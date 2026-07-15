@@ -1,0 +1,237 @@
+using FactuTrust.Domain.Common;
+
+namespace FactuTrust.Domain.Entities.Payroll;
+
+/// <summary>
+/// Paramètres légaux de paie versionnés par exercice (Tunisie) : barème IRPP, taux CNSS,
+/// CSS, TFP, FOPROLOS, frais professionnels et déductions familiales.
+/// Une ligne par exercice. Les valeurs par défaut sont seedées mais restent modifiables
+/// (la loi de finances peut imposer des ajustements sans modification du code).
+/// </summary>
+public sealed class PayrollYearParameters : AggregateRoot
+{
+    public int FiscalYear { get; private set; }
+
+    /// <summary>Taux de cotisation CNSS salariale (RSNA), en % du brut. Ex. 9.18.</summary>
+    public decimal CnssEmployeeRate { get; private set; }
+    /// <summary>Taux de cotisation CNSS patronale (RSNA), en % du brut. Ex. 16.57.</summary>
+    public decimal CnssEmployerRate { get; private set; }
+
+    /// <summary>Taux de cotisation CNSS salariale (RSA), en % du brut.</summary>
+    public decimal CnssEmployeeRateRsa { get; private set; }
+    /// <summary>Taux de cotisation CNSS patronale (RSA), en % du brut.</summary>
+    public decimal CnssEmployerRateRsa { get; private set; }
+
+    /// <summary>Rejeter les contrats dont le salaire de base est inférieur au SMIG mensuel.</summary>
+    public bool EnforceSmigOnContracts { get; private set; }
+    /// <summary>Autoriser les taux de majoration HS 175 % et 200 %.</summary>
+    public bool EnableExtendedOvertimeRates { get; private set; }
+    /// <summary>Matrice à 4 quadrants pour les indemnités (imposable × CNSS).</summary>
+    public bool EnableAllowanceQuadrantMatrix { get; private set; }
+
+    /// <summary>Taux de la Contribution Sociale de Solidarité (CSS), en %. Ex. 0.5.</summary>
+    public decimal CssRate { get; private set; }
+    /// <summary>Seuil annuel (TND) en dessous duquel la CSS ne s'applique pas (tranche exonérée IRPP). Ex. 5000.</summary>
+    public decimal CssAnnualExemptionThreshold { get; private set; }
+
+    /// <summary>Taux des frais professionnels, en % de la base après CNSS. Ex. 10.</summary>
+    public decimal ProfessionalExpensesRate { get; private set; }
+    /// <summary>Plafond annuel (TND) des frais professionnels. Ex. 2000.</summary>
+    public decimal ProfessionalExpensesAnnualCap { get; private set; }
+
+    /// <summary>Déduction annuelle (TND) pour chef de famille. Ex. 300.</summary>
+    public decimal HeadOfFamilyAnnualDeduction { get; private set; }
+    /// <summary>Déduction annuelle (TND) par enfant à charge. Ex. 100.</summary>
+    public decimal ChildAnnualDeduction { get; private set; }
+    /// <summary>Nombre maximum d'enfants à charge pris en compte pour la déduction. Ex. 4.</summary>
+    public int MaxDeductibleChildren { get; private set; }
+
+    /// <summary>Taux de la Taxe de Formation Professionnelle (TFP) — secteur industriel, en %. Ex. 1.</summary>
+    public decimal TfpRateIndustry { get; private set; }
+    /// <summary>Taux de la Taxe de Formation Professionnelle (TFP) — autres secteurs, en %. Ex. 2.</summary>
+    public decimal TfpRateOther { get; private set; }
+    /// <summary>Taux de la contribution FOPROLOS (part patronale), en %. Ex. 1.</summary>
+    public decimal FoprolosRate { get; private set; }
+
+    /// <summary>SMIG mensuel indicatif (TND), pour contrôle de cohérence. Optionnel.</summary>
+    public decimal MonthlySmig { get; private set; }
+
+    private readonly List<PayrollIrppBracket> _irppBrackets = new();
+    /// <summary>Tranches du barème IRPP progressif, triées par borne inférieure croissante.</summary>
+    public IReadOnlyCollection<PayrollIrppBracket> IrppBrackets => _irppBrackets.AsReadOnly();
+
+    private PayrollYearParameters() { }
+
+    public static Result<PayrollYearParameters> Create(
+        int fiscalYear,
+        decimal cnssEmployeeRate,
+        decimal cnssEmployerRate,
+        decimal cssRate,
+        decimal cssAnnualExemptionThreshold,
+        decimal professionalExpensesRate,
+        decimal professionalExpensesAnnualCap,
+        decimal headOfFamilyAnnualDeduction,
+        decimal childAnnualDeduction,
+        int maxDeductibleChildren,
+        decimal tfpRateIndustry,
+        decimal tfpRateOther,
+        decimal foprolosRate,
+        decimal monthlySmig,
+        IEnumerable<PayrollIrppBracket> irppBrackets,
+        decimal? cnssEmployeeRateRsa = null,
+        decimal? cnssEmployerRateRsa = null,
+        bool enforceSmigOnContracts = false,
+        bool enableExtendedOvertimeRates = false,
+        bool enableAllowanceQuadrantMatrix = false)
+    {
+        if (fiscalYear is < 2000 or > 2100)
+            return Result.Failure<PayrollYearParameters>(Error.Validation("FiscalYear", "L'exercice doit être compris entre 2000 et 2100."));
+
+        var brackets = (irppBrackets ?? Enumerable.Empty<PayrollIrppBracket>())
+            .OrderBy(b => b.LowerBound)
+            .ToList();
+
+        if (brackets.Count == 0)
+            return Result.Failure<PayrollYearParameters>(Error.Validation("IrppBrackets", "Le barème IRPP doit comporter au moins une tranche."));
+
+        if (brackets[0].LowerBound != 0m)
+            return Result.Failure<PayrollYearParameters>(Error.Validation("IrppBrackets", "La première tranche IRPP doit démarrer à 0."));
+
+        var rsaEmployeeRate = cnssEmployeeRateRsa ?? cnssEmployeeRate;
+        var rsaEmployerRate = cnssEmployerRateRsa ?? cnssEmployerRate;
+
+        var negativeRates = new[]
+        {
+            cnssEmployeeRate, cnssEmployerRate, rsaEmployeeRate, rsaEmployerRate,
+            cssRate, professionalExpensesRate, tfpRateIndustry, tfpRateOther, foprolosRate
+        };
+        if (negativeRates.Any(r => r < 0))
+            return Result.Failure<PayrollYearParameters>(Error.Validation("Rates", "Les taux ne peuvent pas être négatifs."));
+
+        var entity = new PayrollYearParameters
+        {
+            FiscalYear = fiscalYear,
+            CnssEmployeeRate = Round(cnssEmployeeRate),
+            CnssEmployerRate = Round(cnssEmployerRate),
+            CnssEmployeeRateRsa = Round(rsaEmployeeRate),
+            CnssEmployerRateRsa = Round(rsaEmployerRate),
+            EnforceSmigOnContracts = enforceSmigOnContracts,
+            EnableExtendedOvertimeRates = enableExtendedOvertimeRates,
+            EnableAllowanceQuadrantMatrix = enableAllowanceQuadrantMatrix,
+            CssRate = Round(cssRate),
+            CssAnnualExemptionThreshold = Round(cssAnnualExemptionThreshold),
+            ProfessionalExpensesRate = Round(professionalExpensesRate),
+            ProfessionalExpensesAnnualCap = Round(professionalExpensesAnnualCap),
+            HeadOfFamilyAnnualDeduction = Round(headOfFamilyAnnualDeduction),
+            ChildAnnualDeduction = Round(childAnnualDeduction),
+            MaxDeductibleChildren = Math.Max(0, maxDeductibleChildren),
+            TfpRateIndustry = Round(tfpRateIndustry),
+            TfpRateOther = Round(tfpRateOther),
+            FoprolosRate = Round(foprolosRate),
+            MonthlySmig = Round(monthlySmig)
+        };
+        entity._irppBrackets.AddRange(brackets);
+        return Result.Success(entity);
+    }
+
+    /// <summary>Met à jour l'ensemble des taux et déductions (sans toucher au barème).</summary>
+    public Result UpdateRates(
+        decimal cnssEmployeeRate,
+        decimal cnssEmployerRate,
+        decimal cssRate,
+        decimal cssAnnualExemptionThreshold,
+        decimal professionalExpensesRate,
+        decimal professionalExpensesAnnualCap,
+        decimal headOfFamilyAnnualDeduction,
+        decimal childAnnualDeduction,
+        int maxDeductibleChildren,
+        decimal tfpRateIndustry,
+        decimal tfpRateOther,
+        decimal foprolosRate,
+        decimal monthlySmig,
+        decimal cnssEmployeeRateRsa,
+        decimal cnssEmployerRateRsa,
+        bool enforceSmigOnContracts,
+        bool enableExtendedOvertimeRates,
+        bool enableAllowanceQuadrantMatrix)
+    {
+        var rates = new[]
+        {
+            cnssEmployeeRate, cnssEmployerRate, cnssEmployeeRateRsa, cnssEmployerRateRsa,
+            cssRate, professionalExpensesRate, tfpRateIndustry, tfpRateOther, foprolosRate
+        };
+        if (rates.Any(r => r < 0))
+            return Result.Failure(Error.Validation("Rates", "Les taux ne peuvent pas être négatifs."));
+
+        CnssEmployeeRate = Round(cnssEmployeeRate);
+        CnssEmployerRate = Round(cnssEmployerRate);
+        CnssEmployeeRateRsa = Round(cnssEmployeeRateRsa);
+        CnssEmployerRateRsa = Round(cnssEmployerRateRsa);
+        EnforceSmigOnContracts = enforceSmigOnContracts;
+        EnableExtendedOvertimeRates = enableExtendedOvertimeRates;
+        EnableAllowanceQuadrantMatrix = enableAllowanceQuadrantMatrix;
+        CssRate = Round(cssRate);
+        CssAnnualExemptionThreshold = Round(cssAnnualExemptionThreshold);
+        ProfessionalExpensesRate = Round(professionalExpensesRate);
+        ProfessionalExpensesAnnualCap = Round(professionalExpensesAnnualCap);
+        HeadOfFamilyAnnualDeduction = Round(headOfFamilyAnnualDeduction);
+        ChildAnnualDeduction = Round(childAnnualDeduction);
+        MaxDeductibleChildren = Math.Max(0, maxDeductibleChildren);
+        TfpRateIndustry = Round(tfpRateIndustry);
+        TfpRateOther = Round(tfpRateOther);
+        FoprolosRate = Round(foprolosRate);
+        MonthlySmig = Round(monthlySmig);
+        IncrementVersion();
+        return Result.Success();
+    }
+
+    /// <summary>Remplace intégralement le barème IRPP par un nouveau jeu de tranches.</summary>
+    public Result ReplaceIrppBrackets(IEnumerable<PayrollIrppBracket> brackets)
+    {
+        var ordered = (brackets ?? Enumerable.Empty<PayrollIrppBracket>())
+            .OrderBy(b => b.LowerBound)
+            .ToList();
+
+        if (ordered.Count == 0)
+            return Result.Failure(Error.Validation("IrppBrackets", "Le barème IRPP doit comporter au moins une tranche."));
+        if (ordered[0].LowerBound != 0m)
+            return Result.Failure(Error.Validation("IrppBrackets", "La première tranche IRPP doit démarrer à 0."));
+
+        _irppBrackets.Clear();
+        _irppBrackets.AddRange(ordered);
+        IncrementVersion();
+        return Result.Success();
+    }
+
+    private static decimal Round(decimal value) => Math.Round(value, 3);
+}
+
+/// <summary>
+/// Une tranche du barème IRPP progressif : à partir de <see cref="LowerBound"/> (inclus)
+/// le revenu net annuel imposable est taxé au taux <see cref="Rate"/> jusqu'à la borne
+/// inférieure de la tranche suivante (dernière tranche = illimitée).
+/// </summary>
+public sealed class PayrollIrppBracket : Entity
+{
+    public Guid PayrollYearParametersId { get; private set; }
+    /// <summary>Borne inférieure de la tranche (revenu net annuel, TND).</summary>
+    public decimal LowerBound { get; private set; }
+    /// <summary>Taux marginal de la tranche, en %.</summary>
+    public decimal Rate { get; private set; }
+
+    private PayrollIrppBracket() { }
+
+    public static PayrollIrppBracket Create(decimal lowerBound, decimal rate)
+    {
+        if (lowerBound < 0)
+            throw new ArgumentOutOfRangeException(nameof(lowerBound));
+        if (rate < 0)
+            throw new ArgumentOutOfRangeException(nameof(rate));
+
+        return new PayrollIrppBracket
+        {
+            LowerBound = Math.Round(lowerBound, 3),
+            Rate = Math.Round(rate, 3)
+        };
+    }
+}

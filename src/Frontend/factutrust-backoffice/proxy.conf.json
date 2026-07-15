@@ -1,0 +1,14 @@
+{
+  "/api": {
+    "target": "https://localhost:7001",
+    "secure": false,
+    "changeOrigin": true,
+    "logLevel": "debug",
+    "ws": true
+  },
+  "/health": {
+    "target": "https://localhost:7001",
+    "secure": false,
+    "changeOrigin": true
+  }
+}

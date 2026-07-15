@@ -1,0 +1,374 @@
+import { TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideRouter } from '@angular/router';
+import { environment } from '@environments/environment';
+import { AuthService, AuthResponse, User, normalizeTenantRole, normalizeTenantKind } from './auth.service';
+
+function makeJwt(expOffsetSec = 3600): string {
+  const exp = Math.floor(Date.now() / 1000) + expOffsetSec;
+  const payload = btoa(JSON.stringify({ exp }));
+  return `e.${payload}.s`;
+}
+
+const minimalUser: User = {
+  id: 'u1',
+  email: 'a@b.c',
+  firstName: 'A',
+  lastName: 'B',
+  fullName: 'A B',
+  role: 'Administrator',
+  roleDisplay: 'Admin',
+  tenantId: '00000000-0000-0000-0000-000000000001',
+  companyName: 'Co',
+  twoFactorEnabled: false
+};
+
+function configureAuthTestBed(): void {
+  TestBed.resetTestingModule();
+  TestBed.configureTestingModule({
+    providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])]
+  });
+}
+
+describe('normalizeTenantKind', () => {
+  it('maps PascalCase API string AccountingFirm to accountingFirm', () => {
+    expect(normalizeTenantKind('AccountingFirm')).toBe('accountingFirm');
+  });
+
+  it('maps numeric enum 1 to accountingFirm', () => {
+    expect(normalizeTenantKind(1)).toBe('accountingFirm');
+  });
+
+  it('falls back to accountingFirm for FirmManager without tenantKind', () => {
+    expect(normalizeTenantKind(undefined, 'FirmManager')).toBe('accountingFirm');
+  });
+
+  it('maps Company + Administrator to company', () => {
+    expect(normalizeTenantKind('Company', 'Administrator')).toBe('company');
+  });
+});
+
+describe('normalizeTenantRole', () => {
+  it('maps camelCase API strings to PascalCase', () => {
+    expect(normalizeTenantRole('administrator')).toBe('Administrator');
+    expect(normalizeTenantRole('supervisor')).toBe('Supervisor');
+    expect(normalizeTenantRole('salesRep')).toBe('SalesRep');
+    expect(normalizeTenantRole('salesManager')).toBe('SalesManager');
+  });
+
+  it('is idempotent for PascalCase', () => {
+    expect(normalizeTenantRole('Administrator')).toBe('Administrator');
+    expect(normalizeTenantRole('Supervisor')).toBe('Supervisor');
+    expect(normalizeTenantRole('SalesRep')).toBe('SalesRep');
+  });
+
+  it('maps numeric enum indices from API', () => {
+    expect(normalizeTenantRole(0)).toBe('Administrator');
+    expect(normalizeTenantRole(9)).toBe('Supervisor');
+  });
+
+  it('defaults unknown strings to Accountant', () => {
+    expect(normalizeTenantRole('not-a-role')).toBe('Accountant');
+  });
+});
+
+describe('AuthService', () => {
+  let httpMock: HttpTestingController;
+
+  afterEach(() => {
+    // Le warm-up post-login est un fire-and-forget non testé ici : on draine
+    // silencieusement toute requête /ai/warm-up restante avant verify().
+    httpMock?.match(r => r.url.endsWith('/ai/warm-up')).forEach(r => r.flush({ warmed: true }));
+    httpMock?.verify();
+  });
+
+  describe('legacy migration', () => {
+    it('copies auth keys from localStorage to sessionStorage and clears local', () => {
+      localStorage.clear();
+      sessionStorage.clear();
+      const access = makeJwt();
+      localStorage.setItem('ft_access_token', access);
+      localStorage.setItem('ft_refresh_token', 'refresh-legacy');
+      localStorage.setItem('ft_user', JSON.stringify(minimalUser));
+
+      configureAuthTestBed();
+      httpMock = TestBed.inject(HttpTestingController);
+      TestBed.inject(AuthService);
+
+      expect(sessionStorage.getItem('ft_access_token')).toBe(access);
+      expect(sessionStorage.getItem('ft_refresh_token')).toBe('refresh-legacy');
+      expect(localStorage.getItem('ft_access_token')).toBeNull();
+      expect(localStorage.getItem('ft_refresh_token')).toBeNull();
+    });
+
+    it('does not migrate when ft_auth_remember_me is set', () => {
+      localStorage.clear();
+      sessionStorage.clear();
+      localStorage.setItem('ft_auth_remember_me', '1');
+      localStorage.setItem('ft_access_token', makeJwt());
+      localStorage.setItem('ft_refresh_token', 'r');
+      localStorage.setItem('ft_user', JSON.stringify(minimalUser));
+
+      configureAuthTestBed();
+      httpMock = TestBed.inject(HttpTestingController);
+      const service = TestBed.inject(AuthService);
+
+      expect(sessionStorage.getItem('ft_access_token')).toBeNull();
+      expect(localStorage.getItem('ft_access_token')).toBeTruthy();
+      expect(service.getAccessToken()).toBe(localStorage.getItem('ft_access_token'));
+    });
+  });
+
+  describe('login', () => {
+    beforeEach(() => {
+      localStorage.clear();
+      sessionStorage.clear();
+      configureAuthTestBed();
+      httpMock = TestBed.inject(HttpTestingController);
+    });
+
+    it('stores tokens in sessionStorage when rememberMe is false', () => {
+      const service = TestBed.inject(AuthService);
+      const authData: AuthResponse = {
+        accessToken: makeJwt(),
+        refreshToken: 'new-refresh',
+        expiresAt: '',
+        user: minimalUser,
+        requires2Fa: false
+      };
+
+      service
+        .login({ email: 'a@b.c', password: 'x', rememberMe: false })
+        .subscribe();
+
+      const req = httpMock.expectOne(
+        r => r.url === `${environment.apiUrl}/auth/login` && r.method === 'POST'
+      );
+      req.flush({ success: true, data: authData, message: null, errors: [] });
+
+      expect(sessionStorage.getItem('ft_access_token')).toBe(authData.accessToken);
+      expect(localStorage.getItem('ft_auth_remember_me')).toBeNull();
+      expect(localStorage.getItem('ft_access_token')).toBeNull();
+    });
+
+    it('stores tokens in localStorage when rememberMe is true', () => {
+      const service = TestBed.inject(AuthService);
+      const authData: AuthResponse = {
+        accessToken: makeJwt(),
+        refreshToken: 'new-refresh',
+        expiresAt: '',
+        user: minimalUser,
+        requires2Fa: false
+      };
+
+      service
+        .login({ email: 'a@b.c', password: 'x', rememberMe: true })
+        .subscribe();
+
+      const req = httpMock.expectOne(
+        r => r.url === `${environment.apiUrl}/auth/login` && r.method === 'POST'
+      );
+      req.flush({ success: true, data: authData, message: null, errors: [] });
+
+      expect(localStorage.getItem('ft_auth_remember_me')).toBe('1');
+      expect(localStorage.getItem('ft_access_token')).toBe(authData.accessToken);
+      expect(sessionStorage.getItem('ft_access_token')).toBeNull();
+    });
+
+    it('normalizes camelCase role from API and exposes platform settings for administrator', () => {
+      const service = TestBed.inject(AuthService);
+      const apiUser: User = {
+        ...minimalUser,
+        role: 'administrator'
+      };
+      const authData: AuthResponse = {
+        accessToken: makeJwt(),
+        refreshToken: 'new-refresh',
+        expiresAt: '',
+        user: apiUser,
+        requires2Fa: false
+      };
+
+      service
+        .login({ email: 'a@b.c', password: 'x', rememberMe: false })
+        .subscribe();
+
+      const req = httpMock.expectOne(
+        r => r.url === `${environment.apiUrl}/auth/login` && r.method === 'POST'
+      );
+      req.flush({ success: true, data: authData, message: null, errors: [] });
+
+      expect(service.user()?.role).toBe('Administrator');
+      expect(service.isAdmin()).toBe(true);
+      expect(service.canAccessPlatformSettings()).toBe(true);
+      const stored = JSON.parse(sessionStorage.getItem('ft_user')!) as User;
+      expect(stored.role).toBe('Administrator');
+    });
+
+    it('normalizes supervisor camelCase for platform settings', () => {
+      const service = TestBed.inject(AuthService);
+      const apiUser: User = {
+        ...minimalUser,
+        role: 'supervisor'
+      };
+      const authData: AuthResponse = {
+        accessToken: makeJwt(),
+        refreshToken: 'new-refresh',
+        expiresAt: '',
+        user: apiUser,
+        requires2Fa: false
+      };
+
+      service
+        .login({ email: 'a@b.c', password: 'x', rememberMe: false })
+        .subscribe();
+
+      const req = httpMock.expectOne(
+        r => r.url === `${environment.apiUrl}/auth/login` && r.method === 'POST'
+      );
+      req.flush({ success: true, data: authData, message: null, errors: [] });
+
+      expect(service.user()?.role).toBe('Supervisor');
+      expect(service.isAdmin()).toBe(false);
+      expect(service.canAccessPlatformSettings()).toBe(true);
+    });
+
+    it('does not grant platform settings to accountant (camelCase from API)', () => {
+      const service = TestBed.inject(AuthService);
+      const apiUser: User = {
+        ...minimalUser,
+        role: 'accountant'
+      };
+      const authData: AuthResponse = {
+        accessToken: makeJwt(),
+        refreshToken: 'new-refresh',
+        expiresAt: '',
+        user: apiUser,
+        requires2Fa: false
+      };
+
+      service
+        .login({ email: 'a@b.c', password: 'x', rememberMe: false })
+        .subscribe();
+
+      const req = httpMock.expectOne(
+        r => r.url === `${environment.apiUrl}/auth/login` && r.method === 'POST'
+      );
+      req.flush({ success: true, data: authData, message: null, errors: [] });
+
+      expect(service.user()?.role).toBe('Accountant');
+      expect(service.isAdmin()).toBe(false);
+      expect(service.canAccessPlatformSettings()).toBe(false);
+    });
+
+    it('does not warm up AI after FirmManager login', () => {
+      const service = TestBed.inject(AuthService);
+      const firmUser: User = {
+        ...minimalUser,
+        role: 'FirmManager',
+        tenantKind: 'AccountingFirm',
+        effectivePermissions: ['firm:manage']
+      };
+      const authData: AuthResponse = {
+        accessToken: makeJwt(),
+        refreshToken: 'new-refresh',
+        expiresAt: '',
+        user: firmUser,
+        requires2Fa: false
+      };
+
+      service.login({ email: 'a@b.c', password: 'x', rememberMe: false }).subscribe();
+
+      const loginReq = httpMock.expectOne(
+        r => r.url === `${environment.apiUrl}/auth/login` && r.method === 'POST'
+      );
+      loginReq.flush({ success: true, data: authData, message: null, errors: [] });
+
+      httpMock.expectNone(r => r.url.endsWith('/ai/warm-up'));
+    });
+
+    it('warms up AI after login when user has ai:chat permission', () => {
+      const service = TestBed.inject(AuthService);
+      const adminUser: User = {
+        ...minimalUser,
+        role: 'Administrator',
+        effectivePermissions: ['ai:chat']
+      };
+      const authData: AuthResponse = {
+        accessToken: makeJwt(),
+        refreshToken: 'new-refresh',
+        expiresAt: '',
+        user: adminUser,
+        requires2Fa: false
+      };
+
+      service.login({ email: 'a@b.c', password: 'x', rememberMe: false }).subscribe();
+
+      const loginReq = httpMock.expectOne(
+        r => r.url === `${environment.apiUrl}/auth/login` && r.method === 'POST'
+      );
+      loginReq.flush({ success: true, data: authData, message: null, errors: [] });
+
+      const warmReq = httpMock.expectOne(
+        r => r.url.endsWith('/ai/warm-up') && r.method === 'POST'
+      );
+      warmReq.flush({ warmed: true });
+    });
+  });
+
+  describe('bootstrap from storage', () => {
+    it('normalizes camelCase role when loading ft_user from sessionStorage', () => {
+      localStorage.clear();
+      sessionStorage.clear();
+      const raw = { ...minimalUser, role: 'administrator' };
+      sessionStorage.setItem('ft_access_token', makeJwt());
+      sessionStorage.setItem('ft_refresh_token', 'r');
+      sessionStorage.setItem('ft_user', JSON.stringify(raw));
+      configureAuthTestBed();
+      httpMock = TestBed.inject(HttpTestingController);
+      const service = TestBed.inject(AuthService);
+      expect(service.user()?.role).toBe('Administrator');
+      expect(service.canAccessPlatformSettings()).toBe(true);
+    });
+  });
+
+  describe('permission helpers', () => {
+    beforeEach(() => {
+      localStorage.clear();
+      sessionStorage.clear();
+      configureAuthTestBed();
+      httpMock = TestBed.inject(HttpTestingController);
+    });
+
+    function setEffectivePermissions(service: AuthService, perms: string[] | undefined): void {
+      const u = { ...minimalUser, effectivePermissions: perms };
+      (service as unknown as { userSignal: { set: (x: User | null) => void } }).userSignal.set(u);
+    }
+
+    it('hasPermission allows when effectivePermissions undefined (legacy)', () => {
+      const service = TestBed.inject(AuthService);
+      setEffectivePermissions(service, undefined);
+      expect(service.hasPermission('products:create')).toBe(true);
+    });
+
+    it('hasPermission reflects effectivePermissions when set', () => {
+      const service = TestBed.inject(AuthService);
+      setEffectivePermissions(service, ['products:read']);
+      expect(service.hasPermission('products:read')).toBe(true);
+      expect(service.hasPermission('products:create')).toBe(false);
+    });
+
+    it('hasAnyPermission returns true if one matches', () => {
+      const service = TestBed.inject(AuthService);
+      setEffectivePermissions(service, ['products:read']);
+      expect(service.hasAnyPermission(['products:create', 'products:read'])).toBe(true);
+    });
+
+    it('hasAnyPermission returns false when none match', () => {
+      const service = TestBed.inject(AuthService);
+      setEffectivePermissions(service, ['products:read']);
+      expect(service.hasAnyPermission(['products:create', 'products:delete'])).toBe(false);
+    });
+  });
+});

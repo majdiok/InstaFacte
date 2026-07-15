@@ -1,0 +1,40 @@
+{
+  "screenId": "accounting-income-statement",
+  "description": "Golden fixture for income statement screen analysis",
+  "minQualityScore": 85,
+  "requiredSections": [
+    "Synthèse exécutive",
+    "Indicateurs clés",
+    "Analyse détaillée",
+    "Anomalies et risques",
+    "Actions recommandées",
+    "Points à vérifier"
+  ],
+  "requiredKpis": ["totalRevenue", "grossMargin", "netResult"],
+  "payloadFixture": {
+    "schemaVersion": "2",
+    "screenId": "accounting-income-statement",
+    "payload": {
+      "schemaVersion": "2",
+      "screenId": "accounting-income-statement",
+      "filters": { "fiscalYear": 2026 },
+      "summary": {
+        "totalRevenue": 17792,
+        "totalExpenses": 34157,
+        "costOfGoodsSold": 34157,
+        "grossMargin": -16365,
+        "grossMarginPct": -92.0,
+        "netResult": -16365
+      },
+      "highlights": [
+        {
+          "type": "anomaly",
+          "label": "Marge brute négative",
+          "value": -16365,
+          "context": "Les achats/consommations dépassent les produits"
+        }
+      ],
+      "dataQuality": { "hasData": true, "isPartial": false, "warnings": [] }
+    }
+  }
+}

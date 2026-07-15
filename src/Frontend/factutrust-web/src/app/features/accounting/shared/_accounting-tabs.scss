@@ -1,0 +1,145 @@
+// Shared tab bar styles for accounting consultation screens (design tokens only).
+
+.accounting-tabs-wrap {
+  margin-top: var(--spacing-2);
+  margin-bottom: var(--spacing-4);
+}
+
+.accounting-tabs-wrap__list {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--color-background-elevated);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-xl);
+  padding: var(--spacing-1) var(--spacing-2);
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-neutral-300) transparent;
+}
+
+.accounting-tabs-wrap__list::-webkit-scrollbar {
+  height: 6px;
+}
+
+.accounting-tabs-wrap__list::-webkit-scrollbar-thumb {
+  background: var(--color-neutral-300);
+  border-radius: var(--radius-full);
+}
+
+.accounting-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  flex-shrink: 0;
+  white-space: nowrap;
+  padding: var(--spacing-2) var(--spacing-4);
+  min-height: 2.75rem;
+  border: none;
+  border-right: 1px solid var(--color-border-subtle);
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.accounting-tab:last-child {
+  border-right: none;
+}
+
+.accounting-tab i:first-child {
+  font-size: 1rem;
+  color: inherit;
+  flex-shrink: 0;
+}
+
+.accounting-tab__text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  min-width: 0;
+}
+
+.accounting-tab__code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
+  line-height: 1.2;
+}
+
+.accounting-tab__label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-tertiary);
+  line-height: 1.2;
+}
+
+.accounting-tab__label-short {
+  display: none;
+}
+
+.accounting-tab:hover:not(.is-active) {
+  background: var(--color-background-hover);
+  color: var(--color-text-primary);
+}
+
+.accounting-tab:hover:not(.is-active) .accounting-tab__label {
+  color: var(--color-text-secondary);
+}
+
+.accounting-tab:focus-visible {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: 2px;
+  z-index: 1;
+}
+
+.accounting-tab.is-active {
+  background: var(--color-primary-50);
+  color: var(--color-primary-700);
+  font-weight: var(--font-weight-semibold);
+  box-shadow: inset 0 -2px 0 var(--color-primary-500);
+}
+
+.accounting-tab.is-active .accounting-tab__code {
+  color: var(--color-primary-700);
+}
+
+.accounting-tab.is-active .accounting-tab__label {
+  color: var(--color-primary-600);
+}
+
+@media (max-width: 768px) {
+  .accounting-tab {
+    padding: var(--spacing-2) var(--spacing-3);
+    min-height: 2.5rem;
+  }
+
+  .accounting-tab__text {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .accounting-tab__label {
+    display: none;
+  }
+
+  .accounting-tab__label-short {
+    display: inline;
+    font-size: var(--font-size-xs);
+    color: inherit;
+  }
+
+  .accounting-tab.is-active .accounting-tab__label-short {
+    color: var(--color-primary-700);
+  }
+}

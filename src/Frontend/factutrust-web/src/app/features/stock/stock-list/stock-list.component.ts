@@ -1,0 +1,388 @@
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { CommonModule, CurrencyPipe } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { StockService, StockItem, Warehouse, MovementReason, RecordExitRequest, AdjustStockRequest } from '@core/services/stock.service';
+import { ProductService, ProductListItem } from '@core/services/product.service';
+import { TableTotalsBarComponent, TotalMetric } from '@shared/components/table-totals-bar/table-totals-bar.component';
+
+// PrimeNG Imports
+import { TableModule } from 'primeng/table';
+import { ButtonModule } from 'primeng/button';
+import { DialogModule } from 'primeng/dialog';
+import { DropdownModule } from 'primeng/dropdown';
+import { InputNumberModule } from 'primeng/inputnumber';
+import { InputTextModule } from 'primeng/inputtext';
+import { ToastModule } from 'primeng/toast';
+import { MessageService } from 'primeng/api';
+import { TooltipModule } from 'primeng/tooltip';
+import { ProgressBarModule } from 'primeng/progressbar';
+import { TagModule } from 'primeng/tag';
+
+import { Router, RouterModule } from '@angular/router';
+
+// Shared Components
+import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
+import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
+import { SkeletonTableComponent, SkeletonColumn } from '@shared/components/skeleton/skeleton-table.component';
+import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { ConfirmationService } from '@core/services/confirmation.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
+
+interface StatusOption {
+  label: string;
+  value: string;
+}
+
+@Component({
+  selector: 'app-stock-list',
+  standalone: true,
+  imports: [
+    CommonModule,
+    FormsModule,
+    RouterModule,
+    TableModule,
+    ButtonModule,
+    DialogModule,
+    DropdownModule,
+    InputNumberModule,
+    InputTextModule,
+    ToastModule,
+    TooltipModule,
+    ProgressBarModule,
+    TagModule,
+    CurrencyPipe,
+    PageHeaderComponent,
+    BreadcrumbComponent,
+    SkeletonTableComponent,
+    EmptyStateComponent,
+    ButtonComponent,
+    TableTotalsBarComponent
+  ],
+  templateUrl: './stock-list.component.html',
+  styleUrl: './stock-list.component.scss'
+})
+export class StockListComponent implements OnInit {
+  private stockService = inject(StockService);
+  private productService = inject(ProductService);
+  private messageService = inject(MessageService);
+  private confirmationService = inject(ConfirmationService);
+  private errorHandler = inject(ErrorHandlerService);
+  private router = inject(Router);
+
+  // Data Signals
+  items = signal<StockItem[]>([]);
+  filteredItems = signal<StockItem[]>([]);
+
+  /** Totaux de la zone, calculés sur les lignes filtrées (tout est chargé côté client). */
+  summaryMetrics = computed<TotalMetric[]>(() => {
+    const items = this.filteredItems();
+    return [
+      { label: 'Produits', value: items.length, format: 'number', icon: 'pi-box', tone: 'primary' },
+      { label: 'Quantité', value: items.reduce((acc, i) => acc + i.quantityOnHand, 0), format: 'number', icon: 'pi-database', tone: 'cyan' },
+      { label: 'Valeur stock', value: items.reduce((acc, i) => acc + i.stockValue, 0), format: 'currency', icon: 'pi-wallet', tone: 'primary' },
+      { label: 'En alerte', value: items.filter(i => i.isLowStock && !i.isOutOfStock).length, format: 'number', icon: 'pi-exclamation-triangle', tone: 'amber' },
+      { label: 'Rupture', value: items.filter(i => i.isOutOfStock).length, format: 'number', icon: 'pi-ban', tone: 'rose' }
+    ];
+  });
+  warehouses: Warehouse[] = [];
+  products: ProductListItem[] = [];
+  productsLoaded = false;
+
+  // UI State
+  loading = signal<boolean>(true);
+  initialLoad = signal<boolean>(true);
+  submitting = false;
+  adjustSubmitting = false;
+  exitDialogVisible = false;
+  adjustDialogVisible = false;
+  selectedItemForAdjust: StockItem | null = null;
+
+  // Filters
+  searchTerm = '';
+  selectedWarehouse: Warehouse | null = null;
+  selectedStatus: string | null = null;
+
+  statusOptions: StatusOption[] = [
+    { label: 'En stock', value: 'inStock' },
+    { label: 'Stock faible', value: 'lowStock' },
+    { label: 'Rupture', value: 'outOfStock' }
+  ];
+
+  // Breadcrumb
+  breadcrumbItems: BreadcrumbItem[] = [
+    { label: 'Tableau de bord', route: '/dashboard', icon: 'pi-home' },
+    { label: 'Gestion du Stock' }
+  ];
+
+  // Skeleton columns for loading state
+  skeletonColumns: SkeletonColumn[] = [
+    { width: '180px' },
+    { width: '120px' },
+    { width: '100px' },
+    { width: '120px' },
+    { width: '100px' },
+    { width: '80px' },
+    { width: '120px' }
+  ];
+
+  // Form Model
+  selectedExit = {
+    warehouse: null as Warehouse | null,
+    product: null as ProductListItem | null,
+    quantity: 1,
+    reason: MovementReason.SupplierReturn,
+    notes: ''
+  };
+
+  exitReasons = [
+    { label: 'Retour Fournisseur', value: MovementReason.SupplierReturn },
+    { label: 'Dommage / Perte', value: MovementReason.Damage },
+    { label: 'Transfert', value: MovementReason.Transfer }
+  ];
+
+  // Adjustment Form Model
+  adjustmentForm = {
+    newQuantity: 0,
+    notes: ''
+  };
+
+  ngOnInit(): void {
+    this.loadData();
+    this.loadWarehouses();
+    this.loadProducts();
+  }
+
+  loadData() {
+    this.loading.set(true);
+    this.stockService.getStockItems().subscribe({
+      next: (response) => {
+        if (response.success && response.data) {
+          this.items.set(response.data.items);
+          this.applyFilters();
+        }
+        this.loading.set(false);
+        this.initialLoad.set(false);
+      },
+      error: (err) => {
+        console.error('Error loading stock items', err);
+        this.messageService.add({ severity: 'error', summary: 'Erreur', detail: 'Impossible de charger le stock' });
+        this.loading.set(false);
+        this.initialLoad.set(false);
+      }
+    });
+  }
+
+  loadWarehouses() {
+    this.stockService.getWarehouses(true).subscribe({
+      next: (res) => {
+        if (res.success && res.data) {
+          this.warehouses = res.data;
+        }
+      }
+    });
+  }
+
+  loadProducts() {
+    // Fetch all active products for the dropdown
+    // In a real scenario with many products, this should be server-side filtered on type
+    this.productService.getProducts({ isActive: true, pageSize: 1000 }).subscribe({
+      next: (res) => {
+        if (res.success && res.data) {
+          // Filter mainly physical products if distinction exists, 
+          // though standard products are assumed physical for now.
+          this.products = res.data.items.filter(p => p.isStockManaged);
+        }
+        this.productsLoaded = true;
+      },
+      error: (err) => {
+        this.productsLoaded = true;
+        console.error('Error loading products for stock exit', err);
+      }
+    });
+  }
+
+  // --- Stats Helpers ---
+  calculateTotalValue(): number {
+    return this.items().reduce((acc, item) => acc + item.stockValue, 0);
+  }
+
+  countLowStock(): number {
+    return this.items().filter(i => i.isLowStock && !i.isOutOfStock).length;
+  }
+
+  countOutOfStock(): number {
+    return this.items().filter(i => i.isOutOfStock).length;
+  }
+
+  countInStock(): number {
+    return this.items().filter(i => !i.isLowStock && !i.isOutOfStock).length;
+  }
+
+  // Calculate stock percentage for progress bar
+  getStockPercentage(item: StockItem): number {
+    if (item.minimumStock <= 0) return 100;
+    const ratio = (item.quantityOnHand / (item.minimumStock * 2)) * 100;
+    return Math.min(100, Math.max(0, ratio));
+  }
+
+  getStockSeverity(item: StockItem): string {
+    if (item.isOutOfStock) return 'danger';
+    if (item.isLowStock) return 'warning';
+    return 'success';
+  }
+
+  // --- Filter Methods ---
+  applyFilters(): void {
+    let result = this.items();
+
+    if (this.searchTerm) {
+      const term = this.searchTerm.toLowerCase();
+      result = result.filter(i =>
+        i.productName.toLowerCase().includes(term) ||
+        i.productCode.toLowerCase().includes(term)
+      );
+    }
+
+    if (this.selectedWarehouse) {
+      result = result.filter(i => i.warehouseId === this.selectedWarehouse!.id);
+    }
+
+    if (this.selectedStatus) {
+      switch (this.selectedStatus) {
+        case 'inStock':
+          result = result.filter(i => !i.isLowStock && !i.isOutOfStock);
+          break;
+        case 'lowStock':
+          result = result.filter(i => i.isLowStock && !i.isOutOfStock);
+          break;
+        case 'outOfStock':
+          result = result.filter(i => i.isOutOfStock);
+          break;
+      }
+    }
+
+    this.filteredItems.set(result);
+  }
+
+  hasActiveFilters(): boolean {
+    return !!this.searchTerm || this.selectedWarehouse !== null || this.selectedStatus !== null;
+  }
+
+  activeFiltersCount(): number {
+    let count = 0;
+    if (this.searchTerm) count++;
+    if (this.selectedWarehouse !== null) count++;
+    if (this.selectedStatus !== null) count++;
+    return count;
+  }
+
+  resetFilters(): void {
+    this.searchTerm = '';
+    this.selectedWarehouse = null;
+    this.selectedStatus = null;
+    this.applyFilters();
+  }
+
+  // --- Exit Logic ---
+  openExitDialog() {
+    this.selectedExit = {
+      warehouse: this.warehouses.find(w => w.isDefault) || this.warehouses[0] || null,
+      product: null,
+      quantity: 1,
+      reason: MovementReason.SupplierReturn,
+      notes: ''
+    };
+    this.exitDialogVisible = true;
+  }
+
+  isValidExit(): boolean {
+    return !!this.selectedExit.product &&
+      !!this.selectedExit.warehouse &&
+      this.selectedExit.quantity > 0;
+  }
+
+  submitExit() {
+    if (!this.isValidExit()) return;
+
+    this.submitting = true;
+    const request: RecordExitRequest = {
+      productId: this.selectedExit.product!.id,
+      warehouseId: this.selectedExit.warehouse!.id,
+      quantity: this.selectedExit.quantity,
+      reason: this.selectedExit.reason,
+      notes: this.selectedExit.notes
+    };
+
+    this.stockService.recordExit(request, { skipGlobalErrorUi: true }).subscribe({
+      next: (res) => {
+        this.submitting = false;
+        if (res.success) {
+          this.messageService.add({ severity: 'success', summary: 'Succès', detail: 'Sortie de stock enregistrée' });
+          this.exitDialogVisible = false;
+          this.loadData(); // Refresh
+        } else {
+          const detail = res.errors?.join(', ') || res.message || 'Erreur';
+          this.confirmationService.alert({
+            header: 'Sortie de stock impossible',
+            message: detail,
+            icon: 'pi pi-exclamation-triangle'
+          });
+        }
+      },
+      error: (err) => {
+        this.submitting = false;
+        const msg = this.errorHandler.extractErrorMessage(err);
+        this.confirmationService.alert({
+          header: 'Sortie de stock impossible',
+          message: msg || 'Echec de la sortie de stock',
+          icon: 'pi pi-exclamation-triangle'
+        });
+        this.errorHandler.logError('Stock list exit failed', err, { consoleLevel: 'warn' });
+      }
+    });
+  }
+
+  // --- Adjustment Logic ---
+  openAdjustDialog(item: StockItem) {
+    this.selectedItemForAdjust = item;
+    this.adjustmentForm = {
+      newQuantity: item.quantityOnHand,
+      notes: ''
+    };
+    this.adjustDialogVisible = true;
+  }
+
+  isValidAdjust(): boolean {
+    return this.selectedItemForAdjust !== null &&
+      this.adjustmentForm.newQuantity >= 0;
+  }
+
+  submitAdjust() {
+    if (!this.isValidAdjust() || !this.selectedItemForAdjust) return;
+
+    this.adjustSubmitting = true;
+    const request: AdjustStockRequest = {
+      productId: this.selectedItemForAdjust.productId,
+      warehouseId: this.selectedItemForAdjust.warehouseId,
+      newQuantity: this.adjustmentForm.newQuantity,
+      notes: this.adjustmentForm.notes || undefined
+    };
+
+    this.stockService.adjustStock(request).subscribe({
+      next: (res) => {
+        this.adjustSubmitting = false;
+        if (res.success) {
+          this.messageService.add({ severity: 'success', summary: 'Succès', detail: 'Stock ajusté avec succès' });
+          this.adjustDialogVisible = false;
+          this.selectedItemForAdjust = null;
+          this.loadData(); // Refresh
+        }
+      },
+      error: (err) => {
+        this.adjustSubmitting = false;
+        this.messageService.add({ severity: 'error', summary: 'Erreur', detail: 'Echec de l\'ajustement du stock' });
+      }
+    });
+  }
+}

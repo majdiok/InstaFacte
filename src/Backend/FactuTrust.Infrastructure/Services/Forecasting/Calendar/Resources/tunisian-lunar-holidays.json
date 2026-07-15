@@ -1,0 +1,61 @@
+{
+  "_comment": "Approximate Tunisian lunar holiday dates (Gregorian) for 2024-2030. Exact dates may shift ±1 day based on lunar observation. Update annually. The Ramadan window represents the FIRST day of Ramadan; the implementation expands it to a 30-day window.",
+  "years": [
+    {
+      "year": 2024,
+      "ramadanStart": "2024-03-11",
+      "aidAlFitr": "2024-04-10",
+      "aidAlAdha": "2024-06-16",
+      "rasElAmHijri": "2024-07-07",
+      "mouled": "2024-09-15"
+    },
+    {
+      "year": 2025,
+      "ramadanStart": "2025-03-01",
+      "aidAlFitr": "2025-03-31",
+      "aidAlAdha": "2025-06-06",
+      "rasElAmHijri": "2025-06-26",
+      "mouled": "2025-09-04"
+    },
+    {
+      "year": 2026,
+      "ramadanStart": "2026-02-18",
+      "aidAlFitr": "2026-03-20",
+      "aidAlAdha": "2026-05-27",
+      "rasElAmHijri": "2026-06-16",
+      "mouled": "2026-08-25"
+    },
+    {
+      "year": 2027,
+      "ramadanStart": "2027-02-08",
+      "aidAlFitr": "2027-03-09",
+      "aidAlAdha": "2027-05-16",
+      "rasElAmHijri": "2027-06-05",
+      "mouled": "2027-08-14"
+    },
+    {
+      "year": 2028,
+      "ramadanStart": "2028-01-28",
+      "aidAlFitr": "2028-02-26",
+      "aidAlAdha": "2028-05-05",
+      "rasElAmHijri": "2028-05-25",
+      "mouled": "2028-08-03"
+    },
+    {
+      "year": 2029,
+      "ramadanStart": "2029-01-16",
+      "aidAlFitr": "2029-02-14",
+      "aidAlAdha": "2029-04-24",
+      "rasElAmHijri": "2029-05-14",
+      "mouled": "2029-07-23"
+    },
+    {
+      "year": 2030,
+      "ramadanStart": "2030-01-05",
+      "aidAlFitr": "2030-02-04",
+      "aidAlAdha": "2030-04-14",
+      "rasElAmHijri": "2030-05-04",
+      "mouled": "2030-07-13"
+    }
+  ]
+}

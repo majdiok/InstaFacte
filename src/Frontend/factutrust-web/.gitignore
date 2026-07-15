@@ -1,0 +1,4 @@
+# Procedurally regenerated PBR texture sets. Run `npm run virtual-street:build-textures`
+# in CI or before `ng build` to materialize them. Keep them out of git so the
+# baseline repo stays small and the textures stay reproducible.
+src/assets/virtual-street/textures/

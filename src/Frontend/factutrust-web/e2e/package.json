@@ -1,0 +1,23 @@
+{
+  "name": "factutrust-e2e-tests",
+  "version": "1.0.0",
+  "description": "Tests E2E Selenium/Playwright pour FactuTrust",
+  "scripts": {
+    "test:playwright": "playwright test",
+    "test:playwright:ui": "playwright test --ui",
+    "test:playwright:headed": "playwright test --headed",
+    "test:selenium": "ts-node node_modules/jasmine/bin/jasmine.js e2e/registration.selenium.spec.ts",
+    "test:selenium:chrome": "ts-node node_modules/jasmine/bin/jasmine.js e2e/registration.selenium.spec.ts --browser=chrome",
+    "install:playwright": "npx playwright install",
+    "report:playwright": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "@types/jasmine": "^5.1.0",
+    "@types/node": "^20.0.0",
+    "jasmine": "^5.1.0",
+    "selenium-webdriver": "^4.15.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.2.0"
+  }
+}

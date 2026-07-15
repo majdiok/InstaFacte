@@ -1,0 +1,491 @@
+import { Component, inject, OnInit, signal } from '@angular/core';
+import { CommonModule, CurrencyPipe, DatePipe } from '@angular/common';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { FormsModule } from '@angular/forms';
+import { TagModule } from 'primeng/tag';
+import { TableModule } from 'primeng/table';
+import { ToastModule } from 'primeng/toast';
+import { DialogModule } from 'primeng/dialog';
+import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextModule } from 'primeng/inputtext';
+import { ToastService } from '@core/services/toast.service';
+import { AuthService } from '@core/services/auth.service';
+import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
+import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { RecordPaymentDialogComponent } from '@shared/components/record-payment-dialog/record-payment-dialog.component';
+import {
+    SupplierInvoiceService,
+    SupplierInvoiceDetail,
+    SupplierInvoiceStatus,
+    isSupplierInvoiceOpenForPayment,
+    isSupplierInvoicePaid,
+    isSupplierInvoiceCancelled
+} from '@core/services/supplier-invoice.service';
+import { formatLocalDate } from '@core/utils/date.util';
+
+@Component({
+    selector: 'app-supplier-invoice-detail',
+    standalone: true,
+    imports: [
+        CommonModule, RouterModule, FormsModule, CurrencyPipe, DatePipe,
+        TagModule, TableModule, ToastModule, DialogModule, InputTextareaModule, InputTextModule,
+        PageHeaderComponent, BreadcrumbComponent, ButtonComponent, RecordPaymentDialogComponent
+    ],
+    template: `
+    <app-breadcrumb [items]="breadcrumbItems"></app-breadcrumb>
+
+    @if (loading()) {
+      <div class="loading-container">
+        <i class="pi pi-spin pi-spinner" style="font-size: 2rem"></i>
+        <p>Chargement...</p>
+      </div>
+    } @else if (inv()) {
+      <app-page-header
+        [title]="'Facture ' + inv()!.invoiceNumber"
+        [subtitle]="inv()!.supplier.name">
+        <div class="header-actions">
+          @if (canRecordSupplierPayment()) {
+            <app-button variant="primary" icon="pi-wallet" iconPos="left" (click)="openPayDialog()">
+              Payer la facture
+            </app-button>
+          }
+          @if (canShowPaymentButton()) {
+            <app-button variant="outline" icon="pi-times" iconPos="left" (click)="openCancelDialog()">
+              Annuler
+            </app-button>
+          }
+        </div>
+      </app-page-header>
+
+      <div class="detail-grid">
+        <div class="detail-card">
+          <h3 class="card-title"><i class="pi pi-file"></i> Informations</h3>
+          <div class="info-grid">
+            <div class="info-item"><span class="label">N° facture</span><span class="value mono">{{ inv()!.invoiceNumber }}</span></div>
+            <div class="info-item"><span class="label">Date</span><span class="value">{{ inv()!.invoiceDate | date:'dd/MM/yyyy' }}</span></div>
+            <div class="info-item"><span class="label">Échéance</span><span class="value">{{ inv()!.dueDate | date:'dd/MM/yyyy' }}</span></div>
+            <div class="info-item status-item">
+              <span class="label">Statut</span>
+              <div class="status-with-actions">
+                <p-tag [value]="inv()!.statusDisplay" [severity]="getStatusSeverity(inv()!.status)"></p-tag>
+                @if (canRecordSupplierPayment() || canShowPaymentButton()) {
+                  <div class="card-actions">
+                    @if (canRecordSupplierPayment()) {
+                      <app-button variant="primary" icon="pi-wallet" iconPos="left" (click)="openPayDialog()">
+                        Payer la facture
+                      </app-button>
+                    }
+                    @if (canShowPaymentButton()) {
+                      <app-button variant="outline" icon="pi-times" iconPos="left" (click)="openCancelDialog()">
+                        Annuler
+                      </app-button>
+                    }
+                  </div>
+                }
+              </div>
+            </div>
+            @if (inv()!.externalReference) {
+              <div class="info-item"><span class="label">Référence externe</span><span class="value">{{ inv()!.externalReference }}</span></div>
+            }
+            <div class="info-item"><span class="label">Bon de commande</span><a [routerLink]="['/purchase-orders', inv()!.purchaseOrderId]" class="value link">{{ inv()!.purchaseOrderNumber }}</a></div>
+          </div>
+        </div>
+
+        <div class="detail-card">
+          <h3 class="card-title"><i class="pi pi-building"></i> Fournisseur</h3>
+          <div class="info-grid">
+            <div class="info-item"><span class="label">Nom</span><a [routerLink]="['/suppliers', inv()!.supplier.id]" class="value link">{{ inv()!.supplier.name }}</a></div>
+            <div class="info-item"><span class="label">Email</span><a [href]="'mailto:' + inv()!.supplier.email" class="value link">{{ inv()!.supplier.email }}</a></div>
+            @if (inv()!.supplier.nif) {
+              <div class="info-item"><span class="label">NIF</span><span class="value mono">{{ inv()!.supplier.nif }}</span></div>
+            }
+            <div class="info-item full-width"><span class="label">Adresse</span><span class="value">{{ inv()!.supplier.address }}</span></div>
+          </div>
+        </div>
+
+        <div class="detail-card full-width">
+          <h3 class="card-title"><i class="pi pi-list"></i> Lignes</h3>
+          @if (hasFixedAssetLines()) {
+            <div class="asset-banner" role="status">
+              <i class="pi pi-building"></i>
+              <span>Cette facture comporte des lignes classées en <strong>immobilisations</strong> (comptes 21x / TVA 43662).</span>
+            </div>
+          }
+          <p-table [value]="inv()!.lines" styleClass="p-datatable-sm" [rowHover]="true">
+            <ng-template pTemplate="header">
+              <tr>
+                <th style="width: 50px">#</th>
+                <th>Produit</th>
+                <th style="width: 110px">Type</th>
+                <th style="width: 100px" class="text-center">Quantité</th>
+                <th style="width: 120px" class="text-right">Prix unit. HT</th>
+                <th style="width: 80px" class="text-center">TVA</th>
+                <th style="width: 130px" class="text-right">Total TTC</th>
+              </tr>
+            </ng-template>
+            <ng-template pTemplate="body" let-line>
+              <tr [class.asset-line]="line.isFixedAsset">
+                <td class="text-center">{{ line.lineNumber }}</td>
+                <td><div class="product-info"><span class="product-name">{{ line.productName }}</span><span class="product-code">{{ line.productCode }}</span></div></td>
+                <td>
+                  @if (line.isFixedAsset) {
+                    <p-tag value="Immobilisation" severity="info"></p-tag>
+                    @if (line.assetAccountNumber) {
+                      <span class="asset-account mono">{{ line.assetAccountNumber }}</span>
+                    }
+                    @if (line.fixedAssetId) {
+                      <a [routerLink]="['/accounting/fixed-assets', line.fixedAssetId]" class="asset-link">
+                        {{ line.fixedAssetInventoryNumber || 'Registre immo' }}
+                      </a>
+                    }
+                  } @else {
+                    <span class="line-type-muted">Marchandise</span>
+                  }
+                </td>
+                <td class="text-center">{{ line.quantity }}</td>
+                <td class="text-right">{{ line.unitPriceHT | currency:'TND':'symbol':'1.3-3' }}</td>
+                <td class="text-center">{{ line.vatRateDisplay }}</td>
+                <td class="text-right amount">{{ line.total | currency:'TND':'symbol':'1.3-3' }}</td>
+              </tr>
+            </ng-template>
+          </p-table>
+          <div class="totals-section">
+            <div class="total-row"><span>Sous-total HT</span><span class="amount">{{ inv()!.subTotal | currency:'TND':'symbol':'1.3-3' }}</span></div>
+            <div class="total-row"><span>TVA</span><span class="amount">{{ inv()!.totalVat | currency:'TND':'symbol':'1.3-3' }}</span></div>
+            <div class="total-row grand-total"><span>Total TTC</span><span class="amount">{{ inv()!.totalTTC | currency:'TND':'symbol':'1.3-3' }}</span></div>
+            @if (!inv()!.isSubjectToWithholding && inv()!.totalTTC >= rs7TtcThresholdTnd) {
+              <div class="rs-threshold-banner" role="alert">
+                <p class="rs-threshold-title">Retenue à la source (achats)</p>
+                <p class="rs-threshold-text">
+                  Le total TTC dépasse le seuil indicatif de {{ rs7TtcThresholdTnd | number:'1.0-0' }}&nbsp;TND (RS7), mais aucune retenue n’est calculée tant que le fournisseur n’est pas marqué comme
+                  <strong>assujetti à la retenue à la source</strong> sur sa fiche.
+                </p>
+                <a [routerLink]="['/suppliers', inv()!.supplier.id]" class="rs-threshold-link">Ouvrir la fiche fournisseur</a>
+              </div>
+            }
+            @if (inv()!.isSubjectToWithholding && inv()!.withholdingAmount != null && inv()!.withholdingAmount !== undefined) {
+              <div class="total-row muted-row">
+                <span>Retenue à la source (prévision)</span>
+                <span class="amount">{{ inv()!.withholdingAmount | number:'1.3-3' }} TND @if (inv()!.withholdingRate != null) { — {{ inv()!.withholdingRate }}&nbsp;% }</span>
+              </div>
+            }
+            @if (inv()!.isSubjectToWithholding && inv()!.netAmountAfterWithholding != null && inv()!.netAmountAfterWithholding !== undefined) {
+              <div class="total-row"><span>Net après RS (indicatif)</span><span class="amount">{{ inv()!.netAmountAfterWithholding | currency:'TND':'symbol':'1.3-3' }}</span></div>
+            }
+            @if (inv()!.isSubjectToWithholding) {
+              <p class="tej-hint">
+                La déclaration <strong>TEJ</strong> regroupe automatiquement les factures fournisseurs <strong>soldées</strong> avec retenue, selon le mois de la date de solde.
+                <a routerLink="/withholding-tax/tej-export" class="link-inline">Export TEJ</a>
+              </p>
+            }
+          </div>
+        </div>
+
+        @if (inv()!.notes) {
+          <div class="detail-card full-width">
+            <h3 class="card-title"><i class="pi pi-file-edit"></i> Notes</h3>
+            <p class="notes-text">{{ inv()!.notes }}</p>
+          </div>
+        }
+
+        @if (inv()!.payments && inv()!.payments.length > 0) {
+          <div class="detail-card full-width">
+            <h3 class="card-title"><i class="pi pi-wallet"></i> Historique des paiements</h3>
+            <p-table [value]="inv()!.payments" styleClass="p-datatable-sm" [rowHover]="true">
+              <ng-template pTemplate="header">
+                <tr>
+                  <th>Date</th>
+                  <th class="text-right">Montant</th>
+                  <th>Mode</th>
+                  <th>Référence</th>
+                  <th>Effet</th>
+                </tr>
+              </ng-template>
+              <ng-template pTemplate="body" let-payment>
+                <tr>
+                  <td>{{ payment.paymentDate | date:'dd/MM/yyyy' }}</td>
+                  <td class="text-right amount">{{ payment.amount | number:'1.3-3' }} {{ payment.currency }}</td>
+                  <td>{{ payment.methodDisplay }}</td>
+                  <td>{{ payment.reference || '-' }}</td>
+                  <td>
+                    @if (payment.effetStatus !== null && payment.effetStatus !== undefined) {
+                      <span class="effet-badge" [class.en-portefeuille]="payment.effetStatus === 0" [class.encaisse]="payment.effetStatus === 1" [class.impaye]="payment.effetStatus === 2">
+                        {{ payment.effetStatusDisplay }}@if (payment.effetDueDate) { · éch. {{ payment.effetDueDate | date:'dd/MM/yyyy' }} }
+                      </span>
+                      @if (payment.effetStatus === 0 && canSettleEffet()) {
+                        <button type="button" class="effet-btn" [disabled]="settlingEffetId() === payment.id" (click)="onSettleSupplierEffet(payment.id)">Payer l'effet</button>
+                      }
+                    } @else {
+                      -
+                    }
+                  </td>
+                </tr>
+              </ng-template>
+            </p-table>
+            <div class="payment-summary">
+              <span class="payment-total">Total payé : {{ inv()!.totalPaid | number:'1.3-3' }} TND</span>
+              @if (inv()!.remainingAmount > 0) {
+                <span class="payment-remaining">Restant dû : {{ inv()!.remainingAmount | number:'1.3-3' }} TND</span>
+              }
+            </div>
+          </div>
+        }
+
+        @if (isSupplierInvoicePaid(inv()!.status) && inv()!.paidAt && (!inv()!.payments || inv()!.payments.length === 0)) {
+          <div class="detail-card full-width">
+            <h3 class="card-title"><i class="pi pi-check-circle"></i> Paiement</h3>
+            <p class="notes-text">Payée le {{ inv()!.paidAt | date:'dd/MM/yyyy HH:mm' }}@if (inv()!.paymentReference) { — Réf. {{ inv()!.paymentReference }}}.</p>
+          </div>
+        }
+
+        @if (inv()!.cancellationReason) {
+          <div class="detail-card full-width cancelled-card">
+            <h3 class="card-title"><i class="pi pi-exclamation-triangle"></i> Annulation</h3>
+            <p class="notes-text">{{ inv()!.cancellationReason }}</p>
+            <p class="cancelled-date">Annulée le {{ inv()!.cancelledAt | date:'dd/MM/yyyy HH:mm' }}</p>
+          </div>
+        }
+      </div>
+    }
+
+    <app-record-payment-dialog
+      [panelMode]="true"
+      [(visible)]="payDialogVisible"
+      [invoiceId]="inv()?.id ?? ''"
+      [invoiceNumber]="inv()?.invoiceNumber ?? ''"
+      [totalAmount]="inv()?.totalTTC ?? 0"
+      [totalPaid]="inv()?.totalPaid ?? 0"
+      [remainingAmount]="inv()?.remainingAmount ?? inv()?.totalTTC ?? 0"
+      currency="TND"
+      invoiceType="supplier"
+      (paymentRecorded)="onPaymentRecorded()">
+    </app-record-payment-dialog>
+
+    <!-- Cancel dialog -->
+    <p-dialog header="Annuler la facture" [(visible)]="cancelDialogVisible" [modal]="true" [style]="{ width: '450px' }" [draggable]="false" (onHide)="closeCancelDialog()">
+      <p class="dialog-message">Indiquez le motif d'annulation (obligatoire).</p>
+      <textarea pInputTextarea [(ngModel)]="cancelReason" placeholder="Motif..." [rows]="4" class="w-full"></textarea>
+      <ng-template pTemplate="footer">
+        <app-button variant="outline" (click)="closeCancelDialog()">Retour</app-button>
+        <app-button variant="danger" icon="pi-times" iconPos="left" [disabled]="!cancelReason.trim()" (click)="submitCancel()">Annuler la facture</app-button>
+      </ng-template>
+    </p-dialog>
+  `,
+    styles: [`
+    .loading-container { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: var(--spacing-12); color: var(--color-text-secondary); gap: var(--spacing-3); }
+    .header-actions { display: flex; gap: var(--spacing-2); }
+    .detail-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--spacing-4); }
+    .detail-card { background: var(--color-background-elevated); border-radius: var(--radius-xl); padding: var(--spacing-5); box-shadow: var(--shadow-md); border: 1px solid var(--color-border-subtle); }
+    .detail-card.full-width { grid-column: 1 / -1; }
+    .detail-card.cancelled-card { border-color: var(--color-danger-300); background: var(--color-danger-50, #fef2f2); }
+    .card-title { font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); color: var(--color-text-primary); margin: 0 0 var(--spacing-4) 0; display: flex; align-items: center; gap: var(--spacing-2); }
+    .card-title i { color: var(--color-primary-600); }
+    .info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--spacing-4); }
+    .info-item { display: flex; flex-direction: column; gap: var(--spacing-1); }
+    .info-item.full-width { grid-column: 1 / -1; }
+    .info-item .label { font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; }
+    .info-item .value { font-size: var(--font-size-sm); color: var(--color-text-primary); }
+    .info-item .value.mono { font-family: 'JetBrains Mono', monospace; }
+    .info-item .value.link { color: var(--color-primary-600); text-decoration: none; }
+    .info-item .value.link:hover { text-decoration: underline; }
+    .status-item { grid-column: 1 / -1; }
+    .status-with-actions { display: flex; flex-direction: column; gap: var(--spacing-3); }
+    .card-actions { display: flex; gap: var(--spacing-2); flex-wrap: wrap; }
+    .product-info { display: flex; flex-direction: column; gap: 2px; }
+    .product-name { font-weight: var(--font-weight-medium); }
+    .product-code { font-size: var(--font-size-xs); color: var(--color-neutral-500); font-family: 'JetBrains Mono', monospace; }
+    .asset-banner { display: flex; align-items: flex-start; gap: var(--spacing-3); margin-bottom: var(--spacing-4); padding: var(--spacing-3) var(--spacing-4); border-radius: var(--radius-lg); border: 1px solid var(--color-primary-200); background: var(--color-primary-50, #eff6ff); font-size: var(--font-size-sm); color: var(--color-primary-800); }
+    .asset-banner i { margin-top: 2px; color: var(--color-primary-600); }
+    .asset-line { background: color-mix(in srgb, var(--color-primary-50) 40%, transparent); }
+    .asset-account { display: block; margin-top: var(--spacing-1); font-size: var(--font-size-xs); color: var(--color-text-tertiary); }
+    .asset-link { display: block; margin-top: var(--spacing-1); font-size: var(--font-size-xs); color: var(--color-primary-600); text-decoration: none; font-weight: var(--font-weight-medium); }
+    .asset-link:hover { text-decoration: underline; }
+    .line-type-muted { font-size: var(--font-size-xs); color: var(--color-text-tertiary); }
+    .amount { font-family: 'JetBrains Mono', monospace; font-weight: var(--font-weight-semibold); }
+    .totals-section { margin-top: var(--spacing-4); padding-top: var(--spacing-4); border-top: 2px solid var(--color-border-subtle); display: flex; flex-direction: column; align-items: flex-end; gap: var(--spacing-2); }
+    .total-row { display: flex; justify-content: space-between; width: 300px; font-size: var(--font-size-sm); color: var(--color-text-secondary); }
+    .total-row.grand-total { font-size: var(--font-size-lg); font-weight: var(--font-weight-bold); color: var(--color-text-primary); padding-top: var(--spacing-2); border-top: 1px solid var(--color-border-subtle); }
+    .total-row.muted-row { font-size: var(--font-size-xs); color: var(--color-text-tertiary); }
+    .rs-threshold-banner { align-self: stretch; width: 100%; max-width: 100%; margin-top: var(--spacing-3); padding: var(--spacing-3); border-radius: var(--radius-lg); border: 1px solid var(--color-warning-200); background: var(--color-warning-50, #fffbeb); text-align: left; }
+    .rs-threshold-title { margin: 0 0 var(--spacing-2); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); color: var(--color-text-primary); }
+    .rs-threshold-text { margin: 0 0 var(--spacing-2); font-size: var(--font-size-xs); line-height: 1.55; color: var(--color-text-secondary); }
+    .rs-threshold-link { font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--color-primary-600); text-decoration: none; }
+    .rs-threshold-link:hover { text-decoration: underline; }
+    .tej-hint { font-size: var(--font-size-xs); color: var(--color-text-tertiary); line-height: 1.5; margin: var(--spacing-3) 0 0; max-width: 420px; text-align: right; align-self: flex-end; }
+    .link-inline { margin-left: var(--spacing-2); color: var(--color-primary-600); font-weight: var(--font-weight-medium); }
+    .notes-text { font-size: var(--font-size-sm); color: var(--color-text-secondary); line-height: 1.6; margin: 0; }
+    .payment-summary { margin-top: var(--spacing-4); padding-top: var(--spacing-3); border-top: 1px solid var(--color-border-subtle); display: flex; gap: var(--spacing-6); font-size: var(--font-size-sm); }
+    .payment-total { font-weight: var(--font-weight-semibold); color: var(--color-success-600); }
+    .payment-remaining { font-weight: var(--font-weight-medium); color: var(--color-warning-600); }
+    .effet-badge { display: inline-flex; align-items: center; gap: 4px; font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); padding: 2px 8px; border-radius: var(--radius-lg); background: var(--color-neutral-100); color: var(--color-text-secondary); }
+    .effet-badge.en-portefeuille { background: var(--color-warning-50); color: var(--color-warning-700); }
+    .effet-badge.encaisse { background: var(--color-success-50); color: var(--color-success-700); }
+    .effet-badge.impaye { background: var(--color-error-50); color: var(--color-error-700); }
+    .effet-btn { margin-left: var(--spacing-2); border: 1px solid var(--color-success-200); background: var(--color-white); border-radius: var(--radius-md); padding: 2px 10px; font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); color: var(--color-success-700); cursor: pointer; }
+    .effet-btn:hover:not(:disabled) { background: var(--color-success-50); }
+    .effet-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .cancelled-date { font-size: var(--font-size-xs); color: var(--color-danger-600); margin: var(--spacing-2) 0 0; }
+    .dialog-message { margin: 0 0 var(--spacing-4) 0; font-size: var(--font-size-sm); color: var(--color-text-secondary); }
+    .form-group { display: flex; flex-direction: column; gap: var(--spacing-2); margin-bottom: var(--spacing-4); }
+    .form-group label { font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--color-text-secondary); }
+  `]
+})
+export class SupplierInvoiceDetailComponent implements OnInit {
+    private route = inject(ActivatedRoute);
+    private router = inject(Router);
+    private service = inject(SupplierInvoiceService);
+    private toastService = inject(ToastService);
+    private readonly auth = inject(AuthService);
+
+    readonly SupplierInvoiceStatus = SupplierInvoiceStatus;
+    readonly isSupplierInvoicePaid = isSupplierInvoicePaid;
+    /** Seuil RS7 achats (TND) — aligné sur la valeur par défaut backend ; paramétrage fiscal par exercice possible côté serveur. */
+    readonly rs7TtcThresholdTnd = 1000;
+    loading = signal(true);
+    inv = signal<SupplierInvoiceDetail | null>(null);
+    payDialogVisible = false;
+    cancelDialogVisible = false;
+    cancelReason = '';
+
+    breadcrumbItems: BreadcrumbItem[] = [
+        { label: 'Tableau de bord', route: '/dashboard', icon: 'pi-home' },
+        { label: 'Factures fournisseurs', route: '/supplier-invoices' },
+        { label: 'Détail' }
+    ];
+
+    private get unpaidOnlyFromRoute(): boolean {
+        return this.route.snapshot.data['unpaidOnly'] === true;
+    }
+
+    private get listBackRoute(): string {
+        return this.unpaidOnlyFromRoute ? '/supplier-invoices/unpaid' : '/supplier-invoices';
+    }
+
+    ngOnInit(): void {
+        const id = this.route.snapshot.paramMap.get('id');
+        if (id) this.loadInvoice(id);
+    }
+
+    private buildBreadcrumb(invoiceNumber: string): BreadcrumbItem[] {
+        const base: BreadcrumbItem[] = [
+            { label: 'Tableau de bord', route: '/dashboard', icon: 'pi-home' },
+            { label: 'Factures fournisseurs', route: '/supplier-invoices' }
+        ];
+        if (this.unpaidOnlyFromRoute) {
+            base.push({ label: 'Factures impayées', route: '/supplier-invoices/unpaid' });
+        }
+        base.push({ label: invoiceNumber });
+        return base;
+    }
+
+    private loadInvoice(id: string): void {
+        this.service.getSupplierInvoice(id).subscribe({
+            next: (response) => {
+                if (response.success && response.data) {
+                    this.inv.set(response.data);
+                    this.breadcrumbItems = this.buildBreadcrumb(response.data.invoiceNumber);
+                }
+                this.loading.set(false);
+            },
+            error: () => {
+                this.loading.set(false);
+                this.toastService.add({ severity: 'error', summary: 'Erreur', detail: 'Facture introuvable' });
+                this.router.navigate([this.listBackRoute]);
+            }
+        });
+    }
+
+    getStatusSeverity(s: SupplierInvoiceStatus): 'success' | 'info' | 'warning' | 'danger' | 'secondary' | 'contrast' {
+        switch (s) {
+            case SupplierInvoiceStatus.Pending: return 'warning';
+            case SupplierInvoiceStatus.Paid: return 'success';
+            case SupplierInvoiceStatus.Cancelled: return 'danger';
+            case SupplierInvoiceStatus.PartiallyPaid: return 'info';
+            default: return 'secondary';
+        }
+    }
+
+    canShowPaymentButton(): boolean {
+        return isSupplierInvoiceOpenForPayment(this.inv()?.status);
+    }
+
+    canRecordSupplierPayment(): boolean {
+        return isSupplierInvoiceOpenForPayment(this.inv()?.status)
+            && !this.auth.isFirmDelegatedReadonly();
+    }
+
+    hasFixedAssetLines(): boolean {
+        return this.inv()?.lines?.some(l => l.isFixedAsset) ?? false;
+    }
+
+    openPayDialog(): void {
+        if (this.auth.isFirmDelegatedReadonly()) return;
+        this.payDialogVisible = true;
+    }
+
+    onPaymentRecorded(): void {
+        const invoice = this.inv();
+        if (invoice) {
+            this.toastService.add({ severity: 'success', summary: 'Succès', detail: 'Paiement enregistré avec succès' });
+            this.loadInvoice(invoice.id);
+        }
+    }
+
+    readonly settlingEffetId = signal<string | null>(null);
+
+    canSettleEffet(): boolean {
+        return !this.auth.isFirmDelegatedReadonly();
+    }
+
+    /** Paie un effet fournisseur à échéance (403/532). */
+    onSettleSupplierEffet(paymentId: string): void {
+        if (this.settlingEffetId()) return;
+        if (this.auth.isFirmDelegatedReadonly()) return;
+        const invoice = this.inv();
+        if (!invoice) return;
+
+        this.settlingEffetId.set(paymentId);
+        this.service.settleEffet(invoice.id, paymentId, { settlementDate: formatLocalDate(new Date()) }).subscribe({
+            next: (res) => {
+                this.settlingEffetId.set(null);
+                if (res.success) {
+                    this.toastService.add({ severity: 'success', summary: 'Effet payé', detail: 'Effet fournisseur payé avec succès' });
+                    this.loadInvoice(invoice.id);
+                } else {
+                    this.toastService.add({ severity: 'error', summary: 'Erreur', detail: res.message ?? 'Échec du paiement de l\'effet' });
+                }
+            },
+            error: () => {
+                this.settlingEffetId.set(null);
+                this.toastService.add({ severity: 'error', summary: 'Erreur', detail: 'Échec du paiement de l\'effet' });
+            }
+        });
+    }
+
+    openCancelDialog(): void {
+        this.cancelReason = '';
+        this.cancelDialogVisible = true;
+    }
+
+    closeCancelDialog(): void {
+        this.cancelDialogVisible = false;
+        this.cancelReason = '';
+    }
+
+    submitCancel(): void {
+        const invoice = this.inv();
+        const reason = this.cancelReason?.trim();
+        if (!invoice || !reason) return;
+        this.service.cancel(invoice.id, reason).subscribe({
+            next: (response) => {
+                if (response.success) {
+                    this.closeCancelDialog();
+                    this.toastService.add({ severity: 'success', summary: 'Succès', detail: 'Facture annulée' });
+                    this.loadInvoice(invoice.id);
+                }
+            },
+            error: (err) => this.toastService.add({ severity: 'error', summary: 'Erreur', detail: err?.error?.errors?.[0] || 'Erreur' })
+        });
+    }
+}

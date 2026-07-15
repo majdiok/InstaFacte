@@ -1,0 +1,844 @@
+import { Component, OnInit, OnDestroy, inject, signal, computed } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { RouterModule, ActivatedRoute, ParamMap, Params, Router } from '@angular/router';
+import { FormsModule } from '@angular/forms';
+import { TableModule } from 'primeng/table';
+import { ButtonModule } from 'primeng/button';
+import { InputTextModule } from 'primeng/inputtext';
+import { DropdownModule } from 'primeng/dropdown';
+import { CalendarModule } from 'primeng/calendar';
+import { PaginatorModule } from 'primeng/paginator';
+import { ToastModule } from 'primeng/toast';
+import { ToastService } from '@core/services/toast.service';
+import { Subject, Subscription } from 'rxjs';
+import { debounceTime, distinctUntilChanged, take } from 'rxjs/operators';
+import { applyInvoiceListFiltersFromQuery } from '@core/utils/list-filter-from-query';
+import { formatLocalDate } from '@core/utils/date.util';
+import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
+import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
+import { SkeletonTableComponent, SkeletonColumn } from '@shared/components/skeleton/skeleton-table.component';
+import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { AnalyzeWithAiButtonComponent } from '@features/ai-assistant/components/analyze-with-ai-button/analyze-with-ai-button.component';
+import { wrapLegacyAnalyzePayload } from '@features/ai-assistant/utils/ai-screen-payload.factory';
+import { InvoiceImportDialogComponent } from '@features/invoices/components/invoice-import-dialog/invoice-import-dialog.component';
+import { StatusBadgeComponent, StatusBadgeStatus } from '@shared/components/status-badge/status-badge.component';
+import { TableTotalsBarComponent, TotalMetric } from '@shared/components/table-totals-bar/table-totals-bar.component';
+import { InvoiceService, InvoiceListItem, InvoiceSearchParams, InvoiceListSummary } from '@core/services/invoice.service';
+import { PrintPreviewService } from '@core/services/print-preview.service';
+import { ClientService, ClientListItem } from '@core/services/client.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
+import { AuthService } from '@core/services/auth.service';
+import { PERMISSIONS } from '@core/config/permission-keys';
+
+interface StatusOption {
+  label: string;
+  value: number | null;
+}
+
+@Component({
+  selector: 'app-invoice-list',
+  standalone: true,
+  imports: [
+    CommonModule,
+    RouterModule,
+    FormsModule,
+    TableModule,
+    ButtonModule,
+    InputTextModule,
+    DropdownModule,
+    CalendarModule,
+    PaginatorModule,
+    ToastModule,
+    PageHeaderComponent,
+    BreadcrumbComponent,
+    SkeletonTableComponent,
+    EmptyStateComponent,
+    ButtonComponent,
+    StatusBadgeComponent,
+    TableTotalsBarComponent,
+    AnalyzeWithAiButtonComponent,
+    InvoiceImportDialogComponent
+  ],
+  template: `
+    <app-breadcrumb [items]="breadcrumbItems()"></app-breadcrumb>
+    
+    <app-page-header 
+      [title]="unpaidOnlyMode() ? 'Factures impayées' : 'Factures'" 
+      [subtitle]="unpaidOnlyMode() ? 'Factures clients non réglées ou partiellement réglées.' : 'Gérez vos factures'">
+      <app-button 
+        variant="secondary"
+        icon="pi-print"
+        iconPos="left"
+        [disabled]="printingReport()"
+        (click)="printInvoiceReport()"
+        ariaLabel="Imprimer l'état des factures (période et client optionnels)">
+        Imprimer l'état
+      </app-button>
+      <app-analyze-with-ai-button
+        screenId="invoice-list"
+        [payloadBuilder]="buildInvoiceAnalyzePayload"
+        [disabled]="loading() || initialLoad()" />
+      @if (canImportInvoice()) {
+        <app-button
+          variant="secondary"
+          icon="pi-file-import"
+          iconPos="left"
+          (click)="openImportDialog()"
+          ariaLabel="Importer une facture depuis un fichier (PDF, image, Word ou Excel)">
+          Importer une facture
+        </app-button>
+      }
+      @if (canCreateInvoice()) {
+        <app-button 
+          variant="primary"
+          icon="pi-plus"
+          iconPos="left"
+          routerLink="new">
+          Nouvelle facture
+        </app-button>
+      }
+    </app-page-header>
+
+    <!-- Filters -->
+    <div class="ft-filters">
+      <div class="ft-filters__header">
+        <h3 class="ft-filters__title"><i class="pi pi-filter"></i> Filtres</h3>
+        @if (hasActiveFilters()) {
+          <button
+            class="ft-filters__reset"
+            (click)="resetFilters()"
+            aria-label="Réinitialiser les filtres">
+            <i class="pi pi-times"></i>
+            Réinitialiser ({{ activeFiltersCount() }})
+          </button>
+        }
+      </div>
+      <div class="ft-filters__row">
+        <span class="p-input-icon-left">
+          <i class="pi pi-search"></i>
+          <input 
+            pInputText 
+            type="text" 
+            placeholder="Rechercher..." 
+            [(ngModel)]="searchTerm"
+            (input)="onSearch()">
+        </span>
+
+        <p-dropdown 
+          [options]="statusOptions" 
+          [(ngModel)]="selectedStatus"
+          placeholder="Tous les statuts"
+          [showClear]="true"
+          (onChange)="onFilterChange()">
+        </p-dropdown>
+
+        <p-calendar 
+          [(ngModel)]="dateRange" 
+          selectionMode="range" 
+          [readonlyInput]="true"
+          placeholder="Période"
+          dateFormat="dd/mm/yy"
+          [showClear]="true"
+          (onSelect)="onFilterChange()">
+        </p-calendar>
+
+        <p-dropdown 
+          [options]="clientOptions" 
+          [(ngModel)]="selectedClient"
+          optionLabel="name"
+          placeholder="Tous les clients"
+          [showClear]="true"
+          [filter]="true"
+          filterBy="name,code"
+          (onChange)="onFilterChange()">
+        </p-dropdown>
+      </div>
+    </div>
+
+    <!-- Error Message -->
+    @if (errorMessage() && !loading()) {
+      <div class="error-banner">
+        <div class="error-content">
+          <i class="pi pi-exclamation-triangle"></i>
+          <div class="error-text">
+            <strong>Erreur de chargement</strong>
+            <p>{{ errorMessage() }}</p>
+            @if (isRateLimited()) {
+              <small>Nouvelle tentative dans quelques instants...</small>
+            }
+          </div>
+          <app-button 
+            variant="ghost"
+            size="sm"
+            icon="pi-refresh"
+            (click)="loadInvoices()"
+            [disabled]="loading()">
+            Réessayer
+          </app-button>
+        </div>
+      </div>
+    }
+
+    <!-- Totaux (calculés côté backend sur l'ensemble filtré, pas seulement la page) -->
+    <app-table-totals-bar
+      [metrics]="summaryMetrics()"
+      [loading]="summaryLoading()">
+    </app-table-totals-bar>
+
+    <!-- Table -->
+    <div class="ft-table-card">
+      @if (initialLoad()) {
+      <app-skeleton-table 
+          [rows]="5" 
+          [columns]="skeletonColumns">
+        </app-skeleton-table>
+      } @else {
+        <p-table 
+          [loading]="loading()" 
+          [value]="invoices()" 
+          [lazy]="true"
+          [paginator]="true"
+          [rows]="pageSize"
+          [totalRecords]="totalRecords()"
+          [showCurrentPageReport]="true"
+          currentPageReportTemplate="Affichage de {first} à {last} sur {totalRecords} factures"
+          (onLazyLoad)="onPageChange($event)"
+          styleClass="p-datatable-sm">
+        
+        <ng-template pTemplate="header">
+          <tr>
+            <th pSortableColumn="number">Numéro <p-sortIcon field="number"></p-sortIcon></th>
+            <th>Client</th>
+            <th pSortableColumn="issueDate">Date <p-sortIcon field="issueDate"></p-sortIcon></th>
+            <th>Échéance</th>
+            <th pSortableColumn="totalAmount">Montant <p-sortIcon field="totalAmount"></p-sortIcon></th>
+            <th>Montant payé</th>
+            <th>Reste à payer</th>
+            <th>Statut</th>
+            <th style="width: 120px">Actions</th>
+          </tr>
+        </ng-template>
+
+        <ng-template pTemplate="body" let-invoice>
+          <tr [class.overdue]="invoice.isOverdue" [class.row-avoir]="invoice.isCreditNote">
+            <td>
+              <a [routerLink]="[invoice.id]" class="invoice-number">
+                {{ invoice.number }}
+              </a>
+              @if (invoice.isCreditNote) {
+                <span class="doc-type-chip" title="Facture d'avoir">Avoir</span>
+              }
+            </td>
+            <td>{{ invoice.clientName }}</td>
+            <td>{{ invoice.issueDate | date:'dd/MM/yyyy' }}</td>
+            <td>
+              @if (invoice.dueDate) {
+                <span [class.text-error]="invoice.isOverdue">
+                  {{ invoice.dueDate | date:'dd/MM/yyyy' }}
+                </span>
+              } @else {
+                <span class="text-muted">-</span>
+              }
+            </td>
+            <td class="amount">{{ invoice.totalAmount | number:'1.3-3' }} {{ invoice.currency }}</td>
+            <td class="amount">{{ invoice.totalPaid | number:'1.3-3' }} {{ invoice.currency }}</td>
+            <td class="amount">{{ invoice.remainingAmount | number:'1.3-3' }} {{ invoice.currency }}</td>
+            <td>
+              <app-status-badge 
+                [status]="getStatusBadgeStatus(invoice.status)"
+                [label]="invoice.status">
+              </app-status-badge>
+            </td>
+            <td>
+              <div class="actions">
+                <app-button 
+                  variant="ghost"
+                  size="sm"
+                  icon="pi-eye"
+                  [iconOnly]="true"
+                  [iconAlwaysVisible]="true"
+                  [routerLink]="invoice.id"
+                  ariaLabel="Voir la facture">
+                </app-button>
+                <app-button 
+                  variant="ghost"
+                  size="sm"
+                  icon="pi-download"
+                  [iconOnly]="true"
+                  [iconAlwaysVisible]="true"
+                  (click)="downloadPdf(invoice)"
+                  ariaLabel="Télécharger le PDF">
+                </app-button>
+              </div>
+            </td>
+          </tr>
+        </ng-template>
+
+        <ng-template pTemplate="emptymessage">
+          <tr>
+            <td colspan="9" class="text-center p-6">
+              @if (unpaidOnlyMode()) {
+                <app-empty-state
+                  illustration="empty-invoices.svg"
+                  title="Aucune facture impayée"
+                  description="Aucune facture client en attente de règlement."
+                  actionLabel="Voir toutes les factures"
+                  actionRoute="/invoices">
+                </app-empty-state>
+              } @else {
+                <app-empty-state
+                  illustration="empty-invoices.svg"
+                  title="Aucune facture"
+                  description="Créez votre première facture pour commencer à facturer vos clients."
+                  [showAction]="canCreateInvoice()"
+                  actionLabel="Créer une facture"
+                  actionRoute="new">
+                </app-empty-state>
+              }
+            </td>
+          </tr>
+        </ng-template>
+        </p-table>
+      }
+    </div>
+
+    <app-invoice-import-dialog
+      [visible]="importDialogVisible()"
+      (visibleChange)="importDialogVisible.set($event)">
+    </app-invoice-import-dialog>
+
+  `,
+  styles: [`
+    .invoice-number {
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-primary-600);
+    }
+
+    .doc-type-chip {
+      display: inline-block;
+      margin-left: var(--spacing-2);
+      padding: 0 var(--spacing-2);
+      border-radius: var(--radius-sm);
+      background: var(--color-error-50, #fee2e2);
+      color: var(--color-error-700, #b91c1c);
+      border: 1px solid var(--color-error-200, #fecaca);
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-semibold);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .amount {
+      font-family: var(--font-family-mono, 'JetBrains Mono', monospace);
+      font-weight: var(--font-weight-medium);
+    }
+
+    .actions {
+      display: flex;
+      gap: var(--spacing-1);
+    }
+
+    tr.overdue {
+      background: var(--color-error-50);
+    }
+
+    tr.row-avoir .amount {
+      color: var(--color-error-700, #b91c1c);
+    }
+
+    .error-banner {
+      background: var(--color-error-50);
+      border: 1px solid var(--color-error-200);
+      border-radius: var(--radius-lg);
+      padding: var(--spacing-4);
+      margin-bottom: var(--spacing-4);
+    }
+
+    .error-content {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--spacing-3);
+    }
+
+    .error-content i {
+      color: var(--color-error-600);
+      font-size: var(--font-size-lg);
+      margin-top: var(--spacing-1);
+    }
+
+    .error-text {
+      flex: 1;
+      
+      strong {
+        display: block;
+        color: var(--color-error-800);
+        font-weight: var(--font-weight-semibold);
+        margin-bottom: var(--spacing-1);
+      }
+
+      p {
+        margin: 0;
+        color: var(--color-error-700);
+        font-size: var(--font-size-sm);
+      }
+
+      small {
+        display: block;
+        margin-top: var(--spacing-1);
+        color: var(--color-error-600);
+        font-size: var(--font-size-xs);
+        font-style: italic;
+      }
+    }
+  `]
+})
+export class InvoiceListComponent implements OnInit, OnDestroy {
+  private invoiceService = inject(InvoiceService);
+  private printPreviewService = inject(PrintPreviewService);
+  private toastService = inject(ToastService);
+  private clientService = inject(ClientService);
+  private errorHandler = inject(ErrorHandlerService);
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
+  private auth = inject(AuthService);
+
+  canCreateInvoice = computed(() => this.auth.hasPermission(PERMISSIONS.invoices.create));
+  /** Le bouton d'import requiert la permission de création ET l'accès à l'IA (policy backend AiChat). */
+  canImportInvoice = computed(() => this.canCreateInvoice() && this.auth.hasAllPermissions(['ai:chat']));
+  importDialogVisible = signal(false);
+
+  openImportDialog(): void {
+    this.importDialogVisible.set(true);
+  }
+
+  loading = signal(true);
+  initialLoad = signal(true);
+  invoices = signal<InvoiceListItem[]>([]);
+  totalRecords = signal(0);
+  errorMessage = signal<string | null>(null);
+  isRateLimited = signal(false);
+  printingReport = signal(false);
+  unpaidOnlyMode = signal(false);
+
+  /** Totaux agrégés (backend) sur l'ensemble filtré complet — alimente la zone de totaux. */
+  summary = signal<InvoiceListSummary | null>(null);
+  summaryLoading = signal(false);
+
+  /** Cartes de la zone de totaux, dérivées du résumé backend. */
+  summaryMetrics = computed<TotalMetric[]>(() => {
+    const s = this.summary();
+    const currency = s?.currency ?? 'TND';
+    return [
+      { label: 'Factures', value: s?.count, format: 'number', icon: 'pi-file', tone: 'primary' },
+      { label: 'Total TTC', value: s?.totalTtc, format: 'currency', currency, icon: 'pi-wallet', tone: 'primary' },
+      { label: 'Total HT', value: s?.totalHt, format: 'currency', currency, icon: 'pi-calculator', tone: 'cyan' },
+      { label: 'Total payé', value: s?.totalPaid, format: 'currency', currency, icon: 'pi-check-circle', tone: 'emerald' },
+      { label: 'Reste à payer', value: s?.totalRemaining, format: 'currency', currency, icon: 'pi-clock', tone: 'amber' },
+      { label: 'En retard', value: s?.overdueCount, format: 'number', icon: 'pi-exclamation-triangle', tone: 'rose' }
+    ];
+  });
+
+  searchTerm = '';
+  selectedStatus: number | null = null;
+  dateRange: Date[] | null = [];
+  selectedClient: ClientListItem | null = null;
+  clientOptions: ClientListItem[] = [];
+  private pendingClientIdFromQuery: string | null = null;
+  page = 1;
+  pageSize = 20;
+
+  // Debounce pour la recherche
+  private searchSubject = new Subject<string>();
+  private subscriptions = new Subscription();
+  private isLoadingInProgress = false;
+  private lastErrorTime = 0;
+  private readonly ERROR_DEBOUNCE_MS = 2000; // 2 secondes entre les messages d'erreur
+  private readonly SEARCH_DEBOUNCE_MS = 500; // 500ms de debounce pour la recherche
+  /** Évite le double chargement (ngOnInit + premier onLazyLoad PrimeNG). */
+  private initialLoadDone = false;
+  private isFirstLoad = true;
+
+  breadcrumbItems = computed<BreadcrumbItem[]>(() => {
+    const base: BreadcrumbItem[] = [
+      { label: 'Accueil', route: '/', icon: 'pi-home' },
+      { label: 'Factures', route: '/invoices' }
+    ];
+    if (this.unpaidOnlyMode()) {
+      base.push({ label: 'Factures impayées' });
+    }
+    return base;
+  });
+
+  skeletonColumns: SkeletonColumn[] = [
+    { width: '120px' },
+    { width: '200px' },
+    { width: '100px' },
+    { width: '120px' },
+    { width: '120px' },
+    { width: '100px' },
+    { width: '100px' },
+    { width: '100px' },
+    { width: '100px' }
+  ];
+
+  statusOptions: StatusOption[] = [
+    { label: 'Brouillon', value: 0 },
+    { label: 'Validée', value: 1 },
+    { label: 'Signée', value: 2 },
+    { label: 'Payée', value: 4 },
+    { label: 'Partiellement payée', value: 5 },
+    { label: 'En retard', value: 6 },
+    { label: 'Annulée', value: 7 }
+  ];
+
+  ngOnInit(): void {
+    this.unpaidOnlyMode.set(this.route.snapshot.data['unpaidOnly'] === true);
+    this.subscriptions.add(
+      this.route.data.subscribe((data) => {
+        this.unpaidOnlyMode.set(data['unpaidOnly'] === true);
+      })
+    );
+    this.subscriptions.add(
+      this.route.queryParamMap.pipe(take(1)).subscribe((paramMap) => {
+        this.applyFiltersFromQuery(paramMap);
+      })
+    );
+    // Configuration du debounce pour la recherche
+    this.subscriptions.add(
+      this.searchSubject.pipe(
+        debounceTime(this.SEARCH_DEBOUNCE_MS),
+        distinctUntilChanged()
+      ).subscribe(() => {
+        this.page = 1;
+        this.syncFiltersToUrl();
+        this.loadInvoices();
+      })
+    );
+
+    this.loadClients();
+    this.loadInvoices();
+  }
+
+  private applyFiltersFromQuery(paramMap: ParamMap): void {
+    const applied = applyInvoiceListFiltersFromQuery(paramMap, {
+      selectedStatus: this.selectedStatus,
+      dateRange: this.dateRange,
+      selectedClientId: this.selectedClient?.id ?? null,
+      search: this.searchTerm || null
+    });
+    this.selectedStatus = applied.selectedStatus;
+    if (applied.dateRange) {
+      this.dateRange = applied.dateRange;
+    }
+    if (applied.selectedClientId) {
+      this.pendingClientIdFromQuery = applied.selectedClientId;
+      if (this.clientOptions.length > 0) {
+        this.resolveClientFromQuery();
+      }
+    }
+    if (applied.search) {
+      this.searchTerm = applied.search;
+    }
+  }
+
+  private resolveClientFromQuery(): void {
+    if (!this.pendingClientIdFromQuery) {
+      return;
+    }
+    this.selectedClient =
+      this.clientOptions.find((c) => c.id === this.pendingClientIdFromQuery) ?? null;
+    this.pendingClientIdFromQuery = null;
+  }
+
+  private loadClients(): void {
+    this.clientService.getClients({ pageSize: 200 }).subscribe({
+      next: (response) => {
+        if (response.success && response.data?.items) {
+          this.clientOptions = response.data.items;
+          if (this.pendingClientIdFromQuery) {
+            this.resolveClientFromQuery();
+            this.loadInvoices();
+          }
+        }
+      }
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.subscriptions.unsubscribe();
+  }
+
+  loadInvoices(): void {
+    // Empêcher les requêtes multiples simultanées
+    if (this.isLoadingInProgress) {
+      return;
+    }
+
+    this.isLoadingInProgress = true;
+    this.loading.set(true);
+    this.errorMessage.set(null);
+    this.isRateLimited.set(false);
+
+    const params: InvoiceSearchParams = {
+      search: this.searchTerm || undefined,
+      status: this.selectedStatus ?? undefined,
+      fromDate: this.dateRange?.[0] ? formatLocalDate(this.dateRange[0]) : undefined,
+      toDate: this.dateRange?.[1] ? formatLocalDate(this.dateRange[1]) : undefined,
+      clientId: this.selectedClient?.id,
+      page: this.page,
+      pageSize: this.pageSize,
+      ...(this.unpaidOnlyMode() ? { unpaidOnly: true } : {})
+    };
+
+    // Totaux conformes aux filtres (mêmes params, ensemble filtré complet côté backend).
+    this.loadSummary(params);
+
+    this.invoiceService.getInvoices(params).subscribe({
+      next: (response) => {
+        if (response.success) {
+          this.invoices.set(response.data.items);
+          this.totalRecords.set(response.data.totalCount);
+          this.isRateLimited.set(false);
+        } else {
+          const errorMsg = response.errors?.join(', ') || 'Impossible de charger les factures';
+          this.errorMessage.set(errorMsg);
+          this.showErrorToast(errorMsg);
+        }
+        this.loading.set(false);
+        this.initialLoad.set(false);
+        this.isLoadingInProgress = false;
+      },
+      error: (error) => {
+        this.loading.set(false);
+        this.initialLoad.set(false);
+        this.isLoadingInProgress = false;
+
+        // Gestion spécifique des erreurs 429 (rate limiting) — pas de retry automatique côté service
+        if (error?.status === 429) {
+          this.isRateLimited.set(true);
+          const errorMsg = this.errorHandler.extractErrorMessage(error);
+          this.errorMessage.set(errorMsg);
+          // Ne pas afficher de toast ici car l'intercepteur le gère déjà
+          // Le composant affiche juste le message inline
+          return;
+        }
+
+        // Autres erreurs
+        const errorMsg = this.errorHandler.extractErrorMessage(error) || 'Impossible de charger les factures';
+        this.errorMessage.set(errorMsg);
+        this.showErrorToast(errorMsg);
+      },
+      complete: () => {
+        this.initialLoadDone = true;
+      }
+    });
+  }
+
+  /**
+   * Charge les totaux agrégés (mêmes filtres que la liste). Échec silencieux : la zone de
+   * totaux ne doit jamais perturber l'affichage de la liste (skipGlobalErrorUi).
+   */
+  private loadSummary(params: InvoiceSearchParams): void {
+    this.summaryLoading.set(true);
+    this.invoiceService.getInvoicesSummary({ ...params, skipGlobalErrorUi: true }).subscribe({
+      next: (response) => {
+        this.summary.set(response.success && response.data ? response.data : null);
+        this.summaryLoading.set(false);
+      },
+      error: () => {
+        this.summary.set(null);
+        this.summaryLoading.set(false);
+      }
+    });
+  }
+
+  onSearch(): void {
+    // Utiliser le Subject pour le debounce
+    this.searchSubject.next(this.searchTerm);
+  }
+
+  onFilterChange(): void {
+    // Pour les changements de filtres (dropdown, date), recharger immédiatement
+    // mais toujours avec protection contre les requêtes multiples
+    this.page = 1;
+    this.syncFiltersToUrl();
+    this.loadInvoices();
+  }
+
+  /**
+   * Reflète les filtres courants dans l'URL (query params) : URL partageable et conservée au
+   * rafraîchissement (lecture symétrique dans applyFiltersFromQuery). `replaceUrl` évite de
+   * polluer l'historique ; une valeur nulle retire le paramètre (merge).
+   */
+  private syncFiltersToUrl(): void {
+    const queryParams: Params = {
+      search: this.searchTerm || null,
+      status: this.selectedStatus ?? null,
+      fromDate: this.dateRange?.[0] ? formatLocalDate(this.dateRange[0]) : null,
+      toDate: this.dateRange?.[1] ? formatLocalDate(this.dateRange[1]) : null,
+      clientId: this.selectedClient?.id ?? null
+    };
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams,
+      queryParamsHandling: 'merge',
+      replaceUrl: true
+    });
+  }
+
+  private showErrorToast(message: string): void {
+    const now = Date.now();
+    // Éviter les notifications dupliquées dans un court laps de temps
+    if (now - this.lastErrorTime < this.ERROR_DEBOUNCE_MS) {
+      return;
+    }
+    
+    this.lastErrorTime = now;
+    this.toastService.add({
+      key: 'invoice-list-error',
+      severity: 'error',
+      summary: 'Erreur',
+      detail: message,
+      life: 5000
+    });
+  }
+
+  onPageChange(event: any): void {
+    const first = event.first ?? 0;
+    const rows = event.rows ?? this.pageSize;
+    this.page = rows ? Math.floor(first / rows) + 1 : 1;
+    this.pageSize = rows || this.pageSize;
+
+    if (this.isFirstLoad && first === 0 && this.initialLoadDone) {
+      this.isFirstLoad = false;
+      return;
+    }
+
+    this.loadInvoices();
+    this.isFirstLoad = false;
+  }
+
+  downloadPdf(invoice: InvoiceListItem): void {
+    this.invoiceService.downloadPdf(invoice.id).subscribe({
+      next: (blob) => {
+        if (!blob || blob.size === 0) {
+          return;
+        }
+
+        try {
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `Facture_${invoice.number}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(url);
+        } catch (error) {
+          console.error('Erreur lors du téléchargement du PDF:', error);
+        }
+      },
+      error: (error: Error) => {
+        console.error('Erreur lors du téléchargement du PDF:', error);
+      }
+    });
+  }
+
+  printInvoiceReport(): void {
+    const fromDate = this.dateRange?.[0] ? formatLocalDate(this.dateRange[0]) : undefined;
+    const toDate = this.dateRange?.[1] ? formatLocalDate(this.dateRange[1]) : undefined;
+    const clientId = this.selectedClient?.id;
+
+    this.printingReport.set(true);
+    this.invoiceService.downloadReportPdf(fromDate, toDate, clientId).subscribe({
+      next: (blob) => {
+        this.printingReport.set(false);
+        if (!blob || blob.size === 0) return;
+        this.printPreviewService.openPdfForPrintPreview(blob, `Etat_factures_ventes_${fromDate}_${toDate}.pdf`);
+      },
+      error: (error: Error) => {
+        this.printingReport.set(false);
+        this.toastService.add({
+          key: 'invoice-list-print',
+          severity: 'error',
+          summary: 'Erreur',
+          detail: error.message || 'Impossible de générer le rapport PDF',
+          life: 5000
+        });
+      }
+    });
+  }
+
+  hasActiveFilters(): boolean {
+    return !!this.searchTerm || this.selectedStatus !== null || (this.dateRange?.length ?? 0) > 0 || this.selectedClient !== null;
+  }
+
+  activeFiltersCount(): number {
+    let count = 0;
+    if (this.searchTerm) count++;
+    if (this.selectedStatus !== null) count++;
+    if ((this.dateRange?.length ?? 0) > 0) count++;
+    if (this.selectedClient !== null) count++;
+    return count;
+  }
+
+  resetFilters(): void {
+    this.searchTerm = '';
+    this.selectedStatus = null;
+    this.dateRange = [];
+    this.selectedClient = null;
+    this.page = 1;
+    this.syncFiltersToUrl();
+    this.loadInvoices();
+  }
+
+  readonly buildInvoiceAnalyzePayload = (): unknown =>
+    wrapLegacyAnalyzePayload(
+      'invoice-list',
+      {
+        screen: 'invoice-list',
+        unpaidOnly: this.unpaidOnlyMode(),
+        filters: {
+          search: this.searchTerm || null,
+          status: this.selectedStatus,
+          fromDate: this.dateRange?.[0] ? formatLocalDate(this.dateRange[0]) : null,
+          toDate: this.dateRange?.[1] ? formatLocalDate(this.dateRange[1]) : null,
+          clientId: this.selectedClient?.id ?? null,
+          clientName: this.selectedClient?.name ?? null
+        },
+        pagination: {
+          page: this.page,
+          pageSize: this.pageSize,
+          totalRecords: this.totalRecords()
+        },
+        totals: this.summary(),
+        rows: this.invoices().map(i => ({
+          number: i.number,
+          clientName: i.clientName,
+          issueDate: i.issueDate,
+          dueDate: i.dueDate,
+          totalAmount: i.totalAmount,
+          totalPaid: i.totalPaid,
+          remainingAmount: i.remainingAmount,
+          status: i.status,
+          currency: i.currency,
+          isOverdue: i.isOverdue
+        }))
+      } as Record<string, unknown>
+    );
+
+  getStatusBadgeStatus(status: string): StatusBadgeStatus {
+    const statusMap: Record<string, StatusBadgeStatus> = {
+      'Payée': 'paid',
+      'Partiellement payée': 'partial',
+      'En attente': 'pending',
+      'En retard': 'overdue',
+      'Brouillon': 'draft',
+      'Annulée': 'cancelled',
+      'Validée': 'validated',
+      'Signée': 'signed'
+    };
+    return statusMap[status] || 'draft';
+  }
+}

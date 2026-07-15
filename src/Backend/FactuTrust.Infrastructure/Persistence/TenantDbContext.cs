@@ -1,0 +1,3344 @@
+using FactuTrust.Domain.Common;
+using FactuTrust.Domain.Entities;
+using FactuTrust.Domain.Entities.AI;
+using FactuTrust.Domain.Entities.Channels;
+using FactuTrust.Domain.Entities.Forecasting;
+using FactuTrust.Domain.Entities.Storefront;
+using FactuTrust.Domain.Entities.Studio;
+using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.Events;
+using FactuTrust.Domain.Services;
+using FactuTrust.Domain.ValueObjects;
+using MediatR;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+
+namespace FactuTrust.Infrastructure.Persistence;
+
+/// <summary>
+/// Tenant-specific database context for business data.
+/// Each tenant has their own isolated database with this schema.
+/// </summary>
+public partial class TenantDbContext : DbContext
+{
+    private IMediator? _mediator;
+    private ILogger? _logger;
+
+    public TenantDbContext(DbContextOptions<TenantDbContext> options) : base(options)
+    {
+    }
+
+    internal void SetMediator(IMediator mediator)
+    {
+        _mediator = mediator;
+    }
+
+    internal void SetLogger(ILogger logger)
+    {
+        _logger = logger;
+    }
+
+    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        var domainEvents = ChangeTracker.Entries<Entity>()
+            .Where(e => e.Entity.DomainEvents.Count > 0)
+            .SelectMany(e => e.Entity.DomainEvents)
+            .ToList();
+
+        foreach (var entry in ChangeTracker.Entries<Entity>())
+            entry.Entity.ClearDomainEvents();
+
+        var result = await base.SaveChangesAsync(cancellationToken);
+
+        if (_mediator is not null)
+        {
+            foreach (var domainEvent in domainEvents)
+            {
+                try
+                {
+                    await _mediator.Publish(domainEvent, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    // Domain event side-effects must never abort a successful persistence operation.
+                    // The data has already been committed — only a background side-effect failed.
+                    _logger?.LogError(ex,
+                        "Unhandled exception dispatching domain event {EventType}. " +
+                        "Database changes were committed successfully.",
+                        domainEvent.GetType().Name);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    public DbSet<Client> Clients => Set<Client>();
+    public DbSet<Company> Companies => Set<Company>();
+    public DbSet<Tax> Taxes => Set<Tax>();
+    public DbSet<ProductCategory> ProductCategories => Set<ProductCategory>();
+    public DbSet<Product> Products => Set<Product>();
+    public DbSet<Invoice> Invoices => Set<Invoice>();
+    public DbSet<InvoiceLine> InvoiceLines => Set<InvoiceLine>();
+    public DbSet<Quote> Quotes => Set<Quote>();
+    public DbSet<QuoteLine> QuoteLines => Set<QuoteLine>();
+    public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<CashOperation> CashOperations => Set<CashOperation>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<InvoiceDraft> InvoiceDrafts => Set<InvoiceDraft>();
+    public DbSet<InvoiceNumberSequence> InvoiceNumberSequences => Set<InvoiceNumberSequence>();
+    public DbSet<QuoteNumberSequence> QuoteNumberSequences => Set<QuoteNumberSequence>();
+    public DbSet<DocumentNumberingScheme> DocumentNumberingSchemes => Set<DocumentNumberingScheme>();
+    public DbSet<DocumentTemplatePreference> DocumentTemplatePreferences => Set<DocumentTemplatePreference>();
+    public DbSet<UserDashboardLayout> UserDashboardLayouts => Set<UserDashboardLayout>();
+    public DbSet<CashOperationNumberSequence> CashOperationNumberSequences => Set<CashOperationNumberSequence>();
+    public DbSet<BankDeposit> BankDeposits => Set<BankDeposit>();
+    public DbSet<BankDepositNumberSequence> BankDepositNumberSequences => Set<BankDepositNumberSequence>();
+    public DbSet<BankAccount> BankAccounts => Set<BankAccount>();
+
+    // Stock Management
+    public DbSet<Warehouse> Warehouses => Set<Warehouse>();
+    public DbSet<StockItem> StockItems => Set<StockItem>();
+    public DbSet<StockMovement> StockMovements => Set<StockMovement>();
+
+    // Physical Inventory
+    public DbSet<PhysicalInventory> PhysicalInventories => Set<PhysicalInventory>();
+    public DbSet<InventoryNumberSequence> InventoryNumberSequences => Set<InventoryNumberSequence>();
+
+    // Delivery Notes
+    public DbSet<DeliveryNote> DeliveryNotes => Set<DeliveryNote>();
+    public DbSet<DeliveryNoteLine> DeliveryNoteLines => Set<DeliveryNoteLine>();
+
+    // Purchasing
+    public DbSet<Supplier> Suppliers => Set<Supplier>();
+    public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
+    public DbSet<PurchaseOrderLine> PurchaseOrderLines => Set<PurchaseOrderLine>();
+    public DbSet<InventoryCountLine> InventoryCountLines => Set<InventoryCountLine>();
+
+    // Supplier Invoices
+    public DbSet<SupplierInvoice> SupplierInvoices => Set<SupplierInvoice>();
+    public DbSet<SupplierInvoiceLine> SupplierInvoiceLines => Set<SupplierInvoiceLine>();
+    public DbSet<SupplierPayment> SupplierPayments => Set<SupplierPayment>();
+
+    // Stock Transfers
+    public DbSet<StockTransfer> StockTransfers => Set<StockTransfer>();
+    public DbSet<StockTransferLine> StockTransferLines => Set<StockTransferLine>();
+
+    // Accounting (SCE Tunisia)
+    public DbSet<ChartOfAccount> ChartOfAccounts => Set<ChartOfAccount>();
+    public DbSet<AccountingPeriod> AccountingPeriods => Set<AccountingPeriod>();
+    public DbSet<AccountingYearLock> AccountingYearLocks => Set<AccountingYearLock>();
+    public DbSet<JournalEntrySequence> JournalEntrySequences => Set<JournalEntrySequence>();
+    public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
+    public DbSet<JournalEntryLine> JournalEntryLines => Set<JournalEntryLine>();
+    public DbSet<JournalEntryAttachment> JournalEntryAttachments => Set<JournalEntryAttachment>();
+    public DbSet<Journal> Journals => Set<Journal>();
+    public DbSet<JournalFamily> JournalFamilies => Set<JournalFamily>();
+    public DbSet<LetteringGroup> LetteringGroups => Set<LetteringGroup>();
+    public DbSet<LetteringGroupMember> LetteringGroupMembers => Set<LetteringGroupMember>();
+    public DbSet<VatDeclaration> VatDeclarations => Set<VatDeclaration>();
+    public DbSet<FiscalScheduleEntry> FiscalScheduleEntries => Set<FiscalScheduleEntry>();
+    public DbSet<FiscalScheduleHistoryEntry> FiscalScheduleHistoryEntries => Set<FiscalScheduleHistoryEntry>();
+    public DbSet<FiscalScheduleAttachment> FiscalScheduleAttachments => Set<FiscalScheduleAttachment>();
+    public DbSet<BudgetPost> BudgetPosts => Set<BudgetPost>();
+    public DbSet<BudgetYear> BudgetYears => Set<BudgetYear>();
+    public DbSet<BudgetLine> BudgetLines => Set<BudgetLine>();
+    public DbSet<ThirdPartyAccountingProfile> ThirdPartyAccountingProfiles => Set<ThirdPartyAccountingProfile>();
+
+    // Bank reconciliation (rapprochement bancaire)
+    public DbSet<BankStatement> BankStatements => Set<BankStatement>();
+    public DbSet<BankStatementLine> BankStatementLines => Set<BankStatementLine>();
+
+    // Withholding Tax (TEJ)
+    public DbSet<WithholdingTaxType> WithholdingTaxTypes => Set<WithholdingTaxType>();
+    public DbSet<TejXmlExportLog> TejXmlExportLogs => Set<TejXmlExportLog>();
+    public DbSet<WithholdingFiscalYearParameter> WithholdingFiscalYearParameters => Set<WithholdingFiscalYearParameter>();
+
+    // CRM
+    public DbSet<Opportunity> Opportunities => Set<Opportunity>();
+    public DbSet<SalesActivity> SalesActivities => Set<SalesActivity>();
+    public DbSet<SalesTarget> SalesTargets => Set<SalesTarget>();
+    public DbSet<QuoteTemplate> QuoteTemplates => Set<QuoteTemplate>();
+    public DbSet<QuoteTemplateLine> QuoteTemplateLines => Set<QuoteTemplateLine>();
+    public DbSet<JournalEntryTemplate> JournalEntryTemplates => Set<JournalEntryTemplate>();
+    public DbSet<JournalEntryTemplateLine> JournalEntryTemplateLines => Set<JournalEntryTemplateLine>();
+
+    // Fixed assets (immobilisations)
+    public DbSet<DepreciationRateCategory> DepreciationRateCategories => Set<DepreciationRateCategory>();
+    public DbSet<FixedAsset> FixedAssets => Set<FixedAsset>();
+    public DbSet<DepreciationScheduleLine> DepreciationScheduleLines => Set<DepreciationScheduleLine>();
+    public DbSet<FixedAssetEvent> FixedAssetEvents => Set<FixedAssetEvent>();
+
+    // AI Assistant
+    public DbSet<Conversation> Conversations => Set<Conversation>();
+    public DbSet<ConversationMessage> ConversationMessages => Set<ConversationMessage>();
+    public DbSet<TenantAiProvider> TenantAiProviders => Set<TenantAiProvider>();
+    public DbSet<AiExportAudit> AiExportAudits => Set<AiExportAudit>();
+    public DbSet<ChannelIdentityLink> ChannelIdentityLinks => Set<ChannelIdentityLink>();
+    public DbSet<ChannelLinkCode> ChannelLinkCodes => Set<ChannelLinkCode>();
+    public DbSet<ChannelInboundMessageLog> ChannelInboundMessageLogs => Set<ChannelInboundMessageLog>();
+
+    // Public Virtual Street outbox (tenant-side event sourcing for projection sync)
+    public DbSet<StorefrontOutboxMessage> StorefrontOutboxMessages => Set<StorefrontOutboxMessage>();
+
+    // Demo dataset audit markers
+    public DbSet<DemoDataset> DemoDatasets => Set<DemoDataset>();
+
+    // AI Forecasting Module (gated by Features:Forecasting:Enabled — tables created by migration AddForecastingModule_Tenant).
+    public DbSet<SalesForecast> SalesForecasts => Set<SalesForecast>();
+    public DbSet<ReplenishmentRecommendation> ReplenishmentRecommendations => Set<ReplenishmentRecommendation>();
+    public DbSet<PromotionRecommendation> PromotionRecommendations => Set<PromotionRecommendation>();
+    public DbSet<ProductAbcXyzClassification> ProductAbcXyzClassifications => Set<ProductAbcXyzClassification>();
+    public DbSet<ForecastRecomputeAudit> ForecastRecomputeAudits => Set<ForecastRecomputeAudit>();
+    // Replenishment V2 audit trail (gated by Features:Forecasting:ReplenishmentV2:Enabled, table created by migration AddReplenishmentV2_Tenant).
+    public DbSet<ReplenishmentDecisionAudit> ReplenishmentDecisionAudits => Set<ReplenishmentDecisionAudit>();
+
+    // Payroll Module (RH & Paie) — gated by AppModule.Payroll, tables created by migration AddPayrollModule_Tenant.
+    public DbSet<Domain.Entities.Payroll.Employee> Employees => Set<Domain.Entities.Payroll.Employee>();
+    public DbSet<Domain.Entities.Payroll.EmploymentContract> EmploymentContracts => Set<Domain.Entities.Payroll.EmploymentContract>();
+    public DbSet<Domain.Entities.Payroll.ContractAllowance> ContractAllowances => Set<Domain.Entities.Payroll.ContractAllowance>();
+    public DbSet<Domain.Entities.Payroll.PayrollRun> PayrollRuns => Set<Domain.Entities.Payroll.PayrollRun>();
+    public DbSet<Domain.Entities.Payroll.Payslip> Payslips => Set<Domain.Entities.Payroll.Payslip>();
+    public DbSet<Domain.Entities.Payroll.PayslipLine> PayslipLines => Set<Domain.Entities.Payroll.PayslipLine>();
+    public DbSet<Domain.Entities.Payroll.PayrollYearParameters> PayrollYearParameters => Set<Domain.Entities.Payroll.PayrollYearParameters>();
+    public DbSet<Domain.Entities.Payroll.PayrollIrppBracket> PayrollIrppBrackets => Set<Domain.Entities.Payroll.PayrollIrppBracket>();
+    public DbSet<Domain.Entities.Payroll.LeaveRequest> LeaveRequests => Set<Domain.Entities.Payroll.LeaveRequest>();
+    public DbSet<Domain.Entities.Payroll.EmployeeAdvance> EmployeeAdvances => Set<Domain.Entities.Payroll.EmployeeAdvance>();
+    public DbSet<Domain.Entities.Payroll.PayrollOvertimeLine> PayrollOvertimeLines => Set<Domain.Entities.Payroll.PayrollOvertimeLine>();
+    public DbSet<Domain.Entities.Payroll.LeaveBalanceAccrual> LeaveBalanceAccruals => Set<Domain.Entities.Payroll.LeaveBalanceAccrual>();
+
+    protected override void OnModelCreating(ModelBuilder builder)
+    {
+        base.OnModelCreating(builder);
+
+        // Ignore domain events - they are not database entities
+        builder.Ignore<Domain.Common.DomainEvent>();
+        builder.Ignore<InvoiceCreatedEvent>();
+        builder.Ignore<InvoiceValidatedEvent>();
+        builder.Ignore<InvoiceSignedEvent>();
+        builder.Ignore<InvoicePaidEvent>();
+        builder.Ignore<InvoiceCancelledEvent>();
+        builder.Ignore<InvoiceArchivedEvent>();
+        builder.Ignore<InvoiceOverdueEvent>();
+        builder.Ignore<QuoteCreatedEvent>();
+        builder.Ignore<QuoteSentEvent>();
+        builder.Ignore<QuoteAcceptedEvent>();
+        builder.Ignore<QuoteRejectedEvent>();
+        builder.Ignore<QuoteCancelledEvent>();
+        builder.Ignore<QuoteExpiredEvent>();
+        builder.Ignore<QuoteConvertedToInvoiceEvent>();
+        builder.Ignore<StockMovementRecordedEvent>();
+        builder.Ignore<StockLowAlertEvent>();
+        builder.Ignore<StockOutOfStockEvent>();
+        builder.Ignore<InventoryStartedEvent>();
+        builder.Ignore<InventoryValidatedEvent>();
+        builder.Ignore<InventoryCancelledEvent>();
+        builder.Ignore<InventoryAdjustmentItem>();
+        builder.Ignore<DeliveryNoteCreatedEvent>();
+        builder.Ignore<DeliveryNoteConfirmedEvent>();
+        builder.Ignore<DeliveryNoteInTransitEvent>();
+        builder.Ignore<DeliveryNoteDeliveredEvent>();
+        builder.Ignore<DeliveryNoteFailedEvent>();
+        builder.Ignore<DeliveryNoteCancelledEvent>();
+        builder.Ignore<DeliveryNoteInvoicedEvent>();
+        builder.Ignore<InventorySummary>();
+        builder.Ignore<InventorySummaryItem>();
+        builder.Ignore<StockTransferCreatedEvent>();
+        builder.Ignore<StockTransferConfirmedEvent>();
+        builder.Ignore<StockTransferCompletedEvent>();
+        builder.Ignore<StockTransferCancelledEvent>();
+        builder.Ignore<PayrollRunValidatedEvent>();
+        builder.Ignore<PayrollRunClosedEvent>();
+
+        ConfigureClient(builder);
+        ConfigureCompany(builder);
+        ConfigureTax(builder);
+        ConfigureProductCategory(builder);
+        ConfigureProduct(builder);
+        ConfigureInvoice(builder);
+        ConfigureInvoiceLine(builder);
+        ConfigureQuote(builder);
+        ConfigureQuoteLine(builder);
+        ConfigurePayment(builder);
+        ConfigureAuditLog(builder);
+        ConfigureInvoiceDraft(builder);
+        ConfigureInvoiceNumberSequence(builder);
+        ConfigureQuoteNumberSequence(builder);
+        ConfigureDocumentNumberingScheme(builder);
+        ConfigureDocumentTemplatePreference(builder);
+        ConfigureUserDashboardLayout(builder);
+        ConfigureStudio(builder);
+        ConfigureCashOperationNumberSequence(builder);
+        ConfigureCashOperation(builder);
+        ConfigureBankDepositNumberSequence(builder);
+        ConfigureBankDeposit(builder);
+        ConfigureBankAccount(builder);
+
+        // Stock Management
+        ConfigureWarehouse(builder);
+        ConfigureStockItem(builder);
+        ConfigureStockMovement(builder);
+
+        // Physical Inventory
+        ConfigurePhysicalInventory(builder);
+        ConfigureInventoryCountLine(builder);
+        ConfigureInventoryNumberSequence(builder);
+
+        // Delivery Notes
+        ConfigureDeliveryNote(builder);
+        ConfigureDeliveryNoteLine(builder);
+
+        // Purchasing
+        ConfigureSupplier(builder);
+        ConfigurePurchaseOrder(builder);
+        ConfigurePurchaseOrderLine(builder);
+
+        // Supplier Invoices
+        ConfigureSupplierInvoice(builder);
+        ConfigureSupplierInvoiceLine(builder);
+        ConfigureSupplierPayment(builder);
+
+        // Stock Transfers
+        ConfigureStockTransfer(builder);
+        ConfigureStockTransferLine(builder);
+
+        ConfigureChartOfAccount(builder);
+        ConfigureAccountingPeriod(builder);
+        ConfigureAccountingYearLock(builder);
+        ConfigureJournalEntrySequence(builder);
+        ConfigureJournalEntry(builder);
+        ConfigureJournalEntryLine(builder);
+        ConfigureJournalCatalog(builder);
+        ConfigureJournalEntryAttachment(builder);
+        ConfigureLetteringGroup(builder);
+        ConfigureLetteringGroupMember(builder);
+        ConfigureVatDeclaration(builder);
+        ConfigureFiscalSchedule(builder);
+        ConfigureBudgeting(builder);
+        ConfigureThirdPartyAccountingProfile(builder);
+        ConfigureBankStatement(builder);
+        ConfigureBankStatementLine(builder);
+
+        // Withholding Tax (TEJ)
+        ConfigureWithholdingTaxType(builder);
+        ConfigureWithholdingFiscalYearParameter(builder);
+        ConfigureTejXmlExportLog(builder);
+
+        ConfigureOpportunity(builder);
+        ConfigureSalesActivity(builder);
+        ConfigureSalesTarget(builder);
+        ConfigureQuoteTemplate(builder);
+        ConfigureQuoteTemplateLine(builder);
+        ConfigureJournalEntryTemplate(builder);
+        ConfigureJournalEntryTemplateLine(builder);
+
+        ConfigureDepreciationRateCategory(builder);
+        ConfigureFixedAsset(builder);
+        ConfigureDepreciationScheduleLine(builder);
+        ConfigureFixedAssetEvent(builder);
+
+        ConfigureConversation(builder);
+        ConfigureConversationMessage(builder);
+        ConfigureTenantAiProvider(builder);
+        ConfigureAiExportAudit(builder);
+        ConfigureChannelIdentityLink(builder);
+        ConfigureChannelLinkCode(builder);
+        ConfigureChannelInboundMessageLog(builder);
+
+        // Public Virtual Street (tenant-side outbox for projection sync)
+        ConfigureStorefrontOutboxMessage(builder);
+
+        ConfigureDemoDataset(builder);
+
+        // AI Forecasting Module — defined in TenantDbContext.Forecasting.cs (partial class).
+        ConfigureForecasting(builder);
+
+        // Payroll Module (RH & Paie) — defined in TenantDbContext.Payroll.cs (partial class).
+        ConfigurePayroll(builder);
+    }
+
+    private static void ConfigureDemoDataset(ModelBuilder builder)
+    {
+        builder.Entity<DemoDataset>(entity =>
+        {
+            entity.ToTable("DemoDatasets");
+            entity.HasKey(d => d.Id);
+            entity.Property(d => d.Version).HasMaxLength(32).IsRequired();
+            entity.Property(d => d.AppliedAtUtc).IsRequired();
+        });
+    }
+
+    private static void ConfigureStorefrontOutboxMessage(ModelBuilder builder)
+    {
+        builder.Entity<StorefrontOutboxMessage>(entity =>
+        {
+            entity.ToTable("StorefrontOutboxMessages");
+            entity.HasKey(o => o.Id);
+
+            entity.Property(o => o.EventType)
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(o => o.AggregateType)
+                .HasMaxLength(100)
+                .IsRequired();
+
+            entity.Property(o => o.PayloadJson)
+                .IsRequired();
+
+            entity.Property(o => o.OccurredAt).IsRequired();
+            entity.Property(o => o.AttemptCount).HasDefaultValue(0);
+            entity.Property(o => o.LastError).HasMaxLength(500);
+
+            entity.HasIndex(o => new { o.ProcessedAt, o.OccurredAt })
+                .HasDatabaseName("IX_StorefrontOutbox_Pending");
+
+            entity.HasIndex(o => o.AggregateId)
+                .HasDatabaseName("IX_StorefrontOutbox_AggregateId");
+        });
+    }
+
+    private static void ConfigureClient(ModelBuilder builder)
+    {
+        builder.Entity<Client>(entity =>
+        {
+            entity.ToTable("Clients");
+            entity.HasKey(c => c.Id);
+
+            entity.Property(c => c.Name)
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(c => c.ContactPerson)
+                .HasMaxLength(200);
+
+            entity.Property(c => c.Notes)
+                .HasMaxLength(1000);
+
+            entity.OwnsOne(c => c.NIF, nif =>
+            {
+                nif.Property(n => n.Value)
+                    .HasColumnName("NIF")
+                    .HasMaxLength(20);
+            });
+
+            entity.OwnsOne(c => c.Address, addr =>
+            {
+                addr.Property(a => a.Street).HasColumnName("Street").HasMaxLength(200).IsRequired();
+                addr.Property(a => a.StreetLine2).HasColumnName("StreetLine2").HasMaxLength(200);
+                addr.Property(a => a.City).HasColumnName("City").HasMaxLength(100).IsRequired();
+                addr.Property(a => a.PostalCode).HasColumnName("PostalCode").HasMaxLength(20);
+                addr.Property(a => a.Governorate).HasColumnName("Governorate").HasMaxLength(100).IsRequired();
+                addr.Property(a => a.Country).HasColumnName("Country").HasMaxLength(100).IsRequired();
+            });
+
+            entity.OwnsOne(c => c.Email, email =>
+            {
+                email.Property(e => e.Value)
+                    .HasColumnName("Email")
+                    .HasMaxLength(256)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(c => c.Phone, phone =>
+            {
+                phone.Property(p => p.Value)
+                    .HasColumnName("Phone")
+                    .HasMaxLength(20);
+                phone.Ignore(p => p.CountryCode);
+                phone.Ignore(p => p.LocalNumber);
+            });
+
+            entity.HasIndex(c => c.Name);
+            entity.HasIndex(c => c.IsActive);
+
+            entity.Property(c => c.AssignedUserId).IsRequired(false);
+            entity.Property(c => c.AssignedUserName).HasMaxLength(200).IsRequired(false);
+            entity.HasIndex(c => c.AssignedUserId);
+
+            // TEJ fields
+            entity.Property(c => c.TejIdentificationType).HasConversion<int?>().IsRequired(false);
+            entity.Property(c => c.DateOfBirth).IsRequired(false);
+            entity.Property(c => c.CountryCode).HasMaxLength(3).IsRequired(false);
+            entity.Property(c => c.IsResident).HasDefaultValue(true);
+            entity.Property(c => c.Activity).HasMaxLength(200).IsRequired(false);
+        });
+    }
+
+    private static void ConfigureCompany(ModelBuilder builder)
+    {
+        builder.Entity<Company>(entity =>
+        {
+            entity.ToTable("Companies");
+            entity.HasKey(c => c.Id);
+
+            entity.Property(c => c.Name)
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(c => c.TradeName)
+                .HasMaxLength(200);
+
+            entity.Property(c => c.CommerceRegistry)
+                .HasMaxLength(50);
+
+            entity.Property(c => c.VatCode)
+                .HasMaxLength(50);
+
+            entity.Property(c => c.LogoUrl)
+                .HasMaxLength(500);
+
+            entity.Property(c => c.BankName)
+                .HasMaxLength(100);
+
+            entity.Property(c => c.Iban)
+                .HasMaxLength(34);
+
+            entity.Property(c => c.Rib)
+                .HasMaxLength(24);
+
+            // TEJ fields
+            entity.Property(c => c.EstablishmentCode).HasMaxLength(20).IsRequired(false);
+            entity.Property(c => c.TejAdherentSince).IsRequired(false);
+            entity.Property(c => c.TejCategory).HasConversion<int?>().IsRequired(false);
+
+            entity.OwnsOne(c => c.Nif, nif =>
+            {
+                nif.Property(n => n.Value)
+                    .HasColumnName("NIF")
+                    .HasMaxLength(20)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(c => c.Address, addr =>
+            {
+                addr.Property(a => a.Street).HasColumnName("Street").HasMaxLength(200).IsRequired();
+                addr.Property(a => a.StreetLine2).HasColumnName("StreetLine2").HasMaxLength(200);
+                addr.Property(a => a.City).HasColumnName("City").HasMaxLength(100).IsRequired();
+                addr.Property(a => a.PostalCode).HasColumnName("PostalCode").HasMaxLength(20);
+                addr.Property(a => a.Governorate).HasColumnName("Governorate").HasMaxLength(100).IsRequired();
+                addr.Property(a => a.Country).HasColumnName("Country").HasMaxLength(100).IsRequired();
+            });
+
+            entity.OwnsOne(c => c.Email, email =>
+            {
+                email.Property(e => e.Value)
+                    .HasColumnName("Email")
+                    .HasMaxLength(256)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(c => c.Phone, phone =>
+            {
+                phone.Property(p => p.Value)
+                    .HasColumnName("Phone")
+                    .HasMaxLength(20);
+                phone.Ignore(p => p.CountryCode);
+                phone.Ignore(p => p.LocalNumber);
+            });
+
+            entity.HasIndex(c => c.Name);
+            entity.HasIndex(c => c.IsDefault);
+            entity.HasIndex(c => c.IsActive);
+        });
+    }
+
+    private static void ConfigureTax(ModelBuilder builder)
+    {
+        builder.Entity<Tax>(entity =>
+        {
+            entity.ToTable("Taxes");
+            entity.HasKey(t => t.Id);
+
+            entity.Property(t => t.Name)
+                .HasMaxLength(100)
+                .IsRequired();
+
+            entity.Property(t => t.Type)
+                .HasColumnName("TaxType")
+                .HasConversion<int>();
+
+            entity.Property(t => t.ValueType)
+                .HasConversion<int>();
+
+            entity.Property(t => t.Context)
+                .HasColumnName("ApplicableContext")
+                .HasConversion<int>();
+
+            entity.Property(t => t.Value)
+                .HasPrecision(18, 3);
+
+            entity.HasIndex(t => t.Type);
+            entity.HasIndex(t => t.IsActive);
+            entity.HasIndex(t => t.DisplayOrder);
+        });
+    }
+
+    private static void ConfigureProductCategory(ModelBuilder builder)
+    {
+        builder.Entity<ProductCategory>(entity =>
+        {
+            entity.ToTable("ProductCategories");
+            entity.HasKey(c => c.Id);
+
+            entity.Property(c => c.Code)
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(c => c.Name)
+                .HasMaxLength(100)
+                .IsRequired();
+
+            entity.HasIndex(c => c.Code).IsUnique();
+            entity.HasIndex(c => c.IsActive);
+        });
+    }
+
+    private static void ConfigureProduct(ModelBuilder builder)
+    {
+        builder.Entity<Product>(entity =>
+        {
+            entity.ToTable("Products");
+            entity.HasKey(p => p.Id);
+
+            entity.Property(p => p.Code)
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(p => p.Name)
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(p => p.Description)
+                .HasMaxLength(1000);
+
+            entity.Property(p => p.Unit)
+                .HasMaxLength(50);
+
+            entity.Property(p => p.ImageUrl)
+                .HasMaxLength(500);
+
+            entity.HasOne(p => p.Category)
+                .WithMany()
+                .HasForeignKey(p => p.CategoryId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(p => p.CategoryId);
+
+            entity.OwnsOne(p => p.UnitPrice, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("UnitPrice")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("Currency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(p => p.PurchasePrice, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("PurchasePrice")
+                    .HasPrecision(18, 3);
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("PurchasePriceCurrency")
+                    .HasMaxLength(3);
+            });
+
+            entity.HasIndex(p => p.Code).IsUnique();
+            entity.HasIndex(p => p.Name);
+            entity.HasIndex(p => p.IsActive);
+
+            entity.Property(p => p.IsPubliclyListed).HasDefaultValue(false);
+            entity.Property(p => p.IsFodecApplicable).HasDefaultValue(false);
+            entity.HasIndex(p => p.IsPubliclyListed);
+        });
+    }
+
+    private static void ConfigureInvoice(ModelBuilder builder)
+    {
+        builder.Entity<Invoice>(entity =>
+        {
+            entity.ToTable("Invoices");
+            entity.HasKey(i => i.Id);
+
+            entity.Property(i => i.Type)
+                .HasConversion<int>()
+                .HasColumnName("Type")
+                .IsRequired()
+                .HasDefaultValue(InvoiceType.Standard);
+
+            entity.Property(i => i.Reference)
+                .HasMaxLength(100);
+
+            entity.Property(i => i.Notes)
+                .HasMaxLength(2000);
+
+            entity.Property(i => i.PaymentTerms)
+                .HasMaxLength(500);
+
+            entity.Property(i => i.SignatureHash)
+                .HasMaxLength(500);
+
+            entity.Property(i => i.SignedBy)
+                .HasMaxLength(256);
+
+            entity.Property(i => i.CancellationReason)
+                .HasMaxLength(500);
+
+            entity.Property(i => i.SourceQuoteId);
+
+            entity.Property(i => i.IssuerCompanyId);
+
+            entity.Property(i => i.ElectronicInvoiceTtn)
+                .HasMaxLength(200);
+
+            entity.Property(i => i.ElectronicInvoiceSentAt);
+
+            entity.OwnsOne(i => i.Number, num =>
+            {
+                num.Property(n => n.Value)
+                    .HasColumnName("Number")
+                    .HasMaxLength(50)
+                    .IsRequired();
+
+                num.Property(n => n.Prefix)
+                    .HasColumnName("NumberPrefix")
+                    .HasMaxLength(10)
+                    .IsRequired();
+
+                num.Property(n => n.Year)
+                    .HasColumnName("NumberYear")
+                    .IsRequired();
+
+                num.Property(n => n.Sequence)
+                    .HasColumnName("NumberSequence")
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(i => i.SubTotal, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("SubTotal")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("SubTotalCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(i => i.FodecAmount, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("FodecAmount")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("FodecAmountCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(i => i.TotalVat, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("TotalVat")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("TotalVatCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(i => i.TotalAmount, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("TotalAmount")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("TotalAmountCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(i => i.FiscalStampAmount, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("FiscalStampAmount")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("FiscalStampCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.HasOne(i => i.Client)
+                .WithMany(c => c.Invoices)
+                .HasForeignKey(i => i.ClientId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(i => i.Lines)
+                .WithOne(l => l.Invoice)
+                .HasForeignKey(l => l.InvoiceId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(i => i.Warehouse)
+                .WithMany()
+                .HasForeignKey(i => i.WarehouseId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(i => i.Status);
+            entity.HasIndex(i => i.IssueDate);
+            entity.HasIndex(i => i.DueDate);
+            entity.HasIndex(i => i.ClientId);
+            entity.HasIndex(i => i.SourceQuoteId);
+            entity.HasIndex(i => i.WarehouseId);
+            entity.HasIndex(i => i.IssuerCompanyId);
+        });
+    }
+
+    private static void ConfigureInvoiceLine(ModelBuilder builder)
+    {
+        builder.Entity<InvoiceLine>(entity =>
+        {
+            entity.ToTable("InvoiceLines");
+            entity.HasKey(l => l.Id);
+
+            entity.Property(l => l.ProductCode)
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(l => l.ProductName)
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(l => l.ProductDescription)
+                .HasMaxLength(1000);
+
+            entity.Property(l => l.Unit)
+                .HasMaxLength(50);
+
+            entity.Property(l => l.Quantity)
+                .HasPrecision(18, 4);
+
+            entity.Property(l => l.DiscountPercent)
+                .HasPrecision(5, 2);
+
+            entity.Property(l => l.IsFodecApplicable)
+                .HasDefaultValue(false);
+
+            entity.OwnsOne(l => l.UnitPrice, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("UnitPrice")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("UnitPriceCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(l => l.DiscountAmount, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("DiscountAmount")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("DiscountAmountCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(l => l.SubTotal, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("SubTotal")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("SubTotalCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(l => l.FodecAmount, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("FodecAmount")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("FodecAmountCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(l => l.VatAmount, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("VatAmount")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("VatAmountCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(l => l.Total, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("Total")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("TotalCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.HasOne(l => l.Product)
+                .WithMany()
+                .HasForeignKey(l => l.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(l => l.InvoiceId);
+        });
+    }
+
+    private static void ConfigurePayment(ModelBuilder builder)
+    {
+        builder.Entity<Payment>(entity =>
+        {
+            entity.ToTable("Payments");
+            entity.HasKey(p => p.Id);
+
+            entity.Property(p => p.Reference)
+                .HasMaxLength(100);
+
+            entity.Property(p => p.Notes)
+                .HasMaxLength(500);
+
+            entity.Property(p => p.RefundReason)
+                .HasMaxLength(500);
+
+            entity.Property(p => p.ClientWithholdingAmount)
+                .HasPrecision(18, 3);
+
+            entity.OwnsOne(p => p.Amount, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("Amount")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("Currency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.HasOne(p => p.Invoice)
+                .WithMany()
+                .HasForeignKey(p => p.InvoiceId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(p => p.InvoiceId);
+            entity.HasIndex(p => p.PaymentDate);
+        });
+    }
+
+    private static void ConfigureCashOperation(ModelBuilder builder)
+    {
+        builder.Entity<CashOperation>(entity =>
+        {
+            entity.ToTable("CashExpenses");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.OperationType)
+                .IsRequired()
+                .HasDefaultValue(CashOperationType.Debit);
+
+            entity.Property(e => e.OperationDate)
+                .HasColumnName("ExpenseDate")
+                .IsRequired();
+
+            entity.Property(e => e.Method)
+                .IsRequired();
+
+            entity.Property(e => e.Label)
+                .HasMaxLength(500)
+                .IsRequired();
+
+            entity.Property(e => e.Category);
+
+            entity.Property(e => e.RevenueCategory);
+
+            entity.Property(e => e.Reference)
+                .HasMaxLength(100);
+
+            entity.Property(e => e.Notes)
+                .HasMaxLength(500);
+
+            entity.Property(e => e.Status)
+                .IsRequired();
+
+            entity.Property(e => e.Origin)
+                .IsRequired()
+                .HasDefaultValue(CashOperationOrigin.Manual);
+
+            entity.Property(e => e.SourceType)
+                .HasMaxLength(50);
+
+            entity.Property(e => e.SourceId);
+
+            entity.Property(e => e.CancelledAt);
+
+            entity.Property(e => e.CancellationReason)
+                .HasMaxLength(500);
+
+            entity.OwnsOne(e => e.Amount, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("Amount")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("AmountCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(e => e.Number, num =>
+            {
+                num.Property(n => n.Value)
+                    .HasColumnName("ExpenseNumber")
+                    .HasMaxLength(50)
+                    .IsRequired();
+
+                num.Property(n => n.Year)
+                    .HasColumnName("ExpenseNumberYear")
+                    .IsRequired();
+
+                num.Property(n => n.Sequence)
+                    .HasColumnName("ExpenseNumberSequence")
+                    .IsRequired();
+
+                num.Property(n => n.PrefixValue)
+                    .HasColumnName("ExpenseNumberPrefix")
+                    .HasMaxLength(10)
+                    .IsRequired();
+
+                num.HasIndex(n => n.Value)
+                    .IsUnique();
+            });
+
+            entity.HasIndex(e => e.OperationDate);
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => e.Method);
+            entity.HasIndex(e => e.OperationType);
+            entity.HasIndex(e => new { e.SourceType, e.SourceId });
+            entity.HasIndex(e => new { e.Origin, e.SourceType, e.SourceId })
+                .IsUnique()
+                .HasFilter("[SourceId] IS NOT NULL");
+        });
+    }
+
+    private static void ConfigureBankAccount(ModelBuilder builder)
+    {
+        builder.Entity<BankAccount>(entity =>
+        {
+            entity.ToTable("BankAccounts");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.BankCode)
+                .HasMaxLength(32)
+                .IsRequired();
+
+            entity.Property(e => e.BankName)
+                .HasMaxLength(100)
+                .IsRequired();
+
+            entity.Property(e => e.Designation)
+                .HasMaxLength(200);
+
+            entity.Property(e => e.AgencyName)
+                .HasMaxLength(200);
+
+            entity.Property(e => e.Rib)
+                .HasMaxLength(20)
+                .IsRequired();
+
+            entity.Property(e => e.Iban)
+                .HasMaxLength(34)
+                .IsRequired();
+
+            entity.Property(e => e.SwiftBic)
+                .HasMaxLength(11);
+
+            entity.Property(e => e.IsDefault)
+                .IsRequired();
+
+            entity.Property(e => e.IsActive)
+                .IsRequired();
+
+            entity.Property(e => e.ChartOfAccountNumber)
+                .HasMaxLength(20);
+
+            entity.Property(e => e.Currency)
+                .HasMaxLength(3)
+                .IsRequired()
+                .HasDefaultValue("TND");
+
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(e => e.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(e => e.CompanyId);
+            entity.HasIndex(e => new { e.CompanyId, e.Iban }).IsUnique();
+            entity.HasIndex(e => e.IsDefault);
+        });
+    }
+
+    private static void ConfigureBankDeposit(ModelBuilder builder)
+    {
+        builder.Entity<BankDeposit>(entity =>
+        {
+            entity.ToTable("BankDeposits");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.DepositType).IsRequired();
+            entity.Property(e => e.DepositDate).IsRequired();
+            entity.Property(e => e.BankAccountId).IsRequired();
+            entity.Property(e => e.Quantity).IsRequired();
+            entity.Property(e => e.CashOperationId).IsRequired();
+
+            entity.Property(e => e.DepositSlipReference).HasMaxLength(100);
+            entity.Property(e => e.Notes).HasMaxLength(500);
+            entity.Property(e => e.Status).IsRequired();
+
+            entity.Property(e => e.CancelledAt);
+            entity.Property(e => e.CancellationReason).HasMaxLength(500);
+
+            entity.OwnsOne(e => e.Amount, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("Amount")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("AmountCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(e => e.Number, num =>
+            {
+                num.Property(n => n.Value)
+                    .HasColumnName("DepositNumber")
+                    .HasMaxLength(50)
+                    .IsRequired();
+
+                num.Property(n => n.Year)
+                    .HasColumnName("DepositNumberYear")
+                    .IsRequired();
+
+                num.Property(n => n.Sequence)
+                    .HasColumnName("DepositNumberSequence")
+                    .IsRequired();
+
+                num.HasIndex(n => n.Value)
+                    .IsUnique();
+            });
+
+            entity.HasOne<BankAccount>()
+                .WithMany()
+                .HasForeignKey(e => e.BankAccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne<CashOperation>()
+                .WithMany()
+                .HasForeignKey(e => e.CashOperationId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(e => e.DepositDate);
+            entity.HasIndex(e => new { e.DepositDate, e.Status });
+        });
+    }
+
+    private static void ConfigureBankDepositNumberSequence(ModelBuilder builder)
+    {
+        builder.Entity<BankDepositNumberSequence>(entity =>
+        {
+            entity.ToTable("BankDepositNumberSequences");
+            entity.HasKey(s => s.Id);
+
+            entity.Property(s => s.TenantId).IsRequired();
+            entity.Property(s => s.FiscalYear).IsRequired();
+            entity.Property(s => s.CurrentSequence).IsRequired();
+            entity.Property(s => s.LastUpdated).IsRequired();
+
+            entity.Property(s => s.RowVersion)
+                .IsRowVersion();
+
+            entity.HasIndex(s => new { s.TenantId, s.FiscalYear })
+                .IsUnique();
+        });
+    }
+
+    private static void ConfigureCashOperationNumberSequence(ModelBuilder builder)
+    {
+        builder.Entity<CashOperationNumberSequence>(entity =>
+        {
+            entity.ToTable("CashExpenseNumberSequences");
+            entity.HasKey(s => s.Id);
+
+            entity.Property(s => s.TenantId)
+                .IsRequired();
+
+            entity.Property(s => s.FiscalYear)
+                .IsRequired();
+
+            entity.Property(s => s.Prefix)
+                .HasMaxLength(10)
+                .IsRequired()
+                .HasDefaultValue("DEP");
+
+            entity.Property(s => s.CurrentSequence)
+                .IsRequired();
+
+            entity.Property(s => s.LastUpdated)
+                .IsRequired();
+
+            entity.Property(s => s.RowVersion)
+                .IsRowVersion();
+
+            entity.HasIndex(s => new { s.TenantId, s.FiscalYear, s.Prefix })
+                .IsUnique();
+        });
+    }
+
+    private static void ConfigureAuditLog(ModelBuilder builder)
+    {
+        builder.Entity<AuditLog>(entity =>
+        {
+            entity.ToTable("AuditLogs");
+            entity.HasKey(a => a.Id);
+
+            entity.Property(a => a.UserEmail)
+                .HasMaxLength(256)
+                .IsRequired();
+
+            entity.Property(a => a.Action)
+                .HasMaxLength(100)
+                .IsRequired();
+
+            entity.Property(a => a.EntityType)
+                .HasMaxLength(100)
+                .IsRequired();
+
+            entity.Property(a => a.OldValues)
+                .HasColumnType("nvarchar(max)");
+
+            entity.Property(a => a.NewValues)
+                .HasColumnType("nvarchar(max)");
+
+            entity.Property(a => a.IpAddress)
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(a => a.UserAgent)
+                .HasMaxLength(500);
+
+            entity.Property(a => a.PreviousHash)
+                .HasMaxLength(100)
+                .IsRequired();
+
+            entity.Property(a => a.Hash)
+                .HasMaxLength(100)
+                .IsRequired();
+
+            entity.HasIndex(a => a.CreatedAt);
+            entity.HasIndex(a => a.Action);
+            entity.HasIndex(a => a.EntityType);
+            entity.HasIndex(a => a.UserId);
+        });
+    }
+
+    private static void ConfigureInvoiceDraft(ModelBuilder builder)
+    {
+        builder.Entity<InvoiceDraft>(entity =>
+        {
+            entity.ToTable("InvoiceDrafts");
+            entity.HasKey(d => d.Id);
+
+            entity.Property(d => d.CurrentStep)
+                .IsRequired();
+
+            entity.Property(d => d.MetadataJson)
+                .HasColumnType("nvarchar(max)");
+
+            entity.Property(d => d.NewClientJson)
+                .HasColumnType("nvarchar(max)");
+
+            entity.Property(d => d.LinesJson)
+                .HasColumnType("nvarchar(max)");
+
+            entity.Property(d => d.PaymentLegalJson)
+                .HasColumnType("nvarchar(max)");
+
+            entity.Property(d => d.IdempotencyKey)
+                .HasMaxLength(100);
+
+            entity.HasIndex(d => d.SellerId);
+            entity.HasIndex(d => d.ClientId);
+            entity.HasIndex(d => d.ExpiresAt);
+            entity.HasIndex(d => d.IdempotencyKey);
+            entity.HasIndex(d => d.IsConverted);
+        });
+    }
+
+    private static void ConfigureInvoiceNumberSequence(ModelBuilder builder)
+    {
+        builder.Entity<InvoiceNumberSequence>(entity =>
+        {
+            entity.ToTable("InvoiceNumberSequences");
+            entity.HasKey(s => s.Id);
+
+            entity.Property(s => s.Prefix)
+                .HasMaxLength(10)
+                .IsRequired();
+
+            entity.Property(s => s.RowVersion)
+                .IsRowVersion();
+
+            entity.HasIndex(s => new { s.TenantId, s.Prefix, s.FiscalYear })
+                .IsUnique();
+        });
+    }
+
+    private static void ConfigureDocumentNumberingScheme(ModelBuilder builder)
+    {
+        builder.Entity<DocumentNumberingScheme>(entity =>
+        {
+            entity.ToTable("DocumentNumberingSchemes");
+            entity.HasKey(s => s.Id);
+
+            entity.Property(s => s.FormatBlocksJson)
+                .HasColumnType("nvarchar(max)")
+                .IsRequired();
+
+            entity.Property(s => s.RowVersion)
+                .IsRowVersion();
+
+            entity.HasIndex(s => new { s.TenantId, s.DocumentType, s.FiscalYear })
+                .IsUnique();
+        });
+    }
+
+    private static void ConfigureDocumentTemplatePreference(ModelBuilder builder)
+    {
+        builder.Entity<DocumentTemplatePreference>(entity =>
+        {
+            entity.ToTable("DocumentTemplatePreferences");
+            entity.HasKey(p => p.Id);
+
+            entity.Property(p => p.TemplateKey)
+                .HasMaxLength(100)
+                .IsRequired();
+
+            entity.Property(p => p.RowVersion)
+                .IsRowVersion();
+
+            entity.HasIndex(p => new { p.TenantId, p.DocumentType })
+                .IsUnique();
+        });
+    }
+
+    private static void ConfigureUserDashboardLayout(ModelBuilder builder)
+    {
+        builder.Entity<UserDashboardLayout>(entity =>
+        {
+            entity.ToTable("UserDashboardLayouts");
+            entity.HasKey(p => p.Id);
+
+            entity.Property(p => p.LayoutJson)
+                .HasColumnType("nvarchar(max)")
+                .IsRequired();
+
+            entity.Property(p => p.RowVersion)
+                .IsRowVersion();
+
+            entity.HasIndex(p => new { p.TenantId, p.UserId })
+                .IsUnique();
+        });
+    }
+
+    private static void ConfigureQuote(ModelBuilder builder)
+    {
+        builder.Entity<Quote>(entity =>
+        {
+            entity.ToTable("Quotes");
+            entity.HasKey(q => q.Id);
+
+            entity.Property(q => q.Reference)
+                .HasMaxLength(100);
+
+            entity.Property(q => q.Notes)
+                .HasMaxLength(2000);
+
+            entity.Property(q => q.TermsAndConditions)
+                .HasMaxLength(2000);
+
+            entity.Property(q => q.RejectionReason)
+                .HasMaxLength(500);
+
+            entity.Property(q => q.CancellationReason)
+                .HasMaxLength(500);
+
+            entity.OwnsOne(q => q.Number, num =>
+            {
+                num.Property(n => n.Value)
+                    .HasColumnName("Number")
+                    .HasMaxLength(50)
+                    .IsRequired();
+
+                num.Property(n => n.Prefix)
+                    .HasColumnName("NumberPrefix")
+                    .HasMaxLength(10)
+                    .IsRequired();
+
+                num.Property(n => n.Year)
+                    .HasColumnName("NumberYear")
+                    .IsRequired();
+
+                num.Property(n => n.Sequence)
+                    .HasColumnName("NumberSequence")
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(q => q.SubTotal, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("SubTotal")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("SubTotalCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(q => q.TotalVat, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("TotalVat")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("TotalVatCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(q => q.TotalAmount, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("TotalAmount")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("TotalAmountCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.HasOne(q => q.Client)
+                .WithMany()
+                .HasForeignKey(q => q.ClientId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(q => q.Lines)
+                .WithOne(l => l.Quote)
+                .HasForeignKey(l => l.QuoteId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(q => q.Status);
+            entity.HasIndex(q => q.IssueDate);
+            entity.HasIndex(q => q.ExpiryDate);
+            entity.HasIndex(q => q.ClientId);
+            entity.HasIndex(q => q.ConvertedInvoiceId)
+                .IsUnique()
+                .HasFilter("[ConvertedInvoiceId] IS NOT NULL");
+
+            entity.Property(q => q.OriginStorefrontOrderId);
+            entity.HasIndex(q => q.OriginStorefrontOrderId)
+                .HasFilter("[OriginStorefrontOrderId] IS NOT NULL");
+        });
+    }
+
+    private static void ConfigureQuoteLine(ModelBuilder builder)
+    {
+        builder.Entity<QuoteLine>(entity =>
+        {
+            entity.ToTable("QuoteLines");
+            entity.HasKey(l => l.Id);
+
+            entity.Property(l => l.ProductCode)
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(l => l.ProductName)
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(l => l.ProductDescription)
+                .HasMaxLength(1000);
+
+            entity.Property(l => l.Unit)
+                .HasMaxLength(50);
+
+            entity.Property(l => l.Quantity)
+                .HasPrecision(18, 4);
+
+            entity.Property(l => l.DiscountPercent)
+                .HasPrecision(5, 2);
+
+            entity.OwnsOne(l => l.UnitPrice, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("UnitPrice")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("UnitPriceCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(l => l.DiscountAmount, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("DiscountAmount")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("DiscountAmountCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(l => l.SubTotal, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("SubTotal")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("SubTotalCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(l => l.VatAmount, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("VatAmount")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("VatAmountCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(l => l.Total, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("Total")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("TotalCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.HasOne(l => l.Product)
+                .WithMany()
+                .HasForeignKey(l => l.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(l => l.QuoteId);
+        });
+    }
+
+    private static void ConfigureQuoteNumberSequence(ModelBuilder builder)
+    {
+        builder.Entity<QuoteNumberSequence>(entity =>
+        {
+            entity.ToTable("QuoteNumberSequences");
+            entity.HasKey(s => s.Id);
+
+            entity.Property(s => s.Prefix)
+                .HasMaxLength(10)
+                .IsRequired();
+
+            entity.Property(s => s.RowVersion)
+                .IsRowVersion();
+
+            entity.HasIndex(s => new { s.TenantId, s.Prefix, s.FiscalYear })
+                .IsUnique();
+        });
+    }
+
+    private static void ConfigureWarehouse(ModelBuilder builder)
+    {
+        builder.Entity<Warehouse>(entity =>
+        {
+            entity.ToTable("Warehouses");
+            entity.HasKey(w => w.Id);
+
+            entity.Property(w => w.Code)
+                .HasMaxLength(20)
+                .IsRequired();
+
+            entity.Property(w => w.Name)
+                .HasMaxLength(100)
+                .IsRequired();
+
+            entity.Property(w => w.Address)
+                .HasMaxLength(500);
+
+            entity.HasIndex(w => w.Code).IsUnique();
+            entity.HasIndex(w => w.IsDefault);
+            entity.HasIndex(w => w.IsActive);
+        });
+    }
+
+    private static void ConfigureStockItem(ModelBuilder builder)
+    {
+        builder.Entity<StockItem>(entity =>
+        {
+            entity.ToTable("StockItems");
+            entity.HasKey(s => s.Id);
+
+            entity.Property(s => s.QuantityOnHand)
+                .HasPrecision(18, 4)
+                .IsRequired();
+
+            entity.Property(s => s.QuantityReserved)
+                .HasPrecision(18, 4)
+                .IsRequired();
+
+            entity.Property(s => s.MinimumStock)
+                .HasPrecision(18, 4)
+                .IsRequired();
+
+            entity.Property(s => s.MaximumStock)
+                .HasPrecision(18, 4);
+
+            entity.Property(s => s.AverageCost)
+                .HasPrecision(18, 4)
+                .IsRequired();
+
+            // Navigation to movements (owned collection)
+            entity.HasMany(s => s.Movements)
+                .WithOne()
+                .HasForeignKey(m => m.StockItemId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Indexes for performance
+            entity.HasIndex(s => s.ProductId);
+            entity.HasIndex(s => s.WarehouseId);
+            entity.HasIndex(s => new { s.ProductId, s.WarehouseId }).IsUnique();
+            entity.HasIndex(s => s.IsActive);
+            
+
+        });
+    }
+
+    private static void ConfigureStockMovement(ModelBuilder builder)
+    {
+        builder.Entity<StockMovement>(entity =>
+        {
+            entity.ToTable("StockMovements");
+            entity.HasKey(m => m.Id);
+
+            entity.Property(m => m.Type)
+                .IsRequired();
+
+            entity.Property(m => m.Reason)
+                .IsRequired();
+
+            entity.Property(m => m.Quantity)
+                .HasPrecision(18, 4)
+                .IsRequired();
+
+            entity.Property(m => m.UnitCost)
+                .HasPrecision(18, 4)
+                .IsRequired();
+
+            entity.Property(m => m.BalanceAfter)
+                .HasPrecision(18, 4)
+                .IsRequired();
+
+            entity.Property(m => m.Reference)
+                .HasMaxLength(100);
+
+            entity.Property(m => m.Notes)
+                .HasMaxLength(500);
+
+            entity.Property(m => m.OccurredAt)
+                .IsRequired();
+
+            // Indexes for queries
+            entity.HasIndex(m => m.StockItemId);
+            entity.HasIndex(m => m.OccurredAt);
+            entity.HasIndex(m => new { m.StockItemId, m.OccurredAt });
+            entity.HasIndex(m => m.Reference);
+            entity.HasIndex(m => m.Type);
+            entity.HasIndex(m => m.Reason);
+        });
+    }
+
+    private static void ConfigurePhysicalInventory(ModelBuilder builder)
+    {
+        builder.Entity<PhysicalInventory>(entity =>
+        {
+            entity.ToTable("PhysicalInventories");
+            entity.HasKey(i => i.Id);
+
+            entity.Property(i => i.Reference)
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(i => i.Type)
+                .IsRequired();
+
+            entity.Property(i => i.Status)
+                .IsRequired();
+
+            entity.Property(i => i.StartedAt)
+                .IsRequired();
+
+            entity.Property(i => i.Notes)
+                .HasMaxLength(500);
+
+            entity.HasOne(i => i.Warehouse)
+                .WithMany()
+                .HasForeignKey(i => i.WarehouseId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(i => i.CountLines)
+                .WithOne()
+                .HasForeignKey(l => l.InventoryId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(i => i.Reference).IsUnique();
+            entity.HasIndex(i => i.WarehouseId);
+            entity.HasIndex(i => i.Status);
+            entity.HasIndex(i => new { i.WarehouseId, i.Status });
+            entity.HasIndex(i => i.StartedAt);
+        });
+    }
+
+    private static void ConfigureInventoryNumberSequence(ModelBuilder builder)
+    {
+        builder.Entity<InventoryNumberSequence>(entity =>
+        {
+            entity.ToTable("InventoryNumberSequences");
+            entity.HasKey(s => s.Year);
+
+            entity.Property(s => s.LastSequence)
+                .IsRequired();
+        });
+    }
+
+    private static void ConfigureInventoryCountLine(ModelBuilder builder)
+    {
+        builder.Entity<InventoryCountLine>(entity =>
+        {
+            entity.ToTable("InventoryCountLines");
+            entity.HasKey(l => l.Id);
+
+            entity.Property(l => l.ProductName)
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(l => l.ProductCode)
+                .HasMaxLength(50);
+
+            entity.Property(l => l.TheoreticalQuantity)
+                .HasPrecision(18, 4)
+                .IsRequired();
+
+            entity.Property(l => l.CountedQuantity)
+                .HasPrecision(18, 4);
+
+            entity.HasIndex(l => l.InventoryId);
+            entity.HasIndex(l => l.ProductId);
+            entity.HasIndex(l => new { l.InventoryId, l.ProductId }).IsUnique();
+        });
+    }
+
+    private static void ConfigureDeliveryNote(ModelBuilder builder)
+    {
+        builder.Entity<DeliveryNote>(entity =>
+        {
+            entity.ToTable("DeliveryNotes");
+            entity.HasKey(d => d.Id);
+
+            entity.Property(d => d.Reference)
+                .HasMaxLength(100);
+
+            entity.Property(d => d.Notes)
+                .HasMaxLength(2000);
+
+            entity.Property(d => d.DeliveryAddress)
+                .HasMaxLength(500)
+                .IsRequired();
+
+            entity.Property(d => d.DeliveryCity)
+                .HasMaxLength(100);
+
+            entity.Property(d => d.DeliveryPostalCode)
+                .HasMaxLength(20);
+
+            entity.Property(d => d.RecipientName)
+                .HasMaxLength(200);
+
+            entity.Property(d => d.RecipientSignature)
+                .HasColumnType("nvarchar(max)");
+
+            entity.Property(d => d.FailureReason)
+                .HasMaxLength(500);
+
+            entity.Property(d => d.CancellationReason)
+                .HasMaxLength(500);
+
+            entity.OwnsOne(d => d.Number, num =>
+            {
+                num.Property(n => n.Value)
+                    .HasColumnName("Number")
+                    .HasMaxLength(50)
+                    .IsRequired();
+
+                num.Property(n => n.Year)
+                    .HasColumnName("NumberYear")
+                    .IsRequired();
+
+                num.Property(n => n.Sequence)
+                    .HasColumnName("NumberSequence")
+                    .IsRequired();
+            });
+
+            entity.HasOne(d => d.Client)
+                .WithMany()
+                .HasForeignKey(d => d.ClientId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(d => d.Invoice)
+                .WithMany()
+                .HasForeignKey(d => d.InvoiceId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(d => d.Lines)
+                .WithOne(l => l.DeliveryNote)
+                .HasForeignKey(l => l.DeliveryNoteId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(d => d.Warehouse)
+                .WithMany()
+                .HasForeignKey(d => d.WarehouseId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(d => d.Status);
+            entity.HasIndex(d => d.IssueDate);
+            entity.HasIndex(d => d.DeliveryDate);
+            entity.HasIndex(d => d.ClientId);
+            entity.HasIndex(d => d.InvoiceId);
+            entity.HasIndex(d => d.WarehouseId);
+        });
+    }
+
+    private static void ConfigureDeliveryNoteLine(ModelBuilder builder)
+    {
+        builder.Entity<DeliveryNoteLine>(entity =>
+        {
+            entity.ToTable("DeliveryNoteLines");
+            entity.HasKey(l => l.Id);
+
+            entity.Property(l => l.Designation)
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(l => l.ProductCode)
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(l => l.Description)
+                .HasMaxLength(1000);
+
+            entity.Property(l => l.Unit)
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(l => l.UnitPriceHT)
+                .HasPrecision(18, 3)
+                .IsRequired();
+
+            entity.Property(l => l.VatRatePercent)
+                .IsRequired();
+
+            entity.Property(l => l.OrderedQuantity)
+                .HasPrecision(18, 4)
+                .IsRequired();
+
+            entity.Property(l => l.DeliveredQuantity)
+                .HasPrecision(18, 4)
+                .IsRequired();
+
+            entity.Property(l => l.RejectedQuantity)
+                .HasPrecision(18, 4)
+                .IsRequired();
+
+            entity.Property(l => l.RejectionReason)
+                .HasMaxLength(500);
+
+            entity.Property(l => l.Notes)
+                .HasMaxLength(500);
+
+            entity.HasOne(l => l.Product)
+                .WithMany()
+                .HasForeignKey(l => l.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(l => l.DeliveryNoteId);
+            entity.HasIndex(l => l.ProductId);
+        });
+    }
+
+    private static void ConfigureSupplier(ModelBuilder builder)
+    {
+        builder.Entity<Supplier>(entity =>
+        {
+            entity.ToTable("Suppliers");
+            entity.HasKey(s => s.Id);
+
+            entity.Property(s => s.Name)
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(s => s.ContactPerson)
+                .HasMaxLength(200);
+
+            entity.Property(s => s.PaymentTermDays)
+                .IsRequired();
+
+            entity.Property(s => s.Notes)
+                .HasMaxLength(1000);
+
+            entity.OwnsOne(s => s.NIF, nif =>
+            {
+                nif.Property(n => n.Value)
+                    .HasColumnName("NIF")
+                    .HasMaxLength(20);
+            });
+
+            entity.OwnsOne(s => s.Address, addr =>
+            {
+                addr.Property(a => a.Street).HasColumnName("Street").HasMaxLength(200).IsRequired();
+                addr.Property(a => a.StreetLine2).HasColumnName("StreetLine2").HasMaxLength(200);
+                addr.Property(a => a.City).HasColumnName("City").HasMaxLength(100).IsRequired();
+                addr.Property(a => a.PostalCode).HasColumnName("PostalCode").HasMaxLength(20);
+                addr.Property(a => a.Governorate).HasColumnName("Governorate").HasMaxLength(100).IsRequired();
+                addr.Property(a => a.Country).HasColumnName("Country").HasMaxLength(100).IsRequired();
+            });
+
+            entity.OwnsOne(s => s.Email, email =>
+            {
+                email.Property(e => e.Value)
+                    .HasColumnName("Email")
+                    .HasMaxLength(256)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(s => s.Phone, phone =>
+            {
+                phone.Property(p => p.Value)
+                    .HasColumnName("Phone")
+                    .HasMaxLength(20);
+                phone.Ignore(p => p.CountryCode);
+                phone.Ignore(p => p.LocalNumber);
+            });
+
+            entity.HasIndex(s => s.Name);
+            entity.HasIndex(s => s.IsActive);
+
+            // TEJ fields
+            entity.Property(s => s.TejIdentificationType).HasConversion<int?>().IsRequired(false);
+            entity.Property(s => s.DateOfBirth).IsRequired(false);
+            entity.Property(s => s.CountryCode).HasMaxLength(3).IsRequired(false);
+            entity.Property(s => s.IsResident).HasDefaultValue(true);
+            entity.Property(s => s.Activity).HasMaxLength(200).IsRequired(false);
+            entity.Property(s => s.DefaultWithholdingTaxTypeId).IsRequired(false);
+            entity.Property(s => s.DefaultWithholdingRate).HasPrecision(5, 2).IsRequired(false);
+            entity.Property(s => s.IsSubjectToWithholding).HasDefaultValue(false);
+        });
+    }
+
+    private static void ConfigurePurchaseOrder(ModelBuilder builder)
+    {
+        builder.Entity<PurchaseOrder>(entity =>
+        {
+            entity.ToTable("PurchaseOrders");
+            entity.HasKey(po => po.Id);
+
+            entity.Property(po => po.Reference)
+                .HasMaxLength(100);
+
+            entity.Property(po => po.Notes)
+                .HasMaxLength(2000);
+
+            entity.Property(po => po.CancellationReason)
+                .HasMaxLength(500);
+
+            entity.OwnsOne(po => po.Number, num =>
+            {
+                num.Property(n => n.Value)
+                    .HasColumnName("Number")
+                    .HasMaxLength(50)
+                    .IsRequired();
+
+                num.Property(n => n.Prefix)
+                    .HasColumnName("NumberPrefix")
+                    .HasMaxLength(10)
+                    .IsRequired();
+
+                num.Property(n => n.Year)
+                    .HasColumnName("NumberYear")
+                    .IsRequired();
+
+                num.Property(n => n.Sequence)
+                    .HasColumnName("NumberSequence")
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(po => po.SubTotal, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("SubTotal")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("SubTotalCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(po => po.TotalVat, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("TotalVat")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("TotalVatCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(po => po.TotalAmount, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("TotalAmount")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("TotalAmountCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.HasOne(po => po.Supplier)
+                .WithMany(s => s.PurchaseOrders)
+                .HasForeignKey(po => po.SupplierId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(po => po.Lines)
+                .WithOne(l => l.PurchaseOrder)
+                .HasForeignKey(l => l.PurchaseOrderId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(po => po.Warehouse)
+                .WithMany()
+                .HasForeignKey(po => po.WarehouseId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(po => po.Status);
+            entity.HasIndex(po => po.OrderDate);
+            entity.HasIndex(po => po.SupplierId);
+            entity.HasIndex(po => po.WarehouseId);
+        });
+    }
+
+    private static void ConfigurePurchaseOrderLine(ModelBuilder builder)
+    {
+        builder.Entity<PurchaseOrderLine>(entity =>
+        {
+            entity.ToTable("PurchaseOrderLines");
+            entity.HasKey(l => l.Id);
+
+            entity.Property(l => l.ProductCode)
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(l => l.ProductName)
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(l => l.ProductDescription)
+                .HasMaxLength(1000);
+
+            entity.Property(l => l.Unit)
+                .HasMaxLength(50);
+
+            entity.Property(l => l.Quantity)
+                .HasPrecision(18, 4);
+
+            entity.Property(l => l.ReceivedQuantity)
+                .HasPrecision(18, 4);
+
+            entity.OwnsOne(l => l.UnitPrice, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("UnitPrice")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("UnitPriceCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(l => l.SubTotal, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("SubTotal")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("SubTotalCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(l => l.VatAmount, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("VatAmount")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("VatAmountCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(l => l.Total, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("Total")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("TotalCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.HasOne(l => l.Product)
+                .WithMany()
+                .HasForeignKey(l => l.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(l => l.PurchaseOrderId);
+        });
+    }
+
+    private static void ConfigureSupplierInvoice(ModelBuilder builder)
+    {
+        builder.Entity<SupplierInvoice>(entity =>
+        {
+            entity.ToTable("SupplierInvoices");
+            entity.HasKey(si => si.Id);
+
+            entity.Property(si => si.InvoiceNumber)
+                .HasMaxLength(100)
+                .IsRequired();
+
+            entity.Property(si => si.ExternalReference)
+                .HasMaxLength(200);
+
+            entity.Property(si => si.Notes)
+                .HasMaxLength(2000);
+
+            entity.Property(si => si.PaymentReference)
+                .HasMaxLength(200);
+
+            entity.Property(si => si.CancellationReason)
+                .HasMaxLength(500);
+
+            entity.OwnsOne(si => si.SubTotal, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("SubTotal")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("SubTotalCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(si => si.TotalVat, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("TotalVat")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("TotalVatCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(si => si.TotalAmount, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("TotalAmount")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("TotalAmountCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(si => si.FiscalStampAmount, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("FiscalStampAmount")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("FiscalStampCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.HasOne(si => si.Supplier)
+                .WithMany()
+                .HasForeignKey(si => si.SupplierId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(si => si.PurchaseOrder)
+                .WithMany()
+                .HasForeignKey(si => si.PurchaseOrderId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(si => si.Lines)
+                .WithOne(l => l.SupplierInvoice)
+                .HasForeignKey(l => l.SupplierInvoiceId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(si => si.Warehouse)
+                .WithMany()
+                .HasForeignKey(si => si.WarehouseId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Withholding tax
+            entity.Property(si => si.IsSubjectToWithholding).HasDefaultValue(false);
+            entity.Property(si => si.WithholdingRate).HasPrecision(5, 2).IsRequired(false);
+            entity.Property(si => si.WithholdingAmount).HasPrecision(18, 3).IsRequired(false);
+            entity.Property(si => si.WithholdingTaxTypeId).IsRequired(false);
+            entity.Property(si => si.NetAmountAfterWithholding).HasPrecision(18, 3).IsRequired(false);
+
+            entity.HasIndex(si => si.InvoiceNumber).IsUnique();
+            entity.HasIndex(si => si.Status);
+            entity.HasIndex(si => si.InvoiceDate);
+            entity.HasIndex(si => si.DueDate);
+            entity.HasIndex(si => si.SupplierId);
+            entity.HasIndex(si => si.PurchaseOrderId);
+            entity.HasIndex(si => si.WarehouseId);
+        });
+    }
+
+    private static void ConfigureSupplierInvoiceLine(ModelBuilder builder)
+    {
+        builder.Entity<SupplierInvoiceLine>(entity =>
+        {
+            entity.ToTable("SupplierInvoiceLines");
+            entity.HasKey(l => l.Id);
+
+            entity.Property(l => l.ProductCode)
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(l => l.ProductName)
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(l => l.ProductDescription)
+                .HasMaxLength(1000);
+
+            entity.Property(l => l.Unit)
+                .HasMaxLength(50);
+
+            entity.Property(l => l.Quantity)
+                .HasPrecision(18, 4);
+
+            entity.OwnsOne(l => l.UnitPrice, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("UnitPrice")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("UnitPriceCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(l => l.SubTotal, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("SubTotal")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("SubTotalCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(l => l.VatAmount, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("VatAmount")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("VatAmountCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(l => l.Total, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("Total")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("TotalCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.Property(l => l.AssetAccountNumber).HasMaxLength(20);
+            entity.HasIndex(l => l.SupplierInvoiceId);
+            entity.HasIndex(l => l.IsFixedAsset);
+        });
+    }
+
+    private static void ConfigureSupplierPayment(ModelBuilder builder)
+    {
+        builder.Entity<SupplierPayment>(entity =>
+        {
+            entity.ToTable("SupplierPayments");
+            entity.HasKey(p => p.Id);
+
+            entity.Property(p => p.Reference)
+                .HasMaxLength(100);
+
+            entity.Property(p => p.Notes)
+                .HasMaxLength(500);
+
+            entity.OwnsOne(p => p.Amount, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("Amount")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("AmountCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.HasOne(p => p.SupplierInvoice)
+                .WithMany(si => si.Payments)
+                .HasForeignKey(p => p.SupplierInvoiceId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(p => p.SupplierInvoiceId);
+            entity.HasIndex(p => p.PaymentDate);
+        });
+    }
+
+    private static void ConfigureStockTransfer(ModelBuilder builder)
+    {
+        builder.Entity<StockTransfer>(entity =>
+        {
+            entity.ToTable("StockTransfers");
+            entity.HasKey(t => t.Id);
+
+            entity.Property(t => t.Reference)
+                .HasMaxLength(100);
+
+            entity.Property(t => t.Notes)
+                .HasMaxLength(2000);
+
+            entity.Property(t => t.CancellationReason)
+                .HasMaxLength(500);
+
+            entity.OwnsOne(t => t.Number, num =>
+            {
+                num.Property(n => n.Value)
+                    .HasColumnName("Number")
+                    .HasMaxLength(50)
+                    .IsRequired();
+
+                num.Property(n => n.Prefix)
+                    .HasColumnName("NumberPrefix")
+                    .HasMaxLength(10)
+                    .IsRequired();
+
+                num.Property(n => n.Year)
+                    .HasColumnName("NumberYear")
+                    .IsRequired();
+
+                num.Property(n => n.Sequence)
+                    .HasColumnName("NumberSequence")
+                    .IsRequired();
+            });
+
+            entity.HasOne(t => t.SourceWarehouse)
+                .WithMany()
+                .HasForeignKey(t => t.SourceWarehouseId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(t => t.DestinationWarehouse)
+                .WithMany()
+                .HasForeignKey(t => t.DestinationWarehouseId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(t => t.Lines)
+                .WithOne(l => l.StockTransfer)
+                .HasForeignKey(l => l.StockTransferId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(t => t.Status);
+            entity.HasIndex(t => t.TransferDate);
+            entity.HasIndex(t => t.SourceWarehouseId);
+            entity.HasIndex(t => t.DestinationWarehouseId);
+        });
+    }
+
+    private static void ConfigureStockTransferLine(ModelBuilder builder)
+    {
+        builder.Entity<StockTransferLine>(entity =>
+        {
+            entity.ToTable("StockTransferLines");
+            entity.HasKey(l => l.Id);
+
+            entity.Property(l => l.ProductCode)
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(l => l.ProductName)
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(l => l.RequestedQuantity)
+                .HasPrecision(18, 3);
+
+            entity.Property(l => l.TransferredQuantity)
+                .HasPrecision(18, 3);
+
+            entity.Property(l => l.Notes)
+                .HasMaxLength(500);
+
+            entity.HasIndex(l => l.StockTransferId);
+            entity.HasIndex(l => l.ProductId);
+        });
+    }
+
+    private static void ConfigureChartOfAccount(ModelBuilder builder)
+    {
+        builder.Entity<ChartOfAccount>(entity =>
+        {
+            entity.ToTable("ChartOfAccounts");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.AccountNumber).HasMaxLength(32).IsRequired();
+            entity.HasIndex(e => e.AccountNumber).IsUnique();
+            entity.Property(e => e.Label).HasMaxLength(300).IsRequired();
+            entity.Property(e => e.ParentAccountNumber).HasMaxLength(32);
+            entity.Property(e => e.NatureType).HasConversion<int>();
+            // Attributs « façon Axeane » (additifs, défauts rétro-compatibles).
+            entity.Property(e => e.AccountType).HasConversion<int>().HasDefaultValue(AccountType.General);
+            entity.Property(e => e.IsAuxiliary).HasDefaultValue(false);
+            entity.Property(e => e.AffectationAccountNumber).HasMaxLength(32);
+        });
+    }
+
+    private static void ConfigureAccountingPeriod(ModelBuilder builder)
+    {
+        builder.Entity<AccountingPeriod>(entity =>
+        {
+            entity.ToTable("AccountingPeriods");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.FiscalYear, e.Month }).IsUnique();
+        });
+    }
+
+    private static void ConfigureAccountingYearLock(ModelBuilder builder)
+    {
+        builder.Entity<AccountingYearLock>(entity =>
+        {
+            entity.ToTable("AccountingYearLocks");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.LockedBy).HasMaxLength(256).IsRequired();
+            entity.HasIndex(e => e.FiscalYear).IsUnique();
+        });
+    }
+
+    private static void ConfigureJournalEntrySequence(ModelBuilder builder)
+    {
+        builder.Entity<JournalEntrySequence>(entity =>
+        {
+            entity.ToTable("JournalEntrySequences");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.JournalCode).HasMaxLength(10).IsRequired();
+            entity.HasIndex(e => new { e.JournalCode, e.FiscalYear }).IsUnique();
+        });
+    }
+
+    private static void ConfigureJournalEntry(ModelBuilder builder)
+    {
+        builder.Entity<JournalEntry>(entity =>
+        {
+            entity.ToTable("JournalEntries");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.JournalCode).HasMaxLength(10).IsRequired();
+            entity.Property(e => e.Label).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.SourceEntityType).HasMaxLength(80);
+            // Statut brouillard/validation. Défaut BDD = Validee (1) : les écritures existantes migrées
+            // restent définitives et les états sont strictement inchangés (cf. JournalEntryStatus).
+            // Sentinel = Validee : EF n'omet la colonne (⇒ défaut BDD) QUE lorsque la valeur est Validee ;
+            // un Brouillon (0) est donc TOUJOURS écrit explicitement (indispensable au workflow brouillard).
+            entity.Property(e => e.Status)
+                .HasConversion<int>()
+                .HasDefaultValue(JournalEntryStatus.Validee)
+                .HasSentinel(JournalEntryStatus.Validee);
+            entity.Property(e => e.ValidatedBy).HasMaxLength(256);
+            // Pièce externe (référence + date), facultative — cf. JournalEntry.PieceRef/PieceDate.
+            entity.Property(e => e.PieceRef).HasMaxLength(50);
+            entity.HasIndex(e => e.PieceRef);
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => new { e.JournalCode, e.EntryNumber, e.EntryDate });
+            entity.HasIndex(e => new { e.SourceEntityType, e.SourceEntityId });
+            entity.HasOne(e => e.AccountingPeriod)
+                .WithMany()
+                .HasForeignKey(e => e.AccountingPeriodId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasMany(e => e.Lines)
+                .WithOne(l => l.JournalEntry)
+                .HasForeignKey(l => l.JournalEntryId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureJournalCatalog(ModelBuilder builder)
+    {
+        builder.Entity<JournalFamily>(entity =>
+        {
+            entity.ToTable("JournalFamilies");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Code).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.Label).HasMaxLength(200).IsRequired();
+            entity.HasIndex(e => e.Code).IsUnique();
+        });
+
+        builder.Entity<Journal>(entity =>
+        {
+            entity.ToTable("Journals");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Code).HasMaxLength(10).IsRequired();
+            entity.Property(e => e.Label).HasMaxLength(200).IsRequired();
+            entity.HasIndex(e => e.Code).IsUnique();
+        });
+    }
+
+    private static void ConfigureBudgeting(ModelBuilder builder)
+    {
+        builder.Entity<BudgetPost>(entity =>
+        {
+            entity.ToTable("BudgetPosts");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Code).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.Label).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Kind).HasConversion<int>();
+            entity.Property(e => e.AccountPrefixes).HasMaxLength(200).IsRequired();
+            entity.HasIndex(e => e.Code).IsUnique();
+        });
+
+        builder.Entity<BudgetYear>(entity =>
+        {
+            entity.ToTable("BudgetYears");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Status).HasConversion<int>();
+            entity.Property(e => e.ValidatedBy).HasMaxLength(256);
+            entity.HasIndex(e => e.FiscalYear).IsUnique();
+        });
+
+        builder.Entity<BudgetLine>(entity =>
+        {
+            entity.ToTable("BudgetLines");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Version).HasConversion<int>();
+            entity.Property(e => e.Amount).HasPrecision(18, 3);
+            entity.HasOne(e => e.BudgetPost)
+                .WithMany()
+                .HasForeignKey(e => e.BudgetPostId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(e => new { e.BudgetPostId, e.FiscalYear, e.Version, e.Month }).IsUnique();
+            entity.HasIndex(e => new { e.FiscalYear, e.Version });
+        });
+    }
+
+    private static void ConfigureThirdPartyAccountingProfile(ModelBuilder builder)
+    {
+        builder.Entity<ThirdPartyAccountingProfile>(entity =>
+        {
+            entity.ToTable("ThirdPartyAccountingProfiles");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Kind).HasConversion<int>();
+            entity.Property(e => e.AuxiliaryCode).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.CollectiveAccountNumber).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.AccountingNotes).HasMaxLength(500);
+            entity.HasIndex(e => new { e.Kind, e.ThirdPartyId }).IsUnique();
+            entity.HasIndex(e => e.AuxiliaryCode).IsUnique();
+        });
+    }
+
+    private static void ConfigureJournalEntryLine(ModelBuilder builder)
+    {
+        builder.Entity<JournalEntryLine>(entity =>
+        {
+            entity.ToTable("JournalEntryLines");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.AccountNumber).HasMaxLength(32).IsRequired();
+            entity.Property(e => e.Label).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.LetteringCode).HasMaxLength(16);
+            entity.Property(e => e.ThirdPartyKind).HasConversion<int>();
+            entity.OwnsOne(e => e.DebitAmount, m =>
+            {
+                m.Property(x => x.Amount).HasColumnName("DebitAmount").HasPrecision(18, 3);
+                m.Property(x => x.Currency).HasColumnName("DebitCurrency").HasMaxLength(3);
+            });
+            entity.OwnsOne(e => e.CreditAmount, m =>
+            {
+                m.Property(x => x.Amount).HasColumnName("CreditAmount").HasPrecision(18, 3);
+                m.Property(x => x.Currency).HasColumnName("CreditCurrency").HasMaxLength(3);
+            });
+            entity.HasIndex(e => e.AccountNumber);
+        });
+    }
+
+    private static void ConfigureLetteringGroup(ModelBuilder builder)
+    {
+        builder.Entity<LetteringGroup>(entity =>
+        {
+            entity.ToTable("LetteringGroups");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Code).HasMaxLength(16).IsRequired();
+            entity.Property(e => e.AccountNumber).HasMaxLength(32).IsRequired();
+            entity.OwnsOne(e => e.Amount, m =>
+            {
+                m.Property(x => x.Amount).HasColumnName("Amount").HasPrecision(18, 3);
+                m.Property(x => x.Currency).HasColumnName("Currency").HasMaxLength(3);
+            });
+            entity.HasMany(e => e.Members)
+                .WithOne(m => m.LetteringGroup)
+                .HasForeignKey(m => m.LetteringGroupId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureLetteringGroupMember(ModelBuilder builder)
+    {
+        builder.Entity<LetteringGroupMember>(entity =>
+        {
+            entity.ToTable("LetteringGroupMembers");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.JournalEntryLineId);
+        });
+    }
+
+    private static void ConfigureJournalEntryAttachment(ModelBuilder builder)
+    {
+        builder.Entity<JournalEntryAttachment>(entity =>
+        {
+            entity.ToTable("JournalEntryAttachments");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.FileName).HasMaxLength(260).IsRequired();
+            entity.Property(e => e.StoragePath).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.ContentType).HasMaxLength(120).IsRequired();
+            entity.HasOne(e => e.JournalEntry)
+                .WithMany()
+                .HasForeignKey(e => e.JournalEntryId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(e => e.JournalEntryId);
+        });
+    }
+
+    private static void ConfigureBankStatement(ModelBuilder builder)
+    {
+        builder.Entity<BankStatement>(entity =>
+        {
+            entity.ToTable("BankStatements");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.BankName).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.AccountNumber).HasMaxLength(64).IsRequired();
+            entity.Property(e => e.ChartOfAccountNumber).HasMaxLength(20);
+            entity.Property(e => e.SourceFileName).HasMaxLength(260);
+            entity.Property(e => e.SourceFileHash).HasMaxLength(64);
+            entity.Property(e => e.ImportMethod).HasConversion<int>();
+            entity.HasOne<BankAccount>()
+                .WithMany()
+                .HasForeignKey(e => e.BankAccountId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.OwnsOne(e => e.OpeningBalance, m =>
+            {
+                m.Property(x => x.Amount).HasColumnName("OpeningBalance").HasPrecision(18, 3);
+                m.Property(x => x.Currency).HasColumnName("OpeningCurrency").HasMaxLength(3);
+            });
+            entity.OwnsOne(e => e.ClosingBalance, m =>
+            {
+                m.Property(x => x.Amount).HasColumnName("ClosingBalance").HasPrecision(18, 3);
+                m.Property(x => x.Currency).HasColumnName("ClosingCurrency").HasMaxLength(3);
+            });
+            entity.HasMany(e => e.Lines)
+                .WithOne(l => l.BankStatement)
+                .HasForeignKey(l => l.BankStatementId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(e => new { e.AccountNumber, e.StatementDate });
+            entity.HasIndex(e => e.BankAccountId);
+        });
+    }
+
+    private static void ConfigureBankStatementLine(ModelBuilder builder)
+    {
+        builder.Entity<BankStatementLine>(entity =>
+        {
+            entity.ToTable("BankStatementLines");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.ValueDate);
+            entity.Property(e => e.Reference).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Description).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.Fingerprint).HasMaxLength(64);
+            entity.OwnsOne(e => e.Amount, m =>
+            {
+                m.Property(x => x.Amount).HasColumnName("Amount").HasPrecision(18, 3);
+                m.Property(x => x.Currency).HasColumnName("Currency").HasMaxLength(3);
+            });
+            entity.HasIndex(e => e.BankStatementId);
+            entity.HasIndex(e => e.ReconciledJournalEntryLineId);
+            entity.HasIndex(e => e.Fingerprint);
+        });
+    }
+
+    private static void ConfigureVatDeclaration(ModelBuilder builder)
+    {
+        builder.Entity<VatDeclaration>(entity =>
+        {
+            entity.ToTable("VatDeclarations");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.Year, e.Month }).IsUnique();
+            entity.Property(e => e.Status).HasConversion<int>();
+            entity.OwnsOne(e => e.CollectedVat19, m =>
+            {
+                m.Property(x => x.Amount).HasColumnName("CollectedVat19").HasPrecision(18, 3);
+                m.Property(x => x.Currency).HasColumnName("CollectedVat19Currency").HasMaxLength(3);
+            });
+            entity.OwnsOne(e => e.CollectedVat13, m =>
+            {
+                m.Property(x => x.Amount).HasColumnName("CollectedVat13").HasPrecision(18, 3);
+                m.Property(x => x.Currency).HasColumnName("CollectedVat13Currency").HasMaxLength(3);
+            });
+            entity.OwnsOne(e => e.CollectedVat7, m =>
+            {
+                m.Property(x => x.Amount).HasColumnName("CollectedVat7").HasPrecision(18, 3);
+                m.Property(x => x.Currency).HasColumnName("CollectedVat7Currency").HasMaxLength(3);
+            });
+            entity.OwnsOne(e => e.DeductibleVatGoods, m =>
+            {
+                m.Property(x => x.Amount).HasColumnName("DeductibleVatGoods").HasPrecision(18, 3);
+                m.Property(x => x.Currency).HasColumnName("DeductibleVatGoodsCurrency").HasMaxLength(3);
+            });
+            entity.OwnsOne(e => e.DeductibleVatAssets, m =>
+            {
+                m.Property(x => x.Amount).HasColumnName("DeductibleVatAssets").HasPrecision(18, 3);
+                m.Property(x => x.Currency).HasColumnName("DeductibleVatAssetsCurrency").HasMaxLength(3);
+            });
+            entity.OwnsOne(e => e.PreviousCredit, m =>
+            {
+                m.Property(x => x.Amount).HasColumnName("PreviousCredit").HasPrecision(18, 3);
+                m.Property(x => x.Currency).HasColumnName("PreviousCreditCurrency").HasMaxLength(3);
+            });
+            entity.OwnsOne(e => e.VatDue, m =>
+            {
+                m.Property(x => x.Amount).HasColumnName("VatDue").HasPrecision(18, 3);
+                m.Property(x => x.Currency).HasColumnName("VatDueCurrency").HasMaxLength(3);
+            });
+            entity.OwnsOne(e => e.CreditToCarry, m =>
+            {
+                m.Property(x => x.Amount).HasColumnName("CreditToCarry").HasPrecision(18, 3);
+                m.Property(x => x.Currency).HasColumnName("CreditToCarryCurrency").HasMaxLength(3);
+            });
+            // Déclaration mensuelle unique (V2) : autres taxes + versionnement. Additif, défaut 0/1/false.
+            entity.Property(e => e.Fodec).HasPrecision(18, 3).HasDefaultValue(0m);
+            entity.Property(e => e.DroitTimbre).HasPrecision(18, 3).HasDefaultValue(0m);
+            entity.Property(e => e.Tcl).HasPrecision(18, 3).HasDefaultValue(0m);
+            entity.Property(e => e.Tfp).HasPrecision(18, 3).HasDefaultValue(0m);
+            entity.Property(e => e.Foprolos).HasPrecision(18, 3).HasDefaultValue(0m);
+            entity.Property(e => e.WithholdingTax).HasPrecision(18, 3).HasDefaultValue(0m);
+            entity.Property(e => e.Acomptes).HasPrecision(18, 3).HasDefaultValue(0m);
+            entity.Property(e => e.RevisionNumber).HasDefaultValue(1);
+            entity.Property(e => e.IsRectificative).HasDefaultValue(false);
+        });
+    }
+
+    private static void ConfigureFiscalSchedule(ModelBuilder builder)
+    {
+        builder.Entity<FiscalScheduleEntry>(entity =>
+        {
+            entity.ToTable("FiscalScheduleEntries");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.ObligationType).HasConversion<int>();
+            entity.Property(e => e.ObligationLabel).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Currency).HasMaxLength(3).IsRequired();
+            entity.Property(e => e.EstimatedAmount).HasPrecision(18, 3);
+            entity.Property(e => e.SourceType).HasConversion<int>();
+            entity.Property(e => e.ResponsibleName).HasMaxLength(200);
+            entity.Property(e => e.Observations).HasMaxLength(1000);
+            entity.Property(e => e.LastReminderChannel).HasConversion<int>();
+            entity.Property(e => e.ValidatedBy).HasMaxLength(200);
+            entity.Property(e => e.RowVersion).IsRowVersion();
+            entity.HasIndex(e => e.FiscalYear);
+            entity.HasIndex(e => e.DueDate);
+            entity.HasIndex(e => e.ObligationType);
+            entity.HasIndex(e => e.ResponsibleUserId);
+            entity.HasIndex(e => new { e.ObligationType, e.FiscalYear, e.PeriodMonth, e.PeriodQuarter, e.SourceType, e.IsCancelled });
+            entity.HasIndex(e => new { e.SourceType, e.SourceId });
+            entity.HasMany(e => e.History)
+                .WithOne(h => h.FiscalScheduleEntry)
+                .HasForeignKey(h => h.FiscalScheduleEntryId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasMany(e => e.Attachments)
+                .WithOne(a => a.FiscalScheduleEntry)
+                .HasForeignKey(a => a.FiscalScheduleEntryId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<FiscalScheduleHistoryEntry>(entity =>
+        {
+            entity.ToTable("FiscalScheduleHistoryEntries");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Action).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Summary).HasMaxLength(1000).IsRequired();
+            entity.Property(e => e.OldValuesJson);
+            entity.Property(e => e.NewValuesJson);
+            entity.HasIndex(e => e.FiscalScheduleEntryId);
+            entity.HasIndex(e => e.CreatedAt);
+        });
+
+        builder.Entity<FiscalScheduleAttachment>(entity =>
+        {
+            entity.ToTable("FiscalScheduleAttachments");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.FileName).HasMaxLength(260).IsRequired();
+            entity.Property(e => e.ContentType).HasMaxLength(120).IsRequired();
+            entity.Property(e => e.StoragePath).HasMaxLength(500).IsRequired();
+            entity.HasIndex(e => e.FiscalScheduleEntryId);
+        });
+    }
+
+    private static void ConfigureOpportunity(ModelBuilder builder)
+    {
+        builder.Entity<Opportunity>(entity =>
+        {
+            entity.ToTable("Opportunities");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Title).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.AssignedUserName).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.LostReason).HasMaxLength(1000);
+            entity.Property(e => e.Notes).HasMaxLength(2000);
+            entity.Property(e => e.Source).HasMaxLength(200);
+            entity.Property(e => e.Stage).HasConversion<int>();
+            entity.OwnsOne(e => e.ExpectedAmount, m =>
+            {
+                m.Property(p => p.Amount).HasColumnName("ExpectedAmount").HasPrecision(18, 3);
+                m.Property(p => p.Currency).HasColumnName("ExpectedAmountCurrency").HasMaxLength(3);
+            });
+            entity.HasIndex(e => e.ClientId);
+            entity.HasIndex(e => e.AssignedUserId);
+            entity.HasIndex(e => e.Stage);
+            entity.Ignore(e => e.WeightedAmount);
+        });
+    }
+
+    private static void ConfigureSalesActivity(ModelBuilder builder)
+    {
+        builder.Entity<SalesActivity>(entity =>
+        {
+            entity.ToTable("SalesActivities");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Type).HasConversion<int>();
+            entity.Property(e => e.Subject).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.Description).HasMaxLength(2000);
+            entity.Property(e => e.AssignedUserName).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Priority).HasConversion<int>();
+            entity.Property(e => e.LinkedEntityType).HasMaxLength(100);
+
+            entity.HasIndex(e => e.ClientId);
+            entity.HasIndex(e => e.AssignedUserId);
+            entity.HasIndex(e => e.OpportunityId);
+            entity.HasIndex(e => e.DueDate);
+            entity.Ignore(e => e.IsCompleted);
+        });
+    }
+
+    private static void ConfigureSalesTarget(ModelBuilder builder)
+    {
+        builder.Entity<SalesTarget>(entity =>
+        {
+            entity.ToTable("SalesTargets");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.UserName).HasMaxLength(200).IsRequired();
+            entity.OwnsOne(e => e.TargetAmount, m =>
+            {
+                m.Property(p => p.Amount).HasColumnName("TargetAmount").HasPrecision(18, 3);
+                m.Property(p => p.Currency).HasColumnName("TargetAmountCurrency").HasMaxLength(3);
+            });
+            entity.HasIndex(e => new { e.UserId, e.Year, e.Month }).IsUnique();
+        });
+    }
+
+    private static void ConfigureQuoteTemplate(ModelBuilder builder)
+    {
+        builder.Entity<QuoteTemplate>(entity =>
+        {
+            entity.ToTable("QuoteTemplates");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Name).HasMaxLength(300).IsRequired();
+            entity.Property(e => e.Description).HasMaxLength(1000);
+            entity.Property(e => e.DefaultNotes).HasMaxLength(2000);
+            entity.Property(e => e.DefaultTermsAndConditions).HasMaxLength(4000);
+
+            entity.HasMany(q => q.Lines)
+                .WithOne(l => l.QuoteTemplate)
+                .HasForeignKey(l => l.QuoteTemplateId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureQuoteTemplateLine(ModelBuilder builder)
+    {
+        builder.Entity<QuoteTemplateLine>(entity =>
+        {
+            entity.ToTable("QuoteTemplateLines");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Quantity).HasPrecision(18, 4);
+            entity.Property(e => e.DiscountPercent).HasPrecision(5, 2);
+
+            entity.OwnsOne(l => l.CustomUnitPrice, price =>
+            {
+                price.Property(m => m.Amount).HasColumnName("CustomUnitPrice").HasPrecision(18, 3);
+                price.Property(m => m.Currency).HasColumnName("CustomUnitPriceCurrency").HasMaxLength(3);
+            });
+
+            entity.HasIndex(l => l.QuoteTemplateId);
+            entity.HasIndex(l => l.ProductId);
+        });
+    }
+
+    private static void ConfigureJournalEntryTemplate(ModelBuilder builder)
+    {
+        builder.Entity<JournalEntryTemplate>(entity =>
+        {
+            entity.ToTable("JournalEntryTemplates");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Description).HasMaxLength(1000);
+            entity.Property(e => e.JournalCode).HasMaxLength(10).IsRequired();
+            entity.Property(e => e.LabelTemplate).HasMaxLength(500);
+
+            entity.HasMany(t => t.Lines)
+                .WithOne(l => l.JournalEntryTemplate)
+                .HasForeignKey(l => l.JournalEntryTemplateId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.Name);
+            entity.HasIndex(e => e.IsActive);
+        });
+    }
+
+    private static void ConfigureJournalEntryTemplateLine(ModelBuilder builder)
+    {
+        builder.Entity<JournalEntryTemplateLine>(entity =>
+        {
+            entity.ToTable("JournalEntryTemplateLines");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.AccountNumber).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.LineLabelTemplate).HasMaxLength(500);
+            entity.Property(e => e.FixedDebit).HasPrecision(18, 3);
+            entity.Property(e => e.FixedCredit).HasPrecision(18, 3);
+
+            entity.HasIndex(l => l.JournalEntryTemplateId);
+        });
+    }
+
+    private static void ConfigureDepreciationRateCategory(ModelBuilder builder)
+    {
+        builder.Entity<DepreciationRateCategory>(entity =>
+        {
+            entity.ToTable("DepreciationRateCategories");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Code).HasMaxLength(32).IsRequired();
+            entity.HasIndex(e => e.Code).IsUnique();
+            entity.Property(e => e.Label).HasMaxLength(300).IsRequired();
+            entity.Property(e => e.LegalRatePercent).HasPrecision(8, 4);
+            entity.Property(e => e.DefaultAssetAccount).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.DefaultDepreciationAccount).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.DefaultExpenseAccount).HasMaxLength(20).IsRequired();
+            entity.HasIndex(e => e.SortOrder);
+        });
+    }
+
+    private static void ConfigureFixedAsset(ModelBuilder builder)
+    {
+        builder.Entity<FixedAsset>(entity =>
+        {
+            entity.ToTable("FixedAssets");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.InventoryNumber).HasMaxLength(32).IsRequired();
+            entity.HasIndex(e => e.InventoryNumber).IsUnique();
+            entity.Property(e => e.Label).HasMaxLength(300).IsRequired();
+            entity.Property(e => e.Description).HasMaxLength(2000);
+            entity.Property(e => e.AssetAccountNumber).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.DepreciationAccountNumber).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.ExpenseAccountNumber).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.AcquisitionCost).HasPrecision(18, 3);
+            entity.Property(e => e.CapitalizedFees).HasPrecision(18, 3);
+            entity.Property(e => e.ResidualValue).HasPrecision(18, 3);
+            entity.Property(e => e.VatAmount).HasPrecision(18, 3);
+            entity.Property(e => e.DepreciationRatePercent).HasPrecision(8, 4);
+            entity.Property(e => e.UsefulLifeYears).HasPrecision(8, 2);
+            entity.Property(e => e.AccelerationCoefficient).HasPrecision(8, 4).HasDefaultValue(1m);
+            entity.Property(e => e.AccumulatedDepreciation).HasPrecision(18, 3);
+            entity.Property(e => e.NetBookValue).HasPrecision(18, 3);
+            entity.Property(e => e.Location).HasMaxLength(200);
+            entity.Property(e => e.CreditAccountNumber).HasMaxLength(20);
+            entity.Property(e => e.DisposalProceeds).HasPrecision(18, 3);
+            entity.Property(e => e.DisposalTreasuryAccount).HasMaxLength(20);
+            entity.Property(e => e.Status).HasConversion<int>();
+            entity.Property(e => e.DepreciationMethod).HasConversion<int>();
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => e.DepreciationRateCategoryId);
+            entity.HasIndex(e => e.SupplierInvoiceId);
+            entity.HasIndex(e => e.SupplierInvoiceLineId);
+            entity.Property(e => e.Version).IsConcurrencyToken();
+            entity.HasOne(e => e.DepreciationRateCategory)
+                .WithMany()
+                .HasForeignKey(e => e.DepreciationRateCategoryId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.Navigation(e => e.Events).UsePropertyAccessMode(PropertyAccessMode.Field);
+            entity.Navigation(e => e.ScheduleLines).UsePropertyAccessMode(PropertyAccessMode.Field);
+        });
+    }
+
+    private static void ConfigureDepreciationScheduleLine(ModelBuilder builder)
+    {
+        builder.Entity<DepreciationScheduleLine>(entity =>
+        {
+            entity.ToTable("DepreciationScheduleLines");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.OpeningNbv).HasPrecision(18, 3);
+            entity.Property(e => e.NormalAnnualAmount).HasPrecision(18, 3);
+            entity.Property(e => e.PriorAccumulatedDepreciation).HasPrecision(18, 3);
+            entity.Property(e => e.DepreciationAmount).HasPrecision(18, 3);
+            entity.Property(e => e.AccumulatedDepreciation).HasPrecision(18, 3);
+            entity.Property(e => e.ClosingNbv).HasPrecision(18, 3);
+            entity.HasIndex(e => new { e.FixedAssetId, e.FiscalYear, e.PeriodMonth })
+                .IsUnique()
+                .HasFilter("[PeriodMonth] IS NOT NULL");
+            entity.HasIndex(e => new { e.FixedAssetId, e.FiscalYear })
+                .IsUnique()
+                .HasFilter("[PeriodMonth] IS NULL");
+            entity.HasIndex(e => e.IsPosted);
+            entity.HasOne(e => e.FixedAsset)
+                .WithMany(a => a.ScheduleLines)
+                .HasForeignKey(e => e.FixedAssetId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureFixedAssetEvent(ModelBuilder builder)
+    {
+        builder.Entity<FixedAssetEvent>(entity =>
+        {
+            entity.ToTable("FixedAssetEvents");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.EventType).HasConversion<int>();
+            entity.Property(e => e.Amount).HasPrecision(18, 3);
+            entity.Property(e => e.Notes).HasMaxLength(2000);
+            entity.Property(e => e.MetadataJson).HasMaxLength(4000);
+            entity.HasIndex(e => e.FixedAssetId);
+            entity.HasIndex(e => e.EventDate);
+            entity.HasOne(e => e.FixedAsset)
+                .WithMany(a => a.Events)
+                .HasForeignKey(e => e.FixedAssetId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureWithholdingTaxType(ModelBuilder builder)
+    {
+        builder.Entity<WithholdingTaxType>(entity =>
+        {
+            entity.ToTable("WithholdingTaxTypes");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Code).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.Category).HasConversion<int>();
+            entity.Property(e => e.Label).HasMaxLength(300).IsRequired();
+            entity.Property(e => e.LabelAr).HasMaxLength(300);
+            entity.Property(e => e.DefaultRate).HasPrecision(5, 2).IsRequired();
+            entity.Property(e => e.ArticleReference).HasMaxLength(100);
+            entity.Property(e => e.MinimumThreshold).HasPrecision(18, 3);
+
+            entity.HasIndex(e => e.Code).IsUnique();
+            entity.HasIndex(e => e.Category);
+            entity.HasIndex(e => e.IsActive);
+            entity.HasIndex(e => e.DisplayOrder);
+        });
+    }
+
+    private static void ConfigureWithholdingFiscalYearParameter(ModelBuilder builder)
+    {
+        builder.Entity<WithholdingFiscalYearParameter>(entity =>
+        {
+            entity.ToTable("WithholdingFiscalYearParameters");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.FiscalYear).IsRequired();
+            entity.Property(e => e.Rs7TtcThresholdTnd).HasPrecision(18, 3).IsRequired();
+            entity.HasIndex(e => e.FiscalYear).IsUnique();
+        });
+    }
+
+    private static void ConfigureTejXmlExportLog(ModelBuilder builder)
+    {
+        builder.Entity<TejXmlExportLog>(entity =>
+        {
+            entity.ToTable("TejXmlExportLogs");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.FileName).HasMaxLength(260).IsRequired();
+            entity.Property(e => e.Sha256Hex).HasMaxLength(64).IsRequired();
+            entity.Property(e => e.ValidationErrorSummary).HasMaxLength(4000);
+            entity.Property(e => e.ExportedByEmail).HasMaxLength(320);
+            entity.HasIndex(e => e.CreatedAt);
+            entity.HasIndex(e => new { e.Year, e.Month });
+        });
+    }
+
+    private static void ConfigureConversation(ModelBuilder builder)
+    {
+        builder.Entity<Conversation>(entity =>
+        {
+            entity.ToTable("Conversations");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Title).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.SelectedModel).HasMaxLength(500);
+            entity.Property(e => e.AgentScope).HasDefaultValue(0);
+            entity.Property(e => e.CreatedBy).HasMaxLength(450);
+            entity.Property(e => e.UpdatedBy).HasMaxLength(450);
+            entity.HasIndex(e => e.UserId);
+            entity.HasIndex(e => e.LastMessageAt);
+
+            entity.HasMany(e => e.Messages)
+                .WithOne()
+                .HasForeignKey(e => e.ConversationId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureConversationMessage(ModelBuilder builder)
+    {
+        builder.Entity<ConversationMessage>(entity =>
+        {
+            entity.ToTable("ConversationMessages");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Content).IsRequired();
+            entity.Property(e => e.Role).HasConversion<int>();
+            entity.Property(e => e.ToolName).HasMaxLength(100);
+            entity.Property(e => e.ToolCallId).HasMaxLength(128);
+            entity.Property(e => e.ToolCallsJson).HasColumnType("nvarchar(max)");
+            entity.Property(e => e.CreatedBy).HasMaxLength(450);
+            entity.Property(e => e.UpdatedBy).HasMaxLength(450);
+            entity.HasIndex(e => new { e.ConversationId, e.SortOrder });
+        });
+    }
+
+    private static void ConfigureTenantAiProvider(ModelBuilder builder)
+    {
+        builder.Entity<TenantAiProvider>(entity =>
+        {
+            entity.ToTable("TenantAiProviders");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.ProviderKey).HasMaxLength(64).IsRequired();
+            entity.Property(e => e.DisplayName).HasMaxLength(200);
+            entity.Property(e => e.BaseUrl).HasMaxLength(500);
+            entity.Property(e => e.EncryptedApiKey).HasMaxLength(4000).IsRequired();
+            entity.Property(e => e.CreatedBy).HasMaxLength(450);
+            entity.Property(e => e.UpdatedBy).HasMaxLength(450);
+            entity.HasIndex(e => e.ProviderKey).IsUnique();
+        });
+    }
+
+    private static void ConfigureAiExportAudit(ModelBuilder builder)
+    {
+        builder.Entity<AiExportAudit>(entity =>
+        {
+            entity.ToTable("AiExportAudits");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Format).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.Template).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.Title).HasMaxLength(200);
+            entity.Property(e => e.StoragePath).HasMaxLength(500);
+            entity.Property(e => e.FailureReason).HasMaxLength(500);
+            entity.Property(e => e.ConversationIdsJson).HasColumnType("nvarchar(max)").IsRequired();
+            entity.Property(e => e.MessageIdsJson).HasColumnType("nvarchar(max)").IsRequired();
+            entity.Property(e => e.CreatedBy).HasMaxLength(450);
+            entity.Property(e => e.UpdatedBy).HasMaxLength(450);
+
+            entity.HasIndex(e => e.UserId);
+            entity.HasIndex(e => e.GeneratedAt);
+            entity.HasIndex(e => new { e.UserId, e.GeneratedAt });
+        });
+    }
+
+    private static void ConfigureChannelIdentityLink(ModelBuilder builder)
+    {
+        builder.Entity<ChannelIdentityLink>(entity =>
+        {
+            entity.ToTable("ChannelIdentityLinks");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.ChannelType).HasConversion<int>();
+            entity.Property(e => e.ExternalUserId).HasMaxLength(128).IsRequired();
+            entity.Property(e => e.ExternalChatId).HasMaxLength(128).IsRequired();
+            entity.Property(e => e.IsActive).IsRequired();
+            entity.HasIndex(e => new { e.ChannelType, e.ExternalUserId }).IsUnique();
+            entity.HasIndex(e => new { e.UserId, e.ChannelType }).IsUnique();
+            entity.HasIndex(e => e.IsActive);
+        });
+    }
+
+    private static void ConfigureChannelLinkCode(ModelBuilder builder)
+    {
+        builder.Entity<ChannelLinkCode>(entity =>
+        {
+            entity.ToTable("ChannelLinkCodes");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.ChannelType).HasConversion<int>();
+            entity.Property(e => e.CodeHash).HasMaxLength(128).IsRequired();
+            entity.Property(e => e.ExpiresAt).IsRequired();
+            entity.Property(e => e.AttemptCount).HasDefaultValue(0);
+            entity.HasIndex(e => new { e.ChannelType, e.CodeHash });
+            entity.HasIndex(e => new { e.UserId, e.ChannelType });
+            entity.HasIndex(e => e.ExpiresAt);
+        });
+    }
+
+    private static void ConfigureChannelInboundMessageLog(ModelBuilder builder)
+    {
+        builder.Entity<ChannelInboundMessageLog>(entity =>
+        {
+            entity.ToTable("ChannelInboundMessageLogs");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.ChannelType).HasConversion<int>();
+            entity.Property(e => e.ExternalMessageId).HasMaxLength(150).IsRequired();
+            entity.Property(e => e.ExternalUserId).HasMaxLength(128).IsRequired();
+            entity.Property(e => e.TraceId).HasMaxLength(120).IsRequired();
+            entity.HasIndex(e => new { e.ChannelType, e.ExternalMessageId }).IsUnique();
+            entity.HasIndex(e => e.UserId);
+        });
+    }
+}

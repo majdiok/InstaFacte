@@ -1,0 +1,7 @@
+---
+pid: 0
+cwd: "c:\Solution\FactuTrust - Copy"
+command: "cd \"c:\\Solution\\FactuTrust - Copy\\src\\Frontend\\factutrust-backoffice\" && npm start 2>&1"
+started_at: 2026-06-11T11:20:01.016Z
+running_for_ms: 0        
+---

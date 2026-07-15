@@ -1,0 +1,163 @@
+import { Routes } from '@angular/router';
+import { authGuard } from './core/guards/auth.guard';
+import { warehouseSelectedGuard } from './core/guards/warehouse-selected.guard';
+import { moduleGuard, posModuleGuard } from './core/guards/module.guard';
+import { firmNativeRedirectGuard } from './core/guards/firm-native-redirect.guard';
+import { delegatedReadonlyGuard } from './core/guards/delegated-readonly.guard';
+import { delegatedFirmNavGuard } from './core/guards/delegated-firm-nav.guard';
+import { companyAccountingNavGuard } from './core/guards/company-accounting-nav.guard';
+
+export const routes: Routes = [
+  {
+    path: '',
+    loadChildren: () => import('./features/home/home.routes').then(m => m.HOME_ROUTES)
+  },
+  {
+    path: 'auth',
+    loadChildren: () => import('./features/auth/auth.routes').then(m => m.AUTH_ROUTES)
+  },
+  {
+    path: 'legal/terms',
+    loadComponent: () => import('./features/legal/terms/terms.component').then(m => m.TermsComponent),
+    title: 'Conditions d\'utilisation - InstaFact'
+  },
+  {
+    path: 'visite-virtuelle',
+    loadChildren: () =>
+      import('./features/virtual-street/virtual-street.routes').then(m => m.VIRTUAL_STREET_ROUTES),
+    title: 'InstaFact — Visite virtuelle 3D'
+  },
+  {
+    path: 'pos',
+    loadComponent: () => import('./features/pos/pos-shell.component').then(m => m.PosShellComponent),
+    loadChildren: () => import('./features/pos/pos.routes').then(m => m.POS_ROUTES),
+    canActivate: [authGuard, warehouseSelectedGuard, posModuleGuard],
+    data: { fullWidth: true, hideLayout: true }
+  },
+  {
+    path: '',
+    loadComponent: () => import('./core/layout/main-layout/main-layout.component').then(m => m.MainLayoutComponent),
+    canActivate: [authGuard, warehouseSelectedGuard, firmNativeRedirectGuard, delegatedFirmNavGuard, companyAccountingNavGuard, delegatedReadonlyGuard, moduleGuard],
+    children: [
+      {
+        path: 'access-denied',
+        loadComponent: () =>
+          import('./shared/components/access-denied/access-denied.component').then(m => m.AccessDeniedComponent),
+        title: 'Accès refusé - InstaFact'
+      },
+      {
+        path: 'dashboard',
+        loadComponent: () => import('./features/dashboard/dashboard.component').then(m => m.DashboardComponent),
+        title: 'Tableau de bord - InstaFact'
+      },
+      {
+        path: 'invoices',
+        loadChildren: () => import('./features/invoices/invoices.routes').then(m => m.INVOICES_ROUTES)
+      },
+      {
+        path: 'quotes',
+        loadChildren: () => import('./features/quotes/quotes.routes').then(m => m.QUOTES_ROUTES)
+      },
+      {
+        path: 'delivery-notes',
+        loadChildren: () => import('./features/delivery-notes/delivery-notes.routes').then(m => m.DELIVERY_NOTES_ROUTES)
+      },
+      {
+        path: 'clients',
+        loadChildren: () => import('./features/clients/clients.routes').then(m => m.CLIENTS_ROUTES)
+      },
+      {
+        path: 'products',
+        loadChildren: () => import('./features/products/products.routes').then(m => m.PRODUCTS_ROUTES)
+      },
+      {
+        path: 'product-categories',
+        loadChildren: () => import('./features/product-categories/product-categories.routes').then(m => m.PRODUCT_CATEGORIES_ROUTES)
+      },
+      {
+        path: 'reports',
+        loadChildren: () => import('./features/reports/reports.routes').then(m => m.REPORTS_ROUTES)
+      },
+      {
+        path: 'payments',
+        loadChildren: () => import('./features/payments/payments.routes').then(m => m.PAYMENTS_ROUTES)
+      },
+      {
+        path: 'stock',
+        loadChildren: () => import('./features/stock/stock.routes').then(m => m.STOCK_ROUTES)
+      },
+      {
+        path: 'inventory',
+        loadChildren: () => import('./features/inventory/inventory.routes').then(m => m.INVENTORY_ROUTES)
+      },
+      {
+        path: 'settings',
+        loadChildren: () => import('./features/settings/settings.routes').then(m => m.SETTINGS_ROUTES)
+      },
+      {
+        path: 'suppliers',
+        loadChildren: () => import('./features/suppliers/suppliers.routes').then(m => m.SUPPLIERS_ROUTES)
+      },
+      {
+        path: 'purchase-orders',
+        loadChildren: () => import('./features/purchase-orders/purchase-orders.routes').then(m => m.PURCHASE_ORDERS_ROUTES)
+      },
+      {
+        path: 'supplier-invoices',
+        loadChildren: () => import('./features/supplier-invoices/supplier-invoices.routes').then(m => m.SUPPLIER_INVOICES_ROUTES)
+      },
+      {
+        path: 'transfers',
+        loadChildren: () => import('./features/transfers/transfers.routes').then(m => m.TRANSFERS_ROUTES)
+      },
+      {
+        path: 'documentation',
+        loadChildren: () => import('./features/documentation/documentation.routes').then(m => m.DOCUMENTATION_ROUTES)
+      },
+      {
+        path: 'withholding-tax',
+        loadChildren: () => import('./features/withholding-tax/withholding-tax.routes').then(m => m.WITHHOLDING_TAX_ROUTES)
+      },
+      {
+        path: 'accounting',
+        loadChildren: () => import('./features/accounting/accounting.routes').then(m => m.ACCOUNTING_ROUTES)
+      },
+      {
+        path: 'crm',
+        loadChildren: () => import('./features/crm/crm.routes').then(m => m.CRM_ROUTES)
+      },
+      {
+        path: 'audit',
+        loadChildren: () => import('./features/audit/audit.routes').then(m => m.AUDIT_ROUTES)
+      },
+      {
+        path: 'ai-assistant',
+        loadChildren: () => import('./features/ai-assistant/ai-assistant.routes').then(m => m.AI_ASSISTANT_ROUTES)
+      },
+      {
+        path: 'crm',
+        loadChildren: () => import('./features/crm/crm.routes').then(m => m.CRM_ROUTES)
+      },
+      {
+        path: 'forecasting',
+        loadChildren: () => import('./features/forecasting/forecasting.routes').then(m => m.FORECASTING_ROUTES)
+      },
+      {
+        path: 'firm',
+        loadChildren: () => import('./features/firm/firm.routes').then(m => m.FIRM_ROUTES)
+      },
+      {
+        path: 'studio',
+        loadChildren: () => import('./features/studio/studio.routes').then(m => m.STUDIO_ROUTES)
+      },
+      {
+        path: 'payroll',
+        loadChildren: () => import('./features/payroll/payroll.routes').then(m => m.PAYROLL_ROUTES)
+      }
+    ]
+  },
+  {
+    path: '**',
+    loadComponent: () => import('./shared/components/not-found/not-found.component').then(m => m.NotFoundComponent)
+  }
+];

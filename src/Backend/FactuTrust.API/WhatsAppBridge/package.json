@@ -1,0 +1,13 @@
+{
+  "name": "factutrust-whatsapp-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pont WhatsApp minimal piloté par l'API FactuTrust (stdin/stdout JSON). Dépendance unique : whatsapp-web.js.",
+  "main": "bridge.js",
+  "scripts": {
+    "start": "node bridge.js"
+  },
+  "dependencies": {
+    "whatsapp-web.js": "^1.31.0"
+  }
+}

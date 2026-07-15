@@ -1,0 +1,109 @@
+.filters-card {
+  background: var(--color-background-elevated);
+  border-radius: var(--radius-xl);
+  padding: var(--spacing-4);
+  margin-bottom: var(--spacing-4);
+  box-shadow: var(--shadow-soft-sm, var(--shadow-sm));
+  border: 1px solid var(--color-border-subtle);
+}
+
+.filters-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-3);
+  padding-bottom: var(--spacing-3);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.filters-title {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.filters-reset {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-3);
+  background: white;
+  border: 1px solid var(--color-primary-300);
+  border-radius: var(--radius-md);
+  color: var(--color-primary-700);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-family: var(--font-family);
+
+  &:hover {
+    background: var(--color-primary-100);
+    border-color: var(--color-primary-400);
+  }
+}
+
+.filters-row {
+  display: flex;
+  gap: var(--spacing-4);
+  flex-wrap: wrap;
+}
+
+.table-card {
+  background: var(--color-background-elevated);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  box-shadow: var(--shadow-soft-sm, var(--shadow-md));
+  border: 1px solid var(--color-border-subtle);
+}
+
+.inventory-reference {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-primary-600);
+}
+
+.actions {
+  display: flex;
+  gap: var(--spacing-1);
+}
+
+.text-center {
+  text-align: center;
+}
+
+.error-banner {
+  background: var(--color-error-50);
+  border: 1px solid var(--color-error-200);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-4);
+  margin-bottom: var(--spacing-4);
+}
+
+.error-content {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-3);
+}
+
+.error-content i {
+  color: var(--color-error-600);
+  font-size: var(--font-size-lg);
+  margin-top: var(--spacing-1);
+}
+
+.error-text {
+  flex: 1;
+
+  strong {
+    display: block;
+    color: var(--color-error-800);
+    font-weight: var(--font-weight-semibold);
+    margin-bottom: var(--spacing-1);
+  }
+
+  p {
+    margin: 0;
+    color: var(--color-error-700);
+    font-size: var(--font-size-sm);
+  }
+}

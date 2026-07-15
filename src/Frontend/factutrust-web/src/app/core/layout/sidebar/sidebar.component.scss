@@ -1,0 +1,479 @@
+:host {
+  display: block;
+  height: 100%;
+}
+
+/* Tokens sur #sidebar pour héritage vers surcharges globales (pluto-menu-theme, spécificité > Pluto). */
+/* Design 2026 — accent indigo vibrant + gradient enrichi + glows. */
+#sidebar {
+  /* Dimensions — source unique (consommée aussi par pluto-menu-theme.scss) */
+  --sidebar-rail-width: 176px;
+  --sidebar-submenu-width: 260px;
+  --sidebar-brand-height: 68px;
+  --sidebar-brand-logo-max-height: 50px;
+  --sidebar-brand-logo-max-width: 160px;
+  --sidebar-brand-logo-icon-size: 44px;
+  --sidebar-rail-icon-size: 24px;
+  --sidebar-rail-icon-raster-size: 26px;
+  --sidebar-rail-icon-assistant-size: 28px;
+  --sidebar-rail-label-size: var(--font-size-sm, 0.875rem);
+  --sidebar-rail-label-weight: 600;
+  --sidebar-rail-item-min-height: 84px;
+  --sidebar-rail-item-min-height-collapsed: 56px;
+  --sidebar-rail-item-padding-y: 10px;
+  --sidebar-rail-item-padding-x: 4px;
+  --sidebar-rail-icon-gap: 6px;
+  --sidebar-beta-font-size: 10px;
+  --sidebar-beta-top: 8px;
+  --sidebar-beta-right: 10px;
+  --sidebar-collapse-btn-height: 48px;
+  --sidebar-submenu-link-size: 15px;
+  --sidebar-submenu-icon-size: 18px;
+  --sidebar-submenu-icon-width: 22px;
+  --sidebar-submenu-title-size: 12px;
+
+  /* Maquette claire : rail blanc, accents primaires, icônes colorées par rubrique. */
+  --sidebar-rail-bg: var(--color-white, #ffffff);
+  --sidebar-rail-bg-gradient: var(--color-white, #ffffff);
+  --sidebar-rail-edge: var(--color-neutral-200, #e2e8f0);
+  --sidebar-rail-item-default: var(--color-neutral-600, #475569);
+  --sidebar-rail-item-hover-bg: var(--color-neutral-100, #f1f5f9);
+  --sidebar-rail-item-active-bg: var(--color-primary-50, #eff6ff);
+  --sidebar-rail-accent: var(--color-primary-600, #2563eb);
+  --sidebar-rail-accent-icon: var(--color-primary-600, #2563eb);
+  --sidebar-rail-expanded-bg: var(--color-neutral-50, #f8fafc);
+  --sidebar-rail-expanded-bar: var(--color-primary-300, #93c5fd);
+  --sidebar-submenu-bg: var(--color-white);
+  --sidebar-submenu-border: var(--color-neutral-200);
+  --sidebar-submenu-title: var(--color-neutral-500, #64748b);
+  --sidebar-submenu-link: var(--color-neutral-600);
+  --sidebar-submenu-link-hover-bg: var(--color-primary-50, #eff6ff);
+  --sidebar-submenu-link-hover-text: var(--color-primary-700, #1d4ed8);
+  --sidebar-submenu-link-active-bg: var(--color-primary-50, #eff6ff);
+  --sidebar-submenu-link-active-text: var(--color-primary-700, #1d4ed8);
+  --sidebar-submenu-link-active-accent: var(--color-primary-600, #2563eb);
+  --sidebar-submenu-link-active-icon: var(--color-primary-600, #2563eb);
+
+  display: flex;
+  height: 100%;
+  transition: width 0.3s ease;
+  overflow: hidden;
+  position: relative;
+}
+
+/* -------------------------------------
+   RAIL COLUMN (Left)
+   ------------------------------------- */
+.sidebar-icon-rail {
+  width: var(--sidebar-rail-width);
+  min-width: var(--sidebar-rail-width);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--sidebar-rail-bg-gradient, var(--sidebar-rail-bg));
+  height: 100%;
+  border-right: 1px solid var(--sidebar-rail-edge);
+  z-index: 10;
+}
+
+.sidebar-brand {
+  height: var(--sidebar-brand-height);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid var(--sidebar-rail-edge);
+  position: relative;
+
+  /* Subtil glow accent en bas de la zone brand pour la séparer visuellement */
+  &::after {
+    content: '';
+    position: absolute;
+    left: 18%;
+    right: 18%;
+    bottom: -1px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--color-neutral-200, #e2e8f0), transparent);
+    pointer-events: none;
+  }
+
+  a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    text-decoration: none;
+  }
+
+  .icon-brand-lockup {
+    max-height: var(--sidebar-brand-logo-max-height);
+    max-width: var(--sidebar-brand-logo-max-width);
+    width: auto;
+    object-fit: contain;
+  }
+
+  .icon-logo-only {
+    width: var(--sidebar-brand-logo-icon-size);
+    height: var(--sidebar-brand-logo-icon-size);
+  }
+}
+
+.rail-nav {
+  list-style: none;
+  padding: 12px 0;
+  margin: 0;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.rail-item {
+  margin-bottom: 8px;
+  padding: 0 8px;
+}
+
+.rail-link {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: var(--sidebar-rail-item-min-height);
+  padding: var(--sidebar-rail-item-padding-y) var(--sidebar-rail-item-padding-x);
+  box-sizing: border-box;
+  background: transparent;
+  border: none;
+  border-radius: 12px;
+  color: var(--sidebar-rail-item-default);
+  text-decoration: none;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    color var(--duration-quick, 180ms) var(--ease-out-soft, cubic-bezier(0.16, 1, 0.3, 1)),
+    background var(--duration-quick, 180ms) var(--ease-out-soft, cubic-bezier(0.16, 1, 0.3, 1)),
+    box-shadow var(--duration-quick, 180ms) var(--ease-out-soft, cubic-bezier(0.16, 1, 0.3, 1)),
+    transform var(--duration-quick, 180ms) var(--ease-out-soft, cubic-bezier(0.16, 1, 0.3, 1));
+
+  i {
+    font-size: var(--sidebar-rail-icon-size);
+    margin-bottom: var(--sidebar-rail-icon-gap);
+    transition:
+      color var(--transition-normal, 0.2s ease),
+      opacity var(--transition-normal, 0.2s ease);
+    color: inherit;
+    opacity: 0.85;
+  }
+
+  .rail-icon-img {
+    width: var(--sidebar-rail-icon-raster-size);
+    height: var(--sidebar-rail-icon-raster-size);
+    margin-bottom: var(--sidebar-rail-icon-gap);
+    object-fit: contain;
+    border-radius: 6px;
+    flex-shrink: 0;
+    transition: opacity var(--transition-normal, 0.2s ease);
+    opacity: 0.85;
+  }
+
+  /**
+   * Mascotte raster : léger agrandissement vs FA 20px pour lisibilité (hi-DPI).
+   */
+  .rail-icon-img.rail-icon-img--assistant {
+    width: var(--sidebar-rail-icon-assistant-size);
+    height: var(--sidebar-rail-icon-assistant-size);
+    border-radius: 8px;
+    image-rendering: auto;
+  }
+
+  .rail-label {
+    font-size: var(--sidebar-rail-label-size);
+    font-weight: var(--sidebar-rail-label-weight);
+    text-align: center;
+    line-height: 1.25;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    width: 100%;
+    max-width: 100%;
+    word-break: break-word;
+    hyphens: auto;
+    color: inherit;
+  }
+
+  &:hover,
+  &:focus-visible {
+    color: var(--color-neutral-800, #1e293b);
+    background: var(--sidebar-rail-item-hover-bg);
+    outline: none;
+    transform: translateX(2px);
+
+    i,
+    .rail-icon-img {
+      opacity: 1;
+    }
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-accent-400, #818cf8);
+    outline-offset: 2px;
+  }
+
+  &.rail-section-open:not(.active) {
+    color: var(--color-neutral-800, #1e293b);
+    background: var(--sidebar-rail-expanded-bg);
+    box-shadow: inset 2px 0 0 var(--sidebar-rail-expanded-bar);
+
+    .rail-icon-img {
+      opacity: 0.95;
+    }
+  }
+
+  /* État actif (maquette claire) : fond primaire léger + barre d'accent 3px.
+     L'icône conserve sa couleur de rubrique (cf. mapping plus bas). */
+  &.active {
+    color: var(--color-primary-700, #1d4ed8);
+    background: var(--sidebar-rail-item-active-bg);
+    box-shadow: inset 3px 0 0 var(--sidebar-rail-accent);
+    transform: translateX(2px);
+
+    i {
+      opacity: 1;
+    }
+
+    .rail-icon-img {
+      opacity: 1;
+    }
+  }
+}
+
+#sidebar.sidebar-collapsed {
+  .rail-label {
+    display: none;
+  }
+  .rail-link {
+    min-height: var(--sidebar-rail-item-min-height-collapsed);
+    padding: 0;
+  }
+  /* Pas de pastille BETA en mode réduit (rail étroit) */
+  .rail-beta-badge {
+    display: none;
+  }
+}
+
+/* Pastille « BETA » sur l'item Assistant IA — accent indigo discret. */
+.rail-beta-badge {
+  position: absolute;
+  top: var(--sidebar-beta-top);
+  right: var(--sidebar-beta-right);
+  padding: 1px 5px;
+  font-size: var(--sidebar-beta-font-size);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.45;
+  color: var(--color-primary-600, #2563eb);
+  background: var(--color-primary-100, #dbeafe);
+  border: 1px solid var(--color-primary-200, #bfdbfe);
+  border-radius: 999px;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+/* Couleurs d'icônes par rubrique — fidèles à factutrust_design.html.
+   Ciblent uniquement le rail (.rail-link i) ; les sous-menus restent neutres.
+   Chaque rubrique de 1er niveau possède une icône FontAwesome unique. */
+.rail-link i {
+  &.fa-gauge-high          { color: #2563eb; } /* Tableau de bord — primary */
+  &.fa-chart-line          { color: #059669; } /* Prévisions IA — emerald */
+  &.fa-cash-register       { color: #ea580c; } /* Point de Vente — orange */
+  &.fa-bag-shopping        { color: #db2777; } /* Ventes — pink */
+  &.fa-cart-shopping       { color: #0891b2; } /* Achats — cyan */
+  &.fa-folder-open         { color: #ca8a04; } /* Fiches — yellow */
+  &.fa-boxes-stacked       { color: #4f46e5; } /* Stock — indigo */
+  &.fa-credit-card         { color: #0d9488; } /* Trésorerie — teal */
+  &.fa-handshake           { color: #c026d3; } /* CRM — fuchsia */
+  &.fa-file-invoice-dollar { color: #d97706; } /* Fiscal/TEJ — amber */
+  &.fa-calculator          { color: #e11d48; } /* Comptabilité — rose */
+  &.fa-gear                { color: #475569; } /* Paramètres — slate */
+  &.fa-book                { color: #0284c7; } /* Documentation — sky */
+}
+
+.sidebar-footer-collapse {
+  padding: 10px;
+  border-top: 1px solid var(--sidebar-rail-edge);
+}
+
+.rail-collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: var(--sidebar-collapse-btn-height);
+  background: var(--color-neutral-50, #f8fafc);
+  border: 1px solid var(--sidebar-rail-edge);
+  border-radius: 10px;
+  color: var(--sidebar-rail-item-default);
+  cursor: pointer;
+  transition:
+    background var(--transition-normal, 0.2s ease),
+    color var(--transition-normal, 0.2s ease),
+    border-color var(--transition-normal, 0.2s ease);
+
+  &:hover,
+  &:focus-visible {
+    background: var(--color-primary-50, #eff6ff);
+    color: var(--color-primary-700, #1d4ed8);
+    border-color: var(--color-primary-200, #bfdbfe);
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-accent-400, #818cf8);
+    outline-offset: 2px;
+  }
+}
+
+.rail-collapse-icon--flipped {
+  transform: rotate(180deg);
+}
+
+/* -------------------------------------
+   SUBMENU PANEL (Right)
+   ------------------------------------- */
+.sidebar-submenu-panel {
+  width: var(--sidebar-submenu-width);
+  min-width: var(--sidebar-submenu-width);
+  background: var(--sidebar-submenu-bg);
+  height: 100%;
+  border-right: 1px solid var(--sidebar-submenu-border);
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  transition:
+    width var(--transition-slow, 0.3s ease),
+    min-width var(--transition-slow, 0.3s ease),
+    padding var(--transition-slow, 0.3s ease);
+  overflow: hidden;
+}
+
+#sidebar.sidebar-collapsed .sidebar-submenu-panel,
+#sidebar:not(:has(.submenu-group)) .sidebar-submenu-panel {
+  width: 0;
+  min-width: 0;
+  border-right: none;
+}
+
+.submenu-scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 0;
+}
+
+.submenu-group {
+  margin-bottom: 24px;
+}
+
+.submenu-title {
+  font-size: var(--sidebar-submenu-title-size);
+  font-weight: 700;
+  color: var(--sidebar-submenu-title);
+  margin: 0 0 16px;
+  padding: 0 20px 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  border-bottom: 1px solid var(--color-neutral-100);
+}
+
+.submenu-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.submenu-list li {
+  margin-bottom: 2px;
+  padding: 0 12px;
+}
+
+.submenu-link {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  color: var(--sidebar-submenu-link);
+  font-size: var(--sidebar-submenu-link-size);
+  font-weight: 500;
+  text-decoration: none;
+  transition:
+    background var(--duration-quick, 180ms) var(--ease-out-soft, cubic-bezier(0.16, 1, 0.3, 1)),
+    color var(--duration-quick, 180ms) var(--ease-out-soft, cubic-bezier(0.16, 1, 0.3, 1)),
+    box-shadow var(--duration-quick, 180ms) var(--ease-out-soft, cubic-bezier(0.16, 1, 0.3, 1)),
+    transform var(--duration-quick, 180ms) var(--ease-out-soft, cubic-bezier(0.16, 1, 0.3, 1));
+  gap: 12px;
+
+  i {
+    font-size: var(--sidebar-submenu-icon-size);
+    opacity: 0.75;
+    width: var(--sidebar-submenu-icon-width);
+    text-align: center;
+    color: var(--color-neutral-500);
+    transition:
+      color var(--transition-normal, 0.2s ease),
+      opacity var(--transition-normal, 0.2s ease);
+  }
+
+  span {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &:hover,
+  &:focus-visible {
+    background: var(--sidebar-submenu-link-hover-bg);
+    color: var(--sidebar-submenu-link-hover-text);
+    outline: none;
+    transform: translateX(2px);
+
+    i {
+      opacity: 1;
+    }
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-primary-600, #2563eb);
+    outline-offset: 2px;
+  }
+
+  &.active {
+    background: var(--sidebar-submenu-link-active-bg);
+    color: var(--sidebar-submenu-link-active-text);
+    font-weight: 600;
+    box-shadow:
+      inset 3px 0 0 var(--sidebar-submenu-link-active-accent),
+      0 1px 2px rgba(99, 102, 241, 0.08);
+
+    i {
+      opacity: 1;
+    }
+  }
+}
+
+/* Couleurs d'icônes de sous-menus : pilotées par pluto-menu-theme.scss
+   (sélecteurs `#sidebar … a.submenu-link i.fa-X`, spécificité ID requise pour
+   primer sur la couleur de base). Volontairement absentes ici — un mapping sans
+   ID serait inerte (écrasé par l'ID Pluto). Voir pluto-menu-theme.scss. */

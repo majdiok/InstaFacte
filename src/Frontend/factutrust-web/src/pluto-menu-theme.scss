@@ -1,0 +1,359 @@
+/*------------------------------------------------------------------
+  Pluto Menu Theme - Overrides pour correspondre au design HR Acme
+-------------------------------------------------------------------*/
+
+// --------------------------------------------
+// SIDEBAR (Dual-Rail resets)
+// --------------------------------------------
+
+/* We override the base Pluto static styles for `#sidebar` to hand control 
+   over to our `sidebar.component.scss` flexbox layout. */
+#sidebar {
+  background-color: transparent !important;
+  background-image: none !important;
+  width: auto !important;
+  min-width: unset !important;
+  max-width: unset !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+// Cacher complètement les anciens wrappers Pluto si jamais ils traînent
+#sidebar .sidebar_blog_1,
+#sidebar .sidebar_blog_2 {
+  display: none !important;
+}
+
+// ---------------------------------------------------------------------------
+// InstaFact dual-rail : spécificité > Pluto (colors.css #sidebar ul li a,
+// style.css padding/display/float sur les liens). Les --sidebar-* sont sur
+// #sidebar dans sidebar.component.scss et héritent jusqu’aux liens.
+// ---------------------------------------------------------------------------
+
+#sidebar ul.rail-nav li a.rail-link,
+#sidebar ul.rail-nav li button.rail-link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: var(--sidebar-rail-item-min-height);
+  box-sizing: border-box;
+  padding: var(--sidebar-rail-item-padding-y) var(--sidebar-rail-item-padding-x);
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  text-align: center;
+  color: var(--sidebar-rail-item-default);
+  background: transparent;
+  border: none;
+  border-radius: 12px;
+  text-decoration: none;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    color var(--transition-normal, 0.2s ease),
+    background var(--transition-normal, 0.2s ease),
+    box-shadow var(--transition-normal, 0.2s ease);
+
+  i {
+    float: none;
+    margin-right: 0;
+    margin-bottom: var(--sidebar-rail-icon-gap);
+    width: auto;
+    font-size: var(--sidebar-rail-icon-size);
+    color: inherit;
+    opacity: 0.85;
+    transition:
+      color var(--transition-normal, 0.2s ease),
+      opacity var(--transition-normal, 0.2s ease);
+  }
+
+  &:hover,
+  &:focus {
+    color: var(--color-neutral-800, #1e293b);
+    background: var(--sidebar-rail-item-hover-bg);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-primary-400);
+    outline-offset: 2px;
+  }
+
+  &.rail-section-open:not(.active) {
+    color: var(--color-neutral-800, #1e293b);
+    background: var(--sidebar-rail-expanded-bg);
+    box-shadow: inset 2px 0 0 var(--sidebar-rail-expanded-bar);
+  }
+
+  &.active {
+    color: var(--color-primary-700, #1d4ed8);
+    background: var(--sidebar-rail-item-active-bg);
+    box-shadow: inset 3px 0 0 var(--sidebar-rail-accent);
+
+    /* L'icône conserve sa couleur de rubrique (mapping ci-dessous). */
+    i {
+      opacity: 1;
+    }
+  }
+}
+
+/* Couleurs d'icônes par rubrique — fidèles à factutrust_design.html.
+   Spécificité ID requise pour primer sur `…a.rail-link i { color: inherit }`.
+   Miroir de sidebar.component.scss (le rail clair de la maquette). */
+#sidebar ul.rail-nav li a.rail-link i,
+#sidebar ul.rail-nav li button.rail-link i {
+  &.fa-gauge-high          { color: #2563eb; } /* Tableau de bord — primary */
+  &.fa-chart-line          { color: #059669; } /* Prévisions IA — emerald */
+  &.fa-cash-register       { color: #ea580c; } /* Point de Vente — orange */
+  &.fa-bag-shopping        { color: #db2777; } /* Ventes — pink */
+  &.fa-cart-shopping       { color: #0891b2; } /* Achats — cyan */
+  &.fa-folder-open         { color: #ca8a04; } /* Fiches — yellow */
+  &.fa-boxes-stacked       { color: #4f46e5; } /* Stock — indigo */
+  &.fa-credit-card         { color: #0d9488; } /* Trésorerie — teal */
+  &.fa-handshake           { color: #c026d3; } /* CRM — fuchsia */
+  &.fa-file-invoice-dollar { color: #d97706; } /* Fiscal/TEJ — amber */
+  &.fa-calculator          { color: #e11d48; } /* Comptabilité — rose */
+  &.fa-gear                { color: #475569; } /* Paramètres — slate */
+  &.fa-book                { color: #0284c7; } /* Documentation — sky */
+}
+
+#sidebar.sidebar-collapsed ul.rail-nav li a.rail-link,
+#sidebar.sidebar-collapsed ul.rail-nav li button.rail-link {
+  min-height: var(--sidebar-rail-item-min-height-collapsed);
+  padding: 0;
+}
+
+#sidebar ul.submenu-list li a.submenu-link {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  margin: 0;
+  border-radius: 8px;
+  font-size: var(--sidebar-submenu-link-size);
+  font-weight: 500;
+  line-height: inherit;
+  text-align: left;
+  color: var(--sidebar-submenu-link);
+  background: transparent;
+  text-decoration: none;
+  gap: 12px;
+  transition:
+    background var(--transition-normal, 0.2s ease),
+    color var(--transition-normal, 0.2s ease),
+    box-shadow var(--transition-normal, 0.2s ease);
+
+  i {
+    float: none;
+    margin-right: 0;
+    width: var(--sidebar-submenu-icon-width);
+    font-size: var(--sidebar-submenu-icon-size);
+    opacity: 0.75;
+    text-align: center;
+    color: var(--color-neutral-500);
+    transition:
+      color var(--transition-normal, 0.2s ease),
+      opacity var(--transition-normal, 0.2s ease);
+  }
+
+  &:hover,
+  &:focus {
+    background: var(--sidebar-submenu-link-hover-bg);
+    color: var(--sidebar-submenu-link-hover-text);
+
+    i {
+      opacity: 1;
+    }
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-primary-500);
+    outline-offset: 2px;
+  }
+
+  &.active {
+    background: var(--sidebar-submenu-link-active-bg);
+    color: var(--sidebar-submenu-link-active-text);
+    font-weight: 600;
+    box-shadow: inset 3px 0 0 var(--sidebar-submenu-link-active-accent);
+
+    /* L'icône conserve sa couleur de rubrique (mapping ci-dessous). */
+    i {
+      opacity: 1;
+    }
+  }
+}
+
+/* Couleurs d'icônes de sous-menus par pictogramme — miroir du mapping rail (105-120).
+   Spécificité ID requise pour primer sur `#sidebar … a.submenu-link i { color: neutral-500 }`. */
+#sidebar ul.submenu-list li a.submenu-link i {
+  &.fa-gauge-high           { color: #2563eb; }
+  &.fa-chart-line           { color: #059669; }
+  &.fa-chart-column         { color: #c026d3; }
+  &.fa-chart-pie            { color: #e11d48; }
+  &.fa-file-lines           { color: #2563eb; }
+  &.fa-file                 { color: #2563eb; }
+  &.fa-file-invoice         { color: #2563eb; }
+  &.fa-file-export          { color: #ea580c; }
+  &.fa-truck                { color: #d97706; }
+  &.fa-truck-ramp-box       { color: #ea580c; }
+  &.fa-circle-exclamation   { color: #e11d48; }
+  &.fa-percent              { color: #0d9488; }
+  &.fa-tags                 { color: #ca8a04; }
+  &.fa-table-cells          { color: #4f46e5; }
+  &.fa-calendar-days        { color: #0891b2; }
+  &.fa-users                { color: #7c3aed; }
+  &.fa-cube                 { color: #4f46e5; }
+  &.fa-building             { color: #0891b2; }
+  &.fa-building-columns     { color: #0d9488; }
+  &.fa-money-bill-wave      { color: #059669; }
+  &.fa-boxes-stacked        { color: #4f46e5; }
+  &.fa-right-left           { color: #0d9488; }
+  &.fa-clipboard-list       { color: #d97706; }
+  &.fa-list-ol              { color: #0891b2; }
+  &.fa-list-check           { color: #7c3aed; }
+  &.fa-credit-card          { color: #0d9488; }
+  &.fa-filter-circle-dollar { color: #059669; }
+  &.fa-sliders              { color: #475569; }
+  &.fa-sitemap              { color: #2563eb; }
+  &.fa-book                 { color: #0284c7; }
+  &.fa-book-open            { color: #0284c7; }
+  &.fa-books                { color: #0284c7; }
+  &.fa-scale-balanced       { color: #4f46e5; }
+  &.fa-clock                { color: #d97706; }
+  &.fa-link                 { color: #0891b2; }
+  &.fa-pen-to-square        { color: #7c3aed; }
+  &.fa-lock                 { color: #475569; }
+  &.fa-shield-halved        { color: #059669; }
+  &.fa-house                { color: #2563eb; }
+  &.fa-right-to-bracket     { color: #059669; }
+  &.fa-bag-shopping         { color: #db2777; }
+  &.fa-cart-shopping        { color: #0891b2; }
+  &.fa-folder-open          { color: #ca8a04; }
+  &.fa-gear                 { color: #475569; }
+}
+
+// --------------------------------------------
+// TOPBAR (Header Modernization)
+// --------------------------------------------
+
+.topbar .navbar {
+  background: var(--color-white) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+  border-bottom: 1px solid var(--color-neutral-200);
+  min-height: 60px;
+  padding: 0 20px !important;
+}
+
+.sidebar_toggle {
+  background: transparent !important;
+  color: var(--color-neutral-600) !important;
+  border: none !important;
+  padding: 8px !important;
+  border-radius: 8px;
+}
+
+.sidebar_toggle:hover,
+.sidebar_toggle:focus {
+  color: var(--color-primary-600) !important;
+  background: var(--color-neutral-100) !important;
+}
+
+// Icônes topbar (notifications, paramètres, etc.)
+.icon_info ul li a {
+  color: var(--color-neutral-500) !important;
+  font-size: 18px;
+}
+
+.icon_info ul li a:hover {
+  color: var(--color-primary-600) !important;
+}
+
+// Badge notifications - rouge/orange vif
+.icon_info ul li .badge {
+  background: var(--color-error-500) !important;
+  color: #fff !important;
+  font-size: 10px;
+  padding: 3px 6px;
+  top: 5px;
+  right: 5px;
+  border-radius: 50%;
+}
+
+// User dropdown dans topbar
+.icon_info ul.user_profile_dd>li {
+  background: transparent !important;
+}
+
+.icon_info ul.user_profile_dd>li span,
+.icon_info ul.user_profile_dd>li .name_user {
+  color: var(--color-neutral-700) !important;
+  font-weight: 500;
+}
+
+// Dropdown menu - style SaaS moderne
+.dropdown-menu {
+  background: var(--color-white) !important;
+  border: 1px solid var(--color-neutral-200) !important;
+  box-shadow: var(--shadow-lg) !important;
+  border-radius: var(--radius-lg);
+  padding: 8px 0;
+}
+
+.dropdown-item {
+  color: var(--color-neutral-700) !important;
+  padding: 8px 16px;
+  font-size: 14px;
+}
+
+.dropdown-item:hover {
+  background: var(--color-neutral-50) !important;
+  color: var(--color-primary-600) !important;
+}
+
+.dropdown-divider {
+  border-color: var(--color-neutral-100) !important;
+}
+
+// --------------------------------------------
+// TOPBAR — app-header (surcharges ciblées)
+// --------------------------------------------
+
+.main-header .right_topbar {
+  float: none;
+  width: auto;
+  display: flex;
+  align-items: center;
+}
+
+.main-header .icon_info {
+  float: none;
+  width: auto;
+}
+
+.main-header .icon_info ul.user_profile_dd li > a.main-header__user-trigger {
+  position: relative;
+}
+
+.main-header .icon_info ul.user_profile_dd li > a.main-header__user-trigger::after {
+  position: static;
+  top: auto;
+  right: auto;
+  display: inline-block;
+  margin-left: 0.2rem;
+  vertical-align: middle;
+  transform: none;
+  content: "";
+  border-top: 0.35em solid var(--color-neutral-500);
+  border-right: 0.35em solid transparent;
+  border-bottom: 0;
+  border-left: 0.35em solid transparent;
+  font-family: inherit;
+  font-size: 0;
+  line-height: 0;
+}
+
+.main-header .icon_info ul.user_profile_dd > li > a.main-header__user-trigger .name_user {
+  padding: 0 !important;
+}

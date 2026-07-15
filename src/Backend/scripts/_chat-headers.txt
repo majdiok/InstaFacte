@@ -1,0 +1,14 @@
+HTTP/1.1 200 OK
+Connection: keep-alive
+Content-Type: text/event-stream
+Date: Thu, 11 Jun 2026 22:45:53 GMT
+Server: Kestrel
+Cache-Control: no-cache
+Transfer-Encoding: chunked
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+X-XSS-Protection: 1; mode=block
+Referrer-Policy: strict-origin-when-cross-origin
+Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;
+X-Trace-Id: 0HNM815VJE649:00000001
+

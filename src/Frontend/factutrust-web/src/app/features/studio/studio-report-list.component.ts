@@ -1,0 +1,94 @@
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { RouterModule } from '@angular/router';
+import { TableModule } from 'primeng/table';
+import { ButtonModule } from 'primeng/button';
+import { TooltipModule } from 'primeng/tooltip';
+import { ToastModule } from 'primeng/toast';
+import { MessageService } from 'primeng/api';
+import { ConfirmationService } from '@core/services/confirmation.service';
+import { StudioService } from './studio.service';
+import { CustomReport, ReportDataSourceKind } from './studio.models';
+import { StudioPageShellComponent } from './shared/studio-page-shell.component';
+import { STUDIO_BREADCRUMBS } from './shared/studio-breadcrumb.util';
+import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
+
+@Component({
+  selector: 'app-studio-report-list',
+  standalone: true,
+  imports: [CommonModule, RouterModule, TableModule, ButtonModule, TooltipModule, ToastModule, StudioPageShellComponent, EmptyStateComponent],
+  template: `
+    <p-toast></p-toast>
+    <app-studio-page-shell
+      title="Rapports"
+      subtitle="Analysez vos tables personnalisées et vos données existantes."
+      [breadcrumbs]="breadcrumbs">
+      <button pButton type="button" label="Nouveau rapport" icon="fa-solid fa-plus" studioActions routerLink="/studio/reports/new"></button>
+
+      <div class="ft-table-card">
+        <p-table [value]="reports()" [loading]="loading()" styleClass="p-datatable-sm">
+          <ng-template pTemplate="header">
+            <tr><th>Nom</th><th>Source</th><th>Type</th><th style="width:9rem"></th></tr>
+          </ng-template>
+          <ng-template pTemplate="body" let-r>
+            <tr>
+              <td><strong>{{ r.displayName }}</strong></td>
+              <td>
+                <i [class]="r.dataSourceKind === ExistingKind ? 'fa-solid fa-database' : 'fa-solid fa-table'" class="studio-mr"></i>
+                {{ r.dataSourceRef }}
+              </td>
+              <td>{{ r.definition.grouping.length > 0 ? 'Agrégé' : 'Détail' }}</td>
+              <td class="studio-actions">
+                <button pButton type="button" icon="fa-solid fa-eye" class="p-button-text p-button-sm" [routerLink]="['/studio/reports', r.id, 'view']" pTooltip="Voir"></button>
+                <button pButton type="button" icon="fa-solid fa-pen" class="p-button-text p-button-sm" [routerLink]="['/studio/reports', r.id]" pTooltip="Modifier"></button>
+                <button pButton type="button" icon="fa-solid fa-trash" class="p-button-text p-button-sm p-button-danger" (click)="remove(r)"></button>
+              </td>
+            </tr>
+          </ng-template>
+          <ng-template pTemplate="emptymessage">
+            <tr><td colspan="4">
+              <app-empty-state icon="pi-chart-bar" title="Aucun rapport" description="Créez votre premier rapport analytique."
+                actionLabel="Nouveau rapport" actionRoute="/studio/reports/new" [showAction]="true" />
+            </td></tr>
+          </ng-template>
+        </p-table>
+      </div>
+    </app-studio-page-shell>
+  `,
+  styleUrl: './shared/studio-layout.scss',
+})
+export class StudioReportListComponent implements OnInit {
+  private readonly studio = inject(StudioService);
+  private readonly toast = inject(MessageService);
+  private readonly confirmation = inject(ConfirmationService);
+
+  readonly ExistingKind = ReportDataSourceKind.ExistingSource;
+  readonly reports = signal<CustomReport[]>([]);
+  readonly loading = signal(false);
+  readonly breadcrumbs = STUDIO_BREADCRUMBS.reports();
+
+  ngOnInit(): void { this.load(); }
+
+  private load(): void {
+    this.loading.set(true);
+    this.studio.listReports().subscribe({
+      next: res => { this.loading.set(false); if (res.success) this.reports.set(res.data ?? []); },
+      error: () => { this.loading.set(false); this.toast.add({ severity: 'error', summary: 'Erreur', detail: 'Chargement impossible.' }); }
+    });
+  }
+
+  remove(r: CustomReport): void {
+    this.confirmation.confirm({
+      message: `Supprimer le rapport « ${r.displayName} » ?`,
+      header: 'Confirmation',
+      acceptLabel: 'Supprimer',
+      rejectLabel: 'Annuler',
+      accept: () => {
+        this.studio.deleteReport(r.id).subscribe({
+          next: res => { if (res.success) this.load(); },
+          error: () => this.toast.add({ severity: 'error', summary: 'Erreur', detail: 'Suppression impossible.' })
+        });
+      }
+    });
+  }
+}

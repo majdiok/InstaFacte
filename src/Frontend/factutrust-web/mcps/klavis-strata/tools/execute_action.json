@@ -1,0 +1,142 @@
+{
+  "name": "execute_action",
+  "description": "Execute a specific action with the provided parameters. Must provide server name, action name, and action parameters. ** Important **: It should only be called after you get the action details from the get_action_details tool.",
+  "inputSchema": {
+    "type": "object",
+    "required": [
+      "server_name",
+      "category_name",
+      "action_name"
+    ],
+    "properties": {
+      "server_name": {
+        "type": "string",
+        "enum": [
+          "notion",
+          "sendgrid",
+          "heygen",
+          "youtube",
+          "tavily",
+          "gitlab",
+          "brave search",
+          "intercom",
+          "klavis reportgen",
+          "amplitude",
+          "hugging face",
+          "clockwise",
+          "close",
+          "affinity",
+          "slack",
+          "doc2markdown",
+          "posthog",
+          "zendesk",
+          "onedrive",
+          "postgres",
+          "cloudflare",
+          "sentry",
+          "cal.com",
+          "docusign",
+          "openrouter",
+          "whatsapp",
+          "google forms",
+          "fathom",
+          "stripe",
+          "gmail",
+          "postman",
+          "instagram",
+          "google docs",
+          "mixpanel",
+          "canva",
+          "vercel",
+          "google drive",
+          "pipedrive",
+          "attio",
+          "confluence",
+          "klaviyo",
+          "salesforce",
+          "mem0",
+          "motion",
+          "pagerduty",
+          "fetch url",
+          "hubspot",
+          "monday",
+          "microsoft teams",
+          "google calendar",
+          "sharesight",
+          "linear",
+          "github",
+          "discord",
+          "moneybird",
+          "square",
+          "airtable",
+          "dialpad",
+          "supabase",
+          "paypal",
+          "resend",
+          "firecrawl web search",
+          "google sheets",
+          "markdown2doc",
+          "elevenlabs",
+          "weights and biases",
+          "servicenow",
+          "jira",
+          "quickbooks",
+          "box",
+          "fireflies",
+          "snowflake",
+          "clickup",
+          "outlook calendar",
+          "shopify",
+          "dropbox",
+          "zoho mail",
+          "coinbase",
+          "netlify",
+          "hacker news",
+          "pocketsmith",
+          "outlook mail",
+          "gong",
+          "honeycomb",
+          "asana",
+          "google cloud",
+          "wordpress",
+          "firecrawl deep research",
+          "linkedin",
+          "figma"
+        ],
+        "description": "The name of the server"
+      },
+      "category_name": {
+        "type": "string",
+        "description": "The name of the category to execute the action for"
+      },
+      "action_name": {
+        "type": "string",
+        "description": "The name of the action/operation to execute"
+      },
+      "path_params": {
+        "type": "string",
+        "description": "JSON string containing path parameters for the action"
+      },
+      "query_params": {
+        "type": "string",
+        "description": "JSON string containing query parameters for the action"
+      },
+      "body_schema": {
+        "type": "string",
+        "description": "JSON string containing request body for actions",
+        "default": "{}"
+      },
+      "include_output_fields": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Optional but strongly recommended when you know the response_schema of this action from previous tool calls: Array of field paths to include in the response. Only these fields will be returned. Use dot notation for nested fields (e.g., \"author.displayName\")."
+      },
+      "maximum_output_characters": {
+        "type": "integer",
+        "description": "Optional: Maximum number of characters to return in the response. If the response exceeds this limit, it will be truncated. Prefer include_output_fields over this."
+      }
+    }
+  }
+}

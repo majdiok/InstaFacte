@@ -1,0 +1,216 @@
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { ActivatedRoute, RouterModule } from '@angular/router';
+import { TableModule } from 'primeng/table';
+import { TagModule } from 'primeng/tag';
+import { ToastModule } from 'primeng/toast';
+import { MessageService } from 'primeng/api';
+import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
+import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { SkeletonTableComponent } from '@shared/components/skeleton/skeleton-table.component';
+import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
+import { StockService, StockMovementDto } from '@core/services/stock.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
+
+@Component({
+  selector: 'app-stock-history',
+  standalone: true,
+  imports: [
+    CommonModule,
+    RouterModule,
+    TableModule,
+    TagModule,
+    ToastModule,
+    PageHeaderComponent,
+    BreadcrumbComponent,
+    ButtonComponent,
+    SkeletonTableComponent,
+    EmptyStateComponent
+  ],
+  template: `
+    <p-toast position="bottom-right"></p-toast>
+    
+    <app-breadcrumb [items]="breadcrumbItems"></app-breadcrumb>
+    
+    <app-page-header 
+      [title]="'Historique des Mouvements'"
+      [subtitle]="productName() ? 'Produit: ' + productName() : 'Chargement...'">
+      <app-button 
+        variant="outline"
+        icon="pi-arrow-left"
+        iconPos="left"
+        routerLink="/stock">
+        Retour au Stock
+      </app-button>
+    </app-page-header>
+
+    <div class="history-card">
+      @if (initialLoad()) {
+      <app-skeleton-table [rows]="5" [columns]="skeletonColumns"></app-skeleton-table>
+      } @else if (movements().length === 0) {
+        <app-empty-state
+          illustration="empty-box.svg"
+          title="Aucun mouvement"
+          description="Aucun mouvement de stock n'a été enregistré pour ce produit."
+          actionLabel="Retour au stock"
+          actionRoute="/stock">
+        </app-empty-state>
+      } @else {
+        <p-table 
+          [loading]="loading()" 
+          [value]="movements()" 
+          [paginator]="true" 
+          [rows]="20"
+          [showCurrentPageReport]="true"
+          currentPageReportTemplate="Affichage {first} à {last} sur {totalRecords} mouvements"
+          [rowHover]="true"
+          styleClass="p-datatable-striped">
+          
+          <ng-template pTemplate="header">
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Type</th>
+              <th scope="col">Motif</th>
+              <th scope="col" class="text-right">Quantité</th>
+              <th scope="col" class="text-right">Coût Unit.</th>
+              <th scope="col" class="text-right">Total</th>
+              <th scope="col" class="text-right">Solde</th>
+              <th scope="col">Référence</th>
+            </tr>
+          </ng-template>
+          
+          <ng-template pTemplate="body" let-movement>
+            <tr>
+              <td>{{ movement.occurredAt | date:'dd/MM/yyyy HH:mm' }}</td>
+              <td>
+                <p-tag 
+                  [value]="movement.type === 'Entry' ? 'Entrée' : 'Sortie'" 
+                  [severity]="movement.type === 'Entry' ? 'success' : 'danger'">
+                </p-tag>
+              </td>
+              <td>{{ movement.reason }}</td>
+              <td class="text-right font-mono">
+                <span [class.text-green-600]="movement.type === 'Entry'" 
+                      [class.text-red-600]="movement.type !== 'Entry'">
+                  {{ movement.type === 'Entry' ? '+' : '-' }}{{ movement.quantity | number:'1.2-2' }}
+                </span>
+              </td>
+              <td class="text-right font-mono">
+                {{ movement.unitCost | currency:'TND':'symbol':'1.3-3' }}
+              </td>
+              <td class="text-right font-mono">
+                {{ movement.totalCost | currency:'TND':'symbol':'1.3-3' }}
+              </td>
+              <td class="text-right font-mono font-semibold">{{ movement.balanceAfter | number:'1.2-2' }}</td>
+              <td class="text-gray-600">{{ movement.reference || movement.notes || '-' }}</td>
+            </tr>
+          </ng-template>
+        </p-table>
+      }
+    </div>
+  `,
+  styles: [`
+    .history-card {
+      background: white;
+      border-radius: var(--radius-xl, 1rem);
+      overflow: hidden;
+      box-shadow: var(--shadow-md, 0 4px 6px rgba(0,0,0,0.1));
+      border: 1px solid var(--color-border-subtle, #e5e7eb);
+    }
+
+    .text-right { text-align: right; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    .font-semibold { font-weight: 600; }
+    .text-green-600 { color: #16a34a; }
+    .text-red-600 { color: #dc2626; }
+    .text-gray-500 { color: #6b7280; }
+    .text-gray-600 { color: #4b5563; }
+
+    :host ::ng-deep {
+      .p-datatable .p-datatable-tbody > tr > td {
+        padding: var(--spacing-3, 0.75rem) var(--spacing-4, 1rem);
+        vertical-align: middle;
+      }
+
+      .p-datatable .p-datatable-thead > tr > th {
+        padding: var(--spacing-3, 0.75rem) var(--spacing-4, 1rem);
+        background: var(--color-background-subtle, #f9fafb);
+        font-weight: 600;
+        color: var(--color-text-secondary, #6b7280);
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.05em;
+      }
+    }
+  `]
+})
+export class StockHistoryComponent implements OnInit {
+  private route = inject(ActivatedRoute);
+  private stockService = inject(StockService);
+  private errorHandler = inject(ErrorHandlerService);
+
+  loading = signal(true);
+  initialLoad = signal(true);
+  movements = signal<StockMovementDto[]>([]);
+  productName = signal<string>('');
+  stockItemId: string | null = null;
+
+  breadcrumbItems: BreadcrumbItem[] = [
+    { label: 'Tableau de bord', route: '/dashboard', icon: 'pi-home' },
+    { label: 'Gestion du Stock', route: '/stock' },
+    { label: 'Historique' }
+  ];
+
+  skeletonColumns = [
+    { header: 'Date', width: '15%' },
+    { header: 'Type', width: '10%' },
+    { header: 'Motif', width: '15%' },
+    { header: 'Quantité', width: '12%' },
+    { header: 'Coût', width: '12%' },
+    { header: 'Avant', width: '10%' },
+    { header: 'Après', width: '10%' },
+    { header: 'Référence', width: '16%' }
+  ];
+
+  ngOnInit() {
+    this.stockItemId = this.route.snapshot.paramMap.get('id');
+    if (this.stockItemId) {
+      this.loadMovements();
+      this.loadStockItemInfo();
+    }
+  }
+
+  loadMovements() {
+    if (!this.stockItemId) return;
+
+    this.stockService.getStockMovements(this.stockItemId).subscribe({
+      next: (response) => {
+        if (response.success && response.data) {
+          this.movements.set(response.data.items);
+        }
+        this.loading.set(false);
+        this.initialLoad.set(false);
+      },
+      error: (err) => {
+        this.errorHandler.logError('Failed to load movements', err);
+        this.loading.set(false);
+        this.initialLoad.set(false);
+      }
+    });
+  }
+
+  loadStockItemInfo() {
+    // Get product name from stock items
+    this.stockService.getStockItems().subscribe({
+      next: (response) => {
+        if (response.success && response.data) {
+          const item = response.data.items.find(i => i.id === this.stockItemId);
+          if (item) {
+            this.productName.set(item.productName);
+          }
+        }
+      }
+    });
+  }
+}

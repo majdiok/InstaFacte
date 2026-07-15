@@ -1,0 +1,320 @@
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { TableModule } from 'primeng/table';
+import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
+import { ToastService } from '@core/services/toast.service';
+import {
+  AccountingService,
+  BudgetPostKind,
+  BudgetYearGridDto,
+  BudgetYearStatus,
+  SaveBudgetLineRequest
+} from '../services/accounting.service';
+
+interface EditableBudgetRow {
+  budgetPostId: string;
+  code: string;
+  label: string;
+  kind: BudgetPostKind;
+  /** Valeurs de la version modifiable (index 0 = janvier). */
+  months: number[];
+  /** Référence figée : budget initial (affichée après validation). */
+  initialMonths: number[];
+}
+
+const MONTH_LABELS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
+
+@Component({
+  selector: 'app-budget-entry',
+  standalone: true,
+  imports: [CommonModule, FormsModule, TableModule, PageHeaderComponent, ButtonComponent, AccountingStatusBannerComponent],
+  template: `
+    <app-page-header title="Saisie des budgets" subtitle="Budgets annuels mensualisés par poste — versions Initial puis Révisé après validation" />
+
+    <app-accounting-status-banner variant="error" [message]="error() ?? ''" />
+
+    <div class="card be-toolbar">
+      <div class="be-year">
+        <button type="button" class="be-year-btn" (click)="changeYear(-1)" [disabled]="busy()" aria-label="Exercice précédent"><i class="pi pi-chevron-left"></i></button>
+        <span class="be-year-value">Exercice {{ fiscalYear() }}</span>
+        <button type="button" class="be-year-btn" (click)="changeYear(1)" [disabled]="busy()" aria-label="Exercice suivant"><i class="pi pi-chevron-right"></i></button>
+      </div>
+
+      @if (grid(); as g) {
+        <span class="be-badge" [class.be-badge-draft]="g.status === 0" [class.be-badge-validated]="g.status === 1">
+          {{ g.status === 1 ? 'Initial validé' : 'Brouillon budgétaire' }}
+        </span>
+        @if (g.status === 1) {
+          <span class="be-validated-info">
+            validé le {{ g.validatedAt | date : 'shortDate' }} par {{ g.validatedBy }} — vous modifiez le <strong>budget révisé</strong>
+          </span>
+        }
+      }
+
+      <div class="be-actions">
+        @if (grid()?.status === 0) {
+          <app-button variant="secondary" icon="pi pi-lock" type="button" (click)="validateInitial()" [disabled]="busy()">
+            Valider le budget initial
+          </app-button>
+        }
+        <app-button variant="primary" icon="pi pi-save" type="button" (click)="save()" [disabled]="busy() || rows().length === 0">
+          {{ saving() ? 'Enregistrement…' : 'Enregistrer' }}
+        </app-button>
+      </div>
+    </div>
+
+    @if (distributeFor(); as row) {
+      <div class="card be-distribute">
+        <span>Répartir un montant annuel sur <strong>{{ row.code }} — {{ row.label }}</strong> (linéaire, reliquat sur décembre) :</span>
+        <input type="number" class="be-inp be-dist-inp" [(ngModel)]="distributeAmount" min="0" step="0.001" placeholder="Montant annuel" />
+        <button type="button" class="btn btn-primary" (click)="applyDistribution()">Répartir</button>
+        <button type="button" class="btn btn-secondary" (click)="distributeFor.set(null)">Annuler</button>
+      </div>
+    }
+
+    <div class="card be-grid">
+      <p-table [value]="rows()" [loading]="loading()" [scrollable]="true" styleClass="p-datatable-sm accounting-datatable be-table" [rowHover]="true">
+        <ng-template pTemplate="header">
+          <tr>
+            <th scope="col" class="be-post-col">Poste</th>
+            @for (m of monthLabels; track $index) { <th scope="col" class="be-amt">{{ m }}</th> }
+            <th scope="col" class="be-amt">Total</th>
+            @if (grid()?.status === 1) { <th scope="col" class="be-amt">Total initial</th> }
+            <th scope="col"></th>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="body" let-row>
+          <tr>
+            <td class="be-post-col">
+              <span class="be-code">{{ row.code }}</span> {{ row.label }}
+              <span class="be-kind" [class.be-kind-rev]="row.kind === 1">{{ row.kind === 0 ? 'C' : 'P' }}</span>
+            </td>
+            @for (m of monthLabels; track m; let i = $index) {
+              <td class="be-amt">
+                <input type="number" class="be-inp be-cell" [(ngModel)]="row.months[i]" min="0" step="0.001"
+                  (ngModelChange)="bumpTotals()" [disabled]="busy()" />
+              </td>
+            }
+            <td class="be-amt be-row-total">{{ rowTotal(row) | number : '1.3-3' }}</td>
+            @if (grid()?.status === 1) { <td class="be-amt be-muted">{{ sum(row.initialMonths) | number : '1.3-3' }}</td> }
+            <td>
+              <button type="button" class="be-icon" (click)="startDistribution(row)" [disabled]="busy()" title="Répartir un montant annuel">
+                <i class="pi pi-calculator"></i>
+              </button>
+            </td>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="footer">
+          @if (rows().length > 0) {
+            <tr class="be-totals-row">
+              <td class="be-post-col">Totaux</td>
+              @for (m of monthLabels; track m; let i = $index) {
+                <td class="be-amt">{{ monthTotals()[i] | number : '1.3-3' }}</td>
+              }
+              <td class="be-amt">{{ grandTotal() | number : '1.3-3' }}</td>
+              @if (grid()?.status === 1) { <td></td> }
+              <td></td>
+            </tr>
+          }
+        </ng-template>
+        <ng-template pTemplate="emptymessage">
+          <tr><td [attr.colspan]="16" class="be-empty">Aucun poste budgétaire actif. Créez d'abord des postes dans « Postes budgétaires ».</td></tr>
+        </ng-template>
+      </p-table>
+    </div>
+  `,
+  styles: `
+    .be-toolbar, .be-grid, .be-distribute { padding: var(--spacing-4); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); margin-bottom: var(--spacing-4); }
+    .be-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-3); }
+    .be-year { display: inline-flex; align-items: center; gap: var(--spacing-2); }
+    .be-year-value { font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); min-width: 9rem; text-align: center; }
+    .be-year-btn { background: var(--color-background-subtle); border: 1px solid var(--color-border-default); border-radius: var(--radius-md); padding: var(--spacing-1) var(--spacing-2); cursor: pointer; color: var(--color-text-primary); }
+    .be-year-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .be-badge { display: inline-block; padding: 0.15rem 0.6rem; border-radius: var(--radius-pill, 999px); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); }
+    .be-badge-draft { background: var(--color-warning-50, #fffbeb); color: var(--color-warning-700, #a16207); border: 1px solid var(--color-warning-200, #fde68a); }
+    .be-badge-validated { background: var(--color-success-100, #dcfce7); color: var(--color-success-700, #15803d); }
+    .be-validated-info { font-size: var(--font-size-sm); color: var(--color-text-secondary); }
+    .be-actions { display: flex; gap: var(--spacing-2); margin-left: auto; }
+    .be-distribute { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-3); border: 1px solid var(--color-primary-200, #bfdbfe); }
+    .be-inp { padding: var(--spacing-1) var(--spacing-2); border: 1px solid var(--color-border-default); border-radius: var(--radius-md); background: var(--color-background-elevated); color: var(--color-text-primary); font-size: var(--font-size-sm); }
+    .be-dist-inp { width: 10rem; }
+    .be-cell { width: 6.2rem; text-align: right; font-variant-numeric: tabular-nums; }
+    .be-post-col { min-width: 16rem; }
+    .be-code { font-family: ui-monospace, monospace; font-weight: var(--font-weight-semibold); margin-right: var(--spacing-1); }
+    .be-kind { display: inline-block; margin-left: var(--spacing-2); padding: 0 0.4rem; border-radius: var(--radius-sm, 4px); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); background: var(--color-warning-50, #fffbeb); color: var(--color-warning-700, #a16207); }
+    .be-kind-rev { background: var(--color-success-100, #dcfce7); color: var(--color-success-700, #15803d); }
+    .be-amt { text-align: right; font-variant-numeric: tabular-nums; }
+    .be-row-total { font-weight: var(--font-weight-semibold); }
+    .be-muted { color: var(--color-text-tertiary); }
+    .be-totals-row td { font-weight: var(--font-weight-semibold); border-top: 2px solid var(--color-border-default); }
+    .be-icon { background: none; border: none; cursor: pointer; color: var(--color-text-secondary); padding: var(--spacing-1); }
+    .be-icon:hover { color: var(--color-text-primary); }
+    .be-icon:disabled { opacity: 0.5; cursor: not-allowed; }
+    .be-empty { text-align: center; padding: var(--spacing-6); color: var(--color-text-tertiary); }
+    .btn { padding: var(--spacing-2) var(--spacing-4); border-radius: var(--radius-md); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); cursor: pointer; border: 1px solid transparent; }
+    .btn-secondary { background: var(--color-background-subtle); color: var(--color-text-primary); border-color: var(--color-border-default); }
+    .btn-primary { background: var(--color-primary-500, #2563eb); color: #fff; }
+  `
+})
+export class BudgetEntryComponent implements OnInit {
+  private readonly api = inject(AccountingService);
+  private readonly toast = inject(ToastService);
+
+  readonly monthLabels = MONTH_LABELS;
+
+  readonly fiscalYear = signal(new Date().getFullYear());
+  readonly grid = signal<BudgetYearGridDto | null>(null);
+  readonly rows = signal<EditableBudgetRow[]>([]);
+  readonly loading = signal(false);
+  readonly saving = signal(false);
+  readonly validating = signal(false);
+  readonly error = signal<string | null>(null);
+
+  readonly distributeFor = signal<EditableBudgetRow | null>(null);
+  distributeAmount: number | null = null;
+
+  /** Les inputs mutent les lignes en place : ce tick force le recalcul des totaux. */
+  private readonly totalsTick = signal(0);
+
+  readonly monthTotals = computed<number[]>(() => {
+    this.totalsTick();
+    const totals = new Array<number>(12).fill(0);
+    for (const row of this.rows())
+      for (let i = 0; i < 12; i++) totals[i] += Number(row.months[i]) || 0;
+    return totals;
+  });
+
+  readonly grandTotal = computed(() => this.monthTotals().reduce((a, b) => a + b, 0));
+
+  ngOnInit(): void {
+    this.load();
+  }
+
+  busy(): boolean {
+    return this.loading() || this.saving() || this.validating();
+  }
+
+  bumpTotals(): void {
+    this.totalsTick.update(t => t + 1);
+  }
+
+  sum(values: number[]): number {
+    return values.reduce((a, b) => a + (Number(b) || 0), 0);
+  }
+
+  rowTotal(row: EditableBudgetRow): number {
+    this.totalsTick();
+    return this.sum(row.months);
+  }
+
+  changeYear(delta: number): void {
+    this.fiscalYear.update(y => y + delta);
+    this.load();
+  }
+
+  load(): void {
+    this.loading.set(true);
+    this.error.set(null);
+    this.distributeFor.set(null);
+    this.api.getBudgetYear(this.fiscalYear()).subscribe({
+      next: res => {
+        this.loading.set(false);
+        if (!res.success || !res.data) {
+          this.grid.set(null);
+          this.rows.set([]);
+          this.error.set(res.error ?? 'Erreur de chargement de la grille budgétaire.');
+          return;
+        }
+        const g = res.data;
+        this.grid.set(g);
+        const editRevised = g.status === BudgetYearStatus.Validated;
+        this.rows.set(g.rows.map(r => ({
+          budgetPostId: r.budgetPostId,
+          code: r.code,
+          label: r.label,
+          kind: r.kind,
+          months: [...(editRevised ? r.revisedMonths : r.initialMonths)],
+          initialMonths: [...r.initialMonths]
+        })));
+        this.bumpTotals();
+      },
+      error: () => {
+        this.loading.set(false);
+        this.error.set('Erreur réseau lors du chargement de la grille budgétaire.');
+      }
+    });
+  }
+
+  startDistribution(row: EditableBudgetRow): void {
+    this.distributeAmount = this.sum(row.months) || null;
+    this.distributeFor.set(row);
+  }
+
+  /** Répartition linéaire : montant/12 arrondi à 3 décimales, reliquat sur décembre. */
+  applyDistribution(): void {
+    const row = this.distributeFor();
+    const amount = Number(this.distributeAmount);
+    if (!row || !isFinite(amount) || amount < 0) return;
+    const monthly = Math.round((amount / 12) * 1000) / 1000;
+    for (let i = 0; i < 11; i++) row.months[i] = monthly;
+    row.months[11] = Math.round((amount - monthly * 11) * 1000) / 1000;
+    this.distributeFor.set(null);
+    this.bumpTotals();
+  }
+
+  save(): void {
+    if (this.busy()) return;
+    const lines: SaveBudgetLineRequest[] = [];
+    for (const row of this.rows())
+      for (let i = 0; i < 12; i++)
+        lines.push({ budgetPostId: row.budgetPostId, month: i + 1, amount: Number(row.months[i]) || 0 });
+    if (lines.length === 0) return;
+
+    this.saving.set(true);
+    this.error.set(null);
+    this.api.saveBudgetYear(this.fiscalYear(), lines).subscribe({
+      next: res => {
+        this.saving.set(false);
+        if (!res.success) {
+          this.error.set(res.error ?? "L'enregistrement du budget a échoué.");
+          return;
+        }
+        this.toast.add({ severity: 'success', summary: 'Budget enregistré', detail: `Exercice ${this.fiscalYear()}`, life: 4000 });
+        this.load();
+      },
+      error: () => {
+        this.saving.set(false);
+        this.error.set("Erreur réseau lors de l'enregistrement du budget.");
+      }
+    });
+  }
+
+  validateInitial(): void {
+    if (this.busy()) return;
+    if (!window.confirm(
+      `Valider le budget initial ${this.fiscalYear()} ?\n\n` +
+      'Le budget initial sera figé (copié vers le budget révisé, seule version modifiable ensuite). Cette action est irréversible.')) {
+      return;
+    }
+    this.validating.set(true);
+    this.error.set(null);
+    this.api.validateInitialBudget(this.fiscalYear()).subscribe({
+      next: res => {
+        this.validating.set(false);
+        if (!res.success) {
+          this.error.set(res.error ?? 'La validation du budget initial a échoué.');
+          return;
+        }
+        this.toast.add({ severity: 'success', summary: 'Budget initial validé', detail: `Exercice ${this.fiscalYear()}`, life: 4000 });
+        this.load();
+      },
+      error: () => {
+        this.validating.set(false);
+        this.error.set('Erreur réseau lors de la validation du budget initial.');
+      }
+    });
+  }
+}

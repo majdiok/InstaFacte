@@ -1,0 +1,1028 @@
+﻿=== ICustomSystemRepository.cs ===
+using FactuTrust.Domain.Entities.Studio;
+
+namespace FactuTrust.Application.Common.Interfaces.Repositories;
+
+public interface ICustomSystemRepository
+{
+    Task<CustomSystemDefinition?> GetByIdAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default);
+    Task<CustomSystemDefinition?> GetByKeyAsync(Guid tenantId, string key, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<CustomSystemDefinition>> ListAsync(Guid tenantId, bool includeInactive, CancellationToken cancellationToken = default);
+    Task<bool> KeyExistsAsync(Guid tenantId, string key, CancellationToken cancellationToken = default);
+    Task AddAsync(CustomSystemDefinition system, CancellationToken cancellationToken = default);
+    Task UpdateAsync(CustomSystemDefinition system, CancellationToken cancellationToken = default);
+}
+
+
+=== CustomSystemRepository.cs ===
+using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Domain.Entities.Studio;
+using FactuTrust.Infrastructure.MultiTenancy;
+using Microsoft.EntityFrameworkCore;
+
+namespace FactuTrust.Infrastructure.Repositories.Studio;
+
+public sealed class CustomSystemRepository : ICustomSystemRepository
+{
+    private readonly ITenantDbContextFactory _contextFactory;
+
+    public CustomSystemRepository(ITenantDbContextFactory contextFactory) => _contextFactory = contextFactory;
+
+    public async Task<CustomSystemDefinition?> GetByIdAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.CustomSystemDefinitions
+            .FirstOrDefaultAsync(s => s.TenantId == tenantId && s.Id == id, cancellationToken);
+    }
+
+    public async Task<CustomSystemDefinition?> GetByKeyAsync(Guid tenantId, string key, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.CustomSystemDefinitions
+            .FirstOrDefaultAsync(s => s.TenantId == tenantId && s.Key == key, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<CustomSystemDefinition>> ListAsync(Guid tenantId, bool includeInactive, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        var query = context.CustomSystemDefinitions.Where(s => s.TenantId == tenantId);
+        if (!includeInactive)
+            query = query.Where(s => s.IsActive);
+        return await query.OrderBy(s => s.DisplayName).ToListAsync(cancellationToken);
+    }
+
+    public async Task<bool> KeyExistsAsync(Guid tenantId, string key, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.CustomSystemDefinitions.AnyAsync(s => s.TenantId == tenantId && s.Key == key, cancellationToken);
+    }
+
+    public async Task AddAsync(CustomSystemDefinition system, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        context.CustomSystemDefinitions.Add(system);
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task UpdateAsync(CustomSystemDefinition system, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        context.CustomSystemDefinitions.Update(system);
+        await context.SaveChangesAsync(cancellationToken);
+    }
+}
+
+
+=== CustomSystemFeatures.cs ===
+using System.Text.Json;
+using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Features.Studio.Common;
+using FactuTrust.Domain.Common;
+using FactuTrust.Domain.Entities.Studio;
+using MediatR;
+
+namespace FactuTrust.Application.Features.Studio.Systems;
+
+public sealed record ListCustomSystemsQuery(bool IncludeInactive = false)
+    : IRequest<Result<IReadOnlyList<CustomSystemDto>>>;
+
+public sealed class ListCustomSystemsQueryHandler
+    : IRequestHandler<ListCustomSystemsQuery, Result<IReadOnlyList<CustomSystemDto>>>
+{
+    private readonly ICustomSystemRepository _systems;
+    private readonly ICustomEntityRepository _entities;
+    private readonly ICurrentUser _currentUser;
+
+    public ListCustomSystemsQueryHandler(
+        ICustomSystemRepository systems, ICustomEntityRepository entities, ICurrentUser currentUser)
+    {
+        _systems = systems;
+        _entities = entities;
+        _currentUser = currentUser;
+    }
+
+    public async Task<Result<IReadOnlyList<CustomSystemDto>>> Handle(ListCustomSystemsQuery request, CancellationToken cancellationToken)
+    {
+        if (!StudioContext.TryGet(_currentUser, out var tenantId, out _, out var err))
+            return Result.Failure<IReadOnlyList<CustomSystemDto>>(err);
+
+        var list = await _systems.ListAsync(tenantId, request.IncludeInactive, cancellationToken);
+        var allEntities = await _entities.ListAsync(tenantId, includeInactive: false, cancellationToken);
+        var dtos = list.Select(s =>
+        {
+            var count = allEntities.Count(e => e.SystemId == s.Id);
+            return StudioMappers.ToSystemDto(s, count, ParseOnboarding(s.OnboardingJson));
+        }).ToList();
+        return Result.Success<IReadOnlyList<CustomSystemDto>>(dtos);
+    }
+
+    internal static IReadOnlyList<string>? ParseOnboarding(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            var steps = JsonSerializer.Deserialize<List<string>>(json);
+            return steps?.Count > 0 ? steps : null;
+        }
+        catch (JsonException) { return null; }
+    }
+
+    internal static string? SerializeOnboarding(IReadOnlyList<string>? steps) =>
+        steps is null || steps.Count == 0 ? null : JsonSerializer.Serialize(steps);
+}
+
+public sealed record GetCustomSystemByKeyQuery(string Key) : IRequest<Result<CustomSystemDetailDto>>;
+
+public sealed class GetCustomSystemByKeyQueryHandler
+    : IRequestHandler<GetCustomSystemByKeyQuery, Result<CustomSystemDetailDto>>
+{
+    private readonly ICustomSystemRepository _systems;
+    private readonly ICustomEntityRepository _entities;
+    private readonly ICustomFieldRepository _fields;
+    private readonly ICurrentUser _currentUser;
+
+    public GetCustomSystemByKeyQueryHandler(
+        ICustomSystemRepository systems, ICustomEntityRepository entities, ICustomFieldRepository fields, ICurrentUser currentUser)
+    {
+        _systems = systems;
+        _entities = entities;
+        _fields = fields;
+        _currentUser = currentUser;
+    }
+
+    public async Task<Result<CustomSystemDetailDto>> Handle(GetCustomSystemByKeyQuery request, CancellationToken cancellationToken)
+    {
+        if (!StudioContext.TryGet(_currentUser, out var tenantId, out _, out var err))
+            return Result.Failure<CustomSystemDetailDto>(err);
+
+        var system = await _systems.GetByKeyAsync(tenantId, request.Key.Trim().ToLowerInvariant(), cancellationToken);
+        if (system is null)
+            return Result.Failure<CustomSystemDetailDto>(Error.NotFound("CustomSystem", request.Key));
+
+        var entityList = await _entities.ListBySystemIdAsync(tenantId, system.Id, cancellationToken);
+        var entityDtos = new List<CustomEntityDto>(entityList.Count);
+        foreach (var e in entityList)
+        {
+            var fc = await _fields.CountByEntityAsync(tenantId, e.Id, cancellationToken);
+            entityDtos.Add(StudioMappers.ToDto(e, fc));
+        }
+
+        var sysDto = StudioMappers.ToSystemDto(system, entityDtos.Count, ListCustomSystemsQueryHandler.ParseOnboarding(system.OnboardingJson));
+        return Result.Success(new CustomSystemDetailDto(sysDto, entityDtos));
+    }
+}
+
+public sealed record CreateCustomSystemCommand(CreateCustomSystemRequest Request) : IRequest<Result<CustomSystemDto>>;
+
+public sealed class CreateCustomSystemCommandHandler
+    : IRequestHandler<CreateCustomSystemCommand, Result<CustomSystemDto>>
+{
+    private readonly ICustomSystemRepository _systems;
+    private readonly IAuditService _audit;
+    private readonly ICurrentUser _currentUser;
+
+    public CreateCustomSystemCommandHandler(ICustomSystemRepository systems, IAuditService audit, ICurrentUser currentUser)
+    {
+        _systems = systems;
+        _audit = audit;
+        _currentUser = currentUser;
+    }
+
+    public async Task<Result<CustomSystemDto>> Handle(CreateCustomSystemCommand command, CancellationToken cancellationToken)
+    {
+        if (!StudioContext.TryGet(_currentUser, out var tenantId, out var userId, out var err))
+            return Result.Failure<CustomSystemDto>(err);
+
+        var req = command.Request;
+        var key = req.Key?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (!StudioKey.IsValidShape(key))
+            return Result.Failure<CustomSystemDto>(Error.Validation("key", "ClΘ systΦme invalide."));
+        if (string.IsNullOrWhiteSpace(req.DisplayName))
+            return Result.Failure<CustomSystemDto>(Error.Validation("displayName", "Le nom est obligatoire."));
+        if (await _systems.KeyExistsAsync(tenantId, key, cancellationToken))
+            return Result.Failure<CustomSystemDto>(Error.Conflict($"Un systΦme avec la clΘ ½ {key} ╗ existe dΘjα."));
+
+        var onboardingJson = ListCustomSystemsQueryHandler.SerializeOnboarding(req.OnboardingSteps);
+        var system = CustomSystemDefinition.Create(tenantId, key, req.DisplayName.Trim(),
+            req.Icon?.Trim(), req.Description?.Trim(), onboardingJson, userId);
+
+        await _systems.AddAsync(system, cancellationToken);
+        await StudioAudit.SafeLogAsync(_audit, "Studio.System.Created", "CustomSystem", system.Id,
+            null, new { system.Key, system.DisplayName }, cancellationToken);
+
+        return Result.Success(StudioMappers.ToSystemDto(system, 0, req.OnboardingSteps));
+    }
+}
+
+public sealed record AssignEntityToSystemCommand(Guid EntityId, Guid? SystemId) : IRequest<Result<CustomEntityDto>>;
+
+public sealed class AssignEntityToSystemCommandHandler
+    : IRequestHandler<AssignEntityToSystemCommand, Result<CustomEntityDto>>
+{
+    private readonly ICustomEntityRepository _entities;
+    private readonly ICustomSystemRepository _systems;
+    private readonly ICustomFieldRepository _fields;
+    private readonly ICurrentUser _currentUser;
+
+    public AssignEntityToSystemCommandHandler(
+        ICustomEntityRepository entities, ICustomSystemRepository systems, ICustomFieldRepository fields, ICurrentUser currentUser)
+    {
+        _entities = entities;
+        _systems = systems;
+        _fields = fields;
+        _currentUser = currentUser;
+    }
+
+    public async Task<Result<CustomEntityDto>> Handle(AssignEntityToSystemCommand command, CancellationToken cancellationToken)
+    {
+        if (!StudioContext.TryGet(_currentUser, out var tenantId, out var userId, out var err))
+            return Result.Failure<CustomEntityDto>(err);
+
+        var entity = await _entities.GetByIdAsync(tenantId, command.EntityId, cancellationToken);
+        if (entity is null)
+            return Result.Failure<CustomEntityDto>(Error.NotFound("CustomEntity", command.EntityId));
+
+        if (command.SystemId is Guid sid)
+        {
+            var system = await _systems.GetByIdAsync(tenantId, sid, cancellationToken);
+            if (system is null)
+                return Result.Failure<CustomEntityDto>(Error.NotFound("CustomSystem", sid));
+        }
+
+        entity.AssignToSystem(command.SystemId, userId);
+        await _entities.UpdateAsync(entity, cancellationToken);
+        var count = await _fields.CountByEntityAsync(tenantId, entity.Id, cancellationToken);
+        return Result.Success(StudioMappers.ToDto(entity, count));
+    }
+}
+
+public sealed record GetStudioNavQuery() : IRequest<Result<IReadOnlyList<StudioNavNodeDto>>>;
+
+public sealed class GetStudioNavQueryHandler
+    : IRequestHandler<GetStudioNavQuery, Result<IReadOnlyList<StudioNavNodeDto>>>
+{
+    private readonly ICustomSystemRepository _systems;
+    private readonly ICustomEntityRepository _entities;
+    private readonly ICurrentUser _currentUser;
+
+    public GetStudioNavQueryHandler(
+        ICustomSystemRepository systems, ICustomEntityRepository entities, ICurrentUser currentUser)
+    {
+        _systems = systems;
+        _entities = entities;
+        _currentUser = currentUser;
+    }
+
+    public async Task<Result<IReadOnlyList<StudioNavNodeDto>>> Handle(GetStudioNavQuery request, CancellationToken cancellationToken)
+    {
+        if (!StudioContext.TryGet(_currentUser, out var tenantId, out _, out var err))
+            return Result.Failure<IReadOnlyList<StudioNavNodeDto>>(err);
+
+        var systems = await _systems.ListAsync(tenantId, includeInactive: false, cancellationToken);
+        var entities = await _entities.ListAsync(tenantId, includeInactive: false, cancellationToken);
+        var nodes = new List<StudioNavNodeDto>();
+
+        foreach (var s in systems)
+        {
+            var children = entities
+                .Where(e => e.SystemId == s.Id)
+                .Select(e => new StudioNavNodeDto(
+                    "entity", e.Key, e.DisplayNamePlural, e.Icon, $"/studio/d/{e.Key}", null))
+                .ToList();
+            if (children.Count == 0) continue;
+            nodes.Add(new StudioNavNodeDto(
+                "system", s.Key, s.DisplayName, s.Icon, $"/studio/systems/{s.Key}", children));
+        }
+
+        foreach (var e in entities.Where(e => e.SystemId is null))
+        {
+            nodes.Add(new StudioNavNodeDto(
+                "entity", e.Key, e.DisplayNamePlural, e.Icon, $"/studio/d/{e.Key}", null));
+        }
+
+        return Result.Success<IReadOnlyList<StudioNavNodeDto>>(nodes);
+    }
+}
+
+
+=== StudioSystemsController.cs ===
+using FactuTrust.API.Authorization;
+using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.Studio.Common;
+using FactuTrust.Application.Features.Studio.Systems;
+using MediatR;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+
+namespace FactuTrust.API.Controllers.Studio;
+
+[ApiController]
+[Route("api/studio/systems")]
+[Authorize(Policy = PermissionPolicies.StudioDesignEntities)]
+public sealed class StudioSystemsController : ControllerBase
+{
+    private readonly IMediator _mediator;
+
+    public StudioSystemsController(IMediator mediator) => _mediator = mediator;
+
+    [HttpGet]
+    public async Task<IActionResult> List([FromQuery] bool includeInactive, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new ListCustomSystemsQuery(includeInactive), cancellationToken);
+        return result.IsFailure
+            ? BadRequest(ApiResponse<object>.Fail(result.Error.Description, result.Error.Code))
+            : Ok(ApiResponse<IReadOnlyList<CustomSystemDto>>.Ok(result.Value));
+    }
+
+    [HttpGet("{key}")]
+    [Authorize(Policy = PermissionPolicies.CustomRecordsRead)]
+    public async Task<IActionResult> GetByKey(string key, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetCustomSystemByKeyQuery(key), cancellationToken);
+        return result.IsFailure
+            ? NotFound(ApiResponse<object>.Fail(result.Error.Description, result.Error.Code))
+            : Ok(ApiResponse<CustomSystemDetailDto>.Ok(result.Value));
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> Create([FromBody] CreateCustomSystemRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new CreateCustomSystemCommand(request), cancellationToken);
+        return result.IsFailure
+            ? BadRequest(ApiResponse<object>.Fail(result.Error.Description, result.Error.Code))
+            : Ok(ApiResponse<CustomSystemDto>.Ok(result.Value));
+    }
+}
+
+
+=== StudioAiSystemSpec.cs ===
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using FactuTrust.Application.Features.Studio.Ai;
+using FactuTrust.Application.Features.Studio.Common;
+using FactuTrust.Domain.Enums;
+
+namespace FactuTrust.Application.Features.Studio.Ai;
+
+public sealed record ParsedSystemEntity(
+    string Ref,
+    string EntityDisplayName,
+    string EntityDisplayNamePlural,
+    string? Icon,
+    string? Description,
+    IReadOnlyList<ParsedSystemField> Fields,
+    ParsedFormSpec? Form,
+    ParsedAppReport? Report);
+
+public sealed record ParsedSystemField(
+    string Key,
+    string Label,
+    CustomFieldType FieldType,
+    bool Required,
+    bool Unique,
+    IReadOnlyList<SelectOptionDto>? Options,
+    Dictionary<string, JsonNode?>? Config,
+    string? RelationToRef);
+
+public sealed record ParsedFormSpec(
+    IReadOnlyList<ParsedFormSection> Sections);
+
+public sealed record ParsedFormSection(
+    string? Title,
+    IReadOnlyList<string> FieldKeys);
+
+public sealed record ParsedSeedBatch(
+    string EntityRef,
+    IReadOnlyList<Dictionary<string, JsonNode?>> Records);
+
+public sealed record ParsedSystemSpec(
+    string SystemDisplayName,
+    string? SystemIcon,
+    string? SystemDescription,
+    IReadOnlyList<string>? OnboardingSteps,
+    IReadOnlyList<ParsedSystemEntity> Entities,
+    IReadOnlyList<ParsedSeedBatch> Seed);
+
+/// <summary>
+/// Parses multi-table system specs for <c>studio_generate_system</c>.
+/// </summary>
+public static class StudioAiSystemSpec
+{
+    public const int MaxEntities = 8;
+    public const int MaxSeedRecords = 200;
+
+    private static readonly HashSet<string> RelationTypeAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "relation", "link", "lookup", "reference", "relationcustom", "foreign"
+    };
+
+    public static bool TryParse(string? specJson, out ParsedSystemSpec? spec, out string? error)
+    {
+        spec = null;
+        error = null;
+        if (string.IsNullOrWhiteSpace(specJson)) { error = "spec_json est vide."; return false; }
+
+        JsonNode? root;
+        try { root = JsonNode.Parse(specJson); }
+        catch (JsonException) { error = "spec_json n'est pas un JSON valide."; return false; }
+
+        var systemNode = root?["system"];
+        var displayName = Str(systemNode?["displayName"]) ?? Str(root?["displayName"]) ?? Str(root?["name"]);
+        if (string.IsNullOrWhiteSpace(displayName)) { error = "system.displayName est obligatoire."; return false; }
+
+        var systemIcon = Str(systemNode?["icon"]);
+        var systemDescription = Str(systemNode?["description"]);
+        var onboarding = ParseOnboarding(systemNode?["onboarding"] ?? root?["onboarding"]);
+
+        var entitiesArr = root?["entities"]?.AsArray();
+        if (entitiesArr is null || entitiesArr.Count == 0) { error = "Au moins une entitΘ est requise."; return false; }
+        if (entitiesArr.Count > MaxEntities) { error = $"Maximum {MaxEntities} entitΘs par systΦme."; return false; }
+
+        var entities = new List<ParsedSystemEntity>();
+        var refs = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var en in entitiesArr)
+        {
+            if (entities.Count >= MaxEntities) break;
+            var entity = ParseEntity(en, refs, out var entityError);
+            if (entity is null) { error = entityError; return false; }
+            entities.Add(entity);
+        }
+
+        var seed = ParseSeed(root?["seed"], refs, out var seedError);
+        if (seedError is not null) { error = seedError; return false; }
+
+        foreach (var entity in entities)
+        {
+            foreach (var f in entity.Fields.Where(f => f.FieldType == CustomFieldType.RelationCustom))
+            {
+                if (f.RelationToRef is null || !refs.Contains(f.RelationToRef))
+                {
+                    error = $"Relation ½ {f.Label} ╗ : cible ½ {f.RelationToRef} ╗ introuvable.";
+                    return false;
+                }
+            }
+        }
+
+        spec = new ParsedSystemSpec(displayName!.Trim(), systemIcon, systemDescription, onboarding, entities, seed);
+        return true;
+    }
+
+    private static ParsedSystemEntity? ParseEntity(JsonNode? en, HashSet<string> refs, out string? error)
+    {
+        error = null;
+        var refKey = Str(en?["ref"]) ?? Str(en?["key"]);
+        var displayName = Str(en?["displayName"]) ?? Str(en?["name"]);
+        if (string.IsNullOrWhiteSpace(displayName)) { error = "Chaque entitΘ doit avoir displayName."; return null; }
+
+        refKey = string.IsNullOrWhiteSpace(refKey)
+            ? StudioAiAppSpec.SlugKey(displayName!)
+            : StudioAiAppSpec.SlugKey(refKey);
+        if (string.IsNullOrEmpty(refKey) || !StudioKey.IsValidShape(refKey))
+            refKey = "table";
+        var baseRef = refKey;
+        var i = 1;
+        while (refs.Contains(refKey)) refKey = $"{baseRef}_{++i}";
+        refs.Add(refKey);
+
+        var plural = Str(en?["displayNamePlural"]) ?? displayName!.Trim();
+        var icon = Str(en?["icon"]);
+        var description = Str(en?["description"]);
+
+        var fieldsArr = en?["fields"]?.AsArray();
+        if (fieldsArr is null || fieldsArr.Count == 0) { error = $"EntitΘ ½ {displayName} ╗ : au moins un champ requis."; return null; }
+
+        var fields = new List<ParsedSystemField>();
+        var usedKeys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var fn in fieldsArr)
+        {
+            if (fields.Count >= StudioAiAppSpec.MaxFields) break;
+            var label = Str(fn?["label"]) ?? Str(fn?["name"]);
+            if (string.IsNullOrWhiteSpace(label)) continue;
+
+            var rawType = Str(fn?["type"]) ?? "text";
+            var relationTo = Str(fn?["relationTo"]) ?? Str(fn?["relationToRef"]) ?? Str(fn?["targetRef"]);
+            CustomFieldType fieldType;
+            if (RelationTypeAliases.Contains(rawType) || !string.IsNullOrWhiteSpace(relationTo))
+                fieldType = CustomFieldType.RelationCustom;
+            else
+                fieldType = StudioAiAppSpec.MapType(rawType);
+
+            var key = UniqueFieldKey(label!, usedKeys);
+            var required = Bool(fn?["required"]) ?? Bool(fn?["isRequired"]) ?? false;
+            var unique = Bool(fn?["unique"]) ?? Bool(fn?["isUnique"]) ?? false;
+
+            IReadOnlyList<SelectOptionDto>? options = null;
+            Dictionary<string, JsonNode?>? config = null;
+            if (fieldType is CustomFieldType.Select or CustomFieldType.MultiSelect)
+            {
+                options = ParseOptions(fn?["options"]);
+                if (options is null || options.Count == 0)
+                    fieldType = CustomFieldType.Text;
+            }
+            else if (fieldType != CustomFieldType.RelationCustom)
+            {
+                config = ParseFieldConfig(fn, fieldType);
+            }
+
+            if (fieldType == CustomFieldType.RelationCustom && string.IsNullOrWhiteSpace(relationTo))
+            {
+                error = $"Champ ½ {label} ╗ : relationTo est requis pour un champ relation.";
+                return null;
+            }
+
+            fields.Add(new ParsedSystemField(key, label!, fieldType, required, unique, options, config,
+                fieldType == CustomFieldType.RelationCustom ? StudioAiAppSpec.SlugKey(relationTo!) : null));
+        }
+
+        if (fields.Count == 0) { error = $"EntitΘ ½ {displayName} ╗ : aucun champ valide."; return null; }
+
+        var form = ParseForm(en?["form"], fields);
+        var report = ParseEntityReport(en?["report"], fields);
+        return new ParsedSystemEntity(refKey, displayName!.Trim(), plural.Trim(), icon, description, fields, form, report);
+    }
+
+    private static ParsedAppReport? ParseEntityReport(JsonNode? node, IReadOnlyList<ParsedSystemField> fields)
+    {
+        if (node is not JsonObject) return null;
+        var wrapper = new JsonObject
+        {
+            ["entity"] = new JsonObject { ["displayName"] = "T" },
+            ["fields"] = new JsonArray(fields.Select(f => new JsonObject { ["label"] = f.Label, ["type"] = "text" }).ToArray()),
+            ["report"] = node.DeepClone()
+        };
+        return StudioAiAppSpec.TryParse(wrapper.ToJsonString(), out var appSpec, out _) ? appSpec?.Report : null;
+    }
+
+    private static ParsedFormSpec? ParseForm(JsonNode? node, IReadOnlyList<ParsedSystemField> fields)
+    {
+        if (node is not JsonObject) return null;
+        var byKey = fields.ToDictionary(f => f.Key, StringComparer.Ordinal);
+        var sections = new List<ParsedFormSection>();
+        foreach (var sec in node["sections"]?.AsArray() ?? new JsonArray())
+        {
+            var keys = new List<string>();
+            foreach (var fk in sec?["fields"]?.AsArray() ?? new JsonArray())
+            {
+                var raw = Str(fk);
+                if (string.IsNullOrWhiteSpace(raw)) continue;
+                var resolved = ResolveFieldKey(raw, fields);
+                if (resolved is not null && byKey.ContainsKey(resolved))
+                    keys.Add(resolved);
+            }
+            if (keys.Count > 0)
+                sections.Add(new ParsedFormSection(Str(sec?["title"]), keys));
+        }
+        return sections.Count > 0 ? new ParsedFormSpec(sections) : null;
+    }
+
+    private static IReadOnlyList<ParsedSeedBatch> ParseSeed(JsonNode? node, HashSet<string> refs, out string? error)
+    {
+        error = null;
+        var result = new List<ParsedSeedBatch>();
+        if (node is not JsonArray arr) return result;
+
+        var total = 0;
+        foreach (var batch in arr)
+        {
+            var entityRef = Str(batch?["entityRef"]) ?? Str(batch?["entity"]);
+            if (string.IsNullOrWhiteSpace(entityRef)) { error = "seed.entityRef est obligatoire."; return result; }
+            entityRef = StudioAiAppSpec.SlugKey(entityRef);
+            if (!refs.Contains(entityRef)) { error = $"seed : entitΘ ½ {entityRef} ╗ inconnue."; return result; }
+
+            var recordsArr = batch?["records"]?.AsArray();
+            if (recordsArr is null || recordsArr.Count == 0) continue;
+
+            var records = new List<Dictionary<string, JsonNode?>>();
+            foreach (var rec in recordsArr)
+            {
+                if (total >= MaxSeedRecords) break;
+                if (rec is not JsonObject obj) continue;
+                var dict = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
+                foreach (var prop in obj)
+                    dict[prop.Key] = prop.Value?.DeepClone();
+                records.Add(dict);
+                total++;
+            }
+            if (records.Count > 0)
+                result.Add(new ParsedSeedBatch(entityRef, records));
+        }
+        return result;
+    }
+
+    private static IReadOnlyList<string>? ParseOnboarding(JsonNode? node)
+    {
+        if (node is not JsonArray arr) return null;
+        var steps = arr.Select(Str).Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s!.Trim()).ToList();
+        return steps.Count > 0 ? steps : null;
+    }
+
+    private static string? ResolveFieldKey(string raw, IReadOnlyList<ParsedSystemField> fields)
+    {
+        if (fields.Any(f => f.Key == raw)) return raw;
+        var slug = StudioAiAppSpec.SlugKey(raw);
+        return fields.FirstOrDefault(f => f.Key == slug)?.Key
+            ?? fields.FirstOrDefault(f => StudioAiAppSpec.SlugKey(f.Label) == slug)?.Key;
+    }
+
+    private static string UniqueFieldKey(string label, HashSet<string> used)
+    {
+        var baseKey = StudioAiAppSpec.SlugKey(label);
+        if (string.IsNullOrEmpty(baseKey) || !StudioKey.IsValidShape(baseKey) || StudioKey.IsReservedFieldKey(baseKey))
+            baseKey = "champ";
+        var key = baseKey;
+        var i = 1;
+        while (used.Contains(key)) key = $"{baseKey}_{++i}";
+        used.Add(key);
+        return key;
+    }
+
+    private static IReadOnlyList<SelectOptionDto>? ParseOptions(JsonNode? node)
+    {
+        if (node is not JsonArray arr) return null;
+        var result = new List<SelectOptionDto>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var item in arr)
+        {
+            string? value;
+            string? label;
+            if (item is JsonObject obj)
+            {
+                value = Str(obj["value"]) ?? Str(obj["label"]);
+                label = Str(obj["label"]) ?? value;
+            }
+            else
+            {
+                value = Str(item);
+                label = value;
+            }
+            if (string.IsNullOrWhiteSpace(value)) continue;
+            var slug = StudioAiAppSpec.SlugKey(value);
+            if (string.IsNullOrEmpty(slug)) slug = value!.Trim();
+            if (!seen.Add(slug)) continue;
+            result.Add(new SelectOptionDto(slug, (label ?? value)!.Trim()));
+        }
+        return result.Count > 0 ? result : null;
+    }
+
+    private static Dictionary<string, JsonNode?>? ParseFieldConfig(JsonNode? fn, CustomFieldType type)
+    {
+        var cfg = fn?["config"] as JsonObject;
+        switch (type)
+        {
+            case CustomFieldType.Money:
+            {
+                var currency = Str(cfg?["currency"]) ?? Str(fn?["currency"]) ?? "TND";
+                return new() { ["currency"] = JsonValue.Create(currency.Trim().ToUpperInvariant()) };
+            }
+            case CustomFieldType.Rating:
+            {
+                var max = Int(cfg?["max"]) ?? Int(fn?["max"]) ?? 5;
+                return new() { ["max"] = JsonValue.Create(Math.Clamp(max, 1, 10)) };
+            }
+            default:
+                return null;
+        }
+    }
+
+    private static string? Str(JsonNode? n)
+    {
+        if (n is not JsonValue v) return null;
+        if (v.TryGetValue<string>(out var s)) return string.IsNullOrWhiteSpace(s) ? null : s;
+        return v.ToString();
+    }
+
+    private static bool? Bool(JsonNode? n)
+    {
+        if (n is not JsonValue v) return null;
+        if (v.TryGetValue<bool>(out var b)) return b;
+        var s = Str(n)?.Trim().ToLowerInvariant();
+        return s switch { "true" or "oui" or "yes" or "1" => true, "false" or "non" or "no" or "0" => false, _ => (bool?)null };
+    }
+
+    private static int? Int(JsonNode? n)
+    {
+        if (n is not JsonValue v) return null;
+        if (v.TryGetValue<int>(out var i)) return i;
+        return int.TryParse(Str(n), out var p) ? p : null;
+    }
+}
+
+
+=== StudioAiSystemOrchestrator.cs ===
+using System.Text.Json.Nodes;
+using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Features.Studio.Ai;
+using FactuTrust.Application.Features.Studio.Common;
+using FactuTrust.Application.Features.Studio.Entities;
+using FactuTrust.Application.Features.Studio.Fields;
+using FactuTrust.Application.Features.Studio.Forms;
+using FactuTrust.Application.Features.Studio.Records;
+using FactuTrust.Application.Features.Studio.Reports;
+using FactuTrust.Application.Features.Studio.Systems;
+using FactuTrust.Domain.Common;
+using FactuTrust.Domain.Enums;
+using MediatR;
+
+namespace FactuTrust.Infrastructure.Services.Studio;
+
+public sealed class StudioAiSystemOrchestrator
+{
+    private readonly IMediator _mediator;
+    private readonly ICurrentUser _currentUser;
+
+    public StudioAiSystemOrchestrator(IMediator mediator, ICurrentUser currentUser)
+    {
+        _mediator = mediator;
+        _currentUser = currentUser;
+    }
+
+    public async Task<(bool Success, string? Error, object? Payload)> ExecuteAsync(
+        ParsedSystemSpec spec,
+        IStudioBuildProgress? progress,
+        CancellationToken ct)
+    {
+        var journal = new StudioBuildJournal();
+        IStudioBuildProgress progressReporter = progress ?? journal;
+        void Report(string phase, string label, string status, string? entityRef = null, string? detail = null) =>
+            progressReporter.Report(new StudioBuildStep(phase, label, status, entityRef, detail));
+
+        try
+        {
+            Report("creating_system", "CrΘation du systΦme", "running");
+            var systemKey = await UniqueSystemKeyAsync(spec.SystemDisplayName, ct);
+            var systemResult = await _mediator.Send(new CreateCustomSystemCommand(
+                new CreateCustomSystemRequest(systemKey, spec.SystemDisplayName, spec.SystemIcon,
+                    spec.SystemDescription, spec.OnboardingSteps)), ct);
+            if (!systemResult.IsSuccess)
+                return Fail(systemResult.Error.Description, journal, ct);
+            journal.SystemId = systemResult.Value.Id;
+            journal.SystemKey = systemResult.Value.Key;
+            Report("creating_system", "CrΘation du systΦme", "done");
+
+            var entityKeyMap = new Dictionary<string, string>(StringComparer.Ordinal);
+            var entityIdMap = new Dictionary<string, Guid>(StringComparer.Ordinal);
+
+            foreach (var entitySpec in spec.Entities)
+            {
+                Report("creating_entity", $"Table ½ {entitySpec.EntityDisplayName} ╗", "running", entitySpec.Ref);
+                var existing = await _mediator.Send(new ListCustomEntitiesQuery(true), ct);
+                var usedKeys = existing.IsSuccess
+                    ? existing.Value.Select(e => e.Key).ToHashSet(StringComparer.Ordinal)
+                    : new HashSet<string>(StringComparer.Ordinal);
+                var entityKey = UniqueEntityKey(entitySpec.EntityDisplayName, usedKeys);
+
+                var entityResult = await _mediator.Send(new CreateCustomEntityCommand(
+                    new CreateCustomEntityRequest(entityKey, entitySpec.EntityDisplayName,
+                        entitySpec.EntityDisplayNamePlural, entitySpec.Icon, entitySpec.Description,
+                        journal.SystemId)), ct);
+                if (!entityResult.IsSuccess)
+                    return await RollbackAsync(systemResult.Error.Description, journal, Report, ct);
+
+                var entity = entityResult.Value;
+                journal.EntityIds.Add(entity.Id);
+                entityKeyMap[entitySpec.Ref] = entity.Key;
+                entityIdMap[entitySpec.Ref] = entity.Id;
+
+                var simpleFields = entitySpec.Fields.Where(f => f.FieldType != CustomFieldType.RelationCustom).ToList();
+                var relationFields = entitySpec.Fields.Where(f => f.FieldType == CustomFieldType.RelationCustom).ToList();
+
+                Report("creating_fields", $"Champs de ½ {entitySpec.EntityDisplayName} ╗", "running", entitySpec.Ref);
+                foreach (var f in simpleFields)
+                {
+                    var fr = await CreateFieldAsync(entity.Id, f, entityKeyMap, ct);
+                    if (!fr.IsSuccess)
+                        return await RollbackAsync(fr.Error.Description, journal, Report, ct);
+                }
+                Report("creating_fields", $"Champs de ½ {entitySpec.EntityDisplayName} ╗", "done", entitySpec.Ref);
+
+                foreach (var f in relationFields)
+                {
+                    Report("creating_relations", $"Relation ½ {f.Label} ╗", "running", entitySpec.Ref);
+                    var fr = await CreateFieldAsync(entity.Id, f, entityKeyMap, ct);
+                    if (!fr.IsSuccess)
+                        return await RollbackAsync(fr.Error.Description, journal, Report, ct);
+                    Report("creating_relations", $"Relation ½ {f.Label} ╗", "done", entitySpec.Ref);
+                }
+
+                if (entitySpec.Form is not null && _currentUser.HasPermission(Permissions.Studio.DesignForms))
+                {
+                    Report("creating_form", $"Formulaire ½ {entitySpec.EntityDisplayName} ╗", "running", entitySpec.Ref);
+                    var layout = BuildFormLayout(entitySpec.Form);
+                    var formResult = await _mediator.Send(new UpsertDefaultFormCommand(entity.Id,
+                        new SaveFormLayoutRequest(layout)), ct);
+                    if (!formResult.IsSuccess)
+                        return await RollbackAsync(formResult.Error.Description, journal, Report, ct);
+                    Report("creating_form", $"Formulaire ½ {entitySpec.EntityDisplayName} ╗", "done", entitySpec.Ref);
+                }
+
+                if (entitySpec.Report is not null && _currentUser.HasPermission(Permissions.Studio.DesignReports))
+                {
+                    Report("creating_report", $"Rapport ½ {entitySpec.Report.DisplayName} ╗", "running", entitySpec.Ref);
+                    var def = new ReportDefinition { Grouping = entitySpec.Report.Grouping, Aggregations = entitySpec.Report.Aggregations };
+                    var rr = await _mediator.Send(new UpsertCustomReportCommand(null,
+                        new SaveCustomReportRequest(null, entitySpec.Report.DisplayName,
+                            CustomReportDataSourceKind.CustomEntity, entity.Key, def)), ct);
+                    if (!rr.IsSuccess)
+                        return await RollbackAsync(rr.Error.Description, journal, Report, ct);
+                    Report("creating_report", $"Rapport ½ {entitySpec.Report.DisplayName} ╗", "done", entitySpec.Ref);
+                }
+
+                Report("creating_entity", $"Table ½ {entitySpec.EntityDisplayName} ╗", "done", entitySpec.Ref);
+            }
+
+            if (spec.Seed.Count > 0 && _currentUser.HasPermission(Permissions.CustomData.RecordsWrite))
+            {
+                Report("seeding_data", "PrΘ-remplissage des donnΘes de rΘfΘrence", "running");
+                foreach (var batch in spec.Seed)
+                {
+                    if (!entityKeyMap.TryGetValue(batch.EntityRef, out var entityKey)) continue;
+                    foreach (var rec in batch.Records)
+                    {
+                        var data = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
+                        foreach (var kv in rec)
+                            data[StudioAiAppSpec.SlugKey(kv.Key)] = kv.Value?.DeepClone();
+                        var seedResult = await _mediator.Send(new CreateCustomRecordCommand(entityKey,
+                            new SaveCustomRecordRequest(data)), ct);
+                        if (!seedResult.IsSuccess)
+                            return await RollbackAsync(seedResult.Error.Description, journal, Report, ct);
+                    }
+                }
+                Report("seeding_data", "PrΘ-remplissage des donnΘes de rΘfΘrence", "done");
+            }
+
+            Report("completed", "SystΦme crΘΘ", "done");
+
+            var entities = spec.Entities.Select(e => new
+            {
+                refKey = e.Ref,
+                entityKey = entityKeyMap[e.Ref],
+                displayName = e.EntityDisplayName,
+                openUrl = $"/studio/d/{entityKeyMap[e.Ref]}"
+            }).ToList();
+
+            var payload = new
+            {
+                success = true,
+                systemKey = journal.SystemKey,
+                systemUrl = $"/studio/systems/{journal.SystemKey}",
+                displayName = spec.SystemDisplayName,
+                entityCount = spec.Entities.Count,
+                entities,
+                buildSteps = journal.Steps,
+                message = $"SystΦme ½ {spec.SystemDisplayName} ╗ crΘΘ avec {spec.Entities.Count} table(s)."
+            };
+            return (true, null, payload);
+        }
+        catch (Exception ex)
+        {
+            return await RollbackAsync(ex.Message, journal, Report, ct);
+        }
+    }
+
+    private async Task<Result<CustomFieldDto>> CreateFieldAsync(
+        Guid entityId, ParsedSystemField f, Dictionary<string, string> entityKeyMap, CancellationToken ct)
+    {
+        RelationRefDto? relation = null;
+        if (f.FieldType == CustomFieldType.RelationCustom)
+        {
+            if (f.RelationToRef is null || !entityKeyMap.TryGetValue(f.RelationToRef, out var targetKey))
+                return Result.Failure<CustomFieldDto>(
+                    Error.Validation("relation", $"Cible de relation ½ {f.RelationToRef} ╗ introuvable."));
+            relation = new RelationRefDto("custom", targetKey);
+        }
+
+        return await _mediator.Send(new CreateCustomFieldCommand(entityId,
+            new CreateCustomFieldRequest(f.Key, f.Label, f.FieldType, f.Required, f.Unique, null, f.Options, relation, f.Config)), ct);
+    }
+
+    private static FormLayout BuildFormLayout(ParsedFormSpec form)
+    {
+        var sections = form.Sections.Select(s => new FormSection
+        {
+            Title = s.Title,
+            Fields = s.FieldKeys.Select(k => new FormFieldRef { Key = k, Width = "full" }).ToList()
+        }).ToList();
+        return new FormLayout { Sections = sections };
+    }
+
+    private async Task<string> UniqueSystemKeyAsync(string displayName, CancellationToken ct)
+    {
+        var list = await _mediator.Send(new ListCustomSystemsQuery(true), ct);
+        var used = list.IsSuccess
+            ? list.Value.Select(s => s.Key).ToHashSet(StringComparer.Ordinal)
+            : new HashSet<string>(StringComparer.Ordinal);
+        return UniqueEntityKey(displayName, used);
+    }
+
+    private static string UniqueEntityKey(string displayName, HashSet<string> used)
+    {
+        var baseKey = StudioAiAppSpec.SlugKey(displayName);
+        if (string.IsNullOrEmpty(baseKey) || !StudioKey.IsValidShape(baseKey)) baseKey = "table";
+        var key = baseKey;
+        var i = 1;
+        while (used.Contains(key)) key = $"{baseKey}_{++i}";
+        return key;
+    }
+
+    private async Task<(bool Success, string? Error, object? Payload)> RollbackAsync(
+        string error, StudioBuildJournal journal, Action<string, string, string, string?, string?> report, CancellationToken ct)
+    {
+        report("failed", "╔chec ù annulation", "error", detail: error);
+        foreach (var entityId in journal.EntityIds.AsEnumerable().Reverse())
+            await _mediator.Send(new DeleteCustomEntityCommand(entityId), ct);
+        return (false, error, null);
+    }
+
+    private static (bool Success, string? Error, object? Payload) Fail(string error, StudioBuildJournal journal, CancellationToken ct) =>
+        (false, error, null);
+
+    private sealed class StudioBuildJournal : IStudioBuildProgress
+    {
+        public Guid? SystemId { get; set; }
+        public string? SystemKey { get; set; }
+        public List<Guid> EntityIds { get; } = new();
+        public List<StudioBuildStep> Steps { get; } = new();
+
+        public void Report(StudioBuildStep step) => Steps.Add(step);
+    }
+}
+
+
+=== 20260624120000_AddStudioSystems_Tenant.cs ===
+using System;
+using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace FactuTrust.Infrastructure.Migrations.Tenant
+{
+    /// <inheritdoc />
+    public partial class AddStudioSystems_Tenant : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.CreateTable(
+                name: "CustomSystemDefinitions",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    TenantId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Key = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: false),
+                    DisplayName = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
+                    Icon = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
+                    Description = table.Column<string>(type: "nvarchar(1024)", maxLength: 1024, nullable: true),
+                    OnboardingJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    IsActive = table.Column<bool>(type: "bit", nullable: false),
+                    IsDeleted = table.Column<bool>(type: "bit", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    CreatedBy = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    UpdatedBy = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_CustomSystemDefinitions", x => x.Id);
+                });
+
+            migrationBuilder.AddColumn<Guid>(
+                name: "SystemId",
+                table: "CustomEntityDefinitions",
+                type: "uniqueidentifier",
+                nullable: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_CustomSystemDefinitions_TenantId_Key",
+                table: "CustomSystemDefinitions",
+                columns: new[] { "TenantId", "Key" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_CustomEntityDefinitions_TenantId_SystemId",
+                table: "CustomEntityDefinitions",
+                columns: new[] { "TenantId", "SystemId" });
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropIndex(
+                name: "IX_CustomEntityDefinitions_TenantId_SystemId",
+                table: "CustomEntityDefinitions");
+
+            migrationBuilder.DropColumn(
+                name: "SystemId",
+                table: "CustomEntityDefinitions");
+
+            migrationBuilder.DropTable(
+                name: "CustomSystemDefinitions");
+        }
+    }
+}
+
+

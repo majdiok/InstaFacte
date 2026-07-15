@@ -1,0 +1,7 @@
+---
+pid: 0
+cwd: "c:\Solution\FactuTrust - Copy"
+command: "cd \"c:\\Solution\\FactuTrust - Copy\\src\\Backend\\FactuTrust.API\" && dotnet run --no-build"
+started_at: 2026-06-11T22:30:44.893Z
+running_for_ms: 0        
+---

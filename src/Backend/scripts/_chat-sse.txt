@@ -1,0 +1,72 @@
+data: {"type":"phase","content":null,"toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":"provider_availability","phaseStatus":"running","elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":"ollama:qwen2.5:3b-instruct"}
+
+data: {"type":"phase","content":null,"toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":"provider_availability","phaseStatus":"completed","elapsedMs":2080,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":"ollama:qwen2.5:3b-instruct"}
+
+data: {"type":"phase","content":null,"toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":"conversation_load_or_create","phaseStatus":"running","elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":"nouvelle conversation"}
+
+data: {"type":"phase","content":null,"toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":"conversation_load_or_create","phaseStatus":"completed","elapsedMs":2,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":"nouvelle conversation"}
+
+data: {"type":"phase","content":null,"toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":"build_system_prompt","phaseStatus":"running","elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":"Default"}
+
+data: {"type":"phase","content":null,"toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":"build_system_prompt","phaseStatus":"completed","elapsedMs":2,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":"Default"}
+
+data: {"type":"phase","content":null,"toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":"llm_stream_round","phaseStatus":"running","elapsedMs":null,"round":1,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"heartbeat","content":null,"toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"content","content":"Bien","toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"content","content":" s\u00FBr","toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"content","content":",","toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"content","content":" comment","toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"content","content":" puis","toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"content","content":"-","toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"content","content":"je","toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"content","content":" vous","toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"content","content":" aider","toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"content","content":" aujourd","toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"content","content":"\u0027hui","toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"content","content":" concern","toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"content","content":"ant","toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"content","content":" l","toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"content","content":"\u0027","toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"content","content":"entreprise","toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"content","content":" Cabinet","toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"content","content":" Part","toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"content","content":"enaire","toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"content","content":" Demo","toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"content","content":" SAR","toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"content","content":"L","toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"content","content":" ?","toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"phase","content":null,"toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":"llm_stream_round","phaseStatus":"completed","elapsedMs":15527,"round":1,"firstTokenMs":13630,"hadToolCalls":false,"detail":null}
+
+data: {"type":"phase","content":null,"toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":"persist_conversation","phaseStatus":"running","elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"phase","content":null,"toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":"persist_conversation","phaseStatus":"completed","elapsedMs":106,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+
+data: {"type":"phase","content":null,"toolName":null,"toolCallId":null,"conversationId":null,"error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":"total_request","phaseStatus":"completed","elapsedMs":17951,"round":null,"firstTokenMs":null,"hadToolCalls":false,"detail":"ollama:qwen2.5:3b-instruct"}
+
+data: {"type":"done","content":null,"toolName":null,"toolCallId":null,"conversationId":"e5531652-bf9f-4b7c-8cb5-3d0c61c1b4e4","error":null,"clientActions":null,"suggestedPrompts":null,"sources":null,"dashboard":null,"phase":null,"phaseStatus":null,"elapsedMs":null,"round":null,"firstTokenMs":null,"hadToolCalls":null,"detail":null}
+

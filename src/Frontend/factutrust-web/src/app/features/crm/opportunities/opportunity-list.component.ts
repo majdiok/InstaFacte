@@ -1,0 +1,870 @@
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormsModule } from '@angular/forms';
+import { TableModule } from 'primeng/table';
+import { TableTotalsBarComponent, TotalMetric } from '@shared/components/table-totals-bar/table-totals-bar.component';
+import { DialogModule } from 'primeng/dialog';
+import { DropdownModule } from 'primeng/dropdown';
+import { CalendarModule } from 'primeng/calendar';
+import { InputTextModule } from 'primeng/inputtext';
+import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputNumberModule } from 'primeng/inputnumber';
+import { CheckboxModule } from 'primeng/checkbox';
+import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { CrmService, OpportunityDto } from '../services/crm.service';
+import { ClientService, ClientListItem } from '@core/services/client.service';
+import { AuthService } from '@core/services/auth.service';
+
+interface StageOption {
+  label: string;
+  value: number | null;
+}
+
+@Component({
+  selector: 'app-opportunity-list',
+  standalone: true,
+  imports: [
+    CommonModule,
+    FormsModule,
+    ReactiveFormsModule,
+    TableModule,
+    DialogModule,
+    DropdownModule,
+    CalendarModule,
+    InputTextModule,
+    InputTextareaModule,
+    InputNumberModule,
+    CheckboxModule,
+    PageHeaderComponent,
+    ButtonComponent,
+    TableTotalsBarComponent
+  ],
+  template: `
+    <app-page-header title="Opportunités" subtitle="Pipeline commercial" />
+    <div class="card p-3 mb-3 opportunity-toolbar">
+      <div class="toolbar-row">
+        <p-dropdown
+          [options]="stageOptions"
+          [(ngModel)]="selectedStageOption"
+          optionLabel="label"
+          placeholder="Stage"
+          [showClear]="true"
+          styleClass="toolbar-dropdown"
+          inputId="oppStageFilter"
+          (onChange)="load()"
+          [attr.aria-label]="'Filtrer par stage'"></p-dropdown>
+        <div class="toolbar-mine">
+          <p-checkbox
+            inputId="oppMineOnly"
+            name="oppMineOnly"
+            [(ngModel)]="myOpportunitiesOnly"
+            [binary]="true"
+            (ngModelChange)="load()"></p-checkbox>
+          <label for="oppMineOnly">Mes opportunités</label>
+        </div>
+        <app-button variant="secondary" icon="pi pi-refresh" iconPos="left" (click)="load()" ariaLabel="Actualiser la liste">
+          Actualiser
+        </app-button>
+        <app-button variant="primary" icon="pi pi-plus" iconPos="left" (click)="openCreate()" ariaLabel="Nouvelle opportunité">
+          Nouvelle opportunité
+        </app-button>
+      </div>
+    </div>
+    @if (error()) {
+      <p class="text-danger p-3" role="alert">{{ error() }}</p>
+    }
+    <app-table-totals-bar [metrics]="summaryMetrics()"></app-table-totals-bar>
+    <p-table [value]="items()" [paginator]="true" [rows]="15" styleClass="p-datatable-sm opportunity-table">
+      <ng-template pTemplate="header">
+        <tr>
+          <th scope="col">Titre</th>
+          <th scope="col">Commercial</th>
+          <th scope="col">Stage</th>
+          <th scope="col">Montant</th>
+          <th scope="col">Prob.</th>
+          <th scope="col">Pondéré</th>
+          <th scope="col">Échéance</th>
+          <th scope="col" class="col-actions">Actions</th>
+        </tr>
+      </ng-template>
+      <ng-template pTemplate="body" let-o>
+        <tr>
+          <td style="font-weight:600">{{ o.title }}</td>
+          <td>{{ o.assignedUserName }}</td>
+          <td><span class="badge" [class]="'badge-' + o.stageColor">{{ o.stageName }}</span></td>
+          <td>{{ o.expectedAmount | number:'1.0-0' }}</td>
+          <td>{{ o.probability }}%</td>
+          <td>{{ o.weightedAmount | number:'1.0-0' }}</td>
+          <td>{{ o.expectedCloseDate | date:'shortDate' }}</td>
+          <td class="col-actions">
+            <div class="action-cell">
+              @if (o.stage < 4) {
+                <app-button
+                  variant="ghost"
+                  size="sm"
+                  [iconOnly]="true"
+                  icon="pi pi-angle-right"
+                  ariaLabel="Avancer l’opportunité"
+                  title="Avancer"
+                  [iconAlwaysVisible]="true"
+                  (click)="advance(o.id)"></app-button>
+                <app-button
+                  variant="ghost"
+                  size="sm"
+                  [iconOnly]="true"
+                  icon="pi pi-check"
+                  ariaLabel="Marquer comme gagnée"
+                  title="Gagnée"
+                  [iconAlwaysVisible]="true"
+                  (click)="win(o.id)"></app-button>
+                <app-button
+                  variant="ghost"
+                  size="sm"
+                  [iconOnly]="true"
+                  icon="pi pi-times"
+                  ariaLabel="Marquer comme perdue"
+                  title="Perdue"
+                  [iconAlwaysVisible]="true"
+                  (click)="openLose(o)"></app-button>
+              }
+              <app-button
+                variant="outline"
+                size="sm"
+                [iconOnly]="true"
+                icon="pi pi-pencil"
+                ariaLabel="Modifier l’opportunité"
+                title="Modifier"
+                (click)="openEdit(o)"></app-button>
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+      <ng-template pTemplate="emptymessage">
+        <tr>
+          <td colspan="8" class="empty-cell">
+            <div class="empty-state">
+              <p class="empty-title">Aucune opportunité pour ces critères</p>
+              <p class="empty-hint">Créez une opportunité pour suivre un deal dans le pipeline.</p>
+              <app-button variant="primary" icon="pi pi-plus" iconPos="left" (click)="openCreate()" ariaLabel="Créer une opportunité">
+                Nouvelle opportunité
+              </app-button>
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+
+    <p-dialog
+      [(visible)]="formDialogVisible"
+      [modal]="true"
+      [draggable]="false"
+      styleClass="opp-form-dialog"
+      [contentStyle]="{ overflow: 'visible', padding: 0 }"
+      [header]="editingId ? 'Modifier l’opportunité' : 'Nouvelle opportunité'"
+      [style]="{ width: 'min(560px, 96vw)' }"
+      (onHide)="resetFormDialog()"
+      [attr.aria-describedby]="'opp-form-desc'">
+      <p id="opp-form-desc" class="sr-only">
+        {{ editingId ? 'Modifiez les champs puis enregistrez.' : 'Renseignez le client, le montant et la date de clôture attendue.' }}
+      </p>
+      <div class="opp-dialog-body">
+        <form [formGroup]="oppForm" (ngSubmit)="saveOpportunity()" class="opp-form">
+          <section class="opp-form-section" aria-labelledby="opp-section-deal">
+            <h3 id="opp-section-deal" class="form-block-title">Deal</h3>
+            @if (!editingId) {
+              <div class="form-field">
+                <label class="field-label" for="oppClient">Client <span class="required" aria-hidden="true">*</span></label>
+                <p-dropdown
+                  inputId="oppClient"
+                  formControlName="clientId"
+                  [options]="clients"
+                  optionLabel="name"
+                  optionValue="id"
+                  placeholder="Sélectionner un client"
+                  [filter]="true"
+                  filterBy="name,code"
+                  styleClass="w-full"
+                  [showClear]="true"
+                  [class.ng-invalid]="oppForm.get('clientId')?.invalid && oppForm.get('clientId')?.touched"
+                  [attr.aria-invalid]="oppForm.get('clientId')?.invalid && oppForm.get('clientId')?.touched ? true : null"
+                  [attr.aria-describedby]="oppForm.get('clientId')?.invalid && oppForm.get('clientId')?.touched ? 'opp-client-error' : null"></p-dropdown>
+                @if (oppForm.get('clientId')?.invalid && oppForm.get('clientId')?.touched) {
+                  <small id="opp-client-error" class="field-error" role="alert">Sélectionnez un client.</small>
+                }
+              </div>
+            }
+            <div class="form-field">
+              <label class="field-label" for="oppTitle">Titre <span class="required" aria-hidden="true">*</span></label>
+              <input
+                pInputText
+                id="oppTitle"
+                class="w-full"
+                formControlName="title"
+                autocomplete="off"
+                [attr.aria-invalid]="oppForm.get('title')?.invalid && oppForm.get('title')?.touched ? true : null"
+                [attr.aria-describedby]="oppForm.get('title')?.invalid && oppForm.get('title')?.touched ? 'opp-title-error' : null" />
+              @if (oppForm.get('title')?.invalid && oppForm.get('title')?.touched) {
+                <small id="opp-title-error" class="field-error" role="alert">Le titre est obligatoire.</small>
+              }
+            </div>
+            <div class="form-grid-2">
+              <div class="form-field">
+                <label class="field-label" for="oppAmount">Montant attendu (TND) <span class="required" aria-hidden="true">*</span></label>
+                <p-inputNumber
+                  inputId="oppAmount"
+                  formControlName="expectedAmount"
+                  mode="decimal"
+                  [minFractionDigits]="0"
+                  [maxFractionDigits]="3"
+                  styleClass="w-full"></p-inputNumber>
+              </div>
+              <div class="form-field">
+                <label class="field-label" for="oppProb">Probabilité (%) <span class="required" aria-hidden="true">*</span></label>
+                <p-inputNumber
+                  inputId="oppProb"
+                  formControlName="probability"
+                  [min]="0"
+                  [max]="100"
+                  styleClass="w-full"></p-inputNumber>
+              </div>
+            </div>
+            <div class="form-field">
+              <label class="field-label" for="oppClose">Date de clôture attendue <span class="required" aria-hidden="true">*</span></label>
+              <p-calendar
+                inputId="oppClose"
+                formControlName="expectedCloseDate"
+                dateFormat="dd/mm/yy"
+                [showIcon]="true"
+                [readonlyInput]="true"
+                appendTo="body"
+                styleClass="w-full"
+                [attr.aria-invalid]="oppForm.get('expectedCloseDate')?.invalid && oppForm.get('expectedCloseDate')?.touched ? true : null"
+                [attr.aria-describedby]="oppForm.get('expectedCloseDate')?.invalid && oppForm.get('expectedCloseDate')?.touched ? 'opp-close-error' : null"></p-calendar>
+              @if (oppForm.get('expectedCloseDate')?.invalid && oppForm.get('expectedCloseDate')?.touched) {
+                <small id="opp-close-error" class="field-error" role="alert">La date de clôture est obligatoire.</small>
+              }
+            </div>
+          </section>
+
+          <section class="opp-form-section opp-form-section-secondary" aria-labelledby="opp-section-extra">
+            <h3 id="opp-section-extra" class="form-block-title">Compléments</h3>
+            <div class="form-field">
+              <label class="field-label" for="oppSource">Source (optionnel)</label>
+              <input pInputText id="oppSource" class="w-full" formControlName="source" />
+            </div>
+            <div class="form-field">
+              <label class="field-label" for="oppNotes">Notes (optionnel)</label>
+              <textarea
+                pInputTextarea
+                id="oppNotes"
+                class="w-full opp-notes-textarea"
+                rows="5"
+                formControlName="notes"
+                [autoResize]="true"></textarea>
+            </div>
+          </section>
+
+          @if (formError()) {
+            <p class="form-banner-error text-danger text-sm" role="alert">{{ formError() }}</p>
+          }
+        </form>
+      </div>
+      <ng-template pTemplate="footer">
+        <div class="opp-dialog-footer-actions">
+          <app-button variant="outline" icon="pi-times" iconPos="left" type="button" (click)="formDialogVisible = false" ariaLabel="Annuler">
+            Annuler
+          </app-button>
+          <app-button
+            variant="primary"
+            [icon]="saving() ? 'pi-spin pi-spinner' : 'pi-check'"
+            iconPos="left"
+            type="button"
+            (click)="saveOpportunity()"
+            [disabled]="oppForm.invalid || saving()"
+            [attr.aria-label]="editingId ? 'Enregistrer l’opportunité' : 'Créer l’opportunité'">
+            {{ saving() ? (editingId ? 'Enregistrement...' : 'Création...') : (editingId ? 'Enregistrer' : 'Créer') }}
+          </app-button>
+        </div>
+      </ng-template>
+    </p-dialog>
+
+    <p-dialog
+      [(visible)]="loseDialogVisible"
+      [modal]="true"
+      [draggable]="false"
+      styleClass="opp-lose-dialog"
+      [contentStyle]="{ overflow: 'auto', padding: 0 }"
+      header="Motif de perte"
+      [style]="{ width: 'min(420px, 96vw)' }"
+      (onHide)="resetLoseDialog()">
+      <div class="opp-dialog-body opp-dialog-body--lose">
+        <form [formGroup]="loseForm" (ngSubmit)="confirmLose()" class="opp-form opp-form-lose">
+          <p id="lose-reason-hint" class="lose-dialog-hint">
+            Décrivez brièvement pourquoi l’opportunité est perdue (prix, concurrent, report, absence de budget…). Réservé à
+            l’équipe interne.
+          </p>
+          <div class="form-field">
+            <label class="field-label" for="loseReason">Motif <span class="required" aria-hidden="true">*</span></label>
+            <textarea
+              pInputTextarea
+              id="loseReason"
+              class="w-full lose-reason-textarea"
+              rows="5"
+              formControlName="reason"
+              placeholder="Ex. : offre concurrente moins chère, projet gelé par le client…"
+              [attr.aria-describedby]="loseReasonAriaDescribedBy()"
+              [attr.aria-invalid]="loseForm.get('reason')?.invalid && loseForm.get('reason')?.touched ? true : null"></textarea>
+            @if (loseForm.get('reason')?.invalid && loseForm.get('reason')?.touched) {
+              <small id="lose-reason-error" class="field-error" role="alert">Indiquez un motif (au moins 2 caractères).</small>
+            }
+          </div>
+          @if (loseError()) {
+            <p class="form-banner-error text-danger text-sm" role="alert">{{ loseError() }}</p>
+          }
+        </form>
+      </div>
+      <ng-template pTemplate="footer">
+        <div class="opp-dialog-footer-actions opp-dialog-footer-actions--lose">
+          <app-button variant="ghost" size="sm" type="button" (click)="loseDialogVisible = false" ariaLabel="Annuler">
+            Annuler
+          </app-button>
+          <app-button
+            variant="primary"
+            [icon]="loseSaving() ? 'pi-spin pi-spinner' : 'pi-check'"
+            iconPos="left"
+            type="button"
+            (click)="confirmLose()"
+            [disabled]="loseForm.invalid || loseSaving()"
+            ariaLabel="Confirmer la perte du deal">
+            {{ loseSaving() ? 'Envoi...' : 'Confirmer' }}
+          </app-button>
+        </div>
+      </ng-template>
+    </p-dialog>
+  `,
+  styles: `
+    .opportunity-toolbar .toolbar-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.75rem 1rem;
+    }
+    :host ::ng-deep .toolbar-dropdown {
+      min-width: 200px;
+    }
+    .toolbar-mine {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .toolbar-mine label {
+      margin: 0;
+      cursor: pointer;
+      font-size: var(--font-size-sm);
+      color: var(--color-text-secondary);
+    }
+    .col-actions {
+      width: 1%;
+      white-space: nowrap;
+    }
+    .action-cell {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.25rem;
+      align-items: center;
+      justify-content: flex-end;
+    }
+    .empty-cell {
+      text-align: center;
+      padding: 2.5rem 1rem !important;
+      border: none !important;
+    }
+    .empty-state {
+      max-width: 360px;
+      margin: 0 auto;
+    }
+    .empty-title {
+      font-weight: var(--font-weight-semibold);
+      margin-bottom: 0.25rem;
+    }
+    .empty-hint {
+      font-size: var(--font-size-sm);
+      color: var(--color-text-secondary);
+      margin-bottom: 1rem;
+    }
+
+    .opp-dialog-body {
+      padding: var(--spacing-6);
+    }
+    .opp-form {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-4);
+    }
+    .opp-form-lose {
+      gap: var(--spacing-3);
+    }
+    .opp-dialog-body--lose {
+      padding-top: var(--spacing-5);
+    }
+    .lose-dialog-hint {
+      font-size: var(--font-size-sm);
+      color: var(--color-text-secondary);
+      margin: 0 0 var(--spacing-1);
+      line-height: 1.45;
+      max-width: 42rem;
+    }
+    .lose-reason-textarea {
+      min-height: 8rem;
+      resize: vertical;
+    }
+    .opp-form-section {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-4);
+    }
+    .opp-form-section-secondary {
+      padding-top: var(--spacing-2);
+    }
+    .form-block-title {
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 0;
+      padding-top: var(--spacing-2);
+      border-top: 1px solid var(--color-border-subtle);
+    }
+    .opp-form-section:first-of-type .form-block-title {
+      padding-top: 0;
+      border-top: none;
+    }
+    .form-field {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-2);
+    }
+    .field-label {
+      display: block;
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+      margin: 0;
+    }
+    .required {
+      color: var(--color-error-600);
+      margin-left: var(--spacing-1);
+    }
+    .field-error {
+      display: block;
+      font-size: var(--font-size-xs);
+      color: var(--color-error-600);
+      margin-top: calc(-1 * var(--spacing-1));
+    }
+    .form-banner-error {
+      margin: 0;
+      padding-top: var(--spacing-2);
+    }
+    .form-grid-2 {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: var(--spacing-4);
+    }
+    @media (max-width: 480px) {
+      .form-grid-2 {
+        grid-template-columns: 1fr;
+      }
+    }
+    .opp-notes-textarea {
+      min-height: 7.5rem;
+    }
+    .w-full {
+      width: 100%;
+    }
+    .opp-dialog-footer-actions {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: var(--spacing-4);
+      width: 100%;
+    }
+    .opp-dialog-footer-actions--lose {
+      gap: var(--spacing-3);
+    }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    :host ::ng-deep .opp-form-dialog.p-dialog,
+    :host ::ng-deep .opp-lose-dialog.p-dialog {
+      border-radius: var(--radius-xl, 0.75rem);
+      box-shadow: var(--shadow-xl);
+      overflow: hidden;
+    }
+    :host ::ng-deep .opp-form-dialog .p-dialog-header,
+    :host ::ng-deep .opp-lose-dialog .p-dialog-header {
+      padding: var(--spacing-4) var(--spacing-6);
+      border-bottom: 1px solid var(--color-border-subtle, #e2e8f0);
+      background: var(--color-background-elevated, var(--color-white));
+    }
+    :host ::ng-deep .opp-form-dialog .p-dialog-title,
+    :host ::ng-deep .opp-lose-dialog .p-dialog-title {
+      font-size: var(--font-size-lg);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary, var(--color-neutral-900));
+    }
+    :host ::ng-deep .opp-form-dialog .p-dialog-content,
+    :host ::ng-deep .opp-lose-dialog .p-dialog-content {
+      border-radius: 0;
+    }
+    :host ::ng-deep .opp-form-dialog .p-dialog-footer,
+    :host ::ng-deep .opp-lose-dialog .p-dialog-footer {
+      padding: var(--spacing-4) var(--spacing-6);
+      border-top: 1px solid var(--color-border-subtle, #e2e8f0);
+      background: var(--color-background-subtle, #f8fafc);
+    }
+    :host ::ng-deep .opp-form-dialog .p-dropdown,
+    :host ::ng-deep .opp-form-dialog .p-inputnumber,
+    :host ::ng-deep .opp-form-dialog .p-calendar {
+      width: 100%;
+    }
+    :host ::ng-deep .opp-form-dialog .p-calendar.p-calendar-w-btn .p-datepicker-trigger {
+      background: var(--color-background-elevated);
+      border-color: var(--color-border-default);
+      color: var(--color-text-secondary);
+      min-width: 2.75rem;
+      width: 2.75rem;
+      padding: 0;
+    }
+    :host ::ng-deep .opp-form-dialog .p-calendar.p-calendar-w-btn .p-datepicker-trigger:hover {
+      background: var(--color-background-subtle);
+      border-color: var(--color-border-strong);
+      color: var(--color-text-primary);
+    }
+    :host ::ng-deep .opp-form-dialog .p-calendar.p-calendar-w-btn .p-datepicker-trigger:focus {
+      box-shadow: 0 0 0 3px var(--color-primary-200);
+      outline: none;
+    }
+
+    :host ::ng-deep .opp-lose-dialog textarea.lose-reason-textarea {
+      width: 100%;
+      box-sizing: border-box;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--color-border-default);
+      padding: var(--spacing-3) var(--spacing-4);
+      font-family: inherit;
+      font-size: var(--font-size-base);
+      line-height: 1.5;
+      background: var(--color-background-elevated);
+      color: var(--color-text-primary);
+      transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+    }
+    :host ::ng-deep .opp-lose-dialog textarea.lose-reason-textarea:focus {
+      outline: none;
+      border-color: var(--color-primary-500);
+      box-shadow: 0 0 0 3px var(--color-primary-200);
+    }
+    :host ::ng-deep .opp-lose-dialog textarea.lose-reason-textarea.ng-invalid.ng-touched {
+      border-color: var(--color-error-600);
+    }
+    :host ::ng-deep .opp-lose-dialog textarea.lose-reason-textarea::placeholder {
+      color: var(--color-text-tertiary);
+    }
+  `
+})
+export class OpportunityListComponent implements OnInit {
+  private readonly crm = inject(CrmService);
+  private readonly clientsApi = inject(ClientService);
+  private readonly auth = inject(AuthService);
+  private readonly fb = inject(FormBuilder);
+
+  readonly items = signal<OpportunityDto[]>([]);
+  readonly error = signal<string | null>(null);
+  readonly formError = signal<string | null>(null);
+  readonly loseError = signal<string | null>(null);
+  readonly saving = signal(false);
+  readonly loseSaving = signal(false);
+
+  /** Totaux de la zone, calculés sur les opportunités filtrées (chargées côté client). */
+  readonly summaryMetrics = computed<TotalMetric[]>(() => {
+    const rows = this.items();
+    return [
+      { label: 'Opportunités', value: rows.length, format: 'number', icon: 'pi-briefcase', tone: 'primary' },
+      { label: 'Montant attendu', value: rows.reduce((acc, o) => acc + (o.expectedAmount ?? 0), 0), format: 'currency', icon: 'pi-wallet', tone: 'primary' },
+      { label: 'Pondéré', value: rows.reduce((acc, o) => acc + (o.weightedAmount ?? 0), 0), format: 'currency', icon: 'pi-percentage', tone: 'cyan' },
+      { label: 'Ouvertes', value: rows.filter(o => o.stage < 4).length, format: 'number', icon: 'pi-clock', tone: 'amber' },
+      { label: 'Gagnées', value: rows.filter(o => o.stage === 4).length, format: 'number', icon: 'pi-check-circle', tone: 'emerald' }
+    ];
+  });
+
+  clients: ClientListItem[] = [];
+  myOpportunitiesOnly = false;
+  formDialogVisible = false;
+  loseDialogVisible = false;
+  editingId: string | null = null;
+  loseTargetId: string | null = null;
+
+  stageOptions: StageOption[] = [
+    { label: 'Tous les stages', value: null },
+    { label: 'Prospection', value: 0 },
+    { label: 'Qualification', value: 1 },
+    { label: 'Proposition', value: 2 },
+    { label: 'Négociation', value: 3 },
+    { label: 'Gagnée', value: 4 },
+    { label: 'Perdue', value: 5 }
+  ];
+  selectedStageOption: StageOption | null = this.stageOptions[0];
+
+  oppForm = this.fb.group({
+    clientId: [''],
+    title: ['', [Validators.required, Validators.maxLength(200)]],
+    expectedAmount: [0, [Validators.required, Validators.min(0)]],
+    probability: [50, [Validators.required, Validators.min(0), Validators.max(100)]],
+    expectedCloseDate: [null as Date | null, Validators.required],
+    source: [''],
+    notes: ['']
+  });
+
+  loseForm = this.fb.group({
+    reason: ['', [Validators.required, Validators.minLength(2), Validators.maxLength(2000)]]
+  });
+
+  /** Ids for aria-describedby on the loss reason field (hint + optional inline error). */
+  loseReasonAriaDescribedBy(): string {
+    const r = this.loseForm.get('reason');
+    const ids = ['lose-reason-hint'];
+    if (r?.invalid && r.touched) {
+      ids.push('lose-reason-error');
+    }
+    return ids.join(' ');
+  }
+
+  ngOnInit(): void {
+    this.clientsApi.getClients({ pageSize: 500, isActive: true }).subscribe({
+      next: res => {
+        if (res.success && res.data?.items) {
+          this.clients = res.data.items;
+        }
+      },
+      error: () => {
+        this.clients = [];
+      }
+    });
+    this.load();
+  }
+
+  load(): void {
+    this.error.set(null);
+    const stage = this.selectedStageOption?.value ?? undefined;
+    const uid = this.myOpportunitiesOnly ? this.auth.user()?.id : undefined;
+    this.crm.getOpportunities(stage, uid).subscribe({
+      next: r => {
+        if (r.success && r.data) {
+          this.items.set(r.data);
+        } else {
+          this.error.set(r.error ?? 'Erreur');
+        }
+      },
+      error: () => this.error.set('Erreur réseau')
+    });
+  }
+
+  openCreate(): void {
+    this.editingId = null;
+    this.formError.set(null);
+    this.oppForm.reset({
+      clientId: '',
+      title: '',
+      expectedAmount: 0,
+      probability: 50,
+      expectedCloseDate: new Date(),
+      source: '',
+      notes: ''
+    });
+    const clientCtl = this.oppForm.get('clientId');
+    clientCtl?.setValidators([Validators.required]);
+    clientCtl?.enable();
+    clientCtl?.updateValueAndValidity({ emitEvent: false });
+    this.formDialogVisible = true;
+  }
+
+  openEdit(o: OpportunityDto): void {
+    this.editingId = o.id;
+    this.formError.set(null);
+    const clientCtl = this.oppForm.get('clientId');
+    clientCtl?.clearValidators();
+    clientCtl?.updateValueAndValidity({ emitEvent: false });
+    this.oppForm.patchValue({
+      title: o.title,
+      expectedAmount: o.expectedAmount,
+      probability: o.probability,
+      expectedCloseDate: o.expectedCloseDate ? new Date(o.expectedCloseDate) : new Date(),
+      source: o.source ?? '',
+      notes: o.notes ?? ''
+    });
+    clientCtl?.disable();
+    this.formDialogVisible = true;
+  }
+
+  resetFormDialog(): void {
+    this.editingId = null;
+    this.formError.set(null);
+    this.oppForm.get('clientId')?.enable();
+  }
+
+  saveOpportunity(): void {
+    this.formError.set(null);
+    if (this.oppForm.invalid) {
+      this.oppForm.markAllAsTouched();
+      return;
+    }
+    const v = this.oppForm.getRawValue();
+    const title = (v.title ?? '').trim();
+    if (!title) {
+      this.formError.set('Le titre est obligatoire.');
+      return;
+    }
+    const close = v.expectedCloseDate;
+    if (!close) {
+      this.formError.set('La date de clôture est obligatoire.');
+      return;
+    }
+    const iso = close instanceof Date ? close.toISOString() : new Date(close).toISOString();
+
+    this.saving.set(true);
+    if (this.editingId) {
+      this.crm
+        .updateOpportunity(this.editingId, {
+          title,
+          expectedAmount: Number(v.expectedAmount),
+          probability: Math.round(Number(v.probability)),
+          expectedCloseDate: iso,
+          source: v.source?.trim() || undefined,
+          notes: v.notes?.trim() || undefined
+        })
+        .subscribe({
+          next: r => {
+            this.saving.set(false);
+            if (r.success) {
+              this.formDialogVisible = false;
+              this.load();
+            } else {
+              this.formError.set(r.error ?? 'Enregistrement impossible');
+            }
+          },
+          error: () => {
+            this.saving.set(false);
+            this.formError.set('Erreur réseau');
+          }
+        });
+      return;
+    }
+
+    const clientId = v.clientId?.trim();
+    if (!clientId) {
+      this.saving.set(false);
+      this.formError.set('Sélectionnez un client.');
+      return;
+    }
+
+    this.crm
+      .createOpportunity({
+        title,
+        clientId,
+        expectedAmount: Number(v.expectedAmount),
+        probability: Math.round(Number(v.probability)),
+        expectedCloseDate: iso,
+        source: v.source?.trim() || undefined,
+        notes: v.notes?.trim() || undefined
+      })
+      .subscribe({
+        next: r => {
+          this.saving.set(false);
+          if (r.success) {
+            this.formDialogVisible = false;
+            this.load();
+          } else {
+            this.formError.set(r.error ?? 'Création impossible');
+          }
+        },
+        error: () => {
+          this.saving.set(false);
+          this.formError.set('Erreur réseau');
+        }
+      });
+  }
+
+  advance(id: string): void {
+    this.crm.advanceOpportunity(id).subscribe({
+      next: r => {
+        if (!r.success) {
+          this.error.set(r.error ?? 'Action impossible');
+        }
+        this.load();
+      },
+      error: () => this.error.set('Erreur réseau')
+    });
+  }
+
+  win(id: string): void {
+    this.crm.winOpportunity(id).subscribe({
+      next: r => {
+        if (!r.success) {
+          this.error.set(r.error ?? 'Action impossible');
+        }
+        this.load();
+      },
+      error: () => this.error.set('Erreur réseau')
+    });
+  }
+
+  openLose(o: OpportunityDto): void {
+    this.loseTargetId = o.id;
+    this.loseError.set(null);
+    this.loseForm.reset({ reason: '' });
+    this.loseDialogVisible = true;
+  }
+
+  resetLoseDialog(): void {
+    this.loseTargetId = null;
+    this.loseError.set(null);
+  }
+
+  confirmLose(): void {
+    this.loseError.set(null);
+    if (this.loseForm.invalid || !this.loseTargetId) {
+      this.loseForm.markAllAsTouched();
+      return;
+    }
+    const reason = this.loseForm.get('reason')?.value?.trim() ?? '';
+    this.loseSaving.set(true);
+    this.crm.loseOpportunity(this.loseTargetId, reason).subscribe({
+      next: r => {
+        this.loseSaving.set(false);
+        if (r.success) {
+          this.loseDialogVisible = false;
+          this.loseTargetId = null;
+          this.load();
+        } else {
+          this.loseError.set(r.error ?? 'Action impossible');
+        }
+      },
+      error: () => {
+        this.loseSaving.set(false);
+        this.loseError.set('Erreur réseau');
+      }
+    });
+  }
+}

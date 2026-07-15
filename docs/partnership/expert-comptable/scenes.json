@@ -1,0 +1,65 @@
+{
+  "title": "FactuTrust — Partenariat expert-comptable",
+  "resolution": { "width": 1920, "height": 1080 },
+  "fps": 30,
+  "output": "factutrust-partenariat-expert-comptable.mp4",
+  "voice": "fr-FR-DeniseNeural",
+  "chapters": [
+    {
+      "id": "01",
+      "title": "Introduction",
+      "video": "raw/chapitre-01.webm",
+      "audio": "audio/chapitre-01.mp3",
+      "overlay": "FactuTrust — Partenariat expert-comptable"
+    },
+    {
+      "id": "02",
+      "title": "Tableau de bord",
+      "video": "raw/chapitre-02.webm",
+      "audio": "audio/chapitre-02.mp3",
+      "overlay": "Tableau de bord"
+    },
+    {
+      "id": "03",
+      "title": "Facturation et écritures auto",
+      "video": "raw/chapitre-03.webm",
+      "audio": "audio/chapitre-03.mp3",
+      "overlay": "Factures et journal JV"
+    },
+    {
+      "id": "04",
+      "title": "Trésorerie",
+      "video": "raw/chapitre-04.webm",
+      "audio": "audio/chapitre-04.mp3",
+      "overlay": "Trésorerie"
+    },
+    {
+      "id": "05",
+      "title": "Comptabilité SCE",
+      "video": "raw/chapitre-05.webm",
+      "audio": "audio/chapitre-05.mp3",
+      "overlay": "Module comptabilité"
+    },
+    {
+      "id": "06",
+      "title": "Conformité TEJ",
+      "video": "raw/chapitre-06.webm",
+      "audio": "audio/chapitre-06.mp3",
+      "overlay": "Fiscal / TEJ"
+    },
+    {
+      "id": "07",
+      "title": "Audit et rôles",
+      "video": "raw/chapitre-07.webm",
+      "audio": "audio/chapitre-07.mp3",
+      "overlay": "Audit et gouvernance"
+    },
+    {
+      "id": "08",
+      "title": "Partenariat",
+      "video": "raw/chapitre-08.webm",
+      "audio": "audio/chapitre-08.mp3",
+      "overlay": "Devenez partenaire FactuTrust"
+    }
+  ]
+}

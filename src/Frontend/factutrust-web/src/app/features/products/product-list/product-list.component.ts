@@ -1,0 +1,581 @@
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { RouterModule, Router, NavigationEnd, ActivatedRoute } from '@angular/router';
+import { FormsModule } from '@angular/forms';
+import { TableModule } from 'primeng/table';
+import { ButtonModule } from 'primeng/button';
+import { InputTextModule } from 'primeng/inputtext';
+import { DropdownModule } from 'primeng/dropdown';
+import { TagModule } from 'primeng/tag';
+import { TooltipModule } from 'primeng/tooltip';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ToastModule } from 'primeng/toast';
+import { ConfirmationService } from '@core/services/confirmation.service';
+import { ToastService } from '@core/services/toast.service';
+import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
+import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
+import { SkeletonTableComponent, SkeletonColumn } from '@shared/components/skeleton/skeleton-table.component';
+import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { TableTotalsBarComponent, TotalMetric } from '@shared/components/table-totals-bar/table-totals-bar.component';
+import { ProductService, ProductListItem, ProductSearchParams } from '@core/services/product.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
+import { AuthService } from '@core/services/auth.service';
+import { PERMISSIONS } from '@core/config/permission-keys';
+import { AppModule } from '@core/models/app-module';
+import { filter, take } from 'rxjs/operators';
+import { applyProductListFiltersFromQuery } from '@core/utils/list-filter-from-query';
+
+interface CategoryOption {
+  label: string;
+  value: string | null;
+}
+
+@Component({
+  selector: 'app-product-list',
+  standalone: true,
+  imports: [
+    CommonModule,
+    RouterModule,
+    FormsModule,
+    TableModule,
+    ButtonModule,
+    InputTextModule,
+    DropdownModule,
+    TagModule,
+    TooltipModule,
+    ConfirmDialogModule,
+    ToastModule,
+    PageHeaderComponent,
+    BreadcrumbComponent,
+    SkeletonTableComponent,
+    EmptyStateComponent,
+    ButtonComponent,
+    TableTotalsBarComponent
+  ],
+  template: `
+    <app-breadcrumb [items]="breadcrumbItems"></app-breadcrumb>
+    
+    <app-page-header 
+      title="Produits & Services" 
+      subtitle="Gérez votre catalogue de produits et services">
+      @if (canCreateProduct()) {
+        <app-button 
+          variant="primary"
+          icon="pi-plus"
+          iconPos="left"
+          routerLink="new">
+          Nouveau produit
+        </app-button>
+      }
+    </app-page-header>
+
+    <!-- Filters -->
+    <div class="ft-filters">
+      <div class="ft-filters__header">
+        <h3 class="ft-filters__title"><i class="pi pi-filter"></i> Filtres</h3>
+        @if (hasActiveFilters()) {
+          <button
+            class="ft-filters__reset"
+            (click)="resetFilters()"
+            aria-label="Réinitialiser les filtres">
+            <i class="pi pi-times"></i>
+            Réinitialiser ({{ activeFiltersCount() }})
+          </button>
+        }
+      </div>
+      <div class="ft-filters__row">
+        <span class="p-input-icon-left flex-1">
+          <i class="pi pi-search"></i>
+          <input 
+            pInputText 
+            type="text" 
+            placeholder="Rechercher par nom ou code..." 
+            [(ngModel)]="searchTerm"
+            (input)="onSearch()"
+            class="w-full">
+        </span>
+
+        <p-dropdown 
+          [options]="categoryOptions" 
+          [(ngModel)]="selectedCategory"
+          placeholder="Toutes les types"
+          [showClear]="true"
+          (onChange)="onSearch()">
+        </p-dropdown>
+
+        <p-dropdown 
+          [options]="statusOptions" 
+          [(ngModel)]="selectedStatus"
+          placeholder="Tous les statuts"
+          [showClear]="true"
+          (onChange)="onSearch()">
+        </p-dropdown>
+      </div>
+    </div>
+
+    <!-- Totaux filtrés (conformes aux filtres ; tout le jeu filtré est chargé côté client) -->
+    <app-table-totals-bar [metrics]="summaryMetrics()" [loading]="loading()"></app-table-totals-bar>
+
+    <!-- Table -->
+    <div class="ft-table-card">
+      @if (initialLoad()) {
+        <app-skeleton-table
+          [rows]="5"
+          [columns]="skeletonColumns">
+        </app-skeleton-table>
+      } @else {
+        <p-table 
+          [value]="products()" 
+          [loading]="loading()"
+          [paginator]="true"
+          [rows]="20"
+          [rowHover]="true"
+          styleClass="p-datatable-sm">
+        
+        <ng-template pTemplate="header">
+          <tr>
+            <th pSortableColumn="code" style="width: 120px">Code <p-sortIcon field="code"></p-sortIcon></th>
+            <th pSortableColumn="name">Désignation <p-sortIcon field="name"></p-sortIcon></th>
+            <th>Type</th>
+            <th>Catégorie</th>
+            <th pSortableColumn="unitPrice" class="text-right" style="width: 140px">Prix HT <p-sortIcon field="unitPrice"></p-sortIcon></th>
+            <th style="width: 80px">Unité</th>
+            <th style="width: 80px">TVA</th>
+            <th style="width: 120px">Stock</th>
+            <th style="width: 80px">Statut</th>
+            <th style="width: 140px" class="text-right">Actions</th>
+          </tr>
+        </ng-template>
+
+        <ng-template pTemplate="body" let-product>
+          <tr>
+            <td>
+              <code class="product-code">{{ product.code }}</code>
+            </td>
+            <td>
+              <div class="product-name">
+                <span class="name">{{ product.name }}</span>
+                @if (product.description) {
+                  <span class="desc">{{ product.description }}</span>
+                }
+              </div>
+            </td>
+            <td>
+              <p-tag [value]="product.typeDisplay" severity="info"></p-tag>
+            </td>
+            <td>
+              <span class="product-category">{{ product.category }}</span>
+            </td>
+            <td class="text-right">
+              <span class="price">{{ product.unitPrice | number:'1.3-3' }} TND</span>
+            </td>
+            <td>{{ product.unit }}</td>
+            <td>{{ product.vatRate }}%</td>
+            <td>
+              <p-tag 
+                [value]="product.isStockManaged ? 'Stock activé' : 'Sans stock'" 
+                [severity]="product.isStockManaged ? 'success' : 'secondary'">
+              </p-tag>
+            </td>
+            <td>
+              <p-tag 
+                [value]="product.isActive ? 'Actif' : 'Inactif'" 
+                [severity]="product.isActive ? 'success' : 'secondary'">
+              </p-tag>
+            </td>
+            <td>
+              <div class="actions justify-end">
+                @if (canToggleStockOnProduct() && !product.isStockManaged && product.typeDisplay === 'Produit') {
+                  <app-button 
+                    variant="ghost"
+                    size="sm"
+                    [icon]="stockToggleLoading().has(product.id) ? 'pi-spin pi-spinner' : 'pi-box'"
+                    [iconOnly]="true"
+                    [disabled]="stockToggleLoading().has(product.id)"
+                    pTooltip="Activer la gestion de stock"
+                    tooltipPosition="top"
+                    (click)="enableStockManagement(product)"
+                    ariaLabel="Activer la gestion de stock">
+                  </app-button>
+                }
+                @if (canViewProduct()) {
+                  <app-button 
+                    variant="ghost"
+                    size="sm"
+                    icon="pi-eye"
+                    [iconOnly]="true"
+                    [routerLink]="[product.id, 'view']"
+                    pTooltip="Voir les détails du produit"
+                    tooltipPosition="top"
+                    ariaLabel="Voir les détails du produit">
+                  </app-button>
+                }
+                @if (canEditProduct()) {
+                  <app-button 
+                    variant="ghost"
+                    size="sm"
+                    icon="pi-pencil"
+                    [iconOnly]="true"
+                    [routerLink]="[product.id, 'edit']"
+                    pTooltip="Modifier le produit"
+                    tooltipPosition="top"
+                    ariaLabel="Modifier le produit">
+                  </app-button>
+                }
+                @if (canDeleteProduct()) {
+                  <app-button 
+                    variant="ghost"
+                    size="sm"
+                    icon="pi-trash"
+                    [iconOnly]="true"
+                    (click)="confirmDelete(product)"
+                    ariaLabel="Supprimer le produit">
+                  </app-button>
+                }
+              </div>
+            </td>
+          </tr>
+        </ng-template>
+
+        <ng-template pTemplate="emptymessage">
+          <tr>
+            <td colspan="10" class="text-center p-6">
+              <app-empty-state
+                illustration="empty-products.svg"
+                title="Aucun produit"
+                description="Ajoutez votre premier produit ou service pour commencer à créer des factures."
+                [showAction]="canCreateProduct()"
+                actionLabel="Ajouter un produit"
+                actionRoute="new">
+              </app-empty-state>
+            </td>
+          </tr>
+        </ng-template>
+        </p-table>
+      }
+    </div>
+
+  `,
+  styles: [`
+    .product-code {
+      font-family: var(--font-family-mono, 'JetBrains Mono', monospace);
+      font-size: var(--font-size-sm);
+      background: var(--color-neutral-100);
+      padding: var(--spacing-1) var(--spacing-2);
+      border-radius: var(--radius-sm);
+    }
+
+    .product-name {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-1);
+
+      .name {
+        font-weight: var(--font-weight-medium);
+        color: var(--color-neutral-900);
+      }
+
+      .desc {
+        font-size: var(--font-size-sm);
+        color: var(--color-neutral-500);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 300px;
+      }
+    }
+
+    .price {
+      font-family: var(--font-family-mono, 'JetBrains Mono', monospace);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-neutral-800);
+    }
+
+    .product-category {
+      font-size: var(--font-size-sm);
+      color: var(--color-neutral-600);
+    }
+
+    .actions {
+      display: flex;
+      gap: var(--spacing-1);
+    }
+
+    .justify-end {
+      justify-content: flex-end;
+    }
+
+    .text-right {
+      text-align: right;
+    }
+  `]
+})
+export class ProductListComponent implements OnInit {
+  private confirmationService = inject(ConfirmationService);
+  private toastService = inject(ToastService);
+  private productService = inject(ProductService);
+  private errorHandler = inject(ErrorHandlerService);
+  private router = inject(Router);
+  private route = inject(ActivatedRoute);
+  private auth = inject(AuthService);
+
+  /** Stock module + product update (toggle uses PATCH product via update). */
+  canToggleStockOnProduct = computed(() =>
+    this.auth.hasModule(AppModule.Stock) && this.auth.hasPermission(PERMISSIONS.products.update)
+  );
+
+  canCreateProduct = computed(() => this.auth.hasPermission(PERMISSIONS.products.create));
+  canViewProduct = computed(() => this.auth.hasPermission(PERMISSIONS.products.read));
+  canEditProduct = computed(() => this.auth.hasPermission(PERMISSIONS.products.update));
+  canDeleteProduct = computed(() => this.auth.hasPermission(PERMISSIONS.products.delete));
+
+  loading = signal(true);
+  initialLoad = signal(true);
+  products = signal<ProductListItem[]>([]);
+  totalRecords = signal(0);
+  stockToggleLoading = signal<Set<string>>(new Set());
+
+  /** Totaux de la zone, calculés sur les lignes filtrées (tout est chargé côté client). */
+  summaryMetrics = computed<TotalMetric[]>(() => {
+    const rows = this.products();
+    return [
+      { label: 'Produits', value: rows.length, format: 'number', icon: 'pi-box', tone: 'primary' },
+      { label: 'Actifs', value: rows.filter(p => p.isActive).length, format: 'number', icon: 'pi-check-circle', tone: 'emerald' },
+      { label: 'Inactifs', value: rows.filter(p => !p.isActive).length, format: 'number', icon: 'pi-ban', tone: 'neutral' },
+      { label: 'Gérés en stock', value: rows.filter(p => p.isStockManaged).length, format: 'number', icon: 'pi-database', tone: 'cyan' }
+    ];
+  });
+
+  searchTerm = '';
+  selectedCategory: string | null = null;
+  selectedStatus: boolean | null = null;
+
+  breadcrumbItems: BreadcrumbItem[] = [
+    { label: 'Tableau de bord', route: '/dashboard', icon: 'pi-home' },
+    { label: 'Produits & Services' }
+  ];
+
+  skeletonColumns: SkeletonColumn[] = [
+    { width: '120px' },
+    { width: '200px' },
+    { width: '100px' },
+    { width: '100px' },
+    { width: '140px' },
+    { width: '80px' },
+    { width: '80px' },
+    { width: '120px' },
+    { width: '80px' },
+    { width: '140px' }
+  ];
+
+  categoryOptions: CategoryOption[] = [
+    { label: 'Produits', value: 'Produit' },
+    { label: 'Services', value: 'Service' },
+    { label: 'Abonnements', value: 'Abonnement' }
+  ];
+
+  statusOptions = [
+    { label: 'Actifs', value: true },
+    { label: 'Inactifs', value: false }
+  ];
+
+  hasActiveFilters = computed(() => {
+    return !!(this.searchTerm || this.selectedCategory || this.selectedStatus !== null);
+  });
+
+  activeFiltersCount = computed(() => {
+    let count = 0;
+    if (this.searchTerm) count++;
+    if (this.selectedCategory) count++;
+    if (this.selectedStatus !== null) count++;
+    return count;
+  });
+
+  ngOnInit(): void {
+    this.route.queryParamMap.pipe(take(1)).subscribe((paramMap) => {
+      const applied = applyProductListFiltersFromQuery(paramMap, {
+        search: this.searchTerm || null
+      });
+      if (applied.search) {
+        this.searchTerm = applied.search;
+      }
+    });
+
+    this.loadProducts();
+
+    // Écouter les changements de route pour rafraîchir la liste après création/modification
+    this.router.events
+      .pipe(filter(event => event instanceof NavigationEnd))
+      .subscribe(() => {
+        // Rafraîchir la liste si on revient de la page de création/modification
+        const url = this.router.url;
+        if (url === '/products' || url.startsWith('/products?')) {
+          this.loadProducts();
+        }
+      });
+  }
+
+  loadProducts(): void {
+    this.loading.set(true);
+
+    const params: ProductSearchParams = {
+      search: this.searchTerm || undefined,
+      category: this.selectedCategory || undefined,
+      isActive: this.selectedStatus !== null ? this.selectedStatus : undefined,
+      page: 1,
+      pageSize: 100 // Charger tous les produits pour l'instant
+    };
+
+    this.productService.getProducts(params).subscribe({
+      next: (response) => {
+        if (response.success) {
+          this.products.set(response.data.items);
+          this.totalRecords.set(response.data.totalCount);
+        } else {
+          this.toastService.add({
+            severity: 'error',
+            summary: 'Erreur',
+            detail: response.errors?.join(', ') || 'Impossible de charger les produits'
+          });
+          this.products.set([]);
+        }
+        this.loading.set(false);
+        this.initialLoad.set(false);
+      },
+      error: (error) => {
+        const errorMessage = this.errorHandler.extractErrorMessage(error);
+        this.toastService.add({
+          severity: 'error',
+          summary: 'Erreur',
+          detail: errorMessage || 'Impossible de charger les produits'
+        });
+        this.errorHandler.logError('Failed to load products', error);
+        this.products.set([]);
+        this.loading.set(false);
+        this.initialLoad.set(false);
+      }
+    });
+  }
+
+  onSearch(): void {
+    this.loadProducts();
+  }
+
+  resetFilters(): void {
+    this.searchTerm = '';
+    this.selectedCategory = null;
+    this.selectedStatus = null;
+    this.loadProducts();
+  }
+
+  isStockToggleLoading(productId: string): boolean {
+    return this.stockToggleLoading().has(productId);
+  }
+
+  enableStockManagement(product: ProductListItem): void {
+    this.confirmationService.confirm({
+      message: `Êtes-vous sûr de vouloir activer la gestion de stock pour le produit "${product.name}" ? Il n'est pas possible de désactiver cette fonctionnalité une fois activée.`,
+      header: 'Confirmation d\'activation',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Oui, activer',
+      rejectLabel: 'Non, annuler',
+      acceptButtonStyleClass: 'p-button-primary',
+      accept: () => {
+        const currentSet = new Set(this.stockToggleLoading());
+        currentSet.add(product.id);
+        this.stockToggleLoading.set(currentSet);
+
+        const request = {
+          code: product.code,
+          name: product.name,
+          description: product.description ?? null,
+          category: product.typeDisplay,
+          productCategoryId: product.categoryId || undefined,
+          unitPrice: product.unitPrice,
+          purchasePrice: product.purchasePrice ?? null,
+          unit: product.unit,
+          vatRate: product.vatRate,
+          isActive: product.isActive,
+          isStockManaged: true
+        };
+
+        this.productService.updateProduct(product.id, request).subscribe({
+          next: (response) => {
+            const newSet = new Set(this.stockToggleLoading());
+            newSet.delete(product.id);
+            this.stockToggleLoading.set(newSet);
+
+            if (response.success) {
+              this.toastService.add({
+                severity: 'success',
+                summary: 'Succès',
+                detail: 'La gestion de stock a été activée avec succès'
+              });
+              this.loadProducts(); // Rafraîchir la liste
+            } else {
+              this.toastService.add({
+                severity: 'error',
+                summary: 'Erreur',
+                detail: response.errors?.join(', ') || 'Impossible d\'activer la gestion de stock'
+              });
+            }
+          },
+          error: (error) => {
+            const newSet = new Set(this.stockToggleLoading());
+            newSet.delete(product.id);
+            this.stockToggleLoading.set(newSet);
+
+            const errorMessage = this.errorHandler.extractErrorMessage(error);
+            this.toastService.add({
+              severity: 'error',
+              summary: 'Erreur',
+              detail: errorMessage || 'Impossible d\'activer la gestion de stock'
+            });
+            this.errorHandler.logError('Failed to enable stock management', error);
+          }
+        });
+      }
+    });
+  }
+
+  confirmDelete(product: ProductListItem): void {
+    this.confirmationService.confirm({
+      message: `Êtes-vous sûr de vouloir supprimer le produit "${product.name}" ?`,
+      header: 'Confirmation de suppression',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Oui, supprimer',
+      rejectLabel: 'Non, annuler',
+      acceptButtonStyleClass: 'p-button-danger',
+      accept: () => {
+        this.productService.deleteProduct(product.id).subscribe({
+          next: (response) => {
+            if (response.success) {
+              this.toastService.add({
+                severity: 'success',
+                summary: 'Succès',
+                detail: 'Produit supprimé avec succès'
+              });
+              this.loadProducts(); // Rafraîchir la liste
+            } else {
+              this.toastService.add({
+                severity: 'error',
+                summary: 'Erreur',
+                detail: response.errors?.join(', ') || 'Impossible de supprimer le produit'
+              });
+            }
+          },
+          error: (error) => {
+            const errorMessage = this.errorHandler.extractErrorMessage(error);
+            this.errorHandler.logError('Failed to delete product', error);
+            this.confirmationService.alert({
+              message: errorMessage || 'Impossible de supprimer le produit',
+              header: 'Impossible de supprimer',
+              icon: 'pi pi-exclamation-triangle'
+            });
+          }
+        });
+      }
+    });
+  }
+}

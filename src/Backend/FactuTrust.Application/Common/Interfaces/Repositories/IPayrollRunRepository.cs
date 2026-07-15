@@ -1,0 +1,45 @@
+using FactuTrust.Domain.Entities.Payroll;
+
+namespace FactuTrust.Application.Common.Interfaces.Repositories;
+
+/// <summary>
+/// Repository interface for the PayrollRun aggregate (module Paie).
+/// </summary>
+public interface IPayrollRunRepository
+{
+    /// <summary>Loads a run without its payslips (suited for status transitions that emit domain events).</summary>
+    Task<PayrollRun?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>Loads a run with all its payslips and lines.</summary>
+    Task<PayrollRun?> GetByIdWithPayslipsAsync(Guid id, CancellationToken cancellationToken = default);
+
+    Task<PayrollRun?> GetByPeriodAsync(int year, int month, CancellationToken cancellationToken = default);
+
+    /// <summary>Loads a single payslip (with its lines).</summary>
+    Task<Payslip?> GetPayslipByIdAsync(Guid payslipId, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<PayrollRun>> ListAsync(int? year = null, CancellationToken cancellationToken = default);
+
+    /// <summary>Runs whose period falls within a civil quarter (used for the DTS declaration).</summary>
+    Task<IReadOnlyList<PayrollRun>> ListByQuarterWithPayslipsAsync(int year, int quarter, CancellationToken cancellationToken = default);
+
+    Task<bool> ExistsForPeriodAsync(int year, int month, CancellationToken cancellationToken = default);
+
+    /// <summary>True if a run for the period is validated or closed (locks monthly variable edits).</summary>
+    Task<bool> HasValidatedOrClosedRunForMonthAsync(int year, int month, CancellationToken cancellationToken = default);
+
+    /// <summary>Inserts a brand new (draft) run.</summary>
+    Task<PayrollRun> AddAsync(PayrollRun run, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Persists a calculated run: removes any previous payslips and inserts the freshly computed
+    /// ones, updating the run totals and status.
+    /// </summary>
+    Task PersistCalculationAsync(PayrollRun run, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates run scalar fields only (status, validation/close markers). The passed instance
+    /// carries any domain events, which are dispatched on save.
+    /// </summary>
+    Task UpdateScalarAsync(PayrollRun run, CancellationToken cancellationToken = default);
+}

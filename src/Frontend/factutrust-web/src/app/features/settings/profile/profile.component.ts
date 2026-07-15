@@ -1,0 +1,387 @@
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { RouterModule } from '@angular/router';
+import { InputTextModule } from 'primeng/inputtext';
+import { PasswordModule } from 'primeng/password';
+import { ButtonModule } from 'primeng/button';
+import { CardModule } from 'primeng/card';
+import { DividerModule } from 'primeng/divider';
+import { AvatarModule } from 'primeng/avatar';
+import { ToastService } from '@core/services/toast.service';
+import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
+import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
+import { ErrorMessageService } from '@core/services/error-message.service';
+import { AuthService } from '@core/services/auth.service';
+
+@Component({
+  selector: 'app-profile',
+  standalone: true,
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    RouterModule,
+    InputTextModule,
+    PasswordModule,
+    ButtonModule,
+    CardModule,
+    DividerModule,
+    AvatarModule,
+    PageHeaderComponent,
+    BreadcrumbComponent
+  ],
+  template: `
+    <app-breadcrumb [items]="breadcrumbItems"></app-breadcrumb>
+    
+    <app-page-header 
+      title="Mon profil" 
+      subtitle="Gérez vos informations personnelles">
+      <p-button 
+        label="Retour" 
+        icon="pi pi-arrow-left" 
+        [outlined]="true"
+        routerLink="/settings">
+      </p-button>
+    </app-page-header>
+
+    <div class="profile-grid">
+      <!-- Profile Info -->
+      <p-card header="Informations personnelles" styleClass="profile-card">
+        <div class="profile-header">
+          <p-avatar 
+            [label]="getInitials()"
+            size="xlarge"
+            styleClass="profile-avatar">
+          </p-avatar>
+          <div class="profile-info">
+            <h3>{{ user()?.fullName }}</h3>
+            <p>{{ user()?.email }}</p>
+            <span class="role-badge">{{ user()?.roleDisplay }}</span>
+          </div>
+        </div>
+
+        <p-divider></p-divider>
+
+        <form [formGroup]="profileForm" (ngSubmit)="saveProfile()">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="firstName">Prénom</label>
+              <input 
+                pInputText 
+                id="firstName" 
+                formControlName="firstName"
+                class="w-full">
+            </div>
+
+            <div class="form-group">
+              <label for="lastName">Nom</label>
+              <input 
+                pInputText 
+                id="lastName" 
+                formControlName="lastName"
+                class="w-full">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="email">Adresse email</label>
+            <input 
+              pInputText 
+              id="email" 
+              type="email"
+              formControlName="email"
+              class="w-full">
+          </div>
+
+          <div class="form-actions">
+            <p-button 
+              type="submit"
+              label="Enregistrer" 
+              icon="pi pi-check"
+              [loading]="savingProfile()"
+              [disabled]="profileForm.invalid">
+            </p-button>
+          </div>
+        </form>
+      </p-card>
+
+      <!-- Security -->
+      <p-card header="Sécurité" styleClass="security-card">
+        <form [formGroup]="passwordForm" (ngSubmit)="changePassword()">
+          <div class="form-group">
+            <label for="currentPassword">Mot de passe actuel</label>
+            <p-password 
+              id="currentPassword" 
+              formControlName="currentPassword"
+              [feedback]="false"
+              [toggleMask]="true"
+              styleClass="w-full"
+              inputStyleClass="w-full">
+            </p-password>
+          </div>
+
+          <div class="form-group">
+            <label for="newPassword">Nouveau mot de passe</label>
+            <p-password 
+              id="newPassword" 
+              formControlName="newPassword"
+              [toggleMask]="true"
+              styleClass="w-full"
+              inputStyleClass="w-full"
+              promptLabel="Saisissez un nouveau mot de passe"
+              weakLabel="Faible"
+              mediumLabel="Moyen"
+              strongLabel="Fort">
+            </p-password>
+            <small class="form-hint">Minimum 8 caractères avec majuscule et chiffre</small>
+          </div>
+
+          <div class="form-group">
+            <label for="confirmPassword">Confirmer le mot de passe</label>
+            <p-password 
+              id="confirmPassword" 
+              formControlName="confirmPassword"
+              [feedback]="false"
+              [toggleMask]="true"
+              styleClass="w-full"
+              inputStyleClass="w-full">
+            </p-password>
+          </div>
+
+          <div class="form-actions">
+            <p-button 
+              type="submit"
+              label="Changer le mot de passe" 
+              icon="pi pi-lock"
+              [loading]="savingPassword()"
+              [disabled]="passwordForm.invalid">
+            </p-button>
+          </div>
+        </form>
+
+        <p-divider></p-divider>
+
+        <div class="two-factor-section">
+          <div class="two-factor-info">
+            <h4>Authentification à deux facteurs</h4>
+            <p>Ajoutez une couche de sécurité supplémentaire à votre compte</p>
+          </div>
+          <p-button 
+            [label]="user()?.twoFactorEnabled ? 'Désactiver' : 'Activer'"
+            [outlined]="true"
+            [severity]="user()?.twoFactorEnabled ? 'danger' : 'success'"
+            icon="pi pi-shield">
+          </p-button>
+        </div>
+      </p-card>
+    </div>
+
+  `,
+  styles: [`
+    .profile-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: var(--spacing-6);
+
+      @media (max-width: 1024px) {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .profile-header {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-4);
+      margin-bottom: var(--spacing-4);
+    }
+
+    .profile-info {
+      h3 {
+        margin: 0 0 var(--spacing-1);
+        font-size: var(--font-size-xl);
+        font-weight: var(--font-weight-semibold);
+        color: var(--color-neutral-900);
+      }
+
+      p {
+        margin: 0 0 var(--spacing-2);
+        color: var(--color-neutral-600);
+      }
+
+      .role-badge {
+        display: inline-block;
+        padding: var(--spacing-1) var(--spacing-3);
+        background: var(--color-primary-100);
+        color: var(--color-primary-700);
+        border-radius: var(--radius-full);
+        font-size: var(--font-size-sm);
+        font-weight: var(--font-weight-medium);
+      }
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--spacing-4);
+
+      @media (max-width: 640px) {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .form-group {
+      margin-bottom: var(--spacing-4);
+
+      label {
+        display: block;
+        margin-bottom: var(--spacing-2);
+        font-weight: var(--font-weight-medium);
+        color: var(--color-neutral-700);
+      }
+    }
+
+    .form-hint {
+      color: var(--color-neutral-500);
+      font-size: var(--font-size-sm);
+      margin-top: var(--spacing-1);
+      display: block;
+    }
+
+    .form-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: var(--spacing-4);
+    }
+
+    .two-factor-section {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: var(--spacing-4);
+
+      h4 {
+        margin: 0 0 var(--spacing-1);
+        font-size: var(--font-size-base);
+        color: var(--color-neutral-800);
+      }
+
+      p {
+        margin: 0;
+        font-size: var(--font-size-sm);
+        color: var(--color-neutral-500);
+      }
+    }
+
+    :host ::ng-deep {
+      .profile-avatar {
+        background: var(--color-primary-500);
+        font-size: 1.5rem;
+      }
+
+      .profile-card,
+      .security-card {
+        .p-card-header {
+          padding: var(--spacing-4) var(--spacing-5);
+          border-bottom: 1px solid var(--color-neutral-200);
+          font-weight: var(--font-weight-semibold);
+        }
+
+        .p-card-body {
+          padding: var(--spacing-5);
+        }
+      }
+
+      .p-password {
+        width: 100%;
+      }
+    }
+  `]
+})
+export class ProfileComponent implements OnInit {
+  private fb = inject(FormBuilder);
+  private authService = inject(AuthService);
+  private toastService = inject(ToastService);
+  errorMessageService = inject(ErrorMessageService);
+
+  breadcrumbItems: BreadcrumbItem[] = [
+    { label: 'Tableau de bord', route: '/dashboard', icon: 'pi-home' },
+    { label: 'Paramètres', route: '/settings' },
+    { label: 'Mon profil' }
+  ];
+
+  user = this.authService.user;
+  savingProfile = signal(false);
+  savingPassword = signal(false);
+
+  profileForm: FormGroup = this.fb.group({
+    firstName: ['', Validators.required],
+    lastName: ['', Validators.required],
+    email: ['', [Validators.required, Validators.email]]
+  });
+
+  passwordForm: FormGroup = this.fb.group({
+    currentPassword: ['', Validators.required],
+    newPassword: ['', [Validators.required, Validators.minLength(8)]],
+    confirmPassword: ['', Validators.required]
+  });
+
+  ngOnInit(): void {
+    const user = this.user();
+    if (user) {
+      this.profileForm.patchValue({
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email
+      });
+    }
+  }
+
+  getInitials(): string {
+    const user = this.user();
+    if (!user) return '';
+    return `${user.firstName?.[0] || ''}${user.lastName?.[0] || ''}`.toUpperCase();
+  }
+
+  saveProfile(): void {
+    if (this.profileForm.invalid) return;
+
+    this.savingProfile.set(true);
+    
+    // Simulated - Replace with actual API call
+    setTimeout(() => {
+      this.toastService.add({
+        severity: 'success',
+        summary: 'Succès',
+        detail: 'Profil mis à jour avec succès'
+      });
+      this.savingProfile.set(false);
+    }, 1000);
+  }
+
+  changePassword(): void {
+    if (this.passwordForm.invalid) return;
+
+    const { newPassword, confirmPassword } = this.passwordForm.value;
+    if (newPassword !== confirmPassword) {
+      this.toastService.add({
+        severity: 'error',
+        summary: 'Erreur',
+        detail: 'Les mots de passe ne correspondent pas'
+      });
+      return;
+    }
+
+    this.savingPassword.set(true);
+    
+    // Simulated - Replace with actual API call
+    setTimeout(() => {
+      this.toastService.add({
+        severity: 'success',
+        summary: 'Succès',
+        detail: 'Mot de passe modifié avec succès'
+      });
+      this.passwordForm.reset();
+      this.savingPassword.set(false);
+    }, 1000);
+  }
+}

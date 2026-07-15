@@ -1,0 +1,7 @@
+{
+  "/assets/powerpoint": {
+    "target": "https://localhost:7001",
+    "secure": false,
+    "changeOrigin": true
+  }
+}

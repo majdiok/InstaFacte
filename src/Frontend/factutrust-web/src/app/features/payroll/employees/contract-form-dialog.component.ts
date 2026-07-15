@@ -1,0 +1,245 @@
+import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges, inject, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { DialogModule } from 'primeng/dialog';
+import { DropdownModule } from 'primeng/dropdown';
+import { CalendarModule } from 'primeng/calendar';
+import { InputNumberModule } from 'primeng/inputnumber';
+import { InputTextModule } from 'primeng/inputtext';
+import { InputSwitchModule } from 'primeng/inputswitch';
+import { CheckboxModule } from 'primeng/checkbox';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { EmployeeService, CreateContractRequest, EmploymentContract } from '@core/services/employee.service';
+import { ToastService } from '@core/services/toast.service';
+import { CONTRACT_TYPE_OPTIONS, SOCIAL_REGIME_OPTIONS } from '../payroll-options';
+
+export interface AllowanceRow {
+  label: string;
+  amount: number;
+  taxable: boolean;
+  subjectToCnss: boolean;
+}
+
+function toIsoDate(value: Date | null | undefined): string | undefined {
+  if (!value) return undefined;
+  const y = value.getFullYear();
+  const m = String(value.getMonth() + 1).padStart(2, '0');
+  const d = String(value.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function parseIsoDate(value?: string): Date | null {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+@Component({
+  selector: 'app-contract-form-dialog',
+  standalone: true,
+  imports: [
+    CommonModule,
+    FormsModule,
+    DialogModule,
+    DropdownModule,
+    CalendarModule,
+    InputNumberModule,
+    InputTextModule,
+    InputSwitchModule,
+    CheckboxModule,
+    ButtonComponent
+  ],
+  template: `
+    <p-dialog
+      [header]="editContract ? 'Modifier le contrat' : 'Nouveau contrat'"
+      [(visible)]="visible"
+      [modal]="true"
+      [style]="{ width: '720px', maxWidth: '95vw' }"
+      [draggable]="false"
+      (onHide)="onHide()">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Type</label>
+          <p-dropdown [options]="contractTypeOptions" [(ngModel)]="type" optionLabel="label" optionValue="value" appendTo="body" styleClass="w-full" />
+        </div>
+        <div class="form-group">
+          <label>Régime social</label>
+          <p-dropdown [options]="regimeOptions" [(ngModel)]="regime" optionLabel="label" optionValue="value" appendTo="body" styleClass="w-full" />
+        </div>
+        <div class="form-group">
+          <label>Date début</label>
+          <p-calendar [(ngModel)]="startDate" dateFormat="dd/mm/yy" [showIcon]="true" appendTo="body" styleClass="w-full" />
+        </div>
+        <div class="form-group">
+          <label>Date fin</label>
+          <p-calendar [(ngModel)]="endDate" dateFormat="dd/mm/yy" [showIcon]="true" appendTo="body" styleClass="w-full" />
+        </div>
+        <div class="form-group">
+          <label>Salaire de base (TND)</label>
+          <p-inputNumber [(ngModel)]="baseSalary" [minFractionDigits]="3" [maxFractionDigits]="3" styleClass="w-full" />
+        </div>
+        <div class="form-group">
+          <label>Taux accident travail (%)</label>
+          <p-inputNumber [(ngModel)]="workAccidentRate" [min]="0" [max]="100" styleClass="w-full" />
+        </div>
+        <div class="form-group full-width">
+          <label>Intitulé poste</label>
+          <input pInputText [(ngModel)]="jobTitle" class="w-full" />
+        </div>
+        @if (editContract) {
+          <div class="form-group">
+            <label>Contrat actif</label>
+            <p-inputSwitch [(ngModel)]="isActive" />
+          </div>
+        }
+      </div>
+
+      <h4 class="mt-3">Primes</h4>
+      <table class="allowance-table">
+        <thead>
+          <tr><th>Libellé</th><th>Montant</th><th>Imposable</th><th>CNSS</th><th></th></tr>
+        </thead>
+        <tbody>
+          @for (row of allowanceRows; track i; let i = $index) {
+            <tr>
+              <td><input pInputText [(ngModel)]="row.label" [name]="'label' + i" class="w-full" /></td>
+              <td><p-inputNumber [(ngModel)]="row.amount" [minFractionDigits]="3" [name]="'amt' + i" /></td>
+              <td><p-checkbox [(ngModel)]="row.taxable" [binary]="true" [name]="'tax' + i" /></td>
+              <td><p-checkbox [(ngModel)]="row.subjectToCnss" [binary]="true" [name]="'cnss' + i" /></td>
+              <td><button type="button" class="p-button p-button-text p-button-danger" (click)="removeAllowance(i)">×</button></td>
+            </tr>
+          }
+        </tbody>
+      </table>
+      <button type="button" class="p-button p-button-text mt-2" (click)="addAllowance()">+ Ajouter une prime</button>
+
+      <ng-template pTemplate="footer">
+        <app-button variant="outline" (click)="close()">Annuler</app-button>
+        <app-button variant="primary" [disabled]="saving()" (click)="save()">Enregistrer</app-button>
+      </ng-template>
+    </p-dialog>
+  `,
+  styles: [`
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .form-group { display: flex; flex-direction: column; gap: 0.35rem; }
+    .full-width { grid-column: 1 / -1; }
+    .allowance-table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+    .allowance-table th, .allowance-table td { padding: 0.5rem; border-bottom: 1px solid #e2e8f0; text-align: left; }
+    .w-full { width: 100%; }
+    .mt-2 { margin-top: 0.5rem; }
+    .mt-3 { margin-top: 1rem; }
+  `]
+})
+export class ContractFormDialogComponent implements OnChanges {
+  private readonly employees = inject(EmployeeService);
+  private readonly toast = inject(ToastService);
+
+  readonly contractTypeOptions = CONTRACT_TYPE_OPTIONS;
+  readonly regimeOptions = SOCIAL_REGIME_OPTIONS;
+
+  @Input() visible = false;
+  @Input() employeeId = '';
+  @Input() editContract: EmploymentContract | null = null;
+  @Output() visibleChange = new EventEmitter<boolean>();
+  @Output() saved = new EventEmitter<void>();
+
+  saving = signal(false);
+  type = 'Cdi';
+  regime = 'Rsna';
+  startDate: Date | null = new Date();
+  endDate: Date | null = null;
+  baseSalary = 0;
+  workAccidentRate = 0.4;
+  jobTitle = '';
+  isActive = true;
+  allowanceRows: AllowanceRow[] = [];
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (!this.visible) return;
+    if (this.editContract) {
+      const c = this.editContract;
+      this.type = c.type;
+      this.regime = c.regime;
+      this.startDate = parseIsoDate(c.startDate);
+      this.endDate = parseIsoDate(c.endDate);
+      this.baseSalary = c.baseSalary;
+      this.workAccidentRate = c.workAccidentRate;
+      this.jobTitle = c.jobTitle ?? '';
+      this.isActive = c.isActive;
+      this.allowanceRows = c.allowances.map(a => ({
+        label: a.label,
+        amount: a.amount,
+        taxable: a.taxable,
+        subjectToCnss: a.subjectToCnss
+      }));
+    } else if (changes['visible']?.currentValue === true && !this.editContract) {
+      this.resetFormFields();
+    }
+  }
+
+  addAllowance(): void {
+    this.allowanceRows.push({ label: '', amount: 0, taxable: true, subjectToCnss: true });
+  }
+
+  removeAllowance(i: number): void {
+    this.allowanceRows.splice(i, 1);
+  }
+
+  save(): void {
+    if (!this.employeeId || !this.startDate) return;
+    this.saving.set(true);
+    const allowances = this.allowanceRows
+      .filter(r => r.label.trim())
+      .map(r => ({ label: r.label.trim(), amount: r.amount, taxable: r.taxable, subjectToCnss: r.subjectToCnss }));
+
+    const body: CreateContractRequest = {
+      type: this.type,
+      regime: this.regime,
+      startDate: toIsoDate(this.startDate)!,
+      endDate: toIsoDate(this.endDate),
+      baseSalary: this.baseSalary,
+      workAccidentRate: this.workAccidentRate,
+      jobTitle: this.jobTitle || undefined,
+      allowances
+    };
+
+    const req = this.editContract
+      ? this.employees.updateContract(this.editContract.id, { ...body, isActive: this.isActive })
+      : this.employees.addContract(this.employeeId, body);
+
+    req.subscribe({
+      next: () => {
+        this.toast.add({ severity: 'success', summary: 'Contrat', detail: 'Contrat enregistré.' });
+        this.saved.emit();
+        this.close();
+        this.saving.set(false);
+      },
+      error: err => {
+        this.toast.add({ severity: 'error', summary: 'Contrat', detail: err.error?.message ?? 'Enregistrement impossible.' });
+        this.saving.set(false);
+      }
+    });
+  }
+
+  close(): void {
+    this.visible = false;
+    this.visibleChange.emit(false);
+    this.resetFormFields();
+  }
+
+  onHide(): void {
+    this.visibleChange.emit(false);
+  }
+
+  private resetFormFields(): void {
+    this.type = 'Cdi';
+    this.regime = 'Rsna';
+    this.startDate = new Date();
+    this.endDate = null;
+    this.baseSalary = 0;
+    this.workAccidentRate = 0.4;
+    this.jobTitle = '';
+    this.isActive = true;
+    this.allowanceRows = [];
+  }
+}

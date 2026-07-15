@@ -1,0 +1,296 @@
+<section class="board-v2" [attr.aria-busy]="loading()">
+  <!-- Skip link — keyboard users can jump directly to the table. -->
+  <a class="skip-link" href="#repl-table" (click)="$event.preventDefault(); jumpToTable()">
+    Aller directement au tableau des recommandations
+  </a>
+
+  <!-- KPI bar (top) -->
+  <app-replenishment-kpi-bar [kpi]="kpi()" />
+
+  <!-- Filters strip -->
+  <app-replenishment-filters
+    [initial]="filters()"
+    (change)="onFiltersChange($event)" />
+
+  <!-- Bulk actions / utilities -->
+  <header class="actions-bar" role="toolbar" aria-label="Actions du module Réapprovisionnement">
+    <div class="selection-info" aria-live="polite">
+      <strong>{{ selectionCount() }}</strong> / {{ totalCount() }} sélectionnée(s)
+    </div>
+
+    @if (canManage()) {
+      <button
+        type="button"
+        class="btn btn-secondary"
+        [disabled]="rows().length === 0"
+        (click)="toggleSelectAll()"
+        [attr.aria-pressed]="allRowsSelected()"
+        aria-label="Tout (dé)sélectionner">
+        <i class="pi" [class.pi-square]="!allRowsSelected() && !someRowsSelected()" [class.pi-minus]="someRowsSelected()" [class.pi-check-square]="allRowsSelected()" aria-hidden="true"></i>
+        {{ allRowsSelected() ? 'Désélectionner tout' : 'Tout sélectionner' }}
+      </button>
+
+      <button
+        type="button"
+        class="btn btn-primary"
+        [disabled]="selectionCount() === 0 || bulkActionInFlight()"
+        (click)="bulkApprove()"
+        aria-label="Approuver les recommandations sélectionnées">
+        <i class="pi" [class.pi-check]="!bulkActionInFlight()" [class.pi-spin]="bulkActionInFlight()" [class.pi-spinner]="bulkActionInFlight()" aria-hidden="true"></i>
+        {{ bulkActionInFlight() ? 'Approbation…' : 'Approuver (' + selectionCount() + ')' }}
+      </button>
+
+      <button
+        type="button"
+        class="btn btn-primary"
+        [disabled]="selectionCount() === 0 || bulkActionInFlight()"
+        (click)="openPreparePoModal()"
+        aria-label="Créer les bons de commande à partir de la sélection">
+        <i class="pi pi-shopping-cart" aria-hidden="true"></i>
+        Créer les BC ({{ selectionCount() }})
+      </button>
+
+      <button
+        type="button"
+        class="btn btn-secondary"
+        [disabled]="generating()"
+        (click)="generateNow()"
+        aria-label="Régénérer les recommandations">
+        <i class="pi pi-refresh" aria-hidden="true"></i>
+        {{ generating() ? 'Génération…' : 'Régénérer' }}
+      </button>
+    }
+
+    <button
+      type="button"
+      class="btn btn-secondary"
+      [disabled]="exporting() || rows().length === 0"
+      (click)="exportCsv()"
+      aria-label="Exporter les recommandations au format CSV">
+      <i class="pi pi-download" aria-hidden="true"></i>
+      {{ exporting() ? 'Export…' : 'Exporter CSV' }}
+    </button>
+
+    <div class="actions-ai">
+      <app-analyze-with-ai-button
+        screenId="forecasting-replenishment"
+        [payloadBuilder]="buildAiPayload"
+        [disabled]="loading()" />
+    </div>
+  </header>
+
+  <!-- Body: loading / empty / table -->
+  @if (loading()) {
+    <div class="state loading" aria-live="polite">
+      <i class="pi pi-spin pi-spinner" aria-hidden="true"></i> Chargement…
+    </div>
+  } @else if (rows().length === 0) {
+    <div class="state empty">
+      <i class="pi pi-info-circle" aria-hidden="true"></i>
+      Aucune recommandation pour ces filtres.
+      @if (filters().status === 'pending' && canManage()) {
+        <span>Cliquez sur <strong>Régénérer</strong> pour relancer le calcul.</span>
+      }
+    </div>
+  } @else {
+    <div class="table-wrap">
+      <table id="repl-table"
+             class="table"
+             role="table"
+             [attr.aria-rowcount]="totalCount()"
+             aria-label="Liste des recommandations de réapprovisionnement">
+        <thead>
+          <tr>
+            @if (canManage()) { <th class="check" scope="col" aria-label="Sélection"></th> }
+            <th scope="col">Produit</th>
+            <th scope="col">Entrepôt</th>
+            <th scope="col">Fournisseur</th>
+            <th scope="col" class="num">
+              <button type="button" class="th-sort" (click)="toggleSort('rop')" [attr.aria-sort]="sortBy() === 'rop' ? (sortDesc() ? 'descending' : 'ascending') : 'none'">
+                Stock / ROP
+                @if (sortBy() === 'rop') {
+                  <i class="pi" [class.pi-sort-down]="sortDesc()" [class.pi-sort-up]="!sortDesc()" aria-hidden="true"></i>
+                }
+              </button>
+            </th>
+            <th scope="col" class="num">
+              <button type="button" class="th-sort" (click)="toggleSort('qty')" [attr.aria-sort]="sortBy() === 'qty' ? (sortDesc() ? 'descending' : 'ascending') : 'none'">
+                Qté
+                @if (sortBy() === 'qty') {
+                  <i class="pi" [class.pi-sort-down]="sortDesc()" [class.pi-sort-up]="!sortDesc()" aria-hidden="true"></i>
+                }
+              </button>
+            </th>
+            <th scope="col" class="num">
+              <button type="button" class="th-sort" (click)="toggleSort('days')" [attr.aria-sort]="sortBy() === 'days' ? (sortDesc() ? 'descending' : 'ascending') : 'none'">
+                Jours stock
+                @if (sortBy() === 'days') {
+                  <i class="pi" [class.pi-sort-down]="sortDesc()" [class.pi-sort-up]="!sortDesc()" aria-hidden="true"></i>
+                }
+              </button>
+            </th>
+            <th scope="col">Raisons</th>
+            <th scope="col">Statut</th>
+            @if (canManage()) { <th scope="col" aria-label="Actions"></th> }
+          </tr>
+        </thead>
+        <tbody>
+          @for (r of rows(); track trackById($index, r)) {
+            <tr [class.row-urgent]="r.urgencyLevel === 'Urgent'"
+                [class.row-rupture]="r.urgencyLevel === 'OutOfStock'"
+                [attr.aria-selected]="isSelected(r.id)">
+              @if (canManage()) {
+                <td class="check">
+                  <input
+                    type="checkbox"
+                    [checked]="isSelected(r.id)"
+                    (change)="toggleSelected(r.id)"
+                    [attr.aria-label]="'Sélectionner ' + r.productName" />
+                </td>
+              }
+              <td>
+                <div class="product">
+                  <span class="code">{{ r.productCode }}</span>
+                  <button class="name-btn" type="button" (click)="openProductDemand(r)" title="Voir la prévision de demande">
+                    {{ r.productName }}
+                  </button>
+                </div>
+              </td>
+              <td>{{ r.warehouseName }}</td>
+              <td>
+                @if (r.preferredSupplierName) {
+                  <span class="supplier">{{ r.preferredSupplierName }}</span>
+                } @else {
+                  <span class="supplier-missing"
+                        title="Aucun fournisseur : indispensable pour créer un bon de commande. Utilisez « Modifier » ou assignez-en un dans la fenêtre de création des BC.">
+                    <i class="pi pi-exclamation-triangle" aria-hidden="true"></i>
+                    — Non renseigné —
+                  </span>
+                }
+              </td>
+              <td class="num">
+                <div class="stock">
+                  <span class="onhand" [class.zero]="r.currentStockOnHand === 0">
+                    {{ r.currentStockOnHand | qtyFmt: r.productUnit }}
+                  </span>
+                  <span class="rop">ROP {{ r.rop | qtyFmt: r.productUnit }}</span>
+                </div>
+              </td>
+              <td class="num strong">
+                {{ (r.manualQtyOverride ?? r.recommendedQty) | qtyFmt: r.productUnit }}
+                @if (r.manualQtyOverride !== null && r.manualQtyOverride !== undefined) {
+                  <i class="pi pi-pencil overridden-icon" title="Quantité manuelle" aria-label="Quantité modifiée manuellement"></i>
+                }
+              </td>
+              <td class="num">
+                @if (r.daysOfStockRemaining !== null) {
+                  <span class="urg-badge" [ngClass]="urgencyClass(r.urgencyLevel)" [attr.aria-label]="urgencyLabel(r.urgencyLevel)">
+                    {{ r.daysOfStockRemaining | qtyFmt: null }} j
+                  </span>
+                } @else {
+                  <span class="muted">—</span>
+                }
+              </td>
+              <td>
+                @for (code of r.reasonCodes; track code) {
+                  <span class="badge" [title]="code">{{ code | reasonCode }}</span>
+                }
+              </td>
+              <td>
+                <span class="status status-{{ r.status }}">{{ statusLabel(r.status) }}</span>
+                @if (r.status === 'ordered' && r.linkedPurchaseOrderId) {
+                  <a class="po-link"
+                     [routerLink]="['/purchase-orders', r.linkedPurchaseOrderId]"
+                     title="Ouvrir le bon de commande lié"
+                     aria-label="Ouvrir le bon de commande lié">
+                    <i class="pi pi-external-link" aria-hidden="true"></i>
+                  </a>
+                }
+              </td>
+              @if (canManage()) {
+                <td class="actions">
+                  @if (r.status === 'pending') {
+                    <button class="btn-icon" type="button" (click)="approve(r)" aria-label="Approuver">
+                      <i class="pi pi-check" aria-hidden="true"></i>
+                    </button>
+                    <button class="btn-icon danger" type="button" (click)="openDismissModal(r)" aria-label="Écarter">
+                      <i class="pi pi-times" aria-hidden="true"></i>
+                    </button>
+                  } @else if (r.status === 'approved' || r.status === 'dismissed') {
+                    <button class="btn-icon" type="button" (click)="undo(r)" aria-label="Annuler la décision">
+                      <i class="pi pi-replay" aria-hidden="true"></i>
+                    </button>
+                  }
+                  <button class="btn-icon" type="button" (click)="openOverrideModal(r)" aria-label="Modifier la quantité ou le fournisseur">
+                    <i class="pi pi-pencil" aria-hidden="true"></i>
+                  </button>
+                  <button class="btn-icon" type="button" (click)="openHistoryModal(r)" aria-label="Voir l'historique">
+                    <i class="pi pi-history" aria-hidden="true"></i>
+                  </button>
+                </td>
+              }
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination footer -->
+    @if (totalCount() > pageSize()) {
+      <nav class="pagination" aria-label="Pagination">
+        <button type="button" class="btn btn-secondary"
+                [disabled]="page() === 1"
+                (click)="goToPage(page() - 1)"
+                aria-label="Page précédente">
+          <i class="pi pi-angle-left" aria-hidden="true"></i> Précédent
+        </button>
+        <span class="page-info" aria-live="polite">
+          Page <strong>{{ page() }}</strong> / {{ pageCount() }}
+        </span>
+        <button type="button" class="btn btn-secondary"
+                [disabled]="page() === pageCount()"
+                (click)="goToPage(page() + 1)"
+                aria-label="Page suivante">
+          Suivant <i class="pi pi-angle-right" aria-hidden="true"></i>
+        </button>
+      </nav>
+    }
+  }
+</section>
+
+<!-- Modals (mounted only when active) -->
+@if (demandModal(); as m) {
+  <app-product-demand-modal
+    [productId]="m.productId"
+    [productName]="m.productName"
+    (close)="demandModal.set(null)"
+    (regenerated)="onProductRegenerated()" />
+}
+
+@if (dismissModal(); as m) {
+  <app-dismiss-reason-modal
+    [productName]="m.rec.productName"
+    (confirm)="onDismissConfirmed($event)"
+    (cancel)="dismissModal.set(null)" />
+}
+
+@if (preparePoModal(); as m) {
+  <app-prepare-po-confirm-modal
+    [selection]="m.selection"
+    (confirm)="onPreparePoConfirmed($event)"
+    (cancel)="preparePoModal.set(null)" />
+}
+
+@if (overrideModal(); as m) {
+  <app-override-quantity-modal
+    [recommendation]="m.rec"
+    (confirm)="onOverrideConfirmed($event)"
+    (cancel)="overrideModal.set(null)" />
+}
+
+@if (historyModal(); as m) {
+  <app-decision-history-modal
+    [recommendationId]="m.rec.id"
+    [productName]="m.rec.productName"
+    (cancel)="historyModal.set(null)" />
+}

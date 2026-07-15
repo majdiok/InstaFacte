@@ -1,0 +1,355 @@
+using FactuTrust.Domain.Common;
+using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.ValueObjects;
+
+namespace FactuTrust.Domain.Entities;
+
+/// <summary>
+/// Represents a product or service in the catalog.
+/// </summary>
+public sealed class Product : AggregateRoot
+{
+    public string Code { get; private set; } = null!;
+    public string Name { get; private set; } = null!;
+    public string? Description { get; private set; }
+    public ProductType Type { get; private set; }
+    public Money UnitPrice { get; private set; } = null!;
+
+    /// <summary>
+    /// Purchase price (cost) for this product. Used as default in purchase orders and supplier invoices.
+    /// When null, UnitPrice (selling price) is used as fallback.
+    /// </summary>
+    public Money? PurchasePrice { get; private set; }
+
+    public VatRate VatRate { get; private set; }
+    public string? Unit { get; private set; }
+
+    /// <summary>
+    /// When true, FODEC (1%) applies on this product's HT amount on sales invoices.
+    /// </summary>
+    public bool IsFodecApplicable { get; private set; }
+
+    public bool IsActive { get; private set; }
+    
+    /// <summary>
+    /// Indicates whether this product has stock management enabled.
+    /// When true, stock levels will be tracked and decremented on invoice validation.
+    /// </summary>
+    public bool IsStockManaged { get; private set; }
+
+    /// <summary>
+    /// Product category for classification.
+    /// </summary>
+    public Guid CategoryId { get; private set; }
+    public ProductCategory Category { get; private set; } = null!;
+
+    /// <summary>
+    /// URL of the product image. Populated automatically from external image search (Unsplash/Google).
+    /// </summary>
+    public string? ImageUrl { get; private set; }
+
+    /// <summary>
+    /// Opt-in flag to expose this product on the public 3D storefront.
+    /// Defaults to <c>false</c>. Switching it on emits an outbox message picked up by the
+    /// projection service, which then publishes the product in the Master DB.
+    /// </summary>
+    public bool IsPubliclyListed { get; private set; }
+
+    // ─────────── Replenishment V2 — supplier & packaging hints (all optional, additive) ───────────
+    // These fields enrich the AI Forecasting replenishment module. They are null by default,
+    // so legacy data and the V1 replenishment pipeline are unaffected. Only ReplenishmentService
+    // (gated by Features:Forecasting:ReplenishmentV2:Enabled) reads them.
+
+    /// <summary>
+    /// Preferred supplier used to auto-route replenishment recommendations to a draft PO.
+    /// Null = no preference; the buyer must pick a supplier manually.
+    /// </summary>
+    public Guid? PreferredSupplierId { get; private set; }
+
+    /// <summary>
+    /// Minimum order quantity imposed by the (preferred) supplier.
+    /// Recommended quantities below this value are bumped up to the MOQ at PO-prep time.
+    /// </summary>
+    public decimal? MinimumOrderQuantity { get; private set; }
+
+    /// <summary>
+    /// Packaging unit label (e.g. "Palette", "Carton") — informational, shown to the buyer.
+    /// </summary>
+    public string? PackagingUnit { get; private set; }
+
+    /// <summary>
+    /// Packaging quantity in base units (e.g. 500 units per palette). When set, recommended
+    /// quantities are rounded up to the next multiple to avoid breaking pack constraints.
+    /// </summary>
+    public decimal? PackagingQty { get; private set; }
+
+    /// <summary>
+    /// Per-product override of the supplier lead time in days. Null = fallback to
+    /// ForecastingOptions.DefaultLeadTimeDays. Used by ReplenishmentService only.
+    /// </summary>
+    public int? LeadTimeDaysOverride { get; private set; }
+
+    private Product() { }
+
+    /// <summary>
+    /// Toggles public listing. Returns true if the state actually changed.
+    /// </summary>
+    public bool SetPubliclyListed(bool value)
+    {
+        if (IsPubliclyListed == value)
+            return false;
+        IsPubliclyListed = value;
+        return true;
+    }
+
+    /// <summary>
+    /// Sets the product image URL. Used by the image search service when an image is found.
+    /// </summary>
+    public void SetImageUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url) || url.Length > 500)
+            throw new ArgumentException("L'URL de l'image doit être entre 1 et 500 caractères.", nameof(url));
+        ImageUrl = url.Trim();
+    }
+
+    /// <summary>
+    /// Clears the product image URL.
+    /// </summary>
+    public void ClearImageUrl()
+    {
+        ImageUrl = null;
+    }
+
+    public static Result<Product> Create(
+        string code,
+        string name,
+        ProductType type,
+        Money unitPrice,
+        VatRate vatRate,
+        Guid categoryId,
+        string? description = null,
+        string? unit = null,
+        bool isStockManaged = false,
+        Money? purchasePrice = null,
+        bool isFodecApplicable = false)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+            return Result.Failure<Product>(Error.Validation("Code", "Le code produit est obligatoire"));
+
+        if (code.Length > 50)
+            return Result.Failure<Product>(Error.Validation("Code", "Le code produit ne peut pas dépasser 50 caractères"));
+
+        if (string.IsNullOrWhiteSpace(name))
+            return Result.Failure<Product>(Error.Validation("Name", "Le nom du produit est obligatoire"));
+
+        if (name.Length > 200)
+            return Result.Failure<Product>(Error.Validation("Name", "Le nom du produit ne peut pas dépasser 200 caractères"));
+
+        if (unitPrice.Amount < 0)
+            return Result.Failure<Product>(Error.Validation("UnitPrice", "Le prix unitaire ne peut pas être négatif"));
+
+        if (purchasePrice is { Amount: < 0 })
+            return Result.Failure<Product>(Error.Validation("PurchasePrice", "Le prix d'achat ne peut pas être négatif"));
+
+        // Only physical products can have stock management
+        if (isStockManaged && type == ProductType.Service)
+            return Result.Failure<Product>(Error.Validation("IsStockManaged", "La gestion de stock n'est pas applicable aux services"));
+
+        if (categoryId == Guid.Empty)
+            return Result.Failure<Product>(Error.Validation("CategoryId", "La catégorie produit est obligatoire"));
+
+        var product = new Product
+        {
+            Code = code.Trim().ToUpperInvariant(),
+            Name = name.Trim(),
+            Description = description?.Trim(),
+            Type = type,
+            UnitPrice = unitPrice,
+            PurchasePrice = purchasePrice,
+            VatRate = vatRate,
+            Unit = unit?.Trim(),
+            IsActive = true,
+            IsStockManaged = isStockManaged,
+            CategoryId = categoryId,
+            IsFodecApplicable = isFodecApplicable
+        };
+
+        return Result.Success(product);
+    }
+
+    public void Update(
+        string name,
+        string? description,
+        Money unitPrice,
+        VatRate vatRate,
+        string? unit,
+        Money? purchasePrice = null,
+        Guid? categoryId = null)
+    {
+        if (!string.IsNullOrWhiteSpace(name))
+            Name = name.Trim();
+
+        Description = description?.Trim();
+        UnitPrice = unitPrice;
+        VatRate = vatRate;
+        Unit = unit?.Trim();
+
+        if (purchasePrice is { Amount: < 0 })
+            throw new ArgumentException("Le prix d'achat ne peut pas être négatif", nameof(purchasePrice));
+
+        PurchasePrice = purchasePrice;
+
+        if (categoryId.HasValue && categoryId.Value != Guid.Empty)
+            CategoryId = categoryId.Value;
+    }
+
+    public void SetFodecApplicable(bool value)
+    {
+        IsFodecApplicable = value;
+    }
+
+    /// <summary>
+    /// Returns the effective purchase price. If PurchasePrice is set, returns it; otherwise returns UnitPrice.
+    /// </summary>
+    public Money GetPurchasePrice() => PurchasePrice ?? UnitPrice;
+
+    /// <summary>
+    /// Updates the purchase price. Pass null to clear it.
+    /// </summary>
+    public void UpdatePurchasePrice(Money? newPrice)
+    {
+        if (newPrice is { Amount: < 0 })
+            throw new ArgumentException("Le prix d'achat ne peut pas être négatif", nameof(newPrice));
+
+        PurchasePrice = newPrice;
+    }
+
+    public void UpdatePrice(Money newPrice)
+    {
+        if (newPrice.Amount < 0)
+            throw new ArgumentException("Le prix ne peut pas être négatif", nameof(newPrice));
+
+        UnitPrice = newPrice;
+    }
+
+    public void Deactivate()
+    {
+        IsActive = false;
+    }
+
+    public void Reactivate()
+    {
+        IsActive = true;
+    }
+
+    /// <summary>
+    /// Enables stock management for this product.
+    /// Only applicable to physical products.
+    /// </summary>
+    public Result EnableStockManagement()
+    {
+        if (Type == ProductType.Service)
+            return Result.Failure(Error.Validation("Type", "La gestion de stock n'est pas applicable aux services"));
+
+        IsStockManaged = true;
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Disables stock management for this product.
+    /// </summary>
+    public void DisableStockManagement()
+    {
+        IsStockManaged = false;
+    }
+
+    // ─────────── Replenishment V2 setters (all optional, additive) ───────────
+
+    /// <summary>
+    /// Sets (or clears) the preferred supplier. Pass <c>null</c> to clear.
+    /// No validation against Supplier existence — this is enforced at the application layer.
+    /// </summary>
+    public void SetPreferredSupplier(Guid? supplierId)
+    {
+        if (supplierId.HasValue && supplierId.Value == Guid.Empty)
+            throw new ArgumentException("PreferredSupplierId must be a valid GUID or null", nameof(supplierId));
+        PreferredSupplierId = supplierId;
+    }
+
+    /// <summary>
+    /// Sets (or clears) the minimum order quantity. Pass <c>null</c> to clear.
+    /// </summary>
+    public void SetMinimumOrderQuantity(decimal? moq)
+    {
+        if (moq.HasValue && moq.Value <= 0)
+            throw new ArgumentException("MinimumOrderQuantity must be > 0 (or null to clear)", nameof(moq));
+        MinimumOrderQuantity = moq;
+    }
+
+    /// <summary>
+    /// Sets (or clears) the packaging hint. Both arguments must be provided together
+    /// (label + qty) or both null to clear.
+    /// </summary>
+    public void SetPackaging(string? unit, decimal? qty)
+    {
+        if ((unit is null) != (qty is null))
+            throw new ArgumentException("PackagingUnit and PackagingQty must both be set or both null");
+        if (qty.HasValue && qty.Value <= 0)
+            throw new ArgumentException("PackagingQty must be > 0", nameof(qty));
+        if (unit is not null && (string.IsNullOrWhiteSpace(unit) || unit.Length > 50))
+            throw new ArgumentException("PackagingUnit must be 1..50 chars", nameof(unit));
+
+        PackagingUnit = unit?.Trim();
+        PackagingQty = qty;
+    }
+
+    /// <summary>
+    /// Sets (or clears) the per-product lead-time override. Pass <c>null</c> to fall back
+    /// to <see cref="Configuration.ForecastingOptions.DefaultLeadTimeDays"/>.
+    /// </summary>
+    public void SetLeadTimeDaysOverride(int? days)
+    {
+        if (days.HasValue && (days.Value < 0 || days.Value > 365))
+            throw new ArgumentException("LeadTimeDaysOverride must be in [0..365] (or null to clear)", nameof(days));
+        LeadTimeDaysOverride = days;
+    }
+
+    public Money CalculateVatAmount(decimal quantity)
+    {
+        var subtotal = UnitPrice.Multiply(quantity);
+        return subtotal.ApplyPercentage(VatRate.ToDecimal());
+    }
+
+    public Money CalculateTotalWithVat(decimal quantity)
+    {
+        var subtotal = UnitPrice.Multiply(quantity);
+        var vat = CalculateVatAmount(quantity);
+        return subtotal.Add(vat);
+    }
+}
+
+/// <summary>
+/// Type of product or service.
+/// </summary>
+public enum ProductType
+{
+    /// <summary>
+    /// Physical product.
+    /// </summary>
+    Product = 0,
+
+    /// <summary>
+    /// Service offering.
+    /// </summary>
+    Service = 1
+}
+
+public static class ProductTypeExtensions
+{
+    public static string ToDisplayString(this ProductType type) => type switch
+    {
+        ProductType.Product => "Produit",
+        ProductType.Service => "Service",
+        _ => throw new ArgumentOutOfRangeException(nameof(type))
+    };
+}

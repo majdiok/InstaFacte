@@ -1,0 +1,137 @@
+import { AppModule as M } from '../models/app-module';
+import { NavItem, NavSubItem } from './app-navigation.registry';
+
+/**
+ * Source unique des modules comptables « façon Axeane » (Configuration, Traitements, États,
+ * Déclaration mensuelle, Liasse fiscale, Gestion immobilisations). Consommée par :
+ * - la page d'accueil Comptabilité à tuiles (`accounting-home.component`) ;
+ * - le sidebar du cabinet en mode délégué (menus de premier niveau + sous-menus).
+ * Toute évolution des fonctions comptables se fait ICI pour rester cohérente aux deux endroits.
+ */
+
+export interface AccountingModuleLink {
+  label: string;
+  route: string;
+  icon: string;
+  /** Permissions TOUTES requises pour voir le lien. */
+  perms: string[];
+  /** Modules requis (défaut : [Accounting]). */
+  modules?: M[];
+}
+
+export interface AccountingModuleDef {
+  title: string;
+  icon: string;
+  description: string;
+  links: AccountingModuleLink[];
+}
+
+export const ACCOUNTING_MODULES: AccountingModuleDef[] = [
+  {
+    title: 'Configuration',
+    icon: 'fa-solid fa-sliders',
+    description: 'Plan comptable, journaux et modèles',
+    links: [
+      {
+        label: 'Assistant Comptabilité',
+        route: '/ai-assistant/comptabilite',
+        icon: 'fa-solid fa-wand-magic-sparkles',
+        perms: ['ai:chat', 'accounting:read'],
+        modules: [M.Accounting, M.AI]
+      },
+      { label: 'Plan comptable', route: '/accounting/chart', icon: 'fa-solid fa-sitemap', perms: ['accounting:read'] },
+      { label: 'Plan tiers', route: '/accounting/third-parties', icon: 'fa-solid fa-address-book', perms: ['accounting:read'] },
+      { label: 'Journaux & familles', route: '/accounting/journals', icon: 'fa-solid fa-book-bookmark', perms: ['accounting:read'] },
+      { label: "Modèles d'écriture", route: '/accounting/entry-templates', icon: 'fa-solid fa-clone', perms: ['accounting:read'] }
+    ]
+  },
+  {
+    title: 'Traitements',
+    icon: 'fa-solid fa-gears',
+    description: 'Saisie, import, lettrage, rapprochement, clôture',
+    links: [
+      { label: 'Saisie manuelle', route: '/accounting/manual-entry', icon: 'fa-solid fa-pen-to-square', perms: ['accounting:create'] },
+      { label: "Assistant d'inventaire", route: '/accounting/inventory-assistant', icon: 'fa-solid fa-clipboard-list', perms: ['accounting:create'] },
+      { label: 'Reprise (import)', route: '/accounting/import', icon: 'fa-solid fa-file-import', perms: ['accounting:import'] },
+      { label: 'Lettrage', route: '/accounting/lettering', icon: 'fa-solid fa-link', perms: ['accounting:create'] },
+      { label: 'Rapprochement bancaire', route: '/accounting/bank-reconciliation', icon: 'fa-solid fa-building-columns', perms: ['accounting:read'] },
+      { label: "Recherche d'écriture", route: '/accounting/entry-search', icon: 'fa-solid fa-magnifying-glass', perms: ['accounting:read'] },
+      { label: 'Remplacement de compte', route: '/accounting/account-replacement', icon: 'fa-solid fa-right-left', perms: ['accounting:create'] },
+      { label: 'Contrôles de pré-clôture', route: '/accounting/pre-closing', icon: 'fa-solid fa-list-check', perms: ['accounting:read'] },
+      { label: 'Clôture', route: '/accounting/closing', icon: 'fa-solid fa-lock', perms: ['accounting:close'] }
+    ]
+  },
+  {
+    title: 'États',
+    icon: 'fa-solid fa-table-list',
+    description: 'Journal, grand livre, balance et bilans',
+    links: [
+      { label: 'Journal', route: '/accounting/journal', icon: 'fa-solid fa-book', perms: ['accounting:read'] },
+      { label: 'Grand livre', route: '/accounting/ledger', icon: 'fa-solid fa-book-open', perms: ['accounting:read'] },
+      { label: 'Journaux auxiliaires', route: '/accounting/sub-journals', icon: 'fa-solid fa-books', perms: ['accounting:read'] },
+      { label: 'Balance', route: '/accounting/balance', icon: 'fa-solid fa-scale-balanced', perms: ['accounting:read'] },
+      { label: 'Balance auxiliaire', route: '/accounting/auxiliary-balance', icon: 'fa-solid fa-address-book', perms: ['accounting:read'] },
+      { label: 'Grand livre tiers', route: '/accounting/third-party-ledger', icon: 'fa-solid fa-user-tag', perms: ['accounting:read'] },
+      { label: 'Balance âgée', route: '/accounting/aging', icon: 'fa-solid fa-clock', perms: ['accounting:read'] },
+      { label: 'Bilan', route: '/accounting/balance-sheet', icon: 'fa-solid fa-chart-pie', perms: ['accounting:read'] },
+      { label: 'Compte de résultat', route: '/accounting/income-statement', icon: 'fa-solid fa-chart-line', perms: ['accounting:read'] },
+      { label: "Journal d'audit", route: '/audit', icon: 'fa-solid fa-shield-halved', perms: ['audit:read'] }
+    ]
+  },
+  {
+    title: 'Budgétaire',
+    icon: 'fa-solid fa-chart-column',
+    description: 'Postes budgétaires, budgets et suivi réalisé/budget',
+    links: [
+      { label: 'Postes budgétaires', route: '/accounting/budget-posts', icon: 'fa-solid fa-list-ol', perms: ['accounting:read'] },
+      { label: 'Saisie des budgets', route: '/accounting/budgets', icon: 'fa-solid fa-table-cells', perms: ['accounting:create'] },
+      { label: 'État budgétaire', route: '/accounting/budget-report', icon: 'fa-solid fa-chart-column', perms: ['accounting:read'] }
+    ]
+  },
+  {
+    title: 'Declarations',
+    icon: 'fa-solid fa-file-signature',
+    description: 'Declarations fiscales, echeancier et paiements',
+    links: [
+      { label: 'Declaration mensuelle', route: '/accounting/vat-declaration', icon: 'fa-solid fa-file-invoice', perms: ['accounting:read'] },
+      { label: 'Echeancier fiscal', route: '/accounting/fiscal-schedule', icon: 'fa-solid fa-calendar-days', perms: ['accounting:read'] },
+      { label: 'Paiements et quittances', route: '/treasury', icon: 'fa-solid fa-money-check-dollar', perms: ['treasury:read'] }
+    ]
+  },
+  {
+    title: 'Liasse fiscale',
+    icon: 'fa-solid fa-file-contract',
+    description: 'États financiers NCT (bilan, résultat, flux, notes)',
+    links: [
+      { label: 'États financiers NCT', route: '/accounting/nct-statements', icon: 'fa-solid fa-file-contract', perms: ['accounting:read'] }
+    ]
+  },
+  {
+    title: 'Gestion immobilisations',
+    icon: 'fa-solid fa-building',
+    description: 'Registre et dotations aux amortissements',
+    links: [
+      { label: 'Immobilisations', route: '/accounting/fixed-assets', icon: 'fa-solid fa-building', perms: ['accounting:read'] },
+      { label: 'Dotations', route: '/accounting/fixed-assets/depreciation-run', icon: 'fa-solid fa-calendar-check', perms: ['accounting:read'] },
+      { label: 'Tableau amortissements', route: '/accounting/fixed-assets/amortization-table', icon: 'fa-solid fa-table-list', perms: ['accounting:read'] }
+    ]
+  }
+];
+
+/**
+ * Convertit les modules comptables en items de navigation (rail → sous-menu) pour le sidebar
+ * du cabinet en mode délégué. À passer dans `filterNavItems` pour le gating modules/permissions.
+ */
+export function buildAccountingModuleNavItems(): NavItem[] {
+  return ACCOUNTING_MODULES.map(mod => ({
+    label: mod.title,
+    icon: mod.icon,
+    children: mod.links.map<NavSubItem>(link => ({
+      label: link.label,
+      route: link.route,
+      icon: link.icon,
+      modules: link.modules ?? [M.Accounting],
+      permissionsAll: link.perms
+    }))
+  }));
+}

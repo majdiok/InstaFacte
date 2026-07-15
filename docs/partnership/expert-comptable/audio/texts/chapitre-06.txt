@@ -1,0 +1,4 @@
+﻿CÃ´tÃ© fiscal tunisien, FactuTrust gÃ¨re les retenues Ã  la source et la dÃ©claration TEJ.
+Le tableau de bord fiscal synthÃ©tise les retenues par nature de paiement.
+L'export TEJ gÃ©nÃ¨re le fichier XML conforme au format attendu par l'administration : prÃ©visualisation, puis tÃ©lÃ©chargement pour dÃ©pÃ´t sur le portail officiel.
+Vos clients restent conformes ; votre cabinet sÃ©curise les dÃ©clarations sans tableurs fragiles.

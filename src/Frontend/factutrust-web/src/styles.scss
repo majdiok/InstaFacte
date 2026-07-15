@@ -1,0 +1,1964 @@
+// ============================================
+// TAILWIND (isolé : prefix tw-, preflight désactivé) + couche design ft-*
+// Voir tailwind.config.js et styles/_design-layer.scss.
+// @use doit précéder toute autre règle (contrainte Dart Sass).
+// ============================================
+@use './styles/design-layer';
+@use './styles/primeng-bridge';
+@use './styles/tabs';
+@use './styles/payroll';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+// ============================================
+// POLICE INTER — auto-hébergée (woff2 variable, sous-ensembles latin + latin-ext)
+// Remplace le CDN Google Fonts (anciennement chargé dans index.html) : supprime la
+// dépendance réseau externe à l'origine des warnings « slow network / OTS / decode font »
+// et améliore le temps de premier rendu. font-display: swap conserve le comportement
+// d'origine (pas de FOIT). font-weight 100 900 : police variable couvrant tous les poids.
+// Voir docs/developer/console-errors-faq.md.
+// ============================================
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./assets/fonts/inter/inter-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./assets/fonts/inter/inter-latinext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+// Alias « Inter var » — la famille déclarée par le thème PrimeNG lara (:root font-family).
+// Le woff2 variable livré par PrimeNG (Inter-roman.var.woff2) échoue au parsing OTS de Chrome
+// (« Failed to decode / OTS parsing error »). En redéclarant la MÊME famille APRÈS PrimeNG, sans
+// unicode-range et avec un fichier VALIDE, ce @font-face prime : le navigateur charge le nôtre
+// (typographie Inter identique) et ne tente plus le fichier cassé. Le texte visible utilise déjà
+// notre 'Inter' ci-dessus ; « Inter var » ne sert qu'au :root → aucun changement visuel.
+@font-face {
+  font-family: 'Inter var';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./assets/fonts/inter/inter-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter var';
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./assets/fonts/inter/inter-latin.woff2') format('woff2');
+}
+
+// ============================================
+// POLICES THÈME PLUTO / CHAIN — auto-hébergées (remplacent le CDN Google Fonts)
+// Le thème pluto (src/assets/theme/pluto/style.css) importait 6 familles via
+// @import Google Fonts, chargées GLOBALEMENT (toutes les pages, dont /ai-assistant)
+// bien qu'utilisées seulement sur les pages publiques (landing/storefront/pluto).
+// Cela supprime la dépendance CDN externe restante (requêtes fonts.googleapis.com /
+// fonts.gstatic.com, warnings « slow network / OTS / decode font ») — comme pour Inter.
+//
+// Audit d'usage (zéro régression visuelle) :
+//   • Poppins — corps + composants pluto (poids 200/300/400/500/600/700, aucune italique).
+//   • Raleway — utilisée par pluto (poids 600).
+//   • Roboto  — thème « chain » de la page d'accueil (300/400/500/700 + italiques 400/500/700 ;
+//     ex. .the-clients .client-content p en 500 italique). Le thème chain ne déclarait PAS
+//     son propre @import : il dépendait du @import Roboto global de pluto.
+//   • Source Sans Pro / Arvo / Rajdhani — importées mais JAMAIS référencées → supprimées.
+// Sous-ensembles latin + latin-ext (contenu FR/latin) ; font-display: swap (comportement
+// d'origine conservé, pas de FOIT). Voir docs/developer/console-errors-faq.md.
+// ============================================
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 200;
+  font-display: swap;
+  src: url('./assets/fonts/poppins/poppins-200-latinext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 200;
+  font-display: swap;
+  src: url('./assets/fonts/poppins/poppins-200-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('./assets/fonts/poppins/poppins-300-latinext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('./assets/fonts/poppins/poppins-300-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/poppins/poppins-400-latinext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/poppins/poppins-400-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./assets/fonts/poppins/poppins-500-latinext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./assets/fonts/poppins/poppins-500-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./assets/fonts/poppins/poppins-600-latinext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./assets/fonts/poppins/poppins-600-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./assets/fonts/poppins/poppins-700-latinext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./assets/fonts/poppins/poppins-700-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Raleway';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./assets/fonts/raleway/raleway-600-latinext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Raleway';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./assets/fonts/raleway/raleway-600-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Roboto';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('./assets/fonts/roboto/roboto-300-latinext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Roboto';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('./assets/fonts/roboto/roboto-300-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Roboto';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/roboto/roboto-400-latinext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Roboto';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/roboto/roboto-400-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Roboto';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./assets/fonts/roboto/roboto-500-latinext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Roboto';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./assets/fonts/roboto/roboto-500-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Roboto';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./assets/fonts/roboto/roboto-700-latinext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Roboto';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./assets/fonts/roboto/roboto-700-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Roboto';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/roboto/roboto-400italic-latinext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Roboto';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/roboto/roboto-400italic-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Roboto';
+  font-style: italic;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./assets/fonts/roboto/roboto-500italic-latinext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Roboto';
+  font-style: italic;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./assets/fonts/roboto/roboto-500italic-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Roboto';
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./assets/fonts/roboto/roboto-700italic-latinext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Roboto';
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./assets/fonts/roboto/roboto-700italic-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+// ============================================
+// FACTUTRUST DESIGN SYSTEM
+// Premium SaaS Design System for Invoicing
+// ============================================
+
+// --------------------------------------------
+// CSS CUSTOM PROPERTIES (Design Tokens)
+// --------------------------------------------
+:root {
+  // Colors - Primary (Trust Blue)
+  --color-primary-50: #eff6ff;
+  --color-primary-100: #dbeafe;
+  --color-primary-200: #bfdbfe;
+  --color-primary-300: #93c5fd;
+  --color-primary-400: #60a5fa;
+  --color-primary-500: #3b82f6;
+  --color-primary-600: #2563eb;
+  --color-primary-700: #1d4ed8;
+  --color-primary-800: #1e40af;
+  --color-primary-900: #1e3a8a;
+
+  // InstaFact brand tokens
+  --brand-primary: #0066FF;
+  --brand-primary-dark: #002244;
+  --brand-tagline: #64748b;
+
+  // Accents (auth / marketing — utilisés par les panneaux branding login & inscription)
+  --color-blue-500: #3b82f6;
+  --color-teal-500: #14b8a6;
+  --color-teal-600: #0d9488;
+  --color-orange-500: #f97316;
+
+  // Colors - Success (Green)
+  --color-success-50: #f0fdf4;
+  --color-success-500: #22c55e;
+  --color-success-600: #16a34a;
+  --color-success-700: #15803d;
+
+  // Colors - Warning (Amber) — WCAG AA sur fond 50
+  --color-warning-50: #fffbeb;
+  --color-warning-500: #f59e0b;
+  --color-warning-600: #d97706;
+  --color-warning-700: #b45309;
+
+  // Colors - Error (Red)
+  --color-error-50: #fef2f2;
+  --color-error-500: #ef4444;
+  --color-error-600: #dc2626;
+  --color-error-700: #b91c1c;
+
+  // Colors - Info (Sky) — états informatifs, timeline, cartes Paramètres (ex. Taxes et TVA)
+  --color-info-50: #f0f9ff;
+  --color-info-100: #e0f2fe;
+  --color-info-200: #bae6fd;
+  --color-info-500: #0ea5e9;
+  --color-info-600: #0284c7;
+  --color-info-700: #0369a1;
+  --color-info-800: #075985;
+
+  // Colors - Neutral (Slate)
+  --color-neutral-50: #f8fafc;
+  --color-neutral-100: #f1f5f9;
+  --color-neutral-200: #e2e8f0;
+  --color-neutral-300: #cbd5e1;
+  --color-neutral-400: #94a3b8;
+  --color-neutral-500: #64748b;
+  --color-neutral-600: #475569;
+  --color-neutral-700: #334155;
+  --color-neutral-800: #1e293b;
+  --color-neutral-900: #0f172a;
+
+  // Colors - White & Semantic
+  --color-white: #ffffff;
+  --color-background-base: var(--color-neutral-50);
+  --color-background-elevated: var(--color-white);
+  --color-background-subtle: var(--color-neutral-100);
+  --color-background-hover: var(--color-primary-50);
+  --color-border-subtle: var(--color-neutral-200);
+  --color-border-default: var(--color-neutral-300);
+  --color-border-strong: var(--color-neutral-400);
+  --color-text-primary: var(--color-neutral-900);
+  --color-text-secondary: var(--color-neutral-600);
+  --color-text-tertiary: var(--color-neutral-500);
+  --color-text-disabled: var(--color-neutral-300);
+
+  // Colors - Success/Warning/Error (variants 100, 200)
+  --color-success-100: #dcfce7;
+  --color-success-200: #bbf7d0;
+  --color-warning-100: #fef3c7;
+  --color-warning-200: #fde68a;
+  --color-error-100: #fee2e2;
+  --color-error-200: #fecaca;
+
+  // Typography
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-base: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 1.5rem;
+  --font-size-3xl: 1.875rem;
+  --font-size-4xl: 2.25rem;
+  /** Alias utilisé par certains écrans (ex. saisie manuelle) — aligné sur base */
+  --font-size-md: 1rem;
+
+  /** Alias danger pour compatibilité avec anciennes classes */
+  --color-danger-50: var(--color-error-50);
+  --color-danger-100: var(--color-error-100);
+  --color-danger-200: var(--color-error-200);
+  --color-danger-500: var(--color-error-500);
+  --color-danger-600: var(--color-error-600);
+  --color-danger-700: var(--color-error-700);
+  --color-danger-800: var(--color-error-700);
+
+  --font-weight-light: 300;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.75;
+
+  // Spacing
+  --spacing-0: 0;
+  --spacing-1: 0.25rem;
+  --spacing-2: 0.5rem;
+  --spacing-3: 0.75rem;
+  --spacing-4: 1rem;
+  --spacing-5: 1.25rem;
+  --spacing-6: 1.5rem;
+  --spacing-8: 2rem;
+  --spacing-10: 2.5rem;
+  --spacing-12: 3rem;
+  --spacing-16: 4rem;
+  --spacing-20: 5rem;
+
+  // Border Radius
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  --radius-full: 9999px;
+
+  // Shadows
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.03);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.04);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+  --shadow-primary: 0 4px 14px 0 rgba(37, 99, 235, 0.15);
+  --shadow-primary-hover: 0 8px 20px 0 rgba(37, 99, 235, 0.2);
+
+  // Spacing semantic
+  --section-padding: var(--spacing-8);
+  --section-padding-mobile: var(--spacing-6);
+  --card-padding: var(--spacing-6);
+  --card-padding-compact: var(--spacing-4);
+
+  // Transitions
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-bounce: 400ms cubic-bezier(0.68, -0.55, 0.265, 1.55);
+
+  // Z-Index
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-modal: 300;
+  --z-popover: 400;
+  --z-tooltip: 500;
+  --z-fab: 1050;
+  --z-drawer-overlay: 1100;
+  --z-drawer-panel: 1101;
+  --z-drawer-dropdown: 1200;
+  --z-toast: 1300;
+
+  // --------------------------------------------
+  // Layout semantic tokens (Poseidon-style design)
+  // Single source of truth for header, sidebar, content surfaces
+  // --------------------------------------------
+  --layout-header-bg: var(--color-neutral-100);
+  --layout-header-border: var(--color-border-subtle);
+  --layout-sidebar-bg: var(--color-neutral-100);
+  --layout-sidebar-text: var(--color-text-primary);
+  --layout-sidebar-text-muted: var(--color-text-secondary);
+  --layout-sidebar-item-hover-bg: var(--color-neutral-200);
+  --layout-sidebar-item-active-bg: var(--color-primary-50);
+  --layout-sidebar-item-active-text: var(--color-primary-700);
+  --layout-sidebar-item-active-border: var(--color-primary-500);
+  --layout-sidebar-border: var(--color-border-subtle);
+  --layout-content-bg: var(--color-background-base);
+
+  // --------------------------------------------
+  // POS-specific tokens (Point de Vente premium)
+  // --------------------------------------------
+  --pos-card-hover-shadow: 0 12px 24px -4px rgb(0 0 0 / 0.12), 0 4px 8px -2px rgb(0 0 0 / 0.08);
+  --pos-transition-smooth: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  --pos-accent-gradient: linear-gradient(135deg, var(--color-primary-500), var(--color-primary-700));
+
+  /* Menu commande POS: CTA principal (Valider & Imprimer) — identité verte InstaFact */
+  --pos-cmd-primary-gradient: linear-gradient(135deg, #1a5c4c 0%, #0f4c3d 50%, #0d3d32 100%);
+  --pos-cmd-primary-shadow: 0 4px 16px rgba(26, 92, 76, 0.3);
+  --pos-cmd-primary-shadow-hover: 0 6px 20px rgba(26, 92, 76, 0.4);
+  /* Avoir (credit note) — orange distinct pour éviter confusion avec validation */
+  --pos-cmd-credit-gradient: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
+  --pos-cmd-credit-gradient-hover: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+  /* Fond neutre pour chips moyens de paiement / options d'impression */
+  --pos-cmd-methods-bg: var(--color-neutral-50);
+
+  // --------------------------------------------
+  // DESIGN 2026 — accents, dégradés, ombres feutrées, easings
+  // Ajout additif : aucune variable existante n'est écrasée.
+  // --------------------------------------------
+
+  /* Accent indigo vibrant — identité "next-gen" sidebar et composants modernes */
+  --color-accent-50:  #eef2ff;
+  --color-accent-100: #e0e7ff;
+  --color-accent-200: #c7d2fe;
+  --color-accent-300: #a5b4fc;
+  --color-accent-400: #818cf8;
+  --color-accent-500: #6366f1;
+  --color-accent-600: #4f46e5;
+  --color-accent-700: #4338ca;
+  --color-accent-800: #3730a3;
+  --color-accent-glow: rgba(99, 102, 241, 0.35);
+
+  /* Accent IA — violet→fuchsia (Assistant IA uniquement, cf. maquette) */
+  --ai-accent-50:  #f5f3ff;
+  --ai-accent-100: #ede9fe;
+  --ai-accent-200: #ddd6fe;
+  --ai-accent-300: #c4b5fd;
+  --ai-accent-500: #8b5cf6;
+  --ai-accent-600: #7c3aed;
+  --ai-fuchsia-500: #d946ef;
+  --ai-fuchsia-600: #c026d3;
+  --ai-gradient:        linear-gradient(135deg, #8b5cf6 0%, #d946ef 100%);
+  --ai-gradient-strong: linear-gradient(135deg, #7c3aed 0%, #c026d3 100%);
+  --ai-glow: 0 8px 20px rgba(139, 92, 246, 0.35);
+
+  /* Dégradés sémantiques (135deg) */
+  --gradient-primary:  linear-gradient(135deg, #3b82f6 0%, #6366f1 100%);
+  --gradient-success:  linear-gradient(135deg, #10b981 0%, #059669 100%);
+  --gradient-warning:  linear-gradient(135deg, #f59e0b 0%, #ea580c 100%);
+  --gradient-danger:   linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  --gradient-info:     linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+  --gradient-accent:   linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  --gradient-sidebar:  linear-gradient(180deg, #0c1222 0%, #131b35 45%, #1a1f3d 100%);
+  --gradient-surface:  linear-gradient(180deg, #ffffff 0%, #fafbff 100%);
+  --gradient-banner-danger:  linear-gradient(135deg, #fef2f2 0%, #fff5f5 100%);
+  --gradient-banner-warning: linear-gradient(135deg, #fffbeb 0%, #fff8e7 100%);
+  --gradient-banner-success: linear-gradient(135deg, #f0fdf4 0%, #f5fdf7 100%);
+
+  /* Ombres feutrées — élévation moderne (alternative à --shadow-sm/md/lg) */
+  --shadow-soft-sm: 0 2px 8px -2px rgba(15, 23, 42, 0.06), 0 1px 3px -1px rgba(15, 23, 42, 0.04);
+  --shadow-soft-md: 0 8px 24px -6px rgba(15, 23, 42, 0.08), 0 2px 6px -2px rgba(15, 23, 42, 0.05);
+  --shadow-soft-lg: 0 20px 48px -12px rgba(15, 23, 42, 0.14), 0 6px 16px -4px rgba(15, 23, 42, 0.06);
+  --shadow-glow-accent:  0 0 0 4px var(--color-accent-glow);
+  --shadow-glow-primary: 0 0 0 4px rgba(59, 130, 246, 0.25);
+  --shadow-glow-success: 0 0 0 4px rgba(16, 185, 129, 0.22);
+  --shadow-glow-danger:  0 0 0 4px rgba(239, 68, 68, 0.22);
+
+  /* Micro-animations — easings et durées graduées */
+  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-instant:  100ms;
+  --duration-quick:    180ms;
+  --duration-moderate: 260ms;
+
+  // --------------------------------------------
+  // REFRESH 2026 — tokens additifs (harmonisation tous onglets)
+  // Ajout strictement additif : aucune variable existante n'est modifiée.
+  // Consommés par styles/_primeng-bridge.scss et les composants partagés.
+  // --------------------------------------------
+
+  /* Police monospace — source unique (remplace les chaînes 'JetBrains Mono' en dur) */
+  --font-family-mono: 'JetBrains Mono', 'SF Mono', 'Monaco', 'Consolas', 'Courier New', monospace;
+
+  /* Densité des tableaux — source unique pour le pont PrimeNG et les tables brutes */
+  --table-header-py: 0.75rem;
+  --table-header-px: 1rem;
+  --table-cell-py: 0.875rem;
+  --table-cell-px: 1rem;
+  --table-cell-py-compact: 0.5rem;
+  --table-cell-px-compact: 0.75rem;
+
+  /* Anneau de focus unifié (accessibilité) */
+  --focus-ring: 0 0 0 3px var(--color-primary-200);
+  --focus-ring-offset: 2px;
+}
+
+// POS focus-visible (WCAG 2.1)
+app-pos button:focus-visible,
+app-pos input:focus-visible,
+app-pos [role="tab"]:focus-visible {
+  outline: 3px solid var(--color-primary-300);
+  outline-offset: 2px;
+}
+
+// PrimeIcons: @font-face de secours pour garantir le chargement des polices (chemins node_modules pouvant échouer après build)
+@font-face {
+  font-family: 'primeicons';
+  font-display: block;
+  src: url('./assets/fonts/primeicons/primeicons.woff2') format('woff2'), url('./assets/fonts/primeicons/primeicons.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+}
+
+// POS menu commande: forcer les styles des icônes PrimeIcons (éviter surcharge Pluto/FontAwesome/Bootstrap)
+.pos-layout .order-panel__actions .pi,
+.pos-layout .order-panel .pi {
+  font-family: 'primeicons' !important;
+  display: inline-block !important;
+  line-height: 1 !important;
+  font-style: normal !important;
+  font-weight: normal !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+// --------------------------------------------
+// GLOBAL RESET & BASE STYLES
+// --------------------------------------------
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-primary);
+  background-color: var(--layout-content-bg);
+  min-height: 100vh;
+}
+
+// Typography hierarchy (design premium SaaS)
+h1, .page-title {
+  font-size: var(--font-size-3xl);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+  color: var(--color-neutral-800);
+  letter-spacing: -0.01em;
+  margin-bottom: var(--spacing-2);
+}
+
+h2 {
+  font-size: var(--font-size-3xl);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
+  margin-bottom: var(--spacing-3);
+}
+
+h3 {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-3);
+}
+
+.subtitle {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-normal);
+  color: var(--color-text-secondary);
+  margin-top: calc(var(--spacing-2) * -1);
+  margin-bottom: var(--spacing-6);
+}
+
+a {
+  color: var(--color-primary-600);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+
+  &:hover {
+    color: var(--color-primary-700);
+  }
+}
+
+// --------------------------------------------
+// UTILITY CLASSES
+// --------------------------------------------
+.container {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 var(--spacing-4);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+// Text utilities
+.text-center { text-align: center; }
+.text-left { text-align: left; }
+.text-right { text-align: right; }
+
+.text-primary { color: var(--color-primary-600); }
+.text-success { color: var(--color-success-600); }
+.text-warning { color: var(--color-warning-600); }
+.text-error { color: var(--color-error-600); }
+.text-muted { color: var(--color-neutral-600); } // WCAG AA: ratio ≥4.5:1 sur fond neutral-50
+.text-muted-light { color: var(--color-neutral-500); } // Pour les backgrounds sombres uniquement
+.text-muted-dark { color: var(--color-neutral-700); } // Pour les backgrounds clairs
+
+// Financial / regulatory display (WCAG AA compliant)
+// Montants: typo monospace, tabular-nums pour alignement des colonnes.
+// .amount = alias existant pour compatibilité.
+.amount-display,
+.amount {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Monaco', 'Consolas', monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-base);
+}
+.amount-display.amount-display--lg,
+.wizard-amount.large { font-size: var(--font-size-2xl); }
+.amount-display.amount-display--positive,
+.wizard-amount.positive { color: var(--color-success-700); }
+.amount-display.amount-display--negative,
+.wizard-amount.negative { color: var(--color-error-600); }
+
+// Mentions légales / textes réglementaires
+.legal-text {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--line-height-normal);
+}
+
+.font-medium { font-weight: var(--font-weight-medium); }
+.font-semibold { font-weight: var(--font-weight-semibold); }
+.font-bold { font-weight: var(--font-weight-bold); }
+
+// Flex utilities
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.items-center { align-items: center; }
+.justify-center { justify-content: center; }
+.justify-between { justify-content: space-between; }
+.gap-2 { gap: var(--spacing-2); }
+.gap-4 { gap: var(--spacing-4); }
+.gap-6 { gap: var(--spacing-6); }
+
+// Spacing utilities
+.mt-2 { margin-top: var(--spacing-2); }
+.mt-4 { margin-top: var(--spacing-4); }
+.mt-6 { margin-top: var(--spacing-6); }
+.mb-2 { margin-bottom: var(--spacing-2); }
+.mb-4 { margin-bottom: var(--spacing-4); }
+.mb-6 { margin-bottom: var(--spacing-6); }
+.p-4 { padding: var(--spacing-4); }
+.p-6 { padding: var(--spacing-6); }
+
+// --------------------------------------------
+// POSEIDON-STYLE THEME OVERRIDES
+// Reproduce premium Poseidon look with existing tokens (no theme swap)
+// --------------------------------------------
+// Surfaces: cards and panels use subtle borders and light elevation
+.p-card,
+.p-panel {
+  background: var(--color-background-elevated);
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03), 0 2px 4px -1px rgba(0,0,0,0.03);
+}
+
+.p-panel .p-panel-header {
+  background: var(--color-background-subtle);
+  border-color: var(--color-border-subtle);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+}
+
+// Inputs and dropdowns: consistent radius and focus ring
+.p-inputtext,
+.p-dropdown,
+.p-calendar .p-inputtext {
+  border-radius: var(--radius-lg);
+  border-color: var(--color-border-default);
+}
+
+.p-dropdown-panel,
+.p-datepicker {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-subtle);
+  box-shadow: var(--shadow-md);
+}
+
+// --------------------------------------------
+// PRIMENG CALENDAR FIX
+// Ensures the date input field displays correctly with icon
+// --------------------------------------------
+.p-calendar {
+  display: flex;
+  width: 100%;
+
+  // Input wrapper takes remaining space
+  .p-inputtext {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+  }
+
+  // When showIcon is true, ensure proper layout
+  &.p-calendar-w-btn {
+    .p-inputtext {
+      border-top-right-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+
+    .p-datepicker-trigger {
+      border-top-left-radius: 0;
+      border-bottom-left-radius: 0;
+    }
+  }
+
+  // Ensure the calendar icon button is styled properly
+  .p-datepicker-trigger {
+    flex-shrink: 0;
+    background: var(--color-primary-600);
+    border-color: var(--color-primary-600);
+    color: white;
+
+    &:hover {
+      background: var(--color-primary-700);
+      border-color: var(--color-primary-700);
+    }
+
+    &:focus {
+      box-shadow: 0 0 0 3px var(--color-primary-200);
+    }
+  }
+}
+
+// Width utility class for p-calendar
+.w-full .p-calendar,
+p-calendar.w-full,
+.p-calendar.w-full {
+  width: 100%;
+}
+
+// --------------------------------------------
+// PRIMENG OVERRIDES
+// --------------------------------------------
+.p-button {
+  font-family: var(--font-family);
+  font-weight: var(--font-weight-medium);
+  border-radius: var(--radius-lg);
+  transition: all var(--transition-fast);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+
+  &:hover {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+
+  &:focus-visible {
+    outline: 3px solid var(--color-primary-500);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 1px var(--color-primary-100);
+  }
+}
+
+.p-inputtext {
+  font-family: var(--font-family);
+  border-radius: var(--radius-md);
+  border-color: var(--color-neutral-300);
+  transition: all var(--transition-fast);
+
+  &:focus {
+    border-color: var(--color-primary-600);
+    box-shadow: 0 0 0 3px var(--color-primary-200);
+    outline: 2px solid var(--color-primary-600);
+    outline-offset: 2px;
+  }
+
+  &:hover:not(:focus) {
+    border-color: var(--color-neutral-400);
+  }
+}
+
+.p-card {
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--color-border-subtle);
+  transition: all var(--transition-normal);
+
+  &:hover {
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-2px);
+    border-color: var(--color-border-default);
+  }
+}
+
+.p-datatable {
+  .p-datatable-header {
+    background: var(--color-background-subtle);
+    border-color: var(--color-border-subtle);
+  }
+
+  .p-datatable-thead > tr > th {
+    background: var(--color-background-subtle);
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: var(--spacing-4) var(--spacing-5);
+    border-color: var(--color-border-default);
+    border-bottom: 2px solid var(--color-border-default);
+
+    &.text-right { text-align: right; }
+  }
+
+  .p-datatable-tbody > tr {
+    transition: all var(--transition-fast);
+
+    &:nth-child(even):not(.overdue) {
+      background: var(--color-neutral-50);
+    }
+
+    &.overdue {
+      background: var(--color-warning-50);
+    }
+
+    &:hover {
+      background: var(--color-background-hover);
+      transform: translateX(4px);
+      box-shadow: -4px 0 0 var(--color-primary-500);
+      cursor: pointer;
+    }
+
+    &:active {
+      background: var(--color-primary-100);
+      transform: translateX(2px);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-primary-600);
+      outline-offset: -2px;
+    }
+
+    td {
+      padding: var(--spacing-5);
+    }
+
+    td.text-right { text-align: right; }
+  }
+}
+
+// --------------------------------------------
+// STATUS BADGES (alignés mockup 19-badges-statuts)
+// En retard = warning (orange) pour distinguer de Payée (vert) et Annulée (rouge)
+// --------------------------------------------
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: 4px 12px;
+  /* Design 2026 : pilule arrondie + ombre inset subtile pour profondeur */
+  border-radius: var(--radius-full);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  font-size: 11px;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.04em;
+
+  i { font-size: 0.75rem; }
+
+  &.status-draft {
+    background: var(--color-neutral-100);
+    color: var(--color-neutral-700);
+    border: 1px solid var(--color-neutral-300);
+  }
+
+  &.status-pending {
+    background: var(--color-primary-100);
+    color: var(--color-primary-700);
+    border: 1px solid var(--color-primary-200);
+  }
+
+  &.status-validated {
+    background: var(--color-primary-100);
+    color: var(--color-primary-700);
+    border: 1px solid var(--color-primary-200);
+  }
+
+  &.status-signed {
+    background: var(--color-primary-100);
+    color: var(--color-primary-800);
+    border: 1px solid var(--color-primary-200);
+  }
+
+  &.status-sent {
+    background: var(--color-primary-100);
+    color: var(--color-primary-700);
+    border: 1px solid var(--color-primary-200);
+  }
+
+  &.status-invoiced {
+    background: var(--color-primary-50);
+    color: var(--color-primary-700);
+    border: 1px solid var(--color-primary-300);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  }
+
+  &.status-paid {
+    background: var(--color-success-100);
+    color: var(--color-success-700);
+    border: 1px solid var(--color-success-200);
+  }
+
+  &.status-partial {
+    background: var(--color-warning-50);
+    color: var(--color-warning-600);
+    border: 1px solid var(--color-warning-200);
+  }
+
+  &.status-overdue {
+    background: var(--color-warning-100);
+    color: var(--color-warning-700);
+    border: 1px solid var(--color-warning-200);
+    /* Design 2026 : pulse subtil pour attirer l'attention sur les retards */
+    animation: pulseSubtle 2.5s ease-in-out infinite;
+  }
+
+  &.status-cancelled {
+    background: var(--color-error-100);
+    color: var(--color-error-700);
+    border: 1px solid var(--color-error-200);
+    text-decoration: line-through;
+  }
+
+  &.status-accepted {
+    background: var(--color-success-50);
+    color: var(--color-success-700);
+    border: 1px solid var(--color-success-200);
+  }
+
+  &.status-rejected {
+    background: var(--color-error-50);
+    color: var(--color-error-700);
+    border: 1px solid var(--color-error-200);
+  }
+
+  &.status-expired {
+    background: var(--color-warning-50);
+    color: var(--color-warning-600);
+    border: 1px solid var(--color-warning-200);
+  }
+
+  &.status-converted {
+    background: var(--color-primary-100);
+    color: var(--color-primary-700);
+    border: 1px solid var(--color-primary-200);
+  }
+
+  &.status-active {
+    background: var(--color-success-50);
+    color: var(--color-success-700);
+    border: 1px solid var(--color-success-200);
+  }
+
+  &.status-inactive {
+    background: var(--color-neutral-200);
+    color: var(--color-neutral-600);
+    border: 1px solid var(--color-neutral-400);
+  }
+}
+
+// --------------------------------------------
+// FORM STYLES
+// --------------------------------------------
+.form-group {
+  margin-bottom: var(--spacing-5);
+  position: relative;
+
+  label {
+    display: block;
+    margin-bottom: var(--spacing-2);
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-primary);
+
+    .required { color: var(--color-error-600); margin-left: var(--spacing-1); }
+  }
+
+  .form-hint {
+    margin-top: var(--spacing-1);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-1);
+
+    i { font-size: 0.875rem; }
+  }
+
+  &.form-valid .p-inputtext {
+    border-color: var(--color-success-500) !important;
+
+    &:focus {
+      box-shadow: 0 0 0 3px var(--color-success-100) !important;
+    }
+  }
+
+  &.form-error .p-inputtext,
+  &.form-error .p-dropdown {
+    border-color: var(--color-error-500) !important;
+
+    &:focus {
+      box-shadow: 0 0 0 3px var(--color-error-100) !important;
+    }
+  }
+}
+
+.form-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-2);
+  padding: var(--spacing-3);
+  font-size: var(--font-size-sm);
+  color: var(--color-error-700);
+  background: var(--color-error-50);
+  border: 1px solid var(--color-error-200);
+  border-radius: var(--radius-md);
+
+  i { flex-shrink: 0; margin-top: 2px; color: var(--color-error-600); }
+
+  .form-hint {
+    display: block;
+    margin-top: var(--spacing-1);
+    color: var(--color-neutral-600);
+    font-size: var(--font-size-xs);
+  }
+}
+
+// Bandeau d'erreur / alerte (concept 9) — structure unifiée
+.alert-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-3);
+  padding: var(--spacing-4);
+  border-radius: var(--radius-lg);
+  border-left: 4px solid;
+  margin-bottom: var(--spacing-4);
+
+  &.alert-banner--error {
+    background: var(--color-error-50);
+    border-left-color: var(--color-error-600);
+    color: var(--color-error-800);
+
+    .alert-banner-icon { color: var(--color-error-600); }
+  }
+  &.alert-banner--warning {
+    background: var(--color-warning-50);
+    border-left-color: var(--color-warning-600);
+    color: var(--color-warning-800);
+
+    .alert-banner-icon { color: var(--color-warning-600); }
+  }
+
+  .alert-banner-icon {
+    font-size: var(--font-size-lg);
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .alert-banner-content { flex: 1; min-width: 0; }
+  .alert-banner-actions { flex-shrink: 0; }
+
+  .alert-banner-content .error-text {
+    strong { display: block; font-weight: var(--font-weight-semibold); margin-bottom: var(--spacing-1); }
+    p { margin: 0; font-size: var(--font-size-sm); }
+    small { display: block; margin-top: var(--spacing-1); font-size: var(--font-size-xs); font-style: italic; opacity: 0.9; }
+  }
+  &.alert-banner--error .alert-banner-content .error-text {
+    strong { color: var(--color-error-800); }
+    p { color: var(--color-error-700); }
+    small { color: var(--color-error-600); }
+  }
+}
+
+// --------------------------------------------
+// FILTRES / TABLEAUX (style Poseidon)
+// --------------------------------------------
+.filters-card-poseidon {
+  background: var(--color-background-elevated);
+  border-radius: var(--radius-xl);
+  padding: var(--spacing-4);
+  margin-bottom: var(--spacing-4);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--color-border-subtle);
+}
+
+.filters-card-poseidon__title {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-3);
+  padding-bottom: var(--spacing-3);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.filters-card-poseidon__toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-4);
+  flex-wrap: wrap;
+}
+
+.filters-card-poseidon__clear {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-3);
+  background: var(--color-white);
+  border: 1px solid var(--color-primary-300);
+  border-radius: var(--radius-md);
+  color: var(--color-primary-700);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-family: var(--font-family);
+}
+
+.filters-card-poseidon__clear:hover {
+  background: var(--color-primary-50);
+  border-color: var(--color-primary-400);
+}
+
+.filters-card-poseidon__clear:focus-visible {
+  outline: 3px solid var(--color-primary-500);
+  outline-offset: 2px;
+}
+
+// --------------------------------------------
+// RESPONSIVE UTILITIES
+// --------------------------------------------
+@media (max-width: 768px) {
+  .hide-mobile {
+    display: none !important;
+  }
+
+  .show-mobile {
+    display: block !important;
+  }
+}
+
+@media (min-width: 769px) {
+  .hide-desktop {
+    display: none !important;
+  }
+
+  .show-mobile {
+    display: none !important;
+  }
+}
+
+// --------------------------------------------
+// SKIP LINKS (Accessibilité)
+// --------------------------------------------
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--color-primary-600);
+  color: white;
+  padding: var(--spacing-2) var(--spacing-4);
+  text-decoration: none;
+  z-index: var(--z-tooltip);
+  border-radius: var(--radius-md);
+
+  &:focus {
+    top: 0;
+  }
+}
+
+// --------------------------------------------
+// INVOICE WIZARD SPECIFIC STYLES
+// --------------------------------------------
+
+// Stepper Animations
+.wizard-step-enter {
+  animation: slideInRight 0.3s ease-out;
+}
+
+.wizard-step-leave {
+  animation: slideOutLeft 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideOutLeft {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-30px);
+  }
+}
+
+// Wizard Form Elements
+.wizard-form-section {
+  background: var(--color-background-elevated);
+  border-radius: var(--radius-xl);
+  padding: var(--card-padding);
+  margin-bottom: var(--spacing-6);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--color-border-subtle);
+  border-left: 4px solid var(--color-primary-500);
+}
+
+.wizard-form-title {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  margin-bottom: var(--spacing-5);
+  padding-bottom: var(--spacing-4);
+  border-bottom: 2px solid var(--color-primary-100);
+
+  i {
+    font-size: var(--font-size-xl);
+    color: var(--color-primary-600);
+  }
+
+  h3 {
+    margin: 0;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-primary);
+  }
+}
+
+// Wizard Validation States
+.wizard-field-valid {
+  position: relative;
+
+  &::after {
+    content: '✓';
+    position: absolute;
+    right: var(--spacing-3);
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--color-success-500);
+    font-weight: bold;
+  }
+}
+
+.wizard-field-error {
+  .p-inputtext,
+  .p-dropdown,
+  .p-dropdown .p-inputtext {
+    border-color: var(--color-error-500) !important;
+
+    &:focus {
+      box-shadow: 0 0 0 3px var(--color-error-100) !important;
+    }
+  }
+}
+
+// Wizard Compliance Badges
+.compliance-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding: var(--spacing-1) var(--spacing-2);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+
+  &.compliant {
+    background: var(--color-success-100);
+    color: var(--color-success-700);
+  }
+
+  &.non-compliant {
+    background: var(--color-error-100);
+    color: var(--color-error-700);
+  }
+
+  &.warning {
+    background: var(--color-warning-100);
+    color: var(--color-warning-700);
+  }
+}
+
+// Wizard Amount Display
+.wizard-amount {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: var(--font-weight-semibold);
+
+  &.positive {
+    color: var(--color-success-600);
+  }
+
+  &.negative {
+    color: var(--color-error-600);
+  }
+
+  &.large {
+    font-size: var(--font-size-2xl);
+  }
+}
+
+// Wizard Info Callout
+.wizard-callout {
+  display: flex;
+  gap: var(--spacing-3);
+  padding: var(--spacing-4);
+  border-radius: var(--radius-lg);
+  margin: var(--spacing-4) 0;
+
+  &.info {
+    background: var(--color-primary-50);
+    border: 1px solid var(--color-primary-200);
+    color: var(--color-primary-800);
+  }
+
+  &.warning {
+    background: var(--color-warning-50);
+    border: 1px solid var(--color-warning-200);
+    color: var(--color-warning-800);
+  }
+
+  &.success {
+    background: var(--color-success-50);
+    border: 1px solid var(--color-success-200);
+    color: var(--color-success-800);
+  }
+
+  &.error {
+    background: var(--color-error-50);
+    border: 1px solid var(--color-error-200);
+    color: var(--color-error-800);
+  }
+
+  i {
+    font-size: var(--font-size-lg);
+    flex-shrink: 0;
+  }
+
+  .callout-content {
+    flex: 1;
+
+    strong {
+      display: block;
+      margin-bottom: var(--spacing-1);
+    }
+
+    p {
+      margin: 0;
+      font-size: var(--font-size-sm);
+    }
+  }
+}
+
+// Tunisian Fiscal Specific Styles
+.nif-display {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.5px;
+  padding: var(--spacing-2) var(--spacing-3);
+  background: var(--color-neutral-100);
+  border-radius: var(--radius-md);
+  display: inline-block;
+}
+
+.tnd-amount {
+  &::after {
+    content: ' TND';
+    font-size: 0.85em;
+    color: var(--color-neutral-500);
+    font-weight: var(--font-weight-normal);
+  }
+}
+
+// --------------------------------------------
+// MICRO-INTERACTIONS & ANIMATIONS
+// --------------------------------------------
+
+// Loading States
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleInBounce {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes pulseSubtle {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.skeleton-shimmer {
+  animation: shimmer 2s infinite linear;
+  background: linear-gradient(
+    to right,
+    var(--color-neutral-100) 0%,
+    var(--color-neutral-200) 50%,
+    var(--color-neutral-100) 100%
+  );
+  background-size: 1000px 100%;
+}
+
+// Button Press Animation
+.p-button {
+  position: relative;
+  overflow: hidden;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.3);
+    transform: translate(-50%, -50%);
+    transition: width 0.6s, height 0.6s;
+  }
+
+  &:active::before {
+    width: 300px;
+    height: 300px;
+  }
+}
+
+// Card Hover Effects
+.p-card {
+  transition: all var(--transition-normal);
+
+  &:hover {
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-2px);
+  }
+
+  &.p-card--static:hover {
+    transform: none;
+    box-shadow: var(--shadow-md);
+  }
+}
+
+// Focus Visible (WCAG 2.1 — 2.4.7 Focus Visible)
+// Outline 3px pour visibilité claire au clavier
+*:focus-visible {
+  outline: 3px solid var(--color-primary-500);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+// Skip to content link
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: var(--spacing-4);
+  background: var(--color-primary-600);
+  color: white;
+  padding: var(--spacing-3) var(--spacing-4);
+  text-decoration: none;
+  z-index: var(--z-tooltip);
+  border-radius: var(--radius-md);
+  font-weight: var(--font-weight-semibold);
+  transition: top var(--transition-fast);
+
+  &:focus {
+    top: var(--spacing-4);
+  }
+}
+
+// --------------------------------------------
+// RESPONSIVE IMPROVEMENTS
+// --------------------------------------------
+
+// Mobile Card View for Tables
+@media (max-width: 768px) {
+  .p-datatable {
+    .p-datatable-tbody > tr {
+      display: block;
+      margin-bottom: var(--spacing-4);
+      border: 1px solid var(--color-neutral-200);
+      border-radius: var(--radius-lg);
+      padding: var(--spacing-4);
+      background: var(--color-background-elevated);
+
+      &:hover {
+        transform: none;
+        box-shadow: var(--shadow-md);
+      }
+
+      td {
+        display: flex;
+        justify-content: space-between;
+        padding: var(--spacing-2) 0;
+        border: none;
+
+        &::before {
+          content: attr(data-label);
+          font-weight: var(--font-weight-semibold);
+          color: var(--color-neutral-600);
+          margin-right: var(--spacing-2);
+        }
+      }
+    }
+  }
+}
+
+// --------------------------------------------
+// TOAST OVERRIDES (PrimeNG)
+// --------------------------------------------
+::ng-deep .p-toast {
+  .p-toast-message {
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    border-left: 4px solid;
+    background: var(--color-background-elevated);
+
+    &.p-toast-message-success {
+      border-left-color: var(--color-success-600);
+      .p-toast-message-icon { color: var(--color-success-600); }
+    }
+    &.p-toast-message-error {
+      border-left-color: var(--color-error-600);
+      .p-toast-message-icon { color: var(--color-error-600); }
+    }
+    &.p-toast-message-warn {
+      border-left-color: var(--color-warning-600);
+      .p-toast-message-icon { color: var(--color-warning-600); }
+    }
+    &.p-toast-message-info {
+      border-left-color: var(--color-primary-600);
+      .p-toast-message-icon { color: var(--color-primary-600); }
+    }
+  }
+}
+
+// --------------------------------------------
+// NG-BOOTSTRAP MODAL OVERRIDES
+// Fix pour z-index et pointer-events
+// --------------------------------------------
+
+/**
+ * CRITIQUE: Force le z-index et pointer-events pour garantir
+ * l'interactivité des modales ng-bootstrap au-dessus de tous
+ * les autres éléments. .modal-dialog en pointer-events: auto
+ * évite le blocage des clics sur les boutons (cause racine v2).
+ */
+
+// Backdrop - sélecteurs renforcés (body + élément ng-bootstrap)
+body ngb-modal-backdrop.modal-backdrop,
+body .modal-backdrop {
+  z-index: 1100 !important;
+  background-color: rgba(0, 0, 0, 0.5);
+  pointer-events: auto !important;
+}
+
+// Modal window - sélecteurs renforcés
+body ngb-modal-window.modal,
+body .modal {
+  z-index: 1200 !important;
+  pointer-events: auto !important;
+}
+
+// Modal dialog - pointer-events: auto pour que toute la zone (dont boutons) reçoive les clics
+body .modal-dialog,
+body ngb-modal-window .modal-dialog {
+  pointer-events: auto !important;
+  z-index: 1201 !important;
+}
+
+// Modal content (la boîte blanche)
+body .modal-content,
+body ngb-modal-window .modal-content {
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 1202 !important;
+  background: var(--color-background-elevated);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+}
+
+// Modal header, body, footer - Force l'interactivité
+body .modal-header,
+body .modal-body,
+body .modal-footer {
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 1;
+}
+
+// Tous les boutons dans les modales
+body .modal-footer .btn,
+body .modal-header .btn,
+body .modal-header .btn-close {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+  position: relative;
+  z-index: 2;
+}
+
+// Assurer que les boutons ne sont jamais bloqués
+body .modal-footer .btn:not(:disabled),
+body .modal-header .btn-close {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+}
+
+// Custom class pour les modales de confirmation
+body .confirm-modal-window {
+  z-index: 1200 !important;
+}
+
+body .confirm-modal-window .modal-dialog {
+  z-index: 1201 !important;
+  pointer-events: auto !important;
+}
+
+body .confirm-modal-window .modal-content {
+  z-index: 1202 !important;
+}
+
+// Surcharge des styles Bootstrap/Pluto qui pourraient interférer
+.modal-open {
+  overflow: hidden;
+}
+
+.modal-open .modal {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+// Animation d'entrée/sortie
+body .modal.fade .modal-dialog {
+  transition: transform 0.3s ease-out;
+  transform: translate(0, -50px);
+}
+
+body .modal.show .modal-dialog {
+  transform: none;
+}
+
+// Responsive
+@media (max-width: 576px) {
+  body .modal-dialog {
+    max-width: 90%;
+    margin: var(--spacing-4) auto;
+  }
+
+  body .modal-footer {
+    flex-direction: column;
+
+    .btn {
+      width: 100%;
+    }
+  }
+}
+
+// --------------------------------------------
+// InstaFact app shell — overrides thème Pluto (#content / .topbar)
+// style.css Pluto suppose une sidebar en position fixed et compense avec un
+// padding massif sur #content (~305px à gauche). Le shell actuel est en flex
+// (sidebar + colonne) : sans ces règles, la zone utile reste artificiellement étroite.
+// --------------------------------------------
+#content {
+  padding: 0 !important;
+  min-height: 0 !important;
+  background: transparent !important;
+  position: relative !important;
+  left: auto !important;
+}
+
+.topbar.main-header {
+  position: relative !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  padding-left: 0 !important;
+  top: auto !important;
+  left: auto !important;
+  flex-shrink: 0;
+}
+
+@media (max-width: 1199px) {
+  #content {
+    padding: 0 !important;
+    left: auto !important;
+    position: relative !important;
+  }
+
+  .topbar.main-header {
+    left: auto !important;
+  }
+}
+
+// Print Styles
+@media print {
+  app-sidebar,
+  app-header,
+  .sidebar_blog_2,
+  .page-header-actions {
+    display: none !important;
+  }
+
+  #content {
+    margin-left: 0 !important;
+    padding: 0 !important;
+  }
+
+  .midde_cont {
+    padding: 0 !important;
+  }
+
+  .wizard-container,
+  .wizard-header,
+  .wizard-footer,
+  .wizard-stepper {
+    display: none !important;
+  }
+
+  .invoice-preview {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+  }
+}
+
+// POS themes (applied on html via PosThemeService)
+.pos-theme--christmas .pos-header,
+.pos-theme--christmas .pos-layout .pos-content__order {
+  --pos-header-bg: linear-gradient(135deg, #0f766e 0%, #115e59 50%, #134e4a 100%);
+}
+.pos-theme--christmas .pos-header {
+  background: linear-gradient(135deg, #0f766e 0%, #115e59 50%, #134e4a 100%) !important;
+}
+.pos-theme--ramadan .pos-header {
+  background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%) !important;
+}
+.pos-theme--sales .pos-header {
+  background: linear-gradient(135deg, #7c2d12 0%, #9a3412 50%, #c2410c 100%) !important;
+}
+
+// ---------------------------------------------------------------------------
+// Icônes : neutraliser Pluto `button i { color: #fff }` (style.css)
+//
+// Sans cette surcharge, tout `<i>` dans un `<button>` est forcé en blanc, ce qui
+// rend les pictogrammes invisibles sur boutons à fond clair (Assistant IA, etc.).
+// `color: inherit` reprend la couleur déjà définie sur le bouton (design system).
+// ---------------------------------------------------------------------------
+button.icon-btn > i,
+button.mic-btn > i,
+button.send-btn > i,
+button.new-btn > i,
+button.delete-btn > i,
+button.close-dashboard > i,
+button.ai-fab > i,
+button.ai-fab > img,
+button.sidebar_toggle > i,
+button.btn > i,
+button.error-dismiss > i {
+  color: inherit;
+}
+
+// Renfort : la pile Font Awesome doit gagner sur la police de texte si un thème
+// impose `font-family: inherit` sur des `i` (glyphs « tofu » sinon).
+.fa-solid,
+.fas {
+  font-family: 'Font Awesome 7 Free', 'Font Awesome 6 Free', sans-serif;
+  font-weight: 900;
+  font-style: normal;
+}
+
+.fa-regular,
+.far {
+  font-family: 'Font Awesome 7 Free', 'Font Awesome 6 Free', sans-serif;
+  font-weight: 400;
+  font-style: normal;
+}
+
+.fab,
+.fa-brands {
+  font-family: 'Font Awesome 7 Brands', 'Font Awesome 6 Brands', sans-serif;
+  font-weight: 400;
+  font-style: normal;
+}

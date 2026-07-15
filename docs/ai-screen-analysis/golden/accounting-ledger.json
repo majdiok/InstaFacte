@@ -1,0 +1,27 @@
+{
+  "screenId": "accounting-ledger",
+  "description": "Golden fixture for general ledger screen analysis",
+  "minQualityScore": 85,
+  "requiredSections": [
+    "Synthèse exécutive",
+    "Indicateurs clés",
+    "Anomalies et risques",
+    "Actions recommandées"
+  ],
+  "payloadFixture": {
+    "schemaVersion": "2",
+    "screenId": "accounting-ledger",
+    "payload": {
+      "schemaVersion": "2",
+      "screenId": "accounting-ledger",
+      "summary": {
+        "totalRows": 45,
+        "totalDebit": 125000,
+        "totalCredit": 125000,
+        "finalBalance": 52000,
+        "debitCreditGap": 0
+      },
+      "dataQuality": { "hasData": true, "isPartial": false, "warnings": [] }
+    }
+  }
+}

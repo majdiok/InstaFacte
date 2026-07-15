@@ -1,0 +1,362 @@
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { TableModule } from 'primeng/table';
+import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
+import { ToastService } from '@core/services/toast.service';
+import {
+  AccountingService,
+  JournalEntryTemplateDto,
+  JournalEntryTemplateLineRequest
+} from '../services/accounting.service';
+
+interface TemplateForm {
+  id: string | null;
+  name: string;
+  description: string;
+  journalCode: string;
+  labelTemplate: string;
+  isActive: boolean;
+  /** 0 = aucune, 1 = mensuelle, 2 = trimestrielle, 3 = annuelle. */
+  recurrenceFrequency: number;
+  recurrenceDayOfMonth: number | null;
+  recurrenceStartDate: string;
+  recurrenceEndDate: string;
+  lines: JournalEntryTemplateLineRequest[];
+}
+
+const JOURNAL_CODES = ['JV', 'JA', 'JC', 'JB', 'JOD', 'JIM', 'JAN'];
+
+@Component({
+  selector: 'app-entry-templates',
+  standalone: true,
+  imports: [CommonModule, FormsModule, TableModule, PageHeaderComponent, ButtonComponent, AccountingStatusBannerComponent],
+  template: `
+    <app-page-header title="Modèles d'écriture" subtitle="Modèles réutilisables pour la saisie manuelle" />
+
+    <app-accounting-status-banner variant="error" [message]="error() ?? ''" />
+
+    <div class="card tpl-toolbar-card">
+      <app-button variant="primary" icon="pi pi-plus" type="button" (click)="startCreate()" [disabled]="loading()">
+        Nouveau modèle
+      </app-button>
+    </div>
+
+    @if (form(); as f) {
+      <div class="card tpl-form-card">
+        <h3 class="tpl-form-title">{{ f.id ? 'Modifier le modèle' : 'Nouveau modèle' }}</h3>
+        <div class="tpl-fields">
+          <div class="tpl-field tpl-field-grow">
+            <label class="field-label" for="tpl-name">Nom</label>
+            <input id="tpl-name" class="tpl-input" [(ngModel)]="f.name" [disabled]="saving()" />
+          </div>
+          <div class="tpl-field">
+            <label class="field-label" for="tpl-journal">Journal</label>
+            <select id="tpl-journal" class="tpl-input" [(ngModel)]="f.journalCode" [disabled]="saving()">
+              @for (jc of journalCodes; track jc) { <option [value]="jc">{{ jc }}</option> }
+            </select>
+          </div>
+          <div class="tpl-field tpl-field-grow">
+            <label class="field-label" for="tpl-label">Libellé type</label>
+            <input id="tpl-label" class="tpl-input" [(ngModel)]="f.labelTemplate" [disabled]="saving()" placeholder="Ex. Écriture de {{'{'}}mois{{'}'}}" />
+          </div>
+        </div>
+        <div class="tpl-field">
+          <label class="field-label" for="tpl-desc">Description</label>
+          <input id="tpl-desc" class="tpl-input" [(ngModel)]="f.description" [disabled]="saving()" />
+        </div>
+
+        <h4 class="tpl-lines-title">Récurrence planifiée</h4>
+        <p class="tpl-recurrence-hint">
+          Génère automatiquement l'écriture à chaque échéance (loyers, assurances…). Toutes les lignes
+          doivent porter un montant fixe et être équilibrées.
+        </p>
+        <div class="tpl-fields">
+          <div class="tpl-field">
+            <label class="field-label" for="tpl-rec-freq">Fréquence</label>
+            <select id="tpl-rec-freq" class="tpl-input" [(ngModel)]="f.recurrenceFrequency" [disabled]="saving()">
+              <option [ngValue]="0">Aucune</option>
+              <option [ngValue]="1">Mensuelle</option>
+              <option [ngValue]="2">Trimestrielle</option>
+              <option [ngValue]="3">Annuelle</option>
+            </select>
+          </div>
+          @if (f.recurrenceFrequency > 0) {
+            <div class="tpl-field">
+              <label class="field-label" for="tpl-rec-day">Jour du mois (1–28)</label>
+              <input id="tpl-rec-day" type="number" min="1" max="28" class="tpl-input" [(ngModel)]="f.recurrenceDayOfMonth" [disabled]="saving()" />
+            </div>
+            <div class="tpl-field">
+              <label class="field-label" for="tpl-rec-start">Début</label>
+              <input id="tpl-rec-start" type="date" class="tpl-input" [(ngModel)]="f.recurrenceStartDate" [disabled]="saving()" />
+            </div>
+            <div class="tpl-field">
+              <label class="field-label" for="tpl-rec-end">Fin <span class="tpl-optional">(facultatif)</span></label>
+              <input id="tpl-rec-end" type="date" class="tpl-input" [(ngModel)]="f.recurrenceEndDate" [disabled]="saving()" />
+            </div>
+          }
+        </div>
+
+        <h4 class="tpl-lines-title">Lignes</h4>
+        <table class="tpl-lines">
+          <thead>
+            <tr>
+              <th scope="col">Compte</th>
+              <th scope="col">Libellé ligne</th>
+              <th scope="col" class="tpl-col-amount">Débit fixe</th>
+              <th scope="col" class="tpl-col-amount">Crédit fixe</th>
+              <th scope="col"></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (line of f.lines; track $index) {
+              <tr>
+                <td><input class="tpl-input" [(ngModel)]="line.accountNumber" [disabled]="saving()" /></td>
+                <td><input class="tpl-input" [(ngModel)]="line.lineLabelTemplate" [disabled]="saving()" /></td>
+                <td><input type="number" class="tpl-input tpl-amount" [(ngModel)]="line.fixedDebit" [disabled]="saving()" /></td>
+                <td><input type="number" class="tpl-input tpl-amount" [(ngModel)]="line.fixedCredit" [disabled]="saving()" /></td>
+                <td><button type="button" class="tpl-icon-btn" (click)="removeLine($index)" [disabled]="saving()" aria-label="Supprimer la ligne"><i class="pi pi-trash"></i></button></td>
+              </tr>
+            }
+          </tbody>
+        </table>
+        <button type="button" class="tpl-add-line" (click)="addLine()" [disabled]="saving()"><i class="pi pi-plus"></i> Ajouter une ligne</button>
+
+        <div class="tpl-form-actions">
+          <button type="button" class="btn btn-secondary" (click)="cancel()" [disabled]="saving()">Annuler</button>
+          <button type="button" class="btn btn-primary" (click)="save()" [disabled]="saving() || !f.name.trim() || f.lines.length < 2">
+            {{ saving() ? 'Enregistrement…' : 'Enregistrer' }}
+          </button>
+        </div>
+      </div>
+    }
+
+    <div class="card tpl-list-card">
+      <p-table [value]="templates()" [loading]="loading()" styleClass="p-datatable-sm accounting-datatable" [rowHover]="true">
+        <ng-template pTemplate="header">
+          <tr>
+            <th scope="col">Nom</th>
+            <th scope="col">Journal</th>
+            <th scope="col">Lignes</th>
+            <th scope="col">Récurrence</th>
+            <th scope="col">Utilisations</th>
+            <th scope="col">Actif</th>
+            <th scope="col">Actions</th>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="body" let-t>
+          <tr>
+            <td>{{ t.name }}</td>
+            <td>{{ t.journalCode }}</td>
+            <td>{{ t.lines.length }}</td>
+            <td>
+              @if (t.isRecurring) {
+                <span class="tpl-rec-badge" [title]="'Prochaine échéance : ' + (t.nextRunDate ? (t.nextRunDate | date : 'shortDate') : 'épuisée')">
+                  {{ frequencyLabel(t.recurrenceFrequency) }}
+                  @if (t.nextRunDate) { · {{ t.nextRunDate | date : 'shortDate' }} }
+                </span>
+              } @else {
+                <span class="tpl-rec-none">—</span>
+              }
+            </td>
+            <td>{{ t.usageCount }}</td>
+            <td>{{ t.isActive ? 'Oui' : 'Non' }}</td>
+            <td>
+              @if (t.isRecurring && t.nextRunDate && t.isActive) {
+                <button
+                  type="button"
+                  class="tpl-icon-btn tpl-icon-run"
+                  (click)="runNow(t)"
+                  [disabled]="runningId() === t.id"
+                  aria-label="Générer l'écriture maintenant"
+                  title="Générer l'écriture de la prochaine échéance maintenant">
+                  <i class="pi pi-bolt"></i>
+                </button>
+              }
+              <button type="button" class="tpl-icon-btn" (click)="startEdit(t)" aria-label="Modifier"><i class="pi pi-pencil"></i></button>
+              <button type="button" class="tpl-icon-btn tpl-icon-danger" (click)="remove(t)" aria-label="Supprimer"><i class="pi pi-trash"></i></button>
+            </td>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="emptymessage">
+          <tr><td colspan="7" class="tpl-empty">Aucun modèle. Créez-en un avec « Nouveau modèle ».</td></tr>
+        </ng-template>
+      </p-table>
+    </div>
+  `,
+  styles: `
+    .tpl-toolbar-card, .tpl-form-card, .tpl-list-card { padding: var(--spacing-4); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); margin-bottom: var(--spacing-4); }
+    .tpl-form-title { margin: 0 0 var(--spacing-3); font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); }
+    .tpl-lines-title { margin: var(--spacing-4) 0 var(--spacing-2); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); }
+    .tpl-fields { display: flex; flex-wrap: wrap; gap: var(--spacing-3); margin-bottom: var(--spacing-3); }
+    .tpl-field { display: flex; flex-direction: column; gap: var(--spacing-1); min-width: 8rem; }
+    .tpl-field-grow { flex: 1 1 14rem; }
+    .field-label { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); color: var(--color-text-primary); }
+    .tpl-input { padding: var(--spacing-2) var(--spacing-3); border: 1px solid var(--color-border-default); border-radius: var(--radius-md); background: var(--color-background-elevated); color: var(--color-text-primary); font-size: var(--font-size-sm); width: 100%; }
+    .tpl-lines { width: 100%; border-collapse: collapse; }
+    .tpl-lines th { text-align: left; font-size: var(--font-size-xs); text-transform: uppercase; color: var(--color-text-tertiary); padding: var(--spacing-1) var(--spacing-2); }
+    .tpl-lines td { padding: 2px var(--spacing-2); }
+    .tpl-col-amount, .tpl-amount { text-align: right; }
+    .tpl-add-line { margin-top: var(--spacing-2); background: none; border: 1px dashed var(--color-border-default); border-radius: var(--radius-md); padding: var(--spacing-2) var(--spacing-3); color: var(--color-text-secondary); cursor: pointer; font-size: var(--font-size-sm); }
+    .tpl-form-actions { display: flex; justify-content: flex-end; gap: var(--spacing-3); margin-top: var(--spacing-4); padding-top: var(--spacing-3); border-top: 1px solid var(--color-border-subtle); }
+    .tpl-recurrence-hint { margin: 0 0 var(--spacing-2); font-size: var(--font-size-xs); color: var(--color-text-tertiary); }
+    .tpl-optional { font-weight: var(--font-weight-normal); font-size: var(--font-size-xs); color: var(--color-text-tertiary); }
+    .tpl-rec-badge {
+      display: inline-block; padding: 0.15rem 0.5rem;
+      border: 1px solid var(--color-primary-200, #bfdbfe); border-radius: var(--radius-pill, 999px);
+      background: var(--color-primary-50, #eff6ff); color: var(--color-primary-700, #1d4ed8);
+      font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); white-space: nowrap;
+    }
+    .tpl-rec-none { color: var(--color-text-tertiary); }
+    .tpl-icon-run:hover { color: var(--color-primary-600, #2563eb); }
+    .tpl-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .tpl-icon-btn { background: none; border: none; cursor: pointer; color: var(--color-text-secondary); padding: var(--spacing-1) var(--spacing-2); }
+    .tpl-icon-btn:hover { color: var(--color-text-primary); }
+    .tpl-icon-danger:hover { color: var(--color-danger-600, #dc2626); }
+    .tpl-empty { text-align: center; padding: var(--spacing-6); color: var(--color-text-tertiary); }
+  `
+})
+export class EntryTemplatesComponent implements OnInit {
+  private readonly api = inject(AccountingService);
+  private readonly toast = inject(ToastService);
+  readonly journalCodes = JOURNAL_CODES;
+
+  readonly templates = signal<JournalEntryTemplateDto[]>([]);
+  readonly loading = signal(false);
+  readonly saving = signal(false);
+  readonly error = signal<string | null>(null);
+  readonly form = signal<TemplateForm | null>(null);
+  /** Id du modèle en cours de génération immédiate. */
+  readonly runningId = signal<string | null>(null);
+
+  ngOnInit(): void {
+    this.load();
+  }
+
+  load(): void {
+    this.loading.set(true);
+    this.error.set(null);
+    this.api.getJournalTemplates(false).subscribe({
+      next: res => {
+        this.loading.set(false);
+        if (res.success && res.data) this.templates.set(res.data);
+        else this.error.set(res.error ?? 'Erreur');
+      },
+      error: () => { this.loading.set(false); this.error.set('Erreur réseau'); }
+    });
+  }
+
+  startCreate(): void {
+    this.form.set({
+      id: null, name: '', description: '', journalCode: 'JOD', labelTemplate: '', isActive: true,
+      recurrenceFrequency: 0, recurrenceDayOfMonth: 1, recurrenceStartDate: '', recurrenceEndDate: '',
+      lines: [
+        { lineNumber: 1, accountNumber: '', lineLabelTemplate: '', fixedDebit: null, fixedCredit: null },
+        { lineNumber: 2, accountNumber: '', lineLabelTemplate: '', fixedDebit: null, fixedCredit: null }
+      ]
+    });
+  }
+
+  startEdit(t: JournalEntryTemplateDto): void {
+    this.form.set({
+      id: t.id, name: t.name, description: t.description ?? '', journalCode: t.journalCode,
+      labelTemplate: t.labelTemplate ?? '', isActive: t.isActive,
+      recurrenceFrequency: t.recurrenceFrequency ?? 0,
+      recurrenceDayOfMonth: t.recurrenceDayOfMonth ?? 1,
+      recurrenceStartDate: t.recurrenceStartDate ? t.recurrenceStartDate.substring(0, 10) : '',
+      recurrenceEndDate: t.recurrenceEndDate ? t.recurrenceEndDate.substring(0, 10) : '',
+      lines: t.lines.map(l => ({ lineNumber: l.lineNumber, accountNumber: l.accountNumber, lineLabelTemplate: l.lineLabelTemplate ?? '', fixedDebit: l.fixedDebit ?? null, fixedCredit: l.fixedCredit ?? null }))
+    });
+  }
+
+  frequencyLabel(freq: number): string {
+    switch (freq) {
+      case 1: return 'Mensuelle';
+      case 2: return 'Trimestrielle';
+      case 3: return 'Annuelle';
+      default: return '—';
+    }
+  }
+
+  cancel(): void { this.form.set(null); }
+
+  addLine(): void {
+    const f = this.form();
+    if (!f) return;
+    f.lines.push({ lineNumber: f.lines.length + 1, accountNumber: '', lineLabelTemplate: '', fixedDebit: null, fixedCredit: null });
+    this.form.set({ ...f });
+  }
+
+  removeLine(index: number): void {
+    const f = this.form();
+    if (!f) return;
+    f.lines.splice(index, 1);
+    f.lines.forEach((l, i) => (l.lineNumber = i + 1));
+    this.form.set({ ...f });
+  }
+
+  save(): void {
+    const f = this.form();
+    if (!f || this.saving()) return;
+    if (f.recurrenceFrequency > 0 && !f.recurrenceStartDate) {
+      this.error.set('La date de début est obligatoire pour une récurrence.');
+      return;
+    }
+    this.saving.set(true);
+    const request = {
+      name: f.name.trim(), description: f.description || null, journalCode: f.journalCode,
+      labelTemplate: f.labelTemplate || null,
+      recurrenceFrequency: f.recurrenceFrequency,
+      recurrenceDayOfMonth: f.recurrenceFrequency > 0 ? f.recurrenceDayOfMonth : null,
+      recurrenceStartDate: f.recurrenceFrequency > 0 && f.recurrenceStartDate ? f.recurrenceStartDate : null,
+      recurrenceEndDate: f.recurrenceFrequency > 0 && f.recurrenceEndDate ? f.recurrenceEndDate : null,
+      lines: f.lines
+    };
+    const done = (ok: boolean, err?: string) => {
+      this.saving.set(false);
+      if (ok) {
+        this.toast.add({ severity: 'success', summary: 'Modèle enregistré', detail: 'Le modèle d\'écriture a été enregistré.', life: 4000 });
+        this.form.set(null);
+        this.load();
+      } else this.error.set(err ?? 'Erreur');
+    };
+    if (f.id) {
+      this.api.updateJournalTemplate(f.id, { ...request, isActive: f.isActive }).subscribe({
+        next: res => done(res.success, res.error), error: () => done(false, 'Erreur réseau')
+      });
+    } else {
+      this.api.createJournalTemplate(request).subscribe({
+        next: res => done(res.success, res.error), error: () => done(false, 'Erreur réseau')
+      });
+    }
+  }
+
+  /** Génère l'écriture de la prochaine échéance immédiatement (l'échéance suivante est avancée). */
+  runNow(t: JournalEntryTemplateDto): void {
+    if (!window.confirm(`Générer maintenant l'écriture du modèle « ${t.name} » (échéance du ${t.nextRunDate?.substring(0, 10)}) ?`)) return;
+    this.runningId.set(t.id);
+    this.error.set(null);
+    this.api.runTemplateRecurrence(t.id).subscribe({
+      next: res => {
+        this.runningId.set(null);
+        if (res.success) {
+          this.toast.add({ severity: 'success', summary: 'Écriture générée', detail: `Le modèle « ${t.name} » a généré son écriture.`, life: 4000 });
+          this.load();
+        } else this.error.set(res.error ?? 'Erreur lors de la génération.');
+      },
+      error: () => { this.runningId.set(null); this.error.set('Erreur réseau lors de la génération.'); }
+    });
+  }
+
+  remove(t: JournalEntryTemplateDto): void {
+    this.api.deleteJournalTemplate(t.id).subscribe({
+      next: res => {
+        if (res.success) { this.toast.add({ severity: 'success', summary: 'Modèle supprimé', detail: t.name, life: 4000 }); this.load(); }
+        else this.error.set(res.error ?? 'Erreur');
+      },
+      error: () => this.error.set('Erreur réseau')
+    });
+  }
+}

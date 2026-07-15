@@ -1,0 +1,170 @@
+<app-breadcrumb [items]="breadcrumbItems"></app-breadcrumb>
+
+<app-page-header
+  title="Inventaire"
+  subtitle="Consultez l'historique des inventaires physiques et lancez un nouveau comptage">
+  @if (canCreateInventory()) {
+    <app-button
+      variant="primary"
+      icon="pi-plus"
+      iconPos="left"
+      routerLink="new">
+      Ajouter Inventaire
+    </app-button>
+  }
+</app-page-header>
+
+<!-- Filters -->
+<div class="filters-card">
+  <div class="filters-header">
+    <h3 class="filters-title">FILTRES</h3>
+    @if (hasActiveFilters()) {
+      <button
+        class="filters-reset"
+        (click)="resetFilters()"
+        aria-label="Réinitialiser les filtres">
+        <i class="pi pi-times"></i>
+        Réinitialiser ({{ activeFiltersCount() }})
+      </button>
+    }
+  </div>
+  <div class="filters-row">
+    <span class="p-input-icon-left">
+      <i class="pi pi-search"></i>
+      <input
+        pInputText
+        type="text"
+        placeholder="Recherche par référence..."
+        [(ngModel)]="searchTerm"
+        (input)="onSearch()">
+    </span>
+    <p-dropdown
+      [options]="statusOptions"
+      [(ngModel)]="selectedStatus"
+      optionLabel="label"
+      optionValue="value"
+      placeholder="Tous les statuts"
+      [showClear]="true"
+      (onChange)="onFilterChange()">
+    </p-dropdown>
+    <p-calendar
+      [(ngModel)]="dateRange"
+      selectionMode="range"
+      [readonlyInput]="true"
+      placeholder="Période"
+      dateFormat="dd/mm/yy"
+      [showClear]="true"
+      (onSelect)="onFilterChange()">
+    </p-calendar>
+  </div>
+</div>
+
+<!-- Error -->
+@if (errorMessage() && !loading()) {
+  <div class="error-banner">
+    <div class="error-content">
+      <i class="pi pi-exclamation-triangle"></i>
+      <div class="error-text">
+        <strong>Erreur de chargement</strong>
+        <p>{{ errorMessage() }}</p>
+      </div>
+      <app-button
+        variant="ghost"
+        size="sm"
+        icon="pi-refresh"
+        (click)="loadInventories()"
+        [disabled]="loading()">
+        Réessayer
+      </app-button>
+    </div>
+  </div>
+}
+
+<!-- Totaux (calculés côté backend sur l'ensemble filtré, pas seulement la page) -->
+<app-table-totals-bar [metrics]="summaryMetrics()" [loading]="summaryLoading()"></app-table-totals-bar>
+
+<!-- Table -->
+<div class="table-card">
+  @if (initialLoad()) {
+    <app-skeleton-table
+      [rows]="5"
+      [columns]="skeletonColumns">
+    </app-skeleton-table>
+  } @else {
+    <p-table
+      [value]="inventories()"
+      [loading]="loading()"
+      [lazy]="true"
+      [paginator]="true"
+      [rows]="pageSize"
+      [totalRecords]="totalRecords()"
+      [showCurrentPageReport]="true"
+      currentPageReportTemplate="Affichage de {{ (page - 1) * pageSize + 1 }} à {{ (page - 1) * pageSize + inventories().length }} sur {{ totalRecords() }} inventaires"
+      (onLazyLoad)="onPageChange($event)"
+      styleClass="p-datatable-sm">
+      <ng-template pTemplate="header">
+        <tr>
+          <th>Référence</th>
+          <th>Date</th>
+          <th>Entrepôt</th>
+          <th>Statut</th>
+          <th class="text-center">Avancement</th>
+          <th style="width: 100px">Actions</th>
+        </tr>
+      </ng-template>
+      <ng-template pTemplate="body" let-inv>
+        <tr>
+          <td>
+            <a [routerLink]="[inv.id]" class="inventory-reference">{{ inv.reference }}</a>
+          </td>
+          <td>{{ formatDate(inv.startedAt) }}</td>
+          <td>{{ inv.warehouseName }}</td>
+          <td>
+            <app-status-badge
+              [status]="getStatusBadgeStatus(inv.status)"
+              [label]="inv.statusDisplay">
+            </app-status-badge>
+          </td>
+          <td class="text-center">{{ inv.countedProducts }} / {{ inv.totalProducts }} ({{ inv.progressPercent }} %)</td>
+          <td>
+            <div class="actions">
+              <app-button
+                variant="ghost"
+                size="sm"
+                icon="pi-eye"
+                [iconOnly]="true"
+                [routerLink]="inv.id"
+                ariaLabel="Voir l'inventaire">
+              </app-button>
+              @if (inv.status === 1 && canUpdateInventory()) {
+                <app-button
+                  variant="ghost"
+                  size="sm"
+                  icon="pi-pencil"
+                  [iconOnly]="true"
+                  routerLink="new"
+                  [queryParams]="{ warehouseId: inv.warehouseId }"
+                  ariaLabel="Continuer l'inventaire">
+                </app-button>
+              }
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+      <ng-template pTemplate="emptymessage">
+        <tr>
+          <td colspan="6" class="text-center p-6">
+            <app-empty-state
+              illustration="empty-invoices.svg"
+              title="Aucun inventaire"
+              description="Lancez votre premier inventaire physique pour recenser les produits en stock."
+              [showAction]="canCreateInventory()"
+              actionLabel="Ajouter Inventaire"
+              actionRoute="new">
+            </app-empty-state>
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+  }
+</div>

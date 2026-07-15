@@ -1,0 +1,231 @@
+using System.Text.Json.Serialization;
+
+namespace FactuTrust.Application.Features.AI.DTOs;
+
+public sealed record OllamaChatRequest
+{
+    public required string Model { get; init; }
+    public required List<OllamaChatMessage> Messages { get; init; }
+    public bool Stream { get; init; } = true;
+    public List<OllamaToolDefinition>? Tools { get; init; }
+    public OllamaOptions? Options { get; init; }
+
+    /// <summary>
+    /// Durée pendant laquelle Ollama garde le modèle en mémoire après la requête (ex: "30m", "1h", "0" = indéfini).
+    /// </summary>
+    [JsonPropertyName("keep_alive")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? KeepAlive { get; init; }
+
+    /// <summary>
+    /// Mode de sortie structurée Ollama ("json" force une réponse JSON syntaxiquement valide).
+    /// Ignoré à la sérialisation quand null : le comportement historique reste strictement inchangé.
+    /// </summary>
+    [JsonPropertyName("format")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Format { get; init; }
+}
+
+public sealed record OllamaChatMessage
+{
+    [JsonPropertyName("role")]
+    public required string Role { get; init; }
+
+    [JsonPropertyName("content")]
+    public string Content { get; init; } = string.Empty;
+
+    [JsonPropertyName("tool_calls")]
+    public List<OllamaToolCall>? ToolCalls { get; init; }
+
+    /// <summary>
+    /// Liste d'images en base64 (sans préfixe data:) jointes au message.
+    /// Renseigné uniquement pour les modèles vision capables (gemma3, llava, llama3.2-vision…).
+    /// </summary>
+    [JsonPropertyName("images")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Images { get; init; }
+}
+
+public sealed record OllamaOptions
+{
+    [JsonPropertyName("temperature")]
+    public double? Temperature { get; init; }
+
+    [JsonPropertyName("num_predict")]
+    public int? NumPredict { get; init; }
+
+    [JsonPropertyName("num_ctx")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? NumCtx { get; init; }
+
+    [JsonPropertyName("num_gpu")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? NumGpu { get; init; }
+
+    [JsonPropertyName("num_thread")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? NumThread { get; init; }
+
+    [JsonPropertyName("num_batch")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? NumBatch { get; init; }
+
+    /// <summary>
+    /// Graine de génération (seed). Fixée => sorties reproductibles à température/contexte égaux,
+    /// ce qui supprime la divergence d'un essai à l'autre pour une même question.
+    /// </summary>
+    [JsonPropertyName("seed")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Seed { get; init; }
+
+    [JsonPropertyName("top_p")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? TopP { get; init; }
+}
+
+public sealed record OllamaChatChunk
+{
+    [JsonPropertyName("model")]
+    public string Model { get; init; } = string.Empty;
+
+    [JsonPropertyName("message")]
+    public OllamaChatMessage? Message { get; init; }
+
+    [JsonPropertyName("done")]
+    public bool Done { get; init; }
+
+    [JsonPropertyName("done_reason")]
+    public string? DoneReason { get; init; }
+}
+
+public sealed record OllamaToolDefinition
+{
+    [JsonPropertyName("type")]
+    public string Type { get; init; } = "function";
+
+    [JsonPropertyName("function")]
+    public required OllamaFunctionDefinition Function { get; init; }
+}
+
+public sealed record OllamaFunctionDefinition
+{
+    [JsonPropertyName("name")]
+    public required string Name { get; init; }
+
+    [JsonPropertyName("description")]
+    public required string Description { get; init; }
+
+    [JsonPropertyName("parameters")]
+    public required OllamaFunctionParameters Parameters { get; init; }
+}
+
+public sealed record OllamaFunctionParameters
+{
+    [JsonPropertyName("type")]
+    public string Type { get; init; } = "object";
+
+    [JsonPropertyName("properties")]
+    public Dictionary<string, OllamaParameterProperty> Properties { get; init; } = new();
+
+    [JsonPropertyName("required")]
+    public List<string> Required { get; init; } = new();
+}
+
+public sealed record OllamaParameterProperty
+{
+    [JsonPropertyName("type")]
+    public required string Type { get; init; }
+
+    [JsonPropertyName("description")]
+    public required string Description { get; init; }
+
+    [JsonPropertyName("enum")]
+    public List<string>? Enum { get; init; }
+}
+
+public sealed record OllamaToolCall
+{
+    /// <summary>Optional id (OpenAI / replay); omitted for native Ollama when null.</summary>
+    [JsonPropertyName("id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Id { get; init; }
+
+    [JsonPropertyName("function")]
+    public OllamaToolCallFunction? Function { get; init; }
+}
+
+public sealed record OllamaToolCallFunction
+{
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = string.Empty;
+
+    [JsonPropertyName("arguments")]
+    public Dictionary<string, object?> Arguments { get; init; } = new();
+}
+
+public sealed record OllamaModelInfo
+{
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = string.Empty;
+
+    [JsonPropertyName("size")]
+    public long Size { get; init; }
+
+    [JsonPropertyName("modified_at")]
+    public DateTime ModifiedAt { get; init; }
+}
+
+public sealed record OllamaModelListResponse
+{
+    [JsonPropertyName("models")]
+    public List<OllamaModelInfo> Models { get; init; } = new();
+}
+
+// ── POST /api/show response ──
+
+public sealed record OllamaModelShowResponse
+{
+    [JsonPropertyName("details")]
+    public OllamaModelDetails? Details { get; init; }
+
+    [JsonPropertyName("model_info")]
+    public Dictionary<string, object?>? ModelInfo { get; init; }
+}
+
+public sealed record OllamaModelDetails
+{
+    [JsonPropertyName("parameter_size")]
+    public string? ParameterSize { get; init; }
+
+    [JsonPropertyName("quantization_level")]
+    public string? QuantizationLevel { get; init; }
+
+    [JsonPropertyName("families")]
+    public List<string>? Families { get; init; }
+
+    [JsonPropertyName("family")]
+    public string? Family { get; init; }
+}
+
+// ── GET /api/ps response ──
+
+public sealed record OllamaProcessListResponse
+{
+    [JsonPropertyName("models")]
+    public List<OllamaRunningModel>? Models { get; init; }
+}
+
+public sealed record OllamaRunningModel
+{
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = "";
+
+    [JsonPropertyName("size")]
+    public long Size { get; init; }
+
+    [JsonPropertyName("size_vram")]
+    public long SizeVram { get; init; }
+
+    [JsonPropertyName("details")]
+    public OllamaModelDetails? Details { get; init; }
+}

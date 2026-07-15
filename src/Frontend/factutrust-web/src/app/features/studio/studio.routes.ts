@@ -1,0 +1,131 @@
+import { Routes } from '@angular/router';
+import { permissionGuard } from '@core/guards/permission.guard';
+import { PERMISSIONS } from '@core/config/permission-keys';
+
+export const STUDIO_ROUTES: Routes = [
+  {
+    path: '',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.studio.designEntities] },
+    loadComponent: () => import('./studio-entity-list.component').then(m => m.StudioEntityListComponent),
+    title: 'Studio — Tables - InstaFact'
+  },
+  // ---- AI builder (natural-language app generation) ----
+  {
+    path: 'ai',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.studio.designEntities] },
+    loadComponent: () => import('./studio-ai-builder.component').then(m => m.StudioAiBuilderComponent),
+    title: 'Assistant Studio (IA) - InstaFact'
+  },
+  {
+    path: 'systems/:key',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.customData.recordsRead] },
+    loadComponent: () => import('./studio-system-hub.component').then(m => m.StudioSystemHubComponent),
+    title: 'Système Studio - InstaFact'
+  },
+  // ---- Forms hub (discoverable entry point for the form designer) ----
+  {
+    path: 'forms',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.studio.designForms] },
+    loadComponent: () => import('./studio-form-hub.component').then(m => m.StudioFormHubComponent),
+    title: 'Formulaires - InstaFact'
+  },
+  // ---- Read-only views over existing SQL tables ----
+  {
+    path: 'views/new',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.studio.designForms] },
+    loadComponent: () => import('./studio-view-designer.component').then(m => m.StudioViewDesignerComponent),
+    title: 'Nouvelle vue - InstaFact'
+  },
+  {
+    path: 'views/:id/view',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.customData.reportsView] },
+    loadComponent: () => import('./studio-view-runner.component').then(m => m.StudioViewRunnerComponent),
+    title: 'Vue - InstaFact'
+  },
+  {
+    path: 'views/:id',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.studio.designForms] },
+    loadComponent: () => import('./studio-view-designer.component').then(m => m.StudioViewDesignerComponent),
+    title: 'Modifier la vue - InstaFact'
+  },
+  // ---- Reports (top-level: custom tables + existing sources) ----
+  {
+    path: 'reports/new',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.studio.designReports] },
+    loadComponent: () => import('./studio-report-designer.component').then(m => m.StudioReportDesignerComponent),
+    title: 'Nouveau rapport - InstaFact'
+  },
+  {
+    path: 'reports/:id/view',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.customData.reportsView] },
+    loadComponent: () => import('./studio-report-view.component').then(m => m.StudioReportViewComponent),
+    title: 'Rapport - InstaFact'
+  },
+  {
+    path: 'reports/:id',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.studio.designReports] },
+    loadComponent: () => import('./studio-report-designer.component').then(m => m.StudioReportDesignerComponent),
+    title: 'Modifier rapport - InstaFact'
+  },
+  {
+    path: 'reports',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.studio.designReports] },
+    loadComponent: () => import('./studio-report-list.component').then(m => m.StudioReportListComponent),
+    title: 'Rapports - InstaFact'
+  },
+  // ---- Runtime data routes (by entity key) ----
+  {
+    path: 'd/:key/new',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.customData.recordsWrite] },
+    loadComponent: () => import('./studio-record-form.component').then(m => m.StudioRecordFormComponent),
+    title: 'Nouvel enregistrement - InstaFact'
+  },
+  {
+    path: 'd/:key/:id/edit',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.customData.recordsWrite] },
+    loadComponent: () => import('./studio-record-form.component').then(m => m.StudioRecordFormComponent),
+    title: 'Modifier enregistrement - InstaFact'
+  },
+  {
+    path: 'd/:key',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.customData.recordsRead] },
+    loadComponent: () => import('./studio-record-list.component').then(m => m.StudioRecordListComponent),
+    title: 'Données - InstaFact'
+  },
+  // ---- Design routes (by entity id) ----
+  {
+    path: ':id/form',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.studio.designForms] },
+    loadComponent: () => import('./studio-form-designer.component').then(m => m.StudioFormDesignerComponent),
+    title: 'Mise en page du formulaire - InstaFact'
+  },
+  {
+    path: ':id/automations',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.studio.designEntities] },
+    loadComponent: () => import('./studio-automations.component').then(m => m.StudioAutomationsComponent),
+    title: 'Pont ERP - InstaFact'
+  },
+  {
+    path: ':id',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.studio.designEntities] },
+    loadComponent: () => import('./studio-entity-designer.component').then(m => m.StudioEntityDesignerComponent),
+    title: 'Concepteur de table - InstaFact'
+  }
+];

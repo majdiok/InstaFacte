@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480">
+  <rect width="100%" height="100%" fill="#09090B"/>
+  <rect x="0" y="0" width="640" height="24" fill="#E5E4E2"/>
+  <rect x="416" y="0" width="224" height="480" fill="#27272A" opacity="0.55"/>
+  <text x="24" y="72" font-family="Georgia, Inter, sans-serif" font-size="28" font-weight="700" fill="#FFFFFF">Titre</text>
+  <text x="24" y="108" font-family="Inter, Inter, sans-serif" font-size="16" fill="#FAFAFA">
+    Corps et <tspan fill="#E5E4E2" font-weight="600">lien</tspan>
+  </text>
+  <text x="24" y="464" font-family="Inter, sans-serif" font-size="12" fill="#FAFAFA" opacity="0.7">Obsidian</text>
+</svg>

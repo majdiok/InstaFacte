@@ -1,0 +1,5 @@
+﻿Le cÅ“ur de FactuTrust : la facturation Ã©lectronique conforme.
+En quelques clics, votre client Ã©met une facture validÃ©e, tÃ©lÃ©chargeable en PDF, avec signature Ã©lectronique et traÃ§abilitÃ© lÃ©gale.
+L'avantage dÃ©cisif pour le cabinet : dÃ¨s la validation, les Ã©critures comptables sont gÃ©nÃ©rÃ©es automatiquement dans le journal des ventes.
+Plus de ressaisie manuelle : vous contrÃ´lez, vous ajustez si nÃ©cessaire, mais vous ne repartez jamais de zÃ©ro.
+Ici, le journal JV affiche les Ã©critures liÃ©es aux factures â€” dÃ©bit client, crÃ©dit ventes et TVA collectÃ©e.

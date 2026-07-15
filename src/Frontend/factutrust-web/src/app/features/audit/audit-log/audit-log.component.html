@@ -1,0 +1,269 @@
+<app-page-header title="Journal d'audit" subtitle="Piste d'audit et vérification d'intégrité" />
+
+<div class="audit-toolbar card-like">
+  <button
+    type="button"
+    class="btn btn-primary"
+    (click)="verify()"
+    [disabled]="verifyLoading()"
+    [attr.aria-busy]="verifyLoading()"
+  >
+    @if (verifyLoading()) {
+      <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+    } @else {
+      <i class="pi pi-shield" aria-hidden="true"></i>
+    }
+    Vérifier la chaîne SHA-256
+  </button>
+  @if (verifyError()) {
+    <p-message severity="error" [text]="verifyError()!" styleClass="audit-verify-msg" />
+  }
+  @if (verifyResult(); as vr) {
+    @if (vr.isValid) {
+      <p-message
+        severity="success"
+        [text]="integrityValidMessage(vr.entryCount)"
+        styleClass="audit-verify-msg"
+      />
+    } @else {
+      <p-message
+        severity="error"
+        [text]="
+          integrityBrokenMessage(
+            vr.entryCount,
+            vr.firstBrokenEntryId,
+            vr.firstFailureReason,
+            vr.duplicatePreviousHashGroupCount
+          )
+        "
+        styleClass="audit-verify-msg"
+      />
+    }
+  }
+</div>
+
+<div class="audit-filters card-like" role="search" aria-label="Filtres du journal d'audit">
+  <div class="audit-filters-grid">
+    <label class="form-field" for="audit-from">
+      <span class="field-label">Du</span>
+      <p-calendar
+        inputId="audit-from"
+        [(ngModel)]="fromDate"
+        [showIcon]="true"
+        dateFormat="dd/mm/yy"
+        appendTo="body"
+        styleClass="w-full"
+      ></p-calendar>
+    </label>
+    <label class="form-field" for="audit-to">
+      <span class="field-label">Au</span>
+      <p-calendar
+        inputId="audit-to"
+        [(ngModel)]="toDate"
+        [showIcon]="true"
+        dateFormat="dd/mm/yy"
+        appendTo="body"
+        styleClass="w-full"
+      ></p-calendar>
+    </label>
+    <label class="form-field" for="audit-entity">
+      <span class="field-label">Type d'entité</span>
+      <p-dropdown
+        inputId="audit-entity"
+        [(ngModel)]="selectedEntityType"
+        [options]="entityOptions"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="Tous"
+        [showClear]="true"
+        appendTo="body"
+        styleClass="w-full"
+      ></p-dropdown>
+    </label>
+    <label class="form-field" for="audit-action">
+      <span class="field-label">Action</span>
+      <p-dropdown
+        inputId="audit-action"
+        [(ngModel)]="selectedAction"
+        [options]="actionOptions"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="Toutes"
+        [filter]="true"
+        filterBy="label,value"
+        [showClear]="true"
+        appendTo="body"
+        styleClass="w-full"
+      ></p-dropdown>
+    </label>
+    <label class="form-field audit-field-user" for="audit-user">
+      <span class="field-label">Utilisateur (UUID)</span>
+      <input
+        pInputText
+        id="audit-user"
+        type="text"
+        [(ngModel)]="userIdFilter"
+        class="w-full"
+        autocomplete="off"
+        placeholder="Optionnel"
+      />
+    </label>
+  </div>
+  <div class="audit-filters-actions">
+    <button type="button" class="btn btn-secondary" (click)="applyFilters()">
+      <i class="pi pi-filter" aria-hidden="true"></i>
+      Appliquer les filtres
+    </button>
+    <button type="button" class="btn btn-outline-secondary" (click)="resetFilters()">
+      <i class="pi pi-times" aria-hidden="true"></i>
+      Réinitialiser
+    </button>
+  </div>
+</div>
+
+@if (error()) {
+  <p-message severity="error" [text]="error()!" styleClass="audit-page-error" />
+}
+
+<p-table
+  [value]="rows()"
+  [lazy]="true"
+  (onLazyLoad)="onLazyLoad($event)"
+  [paginator]="true"
+  [rows]="tableRows"
+  [rowsPerPageOptions]="[25, 50, 100]"
+  [totalRecords]="totalRecords()"
+  [loading]="loading()"
+  [rowHover]="true"
+  styleClass="p-datatable-sm"
+  [showCurrentPageReport]="true"
+  currentPageReportTemplate="Affichage de {first} à {last} sur {totalRecords} entrée(s)"
+  [first]="first"
+>
+  <ng-template pTemplate="header">
+    <tr>
+      <th scope="col">Date</th>
+      <th scope="col">Utilisateur</th>
+      <th scope="col">Action</th>
+      <th scope="col">Entité</th>
+      <th scope="col" class="audit-col-actions">Détails</th>
+    </tr>
+  </ng-template>
+  <ng-template pTemplate="body" let-r>
+    <tr [class.audit-row-broken]="isBrokenHighlight(r.id)">
+      <td>
+        <time [attr.datetime]="r.createdAt">{{ r.createdAt | date : 'short' }}</time>
+      </td>
+      <td>
+        <span [pTooltip]="r.userEmail" tooltipPosition="top">{{ r.userEmail }}</span>
+      </td>
+      <td>
+        <p-tag
+          [value]="actionLabel(r.action)"
+          [severity]="actionSeverity(r.action)"
+          styleClass="audit-action-tag"
+          [attr.title]="r.action"
+        />
+      </td>
+      <td>
+        <div class="audit-entity-cell">
+          <span class="audit-entity-type">{{ entityLabel(r.entityType) }}</span>
+          @if (r.entityId) {
+            <code class="audit-code" [attr.title]="r.entityId">{{ shortId(r.entityId) }}</code>
+            @if (r.entityLabel) {
+              <span class="audit-entity-label" [attr.title]="r.entityLabel">{{ r.entityLabel }}</span>
+            }
+            <button
+              type="button"
+              class="btn-icon audit-copy-btn"
+              (click)="copyId(r.entityId!)"
+              [attr.aria-label]="'Copier l\'identifiant ' + r.entityId"
+            >
+              <i class="pi pi-copy" aria-hidden="true"></i>
+            </button>
+          } @else {
+            <span class="audit-entity-dash">—</span>
+          }
+        </div>
+      </td>
+      <td class="audit-col-actions">
+        <button type="button" class="btn btn-sm btn-secondary" (click)="openDetail(r)">Voir</button>
+      </td>
+    </tr>
+  </ng-template>
+  <ng-template pTemplate="emptymessage">
+    <tr>
+      <td colspan="5" class="audit-empty">Aucune entrée d'audit pour ces critères.</td>
+    </tr>
+  </ng-template>
+</p-table>
+
+<p-dialog
+  [visible]="detailOpen()"
+  (visibleChange)="onDetailVisibleChange($event)"
+  [modal]="true"
+  [draggable]="false"
+  [resizable]="false"
+  [style]="{ width: 'min(720px, 96vw)' }"
+  [breakpoints]="{ '960px': '95vw' }"
+  header="Détail de l'entrée d'audit"
+  styleClass="audit-detail-dialog"
+  [focusOnShow]="true"
+  [closeOnEscape]="true"
+  [dismissableMask]="true"
+>
+  @if (detailLoading()) {
+    <p class="audit-detail-loading" role="status" aria-live="polite">Chargement…</p>
+  } @else {
+    @if (detailEntry(); as d) {
+    <div class="audit-detail-body" role="region">
+      <dl class="audit-detail-meta">
+        <div>
+          <dt>Date</dt>
+          <dd>{{ d.createdAt | date : 'medium' }}</dd>
+        </div>
+        <div>
+          <dt>Utilisateur</dt>
+          <dd>{{ d.userEmail }}</dd>
+        </div>
+        <div>
+          <dt>Action</dt>
+          <dd>{{ actionLabel(d.action) }}</dd>
+        </div>
+        <div>
+          <dt>Entité</dt>
+          <dd>
+            {{ entityLabel(d.entityType) }}
+            @if (d.entityId) {
+              <code class="audit-code">{{ d.entityId }}</code>
+            }
+            @if (d.entityLabel) {
+              — {{ d.entityLabel }}
+            }
+          </dd>
+        </div>
+        <div>
+          <dt>Adresse IP</dt>
+          <dd>{{ d.ipAddress }}</dd>
+        </div>
+        <div>
+          <dt>User-Agent</dt>
+          <dd class="audit-detail-wrap">{{ d.userAgent ?? '—' }}</dd>
+        </div>
+      </dl>
+      <div class="audit-detail-hashes">
+        <p><strong>Empreinte précédente</strong></p>
+        <pre class="audit-pre" tabindex="0">{{ d.previousHash }}</pre>
+        <p><strong>Empreinte SHA-256</strong></p>
+        <pre class="audit-pre" tabindex="0">{{ d.hash }}</pre>
+      </div>
+      <div class="audit-detail-json">
+        <p><strong>Anciennes valeurs (JSON)</strong></p>
+        <pre class="audit-pre" tabindex="0">{{ formatJsonBlob(d.oldValues) }}</pre>
+        <p><strong>Nouvelles valeurs (JSON)</strong></p>
+        <pre class="audit-pre" tabindex="0">{{ formatJsonBlob(d.newValues) }}</pre>
+      </div>
+    </div>
+    }
+  }
+</p-dialog>

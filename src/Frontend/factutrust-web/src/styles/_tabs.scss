@@ -1,0 +1,115 @@
+// ============================================
+// ft-tabs — Onglets partagés (PrimeNG p-tabView). Style « pill élevé », tokens only.
+// Opt-in : s'applique uniquement à <p-tabView styleClass="ft-tabs">.
+// Source unique de style d'onglets (remplace l'ancien _reports-tabs.scss).
+// ============================================
+.p-tabview.ft-tabs {
+  // Piste (track) — conteneur de la barre
+  .p-tabview-nav {
+    display: inline-flex;
+    gap: var(--spacing-1);
+    background: var(--color-background-subtle);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-xl);
+    padding: var(--spacing-1);
+  }
+
+  .p-tabview-nav li {
+    margin: 0;
+  }
+
+  // Onglet = pastille
+  .p-tabview-nav li .p-tabview-nav-link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    white-space: nowrap;
+    min-height: 2.5rem;
+    padding: var(--spacing-2) var(--spacing-4);
+    margin: 0;
+    border: 0;
+    border-radius: var(--radius-lg);
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-weight: var(--font-weight-medium);
+    transition: color var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
+  }
+
+  .p-tabview-nav li .p-tabview-nav-link .p-tabview-left-icon,
+  .p-tabview-nav li .p-tabview-nav-link .p-tabview-right-icon {
+    color: inherit;
+    margin: 0;
+  }
+
+  // Survol (onglet inactif)
+  .p-tabview-nav li:not(.p-highlight):not(.p-disabled):hover .p-tabview-nav-link {
+    background: var(--color-background-hover);
+    color: var(--color-text-primary);
+  }
+
+  // Onglet actif = pastille blanche surélevée
+  .p-tabview-nav li.p-highlight .p-tabview-nav-link {
+    background: var(--color-background-elevated);
+    color: var(--color-primary-700);
+    font-weight: var(--font-weight-semibold);
+    box-shadow: var(--shadow-soft-sm);
+  }
+
+  .p-tabview-nav li.p-highlight .p-tabview-nav-link .p-tabview-left-icon,
+  .p-tabview-nav li.p-highlight .p-tabview-nav-link .p-tabview-right-icon {
+    color: var(--color-primary-700);
+  }
+
+  // Focus clavier (WCAG 2.1)
+  .p-tabview-nav li .p-tabview-nav-link:focus-visible {
+    outline: 2px solid var(--color-primary-500);
+    outline-offset: 2px;
+    z-index: 1;
+  }
+
+  // Neutralise l'ink-bar / bordure par défaut PrimeNG
+  .p-tabview-ink-bar {
+    display: none;
+  }
+
+  // Panneaux
+  .p-tabview-panels {
+    padding: var(--spacing-5) 0 0;
+    background: transparent;
+  }
+
+  // Boutons de défilement (overflow horizontal)
+  .p-tabview-nav-prev,
+  .p-tabview-nav-next {
+    background: var(--color-background-elevated);
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-md);
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+  }
+
+  .p-tabview-nav-prev:hover,
+  .p-tabview-nav-next:hover {
+    background: var(--color-background-hover);
+    color: var(--color-text-primary);
+  }
+
+  .p-tabview-nav-prev:focus-visible,
+  .p-tabview-nav-next:focus-visible {
+    outline: 2px solid var(--color-primary-500);
+    outline-offset: 2px;
+  }
+}
+
+@media (max-width: 768px) {
+  .p-tabview.ft-tabs .p-tabview-nav {
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .p-tabview.ft-tabs .p-tabview-nav li .p-tabview-nav-link {
+    padding: var(--spacing-2) var(--spacing-3);
+    min-height: 2.25rem;
+  }
+}

@@ -1,0 +1,3 @@
+﻿AprÃ¨s connexion, le tableau de bord offre une vision instantanÃ©e de l'activitÃ© : chiffre d'affaires, factures en attente, encaissements rÃ©cents.
+Votre client PME pilote son activitÃ© sans tableur ; vous, vous accÃ©dez aux mÃªmes indicateurs avec le rÃ´le Comptable, en lecture ou en contrÃ´le selon les droits accordÃ©s.
+C'est le point d'entrÃ©e idÃ©al pour accompagner plusieurs dossiers clients depuis un seul outil multi-tenant.

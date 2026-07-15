@@ -1,0 +1,614 @@
+import { Component, OnInit, ViewChild, inject, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { Table, TableModule } from 'primeng/table';
+import { InputTextModule } from 'primeng/inputtext';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmationService } from 'primeng/api';
+import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { AccountingService, ChartOfAccountDto, CreateSubAccountRequest } from '../services/accounting.service';
+import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.component';
+import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
+import { AnalyzeWithAiButtonComponent } from '@features/ai-assistant/components/analyze-with-ai-button/analyze-with-ai-button.component';
+import { wrapLegacyAnalyzePayload } from '@features/ai-assistant/utils/ai-screen-payload.factory';
+import { AuthService } from '@core/services/auth.service';
+import { ToastService } from '@core/services/toast.service';
+
+@Component({
+  selector: 'app-chart-of-accounts',
+  standalone: true,
+  imports: [
+    CommonModule,
+    FormsModule,
+    TableModule,
+    InputTextModule,
+    ConfirmDialogModule,
+    PageHeaderComponent,
+    ButtonComponent,
+    AccountingFilterBarComponent,
+    AccountingStatusBannerComponent,
+    AnalyzeWithAiButtonComponent
+  ],
+  providers: [ConfirmationService],
+  template: `
+    <app-page-header title="Plan comptable" subtitle="Plan comptable standard tunisien (SCE) — comptes système verrouillés" />
+    <p-confirmDialog />
+    <div class="card coa-card">
+      <app-accounting-filter-bar ariaLabel="Recherche et actualisation du plan comptable">
+        <div accountingFilterFields class="chart-accounts-toolbar-main">
+          <span class="p-input-icon-left coa-search-wrap">
+            <i class="pi pi-search" aria-hidden="true"></i>
+            <input
+              type="text"
+              pInputText
+              class="coa-search-input"
+              [(ngModel)]="searchTerm"
+              (ngModelChange)="onSearchChange()"
+              placeholder="Rechercher par n° de compte ou libellé…"
+              aria-label="Filtrer le plan comptable" />
+          </span>
+        </div>
+        <div accountingFilterActions class="coa-toolbar-right">
+          @if (canCreate) {
+            <app-button
+              variant="primary"
+              icon="pi pi-plus"
+              iconPos="left"
+              type="button"
+              (click)="openCreate()"
+              ariaLabel="Créer un nouveau compte comptable">
+              Nouveau compte
+            </app-button>
+          }
+          <app-button
+            variant="secondary"
+            icon="pi pi-refresh"
+            iconPos="left"
+            type="button"
+            (click)="load()"
+            ariaLabel="Actualiser le plan comptable">
+            Actualiser
+          </app-button>
+          <app-analyze-with-ai-button
+            screenId="accounting-chart"
+            density="toolbar"
+            [payloadBuilder]="buildChartAnalyzePayload"
+            [disabled]="loading()" />
+          <p class="coa-count" aria-live="polite">
+            <span class="coa-count-value">{{ rows().length }}</span>
+            <span class="coa-count-label"> compte{{ rows().length === 1 ? '' : 's' }}</span>
+          </p>
+        </div>
+      </app-accounting-filter-bar>
+      <app-accounting-status-banner
+        variant="error"
+        [message]="error() ?? ''"
+        [showRetry]="!!error()"
+        retryLabel="Réessayer"
+        (retry)="load()" />
+      <p-table
+        #dt
+        [value]="rows()"
+        [paginator]="true"
+        [rows]="25"
+        [rowsPerPageOptions]="[25, 50, 100]"
+        [globalFilterFields]="['accountNumber', 'label']"
+        [loading]="loading()"
+        [rowHover]="true"
+        [showCurrentPageReport]="true"
+        [sortField]="'accountNumber'"
+        [sortOrder]="1"
+        currentPageReportTemplate="Affichage de {first} à {last} sur {totalRecords} comptes"
+        styleClass="p-datatable-sm coa-table accounting-datatable">
+        <ng-template pTemplate="header">
+          <tr>
+            <th pSortableColumn="accountNumber" scope="col">
+              Compte <p-sortIcon field="accountNumber" />
+            </th>
+            <th pSortableColumn="label" scope="col">
+              Libellé <p-sortIcon field="label" />
+            </th>
+            <th pSortableColumn="accountClass" scope="col" class="coa-col-narrow">
+              Classe <p-sortIcon field="accountClass" />
+            </th>
+            <th scope="col" class="coa-col-narrow">Système</th>
+            <th scope="col" class="coa-col-narrow">Statut</th>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="body" let-r>
+          <tr [class.coa-row-inactive]="!r.isActive">
+            <td class="coa-account-cell" data-label="Compte">
+              <span class="coa-account-code" [style.paddingInlineStart.rem]="indentRem(r.level)">{{ r.accountNumber }}</span>
+            </td>
+            <td data-label="Libellé">{{ r.label }}</td>
+            <td class="coa-col-narrow coa-class-cell" data-label="Classe">{{ r.accountClass }}</td>
+            <td class="coa-col-narrow" data-label="Système">
+              <span
+                class="coa-badge"
+                [class.coa-badge--yes]="r.isSystem"
+                [class.coa-badge--no]="!r.isSystem">
+                {{ r.isSystem ? 'Oui' : 'Non' }}
+              </span>
+            </td>
+            <td class="coa-col-narrow" data-label="Statut">
+              <span class="coa-status-cell">
+                <span
+                  class="coa-badge"
+                  [class.coa-badge--yes]="r.isActive"
+                  [class.coa-badge--no]="!r.isActive">
+                  {{ r.isActive ? 'Actif' : 'Inactif' }}
+                </span>
+                @if (canCreate && !r.isSystem) {
+                  <button
+                    type="button"
+                    class="coa-toggle-btn"
+                    [disabled]="togglingId() === r.id"
+                    (click)="confirmToggleActive(r)"
+                    [attr.aria-label]="(r.isActive ? 'Désactiver' : 'Réactiver') + ' le compte ' + r.accountNumber">
+                    {{ r.isActive ? 'Désactiver' : 'Réactiver' }}
+                  </button>
+                }
+              </span>
+            </td>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="emptymessage">
+          <tr>
+            <td colspan="5" class="coa-empty">
+              <p class="coa-empty-title">Aucun résultat</p>
+              <p class="coa-empty-hint">Ajustez la recherche ou actualisez la liste.</p>
+            </td>
+          </tr>
+        </ng-template>
+      </p-table>
+    </div>
+
+    @if (showCreate()) {
+      <div class="coa-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="coa-create-title">
+        <div class="coa-modal">
+          <h2 id="coa-create-title" class="coa-modal-title">Nouveau compte comptable</h2>
+          <p class="coa-modal-sub">Plan comptable — Gestion des comptes</p>
+
+          <h3 class="coa-sec">Type de compte</h3>
+          <div class="coa-type-row">
+            <button type="button" class="coa-type" [class.coa-type--on]="form.accountType === 2" (click)="setType(2)"><i class="pi pi-truck"></i> Fournisseur</button>
+            <button type="button" class="coa-type" [class.coa-type--on]="form.accountType === 1" (click)="setType(1)"><i class="pi pi-user"></i> Client</button>
+            <button type="button" class="coa-type" [class.coa-type--on]="form.accountType === 3 || form.accountType === 0" (click)="setType(3)"><i class="pi pi-ellipsis-h"></i> Autre</button>
+          </div>
+
+          <h3 class="coa-sec">Hiérarchie du compte</h3>
+          <div class="coa-grid">
+            <div class="coa-field">
+              <label class="coa-lbl" for="coa-aux">Type</label>
+              <select id="coa-aux" class="coa-inp" [(ngModel)]="form.isAuxiliary">
+                <option [ngValue]="true">Auxiliaire</option>
+                <option [ngValue]="false">Général</option>
+              </select>
+            </div>
+            <div class="coa-field coa-field-wide">
+              <label class="coa-lbl" for="coa-parent">Sous compte de</label>
+              <select id="coa-parent" class="coa-inp" [(ngModel)]="form.parentAccountNumber">
+                <option [ngValue]="null">—</option>
+                @for (a of parentOptions(); track a.accountNumber) {
+                  <option [ngValue]="a.accountNumber">{{ a.accountNumber }} — {{ a.label }}</option>
+                }
+              </select>
+            </div>
+            @if (form.isAuxiliary) {
+              <div class="coa-field coa-field-wide">
+                <label class="coa-lbl" for="coa-affect">Compte d'affectation</label>
+                <select id="coa-affect" class="coa-inp" [(ngModel)]="form.affectationAccountNumber">
+                  <option [ngValue]="null">—</option>
+                  @for (a of rows(); track a.accountNumber) {
+                    <option [ngValue]="a.accountNumber">{{ a.accountNumber }} — {{ a.label }}</option>
+                  }
+                </select>
+              </div>
+            }
+          </div>
+
+          <h3 class="coa-sec">Identification</h3>
+          <div class="coa-grid">
+            <div class="coa-field">
+              <label class="coa-lbl" for="coa-num">Compte numéro</label>
+              <input id="coa-num" class="coa-inp" [(ngModel)]="form.accountNumber" placeholder="Ex. 41100001" />
+            </div>
+            <div class="coa-field coa-field-wide">
+              <label class="coa-lbl" for="coa-label">Libellé</label>
+              <input id="coa-label" class="coa-inp" [(ngModel)]="form.label" placeholder="Ex. Client Société X" />
+            </div>
+          </div>
+
+          <div class="coa-modal-actions">
+            <button type="button" class="btn btn-secondary" (click)="closeCreate()" [disabled]="creating()">Annuler</button>
+            <button type="button" class="btn btn-primary" (click)="create()" [disabled]="creating() || !canSubmit()">
+              {{ creating() ? 'Enregistrement…' : 'Enregistrer' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+  `,
+  styles: `
+    .coa-card {
+      padding: var(--spacing-5);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm, 0 1px 3px rgba(15, 23, 42, 0.08));
+    }
+    .coa-toolbar-right {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--spacing-3);
+    }
+    .chart-accounts-toolbar-main {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--spacing-3);
+      flex: 1 1 280px;
+      min-width: 0;
+    }
+    .coa-search-wrap.p-input-icon-left {
+      position: relative;
+      flex: 1 1 220px;
+      max-width: 420px;
+      min-width: 180px;
+    }
+    .coa-search-wrap.p-input-icon-left i {
+      position: absolute;
+      left: var(--spacing-3);
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--color-text-secondary);
+      pointer-events: none;
+    }
+    :host ::ng-deep .coa-search-wrap .p-inputtext,
+    :host ::ng-deep .coa-search-input {
+      width: 100%;
+      padding-left: var(--spacing-8);
+    }
+    .coa-count {
+      margin: 0;
+      font-size: var(--font-size-sm);
+      color: var(--color-text-secondary);
+    }
+    .coa-count-value {
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+      font-variant-numeric: tabular-nums;
+    }
+    .coa-error {
+      margin: 0 0 var(--spacing-3);
+    }
+    .coa-account-cell {
+      vertical-align: middle;
+    }
+    .coa-account-code {
+      display: inline-block;
+      font-variant-numeric: tabular-nums;
+      font-weight: var(--font-weight-medium);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      color: var(--color-text-primary);
+    }
+    .coa-col-narrow {
+      width: 1%;
+      white-space: nowrap;
+    }
+    .coa-class-cell {
+      font-variant-numeric: tabular-nums;
+      text-align: center;
+    }
+    .coa-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.2rem 0.5rem;
+      border-radius: var(--radius-md);
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-semibold);
+      border: 1px solid var(--color-border-subtle);
+      background: var(--color-background-subtle);
+      color: var(--color-text-secondary);
+    }
+    .coa-badge--yes {
+      border-color: var(--color-primary-200);
+      background: var(--color-primary-50, rgba(37, 99, 235, 0.08));
+      color: var(--color-primary-700, var(--color-primary-600));
+    }
+    .coa-badge--no {
+      background: var(--color-background-elevated);
+      color: var(--color-text-tertiary);
+    }
+    .coa-status-cell {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--spacing-2);
+    }
+    .coa-toggle-btn {
+      padding: 0.2rem 0.55rem;
+      border-radius: var(--radius-md);
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-semibold);
+      cursor: pointer;
+      border: 1px solid var(--color-border-default);
+      background: var(--color-background-elevated);
+      color: var(--color-text-secondary);
+    }
+    .coa-toggle-btn:hover:not(:disabled) {
+      border-color: var(--color-primary-500, #2563eb);
+      color: var(--color-primary-700, #1d4ed8);
+    }
+    .coa-toggle-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .coa-row-inactive {
+      opacity: 0.72;
+    }
+    .coa-row-inactive .coa-account-code,
+    .coa-row-inactive td:not(.coa-col-narrow) {
+      color: var(--color-text-tertiary);
+    }
+    .coa-empty {
+      text-align: center;
+      padding: var(--spacing-8) var(--spacing-4) !important;
+      border: none !important;
+    }
+    .coa-empty-title {
+      margin: 0 0 var(--spacing-2);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+    }
+    .coa-empty-hint {
+      margin: 0;
+      font-size: var(--font-size-sm);
+      color: var(--color-text-secondary);
+    }
+    :host ::ng-deep .coa-table .p-datatable-thead > tr > th {
+      text-transform: uppercase;
+      font-size: var(--font-size-xs);
+      letter-spacing: 0.04em;
+      color: var(--color-text-tertiary);
+      background: var(--color-background-subtle);
+    }
+    .coa-modal-backdrop {
+      position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45);
+      display: flex; align-items: center; justify-content: center; z-index: 1000; padding: var(--spacing-4);
+    }
+    .coa-modal {
+      background: var(--color-background-elevated); border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg, 0 10px 30px rgba(15, 23, 42, 0.2));
+      padding: var(--spacing-5); width: 100%; max-width: 560px; max-height: 90vh; overflow: auto;
+    }
+    .coa-modal-title { margin: 0; font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); }
+    .coa-modal-sub { margin: 2px 0 var(--spacing-3); font-size: var(--font-size-xs); color: var(--color-text-tertiary); }
+    .coa-sec { margin: var(--spacing-4) 0 var(--spacing-2); font-size: var(--font-size-xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-text-tertiary); font-weight: var(--font-weight-bold); }
+    .coa-type-row { display: flex; gap: var(--spacing-2); flex-wrap: wrap; }
+    .coa-type {
+      flex: 1 1 8rem; display: inline-flex; align-items: center; justify-content: center; gap: var(--spacing-2);
+      padding: var(--spacing-3); border: 1px solid var(--color-border-default); border-radius: var(--radius-md);
+      background: var(--color-background-elevated); color: var(--color-text-secondary); cursor: pointer; font-size: var(--font-size-sm); font-weight: var(--font-weight-medium);
+    }
+    .coa-type--on { border-color: var(--color-primary-500, #2563eb); background: var(--color-primary-50, #eff6ff); color: var(--color-primary-700, #1d4ed8); }
+    .coa-grid { display: flex; flex-wrap: wrap; gap: var(--spacing-3); }
+    .coa-field { display: flex; flex-direction: column; gap: var(--spacing-1); flex: 1 1 10rem; }
+    .coa-field-wide { flex: 2 1 16rem; }
+    .coa-lbl { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); color: var(--color-text-primary); }
+    .coa-inp { padding: var(--spacing-2) var(--spacing-3); border: 1px solid var(--color-border-default); border-radius: var(--radius-md); background: var(--color-background-elevated); color: var(--color-text-primary); font-size: var(--font-size-sm); width: 100%; }
+    .coa-modal-actions { display: flex; justify-content: flex-end; gap: var(--spacing-3); margin-top: var(--spacing-5); padding-top: var(--spacing-3); border-top: 1px solid var(--color-border-subtle); }
+    .btn { padding: var(--spacing-2) var(--spacing-4); border-radius: var(--radius-md); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); cursor: pointer; border: 1px solid transparent; }
+    .btn-secondary { background: var(--color-background-subtle); color: var(--color-text-primary); border-color: var(--color-border-default); }
+    .btn-primary { background: var(--color-primary-500, #2563eb); color: #fff; }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  `
+})
+export class ChartOfAccountsComponent implements OnInit {
+  private readonly api = inject(AccountingService);
+  private readonly auth = inject(AuthService);
+  private readonly toast = inject(ToastService);
+  private readonly confirmService = inject(ConfirmationService);
+
+  @ViewChild('dt') dt?: Table;
+
+  readonly rows = signal<ChartOfAccountDto[]>([]);
+  readonly error = signal<string | null>(null);
+  readonly loading = signal(false);
+
+  readonly canCreate = this.auth.hasPermission('accounting:create');
+  readonly showCreate = signal(false);
+  readonly creating = signal(false);
+  readonly togglingId = signal<string | null>(null);
+
+  form = this.emptyForm();
+
+  searchTerm = '';
+
+  private emptyForm() {
+    return {
+      accountType: 3 as number, // Autre par défaut
+      isAuxiliary: false,
+      parentAccountNumber: null as string | null,
+      affectationAccountNumber: null as string | null,
+      accountNumber: '',
+      label: ''
+    };
+  }
+
+  openCreate(): void {
+    this.form = this.emptyForm();
+    this.showCreate.set(true);
+  }
+
+  closeCreate(): void {
+    this.showCreate.set(false);
+  }
+
+  /** Sélectionne le type de compte et pré-remplit la hiérarchie (façon Axeane). */
+  setType(type: number): void {
+    this.form.accountType = type;
+    if (type === 1) { // Client
+      this.form.isAuxiliary = true;
+      const parent = this.rows().find(a => a.accountNumber.startsWith('411')) ?? this.rows().find(a => a.accountNumber.startsWith('41'));
+      this.form.parentAccountNumber = parent?.accountNumber ?? null;
+      this.form.affectationAccountNumber = parent?.accountNumber ?? null;
+    } else if (type === 2) { // Fournisseur
+      this.form.isAuxiliary = true;
+      const parent = this.rows().find(a => a.accountNumber.startsWith('401')) ?? this.rows().find(a => a.accountNumber.startsWith('40'));
+      this.form.parentAccountNumber = parent?.accountNumber ?? null;
+      this.form.affectationAccountNumber = parent?.accountNumber ?? null;
+    } else {
+      this.form.isAuxiliary = false;
+      this.form.affectationAccountNumber = null;
+    }
+  }
+
+  /** Comptes proposés comme parent selon le type choisi. */
+  parentOptions(): ChartOfAccountDto[] {
+    const prefix = this.form.accountType === 1 ? '41' : this.form.accountType === 2 ? '40' : '';
+    const list = prefix ? this.rows().filter(a => a.accountNumber.startsWith(prefix)) : this.rows();
+    return list.filter(a => a.accountNumber !== this.form.accountNumber);
+  }
+
+  canSubmit(): boolean {
+    const num = this.form.accountNumber.trim();
+    return num.length >= 2 && /^[1-7]/.test(num) && this.form.label.trim().length > 0;
+  }
+
+  create(): void {
+    if (!this.canSubmit() || this.creating()) return;
+    const num = this.form.accountNumber.trim();
+    // Nature dérivée du type : Client → débit, Fournisseur → crédit, sinon mixte.
+    const natureType = this.form.accountType === 1 ? 0 : this.form.accountType === 2 ? 1 : 2;
+    const request: CreateSubAccountRequest = {
+      accountNumber: num,
+      label: this.form.label.trim(),
+      accountClass: Number(num[0]),
+      parentAccountNumber: this.form.parentAccountNumber || null,
+      natureType,
+      accountType: this.form.accountType,
+      isAuxiliary: this.form.isAuxiliary,
+      affectationAccountNumber: this.form.isAuxiliary ? (this.form.affectationAccountNumber || null) : null
+    };
+    this.creating.set(true);
+    this.api.createSubAccount(request).subscribe({
+      next: res => {
+        this.creating.set(false);
+        if (res.success) {
+          this.toast.add({ severity: 'success', summary: 'Compte créé', detail: `${num} — ${request.label}`, life: 4000 });
+          this.showCreate.set(false);
+          this.load();
+        } else {
+          this.error.set(res.error ?? 'La création du compte a échoué.');
+        }
+      },
+      error: () => {
+        this.creating.set(false);
+        this.error.set('Erreur réseau lors de la création du compte.');
+      }
+    });
+  }
+
+  ngOnInit(): void {
+    this.load();
+  }
+
+  confirmToggleActive(account: ChartOfAccountDto): void {
+    const action = account.isActive ? 'Désactiver' : 'Réactiver';
+    this.confirmService.confirm({
+      header: `${action} le compte`,
+      message: account.isActive
+        ? `Désactiver le compte ${account.accountNumber} — ${account.label} ? Il ne sera plus utilisable en saisie ni en génération automatique.`
+        : `Réactiver le compte ${account.accountNumber} — ${account.label} ?`,
+      acceptLabel: action,
+      rejectLabel: 'Annuler',
+      accept: () => this.toggleActive(account)
+    });
+  }
+
+  private toggleActive(account: ChartOfAccountDto): void {
+    this.togglingId.set(account.id);
+    this.api.toggleAccountActive(account.id).subscribe({
+      next: res => {
+        this.togglingId.set(null);
+        if (res.success) {
+          this.toast.add({
+            severity: 'success',
+            summary: account.isActive ? 'Compte désactivé' : 'Compte réactivé',
+            detail: `${account.accountNumber} — ${account.label}`,
+            life: 4000
+          });
+          this.load();
+        } else {
+          this.error.set(res.error ?? 'Le changement de statut a échoué.');
+        }
+      },
+      error: () => {
+        this.togglingId.set(null);
+        this.error.set('Erreur réseau lors du changement de statut du compte.');
+      }
+    });
+  }
+
+  load(): void {
+    this.loading.set(true);
+    this.error.set(null);
+    this.api.getChartOfAccounts().subscribe({
+      next: res => {
+        this.loading.set(false);
+        if (res.success && res.data) {
+          this.rows.set(res.data);
+          this.reapplyGlobalFilter();
+        } else {
+          this.error.set(res.error ?? 'Erreur de chargement');
+        }
+      },
+      error: () => {
+        this.loading.set(false);
+        this.error.set('Erreur réseau');
+      }
+    });
+  }
+
+  readonly buildChartAnalyzePayload = (): unknown => {
+    const all = this.rows();
+    const byClass: Record<number, number> = {};
+    let activeCount = 0;
+    let systemCount = 0;
+    for (const r of all) {
+      byClass[r.accountClass] = (byClass[r.accountClass] ?? 0) + 1;
+      if (r.isActive) activeCount++;
+      if (r.isSystem) systemCount++;
+    }
+    return wrapLegacyAnalyzePayload(
+      'accounting-chart',
+      {
+        screen: 'accounting-chart',
+        summary: {
+          totalAccounts: all.length,
+          activeAccounts: activeCount,
+          inactiveAccounts: all.length - activeCount,
+          systemAccounts: systemCount,
+          customAccounts: all.length - systemCount,
+          byClass
+        }
+      } as Record<string, unknown>
+    );
+  };
+
+  onSearchChange(): void {
+    this.dt?.filterGlobal(this.searchTerm, 'contains');
+  }
+
+  indentRem(level: number): number {
+    const n = Number(level);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return n * 0.75;
+  }
+
+  private reapplyGlobalFilter(): void {
+    setTimeout(() => {
+      this.dt?.filterGlobal(this.searchTerm, 'contains');
+    }, 0);
+  }
+}

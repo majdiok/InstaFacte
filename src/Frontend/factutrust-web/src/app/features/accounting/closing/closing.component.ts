@@ -1,0 +1,377 @@
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
+import { RouterModule } from '@angular/router';
+import { FormsModule } from '@angular/forms';
+import { TableModule } from 'primeng/table';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmationService } from 'primeng/api';
+import { finalize } from 'rxjs/operators';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
+import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
+import { AccountingService, AccountingPeriodDto, FiscalYearLockDto } from '../services/accounting.service';
+import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
+import { AnalyzeWithAiButtonComponent } from '@features/ai-assistant/components/analyze-with-ai-button/analyze-with-ai-button.component';
+import { wrapLegacyAnalyzePayload } from '@features/ai-assistant/utils/ai-screen-payload.factory';
+
+@Component({
+  selector: 'app-accounting-closing',
+  standalone: true,
+  imports: [
+    CommonModule,
+    RouterModule,
+    FormsModule,
+    TableModule,
+    ConfirmDialogModule,
+    PageHeaderComponent,
+    AccountingStatusBannerComponent,
+    AnalyzeWithAiButtonComponent
+  ],
+  providers: [ConfirmationService],
+  template: `
+    <app-page-header title="Clôture des périodes" subtitle="Verrouillage mensuel des écritures" />
+    <p-confirmDialog />
+
+    <app-accounting-status-banner variant="error" [message]="error() ?? ''" [showRetry]="!!error()" retryLabel="Réessayer" (retry)="refresh()" />
+    <app-accounting-status-banner variant="success" [message]="success() ?? ''" />
+
+    @if (lockedYears().length > 0) {
+      <div class="closing-locks" role="note">
+        <i class="pi pi-lock" aria-hidden="true"></i>
+        <span>Exercice(s) verrouillé(s) définitivement : {{ lockedYearsLabel() }}. Ces exercices ne peuvent plus être rouverts ni modifiés.</span>
+      </div>
+    }
+
+    <div class="card closing-card">
+      <div class="closing-year-bar">
+        <label class="field-label" for="fy-close">Exercice</label>
+        <input id="fy-close" type="number" [(ngModel)]="fiscalYearInput" min="2000" max="2100"
+          class="closing-input" />
+        <a class="btn btn-outline-secondary" [routerLink]="['/accounting/pre-closing']" [queryParams]="{ }">
+          <i class="pi pi-list-check" aria-hidden="true"></i> Contrôles de pré-clôture
+        </a>
+        <button type="button" class="btn btn-warning" (click)="confirmCloseYear()" [disabled]="loading() || isYearLocked(fiscalYearInput)">
+          Clôturer l'exercice
+        </button>
+        <button type="button" class="btn btn-primary" (click)="confirmGenerateOpeningEntries()" [disabled]="loading() || isYearLocked(fiscalYearInput)">
+          Ecritures d'a-nouveau
+        </button>
+        <button type="button" class="btn btn-outline-danger" (click)="confirmLockYear()" [disabled]="loading() || isYearLocked(fiscalYearInput)">
+          <i class="pi pi-lock" aria-hidden="true"></i> Verrouiller définitivement
+        </button>
+        <button type="button" class="btn btn-outline-primary" (click)="exportFec()" [disabled]="loading() || exportingFec()">
+          @if (exportingFec()) {
+            <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+          } @else {
+            <i class="pi pi-download" aria-hidden="true"></i>
+          }
+          Exporter FEC
+        </button>
+        <app-analyze-with-ai-button
+          screenId="accounting-closing"
+          [payloadBuilder]="buildClosingAnalyzePayload"
+          [disabled]="loading()" />
+      </div>
+    </div>
+
+    <p-table [value]="periods()" [paginator]="true" [rows]="12" [loading]="loading()"
+      [rowHover]="true" styleClass="p-datatable-sm">
+      <ng-template pTemplate="header">
+        <tr>
+          <th>Exercice</th>
+          <th>Mois</th>
+          <th>Clôturée</th>
+          <th>Action</th>
+        </tr>
+      </ng-template>
+      <ng-template pTemplate="body" let-p>
+        <tr>
+          <td>{{ p.fiscalYear }}</td>
+          <td>{{ p.month }}</td>
+          <td>
+            <span class="closing-badge" [class.closing-badge--closed]="p.isClosed" [class.closing-badge--open]="!p.isClosed">
+              {{ p.isClosed ? 'Oui' : 'Non' }}
+            </span>
+          </td>
+          <td>
+            @if (!p.isClosed) {
+              <button type="button" class="btn btn-sm btn-outline-danger" (click)="confirmClose(p.id, p.month, p.fiscalYear)" [disabled]="loading()">Clôturer</button>
+            } @else if (isYearLocked(p.fiscalYear)) {
+              <span class="closing-locked-tag"><i class="pi pi-lock" aria-hidden="true"></i> Verrouillé</span>
+            } @else {
+              <button type="button" class="btn btn-sm btn-outline-secondary" (click)="confirmReopen(p.id, p.month, p.fiscalYear)" [disabled]="loading()">Réouvrir</button>
+            }
+          </td>
+        </tr>
+      </ng-template>
+      <ng-template pTemplate="emptymessage">
+        <tr><td colspan="4" style="text-align:center;padding:2rem">Aucune période enregistrée.</td></tr>
+      </ng-template>
+    </p-table>
+  `,
+  styles: `
+    .closing-card { padding:var(--spacing-4); border-radius:var(--radius-lg); box-shadow:var(--shadow-sm); margin-bottom:var(--spacing-4); }
+    .closing-year-bar { display:flex; flex-wrap:wrap; align-items:flex-end; gap:var(--spacing-3); }
+    .field-label { font-size:var(--font-size-sm); font-weight:var(--font-weight-semibold); color:var(--color-text-primary); }
+    .closing-input { padding:var(--spacing-2) var(--spacing-3); border:1px solid var(--color-border-default); border-radius:var(--radius-md); width:6rem; min-height:2.5rem; }
+    .closing-badge { padding:0.2rem 0.5rem; border-radius:var(--radius-md); font-size:var(--font-size-xs); font-weight:var(--font-weight-semibold); }
+    .closing-badge--closed { background:var(--color-success-50,#f0fdf4); color:var(--color-success-700,#15803d); border:1px solid var(--color-success-200); }
+    .closing-badge--open { background:var(--color-warning-50,#fffbeb); color:var(--color-warning-700,#a16207); border:1px solid var(--color-warning-200); }
+    .text-success { color:var(--color-success-600); }
+    .closing-locks {
+      display:flex; align-items:center; gap:var(--spacing-2);
+      padding:var(--spacing-3) var(--spacing-4); margin-bottom:var(--spacing-4);
+      background:var(--color-danger-50,#fef2f2); color:var(--color-danger-700,#b91c1c);
+      border:1px solid var(--color-danger-200,#fecaca); border-radius:var(--radius-md); font-size:var(--font-size-sm);
+    }
+    .closing-locked-tag { display:inline-flex; align-items:center; gap:4px; font-size:var(--font-size-xs); font-weight:var(--font-weight-semibold); color:var(--color-danger-700,#b91c1c); }
+  `
+})
+export class ClosingComponent implements OnInit {
+  private readonly api = inject(AccountingService);
+  private readonly confirmService = inject(ConfirmationService);
+  private readonly errorHandler = inject(ErrorHandlerService);
+  readonly periods = signal<AccountingPeriodDto[]>([]);
+  readonly lockedYears = signal<FiscalYearLockDto[]>([]);
+  readonly error = signal<string | null>(null);
+  readonly success = signal<string | null>(null);
+  readonly loading = signal(false);
+  readonly exportingFec = signal(false);
+  fiscalYearInput = new Date().getFullYear();
+
+  isYearLocked(year: number): boolean {
+    return this.lockedYears().some(l => l.fiscalYear === year);
+  }
+
+  lockedYearsLabel(): string {
+    return this.lockedYears().map(l => l.fiscalYear).sort((a, b) => a - b).join(', ');
+  }
+
+  readonly buildClosingAnalyzePayload = (): unknown =>
+    wrapLegacyAnalyzePayload(
+      'accounting-closing',
+      {
+        screen: 'accounting-closing',
+        fiscalYearInput: this.fiscalYearInput,
+        periods: this.periods().map(p => ({
+          fiscalYear: p.fiscalYear,
+          month: p.month,
+          startDate: p.startDate,
+          endDate: p.endDate,
+          isClosed: p.isClosed
+        }))
+      } as Record<string, unknown>,
+      { rowsKey: 'periods' }
+    );
+
+  ngOnInit(): void {
+    this.refresh();
+  }
+
+  exportFec(): void {
+    const y = this.fiscalYearInput;
+    this.exportingFec.set(true);
+    this.error.set(null);
+    this.success.set(null);
+    this.api.exportFec(y).subscribe({
+      next: blob => {
+        this.exportingFec.set(false);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `FEC_${y}.txt`;
+        a.click();
+        URL.revokeObjectURL(url);
+        this.success.set(`Export FEC ${y} téléchargé.`);
+      },
+      error: err => {
+        this.exportingFec.set(false);
+        this.error.set(this.httpFailureMessage(err, 'Erreur réseau lors de l\'export FEC.'));
+      }
+    });
+  }
+
+  confirmGenerateOpeningEntries(): void {
+    const y = this.fiscalYearInput;
+    this.confirmService.confirm({
+      message: `Generer les ecritures d'a-nouveau pour l'exercice ${y + 1} a partir des soldes de ${y} ?`,
+      header: 'Ecritures d\'a-nouveau',
+      icon: 'pi pi-book',
+      acceptLabel: 'Generer',
+      rejectLabel: 'Annuler',
+      accept: () => {
+        this.loading.set(true);
+        this.error.set(null);
+        this.success.set(null);
+        this.api.generateOpeningEntries(y).subscribe({
+          next: res => {
+            this.loading.set(false);
+            if (res.success) {
+              this.success.set(`Ecritures d'a-nouveau generees pour l'exercice ${y + 1}.`);
+            } else {
+              this.error.set(res.error ?? 'Erreur');
+            }
+          },
+          error: err => {
+            this.loading.set(false);
+            this.error.set(
+              this.httpFailureMessage(err, 'Erreur réseau lors de la génération des à-nouveau.')
+            );
+          }
+        });
+      }
+    });
+  }
+
+  confirmCloseYear(): void {
+    const y = this.fiscalYearInput;
+    this.confirmService.confirm({
+      message: `Clôturer tous les mois enregistrés pour l'exercice ${y} ?`,
+      header: 'Confirmation',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Clôturer',
+      rejectLabel: 'Annuler',
+      accept: () => {
+        this.loading.set(true);
+        this.error.set(null);
+        this.success.set(null);
+        this.api.closeAnnualYear(y).subscribe({
+          next: res => {
+            this.loading.set(false);
+            if (res.success) {
+              this.success.set(`Exercice ${y} clôturé.`);
+              this.refresh();
+            } else {
+              this.error.set(res.error ?? 'Erreur');
+            }
+          },
+          error: err => {
+            this.loading.set(false);
+            this.error.set(
+              this.httpFailureMessage(err, 'Erreur réseau lors de la clôture de l\'exercice.')
+            );
+          }
+        });
+      }
+    });
+  }
+
+  refresh(): void {
+    this.loading.set(true);
+    this.error.set(null);
+    this.api
+      .getPeriods()
+      .pipe(finalize(() => this.loading.set(false)))
+      .subscribe({
+        next: r => {
+          if (r.success && r.data) this.periods.set(r.data);
+          else this.error.set(r.error ?? 'Erreur');
+        },
+        error: err =>
+          this.error.set(this.httpFailureMessage(err, 'Erreur réseau. Impossible de charger les périodes.'))
+      });
+    this.api.getFiscalYearLocks().subscribe({
+      next: r => { if (r.success && r.data) this.lockedYears.set(r.data); }
+    });
+  }
+
+  confirmLockYear(): void {
+    const y = this.fiscalYearInput;
+    this.confirmService.confirm({
+      message: `Verrouiller DÉFINITIVEMENT l'exercice ${y} ? Cette action est IRRÉVERSIBLE : aucune écriture ne pourra plus y être enregistrée et ses périodes ne pourront plus être rouvertes. Assurez-vous d'avoir résolu les contrôles de pré-clôture et généré les à-nouveaux.`,
+      header: 'Verrouillage définitif',
+      icon: 'pi pi-lock',
+      acceptLabel: 'Verrouiller définitivement',
+      rejectLabel: 'Annuler',
+      accept: () => {
+        this.loading.set(true);
+        this.error.set(null);
+        this.success.set(null);
+        this.api.lockFiscalYear(y).subscribe({
+          next: res => {
+            this.loading.set(false);
+            if (res.success) {
+              this.success.set(`Exercice ${y} verrouillé définitivement.`);
+              this.refresh();
+            } else {
+              this.error.set(res.error ?? 'Erreur lors du verrouillage.');
+            }
+          },
+          error: err => {
+            this.loading.set(false);
+            this.error.set(this.httpFailureMessage(err, 'Erreur réseau lors du verrouillage.'));
+          }
+        });
+      }
+    });
+  }
+
+  confirmClose(id: string, month: number, year: number): void {
+    this.confirmService.confirm({
+      message: `Clôturer la période ${month}/${year} ?`,
+      header: 'Confirmation',
+      icon: 'pi pi-lock',
+      acceptLabel: 'Clôturer',
+      rejectLabel: 'Annuler',
+      accept: () => {
+        this.loading.set(true);
+        this.error.set(null);
+        this.success.set(null);
+        this.api.closePeriod(id).subscribe({
+          next: res => {
+            this.loading.set(false);
+            if (res.success) {
+              this.success.set(`Période ${month}/${year} clôturée.`);
+              this.refresh();
+            } else {
+              this.error.set(res.error ?? 'Erreur lors de la clôture.');
+            }
+          },
+          error: err => {
+            this.loading.set(false);
+            this.error.set(this.httpFailureMessage(err, 'Erreur réseau lors de la clôture.'));
+          }
+        });
+      }
+    });
+  }
+
+  confirmReopen(id: string, month: number, year: number): void {
+    this.confirmService.confirm({
+      message: `Réouvrir la période ${month}/${year} ? Les écritures pourront à nouveau être modifiées.`,
+      header: 'Confirmation',
+      icon: 'pi pi-unlock',
+      acceptLabel: 'Réouvrir',
+      rejectLabel: 'Annuler',
+      accept: () => {
+        this.loading.set(true);
+        this.error.set(null);
+        this.success.set(null);
+        this.api.reopenPeriod(id).subscribe({
+          next: res => {
+            this.loading.set(false);
+            if (res.success) {
+              this.success.set(`Période ${month}/${year} réouverte.`);
+              this.refresh();
+            } else {
+              this.error.set(res.error ?? 'Erreur lors de la réouverture.');
+            }
+          },
+          error: err => {
+            this.loading.set(false);
+            this.error.set(this.httpFailureMessage(err, 'Erreur réseau lors de la réouverture.'));
+          }
+        });
+      }
+    });
+  }
+
+  /** Messages API (4xx/5xx) via ErrorHandlerService ; repli « erreur réseau » seulement si status 0 (pas de réponse HTTP). */
+  private httpFailureMessage(err: unknown, networkFallback: string): string {
+    const he = err as HttpErrorResponse;
+    if (he?.status === 0) {
+      return networkFallback;
+    }
+    return this.errorHandler.extractErrorMessage(err);
+  }
+}

@@ -1,0 +1,792 @@
+import { CommonModule } from '@angular/common';
+import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges, inject, signal } from '@angular/core';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { HttpErrorResponse } from '@angular/common/http';
+import { DialogModule } from 'primeng/dialog';
+import { DropdownModule } from 'primeng/dropdown';
+import { InputTextModule } from 'primeng/inputtext';
+import { InputMaskModule } from 'primeng/inputmask';
+import { CheckboxModule } from 'primeng/checkbox';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import {
+  BankAccountDto,
+  BankAccountService,
+  CreateBankAccountPayload,
+  TunisianBankReference,
+  UpdateBankAccountPayload
+} from '@core/services/bank-account.service';
+import { AccountingService, ChartOfAccountDto } from '@features/accounting/services/accounting.service';
+import { ToastService } from '@core/services/toast.service';
+
+@Component({
+  selector: 'app-add-bank-account-dialog',
+  standalone: true,
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    DialogModule,
+    DropdownModule,
+    InputTextModule,
+    InputMaskModule,
+    CheckboxModule,
+    ButtonComponent
+  ],
+  template: `
+    <p-dialog
+      [(visible)]="visible"
+      [modal]="true"
+      [style]="{ width: 'min(580px, 96vw)' }"
+      [draggable]="false"
+      [closable]="true"
+      (onHide)="onHide()"
+      [contentStyle]="{ overflow: 'auto', maxHeight: 'min(72vh, 660px)', padding: 0 }">
+
+      <ng-template pTemplate="header">
+        <div class="dialog-header-custom">
+          <div class="dialog-header-icon" aria-hidden="true">
+            <i class="pi pi-building"></i>
+          </div>
+          <div class="dialog-header-text">
+            <h2 class="dialog-title">{{ editingAccount ? 'Modifier le compte bancaire' : 'Ajouter un compte bancaire' }}</h2>
+            <p class="dialog-subtitle">{{ editingAccount ? 'Mettez à jour les informations de votre compte.' : 'Renseignez les coordonnées de votre compte tunisien.' }}</p>
+          </div>
+        </div>
+      </ng-template>
+
+      <div class="dialog-body">
+        @if (errorMessage()) {
+          <div class="alert-error" role="alert">
+            <i class="pi pi-exclamation-triangle" aria-hidden="true"></i>
+            <span>{{ errorMessage() }}</span>
+          </div>
+        }
+
+        <form [formGroup]="form" (ngSubmit)="submit()" class="bank-account-form" novalidate>
+          <div class="form-fields">
+
+            <div class="form-section">
+              <div class="form-section-header">
+                <div class="form-section-icon" aria-hidden="true"><i class="pi pi-building"></i></div>
+                <h4 class="form-section-title">Établissement bancaire</h4>
+              </div>
+              <div class="form-section-body">
+                <div class="form-group">
+                  <label for="bankCode">Banque <span class="req" aria-hidden="true">*</span></label>
+                  <p-dropdown
+                    inputId="bankCode"
+                    formControlName="bankCode"
+                    [options]="bankOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    placeholder="Sélectionnez une banque"
+                    [filter]="true"
+                    filterBy="label"
+                    [showClear]="false"
+                    styleClass="w-full"
+                    [class.ng-invalid]="form.controls.bankCode.touched && form.controls.bankCode.invalid"
+                    (onChange)="onBankSelected($event.value)">
+                  </p-dropdown>
+                  @if (form.controls.bankCode.touched && form.controls.bankCode.hasError('required')) {
+                    <small class="error-text">Banque est obligatoire</small>
+                  }
+                </div>
+
+                <div class="form-group">
+                  <label for="bankName">Nom de la banque <span class="req" aria-hidden="true">*</span></label>
+                  <input
+                    pInputText
+                    id="bankName"
+                    formControlName="bankName"
+                    class="w-full"
+                    [readOnly]="!isAutreBank()"
+                    [attr.aria-readonly]="!isAutreBank()"
+                    placeholder="Nom de la banque" />
+                  @if (form.controls.bankCode.value && !isAutreBank()) {
+                    <small class="hint"><i class="pi pi-info-circle hint-icon" aria-hidden="true"></i> Renseigné automatiquement — modifiable si « Autre ».</small>
+                  }
+                  @if (form.controls.bankName.touched && form.controls.bankName.hasError('required')) {
+                    <small class="error-text">Le nom de la banque est obligatoire</small>
+                  }
+                </div>
+              </div>
+            </div>
+
+            <div class="form-section">
+              <div class="form-section-header">
+                <div class="form-section-icon section-icon-banking" aria-hidden="true"><i class="pi pi-credit-card"></i></div>
+                <h4 class="form-section-title">Coordonnées bancaires</h4>
+              </div>
+              <div class="form-section-body">
+                <div class="form-group">
+                  <label for="iban">IBAN <span class="req" aria-hidden="true">*</span></label>
+                  <input
+                    pInputText
+                    id="iban"
+                    formControlName="iban"
+                    class="w-full mono-input"
+                    placeholder="TN59 1000 0035 1835 8847 8831"
+                    autocomplete="off"
+                    (blur)="syncRibFromIban()" />
+                  <small class="hint">Exemple&nbsp;: TN59 1000 0035 1835 8847 8831</small>
+                </div>
+
+                <div class="form-group">
+                  <label for="rib">RIB <span class="req" aria-hidden="true">*</span></label>
+                  <p-inputMask
+                    inputId="rib"
+                    formControlName="rib"
+                    mask="99 999 9999999999999 99"
+                    placeholder="XX XXX XXXXXXXXXXXXX XX"
+                    styleClass="w-full mono-input-mask">
+                  </p-inputMask>
+                  <small class="hint">20 chiffres — complété depuis l'IBAN</small>
+                </div>
+
+                <div class="form-group">
+                  <label for="swiftBic">SWIFT / BIC</label>
+                  <input
+                    pInputText
+                    id="swiftBic"
+                    formControlName="swiftBic"
+                    class="w-full mono-input"
+                    placeholder="Ex: BIATTNTT"
+                    maxlength="11" />
+                </div>
+              </div>
+            </div>
+
+            <div class="form-section">
+              <div class="form-section-header">
+                <div class="form-section-icon section-icon-accounting" aria-hidden="true"><i class="pi pi-book"></i></div>
+                <h4 class="form-section-title">Comptabilité (532x)</h4>
+              </div>
+              <div class="form-section-body">
+                <div class="default-account-option">
+                  <p-checkbox formControlName="autoCreateChartAccount" inputId="autoCreateChartAccount" [binary]="true"></p-checkbox>
+                  <label for="autoCreateChartAccount" class="checkbox-label">
+                    <span class="checkbox-label-text">Créer automatiquement un sous-compte banque 532x</span>
+                    <span class="checkbox-label-hint">Un compte auxiliaire sera créé sous 5321 (TND) lors de l'enregistrement.</span>
+                  </label>
+                </div>
+                @if (!form.controls.autoCreateChartAccount.value) {
+                  <div class="form-group">
+                    <label for="chartOfAccountNumber">Compte comptable existant</label>
+                    <p-dropdown
+                      inputId="chartOfAccountNumber"
+                      formControlName="chartOfAccountNumber"
+                      [options]="chartAccountOptions"
+                      optionLabel="label"
+                      optionValue="value"
+                      placeholder="5321…"
+                      [filter]="true"
+                      filterBy="label"
+                      [showClear]="true"
+                      styleClass="w-full">
+                    </p-dropdown>
+                  </div>
+                }
+              </div>
+            </div>
+
+            <div class="form-section">
+              <div class="form-section-header">
+                <div class="form-section-icon section-icon-info" aria-hidden="true"><i class="pi pi-info-circle"></i></div>
+                <h4 class="form-section-title">Informations complémentaires</h4>
+                <span class="section-badge">Optionnel</span>
+              </div>
+              <div class="form-section-body">
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="designation">Libellé du compte</label>
+                    <input pInputText id="designation" formControlName="designation" class="w-full" placeholder="Ex: Compte principal" />
+                  </div>
+                  <div class="form-group">
+                    <label for="agencyName">Agence</label>
+                    <input pInputText id="agencyName" formControlName="agencyName" class="w-full" placeholder="Ex: Agence centre-ville" />
+                  </div>
+                </div>
+
+                @if (!editingAccount) {
+                  <div class="default-account-option">
+                    <p-checkbox formControlName="setAsDefault" inputId="setAsDefault" [binary]="true"></p-checkbox>
+                    <label for="setAsDefault" class="checkbox-label">
+                      <span class="checkbox-label-text">Définir comme compte par défaut</span>
+                      <span class="checkbox-label-hint">Ce compte sera utilisé automatiquement sur vos documents.</span>
+                    </label>
+                  </div>
+                }
+              </div>
+            </div>
+
+          </div>
+
+          <button type="submit" class="sr-only" tabindex="-1" aria-hidden="true">Valider</button>
+        </form>
+      </div>
+
+      <ng-template pTemplate="footer">
+        <div class="dialog-footer">
+          <app-button type="button" variant="ghost" (click)="close()" ariaLabel="Annuler">Annuler</app-button>
+          <app-button
+            type="button"
+            variant="primary"
+            icon="pi pi-check"
+            [disabled]="saving() || form.invalid"
+            ariaLabel="Valider"
+            (click)="submit()">
+            {{ saving() ? 'Enregistrement…' : 'Valider' }}
+          </app-button>
+        </div>
+      </ng-template>
+    </p-dialog>
+  `,
+  styles: [`
+    /* ── Entry animation ── */
+    @keyframes dialogBodyFadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Custom header ── */
+    .dialog-header-custom {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-3);
+      min-width: 0;
+    }
+
+    .dialog-header-icon {
+      flex-shrink: 0;
+      width: 42px;
+      height: 42px;
+      border-radius: var(--radius-lg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--color-primary-100);
+      color: var(--color-primary-600);
+      font-size: 1.2rem;
+    }
+
+    .dialog-header-text {
+      min-width: 0;
+    }
+
+    .dialog-title {
+      margin: 0;
+      font-size: var(--font-size-lg);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+      line-height: 1.3;
+    }
+
+    .dialog-subtitle {
+      margin: var(--spacing-1) 0 0;
+      font-size: var(--font-size-sm);
+      color: var(--color-text-secondary);
+      line-height: 1.4;
+    }
+
+    /* ── Dialog body ── */
+    .dialog-body {
+      padding: var(--spacing-5) var(--spacing-6) var(--spacing-4);
+      animation: dialogBodyFadeIn 0.25s ease-out;
+      overflow-x: hidden;
+      box-sizing: border-box;
+    }
+
+    .bank-account-form {
+      padding: 0;
+    }
+
+    .form-fields {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-5);
+    }
+
+    /* ── Form sections (card-style) ── */
+    .form-section {
+      background: var(--color-background-subtle);
+      border: 1px solid var(--color-border-subtle);
+      border-radius: var(--radius-xl);
+      overflow: hidden;
+    }
+
+    .form-section-header {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-3);
+      padding: var(--spacing-3) var(--spacing-4);
+      border-bottom: 1px solid var(--color-border-subtle);
+      background: var(--color-background-elevated);
+    }
+
+    .form-section-icon {
+      flex-shrink: 0;
+      width: 30px;
+      height: 30px;
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--color-primary-100);
+      color: var(--color-primary-600);
+      font-size: 0.85rem;
+    }
+
+    .section-icon-banking {
+      background: var(--color-success-100, #dcfce7);
+      color: var(--color-success-600, #16a34a);
+    }
+
+    .section-icon-info {
+      background: var(--color-neutral-200);
+      color: var(--color-text-secondary);
+    }
+
+    .section-icon-accounting {
+      background: var(--color-warning-100, #fef3c7);
+      color: var(--color-warning-700, #b45309);
+    }
+
+    .form-section-title {
+      margin: 0;
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+      letter-spacing: 0.01em;
+      flex: 1;
+    }
+
+    .section-badge {
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-medium);
+      padding: 0.125rem 0.5rem;
+      border-radius: var(--radius-md);
+      background: var(--color-background-subtle);
+      color: var(--color-text-tertiary);
+      border: 1px solid var(--color-border-subtle);
+    }
+
+    .form-section-body {
+      padding: var(--spacing-4);
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-4);
+    }
+
+    /* ── Form groups ── */
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--spacing-4);
+    }
+
+    @media (max-width: 480px) {
+      .form-row { grid-template-columns: 1fr; }
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-1);
+    }
+
+    .form-group > label {
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+    }
+
+    .req { color: var(--color-danger-500); }
+
+    .hint {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-1);
+      color: var(--color-text-tertiary);
+      font-size: var(--font-size-xs);
+      line-height: var(--line-height-normal);
+    }
+
+    .hint-icon {
+      font-size: 0.7rem;
+      flex-shrink: 0;
+    }
+
+    .error-text {
+      color: var(--color-danger-500);
+      font-size: var(--font-size-xs);
+    }
+
+    /* ── Mono fields for banking data ── */
+    .mono-input {
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+      letter-spacing: 0.04em;
+      transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
+    }
+
+    /* ── Alert ── */
+    .alert-error {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--spacing-2);
+      padding: var(--spacing-3);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--color-error-200);
+      background: var(--color-error-50);
+      color: var(--color-error-700);
+      margin-bottom: var(--spacing-4);
+      font-size: var(--font-size-sm);
+      line-height: 1.45;
+    }
+
+    .alert-error .pi {
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+
+    /* ── Default account checkbox ── */
+    .default-account-option {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--spacing-3);
+      padding: var(--spacing-3) var(--spacing-4);
+      background: var(--color-primary-50);
+      border: 1px solid var(--color-primary-200);
+      border-radius: var(--radius-lg);
+      cursor: pointer;
+    }
+
+    .checkbox-label {
+      margin: 0;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .checkbox-label-text {
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-medium);
+      color: var(--color-text-primary);
+      line-height: 1.4;
+    }
+
+    .checkbox-label-hint {
+      font-size: var(--font-size-xs);
+      color: var(--color-text-tertiary);
+      line-height: 1.4;
+    }
+
+    /* ── Footer ── */
+    .dialog-footer {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: var(--spacing-3);
+      width: 100%;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 480px) {
+      .dialog-body {
+        padding: var(--spacing-4) var(--spacing-4) var(--spacing-3);
+      }
+
+      .dialog-header-icon { display: none; }
+
+      .form-section-body {
+        padding: var(--spacing-3);
+      }
+    }
+
+    /* ── PrimeNG overrides ── */
+    :host ::ng-deep {
+      .p-dialog {
+        border-radius: var(--radius-xl);
+        box-shadow: var(--shadow-xl);
+        overflow: hidden;
+      }
+
+      .p-dialog-content {
+        border-radius: 0;
+        padding: 0;
+      }
+
+      .p-dialog-header {
+        padding: var(--spacing-4) var(--spacing-6);
+        border-bottom: 1px solid var(--color-border-subtle);
+        background: var(--color-background-elevated);
+      }
+
+      .p-dialog-header .p-dialog-title {
+        display: none;
+      }
+
+      .p-dialog-footer {
+        padding: var(--spacing-4) var(--spacing-6);
+        border-top: 1px solid var(--color-border-subtle);
+        background: var(--color-background-subtle);
+      }
+
+      .p-dropdown,
+      .p-inputmask {
+        width: 100%;
+      }
+
+      .mono-input-mask .p-inputtext {
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        letter-spacing: 0.04em;
+      }
+    }
+  `]
+})
+export class AddBankAccountDialogComponent implements OnChanges {
+  private readonly fb = inject(FormBuilder);
+  private readonly bankAccountService = inject(BankAccountService);
+  private readonly accountingService = inject(AccountingService);
+  private readonly toast = inject(ToastService);
+
+  @Input() visible = false;
+  @Output() visibleChange = new EventEmitter<boolean>();
+  @Output() saved = new EventEmitter<void>();
+  @Input() editingAccount: BankAccountDto | null = null;
+
+  bankOptions: { label: string; value: string }[] = [];
+  chartAccountOptions: { label: string; value: string }[] = [];
+  private banks: TunisianBankReference[] = [];
+
+  saving = signal(false);
+  errorMessage = signal<string | null>(null);
+
+  form = this.fb.nonNullable.group({
+    bankCode: ['', Validators.required],
+    bankName: ['', [Validators.required, Validators.maxLength(100)]],
+    designation: [''],
+    agencyName: [''],
+    swiftBic: [''],
+    iban: ['', Validators.required],
+    rib: ['', Validators.required],
+    setAsDefault: [false],
+    autoCreateChartAccount: [true],
+    chartOfAccountNumber: ['']
+  });
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (!this.visible) return;
+    if (changes['visible']?.currentValue === true || changes['editingAccount']) {
+      this.errorMessage.set(null);
+      this.loadBanksAndForm();
+    }
+  }
+
+  private loadBanksAndForm(): void {
+    this.accountingService.getChartOfAccounts().subscribe(chartRes => {
+      const accounts = chartRes.success && chartRes.data ? chartRes.data : [];
+      this.chartAccountOptions = accounts
+        .filter((a: ChartOfAccountDto) => a.accountNumber.startsWith('532'))
+        .map((a: ChartOfAccountDto) => ({ label: `${a.accountNumber} — ${a.label}`, value: a.accountNumber }));
+    });
+
+    this.bankAccountService.getTunisianBanks().subscribe(banks => {
+      this.banks = banks;
+      this.bankOptions = banks.map(b => ({
+        label: `${b.name} (${b.code})`,
+        value: b.code
+      }));
+      if (this.editingAccount) {
+        this.patchEditForm(this.editingAccount);
+      } else {
+        this.form.reset({
+          bankCode: '',
+          bankName: '',
+          designation: '',
+          agencyName: '',
+          swiftBic: '',
+          iban: '',
+          rib: '',
+          setAsDefault: false,
+          autoCreateChartAccount: true,
+          chartOfAccountNumber: ''
+        });
+      }
+    });
+  }
+
+  private patchEditForm(a: BankAccountDto): void {
+    const ribFormatted = this.formatRibDisplay(a.rib);
+    this.form.patchValue({
+      bankCode: a.bankCode,
+      bankName: a.bankName,
+      designation: a.designation ?? '',
+      agencyName: a.agencyName ?? '',
+      swiftBic: a.swiftBic ?? '',
+      iban: this.formatIbanDisplay(a.iban),
+      rib: ribFormatted,
+      setAsDefault: false,
+      autoCreateChartAccount: !a.chartOfAccountNumber,
+      chartOfAccountNumber: a.chartOfAccountNumber ?? ''
+    });
+    this.onBankSelected(a.bankCode);
+  }
+
+  private formatRibDisplay(ribDigits: string): string {
+    const d = ribDigits.replace(/\D/g, '');
+    if (d.length !== 20) return ribDigits;
+    return `${d.slice(0, 2)} ${d.slice(2, 5)} ${d.slice(5, 18)} ${d.slice(18, 20)}`;
+  }
+
+  isAutreBank(): boolean {
+    return this.form.controls.bankCode.value === 'AUTRE';
+  }
+
+  onBankSelected(code: string | null): void {
+    if (!code) return;
+    const bank = this.banks.find(b => b.code === code);
+    if (!bank) return;
+    if (code === 'AUTRE') {
+      this.form.patchValue({ bankName: '', swiftBic: '' });
+    } else {
+      this.form.patchValue({
+        bankName: bank.name,
+        swiftBic: bank.defaultSwiftBic ?? ''
+      });
+    }
+  }
+
+  syncRibFromIban(): void {
+    const iban = this.normalizeIban(this.form.controls.iban.value);
+    if (iban.length >= 24 && iban.startsWith('TN')) {
+      const rib = iban.slice(4, 24);
+      const formatted = `${rib.slice(0, 2)} ${rib.slice(2, 5)} ${rib.slice(5, 18)} ${rib.slice(18, 20)}`;
+      this.form.patchValue({ rib: formatted });
+    }
+  }
+
+  private normalizeIban(v: string): string {
+    return v.replace(/\s/g, '').toUpperCase();
+  }
+
+  private formatIbanDisplay(iban: string): string {
+    const c = this.normalizeIban(iban);
+    if (c.length !== 24) return iban;
+    return c.replace(/(.{4})/g, '$1 ').trim();
+  }
+
+  private stripRib(v: string): string {
+    return v.replace(/\D/g, '');
+  }
+
+  submit(): void {
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      return;
+    }
+    const v = this.form.getRawValue();
+    const ribDigits = this.stripRib(v.rib);
+    const ibanNorm = this.normalizeIban(v.iban);
+    if (ribDigits.length !== 20) {
+      this.errorMessage.set('Le RIB doit contenir 20 chiffres.');
+      return;
+    }
+    if (!/^TN\d{22}$/.test(ibanNorm)) {
+      this.errorMessage.set("L'IBAN tunisien est invalide (TN + 22 chiffres).");
+      return;
+    }
+    if (ibanNorm.slice(4) !== ribDigits) {
+      this.errorMessage.set("Le RIB ne correspond pas à l'IBAN.");
+      return;
+    }
+
+    this.saving.set(true);
+    this.errorMessage.set(null);
+
+    if (this.editingAccount) {
+      const payload: UpdateBankAccountPayload = {
+        bankCode: v.bankCode,
+        bankName: v.bankName.trim(),
+        rib: ribDigits,
+        iban: ibanNorm,
+        designation: v.designation?.trim() || null,
+        agencyName: v.agencyName?.trim() || null,
+        swiftBic: v.swiftBic?.trim() || null,
+        chartOfAccountNumber: v.autoCreateChartAccount ? null : (v.chartOfAccountNumber?.trim() || null),
+        autoCreateChartAccount: v.autoCreateChartAccount
+      };
+      this.bankAccountService.update(this.editingAccount.id, payload).subscribe({
+        next: res => {
+          this.saving.set(false);
+          if (res.success) {
+            this.toast.add({
+              severity: 'success',
+              summary: 'Succès',
+              detail: res.message ?? 'Compte mis à jour.'
+            });
+            this.close();
+            this.saved.emit();
+          } else {
+            this.errorMessage.set(res.errors?.[0] ?? 'Échec de la mise à jour.');
+          }
+        },
+        error: (err: HttpErrorResponse) => {
+          this.saving.set(false);
+          this.errorMessage.set(this.extractError(err));
+        }
+      });
+    } else {
+      const payload: CreateBankAccountPayload = {
+        bankCode: v.bankCode,
+        bankName: v.bankName.trim(),
+        rib: ribDigits,
+        iban: ibanNorm,
+        designation: v.designation?.trim() || null,
+        agencyName: v.agencyName?.trim() || null,
+        swiftBic: v.swiftBic?.trim() || null,
+        setAsDefault: v.setAsDefault,
+        chartOfAccountNumber: v.autoCreateChartAccount ? null : (v.chartOfAccountNumber?.trim() || null),
+        autoCreateChartAccount: v.autoCreateChartAccount
+      };
+      this.bankAccountService.create(payload).subscribe({
+        next: res => {
+          this.saving.set(false);
+          if (res.success) {
+            this.toast.add({
+              severity: 'success',
+              summary: 'Succès',
+              detail: res.message ?? 'Compte créé.'
+            });
+            this.close();
+            this.saved.emit();
+          } else {
+            this.errorMessage.set(res.errors?.[0] ?? 'Échec de la création.');
+          }
+        },
+        error: (err: HttpErrorResponse) => {
+          this.saving.set(false);
+          this.errorMessage.set(this.extractError(err));
+        }
+      });
+    }
+  }
+
+  private extractError(err: HttpErrorResponse): string {
+    const body = err.error;
+    if (typeof body === 'string') return body;
+    if (body && typeof body === 'object') {
+      const o = body as { message?: string; errors?: string[] };
+      if (o.errors?.length) return o.errors[0];
+      if (o.message) return o.message;
+    }
+    return err.message ?? 'Erreur réseau.';
+  }
+
+  close(): void {
+    this.visibleChange.emit(false);
+  }
+
+  onHide(): void {
+    this.visibleChange.emit(false);
+  }
+}

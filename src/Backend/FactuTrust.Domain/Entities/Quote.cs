@@ -1,0 +1,363 @@
+using FactuTrust.Domain.Common;
+using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.Events;
+using FactuTrust.Domain.ValueObjects;
+
+namespace FactuTrust.Domain.Entities;
+
+/// <summary>
+/// Represents a quote (devis) - a non-binding commercial proposal.
+/// A quote can be converted to an invoice once accepted by the client.
+/// </summary>
+public sealed class Quote : AggregateRoot
+{
+    public QuoteNumber Number { get; private set; } = null!;
+    public DateTime IssueDate { get; private set; }
+    public DateTime ExpiryDate { get; private set; }
+    public QuoteStatus Status { get; private set; }
+    
+    public Guid ClientId { get; private set; }
+    public Client Client { get; private set; } = null!;
+
+    public string? Reference { get; private set; }
+    public string? Notes { get; private set; }
+    public string? TermsAndConditions { get; private set; }
+    
+    private readonly List<string> _legalMentions = new();
+    public IReadOnlyCollection<string> LegalMentions => _legalMentions.AsReadOnly();
+
+    private readonly List<QuoteLine> _lines = new();
+    public IReadOnlyCollection<QuoteLine> Lines => _lines.AsReadOnly();
+
+    public Money SubTotal { get; private set; } = null!;
+    public Money TotalVat { get; private set; } = null!;
+    public Money TotalAmount { get; private set; } = null!;
+
+    public DateTime? SentAt { get; private set; }
+    public DateTime? AcceptedAt { get; private set; }
+    public DateTime? RejectedAt { get; private set; }
+    public string? RejectionReason { get; private set; }
+    public DateTime? CancelledAt { get; private set; }
+    public string? CancellationReason { get; private set; }
+
+    /// <summary>
+    /// The invoice created from this quote (if converted).
+    /// </summary>
+    public Guid? ConvertedInvoiceId { get; private set; }
+
+    /// <summary>
+    /// When the quote was converted to an invoice (traçabilité).
+    /// </summary>
+    public DateTime? ConvertedAt { get; private set; }
+
+    /// <summary>
+    /// When this quote was dispatched from a public storefront order, tracks the originating
+    /// <c>StorefrontOrder.Id</c> (persisted in the Master database). Null for internally created quotes.
+    /// </summary>
+    public Guid? OriginStorefrontOrderId { get; private set; }
+
+    private Quote() { }
+
+    /// <summary>
+    /// Marks this quote as originating from a public 3D storefront order. Idempotent: once set, never changes.
+    /// </summary>
+    public void AttachStorefrontOrigin(Guid storefrontOrderId)
+    {
+        if (storefrontOrderId == Guid.Empty)
+            throw new ArgumentException("StorefrontOrderId invalide", nameof(storefrontOrderId));
+        if (OriginStorefrontOrderId.HasValue)
+            return;
+        OriginStorefrontOrderId = storefrontOrderId;
+    }
+
+    public static Result<Quote> Create(
+        QuoteNumber number,
+        Client client,
+        DateTime issueDate,
+        DateTime expiryDate,
+        string? reference = null,
+        string? notes = null,
+        string? termsAndConditions = null)
+    {
+        if (expiryDate <= issueDate)
+            return Result.Failure<Quote>(Error.Validation("ExpiryDate", "La date d'expiration doit être postérieure à la date d'émission"));
+
+        // Default validity: 30 days from issue date
+        if (expiryDate < issueDate.AddDays(1))
+            return Result.Failure<Quote>(Error.Validation("ExpiryDate", "La validité du devis doit être d'au moins 1 jour"));
+
+        var quote = new Quote
+        {
+            Number = number,
+            ClientId = client.Id,
+            Client = client,
+            IssueDate = issueDate.Date,
+            ExpiryDate = expiryDate.Date,
+            Status = QuoteStatus.Draft,
+            Reference = reference?.Trim(),
+            Notes = notes?.Trim(),
+            TermsAndConditions = termsAndConditions?.Trim(),
+            SubTotal = Money.Zero(),
+            TotalVat = Money.Zero(),
+            TotalAmount = Money.Zero()
+        };
+
+        quote.AddDomainEvent(new QuoteCreatedEvent(quote.Id, quote.Number.Value, client.Id));
+
+        return Result.Success(quote);
+    }
+
+    public Result AddLine(Product product, decimal quantity, Money? customUnitPrice = null, decimal? discountPercent = null)
+    {
+        if (!Status.CanBeEdited())
+            return Result.Failure(Error.Validation("Status", "Ce devis ne peut plus être modifié"));
+
+        if (quantity <= 0)
+            return Result.Failure(Error.Validation("Quantity", "La quantité doit être supérieure à zéro"));
+
+        var unitPrice = customUnitPrice ?? product.UnitPrice;
+        var lineNumber = _lines.Count + 1;
+
+        var lineResult = QuoteLine.Create(
+            this,
+            lineNumber,
+            product,
+            quantity,
+            unitPrice,
+            discountPercent);
+
+        if (lineResult.IsFailure)
+            return Result.Failure(lineResult.Error);
+
+        _lines.Add(lineResult.Value);
+        RecalculateTotals();
+
+        return Result.Success();
+    }
+
+    public Result RemoveLine(Guid lineId)
+    {
+        if (!Status.CanBeEdited())
+            return Result.Failure(Error.Validation("Status", "Ce devis ne peut plus être modifié"));
+
+        var line = _lines.FirstOrDefault(l => l.Id == lineId);
+        if (line is null)
+            return Result.Failure(Error.NotFound("QuoteLine", lineId));
+
+        _lines.Remove(line);
+        RenumberLines();
+        RecalculateTotals();
+
+        return Result.Success();
+    }
+
+    public Result UpdateLine(Guid lineId, decimal quantity, Money? customUnitPrice = null, decimal? discountPercent = null)
+    {
+        if (!Status.CanBeEdited())
+            return Result.Failure(Error.Validation("Status", "Ce devis ne peut plus être modifié"));
+
+        var line = _lines.FirstOrDefault(l => l.Id == lineId);
+        if (line is null)
+            return Result.Failure(Error.NotFound("QuoteLine", lineId));
+
+        var result = line.Update(quantity, customUnitPrice, discountPercent);
+        if (result.IsFailure)
+            return result;
+
+        RecalculateTotals();
+
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Adds a custom quote line without product reference.
+    /// </summary>
+    public Result AddCustomLine(
+        string designation,
+        string? description,
+        decimal quantity,
+        string unit,
+        Money unitPrice,
+        VatRate vatRate,
+        decimal? discountPercent = null)
+    {
+        if (!Status.CanBeEdited())
+            return Result.Failure(Error.Validation("Status", "Ce devis ne peut plus être modifié"));
+
+        if (quantity <= 0)
+            return Result.Failure(Error.Validation("Quantity", "La quantité doit être supérieure à zéro"));
+
+        if (string.IsNullOrWhiteSpace(designation))
+            return Result.Failure(Error.Validation("Designation", "La désignation est obligatoire"));
+
+        var lineNumber = _lines.Count + 1;
+
+        var lineResult = QuoteLine.CreateCustom(
+            this,
+            lineNumber,
+            designation.Trim(),
+            description?.Trim(),
+            quantity,
+            unit,
+            unitPrice,
+            vatRate,
+            discountPercent);
+
+        if (lineResult.IsFailure)
+            return Result.Failure(lineResult.Error);
+
+        _lines.Add(lineResult.Value);
+        RecalculateTotals();
+
+        return Result.Success();
+    }
+
+    public Result Send()
+    {
+        if (!Status.CanBeSent())
+            return Result.Failure(Error.Validation("Status", "Ce devis ne peut pas être envoyé dans son état actuel"));
+
+        if (_lines.Count == 0)
+            return Result.Failure(Error.Validation("Lines", "Le devis doit contenir au moins une ligne"));
+
+        SentAt = DateTime.UtcNow;
+        Status = QuoteStatus.Sent;
+
+        AddDomainEvent(new QuoteSentEvent(Id, Number.Value, Client.Email.Value));
+
+        return Result.Success();
+    }
+
+    public Result Accept()
+    {
+        if (!Status.CanBeAccepted())
+            return Result.Failure(Error.Validation("Status", "Ce devis ne peut pas être accepté dans son état actuel"));
+
+        AcceptedAt = DateTime.UtcNow;
+        Status = QuoteStatus.Accepted;
+
+        AddDomainEvent(new QuoteAcceptedEvent(Id, Number.Value));
+
+        return Result.Success();
+    }
+
+    public Result Reject(string? reason = null)
+    {
+        if (!Status.CanBeRejected())
+            return Result.Failure(Error.Validation("Status", "Ce devis ne peut pas être refusé dans son état actuel"));
+
+        RejectedAt = DateTime.UtcNow;
+        RejectionReason = reason?.Trim();
+        Status = QuoteStatus.Rejected;
+
+        AddDomainEvent(new QuoteRejectedEvent(Id, Number.Value, reason));
+
+        return Result.Success();
+    }
+
+    public Result Cancel(string reason)
+    {
+        if (!Status.CanBeCancelled())
+            return Result.Failure(Error.Validation("Status", "Ce devis ne peut pas être annulé"));
+
+        if (string.IsNullOrWhiteSpace(reason))
+            return Result.Failure(Error.Validation("CancellationReason", "Le motif d'annulation est obligatoire"));
+
+        CancelledAt = DateTime.UtcNow;
+        CancellationReason = reason.Trim();
+        Status = QuoteStatus.Cancelled;
+
+        AddDomainEvent(new QuoteCancelledEvent(Id, Number.Value, reason));
+
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Marks this quote as converted to an invoice.
+    /// This method should only be called during the conversion process.
+    /// </summary>
+    public void MarkAsConverted(Guid invoiceId)
+    {
+        if (Status != QuoteStatus.Accepted)
+            throw new InvalidOperationException("Seuls les devis acceptés peuvent être transformés en facture");
+
+        ConvertedInvoiceId = invoiceId;
+        ConvertedAt = DateTime.UtcNow;
+        Status = QuoteStatus.Converted;
+
+        AddDomainEvent(new QuoteConvertedToInvoiceEvent(Id, Number.Value, invoiceId));
+    }
+
+    public void UpdateNotes(string? notes, string? termsAndConditions)
+    {
+        if (Status.CanBeEdited())
+        {
+            Notes = notes?.Trim();
+            TermsAndConditions = termsAndConditions?.Trim();
+        }
+    }
+
+    /// <summary>
+    /// Adds a legal mention to the quote.
+    /// </summary>
+    public void AddLegalMention(string mention)
+    {
+        if (!string.IsNullOrWhiteSpace(mention) && Status.CanBeEdited())
+        {
+            _legalMentions.Add(mention.Trim());
+        }
+    }
+
+    public void CheckExpiration()
+    {
+        if (ExpiryDate < DateTime.UtcNow.Date && 
+            Status is QuoteStatus.Sent or QuoteStatus.Draft)
+        {
+            Status = QuoteStatus.Expired;
+            AddDomainEvent(new QuoteExpiredEvent(Id, Number.Value, ExpiryDate));
+        }
+    }
+
+    public void ExtendValidity(DateTime newExpiryDate)
+    {
+        if (!Status.CanBeEdited())
+            throw new InvalidOperationException("Ce devis ne peut plus être modifié");
+
+        if (newExpiryDate <= IssueDate)
+            throw new ArgumentException("La date d'expiration doit être postérieure à la date d'émission", nameof(newExpiryDate));
+
+        ExpiryDate = newExpiryDate.Date;
+    }
+
+    private void RecalculateTotals()
+    {
+        var currency = Money.DefaultCurrency;
+        
+        SubTotal = _lines.Aggregate(
+            Money.Zero(currency), 
+            (sum, line) => sum.Add(line.SubTotal));
+
+        TotalVat = _lines.Aggregate(
+            Money.Zero(currency), 
+            (sum, line) => sum.Add(line.VatAmount));
+
+        TotalAmount = SubTotal.Add(TotalVat);
+    }
+
+    private void RenumberLines()
+    {
+        for (int i = 0; i < _lines.Count; i++)
+        {
+            _lines[i].SetLineNumber(i + 1);
+        }
+    }
+
+    public Dictionary<VatRate, Money> GetVatBreakdown()
+    {
+        return _lines
+            .GroupBy(l => l.VatRate)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Aggregate(Money.Zero(), (sum, line) => sum.Add(line.VatAmount)));
+    }
+}

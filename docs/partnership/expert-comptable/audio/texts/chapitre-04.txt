@@ -1,0 +1,4 @@
+﻿La trÃ©sorerie est nativement connectÃ©e Ã  la comptabilitÃ©.
+Chaque encaissement client est enregistrÃ© avec son mode de paiement et alimente les Ã©critures de caisse ou de banque.
+Les comptes bancaires sont paramÃ©trables par entrepÃ´t ou par sociÃ©tÃ©.
+Pour le cabinet, cela signifie des rapprochements plus simples et une piste d'audit claire entre facture, paiement et Ã©criture comptable.

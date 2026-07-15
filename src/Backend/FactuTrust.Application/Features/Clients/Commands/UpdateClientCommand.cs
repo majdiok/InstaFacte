@@ -1,0 +1,142 @@
+using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.Clients.Queries;
+using FactuTrust.Domain.Common;
+using FactuTrust.Domain.Entities;
+using FactuTrust.Domain.ValueObjects;
+using AuditActions = FactuTrust.Domain.Entities.AuditActions;
+using FluentValidation;
+using MediatR;
+
+namespace FactuTrust.Application.Features.Clients.Commands;
+
+/// <summary>
+/// Command to update an existing client.
+/// </summary>
+public sealed record UpdateClientCommand(Guid Id, UpdateClientDto Dto) : IRequest<Result<ClientDetailDto>>;
+
+/// <summary>
+/// Validator for UpdateClientCommand.
+/// </summary>
+public sealed class UpdateClientCommandValidator : AbstractValidator<UpdateClientCommand>
+{
+    public UpdateClientCommandValidator()
+    {
+        RuleFor(x => x.Id).NotEqual(Guid.Empty).WithMessage("Identifiant client invalide.");
+        RuleFor(x => x.Dto.Name).NotEmpty().WithMessage("Le nom ou la raison sociale est obligatoire");
+        RuleFor(x => x.Dto.Email).NotEmpty().WithMessage("L'email est obligatoire");
+        RuleFor(x => x.Dto.Street).NotEmpty().WithMessage("L'adresse est obligatoire");
+        RuleFor(x => x.Dto.City).NotEmpty().WithMessage("La ville est obligatoire");
+        RuleFor(x => x.Dto.Governorate).NotEmpty().WithMessage("Le gouvernorat est obligatoire");
+    }
+}
+
+/// <summary>
+/// Handler for UpdateClientCommand.
+/// </summary>
+public sealed class UpdateClientCommandHandler : IRequestHandler<UpdateClientCommand, Result<ClientDetailDto>>
+{
+    private readonly IClientRepository _clientRepository;
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly ICurrentUser _currentUser;
+    private readonly IAuditService _auditService;
+
+    public UpdateClientCommandHandler(
+        IClientRepository clientRepository,
+        IUnitOfWork unitOfWork,
+        ICurrentUser currentUser,
+        IAuditService auditService)
+    {
+        _clientRepository = clientRepository;
+        _unitOfWork = unitOfWork;
+        _currentUser = currentUser;
+        _auditService = auditService;
+    }
+
+    public async Task<Result<ClientDetailDto>> Handle(UpdateClientCommand request, CancellationToken cancellationToken)
+    {
+        var client = await _clientRepository.GetByIdAsync(request.Id, cancellationToken);
+        if (client is null)
+            return Result.Failure<ClientDetailDto>(Error.NotFound("Client", request.Id));
+
+        var dto = request.Dto;
+
+        var emailResult = Email.Create(dto.Email);
+        if (emailResult.IsFailure)
+            return Result.Failure<ClientDetailDto>(emailResult.Error);
+
+        var existingByEmail = await _clientRepository.GetByEmailExcludingIdAsync(emailResult.Value.Value, request.Id, cancellationToken);
+        if (existingByEmail is not null)
+            return Result.Failure<ClientDetailDto>(Error.Conflict("Un client existe déjà avec cet email."));
+
+        var addressResult = Address.Create(dto.Street, dto.City, dto.Governorate, dto.StreetLine2, dto.PostalCode);
+        if (addressResult.IsFailure)
+            return Result.Failure<ClientDetailDto>(addressResult.Error);
+
+        PhoneNumber? phone = null;
+        if (!string.IsNullOrWhiteSpace(dto.Phone))
+        {
+            var phoneResult = PhoneNumber.Create(dto.Phone.Trim());
+            if (phoneResult.IsFailure)
+                return Result.Failure<ClientDetailDto>(phoneResult.Error);
+            phone = phoneResult.Value;
+        }
+
+        client.Update(
+            dto.Name.Trim(),
+            addressResult.Value,
+            emailResult.Value,
+            phone,
+            dto.ContactPerson?.Trim(),
+            dto.Notes?.Trim());
+
+        if (dto.IsActive != client.IsActive)
+        {
+            if (dto.IsActive) client.Reactivate();
+            else client.Deactivate();
+        }
+
+        client.SetAuditInfo(_currentUser.UserId?.ToString() ?? "system", isUpdate: true);
+
+        await _clientRepository.UpdateAsync(client, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _auditService.LogAsync(
+            AuditActions.Client.Updated,
+            "Client",
+            client.Id,
+            newValues: new { client.Name, client.Email.Value },
+            cancellationToken: cancellationToken);
+
+        var detail = new ClientDetailDto
+        {
+            Id = client.Id,
+            Code = GetClientByIdQueryHandler.GetClientCode(client.Id),
+            Name = client.Name,
+            Type = client.Type,
+            TypeDisplay = client.Type.ToDisplayString(),
+            Nif = client.NIF?.Value,
+            Address = new AddressDto
+            {
+                Street = client.Address.Street,
+                StreetLine2 = client.Address.StreetLine2,
+                City = client.Address.City,
+                PostalCode = client.Address.PostalCode,
+                Governorate = client.Address.Governorate,
+                Country = client.Address.Country,
+                FullAddress = client.Address.ToSingleLine()
+            },
+            Email = client.Email.Value,
+            Phone = client.Phone?.Value,
+            ContactPerson = client.ContactPerson,
+            Notes = client.Notes,
+            IsActive = client.IsActive,
+            CreatedAt = client.CreatedAt,
+            UpdatedAt = client.UpdatedAt
+        };
+
+        return Result.Success(detail);
+    }
+}

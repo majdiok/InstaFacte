@@ -1,0 +1,145 @@
+/* Shared layout tokens for accounting consultation screens */
+
+.accounting-filters-card {
+  padding: var(--spacing-5);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(15, 23, 42, 0.08));
+  margin-bottom: var(--spacing-4);
+}
+
+.accounting-filters-grid {
+  display: grid;
+  gap: var(--spacing-4);
+  align-items: end;
+  width: 100%;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 36rem) {
+  .accounting-filters-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 52rem) {
+  .accounting-filters-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.accounting-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  min-width: 0;
+}
+
+.accounting-filter-label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.accounting-filter-input {
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  background: var(--color-background-elevated);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  min-height: 2.5rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.accounting-filter-input:focus {
+  outline: none;
+  border-color: var(--color-primary-500);
+  box-shadow: 0 0 0 3px var(--color-primary-200);
+}
+
+.accounting-filter-input:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.accounting-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+  flex-shrink: 0;
+}
+
+.accounting-kpi-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-4);
+  margin-bottom: var(--spacing-4);
+}
+
+.accounting-kpi-item {
+  flex: 1 1 160px;
+  padding: var(--spacing-4);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-background-elevated);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(15, 23, 42, 0.04));
+}
+
+.accounting-kpi-label {
+  display: block;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--spacing-1);
+}
+
+.accounting-kpi-value {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-primary);
+}
+
+.accounting-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-5);
+  max-width: 100%;
+  padding-bottom: var(--spacing-16);
+}
+
+/* PrimeNG toolbar used on ledger / lettering (import in component with ::ng-deep) */
+.accounting-prime-toolbar.p-toolbar {
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--spacing-4);
+  padding: 0;
+  border: none;
+  background: transparent;
+  width: 100%;
+
+  .p-toolbar-group-start {
+    flex: 1 1 auto;
+    min-width: 0;
+    align-items: flex-end;
+  }
+
+  .p-toolbar-group-end {
+    flex: 1 1 auto;
+    min-width: min(100%, 20rem);
+    justify-content: flex-end;
+    align-items: flex-end;
+  }
+
+  @media (max-width: 991px) {
+    .p-toolbar-group-end {
+      flex-basis: 100%;
+      justify-content: flex-start;
+    }
+  }
+}

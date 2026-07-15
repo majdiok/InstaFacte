@@ -1,0 +1,582 @@
+import { Injectable, signal, computed } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Router } from '@angular/router';
+import { Observable, firstValueFrom, tap, catchError, of } from 'rxjs';
+import { environment } from '@environments/environment';
+import { AppModule } from '@core/models/app-module';
+import { createHttpContextSkipGlobalErrorUi } from '@core/http-context';
+import { clearWarehouseStorage } from './warehouse-storage';
+
+export interface User {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  role: string;
+  roleDisplay: string;
+  tenantId: string;
+  companyName: string;
+  tenantKind?: number | string;
+  accessMode?: 'native' | 'delegated';
+  contextTenantId?: string;
+  contextCompanyName?: string;
+  twoFactorEnabled: boolean;
+  /** AppModule enum values enabled for this user */
+  enabledModuleIds?: number[];
+  effectivePermissions?: string[];
+}
+
+export interface AuthResponse {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: string;
+  user: User;
+  requires2Fa: boolean;
+}
+
+export interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  message: string | null;
+  errors: string[];
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+  rememberMe: boolean;
+}
+
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  confirmPassword: string;
+  firstName: string;
+  lastName: string;
+  companyName: string;
+  nif: string;
+  taxRegime: number;
+  street: string;
+  streetLine2?: string;
+  city: string;
+  postalCode?: string;
+  governorate: string;
+  companyEmail: string;
+  phone: string;
+  website?: string;
+  warehouseName?: string;
+}
+
+export interface RegisterAccountingFirmRequest {
+  email: string;
+  password: string;
+  confirmPassword: string;
+  firstName: string;
+  lastName: string;
+  firmName: string;
+  nif: string;
+  street: string;
+  streetLine2?: string;
+  city: string;
+  postalCode?: string;
+  governorate: string;
+  firmEmail: string;
+  phone: string;
+  website?: string;
+  description?: string;
+  professionalRegistrationNumber?: string;
+  isPublicInDirectory?: boolean;
+}
+
+/** Canonical role names (PascalCase), aligned with backend <c>InstaFact.Domain.Enums.UserRole</c>. */
+const CANONICAL_TENANT_ROLES = [
+  'Administrator',
+  'Accountant',
+  'Client',
+  'SalesRep',
+  'SalesManager',
+  'Warehouse',
+  'Purchaser',
+  'Cashier',
+  'Auditor',
+  'Supervisor',
+  'Developer',
+  'FirmManager',
+  'FirmAccountant'
+] as const;
+
+/**
+ * API JSON uses <c>JsonStringEnumConverter(JsonNamingPolicy.CamelCase)</c> → e.g. <c>administrator</c>.
+ * The SPA compares roles to PascalCase strings; normalize at the boundary.
+ */
+const API_ROLE_STRING_TO_CANONICAL: Record<string, string> = {
+  administrator: 'Administrator',
+  accountant: 'Accountant',
+  client: 'Client',
+  salesRep: 'SalesRep',
+  salesManager: 'SalesManager',
+  warehouse: 'Warehouse',
+  purchaser: 'Purchaser',
+  cashier: 'Cashier',
+  auditor: 'Auditor',
+  supervisor: 'Supervisor',
+  developer: 'Developer',
+  firmManager: 'FirmManager',
+  firmAccountant: 'FirmAccountant'
+};
+
+const ROLE_ENUM_INDEX_TO_CANONICAL: Record<number, string> = {
+  0: 'Administrator',
+  1: 'Accountant',
+  2: 'Client',
+  3: 'SalesRep',
+  4: 'SalesManager',
+  5: 'Warehouse',
+  6: 'Purchaser',
+  7: 'Cashier',
+  8: 'Auditor',
+  9: 'Supervisor',
+  10: 'Developer',
+  11: 'FirmManager',
+  12: 'FirmAccountant'
+};
+
+/**
+ * Maps API / stored <c>role</c> to canonical PascalCase. Unknown values fall back to <c>Accountant</c>
+ * (same default as backend when no tenant role claim is present).
+ */
+export function normalizeTenantRole(raw: unknown): string {
+  if (typeof raw === 'number' && Number.isInteger(raw) && raw in ROLE_ENUM_INDEX_TO_CANONICAL) {
+    return ROLE_ENUM_INDEX_TO_CANONICAL[raw];
+  }
+  if (typeof raw !== 'string') {
+    if (raw !== null && raw !== undefined) {
+      console.warn('[AuthService] Unexpected role type; defaulting to Accountant:', raw);
+    }
+    return 'Accountant';
+  }
+  const s = raw.trim();
+  if (!s) {
+    return 'Accountant';
+  }
+  if ((CANONICAL_TENANT_ROLES as readonly string[]).includes(s)) {
+    return s;
+  }
+  const fromCamel = API_ROLE_STRING_TO_CANONICAL[s];
+  if (fromCamel) {
+    return fromCamel;
+  }
+  const lowerFirst = s.charAt(0).toLowerCase() + s.slice(1);
+  const fromLowerFirst = API_ROLE_STRING_TO_CANONICAL[lowerFirst];
+  if (fromLowerFirst) {
+    return fromLowerFirst;
+  }
+  console.warn('[AuthService] Unknown role value; defaulting to Accountant:', s);
+  return 'Accountant';
+}
+
+export type NormalizedTenantKind = 'company' | 'accountingFirm';
+
+const FIRM_ROLES = new Set(['FirmManager', 'FirmAccountant']);
+
+/**
+ * Normalizes API/stored tenantKind to a canonical discriminant.
+ * Handles numeric enums, PascalCase/camelCase strings, and role fallback for legacy sessions.
+ */
+export function normalizeTenantKind(raw: unknown, role?: unknown): NormalizedTenantKind {
+  if (typeof raw === 'number') {
+    return raw === 1 ? 'accountingFirm' : 'company';
+  }
+  if (typeof raw === 'string') {
+    const s = raw.trim();
+    if (!s) {
+      return FIRM_ROLES.has(normalizeTenantRole(role)) ? 'accountingFirm' : 'company';
+    }
+    const lower = s.toLowerCase();
+    if (lower === 'accountingfirm' || lower === 'accounting_firm') {
+      return 'accountingFirm';
+    }
+    if (lower === 'company') {
+      return 'company';
+    }
+  }
+  if (FIRM_ROLES.has(normalizeTenantRole(role))) {
+    return 'accountingFirm';
+  }
+  return 'company';
+}
+
+function normalizeUserFields(user: User): User {
+  const role = normalizeTenantRole(user.role);
+  const tenantKind = normalizeTenantKind(user.tenantKind, role);
+  return { ...user, role, tenantKind };
+}
+
+/**
+ * When "Se souvenir de moi" is used, tokens live in localStorage (one session shared across
+ * tabs/windows). Otherwise sessionStorage isolates each tab/window.
+ */
+const REMEMBER_ME_FLAG_KEY = 'ft_auth_remember_me';
+
+@Injectable({
+  providedIn: 'root'
+})
+export class AuthService {
+  private readonly API_URL = `${environment.apiUrl}/auth`;
+  private readonly TOKEN_KEY = 'ft_access_token';
+  private readonly REFRESH_TOKEN_KEY = 'ft_refresh_token';
+  private readonly USER_KEY = 'ft_user';
+
+  private userSignal = signal<User | null>(null);
+
+  readonly user = this.userSignal.asReadonly();
+  readonly isAuthenticated = computed(() => !!this.userSignal());
+  readonly isAdmin = computed(() => this.userSignal()?.role === 'Administrator');
+  /** Hub Paramètres plateforme (hors « Mon profil ») : Administrateur ou Superviseur uniquement. */
+  readonly canAccessPlatformSettings = computed(() => {
+    const r = this.userSignal()?.role;
+    return r === 'Administrator' || r === 'Supervisor';
+  });
+  /** Accès au builder Studio (low-code) : permission de conception requise (Développeur, ou Admin/Superviseur). */
+  readonly canAccessStudio = computed(() => this.hasPermission('studio:design_entities'));
+  readonly isAccountingFirm = computed(() => {
+    const user = this.userSignal();
+    return normalizeTenantKind(user?.tenantKind, user?.role) === 'accountingFirm';
+  });
+  readonly isDelegatedMode = computed(() => this.userSignal()?.accessMode === 'delegated');
+  /** Cabinet comptable consulte un dossier client : pas d'écriture trésorerie/paiements côté UI. */
+  readonly isFirmDelegatedReadonly = computed(
+    () => this.isAccountingFirm() && this.isDelegatedMode()
+  );
+  readonly isFirmManager = computed(() => this.userSignal()?.role === 'FirmManager');
+
+  constructor(
+    private http: HttpClient,
+    private router: Router
+  ) {
+    this.migrateLegacyLocalToSessionIfNeeded();
+    this.userSignal.set(this.getStoredUser());
+    this.checkTokenExpiration();
+  }
+
+  login(credentials: LoginRequest): Observable<ApiResponse<AuthResponse>> {
+    return this.http.post<ApiResponse<AuthResponse>>(`${this.API_URL}/login`, credentials)
+      .pipe(
+        tap(response => {
+          if (response.success && response.data && !response.data.requires2Fa) {
+            this.handleAuthResponse(response.data, credentials.rememberMe);
+          }
+        })
+      );
+  }
+
+  register(data: RegisterRequest): Observable<ApiResponse<AuthResponse>> {
+    return this.http.post<ApiResponse<AuthResponse>>(`${this.API_URL}/register`, data)
+      .pipe(
+        tap({
+          next: (response) => {
+            console.log('[AuthService] Réponse reçue:', response);
+            if (response.success && response.data) {
+              this.handleAuthResponse(response.data, false);
+            }
+          },
+          error: (error) => {
+            console.error('[AuthService] Erreur lors de l\'enregistrement:', error);
+          }
+        })
+      );
+  }
+
+  registerFirm(data: RegisterAccountingFirmRequest): Observable<ApiResponse<AuthResponse>> {
+    return this.http.post<ApiResponse<AuthResponse>>(`${this.API_URL}/register-firm`, data).pipe(
+      tap(response => {
+        if (response.success && response.data) {
+          this.handleAuthResponse(response.data, false);
+        }
+      })
+    );
+  }
+
+  applyAuthResponse(response: AuthResponse): void {
+    this.handleAuthResponse(response, this.isRememberMeBrowserScope());
+  }
+
+  logout(): void {
+    this.http.post(`${this.API_URL}/logout`, {}).pipe(
+      catchError(() => of(null))
+    ).subscribe(() => {
+      this.clearAuth();
+      this.router.navigate(['/auth/login']);
+    });
+  }
+
+  refreshToken(): Observable<ApiResponse<AuthResponse>> {
+    const refreshToken = this.getRefreshToken();
+    return this.http.post<ApiResponse<AuthResponse>>(`${this.API_URL}/refresh`, { refreshToken })
+      .pipe(
+        tap(response => {
+          if (response.success && response.data) {
+            this.handleAuthResponse(response.data, this.isRememberMeBrowserScope());
+          }
+        }),
+        catchError(error => {
+          this.clearAuth();
+          throw error;
+        })
+      );
+  }
+
+  /**
+   * Re-fetch the current user with fresh permissions and modules from the backend
+   * without rotating the JWT. Used at app boot to pick up role/grant changes that
+   * occurred while the user's session was idle.
+   */
+  me(): Observable<ApiResponse<User>> {
+    return this.http.get<ApiResponse<User>>(`${this.API_URL}/me`).pipe(
+      tap(response => {
+        if (response.success && response.data) {
+          const user = normalizeUserFields(response.data);
+          this.persistUser(user);
+          this.userSignal.set(user);
+        }
+      })
+    );
+  }
+
+  /**
+   * Called once during APP_INITIALIZER. If a session exists locally, fetch fresh
+   * permissions/modules from the backend and update the user signal. No-ops when
+   * unauthenticated. Network/server failures are swallowed to keep the app bootable
+   * offline; the existing 401 → refreshToken flow handles auth issues.
+   */
+  async bootstrapRefresh(): Promise<void> {
+    if (!this.getAccessToken() || !this.getStoredUser()) {
+      return;
+    }
+    const timeout = new Promise<void>(resolve => setTimeout(resolve, 3000));
+    try {
+      await Promise.race([
+        firstValueFrom(this.me()).then(() => undefined),
+        timeout
+      ]);
+    } catch {
+      // keep stored user — interceptor handles 401, transient errors are non-fatal
+    }
+  }
+
+  getAccessToken(): string | null {
+    if (this.isRememberMeBrowserScope()) {
+      return localStorage.getItem(this.TOKEN_KEY);
+    }
+    return sessionStorage.getItem(this.TOKEN_KEY);
+  }
+
+  getRefreshToken(): string | null {
+    if (this.isRememberMeBrowserScope()) {
+      return localStorage.getItem(this.REFRESH_TOKEN_KEY);
+    }
+    return sessionStorage.getItem(this.REFRESH_TOKEN_KEY);
+  }
+
+  /**
+   * When <c>enabledModuleIds</c> is absent (legacy stored user), treat as full access
+   * (matches backend: no <c>UserModuleGrants</c> rows → all modules in JWT).
+   * When present as an empty array, no module is enabled (explicit deny).
+   */
+  hasModule(module: AppModule): boolean {
+    const ids = this.userSignal()?.enabledModuleIds;
+    if (ids === undefined || ids === null) {
+      return true;
+    }
+    if (ids.length === 0) {
+      return false;
+    }
+    return ids.includes(module);
+  }
+
+  hasAllModules(modules: readonly AppModule[]): boolean {
+    return modules.every(m => this.hasModule(m));
+  }
+
+  /**
+   * When <c>effectivePermissions</c> is missing on the stored user (legacy), allow access.
+   * When present (including empty), require every listed permission.
+   */
+  hasAllPermissions(permissions: readonly string[]): boolean {
+    if (permissions.length === 0) {
+      return true;
+    }
+    const raw = this.userSignal()?.effectivePermissions;
+    if (raw === undefined || raw === null) {
+      return true;
+    }
+    const set = new Set(raw);
+    return permissions.every(p => set.has(p));
+  }
+
+  /** Single permission; same legacy rules as {@link hasAllPermissions}. */
+  hasPermission(permission: string): boolean {
+    return this.hasAllPermissions([permission]);
+  }
+
+  /**
+   * True if at least one permission is present (when effectivePermissions is set).
+   * Legacy: missing effectivePermissions → allow.
+   */
+  hasAnyPermission(permissions: readonly string[]): boolean {
+    if (permissions.length === 0) {
+      return true;
+    }
+    const raw = this.userSignal()?.effectivePermissions;
+    if (raw === undefined || raw === null) {
+      return true;
+    }
+    const set = new Set(raw);
+    return permissions.some(p => set.has(p));
+  }
+
+  private isRememberMeBrowserScope(): boolean {
+    return localStorage.getItem(REMEMBER_ME_FLAG_KEY) === '1';
+  }
+
+  /**
+   * Legacy: tokens were only in localStorage. Move to sessionStorage for this tab so other
+   * windows/tabs no longer share the same JWT. Skip if user chose "remember me" (flag set).
+   */
+  private migrateLegacyLocalToSessionIfNeeded(): void {
+    if (this.isRememberMeBrowserScope()) {
+      return;
+    }
+    if (sessionStorage.getItem(this.TOKEN_KEY)) {
+      return;
+    }
+    const access = localStorage.getItem(this.TOKEN_KEY);
+    const refresh = localStorage.getItem(this.REFRESH_TOKEN_KEY);
+    const user = localStorage.getItem(this.USER_KEY);
+    if (!access && !refresh && !user) {
+      return;
+    }
+    if (access) {
+      sessionStorage.setItem(this.TOKEN_KEY, access);
+    }
+    if (refresh) {
+      sessionStorage.setItem(this.REFRESH_TOKEN_KEY, refresh);
+    }
+    if (user) {
+      sessionStorage.setItem(this.USER_KEY, user);
+    }
+    localStorage.removeItem(this.TOKEN_KEY);
+    localStorage.removeItem(this.REFRESH_TOKEN_KEY);
+    localStorage.removeItem(this.USER_KEY);
+  }
+
+  private handleAuthResponse(response: AuthResponse, persistAcrossBrowserRestarts: boolean): void {
+    const user = normalizeUserFields(response.user);
+    if (persistAcrossBrowserRestarts) {
+      localStorage.setItem(REMEMBER_ME_FLAG_KEY, '1');
+      localStorage.setItem(this.TOKEN_KEY, response.accessToken);
+      localStorage.setItem(this.REFRESH_TOKEN_KEY, response.refreshToken);
+      localStorage.setItem(this.USER_KEY, JSON.stringify(user));
+      this.clearSessionAuthKeys();
+    } else {
+      localStorage.removeItem(REMEMBER_ME_FLAG_KEY);
+      sessionStorage.setItem(this.TOKEN_KEY, response.accessToken);
+      sessionStorage.setItem(this.REFRESH_TOKEN_KEY, response.refreshToken);
+      sessionStorage.setItem(this.USER_KEY, JSON.stringify(user));
+      this.clearLocalAuthKeys();
+    }
+    this.userSignal.set(user);
+
+    if (normalizeTenantKind(user.tenantKind, user.role) === 'accountingFirm') {
+      clearWarehouseStorage();
+    }
+
+    // Préchauffe le modèle IA en arrière-plan dès la connexion (fire-and-forget).
+    // Sur CPU, charger un modèle 7B prend 10–30 s : le faire ici évite que le 1ᵉʳ message
+    // du chat paie ce coût. Si l'endpoint échoue (Ollama down, OpenRouter sans clé), on
+    // ignore silencieusement — le panneau chat réessaiera à la première ouverture.
+    this.warmUpAiSilently();
+  }
+
+  private warmUpAiSilently(): void {
+    if (!this.hasPermission('ai:chat')) {
+      return;
+    }
+    try {
+      this.http
+        .post(`${environment.apiUrl}/ai/warm-up`, {}, {
+          context: createHttpContextSkipGlobalErrorUi()
+        })
+        .pipe(catchError(() => of(null)))
+        .subscribe();
+    } catch {
+      // Échec très improbable (DI non prête) — non bloquant.
+    }
+  }
+
+  /**
+   * Persist a user object to the same storage scope (local vs session) currently
+   * in use. Does not touch tokens. Used by me() to keep ft_user in sync with
+   * backend permission changes while preserving remember-me semantics.
+   */
+  private persistUser(user: User): void {
+    const json = JSON.stringify(user);
+    if (this.isRememberMeBrowserScope()) {
+      localStorage.setItem(this.USER_KEY, json);
+    } else {
+      sessionStorage.setItem(this.USER_KEY, json);
+    }
+  }
+
+  private clearAuth(): void {
+    localStorage.removeItem(REMEMBER_ME_FLAG_KEY);
+    this.clearLocalAuthKeys();
+    this.clearSessionAuthKeys();
+    this.userSignal.set(null);
+    clearWarehouseStorage();
+  }
+
+  private clearLocalAuthKeys(): void {
+    localStorage.removeItem(this.TOKEN_KEY);
+    localStorage.removeItem(this.REFRESH_TOKEN_KEY);
+    localStorage.removeItem(this.USER_KEY);
+  }
+
+  private clearSessionAuthKeys(): void {
+    sessionStorage.removeItem(this.TOKEN_KEY);
+    sessionStorage.removeItem(this.REFRESH_TOKEN_KEY);
+    sessionStorage.removeItem(this.USER_KEY);
+  }
+
+  private getStoredUser(): User | null {
+    const userJson = this.isRememberMeBrowserScope()
+      ? localStorage.getItem(this.USER_KEY)
+      : sessionStorage.getItem(this.USER_KEY);
+    if (userJson) {
+      try {
+        const parsed = JSON.parse(userJson) as User;
+        return normalizeUserFields(parsed);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  private checkTokenExpiration(): void {
+    const token = this.getAccessToken();
+    if (!token) return;
+
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const expiry = payload.exp * 1000;
+
+      if (Date.now() >= expiry) {
+        this.clearAuth();
+      }
+    } catch {
+      this.clearAuth();
+    }
+  }
+}

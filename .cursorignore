@@ -1,0 +1,10 @@
+﻿# Reduce Cursor indexing / agent context noise
+**/node_modules/**
+**/dist/**
+**/bin/**
+**/obj/**
+**/.angular/**
+**/coverage/**
+**/TestResults/**
+**/*.min.js
+**/package-lock.json

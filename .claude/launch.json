@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "FactuTrust API (.NET 8)",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/Backend/FactuTrust.API/FactuTrust.API.csproj"],
+      "port": 7001
+    },
+    {
+      "name": "FactuTrust Web (Angular)",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd /d C:\\Solution\\FactuTrust - Copy\\src\\Frontend\\factutrust-web && npm start"],
+      "port": 4200
+    },
+    {
+      "name": "FactuTrust Backoffice (Angular)",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd /d C:\\Solution\\FactuTrust - Copy\\src\\Frontend\\factutrust-backoffice && npm start"],
+      "port": 4300
+    },
+    {
+      "name": "FactuTrust Web Preview",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd /d C:\\Solution\\FactuTrust - Copy\\src\\Frontend\\factutrust-web && npm start -- --port 4201"],
+      "port": 4201
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "name": "get_action_details",
+  "description": "Get detailed information about a specific action, including required and optional parameters. Must provide category name and action name. ** Important **: It should only be called after you get the server categories from previous tool calls.",
+  "inputSchema": {
+    "type": "object",
+    "required": [
+      "category_name",
+      "action_name"
+    ],
+    "properties": {
+      "category_name": {
+        "type": "string",
+        "description": "The name of the category"
+      },
+      "action_name": {
+        "type": "string",
+        "description": "The name of the action/operation within the category"
+      }
+    }
+  }
+}

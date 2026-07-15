@@ -1,0 +1,466 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
+using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.DTOs;
+using FactuTrust.Domain.Auth;
+using FactuTrust.Domain.Entities;
+using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.ValueObjects;
+using FactuTrust.Infrastructure.Persistence;
+using FactuTrust.Infrastructure.Services;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+
+namespace FactuTrust.API.Controllers;
+
+[ApiController]
+[Route("api/[controller]")]
+public class AuthController : ControllerBase
+{
+    private readonly UserManager<ApplicationUser> _userManager;
+    private readonly SignInManager<ApplicationUser> _signInManager;
+    private readonly MasterDbContext _masterContext;
+    private readonly ITenantService _tenantService;
+    private readonly ITenantAuthTokenService _tokenService;
+    private readonly IConfiguration _configuration;
+    private readonly IEffectivePermissionService _effectivePermissionService;
+    private readonly IAccountingFirmsFeature _accountingFirmsFeature;
+    private readonly ILogger<AuthController> _logger;
+
+    public AuthController(
+        UserManager<ApplicationUser> userManager,
+        SignInManager<ApplicationUser> signInManager,
+        MasterDbContext masterContext,
+        ITenantService tenantService,
+        ITenantAuthTokenService tokenService,
+        IConfiguration configuration,
+        IEffectivePermissionService effectivePermissionService,
+        IAccountingFirmsFeature accountingFirmsFeature,
+        ILogger<AuthController> logger)
+    {
+        _userManager = userManager;
+        _signInManager = signInManager;
+        _masterContext = masterContext;
+        _tenantService = tenantService;
+        _tokenService = tokenService;
+        _configuration = configuration;
+        _effectivePermissionService = effectivePermissionService;
+        _accountingFirmsFeature = accountingFirmsFeature;
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// Register a new user and create their company.
+    /// </summary>
+    [HttpPost("register")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponse<AuthResponseDto>), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Register([FromBody] RegisterDto dto, CancellationToken cancellationToken)
+    {
+        // Validate NIF
+        var nifResult = NIF.Create(dto.Nif);
+        if (nifResult.IsFailure)
+            return BadRequest(ApiResponse<AuthResponseDto>.Fail(nifResult.Error.Description));
+
+        // Create address
+        var addressResult = Address.Create(dto.Street, dto.City, dto.Governorate, dto.StreetLine2, dto.PostalCode);
+        if (addressResult.IsFailure)
+            return BadRequest(ApiResponse<AuthResponseDto>.Fail(addressResult.Error.Description));
+
+        // Create email
+        var emailResult = Email.Create(dto.CompanyEmail);
+        if (emailResult.IsFailure)
+            return BadRequest(ApiResponse<AuthResponseDto>.Fail(emailResult.Error.Description));
+
+        // Create phone
+        var phoneResult = PhoneNumber.Create(dto.Phone);
+        if (phoneResult.IsFailure)
+            return BadRequest(ApiResponse<AuthResponseDto>.Fail(phoneResult.Error.Description));
+
+        await using var transaction = await _masterContext.Database.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            // Create tenant
+            var tenantResult = Tenant.Create(
+                dto.CompanyName,
+                nifResult.Value,
+                addressResult.Value,
+                emailResult.Value,
+                phoneResult.Value,
+                dto.TaxRegime,
+                dto.Website);
+
+            if (tenantResult.IsFailure)
+                return BadRequest(ApiResponse<AuthResponseDto>.Fail(tenantResult.Error.Description));
+
+            var tenant = tenantResult.Value;
+            if (tenant.Id == Guid.Empty)
+            {
+                return BadRequest(ApiResponse<AuthResponseDto>.Fail("Erreur interne : identifiant entreprise invalide."));
+            }
+
+            _masterContext.Tenants.Add(tenant);
+            await _masterContext.SaveChangesAsync(cancellationToken);
+
+            // Create tenant database with default warehouse
+            await _tenantService.CreateTenantDatabaseAsync(tenant.Id, tenant.DatabaseName, dto.WarehouseName, cancellationToken);
+
+            // Create subscription (Free tier)
+            var subscription = Subscription.CreateFree(tenant.Id);
+            _masterContext.Subscriptions.Add(subscription);
+
+            // Create user
+            var user = new ApplicationUser
+            {
+                UserName = dto.Email,
+                Email = dto.Email,
+                FirstName = dto.FirstName,
+                LastName = dto.LastName,
+                TenantId = tenant.Id,
+                EmailConfirmed = true // Set to false and require confirmation in production
+            };
+
+            var createResult = await _userManager.CreateAsync(user, dto.Password);
+            if (!createResult.Succeeded)
+            {
+                var errors = IdentityErrorTranslator.TranslateToFrench(createResult.Errors);
+                return BadRequest(ApiResponse<AuthResponseDto>.Fail(errors));
+            }
+
+            // Assign Administrator role
+            await _userManager.AddToRoleAsync(user, UserRole.Administrator.ToString());
+
+            await _masterContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            // Generate tokens
+            var tokens = await _tokenService.GenerateTokensAsync(user.Id, tenant.Id, cancellationToken: cancellationToken);
+
+            _logger.LogInformation("User {Email} registered with tenant {TenantId}", dto.Email, tenant.Id);
+
+            return CreatedAtAction(nameof(Login), ApiResponse<AuthResponseDto>.Ok(tokens, "Inscription réussie"));
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            var correlationId = Guid.NewGuid().ToString("N");
+            _logger.LogError(
+                ex,
+                "Registration failed for {Email}. CorrelationId: {CorrelationId}. Detail: {Detail}",
+                dto.Email,
+                correlationId,
+                ex.InnerException?.Message ?? ex.Message);
+
+            const string userMessage =
+                "L'inscription n'a pas pu être finalisée. Réessayez plus tard ou contactez le support.";
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                ApiResponse<AuthResponseDto>.Fail(userMessage, $"REG-{correlationId}"));
+        }
+    }
+
+    /// <summary>
+    /// Authenticate user and return JWT tokens.
+    /// </summary>
+    [HttpPost("login")]
+    [AllowAnonymous]
+    [EnableRateLimiting("login")]
+    [ProducesResponseType(typeof(ApiResponse<AuthResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> Login([FromBody] LoginDto dto, CancellationToken cancellationToken)
+    {
+        var user = await _userManager.FindByEmailAsync(dto.Email);
+        if (user is null || !user.IsActive)
+        {
+            _logger.LogWarning("Login failed for {Email}: user not found or inactive", dto.Email);
+            return Unauthorized(ApiResponse<AuthResponseDto>.Fail("Email ou mot de passe incorrect"));
+        }
+
+        var result = await _signInManager.CheckPasswordSignInAsync(user, dto.Password, lockoutOnFailure: true);
+
+        if (result.IsLockedOut)
+        {
+            _logger.LogWarning("User {Email} is locked out", dto.Email);
+            return Unauthorized(ApiResponse<AuthResponseDto>.Fail("Compte verrouillé. Réessayez dans 15 minutes."));
+        }
+
+        if (!result.Succeeded)
+        {
+            _logger.LogWarning("Login failed for {Email}: invalid password", dto.Email);
+            return Unauthorized(ApiResponse<AuthResponseDto>.Fail("Email ou mot de passe incorrect"));
+        }
+
+        // Check 2FA
+        if (result.RequiresTwoFactor)
+        {
+            return Ok(ApiResponse<AuthResponseDto>.Ok(new AuthResponseDto
+            {
+                Requires2Fa = true,
+                User = await BuildUserProfileDtoAsync(user, null, cancellationToken)
+            }));
+        }
+
+        if (user.TenantId == Guid.Empty)
+        {
+            _logger.LogWarning("User {Email} has no company (TenantId empty)", user.Email);
+            return Unauthorized(ApiResponse<AuthResponseDto>.Fail("Aucune entreprise associée à ce compte. Veuillez contacter l'administrateur."));
+        }
+
+        var tenant = await _masterContext.Tenants.FindAsync(new object[] { user.TenantId }, cancellationToken);
+        if (tenant is null || !tenant.IsActive)
+        {
+            return Unauthorized(ApiResponse<AuthResponseDto>.Fail("Entreprise inactive ou introuvable"));
+        }
+
+        // Update last login
+        user.LastLoginAt = DateTime.UtcNow;
+        await _userManager.UpdateAsync(user);
+
+        var tokens = await _tokenService.GenerateTokensAsync(user.Id, tenant.Id, cancellationToken: cancellationToken);
+
+        _logger.LogInformation("User {Email} logged in successfully", dto.Email);
+
+        return Ok(ApiResponse<AuthResponseDto>.Ok(tokens, "Connexion réussie"));
+    }
+
+    /// <summary>
+    /// Refresh access token using refresh token.
+    /// </summary>
+    [HttpPost("refresh")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponse<AuthResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenDto dto, CancellationToken cancellationToken)
+    {
+        var user = await _masterContext.Users
+            .FirstOrDefaultAsync(u => u.RefreshToken == dto.RefreshToken, cancellationToken);
+
+        if (user is null || user.RefreshTokenExpiryTime <= DateTime.UtcNow)
+        {
+            return Unauthorized(ApiResponse<AuthResponseDto>.Fail("Token de rafraîchissement invalide ou expiré"));
+        }
+
+        if (user.TenantId == Guid.Empty)
+        {
+            return Unauthorized(ApiResponse<AuthResponseDto>.Fail("Aucune entreprise associée à ce compte. Veuillez contacter l'administrateur."));
+        }
+
+        var tenant = await _masterContext.Tenants.FindAsync(new object[] { user.TenantId }, cancellationToken);
+        if (tenant is null)
+        {
+            return Unauthorized(ApiResponse<AuthResponseDto>.Fail("Entreprise introuvable"));
+        }
+
+        var tokens = await _tokenService.GenerateTokensAsync(user.Id, tenant.Id, cancellationToken: cancellationToken);
+
+        return Ok(ApiResponse<AuthResponseDto>.Ok(tokens));
+    }
+
+    /// <summary>
+    /// Logout and invalidate refresh token.
+    /// </summary>
+    [HttpPost("logout")]
+    [Authorize]
+    public async Task<IActionResult> Logout()
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (userId is not null && Guid.TryParse(userId, out var id))
+        {
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user is not null)
+            {
+                user.RefreshToken = null;
+                user.RefreshTokenExpiryTime = null;
+                await _userManager.UpdateAsync(user);
+            }
+        }
+
+        return Ok(ApiResponse<object>.Ok(null!, "Déconnexion réussie"));
+    }
+
+    /// <summary>
+    /// Returns the current authenticated user with fresh permissions and modules
+    /// computed from the database, without rotating the JWT or refresh token.
+    /// Used by the front-end at app boot to re-sync the locally stored user with
+    /// backend permission/module changes (role updates, grant changes) without
+    /// forcing a logout.
+    /// </summary>
+    [HttpGet("me")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<UserDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> Me(CancellationToken cancellationToken)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(ApiResponse<UserDto>.Fail("Identité utilisateur invalide"));
+        }
+
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user is null)
+        {
+            return Unauthorized(ApiResponse<UserDto>.Fail("Utilisateur introuvable"));
+        }
+
+        Tenant? tenant = null;
+        if (user.TenantId != Guid.Empty)
+        {
+            tenant = await _masterContext.Tenants.FindAsync(new object[] { user.TenantId }, cancellationToken);
+        }
+
+        var dto = await BuildUserProfileDtoAsync(user, tenant, cancellationToken);
+        return Ok(ApiResponse<UserDto>.Ok(dto));
+    }
+
+    /// <summary>
+    /// Register a new accounting firm and its manager user.
+    /// </summary>
+    [HttpPost("register-firm")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponse<AuthResponseDto>), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> RegisterFirm([FromBody] RegisterAccountingFirmDto dto, CancellationToken cancellationToken)
+    {
+        if (!_accountingFirmsFeature.IsEnabled)
+            return NotFound();
+
+        if (dto.Password != dto.ConfirmPassword)
+            return BadRequest(ApiResponse<AuthResponseDto>.Fail("Les mots de passe ne correspondent pas"));
+
+        var nifResult = NIF.Create(dto.Nif);
+        if (nifResult.IsFailure)
+            return BadRequest(ApiResponse<AuthResponseDto>.Fail(nifResult.Error.Description));
+
+        var addressResult = Address.Create(dto.Street, dto.City, dto.Governorate, dto.StreetLine2, dto.PostalCode);
+        if (addressResult.IsFailure)
+            return BadRequest(ApiResponse<AuthResponseDto>.Fail(addressResult.Error.Description));
+
+        var emailResult = Email.Create(dto.FirmEmail);
+        if (emailResult.IsFailure)
+            return BadRequest(ApiResponse<AuthResponseDto>.Fail(emailResult.Error.Description));
+
+        var phoneResult = PhoneNumber.Create(dto.Phone);
+        if (phoneResult.IsFailure)
+            return BadRequest(ApiResponse<AuthResponseDto>.Fail(phoneResult.Error.Description));
+
+        await using var transaction = await _masterContext.Database.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            var tenantResult = Tenant.CreateAccountingFirm(
+                dto.FirmName,
+                nifResult.Value,
+                addressResult.Value,
+                emailResult.Value,
+                phoneResult.Value,
+                dto.Website);
+
+            if (tenantResult.IsFailure)
+                return BadRequest(ApiResponse<AuthResponseDto>.Fail(tenantResult.Error.Description));
+
+            var tenant = tenantResult.Value;
+            _masterContext.Tenants.Add(tenant);
+            await _masterContext.SaveChangesAsync(cancellationToken);
+
+            await _tenantService.CreateAccountingFirmDatabaseAsync(tenant.Id, tenant.DatabaseName, cancellationToken);
+
+            var subscription = Subscription.CreateFree(tenant.Id);
+            _masterContext.Subscriptions.Add(subscription);
+
+            var profileResult = AccountingFirmProfile.Create(
+                tenant.Id,
+                dto.FirmName,
+                dto.City,
+                dto.Governorate,
+                emailResult.Value,
+                phoneResult.Value,
+                dto.Description,
+                dto.ProfessionalRegistrationNumber,
+                dto.IsPublicInDirectory);
+
+            if (profileResult.IsFailure)
+                return BadRequest(ApiResponse<AuthResponseDto>.Fail(profileResult.Error.Description));
+
+            _masterContext.AccountingFirmProfiles.Add(profileResult.Value);
+
+            var user = new ApplicationUser
+            {
+                UserName = dto.Email,
+                Email = dto.Email,
+                FirstName = dto.FirstName,
+                LastName = dto.LastName,
+                TenantId = tenant.Id,
+                EmailConfirmed = true
+            };
+
+            var createResult = await _userManager.CreateAsync(user, dto.Password);
+            if (!createResult.Succeeded)
+            {
+                var errors = IdentityErrorTranslator.TranslateToFrench(createResult.Errors);
+                return BadRequest(ApiResponse<AuthResponseDto>.Fail(errors));
+            }
+
+            await _userManager.AddToRoleAsync(user, UserRole.FirmManager.ToString());
+
+            await _masterContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            var tokens = await _tokenService.GenerateTokensAsync(user.Id, tenant.Id, cancellationToken: cancellationToken);
+
+            _logger.LogInformation("Accounting firm {FirmName} registered by {Email}", dto.FirmName, dto.Email);
+
+            return CreatedAtAction(nameof(Login), ApiResponse<AuthResponseDto>.Ok(tokens, "Inscription cabinet réussie"));
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            var correlationId = Guid.NewGuid().ToString("N");
+            _logger.LogError(ex, "Firm registration failed for {Email}. CorrelationId: {CorrelationId}", dto.Email, correlationId);
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                ApiResponse<AuthResponseDto>.Fail("L'inscription du cabinet n'a pas pu être finalisée.", $"FIRM-{correlationId}"));
+        }
+    }
+
+    private async Task<UserDto> BuildUserProfileDtoAsync(ApplicationUser user, Tenant? tenant, CancellationToken cancellationToken)
+    {
+        var roles = await _userManager.GetRolesAsync(user);
+        var snapshot = await _effectivePermissionService.GetUserAccessSnapshotAsync(user.Id, cancellationToken);
+        return CreateUserDto(user, tenant, snapshot, roles);
+    }
+
+    private static UserDto CreateUserDto(ApplicationUser user, Tenant? tenant, UserAccessSnapshot snapshot, IList<string> roles)
+    {
+        var roleName = roles.FirstOrDefault(r => !string.Equals(r, PlatformRoles.PlatformAdmin, StringComparison.Ordinal))
+            ?? UserRole.Accountant.ToString();
+        var roleEnum = Enum.TryParse<UserRole>(roleName, out var r) ? r : UserRole.Accountant;
+        return new UserDto
+        {
+            Id = user.Id,
+            Email = user.Email!,
+            FirstName = user.FirstName,
+            LastName = user.LastName,
+            Role = roleEnum,
+            RoleDisplay = roleEnum.ToDisplayString(),
+            TenantId = user.TenantId,
+            CompanyName = tenant?.CompanyName ?? "",
+            TenantKind = tenant?.Kind ?? TenantKind.Company,
+            AccessMode = "native",
+            TwoFactorEnabled = user.TwoFactorEnabled,
+            EnabledModuleIds = tenant?.Kind == TenantKind.AccountingFirm
+                ? new List<int> { (int)AppModule.Administration }
+                : snapshot.EnabledModules.Select(m => (int)m).ToList(),
+            EffectivePermissions = snapshot.EffectivePermissions.ToList()
+        };
+    }
+
+}

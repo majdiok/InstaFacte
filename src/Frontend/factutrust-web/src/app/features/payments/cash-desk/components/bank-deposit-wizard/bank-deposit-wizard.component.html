@@ -1,0 +1,234 @@
+<p-dialog
+  header="Remise en banque"
+  [visible]="visible"
+  (visibleChange)="handleVisibleChange($event)"
+  [modal]="true"
+  [style]="{ width: 'min(720px, 96vw)' }"
+  [draggable]="false"
+  [closable]="true"
+  [contentStyle]="{ padding: 0 }">
+
+  <div class="wizard-body">
+    <p-steps [model]="steps" [readonly]="true" [activeIndex]="currentStep" styleClass="bank-deposit-steps"></p-steps>
+
+    @if (stepError()) {
+      <div class="wizard-alert" role="alert">{{ stepError() }}</div>
+    }
+
+    <!-- Step 0 -->
+    @if (currentStep === 0) {
+      <div class="step-panel">
+        <h3 class="step-title">Type de dépôt <span class="req">*</span></h3>
+        <div class="type-cards" role="list">
+          <button
+            type="button"
+            class="type-card"
+            [class.selected]="depositType === BankDepositType.Draft"
+            [disabled]="serverBalancesLoading() || getBalanceMethod(1) <= 0"
+            (click)="selectDepositType(BankDepositType.Draft)">
+            <i class="pi pi-briefcase" aria-hidden="true"></i>
+            <span class="type-label">Traites</span>
+            <span class="type-amount">{{ formatCurrency(getBalanceMethod(1)) }} TND</span>
+          </button>
+          <button
+            type="button"
+            class="type-card"
+            [class.selected]="depositType === BankDepositType.Check"
+            [disabled]="serverBalancesLoading() || getBalanceMethod(2) <= 0"
+            (click)="selectDepositType(BankDepositType.Check)">
+            <i class="pi pi-file" aria-hidden="true"></i>
+            <span class="type-label">Chèques</span>
+            <span class="type-amount">{{ formatCurrency(getBalanceMethod(2)) }} TND</span>
+          </button>
+          <button
+            type="button"
+            class="type-card"
+            [class.selected]="depositType === BankDepositType.Cash"
+            [disabled]="serverBalancesLoading() || getBalanceMethod(0) <= 0"
+            (click)="selectDepositType(BankDepositType.Cash)">
+            <i class="pi pi-money-bill" aria-hidden="true"></i>
+            <span class="type-label">Espèce</span>
+            <span class="type-amount">{{ formatCurrency(getBalanceMethod(0)) }} TND</span>
+          </button>
+        </div>
+      </div>
+    }
+
+    <!-- Step 1 -->
+    @if (currentStep === 1) {
+      <div class="step-panel">
+        <div class="field">
+          <label for="slipRef">Numéro de la remise en banque <span class="req">*</span></label>
+          <input pInputText id="slipRef" [(ngModel)]="depositSlipReference" class="w-full" maxlength="100" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="depDate">Date de remise</label>
+          <p-calendar
+            inputId="depDate"
+            [(ngModel)]="depositDate"
+            (ngModelChange)="onDepositDateChange()"
+            [showIcon]="true"
+            dateFormat="dd/mm/yy"
+            [maxDate]="maxDate"
+            appendTo="body"
+            styleClass="w-full">
+          </p-calendar>
+        </div>
+        <div class="field">
+          <span class="field-label">Compte destinataire <span class="req">*</span></span>
+          <div class="account-row">
+            <div class="account-pick">
+              @for (a of bankAccounts; track a.id) {
+                <button
+                  type="button"
+                  class="account-card"
+                  [class.selected]="bankAccountId === a.id"
+                  (click)="bankAccountId = a.id">
+                  <span class="bank-code">{{ a.bankCode }}</span>
+                  <span class="bank-line">{{ a.designation || a.bankName }}</span>
+                  @if (a.agencyName) {
+                    <span class="bank-agency">{{ a.agencyName }}</span>
+                  }
+                  <span class="mono rib">{{ a.rib }}</span>
+                </button>
+              }
+            </div>
+            @if (!auth.isFirmDelegatedReadonly()) {
+              <button type="button" class="add-bank-tile" (click)="openAddBank()">
+                <i class="pi pi-plus" aria-hidden="true"></i>
+                <span>Ajouter une nouvelle banque</span>
+              </button>
+            }
+          </div>
+        </div>
+        @if (previewNumber) {
+          <p class="hint mono">Prochain n° système : {{ previewNumber }}</p>
+        }
+      </div>
+    }
+
+    <!-- Step 2 -->
+    @if (currentStep === 2) {
+      <div class="step-panel">
+        <div class="field">
+          <label for="depAmount">Solde déposé <span class="req">*</span></label>
+          <div class="amount-available">
+            <span class="avail-label">Solde disponible (à la date de remise)</span>
+            <span class="avail-value">{{ formatCurrency(availableForSelectedType()) }} <sup>TND</sup></span>
+          </div>
+          <p class="field-hint">Basé sur les opérations de caisse enregistrées jusqu’à cette date, par moyen de paiement.</p>
+          <p-inputNumber
+            inputId="depAmount"
+            [(ngModel)]="amount"
+            [min]="0.001"
+            [max]="availableForSelectedType()"
+            [maxFractionDigits]="3"
+            [minFractionDigits]="3"
+            mode="decimal"
+            placeholder="0,000"
+            styleClass="w-full">
+          </p-inputNumber>
+        </div>
+        @if (depositType !== BankDepositType.Cash) {
+          <div class="field">
+            <span class="field-label">Quantité (bordereaux)</span>
+            <div class="qty-row">
+              <button type="button" class="step-btn" (click)="decQty()">−</button>
+              <span class="qty-val">{{ quantity }}</span>
+              <button type="button" class="step-btn" (click)="incQty()">+</button>
+            </div>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- Step 3 -->
+    @if (currentStep === 3) {
+      <div class="step-panel validation-grid">
+        <div class="v-col">
+          <h4 class="v-title">Coordonnées bancaires</h4>
+          @if (selectedBankAccount(); as acc) {
+            <dl class="v-dl">
+              <dt>Nom du compte</dt>
+              <dd>{{ acc.designation || acc.bankName }}</dd>
+              <dt>Nom de la banque</dt>
+              <dd>{{ acc.bankName }}</dd>
+              <dt>Code bancaire</dt>
+              <dd>{{ acc.bankCode }}</dd>
+              <dt>IBAN</dt>
+              <dd class="mono">{{ formatIban(acc.iban) }}</dd>
+            </dl>
+          }
+        </div>
+        <div class="v-col">
+          <h4 class="v-title">Détails du dépôt</h4>
+          <dl class="v-dl">
+            <dt>Type</dt>
+            <dd>
+              @switch (depositType) {
+                @case (BankDepositType.Cash) { En espèces }
+                @case (BankDepositType.Check) { Chèques }
+                @case (BankDepositType.Draft) { Traites }
+              }
+            </dd>
+            <dt>Numéro de la remise</dt>
+            <dd>{{ depositSlipReference }}</dd>
+            <dt>Montant</dt>
+            <dd class="amount-highlight">{{ formatCurrency(amount) }} <sup>TND</sup></dd>
+            <dt>Date de remise en banque</dt>
+            <dd>{{ depositDate | date: 'dd MMMM yyyy' }}</dd>
+            @if (depositType !== BankDepositType.Cash) {
+              <dt>Quantité</dt>
+              <dd>{{ quantity }}</dd>
+            }
+          </dl>
+        </div>
+        <div class="field full">
+          <label for="notes">Note</label>
+          <textarea
+            id="notes"
+            pInputTextarea
+            [(ngModel)]="notes"
+            rows="3"
+            class="w-full"
+            maxlength="500">
+          </textarea>
+        </div>
+      </div>
+    }
+  </div>
+
+  <ng-template pTemplate="footer">
+    <div class="wizard-footer">
+      <app-button variant="outline" (click)="currentStep === 0 ? onHide() : prev()" [attr.aria-label]="currentStep === 0 ? 'Fermer' : 'Précédent'">
+        {{ currentStep === 0 ? 'Annuler' : 'Précédent' }}
+      </app-button>
+      @if (currentStep < 3) {
+        <app-button
+          variant="primary"
+          icon="pi pi-arrow-right"
+          iconPos="right"
+          [disabled]="(currentStep === 0 || currentStep === 2) && serverBalancesLoading()"
+          (click)="next()">
+          Continuer
+        </app-button>
+      } @else {
+        <app-button
+          variant="primary"
+          icon="pi pi-check"
+          iconPos="right"
+          [disabled]="submitting()"
+          (click)="submit()">
+          {{ submitting() ? 'Validation...' : 'Valider' }}
+        </app-button>
+      }
+    </div>
+  </ng-template>
+</p-dialog>
+
+<app-add-bank-account-dialog
+  [visible]="addBankDialogVisible"
+  (visibleChange)="addBankDialogVisible = $event"
+  [editingAccount]="null"
+  (saved)="onBankAccountCreated()">
+</app-add-bank-account-dialog>

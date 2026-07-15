@@ -1,0 +1,33 @@
+{
+  "screenId": "invoice-list",
+  "description": "Golden fixture for invoice list screen analysis — PowerPoint export regression",
+  "minQualityScore": 85,
+  "requiredSections": [
+    "Synthèse exécutive",
+    "Indicateurs clés",
+    "Analyse détaillée",
+    "Anomalies et risques",
+    "Actions recommandées"
+  ],
+  "assistantMessageFixture": "## Synthèse exécutive\n\nL'analyse des factures révèle une situation de créances clients significative, avec un montant total restant à payer estimé à **90 151.910 TND**. Le point de vigilance majeur concerne les arriérés de paiement, atteignant **85 472.250 TND**, principalement concentrés chez le client **ste bouzgarou**. Il est crucial de traiter immédiatement les factures en statut 'Brouillon' et en retard, car elles représentent le risque financier le plus élevé pour Ma Société SARL.\n\n## Indicateurs clés\n\n| Indicateur | Montant (TND) | Détails |\n| :--- | :--- | :--- |\n| Total Créances Clients | 90 151.910 | Somme des montants restant à payer. |\n| Créances en Retard (Overdue) | 85 472.250 | Montant des factures dont la date d'échéance est dépassée. |\n| Client le plus exposé | 82 646.900 | Concentration chez ste bouzgarou (incluant l'arriéré). |\n| Nombre de factures critiques | 2 | Factures en statut \"Brouillon\" et en retard. |\n\n## Analyse détaillée\n\n1. **Gestion des créances et arriérés** : Le montant total des créances est élevé, avec une proportion significative de fonds bloqués ou en retard.\n   - **FAC-2026-000095 (ste bouzgarou)** : 82 386.000 TND, statut \"Brouillon\", en retard depuis le 03/03/2026.\n   - **FAC-2026-000093 (ste lamina)** : 3 086.250 TND, statut \"Validée\", en retard depuis le 03/05/2026.\n\n2. **Concentration client** : Le client **ste bouzgarou** est le principal contributeur à la dette.\n\n## Anomalies et risques\n\n- **Critique** : FAC-2026-000095 en brouillon avec montant élevé et retard prolongé.\n- **Attention** : Concentration > 90 % chez un seul client.\n- **OK** : Une facture validée en retard reste récupérable via relance.\n\n## Actions recommandées\n\n1. Valider ou annuler FAC-2026-000095 immédiatement.\n2. Lancer une relance prioritaire auprès de ste bouzgarou.\n3. Mettre en place un suivi hebdomadaire des créances > 30 jours.\n\n## Points à vérifier / limites des données\n\n- Pagination : seule la page courante du snapshot est analysée.\n- Statuts \"Brouillon\" peuvent sous-estimer les créances validées.",
+  "payloadFixture": {
+    "schemaVersion": "2",
+    "screenId": "invoice-list",
+    "payload": {
+      "schemaVersion": "2",
+      "screenId": "invoice-list",
+      "summary": {
+        "totalOutstanding": 90151.91,
+        "totalOverdue": 85472.25,
+        "criticalInvoiceCount": 2,
+        "topClientExposure": 82646.9,
+        "topClientName": "ste bouzgarou"
+      },
+      "dataQuality": {
+        "hasData": true,
+        "isPartial": true,
+        "warnings": ["Seule la page courante est incluse dans l'échantillon"]
+      }
+    }
+  }
+}

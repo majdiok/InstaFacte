@@ -1,0 +1,33 @@
+export const environment = {
+  production: true,
+  apiUrl: '/api',
+  globalSearchEnabled: true,
+  appName: 'InstaFact',
+  version: '1.0.0',
+  aiAssistantProgressTimelineEnabled: true,
+  aiAssistantWarmUpEnabled: true,
+  aiAssistantSmartJsonFallbackEnabled: true,
+  aiAssistantContentResyncEnabled: true,
+  storefrontEnabled: true,
+  storefrontGltfFacades: true,
+  storefrontGltfFacadesVersion: '6',
+  storefrontGltfDraco: false,
+  storefrontGltfMeshopt: false,
+  storefrontGltfDebugLog: false,
+  storefrontPbrEnvironment: true,
+  storefrontPropsEnabled: true,
+  storefrontPbrTexturesEnabled: true,
+  storefrontStreetLampsEnabled: true,
+  storefrontPostFxEnabled: false,
+  storefrontMicroAnimationsEnabled: true,
+  storefrontCinematicIntro: true,
+  storefrontProceduralRichEnabled: true,
+  storefrontDynamicFramingEnabled: true,
+  accountingFirmsEnabled: true,
+  /** Canal WhatsApp (liaison assistant IA + rappels fiscaux). OFF tant que la passerelle n'est pas déployée. */
+  channelsEnabled: false,
+  featureFlags: {
+    wizardSimplifiedFlow: true,
+    pdfPreview: false
+  }
+};

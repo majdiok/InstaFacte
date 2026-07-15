@@ -1,0 +1,625 @@
+using System.Text;
+using FactuTrust.API.Authorization;
+using FactuTrust.API.Middleware;
+using FactuTrust.API.Services.Background;
+using FactuTrust.API.Services.Channels;
+using FactuTrust.Application;
+using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Domain.Constants;
+using FactuTrust.Infrastructure;
+using FactuTrust.Infrastructure.Persistence;
+using FactuTrust.Infrastructure.Scripts;
+using FactuTrust.Infrastructure.Services.Background;
+using Hangfire;
+using Hangfire.SqlServer;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.Hosting;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
+using Serilog;
+using System.Text.Json;
+using System.Threading.RateLimiting;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Serilog configuration (Lot B5 — enrichers + Console + File via appsettings.json,
+// Seq optionnel piloté par section "Seq:Enabled" pour observabilité prod).
+var serilogConfig = new LoggerConfiguration()
+    .ReadFrom.Configuration(builder.Configuration);
+
+if (builder.Configuration.GetValue<bool>("Seq:Enabled"))
+{
+    var seqUrl = builder.Configuration["Seq:ServerUrl"] ?? "http://localhost:5341";
+    var seqApiKey = builder.Configuration["Seq:ApiKey"];
+    serilogConfig.WriteTo.Seq(seqUrl, apiKey: string.IsNullOrEmpty(seqApiKey) ? null : seqApiKey);
+}
+
+Log.Logger = serilogConfig.CreateLogger();
+builder.Host.UseSerilog();
+
+// Add services to the container
+builder.Services.AddApplication();
+builder.Services.AddInfrastructure(builder.Configuration);
+
+// Product image storage: save under wwwroot so static files serve them
+builder.Services.Configure<FactuTrust.Infrastructure.Services.ProductImageStorageOptions>(opts =>
+{
+    opts.BasePath = Path.Combine(builder.Environment.ContentRootPath ?? ".", "wwwroot");
+});
+
+// Studio attachment/signature storage: also under wwwroot (served by UseStaticFiles)
+builder.Services.Configure<FactuTrust.Infrastructure.Services.Studio.StudioFileStorageOptions>(opts =>
+{
+    opts.BasePath = Path.Combine(builder.Environment.ContentRootPath ?? ".", "wwwroot");
+});
+
+// Identity configuration
+builder.Services.AddIdentity<ApplicationUser, ApplicationRole>(options =>
+{
+    // Password policy
+    options.Password.RequireDigit = true;
+    options.Password.RequireLowercase = true;
+    options.Password.RequireUppercase = true;
+    options.Password.RequireNonAlphanumeric = true;
+    options.Password.RequiredLength = 12;
+    options.Password.RequiredUniqueChars = 4;
+
+    // Lockout policy
+    options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
+    options.Lockout.MaxFailedAccessAttempts = 5;
+    options.Lockout.AllowedForNewUsers = true;
+
+    // User settings
+    options.User.RequireUniqueEmail = true;
+    options.SignIn.RequireConfirmedEmail = false; // Set to true in production
+})
+.AddEntityFrameworkStores<MasterDbContext>()
+.AddDefaultTokenProviders();
+
+// JWT Authentication
+var jwtSettings = builder.Configuration.GetSection("JwtSettings");
+var secretKey = jwtSettings["SecretKey"] ?? throw new InvalidOperationException("La clé secrète JWT n'est pas configurée");
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtSettings["Issuer"],
+        ValidAudience = jwtSettings["Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)),
+        ClockSkew = TimeSpan.Zero
+    };
+});
+
+builder.Services.AddAuthorization(options =>
+{
+    // Lot B1 — porte d'entrée plateforme : accepte n'importe lequel des 5 rôles plateforme.
+    // Rétro-compat : les contrôleurs existants annotés [Authorize(Policy = PlatformAdmin)]
+    // continuent à fonctionner pour les utilisateurs PlatformAdmin / BillingAdmin / SupportAgent /
+    // MigrationOperator / ReadOnlyAuditor.
+    options.AddPolicy(PlatformPolicies.PlatformAdmin, policy =>
+        policy.RequireRole(FactuTrust.Domain.Auth.PlatformRoles.All.ToArray()));
+
+    // Policies par rôle exact — pour actions critiques nécessitant un rôle spécifique
+    // (ex: gestion des admins → SuperAdmin uniquement).
+    options.AddPolicy(PlatformPolicies.SuperAdminOnly, policy =>
+        policy.RequireRole(FactuTrust.Domain.Auth.PlatformRoles.PlatformAdmin));
+    options.AddPolicy(PlatformPolicies.BillingAdminOnly, policy =>
+        policy.RequireRole(FactuTrust.Domain.Auth.PlatformRoles.BillingAdmin));
+    options.AddPolicy(PlatformPolicies.SupportAgentOnly, policy =>
+        policy.RequireRole(FactuTrust.Domain.Auth.PlatformRoles.SupportAgent));
+    options.AddPolicy(PlatformPolicies.MigrationOperatorOnly, policy =>
+        policy.RequireRole(FactuTrust.Domain.Auth.PlatformRoles.MigrationOperator));
+    options.AddPolicy(PlatformPolicies.ReadOnlyAuditorOnly, policy =>
+        policy.RequireRole(FactuTrust.Domain.Auth.PlatformRoles.ReadOnlyAuditor));
+});
+builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
+builder.Services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
+
+var isDevelopment = builder.Environment.IsDevelopment();
+
+// Rate Limiting (seuils plus souples en développement pour éviter 429 lors des tests UI)
+builder.Services.AddRateLimiter(options =>
+{
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = isDevelopment ? 2000 : 200,
+                Window = TimeSpan.FromMinutes(1)
+            }));
+
+    options.AddPolicy("login", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = isDevelopment ? 50 : 5,
+                Window = TimeSpan.FromMinutes(1)
+            }));
+
+    options.AddPolicy("ai", context =>
+    {
+        // Quota par utilisateur authentifié (repli sur l'IP pour l'anonyme) : évite que plusieurs
+        // comptes derrière une même IP partagent — et saturent — le même quota « ai ».
+        var userId = context.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var partitionKey = string.IsNullOrEmpty(userId)
+            ? $"ip:{context.Connection.RemoteIpAddress?.ToString() ?? "unknown"}"
+            : $"user:{userId}";
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = isDevelopment ? 100 : 20,
+                Window = TimeSpan.FromMinutes(1)
+            });
+    });
+
+    options.AddPolicy("public-street-read", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = isDevelopment ? 2000 : 60,
+                Window = TimeSpan.FromMinutes(1)
+            }));
+
+    options.AddPolicy("public-street-write", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = isDevelopment ? 200 : 5,
+                Window = TimeSpan.FromMinutes(1)
+            }));
+
+    options.OnRejected = async (context, _) =>
+    {
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        context.HttpContext.Response.ContentType = "application/json";
+        
+        var response = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            success = false,
+            message = "Trop de requêtes. Veuillez réessayer plus tard.",
+            errors = new[] { "Trop de requêtes. Veuillez patienter avant de réessayer." }
+        });
+        
+        await context.HttpContext.Response.WriteAsync(response);
+    };
+});
+
+// CORS
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAngular", policy =>
+    {
+        policy.WithOrigins(
+                builder.Configuration["AllowedOrigins"]?.Split(',') ?? new[] { "http://localhost:4200" })
+            .AllowAnyMethod()
+            .AllowAnyHeader()
+            .WithExposedHeaders(
+                "X-Trace-Id",
+                "X-Export-Id",
+                "X-Export-Slides",
+                "X-Export-Expires",
+                "X-Export-Download-Url",
+                "Content-Disposition")
+            .AllowCredentials();
+    });
+});
+
+// Controllers with JSON options
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        // Property names follow camelCase for TypeScript ergonomics (e.g. "totalAmount", "issueDate").
+        options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+        options.JsonSerializerOptions.WriteIndented = false;
+        // Enum VALUES are serialised verbatim (PascalCase) so they match their C# names.
+        // This is what every Angular template / TypeScript switch already compares against
+        // (e.g. status === 'Draft', DeliveryNoteStatus.Draft = 'Draft').
+        // Forcing CamelCase here breaks every status-conditional UI and was the silent root cause
+        // of the missing Validate / Confirm buttons.
+        options.JsonSerializerOptions.Converters.Add(
+            new System.Text.Json.Serialization.JsonStringEnumConverter());
+    });
+
+// Swagger
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = $"{BrandConstants.Name} API",
+        Version = "v1",
+        Description = "API de facturation électronique tunisienne"
+    });
+
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Description = "JWT Authorization header using the Bearer scheme. Enter 'Bearer' [space] and then your token.",
+        Name = "Authorization",
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.ApiKey,
+        Scheme = "Bearer"
+    });
+
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
+
+// Health Checks (Lot B5 — enriched with named tags for filtering).
+// AddSqlServer fait le job complet : test de connexion + ping. Ajouter
+// AddDbContextCheck<MasterDbContext> serait redondant et exigerait le NuGet
+// Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore.
+builder.Services.AddHealthChecks()
+    .AddSqlServer(
+        builder.Configuration.GetConnectionString("MasterConnection")!,
+        name: "master-db",
+        tags: new[] { "ready", "db" });
+
+// Lot B5 — Hangfire (recurring + queued background jobs).
+// Storage : table dans la base master, schéma "hangfire" pour isolation visuelle.
+builder.Services.AddHangfire(config =>
+{
+    config
+        .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+        .UseSimpleAssemblyNameTypeSerializer()
+        .UseRecommendedSerializerSettings()
+        .UseSqlServerStorage(
+            builder.Configuration.GetConnectionString("MasterConnection")!,
+            new SqlServerStorageOptions
+            {
+                CommandBatchMaxTimeout = TimeSpan.FromMinutes(5),
+                SlidingInvisibilityTimeout = TimeSpan.FromMinutes(5),
+                QueuePollInterval = TimeSpan.Zero,
+                UseRecommendedIsolationLevel = true,
+                DisableGlobalLocks = true,
+                SchemaName = "hangfire"
+            });
+});
+
+builder.Services.AddHangfireServer(options =>
+{
+    options.WorkerCount = Math.Max(2, Environment.ProcessorCount);
+    options.Queues = new[] { "default", "critical", "low" };
+    options.ServerName = $"factutrust-{Environment.MachineName}";
+});
+
+// Enregistrement résilient des jobs récurrents : déplacé hors du pipeline de démarrage
+// synchrone pour qu'une indisponibilité momentanée de Hangfire / SQL Server / LocalDB
+// ne crashe plus l'API au boot. Voir HangfireRecurringJobsRegistrationService.
+builder.Services.AddHostedService<HangfireRecurringJobsRegistrationService>();
+
+// Lot B5 — Demo job for Hangfire (cleanup old FailedLoginAttempts > 90 days).
+builder.Services.AddScoped<CleanupOldFailedLoginAttemptsJob>();
+
+// HttpContext accessor for current user
+builder.Services.AddHttpContextAccessor();
+// ICurrentUser = décorateur canal : identité HTTP historique, sauf pendant un traitement de canal
+// (WhatsApp) où l'instantané ChannelUserContext (AsyncLocal) est servi. Chemin web inchangé.
+builder.Services.AddScoped<FactuTrust.API.Services.CurrentUser>();
+builder.Services.AddScoped<FactuTrust.Application.Common.Interfaces.ICurrentUser, FactuTrust.API.Services.ChannelAwareCurrentUser>();
+builder.Services.AddScoped<ChannelInboundOrchestrator>();
+
+// Pont WhatsApp (processus Node enfant piloté par l'API). Singleton = session unique.
+// Le hosted service ne démarre le pont que si les flags sont ON + AutoStart (inerte en tests).
+builder.Services.AddSingleton<FactuTrust.API.Services.Channels.WhatsAppBridgeHost>();
+builder.Services.AddSingleton<FactuTrust.Application.Common.Interfaces.Services.IWhatsAppBridge>(
+    sp => sp.GetRequiredService<FactuTrust.API.Services.Channels.WhatsAppBridgeHost>());
+builder.Services.AddHostedService<FactuTrust.API.Services.Channels.WhatsAppBridgeHostedService>();
+builder.Services.AddScoped<FactuTrust.Application.Common.Interfaces.Services.IChannelOutboundSender,
+    FactuTrust.API.Services.Channels.WhatsAppBridgeOutboundSender>();
+
+var app = builder.Build();
+
+// Configure the HTTP request pipeline
+
+// Exception handling
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+
+// Swagger (development only) - before security headers to avoid CSP blocking
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", $"{BrandConstants.Name} API v1");
+        c.RoutePrefix = "swagger";
+    });
+}
+
+// Security Headers (skip for Swagger in development)
+app.Use(async (context, next) =>
+{
+    // Skip CSP for Swagger UI in development
+    var path = context.Request.Path.Value?.ToLower() ?? "";
+    var isSwaggerPath = path.StartsWith("/swagger");
+    
+    context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
+    context.Response.Headers.Append("X-Frame-Options", "DENY");
+    context.Response.Headers.Append("X-XSS-Protection", "1; mode=block");
+    context.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
+    
+    if (!isSwaggerPath || !app.Environment.IsDevelopment())
+    {
+        context.Response.Headers.Append("Content-Security-Policy", 
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;");
+    }
+    
+    await next();
+});
+
+// HTTPS redirection
+app.UseHttpsRedirection();
+
+// Static files (e.g. product images under wwwroot/uploads)
+app.UseStaticFiles();
+
+// CORS
+app.UseCors("AllowAngular");
+
+// Authentication & Authorization
+app.UseAuthentication();
+app.UseAuthorization();
+
+// Rate limiting — placé APRÈS l'authentification pour que la politique « ai » puisse partitionner
+// le quota par utilisateur authentifié (et non par IP partagée, ce qui pénalisait plusieurs comptes
+// derrière une même IP). Les endpoints anonymes (login, vitrine publique) retombent sur l'IP.
+// Le routage (implicite) a déjà résolu l'endpoint : les métadonnées [EnableRateLimiting] restent dispo.
+app.UseRateLimiter();
+
+// Tenant resolution middleware
+app.UseMiddleware<TenantMiddleware>();
+app.UseMiddleware<DelegatedAccessMiddleware>();
+
+// Health checks (Lot B5 — séparation live/ready)
+//   /health        → simple liveness (la process répond, sans toucher BD ni Hangfire).
+//   /health/ready  → vérifie les dépendances (BD master, EF context) — utilisé par K8s readiness.
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    Predicate = _ => false, // aucun check, juste 200 si l'app répond
+    AllowCachingResponses = false
+});
+
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    AllowCachingResponses = false,
+    ResponseWriter = WriteHealthCheckResponse
+});
+
+// Lot B5 — Hangfire dashboard (path /hangfire, protégé par filter custom).
+app.UseHangfireDashboard("/hangfire", new DashboardOptions
+{
+    Authorization = new[] { new HangfireDashboardAuthFilter(app.Environment) },
+    DashboardTitle = $"{BrandConstants.Name} — Background Jobs",
+    DisplayStorageConnectionString = false,
+    StatsPollingInterval = 5000
+});
+
+// Controllers
+app.MapControllers();
+
+// Note : l'enregistrement des jobs récurrents Hangfire (anciennement ici, en inline) est
+// désormais effectué de manière résiliente par HangfireRecurringJobsRegistrationService
+// (hosted service avec back-off). Voir builder.Services.AddHostedService<>() plus haut.
+
+// Ensure database is created and migrated
+using (var scope = app.Services.CreateScope())
+{
+    var context = scope.ServiceProvider.GetRequiredService<MasterDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    
+    try
+    {
+        logger.LogInformation("Checking database connection and applying migrations...");
+        
+        // Ensure database exists
+        var canConnect = await context.Database.CanConnectAsync();
+        if (!canConnect)
+        {
+            logger.LogWarning("Database does not exist. It will be created on first migration.");
+        }
+        
+        // Get pending migrations
+        var pendingMigrations = await context.Database.GetPendingMigrationsAsync();
+        if (pendingMigrations.Any())
+        {
+            logger.LogInformation("Applying {Count} pending migration(s)...", pendingMigrations.Count());
+            foreach (var migration in pendingMigrations)
+            {
+                logger.LogInformation("  - {Migration}", migration);
+            }
+        }
+        else
+        {
+            logger.LogInformation("Database is up to date. No pending migrations.");
+        }
+        
+        // Apply migrations (creates database if it doesn't exist)
+        await context.Database.MigrateAsync();
+        logger.LogInformation("Database migration completed successfully.");
+
+        // Seed initial data (roles, etc.)
+        try
+        {
+            logger.LogInformation("Seeding initial data...");
+            await DatabaseSeeder.SeedRolesAsync(scope.ServiceProvider);
+            var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+            // Bootstrap:PlatformAdmin (user-secrets or env) creates the first /api/platform/auth/login operator.
+            await DatabaseSeeder.SeedPlatformAdminAsync(scope.ServiceProvider, configuration);
+
+            // Lot C1 — Seed des 3 plans initiaux (Free / Monthly / Annual) idempotent.
+            await FactuTrust.Infrastructure.Persistence.Seeds.PlanSeeder.SeedAsync(context);
+
+            logger.LogInformation("Database seeding completed successfully.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "FATAL: Database seeding failed (Roles/PlatformAdmin/Plans). Some features may not work correctly.");
+            if (app.Environment.IsDevelopment())
+            {
+                // En dev : on stoppe pour qu'un développeur corrige immédiatement (sinon la table Plans
+                // peut rester vide et le front affichera « Aucun plan correspondant »).
+                throw;
+            }
+            // En prod : on continue pour éviter un downtime, mais le monitoring doit alerter sur ce log.
+        }
+
+        var hostEnvironment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
+        await DatabaseSeeder.WarnIfNoPlatformOperatorInDevelopmentAsync(scope.ServiceProvider, hostEnvironment, logger);
+
+        // Apply migrations to existing tenant databases (if configured)
+        var applyTenantMigrations = builder.Configuration.GetValue<bool>("TenantMigrations:ApplyOnStartup", false);
+        var applyOnlyToMissing = builder.Configuration.GetValue<bool>("TenantMigrations:ApplyOnlyToMissingMigrations", true);
+
+        if (applyTenantMigrations)
+        {
+            try
+            {
+                logger.LogInformation("Applying migrations to existing tenant databases...");
+                
+                if (applyOnlyToMissing)
+                {
+                    // Apply to tenants with pending migrations (HasMigrationsAppliedAsync == false)
+                    var tenantService = scope.ServiceProvider.GetRequiredService<ITenantService>();
+                    var masterContext = scope.ServiceProvider.GetRequiredService<MasterDbContext>();
+                    
+                    var tenants = await masterContext.Tenants
+                        .Where(t => t.IsActive)
+                        .ToListAsync();
+
+                    int appliedCount = 0;
+                    int skippedCount = 0;
+                    int failureCount = 0;
+
+                    foreach (var tenant in tenants)
+                    {
+                        var hasMigrations = await TenantMigrationHelper.HasMigrationsAppliedAsync(
+                            scope.ServiceProvider,
+                            tenant.Id);
+
+                        if (!hasMigrations)
+                        {
+                            logger.LogInformation("Applying migrations for tenant {TenantId} ({CompanyName})...", 
+                                tenant.Id, tenant.CompanyName);
+                            
+                            try
+                            {
+                                await tenantService.ApplyMigrationsAsync(tenant.Id);
+                                logger.LogInformation("✓ Migrations applied for tenant {TenantId}", tenant.Id);
+                                appliedCount++;
+                            }
+                            catch (Exception ex)
+                            {
+                                failureCount++;
+                                logger.LogError(ex, "✗ Failed to apply migrations for tenant {TenantId}", tenant.Id);
+                            }
+                        }
+                        else
+                        {
+                            logger.LogDebug("Tenant {TenantId} already has migrations applied, skipping", tenant.Id);
+                            skippedCount++;
+                        }
+                    }
+
+                    logger.LogInformation(
+                        "Tenant migrations completed. Applied: {AppliedCount}, Skipped: {SkippedCount}, Failures: {FailureCount}, Total: {TotalCount}",
+                        appliedCount, skippedCount, failureCount, tenants.Count);
+
+                    if (hostEnvironment.IsDevelopment() && failureCount > 0)
+                    {
+                        throw new InvalidOperationException(
+                            $"Tenant migration startup failed for {failureCount} tenant(s). Fix migration errors before continuing in Development.");
+                    }
+                }
+                else
+                {
+                    // Apply to all tenants
+                    var successCount = await TenantMigrationHelper.ApplyMigrationsToAllTenantsAsync(
+                        scope.ServiceProvider);
+                    
+                    logger.LogInformation("Tenant migrations completed. Success: {SuccessCount}", successCount);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error applying tenant migrations. The application will continue but tenant operations may fail.");
+                // Don't throw - allow the app to start so we can see the error in logs
+            }
+        }
+        else
+        {
+            logger.LogInformation("Automatic tenant migrations are disabled. Use POST /api/platform/migrations/tenants/apply-migrations to apply manually.");
+        }
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Error during database migration. The application will continue but database operations may fail.");
+        // Don't throw - allow the app to start so we can see the error in logs
+        // In production, you might want to throw here
+    }
+}
+
+Log.Information("{Brand} API starting...", BrandConstants.Name);
+app.Run();
+
+/// <summary>
+/// Lot B5 — Sérialise une réponse JSON détaillée pour <c>/health/ready</c>.
+/// Format consommable par <c>PlatformOpsController</c> et le frontend.
+/// </summary>
+static Task WriteHealthCheckResponse(HttpContext context, HealthReport report)
+{
+    context.Response.ContentType = "application/json";
+    var payload = new
+    {
+        status = report.Status.ToString(),
+        totalDurationMs = (int)report.TotalDuration.TotalMilliseconds,
+        checks = report.Entries.Select(e => new
+        {
+            name = e.Key,
+            status = e.Value.Status.ToString(),
+            durationMs = (int)e.Value.Duration.TotalMilliseconds,
+            description = e.Value.Description,
+            tags = e.Value.Tags
+        })
+    };
+    var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    });
+    return context.Response.WriteAsync(json);
+}
+
+public partial class Program { }

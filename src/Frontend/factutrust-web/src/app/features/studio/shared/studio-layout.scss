@@ -1,0 +1,127 @@
+﻿// Studio module — shared layout tokens & utilities (FactuTrust design system)
+
+.studio-page {
+  padding: var(--spacing-5, 1.25rem);
+  animation: ft-slide-in 0.25s ease-out;
+}
+
+.studio-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-bottom: var(--spacing-3);
+  color: var(--color-primary-600);
+  text-decoration: none;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.studio-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+  margin-bottom: var(--spacing-4);
+  align-items: center;
+}
+
+.studio-toolbar__spacer { flex: 1; }
+.studio-search-input { min-width: 16rem; max-width: 24rem; flex: 1 1 16rem; }
+.studio-num { text-align: right; }
+.studio-actions { text-align: right; white-space: nowrap; }
+.studio-mr { margin-right: var(--spacing-2); color: var(--color-primary-600); }
+
+.studio-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  label {
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-sm);
+    margin-top: var(--spacing-2);
+    color: var(--color-neutral-700);
+  }
+}
+
+.studio-hint { color: var(--color-neutral-500); font-size: var(--font-size-sm); }
+.studio-lbl {
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
+  display: block;
+  margin: var(--spacing-3) 0 var(--spacing-2);
+  color: var(--color-neutral-700);
+}
+.studio-w-full { width: 100%; }
+
+.studio-designer {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-6);
+  align-items: start;
+  @media (max-width: 900px) { grid-template-columns: 1fr; }
+}
+
+.studio-editor {
+  background: var(--color-background-elevated, #fff);
+  border: 1px solid var(--color-border-subtle, #e2e8f0);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-4);
+}
+
+.studio-preview {
+  border: 1px solid var(--color-border-subtle, #e2e8f0);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-4);
+  background: var(--color-neutral-50, #f8fafc);
+  min-height: 200px;
+}
+
+.studio-preview-title {
+  margin: 0 0 var(--spacing-4);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-neutral-700);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.studio-row, .studio-col-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-border-subtle, #e2e8f0);
+  border-radius: var(--radius-md);
+  background: var(--color-background-elevated, #fff);
+  margin-bottom: var(--spacing-2);
+}
+
+.studio-col-row--off { opacity: 0.55; }
+.studio-row-section { background: var(--color-primary-50, #eff6ff); border-color: var(--color-primary-200, #bfdbfe); }
+.studio-row-move, .studio-move { display: flex; flex-direction: column; }
+.studio-cname { min-width: 9rem; font-size: var(--font-size-xs); }
+.studio-grow { flex: 1; }
+.studio-cols { display: flex; flex-direction: column; gap: var(--spacing-2); max-height: 60vh; overflow: auto; }
+.studio-add-bar { display: flex; flex-wrap: wrap; gap: var(--spacing-2); margin-bottom: var(--spacing-4); }
+.studio-block-head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-2); }
+.studio-line { display: flex; flex-wrap: wrap; gap: var(--spacing-2); align-items: center; margin-bottom: var(--spacing-2); }
+.studio-muted { color: var(--color-neutral-500); font-size: var(--font-size-sm); }
+.studio-form-card {
+  background: var(--color-background-elevated, #fff);
+  border: 1px solid var(--color-border-subtle, #e2e8f0);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-6);
+  box-shadow: var(--shadow-sm);
+}
+.studio-form-actions {
+  display: flex; gap: var(--spacing-3); justify-content: flex-end;
+  margin-top: var(--spacing-6); padding-top: var(--spacing-4);
+  border-top: 1px solid var(--color-border-subtle, #e2e8f0);
+}
+.studio-section-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-neutral-800);
+  margin: 0 0 var(--spacing-4);
+  padding-bottom: var(--spacing-2);
+  border-bottom: 1px solid var(--color-border-subtle, #e2e8f0);
+}

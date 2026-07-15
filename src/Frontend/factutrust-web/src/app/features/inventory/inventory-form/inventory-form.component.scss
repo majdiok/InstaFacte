@@ -1,0 +1,202 @@
+.inventory-form {
+    max-width: 960px;
+}
+
+.loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-4);
+    padding: var(--spacing-12);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+
+    .loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid var(--color-border-subtle);
+        border-top-color: var(--color-primary-500);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.document-details {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-5);
+}
+
+.detail-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2);
+
+    .detail-label {
+        font-weight: var(--font-weight-semibold);
+        font-size: var(--font-size-sm);
+        color: var(--color-text-primary);
+
+        .required {
+            color: var(--color-error-600);
+            margin-left: var(--spacing-1);
+        }
+    }
+
+    .detail-value {
+        font-size: var(--font-size-base);
+        color: var(--color-text-secondary);
+    }
+}
+
+.notes-input {
+    width: 100%;
+    min-height: 60px;
+    resize: vertical;
+}
+
+.dropdown-warehouse {
+    max-width: 320px;
+}
+
+.start-section {
+    margin-top: var(--spacing-6);
+    padding: var(--spacing-6);
+    background: var(--color-background-elevated);
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--color-border-subtle);
+}
+
+.start-hint {
+    margin: 0 0 var(--spacing-4);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+}
+
+.start-actions {
+    margin-bottom: var(--spacing-4);
+
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--spacing-2);
+    }
+}
+
+.wizard-link {
+    margin: 0;
+    font-size: var(--font-size-sm);
+
+    .link-ghost {
+        color: var(--color-primary-600);
+        text-decoration: none;
+    }
+
+    .link-ghost:hover {
+        text-decoration: underline;
+    }
+}
+
+.last-saved {
+    margin: 0 0 var(--spacing-4);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+}
+
+.table-wrapper {
+    overflow-x: auto;
+    margin-bottom: var(--spacing-6);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-lg);
+    background: var(--color-background-primary);
+}
+
+.inventory-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-sm);
+
+    th,
+    td {
+        padding: var(--spacing-4);
+        text-align: left;
+        border-bottom: 1px solid var(--color-border-subtle);
+    }
+
+    th {
+        font-weight: var(--font-weight-semibold);
+        color: var(--color-text-primary);
+        background: var(--color-neutral-50);
+    }
+
+    th.col-qty,
+    td.col-qty {
+        width: 140px;
+        text-align: right;
+    }
+
+    td.theoretical {
+        color: var(--color-text-secondary);
+        font-variant-numeric: tabular-nums;
+    }
+
+    tbody tr:last-child td {
+        border-bottom: none;
+    }
+
+    tbody tr:hover {
+        background: var(--color-neutral-50);
+    }
+
+    .product-name {
+        display: block;
+        font-weight: var(--font-weight-medium);
+        color: var(--color-text-primary);
+    }
+
+    .product-code {
+        display: block;
+        font-size: var(--font-size-xs);
+        color: var(--color-text-secondary);
+        margin-top: var(--spacing-1);
+    }
+}
+
+:host ::ng-deep .count-input.p-inputnumber {
+    width: 120px;
+
+    .p-inputnumber-input {
+        width: 100%;
+        text-align: right;
+    }
+}
+
+.form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-4);
+    padding-top: var(--spacing-4);
+    border-top: 1px solid var(--color-border-subtle);
+}
+
+.actions-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-3);
+
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--spacing-2);
+    }
+}

@@ -1,0 +1,300 @@
+using FactuTrust.Domain.Billing;
+using FactuTrust.Domain.Enums;
+using Microsoft.EntityFrameworkCore;
+
+namespace FactuTrust.Infrastructure.Persistence.Seeds;
+
+/// <summary>
+/// Lot C1 — Seed des 3 plans initiaux mappant l'enum <see cref="SubscriptionPlan"/>.
+///
+/// Idempotent : si les plans existent déjà (par code), aucun écrasement.
+/// Garantit que <see cref="DbPlanResolver"/> dispose toujours des entrées BD
+/// correspondant à l'enum (sinon le fallback hardcodé reste actif et tout fonctionne).
+/// </summary>
+public static class PlanSeeder
+{
+    public static async Task SeedAsync(MasterDbContext db, CancellationToken cancellationToken = default)
+    {
+        var existing = await db.Plans.AsNoTracking()
+            .Select(p => p.Code)
+            .ToListAsync(cancellationToken);
+        var existingSet = new HashSet<string>(existing);
+
+        if (!existingSet.Contains(nameof(SubscriptionPlan.Free)))
+        {
+            db.Plans.Add(BuildFreePlan());
+        }
+        if (!existingSet.Contains(nameof(SubscriptionPlan.Monthly)))
+        {
+            db.Plans.Add(BuildMonthlyPlan());
+        }
+        if (!existingSet.Contains(nameof(SubscriptionPlan.Annual)))
+        {
+            db.Plans.Add(BuildAnnualPlan());
+        }
+
+        if (db.ChangeTracker.HasChanges())
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        // Lot C1 — Backfill : aligne les Subscriptions existantes (PlanId NULL) sur le seed.
+        await BackfillSubscriptionPlanIdAsync(db, cancellationToken);
+
+        // Backfill des LIMITES : le seed ci-dessus est insert-only et ne met jamais à jour les limites
+        // d'un plan existant. On réaligne les valeurs sur les constantes (ex. Free MaxCustomEntities 10→50).
+        // Exécuté AVANT le backfill des modules (plus fragile) et avec son propre SaveChanges → persiste
+        // même si le backfill des modules échoue ensuite.
+        await BackfillPlanLimitsAsync(db, cancellationToken);
+
+        // Lot C1 — Backfill défensif : si un nouveau membre d'AppModule a été ajouté
+        // après la création d'un plan, on l'ajoute en IsIncluded=true pour préserver
+        // l'accès des tenants existants. Les plans "plats" (Modules.Count == 0) restent
+        // intacts (rétro-compat permissive gérée par DbPlanResolver).
+        await BackfillPlanModulesAsync(db, cancellationToken);
+    }
+
+    private static async Task BackfillSubscriptionPlanIdAsync(MasterDbContext db, CancellationToken cancellationToken)
+    {
+        var seededPlans = await db.Plans.AsNoTracking()
+            .Where(p => p.Code == nameof(SubscriptionPlan.Free)
+                || p.Code == nameof(SubscriptionPlan.Monthly)
+                || p.Code == nameof(SubscriptionPlan.Annual))
+            .Select(p => new { p.Id, p.Code })
+            .ToListAsync(cancellationToken);
+        if (seededPlans.Count == 0) return;
+
+        var byCode = seededPlans.ToDictionary(p => p.Code, p => p.Id, StringComparer.OrdinalIgnoreCase);
+
+        var subscriptions = await db.Subscriptions
+            .Where(s => s.PlanId == null)
+            .ToListAsync(cancellationToken);
+        if (subscriptions.Count == 0) return;
+
+        var changed = false;
+        foreach (var s in subscriptions)
+        {
+            var code = s.Plan.ToString();
+            if (byCode.TryGetValue(code, out var planId))
+            {
+                s.AttachToPlan(planId, s.Plan);
+                changed = true;
+            }
+        }
+        if (changed) await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private static Plan BuildFreePlan()
+    {
+        var plan = Plan.Create(
+            code: nameof(SubscriptionPlan.Free),
+            name: "Gratuit",
+            description: "Plan de démarrage pour tester FactuTrust.",
+            billingPeriod: BillingPeriod.Free,
+            basePriceTND: 0m,
+            isPublic: true,
+            trialDays: 0,
+            sortOrder: 0,
+            currency: "TND");
+
+        plan.ReplaceLimits(new[]
+        {
+            ("MaxInvoicesPerMonth", SubscriptionLimits.Free.MaxInvoicesPerMonth.ToString()),
+            ("MaxQuotesPerMonth", SubscriptionLimits.Free.MaxQuotesPerMonth.ToString()),
+            ("MaxClients", SubscriptionLimits.Free.MaxClients.ToString()),
+            ("MaxProducts", SubscriptionLimits.Free.MaxProducts.ToString()),
+            ("MaxStorageBytes", SubscriptionLimits.Free.MaxStorageBytes.ToString()),
+            ("MaxUsers", SubscriptionLimits.Free.MaxUsers.ToString()),
+            ("MaxCustomEntities", SubscriptionLimits.Free.MaxCustomEntities.ToString()),
+            ("MaxCustomFieldsPerEntity", SubscriptionLimits.Free.MaxCustomFieldsPerEntity.ToString()),
+            ("MaxCustomRecordsPerEntity", SubscriptionLimits.Free.MaxCustomRecordsPerEntity.ToString())
+        });
+
+        plan.ReplaceFeatures(new[]
+        {
+            ("ElectronicSignature", SubscriptionLimits.Free.ElectronicSignature),
+            ("XmlExport", SubscriptionLimits.Free.XmlExport),
+            ("PaymentTracking", SubscriptionLimits.Free.PaymentTracking),
+            ("PrioritySupport", SubscriptionLimits.Free.PrioritySupport)
+        });
+
+        // Tous les modules autorisés (rétro-compat) — l'admin pourra restreindre plus tard.
+        plan.ReplaceModules(AllModulesIncluded());
+        return plan;
+    }
+
+    private static Plan BuildMonthlyPlan()
+    {
+        var plan = Plan.Create(
+            code: nameof(SubscriptionPlan.Monthly),
+            name: "Mensuel",
+            description: "Toutes les fonctionnalités, facturation mensuelle.",
+            billingPeriod: BillingPeriod.Monthly,
+            basePriceTND: 49m,
+            isPublic: true,
+            trialDays: 14,
+            sortOrder: 1,
+            currency: "TND");
+
+        plan.ReplaceLimits(new[]
+        {
+            ("MaxInvoicesPerMonth", "∞"),
+            ("MaxQuotesPerMonth", "∞"),
+            ("MaxClients", "∞"),
+            ("MaxProducts", "∞"),
+            ("MaxStorageBytes", SubscriptionLimits.Monthly.MaxStorageBytes.ToString()),
+            ("MaxUsers", "∞"),
+            ("MaxCustomEntities", "∞"),
+            ("MaxCustomFieldsPerEntity", "∞"),
+            ("MaxCustomRecordsPerEntity", "∞")
+        });
+
+        plan.ReplaceFeatures(new[]
+        {
+            ("ElectronicSignature", SubscriptionLimits.Monthly.ElectronicSignature),
+            ("XmlExport", SubscriptionLimits.Monthly.XmlExport),
+            ("PaymentTracking", SubscriptionLimits.Monthly.PaymentTracking),
+            ("PrioritySupport", SubscriptionLimits.Monthly.PrioritySupport)
+        });
+
+        plan.ReplaceModules(AllModulesIncluded());
+        return plan;
+    }
+
+    private static Plan BuildAnnualPlan()
+    {
+        var plan = Plan.Create(
+            code: nameof(SubscriptionPlan.Annual),
+            name: "Annuel",
+            description: "Toutes les fonctionnalités + support prioritaire, facturation annuelle (≈ 39 TND/mois).",
+            billingPeriod: BillingPeriod.Annual,
+            basePriceTND: 468m,
+            isPublic: true,
+            trialDays: 14,
+            sortOrder: 2,
+            currency: "TND");
+
+        plan.ReplaceLimits(new[]
+        {
+            ("MaxInvoicesPerMonth", "∞"),
+            ("MaxQuotesPerMonth", "∞"),
+            ("MaxClients", "∞"),
+            ("MaxProducts", "∞"),
+            ("MaxStorageBytes", SubscriptionLimits.Annual.MaxStorageBytes.ToString()),
+            ("MaxUsers", "∞"),
+            ("MaxCustomEntities", "∞"),
+            ("MaxCustomFieldsPerEntity", "∞"),
+            ("MaxCustomRecordsPerEntity", "∞")
+        });
+
+        plan.ReplaceFeatures(new[]
+        {
+            ("ElectronicSignature", SubscriptionLimits.Annual.ElectronicSignature),
+            ("XmlExport", SubscriptionLimits.Annual.XmlExport),
+            ("PaymentTracking", SubscriptionLimits.Annual.PaymentTracking),
+            ("PrioritySupport", SubscriptionLimits.Annual.PrioritySupport)
+        });
+
+        plan.ReplaceModules(AllModulesIncluded());
+        return plan;
+    }
+
+    private static IEnumerable<(int Module, bool IsIncluded)> AllModulesIncluded()
+    {
+        return Enum.GetValues<AppModule>()
+            .Select(m => ((int)m, true));
+    }
+
+    /// <summary>
+    /// Réaligne les limites des plans seedés (Free/Monthly/Annual) sur les constantes
+    /// <see cref="SubscriptionLimits"/>. Idempotent : ne réécrit (et ne SaveChanges) que si une valeur
+    /// diffère. Source de vérité unique = les mêmes <c>Build*Plan()</c> que le seed initial.
+    /// </summary>
+    private static async Task BackfillPlanLimitsAsync(MasterDbContext db, CancellationToken cancellationToken)
+    {
+        var desiredByCode = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            [nameof(SubscriptionPlan.Free)] = LimitsOf(BuildFreePlan()),
+            [nameof(SubscriptionPlan.Monthly)] = LimitsOf(BuildMonthlyPlan()),
+            [nameof(SubscriptionPlan.Annual)] = LimitsOf(BuildAnnualPlan())
+        };
+
+        var plans = await db.Plans
+            .Include(p => p.Limits)
+            .ToListAsync(cancellationToken);
+        if (plans.Count == 0) return;
+
+        var changed = false;
+        foreach (var plan in plans)
+        {
+            if (!desiredByCode.TryGetValue(plan.Code, out var desired)) continue;
+
+            // Mise à jour EN PLACE (UPDATE) des valeurs divergentes — surtout PAS ReplaceLimits, qui
+            // ferait clear+re-add des enfants et déclenche un DbUpdateConcurrencyException (cf. modules).
+            foreach (var limit in plan.Limits)
+            {
+                if (desired.TryGetValue(limit.Key, out var want) && want != limit.Value)
+                {
+                    db.Entry(limit).Property(nameof(PlanLimit.Value)).CurrentValue = want;
+                    changed = true;
+                }
+            }
+
+            // Ajoute (INSERT) les clés de quota introduites après la création du plan.
+            var present = plan.Limits.Select(l => l.Key).ToHashSet(StringComparer.Ordinal);
+            foreach (var (key, value) in desired)
+            {
+                if (present.Contains(key)) continue;
+                db.Add(PlanLimit.Create(plan.Id, key, value));
+                changed = true;
+            }
+        }
+        if (changed) await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private static Dictionary<string, string> LimitsOf(Plan plan) =>
+        plan.Limits.ToDictionary(l => l.Key, l => l.Value, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Pour chaque plan ayant déjà au moins une ligne <c>PlanModule</c>, ajoute en
+    /// <c>IsIncluded = true</c> les modules d'<see cref="AppModule"/> absents.
+    /// Préserve l'accès lorsque l'enum est étendu entre deux releases.
+    /// </summary>
+    private static async Task BackfillPlanModulesAsync(MasterDbContext db, CancellationToken cancellationToken)
+    {
+        var allModules = Enum.GetValues<AppModule>().Select(m => (int)m).ToArray();
+        var plans = await db.Plans
+            .Include(p => p.Modules)
+            .ToListAsync(cancellationToken);
+        if (plans.Count == 0) return;
+
+        var changed = false;
+        foreach (var plan in plans)
+        {
+            if (plan.Modules.Count == 0) continue; // rétro-compat plans plats
+
+            var presentModules = plan.Modules.Select(m => m.Module).ToHashSet();
+            var missing = allModules.Where(m => !presentModules.Contains(m)).ToList();
+            if (missing.Count == 0) continue;
+
+            var merged = plan.Modules
+                .Select(m => (m.Module, m.IsIncluded))
+                .Concat(missing.Select(m => (m, true)));
+            plan.ReplaceModules(merged);
+            changed = true;
+        }
+
+        if (!changed) return;
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Backfill défensif et best-effort : un conflit de concurrence (ligne touchée en parallèle)
+            // ne doit PAS avorter tout le seeding (sinon le backfill des LIMITES ci-dessus serait perdu et
+            // le démarrage loggue un FATAL récurrent). On ignore : la prochaine exécution réessaiera.
+            db.ChangeTracker.Clear();
+        }
+    }
+}

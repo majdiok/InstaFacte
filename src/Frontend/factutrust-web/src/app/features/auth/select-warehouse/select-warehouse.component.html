@@ -1,0 +1,85 @@
+<div id="main-content" class="auth-page">
+  <aside class="branding-panel" aria-label="Présentation InstaFact">
+    <div class="branding-background" aria-hidden="true">
+      <div class="blob shape-1"></div>
+      <div class="blob shape-2"></div>
+      <div class="blob shape-3"></div>
+      <div class="glass-overlay"></div>
+    </div>
+
+    <div class="branding-content">
+      <div class="brand-header">
+        <app-logo size="large" variant="lockup" routerLink="/"></app-logo>
+      </div>
+
+      <div class="value-prop">
+        <span class="badge">Contexte de travail</span>
+        <h1 class="title">Choisissez <br />votre entrepôt</h1>
+        <p class="description">
+          Les données de stock et certaines opérations sont filtrées par entrepôt. Sélectionnez celui dans lequel vous travaillez pour cette session.
+        </p>
+      </div>
+    </div>
+  </aside>
+
+  <main class="form-panel" role="main">
+    <div class="form-scrollable-container">
+      <div class="form-top-bar">
+        <span class="form-top-bar__spacer" aria-hidden="true"></span>
+      </div>
+
+      <div class="form-header-text">
+        <h2>Entrepôt</h2>
+        <p>Votre compte a plusieurs entrepôts actifs. Lequel souhaitez-vous utiliser ?</p>
+      </div>
+
+      @if (loading()) {
+        <p class="warehouse-loading" role="status" aria-live="polite">Chargement des entrepôts…</p>
+      } @else if (error()) {
+        <p-message severity="error" [text]="error()!" styleClass="w-full"></p-message>
+      } @else {
+        <div
+          class="warehouse-fieldset"
+          role="radiogroup"
+          [attr.aria-label]="'Choisir un entrepôt actif'"
+        >
+          @for (w of warehouses(); track w.id) {
+            <button
+              type="button"
+              class="warehouse-option"
+              [class.warehouse-option--selected]="selectedId === w.id"
+              [class.warehouse-option--default]="w.isDefault"
+              [attr.aria-checked]="selectedId === w.id"
+              role="radio"
+              [attr.aria-labelledby]="'wh-label-' + w.id"
+              (click)="selectedId = w.id"
+              (keydown.enter)="selectedId = w.id"
+              (keydown.space)="$event.preventDefault(); selectedId = w.id"
+            >
+              <span class="warehouse-option__radio" aria-hidden="true"></span>
+              <span class="warehouse-option__text" [id]="'wh-label-' + w.id">
+                <span class="warehouse-option__name">{{ w.name }}</span>
+                @if (w.isDefault) {
+                  <span class="warehouse-option__badge">Par défaut</span>
+                }
+                @if (w.code) {
+                  <span class="warehouse-option__code">{{ w.code }}</span>
+                }
+              </span>
+            </button>
+          }
+        </div>
+
+        <p-button
+          type="button"
+          label="Continuer"
+          icon="pi pi-arrow-right"
+          iconPos="right"
+          styleClass="w-full login-submit-btn"
+          [disabled]="!selectedId"
+          (onClick)="confirm()"
+        />
+      }
+    </div>
+  </main>
+</div>

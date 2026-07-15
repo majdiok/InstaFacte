@@ -1,0 +1,235 @@
+<p-toast></p-toast>
+
+<app-breadcrumb [items]="breadcrumbItems"></app-breadcrumb>
+
+<app-page-header title="Mon Stock" subtitle="Vue d'ensemble simple de vos produits">
+    <div class="header-actions">
+        <div class="stock-simple-warehouse">
+            <app-warehouse-selector
+                label="Entrepôt"
+                [showLabel]="true"
+                [required]="true"
+                [value]="warehouseContext.selectedWarehouseId()"
+                (valueChange)="onWarehouseChange($event)"
+                inputId="stock-simple-warehouse">
+            </app-warehouse-selector>
+        </div>
+        @if (canCreateStockMovement()) {
+            <a routerLink="entry" class="stock-btn stock-btn-entry">
+                <i class="pi pi-arrow-down"></i>
+                <span>Entrée Stock</span>
+            </a>
+            <a routerLink="exit" class="stock-btn stock-btn-exit">
+                <i class="pi pi-arrow-up"></i>
+                <span>Sortie Stock</span>
+            </a>
+        }
+        <button pButton pRipple label="Vue détaillée" icon="pi pi-cog" class="p-button-outlined p-button-secondary"
+            (click)="navigateToAdvanced()">
+        </button>
+        <app-analyze-with-ai-button screenId="stock-simple" [payloadBuilder]="buildStockAnalyzePayload"
+            [disabled]="loading()" />
+    </div>
+</app-page-header>
+
+<!-- Loading State -->
+<div *ngIf="loading()" class="loading-container">
+    <p-progressSpinner strokeWidth="3"></p-progressSpinner>
+    <p>Chargement de votre stock...</p>
+</div>
+
+<!-- Main Content -->
+<div *ngIf="!loading() && overview()" class="stock-simple-container">
+
+    <!-- Summary Cards -->
+    <div class="summary-cards">
+        <div class="summary-card card-success">
+            <span class="card-icon">🟢</span>
+            <div class="card-content">
+                <span class="card-number">{{ overview()!.productsInStock }}</span>
+                <span class="card-label">En stock</span>
+            </div>
+        </div>
+        <div class="summary-card card-warning">
+            <span class="card-icon">🟠</span>
+            <div class="card-content">
+                <span class="card-number">{{ overview()!.productsRunningLow }}</span>
+                <span class="card-label">Presque finis</span>
+            </div>
+        </div>
+        <div class="summary-card card-danger">
+            <span class="card-icon">🔴</span>
+            <div class="card-content">
+                <span class="card-number">{{ overview()!.productsOutOfStock }}</span>
+                <span class="card-label">En rupture</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alerts Section -->
+    <div *ngIf="overview()!.alerts.length > 0" class="alerts-section">
+        <h3 class="section-title">⚠️ Actions recommandées</h3>
+        <div class="alerts-list">
+            <div *ngFor="let alert of overview()!.alerts" class="alert-card"
+                [ngClass]="getAlertSeverityClass(alert.severity)">
+                <div class="alert-content">
+                    <p class="alert-message">{{ alert.message }}</p>
+                </div>
+                <button pButton pRipple [label]="alert.actionLabel" class="p-button-sm"
+                    [ngClass]="alert.severity === 'danger' ? 'p-button-danger' : 'p-button-warning'"
+                    (click)="openCountDialogForProduct(alert.productId)">
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Search Bar -->
+    <div class="search-section">
+        <div class="search-wrapper">
+            <span class="p-input-icon-left p-input-icon-right search-input-container">
+                <i class="pi pi-search"></i>
+                <input type="text" pInputText [(ngModel)]="searchTerm" placeholder="Rechercher un produit..."
+                    (keyup.enter)="onSearch()" class="search-input">
+                <i *ngIf="searchTerm" class="pi pi-times clear-icon" (click)="clearSearch()"></i>
+            </span>
+            <button pButton pRipple label="Rechercher" icon="pi pi-search" (click)="onSearch()">
+            </button>
+        </div>
+    </div>
+
+    <!-- Products Grid -->
+    <div class="products-section">
+        <h3 class="section-title">Mes produits ({{ overview()!.totalProducts }})</h3>
+
+        <app-empty-state *ngIf="overview()!.items.length === 0" title="Aucun produit trouvé"
+            message="Aucun produit ne correspond à votre recherche." icon="pi-box">
+        </app-empty-state>
+
+        <div class="products-grid" *ngIf="overview()!.items.length > 0">
+            <div *ngFor="let item of overview()!.items" class="product-card" [ngClass]="getStatusClass(item.status)"
+                (click)="openCountDialog(item)">
+
+                <!-- Status Badge -->
+                <div class="status-badge">
+                    <span class="status-icon">{{ item.statusIcon }}</span>
+                    <span class="status-label">{{ item.statusLabel }}</span>
+                </div>
+
+                <!-- Product Info -->
+                <div class="product-info">
+                    <h4 class="product-name">{{ item.productName }}</h4>
+                    <span class="product-code">{{ item.productCode }}</span>
+                </div>
+
+                <!-- Quantity Display -->
+                <div class="quantity-display">
+                    <span class="quantity-number">{{ item.quantityAvailable }}</span>
+                    <span class="quantity-label">unités</span>
+                </div>
+
+                <!-- Alert Message -->
+                <p *ngIf="item.alertMessage" class="product-alert">
+                    {{ item.alertMessage }}
+                </p>
+
+                <!-- Action Hint -->
+                <div class="action-hint">
+                    <i class="pi pi-pencil"></i>
+                    <span>Cliquez pour compter</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Count Dialog - Premium Design -->
+<p-dialog header="Compter mon stock" [(visible)]="countDialogVisible" [modal]="true"
+    [style]="{width: '480px'}" [closable]="!submitting" [closeOnEscape]="!submitting"
+    [draggable]="false" [resizable]="false" styleClass="count-dialog">
+
+    @if (selectedProduct && !countResult) {
+    <!-- Product Header Section -->
+    <div class="count-product-info">
+        <div class="product-header">
+            <div class="product-icon">
+                <i class="pi pi-box"></i>
+            </div>
+            <div class="product-details">
+                <span class="product-name">{{ selectedProduct.productName }}</span>
+                <span class="product-code">{{ selectedProduct.productCode }}</span>
+            </div>
+        </div>
+        <div class="current-stock">
+            <span class="label">Stock système</span>
+            <span class="value">{{ selectedProduct.quantityAvailable }} <span class="unit">unités</span></span>
+        </div>
+    </div>
+
+    <!-- Count Form Section -->
+    <div class="count-form">
+        <div class="form-field quantity-field">
+            <label for="actualQuantity">Quantité réelle comptée *</label>
+            <p-inputNumber id="actualQuantity" [(ngModel)]="actualQuantity" [min]="0" [showButtons]="true"
+                buttonLayout="horizontal" incrementButtonIcon="pi pi-plus" decrementButtonIcon="pi pi-minus"
+                styleClass="w-full quantity-input">
+            </p-inputNumber>
+
+            <!-- Variation Indicator -->
+            @if (actualQuantity !== selectedProduct.quantityAvailable) {
+            <div class="quantity-delta"
+                [class.delta-positive]="actualQuantity > selectedProduct.quantityAvailable"
+                [class.delta-negative]="actualQuantity < selectedProduct.quantityAvailable">
+                <i [class]="actualQuantity > selectedProduct.quantityAvailable ? 'pi pi-arrow-up' : 'pi pi-arrow-down'"></i>
+                <span>{{ actualQuantity > selectedProduct.quantityAvailable ? '+' : '' }}{{ actualQuantity - selectedProduct.quantityAvailable }} unités</span>
+            </div>
+            }
+            @if (actualQuantity === selectedProduct.quantityAvailable) {
+            <div class="quantity-delta delta-same">
+                <i class="pi pi-check"></i>
+                <span>Stock identique</span>
+            </div>
+            }
+        </div>
+    </div>
+    }
+
+    <!-- Count Result -->
+    @if (countResult) {
+    <div class="count-result">
+        <div class="result-icon">✅</div>
+        <p class="result-message">{{ countResult.humanMessage }}</p>
+
+        <div class="result-details">
+            <div class="detail-row">
+                <span>Avant :</span>
+                <strong>{{ countResult.previousQuantity }} unités</strong>
+            </div>
+            <div class="detail-row">
+                <span>Maintenant :</span>
+                <strong>{{ countResult.newQuantity }} unités</strong>
+            </div>
+        </div>
+
+        @if (countResult.alertMessage) {
+        <div class="result-alert">
+            {{ countResult.alertMessage }}
+        </div>
+        }
+    </div>
+    }
+
+    <ng-template pTemplate="footer">
+        <div class="dialog-actions">
+            @if (!countResult) {
+            <button pButton type="button" label="Annuler" class="p-button-text p-button-secondary"
+                (click)="closeCountDialog()" [disabled]="submitting"></button>
+            <button pButton type="button" label="Valider le comptage" icon="pi pi-check"
+                (click)="submitCount()" [loading]="submitting"></button>
+            }
+            @if (countResult) {
+            <button pButton type="button" label="Fermer" icon="pi pi-check"
+                (click)="closeCountDialog()"></button>
+            }
+        </div>
+    </ng-template>
+</p-dialog>

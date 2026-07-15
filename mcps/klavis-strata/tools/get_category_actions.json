@@ -1,0 +1,19 @@
+{
+  "name": "get_category_actions",
+  "description": "Get a comprehensive overview of API actions available within specific categories. Use this tool if you want to explore what actions are available in particular service categories or get a detailed view of category capabilities. ** Important **: It should only be called after you get the server categories from the discover_server_categories tool.",
+  "inputSchema": {
+    "type": "object",
+    "required": [
+      "category_names"
+    ],
+    "properties": {
+      "category_names": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "List of categories to get actions for"
+      }
+    }
+  }
+}

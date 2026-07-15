@@ -1,0 +1,166 @@
+@import '../shared/accounting-layout';
+
+:host {
+  display: block;
+  padding: var(--spacing-4);
+}
+
+.ledger-filters-card,
+.ledger-table-card {
+  width: 100%;
+}
+
+:host ::ng-deep .ledger-filters-card.p-card,
+:host ::ng-deep .ledger-table-card.p-card {
+  border-radius: var(--radius-xl);
+}
+
+:host ::ng-deep .ledger-toolbar.accounting-prime-toolbar.p-toolbar {
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--spacing-4);
+  padding: 0;
+  border: none;
+  background: transparent;
+  width: 100%;
+
+  .p-toolbar-group-start {
+    flex: 1 1 auto;
+    min-width: 0;
+    align-items: flex-end;
+  }
+
+  .p-toolbar-group-end {
+    flex: 1 1 auto;
+    min-width: min(100%, 20rem);
+    justify-content: flex-end;
+    align-items: flex-end;
+  }
+}
+
+@media (max-width: 991px) {
+  :host ::ng-deep .ledger-toolbar.accounting-prime-toolbar.p-toolbar .p-toolbar-group-end {
+    flex-basis: 100%;
+    justify-content: flex-start;
+  }
+}
+
+.ledger-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  min-width: 0;
+}
+
+.ledger-label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+}
+
+.ledger-field .p-inputtext {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.ledger-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+  padding: var(--spacing-8);
+}
+
+.ledger-table-wrap {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+:host ::ng-deep .ledger-table.p-datatable .p-datatable-header {
+  padding: 0;
+  min-height: 0;
+  border: none;
+  background: transparent;
+}
+
+:host ::ng-deep .ledger-table.p-datatable-scrollable .p-datatable-thead > tr > th {
+  background: var(--color-background-subtle);
+}
+
+.ledger-label-cell {
+  max-width: 28rem;
+  word-break: break-word;
+}
+
+.ledger-code {
+  font-family: ui-monospace, 'Cascadia Code', 'Segoe UI Mono', monospace;
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger-amount {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Ligne de totaux : présentation uniforme avec les autres tableaux comptables. */
+:host ::ng-deep .ledger-table .acc-totals-row td {
+  font-weight: var(--font-weight-bold);
+  background: var(--color-background-subtle);
+  border-top: 2px solid var(--color-border-default);
+}
+
+.ledger-balance-negative {
+  color: var(--color-error-600);
+  font-weight: var(--font-weight-semibold);
+}
+
+:host ::ng-deep .ledger-table.p-datatable {
+  .p-datatable-tbody > tr {
+    cursor: default;
+
+    &:nth-child(even) {
+      background: var(--color-background-subtle);
+    }
+
+    &:hover {
+      transform: none;
+      box-shadow: none;
+      background: var(--color-background-hover);
+    }
+
+    &:active {
+      transform: none;
+      background: var(--color-neutral-100);
+    }
+  }
+}
+
+@media (max-width: 768px) {
+  :host ::ng-deep .ledger-table.p-datatable {
+    .p-datatable-tbody > tr {
+      display: table-row;
+      margin-bottom: 0;
+      border: none;
+      border-radius: 0;
+      padding: 0;
+      background: transparent;
+
+      &:hover {
+        box-shadow: none;
+      }
+
+      > td {
+        display: table-cell !important;
+        justify-content: unset;
+        align-items: unset;
+        padding: var(--spacing-4) var(--spacing-3);
+
+        &::before {
+          content: none !important;
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "screenId": "cash-desk",
+  "description": "Golden fixture for cash desk screen analysis",
+  "minQualityScore": 85,
+  "requiredSections": [
+    "Synthèse exécutive",
+    "Indicateurs clés",
+    "Anomalies et risques",
+    "Actions recommandées"
+  ],
+  "payloadFixture": {
+    "schemaVersion": "2",
+    "screenId": "cash-desk",
+    "payload": {
+      "schemaVersion": "2",
+      "screenId": "cash-desk",
+      "summary": {
+        "primaryTotal": 4000,
+        "primaryCreditsTotal": 27000,
+        "primaryDebitsTotal": 23000,
+        "netPrimary": 4000
+      },
+      "dataQuality": {
+        "hasData": true,
+        "isPartial": true,
+        "warnings": ["Seule la page 1/2 est incluse dans l'échantillon"]
+      }
+    }
+  }
+}

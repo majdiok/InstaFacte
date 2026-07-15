@@ -1,0 +1,509 @@
+// ============================================
+// FACTUTRUST — COUCHE DESIGN (ft-*)
+// Utilitaires/animations portés depuis la maquette factutrust_design.html.
+// 100% autonome : aucune dépendance au CDN Tailwind. Sûr à utiliser partout.
+// Les couleurs consomment les tokens --color-* (styles.scss).
+// ============================================
+
+// -------- Keyframes (préfixées ft- pour éviter toute collision) --------
+@keyframes ft-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes ft-pulse-ring {
+  0% { transform: scale(0.8); opacity: 0.8; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+
+@keyframes ft-typing {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+  30% { transform: translateY(-8px); opacity: 1; }
+}
+
+@keyframes ft-slide-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ft-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes ft-draw {
+  from { stroke-dashoffset: 1000; }
+  to { stroke-dashoffset: 0; }
+}
+
+// -------- Surfaces --------
+.ft-glass {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.ft-card-hover {
+  transition: transform var(--transition-normal, 200ms cubic-bezier(0.4, 0, 0.2, 1)),
+              box-shadow var(--transition-normal, 200ms cubic-bezier(0.4, 0, 0.2, 1));
+
+  &:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-xl);
+  }
+}
+
+// -------- Texte en dégradé (titres / accents) --------
+.ft-gradient-text {
+  background: linear-gradient(135deg, var(--color-primary-600, #2563eb), #7c3aed);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+// -------- Blob décoratif (accent d'angle des cartes KPI) --------
+.ft-blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(28px);
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+// -------- Anneau pulsant (présence IA) --------
+.ft-pulse-ring {
+  position: relative;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    border: 2px solid var(--color-primary-500, #3b82f6);
+    animation: ft-pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+  }
+}
+
+// -------- Indicateur de saisie (3 points animés) --------
+.ft-typing-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--color-neutral-400, #94a3b8);
+  animation: ft-typing 1.4s infinite;
+
+  &:nth-child(2) { animation-delay: 0.2s; }
+  &:nth-child(3) { animation-delay: 0.4s; }
+}
+
+// -------- Animations d'entrée --------
+.ft-slide-in { animation: ft-slide-in 0.3s ease-out; }
+.ft-fade-in { animation: ft-fade-in 0.5s ease-out; }
+
+// -------- Barre de progression --------
+.ft-progress-bar {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-neutral-200, #e2e8f0);
+  border-radius: 9999px;
+
+  &__fill {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--color-primary-500, #3b82f6), var(--color-primary-600, #2563eb));
+    transition: width var(--transition-slow, 300ms cubic-bezier(0.4, 0, 0.2, 1));
+  }
+}
+
+// -------- Élément de navigation (accent latéral menu) --------
+.ft-nav-item {
+  position: relative;
+  transition: background-color var(--transition-fast, 150ms cubic-bezier(0.4, 0, 0.2, 1)),
+              color var(--transition-fast, 150ms cubic-bezier(0.4, 0, 0.2, 1));
+}
+
+// -------- Tracé animé d'un graphe SVG --------
+.ft-chart-line {
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: ft-draw 2s ease-out forwards;
+}
+
+// -------- Barres de défilement fines --------
+.ft-scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-neutral-300, #cbd5e1) transparent;
+
+  &::-webkit-scrollbar { width: 6px; height: 6px; }
+  &::-webkit-scrollbar-track { background: transparent; }
+  &::-webkit-scrollbar-thumb {
+    background: var(--color-neutral-300, #cbd5e1);
+    border-radius: 9999px;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: var(--color-neutral-400, #94a3b8);
+  }
+}
+
+// ============================================
+// BADGE D'ICÔNE — signature visuelle de la maquette
+// Carré arrondi à fond teinté + glyphe coloré. Réutilisable partout :
+// cartes KPI, actions rapides, items de liste, en-têtes de section…
+// Indépendant de la police d'icône (FontAwesome / PrimeIcons / Lucide).
+// Teintes alignées sur la palette Tailwind de factutrust_design.html.
+// ============================================
+$ft-icon-tones: (
+  'primary': (#eff6ff, #2563eb),
+  'violet':  (#f5f3ff, #7c3aed),
+  'fuchsia': (#fdf4ff, #c026d3),
+  'emerald': (#ecfdf5, #059669),
+  'success': (#f0fdf4, #16a34a),
+  'cyan':    (#ecfeff, #0891b2),
+  'teal':    (#f0fdfa, #0d9488),
+  'indigo':  (#eef2ff, #4f46e5),
+  'amber':   (#fffbeb, #d97706),
+  'warning': (#fffbeb, #d97706),
+  'orange':  (#fff7ed, #ea580c),
+  'pink':    (#fdf2f8, #db2777),
+  'rose':    (#fff1f2, #e11d48),
+  'danger':  (#fef2f2, #dc2626),
+  'yellow':  (#fefce8, #ca8a04),
+  'info':    (#f0f9ff, #0284c7),
+  'neutral': (#f8fafc, #475569),
+);
+
+.ft-icon-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;   // 40px — taille des cartes KPI / en-têtes
+  height: 2.5rem;
+  border-radius: var(--radius-xl, 0.75rem);
+  font-size: 1.125rem;
+  line-height: 1;
+  flex-shrink: 0;
+  background: #eff6ff;
+  color: #2563eb;
+  transition: background var(--transition-normal, 200ms cubic-bezier(0.4, 0, 0.2, 1)),
+              color var(--transition-normal, 200ms cubic-bezier(0.4, 0, 0.2, 1));
+
+  &--sm { width: 2rem; height: 2rem; font-size: 0.95rem; border-radius: var(--radius-lg, 0.5rem); }
+  &--lg { width: 3rem; height: 3rem; font-size: 1.35rem; }
+
+  @each $name, $pair in $ft-icon-tones {
+    &--#{$name} {
+      background: nth($pair, 1);
+      color: nth($pair, 2);
+    }
+  }
+}
+
+// Glyphe coloré seul (sans fond) — rails de navigation, listes denses.
+.ft-icon-tone {
+  @each $name, $pair in $ft-icon-tones {
+    &--#{$name} { color: nth($pair, 2); }
+  }
+}
+
+// ============================================
+// BOUTONS BOOTSTRAP/PLUTO — alignés sur <app-button> (maquette)
+// Les boutons bruts `class="btn btn-*"` (forecasting, accounting, withholding…)
+// adoptent le design SANS toucher aux templates ni à leur logique d'icônes.
+// `.btn.btn-*` (spécificité 0,2,0, chargé en dernier) prime sur Pluto/Bootstrap
+// (0,1,0). Les <app-button> ont des styles ENCAPSULÉS de spécificité supérieure
+// et ne sont donc pas affectés. PrimeNG (.p-button) utilise une autre classe.
+// ============================================
+.btn.btn-primary,
+.btn.btn-secondary,
+.btn.btn-success,
+.btn.btn-warning,
+.btn.btn-danger,
+.btn.btn-info,
+.btn.btn-outline-primary,
+.btn.btn-outline-secondary,
+.btn.btn-outline-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-2, 0.5rem);
+  border-radius: var(--radius-lg, 0.5rem);
+  font-weight: var(--font-weight-medium, 500);
+  border: 1px solid transparent;
+  transition: all var(--transition-fast, 150ms cubic-bezier(0.4, 0, 0.2, 1));
+}
+
+.btn.btn-primary {
+  background: var(--gradient-primary, linear-gradient(135deg, #3b82f6 0%, #6366f1 100%));
+  color: #fff;
+  box-shadow: var(--shadow-primary, 0 4px 14px 0 rgba(37, 99, 235, 0.15));
+}
+.btn.btn-primary:hover:not(:disabled) {
+  background: var(--gradient-accent, linear-gradient(135deg, #6366f1 0%, #4f46e5 100%));
+  color: #fff;
+  transform: translateY(-2px);
+}
+
+.btn.btn-secondary {
+  background: var(--color-background-subtle, #f8fafc);
+  color: var(--color-text-primary, #0f172a);
+  border-color: var(--color-border-default, #cbd5e1);
+}
+.btn.btn-secondary:hover:not(:disabled) {
+  background: var(--color-neutral-200, #e2e8f0);
+  border-color: var(--color-border-strong, #94a3b8);
+}
+
+.btn.btn-success {
+  background: var(--gradient-success, linear-gradient(135deg, #10b981 0%, #059669 100%));
+  color: #fff;
+}
+.btn.btn-warning {
+  background: var(--gradient-warning, linear-gradient(135deg, #f59e0b 0%, #ea580c 100%));
+  color: #fff;
+}
+.btn.btn-danger {
+  background: var(--gradient-danger, linear-gradient(135deg, #ef4444 0%, #dc2626 100%));
+  color: #fff;
+}
+.btn.btn-info {
+  background: var(--color-info-600, #0284c7);
+  color: #fff;
+}
+.btn.btn-success:hover:not(:disabled),
+.btn.btn-warning:hover:not(:disabled),
+.btn.btn-danger:hover:not(:disabled),
+.btn.btn-info:hover:not(:disabled) {
+  filter: brightness(0.97);
+  transform: translateY(-2px);
+  color: #fff;
+}
+
+.btn.btn-outline-primary {
+  background: transparent;
+  color: var(--color-primary-600, #2563eb);
+  border-color: var(--color-primary-600, #2563eb);
+}
+.btn.btn-outline-primary:hover:not(:disabled) {
+  background: var(--color-primary-50, #eff6ff);
+  color: var(--color-primary-700, #1d4ed8);
+}
+
+.btn.btn-outline-secondary {
+  background: transparent;
+  color: var(--color-text-secondary, #475569);
+  border-color: var(--color-border-default, #cbd5e1);
+}
+.btn.btn-outline-secondary:hover:not(:disabled) {
+  background: var(--color-background-subtle, #f8fafc);
+  color: var(--color-text-primary, #0f172a);
+}
+
+.btn.btn-outline-danger {
+  background: transparent;
+  color: var(--color-error-600, #dc2626);
+  border-color: var(--color-error-600, #dc2626);
+}
+.btn.btn-outline-danger:hover:not(:disabled) {
+  background: var(--color-error-50, #fef2f2);
+  color: var(--color-error-700, #b91c1c);
+}
+
+// ============================================
+// TABLES BOOTSTRAP BRUTES — alignées sur le style p-table (en-tête sobre,
+// lignes à séparateurs légers, survol primaire). N'affecte que `class="table"`
+// (forecasting : abc-xyz, revenue-forecast). PrimeNG utilise `.p-datatable`.
+// Les modificateurs Bootstrap (.table-striped/.table-hover) restent compatibles.
+// ============================================
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm, 0.875rem);
+
+  thead th {
+    background: var(--color-neutral-50, #f8fafc);
+    color: var(--color-text-secondary, #475569);
+    font-weight: var(--font-weight-semibold, 600);
+    font-size: var(--font-size-xs, 0.75rem);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: var(--spacing-3, 0.75rem) var(--spacing-4, 1rem);
+    border-bottom: 1px solid var(--color-border-default, #cbd5e1);
+    text-align: left;
+  }
+
+  tbody td {
+    padding: var(--spacing-3, 0.75rem) var(--spacing-4, 1rem);
+    border-bottom: 1px solid var(--color-border-subtle, #e2e8f0);
+    color: var(--color-text-primary, #0f172a);
+  }
+
+  tbody tr:hover td {
+    background: var(--color-primary-50, #eff6ff);
+  }
+}
+
+// ============================================
+// CARTES BOOTSTRAP BRUTES — surface alignée sur <app-card> (maquette).
+// Ne définit QUE l'apparence de surface (fond/bordure/rayon/ombre) ; n'impose
+// ni display ni padding (Bootstrap/utilitaires les gèrent). Les composants qui
+// stylent eux-mêmes `.card` (scoped) priment et ne sont pas affectés. Bénéficie
+// aux cartes Bootstrap brutes (CRM, filtres comptabilité…). PrimeNG = `.p-card`.
+// ============================================
+.card {
+  background: var(--color-background-elevated, #ffffff);
+  border: 1px solid var(--color-border-subtle, #e2e8f0);
+  border-radius: var(--radius-xl, 0.75rem);
+  box-shadow: var(--shadow-sm, 0 1px 3px 0 rgb(0 0 0 / 0.08));
+}
+
+// ============================================
+// CONTENU PROJETÉ DES CARTES KPI (tableau de bord) — maquette.
+// Barre de progression / sparkline / sous-titre projetés dans <app-stat-card>.
+// En couche globale (hors budget par-composant) ; s'appliquent au contenu projeté.
+// ============================================
+.kpi-progress {
+  margin-top: var(--spacing-3, 0.75rem);
+  height: 6px;
+  background: var(--color-neutral-100, #f1f5f9);
+  border-radius: var(--radius-full, 9999px);
+  overflow: hidden;
+}
+.kpi-progress-fill {
+  display: block;
+  height: 100%;
+  width: 75%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--color-primary-400, #60a5fa), var(--color-primary-600, #2563eb));
+}
+.kpi-spark {
+  display: block;
+  width: 100%;
+  height: 32px;
+  margin-top: var(--spacing-2, 0.5rem);
+}
+.kpi-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1, 0.25rem);
+  margin-top: var(--spacing-3, 0.75rem);
+  font-size: var(--font-size-xs, 0.75rem);
+  color: var(--color-text-secondary, #475569);
+}
+.kpi-sub--success { color: var(--color-success-600, #16a34a); font-weight: var(--font-weight-medium, 500); }
+.kpi-sub--danger { color: var(--color-error-600, #dc2626); font-weight: var(--font-weight-medium, 500); }
+
+// Carte latérale horizontale (icône + libellé + valeur) — tableau de bord (Livraisons/Devis).
+.dash-side-card {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-4, 1rem);
+  padding: var(--spacing-5, 1.25rem);
+  background: var(--color-background-elevated, #ffffff);
+  border: 1px solid var(--color-border-subtle, #e2e8f0);
+  border-radius: var(--radius-2xl, 1rem);
+  box-shadow: var(--shadow-soft-sm, var(--shadow-sm, 0 1px 3px 0 rgb(0 0 0 / 0.08)));
+}
+.dash-side-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dash-side-label { font-size: var(--font-size-sm, 0.875rem); font-weight: var(--font-weight-semibold, 600); color: var(--color-text-secondary, #475569); }
+.dash-side-value { font-size: var(--font-size-2xl, 1.5rem); font-weight: 700; color: var(--color-text-primary, #0f172a); }
+
+// ============================================
+// UTILITAIRES PARTAGÉS — anti-duplication des listes/détails (REFRESH 2026)
+// Promeut en classes globales les patterns recopiés en `styles:[]` dans ~30 pages
+// (.filters-card / .table-card / sections). 100 % additif : les classes existantes
+// par composant ne sont pas touchées ; les pages migrent vers `ft-*` en Phase 2.
+// ============================================
+
+// -------- Barre de filtres (ex-.filters-card) — surface neutre feutrée --------
+.ft-filters {
+  background: var(--color-background-elevated, #ffffff);
+  border: 1px solid var(--color-border-subtle, #e2e8f0);
+  border-radius: var(--radius-xl, 0.75rem);
+  padding: var(--spacing-4, 1rem) var(--spacing-5, 1.25rem);
+  margin-bottom: var(--spacing-5, 1.25rem);
+  box-shadow: var(--shadow-soft-sm, var(--shadow-sm));
+}
+.ft-filters__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-3, 0.75rem);
+  margin-bottom: var(--spacing-3, 0.75rem);
+}
+.ft-filters__title {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2, 0.5rem);
+  margin: 0;
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-text-secondary, #475569);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.ft-filters__row {
+  display: flex;
+  gap: var(--spacing-3, 0.75rem);
+  flex-wrap: wrap;
+  align-items: center;
+}
+.ft-filters__reset {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2, 0.5rem);
+  padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+  background: var(--color-background-subtle, #f1f5f9);
+  border: 1px solid var(--color-border-default, #cbd5e1);
+  border-radius: var(--radius-md, 0.375rem);
+  color: var(--color-text-secondary, #475569);
+  font-size: var(--font-size-sm, 0.875rem);
+  font-family: inherit;
+  cursor: pointer;
+  transition: all var(--transition-fast, 150ms cubic-bezier(0.4, 0, 0.2, 1));
+
+  &:hover {
+    background: var(--color-neutral-200, #e2e8f0);
+    border-color: var(--color-border-strong, #94a3b8);
+    color: var(--color-text-primary, #0f172a);
+  }
+  &:focus-visible {
+    outline: 0 none;
+    box-shadow: var(--focus-ring, 0 0 0 3px rgba(59, 130, 246, 0.3));
+  }
+}
+
+// -------- Conteneur de tableau (ex-.table-card) --------
+.ft-table-card {
+  background: var(--color-background-elevated, #ffffff);
+  border: 1px solid var(--color-border-subtle, #e2e8f0);
+  border-radius: var(--radius-xl, 0.75rem);
+  box-shadow: var(--shadow-soft-sm, var(--shadow-sm));
+  overflow: hidden;
+}
+
+// -------- Section de page (cartes des pages détail / paramètres) --------
+.ft-page-section {
+  background: var(--color-background-elevated, #ffffff);
+  border: 1px solid var(--color-border-subtle, #e2e8f0);
+  border-radius: var(--radius-xl, 0.75rem);
+  box-shadow: var(--shadow-soft-sm, var(--shadow-sm));
+  padding: var(--card-padding, 1.5rem);
+  margin-bottom: var(--spacing-5, 1.25rem);
+}
+.ft-section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2, 0.5rem);
+  margin: 0 0 var(--spacing-4, 1rem);
+  font-size: var(--font-size-lg, 1.125rem);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-text-primary, #0f172a);
+}
+
+// -------- Police monospace utilitaire (codes, NIF, montants tabulaires) --------
+.ft-mono {
+  font-family: var(--font-family-mono, 'JetBrains Mono', 'SF Mono', monospace);
+  font-variant-numeric: tabular-nums;
+}

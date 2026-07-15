@@ -1,0 +1,315 @@
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { RouterModule } from '@angular/router';
+import { TableModule } from 'primeng/table';
+import { TooltipModule } from 'primeng/tooltip';
+import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { ToastService } from '@core/services/toast.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
+import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
+import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.component';
+import { AccountingService, ThirdPartyDirectoryRowDto } from '../services/accounting.service';
+
+interface ThirdPartyProfileForm {
+  kind: number;
+  thirdPartyId: string;
+  thirdPartyName: string;
+  auxiliaryCode: string;
+  collectiveAccountNumber: string;
+  paymentTermDays: number | null;
+  accountingNotes: string;
+}
+
+/**
+ * Plan tiers unifié (façon Sage Structure → Plan tiers) : répertoire clients + fournisseurs
+ * avec code auxiliaire, compte collectif, délai de règlement et soldes courants ; fiche
+ * comptable éditable en ligne et génération des codes manquants (C0001…/F0001…).
+ */
+@Component({
+  selector: 'app-third-parties',
+  standalone: true,
+  imports: [
+    CommonModule,
+    FormsModule,
+    RouterModule,
+    TableModule,
+    TooltipModule,
+    PageHeaderComponent,
+    ButtonComponent,
+    AccountingStatusBannerComponent,
+    AccountingFilterBarComponent
+  ],
+  template: `
+    <app-page-header title="Plan tiers" subtitle="Répertoire comptable des clients et fournisseurs — codes auxiliaires, comptes collectifs et soldes" />
+
+    <div class="card accounting-filters-card">
+      <app-accounting-filter-bar ariaLabel="Recherche et filtres du plan tiers">
+        <div accountingFilterFields class="tp-toolbar-fields">
+          <div class="accounting-filter-field tp-grow">
+            <label class="accounting-filter-label" for="tp-search">Recherche</label>
+            <input id="tp-search" [(ngModel)]="search" (keyup.enter)="load()" class="accounting-filter-input"
+              placeholder="Nom, e-mail ou code auxiliaire…" />
+          </div>
+          <div class="accounting-filter-field">
+            <label class="accounting-filter-label" for="tp-kind">Type</label>
+            <select id="tp-kind" [(ngModel)]="kind" class="accounting-filter-input">
+              <option [ngValue]="null">Tous</option>
+              <option [ngValue]="1">Clients</option>
+              <option [ngValue]="2">Fournisseurs</option>
+            </select>
+          </div>
+          <div class="accounting-filter-field">
+            <label class="accounting-filter-label" for="tp-inactive">Inactifs</label>
+            <label class="tp-check">
+              <input id="tp-inactive" type="checkbox" [(ngModel)]="includeInactive" />
+              <span>Inclure</span>
+            </label>
+          </div>
+        </div>
+        <div accountingFilterActions>
+          <app-button variant="secondary" icon="pi pi-refresh" iconPos="left" type="button"
+            (click)="load()" [disabled]="loading()" ariaLabel="Actualiser le plan tiers">
+            Actualiser
+          </app-button>
+          <app-button variant="primary" icon="pi pi-hashtag" iconPos="left" type="button"
+            (click)="generateCodes()" [disabled]="loading() || generating()"
+            ariaLabel="Générer les codes auxiliaires manquants">
+            {{ generating() ? 'Génération…' : 'Générer les codes manquants' }}
+          </app-button>
+        </div>
+      </app-accounting-filter-bar>
+    </div>
+
+    <app-accounting-status-banner variant="error" [message]="error() ?? ''"
+      [showRetry]="!!error()" retryLabel="Réessayer" (retry)="load()" />
+
+    @if (form(); as f) {
+      <div class="card tp-form">
+        <h3 class="tp-form-title">
+          Fiche comptable — {{ f.thirdPartyName }}
+          <span class="tp-badge" [class.tp-badge-client]="f.kind === 1" [class.tp-badge-supplier]="f.kind === 2">
+            {{ f.kind === 1 ? 'Client' : 'Fournisseur' }}
+          </span>
+        </h3>
+        <div class="tp-fields">
+          <div class="tp-field">
+            <label class="tp-lbl" for="tp-f-code">Code auxiliaire</label>
+            <input id="tp-f-code" class="tp-inp tp-mono" [(ngModel)]="f.auxiliaryCode" maxlength="20"
+              placeholder="Ex. {{ f.kind === 1 ? 'C0001' : 'F0001' }}" />
+          </div>
+          <div class="tp-field">
+            <label class="tp-lbl" for="tp-f-coll">Compte collectif</label>
+            <input id="tp-f-coll" class="tp-inp tp-mono" [(ngModel)]="f.collectiveAccountNumber" maxlength="20"
+              placeholder="Ex. {{ f.kind === 1 ? '4111' : '4011' }}" />
+          </div>
+          <div class="tp-field">
+            <label class="tp-lbl" for="tp-f-term">Délai de règlement (j)</label>
+            <input id="tp-f-term" type="number" class="tp-inp tp-narrow" [(ngModel)]="f.paymentTermDays" min="0" max="365" />
+          </div>
+          <div class="tp-field tp-grow">
+            <label class="tp-lbl" for="tp-f-notes">Notes comptables</label>
+            <input id="tp-f-notes" class="tp-inp" [(ngModel)]="f.accountingNotes" maxlength="500"
+              placeholder="Observations internes (facultatif)" />
+          </div>
+          <div class="tp-form-actions">
+            <button type="button" class="btn btn-secondary" (click)="form.set(null)" [disabled]="saving()">Annuler</button>
+            <button type="button" class="btn btn-primary" (click)="save()"
+              [disabled]="saving() || !f.auxiliaryCode.trim() || !f.collectiveAccountNumber.trim()">
+              {{ saving() ? 'Enregistrement…' : 'Enregistrer' }}
+            </button>
+          </div>
+        </div>
+        <p class="tp-help">Le code auxiliaire (lettres, chiffres, tirets — 20 max) est unique et alimente la colonne CompAuxNum du FEC. Le compte collectif est numérique (4111 clients / 4011 fournisseurs par défaut).</p>
+      </div>
+    }
+
+    <p-table [value]="rows()" [paginator]="true" [rows]="25" [rowsPerPageOptions]="[25, 50, 100]"
+      [loading]="loading()" [rowHover]="true" [scrollable]="true" scrollHeight="flex"
+      styleClass="p-datatable-sm accounting-datatable tp-table"
+      [showCurrentPageReport]="true" currentPageReportTemplate="Affichage de {first} à {last} sur {totalRecords} tiers">
+      <ng-template pTemplate="header">
+        <tr>
+          <th scope="col">Code aux.</th>
+          <th scope="col">Nom</th>
+          <th scope="col">Type</th>
+          <th scope="col" pTooltip="Compte collectif de rattachement" tooltipPosition="top">Collectif</th>
+          <th scope="col" class="text-right" pTooltip="Délai de règlement (jours)" tooltipPosition="top">Délai</th>
+          <th scope="col" class="text-right">Solde D</th>
+          <th scope="col" class="text-right">Solde C</th>
+          <th scope="col">Actif</th>
+          <th scope="col">Actions</th>
+        </tr>
+      </ng-template>
+      <ng-template pTemplate="body" let-r>
+        <tr [class.tp-inactive]="!r.isActive">
+          <td class="tp-mono" data-label="Code aux.">{{ r.auxiliaryCode || '—' }}</td>
+          <td data-label="Nom">{{ r.name }}</td>
+          <td data-label="Type">
+            <span class="tp-badge" [class.tp-badge-client]="r.kind === 1" [class.tp-badge-supplier]="r.kind === 2">
+              {{ r.kind === 1 ? 'Client' : 'Fournisseur' }}
+            </span>
+          </td>
+          <td class="tp-mono" data-label="Collectif">{{ r.collectiveAccountNumber }}</td>
+          <td class="text-right" data-label="Délai">{{ r.paymentTermDays != null ? r.paymentTermDays + ' j' : '—' }}</td>
+          <td class="text-right tp-num" data-label="Solde D">{{ r.balanceDebit | number : '1.3-3' }}</td>
+          <td class="text-right tp-num" data-label="Solde C">{{ r.balanceCredit | number : '1.3-3' }}</td>
+          <td data-label="Actif">{{ r.isActive ? 'Oui' : 'Non' }}</td>
+          <td data-label="Actions" class="tp-actions">
+            <a class="tp-icon" [routerLink]="['/accounting/third-party-ledger']"
+              [queryParams]="{ thirdPartyId: r.thirdPartyId, kind: r.kind, name: r.name }"
+              pTooltip="Grand livre du tiers" tooltipPosition="top" aria-label="Grand livre du tiers">
+              <i class="pi pi-book"></i>
+            </a>
+            <a class="tp-icon" [routerLink]="['/accounting/lettering']"
+              pTooltip="Lettrage" tooltipPosition="top" aria-label="Lettrage">
+              <i class="pi pi-link"></i>
+            </a>
+            <button type="button" class="tp-icon" (click)="startEdit(r)"
+              pTooltip="Fiche comptable" tooltipPosition="top" aria-label="Modifier la fiche comptable">
+              <i class="pi pi-pencil"></i>
+            </button>
+          </td>
+        </tr>
+      </ng-template>
+      <ng-template pTemplate="emptymessage">
+        <tr><td colspan="9" class="tp-empty">Aucun tiers ne correspond aux filtres.</td></tr>
+      </ng-template>
+    </p-table>
+  `,
+  styles: `
+    @import '../shared/accounting-layout';
+    .tp-toolbar-fields { display:flex; flex-wrap:wrap; align-items:flex-end; gap:var(--spacing-4); }
+    .tp-grow { flex:1 1 14rem; }
+    .tp-check { display:flex; align-items:center; gap:var(--spacing-2); padding:var(--spacing-2) 0; font-size:var(--font-size-sm); color:var(--color-text-primary); cursor:pointer; }
+    .tp-form { padding:var(--spacing-4); border-radius:var(--radius-lg); box-shadow:var(--shadow-sm); margin-bottom:var(--spacing-4); }
+    .tp-form-title { margin:0 0 var(--spacing-3); font-size:var(--font-size-md); font-weight:var(--font-weight-semibold); display:flex; align-items:center; gap:var(--spacing-2); }
+    .tp-fields { display:flex; flex-wrap:wrap; gap:var(--spacing-3); align-items:flex-end; }
+    .tp-field { display:flex; flex-direction:column; gap:var(--spacing-1); min-width:8rem; }
+    .tp-narrow { max-width:7rem; }
+    .tp-lbl { font-size:var(--font-size-sm); font-weight:var(--font-weight-semibold); color:var(--color-text-primary); }
+    .tp-inp { padding:var(--spacing-2) var(--spacing-3); border:1px solid var(--color-border-default); border-radius:var(--radius-md); background:var(--color-background-elevated); color:var(--color-text-primary); font-size:var(--font-size-sm); width:100%; }
+    .tp-form-actions { display:flex; gap:var(--spacing-2); margin-left:auto; }
+    .tp-help { margin:var(--spacing-3) 0 0; font-size:var(--font-size-sm); color:var(--color-text-secondary); }
+    .tp-mono { font-family:ui-monospace, monospace; }
+    .tp-num { font-variant-numeric:tabular-nums; }
+    .tp-inactive { opacity:0.6; }
+    .tp-badge { display:inline-block; padding:0.15rem 0.55rem; border-radius:var(--radius-pill, 999px); font-size:var(--font-size-xs); font-weight:var(--font-weight-semibold); }
+    .tp-badge-client { background:var(--color-primary-50, #eff6ff); color:var(--color-primary-700, #1d4ed8); border:1px solid var(--color-primary-200, #bfdbfe); }
+    .tp-badge-supplier { background:var(--color-warning-50, #fffbeb); color:var(--color-warning-700, #a16207); border:1px solid var(--color-warning-200, #fde68a); }
+    .tp-actions { white-space:nowrap; }
+    .tp-icon { background:none; border:none; cursor:pointer; color:var(--color-text-secondary); padding:var(--spacing-1) var(--spacing-2); display:inline-block; }
+    .tp-icon:hover { color:var(--color-text-primary); }
+    .tp-empty { text-align:center; padding:var(--spacing-6); color:var(--color-text-tertiary); }
+    .text-right { text-align:right; }
+    .btn { padding:var(--spacing-2) var(--spacing-4); border-radius:var(--radius-md); font-size:var(--font-size-sm); font-weight:var(--font-weight-semibold); cursor:pointer; border:1px solid transparent; }
+    .btn-secondary { background:var(--color-background-subtle); color:var(--color-text-primary); border-color:var(--color-border-default); }
+    .btn-primary { background:var(--color-primary-500, #2563eb); color:#fff; }
+    .btn:disabled { opacity:0.6; cursor:not-allowed; }
+    :host ::ng-deep .tp-table.p-datatable .p-datatable-table { min-width:64rem; }
+  `
+})
+export class ThirdPartiesComponent implements OnInit {
+  private readonly api = inject(AccountingService);
+  private readonly toast = inject(ToastService);
+  private readonly errorHandler = inject(ErrorHandlerService);
+
+  search = '';
+  kind: number | null = null;
+  includeInactive = false;
+  readonly rows = signal<ThirdPartyDirectoryRowDto[]>([]);
+  readonly loading = signal(false);
+  readonly saving = signal(false);
+  readonly generating = signal(false);
+  readonly error = signal<string | null>(null);
+  readonly form = signal<ThirdPartyProfileForm | null>(null);
+
+  ngOnInit(): void {
+    this.load();
+  }
+
+  load(): void {
+    this.loading.set(true);
+    this.error.set(null);
+    // Volumes tiers faibles : une page large côté serveur, pagination visuelle côté client.
+    this.api.getThirdPartyDirectory({
+      kind: this.kind, search: this.search, includeInactive: this.includeInactive, page: 1, pageSize: 500
+    }).subscribe({
+      next: res => {
+        this.loading.set(false);
+        if (res.success && res.data) this.rows.set(res.data.items);
+        else this.error.set(res.error ?? 'Erreur de chargement du plan tiers.');
+      },
+      error: err => { this.loading.set(false); this.error.set(this.errorHandler.extractErrorMessage(err)); }
+    });
+  }
+
+  generateCodes(): void {
+    if (this.generating()) return;
+    this.generating.set(true);
+    this.api.ensureAuxiliaryCodes().subscribe({
+      next: res => {
+        this.generating.set(false);
+        if (res.success) {
+          const n = res.data ?? 0;
+          this.toast.add({
+            severity: 'success', summary: 'Codes auxiliaires',
+            detail: n > 0 ? `${n} code(s) généré(s).` : 'Tous les tiers actifs ont déjà un code.', life: 4000
+          });
+          if (n > 0) this.load();
+        } else {
+          this.error.set(res.error ?? 'Erreur lors de la génération des codes.');
+        }
+      },
+      error: err => { this.generating.set(false); this.error.set(this.errorHandler.extractErrorMessage(err)); }
+    });
+  }
+
+  startEdit(r: ThirdPartyDirectoryRowDto): void {
+    this.error.set(null);
+    this.api.getThirdPartyProfile(r.kind, r.thirdPartyId).subscribe({
+      next: res => {
+        if (res.success && res.data) {
+          const p = res.data;
+          this.form.set({
+            kind: p.kind,
+            thirdPartyId: p.thirdPartyId,
+            thirdPartyName: p.thirdPartyName,
+            auxiliaryCode: p.auxiliaryCode ?? '',
+            collectiveAccountNumber: p.collectiveAccountNumber,
+            paymentTermDays: p.paymentTermDays ?? null,
+            accountingNotes: p.accountingNotes ?? ''
+          });
+        } else {
+          this.error.set(res.error ?? 'Erreur de chargement de la fiche.');
+        }
+      },
+      error: err => this.error.set(this.errorHandler.extractErrorMessage(err))
+    });
+  }
+
+  save(): void {
+    const f = this.form();
+    if (!f || this.saving()) return;
+    this.saving.set(true);
+    this.api.upsertThirdPartyProfile(f.kind, f.thirdPartyId, {
+      auxiliaryCode: f.auxiliaryCode.trim().toUpperCase(),
+      collectiveAccountNumber: f.collectiveAccountNumber.trim(),
+      paymentTermDays: f.paymentTermDays,
+      accountingNotes: f.accountingNotes.trim() || null
+    }).subscribe({
+      next: res => {
+        this.saving.set(false);
+        if (res.success) {
+          this.toast.add({ severity: 'success', summary: 'Fiche tiers enregistrée', detail: f.thirdPartyName, life: 4000 });
+          this.form.set(null);
+          this.load();
+        } else {
+          this.error.set(res.error ?? "Erreur lors de l'enregistrement de la fiche.");
+        }
+      },
+      error: err => { this.saving.set(false); this.error.set(this.errorHandler.extractErrorMessage(err)); }
+    });
+  }
+}

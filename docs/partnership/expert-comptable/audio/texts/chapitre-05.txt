@@ -1,0 +1,5 @@
+﻿FactuTrust intÃ¨gre un module comptable complet, alignÃ© sur le plan comptable tunisien.
+Le plan comptable est prÃ©-configurÃ© et extensible. Le journal et le grand livre permettent le contrÃ´le ligne Ã  ligne.
+La balance gÃ©nÃ©rale Ã  huit colonnes, le lettrage des comptes clients et fournisseurs, et la dÃ©claration de TVA prÃ©remplie accÃ©lÃ¨rent vos revues mensuelles.
+Le bilan et le compte de rÃ©sultat closent la boucle pour le reporting de fin d'exercice.
+Enfin, l'export FEC â€” Fichier des Ã‰critures Comptables â€” est disponible en un clic depuis l'Ã©cran de clÃ´ture, prÃªt Ã  transmettre Ã  l'administration ou Ã  intÃ©grer dans vos outils de rÃ©vision.

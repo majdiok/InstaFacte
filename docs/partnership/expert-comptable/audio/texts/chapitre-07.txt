@@ -1,0 +1,4 @@
+﻿La gouvernance est au centre de la confiance.
+Le journal d'audit enregistre chaque action sensible : validation de facture, export FEC, clÃ´ture de pÃ©riode.
+Les rÃ´les prÃ©dÃ©finis â€” dont le rÃ´le Comptable â€” limitent l'accÃ¨s au strict nÃ©cessaire.
+Vous dÃ©ployez FactuTrust chez vos clients PME tout en conservant la visibilitÃ© et le contrÃ´le adaptÃ©s Ã  votre mission de conseil.

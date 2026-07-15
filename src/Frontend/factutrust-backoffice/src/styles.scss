@@ -1,0 +1,282 @@
+/* InstaFact platform backoffice design tokens (dark) */
+:root {
+  /* === Surfaces (existing — preserved) ====================================== */
+  --ft-bg: #0d1117;
+  --ft-surface: #161b22;
+  --ft-surface-2: #0d1117;
+  --ft-border: #30363d;
+  --ft-text: #e6edf3;
+  --ft-text-muted: #8b949e;
+  --ft-accent: #58a6ff;
+  --ft-accent-muted: rgba(88, 166, 255, 0.18);
+  --ft-radius: 10px;
+  --ft-space-3: 0.75rem;
+  --ft-space-4: 1rem;
+  --ft-space-5: 1.25rem;
+  --ft-space-6: 1.5rem;
+
+  /* === Surfaces additionnelles (Lot A1) ===================================== */
+  --ft-surface-3: #1c232c;            /* hover row, drawer body */
+  --ft-surface-overlay: #1f2731;      /* dropdown / menu */
+  --ft-border-strong: #444c56;        /* separator important */
+  --ft-border-subtle: #21262d;        /* divider léger row */
+
+  /* === Texte (compléments) ================================================== */
+  --ft-text-subtle: #6e7681;          /* caption, footnote */
+  --ft-text-on-accent: #0d1117;       /* texte sur surface accent */
+
+  /* === Accent (déclinaisons) ================================================ */
+  --ft-accent-hover: #79b8ff;
+  --ft-accent-pressed: #388bfd;
+  --ft-accent-surface: rgba(88, 166, 255, 0.10);
+  --ft-accent-border: rgba(88, 166, 255, 0.40);
+
+  /* === Couleurs sémantiques (text / surface / border) ====================== */
+  --ft-success-text: #3fb950;
+  --ft-success-surface: rgba(46, 160, 67, 0.14);
+  --ft-success-border: rgba(46, 160, 67, 0.40);
+
+  --ft-warning-text: #d29922;
+  --ft-warning-surface: rgba(187, 128, 9, 0.16);
+  --ft-warning-border: rgba(187, 128, 9, 0.40);
+
+  --ft-danger-text: #f85149;
+  --ft-danger-surface: rgba(248, 81, 73, 0.14);
+  --ft-danger-border: rgba(248, 81, 73, 0.40);
+
+  --ft-info-text: #79c0ff;
+  --ft-info-surface: rgba(56, 139, 253, 0.14);
+  --ft-info-border: rgba(56, 139, 253, 0.40);
+
+  --ft-neutral-text: #8b949e;
+  --ft-neutral-surface: rgba(110, 118, 129, 0.14);
+  --ft-neutral-border: rgba(110, 118, 129, 0.34);
+
+  /* === Espacements sémantiques (superposés à --ft-space-N) ================== */
+  --gap-xxs: 0.25rem;
+  --gap-xs: 0.5rem;
+  --gap-sm: 0.75rem;
+  --gap-md: 1rem;
+  --gap-lg: 1.5rem;
+  --gap-xl: 2rem;
+  --gap-2xl: 3rem;
+  --gap-card: 1.25rem;
+  --gap-section: 2rem;
+  --gap-form-row: 0.75rem;
+
+  /* === Rayons === */
+  --ft-radius-sm: 6px;
+  --ft-radius-lg: 14px;
+  --ft-radius-pill: 9999px;
+
+  /* === Élévations === */
+  --ft-elev-1: 0 1px 0 rgba(0, 0, 0, 0.30);
+  --ft-elev-2: 0 4px 12px rgba(1, 4, 9, 0.55), 0 1px 2px rgba(1, 4, 9, 0.30);
+  --ft-elev-3: 0 12px 32px rgba(1, 4, 9, 0.65), 0 2px 4px rgba(1, 4, 9, 0.40);
+  --ft-elev-overlay: 0 24px 64px rgba(1, 4, 9, 0.75);
+
+  /* === Échelle z-index === */
+  --z-base: 1;
+  --z-sticky: 100;
+  --z-dropdown: 1000;
+  --z-drawer: 1100;
+  --z-modal: 1200;
+  --z-toast: 1300;
+  --z-tooltip: 1400;
+
+  /* === Durations & easings === */
+  --duration-fast: 120ms;
+  --duration-normal: 200ms;
+  --duration-slow: 320ms;
+  --easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --easing-decelerate: cubic-bezier(0, 0, 0.2, 1);
+  --easing-accelerate: cubic-bezier(0.4, 0, 1, 1);
+
+  /* === Typographie === */
+  --font-tabular: 'Inter Tight', 'Inter', system-ui, sans-serif;
+  --font-feature-tabular: 'tnum' 1, 'lnum' 1, 'ss01' 1, 'cv11' 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-normal: 0ms;
+    --duration-slow: 0ms;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ============================================================================
+   Base
+   ============================================================================ */
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background: var(--ft-bg);
+  color: var(--ft-text);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'cv11' 1;
+}
+
+/* Focus visible WCAG */
+*:focus-visible {
+  outline: 2px solid var(--ft-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline-offset: 3px;
+}
+
+/* Chiffres tabulaires (cellules numériques) */
+.cell-num,
+.cell-money,
+.cell-id,
+.kpi-value {
+  font-feature-settings: var(--font-feature-tabular);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* ============================================================================
+   PrimeNG dark polish (existant — préservé)
+   ============================================================================ */
+.p-component {
+  --primary-color: var(--ft-accent);
+}
+
+.p-card {
+  background: var(--ft-surface);
+  border: 1px solid var(--ft-border);
+  border-radius: var(--ft-radius);
+  color: var(--ft-text);
+}
+
+.p-card .p-card-title {
+  color: var(--ft-text);
+}
+
+.p-toolbar {
+  background: var(--ft-surface);
+  border: 1px solid var(--ft-border);
+}
+
+.p-dialog .p-dialog-header {
+  background: var(--ft-surface);
+  border-bottom: 1px solid var(--ft-border);
+  color: var(--ft-text);
+}
+
+.p-dialog .p-dialog-content {
+  background: var(--ft-surface);
+  color: var(--ft-text);
+}
+
+.p-dialog .p-dialog-footer {
+  background: var(--ft-surface);
+  border-top: 1px solid var(--ft-border);
+}
+
+.p-paginator {
+  background: var(--ft-surface);
+  border-color: var(--ft-border);
+  color: var(--ft-text-muted);
+}
+
+.p-dropdown-panel,
+.p-select-panel {
+  background: var(--ft-surface);
+  border: 1px solid var(--ft-border);
+}
+
+.p-inputtext,
+.p-inputtextarea {
+  background: var(--ft-surface-2);
+  border-color: var(--ft-border);
+  color: var(--ft-text);
+}
+
+.p-inputtext:enabled:focus {
+  border-color: var(--ft-accent);
+  box-shadow: 0 0 0 1px var(--ft-accent-muted);
+}
+
+/* ============================================================================
+   Toasts polish (Lot A1)
+   ============================================================================ */
+.p-toast .p-toast-message {
+  background: var(--ft-surface);
+  border: 1px solid var(--ft-border);
+  border-left-width: 3px;
+  border-radius: var(--ft-radius);
+  box-shadow: var(--ft-elev-3);
+  color: var(--ft-text);
+}
+
+.p-toast .p-toast-message.p-toast-message-success {
+  border-left-color: var(--ft-success-text);
+}
+
+.p-toast .p-toast-message.p-toast-message-info {
+  border-left-color: var(--ft-info-text);
+}
+
+.p-toast .p-toast-message.p-toast-message-warn {
+  border-left-color: var(--ft-warning-text);
+}
+
+.p-toast .p-toast-message.p-toast-message-error {
+  border-left-color: var(--ft-danger-text);
+}
+
+/* ============================================================================
+   Skeleton shimmer (utilisée par <ft-skeleton>)
+   ============================================================================ */
+@keyframes ft-shimmer {
+  0% {
+    background-position: -100% 0;
+  }
+  100% {
+    background-position: 100% 0;
+  }
+}
+
+/* ============================================================================
+   Utilitaires accessibilité
+   ============================================================================ */
+.ft-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ft-skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--ft-accent);
+  color: var(--ft-text-on-accent);
+  padding: 0.5rem 1rem;
+  border-radius: 0 0 var(--ft-radius) 0;
+  z-index: var(--z-tooltip);
+  text-decoration: none;
+  transition: top var(--duration-normal) var(--easing-standard);
+}
+
+.ft-skip-link:focus {
+  top: 0;
+}

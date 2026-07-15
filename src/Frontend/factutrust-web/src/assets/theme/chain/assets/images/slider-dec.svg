@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 710 500" width="710" height="500">
+  <defs>
+    <linearGradient id="screenGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f8fafc"/>
+      <stop offset="100%" style="stop-color:#e2e8f0"/>
+    </linearGradient>
+    <linearGradient id="blueAccent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#4b8ef1"/>
+      <stop offset="100%" style="stop-color:#3b7ad6"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-opacity="0.12"/>
+    </filter>
+    <filter id="cardShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+  <!-- Laptop base -->
+  <g filter="url(#shadow)">
+    <rect x="120" y="280" width="470" height="24" rx="4" fill="#e2e8f0"/>
+    <rect x="240" y="300" width="230" height="8" rx="4" fill="#cbd5e1"/>
+  </g>
+  <!-- Laptop screen -->
+  <g filter="url(#shadow)">
+    <rect x="80" y="80" width="550" height="360" rx="8" fill="#1e293b"/>
+    <rect x="90" y="90" width="530" height="340" rx="4" fill="url(#screenGrad)"/>
+  </g>
+  <!-- Browser bar -->
+  <rect x="90" y="90" width="530" height="36" rx="4" fill="#fff"/>
+  <circle cx="110" cy="108" r="6" fill="#f87171"/>
+  <circle cx="130" cy="108" r="6" fill="#fbbf24"/>
+  <circle cx="150" cy="108" r="6" fill="#34d399"/>
+  <rect x="180" y="102" width="280" height="12" rx="6" fill="#e2e8f0"/>
+  <!-- Invoice header -->
+  <rect x="110" y="140" width="180" height="8" rx="2" fill="#4b8ef1" opacity="0.9"/>
+  <rect x="110" y="156" width="120" height="6" rx="2" fill="#94a3b8"/>
+  <!-- Invoice table -->
+  <rect x="110" y="180" width="490" height="28" rx="4" fill="#fff" filter="url(#cardShadow)"/>
+  <line x1="110" y1="208" x2="600" y2="208" stroke="#e2e8f0" stroke-width="1"/>
+  <rect x="120" y="188" width="80" height="12" rx="2" fill="#94a3b8"/>
+  <rect x="220" y="188" width="100" height="12" rx="2" fill="#cbd5e1"/>
+  <rect x="340" y="188" width="60" height="12" rx="2" fill="#cbd5e1"/>
+  <rect x="420" y="188" width="70" height="12" rx="2" fill="#4b8ef1" opacity="0.8"/>
+  <rect x="120" y="218" width="80" height="12" rx="2" fill="#cbd5e1"/>
+  <rect x="220" y="218" width="100" height="12" rx="2" fill="#e2e8f0"/>
+  <rect x="340" y="218" width="60" height="12" rx="2" fill="#e2e8f0"/>
+  <rect x="420" y="218" width="70" height="12" rx="2" fill="#4b8ef1" opacity="0.6"/>
+  <rect x="120" y="238" width="80" height="12" rx="2" fill="#cbd5e1"/>
+  <rect x="220" y="238" width="100" height="12" rx="2" fill="#e2e8f0"/>
+  <rect x="340" y="238" width="60" height="12" rx="2" fill="#e2e8f0"/>
+  <rect x="420" y="238" width="70" height="12" rx="2" fill="#4b8ef1" opacity="0.6"/>
+  <!-- Sidebar icons -->
+  <rect x="115" y="270" width="24" height="24" rx="4" fill="#4b8ef1"/>
+  <rect x="115" y="302" width="24" height="24" rx="4" fill="#e2e8f0"/>
+  <rect x="115" y="334" width="24" height="24" rx="4" fill="#e2e8f0"/>
+  <rect x="115" y="366" width="24" height="24" rx="4" fill="#e2e8f0"/>
+  <!-- Chart area -->
+  <rect x="340" y="280" width="250" height="100" rx="4" fill="#fff" filter="url(#cardShadow)"/>
+  <polyline points="360,360 400,330 440,345 480,300 520,315 560,270 580,285" fill="none" stroke="#4b8ef1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Document icons floating -->
+  <g opacity="0.9">
+    <rect x="520" y="140" width="40" height="52" rx="4" fill="#fff" filter="url(#cardShadow)"/>
+    <line x1="530" y1="155" x2="550" y2="155" stroke="#94a3b8" stroke-width="1"/>
+    <line x1="530" y1="165" x2="545" y2="165" stroke="#cbd5e1" stroke-width="1"/>
+    <line x1="530" y1="175" x2="552" y2="175" stroke="#cbd5e1" stroke-width="1"/>
+    <rect x="530" y="185" width="20" height="6" rx="2" fill="#4b8ef1" opacity="0.7"/>
+  </g>
+  <g opacity="0.7">
+    <rect x="560" y="165" width="35" height="45" rx="4" fill="#fff" filter="url(#cardShadow)" transform="rotate(-8 577 187)"/>
+    <line x1="568" y1="178" x2="583" y2="178" stroke="#94a3b8" stroke-width="1"/>
+    <line x1="568" y1="186" x2="580" y2="186" stroke="#cbd5e1" stroke-width="1"/>
+  </g>
+  <!-- Decorative elements -->
+  <circle cx="630" y="380" r="40" fill="#4b8ef1" opacity="0.08"/>
+  <circle cx="80" y="400" r="30" fill="#4b8ef1" opacity="0.06"/>
+</svg>

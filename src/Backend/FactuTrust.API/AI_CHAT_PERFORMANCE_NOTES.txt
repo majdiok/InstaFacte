@@ -1,0 +1,27 @@
+FactuTrust — Assistant IA : lecture des journaux de performance
+================================================================
+
+Après envoi d’un message dans le chat, l’API journalise des lignes structurées
+avec le même identifiant que l’en-tête HTTP « X-Trace-Id » (réponse POST /api/ai/chat).
+
+Phases à corréler (elapsed_ms)
+------------------------------
+- ollama_availability       : GET /api/tags (cache court côté serveur si AvailabilityCacheSeconds > 0)
+- conversation_load_or_create : chargement ou création conversation
+- build_system_prompt       : prompt système (cache par tenant si SystemPromptCacheMinutes > 0)
+- model_installed_check     : liste des modèles (cache ModelListCacheSeconds)
+- ollama_stream_round       : un tour d’inférence ; first_token_ms = latence avant premier token
+- ai_tool_execute           : exécution d’un outil métier (MediatR)
+- persist_conversation      : sauvegarde en base
+- total_request             : durée totale côté handler
+
+Interprétation rapide
+---------------------
+- first_token_ms élevé, peu d’outils : charge Ollama / GPU / modèle lourd.
+- ai_tool_execute élevé : optimiser la requête ou le rapport (SQL, volume JSON).
+- total_request >> somme des phases : regarder plusieurs tours d’outils (MaxToolCallRounds).
+
+Configuration (appsettings.json, section Ollama)
+------------------------------------------------
+MaxTokens, Temperature, MaxToolCallRounds, AvailabilityCacheSeconds,
+ModelListCacheSeconds, SystemPromptCacheMinutes

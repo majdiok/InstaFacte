@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Envelope schema aligned with FactuTrust TejXmlGeneratorService root structure.
+  Certificate inner XML is not strictly validated here; add official TEJ XSDs for full conformance.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="unqualified">
+  <xs:element name="DeclarationsRS">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Declarant" type="DeclarantType"/>
+        <xs:element name="ReferenceDeclaration" type="ReferenceDeclarationType"/>
+        <xs:choice>
+          <xs:element name="AjouterCertificats" type="CertificatsBlockType"/>
+          <xs:element name="ModifierCertificats" type="CertificatsBlockType"/>
+          <xs:element name="AnnulerCertificats" type="AnnulerCertificatsType"/>
+        </xs:choice>
+      </xs:sequence>
+      <xs:attribute name="VersionSchema" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:complexType name="DeclarantType">
+    <xs:sequence>
+      <xs:element name="TypeIdentifiant" type="xs:string"/>
+      <xs:element name="Identifiant" type="xs:string"/>
+      <xs:element name="CategorieContribuable" type="xs:string"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ReferenceDeclarationType">
+    <xs:sequence>
+      <xs:element name="ActeDepot" type="xs:string"/>
+      <xs:element name="AnneeDepot" type="xs:string"/>
+      <xs:element name="MoisDepot" type="xs:string"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CertificatsBlockType">
+    <xs:sequence>
+      <xs:any minOccurs="0" maxOccurs="unbounded" processContents="skip"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="AnnulerCertificatsType">
+    <xs:sequence>
+      <xs:any minOccurs="0" maxOccurs="unbounded" processContents="skip"/>
+    </xs:sequence>
+  </xs:complexType>
+</xs:schema>
