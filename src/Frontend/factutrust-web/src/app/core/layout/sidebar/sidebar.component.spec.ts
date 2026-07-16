@@ -201,12 +201,13 @@ describe('SidebarComponent — firm navigation', () => {
     const items = fixture.componentInstance.navItems();
     const labels = items.map(i => i.label);
 
-    // Les modules comptables sont des menus de premier niveau.
-    expect(labels).toContain('Configuration');
-    expect(labels).toContain('Traitements');
-    expect(labels).toContain('États');
+    // Les modules comptables visibles sont des menus de premier niveau.
+    expect(labels).not.toContain('Configuration');
+    expect(labels).not.toContain('Traitements');
+    expect(labels).not.toContain('États');
+    expect(labels).not.toContain('Liasse fiscale');
+    expect(labels).toContain('Budgétaire');
     expect(labels).toContain('Declarations');
-    expect(labels).toContain('Liasse fiscale');
     expect(labels).toContain('Gestion immobilisations');
 
     // « Comptabilité » devient un accès direct au hub (route, sans sous-menu).
@@ -214,11 +215,9 @@ describe('SidebarComponent — firm navigation', () => {
     expect(compta?.route).toBe('/accounting/home');
     expect(compta?.children).toBeUndefined();
 
-    // Les sous-menus sont filtrés par permission (accounting:read seul ⇒ pas de Saisie manuelle).
-    const traitements = items.find(i => i.label === 'Traitements');
-    const traitementLabels = traitements?.children?.map(c => c.label) ?? [];
-    expect(traitementLabels).toContain("Recherche d'écriture");
-    expect(traitementLabels).not.toContain('Saisie manuelle');
+    const declarations = items.find(i => i.label === 'Declarations');
+    const declarationLabels = declarations?.children?.map(c => c.label) ?? [];
+    expect(declarationLabels).toContain('Declaration mensuelle');
   });
 
   it('shows four accounting submenus for company users with AI access', () => {

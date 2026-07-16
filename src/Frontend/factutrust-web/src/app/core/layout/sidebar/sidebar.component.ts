@@ -25,7 +25,7 @@ import {
   FIRM_NATIVE_NAV,
   filterDelegatedFirmSectionChildren
 } from '@core/config/firm-navigation.registry';
-import { buildAccountingModuleNavItems } from '@core/config/accounting-modules.config';
+import { buildFirmDelegatedAccountingModuleNavItems } from '@core/config/accounting-modules.config';
 import {
   applyCompanyAccountingSidebar,
   COMPANY_ACCOUNTING_FIXED_ASSETS_ROUTE
@@ -196,9 +196,9 @@ export class SidebarComponent implements OnInit {
       )
       .filter(item => !item.children?.length || item.children.length > 0);
 
-    // Cabinet : éclate le menu « Comptabilité » unique en menus de modules de premier niveau
-    // (Configuration, Traitements, États, Déclaration mensuelle, Liasse fiscale, Immobilisations),
-    // précédés d'un accès direct au hub. Source unique : accounting-modules.config.ts.
+    // Cabinet : éclate le menu « Comptabilité » unique en menus de premier niveau
+    // (Budgétaire, Declarations, Immobilisations), précédés d'un accès direct au hub.
+    // Source unique : accounting-modules.config.ts (filtre cabinet délégué).
     const comptaIndex = items.findIndex(i => i.label === 'Comptabilité');
     if (comptaIndex >= 0) {
       const comptaHub: NavItem = {
@@ -208,7 +208,7 @@ export class SidebarComponent implements OnInit {
         modules: [AppModule.Accounting],
         permissionsAll: [PERMISSIONS.accounting.read]
       };
-      const moduleItems = filterNavItems(this.auth, buildAccountingModuleNavItems());
+      const moduleItems = filterNavItems(this.auth, buildFirmDelegatedAccountingModuleNavItems());
       items = [
         ...items.slice(0, comptaIndex),
         ...filterNavItems(this.auth, [comptaHub]),

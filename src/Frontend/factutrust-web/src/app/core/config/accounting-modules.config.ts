@@ -118,12 +118,20 @@ export const ACCOUNTING_MODULES: AccountingModuleDef[] = [
   }
 ];
 
-/**
- * Convertit les modules comptables en items de navigation (rail → sous-menu) pour le sidebar
- * du cabinet en mode délégué. À passer dans `filterNavItems` pour le gating modules/permissions.
- */
-export function buildAccountingModuleNavItems(): NavItem[] {
-  return ACCOUNTING_MODULES.map(mod => ({
+/** Modules masqués dans le rail sidebar cabinet (mode dossier client). */
+export const FIRM_DELEGATED_HIDDEN_ACCOUNTING_MODULE_TITLES: ReadonlySet<string> = new Set([
+  'Configuration',
+  'Traitements',
+  'États',
+  'Liasse fiscale'
+]);
+
+export function getFirmDelegatedAccountingModules(): AccountingModuleDef[] {
+  return ACCOUNTING_MODULES.filter(m => !FIRM_DELEGATED_HIDDEN_ACCOUNTING_MODULE_TITLES.has(m.title));
+}
+
+function mapModulesToNavItems(modules: AccountingModuleDef[]): NavItem[] {
+  return modules.map(mod => ({
     label: mod.title,
     icon: mod.icon,
     children: mod.links.map<NavSubItem>(link => ({
@@ -134,4 +142,17 @@ export function buildAccountingModuleNavItems(): NavItem[] {
       permissionsAll: link.perms
     }))
   }));
+}
+
+/**
+ * Convertit les modules comptables en items de navigation (rail → sous-menu) pour le sidebar
+ * du cabinet en mode délégué. À passer dans `filterNavItems` pour le gating modules/permissions.
+ */
+export function buildAccountingModuleNavItems(): NavItem[] {
+  return mapModulesToNavItems(ACCOUNTING_MODULES);
+}
+
+/** Sous-ensemble des modules comptables visibles dans le rail sidebar cabinet délégué. */
+export function buildFirmDelegatedAccountingModuleNavItems(): NavItem[] {
+  return mapModulesToNavItems(getFirmDelegatedAccountingModules());
 }
