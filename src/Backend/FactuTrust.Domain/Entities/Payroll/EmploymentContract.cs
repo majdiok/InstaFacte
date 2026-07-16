@@ -11,6 +11,8 @@ public sealed class EmploymentContract : Entity
     public Guid EmployeeId { get; private set; }
     public ContractType Type { get; private set; }
     public SocialRegime Regime { get; private set; }
+    /// <summary>Régime de durée hebdomadaire (48 h ou 40 h) — pilote le calcul des heures supplémentaires.</summary>
+    public WeeklyWorkRegime WeeklyRegime { get; private set; }
     public DateTime StartDate { get; private set; }
     public DateTime? EndDate { get; private set; }
     /// <summary>Salaire de base mensuel brut (TND).</summary>
@@ -38,8 +40,9 @@ public sealed class EmploymentContract : Entity
         decimal baseSalary,
         decimal workAccidentRate,
         DateTime? endDate = null,
-        string? jobTitle = null)
-        => Create(employeeId, type, regime, startDate, baseSalary, workAccidentRate, endDate, jobTitle);
+        string? jobTitle = null,
+        WeeklyWorkRegime weeklyRegime = WeeklyWorkRegime.FortyEightHours)
+        => Create(employeeId, type, regime, startDate, baseSalary, workAccidentRate, endDate, jobTitle, weeklyRegime);
 
     internal static Result<EmploymentContract> Create(
         Guid employeeId,
@@ -49,7 +52,8 @@ public sealed class EmploymentContract : Entity
         decimal baseSalary,
         decimal workAccidentRate,
         DateTime? endDate = null,
-        string? jobTitle = null)
+        string? jobTitle = null,
+        WeeklyWorkRegime weeklyRegime = WeeklyWorkRegime.FortyEightHours)
     {
         if (startDate == default)
             return Result.Failure<EmploymentContract>(Error.Validation("StartDate", "La date de début du contrat est obligatoire."));
@@ -65,6 +69,7 @@ public sealed class EmploymentContract : Entity
             EmployeeId = employeeId,
             Type = type,
             Regime = regime,
+            WeeklyRegime = weeklyRegime,
             StartDate = startDate.Date,
             EndDate = endDate?.Date,
             BaseSalary = Math.Round(baseSalary, 3),
@@ -82,7 +87,8 @@ public sealed class EmploymentContract : Entity
         decimal workAccidentRate,
         DateTime? endDate,
         string? jobTitle,
-        bool isActive)
+        bool isActive,
+        WeeklyWorkRegime weeklyRegime = WeeklyWorkRegime.FortyEightHours)
     {
         if (endDate.HasValue && endDate.Value.Date < startDate.Date)
             return Result.Failure(Error.Validation("EndDate", "La date de fin ne peut pas être antérieure à la date de début."));
@@ -93,6 +99,7 @@ public sealed class EmploymentContract : Entity
 
         Type = type;
         Regime = regime;
+        WeeklyRegime = weeklyRegime;
         StartDate = startDate.Date;
         EndDate = endDate?.Date;
         BaseSalary = Math.Round(baseSalary, 3);

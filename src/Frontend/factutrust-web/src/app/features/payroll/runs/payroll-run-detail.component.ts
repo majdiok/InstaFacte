@@ -89,6 +89,12 @@ import { PayrollStatGridComponent, PayrollSectionComponent, PayrollAmountPipe, f
         <div class="mb-3">
           <strong>{{ selectedPayslip()!.employeeName }}</strong>
           <span class="ml-2 text-secondary">{{ selectedPayslip()!.employeeNumber }}</span>
+          @if (selectedPayslip()!.cin) {
+            <span class="ml-2 text-secondary">CIN {{ selectedPayslip()!.cin }}</span>
+          }
+          @if (selectedPayslip()!.leaveBalanceRemaining != null) {
+            <span class="ml-2 text-secondary">Solde congés : {{ selectedPayslip()!.leaveBalanceRemaining }} j</span>
+          }
         </div>
         <p-table [value]="selectedPayslip()!.lines" styleClass="p-datatable-sm">
           <ng-template pTemplate="header">

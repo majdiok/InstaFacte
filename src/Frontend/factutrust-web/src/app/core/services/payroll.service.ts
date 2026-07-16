@@ -91,6 +91,9 @@ export interface LeaveBalance {
 export interface PayslipDetail extends PayslipListItem {
   payrollRunId: string;
   cnssNumber?: string;
+  cin?: string;
+  hireDate?: string;
+  leaveBalanceRemaining?: number;
   year: number;
   month: number;
   cnssableGross: number;
@@ -118,6 +121,11 @@ export interface PayrollParameters {
   headOfFamilyAnnualDeduction: number;
   childAnnualDeduction: number;
   maxDeductibleChildren: number;
+  studentChildAnnualDeduction: number;
+  disabledChildAnnualDeduction: number;
+  parentDeductionRatePercent: number;
+  parentAnnualDeductionCap: number;
+  isIndustrialSector: boolean;
   tfpRateIndustry: number;
   tfpRateOther: number;
   foprolosRate: number;
@@ -192,13 +200,14 @@ export class PayrollService {
     return this.http.get<ApiResponse<PayrollRunDetail>>(`${this.runsUrl}/${id}`);
   }
 
-  createRun(year: number, month: number, isIndustrialSector = false): Observable<ApiResponse<string>> {
-    return this.http.post<ApiResponse<string>>(this.runsUrl, { year, month, isIndustrialSector });
+  createRun(year: number, month: number): Observable<ApiResponse<string>> {
+    return this.http.post<ApiResponse<string>>(this.runsUrl, { year, month });
   }
 
-  calculateRun(id: string, isIndustrialSector = false): Observable<ApiResponse<unknown>> {
+  // Le secteur TFP (industrie 1 % / autres 2 %) est lu côté serveur depuis les
+  // paramètres de l'exercice — il n'est plus transmis à chaque calcul.
+  calculateRun(id: string): Observable<ApiResponse<unknown>> {
     return this.http.post<ApiResponse<unknown>>(`${this.runsUrl}/${id}/calculate`, {
-      isIndustrialSector,
       settleOutstandingAdvances: true
     });
   }
@@ -273,7 +282,7 @@ export class PayrollService {
     return this.http.delete<ApiResponse<unknown>>(`${this.payrollUrl}/overtime/${id}`);
   }
 
-  previewOvertime(body: { baseSalary: number; hours: number; ratePercent: number; overrideAmount?: number }): Observable<ApiResponse<{ hourlyRate: number; computedAmount: number; effectiveAmount: number; isOverridden: boolean }>> {
+  previewOvertime(body: { baseSalary: number; hours: number; ratePercent: number; overrideAmount?: number; employeeId?: string }): Observable<ApiResponse<{ hourlyRate: number; computedAmount: number; effectiveAmount: number; isOverridden: boolean }>> {
     return this.http.post<ApiResponse<{ hourlyRate: number; computedAmount: number; effectiveAmount: number; isOverridden: boolean }>>(`${this.payrollUrl}/overtime/preview`, body);
   }
 

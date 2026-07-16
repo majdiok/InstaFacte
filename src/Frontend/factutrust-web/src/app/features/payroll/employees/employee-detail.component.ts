@@ -146,7 +146,7 @@ import { PayrollConsultBannerComponent, PayrollAmountPipe, formatPayrollAmount }
             <div class="card p-3 mb-3">
               <div class="contract-header">
                 <div>
-                  <strong>{{ c.typeDisplay }}</strong> — {{ c.regimeDisplay }}
+                  <strong>{{ c.typeDisplay }}</strong> — {{ c.regimeDisplay }} — {{ c.weeklyRegimeDisplay }}
                   @if (!c.isActive) { <p-tag value="Inactif" severity="secondary" class="ml-2" /> }
                 </div>
                 @if (canManage()) {

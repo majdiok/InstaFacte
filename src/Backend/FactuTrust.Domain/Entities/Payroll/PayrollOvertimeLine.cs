@@ -31,7 +31,8 @@ public sealed class PayrollOvertimeLine : AggregateRoot
         decimal ratePercent,
         decimal baseSalary,
         decimal? overrideAmount = null,
-        bool enableExtendedOvertimeRates = false)
+        bool enableExtendedOvertimeRates = false,
+        WeeklyWorkRegime? weeklyRegime = null)
     {
         if (employeeId == Guid.Empty)
             return Result.Failure<PayrollOvertimeLine>(Error.Validation("EmployeeId", "Le salarié est obligatoire."));
@@ -41,13 +42,13 @@ public sealed class PayrollOvertimeLine : AggregateRoot
             return Result.Failure<PayrollOvertimeLine>(Error.Validation("Month", "Mois invalide."));
         if (hours <= 0)
             return Result.Failure<PayrollOvertimeLine>(Error.Validation("Hours", "Le nombre d'heures doit être strictement positif."));
-        if (!OvertimeRatePercentExtensions.IsValid(ratePercent, enableExtendedOvertimeRates))
+        if (!IsRateAllowed(ratePercent, enableExtendedOvertimeRates, weeklyRegime))
             return Result.Failure<PayrollOvertimeLine>(Error.Validation("RatePercent", "Le taux de majoration n'est pas autorisé."));
 
         if (overrideAmount.HasValue && overrideAmount.Value <= 0)
             return Result.Failure<PayrollOvertimeLine>(Error.Validation("OverrideAmount", "Le montant de substitution doit être strictement positif."));
 
-        var computed = OvertimeAmountCalculator.ComputeAmount(baseSalary, hours, ratePercent, enableExtendedOvertimeRates);
+        var computed = OvertimeAmountCalculator.ComputeAmount(baseSalary, hours, ratePercent, enableExtendedOvertimeRates, weeklyRegime);
         var isOverridden = overrideAmount.HasValue && overrideAmount.Value > 0;
 
         return Result.Success(new PayrollOvertimeLine
@@ -63,21 +64,26 @@ public sealed class PayrollOvertimeLine : AggregateRoot
         });
     }
 
-    public Result Update(decimal hours, decimal ratePercent, decimal baseSalary, decimal? overrideAmount = null, bool enableExtendedOvertimeRates = false)
+    public Result Update(decimal hours, decimal ratePercent, decimal baseSalary, decimal? overrideAmount = null, bool enableExtendedOvertimeRates = false, WeeklyWorkRegime? weeklyRegime = null)
     {
         if (hours <= 0)
             return Result.Failure(Error.Validation("Hours", "Le nombre d'heures doit être strictement positif."));
-        if (!OvertimeRatePercentExtensions.IsValid(ratePercent, enableExtendedOvertimeRates))
+        if (!IsRateAllowed(ratePercent, enableExtendedOvertimeRates, weeklyRegime))
             return Result.Failure(Error.Validation("RatePercent", "Le taux de majoration n'est pas autorisé."));
         if (overrideAmount.HasValue && overrideAmount.Value <= 0)
             return Result.Failure(Error.Validation("OverrideAmount", "Le montant de substitution doit être strictement positif."));
 
         Hours = Math.Round(hours, 2);
         RatePercent = ratePercent;
-        ComputedAmount = OvertimeAmountCalculator.ComputeAmount(baseSalary, hours, ratePercent, enableExtendedOvertimeRates);
+        ComputedAmount = OvertimeAmountCalculator.ComputeAmount(baseSalary, hours, ratePercent, enableExtendedOvertimeRates, weeklyRegime);
         IsOverridden = overrideAmount.HasValue && overrideAmount.Value > 0;
         OverrideAmount = IsOverridden ? Math.Round(overrideAmount!.Value, 3) : null;
         IncrementVersion();
         return Result.Success();
     }
+
+    private static bool IsRateAllowed(decimal ratePercent, bool enableExtendedOvertimeRates, WeeklyWorkRegime? weeklyRegime) =>
+        weeklyRegime.HasValue
+            ? OvertimeRatePercentExtensions.IsValid(ratePercent, enableExtendedOvertimeRates, weeklyRegime.Value)
+            : OvertimeRatePercentExtensions.IsValid(ratePercent, enableExtendedOvertimeRates);
 }

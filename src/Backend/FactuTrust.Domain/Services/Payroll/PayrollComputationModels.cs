@@ -31,7 +31,14 @@ public sealed class PayrollComputationInput
     public bool IsIndustrialSector { get; init; }
 
     public bool IsHeadOfFamily { get; init; }
+    /// <summary>Nombre total d'enfants à charge.</summary>
     public int DependentChildren { get; init; }
+    /// <summary>Dont enfants étudiants non boursiers de moins de 25 ans (déduction majorée).</summary>
+    public int StudentChildren { get; init; }
+    /// <summary>Dont enfants infirmes (déduction majorée, hors plafond de rang).</summary>
+    public int DisabledChildren { get; init; }
+    /// <summary>Parents à charge (0 à 2).</summary>
+    public int DependentParents { get; init; }
 }
 
 /// <summary>

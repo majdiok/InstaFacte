@@ -17,6 +17,15 @@ public static class OvertimeRatePercentExtensions
         rate is 125m or 150m
         || (enableExtendedOvertimeRates && rate is 175m or 200m);
 
+    /// <summary>
+    /// Variante tenant compte du régime hebdomadaire : 175 % est le taux légal du régime
+    /// 48 h et reste donc autorisé même sans l'option « taux étendus ». Les taux 125/150
+    /// restent toujours acceptés (lignes historiques).
+    /// </summary>
+    public static bool IsValid(decimal rate, bool enableExtendedOvertimeRates, WeeklyWorkRegime regime) =>
+        IsValid(rate, enableExtendedOvertimeRates)
+        || (regime == WeeklyWorkRegime.FortyEightHours && rate is 175m);
+
     public static string ToDisplayString(decimal rate) => rate switch
     {
         125m => "125 %",

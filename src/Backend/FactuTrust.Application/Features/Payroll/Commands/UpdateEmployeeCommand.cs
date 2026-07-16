@@ -18,6 +18,13 @@ public sealed class UpdateEmployeeCommandValidator : AbstractValidator<UpdateEmp
         RuleFor(x => x.Dto.FirstName).NotEmpty().WithMessage("Le prénom est obligatoire.");
         RuleFor(x => x.Dto.LastName).NotEmpty().WithMessage("Le nom est obligatoire.");
         RuleFor(x => x.Dto.DependentChildren).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Dto.StudentChildren).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Dto.DisabledChildren).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Dto.DependentParents).InclusiveBetween(0, 2)
+            .WithMessage("Le nombre de parents à charge doit être compris entre 0 et 2.");
+        RuleFor(x => x.Dto)
+            .Must(d => d.StudentChildren + d.DisabledChildren <= d.DependentChildren)
+            .WithMessage("Le total des enfants étudiants et infirmes ne peut pas dépasser le nombre d'enfants à charge.");
         RuleFor(x => x.Dto.Cin).ValidCin();
         RuleFor(x => x.Dto.CnssNumber).ValidCnss();
         RuleFor(x => x.Dto.Rib).ValidRib();
@@ -84,7 +91,10 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
             address,
             email,
             phone,
-            dto.Rib);
+            dto.Rib,
+            dto.StudentChildren,
+            dto.DisabledChildren,
+            dto.DependentParents);
 
         if (updateResult.IsFailure)
             return updateResult;

@@ -11,7 +11,7 @@ import { CheckboxModule } from 'primeng/checkbox';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { EmployeeService, CreateContractRequest, EmploymentContract } from '@core/services/employee.service';
 import { ToastService } from '@core/services/toast.service';
-import { CONTRACT_TYPE_OPTIONS, SOCIAL_REGIME_OPTIONS } from '../payroll-options';
+import { CONTRACT_TYPE_OPTIONS, SOCIAL_REGIME_OPTIONS, WEEKLY_REGIME_OPTIONS } from '../payroll-options';
 
 export interface AllowanceRow {
   label: string;
@@ -65,6 +65,10 @@ function parseIsoDate(value?: string): Date | null {
         <div class="form-group">
           <label>Régime social</label>
           <p-dropdown [options]="regimeOptions" [(ngModel)]="regime" optionLabel="label" optionValue="value" appendTo="body" styleClass="w-full" />
+        </div>
+        <div class="form-group">
+          <label>Durée hebdomadaire</label>
+          <p-dropdown [options]="weeklyRegimeOptions" [(ngModel)]="weeklyRegime" optionLabel="label" optionValue="value" appendTo="body" styleClass="w-full" />
         </div>
         <div class="form-group">
           <label>Date début</label>
@@ -136,6 +140,7 @@ export class ContractFormDialogComponent implements OnChanges {
 
   readonly contractTypeOptions = CONTRACT_TYPE_OPTIONS;
   readonly regimeOptions = SOCIAL_REGIME_OPTIONS;
+  readonly weeklyRegimeOptions = WEEKLY_REGIME_OPTIONS;
 
   @Input() visible = false;
   @Input() employeeId = '';
@@ -146,6 +151,7 @@ export class ContractFormDialogComponent implements OnChanges {
   saving = signal(false);
   type = 'Cdi';
   regime = 'Rsna';
+  weeklyRegime = 'FortyEightHours';
   startDate: Date | null = new Date();
   endDate: Date | null = null;
   baseSalary = 0;
@@ -160,6 +166,7 @@ export class ContractFormDialogComponent implements OnChanges {
       const c = this.editContract;
       this.type = c.type;
       this.regime = c.regime;
+      this.weeklyRegime = c.weeklyRegime ?? 'FortyEightHours';
       this.startDate = parseIsoDate(c.startDate);
       this.endDate = parseIsoDate(c.endDate);
       this.baseSalary = c.baseSalary;
@@ -195,6 +202,7 @@ export class ContractFormDialogComponent implements OnChanges {
     const body: CreateContractRequest = {
       type: this.type,
       regime: this.regime,
+      weeklyRegime: this.weeklyRegime,
       startDate: toIsoDate(this.startDate)!,
       endDate: toIsoDate(this.endDate),
       baseSalary: this.baseSalary,
@@ -234,6 +242,7 @@ export class ContractFormDialogComponent implements OnChanges {
   private resetFormFields(): void {
     this.type = 'Cdi';
     this.regime = 'Rsna';
+    this.weeklyRegime = 'FortyEightHours';
     this.startDate = new Date();
     this.endDate = null;
     this.baseSalary = 0;

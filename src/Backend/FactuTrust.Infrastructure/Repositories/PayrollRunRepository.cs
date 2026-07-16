@@ -70,6 +70,8 @@ public sealed class PayrollRunRepository : IPayrollRunRepository
             .AsNoTracking()
             .Include(r => r.Payslips)
             .Where(r => r.Year == year && r.Month >= firstMonth && r.Month <= lastMonth)
+            // La DTS est une déclaration officielle : seuls les cycles arrêtés y figurent.
+            .Where(r => r.Status == PayrollRunStatus.Validated || r.Status == PayrollRunStatus.Closed)
             .OrderBy(r => r.Month)
             .ToListAsync(cancellationToken);
     }

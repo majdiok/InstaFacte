@@ -27,7 +27,7 @@ import { PayrollStatGridComponent, PayrollAmountPipe, formatPayrollAmount, type 
     PayrollAmountPipe
   ],
   template: `
-    <app-page-header title="DTS CNSS" subtitle="Déclaration trimestrielle des salaires.">
+    <app-page-header title="DTS CNSS" subtitle="Déclaration trimestrielle des salaires. Seuls les cycles de paie validés ou clôturés sont inclus.">
       <app-button variant="outline" icon="pi-download" iconPos="left" (click)="exportCsv()" [disabled]="!dts()">Exporter CSV</app-button>
     </app-page-header>
 

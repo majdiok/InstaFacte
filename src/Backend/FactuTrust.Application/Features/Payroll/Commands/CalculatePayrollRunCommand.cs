@@ -77,7 +77,6 @@ public sealed class CalculatePayrollRunCommandHandler : IRequestHandler<Calculat
                 employee,
                 contract,
                 leaves,
-                request.Dto,
                 advanceTotal,
                 overtimeByEmployee.GetValueOrDefault(employee.Id, []),
                 parameters);
@@ -116,7 +115,6 @@ public sealed class CalculatePayrollRunCommandHandler : IRequestHandler<Calculat
         Employee employee,
         EmploymentContract contract,
         IReadOnlyList<LeaveRequest> monthLeaves,
-        CalculatePayrollRunDto dto,
         decimal otherDeductions,
         IReadOnlyList<PayrollOvertimeLine> overtimeLines,
         PayrollYearParameters parameters)
@@ -180,9 +178,14 @@ public sealed class CalculatePayrollRunCommandHandler : IRequestHandler<Calculat
             OtherDeductions = otherDeductions,
             Regime = contract.Regime,
             WorkAccidentRate = contract.WorkAccidentRate,
-            IsIndustrialSector = dto.IsIndustrialSector,
+            // Le secteur (TFP 1 % industrie / 2 % autres) est un paramètre d'exercice persisté ;
+            // le flag du DTO de calcul est déprécié et ignoré.
+            IsIndustrialSector = parameters.IsIndustrialSector,
             IsHeadOfFamily = employee.IsHeadOfFamily,
-            DependentChildren = employee.DependentChildren
+            DependentChildren = employee.DependentChildren,
+            StudentChildren = employee.StudentChildren,
+            DisabledChildren = employee.DisabledChildren,
+            DependentParents = employee.DependentParents
         };
     }
 }

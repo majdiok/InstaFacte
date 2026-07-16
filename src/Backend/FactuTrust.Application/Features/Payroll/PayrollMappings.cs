@@ -23,6 +23,7 @@ public static class PayrollMappings
             CnssNumber = e.CnssNumber,
             JobTitle = contract?.JobTitle,
             CurrentBaseSalary = contract?.BaseSalary,
+            CurrentWeeklyRegime = contract?.WeeklyRegime.ToString(),
             HireDate = e.HireDate,
             IsActive = e.IsActive
         };
@@ -46,6 +47,9 @@ public static class PayrollMappings
             MaritalStatusDisplay = e.MaritalStatus.ToDisplayString(),
             IsHeadOfFamily = e.IsHeadOfFamily,
             DependentChildren = e.DependentChildren,
+            StudentChildren = e.StudentChildren,
+            DisabledChildren = e.DisabledChildren,
+            DependentParents = e.DependentParents,
             Address = e.Address is null ? null : new AddressDto
             {
                 Street = e.Address.Street,
@@ -76,6 +80,8 @@ public static class PayrollMappings
             TypeDisplay = c.Type.ToDisplayString(),
             Regime = c.Regime.ToString(),
             RegimeDisplay = c.Regime.ToDisplayString(),
+            WeeklyRegime = c.WeeklyRegime.ToString(),
+            WeeklyRegimeDisplay = c.WeeklyRegime.ToDisplayString(),
             StartDate = c.StartDate,
             EndDate = c.EndDate,
             BaseSalary = c.BaseSalary,
@@ -222,6 +228,11 @@ public static class PayrollMappings
             HeadOfFamilyAnnualDeduction = p.HeadOfFamilyAnnualDeduction,
             ChildAnnualDeduction = p.ChildAnnualDeduction,
             MaxDeductibleChildren = p.MaxDeductibleChildren,
+            StudentChildAnnualDeduction = p.StudentChildAnnualDeduction,
+            DisabledChildAnnualDeduction = p.DisabledChildAnnualDeduction,
+            ParentDeductionRatePercent = p.ParentDeductionRatePercent,
+            ParentAnnualDeductionCap = p.ParentAnnualDeductionCap,
+            IsIndustrialSector = p.IsIndustrialSector,
             TfpRateIndustry = p.TfpRateIndustry,
             TfpRateOther = p.TfpRateOther,
             FoprolosRate = p.FoprolosRate,

@@ -25,8 +25,14 @@ public sealed class Employee : AggregateRoot
     public MaritalStatus MaritalStatus { get; private set; }
     /// <summary>Le salarié est-il chef de famille (déduction fiscale correspondante) ?</summary>
     public bool IsHeadOfFamily { get; private set; }
-    /// <summary>Nombre d'enfants à charge.</summary>
+    /// <summary>Nombre total d'enfants à charge.</summary>
     public int DependentChildren { get; private set; }
+    /// <summary>Dont enfants étudiants non boursiers de moins de 25 ans (déduction majorée, art. 40 code IRPP).</summary>
+    public int StudentChildren { get; private set; }
+    /// <summary>Dont enfants infirmes (déduction majorée sans limite de rang, art. 40 code IRPP).</summary>
+    public int DisabledChildren { get; private set; }
+    /// <summary>Parents à charge (0 à 2) — déduction de 5 % du revenu net plafonnée par parent.</summary>
+    public int DependentParents { get; private set; }
 
     public Address? Address { get; private set; }
     public Email? Email { get; private set; }
@@ -58,7 +64,10 @@ public sealed class Employee : AggregateRoot
         Address? address = null,
         Email? email = null,
         PhoneNumber? phone = null,
-        string? rib = null)
+        string? rib = null,
+        int studentChildren = 0,
+        int disabledChildren = 0,
+        int dependentParents = 0)
     {
         if (string.IsNullOrWhiteSpace(employeeNumber))
             return Result.Failure<Employee>(Error.Validation("EmployeeNumber", "Le matricule du salarié est obligatoire."));
@@ -71,6 +80,10 @@ public sealed class Employee : AggregateRoot
         if (dependentChildren < 0)
             return Result.Failure<Employee>(Error.Validation("DependentChildren", "Le nombre d'enfants à charge ne peut pas être négatif."));
 
+        var familyResult = ValidateFamilyCounts(dependentChildren, studentChildren, disabledChildren, dependentParents);
+        if (familyResult.IsFailure)
+            return Result.Failure<Employee>(familyResult.Error);
+
         return Result.Success(new Employee
         {
             EmployeeNumber = employeeNumber.Trim(),
@@ -80,6 +93,9 @@ public sealed class Employee : AggregateRoot
             MaritalStatus = maritalStatus,
             IsHeadOfFamily = isHeadOfFamily,
             DependentChildren = dependentChildren,
+            StudentChildren = studentChildren,
+            DisabledChildren = disabledChildren,
+            DependentParents = dependentParents,
             Cin = Normalize(cin),
             CnssNumber = Normalize(cnssNumber),
             DateOfBirth = dateOfBirth?.Date,
@@ -116,7 +132,10 @@ public sealed class Employee : AggregateRoot
         Address? address,
         Email? email,
         PhoneNumber? phone,
-        string? rib)
+        string? rib,
+        int studentChildren = 0,
+        int disabledChildren = 0,
+        int dependentParents = 0)
     {
         if (string.IsNullOrWhiteSpace(firstName))
             return Result.Failure(Error.Validation("FirstName", "Le prénom est obligatoire."));
@@ -125,11 +144,18 @@ public sealed class Employee : AggregateRoot
         if (dependentChildren < 0)
             return Result.Failure(Error.Validation("DependentChildren", "Le nombre d'enfants à charge ne peut pas être négatif."));
 
+        var familyResult = ValidateFamilyCounts(dependentChildren, studentChildren, disabledChildren, dependentParents);
+        if (familyResult.IsFailure)
+            return familyResult;
+
         FirstName = firstName.Trim();
         LastName = lastName.Trim();
         MaritalStatus = maritalStatus;
         IsHeadOfFamily = isHeadOfFamily;
         DependentChildren = dependentChildren;
+        StudentChildren = studentChildren;
+        DisabledChildren = disabledChildren;
+        DependentParents = dependentParents;
         Cin = Normalize(cin);
         CnssNumber = Normalize(cnssNumber);
         DateOfBirth = dateOfBirth?.Date;
@@ -148,9 +174,10 @@ public sealed class Employee : AggregateRoot
         decimal baseSalary,
         decimal workAccidentRate,
         DateTime? endDate = null,
-        string? jobTitle = null)
+        string? jobTitle = null,
+        WeeklyWorkRegime weeklyRegime = WeeklyWorkRegime.FortyEightHours)
     {
-        var contractResult = EmploymentContract.Create(Id, type, regime, startDate, baseSalary, workAccidentRate, endDate, jobTitle);
+        var contractResult = EmploymentContract.Create(Id, type, regime, startDate, baseSalary, workAccidentRate, endDate, jobTitle, weeklyRegime);
         if (contractResult.IsFailure)
             return contractResult;
 
@@ -186,6 +213,17 @@ public sealed class Employee : AggregateRoot
         IsActive = true;
         TerminationDate = null;
         IncrementVersion();
+    }
+
+    private static Result ValidateFamilyCounts(int dependentChildren, int studentChildren, int disabledChildren, int dependentParents)
+    {
+        if (studentChildren < 0 || disabledChildren < 0)
+            return Result.Failure(Error.Validation("StudentChildren", "Les nombres d'enfants étudiants et infirmes ne peuvent pas être négatifs."));
+        if (studentChildren + disabledChildren > dependentChildren)
+            return Result.Failure(Error.Validation("StudentChildren", "Le total des enfants étudiants et infirmes ne peut pas dépasser le nombre d'enfants à charge."));
+        if (dependentParents is < 0 or > 2)
+            return Result.Failure(Error.Validation("DependentParents", "Le nombre de parents à charge doit être compris entre 0 et 2."));
+        return Result.Success();
     }
 
     private static string? Normalize(string? value) =>

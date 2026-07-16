@@ -47,6 +47,11 @@ public static class PayrollParameterDefaults
             tfpRateOther: 2m,
             foprolosRate: 1m,
             monthlySmig: 528.320m,
-            irppBrackets: brackets);
+            irppBrackets: brackets,
+            studentChildAnnualDeduction: 1000m,
+            disabledChildAnnualDeduction: 2000m,
+            parentDeductionRatePercent: 5m,
+            parentAnnualDeductionCap: 450m,
+            isIndustrialSector: false);
     }
 }

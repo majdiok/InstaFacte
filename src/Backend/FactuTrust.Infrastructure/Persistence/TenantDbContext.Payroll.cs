@@ -43,6 +43,9 @@ public partial class TenantDbContext
             entity.Property(e => e.MaritalStatus).IsRequired();
             entity.Property(e => e.IsHeadOfFamily).IsRequired();
             entity.Property(e => e.DependentChildren).IsRequired();
+            entity.Property(e => e.StudentChildren).IsRequired().HasDefaultValue(0);
+            entity.Property(e => e.DisabledChildren).IsRequired().HasDefaultValue(0);
+            entity.Property(e => e.DependentParents).IsRequired().HasDefaultValue(0);
             entity.Property(e => e.HireDate).IsRequired();
             entity.Property(e => e.IsActive).IsRequired();
             entity.Property(e => e.LeaveOpeningBalanceDays).HasPrecision(8, 3);
@@ -90,6 +93,7 @@ public partial class TenantDbContext
             entity.Property(c => c.EmployeeId).IsRequired();
             entity.Property(c => c.Type).IsRequired();
             entity.Property(c => c.Regime).IsRequired();
+            entity.Property(c => c.WeeklyRegime).IsRequired().HasDefaultValue(Domain.Enums.WeeklyWorkRegime.FortyEightHours);
             entity.Property(c => c.StartDate).IsRequired();
             entity.Property(c => c.EndDate);
             entity.Property(c => c.BaseSalary).HasPrecision(18, 3);
@@ -243,6 +247,12 @@ public partial class TenantDbContext
             entity.Property(p => p.HeadOfFamilyAnnualDeduction).HasPrecision(18, 3);
             entity.Property(p => p.ChildAnnualDeduction).HasPrecision(18, 3);
             entity.Property(p => p.MaxDeductibleChildren).IsRequired();
+            // Défauts légaux (art. 40 code IRPP) pour les lignes créées avant l'ajout de ces colonnes.
+            entity.Property(p => p.StudentChildAnnualDeduction).HasPrecision(18, 3).HasDefaultValue(1000m);
+            entity.Property(p => p.DisabledChildAnnualDeduction).HasPrecision(18, 3).HasDefaultValue(2000m);
+            entity.Property(p => p.ParentDeductionRatePercent).HasPrecision(8, 4).HasDefaultValue(5m);
+            entity.Property(p => p.ParentAnnualDeductionCap).HasPrecision(18, 3).HasDefaultValue(450m);
+            entity.Property(p => p.IsIndustrialSector).IsRequired().HasDefaultValue(false);
             entity.Property(p => p.TfpRateIndustry).HasPrecision(8, 4);
             entity.Property(p => p.TfpRateOther).HasPrecision(8, 4);
             entity.Property(p => p.FoprolosRate).HasPrecision(8, 4);

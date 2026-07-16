@@ -28,6 +28,7 @@ export interface EmployeeListItem {
   cnssNumber?: string;
   jobTitle?: string;
   currentBaseSalary?: number;
+  currentWeeklyRegime?: string;
   hireDate: string;
   isActive: boolean;
 }
@@ -46,6 +47,8 @@ export interface EmploymentContract {
   typeDisplay: string;
   regime: string;
   regimeDisplay: string;
+  weeklyRegime: string;
+  weeklyRegimeDisplay: string;
   startDate: string;
   endDate?: string;
   baseSalary: number;
@@ -70,6 +73,9 @@ export interface EmployeeDetail {
   maritalStatusDisplay: string;
   isHeadOfFamily: boolean;
   dependentChildren: number;
+  studentChildren: number;
+  disabledChildren: number;
+  dependentParents: number;
   address?: {
     street?: string;
     streetLine2?: string;
@@ -97,6 +103,9 @@ export interface CreateEmployeeRequest {
   maritalStatus?: string;
   isHeadOfFamily?: boolean;
   dependentChildren?: number;
+  studentChildren?: number;
+  disabledChildren?: number;
+  dependentParents?: number;
   street?: string;
   streetLine2?: string;
   city?: string;
@@ -112,6 +121,7 @@ export interface UpdateEmployeeRequest extends Omit<CreateEmployeeRequest, 'empl
 export interface CreateContractRequest {
   type: string;
   regime: string;
+  weeklyRegime?: string;
   startDate: string;
   endDate?: string;
   baseSalary: number;

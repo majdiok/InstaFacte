@@ -45,6 +45,17 @@ public sealed class PayrollYearParameters : AggregateRoot
     public decimal ChildAnnualDeduction { get; private set; }
     /// <summary>Nombre maximum d'enfants à charge pris en compte pour la déduction. Ex. 4.</summary>
     public int MaxDeductibleChildren { get; private set; }
+    /// <summary>Déduction annuelle (TND) par enfant étudiant non boursier de moins de 25 ans. Ex. 1000.</summary>
+    public decimal StudentChildAnnualDeduction { get; private set; }
+    /// <summary>Déduction annuelle (TND) par enfant infirme (sans limite de rang). Ex. 2000.</summary>
+    public decimal DisabledChildAnnualDeduction { get; private set; }
+    /// <summary>Taux de la déduction pour parent à charge, en % du revenu net imposable. Ex. 5.</summary>
+    public decimal ParentDeductionRatePercent { get; private set; }
+    /// <summary>Plafond annuel (TND) de la déduction par parent à charge. Ex. 450.</summary>
+    public decimal ParentAnnualDeductionCap { get; private set; }
+
+    /// <summary>L'entreprise relève-t-elle du secteur industriel (TFP à taux réduit) ?</summary>
+    public bool IsIndustrialSector { get; private set; }
 
     /// <summary>Taux de la Taxe de Formation Professionnelle (TFP) — secteur industriel, en %. Ex. 1.</summary>
     public decimal TfpRateIndustry { get; private set; }
@@ -82,7 +93,12 @@ public sealed class PayrollYearParameters : AggregateRoot
         decimal? cnssEmployerRateRsa = null,
         bool enforceSmigOnContracts = false,
         bool enableExtendedOvertimeRates = false,
-        bool enableAllowanceQuadrantMatrix = false)
+        bool enableAllowanceQuadrantMatrix = false,
+        decimal studentChildAnnualDeduction = 0m,
+        decimal disabledChildAnnualDeduction = 0m,
+        decimal parentDeductionRatePercent = 0m,
+        decimal parentAnnualDeductionCap = 0m,
+        bool isIndustrialSector = false)
     {
         if (fiscalYear is < 2000 or > 2100)
             return Result.Failure<PayrollYearParameters>(Error.Validation("FiscalYear", "L'exercice doit être compris entre 2000 et 2100."));
@@ -103,10 +119,14 @@ public sealed class PayrollYearParameters : AggregateRoot
         var negativeRates = new[]
         {
             cnssEmployeeRate, cnssEmployerRate, rsaEmployeeRate, rsaEmployerRate,
-            cssRate, professionalExpensesRate, tfpRateIndustry, tfpRateOther, foprolosRate
+            cssRate, professionalExpensesRate, tfpRateIndustry, tfpRateOther, foprolosRate,
+            parentDeductionRatePercent
         };
         if (negativeRates.Any(r => r < 0))
             return Result.Failure<PayrollYearParameters>(Error.Validation("Rates", "Les taux ne peuvent pas être négatifs."));
+
+        if (studentChildAnnualDeduction < 0 || disabledChildAnnualDeduction < 0 || parentAnnualDeductionCap < 0)
+            return Result.Failure<PayrollYearParameters>(Error.Validation("Deductions", "Les déductions ne peuvent pas être négatives."));
 
         var entity = new PayrollYearParameters
         {
@@ -125,6 +145,11 @@ public sealed class PayrollYearParameters : AggregateRoot
             HeadOfFamilyAnnualDeduction = Round(headOfFamilyAnnualDeduction),
             ChildAnnualDeduction = Round(childAnnualDeduction),
             MaxDeductibleChildren = Math.Max(0, maxDeductibleChildren),
+            StudentChildAnnualDeduction = Round(studentChildAnnualDeduction),
+            DisabledChildAnnualDeduction = Round(disabledChildAnnualDeduction),
+            ParentDeductionRatePercent = Round(parentDeductionRatePercent),
+            ParentAnnualDeductionCap = Round(parentAnnualDeductionCap),
+            IsIndustrialSector = isIndustrialSector,
             TfpRateIndustry = Round(tfpRateIndustry),
             TfpRateOther = Round(tfpRateOther),
             FoprolosRate = Round(foprolosRate),
@@ -153,15 +178,24 @@ public sealed class PayrollYearParameters : AggregateRoot
         decimal cnssEmployerRateRsa,
         bool enforceSmigOnContracts,
         bool enableExtendedOvertimeRates,
-        bool enableAllowanceQuadrantMatrix)
+        bool enableAllowanceQuadrantMatrix,
+        decimal studentChildAnnualDeduction = 0m,
+        decimal disabledChildAnnualDeduction = 0m,
+        decimal parentDeductionRatePercent = 0m,
+        decimal parentAnnualDeductionCap = 0m,
+        bool isIndustrialSector = false)
     {
         var rates = new[]
         {
             cnssEmployeeRate, cnssEmployerRate, cnssEmployeeRateRsa, cnssEmployerRateRsa,
-            cssRate, professionalExpensesRate, tfpRateIndustry, tfpRateOther, foprolosRate
+            cssRate, professionalExpensesRate, tfpRateIndustry, tfpRateOther, foprolosRate,
+            parentDeductionRatePercent
         };
         if (rates.Any(r => r < 0))
             return Result.Failure(Error.Validation("Rates", "Les taux ne peuvent pas être négatifs."));
+
+        if (studentChildAnnualDeduction < 0 || disabledChildAnnualDeduction < 0 || parentAnnualDeductionCap < 0)
+            return Result.Failure(Error.Validation("Deductions", "Les déductions ne peuvent pas être négatives."));
 
         CnssEmployeeRate = Round(cnssEmployeeRate);
         CnssEmployerRate = Round(cnssEmployerRate);
@@ -177,6 +211,11 @@ public sealed class PayrollYearParameters : AggregateRoot
         HeadOfFamilyAnnualDeduction = Round(headOfFamilyAnnualDeduction);
         ChildAnnualDeduction = Round(childAnnualDeduction);
         MaxDeductibleChildren = Math.Max(0, maxDeductibleChildren);
+        StudentChildAnnualDeduction = Round(studentChildAnnualDeduction);
+        DisabledChildAnnualDeduction = Round(disabledChildAnnualDeduction);
+        ParentDeductionRatePercent = Round(parentDeductionRatePercent);
+        ParentAnnualDeductionCap = Round(parentAnnualDeductionCap);
+        IsIndustrialSector = isIndustrialSector;
         TfpRateIndustry = Round(tfpRateIndustry);
         TfpRateOther = Round(tfpRateOther);
         FoprolosRate = Round(foprolosRate);

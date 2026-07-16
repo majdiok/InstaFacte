@@ -13,6 +13,8 @@ public sealed record EmployeeListDto
     public string? CnssNumber { get; init; }
     public string? JobTitle { get; init; }
     public decimal? CurrentBaseSalary { get; init; }
+    /// <summary>Régime hebdomadaire du contrat actif ("FortyEightHours" / "FortyHours").</summary>
+    public string? CurrentWeeklyRegime { get; init; }
     public DateTime HireDate { get; init; }
     public bool IsActive { get; init; }
 }
@@ -33,6 +35,8 @@ public sealed record EmploymentContractDto
     public string TypeDisplay { get; init; } = null!;
     public string Regime { get; init; } = null!;
     public string RegimeDisplay { get; init; } = null!;
+    public string WeeklyRegime { get; init; } = null!;
+    public string WeeklyRegimeDisplay { get; init; } = null!;
     public DateTime StartDate { get; init; }
     public DateTime? EndDate { get; init; }
     public decimal BaseSalary { get; init; }
@@ -58,6 +62,9 @@ public sealed record EmployeeDetailDto
     public string MaritalStatusDisplay { get; init; } = null!;
     public bool IsHeadOfFamily { get; init; }
     public int DependentChildren { get; init; }
+    public int StudentChildren { get; init; }
+    public int DisabledChildren { get; init; }
+    public int DependentParents { get; init; }
     public AddressDto? Address { get; init; }
     public string? Email { get; init; }
     public string? Phone { get; init; }
@@ -78,6 +85,9 @@ public sealed record CreateEmployeeDto
     public string MaritalStatus { get; init; } = "Single";
     public bool IsHeadOfFamily { get; init; }
     public int DependentChildren { get; init; }
+    public int StudentChildren { get; init; }
+    public int DisabledChildren { get; init; }
+    public int DependentParents { get; init; }
     public string? Street { get; init; }
     public string? StreetLine2 { get; init; }
     public string? City { get; init; }
@@ -98,6 +108,9 @@ public sealed record UpdateEmployeeDto
     public string MaritalStatus { get; init; } = "Single";
     public bool IsHeadOfFamily { get; init; }
     public int DependentChildren { get; init; }
+    public int StudentChildren { get; init; }
+    public int DisabledChildren { get; init; }
+    public int DependentParents { get; init; }
     public string? Street { get; init; }
     public string? StreetLine2 { get; init; }
     public string? City { get; init; }
@@ -120,6 +133,7 @@ public sealed record CreateContractDto
 {
     public string Type { get; init; } = "Cdi";
     public string Regime { get; init; } = "Rsna";
+    public string WeeklyRegime { get; init; } = "FortyEightHours";
     public DateTime StartDate { get; init; }
     public DateTime? EndDate { get; init; }
     public decimal BaseSalary { get; init; }
@@ -132,6 +146,7 @@ public sealed record UpdateContractDto
 {
     public string Type { get; init; } = "Cdi";
     public string Regime { get; init; } = "Rsna";
+    public string WeeklyRegime { get; init; } = "FortyEightHours";
     public DateTime StartDate { get; init; }
     public DateTime? EndDate { get; init; }
     public decimal BaseSalary { get; init; }
@@ -189,12 +204,13 @@ public sealed record CreatePayrollRunDto
     public int Year { get; init; }
     public int Month { get; init; }
     public string? Label { get; init; }
+    /// <summary>Déprécié — le secteur est lu depuis les paramètres d'exercice. Conservé pour compatibilité API, ignoré.</summary>
     public bool IsIndustrialSector { get; init; }
 }
 
 public sealed record CalculatePayrollRunDto
 {
-    /// <summary>Le tenant relève-t-il du secteur industriel (TFP à taux réduit) ?</summary>
+    /// <summary>Déprécié — le secteur est lu depuis les paramètres d'exercice (PayrollYearParameters.IsIndustrialSector). Conservé pour compatibilité API, ignoré.</summary>
     public bool IsIndustrialSector { get; init; }
     /// <summary>Solder automatiquement les avances en cours lors du calcul.</summary>
     public bool SettleOutstandingAdvances { get; init; } = true;
@@ -285,6 +301,11 @@ public sealed record PayrollParametersDto
     public decimal HeadOfFamilyAnnualDeduction { get; init; }
     public decimal ChildAnnualDeduction { get; init; }
     public int MaxDeductibleChildren { get; init; }
+    public decimal StudentChildAnnualDeduction { get; init; }
+    public decimal DisabledChildAnnualDeduction { get; init; }
+    public decimal ParentDeductionRatePercent { get; init; }
+    public decimal ParentAnnualDeductionCap { get; init; }
+    public bool IsIndustrialSector { get; init; }
     public decimal TfpRateIndustry { get; init; }
     public decimal TfpRateOther { get; init; }
     public decimal FoprolosRate { get; init; }
@@ -308,6 +329,11 @@ public sealed record UpdatePayrollParametersDto
     public decimal HeadOfFamilyAnnualDeduction { get; init; }
     public decimal ChildAnnualDeduction { get; init; }
     public int MaxDeductibleChildren { get; init; }
+    public decimal StudentChildAnnualDeduction { get; init; }
+    public decimal DisabledChildAnnualDeduction { get; init; }
+    public decimal ParentDeductionRatePercent { get; init; }
+    public decimal ParentAnnualDeductionCap { get; init; }
+    public bool IsIndustrialSector { get; init; }
     public decimal TfpRateIndustry { get; init; }
     public decimal TfpRateOther { get; init; }
     public decimal FoprolosRate { get; init; }

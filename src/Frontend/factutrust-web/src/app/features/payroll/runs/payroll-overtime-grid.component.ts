@@ -11,7 +11,7 @@ import { EmployeeService, EmployeeListItem } from '@core/services/employee.servi
 import { PayrollService, PayrollOvertimeLine, UpsertOvertimeLineRequest } from '@core/services/payroll.service';
 import { ToastService } from '@core/services/toast.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
-import { OVERTIME_RATE_OPTIONS } from '../payroll-options';
+import { defaultOvertimeRate, overtimeRateOptions, weeklyRegimeDivisor } from '../payroll-options';
 import { PayrollSectionComponent, PayrollAmountPipe } from '../shared';
 
 @Component({
@@ -32,7 +32,7 @@ import { PayrollSectionComponent, PayrollAmountPipe } from '../shared';
   template: `
     <app-payroll-section
       title="Éléments variables — Heures supplémentaires"
-      subtitle="Montant = (salaire base ÷ 173,33) × heures × taux majoré. Override possible."
+      subtitle="Montant = (salaire base ÷ 208 en régime 48 h, ÷ 173,33 en régime 40 h) × heures × taux majoré. Override possible."
       icon="pi-clock">
       @if (!readOnly) {
         <div class="payroll-toolbar mb-3">
@@ -82,7 +82,7 @@ import { PayrollSectionComponent, PayrollAmountPipe } from '../shared';
     <p-dialog [header]="editingId ? 'Modifier heures sup.' : 'Nouvelles heures sup.'" [(visible)]="dialogVisible" [modal]="true" [style]="{ width: '480px' }">
       <div class="payroll-form-group mb-2">
         <label>Salarié</label>
-        <p-dropdown [options]="employees()" optionLabel="fullName" optionValue="id" [(ngModel)]="formEmployeeId" (ngModelChange)="refreshPreview()" appendTo="body" styleClass="w-full" [disabled]="!!editingId" />
+        <p-dropdown [options]="employees()" optionLabel="fullName" optionValue="id" [(ngModel)]="formEmployeeId" (ngModelChange)="onEmployeeChange()" appendTo="body" styleClass="w-full" [disabled]="!!editingId" />
       </div>
       <div class="payroll-form-row">
         <div class="payroll-form-group">
@@ -98,7 +98,7 @@ import { PayrollSectionComponent, PayrollAmountPipe } from '../shared';
         <label>Montant override (optionnel)</label>
         <p-inputNumber [(ngModel)]="formOverride" [minFractionDigits]="3" [maxFractionDigits]="3" [locale]="'fr-TN'" (ngModelChange)="refreshPreview()" styleClass="w-full" />
       </div>
-      <p class="payroll-info-text">Formule : (salaire base ÷ 173,33) × heures × (taux % ÷ 100)</p>
+      <p class="payroll-info-text">Formule : (salaire base ÷ {{ divisorLabel }}) × heures × (taux % ÷ 100)</p>
       @if (previewAmount() !== null) {
         <p>Montant appliqué : <strong>{{ previewAmount() | payrollAmount }}</strong></p>
       }
@@ -127,20 +127,34 @@ export class PayrollOvertimeGridComponent implements OnInit {
   private readonly toast = inject(ToastService);
   private readonly confirmation = inject(ConfirmationService);
 
-  readonly rateOptions = OVERTIME_RATE_OPTIONS;
   lines = signal<PayrollOvertimeLine[]>([]);
   employees = signal<EmployeeListItem[]>([]);
   dialogVisible = false;
   editingId: string | null = null;
   formEmployeeId: string | null = null;
   formHours = 1;
-  formRatePercent = 125;
+  formRatePercent = 175;
   formOverride: number | null = null;
   previewAmount = signal<number | null>(null);
+  private extendedRatesEnabled = false;
+
+  /** Régime hebdomadaire du contrat actif du salarié sélectionné. */
+  get selectedWeeklyRegime(): string | undefined {
+    return this.employees().find(e => e.id === this.formEmployeeId)?.currentWeeklyRegime;
+  }
+
+  get divisorLabel(): string {
+    return weeklyRegimeDivisor(this.selectedWeeklyRegime);
+  }
+
+  get rateOptions(): { value: number; label: string }[] {
+    return overtimeRateOptions(this.selectedWeeklyRegime, this.extendedRatesEnabled);
+  }
 
   ngOnInit(): void {
     this.lines.set(this.initialLines ?? []);
     this.loadEmployees();
+    this.loadExtendedRatesOption();
   }
 
   reload(): void {
@@ -157,15 +171,29 @@ export class PayrollOvertimeGridComponent implements OnInit {
     });
   }
 
+  private loadExtendedRatesOption(): void {
+    this.payroll.getParameters(this.year).subscribe({
+      next: res => (this.extendedRatesEnabled = res.data?.enableExtendedOvertimeRates ?? false),
+      error: () => {}
+    });
+  }
+
   openDialog(): void {
     if (this.readOnly) return;
     this.editingId = null;
     this.formEmployeeId = null;
     this.formHours = 1;
-    this.formRatePercent = 125;
+    this.formRatePercent = defaultOvertimeRate(undefined);
     this.formOverride = null;
     this.previewAmount.set(null);
     this.dialogVisible = true;
+  }
+
+  onEmployeeChange(): void {
+    // Propose le taux légal du régime du salarié ; en édition, le taux historique est conservé.
+    if (!this.editingId)
+      this.formRatePercent = defaultOvertimeRate(this.selectedWeeklyRegime);
+    this.refreshPreview();
   }
 
   editLine(line: PayrollOvertimeLine): void {
@@ -190,7 +218,8 @@ export class PayrollOvertimeGridComponent implements OnInit {
       baseSalary,
       hours: this.formHours,
       ratePercent: this.formRatePercent,
-      overrideAmount: this.formOverride ?? undefined
+      overrideAmount: this.formOverride ?? undefined,
+      employeeId: this.formEmployeeId ?? undefined
     }).subscribe({
       next: res => this.previewAmount.set(res.data?.effectiveAmount ?? null),
       error: () => this.previewAmount.set(null)

@@ -162,7 +162,12 @@ import { ButtonComponent } from '@shared/components/button/button.component';
                 <label for="allowanceMatrix">Matrice primes (imposable × CNSS)</label>
                 <p-inputSwitch inputId="allowanceMatrix" [(ngModel)]="params()!.enableAllowanceQuadrantMatrix" name="allowanceMatrix" />
               </div>
+              <div class="payroll-form-group switch-row">
+                <label for="industrialSector">Secteur industriel (TFP 1 % au lieu de 2 %)</label>
+                <p-inputSwitch inputId="industrialSector" [(ngModel)]="params()!.isIndustrialSector" name="industrialSector" />
+              </div>
             </div>
+            <p class="payroll-info-text mt-2">Le taux TFP appliqué aux cycles de paie de cet exercice suit ce paramètre ; recalculez les cycles en brouillon pour l'appliquer.</p>
           </p-tabPanel>
         </p-tabView>
 
@@ -174,6 +179,7 @@ import { ButtonComponent } from '@shared/components/button/button.component';
   `,
   styles: [`
     .mb-3 { margin-bottom: var(--spacing-4); }
+    .mt-2 { margin-top: var(--spacing-2); }
     .mt-4 { margin-top: var(--spacing-6); }
     .mr-2 { margin-right: var(--spacing-2); }
     .w-full { width: 100%; }

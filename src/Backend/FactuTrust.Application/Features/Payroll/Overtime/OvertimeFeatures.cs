@@ -3,6 +3,7 @@ using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Payroll;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities.Payroll;
+using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Services.Payroll;
 using FluentValidation;
 using MediatR;
@@ -119,7 +120,8 @@ public sealed class CreateOvertimeLineCommandHandler : IRequestHandler<CreateOve
             dto.RatePercent,
             contract.BaseSalary,
             dto.OverrideAmount,
-            payrollParams.EnableExtendedOvertimeRates);
+            payrollParams.EnableExtendedOvertimeRates,
+            contract.WeeklyRegime);
 
         if (lineResult.IsFailure)
             return Result.Failure<Guid>(lineResult.Error);
@@ -184,7 +186,8 @@ public sealed class UpdateOvertimeLineCommandHandler : IRequestHandler<UpdateOve
             request.Dto.RatePercent,
             contract.BaseSalary,
             request.Dto.OverrideAmount,
-            payrollParams.EnableExtendedOvertimeRates);
+            payrollParams.EnableExtendedOvertimeRates,
+            contract.WeeklyRegime);
 
         if (updateResult.IsFailure)
             return updateResult;
@@ -221,16 +224,18 @@ public sealed class DeleteOvertimeLineCommandHandler : IRequestHandler<DeleteOve
     }
 }
 
-public sealed record PreviewOvertimeAmountQuery(decimal BaseSalary, decimal Hours, decimal RatePercent, decimal? OverrideAmount, int? FiscalYear = null)
+public sealed record PreviewOvertimeAmountQuery(decimal BaseSalary, decimal Hours, decimal RatePercent, decimal? OverrideAmount, int? FiscalYear = null, Guid? EmployeeId = null)
     : IRequest<OvertimePreviewDto>;
 
 public sealed class PreviewOvertimeAmountQueryHandler : IRequestHandler<PreviewOvertimeAmountQuery, OvertimePreviewDto>
 {
     private readonly IPayrollParametersRepository _parameters;
+    private readonly IEmployeeRepository _employees;
 
-    public PreviewOvertimeAmountQueryHandler(IPayrollParametersRepository parameters)
+    public PreviewOvertimeAmountQueryHandler(IPayrollParametersRepository parameters, IEmployeeRepository employees)
     {
         _parameters = parameters;
+        _employees = employees;
     }
 
     public async Task<OvertimePreviewDto> Handle(PreviewOvertimeAmountQuery request, CancellationToken cancellationToken)
@@ -239,9 +244,18 @@ public sealed class PreviewOvertimeAmountQueryHandler : IRequestHandler<PreviewO
         var payrollParams = await _parameters.GetOrCreateForYearAsync(year, cancellationToken);
         var enableExtended = payrollParams.EnableExtendedOvertimeRates;
 
-        var computed = OvertimeAmountCalculator.ComputeAmount(request.BaseSalary, request.Hours, request.RatePercent, enableExtended);
+        // Le régime hebdomadaire est résolu depuis le contrat actif du salarié quand il est fourni ;
+        // à défaut la convention 48 h s'applique (comportement historique).
+        WeeklyWorkRegime? regime = null;
+        if (request.EmployeeId.HasValue)
+        {
+            var employee = await _employees.GetByIdWithContractsAsync(request.EmployeeId.Value, cancellationToken);
+            regime = employee?.GetActiveContract(DateTime.UtcNow)?.WeeklyRegime;
+        }
+
+        var computed = OvertimeAmountCalculator.ComputeAmount(request.BaseSalary, request.Hours, request.RatePercent, enableExtended, regime);
         var effective = OvertimeAmountCalculator.ResolveEffectiveAmount(computed, request.OverrideAmount);
-        var hourlyRate = OvertimeAmountCalculator.ComputeHourlyRate(request.BaseSalary);
+        var hourlyRate = OvertimeAmountCalculator.ComputeHourlyRate(request.BaseSalary, regime);
 
         return new OvertimePreviewDto
         {

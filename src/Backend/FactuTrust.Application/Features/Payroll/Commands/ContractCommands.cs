@@ -45,6 +45,8 @@ public sealed class AddContractCommandHandler : IRequestHandler<AddContractComma
             return Result.Failure<Guid>(Error.Validation("Type", "Type de contrat invalide."));
         if (!Enum.TryParse<SocialRegime>(dto.Regime, out var regime))
             return Result.Failure<Guid>(Error.Validation("Regime", "Régime social invalide."));
+        if (!Enum.TryParse<WeeklyWorkRegime>(dto.WeeklyRegime, out var weeklyRegime))
+            return Result.Failure<Guid>(Error.Validation("WeeklyRegime", "Régime hebdomadaire invalide."));
 
         var fiscalYear = dto.StartDate.Year;
         var parameters = await _parameters.GetOrCreateForYearAsync(fiscalYear, cancellationToken);
@@ -52,7 +54,7 @@ public sealed class AddContractCommandHandler : IRequestHandler<AddContractComma
             return Result.Failure<Guid>(Error.Validation("BaseSalary", $"Le salaire de base ne peut pas être inférieur au SMIG ({parameters.MonthlySmig:N3} TND)."));
 
         var contractResult = EmploymentContract.CreatePublic(
-            request.EmployeeId, type, regime, dto.StartDate, dto.BaseSalary, dto.WorkAccidentRate, dto.EndDate, dto.JobTitle);
+            request.EmployeeId, type, regime, dto.StartDate, dto.BaseSalary, dto.WorkAccidentRate, dto.EndDate, dto.JobTitle, weeklyRegime);
         if (contractResult.IsFailure)
             return Result.Failure<Guid>(contractResult.Error);
 
@@ -104,13 +106,15 @@ public sealed class UpdateContractCommandHandler : IRequestHandler<UpdateContrac
             return Result.Failure(Error.Validation("Type", "Type de contrat invalide."));
         if (!Enum.TryParse<SocialRegime>(dto.Regime, out var regime))
             return Result.Failure(Error.Validation("Regime", "Régime social invalide."));
+        if (!Enum.TryParse<WeeklyWorkRegime>(dto.WeeklyRegime, out var weeklyRegime))
+            return Result.Failure(Error.Validation("WeeklyRegime", "Régime hebdomadaire invalide."));
 
         var fiscalYear = dto.StartDate.Year;
         var parameters = await _parameters.GetOrCreateForYearAsync(fiscalYear, cancellationToken);
         if (parameters.EnforceSmigOnContracts && dto.BaseSalary < parameters.MonthlySmig)
             return Result.Failure(Error.Validation("BaseSalary", $"Le salaire de base ne peut pas être inférieur au SMIG ({parameters.MonthlySmig:N3} TND)."));
 
-        var updateResult = contract.Update(type, regime, dto.StartDate, dto.BaseSalary, dto.WorkAccidentRate, dto.EndDate, dto.JobTitle, dto.IsActive);
+        var updateResult = contract.Update(type, regime, dto.StartDate, dto.BaseSalary, dto.WorkAccidentRate, dto.EndDate, dto.JobTitle, dto.IsActive, weeklyRegime);
         if (updateResult.IsFailure)
             return updateResult;
 

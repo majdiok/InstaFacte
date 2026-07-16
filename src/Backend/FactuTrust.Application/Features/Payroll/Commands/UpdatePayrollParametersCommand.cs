@@ -51,7 +51,12 @@ public sealed class UpdatePayrollParametersCommandHandler : IRequestHandler<Upda
             dto.CnssEmployerRateRsa,
             dto.EnforceSmigOnContracts,
             dto.EnableExtendedOvertimeRates,
-            dto.EnableAllowanceQuadrantMatrix);
+            dto.EnableAllowanceQuadrantMatrix,
+            dto.StudentChildAnnualDeduction,
+            dto.DisabledChildAnnualDeduction,
+            dto.ParentDeductionRatePercent,
+            dto.ParentAnnualDeductionCap,
+            dto.IsIndustrialSector);
         if (ratesResult.IsFailure)
             return ratesResult;
 

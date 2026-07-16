@@ -53,15 +53,12 @@ public static class PayrollCalculator
         // 4. Frais professionnels (mensualisés, plafonnés).
         var monthlyCap = R(parameters.ProfessionalExpensesAnnualCap / 12m);
         var professionalExpenses = R(baseAfterCnss * parameters.ProfessionalExpensesRate / 100m);
-        if (professionalExpenses > monthlyCap)
+        var professionalExpensesCapped = professionalExpenses > monthlyCap;
+        if (professionalExpensesCapped)
             professionalExpenses = monthlyCap;
 
-        // 5. Déductions familiales (mensualisées).
-        var childCount = Math.Min(input.DependentChildren, parameters.MaxDeductibleChildren);
-        var annualFamilyDeduction =
-            (input.IsHeadOfFamily ? parameters.HeadOfFamilyAnnualDeduction : 0m)
-            + childCount * parameters.ChildAnnualDeduction;
-        var familyDeductions = R(annualFamilyDeduction / 12m);
+        // 5. Déductions familiales (mensualisées) — art. 40 du code de l'IRPP.
+        var familyDeductions = ComputeMonthlyFamilyDeductions(input, parameters, baseAfterCnss, professionalExpenses);
 
         // 6. Net imposable mensuel puis annualisation pour le barème progressif.
         var monthlyNetTaxable = baseAfterCnss - professionalExpenses - familyDeductions;
@@ -102,9 +99,10 @@ public static class PayrollCalculator
         var foprolos = R(cnssableGross * parameters.FoprolosRate / 100m);
 
         var lines = BuildLines(
-            input, cnssEmployeeRate, cnssEmployerRate, tfpRate,
-            cnssableGross, cnssEmployee, professionalExpenses, familyDeductions,
-            irpp, css, cnssEmployer, workAccident, tfp, foprolos);
+            input, parameters, cnssEmployeeRate, cnssEmployerRate, tfpRate,
+            cnssableGross, cnssEmployee, baseAfterCnss,
+            professionalExpenses, professionalExpensesCapped, familyDeductions,
+            monthlyNetTaxable, irpp, css, cnssEmployer, workAccident, tfp, foprolos);
 
         return new PayrollComputation
         {
@@ -161,15 +159,59 @@ public static class PayrollCalculator
         return R(tax);
     }
 
+    /// <summary>
+    /// Déductions familiales annuelles mensualisées : chef de famille, enfants ordinaires
+    /// (plafond de rang, consommé d'abord par les étudiants à déduction majorée), enfants
+    /// infirmes (hors plafond), parents à charge (% du revenu net annuel, plafonné par parent).
+    /// </summary>
+    private static decimal ComputeMonthlyFamilyDeductions(
+        PayrollComputationInput input,
+        PayrollYearParameters parameters,
+        decimal baseAfterCnss,
+        decimal professionalExpenses)
+    {
+        var annual = input.IsHeadOfFamily ? parameters.HeadOfFamilyAnnualDeduction : 0m;
+
+        var disabled = Math.Max(0, input.DisabledChildren);
+        annual += disabled * parameters.DisabledChildAnnualDeduction;
+
+        var cap = Math.Max(0, parameters.MaxDeductibleChildren);
+        var students = Math.Min(Math.Max(0, input.StudentChildren), cap);
+        annual += students * parameters.StudentChildAnnualDeduction;
+
+        var ordinary = Math.Max(0, input.DependentChildren - input.StudentChildren - disabled);
+        var ordinaryCounted = Math.Min(ordinary, cap - students);
+        annual += ordinaryCounted * parameters.ChildAnnualDeduction;
+
+        var parents = Math.Clamp(input.DependentParents, 0, 2);
+        if (parents > 0 && parameters.ParentDeductionRatePercent > 0)
+        {
+            var annualNetIncome = R((baseAfterCnss - professionalExpenses) * 12m);
+            if (annualNetIncome > 0)
+            {
+                var perParent = Math.Min(
+                    R(annualNetIncome * parameters.ParentDeductionRatePercent / 100m),
+                    parameters.ParentAnnualDeductionCap);
+                annual += parents * perParent;
+            }
+        }
+
+        return R(annual / 12m);
+    }
+
     private static List<PayrollComputationLine> BuildLines(
         PayrollComputationInput input,
+        PayrollYearParameters parameters,
         decimal cnssEmployeeRate,
         decimal cnssEmployerRate,
         decimal tfpRate,
         decimal cnssableGross,
         decimal cnssEmployee,
+        decimal baseAfterCnss,
         decimal professionalExpenses,
+        bool professionalExpensesCapped,
         decimal familyDeductions,
+        decimal monthlyNetTaxable,
         decimal irpp,
         decimal css,
         decimal cnssEmployer,
@@ -210,13 +252,19 @@ public static class PayrollCalculator
         if (cnssEmployee > 0)
             Add("Retenue CNSS", PayslipLineKind.Deduction, cnssEmployee, cnssableGross, cnssEmployeeRate);
         if (professionalExpenses > 0)
-            Add("Frais professionnels (déduction)", PayslipLineKind.Info, professionalExpenses);
+        {
+            // Plafonnés : le montant ne résulte plus de base × taux, on n'affiche donc pas ce couple.
+            if (professionalExpensesCapped)
+                Add("Frais professionnels (plafonnés)", PayslipLineKind.Info, professionalExpenses);
+            else
+                Add("Frais professionnels (déduction)", PayslipLineKind.Info, professionalExpenses, baseAfterCnss, parameters.ProfessionalExpensesRate);
+        }
         if (familyDeductions > 0)
             Add("Déductions familiales", PayslipLineKind.Info, familyDeductions);
         if (irpp > 0)
-            Add("Retenue IRPP", PayslipLineKind.Deduction, irpp);
+            Add("Retenue IRPP", PayslipLineKind.Deduction, irpp, monthlyNetTaxable);
         if (css > 0)
-            Add("Contribution Sociale de Solidarité (CSS)", PayslipLineKind.Deduction, css);
+            Add("Contribution Sociale de Solidarité (CSS)", PayslipLineKind.Deduction, css, monthlyNetTaxable, parameters.CssRate);
         if (input.OtherDeductions > 0)
             Add("Autres retenues (avances, oppositions)", PayslipLineKind.Deduction, input.OtherDeductions);
 
@@ -228,7 +276,7 @@ public static class PayrollCalculator
         if (tfp > 0)
             Add("TFP", PayslipLineKind.EmployerContribution, tfp, cnssableGross, tfpRate);
         if (foprolos > 0)
-            Add("FOPROLOS", PayslipLineKind.EmployerContribution, foprolos, cnssableGross);
+            Add("FOPROLOS", PayslipLineKind.EmployerContribution, foprolos, cnssableGross, parameters.FoprolosRate);
 
         return lines;
     }
