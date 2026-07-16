@@ -10,19 +10,19 @@
     {
       "name": "FactuTrust Web (Angular)",
       "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "cd /d C:\\Solution\\FactuTrust - Copy\\src\\Frontend\\factutrust-web && npm start"],
+      "runtimeArgs": ["/c", "cd /d C:\\Solution\\FactuTrustCopy\\src\\Frontend\\factutrust-web && npm start"],
       "port": 4200
     },
     {
       "name": "FactuTrust Backoffice (Angular)",
       "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "cd /d C:\\Solution\\FactuTrust - Copy\\src\\Frontend\\factutrust-backoffice && npm start"],
+      "runtimeArgs": ["/c", "cd /d C:\\Solution\\FactuTrustCopy\\src\\Frontend\\factutrust-backoffice && npm start"],
       "port": 4300
     },
     {
       "name": "FactuTrust Web Preview",
       "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "cd /d C:\\Solution\\FactuTrust - Copy\\src\\Frontend\\factutrust-web && npm start -- --port 4201"],
+      "runtimeArgs": ["/c", "cd /d C:\\Solution\\FactuTrustCopy\\src\\Frontend\\factutrust-web && npm start -- --port 4201"],
       "port": 4201
     }
   ]
