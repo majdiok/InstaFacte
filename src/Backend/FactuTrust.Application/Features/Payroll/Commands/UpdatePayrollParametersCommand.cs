@@ -14,7 +14,43 @@ public sealed class UpdatePayrollParametersCommandValidator : AbstractValidator<
     public UpdatePayrollParametersCommandValidator()
     {
         RuleFor(x => x.FiscalYear).InclusiveBetween(2000, 2100);
+
+        // Taux exprimés en pourcentage.
+        RuleFor(x => x.Dto.CnssEmployeeRate).InclusiveBetween(0, 100);
+        RuleFor(x => x.Dto.CnssEmployerRate).InclusiveBetween(0, 100);
+        RuleFor(x => x.Dto.CnssEmployeeRateRsa).InclusiveBetween(0, 100);
+        RuleFor(x => x.Dto.CnssEmployerRateRsa).InclusiveBetween(0, 100);
+        RuleFor(x => x.Dto.CssRate).InclusiveBetween(0, 100);
+        RuleFor(x => x.Dto.ProfessionalExpensesRate).InclusiveBetween(0, 100);
+        RuleFor(x => x.Dto.TfpRateIndustry).InclusiveBetween(0, 100);
+        RuleFor(x => x.Dto.TfpRateOther).InclusiveBetween(0, 100);
+        RuleFor(x => x.Dto.FoprolosRate).InclusiveBetween(0, 100);
+        RuleFor(x => x.Dto.ParentDeductionRatePercent).InclusiveBetween(0, 100);
+
+        // Montants et plafonds.
+        RuleFor(x => x.Dto.CssAnnualExemptionThreshold).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Dto.ProfessionalExpensesAnnualCap).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Dto.HeadOfFamilyAnnualDeduction).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Dto.ChildAnnualDeduction).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Dto.StudentChildAnnualDeduction).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Dto.DisabledChildAnnualDeduction).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Dto.ParentAnnualDeductionCap).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Dto.MonthlySmig).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Dto.MaxDeductibleChildren).InclusiveBetween(0, 10);
+
+        // Barème IRPP : première tranche à 0, seuils strictement croissants, taux 0-100.
         RuleFor(x => x.Dto.IrppBrackets).NotEmpty().WithMessage("Le barème IRPP doit comporter au moins une tranche.");
+        RuleFor(x => x.Dto.IrppBrackets)
+            .Must(b => b.Count == 0 || b.OrderBy(t => t.LowerBound).First().LowerBound == 0m)
+            .WithMessage("La première tranche IRPP doit démarrer à 0.");
+        RuleFor(x => x.Dto.IrppBrackets)
+            .Must(b => b.Select(t => t.LowerBound).Distinct().Count() == b.Count)
+            .WithMessage("Deux tranches IRPP ne peuvent pas avoir le même seuil inférieur.");
+        RuleForEach(x => x.Dto.IrppBrackets).ChildRules(bracket =>
+        {
+            bracket.RuleFor(b => b.LowerBound).GreaterThanOrEqualTo(0);
+            bracket.RuleFor(b => b.Rate).InclusiveBetween(0, 100);
+        });
     }
 }
 

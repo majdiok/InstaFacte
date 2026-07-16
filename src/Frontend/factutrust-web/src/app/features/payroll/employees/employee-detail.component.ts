@@ -110,6 +110,14 @@ import { PayrollConsultBannerComponent, PayrollAmountPipe, formatPayrollAmount }
               <dd>{{ employee()!.dependentChildren }}</dd>
             </div>
             <div>
+              <dt>Dont étudiants / infirmes</dt>
+              <dd>{{ employee()!.studentChildren ?? 0 }} / {{ employee()!.disabledChildren ?? 0 }}</dd>
+            </div>
+            <div>
+              <dt>Parents à charge</dt>
+              <dd>{{ employee()!.dependentParents ?? 0 }}</dd>
+            </div>
+            <div>
               <dt>Email</dt>
               <dd>{{ employee()!.email || '—' }}</dd>
             </div>

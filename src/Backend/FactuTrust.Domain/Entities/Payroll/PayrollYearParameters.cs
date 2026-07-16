@@ -235,6 +235,10 @@ public sealed class PayrollYearParameters : AggregateRoot
             return Result.Failure(Error.Validation("IrppBrackets", "Le barème IRPP doit comporter au moins une tranche."));
         if (ordered[0].LowerBound != 0m)
             return Result.Failure(Error.Validation("IrppBrackets", "La première tranche IRPP doit démarrer à 0."));
+        if (ordered.Select(b => b.LowerBound).Distinct().Count() != ordered.Count)
+            return Result.Failure(Error.Validation("IrppBrackets", "Deux tranches IRPP ne peuvent pas avoir le même seuil inférieur."));
+        if (ordered.Any(b => b.Rate < 0m || b.Rate > 100m))
+            return Result.Failure(Error.Validation("IrppBrackets", "Les taux IRPP doivent être compris entre 0 et 100 %."));
 
         _irppBrackets.Clear();
         _irppBrackets.AddRange(ordered);

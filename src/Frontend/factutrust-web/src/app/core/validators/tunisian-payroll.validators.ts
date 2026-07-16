@@ -31,6 +31,18 @@ export const tunisianPayrollValidators = {
     if (raw == null || String(raw).trim() === '') return null;
     const match = TUNISIAN_GOVERNORATES.some(g => g.toLowerCase() === String(raw).trim().toLowerCase());
     return match ? null : { tunisianFormat: 'Gouvernorat tunisien invalide.' };
+  },
+  /**
+   * Validateur de groupe : étudiants + infirmes ≤ enfants à charge (art. 40 code IRPP).
+   * À poser sur le FormGroup contenant dependentChildren / studentChildren / disabledChildren.
+   */
+  familyCounts: (group: AbstractControl): ValidationErrors | null => {
+    const total = Number(group.get('dependentChildren')?.value ?? 0);
+    const students = Number(group.get('studentChildren')?.value ?? 0);
+    const disabled = Number(group.get('disabledChildren')?.value ?? 0);
+    return students + disabled <= total
+      ? null
+      : { familyCounts: 'Le total des enfants étudiants et infirmes ne peut pas dépasser le nombre d’enfants à charge.' };
   }
 };
 

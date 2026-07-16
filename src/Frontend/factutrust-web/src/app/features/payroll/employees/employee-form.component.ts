@@ -135,6 +135,26 @@ function parseIsoDate(value?: string): Date | null {
           </div>
           <div class="payroll-form-row">
             <div class="payroll-form-group">
+              <label for="studentChildren">Dont étudiants (non boursiers, &lt; 25 ans)</label>
+              <p-inputNumber id="studentChildren" formControlName="studentChildren" [min]="0" styleClass="w-full" />
+              <span class="field-hint">Déduction IRPP majorée</span>
+            </div>
+            <div class="payroll-form-group">
+              <label for="disabledChildren">Dont infirmes</label>
+              <p-inputNumber id="disabledChildren" formControlName="disabledChildren" [min]="0" styleClass="w-full" />
+              <span class="field-hint">Déduction majorée, sans limite de rang</span>
+            </div>
+            <div class="payroll-form-group">
+              <label for="dependentParents">Parents à charge</label>
+              <p-inputNumber id="dependentParents" formControlName="dependentParents" [min]="0" [max]="2" styleClass="w-full" />
+              <span class="field-hint">0 à 2 — déduction de 5 % du revenu net, plafonnée</span>
+            </div>
+          </div>
+          @if (form.errors?.['familyCounts'] && form.touched) {
+            <div class="field-error">{{ form.errors?.['familyCounts'] }}</div>
+          }
+          <div class="payroll-form-row">
+            <div class="payroll-form-group">
               <label for="email">Email</label>
               <input pInputText id="email" formControlName="email" class="w-full" [class.ng-invalid]="isInvalid('email')" />
               @if (isInvalid('email')) {
@@ -228,6 +248,9 @@ export class EmployeeFormComponent implements OnInit {
     maritalStatus: ['Single'],
     isHeadOfFamily: [false],
     dependentChildren: [0, Validators.min(0)],
+    studentChildren: [0, Validators.min(0)],
+    disabledChildren: [0, Validators.min(0)],
+    dependentParents: [0, [Validators.min(0), Validators.max(2)]],
     email: ['', Validators.email],
     phone: ['', tunisianPayrollValidators.phone],
     rib: ['', tunisianPayrollValidators.rib],
@@ -236,7 +259,7 @@ export class EmployeeFormComponent implements OnInit {
     city: [''],
     postalCode: [''],
     governorate: ['', tunisianPayrollValidators.governorate]
-  });
+  }, { validators: tunisianPayrollValidators.familyCounts });
 
   breadcrumbItems = computed((): BreadcrumbItem[] => [
     { label: 'Salariés', route: '/payroll/employees' },
@@ -293,6 +316,9 @@ export class EmployeeFormComponent implements OnInit {
       maritalStatus: e.maritalStatus,
       isHeadOfFamily: e.isHeadOfFamily,
       dependentChildren: e.dependentChildren,
+      studentChildren: e.studentChildren ?? 0,
+      disabledChildren: e.disabledChildren ?? 0,
+      dependentParents: e.dependentParents ?? 0,
       email: e.email ?? '',
       phone: e.phone ?? '',
       rib: e.rib ?? '',
@@ -322,6 +348,9 @@ export class EmployeeFormComponent implements OnInit {
         maritalStatus: raw.maritalStatus,
         isHeadOfFamily: raw.isHeadOfFamily,
         dependentChildren: raw.dependentChildren ?? 0,
+        studentChildren: raw.studentChildren ?? 0,
+        disabledChildren: raw.disabledChildren ?? 0,
+        dependentParents: raw.dependentParents ?? 0,
         street: raw.street || undefined,
         streetLine2: raw.streetLine2 || undefined,
         city: raw.city || undefined,
@@ -354,6 +383,9 @@ export class EmployeeFormComponent implements OnInit {
         maritalStatus: raw.maritalStatus,
         isHeadOfFamily: raw.isHeadOfFamily,
         dependentChildren: raw.dependentChildren ?? 0,
+        studentChildren: raw.studentChildren ?? 0,
+        disabledChildren: raw.disabledChildren ?? 0,
+        dependentParents: raw.dependentParents ?? 0,
         street: raw.street || undefined,
         streetLine2: raw.streetLine2 || undefined,
         city: raw.city || undefined,
