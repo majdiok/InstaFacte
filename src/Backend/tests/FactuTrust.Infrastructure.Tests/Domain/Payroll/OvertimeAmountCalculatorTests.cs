@@ -57,6 +57,55 @@ public sealed class OvertimeAmountCalculatorTests
         Assert.False(OvertimeRatePercentExtensions.IsValid(200m));
     }
 
+    // ── Régime hebdomadaire (48 h ÷ 208 / 40 h ÷ 173,33) ──
+
+    [Fact]
+    public void ComputeHourlyRate_FortyEightHoursRegime_MatchesLegacyDivisor()
+    {
+        // Non-régression : le régime 48 h explicite produit le même résultat que l'historique.
+        Assert.Equal(
+            OvertimeAmountCalculator.ComputeHourlyRate(2080m),
+            OvertimeAmountCalculator.ComputeHourlyRate(2080m, WeeklyWorkRegime.FortyEightHours));
+    }
+
+    [Fact]
+    public void ComputeHourlyRate_FortyHoursRegime_Uses173_33Divisor()
+    {
+        // 1733,30 / 173,33 = 10,000
+        Assert.Equal(10m, OvertimeAmountCalculator.ComputeHourlyRate(1733.30m, WeeklyWorkRegime.FortyHours));
+    }
+
+    [Fact]
+    public void ComputeAmount_FortyHoursRegime_125Percent()
+    {
+        // 1000 / 173,33 = 5,769 ; × 10 h × 1,25 = 72,113 (arrondi 3 déc. sur le taux horaire)
+        var amount = OvertimeAmountCalculator.ComputeAmount(1000m, 10m, 125m, regime: WeeklyWorkRegime.FortyHours);
+        Assert.Equal(72.113m, amount);
+    }
+
+    [Fact]
+    public void ComputeAmount_FortyEightHoursRegime_175Percent_AllowedWithoutExtendedFlag()
+    {
+        // 175 % est le taux légal du régime 48 h : accepté même sans l'option « taux étendus ».
+        var amount = OvertimeAmountCalculator.ComputeAmount(2080m, 2m, 175m, regime: WeeklyWorkRegime.FortyEightHours);
+        Assert.Equal(35m, amount);
+    }
+
+    [Fact]
+    public void ComputeAmount_FortyHoursRegime_175Percent_StillRequiresExtendedFlag()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            OvertimeAmountCalculator.ComputeAmount(2080m, 2m, 175m, regime: WeeklyWorkRegime.FortyHours));
+    }
+
+    [Fact]
+    public void IsValid_RegimeAware_Accepts175ForFortyEightHours()
+    {
+        Assert.True(OvertimeRatePercentExtensions.IsValid(175m, false, WeeklyWorkRegime.FortyEightHours));
+        Assert.False(OvertimeRatePercentExtensions.IsValid(175m, false, WeeklyWorkRegime.FortyHours));
+        Assert.False(OvertimeRatePercentExtensions.IsValid(200m, false, WeeklyWorkRegime.FortyEightHours));
+    }
+
     [Fact]
     public void ResolveEffectiveAmount_OverrideTakesPrecedence()
     {

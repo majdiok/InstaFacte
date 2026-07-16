@@ -26,6 +26,9 @@ describe('EmployeeDetailComponent', () => {
     maritalStatusDisplay: 'Célibataire',
     isHeadOfFamily: false,
     dependentChildren: 0,
+    studentChildren: 0,
+    disabledChildren: 0,
+    dependentParents: 0,
     hireDate: '2026-01-01',
     isActive: true,
     contracts: [] as never[]

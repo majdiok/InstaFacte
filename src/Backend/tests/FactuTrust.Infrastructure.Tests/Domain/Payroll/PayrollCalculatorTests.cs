@@ -286,6 +286,188 @@ public sealed class PayrollCalculatorTests
     }
 
     [Fact]
+    public void Compute_MonthlySmig_MatchesHandComputedValues()
+    {
+        // SMIG 528,320 : le net imposable annuel (5182,056) dépasse légèrement la tranche à 0 %.
+        var input = new PayrollComputationInput
+        {
+            BaseSalary = 528.320m,
+            Regime = SocialRegime.Rsna
+        };
+
+        var c = PayrollCalculator.Compute(input, Params());
+
+        Assert.Equal(48.500m, c.CnssEmployee);         // 528,320 × 9,18 %
+        Assert.Equal(479.820m, c.TaxableBaseAfterCnss);
+        Assert.Equal(47.982m, c.ProfessionalExpenses); // 10 %, sous le plafond
+        Assert.Equal(431.838m, c.MonthlyNetTaxable);
+        Assert.Equal(5182.056m, c.AnnualNetTaxable);
+        Assert.Equal(2.276m, c.Irpp);                  // (5182,056 − 5000) × 15 % ÷ 12
+        Assert.Equal(2.159m, c.Css);                   // 5182,056 × 0,5 % ÷ 12
+        Assert.Equal(475.385m, c.NetSalary);
+    }
+
+    [Fact]
+    public void Compute_CssExemptionThreshold_EdgeCases()
+    {
+        var pars = Params();
+
+        // 509 TND/mois : net imposable annuel 4992,564 ≤ 5000 → IRPP et CSS exonérés.
+        var below = PayrollCalculator.Compute(new PayrollComputationInput { BaseSalary = 509m, Regime = SocialRegime.Rsna }, pars);
+        Assert.True(below.AnnualNetTaxable <= 5000m);
+        Assert.Equal(0m, below.Irpp);
+        Assert.Equal(0m, below.Css);
+
+        // 510 TND/mois : net imposable annuel 5002,368 > 5000 → CSS due sur la totalité.
+        var above = PayrollCalculator.Compute(new PayrollComputationInput { BaseSalary = 510m, Regime = SocialRegime.Rsna }, pars);
+        Assert.True(above.AnnualNetTaxable > 5000m);
+        Assert.True(above.Css > 0m);
+    }
+
+    // ── Déductions familiales étendues (art. 40 code IRPP) ──
+
+    [Fact]
+    public void Compute_ExtendedFamilyDeductions_MatchesHandComputedValues()
+    {
+        // Chef de famille, 4 enfants dont 1 étudiant (1000) et 1 infirme (2000, hors plafond),
+        // 1 parent à charge (5 % du revenu net annuel plafonné à 450).
+        var input = new PayrollComputationInput
+        {
+            BaseSalary = 3000m,
+            Regime = SocialRegime.Rsna,
+            IsHeadOfFamily = true,
+            DependentChildren = 4,
+            StudentChildren = 1,
+            DisabledChildren = 1,
+            DependentParents = 1
+        };
+
+        var c = PayrollCalculator.Compute(input, Params());
+
+        // 300 (chef) + 2000 (infirme) + 1000 (étudiant) + 2 × 100 (ordinaires) + 450 (parent plafonné) = 3950/an
+        Assert.Equal(329.167m, c.FamilyDeductions);
+    }
+
+    [Fact]
+    public void Compute_ParentDeduction_BelowCap_UsesFivePercentOfNetIncome()
+    {
+        // Salaire faible : 5 % du revenu net annuel (392,342) reste sous le plafond de 450.
+        var input = new PayrollComputationInput
+        {
+            BaseSalary = 800m,
+            Regime = SocialRegime.Rsna,
+            DependentParents = 1
+        };
+
+        var c = PayrollCalculator.Compute(input, Params());
+
+        // (726,560 − 72,656) × 12 = 7846,848 ; × 5 % = 392,342 ; ÷ 12 = 32,695
+        Assert.Equal(32.695m, c.FamilyDeductions);
+    }
+
+    [Fact]
+    public void Compute_StudentChildren_ConsumeCapBeforeOrdinaryChildren()
+    {
+        // 5 enfants dont 4 étudiants : le plafond de 4 est entièrement consommé par les
+        // étudiants (déduction la plus favorable), l'enfant ordinaire n'ouvre plus droit.
+        var input = new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            Regime = SocialRegime.Rsna,
+            DependentChildren = 5,
+            StudentChildren = 4
+        };
+
+        var c = PayrollCalculator.Compute(input, Params());
+
+        Assert.Equal(333.333m, c.FamilyDeductions); // 4 × 1000 / 12
+    }
+
+    [Fact]
+    public void Compute_DefaultFamilyCounts_MatchLegacyDeduction()
+    {
+        // Non-régression : sans étudiants/infirmes/parents, la déduction reste chef + enfants × 100.
+        var input = new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            Regime = SocialRegime.Rsna,
+            IsHeadOfFamily = true,
+            DependentChildren = 2
+        };
+
+        var c = PayrollCalculator.Compute(input, Params());
+
+        Assert.Equal(41.667m, c.FamilyDeductions); // (300 + 200) / 12
+    }
+
+    // ── TFP par secteur ──
+
+    [Fact]
+    public void Compute_IndustrialSector_UsesReducedTfpRate()
+    {
+        var input = new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            Regime = SocialRegime.Rsna,
+            IsIndustrialSector = true
+        };
+
+        var c = PayrollCalculator.Compute(input, Params());
+
+        Assert.Equal(20.000m, c.Tfp); // 2000 × 1 % (industrie) au lieu de 2 %
+    }
+
+    // ── Base / Taux des lignes de bulletin ──
+
+    [Fact]
+    public void Compute_Lines_CarryBaseAndRateForStatutoryDeductions()
+    {
+        var input = new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            Regime = SocialRegime.Rsna,
+            WorkAccidentRate = 0.4m
+        };
+
+        var c = PayrollCalculator.Compute(input, Params());
+
+        // Frais pro plafonnés (181,640 > 166,667) : libellé dédié, pas de couple base × taux.
+        var fraisPro = Assert.Single(c.Lines, l => l.Label.StartsWith("Frais professionnels"));
+        Assert.Equal("Frais professionnels (plafonnés)", fraisPro.Label);
+        Assert.Null(fraisPro.Base);
+        Assert.Null(fraisPro.Rate);
+
+        var irpp = Assert.Single(c.Lines, l => l.Label == "Retenue IRPP");
+        Assert.Equal(1649.733m, irpp.Base);
+        Assert.Null(irpp.Rate);
+
+        var css = Assert.Single(c.Lines, l => l.Label.Contains("CSS"));
+        Assert.Equal(1649.733m, css.Base);
+        Assert.Equal(0.5m, css.Rate);
+
+        var foprolos = Assert.Single(c.Lines, l => l.Label == "FOPROLOS");
+        Assert.Equal(2000m, foprolos.Base);
+        Assert.Equal(1m, foprolos.Rate);
+    }
+
+    [Fact]
+    public void Compute_Lines_UncappedProfessionalExpenses_ShowBaseAndRate()
+    {
+        var input = new PayrollComputationInput
+        {
+            BaseSalary = 1000m,
+            Regime = SocialRegime.Rsna
+        };
+
+        var c = PayrollCalculator.Compute(input, Params());
+
+        var fraisPro = Assert.Single(c.Lines, l => l.Label.StartsWith("Frais professionnels"));
+        Assert.Equal("Frais professionnels (déduction)", fraisPro.Label);
+        Assert.Equal(908.200m, fraisPro.Base); // 1000 − 91,800 (CNSS)
+        Assert.Equal(10m, fraisPro.Rate);
+    }
+
+    [Fact]
     public void Compute_OvertimeAmount_AddsEarningLine()
     {
         var input = new PayrollComputationInput

@@ -11,16 +11,23 @@ import { of } from 'rxjs';
 describe('PayrollOvertimeGridComponent', () => {
   let fixture: ComponentFixture<PayrollOvertimeGridComponent>;
 
+  const employees = [
+    { id: 'e48', fullName: 'Salarié 48h', currentBaseSalary: 2080, currentWeeklyRegime: 'FortyEightHours' },
+    { id: 'e40', fullName: 'Salarié 40h', currentBaseSalary: 1733.3, currentWeeklyRegime: 'FortyHours' }
+  ];
+
   beforeEach(() => {
     TestBed.configureTestingModule({
       imports: [PayrollOvertimeGridComponent],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
-        { provide: PayrollService, useValue: jasmine.createSpyObj('PayrollService', [
-          'listOvertimeForMonth', 'createOvertimeLine', 'updateOvertimeLine', 'deleteOvertimeLine', 'previewOvertime'
-        ]) },
-        { provide: EmployeeService, useValue: { list: () => of({ success: true, data: { items: [] } }) } },
+        { provide: PayrollService, useValue: {
+          listOvertime: () => of({ success: true, data: [] }),
+          getParameters: () => of({ success: true, data: { enableExtendedOvertimeRates: false } }),
+          previewOvertime: () => of({ success: true, data: { hourlyRate: 10, computedAmount: 25, effectiveAmount: 25, isOverridden: false } })
+        } },
+        { provide: EmployeeService, useValue: { list: () => of({ success: true, data: { items: employees } }) } },
         { provide: ToastService, useValue: jasmine.createSpyObj('ToastService', ['add']) },
         { provide: ConfirmationService, useValue: jasmine.createSpyObj('ConfirmationService', ['confirm']) }
       ]
@@ -38,5 +45,29 @@ describe('PayrollOvertimeGridComponent', () => {
 
   it('shows section title for overtime', () => {
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('Heures supplémentaires');
+  });
+
+  it('proposes the legal rate for a 48h-regime employee (175 %)', () => {
+    const cmp = fixture.componentInstance;
+    cmp.formEmployeeId = 'e48';
+    cmp.onEmployeeChange();
+    expect(cmp.formRatePercent).toBe(175);
+    expect(cmp.divisorLabel).toBe('208');
+  });
+
+  it('proposes the legal rate for a 40h-regime employee (125 %) with divisor 173,33', () => {
+    const cmp = fixture.componentInstance;
+    cmp.formEmployeeId = 'e40';
+    cmp.onEmployeeChange();
+    expect(cmp.formRatePercent).toBe(125);
+    expect(cmp.divisorLabel).toBe('173,33');
+  });
+
+  it('offers 175 % without extended rates only for the 48h regime', () => {
+    const cmp = fixture.componentInstance;
+    cmp.formEmployeeId = 'e48';
+    expect(cmp.rateOptions.some(o => o.value === 175)).toBeTrue();
+    cmp.formEmployeeId = 'e40';
+    expect(cmp.rateOptions.some(o => o.value === 175)).toBeFalse();
   });
 });

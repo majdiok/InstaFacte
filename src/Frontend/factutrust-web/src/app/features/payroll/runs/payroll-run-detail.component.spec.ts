@@ -41,6 +41,8 @@ describe('PayrollRunDetailComponent', () => {
         provideHttpClientTesting(),
         { provide: PayrollService, useValue: {
           getRun: () => of({ success: true, data: mockRun }),
+          getParameters: () => of({ success: true, data: { enableExtendedOvertimeRates: false } }),
+          listOvertime: () => of({ success: true, data: [] }),
           calculateRun: jasmine.createSpy('calculateRun'),
           validateRun: jasmine.createSpy('validateRun'),
           reopenRun: jasmine.createSpy('reopenRun'),
