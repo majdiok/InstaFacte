@@ -11,7 +11,7 @@ import { canRunPayroll, canValidatePayroll, canManagePayrollEmployees } from '@c
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { PayrollOvertimeGridComponent } from './payroll-overtime-grid.component';
-import { PayrollStatGridComponent, PayrollSectionComponent, PayrollAmountPipe, type PayrollStatItem } from '../shared';
+import { PayrollStatGridComponent, PayrollSectionComponent, PayrollAmountPipe, formatPayrollAmount, type PayrollStatItem } from '../shared';
 
 @Component({
   selector: 'app-payroll-run-detail',
@@ -55,6 +55,7 @@ import { PayrollStatGridComponent, PayrollSectionComponent, PayrollAmountPipe, t
       }
 
       <app-payroll-section title="Bulletins de paie" icon="pi-file">
+        <div class="payroll-table-scroll">
         <p-table [value]="run()!.payslips" styleClass="p-datatable-sm">
           <ng-template pTemplate="header">
             <tr>
@@ -79,6 +80,7 @@ import { PayrollStatGridComponent, PayrollSectionComponent, PayrollAmountPipe, t
             <tr><td colspan="4">Aucun bulletin — lancez le calcul.</td></tr>
           </ng-template>
         </p-table>
+        </div>
       </app-payroll-section>
     }
 
@@ -143,13 +145,13 @@ export class PayrollRunDetailComponent implements OnInit {
     const r = this.run();
     if (!r) return [];
     return [
-      { label: 'Brut', value: r.totalGross, icon: 'pi-money-bill', variant: 'primary' },
-      { label: 'Net', value: r.totalNet, icon: 'pi-wallet', variant: 'success', featured: true },
-      { label: 'IRPP', value: r.totalIrpp, icon: 'pi-percentage', variant: 'warning' },
-      { label: 'CNSS sal.', value: r.totalCnssEmployee, icon: 'pi-user', variant: 'primary' },
-      { label: 'CNSS pat.', value: r.totalCnssEmployer, icon: 'pi-building', variant: 'primary' },
-      { label: 'TFP', value: r.totalTfp, icon: 'pi-chart-line', variant: 'warning' },
-      { label: 'FOPROLOS', value: r.totalFoprolos, icon: 'pi-briefcase', variant: 'warning' }
+      { label: 'Brut', value: formatPayrollAmount(r.totalGross, false), icon: 'pi-money-bill', variant: 'primary' },
+      { label: 'Net', value: formatPayrollAmount(r.totalNet, false), icon: 'pi-wallet', variant: 'success', featured: true },
+      { label: 'IRPP', value: formatPayrollAmount(r.totalIrpp, false), icon: 'pi-percentage', variant: 'warning' },
+      { label: 'CNSS sal.', value: formatPayrollAmount(r.totalCnssEmployee, false), icon: 'pi-user', variant: 'primary' },
+      { label: 'CNSS pat.', value: formatPayrollAmount(r.totalCnssEmployer, false), icon: 'pi-building', variant: 'primary' },
+      { label: 'TFP', value: formatPayrollAmount(r.totalTfp, false), icon: 'pi-chart-line', variant: 'warning' },
+      { label: 'FOPROLOS', value: formatPayrollAmount(r.totalFoprolos, false), icon: 'pi-briefcase', variant: 'warning' }
     ];
   });
 

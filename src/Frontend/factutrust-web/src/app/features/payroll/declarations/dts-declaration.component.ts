@@ -9,7 +9,7 @@ import { PayrollService, DtsDeclaration } from '@core/services/payroll.service';
 import { ToastService } from '@core/services/toast.service';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
-import { PayrollStatGridComponent, PayrollAmountPipe, type PayrollStatItem } from '../shared';
+import { PayrollStatGridComponent, PayrollAmountPipe, formatPayrollAmount, type PayrollStatItem } from '../shared';
 
 @Component({
   selector: 'app-dts-declaration',
@@ -107,10 +107,10 @@ export class DtsDeclarationComponent implements OnInit {
     if (!d) return [];
     return [
       { label: 'Salariés', value: d.employeeCount, icon: 'pi-users', variant: 'primary' },
-      { label: 'Masse CNSSable', value: d.totalCnssableGross, icon: 'pi-chart-bar', variant: 'primary' },
-      { label: 'CNSS salarié', value: d.totalCnssEmployee, icon: 'pi-user', variant: 'warning' },
-      { label: 'CNSS employeur', value: d.totalCnssEmployer, icon: 'pi-building', variant: 'warning' },
-      { label: 'Cotisations totales', value: d.totalContributions, icon: 'pi-wallet', variant: 'success', featured: true }
+      { label: 'Masse CNSSable', value: formatPayrollAmount(d.totalCnssableGross, false), icon: 'pi-chart-bar', variant: 'primary' },
+      { label: 'CNSS salarié', value: formatPayrollAmount(d.totalCnssEmployee, false), icon: 'pi-user', variant: 'warning' },
+      { label: 'CNSS employeur', value: formatPayrollAmount(d.totalCnssEmployer, false), icon: 'pi-building', variant: 'warning' },
+      { label: 'Cotisations totales', value: formatPayrollAmount(d.totalContributions, false), icon: 'pi-wallet', variant: 'success', featured: true }
     ];
   });
 

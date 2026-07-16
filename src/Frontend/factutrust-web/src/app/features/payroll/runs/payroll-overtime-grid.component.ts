@@ -40,6 +40,7 @@ import { PayrollSectionComponent, PayrollAmountPipe } from '../shared';
         </div>
       }
 
+      <div class="payroll-table-scroll">
       <p-table [value]="lines()" styleClass="p-datatable-sm">
         <ng-template pTemplate="header">
           <tr>
@@ -75,6 +76,7 @@ import { PayrollSectionComponent, PayrollAmountPipe } from '../shared';
           <tr><td [attr.colspan]="readOnly ? 5 : 6">Aucune heure supplémentaire saisie pour ce mois.</td></tr>
         </ng-template>
       </p-table>
+      </div>
     </app-payroll-section>
 
     <p-dialog [header]="editingId ? 'Modifier heures sup.' : 'Nouvelles heures sup.'" [(visible)]="dialogVisible" [modal]="true" [style]="{ width: '480px' }">
@@ -85,7 +87,7 @@ import { PayrollSectionComponent, PayrollAmountPipe } from '../shared';
       <div class="payroll-form-row">
         <div class="payroll-form-group">
           <label>Heures</label>
-          <p-inputNumber [(ngModel)]="formHours" [min]="0.5" [step]="0.5" (ngModelChange)="refreshPreview()" styleClass="w-full" />
+          <p-inputNumber [(ngModel)]="formHours" [min]="0.5" [step]="0.5" [locale]="'fr-TN'" (ngModelChange)="refreshPreview()" styleClass="w-full" />
         </div>
         <div class="payroll-form-group">
           <label>Taux majoré</label>
@@ -94,7 +96,7 @@ import { PayrollSectionComponent, PayrollAmountPipe } from '../shared';
       </div>
       <div class="payroll-form-group mb-2">
         <label>Montant override (optionnel)</label>
-        <p-inputNumber [(ngModel)]="formOverride" [minFractionDigits]="3" [maxFractionDigits]="3" (ngModelChange)="refreshPreview()" styleClass="w-full" />
+        <p-inputNumber [(ngModel)]="formOverride" [minFractionDigits]="3" [maxFractionDigits]="3" [locale]="'fr-TN'" (ngModelChange)="refreshPreview()" styleClass="w-full" />
       </div>
       <p class="payroll-info-text">Formule : (salaire base ÷ 173,33) × heures × (taux % ÷ 100)</p>
       @if (previewAmount() !== null) {

@@ -89,7 +89,7 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
       </div>
       <div class="payroll-form-group mb-2">
         <label>Montant (TND)</label>
-        <p-inputNumber [(ngModel)]="formAmount" [minFractionDigits]="3" [min]="0.001" styleClass="w-full" />
+        <p-inputNumber [(ngModel)]="formAmount" [minFractionDigits]="3" [min]="0.001" [locale]="'fr-TN'" styleClass="w-full" />
       </div>
       <div class="payroll-form-group mb-2">
         <label>Motif</label>

@@ -76,7 +76,7 @@ function parseIsoDate(value?: string): Date | null {
         </div>
         <div class="form-group">
           <label>Salaire de base (TND)</label>
-          <p-inputNumber [(ngModel)]="baseSalary" [minFractionDigits]="3" [maxFractionDigits]="3" styleClass="w-full" />
+          <p-inputNumber [(ngModel)]="baseSalary" [minFractionDigits]="3" [maxFractionDigits]="3" [locale]="'fr-TN'" styleClass="w-full" />
         </div>
         <div class="form-group">
           <label>Taux accident travail (%)</label>
@@ -103,7 +103,7 @@ function parseIsoDate(value?: string): Date | null {
           @for (row of allowanceRows; track i; let i = $index) {
             <tr>
               <td><input pInputText [(ngModel)]="row.label" [name]="'label' + i" class="w-full" /></td>
-              <td><p-inputNumber [(ngModel)]="row.amount" [minFractionDigits]="3" [name]="'amt' + i" /></td>
+              <td><p-inputNumber [(ngModel)]="row.amount" [minFractionDigits]="3" [locale]="'fr-TN'" [name]="'amt' + i" /></td>
               <td><p-checkbox [(ngModel)]="row.taxable" [binary]="true" [name]="'tax' + i" /></td>
               <td><p-checkbox [(ngModel)]="row.subjectToCnss" [binary]="true" [name]="'cnss' + i" /></td>
               <td><button type="button" class="p-button p-button-text p-button-danger" (click)="removeAllowance(i)">×</button></td>

@@ -16,7 +16,7 @@ import { canManagePayrollEmployees, isPayrollConsultMode } from '@core/utils/pay
 import { ContractFormDialogComponent } from './contract-form-dialog.component';
 import { EmployeeLeavesTabComponent } from './employee-leaves-tab.component';
 import { EmployeeAdvancesTabComponent } from './employee-advances-tab.component';
-import { PayrollConsultBannerComponent, PayrollAmountPipe } from '../shared';
+import { PayrollConsultBannerComponent, PayrollAmountPipe, formatPayrollAmount } from '../shared';
 
 @Component({
   selector: 'app-employee-detail',
@@ -62,7 +62,7 @@ import { PayrollConsultBannerComponent, PayrollAmountPipe } from '../shared';
         </div>
       }
 
-      <p-tabView>
+      <p-tabView styleClass="ft-tabs">
         <p-tabPanel>
           <ng-template pTemplate="header">
             <i class="pi pi-id-card mr-2"></i>
@@ -244,7 +244,7 @@ export class EmployeeDetailComponent implements OnInit {
     } else {
       const smig = this.monthlySmig();
       if (smig != null && activeContract.baseSalary < smig) {
-        items.push({ severity: 'error', text: `Salaire de base (${activeContract.baseSalary} TND) inférieur au SMIG mensuel (${smig} TND).` });
+        items.push({ severity: 'error', text: `Salaire de base (${formatPayrollAmount(activeContract.baseSalary)}) inférieur au SMIG mensuel (${formatPayrollAmount(smig)}).` });
       }
     }
     return items;

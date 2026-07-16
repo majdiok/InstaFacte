@@ -35,6 +35,13 @@
   }
 }
 
+// Conteneur de défilement horizontal local : les tables larges défilent dans leur
+// bloc au lieu de faire déborder la page entière.
+.payroll-table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
 .payroll-alert-list {
   display: flex;
   flex-direction: column;

@@ -1,4 +1,4 @@
-export { PayrollAmountPipe } from './payroll-amount.pipe';
+export { PayrollAmountPipe, formatPayrollAmount } from './payroll-amount.pipe';
 export { PayrollStatGridComponent, type PayrollStatItem } from './payroll-stat-grid.component';
 export { PayrollSectionComponent } from './payroll-section.component';
 export { PayrollConsultBannerComponent } from './payroll-consult-banner.component';

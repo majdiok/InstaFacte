@@ -35,7 +35,7 @@ import { ButtonComponent } from '@shared/components/button/button.component';
 
     @if (params()) {
       <form (ngSubmit)="save()">
-        <p-tabView>
+        <p-tabView styleClass="ft-tabs">
           <p-tabPanel header="Taux légaux">
             <ng-template pTemplate="header">
               <i class="pi pi-percentage mr-2"></i>
@@ -44,51 +44,51 @@ import { ButtonComponent } from '@shared/components/button/button.component';
             <div class="payroll-form-row">
               <div class="payroll-form-group">
                 <label>CNSS salarié (%)</label>
-                <p-inputNumber [(ngModel)]="params()!.cnssEmployeeRate" name="cnssEmployeeRate" [minFractionDigits]="2" [maxFractionDigits]="4" styleClass="w-full" />
+                <p-inputNumber [(ngModel)]="params()!.cnssEmployeeRate" name="cnssEmployeeRate" [minFractionDigits]="2" [maxFractionDigits]="4" [locale]="'fr-TN'" styleClass="w-full" />
               </div>
               <div class="payroll-form-group">
                 <label>CNSS employeur (%)</label>
-                <p-inputNumber [(ngModel)]="params()!.cnssEmployerRate" name="cnssEmployerRate" [minFractionDigits]="2" [maxFractionDigits]="4" styleClass="w-full" />
+                <p-inputNumber [(ngModel)]="params()!.cnssEmployerRate" name="cnssEmployerRate" [minFractionDigits]="2" [maxFractionDigits]="4" [locale]="'fr-TN'" styleClass="w-full" />
               </div>
               <div class="payroll-form-group">
                 <label>CNSS salarié RSA (%)</label>
-                <p-inputNumber [(ngModel)]="params()!.cnssEmployeeRateRsa" name="cnssEmployeeRateRsa" [minFractionDigits]="2" [maxFractionDigits]="4" styleClass="w-full" />
+                <p-inputNumber [(ngModel)]="params()!.cnssEmployeeRateRsa" name="cnssEmployeeRateRsa" [minFractionDigits]="2" [maxFractionDigits]="4" [locale]="'fr-TN'" styleClass="w-full" />
               </div>
               <div class="payroll-form-group">
                 <label>CNSS employeur RSA (%)</label>
-                <p-inputNumber [(ngModel)]="params()!.cnssEmployerRateRsa" name="cnssEmployerRateRsa" [minFractionDigits]="2" [maxFractionDigits]="4" styleClass="w-full" />
+                <p-inputNumber [(ngModel)]="params()!.cnssEmployerRateRsa" name="cnssEmployerRateRsa" [minFractionDigits]="2" [maxFractionDigits]="4" [locale]="'fr-TN'" styleClass="w-full" />
               </div>
               <div class="payroll-form-group">
                 <label>CSS (%)</label>
-                <p-inputNumber [(ngModel)]="params()!.cssRate" name="cssRate" [minFractionDigits]="2" [maxFractionDigits]="4" styleClass="w-full" />
+                <p-inputNumber [(ngModel)]="params()!.cssRate" name="cssRate" [minFractionDigits]="2" [maxFractionDigits]="4" [locale]="'fr-TN'" styleClass="w-full" />
               </div>
               <div class="payroll-form-group">
                 <label>Seuil exonération CSS (annuel)</label>
-                <p-inputNumber [(ngModel)]="params()!.cssAnnualExemptionThreshold" name="cssExemption" [minFractionDigits]="3" styleClass="w-full" />
+                <p-inputNumber [(ngModel)]="params()!.cssAnnualExemptionThreshold" name="cssExemption" [minFractionDigits]="3" [locale]="'fr-TN'" styleClass="w-full" />
               </div>
               <div class="payroll-form-group">
                 <label>TFP industrie (%)</label>
-                <p-inputNumber [(ngModel)]="params()!.tfpRateIndustry" name="tfpIndustry" [minFractionDigits]="2" [maxFractionDigits]="4" styleClass="w-full" />
+                <p-inputNumber [(ngModel)]="params()!.tfpRateIndustry" name="tfpIndustry" [minFractionDigits]="2" [maxFractionDigits]="4" [locale]="'fr-TN'" styleClass="w-full" />
               </div>
               <div class="payroll-form-group">
                 <label>TFP autres (%)</label>
-                <p-inputNumber [(ngModel)]="params()!.tfpRateOther" name="tfpOther" [minFractionDigits]="2" [maxFractionDigits]="4" styleClass="w-full" />
+                <p-inputNumber [(ngModel)]="params()!.tfpRateOther" name="tfpOther" [minFractionDigits]="2" [maxFractionDigits]="4" [locale]="'fr-TN'" styleClass="w-full" />
               </div>
               <div class="payroll-form-group">
                 <label>FOPROLOS (%)</label>
-                <p-inputNumber [(ngModel)]="params()!.foprolosRate" name="foprolos" [minFractionDigits]="2" [maxFractionDigits]="4" styleClass="w-full" />
+                <p-inputNumber [(ngModel)]="params()!.foprolosRate" name="foprolos" [minFractionDigits]="2" [maxFractionDigits]="4" [locale]="'fr-TN'" styleClass="w-full" />
               </div>
               <div class="payroll-form-group">
                 <label>SMIG mensuel (TND)</label>
-                <p-inputNumber [(ngModel)]="params()!.monthlySmig" name="smig" [minFractionDigits]="3" styleClass="w-full" />
+                <p-inputNumber [(ngModel)]="params()!.monthlySmig" name="smig" [minFractionDigits]="3" [locale]="'fr-TN'" styleClass="w-full" />
               </div>
               <div class="payroll-form-group">
                 <label>Frais pro. (%)</label>
-                <p-inputNumber [(ngModel)]="params()!.professionalExpensesRate" name="proExpRate" [minFractionDigits]="2" [maxFractionDigits]="4" styleClass="w-full" />
+                <p-inputNumber [(ngModel)]="params()!.professionalExpensesRate" name="proExpRate" [minFractionDigits]="2" [maxFractionDigits]="4" [locale]="'fr-TN'" styleClass="w-full" />
               </div>
               <div class="payroll-form-group">
                 <label>Plafond frais pro. (annuel)</label>
-                <p-inputNumber [(ngModel)]="params()!.professionalExpensesAnnualCap" name="proExpCap" [minFractionDigits]="3" styleClass="w-full" />
+                <p-inputNumber [(ngModel)]="params()!.professionalExpensesAnnualCap" name="proExpCap" [minFractionDigits]="3" [locale]="'fr-TN'" styleClass="w-full" />
               </div>
             </div>
           </p-tabPanel>
@@ -109,10 +109,10 @@ import { ButtonComponent } from '@shared/components/button/button.component';
               <ng-template pTemplate="body" let-bracket let-i="rowIndex">
                 <tr>
                   <td>
-                    <p-inputNumber [(ngModel)]="bracket.lowerBound" [name]="'lb' + i" [minFractionDigits]="3" styleClass="w-full" />
+                    <p-inputNumber [(ngModel)]="bracket.lowerBound" [name]="'lb' + i" [minFractionDigits]="3" [locale]="'fr-TN'" styleClass="w-full" />
                   </td>
                   <td>
-                    <p-inputNumber [(ngModel)]="bracket.rate" [name]="'rate' + i" [minFractionDigits]="2" [maxFractionDigits]="4" styleClass="w-full" />
+                    <p-inputNumber [(ngModel)]="bracket.rate" [name]="'rate' + i" [minFractionDigits]="2" [maxFractionDigits]="4" [locale]="'fr-TN'" styleClass="w-full" />
                   </td>
                   <td>
                     <button type="button" pButton icon="pi pi-trash" class="p-button-text p-button-danger p-button-sm" (click)="removeBracket(i)"></button>
@@ -131,11 +131,11 @@ import { ButtonComponent } from '@shared/components/button/button.component';
             <div class="payroll-form-row">
               <div class="payroll-form-group">
                 <label>Chef de famille (annuel, TND)</label>
-                <p-inputNumber [(ngModel)]="params()!.headOfFamilyAnnualDeduction" name="headDeduction" [minFractionDigits]="3" styleClass="w-full" />
+                <p-inputNumber [(ngModel)]="params()!.headOfFamilyAnnualDeduction" name="headDeduction" [minFractionDigits]="3" [locale]="'fr-TN'" styleClass="w-full" />
               </div>
               <div class="payroll-form-group">
                 <label>Enfant à charge (annuel, TND)</label>
-                <p-inputNumber [(ngModel)]="params()!.childAnnualDeduction" name="childDeduction" [minFractionDigits]="3" styleClass="w-full" />
+                <p-inputNumber [(ngModel)]="params()!.childAnnualDeduction" name="childDeduction" [minFractionDigits]="3" [locale]="'fr-TN'" styleClass="w-full" />
               </div>
               <div class="payroll-form-group">
                 <label>Enfants déductibles max.</label>
