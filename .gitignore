@@ -13,6 +13,8 @@ obj/
 .angular/
 _api_build_check/
 _build_check/
+src/Backend/src/Backend/
+artifacts/qa-pdf-templates/
 *.log
 
 # Visual Studio / Rider
