@@ -22,6 +22,8 @@ const firmUser: User = {
   companyName: 'Cabinet Test',
   tenantKind: 'AccountingFirm',
   twoFactorEnabled: false,
+  // Requis depuis le fail-closed : hasModule refuse quand le champ est absent.
+  enabledModuleIds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
   effectivePermissions: ['firm:manage', 'accounting:read']
 };
 

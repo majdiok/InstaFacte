@@ -16,6 +16,8 @@ const companyUser: User = {
   companyName: 'Société Test',
   tenantKind: 'Company',
   twoFactorEnabled: false,
+  // Requis depuis le fail-closed : hasModule refuse quand le champ est absent.
+  enabledModuleIds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
   effectivePermissions: ['accounting:read', 'invoices:read']
 };
 
@@ -34,6 +36,7 @@ const delegatedFirmUser: User = {
   contextTenantId: '00000000-0000-0000-0000-000000000003',
   contextCompanyName: 'Ste Bouzgarou',
   twoFactorEnabled: false,
+  enabledModuleIds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
   effectivePermissions: ['accounting:read', 'treasury:read', 'invoices:read']
 };
 

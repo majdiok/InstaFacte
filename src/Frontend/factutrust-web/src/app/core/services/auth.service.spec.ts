@@ -21,7 +21,11 @@ const minimalUser: User = {
   roleDisplay: 'Admin',
   tenantId: '00000000-0000-0000-0000-000000000001',
   companyName: 'Co',
-  twoFactorEnabled: false
+  twoFactorEnabled: false,
+  // Champs requis depuis le passage en fail-closed : une session stockée sans
+  // enabledModuleIds/effectivePermissions est purgée au chargement (re-login).
+  enabledModuleIds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+  effectivePermissions: []
 };
 
 function configureAuthTestBed(): void {
@@ -346,10 +350,12 @@ describe('AuthService', () => {
       (service as unknown as { userSignal: { set: (x: User | null) => void } }).userSignal.set(u);
     }
 
-    it('hasPermission allows when effectivePermissions undefined (legacy)', () => {
+    it('hasPermission refuse quand effectivePermissions est absent (fail-closed)', () => {
+      // Le backend renvoie toujours effectivePermissions ; une absence ne peut être
+      // qu'un état anormal (storage édité) => refus, plus de fail-open legacy.
       const service = TestBed.inject(AuthService);
       setEffectivePermissions(service, undefined);
-      expect(service.hasPermission('products:create')).toBe(true);
+      expect(service.hasPermission('products:create')).toBe(false);
     });
 
     it('hasPermission reflects effectivePermissions when set', () => {

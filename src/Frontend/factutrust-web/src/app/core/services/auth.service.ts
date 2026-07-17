@@ -380,16 +380,14 @@ export class AuthService {
   }
 
   /**
-   * When <c>enabledModuleIds</c> is absent (legacy stored user), treat as full access
-   * (matches backend: no <c>UserModuleGrants</c> rows → all modules in JWT).
-   * When present as an empty array, no module is enabled (explicit deny).
+   * Fail-closed : champ absent => refus. Le backend renvoie TOUJOURS
+   * enabledModuleIds (login/refresh/me), et les sessions stockées antérieures
+   * à ce champ sont purgées au chargement (getStoredUser) — l'absence ne peut
+   * donc être qu'un état anormal (ex. storage édité à la main).
    */
   hasModule(module: AppModule): boolean {
     const ids = this.userSignal()?.enabledModuleIds;
     if (ids === undefined || ids === null) {
-      return true;
-    }
-    if (ids.length === 0) {
       return false;
     }
     return ids.includes(module);
@@ -400,8 +398,8 @@ export class AuthService {
   }
 
   /**
-   * When <c>effectivePermissions</c> is missing on the stored user (legacy), allow access.
-   * When present (including empty), require every listed permission.
+   * Fail-closed : champ absent => refus (voir hasModule). Quand il est présent
+   * (y compris vide), chaque permission listée est exigée.
    */
   hasAllPermissions(permissions: readonly string[]): boolean {
     if (permissions.length === 0) {
@@ -409,7 +407,7 @@ export class AuthService {
     }
     const raw = this.userSignal()?.effectivePermissions;
     if (raw === undefined || raw === null) {
-      return true;
+      return false;
     }
     const set = new Set(raw);
     return permissions.every(p => set.has(p));
@@ -421,8 +419,7 @@ export class AuthService {
   }
 
   /**
-   * True if at least one permission is present (when effectivePermissions is set).
-   * Legacy: missing effectivePermissions → allow.
+   * True si au moins une permission est présente. Fail-closed : champ absent => refus.
    */
   hasAnyPermission(permissions: readonly string[]): boolean {
     if (permissions.length === 0) {
@@ -430,7 +427,7 @@ export class AuthService {
     }
     const raw = this.userSignal()?.effectivePermissions;
     if (raw === undefined || raw === null) {
-      return true;
+      return false;
     }
     const set = new Set(raw);
     return permissions.some(p => set.has(p));
@@ -556,6 +553,15 @@ export class AuthService {
     if (userJson) {
       try {
         const parsed = JSON.parse(userJson) as User;
+        // Session obsolète (antérieure aux champs enabledModuleIds/effectivePermissions) :
+        // on la purge plutôt que d'appliquer un fail-open — l'utilisateur se reconnecte
+        // et reçoit un payload complet. Empêche aussi qu'une édition manuelle du storage
+        // (suppression des champs) ne désactive les contrôles côté client.
+        if (parsed.enabledModuleIds == null || parsed.effectivePermissions == null) {
+          this.clearLocalAuthKeys();
+          this.clearSessionAuthKeys();
+          return null;
+        }
         return normalizeUserFields(parsed);
       } catch {
         return null;
