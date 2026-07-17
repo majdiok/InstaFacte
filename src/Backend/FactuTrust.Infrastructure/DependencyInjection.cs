@@ -53,10 +53,31 @@ public static class DependencyInjection
             services.AddScoped<IDbContextFactory<TenantDbContext>, TenantDbContextFactoryAdapter>();
         }
 
-        // Data Protection for encrypting connection strings
-        services.AddDataProtection()
+        // Data Protection for encrypting connection strings.
+        // Le trousseau est persisté dans la base master : il DOIT être chiffré au repos
+        // (il protège les chaînes de connexion tenant, les secrets TOTP et les clés IA).
+        // Les clés existantes non chiffrées restent lisibles (le keyring gère le mixte).
+        var dataProtectionBuilder = services.AddDataProtection()
             .SetApplicationName("FactuTrust")
             .PersistKeysToDbContext<MasterDbContext>();
+
+        var certificatePath = configuration["DataProtection:CertificatePath"];
+        if (!string.IsNullOrWhiteSpace(certificatePath))
+        {
+            var certificatePassword = configuration["DataProtection:CertificatePassword"];
+            dataProtectionBuilder.ProtectKeysWithCertificate(
+                new System.Security.Cryptography.X509Certificates.X509Certificate2(certificatePath, certificatePassword));
+        }
+        else if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+        {
+            dataProtectionBuilder.ProtectKeysWithDpapi(protectToLocalMachine: true);
+        }
+        else
+        {
+            Console.Error.WriteLine(
+                "[FactuTrust] AVERTISSEMENT : le trousseau DataProtection n'est PAS chiffré au repos. " +
+                "Fournissez DataProtection:CertificatePath (+ CertificatePassword) sur cette plateforme.");
+        }
 
         // Multi-tenancy
         // Only register if not in design-time mode (EF Core tools)

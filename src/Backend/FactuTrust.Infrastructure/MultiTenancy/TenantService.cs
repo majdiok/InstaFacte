@@ -6,6 +6,7 @@ using FactuTrust.Infrastructure.Persistence;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -16,35 +17,50 @@ namespace FactuTrust.Infrastructure.MultiTenancy;
 /// </summary>
 public sealed class TenantService : ITenantService
 {
+    // La chaîne de connexion d'un tenant ne change qu'à sa création : le cache évite
+    // un aller-retour base master + un déchiffrement DataProtection à CHAQUE requête
+    // authentifiée (TenantMiddleware). TTL de sûreté aligné sur TenantMigrationGuard.
+    private const string ConnectionStringCacheKeyPrefix = "TenantService.ConnectionString.";
+    private static readonly TimeSpan ConnectionStringCacheDuration = TimeSpan.FromMinutes(15);
+
     private readonly MasterDbContext _masterContext;
     private readonly IDataProtector _protector;
     private readonly IConfiguration _configuration;
+    private readonly IMemoryCache _cache;
     private readonly ILogger<TenantService> _logger;
 
     public TenantService(
         MasterDbContext masterContext,
         IDataProtectionProvider dataProtectionProvider,
         IConfiguration configuration,
+        IMemoryCache cache,
         ILogger<TenantService> logger)
     {
         _masterContext = masterContext;
         _protector = dataProtectionProvider.CreateProtector("TenantConnectionStrings");
         _configuration = configuration;
+        _cache = cache;
         _logger = logger;
     }
 
     public async Task<string?> GetConnectionStringAsync(Guid tenantId, CancellationToken cancellationToken = default)
     {
+        var cacheKey = $"{ConnectionStringCacheKeyPrefix}{tenantId}";
+        if (_cache.TryGetValue(cacheKey, out string? cached))
+            return cached;
+
         var tenantConnection = await _masterContext.TenantConnectionStrings
             .AsNoTracking()
             .FirstOrDefaultAsync(t => t.TenantId == tenantId, cancellationToken);
 
         if (tenantConnection is null)
-            return null;
+            return null; // Échec non mis en cache : un tenant tout juste provisionné doit être vu immédiatement.
 
         try
         {
-            return _protector.Unprotect(tenantConnection.EncryptedConnectionString);
+            var connectionString = _protector.Unprotect(tenantConnection.EncryptedConnectionString);
+            _cache.Set(cacheKey, connectionString, ConnectionStringCacheDuration);
+            return connectionString;
         }
         catch (Exception ex)
         {
@@ -93,6 +109,7 @@ public sealed class TenantService : ITenantService
 
         _masterContext.TenantConnectionStrings.Add(tenantConnection);
         await _masterContext.SaveChangesAsync(cancellationToken);
+        _cache.Remove($"{ConnectionStringCacheKeyPrefix}{tenantId}");
 
         _logger.LogInformation("Created database {DatabaseName} for tenant {TenantId} with default warehouse, passenger client, and withholding tax catalog", databaseName, tenantId);
 
@@ -126,6 +143,7 @@ public sealed class TenantService : ITenantService
 
         _masterContext.TenantConnectionStrings.Add(tenantConnection);
         await _masterContext.SaveChangesAsync(cancellationToken);
+        _cache.Remove($"{ConnectionStringCacheKeyPrefix}{tenantId}");
 
         _logger.LogInformation("Created lightweight database {DatabaseName} for accounting firm tenant {TenantId}", databaseName, tenantId);
 

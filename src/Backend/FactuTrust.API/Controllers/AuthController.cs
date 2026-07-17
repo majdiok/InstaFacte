@@ -60,6 +60,7 @@ public class AuthController : ControllerBase
     /// </summary>
     [HttpPost("register")]
     [AllowAnonymous]
+    [EnableRateLimiting("register")]
     [ProducesResponseType(typeof(ApiResponse<AuthResponseDto>), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Register([FromBody] RegisterDto dto, CancellationToken cancellationToken)
@@ -240,7 +241,13 @@ public class AuthController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenDto dto, CancellationToken cancellationToken)
     {
+        var refreshTokenHash = RefreshTokenHasher.Hash(dto.RefreshToken);
         var user = await _masterContext.Users
+            .FirstOrDefaultAsync(u => u.RefreshToken == refreshTokenHash, cancellationToken);
+
+        // Compatibilité : tokens émis avant le passage au stockage haché (rotation ré-écrit en hash).
+        // À retirer après le 2026-07-31 (durée de vie max des refresh tokens : 7 jours).
+        user ??= await _masterContext.Users
             .FirstOrDefaultAsync(u => u.RefreshToken == dto.RefreshToken, cancellationToken);
 
         if (user is null || user.RefreshTokenExpiryTime <= DateTime.UtcNow)
@@ -326,6 +333,7 @@ public class AuthController : ControllerBase
     /// </summary>
     [HttpPost("register-firm")]
     [AllowAnonymous]
+    [EnableRateLimiting("register")]
     [ProducesResponseType(typeof(ApiResponse<AuthResponseDto>), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> RegisterFirm([FromBody] RegisterAccountingFirmDto dto, CancellationToken cancellationToken)

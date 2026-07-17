@@ -167,6 +167,16 @@ builder.Services.AddRateLimiter(options =>
                 Window = TimeSpan.FromMinutes(1)
             }));
 
+    // L'inscription anonyme provisionne une base SQL complète : limite stricte par IP.
+    options.AddPolicy("register", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = isDevelopment ? 100 : 3,
+                Window = TimeSpan.FromHours(1)
+            }));
+
     options.AddPolicy("ai", context =>
     {
         // Quota par utilisateur authentifié (repli sur l'IP pour l'anonyme) : évite que plusieurs
@@ -216,6 +226,13 @@ builder.Services.AddRateLimiter(options =>
         
         await context.HttpContext.Response.WriteAsync(response);
     };
+});
+
+// HSTS (consommé par app.UseHsts() hors développement)
+builder.Services.AddHsts(options =>
+{
+    options.MaxAge = TimeSpan.FromDays(180);
+    options.IncludeSubDomains = true;
 });
 
 // CORS
@@ -391,6 +408,12 @@ app.Use(async (context, next) =>
     
     await next();
 });
+
+// HSTS (hors développement) : protège la redirection HTTPS du stripping au premier contact.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
 
 // HTTPS redirection
 app.UseHttpsRedirection();

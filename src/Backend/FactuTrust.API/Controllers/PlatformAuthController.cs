@@ -8,6 +8,7 @@ using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Auth;
 using FactuTrust.Domain.Common;
 using FactuTrust.Infrastructure.Persistence;
+using FactuTrust.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -146,7 +147,13 @@ public sealed class PlatformAuthController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenDto dto, CancellationToken cancellationToken)
     {
+        var refreshTokenHash = RefreshTokenHasher.Hash(dto.RefreshToken);
         var user = await _masterContext.Users
+            .FirstOrDefaultAsync(u => u.RefreshToken == refreshTokenHash, cancellationToken);
+
+        // Compatibilité : tokens émis avant le passage au stockage haché (rotation ré-écrit en hash).
+        // À retirer après le 2026-07-31 (durée de vie max des refresh tokens : 7 jours).
+        user ??= await _masterContext.Users
             .FirstOrDefaultAsync(u => u.RefreshToken == dto.RefreshToken, cancellationToken);
 
         if (user is null || user.RefreshTokenExpiryTime <= DateTime.UtcNow)
@@ -468,7 +475,7 @@ public sealed class PlatformAuthController : ControllerBase
         var refreshToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
         var refreshTokenExpiry = DateTime.UtcNow.AddDays(7);
 
-        user.RefreshToken = refreshToken;
+        user.RefreshToken = RefreshTokenHasher.Hash(refreshToken);
         user.RefreshTokenExpiryTime = refreshTokenExpiry;
         await _userManager.UpdateAsync(user);
 

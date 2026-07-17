@@ -142,7 +142,7 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
         var accessToken = new JwtSecurityTokenHandler().WriteToken(token);
         var refreshToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
 
-        user.RefreshToken = refreshToken;
+        user.RefreshToken = RefreshTokenHasher.Hash(refreshToken);
         user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
         await _userManager.UpdateAsync(user);
 
