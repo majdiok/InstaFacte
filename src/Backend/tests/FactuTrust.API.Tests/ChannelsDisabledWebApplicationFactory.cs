@@ -12,15 +12,27 @@ namespace FactuTrust.API.Tests;
 /// </summary>
 public class ChannelsDisabledWebApplicationFactory : WebApplicationFactory<Program>
 {
+    /// <summary>
+    /// Clé de signature JWT réservée aux tests (les appsettings ne contiennent plus de clé).
+    /// Doit être utilisée par les tests qui forgent des tokens (voir PlatformApiIntegrationTests).
+    /// </summary>
+    public const string TestJwtSecretKey = "FactuTrust-Tests-Only-Signing-Key-Not-A-Production-Secret-0123456789";
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        // UseSetting est injecté dans la configuration initiale du WebApplicationBuilder :
+        // indispensable pour les valeurs lues par Program.cs pendant la construction de l'hôte
+        // (la clé JWT est capturée dans TokenValidationParameters à ce moment-là).
+        builder.UseSetting("JwtSettings:SecretKey", TestJwtSecretKey);
+
         builder.ConfigureAppConfiguration((_, config) =>
         {
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Channels:Enabled"] = "false",
                 ["Channels:WhatsAppEnabled"] = "false",
-                ["Channels:AutoStart"] = "false"
+                ["Channels:AutoStart"] = "false",
+                ["JwtSettings:SecretKey"] = TestJwtSecretKey
             });
         });
     }

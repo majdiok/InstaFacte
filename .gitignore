@@ -6,9 +6,13 @@ yarn-error.log*
 
 # Build outputs
 dist/
+dist-build/
 build/
 bin/
 obj/
+.angular/
+_api_build_check/
+_build_check/
 *.log
 
 # Visual Studio / Rider
@@ -20,6 +24,10 @@ obj/
 .env
 .env.*
 !.env.example
+
+# Fixtures de login générées localement (contiennent des tokens réels)
+src/Backend/scripts/_platform-login.json
+src/Backend/scripts/_tenant-login.json
 
 # IDE files
 .vscode/

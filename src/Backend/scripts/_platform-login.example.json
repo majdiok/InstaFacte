@@ -1,0 +1,16 @@
+{
+  "_comment": "Exemple anonymisé. Les fichiers _platform-login.json et _tenant-login.json sont générés localement par les scripts de smoke/benchmark et contiennent des tokens réels : ils sont ignorés par git et ne doivent JAMAIS être versionnés.",
+  "success": true,
+  "data": {
+    "accessToken": "<jwt>",
+    "refreshToken": "<refresh-token>",
+    "expiresAt": "2026-01-01T00:00:00.0000000Z",
+    "user": {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "email": "admin@example.local",
+      "roles": ["PlatformAdmin"]
+    }
+  },
+  "message": "Connexion réussie",
+  "error": null
+}

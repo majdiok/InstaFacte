@@ -84,7 +84,20 @@ builder.Services.AddIdentity<ApplicationUser, ApplicationRole>(options =>
 
 // JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
-var secretKey = jwtSettings["SecretKey"] ?? throw new InvalidOperationException("La clé secrète JWT n'est pas configurée");
+var secretKey = jwtSettings["SecretKey"];
+// Empreinte SHA-256 de l'ancienne clé versionnée dans le dépôt : considérée compromise,
+// refusée dans tous les environnements (comparaison par hash pour ne pas réintroduire sa valeur ici).
+const string compromisedLegacyJwtKeySha256 = "11372469839bb660ecbdd20f1afa9106fcf54fc79cfb8706b77acf48f475a13b";
+if (string.IsNullOrWhiteSpace(secretKey))
+    throw new InvalidOperationException(
+        "La clé secrète JWT n'est pas configurée. Renseignez JwtSettings:SecretKey " +
+        "(dotnet user-secrets en développement, variable d'environnement JwtSettings__SecretKey en production).");
+var secretKeySha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(secretKey)));
+if (string.Equals(secretKeySha256, compromisedLegacyJwtKeySha256, StringComparison.OrdinalIgnoreCase))
+    throw new InvalidOperationException(
+        "La clé JWT historique (exposée dans le dépôt) est refusée. Générez une nouvelle clé aléatoire d'au moins 32 octets.");
+if (Encoding.UTF8.GetByteCount(secretKey) < 32)
+    throw new InvalidOperationException("JwtSettings:SecretKey doit faire au moins 32 octets (256 bits).");
 
 builder.Services.AddAuthentication(options =>
 {

@@ -25,7 +25,7 @@ public sealed class PlatformApiIntegrationTests : IClassFixture<ChannelsDisabled
     private static string CreateSignedJwt(IEnumerable<Claim> claims)
     {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(
-            "***CLE-JWT-HISTORIQUE-PURGEE***"));
+            ChannelsDisabledWebApplicationFactory.TestJwtSecretKey));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
         var token = new JwtSecurityToken(
             issuer: "FactuTrust",
