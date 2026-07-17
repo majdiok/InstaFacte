@@ -49,6 +49,37 @@ public sealed class EmployeeAdvanceRepository : IEmployeeAdvanceRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<EmployeeAdvance>> ListOutstandingByEmployeeIdsAsync(IReadOnlyCollection<Guid> employeeIds, CancellationToken cancellationToken = default)
+    {
+        if (employeeIds.Count == 0)
+            return Array.Empty<EmployeeAdvance>();
+
+        await using var context = _contextFactory.CreateContext();
+        return await context.EmployeeAdvances
+            .Where(a => employeeIds.Contains(a.EmployeeId) && !a.IsSettled)
+            .OrderBy(a => a.EmployeeId)
+            .ThenBy(a => a.Date)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<EmployeeAdvance>> ListSettledByPayrollRunIdAsync(Guid payrollRunId, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.EmployeeAdvances
+            .Where(a => a.SettledInPayrollRunId == payrollRunId)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task UpdateRangeAsync(IReadOnlyList<EmployeeAdvance> entities, CancellationToken cancellationToken = default)
+    {
+        if (entities.Count == 0)
+            return;
+
+        await using var context = _contextFactory.CreateContext();
+        context.EmployeeAdvances.UpdateRange(entities);
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<EmployeeAdvance> AddAsync(EmployeeAdvance entity, CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();

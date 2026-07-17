@@ -718,6 +718,16 @@ public partial class TenantDbContext : DbContext
                 num.Property(n => n.Sequence)
                     .HasColumnName("NumberSequence")
                     .IsRequired();
+
+                // Recherche par numéro (SearchAsync) + contrôles de séquence.
+                // Non unique à ce stade : l'unicité (exigence fiscale) sera ajoutée par une
+                // migration dédiée APRÈS le balayage des doublons sur tous les tenants
+                // (une migration unique qui échoue bloquerait le tenant via TenantMigrationGuard).
+                num.HasIndex(n => n.Value)
+                    .HasDatabaseName("IX_Invoices_Number");
+
+                num.HasIndex(n => new { n.Year, n.Prefix, n.Sequence })
+                    .HasDatabaseName("IX_Invoices_NumberYear_NumberPrefix_NumberSequence");
             });
 
             entity.OwnsOne(i => i.SubTotal, price =>
@@ -1282,7 +1292,9 @@ public partial class TenantDbContext : DbContext
                 .HasMaxLength(100)
                 .IsRequired();
 
-            entity.HasIndex(a => a.CreatedAt);
+            // Couvre l'ordre canonique de la chaîne d'audit (CreatedAt, Id) utilisé par
+            // GetLastHash/VerifyChain, et sert aussi les requêtes par CreatedAt seul.
+            entity.HasIndex(a => new { a.CreatedAt, a.Id });
             entity.HasIndex(a => a.Action);
             entity.HasIndex(a => a.EntityType);
             entity.HasIndex(a => a.UserId);

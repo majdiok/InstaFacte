@@ -22,12 +22,12 @@ public sealed class LetteringService : ILetteringService
         if (journalEntryLineIds.Count < 2)
             return Result.Failure(Error.Validation("Lines", "Au moins deux lignes d'écriture sont requises pour le lettrage."));
 
-        await using var strategyContext = _contextFactory.CreateContext();
+        await using var strategyContext = _contextFactory.CreateIsolatedContext();
         var strategy = strategyContext.Database.CreateExecutionStrategy();
 
         return await strategy.ExecuteAsync(async () =>
         {
-            await using var ctx = _contextFactory.CreateContext();
+            await using var ctx = _contextFactory.CreateIsolatedContext();
             var lines = await ctx.JournalEntryLines
                 .AsTracking()
                 .Where(l => journalEntryLineIds.Contains(l.Id))

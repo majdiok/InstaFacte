@@ -335,7 +335,7 @@ public sealed class FixedAssetRepository : IFixedAssetRepository
         {
             try
             {
-                await using var context = _contextFactory.CreateContext();
+                await using var context = _contextFactory.CreateIsolatedContext();
                 var strategy = context.Database.CreateExecutionStrategy();
 
                 return await strategy.ExecuteAsync(async () =>

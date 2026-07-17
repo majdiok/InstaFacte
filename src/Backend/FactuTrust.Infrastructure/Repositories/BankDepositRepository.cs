@@ -76,7 +76,7 @@ public sealed class BankDepositRepository : IBankDepositRepository
         CashOperation cashOperation,
         CancellationToken cancellationToken = default)
     {
-        await using var context = _contextFactory.CreateContext();
+        await using var context = _contextFactory.CreateIsolatedContext();
         var strategy = context.Database.CreateExecutionStrategy();
 
         await strategy.ExecuteAsync(async () =>
@@ -105,7 +105,7 @@ public sealed class BankDepositRepository : IBankDepositRepository
         CashOperation cashOperation,
         CancellationToken cancellationToken = default)
     {
-        await using var context = _contextFactory.CreateContext();
+        await using var context = _contextFactory.CreateIsolatedContext();
         var strategy = context.Database.CreateExecutionStrategy();
 
         await strategy.ExecuteAsync(async () =>

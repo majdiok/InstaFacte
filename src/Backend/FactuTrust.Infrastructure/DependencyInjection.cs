@@ -47,10 +47,17 @@ public static class DependencyInjection
             // Register TenantDbContextFactory as both concrete type and interface
             services.AddScoped<TenantDbContextFactory>();
             services.AddScoped<ITenantDbContextFactory, TenantDbContextFactory>(sp => sp.GetRequiredService<TenantDbContextFactory>());
-            
+
             // Register a custom factory adapter that resolves tenant connection string at runtime
-            // This allows IDbContextFactory<TenantDbContext> to work correctly with multi-tenancy
+            // This allows IDbContextFactory<TenantDbContext> to work correctly with multi-tenancy.
+            // NOTE : l'adapter ne s'enrôle JAMAIS dans la transaction ambiante — les allocateurs
+            // de séquences (DocumentNumberService, InvoiceNumberGenerator, CustomSequenceAllocator)
+            // qui l'utilisent gardent leurs propres transactions Serializable.
             services.AddScoped<IDbContextFactory<TenantDbContext>, TenantDbContextFactoryAdapter>();
+
+            // Unité de travail tenant : transaction ambiante partagée par les repositories.
+            services.AddScoped<TenantAmbientTransaction>();
+            services.AddScoped<ITenantUnitOfWork, TenantUnitOfWork>();
         }
 
         // Data Protection for encrypting connection strings.
@@ -484,7 +491,9 @@ public sealed class UnitOfWork : IUnitOfWork, IDisposable, IAsyncDisposable
         _contextFactory = contextFactory;
     }
 
-    private TenantDbContext Context => _context ??= _contextFactory.CreateContext();
+    // Isolé : ce UnitOfWork legacy ouvre ses propres transactions — il ne doit jamais
+    // s'enrôler dans la transaction ambiante de TenantUnitOfWork.
+    private TenantDbContext Context => _context ??= _contextFactory.CreateIsolatedContext();
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {

@@ -20,7 +20,7 @@ public sealed class AuditChainRepairService : IAuditChainRepairService
 
     public async Task<Result<int>> ResealChainAsync(CancellationToken cancellationToken = default)
     {
-        await using var strategyContext = _contextFactory.CreateContext();
+        await using var strategyContext = _contextFactory.CreateIsolatedContext();
         var relational = strategyContext.Database.IsRelational();
 
         if (relational)
@@ -28,7 +28,7 @@ public sealed class AuditChainRepairService : IAuditChainRepairService
             var strategy = strategyContext.Database.CreateExecutionStrategy();
             return await strategy.ExecuteAsync(async () =>
             {
-                await using var ctx = _contextFactory.CreateContext();
+                await using var ctx = _contextFactory.CreateIsolatedContext();
                 await using var tx = await ctx.Database.BeginTransactionAsync(
                     System.Data.IsolationLevel.Serializable,
                     cancellationToken);
@@ -46,7 +46,7 @@ public sealed class AuditChainRepairService : IAuditChainRepairService
             });
         }
 
-        await using var ctx = _contextFactory.CreateContext();
+        await using var ctx = _contextFactory.CreateIsolatedContext();
         return Result.Success(await ResealCoreAsync(ctx, cancellationToken));
     }
 

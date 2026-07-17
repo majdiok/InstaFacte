@@ -34,7 +34,7 @@ public sealed class StockTransferCompletionService : IStockTransferCompletionSer
         {
             try
             {
-                await using var context = _contextFactory.CreateContext();
+                await using var context = _contextFactory.CreateIsolatedContext();
                 var strategy = context.Database.CreateExecutionStrategy();
 
                 // ExecutionStrategy may retry the delegate after transient failures; the inner work must be idempotent.

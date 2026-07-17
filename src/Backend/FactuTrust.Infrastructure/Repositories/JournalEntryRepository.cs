@@ -115,7 +115,10 @@ public sealed class JournalEntryRepository : IJournalEntryRepository
     public async Task<int> ReserveNextEntryNumberAsync(string journalCode, int fiscalYear, CancellationToken cancellationToken = default)
     {
         var code = journalCode.Trim().ToUpperInvariant();
-        await using var context = _contextFactory.CreateContext();
+        // Contexte isolé : la réservation de numéro garde SA transaction, même à l'intérieur
+        // d'une unité de travail ambiante (un rollback externe « brûle » le numéro — trou
+        // signalé par les contrôles d'intégrité — mais ne casse jamais la séquence).
+        await using var context = _contextFactory.CreateIsolatedContext();
         var strategy = context.Database.CreateExecutionStrategy();
 
         return await strategy.ExecuteAsync(async () =>

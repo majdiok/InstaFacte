@@ -56,12 +56,12 @@ public sealed class AccountingPeriodService : IAccountingPeriodService
 
     public async Task<Result> ClosePeriodWithLockAsync(Guid periodId, string closedBy, CancellationToken cancellationToken = default)
     {
-        await using var strategyContext = _contextFactory.CreateContext();
+        await using var strategyContext = _contextFactory.CreateIsolatedContext();
         var strategy = strategyContext.Database.CreateExecutionStrategy();
 
         return await strategy.ExecuteAsync(async () =>
         {
-            await using var ctx = _contextFactory.CreateContext();
+            await using var ctx = _contextFactory.CreateIsolatedContext();
             var relational = ctx.Database.IsRelational();
             await using var transaction = relational
                 ? await ctx.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken)
@@ -124,12 +124,12 @@ public sealed class AccountingPeriodService : IAccountingPeriodService
 
     public async Task<Result<AccountingPeriod>> ReopenPeriodAsync(Guid periodId, CancellationToken cancellationToken = default)
     {
-        await using var strategyContext = _contextFactory.CreateContext();
+        await using var strategyContext = _contextFactory.CreateIsolatedContext();
         var strategy = strategyContext.Database.CreateExecutionStrategy();
 
         return await strategy.ExecuteAsync(async () =>
         {
-            await using var ctx = _contextFactory.CreateContext();
+            await using var ctx = _contextFactory.CreateIsolatedContext();
             var relational = ctx.Database.IsRelational();
             await using var transaction = relational
                 ? await ctx.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken)
@@ -184,7 +184,7 @@ public sealed class AccountingPeriodService : IAccountingPeriodService
     /// <summary>Vrai si l'exercice est verrouillé définitivement (une ligne AccountingYearLock existe).</summary>
     private async Task<bool> IsYearLockedAsync(int fiscalYear, CancellationToken cancellationToken)
     {
-        await using var ctx = _contextFactory.CreateContext();
+        await using var ctx = _contextFactory.CreateIsolatedContext();
         return await ctx.AccountingYearLocks.AsNoTracking().AnyAsync(l => l.FiscalYear == fiscalYear, cancellationToken);
     }
 

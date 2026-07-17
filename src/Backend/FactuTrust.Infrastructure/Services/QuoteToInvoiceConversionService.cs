@@ -44,12 +44,12 @@ public sealed class QuoteToInvoiceConversionService : IQuoteToInvoiceConversionS
         string userId,
         CancellationToken cancellationToken = default)
     {
-        await using var strategyContext = _contextFactory.CreateContext();
+        await using var strategyContext = _contextFactory.CreateIsolatedContext();
         var strategy = strategyContext.Database.CreateExecutionStrategy();
 
         return await strategy.ExecuteAsync(async () =>
         {
-            await using var context = _contextFactory.CreateContext();
+            await using var context = _contextFactory.CreateIsolatedContext();
             await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
 
             try

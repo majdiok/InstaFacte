@@ -36,7 +36,7 @@ public sealed class AuditService : IAuditService
         object? newValues = null,
         CancellationToken cancellationToken = default)
     {
-        await using var strategyContext = _contextFactory.CreateContext();
+        await using var strategyContext = _contextFactory.CreateIsolatedContext();
         var relational = strategyContext.Database.IsRelational();
         if (!relational)
             await NonRelationalAuditGate.WaitAsync(cancellationToken);
@@ -47,7 +47,7 @@ public sealed class AuditService : IAuditService
                 var strategy = strategyContext.Database.CreateExecutionStrategy();
                 await strategy.ExecuteAsync(async () =>
                 {
-                    await using var context = _contextFactory.CreateContext();
+                    await using var context = _contextFactory.CreateIsolatedContext();
                     await using var transaction = await context.Database.BeginTransactionAsync(
                         IsolationLevel.Serializable,
                         cancellationToken);
@@ -65,7 +65,7 @@ public sealed class AuditService : IAuditService
             }
             else
             {
-                await using var context = _contextFactory.CreateContext();
+                await using var context = _contextFactory.CreateIsolatedContext();
                 await AppendAuditLogAsync(context, action, entityType, entityId, oldValues, newValues, cancellationToken);
             }
         }
@@ -106,7 +106,7 @@ public sealed class AuditService : IAuditService
 
     public async Task<string> GetLastHashAsync(CancellationToken cancellationToken = default)
     {
-        await using var context = _contextFactory.CreateContext();
+        await using var context = _contextFactory.CreateIsolatedContext();
         return await GetLastHashCoreAsync(context, cancellationToken);
     }
 

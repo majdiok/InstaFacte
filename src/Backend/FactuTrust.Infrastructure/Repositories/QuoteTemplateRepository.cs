@@ -82,12 +82,12 @@ public sealed class QuoteTemplateRepository : IQuoteTemplateRepository
         string updatedBy,
         CancellationToken cancellationToken = default)
     {
-        await using var strategyContext = _contextFactory.CreateContext();
+        await using var strategyContext = _contextFactory.CreateIsolatedContext();
         var strategy = strategyContext.Database.CreateExecutionStrategy();
 
         return await strategy.ExecuteAsync(async () =>
         {
-            await using var context = _contextFactory.CreateContext();
+            await using var context = _contextFactory.CreateIsolatedContext();
             var entity = await context.QuoteTemplates
                 .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
 

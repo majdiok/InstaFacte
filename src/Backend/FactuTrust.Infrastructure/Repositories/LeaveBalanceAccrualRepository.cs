@@ -98,6 +98,22 @@ public sealed class LeaveBalanceAccrualRepository : ILeaveBalanceAccrualReposito
 
 
 
+    public async Task<IReadOnlyList<LeaveBalanceAccrual>> GetByEmployeePeriodsAsync(
+        IReadOnlyCollection<Guid> employeeIds,
+        int year,
+        int month,
+        CancellationToken cancellationToken = default)
+    {
+        if (employeeIds.Count == 0)
+            return Array.Empty<LeaveBalanceAccrual>();
+
+        await using var context = _contextFactory.CreateContext();
+        return await context.LeaveBalanceAccruals
+            .AsNoTracking()
+            .Where(a => employeeIds.Contains(a.EmployeeId) && a.Year == year && a.Month == month)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<LeaveBalanceAccrual> AddAsync(LeaveBalanceAccrual entity, CancellationToken cancellationToken = default)
 
     {
@@ -110,6 +126,16 @@ public sealed class LeaveBalanceAccrualRepository : ILeaveBalanceAccrualReposito
 
         return entity;
 
+    }
+
+    public async Task AddRangeAsync(IReadOnlyList<LeaveBalanceAccrual> entities, CancellationToken cancellationToken = default)
+    {
+        if (entities.Count == 0)
+            return;
+
+        await using var context = _contextFactory.CreateContext();
+        context.LeaveBalanceAccruals.AddRange(entities);
+        await context.SaveChangesAsync(cancellationToken);
     }
 
 

@@ -40,7 +40,15 @@ public interface ILeaveBalanceAccrualRepository
 
 
 
+    Task<IReadOnlyList<LeaveBalanceAccrual>> GetByEmployeePeriodsAsync(
+        IReadOnlyCollection<Guid> employeeIds,
+        int year,
+        int month,
+        CancellationToken cancellationToken = default);
+
     Task<LeaveBalanceAccrual> AddAsync(LeaveBalanceAccrual entity, CancellationToken cancellationToken = default);
+
+    Task AddRangeAsync(IReadOnlyList<LeaveBalanceAccrual> entities, CancellationToken cancellationToken = default);
 
 
 
