@@ -551,6 +551,7 @@ public sealed class InvoiceRepository : IInvoiceRepository
 
         var query = ApplyInvoiceFilters(
             context.Invoices
+                .AsNoTracking()
                 .Include(i => i.Client)
                 .Include(i => i.Warehouse)
                 .AsQueryable(),
