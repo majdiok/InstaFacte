@@ -19,6 +19,24 @@ const companyUser: User = {
   effectivePermissions: ['accounting:read', 'invoices:read']
 };
 
+const delegatedFirmUser: User = {
+  id: 'u2',
+  email: 'firm@test.c',
+  firstName: 'O',
+  lastName: 'G',
+  fullName: 'O G',
+  role: 'FirmManager',
+  roleDisplay: 'Responsable cabinet',
+  tenantId: '00000000-0000-0000-0000-000000000002',
+  companyName: 'Cabinet Test',
+  tenantKind: 'AccountingFirm',
+  accessMode: 'delegated',
+  contextTenantId: '00000000-0000-0000-0000-000000000003',
+  contextCompanyName: 'Ste Bouzgarou',
+  twoFactorEnabled: false,
+  effectivePermissions: ['accounting:read', 'treasury:read', 'invoices:read']
+};
+
 function setUser(auth: AuthService, u: User | null): void {
   (auth as unknown as { userSignal: { set: (x: User | null) => void } }).userSignal.set(u);
 }
@@ -89,6 +107,34 @@ describe('app-navigation.registry', () => {
 
       const routes = getVisibleNavSearchEntries(auth).map(e => e.route);
       expect(routes).not.toContain('/ai-assistant/comptabilite');
+    });
+  });
+
+  describe('getVisibleNavSearchEntries — firm delegated accounting restriction', () => {
+    beforeEach(() => {
+      TestBed.configureTestingModule({
+        providers: [provideHttpClient(), provideHttpClientTesting()]
+      });
+    });
+
+    it('includes declaration search entries for delegated firm users', () => {
+      const auth = TestBed.inject(AuthService);
+      setUser(auth, delegatedFirmUser);
+
+      const entries = getVisibleNavSearchEntries(auth);
+      const routes = entries.map(e => e.route);
+      const labels = entries.map(e => e.label);
+
+      expect(routes).toContain('/accounting/vat-declaration');
+      expect(labels).toContain('Declarations · TVA');
+    });
+
+    it('keeps vat-declaration visible for company users', () => {
+      const auth = TestBed.inject(AuthService);
+      setUser(auth, companyUser);
+
+      const routes = getVisibleNavSearchEntries(auth).map(e => e.route);
+      expect(routes).toContain('/accounting/vat-declaration');
     });
   });
 });

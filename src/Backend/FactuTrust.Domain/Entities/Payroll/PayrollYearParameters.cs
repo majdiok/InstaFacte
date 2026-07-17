@@ -240,6 +240,9 @@ public sealed class PayrollYearParameters : AggregateRoot
         if (ordered.Any(b => b.Rate < 0m || b.Rate > 100m))
             return Result.Failure(Error.Validation("IrppBrackets", "Les taux IRPP doivent être compris entre 0 et 100 %."));
 
+        foreach (var bracket in ordered)
+            bracket.AssignParentId(Id);
+
         _irppBrackets.Clear();
         _irppBrackets.AddRange(ordered);
         IncrementVersion();
@@ -276,5 +279,13 @@ public sealed class PayrollIrppBracket : Entity
             LowerBound = Math.Round(lowerBound, 3),
             Rate = Math.Round(rate, 3)
         };
+    }
+
+    internal void AssignParentId(Guid payrollYearParametersId)
+    {
+        if (payrollYearParametersId == Guid.Empty)
+            throw new ArgumentException("L'identifiant des paramètres de paie est obligatoire.", nameof(payrollYearParametersId));
+
+        PayrollYearParametersId = payrollYearParametersId;
     }
 }

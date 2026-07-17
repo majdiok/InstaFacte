@@ -647,3 +647,81 @@ describe('InvoiceWizardService subscription quota', () => {
     });
   });
 });
+
+describe('InvoiceWizardService initForCreditNote', () => {
+  let httpMock: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: defaultWizardProviders
+    });
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+  });
+
+  it('preserves seller across initForCreditNote reset', () => {
+    const svc = TestBed.inject(InvoiceWizardService);
+    setupMinimalValidWizardState(svc);
+    const sellerId = svc.seller()?.id;
+
+    const invoiceId = '550e8400-e29b-41d4-a716-446655440000';
+    let completed = false;
+    svc.initForCreditNote(invoiceId).subscribe({
+      next: () => { completed = true; }
+    });
+
+    const invoiceReq = httpMock.expectOne(`${environment.apiUrl}/invoices/${invoiceId}`);
+    invoiceReq.flush({
+      success: true,
+      data: {
+        id: invoiceId,
+        clientId: VALID_CLIENT_ID,
+        lines: []
+      }
+    });
+
+    const clientReq = httpMock.expectOne(`${environment.apiUrl}/clients/${VALID_CLIENT_ID}`);
+    clientReq.flush({
+      success: true,
+      data: {
+        id: VALID_CLIENT_ID,
+        name: 'Test Client',
+        type: 'Individual',
+        email: 'client@test.com',
+        phone: null,
+        nif: null,
+        address: {
+          street: '2 rue Client',
+          streetLine2: null,
+          postalCode: null,
+          city: 'Tunis',
+          governorate: 'Tunis'
+        }
+      }
+    });
+
+    expect(completed).toBeTrue();
+    expect(svc.seller()?.id).toBe(sellerId);
+    expect(svc.metadata().type).toBe(InvoiceType.CreditNote);
+    expect(svc.metadata().linkedInvoiceId).toBe(invoiceId);
+  });
+
+  it('propagates HTTP error from initForCreditNote', (done) => {
+    const svc = TestBed.inject(InvoiceWizardService);
+    const invoiceId = '550e8400-e29b-41d4-a716-446655440000';
+
+    svc.initForCreditNote(invoiceId).subscribe({
+      next: () => fail('should not succeed'),
+      error: err => {
+        expect(err).toBeTruthy();
+        done();
+      }
+    });
+
+    const invoiceReq = httpMock.expectOne(`${environment.apiUrl}/invoices/${invoiceId}`);
+    invoiceReq.flush({ message: 'Not found' }, { status: 404, statusText: 'Not Found' });
+  });
+});

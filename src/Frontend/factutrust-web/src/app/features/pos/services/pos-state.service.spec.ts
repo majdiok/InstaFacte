@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { PosStateService } from './pos-state.service';
 import { ProductListItem } from '@core/services/product.service';
-import { TunisianVatRate } from '../../invoices/invoice-wizard/models/invoice-wizard.models';
+import { LinkedInvoiceRef } from '@core/services/invoice-reference-resolver.service';
 
 function fodecProduct(): ProductListItem {
   return {
@@ -21,6 +21,52 @@ function fodecProduct(): ProductListItem {
     isFodecApplicable: true
   };
 }
+
+function sampleLinkedInvoice(): LinkedInvoiceRef {
+  return {
+    id: '550e8400-e29b-41d4-a716-446655440000',
+    number: 'FAC-2026-000042',
+    clientName: 'Client test',
+    status: 'Validée',
+    totalTTC: 100
+  };
+}
+
+describe('PosStateService credit note mode', () => {
+  beforeEach(() => {
+    TestBed.configureTestingModule({ providers: [PosStateService] });
+  });
+
+  it('canValidate requires linked invoice and at least one line in credit mode', () => {
+    const svc = TestBed.inject(PosStateService);
+    expect(svc.canValidate()).toBeFalse();
+
+    svc.enableCreditNoteMode(sampleLinkedInvoice());
+    expect(svc.canValidate()).toBeFalse();
+
+    svc.addProduct(fodecProduct());
+    expect(svc.canValidate()).toBeTrue();
+  });
+
+  it('disableCreditNoteMode clears linked invoice and lines', () => {
+    const svc = TestBed.inject(PosStateService);
+    svc.enableCreditNoteMode(sampleLinkedInvoice());
+    svc.addProduct(fodecProduct());
+
+    svc.disableCreditNoteMode();
+
+    expect(svc.isCreditNote()).toBeFalse();
+    expect(svc.linkedInvoice()).toBeNull();
+    expect(svc.lines().length).toBe(0);
+    expect(svc.canValidate()).toBeFalse();
+  });
+
+  it('enableCreditNoteMode ignores invalid ref', () => {
+    const svc = TestBed.inject(PosStateService);
+    svc.enableCreditNoteMode({ ...sampleLinkedInvoice(), id: '  ' });
+    expect(svc.isCreditNote()).toBeFalse();
+  });
+});
 
 describe('PosStateService FODEC', () => {
   beforeEach(() => {

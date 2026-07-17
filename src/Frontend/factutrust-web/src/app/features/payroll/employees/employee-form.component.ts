@@ -89,6 +89,16 @@ function parseIsoDate(value?: string): Date | null {
           </div>
           <div class="payroll-form-row">
             <div class="payroll-form-group">
+              <label for="category">Catégorie</label>
+              <input pInputText id="category" formControlName="category" class="w-full" />
+            </div>
+            <div class="payroll-form-group">
+              <label for="echelon">Échelon</label>
+              <input pInputText id="echelon" formControlName="echelon" class="w-full" />
+            </div>
+          </div>
+          <div class="payroll-form-row">
+            <div class="payroll-form-group">
               <label for="firstName">Prénom <span class="required">*</span></label>
               <input pInputText id="firstName" formControlName="firstName" class="w-full" [class.ng-invalid]="isInvalid('firstName')" />
               @if (isInvalid('firstName')) {
@@ -243,6 +253,8 @@ export class EmployeeFormComponent implements OnInit {
     lastName: ['', Validators.required],
     cin: ['', tunisianPayrollValidators.cin],
     cnssNumber: ['', tunisianPayrollValidators.cnss],
+    category: [''],
+    echelon: [''],
     dateOfBirth: [null as Date | null],
     hireDate: [null as Date | null, Validators.required],
     maritalStatus: ['Single'],
@@ -311,6 +323,8 @@ export class EmployeeFormComponent implements OnInit {
       lastName: e.lastName,
       cin: e.cin ?? '',
       cnssNumber: e.cnssNumber ?? '',
+      category: e.category ?? '',
+      echelon: e.echelon ?? '',
       dateOfBirth: parseIsoDate(e.dateOfBirth),
       hireDate: parseIsoDate(e.hireDate),
       maritalStatus: e.maritalStatus,
@@ -344,6 +358,8 @@ export class EmployeeFormComponent implements OnInit {
         lastName: raw.lastName,
         cin: raw.cin || undefined,
         cnssNumber: raw.cnssNumber || undefined,
+        category: raw.category || undefined,
+        echelon: raw.echelon || undefined,
         dateOfBirth: toIsoDate(raw.dateOfBirth),
         maritalStatus: raw.maritalStatus,
         isHeadOfFamily: raw.isHeadOfFamily,
@@ -378,6 +394,8 @@ export class EmployeeFormComponent implements OnInit {
         lastName: raw.lastName,
         cin: raw.cin || undefined,
         cnssNumber: raw.cnssNumber || undefined,
+        category: raw.category || undefined,
+        echelon: raw.echelon || undefined,
         dateOfBirth: toIsoDate(raw.dateOfBirth),
         hireDate: toIsoDate(raw.hireDate)!,
         maritalStatus: raw.maritalStatus,

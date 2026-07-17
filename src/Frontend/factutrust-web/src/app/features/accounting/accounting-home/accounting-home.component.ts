@@ -3,7 +3,11 @@ import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { AuthService } from '@core/services/auth.service';
-import { ACCOUNTING_MODULES, AccountingModuleDef } from '@core/config/accounting-modules.config';
+import {
+  ACCOUNTING_MODULES,
+  ACCOUNTING_HOME_HIDDEN_MODULE_TITLES,
+  AccountingModuleDef
+} from '@core/config/accounting-modules.config';
 import { canSeeNavEntry } from '@core/utils/nav-visibility';
 import { AppModule } from '@core/models/app-module';
 
@@ -100,6 +104,7 @@ export class AccountingHomeComponent {
             permissionsAll: link.perms
           }))
       }))
+      .filter(mod => !ACCOUNTING_HOME_HIDDEN_MODULE_TITLES.has(mod.title))
       .filter(mod => mod.links.length > 0);
   });
 }

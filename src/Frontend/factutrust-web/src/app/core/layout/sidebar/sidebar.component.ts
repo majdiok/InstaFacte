@@ -196,8 +196,7 @@ export class SidebarComponent implements OnInit {
       )
       .filter(item => !item.children?.length || item.children.length > 0);
 
-    // Cabinet : éclate le menu « Comptabilité » unique en menus de premier niveau
-    // (Budgétaire, Declarations, Immobilisations), précédés d'un accès direct au hub.
+    // Cabinet délégué : hub Comptabilité + menus Budgétaire, Declarations, Immobilisations.
     // Source unique : accounting-modules.config.ts (filtre cabinet délégué).
     const comptaIndex = items.findIndex(i => i.label === 'Comptabilité');
     if (comptaIndex >= 0) {

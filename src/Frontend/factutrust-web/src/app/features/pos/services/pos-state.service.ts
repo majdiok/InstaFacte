@@ -14,6 +14,7 @@ import {
   roundTnd
 } from '../../invoices/invoice-wizard/services/invoice-wizard-calculation.utils';
 import { POS_PASSENGER_CLIENT_EMAIL } from '../constants/pos-client.constants';
+import { LinkedInvoiceRef } from '@core/services/invoice-reference-resolver.service';
 
 export interface PosClient {
   id: string;
@@ -82,7 +83,7 @@ export interface PosState {
   orderNotes: string;
   isQuickMode: boolean;
   isCreditNote: boolean;
-  linkedInvoiceId: string | null;
+  linkedInvoice: LinkedInvoiceRef | null;
   printMode: 'pdf' | 'receipt' | 'both';
   isDemoMode: boolean;
   paymentSchedule: 'full' | '2x' | '3x';
@@ -176,7 +177,7 @@ export class PosStateService {
   readonly canValidate = computed(() => {
     if (this.state().isProcessing) return false;
     if (this.state().isCreditNote) {
-      return !!this.state().linkedInvoiceId?.trim();
+      return !!this.state().linkedInvoice?.id && this.state().lines.length > 0;
     }
     if (this.state().lines.length === 0) return false;
     if (this.state().isSplitPayment) return this.isSplitValid();
@@ -186,7 +187,7 @@ export class PosStateService {
   readonly canSaveDraft = computed(() => {
     if (this.state().isProcessing) return false;
     if (this.state().isCreditNote) {
-      return !!this.state().linkedInvoiceId?.trim();
+      return !!this.state().linkedInvoice?.id && this.state().lines.length > 0;
     }
     if (this.state().lines.length === 0) return false;
     if (this.state().isSplitPayment) return this.isSplitValid();
@@ -226,7 +227,7 @@ export class PosStateService {
       orderNotes: '',
       isQuickMode: false,
       isCreditNote: false,
-      linkedInvoiceId: null,
+      linkedInvoice: null,
       printMode: 'pdf',
       isDemoMode: false,
       paymentSchedule: 'full',
@@ -246,7 +247,9 @@ export class PosStateService {
   readonly orderNotes = computed(() => this.state().orderNotes);
   readonly isQuickMode = computed(() => this.state().isQuickMode);
   readonly isCreditNote = computed(() => this.state().isCreditNote);
-  readonly linkedInvoiceId = computed(() => this.state().linkedInvoiceId);
+  readonly linkedInvoice = computed(() => this.state().linkedInvoice);
+  readonly linkedInvoiceId = computed(() => this.state().linkedInvoice?.id ?? null);
+  readonly linkedInvoiceNumber = computed(() => this.state().linkedInvoice?.number ?? null);
   readonly printMode = computed(() => this.state().printMode);
   readonly isDemoMode = computed(() => this.state().isDemoMode);
   readonly paymentSchedule = computed(() => this.state().paymentSchedule);
@@ -414,15 +417,38 @@ export class PosStateService {
     this.updateState({ isQuickMode: !this.state().isQuickMode });
   }
 
-  enableCreditNoteMode(invoiceId: string): void {
-    const id = invoiceId?.trim();
-    if (id) {
-      this.updateState({ isCreditNote: true, linkedInvoiceId: id, isDirty: true });
+  enableCreditNoteMode(linkedInvoice: LinkedInvoiceRef): void {
+    if (!linkedInvoice?.id?.trim()) {
+      return;
     }
+    this.updateState({
+      isCreditNote: true,
+      linkedInvoice,
+      isDirty: true,
+      lastError: null
+    });
   }
 
   disableCreditNoteMode(): void {
-    this.updateState({ isCreditNote: false, linkedInvoiceId: null, isDirty: true });
+    this.updateState({
+      isCreditNote: false,
+      linkedInvoice: null,
+      lines: [],
+      isDirty: true,
+      lastError: null,
+      globalDiscountType: null,
+      globalDiscountValue: null,
+      globalDiscountAmount: 0
+    });
+  }
+
+  setLines(lines: PosOrderLine[]): void {
+    const cloned = lines.map(line => {
+      const copy = { ...line };
+      this.recalculateLine(copy);
+      return copy;
+    });
+    this.updateState({ lines: cloned, isDirty: true, lastError: null });
   }
 
   setPrintMode(mode: 'pdf' | 'receipt' | 'both'): void {

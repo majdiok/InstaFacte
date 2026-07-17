@@ -3,10 +3,12 @@ import { NavItem, NavSubItem } from './app-navigation.registry';
 
 /**
  * Source unique des modules comptables « façon Axeane » (Configuration, Traitements, États,
- * Déclaration mensuelle, Liasse fiscale, Gestion immobilisations). Consommée par :
+ * Budgétaire, Declarations, Liasse fiscale, Gestion immobilisations). Consommée par :
  * - la page d'accueil Comptabilité à tuiles (`accounting-home.component`) ;
  * - le sidebar du cabinet en mode délégué (menus de premier niveau + sous-menus).
  * Toute évolution des fonctions comptables se fait ICI pour rester cohérente aux deux endroits.
+ * Les modules listés dans `ACCOUNTING_HOME_HIDDEN_MODULE_TITLES` restent dans le catalogue mais
+ * sont masqués des tuiles hub uniquement ; le rail cabinet délégué affiche Budgétaire et Declarations.
  */
 
 export interface AccountingModuleLink {
@@ -118,6 +120,12 @@ export const ACCOUNTING_MODULES: AccountingModuleDef[] = [
   }
 ];
 
+/** Modules masqués des tuiles hub Comptabilité (/accounting/home) uniquement. */
+export const ACCOUNTING_HOME_HIDDEN_MODULE_TITLES: ReadonlySet<string> = new Set([
+  'Budgétaire',
+  'Declarations'
+]);
+
 /** Modules masqués dans le rail sidebar cabinet (mode dossier client). */
 export const FIRM_DELEGATED_HIDDEN_ACCOUNTING_MODULE_TITLES: ReadonlySet<string> = new Set([
   'Configuration',
@@ -125,6 +133,10 @@ export const FIRM_DELEGATED_HIDDEN_ACCOUNTING_MODULE_TITLES: ReadonlySet<string>
   'États',
   'Liasse fiscale'
 ]);
+
+export function isAccountingModuleHiddenFromHome(title: string): boolean {
+  return ACCOUNTING_HOME_HIDDEN_MODULE_TITLES.has(title);
+}
 
 export function getFirmDelegatedAccountingModules(): AccountingModuleDef[] {
   return ACCOUNTING_MODULES.filter(m => !FIRM_DELEGATED_HIDDEN_ACCOUNTING_MODULE_TITLES.has(m.title));

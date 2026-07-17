@@ -66,6 +66,8 @@ export interface EmployeeDetail {
   fullName: string;
   cin?: string;
   cnssNumber?: string;
+  category?: string;
+  echelon?: string;
   dateOfBirth?: string;
   hireDate: string;
   terminationDate?: string;
@@ -98,6 +100,8 @@ export interface CreateEmployeeRequest {
   lastName: string;
   cin?: string;
   cnssNumber?: string;
+  category?: string;
+  echelon?: string;
   dateOfBirth?: string;
   hireDate: string;
   maritalStatus?: string;

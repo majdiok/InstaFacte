@@ -3642,6 +3642,10 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<string>("Category")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<string>("CnssNumber")
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)");
@@ -3667,6 +3671,10 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int")
                         .HasDefaultValue(0);
+
+                    b.Property<string>("Echelon")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("EmployeeNumber")
                         .IsRequired()
@@ -3733,7 +3741,7 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                 });
 
             modelBuilder.Entity("FactuTrust.Domain.Entities.Payroll.EmployeeAdvance", b =>
-                {
+            {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");

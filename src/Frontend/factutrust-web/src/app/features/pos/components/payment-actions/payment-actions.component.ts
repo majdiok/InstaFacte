@@ -5,6 +5,7 @@ import { PosStateService } from '../../services/pos-state.service';
 import { PaymentMethod } from '../../../invoices/invoice-wizard/models/invoice-wizard.models';
 import { SplitPaymentComponent } from '../split-payment/split-payment.component';
 import { RefundInvoiceIdDialogComponent } from '@shared/components/refund-invoice-id-dialog/refund-invoice-id-dialog.component';
+import { LinkedInvoiceRef } from '@core/services/invoice-reference-resolver.service';
 
 @Component({
   selector: 'app-payment-actions',
@@ -655,6 +656,7 @@ export class PaymentActionsComponent {
   @Output() onSendEmail = new EventEmitter<void>();
   @Output() onHold = new EventEmitter<void>();
   @Output() onCancel = new EventEmitter<void>();
+  @Output() creditNoteInvoiceSelected = new EventEmitter<LinkedInvoiceRef>();
 
   readonly posState = inject(PosStateService);
   private readonly ngbModal = inject(NgbModal);
@@ -677,9 +679,9 @@ export class PaymentActionsComponent {
       modalDialogClass: 'refund-invoice-id-dialog',
     });
     ref.result.then(
-      (invoiceId: string) => {
-        if (invoiceId?.trim()) {
-          this.posState.enableCreditNoteMode(invoiceId.trim());
+      (linkedInvoice: LinkedInvoiceRef) => {
+        if (linkedInvoice?.id) {
+          this.creditNoteInvoiceSelected.emit(linkedInvoice);
         }
       },
       () => { }

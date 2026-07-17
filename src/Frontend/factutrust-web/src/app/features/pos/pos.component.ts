@@ -2,9 +2,10 @@ import { Component, inject, OnDestroy, OnInit, HostListener, ViewChild, effect }
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
-import { switchMap, map, catchError } from 'rxjs/operators';
-import { throwError } from 'rxjs';
+import { switchMap, map, catchError, tap } from 'rxjs/operators';
+import { throwError, of } from 'rxjs';
 import { PosStateService } from './services/pos-state.service';
+import { PosOrderLine } from './services/pos-state.service';
 import { PosBarcodeService } from './services/pos-barcode.service';
 import { PosHeldOrdersService } from './services/pos-held-orders.service';
 import { PosDualScreenService } from './services/pos-dual-screen.service';
@@ -38,8 +39,10 @@ import {
   ClientTaxType,
   PaymentMethod,
   PAYMENT_METHOD_OPTIONS,
-  AddressInfo
+  AddressInfo,
+  InvoiceLine as WizardInvoiceLine
 } from '../invoices/invoice-wizard/models/invoice-wizard.models';
+import { LinkedInvoiceRef } from '@core/services/invoice-reference-resolver.service';
 import { environment } from '@environments/environment';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
@@ -76,6 +79,7 @@ import { WarehouseContextService } from '@core/services/warehouse-context.servic
             (onSendEmail)="validateAndPrint()"
             (onHold)="holdOrder()"
             (onCancel)="newOrder()"
+            (creditNoteInvoiceSelected)="onCreditNoteInvoiceSelected($event)"
             (onSuggestionAdd)="addProductToOrder($event)"
             (onFrequentProductAdd)="addProductToOrder($event)" />
         </div>
@@ -831,10 +835,8 @@ export class PosComponent implements OnInit, OnDestroy {
           acceptLabel: 'Forcer la validation',
           rejectLabel: 'Annuler',
           accept: () => {
-            if (this.posState.isCreditNote() && this.posState.linkedInvoiceId()) {
-              this.wizardService.initForCreditNote(this.posState.linkedInvoiceId()!).subscribe(() => {
-                this.doValidateAndPrint(true);
-              });
+            if (this.posState.isCreditNote()) {
+              this.runCreditNoteValidationPipeline();
             } else {
               this.doValidateAndPrint(false);
             }
@@ -843,13 +845,215 @@ export class PosComponent implements OnInit, OnDestroy {
         });
         return;
       }
-      if (this.posState.isCreditNote() && this.posState.linkedInvoiceId()) {
-        this.wizardService.initForCreditNote(this.posState.linkedInvoiceId()!).subscribe(() => {
-          this.doValidateAndPrint(true);
-        });
+      if (this.posState.isCreditNote()) {
+        this.runCreditNoteValidationPipeline();
       } else {
         this.doValidateAndPrint(false);
       }
+    });
+  }
+
+  onCreditNoteInvoiceSelected(linkedInvoice: LinkedInvoiceRef): void {
+    const activate = () => this.activateCreditNoteMode(linkedInvoice);
+
+    if (this.posState.lines().length > 0) {
+      this.confirmationService.confirm({
+        header: 'Remplacer le panier ?',
+        message: 'Le panier actuel sera remplacé par les lignes de la facture sélectionnée.',
+        icon: 'pi pi-exclamation-triangle',
+        acceptLabel: 'Continuer',
+        rejectLabel: 'Annuler',
+        accept: activate
+      });
+      return;
+    }
+
+    activate();
+  }
+
+  private activateCreditNoteMode(linkedInvoice: LinkedInvoiceRef): void {
+    this.posState.enableCreditNoteMode(linkedInvoice);
+    this.posState.setProcessing(true);
+    this.posState.setError(null);
+
+    this.wizardService.initForCreditNote(linkedInvoice.id).subscribe({
+      next: () => {
+        this.populatePosCartFromWizardLines();
+        this.posState.setProcessing(false);
+        this.showToast('Panier pré-rempli — modifiez les quantités pour un avoir partiel');
+      },
+      error: err => {
+        this.posState.setProcessing(false);
+        this.posState.disableCreditNoteMode();
+        const message = this.extractErrorMessage(err, 'Impossible de charger la facture liée.');
+        this.posState.setError(message);
+        this.audioService.beepError();
+      }
+    });
+  }
+
+  private runCreditNoteValidationPipeline(): void {
+    const linked = this.posState.linkedInvoice();
+    if (!linked?.id) {
+      this.posState.setProcessing(false);
+      this.posState.setError('Facture liée invalide. Veuillez sélectionner une facture.');
+      this.audioService.beepError();
+      return;
+    }
+
+    if (this.posState.lines().length === 0) {
+      this.posState.setProcessing(false);
+      this.posState.setError('Ajoutez au moins une ligne à rembourser.');
+      this.audioService.beepError();
+      return;
+    }
+
+    this.wizardService.initForCreditNote(linked.id).pipe(
+      tap(() => this.prepareCreditNoteWizardState()),
+      switchMap(() => this.wizardService.saveDraft()),
+      switchMap(draftId => {
+        const idempotencyKey = `pos-${Date.now()}-${crypto.randomUUID()}`.slice(0, 64);
+        return this.http.post<
+          ApiResponse<{ invoiceId: string; invoiceNumber: string }>
+        >(`${this.WIZARD_API_URL}/drafts/${draftId}/submit`, { idempotencyKey }).pipe(
+          map(res => {
+            const data = res?.data as Record<string, unknown> | undefined;
+            const rawId = data?.['invoiceId'] ?? data?.['InvoiceId'];
+            const rawNum = data?.['invoiceNumber'] ?? data?.['InvoiceNumber'];
+            const invoiceId = typeof rawId === 'string' ? rawId : String(rawId ?? '');
+            const invoiceNumber = typeof rawNum === 'string' ? rawNum : String(rawNum ?? '');
+            return { invoiceId, invoiceNumber };
+          })
+        );
+      }),
+      catchError(err => {
+        this.posState.setProcessing(false);
+        const message = this.extractErrorMessage(err, 'Erreur lors de la création de l\'avoir');
+        this.posState.setError(message);
+        this.audioService.beepError();
+        return throwError(() => err);
+      })
+    ).subscribe({
+      next: payload => this.onInvoiceCreated(payload),
+      error: () => {}
+    });
+  }
+
+  private populatePosCartFromWizardLines(): void {
+    const posLines = this.mapWizardLinesToPosLines(this.wizardService.lines());
+    this.posState.setLines(posLines);
+  }
+
+  private mapWizardLinesToPosLines(lines: WizardInvoiceLine[]): PosOrderLine[] {
+    return lines.map(line => ({
+      id: crypto.randomUUID(),
+      productId: line.productId ?? '',
+      productCode: '',
+      designation: line.designation,
+      description: line.description,
+      quantity: line.quantity,
+      unit: line.unit ?? '',
+      unitPriceHT: line.unitPriceHT,
+      vatRate: line.vatRate,
+      isFodecApplicable: line.isFodecApplicable ?? false,
+      fodecAmount: line.fodecAmount,
+      totalHT: line.totalHT,
+      vatAmount: line.vatAmount,
+      totalTTC: line.totalTTC,
+      discountType: line.discountType,
+      discountValue: line.discountValue,
+      discountAmount: line.discountAmount,
+      notes: ''
+    }));
+  }
+
+  private prepareCreditNoteWizardState(): void {
+    const linked = this.posState.linkedInvoice();
+    if (!linked?.id) {
+      return;
+    }
+
+    if (!this.wizardService.seller() && this.sellerLoaded) {
+      this.loadSeller();
+    }
+
+    this.wizardService.updateMetadata({
+      type: InvoiceType.CreditNote,
+      linkedInvoiceId: linked.id,
+      issueDate: new Date(),
+      dueDate: new Date(),
+      currency: Currency.TND,
+      internalReference: `POS-AVO-${this.posState.sessionId()}`
+    });
+
+    const posClient = this.posState.client();
+    if (posClient && !posClient.isWalkIn) {
+      this.wizardService.selectClient({
+        id: posClient.id,
+        isNewClient: false,
+        name: posClient.name,
+        taxType: posClient.nif ? ClientTaxType.TaxSubject : ClientTaxType.NonTaxSubject,
+        address: {
+          street: '',
+          streetLine2: null,
+          postalCode: null,
+          city: '',
+          governorate: '',
+          country: 'Tunisie'
+        },
+        nif: posClient.nif || null,
+        email: posClient.email,
+        phone: posClient.phone || null,
+        contactPerson: null
+      });
+    }
+
+    for (const line of [...this.wizardService.lines()]) {
+      this.wizardService.removeLine(line.id);
+    }
+
+    const posLines = this.posState.lines();
+    const totals = this.posState.totals();
+    const subTotalHT = totals.subTotalHT;
+    const globalDiscount = totals.totalDiscount;
+
+    posLines.forEach(line => {
+      let discountType = line.discountType;
+      let discountValue = line.discountValue;
+      if (globalDiscount > 0 && subTotalHT > 0) {
+        const lineShare = (line.totalHT / subTotalHT) * globalDiscount;
+        const effectiveDiscount = line.discountAmount + lineShare;
+        discountType = 'AMOUNT';
+        discountValue = effectiveDiscount;
+      }
+      this.wizardService.addLine({
+        productId: line.productId,
+        designation: line.designation,
+        description: (line.description?.trim()) || null,
+        quantity: line.quantity,
+        unit: line.unit,
+        unitPriceHT: line.unitPriceHT,
+        vatRate: line.vatRate,
+        isFodecApplicable: line.isFodecApplicable ?? false,
+        discountType: discountType ?? null,
+        discountValue: discountValue ?? null
+      });
+    });
+
+    let paymentMethod = this.posState.paymentMethod();
+    let paymentTerms = 'Remboursement comptant';
+    if (this.posState.isSplitPayment() && this.posState.paymentSplits().length > 0) {
+      paymentMethod = this.posState.paymentSplits()[0].method;
+      const parts = this.posState.paymentSplits().map(s =>
+        `${s.method}: ${this.posState.formatAmount(s.amount)} TND`
+      );
+      paymentTerms = `Remboursement fractionné : ${parts.join(', ')}`;
+    }
+
+    this.wizardService.updatePayment({
+      method: paymentMethod,
+      terms: paymentTerms,
+      daysUntilDue: 0
     });
   }
 

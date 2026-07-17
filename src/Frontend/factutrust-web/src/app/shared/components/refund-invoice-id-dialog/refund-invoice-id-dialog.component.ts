@@ -5,15 +5,22 @@ import {
   AfterViewInit,
   signal,
   computed,
+  inject,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { NgbActiveModal } from '@ng-bootstrap/ng-bootstrap';
+import { AutoCompleteModule } from 'primeng/autocomplete';
+import { InvoiceListItem } from '@core/services/invoice.service';
+import {
+  InvoiceReferenceResolverService,
+  LinkedInvoiceRef
+} from '@core/services/invoice-reference-resolver.service';
 
 @Component({
   selector: 'app-refund-invoice-id-dialog',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, AutoCompleteModule],
   template: `
     <div class="refund-dialog-header">
       <i class="pi pi-file-edit refund-dialog-icon" aria-hidden="true"></i>
@@ -28,22 +35,46 @@ import { NgbActiveModal } from '@ng-bootstrap/ng-bootstrap';
     </div>
     <div class="refund-dialog-body">
       <p class="refund-dialog-message">
-        Saisissez l'ID ou le numéro de la facture à rembourser.
+        Recherchez la facture d'origine par numéro ou nom de client.
       </p>
-      <label for="refundInvoiceIdInput" class="refund-dialog-label">
-        ID ou numéro de facture
+      <label for="refundInvoiceSearch" class="refund-dialog-label">
+        Facture à rembourser
       </label>
-      <input
-        #invoiceIdInput
-        id="refundInvoiceIdInput"
-        type="text"
-        class="refund-dialog-input"
-        [ngModel]="invoiceId()"
-        (ngModelChange)="invoiceId.set($event)"
-        (keydown.enter)="onSubmit()"
-        placeholder="Ex. INV-2024-001"
-        aria-label="ID ou numéro de la facture à rembourser"
-        aria-describedby="refundDialogTitle" />
+      <p-autoComplete
+        #invoiceSearchInput
+        inputId="refundInvoiceSearch"
+        [(ngModel)]="searchText"
+        [suggestions]="suggestions"
+        (completeMethod)="onSearch($event)"
+        (onSelect)="onInvoiceSelect($event)"
+        field="number"
+        [dropdown]="false"
+        [minLength]="1"
+        placeholder="Ex. FAC-2026-000042"
+        appendTo="body"
+        [inputStyle]="{ width: '100%' }"
+        [style]="{ width: '100%' }"
+        aria-label="Rechercher une facture à rembourser"
+        aria-describedby="refundDialogTitle">
+        <ng-template let-invoice pTemplate="item">
+          <div class="invoice-suggestion">
+            <span class="invoice-num">{{ invoice.number }}</span>
+            <span class="invoice-client">{{ invoice.clientName }}</span>
+            <span class="invoice-amount">{{ invoice.totalAmount | number:'1.3-3' }} {{ invoice.currency }}</span>
+          </div>
+        </ng-template>
+        <ng-template pTemplate="empty">
+          <div class="invoice-empty">
+            <span>Aucune facture trouvée</span>
+          </div>
+        </ng-template>
+      </p-autoComplete>
+      @if (errorMessage()) {
+        <p class="refund-dialog-error" role="alert">{{ errorMessage() }}</p>
+      }
+      @if (isResolving()) {
+        <p class="refund-dialog-loading">Recherche en cours…</p>
+      }
     </div>
     <div class="refund-dialog-footer">
       <button
@@ -124,11 +155,6 @@ import { NgbActiveModal } from '@ng-bootstrap/ng-bootstrap';
       opacity: 1;
     }
 
-    .refund-dialog-close:focus-visible {
-      outline: 2px solid var(--color-primary-500, #3b82f6);
-      outline-offset: 2px;
-    }
-
     .refund-dialog-body {
       padding: var(--spacing-5, 1.25rem);
     }
@@ -148,36 +174,41 @@ import { NgbActiveModal } from '@ng-bootstrap/ng-bootstrap';
       color: var(--color-text-primary, #0f172a);
     }
 
-    .refund-dialog-input {
-      width: 100%;
-      padding: var(--spacing-3, 0.75rem) var(--spacing-4, 1rem);
-      border: 1px solid var(--color-border-default, #cbd5e1);
-      border-radius: var(--radius-lg, 0.5rem);
-      font-size: var(--font-size-base, 1rem);
-      font-family: var(--font-family);
-      color: var(--color-text-primary, #0f172a);
-      background: var(--color-white, #ffffff);
-      transition: border-color var(--transition-fast, 150ms);
+    .invoice-suggestion {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: baseline;
     }
 
-    .refund-dialog-input::placeholder {
-      color: var(--color-text-tertiary, #64748b);
+    .invoice-num {
+      font-weight: 600;
     }
 
-    .refund-dialog-input:hover:not(:focus) {
-      border-color: var(--color-border-strong, #94a3b8);
+    .invoice-client {
+      color: var(--color-text-secondary, #475569);
     }
 
-    .refund-dialog-input:focus {
-      outline: none;
-      border-color: var(--color-primary-500, #3b82f6);
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    .invoice-amount {
+      margin-left: auto;
+      font-size: 0.875rem;
     }
 
-    .refund-dialog-input:focus-visible {
-      outline: none;
-      border-color: var(--color-primary-500, #3b82f6);
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    .invoice-empty {
+      padding: 0.5rem;
+      color: var(--color-text-secondary, #475569);
+    }
+
+    .refund-dialog-error {
+      margin: var(--spacing-3, 0.75rem) 0 0;
+      color: var(--color-danger-600, #dc2626);
+      font-size: var(--font-size-sm, 0.875rem);
+    }
+
+    .refund-dialog-loading {
+      margin: var(--spacing-2, 0.5rem) 0 0;
+      color: var(--color-text-secondary, #475569);
+      font-size: var(--font-size-sm, 0.875rem);
     }
 
     .refund-dialog-footer {
@@ -192,14 +223,11 @@ import { NgbActiveModal } from '@ng-bootstrap/ng-bootstrap';
     .refund-dialog-btn {
       pointer-events: auto !important;
       cursor: pointer !important;
-      position: relative;
-      z-index: 1;
       min-width: 100px;
       padding: var(--spacing-2, 0.5rem) var(--spacing-4, 1rem);
       font-size: var(--font-size-sm, 0.875rem);
       font-weight: var(--font-weight-medium, 500);
       border-radius: var(--radius-md, 0.375rem);
-      transition: all var(--transition-fast, 150ms);
       font-family: var(--font-family);
     }
 
@@ -209,69 +237,92 @@ import { NgbActiveModal } from '@ng-bootstrap/ng-bootstrap';
       color: var(--color-text-primary, #0f172a);
     }
 
-    .refund-dialog-btn.reject:hover {
-      background: var(--color-neutral-100, #f1f5f9);
-      border-color: var(--color-border-strong, #94a3b8);
-    }
-
-    .refund-dialog-btn.reject:focus-visible {
-      outline: 2px solid var(--color-primary-500, #3b82f6);
-      outline-offset: 2px;
-    }
-
     .refund-dialog-btn.accept {
       background: var(--color-primary-600, #2563eb);
       border: 1px solid var(--color-primary-600, #2563eb);
       color: white;
     }
 
-    .refund-dialog-btn.accept:hover:not(:disabled) {
-      background: var(--color-primary-700, #1d4ed8);
-      border-color: var(--color-primary-700, #1d4ed8);
-    }
-
     .refund-dialog-btn.accept:disabled {
       opacity: 0.5;
       cursor: not-allowed;
     }
-
-    .refund-dialog-btn.accept:focus-visible:not(:disabled) {
-      outline: 2px solid var(--color-primary-500, #3b82f6);
-      outline-offset: 2px;
-    }
-
-    @media (max-width: 576px) {
-      .refund-dialog-footer {
-        flex-direction: column;
-      }
-
-      .refund-dialog-footer .refund-dialog-btn {
-        width: 100%;
-      }
-    }
   `],
 })
 export class RefundInvoiceIdDialogComponent implements AfterViewInit {
-  @ViewChild('invoiceIdInput') inputRef!: ElementRef<HTMLInputElement>;
+  @ViewChild('invoiceSearchInput') inputRef!: ElementRef<HTMLElement>;
 
-  invoiceId = signal('');
+  private readonly resolver = inject(InvoiceReferenceResolverService);
 
-  canSubmit = computed(() => (this.invoiceId() ?? '').trim().length > 0);
+  searchText = '';
+  suggestions: InvoiceListItem[] = [];
+  selectedRef = signal<LinkedInvoiceRef | null>(null);
+  errorMessage = signal<string | null>(null);
+  isResolving = signal(false);
+
+  canSubmit = computed(() => !!this.selectedRef()?.id && !this.isResolving());
 
   constructor(public modal: NgbActiveModal) {}
 
   ngAfterViewInit(): void {
     setTimeout(() => {
-      const el = this.inputRef?.nativeElement;
-      if (el) {
-        el.focus();
-      }
+      const el = this.inputRef?.nativeElement?.querySelector('input');
+      el?.focus();
     }, 0);
   }
 
+  onSearch(event: { query: string }): void {
+    this.errorMessage.set(null);
+    this.selectedRef.set(null);
+    this.resolver.searchInvoices(event.query ?? '').subscribe({
+      next: items => { this.suggestions = items; },
+      error: () => { this.suggestions = []; }
+    });
+  }
+
+  onInvoiceSelect(event: { value: InvoiceListItem }): void {
+    const invoice = event?.value;
+    if (!invoice?.id) {
+      return;
+    }
+    this.errorMessage.set(null);
+    this.selectedRef.set(this.toRef(invoice));
+    this.searchText = invoice.number;
+  }
+
   onSubmit(): void {
-    if (!this.canSubmit()) return;
-    const id = (this.invoiceId() ?? '').trim();
-    this.modal.close(id);
+    if (this.selectedRef()) {
+      this.modal.close(this.selectedRef());
+      return;
+    }
+
+    const query = this.searchText?.trim();
+    if (!query) {
+      this.errorMessage.set('Veuillez saisir ou sélectionner une facture.');
+      return;
+    }
+
+    this.isResolving.set(true);
+    this.errorMessage.set(null);
+    this.resolver.resolveReference(query).subscribe({
+      next: ref => {
+        this.isResolving.set(false);
+        this.modal.close(ref);
+      },
+      error: err => {
+        this.isResolving.set(false);
+        this.errorMessage.set(err?.message ?? 'Facture introuvable.');
+      }
+    });
+  }
+
+  private toRef(invoice: InvoiceListItem): LinkedInvoiceRef {
+    return {
+      id: invoice.id,
+      number: invoice.number,
+      clientName: invoice.clientName,
+      status: invoice.status,
+      totalTTC: Math.abs(invoice.totalAmount)
+    };
   }
 }

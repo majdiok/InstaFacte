@@ -8,6 +8,7 @@ import { ProductListItem, ProductService } from '@core/services/product.service'
 import { ClientSelectorComponent } from '../client-selector/client-selector.component';
 import { OrderLineComponent } from '../order-line/order-line.component';
 import { PaymentActionsComponent } from '../payment-actions/payment-actions.component';
+import { LinkedInvoiceRef } from '@core/services/invoice-reference-resolver.service';
 
 @Component({
   selector: 'app-order-panel',
@@ -19,7 +20,7 @@ import { PaymentActionsComponent } from '../payment-actions/payment-actions.comp
       @if (posState.isCreditNote()) {
           <div class="order-panel__credit-bandeau">
             <i class="pi pi-file-edit"></i>
-            <span>Mode Avoir - Facture: {{ posState.linkedInvoiceId() }}</span>
+            <span>Mode Avoir — Facture : {{ posState.linkedInvoiceNumber() || posState.linkedInvoiceId() }}</span>
           </div>
           }
       <!-- Header -->
@@ -290,7 +291,8 @@ import { PaymentActionsComponent } from '../payment-actions/payment-actions.comp
           (onSaveDraft)="onSaveDraft.emit()"
           (onSendEmail)="onSendEmail.emit()"
           (onHold)="onHold.emit()"
-          (onCancel)="onCancel.emit()" />
+          (onCancel)="onCancel.emit()"
+          (creditNoteInvoiceSelected)="creditNoteInvoiceSelected.emit($event)" />
       </div>
       </div>
     </div>
@@ -1086,6 +1088,7 @@ export class OrderPanelComponent {
   @Output() onSendEmail = new EventEmitter<void>();
   @Output() onHold = new EventEmitter<void>();
   @Output() onCancel = new EventEmitter<void>();
+  @Output() creditNoteInvoiceSelected = new EventEmitter<LinkedInvoiceRef>();
   @Output() onSuggestionAdd = new EventEmitter<ProductListItem>();
   @Output() onFrequentProductAdd = new EventEmitter<ProductListItem>();
 

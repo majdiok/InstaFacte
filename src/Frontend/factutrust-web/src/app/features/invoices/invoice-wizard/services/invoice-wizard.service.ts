@@ -9,6 +9,7 @@ import { ApiResponse } from '@core/services/auth.service';
 import { SubscriptionInfo, SubscriptionService } from '@core/services/subscription.service';
 import { Company } from '@core/services/company.service';
 import { InvoiceService } from '@core/services/invoice.service';
+import { isValidInvoiceGuid } from '@core/services/invoice-reference-resolver.service';
 import { ClientService, Client, ClientType } from '@core/services/client.service';
 import { ProductService } from '@core/services/product.service';
 import { TaxService, TaxType, TaxValueType, TaxContext } from '@core/services/tax.service';
@@ -400,7 +401,11 @@ export class InvoiceWizardService {
    * Sets type=CreditNote, linkedInvoiceId, and pre-fills client from the original invoice.
    */
   initForCreditNote(invoiceId: string): Observable<void> {
+    const preservedSeller = this.state().seller;
     this.reset();
+    if (preservedSeller) {
+      this.selectSeller(preservedSeller);
+    }
     this.updateMetadata({
       type: InvoiceType.CreditNote,
       linkedInvoiceId: invoiceId
@@ -409,13 +414,14 @@ export class InvoiceWizardService {
     return this.invoiceService.getInvoice(invoiceId).pipe(
       switchMap((invoiceResponse) => {
         if (!invoiceResponse?.success) {
+          const message = invoiceResponse?.message || 'Impossible de charger la facture liée.';
           console.error('[initForCreditNote] Invoice fetch failed:', invoiceResponse);
-          return of({ clientInfo: undefined as ClientInfo | undefined, invoiceLines: [] as InvoiceLine[] });
+          return throwError(() => new Error(message));
         }
         const data = invoiceResponse.data;
         if (!data) {
           console.error('[initForCreditNote] Invoice data is null');
-          return of({ clientInfo: undefined as ClientInfo | undefined, invoiceLines: [] as InvoiceLine[] });
+          return throwError(() => new Error('Impossible de charger la facture liée.'));
         }
 
         const invoiceLines = this.mapApiLinesToWizardLines(data.lines);
@@ -457,7 +463,7 @@ export class InvoiceWizardService {
       catchError((err) => {
         console.error('[initForCreditNote] Unexpected error:', err);
         this.validateStepByDomain('metadata');
-        return of(void 0);
+        return throwError(() => err);
       })
     );
   }
@@ -1877,7 +1883,7 @@ export class InvoiceWizardService {
         dueDate: meta.dueDate ? (meta.dueDate instanceof Date ? meta.dueDate.toISOString() : meta.dueDate) : null,
         currency: meta.currency,
         internalReference: meta.internalReference,
-        linkedInvoiceId: meta.linkedInvoiceId || null,
+        linkedInvoiceId: isValidInvoiceGuid(meta.linkedInvoiceId) ? meta.linkedInvoiceId : null,
         warehouseId: meta.warehouseId || null
       },
       sellerId: state.seller?.id || null,

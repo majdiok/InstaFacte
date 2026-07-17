@@ -40,6 +40,8 @@ public static class PayrollMappings
             FullName = e.FullName,
             Cin = e.Cin,
             CnssNumber = e.CnssNumber,
+            Category = e.Category,
+            Echelon = e.Echelon,
             DateOfBirth = e.DateOfBirth,
             HireDate = e.HireDate,
             TerminationDate = e.TerminationDate,

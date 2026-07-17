@@ -49,7 +49,8 @@ public sealed class TenantCompanySummaryProvider : ITenantCompanySummaryProvider
             CompanyName = tenant.CompanyName,
             Nif = tenant.NIF.Value,
             TaxRegimeDisplay = tenant.TaxRegime.ToDisplayString(),
-            TradeName = tradeName
+            TradeName = tradeName,
+            AddressLine = tenant.Address.ToSingleLine()
         };
     }
 }

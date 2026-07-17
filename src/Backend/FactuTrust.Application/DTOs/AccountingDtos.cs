@@ -212,6 +212,7 @@ public sealed record TenantCompanySummaryDto
     public string Nif { get; init; } = null!;
     public string TaxRegimeDisplay { get; init; } = null!;
     public string? TradeName { get; init; }
+    public string? AddressLine { get; init; }
 }
 
 public sealed record VatDeclarationDto

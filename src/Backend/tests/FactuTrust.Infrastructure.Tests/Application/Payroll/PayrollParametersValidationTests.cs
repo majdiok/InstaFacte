@@ -135,4 +135,20 @@ public sealed class PayrollParametersValidationTests
 
         Assert.True(result.IsFailure);
     }
+
+    [Fact]
+    public void ReplaceIrppBrackets_assigns_parent_id_on_persisted_aggregate()
+    {
+        var parameters = PayrollParameterDefaults.CreateDefaults(2026).Value;
+        var brackets = new[]
+        {
+            PayrollIrppBracket.Create(0m, 0m),
+            PayrollIrppBracket.Create(5000m, 15m)
+        };
+
+        var result = parameters.ReplaceIrppBrackets(brackets);
+
+        Assert.True(result.IsSuccess);
+        Assert.All(parameters.IrppBrackets, b => Assert.Equal(parameters.Id, b.PayrollYearParametersId));
+    }
 }

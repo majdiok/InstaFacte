@@ -2,6 +2,7 @@ using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Domain.Entities.Payroll;
 using FactuTrust.Domain.Services.Payroll;
 using FactuTrust.Infrastructure.MultiTenancy;
+using FactuTrust.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace FactuTrust.Infrastructure.Repositories;
@@ -76,9 +77,10 @@ public sealed class PayrollParametersRepository : IPayrollParametersRepository
         await using var context = _contextFactory.CreateContext();
 
         // Replace brackets so removed ones are deleted rather than orphaned.
-        await context.PayrollIrppBrackets
+        var bracketsToDelete = await context.PayrollIrppBrackets
             .Where(b => b.PayrollYearParametersId == parameters.Id)
-            .ExecuteDeleteAsync(cancellationToken);
+            .ToListAsync(cancellationToken);
+        context.PayrollIrppBrackets.RemoveRange(bracketsToDelete);
 
         var tracked = await context.PayrollYearParameters
             .FirstOrDefaultAsync(p => p.Id == parameters.Id, cancellationToken);
@@ -86,14 +88,23 @@ public sealed class PayrollParametersRepository : IPayrollParametersRepository
         if (tracked is null)
         {
             context.PayrollYearParameters.Add(parameters);
+            foreach (var bracket in parameters.IrppBrackets)
+                AddBracket(context, bracket, parameters.Id);
         }
         else
         {
             context.Entry(tracked).CurrentValues.SetValues(parameters);
             foreach (var bracket in parameters.IrppBrackets)
-                context.PayrollIrppBrackets.Add(bracket);
+                AddBracket(context, bracket, tracked.Id);
         }
 
         await context.SaveChangesAsync(cancellationToken);
+    }
+
+    private static void AddBracket(TenantDbContext context, PayrollIrppBracket bracket, Guid parentId)
+    {
+        var entry = context.PayrollIrppBrackets.Add(bracket);
+        if (bracket.PayrollYearParametersId == Guid.Empty)
+            entry.Property(b => b.PayrollYearParametersId).CurrentValue = parentId;
     }
 }

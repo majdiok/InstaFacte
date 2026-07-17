@@ -94,7 +94,9 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
             dto.Rib,
             dto.StudentChildren,
             dto.DisabledChildren,
-            dto.DependentParents);
+            dto.DependentParents,
+            dto.Category,
+            dto.Echelon);
 
         if (updateResult.IsFailure)
             return updateResult;

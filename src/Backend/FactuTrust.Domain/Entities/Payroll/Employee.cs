@@ -16,6 +16,10 @@ public sealed class Employee : AggregateRoot
     public string? Cin { get; private set; }
     /// <summary>Matricule / numéro d'affiliation CNSS du salarié.</summary>
     public string? CnssNumber { get; private set; }
+    /// <summary>Catégorie professionnelle (affichage fiche de paie).</summary>
+    public string? Category { get; private set; }
+    /// <summary>Échelon (affichage fiche de paie).</summary>
+    public string? Echelon { get; private set; }
 
     public DateTime? DateOfBirth { get; private set; }
     public DateTime HireDate { get; private set; }
@@ -67,7 +71,9 @@ public sealed class Employee : AggregateRoot
         string? rib = null,
         int studentChildren = 0,
         int disabledChildren = 0,
-        int dependentParents = 0)
+        int dependentParents = 0,
+        string? category = null,
+        string? echelon = null)
     {
         if (string.IsNullOrWhiteSpace(employeeNumber))
             return Result.Failure<Employee>(Error.Validation("EmployeeNumber", "Le matricule du salarié est obligatoire."));
@@ -98,6 +104,8 @@ public sealed class Employee : AggregateRoot
             DependentParents = dependentParents,
             Cin = Normalize(cin),
             CnssNumber = Normalize(cnssNumber),
+            Category = Normalize(category),
+            Echelon = Normalize(echelon),
             DateOfBirth = dateOfBirth?.Date,
             Address = address,
             Email = email,
@@ -135,7 +143,9 @@ public sealed class Employee : AggregateRoot
         string? rib,
         int studentChildren = 0,
         int disabledChildren = 0,
-        int dependentParents = 0)
+        int dependentParents = 0,
+        string? category = null,
+        string? echelon = null)
     {
         if (string.IsNullOrWhiteSpace(firstName))
             return Result.Failure(Error.Validation("FirstName", "Le prénom est obligatoire."));
@@ -158,6 +168,8 @@ public sealed class Employee : AggregateRoot
         DependentParents = dependentParents;
         Cin = Normalize(cin);
         CnssNumber = Normalize(cnssNumber);
+        Category = Normalize(category);
+        Echelon = Normalize(echelon);
         DateOfBirth = dateOfBirth?.Date;
         Address = address;
         Email = email;

@@ -39,6 +39,7 @@ public sealed class PdfServicePayslipTests
         var bytes = await service.GeneratePayslipPdfAsync(dto, "Société Test", CancellationToken.None);
         Assert.NotNull(bytes);
         Assert.NotEmpty(bytes);
-        Assert.Equal(0x25, bytes[0]);
+        Assert.Equal(0x25, bytes[0]); // PDF magic '%'
+        Assert.True(bytes.Length > 500, "Le PDF fiche de paie devrait contenir une mise en page complète.");
     }
 }

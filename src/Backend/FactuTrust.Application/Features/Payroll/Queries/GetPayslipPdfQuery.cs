@@ -1,7 +1,6 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
-using FactuTrust.Application.Features.Payroll.LeaveBalance;
 using FactuTrust.Domain.Common;
 using MediatR;
 
@@ -42,21 +41,19 @@ public sealed class GetPayslipPdfQueryHandler : IRequestHandler<GetPayslipPdfQue
 
         var dto = PayrollMappings.ToPayslipDetailDto(payslip);
 
-        var employee = await _employees.GetByIdAsync(payslip.EmployeeId, cancellationToken);
-        if (employee is not null)
-        {
-            var balance = await GetEmployeeLeaveBalanceQueryHandler.BuildBalanceDtoAsync(
-                employee, payslip.Year, _accruals, _leaves, cancellationToken);
-
-            dto = dto with
-            {
-                Cin = employee.Cin,
-                HireDate = employee.HireDate,
-                LeaveBalanceRemaining = balance.Remaining
-            };
-        }
-
+        var employee = await _employees.GetByIdWithContractsAsync(payslip.EmployeeId, cancellationToken);
         var company = await _companySummary.GetCurrentTenantSummaryAsync(cancellationToken);
+
+        dto = await PayslipDetailEnrichment.EnrichAsync(
+            dto,
+            employee,
+            payslip.Year,
+            payslip.Month,
+            _accruals,
+            _leaves,
+            company?.AddressLine,
+            cancellationToken);
+
         var bytes = await _pdf.GeneratePayslipPdfAsync(dto, company?.CompanyName ?? string.Empty, cancellationToken);
 
         if (bytes.Length == 0)

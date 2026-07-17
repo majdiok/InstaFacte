@@ -1,6 +1,5 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.DTOs;
-using FactuTrust.Application.Features.Payroll.LeaveBalance;
 using FactuTrust.Domain.Common;
 using MediatR;
 
@@ -35,20 +34,16 @@ public sealed class GetPayslipByIdQueryHandler : IRequestHandler<GetPayslipByIdQ
 
         var dto = PayrollMappings.ToPayslipDetailDto(payslip);
 
-        // Même enrichissement que le PDF : CIN, date d'embauche et solde de congés.
-        var employee = await _employees.GetByIdAsync(payslip.EmployeeId, cancellationToken);
-        if (employee is not null)
-        {
-            var balance = await GetEmployeeLeaveBalanceQueryHandler.BuildBalanceDtoAsync(
-                employee, payslip.Year, _accruals, _leaves, cancellationToken);
-
-            dto = dto with
-            {
-                Cin = employee.Cin,
-                HireDate = employee.HireDate,
-                LeaveBalanceRemaining = balance.Remaining
-            };
-        }
+        var employee = await _employees.GetByIdWithContractsAsync(payslip.EmployeeId, cancellationToken);
+        dto = await PayslipDetailEnrichment.EnrichAsync(
+            dto,
+            employee,
+            payslip.Year,
+            payslip.Month,
+            _accruals,
+            _leaves,
+            companyAddress: null,
+            cancellationToken);
 
         return Result.Success(dto);
     }

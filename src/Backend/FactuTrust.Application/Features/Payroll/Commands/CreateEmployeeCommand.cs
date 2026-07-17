@@ -105,7 +105,9 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
             dto.Rib,
             dto.StudentChildren,
             dto.DisabledChildren,
-            dto.DependentParents);
+            dto.DependentParents,
+            dto.Category,
+            dto.Echelon);
 
         if (employeeResult.IsFailure)
             return Result.Failure<Guid>(employeeResult.Error);

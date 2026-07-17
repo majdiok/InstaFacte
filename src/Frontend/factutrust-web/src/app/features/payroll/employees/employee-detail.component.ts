@@ -84,6 +84,14 @@ import { PayrollConsultBannerComponent, PayrollAmountPipe, formatPayrollAmount }
               </dd>
             </div>
             <div>
+              <dt>Catégorie</dt>
+              <dd>{{ employee()!.category || '—' }}</dd>
+            </div>
+            <div>
+              <dt>Échelon</dt>
+              <dd>{{ employee()!.echelon || '—' }}</dd>
+            </div>
+            <div>
               <dt>Date naissance</dt>
               <dd>{{ employee()!.dateOfBirth ? (employee()!.dateOfBirth | date:'dd/MM/yyyy') : '—' }}</dd>
             </div>

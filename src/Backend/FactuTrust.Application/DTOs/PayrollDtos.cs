@@ -55,6 +55,8 @@ public sealed record EmployeeDetailDto
     public string FullName { get; init; } = null!;
     public string? Cin { get; init; }
     public string? CnssNumber { get; init; }
+    public string? Category { get; init; }
+    public string? Echelon { get; init; }
     public DateTime? DateOfBirth { get; init; }
     public DateTime HireDate { get; init; }
     public DateTime? TerminationDate { get; init; }
@@ -80,6 +82,8 @@ public sealed record CreateEmployeeDto
     public string LastName { get; init; } = null!;
     public string? Cin { get; init; }
     public string? CnssNumber { get; init; }
+    public string? Category { get; init; }
+    public string? Echelon { get; init; }
     public DateTime? DateOfBirth { get; init; }
     public DateTime HireDate { get; init; }
     public string MaritalStatus { get; init; } = "Single";
@@ -104,6 +108,8 @@ public sealed record UpdateEmployeeDto
     public string LastName { get; init; } = null!;
     public string? Cin { get; init; }
     public string? CnssNumber { get; init; }
+    public string? Category { get; init; }
+    public string? Echelon { get; init; }
     public DateTime? DateOfBirth { get; init; }
     public string MaritalStatus { get; init; } = "Single";
     public bool IsHeadOfFamily { get; init; }
@@ -251,6 +257,12 @@ public sealed record PayslipDetailDto
     public string EmployeeNumber { get; init; } = null!;
     public string? CnssNumber { get; init; }
     public string? Cin { get; init; }
+    public string? JobTitle { get; init; }
+    public string? Category { get; init; }
+    public string? Echelon { get; init; }
+    public bool IsHeadOfFamily { get; init; }
+    public decimal? WorkedDays { get; init; }
+    public string? CompanyAddress { get; init; }
     public DateTime? HireDate { get; init; }
     public decimal? LeaveBalanceRemaining { get; init; }
     public int Year { get; init; }
