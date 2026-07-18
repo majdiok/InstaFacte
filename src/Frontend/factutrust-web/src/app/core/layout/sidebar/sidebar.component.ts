@@ -31,6 +31,7 @@ import {
 } from '@core/config/company-accounting-nav.config';
 import { FirmContextService } from '@core/services/firm-context.service';
 import { FirmAssignmentService, FirmClientDossier } from '@core/services/firm-assignment.service';
+import { FirmBadgeService } from '@core/services/firm-badge.service';
 import { AccountingFeatureFlagsService } from '@features/accounting/shared/accounting-feature-flags.service';
 import { BRAND } from '@core/constants/brand';
 import { AppModule } from '@core/models/app-module';
@@ -93,11 +94,11 @@ export class SidebarComponent implements OnInit {
   private readonly auth = inject(AuthService);
   private readonly firmContext = inject(FirmContextService);
   private readonly firmAssignments = inject(FirmAssignmentService);
+  private readonly firmBadge = inject(FirmBadgeService);
   private readonly accountingFlags = inject(AccountingFeatureFlagsService);
   private readonly studioNav = inject(StudioNavService);
 
   private readonly activeClients = signal<FirmClientDossier[]>([]);
-  private readonly pendingInvitations = signal(0);
 
   readonly dashboardHomeLink = computed(() =>
     this.auth.isAccountingFirm() ? '/firm/dashboard' : '/dashboard'
@@ -110,7 +111,7 @@ export class SidebarComponent implements OnInit {
     this.auth.user();
     this.firmContext.context();
     this.activeClients();
-    this.pendingInvitations();
+    this.firmBadge.pendingInvitationsCount();
 
     if (this.auth.isAccountingFirm()) {
       if (this.auth.isDelegatedMode()) {
@@ -157,7 +158,7 @@ export class SidebarComponent implements OnInit {
       });
     }
 
-    const pending = this.pendingInvitations();
+    const pending = this.firmBadge.pendingInvitationsCount();
     const dashboard = FIRM_NATIVE_NAV.find(i => i.route === '/firm/dashboard')!;
     const invitations = FIRM_NATIVE_NAV.find(i => i.route === '/firm/invitations')!;
     const tail = FIRM_NATIVE_NAV.filter(
@@ -323,9 +324,7 @@ export class SidebarComponent implements OnInit {
     this.firmAssignments.getActiveClients().subscribe(r => {
       if (r.success) this.activeClients.set(r.data);
     });
-    this.firmAssignments.getIncomingInvitations().subscribe(r => {
-      if (r.success) this.pendingInvitations.set(r.data.length);
-    });
+    this.firmBadge.refresh();
   }
 
   private collapseSubmenuPanel(): void {

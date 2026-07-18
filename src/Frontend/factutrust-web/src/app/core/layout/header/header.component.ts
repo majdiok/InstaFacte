@@ -1,8 +1,9 @@
 import { Component, Input, Output, EventEmitter, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
 import { NgbDropdownModule } from '@ng-bootstrap/ng-bootstrap';
 import { AuthService } from '../../services/auth.service';
+import { AppNotification, NotificationService } from '../../services/notification.service';
 import { WarehouseContextService } from '../../services/warehouse-context.service';
 import { FirmContextService } from '../../services/firm-context.service';
 import { BreadcrumbService } from '../../services/breadcrumb.service';
@@ -85,13 +86,51 @@ import { GlobalSearchService } from '../../services/global-search.service';
                     <i class="fa-solid fa-share-nodes"></i>
                   </a>
                 </li>
-                <li>
-                  <a href="#" (click)="$event.preventDefault()" aria-label="Notifications">
+                <li ngbDropdown placement="bottom-end" (openChange)="onNotificationsOpenChange($event)">
+                  <a
+                    ngbDropdownToggle
+                    id="notificationsDropdown"
+                    role="button"
+                    class="notif-bell"
+                    aria-label="Notifications">
                     <i class="fa-regular fa-bell"></i>
-                    @if (notificationCount() > 0) {
-                      <span class="badge">{{ notificationCount() }}</span>
+                    @if (notifications.unreadCount() > 0) {
+                      <span class="badge">{{ notifications.unreadCount() > 99 ? '99+' : notifications.unreadCount() }}</span>
                     }
                   </a>
+                  <div ngbDropdownMenu aria-labelledby="notificationsDropdown" class="notif-menu">
+                    <div class="notif-menu__header">
+                      <span class="notif-menu__title">Notifications</span>
+                      @if (notifications.unreadCount() > 0) {
+                        <button type="button" class="notif-menu__mark-all" (click)="markAllRead($event)">
+                          Tout marquer comme lu
+                        </button>
+                      }
+                    </div>
+                    @if (notifications.latest().length === 0) {
+                      <div class="notif-menu__empty">
+                        <i class="fa-regular fa-bell-slash" aria-hidden="true"></i>
+                        <p>Aucune notification</p>
+                      </div>
+                    } @else {
+                      <div class="notif-menu__list">
+                        @for (n of notifications.latest(); track n.id) {
+                          <button
+                            type="button"
+                            class="notif-item"
+                            [class.notif-item--unread]="!n.readAt"
+                            (click)="openNotification(n)">
+                            <span class="notif-item__dot" aria-hidden="true"></span>
+                            <span class="notif-item__content">
+                              <span class="notif-item__title">{{ n.title }}</span>
+                              <span class="notif-item__body">{{ n.body }}</span>
+                              <span class="notif-item__date">{{ n.createdAt | date: 'dd/MM/yyyy HH:mm' }}</span>
+                            </span>
+                          </button>
+                        }
+                      </div>
+                    }
+                  </div>
                 </li>
               </ul>
               <ul class="user_profile_dd">
@@ -300,6 +339,136 @@ import { GlobalSearchService } from '../../services/global-search.service';
       }
     }
 
+    .notif-bell {
+      cursor: pointer;
+    }
+
+    .notif-menu {
+      width: 360px;
+      max-width: calc(100vw - 32px);
+      padding: 0;
+      border: 1px solid var(--color-neutral-200);
+      border-radius: 14px;
+      box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+      overflow: hidden;
+    }
+
+    .notif-menu__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--color-neutral-200);
+      background: var(--color-neutral-50, #f8fafc);
+    }
+
+    .notif-menu__title {
+      font-weight: 600;
+      font-size: 14px;
+      color: #1e293b;
+    }
+
+    .notif-menu__mark-all {
+      border: none;
+      background: none;
+      padding: 0;
+      font-size: 12px;
+      color: var(--color-primary-600);
+      cursor: pointer;
+
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+
+    .notif-menu__empty {
+      padding: 28px 16px;
+      text-align: center;
+      color: #94a3b8;
+
+      i {
+        font-size: 24px;
+        margin-bottom: 8px;
+      }
+
+      p {
+        margin: 0;
+        font-size: 13px;
+      }
+    }
+
+    .notif-menu__list {
+      max-height: 380px;
+      overflow-y: auto;
+    }
+
+    .notif-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      width: 100%;
+      padding: 12px 16px;
+      border: none;
+      border-bottom: 1px solid var(--color-neutral-100, #f1f5f9);
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+      transition: background 0.15s;
+
+      &:hover {
+        background: #f1f5f9;
+      }
+
+      &:last-child {
+        border-bottom: none;
+      }
+    }
+
+    .notif-item__dot {
+      flex-shrink: 0;
+      width: 8px;
+      height: 8px;
+      margin-top: 6px;
+      border-radius: 50%;
+      background: transparent;
+    }
+
+    .notif-item--unread .notif-item__dot {
+      background: var(--color-primary-600);
+    }
+
+    .notif-item__content {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .notif-item__title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1e293b;
+    }
+
+    .notif-item--unread .notif-item__title {
+      color: var(--color-primary-700);
+    }
+
+    .notif-item__body {
+      font-size: 12px;
+      color: #64748b;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+
+    .notif-item__date {
+      font-size: 11px;
+      color: #94a3b8;
+    }
+
     .user_profile_dd {
       margin: 0;
       padding: 0;
@@ -379,10 +548,30 @@ export class HeaderComponent {
   readonly globalSearch = inject(GlobalSearchService);
   readonly authService = inject(AuthService);
   readonly firmContext = inject(FirmContextService);
+  readonly notifications = inject(NotificationService);
+  private readonly router = inject(Router);
   warehouseContext = inject(WarehouseContextService);
   breadcrumbService = inject(BreadcrumbService);
 
-  notificationCount = () => 0;
+  onNotificationsOpenChange(open: boolean): void {
+    if (open) {
+      this.notifications.refresh();
+    }
+  }
+
+  openNotification(notification: AppNotification): void {
+    if (!notification.readAt) {
+      this.notifications.markRead(notification.id);
+    }
+    if (notification.linkUrl) {
+      this.router.navigateByUrl(notification.linkUrl);
+    }
+  }
+
+  markAllRead(event: Event): void {
+    event.stopPropagation();
+    this.notifications.markAllRead();
+  }
 
   async returnToFirm(): Promise<void> {
     await this.firmContext.returnToFirmHome();
