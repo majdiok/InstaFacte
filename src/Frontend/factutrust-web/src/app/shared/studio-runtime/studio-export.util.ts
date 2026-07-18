@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 export interface ExportColumn {
   key: string;
@@ -31,6 +31,14 @@ function triggerDownload(blob: Blob, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+async function downloadWorkbook(workbook: ExcelJS.Workbook, filename: string): Promise<void> {
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  });
+  triggerDownload(blob, ensureExt(filename, 'xlsx'));
+}
+
 /** Exports rows (keyed by column.key) to a semicolon-separated CSV (Excel-FR friendly, BOM). */
 export function exportRowsCsv(
   filename: string,
@@ -45,20 +53,18 @@ export function exportRowsCsv(
   triggerDownload(blob, ensureExt(filename, 'csv'));
 }
 
-/** Exports rows to a real .xlsx workbook (reuses the xlsx dependency already in the app). */
-export function exportRowsXlsx(
+/** Exports rows to a real .xlsx workbook via ExcelJS. */
+export async function exportRowsXlsx(
   filename: string,
   columns: ExportColumn[],
   rows: Record<string, unknown>[],
   formatCell?: (row: Record<string, unknown>, col: ExportColumn) => string
-): void {
-  const data = rows.map(r => {
-    const o: Record<string, string> = {};
-    for (const c of columns) o[c.label] = formatCell ? formatCell(r, c) : cell(r[c.key]);
-    return o;
-  });
-  const ws = XLSX.utils.json_to_sheet(data, { header: columns.map(c => c.label) });
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Données');
-  XLSX.writeFile(wb, ensureExt(filename, 'xlsx'));
+): Promise<void> {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Données');
+  worksheet.addRow(columns.map(c => c.label));
+  for (const row of rows) {
+    worksheet.addRow(columns.map(c => (formatCell ? formatCell(row, c) : cell(row[c.key]))));
+  }
+  await downloadWorkbook(workbook, filename);
 }

@@ -1,4 +1,5 @@
-import { exportRowsCsv } from './studio-export.util';
+import ExcelJS from 'exceljs';
+import { exportRowsCsv, exportRowsXlsx } from './studio-export.util';
 
 describe('studio-export.util', () => {
   beforeEach(() => {
@@ -28,5 +29,28 @@ describe('studio-export.util', () => {
     const text = new TextDecoder('utf-8').decode(bytes);
     expect(text).toContain('Col A;Col B');
     expect(text).toContain('"1;2";x');
+  });
+
+  it('builds an xlsx workbook with headers and row values', async () => {
+    let captured: Blob | undefined;
+    spyOn(URL, 'createObjectURL').and.callFake((blob: Blob) => {
+      captured = blob;
+      return 'blob:test-xlsx';
+    });
+
+    await exportRowsXlsx(
+      'export-test',
+      [{ key: 'name', label: 'Nom' }, { key: 'qty', label: 'Qté' }],
+      [{ name: 'Article', qty: 3 }]
+    );
+
+    expect(captured).toBeDefined();
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(await captured!.arrayBuffer());
+    const sheet = workbook.getWorksheet('Données');
+    expect(sheet).toBeDefined();
+    expect(sheet!.getRow(1).values).toEqual([, 'Nom', 'Qté']);
+    expect(sheet!.getRow(2).values).toEqual([, 'Article', '3']);
   });
 });

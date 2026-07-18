@@ -1,9 +1,23 @@
+import ExcelJS from 'exceljs';
 import type { DashboardConfig } from '../models/ai-chat.models';
 
-/** One sheet per table section (Excel .xlsx via SheetJS). */
+function sanitizeSheetName(title: string): string {
+  const s = title.replace(/[:\\/?*[\]]/g, ' ').trim().slice(0, 31);
+  return s.length > 0 ? s : 'Données';
+}
+
+function triggerDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/** One sheet per table section (Excel .xlsx via ExcelJS). */
 export async function exportDashboardToXlsx(config: DashboardConfig, baseFileName: string): Promise<void> {
-  const XLSX = await import('xlsx');
-  const wb = XLSX.utils.book_new();
+  const workbook = new ExcelJS.Workbook();
   let sheetIdx = 0;
   for (const sec of config.sections) {
     if (sec.type !== 'table') {
@@ -14,22 +28,22 @@ export async function exportDashboardToXlsx(config: DashboardConfig, baseFileNam
     if (cols.length === 0) {
       continue;
     }
-    const aoa = [cols.map(c => c.label), ...rows.map(r => cols.map(c => r[c.key]))];
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    const name = sanitizeSheetName(sec.title || `Table${sheetIdx + 1}`);
-    XLSX.utils.book_append_sheet(wb, ws, name);
+    const worksheet = workbook.addWorksheet(sanitizeSheetName(sec.title || `Table${sheetIdx + 1}`));
+    worksheet.addRow(cols.map(c => c.label));
+    for (const row of rows) {
+      worksheet.addRow(cols.map(c => row[c.key]));
+    }
     sheetIdx++;
   }
   if (sheetIdx === 0) {
     return;
   }
   const fname = baseFileName.endsWith('.xlsx') ? baseFileName : `${baseFileName}.xlsx`;
-  XLSX.writeFile(wb, fname);
-}
-
-function sanitizeSheetName(title: string): string {
-  const s = title.replace(/[:\\/?*[\]]/g, ' ').trim().slice(0, 31);
-  return s.length > 0 ? s : 'Données';
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  });
+  triggerDownload(blob, fname);
 }
 
 /** Rasterizes a DOM subtree into a single A4 PDF page (scaled to fit; long content may shrink). */
