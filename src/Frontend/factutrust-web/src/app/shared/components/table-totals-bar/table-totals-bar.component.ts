@@ -9,7 +9,7 @@ import { CommonModule, DecimalPipe } from '@angular/common';
 export interface TotalMetric {
   label: string;
   value: number | null | undefined;
-  /** 'currency' → "1,234.000 TND" ; 'number' → entier ; 'percent' → "12.5 %". Défaut : 'number'. */
+  /** 'currency' → "1 234,000 TND" (fr-TN) ; 'number' → entier ; 'percent' → "12,5 %". Défaut : 'number'. */
   format?: 'currency' | 'number' | 'percent';
   /** Devise pour le format 'currency' (défaut 'TND'). */
   currency?: string;
@@ -25,8 +25,10 @@ export interface TotalMetric {
  * Zone de totaux placée au-dessus d'un tableau (style Swiver). Bande responsive de tuiles
  * compactes alimentées par des agrégats calculés côté backend sur l'ensemble filtré complet.
  *
- * Le formatage monétaire réutilise {@link DecimalPipe} (piloté par LOCALE_ID) — donc identique
- * au pipe `number:'1.3-3'` utilisé dans les cellules des tableaux : aucune divergence visuelle.
+ * Le formatage monétaire réutilise {@link DecimalPipe}, piloté par LOCALE_ID — désormais
+ * fixé globalement à 'fr-TN' (main.ts) : rendu « 1 234,000 », identique aux cellules des
+ * tableaux formatées en fr-TN. (Avant la locale globale, LOCALE_ID par défaut = en-US
+ * rendait « 1,234.000 » ici, divergent des cellules.)
  */
 @Component({
   selector: 'app-table-totals-bar',

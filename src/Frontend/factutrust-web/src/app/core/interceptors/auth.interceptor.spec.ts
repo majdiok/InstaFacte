@@ -49,6 +49,36 @@ describe('authInterceptor', () => {
     httpMock.verify();
   });
 
+  it("n'attache jamais le Bearer aux URLs hors API (isOurApi)", () => {
+    const authService = jasmine.createSpyObj('AuthService', [
+      'getAccessToken',
+      'getRefreshToken',
+      'refreshToken',
+      'logout',
+      'isAuthenticated'
+    ]);
+    authService.getAccessToken.and.returnValue('tok');
+    authService.isAuthenticated.and.returnValue(true);
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(withInterceptors([authInterceptor])),
+        provideHttpClientTesting(),
+        { provide: AuthService, useValue: authService }
+      ]
+    });
+
+    const http = TestBed.inject(HttpClient);
+    const httpMock = TestBed.inject(HttpTestingController);
+
+    http.get('https://api.tierce.example.com/data').subscribe();
+    const req = httpMock.expectOne('https://api.tierce.example.com/data');
+    expect(req.request.headers.has('Authorization')).toBe(false);
+    req.flush({});
+    httpMock.verify();
+  });
+
   it('does not add Authorization for auth/login', () => {
     const authService = jasmine.createSpyObj('AuthService', [
       'getAccessToken',

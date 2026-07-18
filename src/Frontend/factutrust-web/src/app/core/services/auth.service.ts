@@ -1,7 +1,7 @@
 import { Injectable, signal, computed } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
-import { Observable, firstValueFrom, tap, catchError, of } from 'rxjs';
+import { Observable, firstValueFrom, tap, catchError, of, finalize, shareReplay } from 'rxjs';
 import { environment } from '@environments/environment';
 import { AppModule } from '@core/models/app-module';
 import { createHttpContextSkipGlobalErrorUi } from '@core/http-context';
@@ -311,9 +311,20 @@ export class AuthService {
     });
   }
 
+  /**
+   * Mutex de refresh : les 401 concurrents partagent LA même requête.
+   * Sans cela, chaque 401 déclenchait son propre refresh ; avec la rotation des
+   * refresh tokens côté serveur, les requêtes perdantes invalidaient la session
+   * (déconnexions intempestives sous rafale de requêtes expirées).
+   */
+  private refreshInFlight$: Observable<ApiResponse<AuthResponse>> | null = null;
+
   refreshToken(): Observable<ApiResponse<AuthResponse>> {
+    if (this.refreshInFlight$) {
+      return this.refreshInFlight$;
+    }
     const refreshToken = this.getRefreshToken();
-    return this.http.post<ApiResponse<AuthResponse>>(`${this.API_URL}/refresh`, { refreshToken })
+    this.refreshInFlight$ = this.http.post<ApiResponse<AuthResponse>>(`${this.API_URL}/refresh`, { refreshToken })
       .pipe(
         tap(response => {
           if (response.success && response.data) {
@@ -323,8 +334,13 @@ export class AuthService {
         catchError(error => {
           this.clearAuth();
           throw error;
-        })
+        }),
+        finalize(() => {
+          this.refreshInFlight$ = null;
+        }),
+        shareReplay(1)
       );
+    return this.refreshInFlight$;
   }
 
   /**

@@ -2,7 +2,10 @@ import { bootstrapApplication } from '@angular/platform-browser';
 import { provideRouter, withViewTransitions } from '@angular/router';
 import { provideHttpClient, withInterceptors, withFetch } from '@angular/common/http';
 import { provideAnimations } from '@angular/platform-browser/animations';
-import { APP_INITIALIZER, importProvidersFrom, isDevMode } from '@angular/core';
+import { APP_INITIALIZER, LOCALE_ID, importProvidersFrom, isDevMode } from '@angular/core';
+import { registerLocaleData } from '@angular/common';
+import localeFrTN from '@angular/common/locales/fr-TN';
+import localeFrTNExtra from '@angular/common/locales/extra/fr-TN';
 import { MarkdownModule } from 'ngx-markdown';
 import { MessageService } from 'primeng/api';
 import { AppComponent } from './app/app.component';
@@ -18,8 +21,14 @@ if (isDevMode()) {
   installDevConsoleNoiseFilter();
 }
 
+// Locale globale fr-TN : les pipes number/currency/date rendent le format tunisien
+// (1 234,000) partout — avant, LOCALE_ID par défaut (en-US) donnait 1,234.000 dans
+// les composants utilisant DecimalPipe sans locale explicite (ex. table-totals-bar).
+registerLocaleData(localeFrTN, 'fr-TN', localeFrTNExtra);
+
 bootstrapApplication(AppComponent, {
   providers: [
+    { provide: LOCALE_ID, useValue: 'fr-TN' },
     provideRouter(routes, withViewTransitions()),
     provideHttpClient(
       withFetch(), // Utiliser fetch au lieu de XMLHttpRequest pour meilleure compatibilité avec Playwright

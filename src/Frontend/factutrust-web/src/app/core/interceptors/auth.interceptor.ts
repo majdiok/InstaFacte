@@ -2,10 +2,18 @@ import { HttpInterceptorFn, HttpRequest, HttpHandlerFn, HttpErrorResponse } from
 import { inject } from '@angular/core';
 import { catchError, switchMap, throwError } from 'rxjs';
 import { AuthService } from '../services/auth.service';
+import { environment } from '@environments/environment';
 
 export const authInterceptor: HttpInterceptorFn = (req: HttpRequest<unknown>, next: HttpHandlerFn) => {
   const authService = inject(AuthService);
-  
+
+  // Le Bearer ne part QUE vers notre API (même modèle que le backoffice) :
+  // toute future intégration tierce via HttpClient ne recevra jamais le JWT.
+  const isOurApi = req.url.startsWith(environment.apiUrl) || req.url.startsWith('/api');
+  if (!isOurApi) {
+    return next(req);
+  }
+
   // Skip auth header for login/register endpoints
   if (req.url.includes('/auth/login') || req.url.includes('/auth/register')) {
     return next(req);
