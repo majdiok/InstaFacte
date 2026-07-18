@@ -9,7 +9,8 @@ public enum FirmAssignmentStatus
     Active = 1,
     Rejected = 2,
     RevokedByCompany = 3,
-    RevokedByFirm = 4
+    RevokedByFirm = 4,
+    CancelledByCompany = 5
 }
 
 public static class FirmAssignmentStatusExtensions
@@ -21,6 +22,7 @@ public static class FirmAssignmentStatusExtensions
         FirmAssignmentStatus.Rejected => "Refusée",
         FirmAssignmentStatus.RevokedByCompany => "Révoquée par la société",
         FirmAssignmentStatus.RevokedByFirm => "Résiliée par le cabinet",
+        FirmAssignmentStatus.CancelledByCompany => "Annulée par la société",
         _ => status.ToString()
     };
 

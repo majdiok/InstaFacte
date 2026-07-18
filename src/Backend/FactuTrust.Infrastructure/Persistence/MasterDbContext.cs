@@ -272,6 +272,13 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.HasIndex(a => new { a.CompanyTenantId, a.FirmTenantId, a.Status });
             entity.HasIndex(a => a.FirmTenantId);
             entity.Property(a => a.Notes).HasMaxLength(1000);
+            entity.Property(a => a.RejectionReason).HasMaxLength(500);
+
+            // Une seule liaison « ouverte » (pending=0 ou active=1) par société — garde anti-course au niveau DB.
+            entity.HasIndex(a => a.CompanyTenantId)
+                .IsUnique()
+                .HasFilter("[Status] IN (0, 1)")
+                .HasDatabaseName("IX_FirmClientAssignments_CompanyTenantId_Open");
         });
 
         builder.Entity<UserModuleGrant>(entity =>

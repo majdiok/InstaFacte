@@ -5,12 +5,20 @@ using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.ValueObjects;
 using FactuTrust.Infrastructure.Persistence;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace FactuTrust.Infrastructure.Services;
 
 public sealed class FirmAssignmentService : IFirmAssignmentService
 {
+    /// <summary>Statuts « ouverts » (une seule liaison ouverte par société) — traduisible en SQL via Contains.</summary>
+    private static readonly FirmAssignmentStatus[] OpenStatuses =
+    [
+        FirmAssignmentStatus.PendingFirmApproval,
+        FirmAssignmentStatus.Active
+    ];
+
     private readonly MasterDbContext _masterContext;
 
     public FirmAssignmentService(MasterDbContext masterContext)
@@ -58,8 +66,7 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
         Guid companyTenantId, CancellationToken cancellationToken = default)
     {
         var assignment = await _masterContext.FirmClientAssignments.AsNoTracking()
-            .Where(a => a.CompanyTenantId == companyTenantId &&
-                (a.Status == FirmAssignmentStatus.PendingFirmApproval || a.Status == FirmAssignmentStatus.Active))
+            .Where(a => a.CompanyTenantId == companyTenantId && OpenStatuses.Contains(a.Status))
             .OrderByDescending(a => a.RequestedAt)
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -74,10 +81,7 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
             .OrderByDescending(a => a.RequestedAt)
             .ToListAsync(cancellationToken);
 
-        var result = new List<FirmClientAssignmentDto>();
-        foreach (var a in assignments)
-            result.Add(await MapAssignmentAsync(a, cancellationToken));
-        return result;
+        return await MapAssignmentsAsync(assignments, cancellationToken);
     }
 
     public async Task<Result<FirmClientAssignmentDto>> RequestAssignmentAsync(
@@ -92,8 +96,7 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
             return Result.Failure<FirmClientAssignmentDto>(Error.Validation("Firm", "Cabinet comptable invalide"));
 
         var hasOpen = await _masterContext.FirmClientAssignments
-            .AnyAsync(a => a.CompanyTenantId == companyTenantId &&
-                (a.Status == FirmAssignmentStatus.PendingFirmApproval || a.Status == FirmAssignmentStatus.Active),
+            .AnyAsync(a => a.CompanyTenantId == companyTenantId && OpenStatuses.Contains(a.Status),
                 cancellationToken);
         if (hasOpen)
             return Result.Failure<FirmClientAssignmentDto>(Error.Validation("Assignment", "Une demande ou affectation est déjà en cours"));
@@ -103,10 +106,36 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
             return Result.Failure<FirmClientAssignmentDto>(createResult.Error);
 
         _masterContext.FirmClientAssignments.Add(createResult.Value);
-        await _masterContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _masterContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            // Course entre deux demandes concurrentes : l'index unique filtré fait foi.
+            _masterContext.FirmClientAssignments.Remove(createResult.Value);
+            return Result.Failure<FirmClientAssignmentDto>(Error.Validation("Assignment", "Une demande ou affectation est déjà en cours"));
+        }
 
         var mapped = await MapAssignmentAsync(createResult.Value, cancellationToken);
         return Result.Success(mapped);
+    }
+
+    public async Task<Result> CancelPendingByCompanyAsync(
+        Guid companyTenantId, Guid cancelledByUserId, CancellationToken cancellationToken = default)
+    {
+        var assignment = await _masterContext.FirmClientAssignments
+            .FirstOrDefaultAsync(a => a.CompanyTenantId == companyTenantId && a.Status == FirmAssignmentStatus.PendingFirmApproval, cancellationToken);
+
+        if (assignment is null)
+            return Result.Failure(Error.Validation("Assignment", "Aucune demande en attente"));
+
+        var cancelResult = assignment.CancelByCompany(cancelledByUserId);
+        if (cancelResult.IsFailure)
+            return cancelResult;
+
+        await _masterContext.SaveChangesAsync(cancellationToken);
+        return Result.Success();
     }
 
     public async Task<Result> RevokeByCompanyAsync(
@@ -134,10 +163,7 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
             .OrderByDescending(a => a.RequestedAt)
             .ToListAsync(cancellationToken);
 
-        var result = new List<FirmClientAssignmentDto>();
-        foreach (var a in assignments)
-            result.Add(await MapAssignmentAsync(a, cancellationToken));
-        return result;
+        return await MapAssignmentsAsync(assignments, cancellationToken);
     }
 
     public async Task<IReadOnlyList<FirmClientDossierDto>> GetActiveClientsAsync(
@@ -175,7 +201,7 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
     }
 
     public async Task<Result> RejectAssignmentAsync(
-        Guid firmTenantId, Guid assignmentId, Guid respondedByUserId, CancellationToken cancellationToken = default)
+        Guid firmTenantId, Guid assignmentId, Guid respondedByUserId, string? reason = null, CancellationToken cancellationToken = default)
     {
         var assignment = await _masterContext.FirmClientAssignments
             .FirstOrDefaultAsync(a => a.Id == assignmentId && a.FirmTenantId == firmTenantId, cancellationToken);
@@ -183,7 +209,7 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
         if (assignment is null)
             return Result.Failure(Error.NotFound("Assignment", assignmentId));
 
-        var rejectResult = assignment.Reject(respondedByUserId);
+        var rejectResult = assignment.Reject(respondedByUserId, reason);
         if (rejectResult.IsFailure)
             return rejectResult;
 
@@ -254,30 +280,51 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
     private async Task<FirmClientAssignmentDto> MapAssignmentAsync(
         FirmClientAssignment assignment, CancellationToken cancellationToken)
     {
-        var company = await _masterContext.Tenants.AsNoTracking()
-            .FirstAsync(t => t.Id == assignment.CompanyTenantId, cancellationToken);
+        var mapped = await MapAssignmentsAsync([assignment], cancellationToken);
+        return mapped[0];
+    }
 
-        var firmProfile = await _masterContext.AccountingFirmProfiles.AsNoTracking()
-            .FirstOrDefaultAsync(p => p.TenantId == assignment.FirmTenantId, cancellationToken);
+    /// <summary>Mapping par lots : 2 requêtes au total (Tenants + AccountingFirmProfiles) quel que soit le nombre d'assignments.</summary>
+    private async Task<IReadOnlyList<FirmClientAssignmentDto>> MapAssignmentsAsync(
+        IReadOnlyList<FirmClientAssignment> assignments, CancellationToken cancellationToken)
+    {
+        if (assignments.Count == 0)
+            return Array.Empty<FirmClientAssignmentDto>();
 
-        var firmName = firmProfile?.DisplayName
-            ?? (await _masterContext.Tenants.AsNoTracking().FirstAsync(t => t.Id == assignment.FirmTenantId, cancellationToken)).CompanyName;
+        var tenantIds = assignments
+            .SelectMany(a => new[] { a.CompanyTenantId, a.FirmTenantId })
+            .Distinct()
+            .ToList();
 
-        return new FirmClientAssignmentDto
+        var tenantNames = await _masterContext.Tenants.AsNoTracking()
+            .Where(t => tenantIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => t.CompanyName, cancellationToken);
+
+        var firmIds = assignments.Select(a => a.FirmTenantId).Distinct().ToList();
+        var firmProfileNames = await _masterContext.AccountingFirmProfiles.AsNoTracking()
+            .Where(p => firmIds.Contains(p.TenantId))
+            .ToDictionaryAsync(p => p.TenantId, p => p.DisplayName, cancellationToken);
+
+        return assignments.Select(assignment => new FirmClientAssignmentDto
         {
             Id = assignment.Id,
             CompanyTenantId = assignment.CompanyTenantId,
-            CompanyName = company.CompanyName,
+            CompanyName = tenantNames.GetValueOrDefault(assignment.CompanyTenantId, string.Empty),
             FirmTenantId = assignment.FirmTenantId,
-            FirmDisplayName = firmName,
+            FirmDisplayName = firmProfileNames.GetValueOrDefault(assignment.FirmTenantId)
+                ?? tenantNames.GetValueOrDefault(assignment.FirmTenantId, string.Empty),
             Status = assignment.Status,
             StatusDisplay = assignment.Status.ToDisplayString(),
             RequestedAt = assignment.RequestedAt,
             RespondedAt = assignment.RespondedAt,
             RevokedAt = assignment.RevokedAt,
-            Notes = assignment.Notes
-        };
+            Notes = assignment.Notes,
+            RejectionReason = assignment.RejectionReason
+        }).ToList();
     }
+
+    private static bool IsUniqueConstraintViolation(DbUpdateException ex) =>
+        ex.InnerException is SqlException { Number: 2601 or 2627 };
 
     private static AccountingFirmProfileDto MapProfile(AccountingFirmProfile profile) => new()
     {

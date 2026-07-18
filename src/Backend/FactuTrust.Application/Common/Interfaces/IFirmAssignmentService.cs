@@ -11,10 +11,11 @@ public interface IFirmAssignmentService
     Task<IReadOnlyList<FirmClientAssignmentDto>> GetCompanyAssignmentHistoryAsync(Guid companyTenantId, CancellationToken cancellationToken = default);
     Task<Result<FirmClientAssignmentDto>> RequestAssignmentAsync(Guid companyTenantId, Guid requestedByUserId, RequestFirmAssignmentDto dto, CancellationToken cancellationToken = default);
     Task<Result> RevokeByCompanyAsync(Guid companyTenantId, Guid revokedByUserId, CancellationToken cancellationToken = default);
+    Task<Result> CancelPendingByCompanyAsync(Guid companyTenantId, Guid cancelledByUserId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<FirmClientAssignmentDto>> GetIncomingInvitationsAsync(Guid firmTenantId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<FirmClientDossierDto>> GetActiveClientsAsync(Guid firmTenantId, CancellationToken cancellationToken = default);
     Task<Result> AcceptAssignmentAsync(Guid firmTenantId, Guid assignmentId, Guid respondedByUserId, CancellationToken cancellationToken = default);
-    Task<Result> RejectAssignmentAsync(Guid firmTenantId, Guid assignmentId, Guid respondedByUserId, CancellationToken cancellationToken = default);
+    Task<Result> RejectAssignmentAsync(Guid firmTenantId, Guid assignmentId, Guid respondedByUserId, string? reason = null, CancellationToken cancellationToken = default);
     Task<Result> RevokeByFirmAsync(Guid firmTenantId, Guid assignmentId, Guid revokedByUserId, CancellationToken cancellationToken = default);
     Task<bool> HasActiveAssignmentAsync(Guid firmTenantId, Guid companyTenantId, CancellationToken cancellationToken = default);
     Task<AccountingFirmProfileDto?> GetFirmProfileAsync(Guid firmTenantId, CancellationToken cancellationToken = default);

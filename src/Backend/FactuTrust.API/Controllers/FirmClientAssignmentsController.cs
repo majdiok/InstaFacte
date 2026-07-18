@@ -78,6 +78,22 @@ public sealed class FirmClientAssignmentsController : ControllerBase
         return Ok(ApiResponse<object>.Ok(null!, "Affectation révoquée"));
     }
 
+    [HttpDelete("company/pending")]
+    [Authorize(Roles = nameof(UserRole.Administrator))]
+    public async Task<ActionResult<ApiResponse<object>>> CancelPendingByCompany(CancellationToken cancellationToken)
+    {
+        var tenantId = GetHomeTenantId();
+        var userId = GetUserId();
+        if (tenantId is null || userId is null)
+            return Unauthorized();
+
+        var result = await _assignmentService.CancelPendingByCompanyAsync(tenantId.Value, userId.Value, cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<object>.Ok(null!, "Demande annulée"));
+    }
+
     [HttpGet("firm/incoming")]
     [Authorize(Roles = $"{nameof(UserRole.FirmManager)},{nameof(UserRole.FirmAccountant)}")]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<FirmClientAssignmentDto>>>> GetIncoming(CancellationToken cancellationToken)
@@ -120,14 +136,17 @@ public sealed class FirmClientAssignmentsController : ControllerBase
 
     [HttpPost("firm/{assignmentId:guid}/reject")]
     [Authorize(Roles = nameof(UserRole.FirmManager))]
-    public async Task<ActionResult<ApiResponse<object>>> Reject(Guid assignmentId, CancellationToken cancellationToken)
+    public async Task<ActionResult<ApiResponse<object>>> Reject(
+        Guid assignmentId,
+        [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] RejectFirmAssignmentDto? dto,
+        CancellationToken cancellationToken)
     {
         var tenantId = GetHomeTenantId();
         var userId = GetUserId();
         if (tenantId is null || userId is null)
             return Unauthorized();
 
-        var result = await _assignmentService.RejectAssignmentAsync(tenantId.Value, assignmentId, userId.Value, cancellationToken);
+        var result = await _assignmentService.RejectAssignmentAsync(tenantId.Value, assignmentId, userId.Value, dto?.Reason, cancellationToken);
         if (result.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
 

@@ -32,25 +32,20 @@ public sealed class FirmDashboardService : IFirmDashboardService
             orderby t.CompanyName
             select new { a, t.CompanyName }).ToListAsync(cancellationToken);
 
-        var invitations = await _masterContext.FirmClientAssignments.AsNoTracking()
-            .Where(a => a.FirmTenantId == firmTenantId && a.Status == FirmAssignmentStatus.PendingFirmApproval)
-            .OrderByDescending(a => a.RequestedAt)
+        var invitationRows = await (
+            from a in _masterContext.FirmClientAssignments.AsNoTracking()
+            join t in _masterContext.Tenants.AsNoTracking() on a.CompanyTenantId equals t.Id
+            where a.FirmTenantId == firmTenantId && a.Status == FirmAssignmentStatus.PendingFirmApproval
+            orderby a.RequestedAt descending
+            select new FirmDashboardInvitationRowDto
+            {
+                Id = a.Id,
+                CompanyName = t.CompanyName,
+                RequestedAt = a.RequestedAt,
+                Notes = a.Notes
+            })
             .Take(10)
             .ToListAsync(cancellationToken);
-
-        var invitationRows = new List<FirmDashboardInvitationRowDto>();
-        foreach (var inv in invitations)
-        {
-            var company = await _masterContext.Tenants.AsNoTracking()
-                .FirstAsync(t => t.Id == inv.CompanyTenantId, cancellationToken);
-            invitationRows.Add(new FirmDashboardInvitationRowDto
-            {
-                Id = inv.Id,
-                CompanyName = company.CompanyName,
-                RequestedAt = inv.RequestedAt,
-                Notes = inv.Notes
-            });
-        }
 
         var cutoff = DateTime.UtcNow.AddDays(-30);
         var clientRows = new List<FirmDashboardClientRowDto>();

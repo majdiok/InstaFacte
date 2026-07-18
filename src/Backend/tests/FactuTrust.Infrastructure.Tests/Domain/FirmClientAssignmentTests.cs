@@ -85,4 +85,62 @@ public sealed class FirmClientAssignmentTests
         Assert.True(revoke.IsSuccess);
         Assert.Equal(FirmAssignmentStatus.RevokedByFirm, assignment.Status);
     }
+
+    [Fact]
+    public void Reject_stores_trimmed_reason()
+    {
+        var assignment = FirmClientAssignment.Request(CompanyId, FirmId, UserId).Value;
+
+        var reject = assignment.Reject(UserId, "  Dossier incomplet  ");
+
+        Assert.True(reject.IsSuccess);
+        Assert.Equal("Dossier incomplet", assignment.RejectionReason);
+    }
+
+    [Fact]
+    public void Reject_without_reason_leaves_reason_null()
+    {
+        var assignment = FirmClientAssignment.Request(CompanyId, FirmId, UserId).Value;
+
+        var reject = assignment.Reject(UserId, "   ");
+
+        Assert.True(reject.IsSuccess);
+        Assert.Null(assignment.RejectionReason);
+    }
+
+    [Fact]
+    public void Reject_truncates_reason_to_max_length()
+    {
+        var assignment = FirmClientAssignment.Request(CompanyId, FirmId, UserId).Value;
+        var longReason = new string('x', FirmClientAssignment.RejectionReasonMaxLength + 100);
+
+        assignment.Reject(UserId, longReason);
+
+        Assert.Equal(FirmClientAssignment.RejectionReasonMaxLength, assignment.RejectionReason!.Length);
+    }
+
+    [Fact]
+    public void CancelByCompany_transitions_from_pending()
+    {
+        var assignment = FirmClientAssignment.Request(CompanyId, FirmId, UserId).Value;
+
+        var cancel = assignment.CancelByCompany(UserId);
+
+        Assert.True(cancel.IsSuccess);
+        Assert.Equal(FirmAssignmentStatus.CancelledByCompany, assignment.Status);
+        Assert.Equal(UserId, assignment.RevokedByUserId);
+        Assert.NotNull(assignment.RevokedAt);
+    }
+
+    [Fact]
+    public void CancelByCompany_fails_when_active()
+    {
+        var assignment = FirmClientAssignment.Request(CompanyId, FirmId, UserId).Value;
+        assignment.Accept(UserId);
+
+        var cancel = assignment.CancelByCompany(UserId);
+
+        Assert.True(cancel.IsFailure);
+        Assert.Equal(FirmAssignmentStatus.Active, assignment.Status);
+    }
 }

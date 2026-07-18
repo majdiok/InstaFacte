@@ -78,6 +78,12 @@ public sealed record FirmClientAssignmentDto
     public DateTime? RespondedAt { get; init; }
     public DateTime? RevokedAt { get; init; }
     public string? Notes { get; init; }
+    public string? RejectionReason { get; init; }
+}
+
+public sealed record RejectFirmAssignmentDto
+{
+    public string? Reason { get; init; }
 }
 
 public sealed record FirmClientDossierDto

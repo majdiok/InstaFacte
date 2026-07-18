@@ -18,6 +18,9 @@ public sealed class FirmClientAssignment : AggregateRoot
     public Guid? RevokedByUserId { get; private set; }
     public DateTime? RevokedAt { get; private set; }
     public string? Notes { get; private set; }
+    public string? RejectionReason { get; private set; }
+
+    public const int RejectionReasonMaxLength = 500;
 
     private FirmClientAssignment() { }
 
@@ -61,7 +64,7 @@ public sealed class FirmClientAssignment : AggregateRoot
         return Result.Success();
     }
 
-    public Result Reject(Guid respondedByUserId)
+    public Result Reject(Guid respondedByUserId, string? reason = null)
     {
         if (Status != FirmAssignmentStatus.PendingFirmApproval)
             return Result.Failure(Error.Validation("Status", "Seule une demande en attente peut être refusée"));
@@ -72,6 +75,26 @@ public sealed class FirmClientAssignment : AggregateRoot
         Status = FirmAssignmentStatus.Rejected;
         RespondedByUserId = respondedByUserId;
         RespondedAt = DateTime.UtcNow;
+
+        var trimmed = reason?.Trim();
+        RejectionReason = string.IsNullOrEmpty(trimmed)
+            ? null
+            : trimmed.Length <= RejectionReasonMaxLength ? trimmed : trimmed[..RejectionReasonMaxLength];
+
+        return Result.Success();
+    }
+
+    public Result CancelByCompany(Guid cancelledByUserId)
+    {
+        if (Status != FirmAssignmentStatus.PendingFirmApproval)
+            return Result.Failure(Error.Validation("Status", "Seule une demande en attente peut être annulée"));
+
+        if (cancelledByUserId == Guid.Empty)
+            return Result.Failure(Error.Validation("User", "Utilisateur invalide"));
+
+        Status = FirmAssignmentStatus.CancelledByCompany;
+        RevokedByUserId = cancelledByUserId;
+        RevokedAt = DateTime.UtcNow;
         return Result.Success();
     }
 
