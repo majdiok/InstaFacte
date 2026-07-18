@@ -25,6 +25,7 @@ export interface FirmClientAssignment {
   respondedAt?: string;
   revokedAt?: string;
   notes?: string;
+  rejectionReason?: string;
 }
 
 export interface FirmClientDossier {
@@ -50,12 +51,20 @@ export class FirmAssignmentService {
     return this.http.get<ApiResponse<FirmClientAssignment | null>>(`${this.assignmentsUrl}/company/current`);
   }
 
+  getCompanyHistory(): Observable<ApiResponse<FirmClientAssignment[]>> {
+    return this.http.get<ApiResponse<FirmClientAssignment[]>>(`${this.assignmentsUrl}/company/history`);
+  }
+
   requestAssignment(firmTenantId: string, notes?: string): Observable<ApiResponse<FirmClientAssignment>> {
     return this.http.post<ApiResponse<FirmClientAssignment>>(this.assignmentsUrl, { firmTenantId, notes });
   }
 
   revokeByCompany(): Observable<ApiResponse<unknown>> {
     return this.http.delete<ApiResponse<unknown>>(`${this.assignmentsUrl}/company/current`);
+  }
+
+  cancelPendingRequest(): Observable<ApiResponse<unknown>> {
+    return this.http.delete<ApiResponse<unknown>>(`${this.assignmentsUrl}/company/pending`);
   }
 
   getIncomingInvitations(): Observable<ApiResponse<FirmClientAssignment[]>> {
@@ -70,8 +79,8 @@ export class FirmAssignmentService {
     return this.http.post<ApiResponse<unknown>>(`${this.assignmentsUrl}/firm/${assignmentId}/accept`, {});
   }
 
-  rejectInvitation(assignmentId: string): Observable<ApiResponse<unknown>> {
-    return this.http.post<ApiResponse<unknown>>(`${this.assignmentsUrl}/firm/${assignmentId}/reject`, {});
+  rejectInvitation(assignmentId: string, reason?: string): Observable<ApiResponse<unknown>> {
+    return this.http.post<ApiResponse<unknown>>(`${this.assignmentsUrl}/firm/${assignmentId}/reject`, { reason });
   }
 
   revokeClient(assignmentId: string): Observable<ApiResponse<unknown>> {
