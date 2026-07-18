@@ -2,3 +2,8 @@
 # in CI or before `ng build` to materialize them. Keep them out of git so the
 # baseline repo stays small and the textures stay reproducible.
 src/assets/virtual-street/textures/
+
+# Playwright test output (traces, screenshots, videos, last-run metadata).
+# Regenerated on every e2e run; must not be versioned.
+test-results/
+playwright-report/
