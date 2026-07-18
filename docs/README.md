@@ -22,6 +22,7 @@ La **documentation utilisateur** est destinée aux utilisateurs novices et non-i
 ## Documentation développeur
 
 - **[FAQ — erreurs console (extensions vs application)](developer/console-errors-faq.md)** : distinguer les messages `Uncaught (in promise)` / permissions liés aux extensions Chrome des erreurs réelles de l’API FactuTrust ; procédure Network, navigation privée, et politique de non-régression sur les intercepteurs HTTP.
+- **[Sécurité des dépendances npm](../SECURITY.md)** : processus d’audit trimestriel, seuils CI, risques résiduels acceptés (Angular 19.2 LTS).
 
 ## Structure
 

@@ -28,6 +28,10 @@ Invoke-Step "Backend : tests Infrastructure" {
 Invoke-Step "Backend : tests API" {
     dotnet test (Join-Path $root 'src\Backend\tests\FactuTrust.API.Tests\FactuTrust.API.Tests.csproj') --nologo --no-build -v minimal
 }
+Invoke-Step "Web : npm audit (critical)" {
+    Push-Location (Join-Path $root 'src\Frontend\factutrust-web')
+    try { npm audit --audit-level=critical } finally { Pop-Location }
+}
 Invoke-Step "Web : specs Jasmine (headless)" {
     Push-Location (Join-Path $root 'src\Frontend\factutrust-web')
     try { npx ng test --watch=false --browsers=ChromeHeadless } finally { Pop-Location }
@@ -36,9 +40,13 @@ Invoke-Step "Web : build production" {
     Push-Location (Join-Path $root 'src\Frontend\factutrust-web')
     try { npm run build:prod } finally { Pop-Location }
 }
+Invoke-Step "Backoffice : npm audit (critical)" {
+    Push-Location (Join-Path $root 'src\Frontend\factutrust-backoffice')
+    try { npm audit --audit-level=critical } finally { Pop-Location }
+}
 Invoke-Step "Backoffice : build" {
     Push-Location (Join-Path $root 'src\Frontend\factutrust-backoffice')
-    try { npx ng build } finally { Pop-Location }
+    try { npx ng build --configuration production } finally { Pop-Location }
 }
 
 Write-Host "`n=== RECAPITULATIF ===" -ForegroundColor Green
