@@ -13,7 +13,7 @@ import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { DropdownModule } from 'primeng/dropdown';
@@ -103,7 +103,7 @@ const DEFAULT_LIMIT_KEYS = [
     DialogModule,
     ButtonModule,
     InputTextModule,
-    InputTextareaModule,
+    InputTextarea,
     InputNumberModule,
     InputSwitchModule,
     DropdownModule,

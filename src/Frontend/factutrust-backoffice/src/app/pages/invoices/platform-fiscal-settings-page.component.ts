@@ -12,7 +12,7 @@ import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { CheckboxModule } from 'primeng/checkbox';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { TableModule } from 'primeng/table';
 import { MessageService } from 'primeng/api';
 
@@ -49,7 +49,7 @@ import { INVOICES_FR } from './invoices.i18n.fr';
     InputTextModule,
     InputNumberModule,
     CheckboxModule,
-    InputTextareaModule,
+    InputTextarea,
     TableModule,
     FtPageHeaderComponent,
     FtSkeletonComponent

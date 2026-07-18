@@ -7,7 +7,7 @@ import { TagModule } from 'primeng/tag';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { DropdownModule } from 'primeng/dropdown';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { TabViewModule } from 'primeng/tabview';
 import { MessageService } from 'primeng/api';
 import { PlatformTenantService } from '@core/services/platform-tenant.service';
@@ -34,7 +34,7 @@ import { TenantModulesTabComponent } from './tenant-modules-tab.component';
     ButtonModule,
     DialogModule,
     DropdownModule,
-    InputTextareaModule,
+    InputTextarea,
     TabViewModule,
     TenantInvoicesTabComponent,
     TenantModulesTabComponent

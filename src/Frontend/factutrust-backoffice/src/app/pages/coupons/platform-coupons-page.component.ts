@@ -162,7 +162,7 @@ import { CouponFormDialogComponent } from './coupon-form-dialog.component';
               <p-button
                 icon="pi pi-pause"
                 [text]="true"
-                severity="warning"
+                severity="warn"
                 size="small"
                 [pTooltip]="t('action.deactivate')"
                 tooltipPosition="left"

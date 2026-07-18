@@ -6,6 +6,8 @@ import { registerLocaleData } from '@angular/common';
 import localeFrTn from '@angular/common/locales/fr-TN';
 import localeFrTnExtra from '@angular/common/locales/extra/fr-TN';
 import { MessageService } from 'primeng/api';
+import { providePrimeNG } from 'primeng/config';
+import Aura from '@primeuix/themes/aura';
 import { routes } from './app.routes';
 import { platformAuthInterceptor } from '@core/interceptors/platform-auth.interceptor';
 
@@ -18,6 +20,14 @@ export const appConfig: ApplicationConfig = {
     provideRouter(routes),
     provideHttpClient(withInterceptors([platformAuthInterceptor])),
     provideAnimations(),
+    providePrimeNG({
+      theme: {
+        preset: Aura,
+        options: {
+          darkModeSelector: '.dark-mode'
+        }
+      }
+    }),
     { provide: LOCALE_ID, useValue: 'fr-TN' },
     MessageService
   ]

@@ -249,7 +249,7 @@ interface ActiveChip {
         <span class="bulk-bar__count">
           {{ t('bulk.selected').replace('{count}', String(selectedRows().length)) }}
         </span>
-        <p-button [label]="t('bulk.suspend')" icon="pi pi-pause" severity="warning" [outlined]="true" size="small" [disabled]="true" pTooltip="Disponible avec Lot D2" tooltipPosition="top" />
+        <p-button [label]="t('bulk.suspend')" icon="pi pi-pause" severity="warn" [outlined]="true" size="small" [disabled]="true" pTooltip="Disponible avec Lot D2" tooltipPosition="top" />
         <p-button [label]="t('bulk.export')" icon="pi pi-download" [outlined]="true" size="small" [disabled]="true" pTooltip="Disponible bientôt" tooltipPosition="top" />
         <p-button [label]="t('bulk.email')" icon="pi pi-envelope" [outlined]="true" size="small" [disabled]="true" pTooltip="Disponible avec Lot C2" tooltipPosition="top" />
         <p-button icon="pi pi-times" [text]="true" size="small" [ariaLabel]="t('bulk.clear')" (onClick)="clearSelection()" />

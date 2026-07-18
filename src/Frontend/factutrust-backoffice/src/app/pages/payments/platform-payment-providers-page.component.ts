@@ -12,7 +12,7 @@ import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { CheckboxModule } from 'primeng/checkbox';
 import { TooltipModule } from 'primeng/tooltip';
 import { MessageService } from 'primeng/api';
@@ -51,7 +51,7 @@ import { PAYMENTS_FR } from './payments.i18n.fr';
     ButtonModule,
     DialogModule,
     InputTextModule,
-    InputTextareaModule,
+    InputTextarea,
     CheckboxModule,
     TooltipModule,
     FtPageHeaderComponent,

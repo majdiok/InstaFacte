@@ -347,7 +347,8 @@ export class PlatformInvoicesPageComponent implements OnInit {
     }
   }
 
-  protected onRowSelect(event: { data?: PlatformInvoiceSummaryDto }): void {
-    if (event.data?.id) this.router.navigate(['/invoices', event.data.id]);
+  protected onRowSelect(event: { data?: PlatformInvoiceSummaryDto | PlatformInvoiceSummaryDto[] | null }): void {
+    const row = Array.isArray(event.data) ? event.data[0] : event.data;
+    if (row?.id) this.router.navigate(['/invoices', row.id]);
   }
 }

@@ -90,7 +90,7 @@ type MigrationFilter = 'all' | 'applied' | 'missing';
         <p-button
           [label]="t('alert.pendingApplyAll')"
           icon="pi pi-database"
-          severity="warning"
+          severity="warn"
           size="small"
           (onClick)="openApplyAllDialog()"
         />

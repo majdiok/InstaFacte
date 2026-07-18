@@ -64,7 +64,7 @@ import { ADMINS_FR } from './admins.i18n.fr';
         <p-button
           [label]="t('reset.confirm')"
           icon="pi pi-key"
-          severity="warning"
+          severity="warn"
           [disabled]="busy || !canConfirm()"
           [loading]="busy"
           (onClick)="onConfirm()"

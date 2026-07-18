@@ -13,7 +13,7 @@ import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { ButtonModule } from 'primeng/button';
 import { RadioButtonModule } from 'primeng/radiobutton';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import type { PlatformStorefrontProfileDto } from '@core/services/platform-storefront.service';
 import { STOREFRONTS_FR } from './storefronts.i18n.fr';
 
@@ -30,7 +30,7 @@ type RejectReasonCode = 'logo' | 'name' | 'contact' | 'category' | 'other';
   selector: 'app-storefront-reject-dialog',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, DialogModule, ButtonModule, RadioButtonModule, InputTextareaModule],
+  imports: [FormsModule, DialogModule, ButtonModule, RadioButtonModule, InputTextarea],
   template: `
     <p-dialog
       [visible]="visible"

@@ -270,7 +270,7 @@ import { EMAILS_FR } from './emails.i18n.fr';
             <p-button
               [label]="t('action.retry')"
               icon="pi pi-replay"
-              severity="warning"
+              severity="warn"
               [outlined]="true"
               [disabled]="busy()"
               (onClick)="retry(d.id)" />

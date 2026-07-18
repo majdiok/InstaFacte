@@ -91,7 +91,7 @@ import { MIGRATIONS_FR } from './migrations.i18n.fr';
           <p-button
             [label]="t('drawer.action.apply')"
             icon="pi pi-play"
-            severity="warning"
+            severity="warn"
             [loading]="busy"
             [disabled]="busy"
             (onClick)="onApplyClick()"

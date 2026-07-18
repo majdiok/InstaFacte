@@ -209,7 +209,7 @@ import { PlanFormDialogComponent } from './plan-form-dialog.component';
                 <p-button
                   [label]="t('action.archive')"
                   icon="pi pi-archive"
-                  severity="warning"
+                  severity="warn"
                   [outlined]="true"
                   size="small"
                   [disabled]="busy() || plan.subscriptionsCount > 0"

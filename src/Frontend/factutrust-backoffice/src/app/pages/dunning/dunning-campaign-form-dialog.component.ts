@@ -13,7 +13,7 @@ import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { DropdownModule } from 'primeng/dropdown';
 import { CheckboxModule } from 'primeng/checkbox';
@@ -53,7 +53,7 @@ interface StepRow {
     DialogModule,
     ButtonModule,
     InputTextModule,
-    InputTextareaModule,
+    InputTextarea,
     InputNumberModule,
     DropdownModule,
     CheckboxModule,
