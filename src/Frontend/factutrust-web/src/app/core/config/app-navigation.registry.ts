@@ -658,23 +658,6 @@ export const ALL_NAV_ITEMS: NavItem[] = [
     modules: [M.Administration],
     permissionsAll: ['settings:read'],
     platformSettingsOnly: true
-  },
-  {
-    label: 'Documentation',
-    icon: 'fa-solid fa-book',
-    children: [
-      { label: 'Guide utilisateur', route: '/documentation', icon: 'fa-solid fa-house' },
-      { label: 'Premiers pas', route: '/documentation/premiers-pas', icon: 'fa-solid fa-right-to-bracket' },
-      { label: 'Tableau de bord', route: '/documentation/tableau-de-bord', icon: 'fa-solid fa-gauge-high' },
-      { label: 'Ventes', route: '/documentation/ventes', icon: 'fa-solid fa-bag-shopping' },
-      { label: 'Achats', route: '/documentation/achats', icon: 'fa-solid fa-cart-shopping' },
-      { label: 'Fiches', route: '/documentation/fiches', icon: 'fa-regular fa-folder-open' },
-      { label: 'Stock', route: '/documentation/stock', icon: 'fa-solid fa-boxes-stacked' },
-      { label: 'Paiements', route: '/documentation/paiements', icon: 'fa-solid fa-credit-card' },
-      { label: 'Rapports', route: '/documentation/rapports', icon: 'fa-solid fa-chart-column' },
-      { label: 'Paramètres', route: '/documentation/parametres', icon: 'fa-solid fa-gear' },
-      { label: 'Glossaire', route: '/documentation/glossaire', icon: 'fa-solid fa-clipboard-list' }
-    ]
   }
 ];
 

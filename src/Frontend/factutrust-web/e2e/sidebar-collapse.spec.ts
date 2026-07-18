@@ -1,0 +1,114 @@
+import { test, expect } from '@playwright/test';
+import { getDemoCredentials, loginAsDemoUser, waitForAppReady } from './helpers/partnership-demo.helpers';
+
+async function ensureAuthenticated(page: import('@playwright/test').Page): Promise<boolean> {
+  const creds = getDemoCredentials();
+  if (!creds) {
+    return false;
+  }
+  await loginAsDemoUser(page);
+  return true;
+}
+
+async function getRailWidth(page: import('@playwright/test').Page): Promise<number> {
+  const rail = page.locator('.sidebar-icon-rail');
+  await expect(rail).toBeVisible();
+  const box = await rail.boundingBox();
+  expect(box).toBeTruthy();
+  return box!.width;
+}
+
+test.describe('Sidebar collapse', () => {
+  test('rail shrinks from expanded to collapsed width on toggle', async ({ page }) => {
+    if (!(await ensureAuthenticated(page))) {
+      test.skip(true, 'DOC_EMAIL/DOC_PASSWORD or demo credentials required');
+    }
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await waitForAppReady(page);
+    await page.goto('/dashboard');
+
+    const expandedWidth = await getRailWidth(page);
+    expect(expandedWidth).toBeGreaterThan(150);
+    expect(expandedWidth).toBeLessThan(200);
+
+    await page.locator('.rail-collapse-btn').click();
+    await page.waitForTimeout(350);
+
+    const collapsedWidth = await getRailWidth(page);
+    expect(collapsedWidth).toBeGreaterThanOrEqual(68);
+    expect(collapsedWidth).toBeLessThanOrEqual(76);
+    expect(collapsedWidth).toBeLessThan(expandedWidth - 80);
+
+    await expect(page.locator('#sidebar.sidebar-collapsed')).toBeVisible();
+  });
+
+  test('header toggle expands and collapses the rail', async ({ page }) => {
+    if (!(await ensureAuthenticated(page))) {
+      test.skip(true, 'DOC_EMAIL/DOC_PASSWORD or demo credentials required');
+    }
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await waitForAppReady(page);
+    await page.goto('/dashboard');
+
+    await page.locator('.rail-collapse-btn').click();
+    await page.waitForTimeout(350);
+    await expect(page.locator('#sidebar.sidebar-collapsed')).toBeVisible();
+
+    await page.locator('.sidebar_toggle').click();
+    await page.waitForTimeout(350);
+    await expect(page.locator('#sidebar.sidebar-collapsed')).toHaveCount(0);
+
+    const expandedWidth = await getRailWidth(page);
+    expect(expandedWidth).toBeGreaterThan(150);
+  });
+
+  test('parent section expands sidebar and shows submenu when rail is collapsed', async ({ page }) => {
+    if (!(await ensureAuthenticated(page))) {
+      test.skip(true, 'DOC_EMAIL/DOC_PASSWORD or demo credentials required');
+    }
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await waitForAppReady(page);
+    await page.goto('/dashboard');
+
+    await page.locator('.rail-collapse-btn').click();
+    await page.waitForTimeout(350);
+
+    const ventesButton = page.locator('button.rail-parent[title="Ventes"]');
+    if ((await ventesButton.count()) === 0) {
+      test.skip(true, 'Ventes parent nav not available for current user');
+    }
+
+    await ventesButton.click();
+    await page.waitForTimeout(350);
+
+    await expect(page.locator('#sidebar.sidebar-collapsed')).toHaveCount(0);
+    await expect(page.locator('.submenu-title', { hasText: 'Ventes' })).toBeVisible();
+  });
+
+  test('collapsed rail stays visible at tablet viewport without horizontal overflow', async ({ page }) => {
+    if (!(await ensureAuthenticated(page))) {
+      test.skip(true, 'DOC_EMAIL/DOC_PASSWORD or demo credentials required');
+    }
+
+    await page.setViewportSize({ width: 768, height: 800 });
+    await waitForAppReady(page);
+    await page.goto('/dashboard');
+
+    await page.locator('.sidebar_toggle').click();
+    await page.waitForTimeout(350);
+
+    const rail = page.locator('.sidebar-icon-rail');
+    await expect(rail).toBeVisible();
+
+    const collapsedWidth = await getRailWidth(page);
+    expect(collapsedWidth).toBeGreaterThanOrEqual(68);
+    expect(collapsedWidth).toBeLessThanOrEqual(76);
+
+    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
+    expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 1);
+  });
+});

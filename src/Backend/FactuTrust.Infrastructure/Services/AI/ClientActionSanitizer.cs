@@ -40,8 +40,7 @@ public static class ClientActionSanitizer
         "/purchase-orders",
         "/reports",
         "/payments",
-        "/transfers",
-        "/documentation"
+        "/transfers"
     };
 
     private static readonly Regex SafeRouteSegment = new(

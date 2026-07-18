@@ -6,6 +6,7 @@ import { firmNativeRedirectGuard } from './core/guards/firm-native-redirect.guar
 import { delegatedReadonlyGuard } from './core/guards/delegated-readonly.guard';
 import { delegatedFirmNavGuard } from './core/guards/delegated-firm-nav.guard';
 import { companyAccountingNavGuard } from './core/guards/company-accounting-nav.guard';
+import { documentationAccessGuard } from './core/guards/documentation-access.guard';
 
 export const routes: Routes = [
   {
@@ -112,6 +113,7 @@ export const routes: Routes = [
       },
       {
         path: 'documentation',
+        canActivate: [documentationAccessGuard],
         loadChildren: () => import('./features/documentation/documentation.routes').then(m => m.DOCUMENTATION_ROUTES)
       },
       {

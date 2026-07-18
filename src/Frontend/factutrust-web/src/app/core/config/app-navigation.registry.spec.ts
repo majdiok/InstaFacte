@@ -69,6 +69,11 @@ describe('app-navigation.registry', () => {
       expect(entries.every(e => e.id.length > 0)).toBe(true);
       expect(entries.map(e => e.id).length).toBe(new Set(entries.map(e => e.id)).size);
     });
+
+    it('does not include documentation routes', () => {
+      const routes = buildFlatNavSearchEntries().map(e => e.route);
+      expect(routes.some(route => route.startsWith('/documentation'))).toBe(false);
+    });
   });
 
   describe('getVisibleNavSearchEntries — company accounting restriction', () => {
@@ -85,6 +90,14 @@ describe('app-navigation.registry', () => {
       const labels = getVisibleNavSearchEntries(auth).map(e => e.label);
       expect(labels).not.toContain('Saisie manuelle');
       expect(labels).not.toContain('Plan comptable');
+    });
+
+    it('excludes documentation routes for company users', () => {
+      const auth = TestBed.inject(AuthService);
+      setUser(auth, companyUser);
+
+      const routes = getVisibleNavSearchEntries(auth).map(e => e.route);
+      expect(routes.some(route => route.startsWith('/documentation'))).toBe(false);
     });
 
     it('includes allowed accounting state routes for company users', () => {

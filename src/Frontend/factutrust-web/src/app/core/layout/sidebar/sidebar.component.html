@@ -1,6 +1,6 @@
 <nav
   id="sidebar"
-  [class.sidebar-collapsed]="collapsed"
+  [class.sidebar-collapsed]="collapsed()"
   aria-label="Navigation principale">
   
   <!-- Left Column: Icon Rail -->
@@ -10,7 +10,7 @@
       <a
         [routerLink]="dashboardHomeLink()"
         [attr.aria-label]="brand.name + ' — Tableau de bord'">
-        @if (!collapsed) {
+        @if (!collapsed()) {
           <img
             [src]="brand.logoLockup"
             [alt]="brand.name"
@@ -92,9 +92,9 @@
         type="button"
         class="rail-collapse-btn"
         (click)="toggleCollapse.emit()"
-        [attr.aria-expanded]="!collapsed"
-        [attr.title]="collapsed ? 'Agrandir le menu latéral' : 'Réduire le menu latéral'">
-        <i class="fa-solid fa-angles-left" aria-hidden="true" [class.rail-collapse-icon--flipped]="collapsed"></i>
+        [attr.aria-expanded]="!collapsed()"
+        [attr.title]="collapsed() ? 'Agrandir le menu latéral' : 'Réduire le menu latéral'">
+        <i class="fa-solid fa-angles-left" aria-hidden="true" [class.rail-collapse-icon--flipped]="collapsed()"></i>
       </button>
     </div>
   </div>

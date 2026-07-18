@@ -68,16 +68,6 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
 
     ]
 
-  },
-
-  {
-
-    label: 'Documentation',
-
-    icon: 'fa-solid fa-book',
-
-    route: '/documentation'
-
   }
 
 ];

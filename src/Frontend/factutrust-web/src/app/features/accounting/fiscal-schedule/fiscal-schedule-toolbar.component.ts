@@ -1,6 +1,5 @@
 import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
-import { RouterModule } from '@angular/router';
 import { MenuModule } from 'primeng/menu';
 import { MenuItem } from 'primeng/api';
 import { FISCAL_SCHEDULE_SHARED_STYLES } from './fiscal-schedule-shared.styles';
@@ -8,7 +7,7 @@ import { FISCAL_SCHEDULE_SHARED_STYLES } from './fiscal-schedule-shared.styles';
 @Component({
   selector: 'app-fiscal-schedule-toolbar',
   standalone: true,
-  imports: [CommonModule, RouterModule, MenuModule],
+  imports: [CommonModule, MenuModule],
   template: `
     <div class="toolbar" role="toolbar" aria-label="Actions echeancier fiscal">
       <button class="icon-button primary" type="button" title="Creer" (click)="create.emit()" [disabled]="!canCreate">
@@ -38,9 +37,6 @@ import { FISCAL_SCHEDULE_SHARED_STYLES } from './fiscal-schedule-shared.styles';
       <button class="icon-button" type="button" title="Planifier les rappels" (click)="planReminder.emit()" [disabled]="!canCreate || !hasSelection">
         <i class="fa-regular fa-bell"></i><span>Planifier les rappels</span>
       </button>
-      <a class="icon-button help-link" routerLink="/documentation" title="Aide">
-        <i class="fa-regular fa-circle-question"></i><span>Aide</span>
-      </a>
     </div>
   `,
   styles: [FISCAL_SCHEDULE_SHARED_STYLES, `
@@ -52,10 +48,6 @@ import { FISCAL_SCHEDULE_SHARED_STYLES } from './fiscal-schedule-shared.styles';
     }
     .menu-wrap { position: relative; }
     .caret { font-size: 10px; opacity: .7; }
-    .help-link {
-      text-decoration: none;
-      display: inline-flex;
-    }
   `]
 })
 export class FiscalScheduleToolbarComponent implements OnChanges {

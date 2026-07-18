@@ -24,7 +24,8 @@ const FIRM_NATIVE_BLOCKED_SEGMENTS = new Set([
   'forecasting',
   'studio',
   'audit',
-  'ai-assistant'
+  'ai-assistant',
+  'documentation'
 ]);
 
 /** Segments allowed only when the firm user has switched into a client dossier. */
@@ -59,7 +60,7 @@ export const firmNativeRedirectGuard: CanActivateFn = (_route, state) => {
     return true;
   }
 
-  if (first === 'documentation' || first === 'access-denied') {
+  if (first === 'access-denied') {
     return true;
   }
 

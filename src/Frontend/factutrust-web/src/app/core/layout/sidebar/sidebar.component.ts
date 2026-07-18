@@ -1,13 +1,12 @@
 import {
   Component,
-  Input,
-  Output,
-  EventEmitter,
   inject,
   computed,
   effect,
   signal,
-  OnInit
+  OnInit,
+  input,
+  output
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
@@ -84,8 +83,9 @@ function findLongestMatchingChildInParent(path: string, item: NavItem): NavSubIt
   styleUrl: './sidebar.component.scss'
 })
 export class SidebarComponent implements OnInit {
-  @Input() collapsed = false;
-  @Output() toggleCollapse = new EventEmitter<void>();
+  readonly collapsed = input(false);
+  readonly toggleCollapse = output<void>();
+  readonly requestExpand = output<void>();
 
   readonly brand = BRAND;
 
@@ -283,6 +283,12 @@ export class SidebarComponent implements OnInit {
   }
 
   constructor() {
+    effect(() => {
+      if (this.collapsed()) {
+        this.expandedParentLabel = null;
+      }
+    });
+
     this.router.events
       .pipe(
         filter((e): e is NavigationEnd => e instanceof NavigationEnd),
@@ -332,6 +338,11 @@ export class SidebarComponent implements OnInit {
 
   toggleSubmenu(item: NavItem): void {
     if (!item.children?.length) {
+      return;
+    }
+    if (this.collapsed()) {
+      this.requestExpand.emit();
+      this.expandedParentLabel = item.label;
       return;
     }
     this.expandedParentLabel =

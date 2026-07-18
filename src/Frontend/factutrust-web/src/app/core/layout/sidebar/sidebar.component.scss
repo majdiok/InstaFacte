@@ -8,8 +8,11 @@
 #sidebar {
   /* Dimensions — source unique (consommée aussi par pluto-menu-theme.scss) */
   --sidebar-rail-width: 176px;
+  --sidebar-rail-width-collapsed: 72px;
   --sidebar-submenu-width: 260px;
   --sidebar-brand-height: 68px;
+  --sidebar-brand-height-collapsed: 56px;
+  --sidebar-brand-logo-icon-size-collapsed: 36px;
   --sidebar-brand-logo-max-height: 50px;
   --sidebar-brand-logo-max-width: 160px;
   --sidebar-brand-logo-icon-size: 44px;
@@ -74,6 +77,9 @@
   height: 100%;
   border-right: 1px solid var(--sidebar-rail-edge);
   z-index: 10;
+  transition:
+    width var(--transition-slow, 0.3s ease),
+    min-width var(--transition-slow, 0.3s ease);
 }
 
 .sidebar-brand {
@@ -254,13 +260,57 @@
 }
 
 #sidebar.sidebar-collapsed {
+  --sidebar-rail-width: var(--sidebar-rail-width-collapsed);
+  --sidebar-brand-height: var(--sidebar-brand-height-collapsed);
+
+  .rail-item {
+    padding: 0 4px;
+  }
+
   .rail-label {
     display: none;
   }
+
   .rail-link {
     min-height: var(--sidebar-rail-item-min-height-collapsed);
     padding: 0;
+
+    i,
+    .rail-icon-img {
+      margin-bottom: 0;
+    }
+
+    &:hover,
+    &:focus-visible,
+    &.active {
+      transform: none;
+    }
   }
+
+  .sidebar-brand .icon-logo-only {
+    width: var(--sidebar-brand-logo-icon-size-collapsed);
+    height: var(--sidebar-brand-logo-icon-size-collapsed);
+  }
+
+  .sidebar-footer-collapse {
+    padding: 8px 6px;
+  }
+
+  .rail-collapse-btn {
+    height: 40px;
+    border-radius: 8px;
+  }
+
+  .rail-link .badge {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    margin: 0;
+    font-size: 9px;
+    padding: 2px 4px;
+    line-height: 1;
+  }
+
   /* Pas de pastille BETA en mode réduit (rail étroit) */
   .rail-beta-badge {
     display: none;

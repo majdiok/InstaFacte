@@ -25,7 +25,8 @@ import { DrawerOverlayService } from '../../services/drawer-overlay.service';
       <div class="inner_container">
         <app-sidebar
           [collapsed]="sidebarCollapsed()"
-          (toggleCollapse)="toggleSidebar()">
+          (toggleCollapse)="toggleSidebar()"
+          (requestExpand)="expandSidebar()">
         </app-sidebar>
         <div id="content">
           @if (!layoutFlags().hideLayout) {
@@ -273,6 +274,10 @@ export class MainLayoutComponent implements OnInit {
 
   toggleSidebar(): void {
     this.sidebarCollapsed.update(v => !v);
+  }
+
+  expandSidebar(): void {
+    this.sidebarCollapsed.set(false);
   }
 
   toggleAiPanel(): void {

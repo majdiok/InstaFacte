@@ -77,6 +77,7 @@ describe('SidebarComponent — firm navigation', () => {
     const labels = fixture.componentInstance.navItems().map(i => i.label);
     expect(labels).toContain('Mes dossiers clients');
     expect(labels).not.toContain('Ventes');
+    expect(labels).not.toContain('Documentation');
   });
 
   it('does not show Echeancier fiscal in firm native sidemenu', () => {
@@ -143,6 +144,7 @@ describe('SidebarComponent — firm navigation', () => {
     expect(labels.some(l => l.startsWith('Dossier :'))).toBe(true);
     expect(labels).toContain('Ventes');
     expect(labels).not.toContain('Mes dossiers clients');
+    expect(labels).not.toContain('Documentation');
   });
 
   it('uses action items for return and change dossier in delegated mode', () => {
@@ -245,6 +247,7 @@ describe('SidebarComponent — firm navigation', () => {
       'Liste des immobilisations'
     ]);
     expect(items.map(i => i.label)).not.toContain('Traitements');
+    expect(items.map(i => i.label)).not.toContain('Documentation');
   });
 
   it('hides accounting assistant submenu when company user lacks ai:chat', () => {
@@ -313,5 +316,127 @@ describe('SidebarComponent — firm navigation', () => {
       'États comptables',
       'Déclaration mensuelle'
     ]);
+  });
+});
+
+describe('SidebarComponent — collapse', () => {
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      imports: [SidebarComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: FirmAssignmentService,
+          useValue: {
+            getActiveClients: () => of({ success: true, data: [] }),
+            getIncomingInvitations: () => of({ success: true, data: [] })
+          }
+        },
+        {
+          provide: AccountingFeatureFlagsService,
+          useValue: { flags: () => ({ fixedAssetsEnabled: true }) }
+        },
+        {
+          provide: StudioNavService,
+          useValue: { items: () => [] }
+        }
+      ]
+    });
+  });
+
+  it('applies sidebar-collapsed class when collapsed input is true', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, delegatedUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.componentRef.setInput('collapsed', true);
+    fixture.detectChanges();
+
+    const sidebar = fixture.nativeElement.querySelector('#sidebar') as HTMLElement;
+    expect(sidebar.classList.contains('sidebar-collapsed')).toBe(true);
+  });
+
+  it('hides rail labels in DOM when collapsed', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, delegatedUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.componentRef.setInput('collapsed', true);
+    fixture.detectChanges();
+
+    const label = fixture.nativeElement.querySelector('.rail-label') as HTMLElement;
+    expect(getComputedStyle(label).display).toBe('none');
+  });
+
+  it('uses collapsed rail width token on sidebar element', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, delegatedUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.componentRef.setInput('collapsed', true);
+    fixture.detectChanges();
+
+    const sidebar = fixture.nativeElement.querySelector('#sidebar') as HTMLElement;
+    expect(getComputedStyle(sidebar).getPropertyValue('--sidebar-rail-width').trim()).toBe('72px');
+  });
+
+  it('clears expandedParentLabel when collapsed becomes true', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, delegatedUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.componentRef.setInput('collapsed', false);
+    fixture.detectChanges();
+
+    const ventes = fixture.componentInstance.navItems().find(i => i.label === 'Ventes');
+    expect(ventes).toBeTruthy();
+    fixture.componentInstance.toggleSubmenu(ventes!);
+    expect(fixture.componentInstance.expandedParentLabel).toBe('Ventes');
+
+    fixture.componentRef.setInput('collapsed', true);
+    fixture.detectChanges();
+    expect(fixture.componentInstance.expandedParentLabel).toBeNull();
+  });
+
+  it('emits requestExpand and opens section when parent clicked in collapsed mode', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, delegatedUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.componentRef.setInput('collapsed', true);
+    fixture.detectChanges();
+
+    const expandSpy = jasmine.createSpy('requestExpand');
+    fixture.componentInstance.requestExpand.subscribe(expandSpy);
+
+    const ventes = fixture.componentInstance.navItems().find(i => i.label === 'Ventes');
+    expect(ventes).toBeTruthy();
+    fixture.componentInstance.toggleSubmenu(ventes!);
+
+    expect(expandSpy).toHaveBeenCalled();
+    expect(fixture.componentInstance.expandedParentLabel).toBe('Ventes');
+  });
+
+  it('toggles submenu section when expanded and parent clicked twice', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, delegatedUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.componentRef.setInput('collapsed', false);
+    fixture.detectChanges();
+
+    const ventes = fixture.componentInstance.navItems().find(i => i.label === 'Ventes');
+    fixture.componentInstance.toggleSubmenu(ventes!);
+    expect(fixture.componentInstance.expandedParentLabel).toBe('Ventes');
+    fixture.componentInstance.toggleSubmenu(ventes!);
+    expect(fixture.componentInstance.expandedParentLabel).toBeNull();
   });
 });

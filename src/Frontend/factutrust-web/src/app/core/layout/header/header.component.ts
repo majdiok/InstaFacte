@@ -24,7 +24,8 @@ import { GlobalSearchService } from '../../services/global-search.service';
             type="button"
             class="sidebar_toggle"
             (click)="toggleSidebar.emit()"
-            aria-label="Menu">
+            [attr.aria-expanded]="!sidebarCollapsed"
+            [attr.aria-label]="sidebarCollapsed ? 'Agrandir le menu latéral' : 'Réduire le menu latéral'">
             <i class="fa fa-bars"></i>
           </button>
 

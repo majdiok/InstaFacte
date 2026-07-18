@@ -30,7 +30,7 @@ export const moduleGuard: CanActivateFn = (_route, state) => {
   if (auth.isAccountingFirm() && !auth.isDelegatedMode()) {
     const segments = path.split('/').filter(Boolean);
     const first = segments[0];
-    if (first && first !== 'firm' && first !== 'documentation' && first !== 'access-denied') {
+    if (first && first !== 'firm' && first !== 'access-denied') {
       return router.createUrlTree(['/firm/dashboard']);
     }
   }

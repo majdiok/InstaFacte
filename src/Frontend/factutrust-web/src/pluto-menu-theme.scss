@@ -16,6 +16,12 @@
   max-width: unset !important;
   box-shadow: none !important;
   border: none !important;
+  margin-left: 0 !important;
+  position: relative !important;
+}
+
+#sidebar.sidebar-collapsed {
+  --sidebar-rail-width: var(--sidebar-rail-width-collapsed);
 }
 
 // Cacher complètement les anciens wrappers Pluto si jamais ils traînent
