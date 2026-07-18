@@ -1,4 +1,5 @@
 using System.Collections.Frozen;
+using System.Text.RegularExpressions;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Features.Studio.Common;
 using Microsoft.Extensions.Logging;
@@ -17,7 +18,7 @@ public sealed class StudioFileStorageOptions
 /// BasePath/uploads/tenants/{tenantId}/studio/{entityKey}/. Hardened like the product-image storage:
 /// MIME whitelist, size cap, validated entity key, and path-traversal containment.
 /// </summary>
-public sealed class StudioFileStorageService : IStudioFileStorageService
+public sealed partial class StudioFileStorageService : IStudioFileStorageService
 {
     private const int MaxFileSizeBytes = 5 * 1024 * 1024; // 5 MB
     private const string StudioSegment = "studio";
@@ -31,6 +32,20 @@ public sealed class StudioFileStorageService : IStudioFileStorageService
         ["image/gif"] = ".gif",
         ["application/pdf"] = ".pdf"
     }.ToFrozenDictionary();
+
+    // Reverse map for downloads (extension → MIME). Values mirror AllowedContentTypes.
+    private static readonly FrozenDictionary<string, string> ExtensionContentTypes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        [".jpg"] = "image/jpeg",
+        [".png"] = "image/png",
+        [".webp"] = "image/webp",
+        [".gif"] = "image/gif",
+        [".pdf"] = "application/pdf"
+    }.ToFrozenDictionary();
+
+    // Exactly what SaveAsync produces: 32-hex GUID ("N" format) + whitelisted lowercase extension.
+    [GeneratedRegex("^[0-9a-f]{32}\\.(jpg|png|webp|gif|pdf)$")]
+    private static partial Regex StoredFileNamePattern();
 
     private readonly StudioFileStorageOptions _options;
     private readonly ILogger<StudioFileStorageService> _logger;
@@ -89,6 +104,24 @@ public sealed class StudioFileStorageService : IStudioFileStorageService
         var relativeUrl = "/" + relativeDir.Replace('\\', '/').TrimStart('/') + "/" + fileName;
         _logger.LogDebug("Studio file saved for tenant {TenantId}, entity {EntityKey}", tenantId, entityKey);
         return relativeUrl;
+    }
+
+    public StudioStoredFile? Resolve(Guid tenantId, string entityKey, string fileName)
+    {
+        if (!StudioKey.IsValidShape(entityKey)) return null;
+        if (string.IsNullOrWhiteSpace(fileName) || !StoredFileNamePattern().IsMatch(fileName)) return null;
+
+        var basePath = Path.GetFullPath(_options.BasePath ?? "wwwroot");
+        var tenantEntityDir = Path.GetFullPath(
+            Path.Combine(basePath, "uploads", "tenants", tenantId.ToString(), StudioSegment, entityKey));
+
+        // The strict file-name pattern already excludes traversal; containment is belt-and-braces.
+        var fullPath = Path.GetFullPath(Path.Combine(tenantEntityDir, fileName));
+        if (!fullPath.StartsWith(tenantEntityDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            return null;
+        if (!File.Exists(fullPath)) return null;
+
+        return new StudioStoredFile(fullPath, ExtensionContentTypes[Path.GetExtension(fileName)]);
     }
 
     public Task DeleteAsync(Guid tenantId, string relativeUrl, CancellationToken cancellationToken = default)

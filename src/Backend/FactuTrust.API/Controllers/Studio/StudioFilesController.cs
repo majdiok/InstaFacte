@@ -8,13 +8,14 @@ using Microsoft.AspNetCore.Mvc;
 namespace FactuTrust.API.Controllers.Studio;
 
 /// <summary>
-/// Uploads files for Studio Attachment / Signature fields. Returns the stored file's relative URL,
-/// which the record then stores in its JSON. Gated by the runtime write permission; tenant- and
-/// entity-scoped on disk. Max 5 MB; images and PDF only.
+/// Uploads and serves files for Studio Attachment / Signature fields. Upload returns the stored file's
+/// relative URL, which the record then stores in its JSON; download resolves the file from the
+/// authenticated tenant's folder only (these files are excluded from static serving — Program.cs).
+/// Upload is gated by the runtime write permission, download by the read permission. Max 5 MB;
+/// images and PDF only.
 /// </summary>
 [ApiController]
 [Route("api/studio/records/{entityKey}/files")]
-[Authorize(Policy = PermissionPolicies.CustomRecordsWrite)]
 public sealed class StudioFilesController : ControllerBase
 {
     private const long MaxUploadBytes = 5 * 1024 * 1024;
@@ -29,6 +30,7 @@ public sealed class StudioFilesController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Policy = PermissionPolicies.CustomRecordsWrite)]
     [RequestSizeLimit(MaxUploadBytes + 4096)]
     [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -59,5 +61,28 @@ public sealed class StudioFilesController : ControllerBase
         {
             return BadRequest(ApiResponse<string>.Fail(ex.Message));
         }
+    }
+
+    /// <summary>
+    /// Authenticated download of a previously uploaded Studio file. The file is resolved under the
+    /// CURRENT tenant's folder only (tenant id from the auth context, never from the URL), so a foreign
+    /// tenant's file name simply yields 404.
+    /// </summary>
+    [HttpGet("{fileName}")]
+    [Authorize(Policy = PermissionPolicies.CustomRecordsRead)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public IActionResult Download(string entityKey, string fileName)
+    {
+        if (_tenantContext.TenantId is null)
+            return NotFound();
+
+        var file = _storage.Resolve(_tenantContext.TenantId.Value, entityKey, fileName);
+        if (file is null)
+            return NotFound();
+
+        // File names are immutable GUIDs (replaced, never rewritten): private caching is safe.
+        Response.Headers.CacheControl = "private, max-age=3600";
+        return PhysicalFile(file.FullPath, file.ContentType);
     }
 }

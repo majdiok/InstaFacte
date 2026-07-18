@@ -418,7 +418,22 @@ if (!app.Environment.IsDevelopment())
 // HTTPS redirection
 app.UseHttpsRedirection();
 
-// Static files (e.g. product images under wwwroot/uploads)
+// Static files (e.g. product images under wwwroot/uploads).
+// EXCEPTION : les fichiers Studio (pièces jointes / signatures) ne sont jamais servis statiquement —
+// ils contiennent des données tenant et exigent le téléchargement authentifié
+// (GET api/studio/records/{entityKey}/files/{fileName}, contrôle du tenant via le contexte).
+// 404 (et non 401) pour ne pas révéler l'existence du fichier.
+app.Use(async (context, next) =>
+{
+    var path = context.Request.Path;
+    if (path.StartsWithSegments("/uploads/tenants", StringComparison.OrdinalIgnoreCase)
+        && (path.Value?.Contains("/studio/", StringComparison.OrdinalIgnoreCase) ?? false))
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+    await next();
+});
 app.UseStaticFiles();
 
 // CORS

@@ -5,9 +5,10 @@ import { ButtonModule } from 'primeng/button';
 import { MultiSelectModule } from 'primeng/multiselect';
 import { TooltipModule } from 'primeng/tooltip';
 import { FormsModule } from '@angular/forms';
-import { environment } from '@environments/environment';
+import { Observable } from 'rxjs';
 import { CustomField, CustomFieldType } from './studio-runtime.models';
 import { StudioCodeImageComponent } from './studio-code-image.component';
+import { StudioFileService } from './studio-file.service';
 import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
 
 export interface DynamicRow {
@@ -69,10 +70,11 @@ export interface DynamicRow {
                       <app-studio-code-image [fieldType]="f.fieldType" [config]="f.config" [value]="row.data?.[f.key]" />
                     }
                     @case ('file') {
-                      @if (fileUrl(row, f); as url) {
-                        <a [href]="url" target="_blank" rel="noopener" class="dt-file-cell">
+                      @if (fileValue(row, f); as v) {
+                        <a role="button" tabindex="0" class="dt-file-cell"
+                          (click)="openFile(v)" (keyup.enter)="openFile(v)">
                           @if (isImageValue(row, f)) {
-                            <img [src]="url" class="dt-file-thumb" alt="" />
+                            <img [attr.src]="fileSrc(v) | async" class="dt-file-thumb" alt="" />
                           } @else {
                             <i class="fa-solid fa-paperclip"></i> Fichier
                           }
@@ -112,12 +114,14 @@ export interface DynamicRow {
     .dt-picker label { font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--color-neutral-600); }
     .dt-actions { text-align: right; white-space: nowrap; display: flex; gap: var(--spacing-1); justify-content: flex-end; }
     .dt-actions-col { width: 8rem; text-align: right; }
-    .dt-file-cell { display: inline-flex; align-items: center; gap: .35rem; color: var(--color-primary-600); }
+    .dt-file-cell { display: inline-flex; align-items: center; gap: .35rem; color: var(--color-primary-600); cursor: pointer; }
     .dt-file-thumb { max-height: 36px; border-radius: var(--radius-sm); border: 1px solid var(--color-border-subtle); }
     :host ::ng-deep .dt-ms { min-width: 14rem; }
   `]
 })
 export class DynamicTableComponent implements OnChanges {
+  private readonly studioFiles = inject(StudioFileService);
+
   @Input() columns: CustomField[] = [];
   @Input() allFields: CustomField[] = [];
   @Input() entityKey = '';
@@ -188,11 +192,18 @@ export class DynamicTableComponent implements OnChanges {
     return 'text';
   }
 
-  fileUrl(row: DynamicRow, field: CustomField): string | null {
+  fileValue(row: DynamicRow, field: CustomField): string | null {
     const v = row.data?.[field.key];
-    if (typeof v !== 'string' || !v) return null;
-    if (v.startsWith('http')) return v;
-    return environment.apiUrl.replace(/\/api\/?$/, '') + v;
+    return typeof v === 'string' && v ? v : null;
+  }
+
+  /** Blob object URL via le service (cache : instance stable par valeur, sûre pour le template). */
+  fileSrc(value: string): Observable<string | null> {
+    return this.studioFiles.objectUrl(value);
+  }
+
+  openFile(value: string): void {
+    this.studioFiles.open(value);
   }
 
   isImageValue(row: DynamicRow, field: CustomField): boolean {

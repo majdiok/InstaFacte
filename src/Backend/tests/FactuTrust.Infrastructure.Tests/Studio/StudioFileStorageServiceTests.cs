@@ -55,6 +55,43 @@ public sealed class StudioFileStorageServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Resolve_returns_saved_file_with_content_type()
+    {
+        using var ms = new MemoryStream(new byte[] { 1, 2, 3 });
+        var url = await _svc.SaveAsync(Tid, "contacts", ms, "image/png");
+        var fileName = url[(url.LastIndexOf('/') + 1)..];
+
+        var file = _svc.Resolve(Tid, "contacts", fileName);
+
+        Assert.NotNull(file);
+        Assert.Equal("image/png", file!.ContentType);
+        Assert.Equal(Path.GetFullPath(ToFullPath(url)), file.FullPath);
+    }
+
+    [Fact]
+    public async Task Resolve_is_tenant_and_entity_scoped()
+    {
+        using var ms = new MemoryStream(new byte[] { 1, 2, 3 });
+        var url = await _svc.SaveAsync(Tid, "contacts", ms, "image/png");
+        var fileName = url[(url.LastIndexOf('/') + 1)..];
+
+        // Same file name under another tenant or another entity must not resolve.
+        Assert.Null(_svc.Resolve(Guid.NewGuid(), "contacts", fileName));
+        Assert.Null(_svc.Resolve(Tid, "orders", fileName));
+    }
+
+    [Fact]
+    public void Resolve_rejects_invalid_or_missing_names()
+    {
+        Assert.Null(_svc.Resolve(Tid, "contacts", "../secret.png"));
+        Assert.Null(_svc.Resolve(Tid, "contacts", "notaguid.png"));
+        Assert.Null(_svc.Resolve(Tid, "contacts", new string('a', 32) + ".exe"));
+        Assert.Null(_svc.Resolve(Tid, "Bad Key!", new string('a', 32) + ".png"));
+        // Well-formed name but no file on disk.
+        Assert.Null(_svc.Resolve(Tid, "contacts", Guid.NewGuid().ToString("N") + ".png"));
+    }
+
+    [Fact]
     public async Task Delete_removes_own_file_but_ignores_foreign_paths()
     {
         using var ms = new MemoryStream(new byte[] { 1, 2, 3 });

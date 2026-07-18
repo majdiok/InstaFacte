@@ -1,15 +1,18 @@
 import { Component, ElementRef, EventEmitter, Input, Output, ViewChild, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
+import { Observable } from 'rxjs';
 import { ButtonModule } from 'primeng/button';
 import { environment } from '@environments/environment';
+import { StudioFileService } from './studio-file.service';
 
 interface UploadResponse { success: boolean; data: string | null; message?: string; errors?: string[]; }
 
 /**
  * Editor for Studio Attachment / Signature fields. Uploads to the authenticated endpoint
  * (api/studio/records/{entityKey}/files) and emits the stored file's relative URL. Signature mode
- * captures a hand-drawn PNG on a canvas (no external dependency). Read contexts just show the file.
+ * captures a hand-drawn PNG on a canvas (no external dependency). Read contexts show the file via
+ * an authenticated blob fetch (StudioFileService) — these files are not statically served.
  */
 @Component({
   selector: 'app-studio-file-field',
@@ -19,8 +22,9 @@ interface UploadResponse { success: boolean; data: string | null; message?: stri
     <div class="ft-file" [ngSwitch]="mode">
       <!-- Attachment -->
       <div *ngSwitchCase="'attachment'" class="ft-file-row">
-        <a *ngIf="value" [attr.href]="absoluteUrl" target="_blank" rel="noopener" class="ft-file-link">
-          <img *ngIf="isImage" [attr.src]="absoluteUrl" class="ft-file-thumb" alt="" />
+        <a *ngIf="value" role="button" tabindex="0" class="ft-file-link"
+          (click)="openFile()" (keyup.enter)="openFile()">
+          <img *ngIf="isImage" [attr.src]="fileSrc$ | async" class="ft-file-thumb" alt="" />
           <span *ngIf="!isImage"><i class="fa-solid fa-file"></i> Voir le fichier</span>
         </a>
         <input #fileInput type="file" (change)="onFile($event)" hidden />
@@ -33,7 +37,7 @@ interface UploadResponse { success: boolean; data: string | null; message?: stri
       <!-- Signature -->
       <div *ngSwitchCase="'signature'" class="ft-file-col">
         <ng-container *ngIf="value && !editing">
-          <img [attr.src]="absoluteUrl" class="ft-sign-img" alt="signature" />
+          <img [attr.src]="fileSrc$ | async" class="ft-sign-img" alt="signature" />
           <div class="ft-sign-actions">
             <button pButton type="button" label="Refaire" class="p-button-text p-button-sm" (click)="editing = true"></button>
             <button pButton type="button" icon="fa-solid fa-xmark" class="p-button-text p-button-sm p-button-danger" (click)="clear()"></button>
@@ -57,7 +61,7 @@ interface UploadResponse { success: boolean; data: string | null; message?: stri
     .ft-file { display: flex; flex-direction: column; gap: .4rem; }
     .ft-file-row { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
     .ft-file-col { display: flex; flex-direction: column; gap: .4rem; align-items: flex-start; }
-    .ft-file-link { display: inline-flex; align-items: center; gap: .35rem; color: var(--primary-color); }
+    .ft-file-link { display: inline-flex; align-items: center; gap: .35rem; color: var(--primary-color); cursor: pointer; }
     .ft-file-thumb { max-height: 48px; border-radius: 6px; border: 1px solid var(--surface-300); }
     .ft-sign-pad { border: 1px dashed var(--surface-400); border-radius: 8px; touch-action: none; background: var(--surface-0); cursor: crosshair; }
     .ft-sign-img { max-height: 90px; border: 1px solid var(--surface-300); border-radius: 8px; background: #fff; }
@@ -68,6 +72,7 @@ interface UploadResponse { success: boolean; data: string | null; message?: stri
 })
 export class StudioFileFieldComponent {
   private readonly http = inject(HttpClient);
+  private readonly studioFiles = inject(StudioFileService);
 
   @Input() mode: 'attachment' | 'signature' = 'attachment';
   @Input() entityKey = '';
@@ -82,10 +87,13 @@ export class StudioFileFieldComponent {
   private drawing = false;
   private hasInk = false;
 
-  get absoluteUrl(): string | null {
-    if (!this.value) return null;
-    if (this.value.startsWith('http')) return this.value;
-    return environment.apiUrl.replace(/\/api\/?$/, '') + this.value;
+  /** Blob object URL du fichier (cache service : instance stable par valeur, sûre pour le template). */
+  get fileSrc$(): Observable<string | null> | null {
+    return this.value ? this.studioFiles.objectUrl(this.value) : null;
+  }
+
+  openFile(): void {
+    if (this.value) this.studioFiles.open(this.value);
   }
 
   get isImage(): boolean {
