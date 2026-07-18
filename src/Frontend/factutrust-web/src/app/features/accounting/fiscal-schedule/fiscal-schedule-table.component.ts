@@ -201,9 +201,10 @@ export class FiscalScheduleTableComponent {
     return pages;
   }
 
-  onSelect(row: FiscalScheduleEntryDto | null): void {
-    this.selection = row;
-    this.selectRow.emit(row);
+  onSelect(row: FiscalScheduleEntryDto | FiscalScheduleEntryDto[] | null | undefined): void {
+    const selected = Array.isArray(row) ? (row[0] ?? null) : (row ?? null);
+    this.selection = selected;
+    this.selectRow.emit(selected);
   }
 
   amount(value: number, currency = 'TND'): string {
