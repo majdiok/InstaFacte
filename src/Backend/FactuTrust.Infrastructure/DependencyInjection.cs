@@ -98,6 +98,7 @@ public static class DependencyInjection
             services.AddScoped<IFirmFiscalScheduleService, FirmFiscalScheduleService>();
             services.AddScoped<IFirmFiscalScheduleWriteService, FirmFiscalScheduleWriteService>();
             services.AddScoped<IFirmContextService, FirmContextService>();
+            services.AddScoped<INotificationService, NotificationService>();
             services.AddSingleton<IAccountingFirmsFeature, AccountingFirmsFeature>();
             services.AddScoped<ITenantMigrationGuard, TenantMigrationGuard>();
             // TenantDbContextFactory is already registered above

@@ -30,6 +30,7 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
     public DbSet<UserModuleGrant> UserModuleGrants => Set<UserModuleGrant>();
     public DbSet<AccountingFirmProfile> AccountingFirmProfiles => Set<AccountingFirmProfile>();
     public DbSet<FirmClientAssignment> FirmClientAssignments => Set<FirmClientAssignment>();
+    public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
 
     // Public Virtual Street (3D storefront projection)
     public DbSet<StorefrontProfile> StorefrontProfiles => Set<StorefrontProfile>();
@@ -279,6 +280,18 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
                 .IsUnique()
                 .HasFilter("[Status] IN (0, 1)")
                 .HasDatabaseName("IX_FirmClientAssignments_CompanyTenantId_Open");
+        });
+
+        builder.Entity<UserNotification>(entity =>
+        {
+            entity.ToTable("UserNotifications");
+            entity.HasKey(n => n.Id);
+            entity.Property(n => n.RecipientRole).HasMaxLength(UserNotification.RecipientRoleMaxLength);
+            entity.Property(n => n.Title).HasMaxLength(UserNotification.TitleMaxLength).IsRequired();
+            entity.Property(n => n.Body).HasMaxLength(UserNotification.BodyMaxLength).IsRequired();
+            entity.Property(n => n.LinkUrl).HasMaxLength(UserNotification.LinkUrlMaxLength);
+            entity.HasIndex(n => new { n.RecipientTenantId, n.ReadAt });
+            entity.HasIndex(n => new { n.RecipientTenantId, n.CreatedAt }).IsDescending(false, true);
         });
 
         builder.Entity<UserModuleGrant>(entity =>

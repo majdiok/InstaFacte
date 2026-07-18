@@ -7,6 +7,7 @@ using FactuTrust.Domain.ValueObjects;
 using FactuTrust.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace FactuTrust.Infrastructure.Services;
 
@@ -20,10 +21,17 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
     ];
 
     private readonly MasterDbContext _masterContext;
+    private readonly INotificationService _notificationService;
+    private readonly ILogger<FirmAssignmentService> _logger;
 
-    public FirmAssignmentService(MasterDbContext masterContext)
+    public FirmAssignmentService(
+        MasterDbContext masterContext,
+        INotificationService notificationService,
+        ILogger<FirmAssignmentService> logger)
     {
         _masterContext = masterContext;
+        _notificationService = notificationService;
+        _logger = logger;
     }
 
     public async Task<IReadOnlyList<AccountingFirmDirectoryItemDto>> SearchDirectoryAsync(
@@ -117,6 +125,14 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
             return Result.Failure<FirmClientAssignmentDto>(Error.Validation("Assignment", "Une demande ou affectation est déjà en cours"));
         }
 
+        await TryNotifyAsync(
+            dto.FirmTenantId,
+            nameof(UserRole.FirmManager),
+            NotificationType.FirmAssignmentRequested,
+            "Nouvelle demande de liaison",
+            $"{company.CompanyName} souhaite vous confier sa comptabilité.",
+            "/firm/invitations");
+
         var mapped = await MapAssignmentAsync(createResult.Value, cancellationToken);
         return Result.Success(mapped);
     }
@@ -135,6 +151,15 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
             return cancelResult;
 
         await _masterContext.SaveChangesAsync(cancellationToken);
+
+        await TryNotifyAsync(
+            assignment.FirmTenantId,
+            nameof(UserRole.FirmManager),
+            NotificationType.FirmAssignmentCancelled,
+            "Demande de liaison annulée",
+            $"{await GetTenantNameAsync(assignment.CompanyTenantId)} a annulé sa demande de liaison.",
+            "/firm/invitations");
+
         return Result.Success();
     }
 
@@ -152,6 +177,15 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
             return revokeResult;
 
         await _masterContext.SaveChangesAsync(cancellationToken);
+
+        await TryNotifyAsync(
+            assignment.FirmTenantId,
+            nameof(UserRole.FirmManager),
+            NotificationType.FirmAssignmentRevoked,
+            "Liaison révoquée",
+            $"{await GetTenantNameAsync(assignment.CompanyTenantId)} a révoqué la liaison comptable.",
+            "/firm/dashboard");
+
         return Result.Success();
     }
 
@@ -197,6 +231,15 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
             return acceptResult;
 
         await _masterContext.SaveChangesAsync(cancellationToken);
+
+        await TryNotifyAsync(
+            assignment.CompanyTenantId,
+            nameof(UserRole.Administrator),
+            NotificationType.FirmAssignmentAccepted,
+            "Demande acceptée",
+            $"Le cabinet {await GetFirmDisplayNameAsync(assignment.FirmTenantId)} a accepté votre demande de liaison.",
+            "/settings/accounting-firm");
+
         return Result.Success();
     }
 
@@ -214,6 +257,19 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
             return rejectResult;
 
         await _masterContext.SaveChangesAsync(cancellationToken);
+
+        var rejectionBody = $"Le cabinet {await GetFirmDisplayNameAsync(assignment.FirmTenantId)} a refusé votre demande de liaison.";
+        if (!string.IsNullOrEmpty(assignment.RejectionReason))
+            rejectionBody += $" Motif : {assignment.RejectionReason}";
+
+        await TryNotifyAsync(
+            assignment.CompanyTenantId,
+            nameof(UserRole.Administrator),
+            NotificationType.FirmAssignmentRejected,
+            "Demande refusée",
+            rejectionBody,
+            "/settings/accounting-firm");
+
         return Result.Success();
     }
 
@@ -231,6 +287,15 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
             return revokeResult;
 
         await _masterContext.SaveChangesAsync(cancellationToken);
+
+        await TryNotifyAsync(
+            assignment.CompanyTenantId,
+            nameof(UserRole.Administrator),
+            NotificationType.FirmAssignmentRevoked,
+            "Liaison résiliée",
+            $"Le cabinet {await GetFirmDisplayNameAsync(assignment.FirmTenantId)} a résilié la liaison comptable.",
+            "/settings/accounting-firm");
+
         return Result.Success();
     }
 
@@ -325,6 +390,63 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
 
     private static bool IsUniqueConstraintViolation(DbUpdateException ex) =>
         ex.InnerException is SqlException { Number: 2601 or 2627 };
+
+    /// <summary>
+    /// Émission best-effort d'une notification in-app : ne fait jamais échouer
+    /// l'opération métier qui vient d'être validée (log warning au pire).
+    /// </summary>
+    private async Task TryNotifyAsync(
+        Guid recipientTenantId,
+        string recipientRole,
+        NotificationType type,
+        string title,
+        string body,
+        string? linkUrl)
+    {
+        try
+        {
+            await _notificationService.CreateAsync(
+                recipientTenantId, recipientRole, type, title, body, linkUrl, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Échec d'émission de la notification {Type} vers le tenant {TenantId}", type, recipientTenantId);
+        }
+    }
+
+    /// <summary>Nom d'affichage du cabinet (profil annuaire, sinon tenant) — sans exception (usage notification).</summary>
+    private async Task<string> GetFirmDisplayNameAsync(Guid firmTenantId)
+    {
+        try
+        {
+            var profileName = await _masterContext.AccountingFirmProfiles.AsNoTracking()
+                .Where(p => p.TenantId == firmTenantId)
+                .Select(p => p.DisplayName)
+                .FirstOrDefaultAsync();
+
+            return !string.IsNullOrEmpty(profileName) ? profileName : await GetTenantNameAsync(firmTenantId);
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    /// <summary>Nom du tenant — sans exception (usage notification).</summary>
+    private async Task<string> GetTenantNameAsync(Guid tenantId)
+    {
+        try
+        {
+            return await _masterContext.Tenants.AsNoTracking()
+                .Where(t => t.Id == tenantId)
+                .Select(t => t.CompanyName)
+                .FirstOrDefaultAsync() ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
 
     private static AccountingFirmProfileDto MapProfile(AccountingFirmProfile profile) => new()
     {
