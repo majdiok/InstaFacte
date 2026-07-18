@@ -107,6 +107,22 @@ WHERE TABLE_NAME = 'FiscalScheduleEntries'
 
 ---
 
+## Unicité des numéros de facture de vente (index unique différé)
+
+L'index sur `Invoices.Number` est aujourd'hui **non unique** (migration
+`20260717125815_AddInvoiceSearchAndAuditIndexes_Tenant`). L'index UNIQUE exigé
+par la réglementation fiscale ne doit être livré qu'après un balayage 100 %
+propre de tous les tenants — une migration unique en échec bloquerait le tenant
+au boot (`TenantMigrationGuard`).
+
+Procédure complète (balayage → arbitrage → migration gardée) :
+[`docs/runbooks/invoice-number-uniqueness.md`](runbooks/invoice-number-uniqueness.md)
+
+Balayage : `GET /api/platform/migrations/tenants/invoice-number-integrity`
+(PlatformAdmin) ou [`docs/runbooks/sql/ScanInvoiceNumberDuplicates_AllTenants.sql`](runbooks/sql/ScanInvoiceNumberDuplicates_AllTenants.sql).
+
+---
+
 ## Configuration
 
 ```json

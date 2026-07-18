@@ -174,3 +174,63 @@ public sealed record MigrationStatusResultDto
     public string? SubscriptionStatusDisplay { get; init; }
     public bool IsPayingSubscriber { get; init; }
 }
+
+// ---------------------------------------------------------------------------
+// Balayage d'unicité des numéros de facture de vente (exigence fiscale).
+// Préalable OBLIGATOIRE à toute migration ajoutant un index UNIQUE sur
+// Invoices.Number : une migration unique qui échoue bloquerait le tenant
+// au boot via TenantMigrationGuard.
+// ---------------------------------------------------------------------------
+
+/// <summary>Une facture impliquée dans un doublon de numéro.</summary>
+public sealed record DuplicateInvoiceDto
+{
+    public Guid InvoiceId { get; init; }
+    public InvoiceStatus Status { get; init; }
+    public string StatusDisplay { get; init; } = null!;
+    public DateTime IssueDate { get; init; }
+    public DateTime CreatedAt { get; init; }
+    public decimal TotalAmount { get; init; }
+}
+
+/// <summary>Un numéro de facture porté par plusieurs factures dans une même base tenant.</summary>
+public sealed record DuplicateInvoiceNumberDto
+{
+    public string Number { get; init; } = null!;
+    public IReadOnlyList<DuplicateInvoiceDto> Invoices { get; init; } = Array.Empty<DuplicateInvoiceDto>();
+}
+
+/// <summary>Résultat du balayage d'unicité pour un tenant.</summary>
+public sealed record TenantInvoiceNumberIntegrityDto
+{
+    public const string StatusClean = "Clean";
+    public const string StatusDuplicatesFound = "DuplicatesFound";
+    public const string StatusUnreachable = "Unreachable";
+
+    public Guid TenantId { get; init; }
+    public string TenantName { get; init; } = null!;
+    /// <summary>Clean | DuplicatesFound | Unreachable.</summary>
+    public string Status { get; init; } = null!;
+    public int InvoiceCount { get; init; }
+    /// <summary>Vrai si un index UNIQUE dont la première colonne est Number existe déjà sur Invoices.</summary>
+    public bool HasUniqueIndex { get; init; }
+    public IReadOnlyList<DuplicateInvoiceNumberDto> Duplicates { get; init; } = Array.Empty<DuplicateInvoiceNumberDto>();
+    public string? Error { get; init; }
+}
+
+/// <summary>Rapport consolidé du balayage d'unicité des numéros de facture (tous tenants actifs).</summary>
+public sealed record InvoiceNumberIntegrityReportDto
+{
+    public DateTime ScannedAtUtc { get; init; }
+    public int TotalTenants { get; init; }
+    public int CleanTenants { get; init; }
+    public int TenantsWithDuplicates { get; init; }
+    public int UnreachableTenants { get; init; }
+    public int TotalDuplicateNumbers { get; init; }
+    /// <summary>
+    /// Fail-closed : vrai UNIQUEMENT si tous les tenants ont été joints ET qu'aucun doublon
+    /// n'a été trouvé. Un tenant injoignable suffit à rendre l'index unique non sûr.
+    /// </summary>
+    public bool IsUniqueIndexSafe { get; init; }
+    public IReadOnlyList<TenantInvoiceNumberIntegrityDto> Tenants { get; init; } = Array.Empty<TenantInvoiceNumberIntegrityDto>();
+}

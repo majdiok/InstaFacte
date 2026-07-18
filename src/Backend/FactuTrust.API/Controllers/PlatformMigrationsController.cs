@@ -207,6 +207,40 @@ public sealed class PlatformMigrationsController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Balayage d'unicité des numéros de facture de vente (Invoices.Number) sur tous
+    /// les tenants actifs. Préalable OBLIGATOIRE avant de livrer la migration ajoutant
+    /// l'index UNIQUE fiscal : tant que <c>IsUniqueIndexSafe</c> est faux (doublons ou
+    /// tenant injoignable — fail-closed), la migration ne doit PAS être déployée, sinon
+    /// elle échouerait au boot du tenant et le bloquerait via TenantMigrationGuard.
+    /// </summary>
+    [HttpGet("tenants/invoice-number-integrity")]
+    [ProducesResponseType(typeof(ApiResponse<InvoiceNumberIntegrityReportDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> ScanInvoiceNumberIntegrity(CancellationToken cancellationToken)
+    {
+        try
+        {
+            _logger.LogInformation("Platform admin requested invoice number integrity scan for all tenants");
+
+            var report = await InvoiceNumberIntegrityHelper.ScanAllTenantsAsync(_serviceProvider, cancellationToken);
+
+            var message = report.IsUniqueIndexSafe
+                ? $"Aucun doublon détecté sur {report.CleanTenants} tenant(s) : l'index unique peut être déployé."
+                : $"Index unique NON déployable : {report.TenantsWithDuplicates} tenant(s) avec doublons, " +
+                  $"{report.UnreachableTenants} injoignable(s) sur {report.TotalTenants}.";
+
+            return Ok(ApiResponse<InvoiceNumberIntegrityReportDto>.Ok(report, message));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during invoice number integrity scan");
+            return StatusCode(500, ApiResponse<InvoiceNumberIntegrityReportDto>.Fail(
+                $"Erreur lors du balayage d'unicité : {ex.Message}"));
+        }
+    }
+
     [HttpGet("tenants/migrations-status")]
     [ProducesResponseType(typeof(ApiResponse<List<MigrationStatusResultDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAllTenantsMigrationStatus(CancellationToken cancellationToken)

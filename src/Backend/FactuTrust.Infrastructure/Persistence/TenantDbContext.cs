@@ -723,6 +723,9 @@ public partial class TenantDbContext : DbContext
                 // Non unique à ce stade : l'unicité (exigence fiscale) sera ajoutée par une
                 // migration dédiée APRÈS le balayage des doublons sur tous les tenants
                 // (une migration unique qui échoue bloquerait le tenant via TenantMigrationGuard).
+                // Balayage 2026-07-18 : doublons détectés → migration différée.
+                // Procédure : docs/runbooks/invoice-number-uniqueness.md ;
+                // balayage : GET /api/platform/migrations/tenants/invoice-number-integrity.
                 num.HasIndex(n => n.Value)
                     .HasDatabaseName("IX_Invoices_Number");
 
