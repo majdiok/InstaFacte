@@ -1,8 +1,9 @@
 import { TestBed } from '@angular/core/testing';
-import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { PowerPointExportService } from './powerpoint-export.service';
 import { SlideContentBlock, SlideOrientation, PowerPointTemplate } from '../models/ai-chat.models';
 import { environment } from '@environments/environment';
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 
 describe('PowerPointExportService', () => {
   let service: PowerPointExportService;
@@ -11,9 +12,9 @@ describe('PowerPointExportService', () => {
 
   beforeEach(() => {
     TestBed.configureTestingModule({
-      imports: [HttpClientTestingModule],
-      providers: [PowerPointExportService]
-    });
+    imports: [],
+    providers: [PowerPointExportService, provideHttpClient(withInterceptorsFromDi()), provideHttpClientTesting()]
+});
     service = TestBed.inject(PowerPointExportService);
     httpMock = TestBed.inject(HttpTestingController);
   });

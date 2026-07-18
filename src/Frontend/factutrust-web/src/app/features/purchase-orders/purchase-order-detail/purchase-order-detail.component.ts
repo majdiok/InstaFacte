@@ -6,7 +6,7 @@ import { TagModule } from 'primeng/tag';
 import { TableModule } from 'primeng/table';
 import { ToastModule } from 'primeng/toast';
 import { DialogModule } from 'primeng/dialog';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { TooltipModule } from 'primeng/tooltip';
 import { ToastService } from '@core/services/toast.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
@@ -26,7 +26,7 @@ import {
   standalone: true,
   imports: [
     CommonModule, RouterModule, FormsModule, CurrencyPipe, DatePipe,
-    TagModule, TableModule, ToastModule, DialogModule, InputTextareaModule, TooltipModule,
+    TagModule, TableModule, ToastModule, DialogModule, InputTextarea, TooltipModule,
     PageHeaderComponent, BreadcrumbComponent, ButtonComponent, CreateSupplierInvoiceModalComponent
   ],
   template: `
@@ -668,11 +668,11 @@ export class PurchaseOrderDetailComponent implements OnInit {
     return status === PurchaseOrderStatus.PartiallyReceived || status === PurchaseOrderStatus.Received;
   }
 
-  getStatusSeverity(status: PurchaseOrderStatus): 'success' | 'info' | 'warning' | 'danger' | 'secondary' | 'contrast' {
+  getStatusSeverity(status: PurchaseOrderStatus): 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast' {
     switch (status) {
       case PurchaseOrderStatus.Draft: return 'secondary';
       case PurchaseOrderStatus.Confirmed: return 'info';
-      case PurchaseOrderStatus.PartiallyReceived: return 'warning';
+      case PurchaseOrderStatus.PartiallyReceived: return 'warn';
       case PurchaseOrderStatus.Received: return 'success';
       case PurchaseOrderStatus.Cancelled: return 'danger';
       case PurchaseOrderStatus.Invoiced: return 'contrast';

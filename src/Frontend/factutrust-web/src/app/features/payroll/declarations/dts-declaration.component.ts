@@ -72,7 +72,7 @@ import { PayrollStatGridComponent, PayrollAmountPipe, formatPayrollAmount, type 
                 {{ l.cnssNumber }}
               } @else {
                 <i class="pi pi-exclamation-triangle text-warning" pTooltip="CNSS manquant" tooltipPosition="top"></i>
-                <p-tag value="Manquant" severity="warning" class="ml-2" />
+                <p-tag value="Manquant" severity="warn" class="ml-2" />
               }
             </td>
             <td class="text-right">{{ l.totalCnssableGross | payrollAmount }}</td>

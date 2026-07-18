@@ -1131,7 +1131,7 @@ export class InvoiceDetailComponent implements OnInit {
     ];
   }
 
-  getStatusSeverity(status: string): 'success' | 'info' | 'warning' | 'danger' | 'secondary' | 'contrast' {
+  getStatusSeverity(status: string): 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast' {
     switch (status) {
       case 'Draft': return 'secondary';
       case 'Validated': return 'info';
@@ -1139,7 +1139,7 @@ export class InvoiceDetailComponent implements OnInit {
       case 'Paid': return 'success';
       case 'PartiallyPaid': return 'info';
       case 'Overdue': return 'danger';
-      case 'Cancelled': return 'warning';
+      case 'Cancelled': return 'warn';
       case 'Archived': return 'secondary';
       default: return 'secondary';
     }

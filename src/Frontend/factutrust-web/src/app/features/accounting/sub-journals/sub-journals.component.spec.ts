@@ -1,8 +1,9 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { environment } from '@environments/environment';
 import { SubJournalsComponent } from './sub-journals.component';
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 
 describe('SubJournalsComponent', () => {
   let fixture: ComponentFixture<SubJournalsComponent>;
@@ -12,8 +13,9 @@ describe('SubJournalsComponent', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [SubJournalsComponent, HttpClientTestingModule, NoopAnimationsModule]
-    }).compileComponents();
+    imports: [SubJournalsComponent, NoopAnimationsModule],
+    providers: [provideHttpClient(withInterceptorsFromDi()), provideHttpClientTesting()]
+}).compileComponents();
 
     fixture = TestBed.createComponent(SubJournalsComponent);
     component = fixture.componentInstance;

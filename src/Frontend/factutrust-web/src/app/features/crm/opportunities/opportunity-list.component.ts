@@ -8,7 +8,7 @@ import { DialogModule } from 'primeng/dialog';
 import { DropdownModule } from 'primeng/dropdown';
 import { CalendarModule } from 'primeng/calendar';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { CheckboxModule } from 'primeng/checkbox';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
@@ -34,7 +34,7 @@ interface StageOption {
     DropdownModule,
     CalendarModule,
     InputTextModule,
-    InputTextareaModule,
+    InputTextarea,
     InputNumberModule,
     CheckboxModule,
     PageHeaderComponent,

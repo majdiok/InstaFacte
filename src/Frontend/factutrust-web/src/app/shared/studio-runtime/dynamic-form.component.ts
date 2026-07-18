@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { CalendarModule } from 'primeng/calendar';
@@ -34,7 +34,7 @@ interface RenderSection {
   standalone: true,
   imports: [
     CommonModule, ReactiveFormsModule,
-    ButtonModule, InputTextModule, InputTextareaModule, InputNumberModule,
+    ButtonModule, InputTextModule, InputTextarea, InputNumberModule,
     InputSwitchModule, CalendarModule, DropdownModule, MultiSelectModule, RatingModule,
     StudioCodeImageComponent, StudioFileFieldComponent
   ],
@@ -53,7 +53,7 @@ interface RenderSection {
               <p-inputNumber *ngSwitchCase="FT.Decimal" [formControlName]="cell.field.key" mode="decimal" [minFractionDigits]="0" [maxFractionDigits]="6"></p-inputNumber>
               <p-inputNumber *ngSwitchCase="FT.Money" [formControlName]="cell.field.key" mode="currency" [currency]="moneyCurrency(cell.field)" [minFractionDigits]="0" [maxFractionDigits]="3"></p-inputNumber>
               <p-inputNumber *ngSwitchCase="FT.Percentage" [formControlName]="cell.field.key" mode="decimal" suffix=" %" [minFractionDigits]="0" [maxFractionDigits]="2"></p-inputNumber>
-              <p-rating *ngSwitchCase="FT.Rating" [formControlName]="cell.field.key" [stars]="ratingStars(cell.field)" [cancel]="!cell.field.isRequired"></p-rating>
+              <p-rating *ngSwitchCase="FT.Rating" [formControlName]="cell.field.key" [stars]="ratingStars(cell.field)"></p-rating>
               <ng-container *ngSwitchCase="FT.QrCode">
                 <input pInputText [formControlName]="cell.field.key" placeholder="Valeur à encoder" />
                 <app-studio-code-image class="ft-code-preview" [fieldType]="FT.QrCode" [value]="form.get(cell.field.key)?.value"></app-studio-code-image>

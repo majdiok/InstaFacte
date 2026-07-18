@@ -6,7 +6,7 @@ import { InputNumberModule } from 'primeng/inputnumber';
 import { CalendarModule } from 'primeng/calendar';
 import { DropdownModule } from 'primeng/dropdown';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { ToastService } from '@core/services/toast.service';
 import { formatLocalDate } from '@core/utils/date.util';
@@ -41,7 +41,7 @@ const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] 
     CalendarModule,
     DropdownModule,
     InputTextModule,
-    InputTextareaModule,
+    InputTextarea,
     ButtonComponent
   ],
   template: `

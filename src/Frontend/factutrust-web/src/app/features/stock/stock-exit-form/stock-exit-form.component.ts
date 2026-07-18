@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { DropdownModule } from 'primeng/dropdown';
 import { ButtonModule } from 'primeng/button';
@@ -27,7 +27,7 @@ import { ConfirmationService } from '@core/services/confirmation.service';
     ReactiveFormsModule,
     RouterModule,
     InputTextModule,
-    InputTextareaModule,
+    InputTextarea,
     InputNumberModule,
     DropdownModule,
     ButtonModule,

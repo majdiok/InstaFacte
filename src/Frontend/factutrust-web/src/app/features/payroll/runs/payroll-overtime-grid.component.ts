@@ -61,7 +61,7 @@ import { PayrollSectionComponent, PayrollAmountPipe } from '../shared';
             <td class="text-right">
               {{ line.effectiveAmount | payrollAmount }}
               @if (line.isOverridden) {
-                <p-tag value="Ajusté manuellement" severity="warning" class="ml-2" />
+                <p-tag value="Ajusté manuellement" severity="warn" class="ml-2" />
               }
             </td>
             @if (!readOnly) {

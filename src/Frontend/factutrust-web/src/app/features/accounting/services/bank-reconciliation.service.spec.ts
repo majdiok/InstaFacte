@@ -1,7 +1,8 @@
 import { TestBed } from '@angular/core/testing';
-import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { BankReconciliationService, BankStatementExtractionMethod, BankStatementFileFormat, normalizeExtractionMethod } from './bank-reconciliation.service';
 import { environment } from '@environments/environment';
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 
 describe('BankReconciliationService', () => {
   let service: BankReconciliationService;
@@ -10,8 +11,9 @@ describe('BankReconciliationService', () => {
 
   beforeEach(() => {
     TestBed.configureTestingModule({
-      imports: [HttpClientTestingModule]
-    });
+    imports: [],
+    providers: [provideHttpClient(withInterceptorsFromDi()), provideHttpClientTesting()]
+});
     service = TestBed.inject(BankReconciliationService);
     httpMock = TestBed.inject(HttpTestingController);
   });

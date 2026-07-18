@@ -6,7 +6,7 @@ import { RouterLink } from '@angular/router';
 import { CardModule } from 'primeng/card';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { DropdownModule } from 'primeng/dropdown';
 import { MessageModule } from 'primeng/message';
@@ -225,7 +225,7 @@ function editFormFromView(v: StorefrontProfileView): StorefrontEditForm {
     CardModule,
     ButtonModule,
     InputTextModule,
-    InputTextareaModule,
+    InputTextarea,
     InputSwitchModule,
     DropdownModule,
     MessageModule,

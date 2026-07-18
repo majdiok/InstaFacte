@@ -540,7 +540,7 @@ export class ClientListComponent implements OnInit, OnDestroy {
     this.isFirstLoad = false;
   }
 
-  getTypeSeverity(type: ClientType): 'success' | 'info' | 'warning' | 'danger' | 'secondary' | 'contrast' {
+  getTypeSeverity(type: ClientType): 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast' {
     switch (type) {
       case ClientType.Individual:
         return 'info';

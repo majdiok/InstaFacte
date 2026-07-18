@@ -9,7 +9,7 @@ import { TableModule, TableLazyLoadEvent } from 'primeng/table';
 import { DropdownModule } from 'primeng/dropdown';
 import { CalendarModule } from 'primeng/calendar';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { CheckboxModule } from 'primeng/checkbox';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -47,7 +47,7 @@ interface StatusFilterOption {
     DropdownModule,
     CalendarModule,
     InputTextModule,
-    InputTextareaModule,
+    InputTextarea,
     CheckboxModule,
     PageHeaderComponent,
     ButtonComponent,

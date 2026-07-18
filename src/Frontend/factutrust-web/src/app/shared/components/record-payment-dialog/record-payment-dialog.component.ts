@@ -6,7 +6,7 @@ import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { CalendarModule } from 'primeng/calendar';
 import { DropdownModule } from 'primeng/dropdown';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { OverlayOptions } from 'primeng/api';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { InvoiceService, RecordPaymentRequest } from '@core/services/invoice.service';
@@ -47,7 +47,7 @@ const ALLOWED_PAYMENT_METHOD_VALUES = new Set<number>(
     InputNumberModule,
     CalendarModule,
     DropdownModule,
-    InputTextareaModule,
+    InputTextarea,
     ButtonComponent
   ],
   template: `

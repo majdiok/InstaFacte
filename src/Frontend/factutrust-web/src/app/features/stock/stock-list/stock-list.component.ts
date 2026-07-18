@@ -228,7 +228,7 @@ export class StockListComponent implements OnInit {
 
   getStockSeverity(item: StockItem): string {
     if (item.isOutOfStock) return 'danger';
-    if (item.isLowStock) return 'warning';
+    if (item.isLowStock) return 'warn';
     return 'success';
   }
 

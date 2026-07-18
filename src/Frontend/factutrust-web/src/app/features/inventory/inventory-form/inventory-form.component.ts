@@ -21,7 +21,7 @@ import { ErrorHandlerService } from '@core/services/error-handler.service';
 
 import { DropdownModule } from 'primeng/dropdown';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { ButtonModule } from 'primeng/button';
 import { RippleModule } from 'primeng/ripple';
 
@@ -47,7 +47,7 @@ export interface InventoryFormLine extends InventoryProductItem {
         RouterModule,
         DropdownModule,
         InputNumberModule,
-        InputTextareaModule,
+        InputTextarea,
         ButtonModule,
         RippleModule,
         PageHeaderComponent,

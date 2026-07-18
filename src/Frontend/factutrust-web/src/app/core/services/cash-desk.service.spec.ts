@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import {
   normalizePaymentMethod,
   normalizeCashOperationType,
@@ -9,6 +9,7 @@ import {
   CashDeskService
 } from './cash-desk.service';
 import { environment } from '@environments/environment';
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 
 describe('cash-desk API normalization', () => {
   describe('normalizePaymentMethod', () => {
@@ -74,9 +75,9 @@ describe('CashDeskService cache invalidation', () => {
 
   beforeEach(() => {
     TestBed.configureTestingModule({
-      imports: [HttpClientTestingModule],
-      providers: [CashDeskService]
-    });
+    imports: [],
+    providers: [CashDeskService, provideHttpClient(withInterceptorsFromDi()), provideHttpClientTesting()]
+});
     service = TestBed.inject(CashDeskService);
     httpMock = TestBed.inject(HttpTestingController);
   });

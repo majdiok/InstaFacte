@@ -465,7 +465,7 @@ export class SupplierListComponent implements OnInit, OnDestroy {
         this.isFirstLoad = false;
     }
 
-    getTypeSeverity(type: string): 'success' | 'info' | 'warning' | 'danger' | 'secondary' | 'contrast' {
+    getTypeSeverity(type: string): 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast' {
         return type === 'Business' ? 'success' : 'info';
     }
 

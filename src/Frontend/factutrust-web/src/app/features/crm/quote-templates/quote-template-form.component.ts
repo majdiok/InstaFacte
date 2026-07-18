@@ -6,7 +6,7 @@ import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { AutoCompleteModule, AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { MessageModule } from 'primeng/message';
@@ -40,7 +40,7 @@ interface TemplateLineRow {
     ButtonModule,
     InputTextModule,
     InputNumberModule,
-    InputTextareaModule,
+    InputTextarea,
     InputSwitchModule,
     AutoCompleteModule,
     MessageModule,

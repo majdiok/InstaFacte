@@ -6,7 +6,7 @@ import { TagModule } from 'primeng/tag';
 import { TableModule } from 'primeng/table';
 import { ToastModule } from 'primeng/toast';
 import { DialogModule } from 'primeng/dialog';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { InputTextModule } from 'primeng/inputtext';
 import { ToastService } from '@core/services/toast.service';
 import { AuthService } from '@core/services/auth.service';
@@ -29,7 +29,7 @@ import { formatLocalDate } from '@core/utils/date.util';
     standalone: true,
     imports: [
         CommonModule, RouterModule, FormsModule, CurrencyPipe, DatePipe,
-        TagModule, TableModule, ToastModule, DialogModule, InputTextareaModule, InputTextModule,
+        TagModule, TableModule, ToastModule, DialogModule, InputTextarea, InputTextModule,
         PageHeaderComponent, BreadcrumbComponent, ButtonComponent, RecordPaymentDialogComponent
     ],
     template: `
@@ -396,9 +396,9 @@ export class SupplierInvoiceDetailComponent implements OnInit {
         });
     }
 
-    getStatusSeverity(s: SupplierInvoiceStatus): 'success' | 'info' | 'warning' | 'danger' | 'secondary' | 'contrast' {
+    getStatusSeverity(s: SupplierInvoiceStatus): 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast' {
         switch (s) {
-            case SupplierInvoiceStatus.Pending: return 'warning';
+            case SupplierInvoiceStatus.Pending: return 'warn';
             case SupplierInvoiceStatus.Paid: return 'success';
             case SupplierInvoiceStatus.Cancelled: return 'danger';
             case SupplierInvoiceStatus.PartiallyPaid: return 'info';

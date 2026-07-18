@@ -167,7 +167,7 @@ import { StatCardComponent } from '@shared/components/stat-card/stat-card.compon
 
                     @if (c.isInactive30Days) {
 
-                      <p-tag severity="warning" value="Inactif 30j" />
+                      <p-tag severity="warn" value="Inactif 30j" />
 
                     } @else {
 

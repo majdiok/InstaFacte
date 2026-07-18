@@ -1,10 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import {
-  HttpClient,
-  provideHttpClient,
-  withInterceptors,
-  HttpContext
-} from '@angular/common/http';
+import { HttpClient, provideHttpClient, withInterceptors, HttpContext } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { errorInterceptor } from './error.interceptor';
 import { ToastService } from '@core/services/toast.service';

@@ -93,7 +93,7 @@ type StatusFilter = 'all' | 'active' | 'inactive';
               @if (e.cnssNumber) {
                 {{ e.cnssNumber }}
               } @else {
-                <p-tag value="CNSS manquant" severity="warning" />
+                <p-tag value="CNSS manquant" severity="warn" />
               }
             </td>
             <td>{{ e.jobTitle || '—' }}</td>

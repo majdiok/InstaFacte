@@ -313,9 +313,9 @@ export class SupplierInvoiceListComponent implements OnInit, OnDestroy {
         this.isFirstLoad = false;
     }
 
-    getStatusSeverity(s: SupplierInvoiceStatus): 'success' | 'info' | 'warning' | 'danger' | 'secondary' | 'contrast' {
+    getStatusSeverity(s: SupplierInvoiceStatus): 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast' {
         switch (s) {
-            case SupplierInvoiceStatus.Pending: return 'warning';
+            case SupplierInvoiceStatus.Pending: return 'warn';
             case SupplierInvoiceStatus.PartiallyPaid: return 'info';
             case SupplierInvoiceStatus.Paid: return 'success';
             case SupplierInvoiceStatus.Cancelled: return 'danger';

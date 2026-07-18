@@ -1449,7 +1449,7 @@ export class StepPreviewComponent implements OnInit {
   get validationSummaryClass(): string {
     if (!this.validation) return '';
     if (this.validation.isValid) return 'success';
-    if (this.validation.canProceed) return 'warning';
+    if (this.validation.canProceed) return 'warn';
     return 'error';
   }
 

@@ -152,7 +152,7 @@ interface ReceptionLine {
                     @if (line.isFullyReceived) {
                       <p-tag value="Reçu" severity="success"></p-tag>
                     } @else if (line.receivedQuantity > 0) {
-                      <p-tag value="Partiel" severity="warning"></p-tag>
+                      <p-tag value="Partiel" severity="warn"></p-tag>
                     } @else {
                       <p-tag value="En attente" severity="secondary"></p-tag>
                     }
@@ -443,11 +443,11 @@ export class PurchaseOrderReceiveComponent implements OnInit {
     });
   }
 
-  getStatusSeverity(status: PurchaseOrderStatus): 'success' | 'info' | 'warning' | 'danger' | 'secondary' | 'contrast' {
+  getStatusSeverity(status: PurchaseOrderStatus): 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast' {
     switch (status) {
       case PurchaseOrderStatus.Draft: return 'secondary';
       case PurchaseOrderStatus.Confirmed: return 'info';
-      case PurchaseOrderStatus.PartiallyReceived: return 'warning';
+      case PurchaseOrderStatus.PartiallyReceived: return 'warn';
       case PurchaseOrderStatus.Received: return 'success';
       case PurchaseOrderStatus.Cancelled: return 'danger';
       case PurchaseOrderStatus.Invoiced: return 'contrast';

@@ -79,7 +79,7 @@ import { PayrollConsultBannerComponent, PayrollAmountPipe, formatPayrollAmount }
                 @if (employee()!.cnssNumber) {
                   {{ employee()!.cnssNumber }}
                 } @else {
-                  <p-tag value="CNSS manquant" severity="warning" />
+                  <p-tag value="CNSS manquant" severity="warn" />
                 }
               </dd>
             </div>

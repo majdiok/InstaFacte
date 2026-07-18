@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ForecastingService } from './forecasting.service';
 import { environment } from '@environments/environment';
 import {
@@ -9,6 +9,7 @@ import {
   ReplenishmentRecommendation,
   ReplenishmentStatus
 } from '../models/forecasting.models';
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 
 /**
  * Unit tests for the V2 surface of {@link ForecastingService}. Verifies URL paths, HTTP verbs,
@@ -22,8 +23,9 @@ describe('ForecastingService — Replenishment V2', () => {
 
   beforeEach(() => {
     TestBed.configureTestingModule({
-      imports: [HttpClientTestingModule]
-    });
+    imports: [],
+    providers: [provideHttpClient(withInterceptorsFromDi()), provideHttpClientTesting()]
+});
     service = TestBed.inject(ForecastingService);
     httpMock = TestBed.inject(HttpTestingController);
   });

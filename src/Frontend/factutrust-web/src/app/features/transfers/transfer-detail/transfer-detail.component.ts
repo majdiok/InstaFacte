@@ -6,7 +6,7 @@ import { TagModule } from 'primeng/tag';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
@@ -17,7 +17,7 @@ import { ErrorHandlerService } from '@core/services/error-handler.service';
 @Component({
   selector: 'app-transfer-detail',
   standalone: true,
-  imports: [CommonModule, ButtonModule, TagModule, ConfirmDialogModule, ToastModule, InputTextareaModule, FormsModule, DialogModule, ProgressSpinnerModule],
+  imports: [CommonModule, ButtonModule, TagModule, ConfirmDialogModule, ToastModule, InputTextarea, FormsModule, DialogModule, ProgressSpinnerModule],
   providers: [ConfirmationService, MessageService],
   template: `
     <p-toast></p-toast>

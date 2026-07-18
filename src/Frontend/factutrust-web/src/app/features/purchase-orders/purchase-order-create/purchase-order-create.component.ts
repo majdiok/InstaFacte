@@ -7,7 +7,7 @@ import { DropdownModule } from 'primeng/dropdown';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { CalendarModule } from 'primeng/calendar';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { ToastModule } from 'primeng/toast';
 import { ToastService } from '@core/services/toast.service';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
@@ -37,7 +37,7 @@ interface OrderLine {
   imports: [
     CommonModule, RouterModule, FormsModule, CurrencyPipe,
     TableModule, DropdownModule, InputTextModule, InputNumberModule,
-    CalendarModule, InputTextareaModule, ToastModule,
+    CalendarModule, InputTextarea, ToastModule,
     PageHeaderComponent, BreadcrumbComponent, FormSectionComponent, ButtonComponent, WarehouseSelectorComponent
   ],
   template: `

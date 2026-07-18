@@ -757,14 +757,14 @@ export class ClientDetailComponent implements OnInit {
     });
   }
 
-  getTypeSeverity(type: ClientType): 'success' | 'info' | 'warning' | 'danger' | 'secondary' | 'contrast' {
+  getTypeSeverity(type: ClientType): 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast' {
     switch (type) {
       case ClientType.Individual:
         return 'info';
       case ClientType.Business:
         return 'success';
       case ClientType.Government:
-        return 'warning';
+        return 'warn';
       case ClientType.Association:
         return 'secondary';
       default:

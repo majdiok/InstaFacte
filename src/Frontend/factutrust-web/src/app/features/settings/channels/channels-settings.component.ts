@@ -391,11 +391,11 @@ export class ChannelsSettingsComponent implements OnInit, OnDestroy {
     }
   });
 
-  readonly bridgeSeverity = computed<'success' | 'warning' | 'danger' | 'info' | 'secondary'>(() => {
+  readonly bridgeSeverity = computed<'success' | 'warn' | 'danger' | 'info' | 'secondary'>(() => {
     switch (this.bridgeStatus()?.state) {
       case 'Ready': return 'success';
       case 'WaitingQr':
-      case 'Disconnected': return 'warning';
+      case 'Disconnected': return 'warn';
       case 'AuthFailure':
       case 'DependenciesMissing':
       case 'NodeMissing': return 'danger';

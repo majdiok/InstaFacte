@@ -131,7 +131,7 @@ import {
           </td>
           <td data-label="Lettrage">
             @if (r.letteringCode) {
-              <p-tag [value]="r.letteringCode" [severity]="r.letteringCode.startsWith('P') ? 'warning' : 'info'" [rounded]="true" />
+              <p-tag [value]="r.letteringCode" [severity]="r.letteringCode.startsWith('P') ? 'warn' : 'info'" [rounded]="true" />
             }
           </td>
         </tr>

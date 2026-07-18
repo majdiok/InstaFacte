@@ -8,7 +8,7 @@ import { InputTextModule } from 'primeng/inputtext';
 import { DropdownModule } from 'primeng/dropdown';
 import { CalendarModule } from 'primeng/calendar';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { CheckboxModule } from 'primeng/checkbox';
 import { AutoCompleteModule, AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { DialogModule } from 'primeng/dialog';
@@ -57,7 +57,7 @@ interface LineRow {
     DropdownModule,
     CalendarModule,
     InputNumberModule,
-    InputTextareaModule,
+    InputTextarea,
     CheckboxModule,
     AutoCompleteModule,
     DialogModule,

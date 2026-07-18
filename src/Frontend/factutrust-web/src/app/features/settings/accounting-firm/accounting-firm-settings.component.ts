@@ -125,9 +125,9 @@ export class AccountingFirmSettingsComponent implements OnInit {
     });
   }
 
-  statusSeverity(a: FirmClientAssignment): 'success' | 'warning' | 'danger' | 'info' {
+  statusSeverity(a: FirmClientAssignment): 'success' | 'warn' | 'danger' | 'info' {
     if (a.status === 1) return 'success';
-    if (a.status === 0) return 'warning';
+    if (a.status === 0) return 'warn';
     return 'info';
   }
 }

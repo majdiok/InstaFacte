@@ -8,7 +8,7 @@ import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { CardModule } from 'primeng/card';
 import { TagModule } from 'primeng/tag';
@@ -34,7 +34,7 @@ import {
     ButtonModule,
     DialogModule,
     InputTextModule,
-    InputTextareaModule,
+    InputTextarea,
     InputSwitchModule,
     CardModule,
     TagModule,
@@ -146,7 +146,7 @@ import {
                   <td>
                     <p-tag
                       [value]="row.isActive ? 'Actif' : 'Inactif'"
-                      [severity]="row.isActive ? 'success' : 'warning'">
+                      [severity]="row.isActive ? 'success' : 'warn'">
                     </p-tag>
                   </td>
                   <td class="col-actions">

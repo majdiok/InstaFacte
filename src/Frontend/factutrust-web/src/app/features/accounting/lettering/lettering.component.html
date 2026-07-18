@@ -107,7 +107,7 @@
           [disabled]="!canLetter()"
           [loading]="lettering()"
           (onClick)="letterSelected()"
-          [severity]="!selectionSummary().balanced && allowPartial ? 'warning' : 'success'"
+          [severity]="!selectionSummary().balanced && allowPartial ? 'warn' : 'success'"
           [attr.aria-label]="canLetter()
             ? 'Lettrer les ' + selectionSummary().count + ' lignes sélectionnées'
             : 'Sélection non équilibrée – cochez lettrage partiel ou équilibrez la sélection'"
@@ -195,7 +195,7 @@
                   <span class="lettering-code-cell">
                     <p-tag
                       [value]="line.letteringCode"
-                      [severity]="isPartialCode(line.letteringCode) ? 'warning' : 'info'"
+                      [severity]="isPartialCode(line.letteringCode) ? 'warn' : 'info'"
                       [rounded]="true"
                       [attr.title]="isPartialCode(line.letteringCode) ? 'Lettrage partiel' : 'Lettrage'" />
                     <button

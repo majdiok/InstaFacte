@@ -117,7 +117,7 @@ import { ChangePlanDialogComponent } from './change-plan-dialog/change-plan-dial
             <p-button
               label="Régulariser l'abonnement"
               icon="pi pi-refresh"
-              severity="warning"
+              severity="warn"
               [outlined]="true"
               (onClick)="openChangePlanDialog()">
             </p-button>
@@ -207,7 +207,7 @@ import { ChangePlanDialogComponent } from './change-plan-dialog/change-plan-dial
                   <p-button
                     label="Régulariser l'abonnement"
                     styleClass="w-full"
-                    severity="warning"
+                    severity="warn"
                     (onClick)="openChangePlanDialog()">
                   </p-button>
                 } @else {
@@ -249,7 +249,7 @@ import { ChangePlanDialogComponent } from './change-plan-dialog/change-plan-dial
                   <span>{{ invoice.amount | number:'1.3-3' }} {{ invoice.currency }}</span>
                   <p-tag
                     [value]="invoice.status"
-                    [severity]="invoice.status === 'Payée' ? 'success' : 'warning'">
+                    [severity]="invoice.status === 'Payée' ? 'success' : 'warn'">
                   </p-tag>
                 </div>
                 <p-button
@@ -761,11 +761,11 @@ export class SubscriptionComponent implements OnInit {
     return 0;
   }
 
-  getStatusSeverity(status: string): 'success' | 'info' | 'warning' | 'danger' | 'secondary' {
+  getStatusSeverity(status: string): 'success' | 'info' | 'warn' | 'danger' | 'secondary' {
     switch (status) {
       case 'Active': return 'success';
       case 'Trial': return 'info';
-      case 'PastDue': return 'warning';
+      case 'PastDue': return 'warn';
       case 'Suspended':
       case 'Expired':
       case 'Cancelled':

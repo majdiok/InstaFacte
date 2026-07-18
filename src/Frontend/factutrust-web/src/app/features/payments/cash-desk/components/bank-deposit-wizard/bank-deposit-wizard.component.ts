@@ -7,7 +7,7 @@ import { MenuItem } from 'primeng/api';
 import { CalendarModule } from 'primeng/calendar';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { ToastService } from '@core/services/toast.service';
 import { AuthService } from '@core/services/auth.service';
@@ -41,7 +41,7 @@ const DEPOSIT_TO_METHOD: Record<BankDepositType, number> = {
     CalendarModule,
     InputNumberModule,
     InputTextModule,
-    InputTextareaModule,
+    InputTextarea,
     ButtonComponent,
     AddBankAccountDialogComponent
   ],

@@ -1,31 +1,34 @@
 import { TestBed } from '@angular/core/testing';
-import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { RouterTestingModule } from '@angular/router/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { environment } from '@environments/environment';
 import { FixedAssetDetailComponent } from './fixed-asset-detail.component';
 import { DepreciationMethod, FixedAssetStatus } from '../services/fixed-assets.service';
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 
 describe('FixedAssetDetailComponent', () => {
   const base = `${environment.apiUrl}/accounting/fixed-assets`;
 
   function setup(routeSnapshot: Partial<{ data: Record<string, unknown>; id: string | null }>) {
     TestBed.configureTestingModule({
-      imports: [FixedAssetDetailComponent, HttpClientTestingModule, RouterTestingModule, NoopAnimationsModule],
-      providers: [
+    imports: [FixedAssetDetailComponent, RouterTestingModule, NoopAnimationsModule],
+    providers: [
         {
-          provide: ActivatedRoute,
-          useValue: {
-            snapshot: {
-              data: routeSnapshot.data ?? {},
-              paramMap: convertToParamMap(routeSnapshot.id ? { id: routeSnapshot.id } : {}),
-              queryParamMap: convertToParamMap({})
+            provide: ActivatedRoute,
+            useValue: {
+                snapshot: {
+                    data: routeSnapshot.data ?? {},
+                    paramMap: convertToParamMap(routeSnapshot.id ? { id: routeSnapshot.id } : {}),
+                    queryParamMap: convertToParamMap({})
+                }
             }
-          }
-        }
-      ]
-    });
+        },
+        provideHttpClient(withInterceptorsFromDi()),
+        provideHttpClientTesting()
+    ]
+});
 
     const fixture = TestBed.createComponent(FixedAssetDetailComponent);
     const httpMock = TestBed.inject(HttpTestingController);

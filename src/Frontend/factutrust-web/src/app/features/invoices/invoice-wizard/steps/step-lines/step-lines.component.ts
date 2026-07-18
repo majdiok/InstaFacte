@@ -111,7 +111,7 @@ import {
             label="Résoudre la première"
             icon="pi pi-arrow-right"
             iconPos="right"
-            severity="warning"
+            severity="warn"
             (click)="resolveNextUnmatched()">
           </p-button>
         </div>

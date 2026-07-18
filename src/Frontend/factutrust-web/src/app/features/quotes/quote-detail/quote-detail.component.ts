@@ -12,7 +12,7 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { TimelineModule } from 'primeng/timeline';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogModule } from 'primeng/dialog';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { ToastModule } from 'primeng/toast';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { ToastService } from '@core/services/toast.service';
@@ -49,7 +49,7 @@ interface TimelineEvent {
     TimelineModule,
     ConfirmDialogModule,
     DialogModule,
-    InputTextareaModule,
+    InputTextarea,
     ToastModule,
     PageHeaderComponent,
     BreadcrumbComponent,
@@ -716,7 +716,7 @@ export class QuoteDetailComponent implements OnInit {
 
   getStatusSeverity(
     status: string,
-  ): 'success' | 'info' | 'warning' | 'danger' | 'secondary' | 'contrast' {
+  ): 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast' {
     switch (status) {
       case 'Draft':
         return 'secondary';
@@ -727,11 +727,11 @@ export class QuoteDetailComponent implements OnInit {
       case 'Rejected':
         return 'danger';
       case 'Expired':
-        return 'warning';
+        return 'warn';
       case 'Converted':
         return 'success';
       case 'Cancelled':
-        return 'warning';
+        return 'warn';
       default:
         return 'secondary';
     }

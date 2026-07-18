@@ -474,11 +474,11 @@ export class PurchaseOrderListComponent implements OnInit, OnDestroy {
         this.isFirstLoad = false;
     }
 
-    getStatusSeverity(status: PurchaseOrderStatus): 'success' | 'info' | 'warning' | 'danger' | 'secondary' | 'contrast' {
+    getStatusSeverity(status: PurchaseOrderStatus): 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast' {
         switch (status) {
             case PurchaseOrderStatus.Draft: return 'secondary';
             case PurchaseOrderStatus.Confirmed: return 'info';
-            case PurchaseOrderStatus.PartiallyReceived: return 'warning';
+            case PurchaseOrderStatus.PartiallyReceived: return 'warn';
             case PurchaseOrderStatus.Received: return 'success';
             case PurchaseOrderStatus.Cancelled: return 'danger';
             default: return 'secondary';

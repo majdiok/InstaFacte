@@ -6,7 +6,7 @@ import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { TooltipModule } from 'primeng/tooltip';
 import { ToastModule } from 'primeng/toast';
 import { MessageService } from 'primeng/api';
@@ -24,7 +24,7 @@ import { SkeletonTableComponent } from '@shared/components/skeleton/skeleton-tab
   standalone: true,
   imports: [
     CommonModule, FormsModule, RouterModule, TableModule, ButtonModule, DialogModule,
-    InputTextModule, InputTextareaModule, TooltipModule, ToastModule,
+    InputTextModule, InputTextarea, TooltipModule, ToastModule,
     StudioPageShellComponent, ButtonComponent, EmptyStateComponent, StatusBadgeComponent, SkeletonTableComponent
   ],
   template: `

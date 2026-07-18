@@ -8,6 +8,8 @@ import localeFrTN from '@angular/common/locales/fr-TN';
 import localeFrTNExtra from '@angular/common/locales/extra/fr-TN';
 import { MarkdownModule } from 'ngx-markdown';
 import { MessageService } from 'primeng/api';
+import { providePrimeNG } from 'primeng/config';
+import Aura from '@primeng/themes/aura';
 import { AppComponent } from './app/app.component';
 import { routes } from './app/app.routes';
 import { authInterceptor } from './app/core/interceptors/auth.interceptor';
@@ -35,6 +37,14 @@ bootstrapApplication(AppComponent, {
       withInterceptors([authInterceptor, errorInterceptor])
     ),
     provideAnimations(),
+    providePrimeNG({
+      theme: {
+        preset: Aura,
+        options: {
+          darkModeSelector: '.dark-mode'
+        }
+      }
+    }),
     importProvidersFrom(MarkdownModule.forRoot()),
     MessageService,
     {

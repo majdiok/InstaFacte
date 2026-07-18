@@ -8,7 +8,7 @@ import { DropdownModule } from 'primeng/dropdown';
 import { CalendarModule } from 'primeng/calendar';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { EmployeeService } from '@core/services/employee.service';
 import { PayrollService, LeaveRequest, LeaveBalance } from '@core/services/payroll.service';
@@ -38,7 +38,7 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
     CalendarModule,
     InputNumberModule,
     InputTextModule,
-    InputTextareaModule,
+    InputTextarea,
     ButtonComponent,
     PayrollStatGridComponent
   ],
@@ -88,7 +88,7 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
           <td>{{ l.endDate | date:'dd/MM/yyyy' }}</td>
           <td class="text-right">{{ l.days }}</td>
           <td>
-            <p-tag [value]="l.isApproved ? 'Approuvé' : 'En attente'" [severity]="l.isApproved ? 'success' : 'warning'" />
+            <p-tag [value]="l.isApproved ? 'Approuvé' : 'En attente'" [severity]="l.isApproved ? 'success' : 'warn'" />
           </td>
           @if (!readOnly) {
             <td class="actions">

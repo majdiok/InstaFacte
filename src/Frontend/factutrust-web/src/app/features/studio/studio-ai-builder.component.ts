@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { AiStreamService } from '@features/ai-assistant/services/ai-stream.service';
 import { AssistantMode, ChatRequest, ChatStreamEvent } from '@features/ai-assistant/models/ai-chat.models';
 import { StudioNavService } from './studio-nav.service';
@@ -17,7 +17,7 @@ interface BuildStep { phase: string; label: string; status: string; entityRef?: 
 @Component({
   selector: 'app-studio-ai-builder',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, ButtonModule, InputTextareaModule, StudioPageShellComponent],
+  imports: [CommonModule, FormsModule, RouterModule, ButtonModule, InputTextarea, StudioPageShellComponent],
   template: `
     <app-studio-page-shell
       title="Assistant Studio (IA)"

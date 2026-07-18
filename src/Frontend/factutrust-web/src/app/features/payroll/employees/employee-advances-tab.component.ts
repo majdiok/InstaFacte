@@ -6,7 +6,7 @@ import { TagModule } from 'primeng/tag';
 import { DialogModule } from 'primeng/dialog';
 import { CalendarModule } from 'primeng/calendar';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { EmployeeService } from '@core/services/employee.service';
 import { PayrollService, EmployeeAdvance } from '@core/services/payroll.service';
@@ -33,7 +33,7 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
     DialogModule,
     CalendarModule,
     InputNumberModule,
-    InputTextareaModule,
+    InputTextarea,
     ButtonComponent,
     PayrollSectionComponent,
     PayrollAmountPipe

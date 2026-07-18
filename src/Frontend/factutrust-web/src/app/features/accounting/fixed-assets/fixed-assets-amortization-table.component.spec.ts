@@ -1,10 +1,11 @@
 import { TestBed } from '@angular/core/testing';
-import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { environment } from '@environments/environment';
 import { FixedAssetsAmortizationTableComponent } from './fixed-assets-amortization-table.component';
 import { AuthService } from '@core/services/auth.service';
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 
 describe('FixedAssetsAmortizationTableComponent', () => {
   const base = `${environment.apiUrl}/accounting/fixed-assets`;
@@ -76,18 +77,20 @@ describe('FixedAssetsAmortizationTableComponent', () => {
 
   beforeEach(() => {
     TestBed.configureTestingModule({
-      imports: [FixedAssetsAmortizationTableComponent, HttpClientTestingModule, NoopAnimationsModule],
-      providers: [
+    imports: [FixedAssetsAmortizationTableComponent, NoopAnimationsModule],
+    providers: [
         {
-          provide: AuthService,
-          useValue: { user: () => ({ companyName: 'Ma Société' }) }
+            provide: AuthService,
+            useValue: { user: () => ({ companyName: 'Ma Société' }) }
         },
         {
-          provide: ActivatedRoute,
-          useValue: { snapshot: { queryParamMap: convertToParamMap({}) } }
-        }
-      ]
-    });
+            provide: ActivatedRoute,
+            useValue: { snapshot: { queryParamMap: convertToParamMap({}) } }
+        },
+        provideHttpClient(withInterceptorsFromDi()),
+        provideHttpClientTesting()
+    ]
+});
   });
 
   it('loads Sage report zones and renders grouped table', () => {

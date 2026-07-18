@@ -6,7 +6,7 @@ import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { DropdownModule } from 'primeng/dropdown';
 import { DialogModule } from 'primeng/dialog';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { TooltipModule } from 'primeng/tooltip';
 import { SkeletonTableComponent, SkeletonColumn } from '@shared/components/skeleton/skeleton-table.component';
 import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
@@ -57,7 +57,7 @@ const MONTH_OPTIONS: { label: string; value: number }[] = [
     ButtonModule,
     DropdownModule,
     DialogModule,
-    InputTextareaModule,
+    InputTextarea,
     TooltipModule,
     PageHeaderComponent,
     SkeletonTableComponent,

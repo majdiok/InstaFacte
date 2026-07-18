@@ -134,7 +134,7 @@ export function auditEntityTypeLabel(entityType: string): string {
 
 export function auditActionSeverity(
   action: string
-): 'success' | 'info' | 'warning' | 'danger' | 'secondary' | 'contrast' | undefined {
+): 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast' | undefined {
   if (action.includes('Paid') || action.includes('Accepted') || action.includes('Delivered') || action.includes('Validated')) {
     return 'success';
   }

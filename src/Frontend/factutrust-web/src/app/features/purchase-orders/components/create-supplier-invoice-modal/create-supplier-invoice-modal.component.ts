@@ -5,7 +5,7 @@ import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { CalendarModule } from 'primeng/calendar';
 import { DropdownModule } from 'primeng/dropdown';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { CheckboxModule } from 'primeng/checkbox';
 import { TableModule } from 'primeng/table';
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -50,7 +50,7 @@ interface LineClassificationRow {
   standalone: true,
   imports: [
     CommonModule, FormsModule, DialogModule, InputTextModule,
-    CalendarModule, DropdownModule, InputTextareaModule, CheckboxModule,
+    CalendarModule, DropdownModule, InputTextarea, CheckboxModule,
     TableModule, ButtonComponent
   ],
   template: `

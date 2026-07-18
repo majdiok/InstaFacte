@@ -119,7 +119,7 @@ import { NumberingDocTabsComponent } from './components/numbering-doc-tabs.compo
           </div>
           @if (isFormatLocked() || hasIssuedDocuments()) {
             <p-tag
-              severity="warning"
+              severity="warn"
               icon="pi pi-lock"
               value="Format verrouillé — des documents existent déjà"
               styleClass="lock-tag">

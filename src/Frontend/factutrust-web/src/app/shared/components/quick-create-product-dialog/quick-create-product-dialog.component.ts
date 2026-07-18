@@ -14,7 +14,7 @@ import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { DropdownModule } from 'primeng/dropdown';
-import { InputTextareaModule } from 'primeng/inputtextarea';
+import { InputTextarea } from 'primeng/inputtextarea';
 import { CheckboxModule } from 'primeng/checkbox';
 import { OverlayOptions } from 'primeng/api';
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -79,7 +79,7 @@ const VAT_OPTIONS: VatOption[] = [
     InputTextModule,
     InputNumberModule,
     DropdownModule,
-    InputTextareaModule,
+    InputTextarea,
     CheckboxModule,
     ButtonComponent,
   ],
