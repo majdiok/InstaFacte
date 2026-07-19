@@ -50,6 +50,9 @@
             density="toolbar"
             [payloadBuilder]="buildLedgerAnalyzePayload"
             [disabled]="loading()" />
+          <app-accounting-export-menu
+            [disabled]="loading() || exporting() || rows().length === 0"
+            (exportFormat)="onExport($event)" />
         </app-accounting-toolbar-actions>
       </ng-template>
     </p-toolbar>

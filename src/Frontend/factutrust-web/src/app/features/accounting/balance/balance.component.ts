@@ -18,6 +18,8 @@ import {
   todayLocalYmd,
   validateDateRange
 } from '../shared/accounting-date-utils';
+import { AccountingExportMenuComponent } from '../shared/accounting-export-menu.component';
+import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
 
 @Component({
   selector: 'app-accounting-balance',
@@ -33,7 +35,8 @@ import {
     AccountingFilterBarComponent,
     AnalyzeWithAiButtonComponent,
     ButtonComponent,
-    TooltipModule
+    TooltipModule,
+    AccountingExportMenuComponent
   ],
   template: `
     <app-page-header title="Balance" subtitle="Balance générale — 8 colonnes avec soldes d'ouverture" />
@@ -72,6 +75,9 @@ import {
             density="toolbar"
             [payloadBuilder]="buildBalanceAnalyzePayload"
             [disabled]="loading()" />
+          <app-accounting-export-menu
+            [disabled]="loading() || exporting() || rows().length === 0"
+            (exportFormat)="onExport($event)" />
         </div>
       </app-accounting-filter-bar>
     </div>
@@ -155,6 +161,7 @@ export class BalanceComponent implements OnInit {
   readonly rows = signal<BalanceRowDto[]>([]);
   readonly error = signal<string | null>(null);
   readonly loading = signal(false);
+  readonly exporting = signal(false);
 
   readonly filteredRows = computed(() => {
     const fc = this.filterClass;
@@ -225,6 +232,27 @@ export class BalanceComponent implements OnInit {
       error: () => {
         this.loading.set(false);
         this.error.set('Erreur réseau');
+      }
+    });
+  }
+
+  onExport(format: AccountingExportFormat): void {
+    const from = parseLocalDateString(this.fromStr);
+    const to = parseLocalDateString(this.toStr);
+    const vr = validateDateRange(from, to);
+    if (!vr.valid) {
+      this.error.set(vr.message ?? 'Période invalide.');
+      return;
+    }
+    this.exporting.set(true);
+    this.api.exportBalance(from, to, format).subscribe({
+      next: blob => {
+        this.exporting.set(false);
+        downloadBlob(blob, `balance_${this.fromStr}_${this.toStr}.${exportExtension(format)}`);
+      },
+      error: () => {
+        this.exporting.set(false);
+        this.error.set("Erreur lors de l'export.");
       }
     });
   }

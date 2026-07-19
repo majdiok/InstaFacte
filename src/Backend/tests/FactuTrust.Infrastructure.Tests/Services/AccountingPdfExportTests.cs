@@ -44,6 +44,146 @@ public sealed class AccountingPdfExportTests
         Assert.Equal((byte)'P', bytes[1]);
     }
 
+    private static void AssertIsPdf(byte[] bytes)
+    {
+        Assert.NotNull(bytes);
+        Assert.True(bytes.Length > 500);
+        Assert.Equal((byte)'%', bytes[0]);
+        Assert.Equal((byte)'P', bytes[1]);
+        Assert.Equal((byte)'D', bytes[2]);
+        Assert.Equal((byte)'F', bytes[3]);
+    }
+
+    private static AccountingReportHeader Header(string title) =>
+        new("Ma Société SARL", "1234567/A/M/000", title, "Du 01/01/2025 au 31/01/2025");
+
+    [Fact]
+    public async Task GenerateJournalPdf_MultipleJournals_ProducesPdf()
+    {
+        var entries = new List<JournalEntryDto>
+        {
+            new()
+            {
+                EntryNumber = 1, JournalCode = "VTE", EntryDate = new DateTime(2025, 1, 2), Label = "Vente",
+                Lines = new List<JournalEntryLineDto>
+                {
+                    new() { AccountNumber = "411000", Label = "Client X", Debit = 1190.500m, Credit = 0m },
+                    new() { AccountNumber = "707000", Label = "Ventes", Debit = 0m, Credit = 1000.000m },
+                    new() { AccountNumber = "4367000", Label = "TVA collectée", Debit = 0m, Credit = 190.500m }
+                }
+            },
+            new()
+            {
+                EntryNumber = 2, JournalCode = "ACH", EntryDate = new DateTime(2025, 1, 5), Label = "Achat",
+                Lines = new List<JournalEntryLineDto>
+                {
+                    new() { AccountNumber = "607000", Label = "Achats", Debit = 500.000m, Credit = 0m },
+                    new() { AccountNumber = "401000", Label = "Fournisseur Y", Debit = 0m, Credit = 500.000m }
+                }
+            }
+        };
+
+        var bytes = await BuildPdfService().GenerateJournalPdfAsync(entries, Header("Journal général"), CancellationToken.None);
+        AssertIsPdf(bytes);
+    }
+
+    [Fact]
+    public async Task GenerateJournalPdf_EmptyList_ProducesPdfWithoutThrowing()
+    {
+        var bytes = await BuildPdfService().GenerateJournalPdfAsync(new List<JournalEntryDto>(), Header("Journal général"), CancellationToken.None);
+        AssertIsPdf(bytes);
+    }
+
+    [Fact]
+    public async Task GenerateLedgerPdf_ProducesPdf()
+    {
+        var rows = new List<LedgerRowDto>
+        {
+            new() { EntryDate = new DateTime(2025, 1, 2), JournalCode = "VTE", PieceNumber = 1, Label = "Facture 1", Debit = 1190.500m, Credit = 0m, RunningBalance = 1190.500m },
+            new() { EntryDate = new DateTime(2025, 1, 6), JournalCode = "BQ", PieceNumber = 3, Label = "Règlement", Debit = 0m, Credit = 1190.500m, RunningBalance = 0m }
+        };
+        var bytes = await BuildPdfService().GenerateLedgerPdfAsync("411000", rows, Header("Grand livre — compte 411000"), CancellationToken.None);
+        AssertIsPdf(bytes);
+    }
+
+    [Fact]
+    public async Task GenerateBalancePdf_ProducesPdf()
+    {
+        var rows = new List<BalanceRowDto>
+        {
+            new() { AccountNumber = "411000", Label = "Clients", OpeningDebit = 0m, OpeningCredit = 0m, MovementDebit = 1190.500m, MovementCredit = 1190.500m, ClosingDebit = 0m, ClosingCredit = 0m },
+            new() { AccountNumber = "707000", Label = "Ventes", OpeningDebit = 0m, OpeningCredit = 0m, MovementDebit = 0m, MovementCredit = 1000.000m, ClosingDebit = 0m, ClosingCredit = 1000.000m }
+        };
+        var bytes = await BuildPdfService().GenerateBalancePdfAsync(rows, Header("Balance générale"), CancellationToken.None);
+        AssertIsPdf(bytes);
+    }
+
+    [Fact]
+    public async Task GenerateAuxiliaryBalancePdf_ProducesPdf()
+    {
+        var rows = new List<AuxiliaryBalanceRowDto>
+        {
+            new() { ThirdPartyId = Guid.NewGuid(), ThirdPartyName = "Client X", MovementDebit = 1190.500m, ClosingDebit = 1190.500m },
+            new() { ThirdPartyId = Guid.NewGuid(), ThirdPartyName = "Client Y", MovementDebit = 500.000m, ClosingDebit = 500.000m }
+        };
+        var bytes = await BuildPdfService().GenerateAuxiliaryBalancePdfAsync(rows, Header("Balance auxiliaire — Clients"), CancellationToken.None);
+        AssertIsPdf(bytes);
+    }
+
+    [Fact]
+    public async Task GenerateThirdPartyLedgerPdf_ProducesPdf()
+    {
+        var ledger = new ThirdPartyLedgerDto
+        {
+            ThirdPartyId = Guid.NewGuid(),
+            ThirdPartyName = "Client X",
+            OpeningBalance = 100.000m,
+            Rows = new List<ThirdPartyLedgerRowDto>
+            {
+                new() { EntryDate = new DateTime(2025, 1, 2), JournalCode = "VTE", PieceNumber = 1, AccountNumber = "411000", Label = "Facture", Debit = 1190.500m, Credit = 0m, RunningBalance = 1290.500m, LetteringCode = "A" }
+            }
+        };
+        var bytes = await BuildPdfService().GenerateThirdPartyLedgerPdfAsync(ledger, Header("Grand livre tiers — Client X"), CancellationToken.None);
+        AssertIsPdf(bytes);
+    }
+
+    [Fact]
+    public async Task GenerateAgingPdf_ProducesPdf()
+    {
+        var rows = new List<AgingReportRowDto>
+        {
+            new() { ThirdPartyId = Guid.NewGuid(), ThirdPartyName = "Client X", Total = 1500.000m, NotYetDue = 500.000m, Days0To30 = 1000.000m }
+        };
+        var bytes = await BuildPdfService().GenerateAgingPdfAsync(rows, Header("Balance âgée — Clients"), CancellationToken.None);
+        AssertIsPdf(bytes);
+    }
+
+    [Fact]
+    public async Task GenerateBalanceSheetPdf_ProducesPdf()
+    {
+        var dto = new BalanceSheetDto
+        {
+            Assets = new List<FinancialStatementLineDto> { new() { AccountNumber = "22", Label = "Immobilisations", AccountClass = 2, Amount = 30000.000m, PreviousYearAmount = 25000.000m } },
+            Liabilities = new List<FinancialStatementLineDto> { new() { AccountNumber = "10", Label = "Capital", AccountClass = 1, Amount = 30000.000m } },
+            TotalAssets = 30000.000m, TotalLiabilities = 30000.000m, NetResult = 0m
+        };
+        var bytes = await BuildPdfService().GenerateBalanceSheetPdfAsync(dto, Header("Bilan"), CancellationToken.None);
+        AssertIsPdf(bytes);
+    }
+
+    [Fact]
+    public async Task GenerateIncomeStatementPdf_ProducesPdf()
+    {
+        var dto = new IncomeStatementDto
+        {
+            Revenue = new List<FinancialStatementLineDto> { new() { AccountNumber = "70", Label = "Ventes", AccountClass = 7, Amount = 20000.000m } },
+            Expenses = new List<FinancialStatementLineDto> { new() { AccountNumber = "60", Label = "Achats", AccountClass = 6, Amount = 12000.000m } },
+            TotalRevenue = 20000.000m, TotalExpenses = 12000.000m, NetResult = 8000.000m
+        };
+        var bytes = await BuildPdfService().GenerateIncomeStatementPdfAsync(dto, Header("Compte de résultat"), CancellationToken.None);
+        AssertIsPdf(bytes);
+    }
+
     [Fact]
     public async Task GenerateNctLiassePdf_ProducesNonEmptyPdf()
     {

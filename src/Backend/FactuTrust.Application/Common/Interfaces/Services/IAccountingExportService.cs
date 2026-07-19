@@ -11,7 +11,15 @@ public interface IAccountingExportService
     byte[] ExportLedgerToExcel(IReadOnlyList<LedgerRowDto> rows, string accountNumber);
     byte[] ExportBalanceToExcel(IReadOnlyList<BalanceRowDto> rows);
     byte[] ExportAuxiliaryBalanceToCsv(IReadOnlyList<AuxiliaryBalanceRowDto> rows);
+    byte[] ExportAuxiliaryBalanceToExcel(IReadOnlyList<AuxiliaryBalanceRowDto> rows);
     byte[] ExportThirdPartyLedgerToCsv(ThirdPartyLedgerDto ledger);
+    byte[] ExportThirdPartyLedgerToExcel(ThirdPartyLedgerDto ledger);
+    byte[] ExportAgingToCsv(IReadOnlyList<AgingReportRowDto> rows, string kindLabel);
+    byte[] ExportAgingToExcel(IReadOnlyList<AgingReportRowDto> rows, string kindLabel);
+    byte[] ExportBalanceSheetToCsv(BalanceSheetDto dto);
+    byte[] ExportBalanceSheetToExcel(BalanceSheetDto dto);
+    byte[] ExportIncomeStatementToCsv(IncomeStatementDto dto);
+    byte[] ExportIncomeStatementToExcel(IncomeStatementDto dto);
     byte[] ExportBudgetReportToCsv(BudgetReportDto report);
     byte[] ExportBudgetReportToExcel(BudgetReportDto report);
 }

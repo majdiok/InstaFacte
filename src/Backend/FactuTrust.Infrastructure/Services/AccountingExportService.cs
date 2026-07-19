@@ -118,8 +118,10 @@ public sealed class AccountingExportService : IAccountingExportService
     private static string FormatDate(DateTime date) =>
         date.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
 
+    // Le dinar tunisien s'exprime en millimes (3 décimales). L'export tabulaire (Excel) et l'écran
+    // utilisent 3 décimales ; le CSV doit être cohérent pour ne pas tronquer les millimes.
     private static string FormatDecimal(decimal value) =>
-        value.ToString("0.00", CultureInfo.InvariantCulture);
+        value.ToString("0.000", CultureInfo.InvariantCulture);
 
     public byte[] ExportBudgetReportToCsv(BudgetReportDto report)
     {
@@ -319,6 +321,258 @@ public sealed class AccountingExportService : IAccountingExportService
 
         ws.Columns().AdjustToContents();
         return WorkbookToBytes(wb);
+    }
+
+    public byte[] ExportAuxiliaryBalanceToExcel(IReadOnlyList<AuxiliaryBalanceRowDto> rows)
+    {
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("Balance auxiliaire");
+
+        var headers = new[] { "Tiers", "Ouverture D", "Ouverture C", "Mouvement D", "Mouvement C", "Clôture D", "Clôture C" };
+        for (var c = 0; c < headers.Length; c++)
+            ws.Cell(1, c + 1).Value = headers[c];
+        StyleHeaderRow(ws, headers.Length);
+
+        var row = 2;
+        foreach (var r in rows)
+        {
+            ws.Cell(row, 1).Value = r.ThirdPartyName;
+            ws.Cell(row, 2).Value = r.OpeningDebit;
+            ws.Cell(row, 3).Value = r.OpeningCredit;
+            ws.Cell(row, 4).Value = r.MovementDebit;
+            ws.Cell(row, 5).Value = r.MovementCredit;
+            ws.Cell(row, 6).Value = r.ClosingDebit;
+            ws.Cell(row, 7).Value = r.ClosingCredit;
+            for (var c = 2; c <= 7; c++)
+                ws.Cell(row, c).Style.NumberFormat.Format = "#,##0.000";
+            row++;
+        }
+
+        ws.Cell(row, 1).Value = "TOTAUX";
+        ws.Cell(row, 1).Style.Font.Bold = true;
+        for (var c = 2; c <= 7; c++)
+        {
+            ws.Cell(row, c).FormulaA1 = $"SUM({ws.Cell(2, c).Address}:{ws.Cell(row - 1, c).Address})";
+            ws.Cell(row, c).Style.Font.Bold = true;
+            ws.Cell(row, c).Style.NumberFormat.Format = "#,##0.000";
+        }
+
+        ws.Columns().AdjustToContents();
+        return WorkbookToBytes(wb);
+    }
+
+    public byte[] ExportThirdPartyLedgerToExcel(ThirdPartyLedgerDto ledger)
+    {
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("Grand livre tiers");
+
+        ws.Cell(1, 1).Value = "Tiers";
+        ws.Cell(1, 2).Value = ledger.ThirdPartyName;
+        ws.Cell(1, 1).Style.Font.Bold = true;
+        ws.Cell(2, 1).Value = "Solde d'ouverture";
+        ws.Cell(2, 2).Value = ledger.OpeningBalance;
+        ws.Cell(2, 2).Style.NumberFormat.Format = "#,##0.000";
+        ws.Cell(2, 1).Style.Font.Bold = true;
+
+        var headers = new[] { "Date", "Journal", "N°Pièce", "Réf. pièce", "Compte", "Libellé", "Débit", "Crédit", "Solde", "Lettrage" };
+        for (var c = 0; c < headers.Length; c++)
+            ws.Cell(4, c + 1).Value = headers[c];
+        StyleHeaderRow(ws, headers.Length, headerRow: 4);
+
+        var row = 5;
+        foreach (var r in ledger.Rows)
+        {
+            ws.Cell(row, 1).Value = r.EntryDate;
+            ws.Cell(row, 1).Style.NumberFormat.Format = "dd/MM/yyyy";
+            ws.Cell(row, 2).Value = r.JournalCode;
+            ws.Cell(row, 3).Value = r.PieceNumber;
+            ws.Cell(row, 4).Value = r.PieceRef ?? string.Empty;
+            ws.Cell(row, 5).Value = r.AccountNumber;
+            ws.Cell(row, 6).Value = r.Label;
+            ws.Cell(row, 7).Value = r.Debit;
+            ws.Cell(row, 8).Value = r.Credit;
+            ws.Cell(row, 9).Value = r.RunningBalance;
+            ws.Cell(row, 10).Value = r.LetteringCode ?? string.Empty;
+            for (var c = 7; c <= 9; c++)
+                ws.Cell(row, c).Style.NumberFormat.Format = "#,##0.000";
+            row++;
+        }
+
+        ws.Columns().AdjustToContents();
+        return WorkbookToBytes(wb);
+    }
+
+    public byte[] ExportAgingToCsv(IReadOnlyList<AgingReportRowDto> rows, string kindLabel)
+    {
+        var sb = new StringBuilder();
+        sb.Append("Balance âgée;").AppendLine(Escape(kindLabel));
+        sb.AppendLine("Tiers;Total;Non échu;0-30 j;31-60 j;61-90 j;+90 j");
+
+        foreach (var r in rows)
+        {
+            sb.Append(Escape(r.ThirdPartyName)).Append(Separator);
+            sb.Append(FormatDecimal(r.Total)).Append(Separator);
+            sb.Append(FormatDecimal(r.NotYetDue)).Append(Separator);
+            sb.Append(FormatDecimal(r.Days0To30)).Append(Separator);
+            sb.Append(FormatDecimal(r.Days31To60)).Append(Separator);
+            sb.Append(FormatDecimal(r.Days61To90)).Append(Separator);
+            sb.AppendLine(FormatDecimal(r.DaysOver90));
+        }
+
+        return BuildBytes(sb);
+    }
+
+    public byte[] ExportAgingToExcel(IReadOnlyList<AgingReportRowDto> rows, string kindLabel)
+    {
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("Balance âgée");
+
+        ws.Cell(1, 1).Value = $"Balance âgée — {kindLabel}";
+        ws.Cell(1, 1).Style.Font.Bold = true;
+
+        var headers = new[] { "Tiers", "Total", "Non échu", "0-30 j", "31-60 j", "61-90 j", "+90 j" };
+        for (var c = 0; c < headers.Length; c++)
+            ws.Cell(3, c + 1).Value = headers[c];
+        StyleHeaderRow(ws, headers.Length, headerRow: 3);
+
+        var row = 4;
+        foreach (var r in rows)
+        {
+            ws.Cell(row, 1).Value = r.ThirdPartyName;
+            ws.Cell(row, 2).Value = r.Total;
+            ws.Cell(row, 3).Value = r.NotYetDue;
+            ws.Cell(row, 4).Value = r.Days0To30;
+            ws.Cell(row, 5).Value = r.Days31To60;
+            ws.Cell(row, 6).Value = r.Days61To90;
+            ws.Cell(row, 7).Value = r.DaysOver90;
+            for (var c = 2; c <= 7; c++)
+                ws.Cell(row, c).Style.NumberFormat.Format = "#,##0.000";
+            row++;
+        }
+
+        ws.Cell(row, 1).Value = "TOTAUX";
+        ws.Cell(row, 1).Style.Font.Bold = true;
+        for (var c = 2; c <= 7; c++)
+        {
+            ws.Cell(row, c).FormulaA1 = $"SUM({ws.Cell(4, c).Address}:{ws.Cell(row - 1, c).Address})";
+            ws.Cell(row, c).Style.Font.Bold = true;
+            ws.Cell(row, c).Style.NumberFormat.Format = "#,##0.000";
+        }
+
+        ws.Columns().AdjustToContents();
+        return WorkbookToBytes(wb);
+    }
+
+    public byte[] ExportBalanceSheetToCsv(BalanceSheetDto dto)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Section;Compte;Libellé;Montant;N-1");
+        AppendStatementCsvSection(sb, "ACTIF", dto.Assets);
+        AppendStatementCsvTotal(sb, "TOTAL ACTIF", dto.TotalAssets);
+        AppendStatementCsvSection(sb, "PASSIF", dto.Liabilities);
+        AppendStatementCsvTotal(sb, "TOTAL PASSIF", dto.TotalLiabilities);
+        AppendStatementCsvTotal(sb, "RÉSULTAT NET", dto.NetResult);
+        return BuildBytes(sb);
+    }
+
+    public byte[] ExportBalanceSheetToExcel(BalanceSheetDto dto)
+    {
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("Bilan");
+        var row = BuildStatementSheetHeader(ws, "Bilan");
+        row = AppendStatementExcelSection(ws, row, "ACTIF", dto.Assets);
+        row = AppendStatementExcelTotal(ws, row, "TOTAL ACTIF", dto.TotalAssets);
+        row++;
+        row = AppendStatementExcelSection(ws, row, "PASSIF", dto.Liabilities);
+        row = AppendStatementExcelTotal(ws, row, "TOTAL PASSIF", dto.TotalLiabilities);
+        AppendStatementExcelTotal(ws, row, "RÉSULTAT NET", dto.NetResult);
+        ws.Columns().AdjustToContents();
+        return WorkbookToBytes(wb);
+    }
+
+    public byte[] ExportIncomeStatementToCsv(IncomeStatementDto dto)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Section;Compte;Libellé;Montant;N-1");
+        AppendStatementCsvSection(sb, "PRODUITS", dto.Revenue);
+        AppendStatementCsvTotal(sb, "TOTAL PRODUITS", dto.TotalRevenue);
+        AppendStatementCsvSection(sb, "CHARGES", dto.Expenses);
+        AppendStatementCsvTotal(sb, "TOTAL CHARGES", dto.TotalExpenses);
+        AppendStatementCsvTotal(sb, "RÉSULTAT NET", dto.NetResult);
+        return BuildBytes(sb);
+    }
+
+    public byte[] ExportIncomeStatementToExcel(IncomeStatementDto dto)
+    {
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("Compte de résultat");
+        var row = BuildStatementSheetHeader(ws, "Compte de résultat");
+        row = AppendStatementExcelSection(ws, row, "PRODUITS", dto.Revenue);
+        row = AppendStatementExcelTotal(ws, row, "TOTAL PRODUITS", dto.TotalRevenue);
+        row++;
+        row = AppendStatementExcelSection(ws, row, "CHARGES", dto.Expenses);
+        row = AppendStatementExcelTotal(ws, row, "TOTAL CHARGES", dto.TotalExpenses);
+        AppendStatementExcelTotal(ws, row, "RÉSULTAT NET", dto.NetResult);
+        ws.Columns().AdjustToContents();
+        return WorkbookToBytes(wb);
+    }
+
+    private void AppendStatementCsvSection(StringBuilder sb, string section, IReadOnlyList<FinancialStatementLineDto> lines)
+    {
+        foreach (var l in lines)
+        {
+            sb.Append(Escape(section)).Append(Separator);
+            sb.Append(Escape(l.AccountNumber)).Append(Separator);
+            sb.Append(Escape(l.Label)).Append(Separator);
+            sb.Append(FormatDecimal(l.Amount)).Append(Separator);
+            sb.AppendLine(l.PreviousYearAmount.HasValue ? FormatDecimal(l.PreviousYearAmount.Value) : string.Empty);
+        }
+    }
+
+    private static void AppendStatementCsvTotal(StringBuilder sb, string label, decimal amount)
+    {
+        sb.Append(Separator).Append(Separator);
+        sb.Append(Escape(label)).Append(Separator);
+        sb.Append(FormatDecimal(amount)).AppendLine(";");
+    }
+
+    private static int BuildStatementSheetHeader(IXLWorksheet ws, string title)
+    {
+        ws.Cell(1, 1).Value = title;
+        ws.Cell(1, 1).Style.Font.Bold = true;
+        var headers = new[] { "Section", "Compte", "Libellé", "Montant", "N-1" };
+        for (var c = 0; c < headers.Length; c++)
+            ws.Cell(3, c + 1).Value = headers[c];
+        StyleHeaderRow(ws, headers.Length, headerRow: 3);
+        return 4;
+    }
+
+    private static int AppendStatementExcelSection(IXLWorksheet ws, int row, string section, IReadOnlyList<FinancialStatementLineDto> lines)
+    {
+        foreach (var l in lines)
+        {
+            ws.Cell(row, 1).Value = section;
+            ws.Cell(row, 2).Value = l.AccountNumber;
+            ws.Cell(row, 3).Value = l.Label;
+            ws.Cell(row, 4).Value = l.Amount;
+            ws.Cell(row, 4).Style.NumberFormat.Format = "#,##0.000";
+            if (l.PreviousYearAmount.HasValue)
+            {
+                ws.Cell(row, 5).Value = l.PreviousYearAmount.Value;
+                ws.Cell(row, 5).Style.NumberFormat.Format = "#,##0.000";
+            }
+            row++;
+        }
+        return row;
+    }
+
+    private static int AppendStatementExcelTotal(IXLWorksheet ws, int row, string label, decimal amount)
+    {
+        ws.Cell(row, 3).Value = label;
+        ws.Cell(row, 4).Value = amount;
+        ws.Cell(row, 4).Style.NumberFormat.Format = "#,##0.000";
+        ws.Range(row, 3, row, 4).Style.Font.Bold = true;
+        return row + 1;
     }
 
     private static void StyleHeaderRow(IXLWorksheet ws, int colCount, int headerRow = 1)

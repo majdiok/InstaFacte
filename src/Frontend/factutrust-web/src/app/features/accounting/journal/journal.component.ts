@@ -17,6 +17,8 @@ import { AccountingMonitoringService } from '../shared/accounting-monitoring.ser
 import { AnalyzeWithAiButtonComponent } from '@features/ai-assistant/components/analyze-with-ai-button/analyze-with-ai-button.component';
 import { wrapLegacyAnalyzePayload } from '@features/ai-assistant/utils/ai-screen-payload.factory';
 import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.component';
+import { AccountingExportMenuComponent } from '../shared/accounting-export-menu.component';
+import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
 
 type JournalFlatRow = {
   entryId: string;
@@ -50,7 +52,8 @@ type JournalFlatRow = {
     ButtonComponent,
     AccountingStatusBannerComponent,
     AnalyzeWithAiButtonComponent,
-    AccountingFilterBarComponent
+    AccountingFilterBarComponent,
+    AccountingExportMenuComponent
   ],
   template: `
     <app-page-header title="Journal comptable" subtitle="Écritures par période" />
@@ -107,6 +110,9 @@ type JournalFlatRow = {
             density="toolbar"
             [payloadBuilder]="buildJournalAnalyzePayload"
             [disabled]="loading()" />
+          <app-accounting-export-menu
+            [disabled]="loading() || exporting() || flatRows().length === 0"
+            (exportFormat)="onExport($event)" />
         </div>
       </app-accounting-filter-bar>
     </div>
@@ -711,6 +717,7 @@ export class JournalComponent implements OnInit {
 
   readonly error = signal<string | null>(null);
   readonly loading = signal(false);
+  readonly exporting = signal(false);
   readonly flatRows = signal<JournalFlatRow[]>([]);
 
   readonly validatingId = signal<string | null>(null);
@@ -749,6 +756,27 @@ export class JournalComponent implements OnInit {
     this.fromStr = firstDayOfMonthLocalYmd();
     this.toStr = todayLocalYmd();
     this.load();
+  }
+
+  onExport(format: AccountingExportFormat): void {
+    const from = parseLocalDateString(this.fromStr);
+    const to = parseLocalDateString(this.toStr);
+    const vr = validateDateRange(from, to);
+    if (!vr.valid) {
+      this.error.set(vr.message ?? 'Période invalide.');
+      return;
+    }
+    this.exporting.set(true);
+    this.api.exportJournal(this.journalCode || undefined, from, to, format).subscribe({
+      next: blob => {
+        this.exporting.set(false);
+        downloadBlob(blob, `journal_${this.fromStr}_${this.toStr}.${exportExtension(format)}`);
+      },
+      error: () => {
+        this.exporting.set(false);
+        this.error.set("Erreur lors de l'export.");
+      }
+    });
   }
 
   load(): void {

@@ -9,6 +9,8 @@ import { AnalyzeWithAiButtonComponent } from '@features/ai-assistant/components/
 import { wrapLegacyAnalyzePayload } from '@features/ai-assistant/utils/ai-screen-payload.factory';
 import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
+import { AccountingExportMenuComponent } from '../shared/accounting-export-menu.component';
+import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
 
 @Component({
   selector: 'app-balance-sheet',
@@ -21,7 +23,8 @@ import { ButtonComponent } from '@shared/components/button/button.component';
     AccountingStatusBannerComponent,
     AnalyzeWithAiButtonComponent,
     AccountingFilterBarComponent,
-    ButtonComponent
+    ButtonComponent,
+    AccountingExportMenuComponent
   ],
   template: `
     <app-page-header title="Bilan" subtitle="État de la situation patrimoniale — Actif et Passif" />
@@ -50,6 +53,9 @@ import { ButtonComponent } from '@shared/components/button/button.component';
             density="toolbar"
             [payloadBuilder]="buildBalanceSheetAnalyzePayload"
             [disabled]="loading()" />
+          <app-accounting-export-menu
+            [disabled]="loading() || exporting() || !data()"
+            (exportFormat)="onExport($event)" />
         </div>
       </app-accounting-filter-bar>
     </div>
@@ -190,6 +196,7 @@ export class BalanceSheetComponent implements OnInit {
   readonly data = signal<BalanceSheetDto | null>(null);
   readonly error = signal<string | null>(null);
   readonly loading = signal(false);
+  readonly exporting = signal(false);
 
   readonly buildBalanceSheetAnalyzePayload = (): unknown => {
     const d = this.data();
@@ -238,6 +245,20 @@ export class BalanceSheetComponent implements OnInit {
       error: () => {
         this.loading.set(false);
         this.error.set('Erreur réseau');
+      }
+    });
+  }
+
+  onExport(format: AccountingExportFormat): void {
+    this.exporting.set(true);
+    this.api.exportBalanceSheet(this.fiscalYear, format).subscribe({
+      next: blob => {
+        this.exporting.set(false);
+        downloadBlob(blob, `bilan_${this.fiscalYear}.${exportExtension(format)}`);
+      },
+      error: () => {
+        this.exporting.set(false);
+        this.error.set("Erreur lors de l'export.");
       }
     });
   }

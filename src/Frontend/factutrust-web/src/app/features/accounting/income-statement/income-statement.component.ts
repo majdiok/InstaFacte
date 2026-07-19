@@ -8,6 +8,8 @@ import { AccountingStatusBannerComponent } from '../shared/accounting-status-ban
 import { AnalyzeWithAiButtonComponent } from '@features/ai-assistant/components/analyze-with-ai-button/analyze-with-ai-button.component';
 import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
+import { AccountingExportMenuComponent } from '../shared/accounting-export-menu.component';
+import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
 import {
   buildNoDataPayload,
   buildScreenAnalysisPayloadV2,
@@ -26,7 +28,8 @@ import { ScreenAnalysisHighlight } from '@features/ai-assistant/models/ai-screen
     AccountingStatusBannerComponent,
     AnalyzeWithAiButtonComponent,
     AccountingFilterBarComponent,
-    ButtonComponent
+    ButtonComponent,
+    AccountingExportMenuComponent
   ],
   template: `
     <app-page-header title="Compte de résultat" subtitle="Produits et charges de l'exercice" />
@@ -55,6 +58,9 @@ import { ScreenAnalysisHighlight } from '@features/ai-assistant/models/ai-screen
             density="toolbar"
             [payloadBuilder]="buildIncomeStatementAnalyzePayload"
             [disabled]="loading()" />
+          <app-accounting-export-menu
+            [disabled]="loading() || exporting() || !data()"
+            (exportFormat)="onExport($event)" />
         </div>
       </app-accounting-filter-bar>
     </div>
@@ -197,6 +203,7 @@ export class IncomeStatementComponent implements OnInit {
   readonly data = signal<IncomeStatementDto | null>(null);
   readonly error = signal<string | null>(null);
   readonly loading = signal(false);
+  readonly exporting = signal(false);
 
   readonly buildIncomeStatementAnalyzePayload = (): unknown => {
     const d = this.data();
@@ -281,6 +288,20 @@ export class IncomeStatementComponent implements OnInit {
       error: () => {
         this.loading.set(false);
         this.error.set('Erreur réseau');
+      }
+    });
+  }
+
+  onExport(format: AccountingExportFormat): void {
+    this.exporting.set(true);
+    this.api.exportIncomeStatement(this.fiscalYear, format).subscribe({
+      next: blob => {
+        this.exporting.set(false);
+        downloadBlob(blob, `compte_resultat_${this.fiscalYear}.${exportExtension(format)}`);
+      },
+      error: () => {
+        this.exporting.set(false);
+        this.error.set("Erreur lors de l'export.");
       }
     });
   }

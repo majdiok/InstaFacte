@@ -26,6 +26,8 @@ import {
   todayLocalYmd,
   validateDateRange
 } from '../shared/accounting-date-utils';
+import { AccountingExportMenuComponent } from '../shared/accounting-export-menu.component';
+import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
 
 @Component({
   selector: 'app-accounting-ledger',
@@ -43,7 +45,8 @@ import {
     PageHeaderComponent,
     EmptyStateComponent,
     AccountingStatusBannerComponent,
-    AnalyzeWithAiButtonComponent
+    AnalyzeWithAiButtonComponent,
+    AccountingExportMenuComponent
   ],
   templateUrl: './ledger.component.html',
   styleUrl: './ledger.component.scss'
@@ -59,6 +62,7 @@ export class LedgerComponent implements OnInit {
   readonly rows = signal<LedgerRowDto[]>([]);
   readonly error = signal<string | null>(null);
   readonly loading = signal(true);
+  readonly exporting = signal(false);
 
   readonly showEmpty = computed(
     () => this.rows().length === 0 && !this.loading() && !this.error()
@@ -190,5 +194,31 @@ export class LedgerComponent implements OnInit {
         },
         error: () => this.error.set('Erreur réseau')
       });
+  }
+
+  onExport(format: AccountingExportFormat): void {
+    const account = this.account.trim();
+    if (!account) {
+      this.error.set('Saisissez un numéro de compte avant d\'exporter.');
+      return;
+    }
+    const from = parseLocalDateString(this.fromStr);
+    const to = parseLocalDateString(this.toStr);
+    const vr = validateDateRange(from, to);
+    if (!vr.valid) {
+      this.error.set(vr.message ?? 'Période invalide.');
+      return;
+    }
+    this.exporting.set(true);
+    this.api.exportLedger(account, from, to, format).subscribe({
+      next: blob => {
+        this.exporting.set(false);
+        downloadBlob(blob, `grand_livre_${account}_${this.fromStr}_${this.toStr}.${exportExtension(format)}`);
+      },
+      error: () => {
+        this.exporting.set(false);
+        this.error.set("Erreur lors de l'export.");
+      }
+    });
   }
 }

@@ -1,3 +1,5 @@
+using FactuTrust.Application.Common.Enums;
+using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Common;
@@ -21,7 +23,7 @@ public sealed class GetAuxiliaryBalanceQueryHandler
         => _reporting.GetAuxiliaryBalanceAsync(request.Kind, request.From, request.To, cancellationToken);
 }
 
-public sealed record ExportAuxiliaryBalanceCsvQuery(ThirdPartyKind Kind, DateTime From, DateTime To)
+public sealed record ExportAuxiliaryBalanceCsvQuery(ThirdPartyKind Kind, DateTime From, DateTime To, AccountingExportFormat Format = AccountingExportFormat.Csv)
     : IRequest<Result<byte[]>>;
 
 public sealed class ExportAuxiliaryBalanceCsvQueryHandler
@@ -29,11 +31,15 @@ public sealed class ExportAuxiliaryBalanceCsvQueryHandler
 {
     private readonly IAccountingReportingService _reporting;
     private readonly IAccountingExportService _export;
+    private readonly IPdfService _pdf;
+    private readonly ICompanyRepository _companies;
 
-    public ExportAuxiliaryBalanceCsvQueryHandler(IAccountingReportingService reporting, IAccountingExportService export)
+    public ExportAuxiliaryBalanceCsvQueryHandler(IAccountingReportingService reporting, IAccountingExportService export, IPdfService pdf, ICompanyRepository companies)
     {
         _reporting = reporting;
         _export = export;
+        _pdf = pdf;
+        _companies = companies;
     }
 
     public async Task<Result<byte[]>> Handle(ExportAuxiliaryBalanceCsvQuery request, CancellationToken cancellationToken)
@@ -41,7 +47,19 @@ public sealed class ExportAuxiliaryBalanceCsvQueryHandler
         var result = await _reporting.GetAuxiliaryBalanceAsync(request.Kind, request.From, request.To, cancellationToken);
         if (result.IsFailure)
             return Result.Failure<byte[]>(result.Error);
-        return _export.ExportAuxiliaryBalanceToCsv(result.Value);
+
+        return request.Format switch
+        {
+            AccountingExportFormat.Excel => _export.ExportAuxiliaryBalanceToExcel(result.Value),
+            AccountingExportFormat.Pdf => await _pdf.GenerateAuxiliaryBalancePdfAsync(
+                result.Value,
+                AccountingExportHelpers.Header(
+                    await _companies.GetDefaultAsync(cancellationToken),
+                    $"Balance auxiliaire — {AccountingExportHelpers.KindLabel(request.Kind)}",
+                    AccountingExportHelpers.PeriodRange(request.From, request.To)),
+                cancellationToken),
+            _ => _export.ExportAuxiliaryBalanceToCsv(result.Value)
+        };
     }
 }
 
@@ -60,7 +78,7 @@ public sealed class GetThirdPartyLedgerQueryHandler
         => _reporting.GetThirdPartyLedgerAsync(request.ThirdPartyId, request.Kind, request.From, request.To, cancellationToken);
 }
 
-public sealed record ExportThirdPartyLedgerCsvQuery(Guid ThirdPartyId, ThirdPartyKind Kind, DateTime From, DateTime To)
+public sealed record ExportThirdPartyLedgerCsvQuery(Guid ThirdPartyId, ThirdPartyKind Kind, DateTime From, DateTime To, AccountingExportFormat Format = AccountingExportFormat.Csv)
     : IRequest<Result<byte[]>>;
 
 public sealed class ExportThirdPartyLedgerCsvQueryHandler
@@ -68,11 +86,15 @@ public sealed class ExportThirdPartyLedgerCsvQueryHandler
 {
     private readonly IAccountingReportingService _reporting;
     private readonly IAccountingExportService _export;
+    private readonly IPdfService _pdf;
+    private readonly ICompanyRepository _companies;
 
-    public ExportThirdPartyLedgerCsvQueryHandler(IAccountingReportingService reporting, IAccountingExportService export)
+    public ExportThirdPartyLedgerCsvQueryHandler(IAccountingReportingService reporting, IAccountingExportService export, IPdfService pdf, ICompanyRepository companies)
     {
         _reporting = reporting;
         _export = export;
+        _pdf = pdf;
+        _companies = companies;
     }
 
     public async Task<Result<byte[]>> Handle(ExportThirdPartyLedgerCsvQuery request, CancellationToken cancellationToken)
@@ -80,6 +102,18 @@ public sealed class ExportThirdPartyLedgerCsvQueryHandler
         var result = await _reporting.GetThirdPartyLedgerAsync(request.ThirdPartyId, request.Kind, request.From, request.To, cancellationToken);
         if (result.IsFailure)
             return Result.Failure<byte[]>(result.Error);
-        return _export.ExportThirdPartyLedgerToCsv(result.Value);
+
+        return request.Format switch
+        {
+            AccountingExportFormat.Excel => _export.ExportThirdPartyLedgerToExcel(result.Value),
+            AccountingExportFormat.Pdf => await _pdf.GenerateThirdPartyLedgerPdfAsync(
+                result.Value,
+                AccountingExportHelpers.Header(
+                    await _companies.GetDefaultAsync(cancellationToken),
+                    $"Grand livre tiers — {result.Value.ThirdPartyName}",
+                    AccountingExportHelpers.PeriodRange(request.From, request.To)),
+                cancellationToken),
+            _ => _export.ExportThirdPartyLedgerToCsv(result.Value)
+        };
     }
 }

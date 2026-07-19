@@ -10,6 +10,8 @@ import { AnalyzeWithAiButtonComponent } from '@features/ai-assistant/components/
 import { wrapLegacyAnalyzePayload } from '@features/ai-assistant/utils/ai-screen-payload.factory';
 import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
+import { AccountingExportMenuComponent } from '../shared/accounting-export-menu.component';
+import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
 
 @Component({
   selector: 'app-accounting-aging',
@@ -23,7 +25,8 @@ import { ButtonComponent } from '@shared/components/button/button.component';
     AccountingStatusBannerComponent,
     AnalyzeWithAiButtonComponent,
     AccountingFilterBarComponent,
-    ButtonComponent
+    ButtonComponent,
+    AccountingExportMenuComponent
   ],
   styles: [
     `
@@ -74,6 +77,14 @@ import { ButtonComponent } from '@shared/components/button/button.component';
             density="toolbar"
             [payloadBuilder]="buildAgingAnalyzePayload"
             [disabled]="loadingClients() || loadingSuppliers()" />
+          <app-accounting-export-menu
+            label="Exporter clients"
+            [disabled]="loadingClients() || exportingClients() || clients().length === 0"
+            (exportFormat)="onExportClients($event)" />
+          <app-accounting-export-menu
+            label="Exporter fournisseurs"
+            [disabled]="loadingSuppliers() || exportingSuppliers() || suppliers().length === 0"
+            (exportFormat)="onExportSuppliers($event)" />
         </div>
       </app-accounting-filter-bar>
     </div>
@@ -202,6 +213,8 @@ export class AgingComponent implements OnInit {
   readonly errSup = signal<string | null>(null);
   readonly loadingClients = signal(false);
   readonly loadingSuppliers = signal(false);
+  readonly exportingClients = signal(false);
+  readonly exportingSuppliers = signal(false);
 
   readonly totalsClients = computed(() => this.sumRows(this.clients()));
   readonly totalsSuppliers = computed(() => this.sumRows(this.suppliers()));
@@ -286,6 +299,34 @@ export class AgingComponent implements OnInit {
       error: () => {
         this.loadingSuppliers.set(false);
         this.errSup.set('Erreur réseau. Réessayez plus tard.');
+      }
+    });
+  }
+
+  onExportClients(format: AccountingExportFormat): void {
+    this.exportingClients.set(true);
+    this.api.exportClientAging(format).subscribe({
+      next: blob => {
+        this.exportingClients.set(false);
+        downloadBlob(blob, `balance_agee_clients.${exportExtension(format)}`);
+      },
+      error: () => {
+        this.exportingClients.set(false);
+        this.errClients.set("Erreur lors de l'export.");
+      }
+    });
+  }
+
+  onExportSuppliers(format: AccountingExportFormat): void {
+    this.exportingSuppliers.set(true);
+    this.api.exportSupplierAging(format).subscribe({
+      next: blob => {
+        this.exportingSuppliers.set(false);
+        downloadBlob(blob, `balance_agee_fournisseurs.${exportExtension(format)}`);
+      },
+      error: () => {
+        this.exportingSuppliers.set(false);
+        this.errSup.set("Erreur lors de l'export.");
       }
     });
   }

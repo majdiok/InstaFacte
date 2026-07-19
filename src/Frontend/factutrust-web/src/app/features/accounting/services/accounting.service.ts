@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 import { environment } from '@environments/environment';
 import { createHttpContextSkipGlobalErrorUi } from '@core/http-context';
 import { formatLocalDate } from '../shared/accounting-date-utils';
+import { AccountingExportFormat } from '../shared/accounting-download.util';
 
 export interface ChartOfAccountDto {
   id: string;
@@ -752,6 +753,35 @@ export class AccountingService {
     return this.http.get<ApiResponse<BalanceRowDto[]>>(`${this.base}/balance`, { params: p });
   }
 
+  /** Export du journal (csv / excel / pdf). */
+  exportJournal(journalCode: string | undefined, from: Date, to: Date, format: AccountingExportFormat): Observable<Blob> {
+    let p = new HttpParams()
+      .set('from', formatLocalDate(from))
+      .set('to', formatLocalDate(to))
+      .set('format', format);
+    if (journalCode) p = p.set('journalCode', journalCode);
+    return this.http.get(`${this.base}/journal/export`, { params: p, responseType: 'blob' });
+  }
+
+  /** Export du grand livre d'un compte (csv / excel / pdf). */
+  exportLedger(accountNumber: string, from: Date, to: Date, format: AccountingExportFormat): Observable<Blob> {
+    const p = new HttpParams()
+      .set('accountNumber', accountNumber)
+      .set('from', formatLocalDate(from))
+      .set('to', formatLocalDate(to))
+      .set('format', format);
+    return this.http.get(`${this.base}/ledger/export`, { params: p, responseType: 'blob' });
+  }
+
+  /** Export de la balance générale (csv / excel / pdf). */
+  exportBalance(from: Date, to: Date, format: AccountingExportFormat): Observable<Blob> {
+    const p = new HttpParams()
+      .set('from', formatLocalDate(from))
+      .set('to', formatLocalDate(to))
+      .set('format', format);
+    return this.http.get(`${this.base}/balance/export`, { params: p, responseType: 'blob' });
+  }
+
   /** Balance auxiliaire par tiers. kind : 1 = clients, 2 = fournisseurs. */
   getAuxiliaryBalance(kind: number, from: Date, to: Date): Observable<ApiResponse<AuxiliaryBalanceRowDto[]>> {
     const p = new HttpParams()
@@ -761,11 +791,12 @@ export class AccountingService {
     return this.http.get<ApiResponse<AuxiliaryBalanceRowDto[]>>(`${this.base}/auxiliary-balance`, { params: p });
   }
 
-  exportAuxiliaryBalance(kind: number, from: Date, to: Date): Observable<Blob> {
+  exportAuxiliaryBalance(kind: number, from: Date, to: Date, format: AccountingExportFormat = 'csv'): Observable<Blob> {
     const p = new HttpParams()
       .set('kind', kind)
       .set('from', formatLocalDate(from))
-      .set('to', formatLocalDate(to));
+      .set('to', formatLocalDate(to))
+      .set('format', format);
     return this.http.get(`${this.base}/auxiliary-balance/export`, { params: p, responseType: 'blob' });
   }
 
@@ -779,12 +810,13 @@ export class AccountingService {
     return this.http.get<ApiResponse<ThirdPartyLedgerDto>>(`${this.base}/third-party-ledger`, { params: p });
   }
 
-  exportThirdPartyLedger(thirdPartyId: string, kind: number, from: Date, to: Date): Observable<Blob> {
+  exportThirdPartyLedger(thirdPartyId: string, kind: number, from: Date, to: Date, format: AccountingExportFormat = 'csv'): Observable<Blob> {
     const p = new HttpParams()
       .set('thirdPartyId', thirdPartyId)
       .set('kind', kind)
       .set('from', formatLocalDate(from))
-      .set('to', formatLocalDate(to));
+      .set('to', formatLocalDate(to))
+      .set('format', format);
     return this.http.get(`${this.base}/third-party-ledger/export`, { params: p, responseType: 'blob' });
   }
 
@@ -794,6 +826,30 @@ export class AccountingService {
 
   getSupplierAging(): Observable<ApiResponse<AgingReportRowDto[]>> {
     return this.http.get<ApiResponse<AgingReportRowDto[]>>(`${this.base}/aging/suppliers`);
+  }
+
+  /** Export de la balance âgée clients (csv / excel / pdf). */
+  exportClientAging(format: AccountingExportFormat): Observable<Blob> {
+    const p = new HttpParams().set('format', format);
+    return this.http.get(`${this.base}/aging/clients/export`, { params: p, responseType: 'blob' });
+  }
+
+  /** Export de la balance âgée fournisseurs (csv / excel / pdf). */
+  exportSupplierAging(format: AccountingExportFormat): Observable<Blob> {
+    const p = new HttpParams().set('format', format);
+    return this.http.get(`${this.base}/aging/suppliers/export`, { params: p, responseType: 'blob' });
+  }
+
+  /** Export du bilan (csv / excel / pdf). */
+  exportBalanceSheet(fiscalYear: number, format: AccountingExportFormat): Observable<Blob> {
+    const p = new HttpParams().set('fiscalYear', fiscalYear).set('format', format);
+    return this.http.get(`${this.base}/balance-sheet/export`, { params: p, responseType: 'blob' });
+  }
+
+  /** Export du compte de résultat (csv / excel / pdf). */
+  exportIncomeStatement(fiscalYear: number, format: AccountingExportFormat): Observable<Blob> {
+    const p = new HttpParams().set('fiscalYear', fiscalYear).set('format', format);
+    return this.http.get(`${this.base}/income-statement/export`, { params: p, responseType: 'blob' });
   }
 
   getVatDeclaration(year: number, month: number): Observable<ApiResponse<VatDeclarationDto>> {

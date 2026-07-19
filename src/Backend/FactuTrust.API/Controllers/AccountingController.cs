@@ -1,5 +1,6 @@
 using System.Text;
 using FactuTrust.API.Authorization;
+using FactuTrust.Application.Common.Enums;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Accounting.Budgeting;
 using FactuTrust.Application.Features.Accounting.ThirdPartyDirectory;
@@ -23,6 +24,14 @@ public sealed class AccountingController : ControllerBase
     {
         _mediator = mediator;
     }
+
+    /// <summary>Construit la réponse fichier (content-type + extension) selon le format d'export demandé.</summary>
+    private FileContentResult FileFor(byte[] bytes, AccountingExportFormat format, string baseName) => format switch
+    {
+        AccountingExportFormat.Excel => File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"{baseName}.xlsx"),
+        AccountingExportFormat.Pdf => File(bytes, "application/pdf", $"{baseName}.pdf"),
+        _ => File(bytes, "text/csv", $"{baseName}.csv")
+    };
 
     [HttpGet("chart-of-accounts")]
     [Authorize(Policy = PermissionPolicies.AccountingRead)]
@@ -253,18 +262,19 @@ public sealed class AccountingController : ControllerBase
     [HttpGet("auxiliary-balance/export")]
     [Authorize(Policy = PermissionPolicies.AccountingRead)]
     public async Task<IActionResult> ExportAuxiliaryBalance(
-        [FromQuery] int kind, [FromQuery] DateTime? from, [FromQuery] DateTime? to, CancellationToken cancellationToken)
+        [FromQuery] int kind, [FromQuery] DateTime? from, [FromQuery] DateTime? to,
+        [FromQuery] AccountingExportFormat format = AccountingExportFormat.Csv, CancellationToken cancellationToken = default)
     {
         if (!from.HasValue || !to.HasValue)
             return BadRequest(ApiResponse<object>.Fail("from et to sont requis."));
         if (kind is not ((int)Domain.Enums.ThirdPartyKind.Client or (int)Domain.Enums.ThirdPartyKind.Supplier))
             return BadRequest(ApiResponse<object>.Fail("kind doit être 1 (client) ou 2 (fournisseur)."));
 
-        var r = await _mediator.Send(new ExportAuxiliaryBalanceCsvQuery((Domain.Enums.ThirdPartyKind)kind, from.Value, to.Value), cancellationToken);
+        var r = await _mediator.Send(new ExportAuxiliaryBalanceCsvQuery((Domain.Enums.ThirdPartyKind)kind, from.Value, to.Value, format), cancellationToken);
         if (r.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
         var kindName = kind == (int)Domain.Enums.ThirdPartyKind.Client ? "clients" : "fournisseurs";
-        return File(r.Value, "text/csv", $"balance_auxiliaire_{kindName}_{from.Value:yyyyMMdd}_{to.Value:yyyyMMdd}.csv");
+        return FileFor(r.Value, format, $"balance_auxiliaire_{kindName}_{from.Value:yyyyMMdd}_{to.Value:yyyyMMdd}");
     }
 
     [HttpGet("third-party-ledger")]
@@ -288,17 +298,18 @@ public sealed class AccountingController : ControllerBase
     [Authorize(Policy = PermissionPolicies.AccountingRead)]
     public async Task<IActionResult> ExportThirdPartyLedger(
         [FromQuery] Guid thirdPartyId, [FromQuery] int kind,
-        [FromQuery] DateTime? from, [FromQuery] DateTime? to, CancellationToken cancellationToken)
+        [FromQuery] DateTime? from, [FromQuery] DateTime? to,
+        [FromQuery] AccountingExportFormat format = AccountingExportFormat.Csv, CancellationToken cancellationToken = default)
     {
         if (thirdPartyId == Guid.Empty || !from.HasValue || !to.HasValue)
             return BadRequest(ApiResponse<object>.Fail("thirdPartyId, from et to sont requis."));
         if (kind is not ((int)Domain.Enums.ThirdPartyKind.Client or (int)Domain.Enums.ThirdPartyKind.Supplier))
             return BadRequest(ApiResponse<object>.Fail("kind doit être 1 (client) ou 2 (fournisseur)."));
 
-        var r = await _mediator.Send(new ExportThirdPartyLedgerCsvQuery(thirdPartyId, (Domain.Enums.ThirdPartyKind)kind, from.Value, to.Value), cancellationToken);
+        var r = await _mediator.Send(new ExportThirdPartyLedgerCsvQuery(thirdPartyId, (Domain.Enums.ThirdPartyKind)kind, from.Value, to.Value, format), cancellationToken);
         if (r.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
-        return File(r.Value, "text/csv", $"grand_livre_tiers_{from.Value:yyyyMMdd}_{to.Value:yyyyMMdd}.csv");
+        return FileFor(r.Value, format, $"grand_livre_tiers_{from.Value:yyyyMMdd}_{to.Value:yyyyMMdd}");
     }
 
     [HttpGet("aging/clients")]
@@ -319,6 +330,28 @@ public sealed class AccountingController : ControllerBase
         if (r.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
         return Ok(ApiResponse<IReadOnlyList<AgingReportRowDto>>.Ok(r.Value));
+    }
+
+    [HttpGet("aging/clients/export")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> ExportClientAging(
+        [FromQuery] AccountingExportFormat format = AccountingExportFormat.Csv, CancellationToken cancellationToken = default)
+    {
+        var r = await _mediator.Send(new ExportAgingQuery(Domain.Enums.ThirdPartyKind.Client, format), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return FileFor(r.Value, format, $"balance_agee_clients_{DateTime.UtcNow:yyyyMMdd}");
+    }
+
+    [HttpGet("aging/suppliers/export")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> ExportSupplierAging(
+        [FromQuery] AccountingExportFormat format = AccountingExportFormat.Csv, CancellationToken cancellationToken = default)
+    {
+        var r = await _mediator.Send(new ExportAgingQuery(Domain.Enums.ThirdPartyKind.Supplier, format), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return FileFor(r.Value, format, $"balance_agee_fournisseurs_{DateTime.UtcNow:yyyyMMdd}");
     }
 
     [HttpGet("vat-declaration")]
@@ -596,6 +629,32 @@ public sealed class AccountingController : ControllerBase
         if (r.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
         return Ok(ApiResponse<IncomeStatementDto>.Ok(r.Value));
+    }
+
+    [HttpGet("balance-sheet/export")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> ExportBalanceSheet(
+        [FromQuery] int fiscalYear,
+        [FromQuery] AccountingExportFormat format = AccountingExportFormat.Csv,
+        CancellationToken cancellationToken = default)
+    {
+        var r = await _mediator.Send(new ExportBalanceSheetQuery(fiscalYear, format), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return FileFor(r.Value, format, $"bilan_{fiscalYear}");
+    }
+
+    [HttpGet("income-statement/export")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> ExportIncomeStatement(
+        [FromQuery] int fiscalYear,
+        [FromQuery] AccountingExportFormat format = AccountingExportFormat.Csv,
+        CancellationToken cancellationToken = default)
+    {
+        var r = await _mediator.Send(new ExportIncomeStatementQuery(fiscalYear, format), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return FileFor(r.Value, format, $"compte_resultat_{fiscalYear}");
     }
 
     [HttpGet("nct-statements")]
@@ -892,16 +951,17 @@ public sealed class AccountingController : ControllerBase
         [FromQuery] string? journalCode,
         [FromQuery] DateTime? from,
         [FromQuery] DateTime? to,
-        CancellationToken cancellationToken)
+        [FromQuery] AccountingExportFormat format = AccountingExportFormat.Csv,
+        CancellationToken cancellationToken = default)
     {
         if (!from.HasValue || !to.HasValue)
             return BadRequest(ApiResponse<object>.Fail("Les paramètres from et to sont requis."));
 
-        var r = await _mediator.Send(new ExportJournalCsvQuery(journalCode, from.Value, to.Value), cancellationToken);
+        var r = await _mediator.Send(new ExportJournalCsvQuery(journalCode, from.Value, to.Value, format), cancellationToken);
         if (r.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
 
-        return File(r.Value, "text/csv", $"journal_{from.Value:yyyyMMdd}_{to.Value:yyyyMMdd}.csv");
+        return FileFor(r.Value, format, $"journal_{from.Value:yyyyMMdd}_{to.Value:yyyyMMdd}");
     }
 
     [HttpGet("ledger/export")]
@@ -910,16 +970,17 @@ public sealed class AccountingController : ControllerBase
         [FromQuery] string accountNumber,
         [FromQuery] DateTime? from,
         [FromQuery] DateTime? to,
-        CancellationToken cancellationToken)
+        [FromQuery] AccountingExportFormat format = AccountingExportFormat.Csv,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(accountNumber) || !from.HasValue || !to.HasValue)
             return BadRequest(ApiResponse<object>.Fail("accountNumber, from et to sont requis."));
 
-        var r = await _mediator.Send(new ExportLedgerCsvQuery(accountNumber, from.Value, to.Value), cancellationToken);
+        var r = await _mediator.Send(new ExportLedgerCsvQuery(accountNumber, from.Value, to.Value, format), cancellationToken);
         if (r.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
 
-        return File(r.Value, "text/csv", $"grand_livre_{accountNumber}_{from.Value:yyyyMMdd}_{to.Value:yyyyMMdd}.csv");
+        return FileFor(r.Value, format, $"grand_livre_{accountNumber}_{from.Value:yyyyMMdd}_{to.Value:yyyyMMdd}");
     }
 
     [HttpGet("balance/export")]
@@ -927,16 +988,17 @@ public sealed class AccountingController : ControllerBase
     public async Task<IActionResult> ExportBalance(
         [FromQuery] DateTime? from,
         [FromQuery] DateTime? to,
-        CancellationToken cancellationToken)
+        [FromQuery] AccountingExportFormat format = AccountingExportFormat.Csv,
+        CancellationToken cancellationToken = default)
     {
         if (!from.HasValue || !to.HasValue)
             return BadRequest(ApiResponse<object>.Fail("from et to sont requis."));
 
-        var r = await _mediator.Send(new ExportBalanceCsvQuery(from.Value, to.Value), cancellationToken);
+        var r = await _mediator.Send(new ExportBalanceCsvQuery(from.Value, to.Value, format), cancellationToken);
         if (r.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
 
-        return File(r.Value, "text/csv", $"balance_{from.Value:yyyyMMdd}_{to.Value:yyyyMMdd}.csv");
+        return FileFor(r.Value, format, $"balance_{from.Value:yyyyMMdd}_{to.Value:yyyyMMdd}");
     }
 
     [HttpGet("fec/export/{fiscalYear:int}")]

@@ -15,6 +15,8 @@ import {
   todayLocalYmd,
   validateDateRange
 } from '../shared/accounting-date-utils';
+import { AccountingExportMenuComponent } from '../shared/accounting-export-menu.component';
+import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
 
 /**
  * Balance auxiliaire : une ligne par tiers (clients ou fournisseurs) avec soldes
@@ -32,7 +34,8 @@ import {
     PageHeaderComponent,
     AccountingStatusBannerComponent,
     AccountingFilterBarComponent,
-    ButtonComponent
+    ButtonComponent,
+    AccountingExportMenuComponent
   ],
   template: `
     <app-page-header title="Balance auxiliaire" subtitle="Soldes par tiers — clients ou fournisseurs" />
@@ -66,16 +69,9 @@ import {
             ariaLabel="Actualiser la balance auxiliaire">
             Actualiser
           </app-button>
-          <app-button
-            variant="secondary"
-            icon="pi pi-download"
-            iconPos="left"
-            type="button"
-            (click)="exportCsv()"
-            [disabled]="loading() || exporting()"
-            ariaLabel="Exporter la balance auxiliaire en CSV">
-            Export CSV
-          </app-button>
+          <app-accounting-export-menu
+            [disabled]="loading() || exporting() || rows().length === 0"
+            (exportFormat)="onExport($event)" />
         </div>
       </app-accounting-filter-bar>
     </div>
@@ -199,7 +195,7 @@ export class AuxiliaryBalanceComponent implements OnInit {
     });
   }
 
-  exportCsv(): void {
+  onExport(format: AccountingExportFormat): void {
     const from = parseLocalDateString(this.fromStr);
     const to = parseLocalDateString(this.toStr);
     const vr = validateDateRange(from, to);
@@ -208,19 +204,15 @@ export class AuxiliaryBalanceComponent implements OnInit {
       return;
     }
     this.exporting.set(true);
-    this.api.exportAuxiliaryBalance(this.kind, from, to).subscribe({
+    this.api.exportAuxiliaryBalance(this.kind, from, to, format).subscribe({
       next: blob => {
         this.exporting.set(false);
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `balance_auxiliaire_${this.kind === 1 ? 'clients' : 'fournisseurs'}_${this.fromStr}_${this.toStr}.csv`;
-        a.click();
-        URL.revokeObjectURL(url);
+        const kindName = this.kind === 1 ? 'clients' : 'fournisseurs';
+        downloadBlob(blob, `balance_auxiliaire_${kindName}_${this.fromStr}_${this.toStr}.${exportExtension(format)}`);
       },
       error: () => {
         this.exporting.set(false);
-        this.error.set("Erreur lors de l'export CSV.");
+        this.error.set("Erreur lors de l'export.");
       }
     });
   }

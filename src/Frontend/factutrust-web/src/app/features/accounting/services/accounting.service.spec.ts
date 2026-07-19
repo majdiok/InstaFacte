@@ -362,4 +362,68 @@ describe('AccountingService', () => {
       req.flush({ success: true, data: 3 });
     });
   });
+
+  describe('exports (csv / excel / pdf)', () => {
+    const from = new Date(2026, 0, 1);
+    const to = new Date(2026, 2, 31);
+    const blob = new Blob(['x'], { type: 'application/octet-stream' });
+
+    it('exportJournal should GET journal/export with format and blob responseType', () => {
+      service.exportJournal('JV', from, to, 'pdf').subscribe(b => expect(b).toBeTruthy());
+      const req = httpMock.expectOne(r => r.url === `${base}/journal/export`);
+      expect(req.request.method).toBe('GET');
+      expect(req.request.params.get('format')).toBe('pdf');
+      expect(req.request.params.get('journalCode')).toBe('JV');
+      expect(req.request.responseType).toBe('blob');
+      req.flush(blob);
+    });
+
+    it('exportLedger should GET ledger/export with account and excel format', () => {
+      service.exportLedger('4111', from, to, 'excel').subscribe();
+      const req = httpMock.expectOne(r => r.url === `${base}/ledger/export`);
+      expect(req.request.params.get('accountNumber')).toBe('4111');
+      expect(req.request.params.get('format')).toBe('excel');
+      expect(req.request.responseType).toBe('blob');
+      req.flush(blob);
+    });
+
+    it('exportBalance should GET balance/export with csv format', () => {
+      service.exportBalance(from, to, 'csv').subscribe();
+      const req = httpMock.expectOne(r => r.url === `${base}/balance/export`);
+      expect(req.request.params.get('format')).toBe('csv');
+      req.flush(blob);
+    });
+
+    it('exportAuxiliaryBalance should include kind and format', () => {
+      service.exportAuxiliaryBalance(2, from, to, 'excel').subscribe();
+      const req = httpMock.expectOne(r => r.url === `${base}/auxiliary-balance/export`);
+      expect(req.request.params.get('kind')).toBe('2');
+      expect(req.request.params.get('format')).toBe('excel');
+      req.flush(blob);
+    });
+
+    it('exportClientAging should GET aging/clients/export with format', () => {
+      service.exportClientAging('pdf').subscribe();
+      const req = httpMock.expectOne(r => r.url === `${base}/aging/clients/export`);
+      expect(req.request.params.get('format')).toBe('pdf');
+      expect(req.request.responseType).toBe('blob');
+      req.flush(blob);
+    });
+
+    it('exportBalanceSheet should GET balance-sheet/export with fiscalYear and format', () => {
+      service.exportBalanceSheet(2025, 'pdf').subscribe();
+      const req = httpMock.expectOne(r => r.url === `${base}/balance-sheet/export`);
+      expect(req.request.params.get('fiscalYear')).toBe('2025');
+      expect(req.request.params.get('format')).toBe('pdf');
+      req.flush(blob);
+    });
+
+    it('exportIncomeStatement should GET income-statement/export with fiscalYear and format', () => {
+      service.exportIncomeStatement(2025, 'excel').subscribe();
+      const req = httpMock.expectOne(r => r.url === `${base}/income-statement/export`);
+      expect(req.request.params.get('fiscalYear')).toBe('2025');
+      expect(req.request.params.get('format')).toBe('excel');
+      req.flush(blob);
+    });
+  });
 });
