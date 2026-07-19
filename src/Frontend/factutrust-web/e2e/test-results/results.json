@@ -1,7 +1,14 @@
 {
   "config": {
-    "configFile": "C:\\Solution\\FactuTrust - Copy\\src\\Frontend\\factutrust-web\\playwright.config.ts",
-    "rootDir": "C:/Solution/FactuTrust - Copy/src/Frontend/factutrust-web/e2e",
+    "argv": [
+      "C:\\Program Files\\nodejs\\node.exe",
+      "C:\\Solution\\FactuTrustCopy\\src\\Frontend\\factutrust-web\\node_modules\\@playwright\\test\\cli.js",
+      "test",
+      "e2e/accounting/accounting-layout.spec.ts"
+    ],
+    "configFile": "C:\\Solution\\FactuTrustCopy\\src\\Frontend\\factutrust-web\\playwright.config.ts",
+    "rootDir": "C:/Solution/FactuTrustCopy/src/Frontend/factutrust-web/e2e",
+    "failOnFlakyTests": false,
     "forbidOnly": false,
     "fullyParallel": true,
     "globalSetup": null,
@@ -11,9 +18,66 @@
     "grepInvert": null,
     "maxFailures": 0,
     "metadata": {
-      "actualWorkers": 1
+      "actualWorkers": 3
     },
     "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "C:/Solution/FactuTrustCopy/src/Frontend/factutrust-web/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 3
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "C:/Solution/FactuTrustCopy/src/Frontend/factutrust-web/e2e",
+        "testIgnore": [
+          "/.*\\.selenium\\.spec\\.ts$/"
+        ],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "C:/Solution/FactuTrustCopy/src/Frontend/factutrust-web/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 3
+        },
+        "id": "firefox",
+        "name": "firefox",
+        "testDir": "C:/Solution/FactuTrustCopy/src/Frontend/factutrust-web/e2e",
+        "testIgnore": [
+          "/.*\\.selenium\\.spec\\.ts$/"
+        ],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "C:/Solution/FactuTrustCopy/src/Frontend/factutrust-web/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 3
+        },
+        "id": "webkit",
+        "name": "webkit",
+        "testDir": "C:/Solution/FactuTrustCopy/src/Frontend/factutrust-web/e2e",
+        "testIgnore": [
+          "/.*\\.selenium\\.spec\\.ts$/"
+        ],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
     "reporter": [
       [
         "html",
@@ -34,68 +98,11 @@
       "max": 5,
       "threshold": 300000
     },
-    "quiet": false,
-    "projects": [
-      {
-        "outputDir": "C:/Solution/FactuTrust - Copy/src/Frontend/factutrust-web/test-results",
-        "repeatEach": 1,
-        "retries": 0,
-        "metadata": {
-          "actualWorkers": 1
-        },
-        "id": "chromium",
-        "name": "chromium",
-        "testDir": "C:/Solution/FactuTrust - Copy/src/Frontend/factutrust-web/e2e",
-        "testIgnore": [
-          "/.*\\.selenium\\.spec\\.ts$/"
-        ],
-        "testMatch": [
-          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
-        ],
-        "timeout": 30000
-      },
-      {
-        "outputDir": "C:/Solution/FactuTrust - Copy/src/Frontend/factutrust-web/test-results",
-        "repeatEach": 1,
-        "retries": 0,
-        "metadata": {
-          "actualWorkers": 1
-        },
-        "id": "firefox",
-        "name": "firefox",
-        "testDir": "C:/Solution/FactuTrust - Copy/src/Frontend/factutrust-web/e2e",
-        "testIgnore": [
-          "/.*\\.selenium\\.spec\\.ts$/"
-        ],
-        "testMatch": [
-          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
-        ],
-        "timeout": 30000
-      },
-      {
-        "outputDir": "C:/Solution/FactuTrust - Copy/src/Frontend/factutrust-web/test-results",
-        "repeatEach": 1,
-        "retries": 0,
-        "metadata": {
-          "actualWorkers": 1
-        },
-        "id": "webkit",
-        "name": "webkit",
-        "testDir": "C:/Solution/FactuTrust - Copy/src/Frontend/factutrust-web/e2e",
-        "testIgnore": [
-          "/.*\\.selenium\\.spec\\.ts$/"
-        ],
-        "testMatch": [
-          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
-        ],
-        "timeout": 30000
-      }
-    ],
     "shard": null,
     "tags": [],
     "updateSnapshots": "missing",
     "updateSourceMethod": "patch",
-    "version": "1.57.0",
+    "version": "1.61.1",
     "workers": 8,
     "webServer": {
       "command": "npm start",
@@ -106,69 +113,159 @@
   },
   "suites": [
     {
-      "title": "accounting\\fixed-assets-amortization-table.spec.ts",
-      "file": "accounting/fixed-assets-amortization-table.spec.ts",
+      "title": "accounting\\accounting-layout.spec.ts",
+      "file": "accounting/accounting-layout.spec.ts",
       "column": 0,
       "line": 0,
       "specs": [],
       "suites": [
         {
-          "title": "Fixed assets amortization table",
-          "file": "accounting/fixed-assets-amortization-table.spec.ts",
+          "title": "Accounting UI layout",
+          "file": "accounting/accounting-layout.spec.ts",
           "line": 3,
           "column": 6,
           "specs": [
             {
-              "title": "screen is reachable from accounting routes",
-              "ok": true,
+              "title": "ledger toolbar buttons do not overlap at 1280px",
+              "ok": false,
               "tags": [],
               "tests": [
                 {
                   "timeout": 30000,
-                  "annotations": [
-                    {
-                      "type": "skip",
-                      "description": "Requires authenticated E2E session in CI/local.",
-                      "location": {
-                        "file": "C:\\Solution\\FactuTrust - Copy\\src\\Frontend\\factutrust-web\\e2e\\accounting\\fixed-assets-amortization-table.spec.ts",
-                        "line": 5,
-                        "column": 10
-                      }
-                    }
-                  ],
-                  "expectedStatus": "skipped",
+                  "annotations": [],
+                  "expectedStatus": "passed",
                   "projectId": "chromium",
                   "projectName": "chromium",
                   "results": [
                     {
                       "workerIndex": 0,
                       "parallelIndex": 0,
-                      "status": "skipped",
-                      "duration": 293,
-                      "errors": [],
+                      "status": "failed",
+                      "duration": 8,
+                      "error": {
+                        "message": "Error: browserType.launch: Executable doesn't exist at C:\\Users\\sabriko\\AppData\\Local\\ms-playwright\\chromium_headless_shell-1228\\chrome-headless-shell-win64\\chrome-headless-shell.exe\n╔════════════════════════════════════════════════════════════╗\n║ Looks like Playwright was just installed or updated.       ║\n║ Please run the following command to download new browsers: ║\n║                                                            ║\n║     npx playwright install                                 ║\n║                                                            ║\n║ <3 Playwright Team                                         ║\n╚════════════════════════════════════════════════════════════╝",
+                        "stack": "Error: browserType.launch: Executable doesn't exist at C:\\Users\\sabriko\\AppData\\Local\\ms-playwright\\chromium_headless_shell-1228\\chrome-headless-shell-win64\\chrome-headless-shell.exe\n╔════════════════════════════════════════════════════════════╗\n║ Looks like Playwright was just installed or updated.       ║\n║ Please run the following command to download new browsers: ║\n║                                                            ║\n║     npx playwright install                                 ║\n║                                                            ║\n║ <3 Playwright Team                                         ║\n╚════════════════════════════════════════════════════════════╝"
+                      },
+                      "errors": [
+                        {
+                          "message": "Error: browserType.launch: Executable doesn't exist at C:\\Users\\sabriko\\AppData\\Local\\ms-playwright\\chromium_headless_shell-1228\\chrome-headless-shell-win64\\chrome-headless-shell.exe\n╔════════════════════════════════════════════════════════════╗\n║ Looks like Playwright was just installed or updated.       ║\n║ Please run the following command to download new browsers: ║\n║                                                            ║\n║     npx playwright install                                 ║\n║                                                            ║\n║ <3 Playwright Team                                         ║\n╚════════════════════════════════════════════════════════════╝"
+                        }
+                      ],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-07-09T14:06:53.048Z",
-                      "annotations": [
+                      "startTime": "2026-07-19T03:07:37.238Z",
+                      "annotations": [],
+                      "attachments": [
                         {
-                          "type": "skip",
-                          "description": "Requires authenticated E2E session in CI/local.",
-                          "location": {
-                            "file": "C:\\Solution\\FactuTrust - Copy\\src\\Frontend\\factutrust-web\\e2e\\accounting\\fixed-assets-amortization-table.spec.ts",
-                            "line": 5,
-                            "column": 10
-                          }
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Solution\\FactuTrustCopy\\src\\Frontend\\factutrust-web\\test-results\\accounting-accounting-layo-7dc42-ns-do-not-overlap-at-1280px-chromium\\error-context.md"
                         }
-                      ],
-                      "attachments": []
+                      ]
                     }
                   ],
-                  "status": "skipped"
+                  "status": "unexpected"
                 }
               ],
-              "id": "31bba55362b05ec48c11-36ef6bba3ad4cb8972f5",
-              "file": "accounting/fixed-assets-amortization-table.spec.ts",
+              "id": "580be8730c928a4251f5-becb3750d778c6181044",
+              "file": "accounting/accounting-layout.spec.ts",
+              "line": 4,
+              "column": 7
+            },
+            {
+              "title": "ledger toolbar buttons do not overlap at 1280px",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "firefox",
+                  "projectName": "firefox",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 1,
+                      "status": "failed",
+                      "duration": 8,
+                      "error": {
+                        "message": "Error: browserType.launch: Executable doesn't exist at C:\\Users\\sabriko\\AppData\\Local\\ms-playwright\\firefox-1532\\firefox\\firefox.exe\n╔════════════════════════════════════════════════════════════╗\n║ Looks like Playwright was just installed or updated.       ║\n║ Please run the following command to download new browsers: ║\n║                                                            ║\n║     npx playwright install                                 ║\n║                                                            ║\n║ <3 Playwright Team                                         ║\n╚════════════════════════════════════════════════════════════╝",
+                        "stack": "Error: browserType.launch: Executable doesn't exist at C:\\Users\\sabriko\\AppData\\Local\\ms-playwright\\firefox-1532\\firefox\\firefox.exe\n╔════════════════════════════════════════════════════════════╗\n║ Looks like Playwright was just installed or updated.       ║\n║ Please run the following command to download new browsers: ║\n║                                                            ║\n║     npx playwright install                                 ║\n║                                                            ║\n║ <3 Playwright Team                                         ║\n╚════════════════════════════════════════════════════════════╝"
+                      },
+                      "errors": [
+                        {
+                          "message": "Error: browserType.launch: Executable doesn't exist at C:\\Users\\sabriko\\AppData\\Local\\ms-playwright\\firefox-1532\\firefox\\firefox.exe\n╔════════════════════════════════════════════════════════════╗\n║ Looks like Playwright was just installed or updated.       ║\n║ Please run the following command to download new browsers: ║\n║                                                            ║\n║     npx playwright install                                 ║\n║                                                            ║\n║ <3 Playwright Team                                         ║\n╚════════════════════════════════════════════════════════════╝"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-07-19T03:07:37.209Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Solution\\FactuTrustCopy\\src\\Frontend\\factutrust-web\\test-results\\accounting-accounting-layo-7dc42-ns-do-not-overlap-at-1280px-firefox\\error-context.md"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "580be8730c928a4251f5-cba5786f890510944537",
+              "file": "accounting/accounting-layout.spec.ts",
+              "line": 4,
+              "column": 7
+            },
+            {
+              "title": "ledger toolbar buttons do not overlap at 1280px",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "failed",
+                      "duration": 7,
+                      "error": {
+                        "message": "Error: browserType.launch: Executable doesn't exist at C:\\Users\\sabriko\\AppData\\Local\\ms-playwright\\webkit-2311\\Playwright.exe\n╔════════════════════════════════════════════════════════════╗\n║ Looks like Playwright was just installed or updated.       ║\n║ Please run the following command to download new browsers: ║\n║                                                            ║\n║     npx playwright install                                 ║\n║                                                            ║\n║ <3 Playwright Team                                         ║\n╚════════════════════════════════════════════════════════════╝",
+                        "stack": "Error: browserType.launch: Executable doesn't exist at C:\\Users\\sabriko\\AppData\\Local\\ms-playwright\\webkit-2311\\Playwright.exe\n╔════════════════════════════════════════════════════════════╗\n║ Looks like Playwright was just installed or updated.       ║\n║ Please run the following command to download new browsers: ║\n║                                                            ║\n║     npx playwright install                                 ║\n║                                                            ║\n║ <3 Playwright Team                                         ║\n╚════════════════════════════════════════════════════════════╝"
+                      },
+                      "errors": [
+                        {
+                          "message": "Error: browserType.launch: Executable doesn't exist at C:\\Users\\sabriko\\AppData\\Local\\ms-playwright\\webkit-2311\\Playwright.exe\n╔════════════════════════════════════════════════════════════╗\n║ Looks like Playwright was just installed or updated.       ║\n║ Please run the following command to download new browsers: ║\n║                                                            ║\n║     npx playwright install                                 ║\n║                                                            ║\n║ <3 Playwright Team                                         ║\n╚════════════════════════════════════════════════════════════╝"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-07-19T03:07:37.283Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Solution\\FactuTrustCopy\\src\\Frontend\\factutrust-web\\test-results\\accounting-accounting-layo-7dc42-ns-do-not-overlap-at-1280px-webkit\\error-context.md"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "580be8730c928a4251f5-c4130fe158e4f08789b9",
+              "file": "accounting/accounting-layout.spec.ts",
               "line": 4,
               "column": 7
             }
@@ -179,11 +276,11 @@
   ],
   "errors": [],
   "stats": {
-    "startTime": "2026-07-09T14:05:41.394Z",
-    "duration": 72616.643,
+    "startTime": "2026-07-19T03:07:04.072Z",
+    "duration": 33687.507,
     "expected": 0,
-    "skipped": 1,
-    "unexpected": 0,
+    "skipped": 0,
+    "unexpected": 3,
     "flaky": 0
   }
 }
