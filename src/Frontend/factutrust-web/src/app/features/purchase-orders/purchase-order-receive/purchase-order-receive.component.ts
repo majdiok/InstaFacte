@@ -1,5 +1,5 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
-import { CommonModule, CurrencyPipe } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -38,7 +38,7 @@ interface ReceptionLine {
   selector: 'app-purchase-order-receive',
   standalone: true,
   imports: [
-    CommonModule, RouterModule, FormsModule, CurrencyPipe,
+    CommonModule, RouterModule, FormsModule,
     TableModule, InputNumberModule, ProgressBarModule, TagModule, ToastModule,
     PageHeaderComponent, BreadcrumbComponent, ButtonComponent, WarehouseSelectorComponent
   ],

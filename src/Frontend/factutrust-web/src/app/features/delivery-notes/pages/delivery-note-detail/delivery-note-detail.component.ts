@@ -23,7 +23,6 @@ import { MenuItem } from '@shared/models/menu-item.model';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
-import { CardComponent } from '@shared/components/card/card.component';
 import { StatusBadgeComponent, StatusBadgeStatus } from '@shared/components/status-badge/status-badge.component';
 import { DeliveryNoteService } from '../../services/delivery-note.service';
 import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDeliveryLineDto } from '../../models/delivery-note.model';
@@ -52,7 +51,6 @@ import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDel
     PageHeaderComponent,
     BreadcrumbComponent,
     ButtonComponent,
-    CardComponent,
     StatusBadgeComponent
   ],
   template: `

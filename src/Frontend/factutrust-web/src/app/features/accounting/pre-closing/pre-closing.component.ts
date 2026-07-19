@@ -99,7 +99,7 @@ import { ButtonComponent } from '@shared/components/button/button.component';
     }
   `,
   styles: `
-    @import '../shared/accounting-layout';
+    @use '../shared/accounting-layout';
     .pc-toolbar-fields { display:flex; flex-wrap:wrap; align-items:flex-end; gap:var(--spacing-4); }
     .text-right { text-align:right; }
     .pc-num { font-variant-numeric:tabular-nums; }

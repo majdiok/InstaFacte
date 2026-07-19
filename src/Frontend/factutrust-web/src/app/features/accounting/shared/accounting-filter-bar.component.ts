@@ -24,7 +24,7 @@ import { CommonModule } from '@angular/common';
     </div>
   `,
   styles: `
-    @import './accounting-layout';
+    @use './accounting-layout';
     .accounting-filter-bar {
       margin-bottom: var(--spacing-4);
     }

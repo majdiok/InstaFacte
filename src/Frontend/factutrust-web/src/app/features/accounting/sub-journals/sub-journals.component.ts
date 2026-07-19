@@ -7,7 +7,6 @@ import { AccountingService, JournalEntryDto } from '../services/accounting.servi
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
 import { AnalyzeWithAiButtonComponent } from '@features/ai-assistant/components/analyze-with-ai-button/analyze-with-ai-button.component';
 import { wrapLegacyAnalyzePayload } from '@features/ai-assistant/utils/ai-screen-payload.factory';
-import { ButtonComponent } from '@shared/components/button/button.component';
 import {
   firstDayOfMonthLocalYmd,
   parseLocalDateString,
@@ -40,7 +39,6 @@ type JournalFlatRow = {
     PageHeaderComponent,
     AccountingStatusBannerComponent,
     AnalyzeWithAiButtonComponent,
-    ButtonComponent,
     AccountingJournalTabsComponent
   ],
   template: `
@@ -153,7 +151,7 @@ type JournalFlatRow = {
     </div>
   `,
   styles: `
-    @import '../shared/accounting-layout';
+    @use '../shared/accounting-layout';
 
     .sub-journals-filters-card {
       padding: var(--spacing-5);

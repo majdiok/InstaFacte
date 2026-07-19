@@ -17,7 +17,6 @@ import { AccountingMonitoringService } from '../shared/accounting-monitoring.ser
 import { AnalyzeWithAiButtonComponent } from '@features/ai-assistant/components/analyze-with-ai-button/analyze-with-ai-button.component';
 import { wrapLegacyAnalyzePayload } from '@features/ai-assistant/utils/ai-screen-payload.factory';
 import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.component';
-import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
 
 type JournalFlatRow = {
   entryId: string;
@@ -51,8 +50,7 @@ type JournalFlatRow = {
     ButtonComponent,
     AccountingStatusBannerComponent,
     AnalyzeWithAiButtonComponent,
-    AccountingFilterBarComponent,
-    EmptyStateComponent
+    AccountingFilterBarComponent
   ],
   template: `
     <app-page-header title="Journal comptable" subtitle="Écritures par période" />
@@ -368,6 +366,7 @@ type JournalFlatRow = {
     }
   `,
   styles: `
+    @use '../shared/accounting-layout';
     .journal-filters-card,
     .journal-table-card {
       padding: var(--spacing-5);
@@ -414,7 +413,6 @@ type JournalFlatRow = {
       opacity: 0.65;
       cursor: not-allowed;
     }
-    @import '../shared/accounting-layout';
     .journal-error {
       margin: 0 0 var(--spacing-3);
     }

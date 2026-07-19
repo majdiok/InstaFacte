@@ -31,7 +31,6 @@ import { InputTextModule } from 'primeng/inputtext';
 // Shared Components
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
-import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
 
 type WizardStep = 'start' | 'count' | 'summary' | 'success';
 
@@ -55,8 +54,7 @@ type WizardStep = 'start' | 'count' | 'summary' | 'success';
         CheckboxModule,
         InputTextModule,
         PageHeaderComponent,
-        BreadcrumbComponent,
-        EmptyStateComponent
+        BreadcrumbComponent
     ],
     templateUrl: './inventory-wizard.component.html',
     styleUrl: './inventory-wizard.component.scss'

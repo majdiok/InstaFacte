@@ -19,7 +19,6 @@ import { MenuItem } from '@shared/models/menu-item.model';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
-import { CardComponent } from '@shared/components/card/card.component';
 import { StatusBadgeComponent, StatusBadgeStatus } from '@shared/components/status-badge/status-badge.component';
 import { RecordPaymentDialogComponent } from '@shared/components/record-payment-dialog/record-payment-dialog.component';
 import { InvoiceService, InvoiceDetail } from '@core/services/invoice.service';
@@ -52,7 +51,6 @@ interface TimelineEvent {
     PageHeaderComponent,
     BreadcrumbComponent,
     ButtonComponent,
-    CardComponent,
     StatusBadgeComponent,
     RecordPaymentDialogComponent
   ],

@@ -1,4 +1,4 @@
-import { CommonModule, DatePipe } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -60,7 +60,6 @@ import { ReplenishmentExportService } from '../../services/replenishment-export.
     CommonModule,
     FormsModule,
     RouterLink,
-    DatePipe,
     AnalyzeWithAiButtonComponent,
     ProductDemandModalComponent,
     DismissReasonModalComponent,

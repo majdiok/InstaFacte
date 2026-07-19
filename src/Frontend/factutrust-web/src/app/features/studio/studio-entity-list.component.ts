@@ -14,7 +14,6 @@ import { StudioService } from './studio.service';
 import { CustomEntity } from './studio.models';
 import { StudioPageShellComponent } from './shared/studio-page-shell.component';
 import { STUDIO_BREADCRUMBS } from './shared/studio-breadcrumb.util';
-import { ButtonComponent } from '@shared/components/button/button.component';
 import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
 import { StatusBadgeComponent } from '@shared/components/status-badge/status-badge.component';
 import { SkeletonTableComponent } from '@shared/components/skeleton/skeleton-table.component';
@@ -25,7 +24,7 @@ import { SkeletonTableComponent } from '@shared/components/skeleton/skeleton-tab
   imports: [
     CommonModule, FormsModule, RouterModule, TableModule, ButtonModule, DialogModule,
     InputTextModule, InputTextarea, TooltipModule, ToastModule,
-    StudioPageShellComponent, ButtonComponent, EmptyStateComponent, StatusBadgeComponent, SkeletonTableComponent
+    StudioPageShellComponent, EmptyStateComponent, StatusBadgeComponent, SkeletonTableComponent
   ],
   template: `
     <p-toast></p-toast>

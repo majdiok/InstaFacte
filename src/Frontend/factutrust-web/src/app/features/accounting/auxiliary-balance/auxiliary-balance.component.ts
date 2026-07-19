@@ -136,7 +136,7 @@ import {
     </p-table>
   `,
   styles: `
-    @import '../shared/accounting-layout';
+    @use '../shared/accounting-layout';
     .auxbal-toolbar-fields { display:flex; flex-wrap:wrap; align-items:flex-end; gap:var(--spacing-4); }
     .text-right { text-align:right; }
     .auxbal-num { font-variant-numeric:tabular-nums; }

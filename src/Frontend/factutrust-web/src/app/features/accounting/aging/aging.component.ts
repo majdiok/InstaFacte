@@ -27,11 +27,11 @@ import { ButtonComponent } from '@shared/components/button/button.component';
   ],
   styles: [
     `
+      @use '../shared/accounting-layout';
       .text-right {
         text-align: right;
         font-variant-numeric: tabular-nums;
       }
-      @import '../shared/accounting-layout';
       .aging-zero {
         color: var(--color-text-tertiary);
       }

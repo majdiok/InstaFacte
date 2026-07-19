@@ -144,7 +144,7 @@ import {
     </p-table>
   `,
   styles: `
-    @import '../shared/accounting-layout';
+    @use '../shared/accounting-layout';
     .tpl-toolbar-fields { display:flex; flex-wrap:wrap; align-items:flex-end; gap:var(--spacing-4); }
     .text-right { text-align:right; }
     .tpl-num { font-variant-numeric:tabular-nums; }

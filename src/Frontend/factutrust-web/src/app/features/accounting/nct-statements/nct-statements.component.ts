@@ -106,7 +106,7 @@ type NctTab = 'bilan' | 'resultat' | 'flux' | 'capitaux' | 'notes';
     </ng-template>
   `,
   styles: `
-    @import '../shared/accounting-layout';
+    @use '../shared/accounting-layout';
     .nct-year-input { max-width: 7rem; }
     .nct-info-banner { display:flex; align-items:center; gap:var(--spacing-2); margin-bottom:var(--spacing-4); padding:var(--spacing-3) var(--spacing-4); border-radius:var(--radius-md); background:var(--color-primary-50,#eff6ff); border:1px solid var(--color-primary-200,#bfdbfe); color:var(--color-primary-700,#1d4ed8); font-size:var(--font-size-sm); }
     .nct-tabs { display:flex; flex-wrap:wrap; gap:var(--spacing-2); margin-bottom:var(--spacing-4); }

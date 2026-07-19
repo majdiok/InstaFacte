@@ -12,7 +12,6 @@ import { AnalyzeWithAiButtonComponent } from '@features/ai-assistant/components/
 import { wrapLegacyAnalyzePayload } from '@features/ai-assistant/utils/ai-screen-payload.factory';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { TooltipModule } from 'primeng/tooltip';
-import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
 import {
   firstDayOfMonthLocalYmd,
   parseLocalDateString,
@@ -34,8 +33,7 @@ import {
     AccountingFilterBarComponent,
     AnalyzeWithAiButtonComponent,
     ButtonComponent,
-    TooltipModule,
-    EmptyStateComponent
+    TooltipModule
   ],
   template: `
     <app-page-header title="Balance" subtitle="Balance générale — 8 colonnes avec soldes d'ouverture" />
@@ -140,7 +138,7 @@ import {
     </p-tabView>
   `,
   styles: `
-    @import '../shared/accounting-layout';
+    @use '../shared/accounting-layout';
     .balance-toolbar-fields { display:flex; flex-wrap:wrap; align-items:flex-end; gap:var(--spacing-4); }
     .text-right { text-align:right; }
     .acc-totals-row td { font-weight:var(--font-weight-bold); background:var(--color-background-subtle); border-top:2px solid var(--color-border-default); }

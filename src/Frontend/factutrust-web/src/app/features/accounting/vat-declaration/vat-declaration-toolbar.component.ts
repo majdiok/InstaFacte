@@ -52,7 +52,7 @@ import { isCompanyAccountingRestricted } from '@core/config/company-accounting-n
     </div>
   `,
   styles: `
-    @import '../shared/accounting-layout';
+    @use '../shared/accounting-layout';
     .vat-toolbar-card { margin-bottom: var(--spacing-4); padding: var(--spacing-5); }
     .vat-toolbar { display: flex; flex-wrap: wrap; gap: var(--spacing-4); align-items: flex-end; justify-content: space-between; }
     .vat-toolbar-fields { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--spacing-4); }

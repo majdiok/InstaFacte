@@ -128,7 +128,7 @@ const MONTH_NAMES = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Jui
     </div>
   `,
   styles: `
-    @import '../shared/accounting-layout';
+    @use '../shared/accounting-layout';
     .br-fields { display: flex; flex-wrap: wrap; gap: var(--spacing-3); }
     .br-actions { display: flex; flex-wrap: wrap; gap: var(--spacing-2); align-items: flex-end; }
     .br-year-inp { max-width: 7rem; }

@@ -1,5 +1,6 @@
 // ============================================
 // FACTUTRUST — COUCHE DESIGN (ft-*)
+@use 'sass:list';
 // Utilitaires/animations portés depuis la maquette factutrust_design.html.
 // 100% autonome : aucune dépendance au CDN Tailwind. Sûr à utiliser partout.
 // Les couleurs consomment les tokens --color-* (styles.scss).
@@ -194,8 +195,8 @@ $ft-icon-tones: (
 
   @each $name, $pair in $ft-icon-tones {
     &--#{$name} {
-      background: nth($pair, 1);
-      color: nth($pair, 2);
+      background: list.nth($pair, 1);
+      color: list.nth($pair, 2);
     }
   }
 }
@@ -203,7 +204,7 @@ $ft-icon-tones: (
 // Glyphe coloré seul (sans fond) — rails de navigation, listes denses.
 .ft-icon-tone {
   @each $name, $pair in $ft-icon-tones {
-    &--#{$name} { color: nth($pair, 2); }
+    &--#{$name} { color: list.nth($pair, 2); }
   }
 }
 

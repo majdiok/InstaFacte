@@ -179,7 +179,7 @@ interface ThirdPartyProfileForm {
     </p-table>
   `,
   styles: `
-    @import '../shared/accounting-layout';
+    @use '../shared/accounting-layout';
     .tp-toolbar-fields { display:flex; flex-wrap:wrap; align-items:flex-end; gap:var(--spacing-4); }
     .tp-grow { flex:1 1 14rem; }
     .tp-check { display:flex; align-items:center; gap:var(--spacing-2); padding:var(--spacing-2) 0; font-size:var(--font-size-sm); color:var(--color-text-primary); cursor:pointer; }

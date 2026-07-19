@@ -604,15 +604,6 @@ app-pos [role="tab"]:focus-visible {
   outline-offset: 2px;
 }
 
-// PrimeIcons: @font-face de secours pour garantir le chargement des polices (chemins node_modules pouvant échouer après build)
-@font-face {
-  font-family: 'primeicons';
-  font-display: block;
-  src: url('./assets/fonts/primeicons/primeicons.woff2') format('woff2'), url('./assets/fonts/primeicons/primeicons.woff') format('woff');
-  font-weight: normal;
-  font-style: normal;
-}
-
 // POS menu commande: forcer les styles des icônes PrimeIcons (éviter surcharge Pluto/FontAwesome/Bootstrap)
 .pos-layout .order-panel__actions .pi,
 .pos-layout .order-panel .pi {
