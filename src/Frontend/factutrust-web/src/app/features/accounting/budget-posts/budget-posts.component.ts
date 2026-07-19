@@ -5,6 +5,7 @@ import { TableModule } from 'primeng/table';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
+import { AccountingTableActionsComponent } from '../shared/accounting-table-actions.component';
 import { ToastService } from '@core/services/toast.service';
 import { AccountingService, BudgetPostDto, BudgetPostKind } from '../services/accounting.service';
 
@@ -20,7 +21,7 @@ interface BudgetPostForm {
 @Component({
   selector: 'app-budget-posts',
   standalone: true,
-  imports: [CommonModule, FormsModule, TableModule, PageHeaderComponent, ButtonComponent, AccountingStatusBannerComponent],
+  imports: [CommonModule, FormsModule, TableModule, PageHeaderComponent, ButtonComponent, AccountingStatusBannerComponent, AccountingTableActionsComponent],
   template: `
     <app-page-header title="Postes budgétaires" subtitle="Regroupements de comptes (par préfixes) servant à la saisie des budgets et au suivi réalisé/budget" />
 
@@ -47,10 +48,10 @@ interface BudgetPostForm {
           </div>
           <div class="bp-field"><label class="bp-lbl">Ordre</label><input type="number" class="bp-inp bp-narrow" [(ngModel)]="f.displayOrder" min="0" /></div>
           <div class="bp-form-actions">
-            <button type="button" class="btn btn-secondary" (click)="form.set(null)" [disabled]="saving()">Annuler</button>
-            <button type="button" class="btn btn-primary" (click)="save()" [disabled]="saving() || !f.code.trim() || !f.label.trim() || !f.accountPrefixes.trim()">
+            <app-button variant="secondary" size="sm" type="button" (click)="form.set(null)" [disabled]="saving()">Annuler</app-button>
+            <app-button variant="primary" size="sm" type="button" (click)="save()" [disabled]="saving() || !f.code.trim() || !f.label.trim() || !f.accountPrefixes.trim()">
               {{ saving() ? 'Enregistrement…' : 'Enregistrer' }}
-            </button>
+            </app-button>
           </div>
         </div>
         <p class="bp-help">Préfixes séparés par « ; » (1 à 8 chiffres chacun). Le réalisé agrège les comptes commençant par ces préfixes ; en cas de chevauchement entre postes, le préfixe le plus long gagne.</p>
@@ -75,10 +76,15 @@ interface BudgetPostForm {
             <td>{{ p.displayOrder }}</td>
             <td>{{ p.isActive ? 'Oui' : 'Non' }}</td>
             <td>
-              <button type="button" class="bp-icon" (click)="startEdit(p)" aria-label="Modifier"><i class="pi pi-pencil"></i></button>
-              <button type="button" class="bp-icon" (click)="toggle(p)" [attr.aria-label]="p.isActive ? 'Désactiver' : 'Activer'">
-                <i class="pi" [class.pi-eye-slash]="p.isActive" [class.pi-eye]="!p.isActive"></i>
-              </button>
+              <app-accounting-table-actions>
+                <app-button variant="ghost" size="sm" icon="pi-pencil" [iconOnly]="true" [iconAlwaysVisible]="true"
+                  type="button" (click)="startEdit(p)" ariaLabel="Modifier" />
+                <app-button variant="ghost" size="sm"
+                  [icon]="p.isActive ? 'pi-eye-slash' : 'pi-eye'"
+                  [iconOnly]="true" [iconAlwaysVisible]="true"
+                  type="button" (click)="toggle(p)"
+                  [attr.aria-label]="p.isActive ? 'Désactiver' : 'Activer'" />
+              </app-accounting-table-actions>
             </td>
           </tr>
         </ng-template>
@@ -96,20 +102,14 @@ interface BudgetPostForm {
     .bp-narrow { max-width: 6rem; }
     .bp-lbl { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); color: var(--color-text-primary); }
     .bp-inp { padding: var(--spacing-2) var(--spacing-3); border: 1px solid var(--color-border-default); border-radius: var(--radius-md); background: var(--color-background-elevated); color: var(--color-text-primary); font-size: var(--font-size-sm); width: 100%; }
-    .bp-form-actions { display: flex; gap: var(--spacing-2); margin-left: auto; }
+    .bp-form-actions { display: flex; gap: var(--spacing-2); margin-left: auto; align-items: center; }
     .bp-help { margin: var(--spacing-3) 0 0; font-size: var(--font-size-sm); color: var(--color-text-secondary); }
     .bp-mono { font-family: ui-monospace, monospace; }
     .bp-inactive { opacity: 0.6; }
     .bp-badge { display: inline-block; padding: 0.15rem 0.55rem; border-radius: var(--radius-pill, 999px); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); }
     .bp-badge-expense { background: var(--color-warning-50, #fffbeb); color: var(--color-warning-700, #a16207); border: 1px solid var(--color-warning-200, #fde68a); }
     .bp-badge-revenue { background: var(--color-success-100, #dcfce7); color: var(--color-success-700, #15803d); }
-    .bp-icon { background: none; border: none; cursor: pointer; color: var(--color-text-secondary); padding: var(--spacing-1) var(--spacing-2); }
-    .bp-icon:hover { color: var(--color-text-primary); }
     .bp-empty { text-align: center; padding: var(--spacing-6); color: var(--color-text-tertiary); }
-    .btn { padding: var(--spacing-2) var(--spacing-4); border-radius: var(--radius-md); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); cursor: pointer; border: 1px solid transparent; }
-    .btn-secondary { background: var(--color-background-subtle); color: var(--color-text-primary); border-color: var(--color-border-default); }
-    .btn-primary { background: var(--color-primary-500, #2563eb); color: #fff; }
-    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
   `
 })
 export class BudgetPostsComponent implements OnInit {

@@ -5,6 +5,7 @@ import { TableModule } from 'primeng/table';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
+import { AccountingTableActionsComponent } from '../shared/accounting-table-actions.component';
 import { ToastService } from '@core/services/toast.service';
 import {
   AccountingService,
@@ -32,7 +33,7 @@ const JOURNAL_CODES = ['JV', 'JA', 'JC', 'JB', 'JOD', 'JIM', 'JAN'];
 @Component({
   selector: 'app-entry-templates',
   standalone: true,
-  imports: [CommonModule, FormsModule, TableModule, PageHeaderComponent, ButtonComponent, AccountingStatusBannerComponent],
+  imports: [CommonModule, FormsModule, TableModule, PageHeaderComponent, ButtonComponent, AccountingStatusBannerComponent, AccountingTableActionsComponent],
   template: `
     <app-page-header title="Modèles d'écriture" subtitle="Modèles réutilisables pour la saisie manuelle" />
 
@@ -117,7 +118,10 @@ const JOURNAL_CODES = ['JV', 'JA', 'JC', 'JB', 'JOD', 'JIM', 'JAN'];
                 <td><input class="tpl-input" [(ngModel)]="line.lineLabelTemplate" [disabled]="saving()" /></td>
                 <td><input type="number" class="tpl-input tpl-amount" [(ngModel)]="line.fixedDebit" [disabled]="saving()" /></td>
                 <td><input type="number" class="tpl-input tpl-amount" [(ngModel)]="line.fixedCredit" [disabled]="saving()" /></td>
-                <td><button type="button" class="tpl-icon-btn" (click)="removeLine($index)" [disabled]="saving()" aria-label="Supprimer la ligne"><i class="pi pi-trash"></i></button></td>
+                <td>
+                  <app-button variant="ghost" size="sm" icon="pi-trash" [iconOnly]="true" [iconAlwaysVisible]="true"
+                    type="button" (click)="removeLine($index)" [disabled]="saving()" ariaLabel="Supprimer la ligne" />
+                </td>
               </tr>
             }
           </tbody>
@@ -164,19 +168,25 @@ const JOURNAL_CODES = ['JV', 'JA', 'JC', 'JB', 'JOD', 'JIM', 'JAN'];
             <td>{{ t.usageCount }}</td>
             <td>{{ t.isActive ? 'Oui' : 'Non' }}</td>
             <td>
+              <app-accounting-table-actions>
               @if (t.isRecurring && t.nextRunDate && t.isActive) {
-                <button
+                <app-button
+                  variant="ghost"
+                  size="sm"
+                  icon="pi-bolt"
+                  [iconOnly]="true"
+                  [iconAlwaysVisible]="true"
                   type="button"
-                  class="tpl-icon-btn tpl-icon-run"
                   (click)="runNow(t)"
                   [disabled]="runningId() === t.id"
-                  aria-label="Générer l'écriture maintenant"
-                  title="Générer l'écriture de la prochaine échéance maintenant">
-                  <i class="pi pi-bolt"></i>
-                </button>
+                  ariaLabel="Générer l'écriture maintenant"
+                  title="Générer l'écriture de la prochaine échéance maintenant" />
               }
-              <button type="button" class="tpl-icon-btn" (click)="startEdit(t)" aria-label="Modifier"><i class="pi pi-pencil"></i></button>
-              <button type="button" class="tpl-icon-btn tpl-icon-danger" (click)="remove(t)" aria-label="Supprimer"><i class="pi pi-trash"></i></button>
+              <app-button variant="ghost" size="sm" icon="pi-pencil" [iconOnly]="true" [iconAlwaysVisible]="true"
+                type="button" (click)="startEdit(t)" ariaLabel="Modifier" />
+              <app-button variant="ghost" size="sm" icon="pi-trash" [iconOnly]="true" [iconAlwaysVisible]="true"
+                type="button" (click)="remove(t)" ariaLabel="Supprimer" />
+              </app-accounting-table-actions>
             </td>
           </tr>
         </ng-template>
@@ -210,11 +220,6 @@ const JOURNAL_CODES = ['JV', 'JA', 'JC', 'JB', 'JOD', 'JIM', 'JAN'];
       font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); white-space: nowrap;
     }
     .tpl-rec-none { color: var(--color-text-tertiary); }
-    .tpl-icon-run:hover { color: var(--color-primary-600, #2563eb); }
-    .tpl-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .tpl-icon-btn { background: none; border: none; cursor: pointer; color: var(--color-text-secondary); padding: var(--spacing-1) var(--spacing-2); }
-    .tpl-icon-btn:hover { color: var(--color-text-primary); }
-    .tpl-icon-danger:hover { color: var(--color-danger-600, #dc2626); }
     .tpl-empty { text-align: center; padding: var(--spacing-6); color: var(--color-text-tertiary); }
   `
 })

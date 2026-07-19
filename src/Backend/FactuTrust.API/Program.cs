@@ -140,9 +140,14 @@ builder.Services.AddAuthorization(options =>
         policy.RequireRole(FactuTrust.Domain.Auth.PlatformRoles.MigrationOperator));
     options.AddPolicy(PlatformPolicies.ReadOnlyAuditorOnly, policy =>
         policy.RequireRole(FactuTrust.Domain.Auth.PlatformRoles.ReadOnlyAuditor));
+
+    options.AddPolicy(PermissionPolicies.FirmDelegatedContext, policy =>
+        policy.RequireAuthenticatedUser()
+            .AddRequirements(new FirmDelegatedContextRequirement()));
 });
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
 builder.Services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
+builder.Services.AddScoped<IAuthorizationHandler, FirmDelegatedContextAuthorizationHandler>();
 
 var isDevelopment = builder.Environment.IsDevelopment();
 

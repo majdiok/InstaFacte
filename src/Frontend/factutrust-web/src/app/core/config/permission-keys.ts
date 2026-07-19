@@ -94,7 +94,11 @@ export const PERMISSIONS = {
   accounting: {
     read: 'accounting:read',
     create: 'accounting:create',
-    close: 'accounting:close'
+    close: 'accounting:close',
+    validate: 'accounting:validate',
+    reverse: 'accounting:reverse',
+    import: 'accounting:import',
+    declare: 'accounting:declare'
   },
   audit: {
     read: 'audit:read'

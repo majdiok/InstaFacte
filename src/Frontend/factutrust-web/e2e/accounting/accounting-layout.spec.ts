@@ -26,4 +26,30 @@ test.describe('Accounting UI layout', () => {
       expect(overlap).toBe(false);
     }
   });
+
+  test('journal toolbar buttons do not overlap at 1280px', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('/accounting/journal');
+    if (page.url().includes('/auth/login')) {
+      test.skip(true, 'Authentication required');
+    }
+
+    const refresh = page.getByRole('button', { name: /Actualiser/i });
+    const exportBtn = page.getByRole('button', { name: /Exporter/i });
+    await expect(refresh).toBeVisible();
+    await expect(exportBtn).toBeVisible();
+
+    const a = await refresh.boundingBox();
+    const b = await exportBtn.boundingBox();
+    expect(a).toBeTruthy();
+    expect(b).toBeTruthy();
+    if (a && b) {
+      const overlap =
+        a.x < b.x + b.width &&
+        a.x + a.width > b.x &&
+        a.y < b.y + b.height &&
+        a.y + a.height > b.y;
+      expect(overlap).toBe(false);
+    }
+  });
 });

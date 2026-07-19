@@ -10,6 +10,7 @@ import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
 import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.component';
+import { AccountingTableActionsComponent } from '../shared/accounting-table-actions.component';
 import { AccountingService, ThirdPartyDirectoryRowDto } from '../services/accounting.service';
 
 interface ThirdPartyProfileForm {
@@ -39,7 +40,8 @@ interface ThirdPartyProfileForm {
     PageHeaderComponent,
     ButtonComponent,
     AccountingStatusBannerComponent,
-    AccountingFilterBarComponent
+    AccountingFilterBarComponent,
+    AccountingTableActionsComponent
   ],
   template: `
     <app-page-header title="Plan tiers" subtitle="Répertoire comptable des clients et fournisseurs — codes auxiliaires, comptes collectifs et soldes" />
@@ -157,19 +159,18 @@ interface ThirdPartyProfileForm {
           <td class="text-right tp-num" data-label="Solde C">{{ r.balanceCredit | number : '1.3-3' }}</td>
           <td data-label="Actif">{{ r.isActive ? 'Oui' : 'Non' }}</td>
           <td data-label="Actions" class="tp-actions">
-            <a class="tp-icon" [routerLink]="['/accounting/third-party-ledger']"
+            <app-accounting-table-actions>
+            <app-button variant="ghost" size="sm" icon="pi-book" [iconOnly]="true" [iconAlwaysVisible]="true"
+              [routerLink]="['/accounting/third-party-ledger']"
               [queryParams]="{ thirdPartyId: r.thirdPartyId, kind: r.kind, name: r.name }"
-              pTooltip="Grand livre du tiers" tooltipPosition="top" aria-label="Grand livre du tiers">
-              <i class="pi pi-book"></i>
-            </a>
-            <a class="tp-icon" [routerLink]="['/accounting/lettering']"
-              pTooltip="Lettrage" tooltipPosition="top" aria-label="Lettrage">
-              <i class="pi pi-link"></i>
-            </a>
-            <button type="button" class="tp-icon" (click)="startEdit(r)"
-              pTooltip="Fiche comptable" tooltipPosition="top" aria-label="Modifier la fiche comptable">
-              <i class="pi pi-pencil"></i>
-            </button>
+              pTooltip="Grand livre du tiers" tooltipPosition="top" ariaLabel="Grand livre du tiers" />
+            <app-button variant="ghost" size="sm" icon="pi-link" [iconOnly]="true" [iconAlwaysVisible]="true"
+              [routerLink]="['/accounting/lettering']"
+              pTooltip="Lettrage" tooltipPosition="top" ariaLabel="Lettrage" />
+            <app-button variant="ghost" size="sm" icon="pi-pencil" [iconOnly]="true" [iconAlwaysVisible]="true"
+              type="button" (click)="startEdit(r)"
+              pTooltip="Fiche comptable" tooltipPosition="top" ariaLabel="Modifier la fiche comptable" />
+            </app-accounting-table-actions>
           </td>
         </tr>
       </ng-template>
@@ -199,8 +200,6 @@ interface ThirdPartyProfileForm {
     .tp-badge-client { background:var(--color-primary-50, #eff6ff); color:var(--color-primary-700, #1d4ed8); border:1px solid var(--color-primary-200, #bfdbfe); }
     .tp-badge-supplier { background:var(--color-warning-50, #fffbeb); color:var(--color-warning-700, #a16207); border:1px solid var(--color-warning-200, #fde68a); }
     .tp-actions { white-space:nowrap; }
-    .tp-icon { background:none; border:none; cursor:pointer; color:var(--color-text-secondary); padding:var(--spacing-1) var(--spacing-2); display:inline-block; }
-    .tp-icon:hover { color:var(--color-text-primary); }
     .tp-empty { text-align:center; padding:var(--spacing-6); color:var(--color-text-tertiary); }
     .text-right { text-align:right; }
     .btn { padding:var(--spacing-2) var(--spacing-4); border-radius:var(--radius-md); font-size:var(--font-size-sm); font-weight:var(--font-weight-semibold); cursor:pointer; border:1px solid transparent; }

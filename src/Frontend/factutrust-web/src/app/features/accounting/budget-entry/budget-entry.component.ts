@@ -6,6 +6,8 @@ import { PageHeaderComponent } from '@shared/components/page-header/page-header.
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
 import { ToastService } from '@core/services/toast.service';
+import { AuthService } from '@core/services/auth.service';
+import { canValidateAccountingEntries } from '@core/utils/accounting-access';
 import {
   AccountingService,
   BudgetPostKind,
@@ -55,7 +57,7 @@ const MONTH_LABELS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août
       }
 
       <div class="be-actions">
-        @if (grid()?.status === 0) {
+        @if (grid()?.status === 0 && canValidate()) {
           <app-button variant="secondary" icon="pi pi-lock" type="button" (click)="validateInitial()" [disabled]="busy()">
             Valider le budget initial
           </app-button>
@@ -162,6 +164,9 @@ const MONTH_LABELS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août
 export class BudgetEntryComponent implements OnInit {
   private readonly api = inject(AccountingService);
   private readonly toast = inject(ToastService);
+  private readonly auth = inject(AuthService);
+
+  readonly canValidate = computed(() => canValidateAccountingEntries(this.auth));
 
   readonly monthLabels = MONTH_LABELS;
 
@@ -293,6 +298,7 @@ export class BudgetEntryComponent implements OnInit {
   }
 
   validateInitial(): void {
+    if (!this.canValidate()) return;
     if (this.busy()) return;
     if (!window.confirm(
       `Valider le budget initial ${this.fiscalYear()} ?\n\n` +

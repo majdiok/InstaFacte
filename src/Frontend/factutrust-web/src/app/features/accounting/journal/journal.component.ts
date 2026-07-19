@@ -18,7 +18,11 @@ import { AnalyzeWithAiButtonComponent } from '@features/ai-assistant/components/
 import { wrapLegacyAnalyzePayload } from '@features/ai-assistant/utils/ai-screen-payload.factory';
 import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.component';
 import { AccountingExportMenuComponent } from '../shared/accounting-export-menu.component';
+import { AccountingToolbarActionsComponent } from '../shared/accounting-toolbar-actions.component';
+import { AccountingTableActionsComponent } from '../shared/accounting-table-actions.component';
 import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
+import { AuthService } from '@core/services/auth.service';
+import { canValidateAccountingEntries } from '@core/utils/accounting-access';
 
 type JournalFlatRow = {
   entryId: string;
@@ -53,7 +57,9 @@ type JournalFlatRow = {
     AccountingStatusBannerComponent,
     AnalyzeWithAiButtonComponent,
     AccountingFilterBarComponent,
-    AccountingExportMenuComponent
+    AccountingExportMenuComponent,
+    AccountingToolbarActionsComponent,
+    AccountingTableActionsComponent
   ],
   template: `
     <app-page-header title="Journal comptable" subtitle="Écritures par période" />
@@ -95,8 +101,10 @@ type JournalFlatRow = {
           </div>
         </div>
         <div accountingFilterActions>
+          <app-accounting-toolbar-actions>
           <app-button
             variant="secondary"
+            size="sm"
             icon="pi pi-refresh"
             iconPos="left"
             type="button"
@@ -113,6 +121,7 @@ type JournalFlatRow = {
           <app-accounting-export-menu
             [disabled]="loading() || exporting() || flatRows().length === 0"
             (exportFormat)="onExport($event)" />
+          </app-accounting-toolbar-actions>
         </div>
       </app-accounting-filter-bar>
     </div>
@@ -132,7 +141,11 @@ type JournalFlatRow = {
       <div class="journal-draft-banner" role="status" aria-live="polite">
         <i class="pi pi-pencil" aria-hidden="true"></i>
         <span>
-          {{ draftEntryCount() }} écriture{{ draftEntryCount() === 1 ? '' : 's' }} en brouillard sur la période — à valider avant clôture ou export.
+          @if (canValidate()) {
+            {{ draftEntryCount() }} écriture{{ draftEntryCount() === 1 ? '' : 's' }} en brouillard sur la période — à valider avant clôture ou export.
+          } @else {
+            {{ draftEntryCount() }} écriture{{ draftEntryCount() === 1 ? '' : 's' }} en brouillard — en attente de validation par votre cabinet comptable.
+          }
         </span>
       </div>
     }
@@ -214,40 +227,48 @@ type JournalFlatRow = {
               }
             </td>
             <td class="journal-col-narrow" data-label="Actions">
-              @if (r.firstOfEntry && r.isDraft) {
-                <button
+              <app-accounting-table-actions>
+              @if (r.firstOfEntry && r.isDraft && canValidate()) {
+                <app-button
+                  variant="success"
+                  size="sm"
+                  icon="pi-check"
+                  iconPos="left"
                   type="button"
-                  class="journal-validate-btn"
                   (click)="validateEntry(r.entryId)"
                   [disabled]="validatingId() === r.entryId"
                   [attr.aria-label]="'Valider l\\'écriture ' + r.journal + ' n° ' + r.piece">
-                  <i class="pi pi-check" aria-hidden="true"></i>
                   Valider
-                </button>
+                </app-button>
               }
               @if (r.firstOfEntry && !r.isDraft && !r.isReversed) {
-                <button
+                <app-button
+                  variant="secondary"
+                  size="sm"
+                  icon="pi-replay"
+                  iconPos="left"
                   type="button"
-                  class="journal-reverse-btn"
                   (click)="openReverse(r)"
                   [attr.aria-label]="'Extourner l\\'écriture ' + r.journal + ' n° ' + r.piece">
-                  <i class="pi pi-replay" aria-hidden="true"></i>
                   Extourner
-                </button>
+                </app-button>
               }
               @if (r.firstOfEntry) {
-                <button
+                <app-button
+                  variant="ghost"
+                  size="sm"
+                  icon="pi-paperclip"
+                  [iconOnly]="true"
+                  [iconAlwaysVisible]="true"
                   type="button"
-                  class="journal-attach-btn"
                   (click)="openAttachments(r)"
-                  [attr.aria-label]="'Pièces jointes de l\\'écriture ' + r.journal + ' n° ' + r.piece"
-                  title="Pièces justificatives">
-                  <i class="pi pi-paperclip" aria-hidden="true"></i>
-                  @if (r.attachmentCount > 0) {
-                    <span class="journal-attach-count">{{ r.attachmentCount }}</span>
-                  }
-                </button>
+                  [attr.aria-label]="'Pièces jointes de l\\'écriture ' + r.journal + ' n° ' + r.piece + (r.attachmentCount > 0 ? ' (' + r.attachmentCount + ')' : '')"
+                  title="Pièces justificatives" />
+                @if (r.attachmentCount > 0) {
+                  <span class="journal-attach-count">{{ r.attachmentCount }}</span>
+                }
               }
+              </app-accounting-table-actions>
             </td>
           </tr>
         </ng-template>
@@ -514,24 +535,11 @@ type JournalFlatRow = {
       background: var(--color-background-subtle);
       white-space: nowrap;
     }
-    .journal-attach-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.25rem;
-      margin-inline-start: var(--spacing-1);
-      padding: 0.2rem 0.45rem;
-      border: 1px solid var(--color-border-default);
-      border-radius: var(--radius-md);
-      background: var(--color-background-elevated);
-      color: var(--color-text-secondary);
+    .journal-attach-count {
+      font-weight: var(--font-weight-semibold);
       font-size: var(--font-size-xs);
-      cursor: pointer;
-    }
-    .journal-attach-btn:hover {
-      border-color: var(--color-primary-500, #2563eb);
       color: var(--color-primary-700, #1d4ed8);
     }
-    .journal-attach-count { font-weight: var(--font-weight-semibold); }
     .journal-attach-modal { max-width: 34rem; }
     .journal-attach-error { margin: 0 0 var(--spacing-3); color: var(--color-danger-600, #dc2626); font-size: var(--font-size-sm); }
     .journal-attach-loading, .journal-attach-empty { margin: var(--spacing-3) 0; color: var(--color-text-tertiary); font-size: var(--font-size-sm); }
@@ -568,49 +576,10 @@ type JournalFlatRow = {
     .journal-row-draft > td {
       background: var(--color-warning-50, #fffbeb);
     }
-    .journal-validate-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: var(--spacing-1);
-      padding: 0.2rem 0.55rem;
-      border: 1px solid var(--color-success-300, #86efac);
-      border-radius: var(--radius-md);
-      background: var(--color-success-50, #f0fdf4);
-      color: var(--color-success-700, #15803d);
-      font-size: var(--font-size-xs);
-      font-weight: var(--font-weight-semibold);
-      cursor: pointer;
-      white-space: nowrap;
-    }
-    .journal-validate-btn:hover:not(:disabled) {
-      background: var(--color-success-100, #dcfce7);
-    }
-    .journal-validate-btn:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
     .journal-badge-reversed {
       margin-left: var(--spacing-1);
       background: var(--color-neutral-100, #f1f5f9);
       color: var(--color-text-secondary);
-    }
-    .journal-reverse-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: var(--spacing-1);
-      padding: 0.2rem 0.55rem;
-      border: 1px solid var(--color-border-default);
-      border-radius: var(--radius-md);
-      background: var(--color-background-elevated);
-      color: var(--color-text-secondary);
-      font-size: var(--font-size-xs);
-      font-weight: var(--font-weight-semibold);
-      cursor: pointer;
-      white-space: nowrap;
-    }
-    .journal-reverse-btn:hover {
-      background: var(--color-background-subtle);
-      color: var(--color-text-primary);
     }
     .journal-modal-backdrop {
       position: fixed;
@@ -707,6 +676,9 @@ type JournalFlatRow = {
 export class JournalComponent implements OnInit {
   private readonly api = inject(AccountingService);
   private readonly monitoring = inject(AccountingMonitoringService);
+  private readonly auth = inject(AuthService);
+
+  readonly canValidate = computed(() => canValidateAccountingEntries(this.auth));
 
   @ViewChild('dt') dt?: Table;
 
@@ -859,6 +831,7 @@ export class JournalComponent implements OnInit {
 
   /** Valide une écriture en brouillard (la rend définitive), puis recharge le journal. */
   validateEntry(entryId: string): void {
+    if (!this.canValidate()) return;
     if (this.validatingId()) return;
     this.validatingId.set(entryId);
     this.api.validateJournalEntry(entryId).subscribe({

@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Domain.Auth;
+using FactuTrust.Domain.Authorization;
 using FactuTrust.Domain.Enums;
 
 namespace FactuTrust.API.Services;
@@ -49,6 +50,9 @@ public sealed class CurrentUser : ICurrentUser
     }
 
     public bool IsAuthenticated => User?.Identity?.IsAuthenticated ?? false;
+
+    public bool IsAccountingFirmDelegatedContext =>
+        AccountingValidationAccess.IsAccountingFirmDelegatedContext(User);
 
     public bool HasPermission(string permission)
     {

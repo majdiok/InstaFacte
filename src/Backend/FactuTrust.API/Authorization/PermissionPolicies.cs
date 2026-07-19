@@ -76,6 +76,9 @@ public static class PermissionPolicies
     public const string AccountingCreate = "perm:" + Permissions.Accounting.Create;
     public const string AccountingClose = "perm:" + Permissions.Accounting.Close;
     public const string AccountingValidate = "perm:" + Permissions.Accounting.Validate;
+
+    /// <summary>Accounting firm operating on a delegated client dossier (not native firm home).</summary>
+    public const string FirmDelegatedContext = "firm:delegated-context";
     public const string AccountingReverse = "perm:" + Permissions.Accounting.Reverse;
     public const string AccountingImport = "perm:" + Permissions.Accounting.Import;
     public const string AccountingDeclare = "perm:" + Permissions.Accounting.Declare;

@@ -3,6 +3,7 @@ using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Domain.Authorization;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
@@ -340,6 +341,9 @@ public sealed class ValidateInitialBudgetCommandHandler : IRequestHandler<Valida
 
     public async Task<Result> Handle(ValidateInitialBudgetCommand request, CancellationToken cancellationToken)
     {
+        if (!_currentUser.IsAccountingFirmDelegatedContext)
+            return Result.Failure(Error.Forbidden(AccountingValidationAccess.DeniedMessage));
+
         if (!_settings.BudgetingEnabled)
             return Result.Failure(BudgetingGuard.Disabled);
         if (request.FiscalYear is < 2000 or > 2100)

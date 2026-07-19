@@ -5,6 +5,7 @@ import { TableModule } from 'primeng/table';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
+import { AccountingTableActionsComponent } from '../shared/accounting-table-actions.component';
 import { ToastService } from '@core/services/toast.service';
 import { AccountingService, JournalDto, JournalFamilyDto } from '../services/accounting.service';
 
@@ -18,7 +19,7 @@ interface JournalForm {
 @Component({
   selector: 'app-journals',
   standalone: true,
-  imports: [CommonModule, FormsModule, TableModule, PageHeaderComponent, ButtonComponent, AccountingStatusBannerComponent],
+  imports: [CommonModule, FormsModule, TableModule, PageHeaderComponent, ButtonComponent, AccountingStatusBannerComponent, AccountingTableActionsComponent],
   template: `
     <app-page-header title="Journaux & familles" subtitle="Gestion des journaux comptables et de leurs familles" />
 
@@ -78,12 +79,17 @@ interface JournalForm {
             <td>{{ j.isSystem ? 'Oui' : 'Non' }}</td>
             <td>{{ j.isActive ? 'Oui' : 'Non' }}</td>
             <td>
-              <button type="button" class="jr-icon" (click)="startEdit(j)" aria-label="Modifier"><i class="pi pi-pencil"></i></button>
+              <app-accounting-table-actions>
+              <app-button variant="ghost" size="sm" icon="pi-pencil" [iconOnly]="true" [iconAlwaysVisible]="true"
+                type="button" (click)="startEdit(j)" ariaLabel="Modifier" />
               @if (!j.isSystem) {
-                <button type="button" class="jr-icon" (click)="toggle(j)" [attr.aria-label]="j.isActive ? 'Désactiver' : 'Activer'">
-                  <i class="pi" [class.pi-eye-slash]="j.isActive" [class.pi-eye]="!j.isActive"></i>
-                </button>
+                <app-button variant="ghost" size="sm"
+                  [icon]="j.isActive ? 'pi-eye-slash' : 'pi-eye'"
+                  [iconOnly]="true" [iconAlwaysVisible]="true"
+                  type="button" (click)="toggle(j)"
+                  [attr.aria-label]="j.isActive ? 'Désactiver' : 'Activer'" />
               }
+              </app-accounting-table-actions>
             </td>
           </tr>
         </ng-template>
@@ -103,8 +109,6 @@ interface JournalForm {
     .jr-form-actions { display: flex; gap: var(--spacing-2); margin-left: auto; }
     .jr-mono { font-family: ui-monospace, monospace; }
     .jr-inactive { opacity: 0.6; }
-    .jr-icon { background: none; border: none; cursor: pointer; color: var(--color-text-secondary); padding: var(--spacing-1) var(--spacing-2); }
-    .jr-icon:hover { color: var(--color-text-primary); }
     .jr-empty { text-align: center; padding: var(--spacing-6); color: var(--color-text-tertiary); }
     .btn { padding: var(--spacing-2) var(--spacing-4); border-radius: var(--radius-md); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); cursor: pointer; border: 1px solid transparent; }
     .btn-secondary { background: var(--color-background-subtle); color: var(--color-text-primary); border-color: var(--color-border-default); }

@@ -2,6 +2,7 @@ import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MenuModule } from 'primeng/menu';
 import { MenuItem } from 'primeng/api';
+import { ButtonComponent } from '@shared/components/button/button.component';
 import { AccountingExportFormat } from './accounting-download.util';
 
 /**
@@ -11,31 +12,22 @@ import { AccountingExportFormat } from './accounting-download.util';
 @Component({
   selector: 'app-accounting-export-menu',
   standalone: true,
-  imports: [CommonModule, MenuModule],
+  imports: [CommonModule, MenuModule, ButtonComponent],
   template: `
     <p-menu #menu [popup]="true" [model]="items" appendTo="body"></p-menu>
-    <button
+    <app-button
+      variant="secondary"
+      size="sm"
+      icon="pi-download"
+      iconPos="left"
       type="button"
-      class="acc-export-btn"
-      (click)="menu.toggle($event)"
       [disabled]="disabled"
-      aria-haspopup="true"
+      (click)="menu.toggle($event)"
+      [attr.aria-haspopup]="true"
       [attr.aria-label]="label">
-      <i class="fa-solid fa-download"></i>
-      <span>{{ label }}</span>
-      <i class="fa-solid fa-caret-down" aria-hidden="true"></i>
-    </button>
-  `,
-  styles: `
-    .acc-export-btn {
-      display:inline-flex; align-items:center; gap:0.4rem;
-      padding:0.45rem 0.85rem; border:1px solid var(--color-border-default, #cbd5e1);
-      border-radius:var(--radius-md, 6px); background:var(--color-background-elevated, #fff);
-      color:var(--color-text-default, #1e293b); font-size:0.875rem; cursor:pointer;
-      transition:background .15s, border-color .15s;
-    }
-    .acc-export-btn:hover:not(:disabled) { background:var(--color-background-subtle, #f1f5f9); border-color:var(--color-primary-400, #60a5fa); }
-    .acc-export-btn:disabled { opacity:.55; cursor:not-allowed; }
+      {{ label }}
+      <i class="pi pi-chevron-down icon-right" aria-hidden="true"></i>
+    </app-button>
   `
 })
 export class AccountingExportMenuComponent {

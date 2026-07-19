@@ -5,6 +5,7 @@ import { Title } from '@angular/platform-browser';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { AccountingService, VatDeclarationDto } from '../services/accounting.service';
 import { AuthService } from '@core/services/auth.service';
+import { canShowVatDeclarationDocLinks } from '@core/config/company-accounting-nav.config';
 import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { wrapLegacyAnalyzePayload } from '@features/ai-assistant/utils/ai-screen-payload.factory';
@@ -89,7 +90,9 @@ import {
 
           <app-vat-declaration-vat-detail-table [declaration]="d" />
 
-          <app-vat-declaration-doc-links [links]="docLinks()" />
+          @if (showDocLinks) {
+            <app-vat-declaration-doc-links [links]="docLinks()" />
+          }
         </div>
 
         <app-vat-declaration-summary-panel
@@ -126,6 +129,7 @@ import {
 export class VatDeclarationComponent implements OnInit {
   private readonly api = inject(AccountingService);
   readonly auth = inject(AuthService);
+  readonly showDocLinks = canShowVatDeclarationDocLinks(this.auth);
   private readonly toast = inject(ToastService);
   private readonly title = inject(Title);
   private readonly route = inject(ActivatedRoute);
@@ -161,6 +165,7 @@ export class VatDeclarationComponent implements OnInit {
   });
 
   readonly docLinks = computed(() => {
+    if (!this.showDocLinks) return [];
     const d = this.data();
     if (!d) return [];
     return buildDocLinks(d, this.year, this.month);

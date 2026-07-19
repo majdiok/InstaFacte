@@ -36,6 +36,11 @@ public interface ICurrentUser
     /// Checks if the user has a specific permission.
     /// </summary>
     bool HasPermission(string permission);
+
+    /// <summary>
+    /// True when an accounting firm user is operating on a delegated client dossier.
+    /// </summary>
+    bool IsAccountingFirmDelegatedContext { get; }
     
     /// <summary>
     /// Gets the user's IP address.

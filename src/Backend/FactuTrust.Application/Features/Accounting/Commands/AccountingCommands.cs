@@ -5,6 +5,7 @@ using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Accounting.FiscalSchedule;
 using FactuTrust.Application.Features.Accounting.Queries;
+using FactuTrust.Domain.Authorization;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
@@ -662,6 +663,9 @@ public sealed class ValidateJournalEntryCommandHandler : IRequestHandler<Validat
 
     public async Task<Result> Handle(ValidateJournalEntryCommand request, CancellationToken cancellationToken)
     {
+        if (!_currentUser.IsAccountingFirmDelegatedContext)
+            return Result.Failure(Error.Forbidden(AccountingValidationAccess.DeniedMessage));
+
         var entry = await _journalEntries.GetByIdAsync(request.Id, cancellationToken);
         if (entry is null)
             return Result.Failure(Error.NotFound("JournalEntry", request.Id));
@@ -706,6 +710,9 @@ public sealed class ValidateJournalEntriesBatchCommandHandler : IRequestHandler<
 
     public async Task<Result<int>> Handle(ValidateJournalEntriesBatchCommand request, CancellationToken cancellationToken)
     {
+        if (!_currentUser.IsAccountingFirmDelegatedContext)
+            return Result.Failure<int>(Error.Forbidden(AccountingValidationAccess.DeniedMessage));
+
         var drafts = await _journalEntries.GetDraftsByPeriodAsync(
             request.Request.PeriodId, request.Request.JournalCode, cancellationToken);
 

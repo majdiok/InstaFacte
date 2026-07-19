@@ -31,6 +31,9 @@ public sealed class ChannelAwareCurrentUser : ICurrentUser
 
     public bool IsAuthenticated => Snapshot is not null || _inner.IsAuthenticated;
 
+    public bool IsAccountingFirmDelegatedContext =>
+        Snapshot is null && _inner.IsAccountingFirmDelegatedContext;
+
     public bool HasPermission(string permission) =>
         Snapshot is { } s ? s.Permissions.Contains(permission) : _inner.HasPermission(permission);
 

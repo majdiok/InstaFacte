@@ -101,6 +101,7 @@ public sealed class AccountingController : ControllerBase
 
     [HttpPost("journal/{id:guid}/validate")]
     [Authorize(Policy = PermissionPolicies.AccountingValidate)]
+    [Authorize(Policy = PermissionPolicies.FirmDelegatedContext)]
     public async Task<IActionResult> ValidateEntry(Guid id, CancellationToken cancellationToken)
     {
         var r = await _mediator.Send(new ValidateJournalEntryCommand(id), cancellationToken);
@@ -111,6 +112,7 @@ public sealed class AccountingController : ControllerBase
 
     [HttpPost("journal/validate-batch")]
     [Authorize(Policy = PermissionPolicies.AccountingValidate)]
+    [Authorize(Policy = PermissionPolicies.FirmDelegatedContext)]
     public async Task<IActionResult> ValidateEntriesBatch([FromBody] ValidateJournalEntriesBatchRequest request, CancellationToken cancellationToken)
     {
         var r = await _mediator.Send(new ValidateJournalEntriesBatchCommand(request), cancellationToken);
@@ -814,6 +816,7 @@ public sealed class AccountingController : ControllerBase
     /// <summary>Valide (fige) le budget initial : copie Initial → Révisé, seule version modifiable ensuite.</summary>
     [HttpPost("budgets/{fiscalYear:int}/validate-initial")]
     [Authorize(Policy = PermissionPolicies.AccountingValidate)]
+    [Authorize(Policy = PermissionPolicies.FirmDelegatedContext)]
     public async Task<IActionResult> ValidateInitialBudget(int fiscalYear, CancellationToken cancellationToken)
     {
         var r = await _mediator.Send(new ValidateInitialBudgetCommand(fiscalYear), cancellationToken);

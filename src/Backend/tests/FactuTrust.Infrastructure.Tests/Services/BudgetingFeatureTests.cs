@@ -50,6 +50,7 @@ public sealed class BudgetingFeatureTests
     {
         var mock = new Mock<ICurrentUser>();
         mock.SetupGet(u => u.Email).Returns("comptable@cabinet.tn");
+        mock.SetupGet(u => u.IsAccountingFirmDelegatedContext).Returns(true);
         return mock.Object;
     }
 
@@ -159,6 +160,27 @@ public sealed class BudgetingFeatureTests
     }
 
     // ── Validation de l'initial ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task ValidateInitial_RefusesWhenNotDelegatedFirmContext()
+    {
+        var postId = await SeedPostAsync();
+        var save = new SaveBudgetYearCommandHandler(_repository, Audit(), User(), Settings());
+        await save.Handle(new SaveBudgetYearCommand(2026, new SaveBudgetYearRequest
+        {
+            Lines = new[] { new SaveBudgetLineRequest { BudgetPostId = postId, Month = 1, Amount = 1000m } }
+        }), CancellationToken.None);
+
+        var mock = new Mock<ICurrentUser>();
+        mock.SetupGet(u => u.Email).Returns("admin@societe.tn");
+        mock.SetupGet(u => u.IsAccountingFirmDelegatedContext).Returns(false);
+
+        var validate = new ValidateInitialBudgetCommandHandler(_repository, Audit(), mock.Object, Settings());
+        var result = await validate.Handle(new ValidateInitialBudgetCommand(2026), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Forbidden", result.Error.Code);
+    }
 
     [Fact]
     public async Task ValidateInitial_CopiesInitialToRevised_ThenRefusesSecondValidation()

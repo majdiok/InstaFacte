@@ -10,6 +10,7 @@ import { RouterModule } from '@angular/router';
     @if (routerLink) {
       <a
         [routerLink]="routerLink"
+        [queryParams]="queryParams"
         class="btn btn-{{ variant }} btn-{{ size }}"
         [class.btn-icon-only]="iconOnly"
         [class.btn-icon-always-visible]="iconOnly && iconAlwaysVisible"
@@ -137,9 +138,24 @@ import { RouterModule } from '@angular/router';
     }
     .btn-danger:active:not(:disabled) { transform: translateY(0); }
 
+    .btn-success {
+      background: var(--color-success-50, #f0fdf4);
+      color: var(--color-success-700, #15803d);
+      border: 1px solid var(--color-success-300, #86efac);
+    }
+    .btn-success:hover:not(:disabled) {
+      background: var(--color-success-100, #dcfce7);
+      border-color: var(--color-success-400, #4ade80);
+      color: var(--color-success-800, #166534);
+    }
+    .btn-success:active:not(:disabled) { transform: translateY(0); }
+
     .btn-sm { padding: var(--spacing-2) var(--spacing-4); font-size: var(--font-size-sm); }
+    .btn-xs { padding: var(--spacing-1) var(--spacing-2); font-size: var(--font-size-xs); }
     .btn-lg { padding: var(--spacing-4) var(--spacing-8); font-size: var(--font-size-lg); }
     .btn-icon-only { padding: var(--spacing-3); width: 40px; height: 40px; }
+    .btn-sm.btn-icon-only { padding: var(--spacing-2); width: 32px; height: 32px; }
+    .btn-xs.btn-icon-only { padding: var(--spacing-1); width: 28px; height: 28px; }
 
     .btn:disabled {
       opacity: 0.5;
@@ -163,8 +179,8 @@ import { RouterModule } from '@angular/router';
   `]
 })
 export class ButtonComponent {
-  @Input() variant: 'primary' | 'secondary' | 'outline' | 'ghost' | 'soft' | 'danger' = 'primary';
-  @Input() size: 'sm' | 'md' | 'lg' = 'md';
+  @Input() variant: 'primary' | 'secondary' | 'outline' | 'ghost' | 'soft' | 'danger' | 'success' = 'primary';
+  @Input() size: 'xs' | 'sm' | 'md' | 'lg' = 'md';
   @Input() icon?: string;
   @Input() iconPos: 'left' | 'right' = 'left';
   @Input() iconOnly = false;
@@ -172,6 +188,7 @@ export class ButtonComponent {
   @Input() type: 'button' | 'submit' | 'reset' = 'button';
   @Input() ariaLabel?: string;
   @Input() routerLink?: string | string[];
+  @Input() queryParams?: Record<string, string | number | boolean | null | undefined>;
   /** When true and iconOnly, uses a higher-contrast icon color for visibility (e.g. in table action columns). */
   @Input() iconAlwaysVisible = false;
 }

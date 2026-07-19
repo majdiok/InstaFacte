@@ -76,6 +76,11 @@ export function isCompanyAccountingRestricted(auth: AuthService): boolean {
   return !auth.isAccountingFirm();
 }
 
+/** Zone « Pièces justificatives » de la déclaration TVA : réservée au cabinet comptable. */
+export function canShowVatDeclarationDocLinks(auth: AuthService): boolean {
+  return !isCompanyAccountingRestricted(auth);
+}
+
 function pathMatchesPrefix(path: string, prefix: string): boolean {
   if (path === prefix) {
     return true;

@@ -35,6 +35,7 @@ public sealed class AuditServiceTests
         public Guid? TenantId { get; } = Guid.NewGuid();
         public UserRole? Role => UserRole.Administrator;
         public bool IsAuthenticated => true;
+        public bool IsAccountingFirmDelegatedContext => false;
         public bool HasPermission(string permission) => true;
         public string? IpAddress { get; } = "127.0.0.1";
         public string? UserAgent { get; } = "FactuTrust.Tests";
