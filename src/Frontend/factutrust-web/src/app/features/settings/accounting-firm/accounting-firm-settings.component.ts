@@ -44,7 +44,6 @@ const NOTES_MAX = 1000;
         <app-skeleton width="30%" height="2.4rem" shape="rounded"></app-skeleton>
       </div>
     } @else if (current()) {
-      <!-- État : une liaison est ouverte (en attente ou active) -->
       @if (current(); as assignment) {
       <div class="af-card">
         <div class="af-liaison">

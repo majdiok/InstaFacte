@@ -7,7 +7,6 @@ import { AppNotification, NotificationService } from '../../services/notificatio
 import { WarehouseContextService } from '../../services/warehouse-context.service';
 import { FirmContextService } from '../../services/firm-context.service';
 import { BreadcrumbService } from '../../services/breadcrumb.service';
-import { BreadcrumbComponent } from '@shared/components/breadcrumb/breadcrumb.component';
 import { QuickAccessMenuComponent } from './quick-access-menu/quick-access-menu.component';
 import { GlobalSearchComponent } from '../global-search/global-search.component';
 import { GlobalSearchService } from '../../services/global-search.service';
@@ -15,7 +14,7 @@ import { GlobalSearchService } from '../../services/global-search.service';
 @Component({
   selector: 'app-header',
   standalone: true,
-  imports: [CommonModule, RouterModule, NgbDropdownModule, BreadcrumbComponent, QuickAccessMenuComponent, GlobalSearchComponent],
+  imports: [CommonModule, RouterModule, NgbDropdownModule, QuickAccessMenuComponent, GlobalSearchComponent],
   template: `
     <div class="topbar main-header">
       <nav class="navbar navbar-expand-lg">

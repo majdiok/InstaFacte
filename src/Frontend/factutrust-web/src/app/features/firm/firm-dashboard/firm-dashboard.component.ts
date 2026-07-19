@@ -10,8 +10,6 @@ import { TagModule } from 'primeng/tag';
 
 import { AuthService } from '@core/services/auth.service';
 
-import { FirmAssignmentService } from '@core/services/firm-assignment.service';
-
 import {
 
   FirmDashboardService,
@@ -24,6 +22,8 @@ import {
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 
 import { StatCardComponent } from '@shared/components/stat-card/stat-card.component';
+
+import { FirmInvitationActionsService } from '../shared/firm-invitation-actions.service';
 
 
 
@@ -233,13 +233,17 @@ import { StatCardComponent } from '@shared/components/stat-card/stat-card.compon
 
                 </div>
 
-                <div class="actions">
+                @if (auth.isFirmManager()) {
 
-                  <button type="button" pButton label="Accepter" class="p-button-sm p-button-success" (click)="accept(inv)"></button>
+                  <div class="actions">
 
-                  <button type="button" pButton label="Refuser" class="p-button-sm p-button-outlined" (click)="reject(inv)"></button>
+                    <button type="button" pButton label="Accepter" class="p-button-sm p-button-success" (click)="accept(inv)"></button>
 
-                </div>
+                    <button type="button" pButton label="Refuser" class="p-button-sm p-button-outlined" (click)="reject(inv)"></button>
+
+                  </div>
+
+                }
 
               </li>
 
@@ -337,7 +341,7 @@ export class FirmDashboardComponent implements OnInit {
 
   private readonly dashboardService = inject(FirmDashboardService);
 
-  private readonly assignments = inject(FirmAssignmentService);
+  private readonly actions = inject(FirmInvitationActionsService);
 
 
 
@@ -387,17 +391,17 @@ export class FirmDashboardComponent implements OnInit {
 
 
 
-  accept(inv: FirmDashboardInvitationRow): void {
+  async accept(inv: FirmDashboardInvitationRow): Promise<void> {
 
-    this.assignments.acceptInvitation(inv.id).subscribe(() => this.loadDashboard());
+    if (await this.actions.accept(inv)) this.loadDashboard();
 
   }
 
 
 
-  reject(inv: FirmDashboardInvitationRow): void {
+  async reject(inv: FirmDashboardInvitationRow): Promise<void> {
 
-    this.assignments.rejectInvitation(inv.id).subscribe(() => this.loadDashboard());
+    if (await this.actions.reject(inv)) this.loadDashboard();
 
   }
 
