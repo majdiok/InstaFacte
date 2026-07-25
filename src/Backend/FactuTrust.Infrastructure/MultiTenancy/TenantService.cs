@@ -319,6 +319,7 @@ public sealed class TenantService : ITenantService
         await using var context = new TenantDbContext(options);
         await WithholdingTaxCatalogInitializer.EnsureSystemTypesSeededAsync(context, cancellationToken);
         await WithholdingFiscalYearParameterInitializer.EnsureDefaultsSeededAsync(context, cancellationToken);
+        await IncomeTaxYearParameterInitializer.EnsureDefaultsSeededAsync(context, cancellationToken);
     }
 }
 

@@ -288,8 +288,18 @@ export class WizardValidationService {
       if (line.discountType && line.discountValue !== null && line.discountValue !== undefined) {
         if (line.discountValue < 0) {
           lineErrors.push(this.createError('MIN_VALUE', `Ligne ${i + 1}: La remise ne peut pas être négative`));
-        } else if (line.discountType === 'PERCENT' && line.discountValue > NUMERIC_LIMITS.maxDiscountPercent) {
-          lineErrors.push(this.createError('MAX_VALUE', `Ligne ${i + 1}: La remise ne peut pas dépasser 100%`));
+        } else if (line.discountType === 'PERCENT') {
+          const maxAllowed = line.productIsDiscountEnabled && line.productMaxDiscountPercent != null
+            ? Math.min(line.productMaxDiscountPercent, NUMERIC_LIMITS.maxDiscountPercent)
+            : NUMERIC_LIMITS.maxDiscountPercent;
+          if (line.discountValue > maxAllowed) {
+            lineErrors.push(this.createError(
+              'MAX_VALUE',
+              maxAllowed < NUMERIC_LIMITS.maxDiscountPercent
+                ? `Ligne ${i + 1}: La remise ne peut pas dépasser ${maxAllowed}% pour ce produit`
+                : `Ligne ${i + 1}: La remise ne peut pas dépasser 100%`
+            ));
+          }
         } else if (line.discountType === 'AMOUNT') {
           const subtotal = line.quantity * line.unitPriceHT;
           if (line.discountValue > subtotal) {

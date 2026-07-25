@@ -25,6 +25,13 @@ export interface FirmDashboardData {
   pendingInvitationsCount: number;
   inactiveDossiersCount: number;
   vatDraftsCount: number;
+  overdueSchedulesCount: number;
+  upcomingWithin7DaysCount: number;
+  tejPendingCount: number;
+  liasseDraftsCount: number;
+  dtsPendingCount: number;
+  overdueEstimatedAmount: number;
+  upcoming7DaysEstimatedAmount: number;
   clients: FirmDashboardClientRow[];
   pendingInvitations: FirmDashboardInvitationRow[];
 }

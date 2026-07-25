@@ -14,6 +14,8 @@ export const FISCAL_OBLIGATION_OPTIONS = [
   { value: FiscalObligationType.FinancialStatements, label: 'Etats financiers' },
   { value: FiscalObligationType.SemiAnnualFinancialStatements, label: 'Etats financiers semestriels' },
   { value: FiscalObligationType.PersonalIncomeTaxInstallment, label: 'IRPP - Acompte' },
+  { value: FiscalObligationType.CnssDtsQuarterly, label: 'DTS CNSS trimestrielle' },
+  { value: FiscalObligationType.PayrollIrppWithholding, label: 'Retenues IRPP paie' },
   { value: FiscalObligationType.Other, label: 'Autre obligation' }
 ];
 
@@ -142,6 +144,17 @@ export function fiscalSourceRoute(entry: FiscalScheduleEntryDto): string | null 
   }
   if (entry.obligationType === FiscalObligationType.WithholdingTax) {
     return '/withholding-tax/tej-export';
+  }
+  if (entry.obligationType === FiscalObligationType.ProvisionalCorporateTaxInstallment
+    || entry.obligationType === FiscalObligationType.PersonalIncomeTaxInstallment) {
+    return `/accounting/nct-statements?fiscalYear=${entry.fiscalYear}`;
+  }
+  if (entry.obligationType === FiscalObligationType.CnssDtsQuarterly) {
+    const quarter = entry.periodQuarter ?? 1;
+    return `/payroll/declarations?year=${entry.fiscalYear}&quarter=${quarter}`;
+  }
+  if (entry.obligationType === FiscalObligationType.PayrollIrppWithholding) {
+    return '/payroll/runs';
   }
   return null;
 }

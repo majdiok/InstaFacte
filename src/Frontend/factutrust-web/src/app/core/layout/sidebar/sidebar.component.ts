@@ -22,6 +22,7 @@ import {
 import {
   DELEGATED_SECTION_LABELS,
   FIRM_NATIVE_NAV,
+  filterFirmGovernanceNav,
   filterDelegatedFirmSectionChildren
 } from '@core/config/firm-navigation.registry';
 import { buildFirmDelegatedAccountingModuleNavItems } from '@core/config/accounting-modules.config';
@@ -32,6 +33,7 @@ import {
 import { FirmContextService } from '@core/services/firm-context.service';
 import { FirmAssignmentService, FirmClientDossier } from '@core/services/firm-assignment.service';
 import { FirmBadgeService } from '@core/services/firm-badge.service';
+import { FirmFeatureFlagsService } from '@core/services/firm-feature-flags.service';
 import { AccountingFeatureFlagsService } from '@features/accounting/shared/accounting-feature-flags.service';
 import { BRAND } from '@core/constants/brand';
 import { AppModule } from '@core/models/app-module';
@@ -95,6 +97,7 @@ export class SidebarComponent implements OnInit {
   private readonly firmContext = inject(FirmContextService);
   private readonly firmAssignments = inject(FirmAssignmentService);
   private readonly firmBadge = inject(FirmBadgeService);
+  private readonly firmFeatureFlags = inject(FirmFeatureFlagsService);
   private readonly accountingFlags = inject(AccountingFeatureFlagsService);
   private readonly studioNav = inject(StudioNavService);
 
@@ -175,14 +178,40 @@ export class SidebarComponent implements OnInit {
         icon: 'fa-solid fa-briefcase',
         children: dossierChildren.length
           ? dossierChildren
-          : [{ label: 'Aucun dossier actif', route: '/firm/clients', icon: 'fa-solid fa-inbox' }]
+          : [{
+              label: this.auth.isFirmAccountant()
+                ? 'Aucun dossier affecté'
+                : 'Aucun dossier actif',
+              route: '/firm/clients',
+              icon: 'fa-solid fa-inbox'
+            }]
       },
       {
         ...invitations,
         badge: pending > 0 ? pending : undefined
       },
-      ...tail
+      ...this.filterFirmManagerOnlyNav(
+        filterFirmGovernanceNav(tail, this.firmFeatureFlags.isEnabled('firmGovernance'))
+      )
     ];
+  }
+
+  /** Masque les entrées réservées FirmManager (ex. affectation des dossiers). */
+  private filterFirmManagerOnlyNav(items: NavItem[]): NavItem[] {
+    if (this.auth.isFirmManager()) {
+      return items;
+    }
+    return items
+      .map(item =>
+        item.children?.length
+          ? {
+              ...item,
+              children: item.children.filter(c => c.route !== '/firm/affectation')
+            }
+          : item
+      )
+      .filter(item => item.route !== '/firm/affectation')
+      .filter(item => !item.children || item.children.length > 0);
   }
 
   private buildDelegatedNav(): NavItem[] {

@@ -20,6 +20,7 @@ import { ErrorMessageService } from '@core/services/error-message.service';
 import { CompanyService, UpdateCompanyRequest } from '@core/services/company.service';
 import { StockService, Warehouse, UpdateWarehouseRequest } from '@core/services/stock.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
+import { TUNISIAN_GOVERNORATE_OPTIONS } from '@shared/validation/validation-rules';
 
 @Component({
   selector: 'app-company',
@@ -620,32 +621,7 @@ export class CompanyComponent implements OnInit, OnDestroy {
     { label: 'Exonéré', value: 2 }
   ];
 
-  governorates = [
-    { label: 'Ariana', value: 'Ariana' },
-    { label: 'Béja', value: 'Béja' },
-    { label: 'Ben Arous', value: 'Ben Arous' },
-    { label: 'Bizerte', value: 'Bizerte' },
-    { label: 'Gabès', value: 'Gabès' },
-    { label: 'Gafsa', value: 'Gafsa' },
-    { label: 'Jendouba', value: 'Jendouba' },
-    { label: 'Kairouan', value: 'Kairouan' },
-    { label: 'Kasserine', value: 'Kasserine' },
-    { label: 'Kébili', value: 'Kébili' },
-    { label: 'Kef', value: 'Kef' },
-    { label: 'Mahdia', value: 'Mahdia' },
-    { label: 'Manouba', value: 'Manouba' },
-    { label: 'Médenine', value: 'Médenine' },
-    { label: 'Monastir', value: 'Monastir' },
-    { label: 'Nabeul', value: 'Nabeul' },
-    { label: 'Sfax', value: 'Sfax' },
-    { label: 'Sidi Bouzid', value: 'Sidi Bouzid' },
-    { label: 'Siliana', value: 'Siliana' },
-    { label: 'Sousse', value: 'Sousse' },
-    { label: 'Tataouine', value: 'Tataouine' },
-    { label: 'Tozeur', value: 'Tozeur' },
-    { label: 'Tunis', value: 'Tunis' },
-    { label: 'Zaghouan', value: 'Zaghouan' }
-  ];
+  governorates = TUNISIAN_GOVERNORATE_OPTIONS;
 
   form: FormGroup = this.fb.group({
     companyName: ['', Validators.required],

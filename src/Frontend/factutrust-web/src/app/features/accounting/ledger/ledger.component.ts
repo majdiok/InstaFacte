@@ -10,7 +10,13 @@ import { ProgressSpinnerModule } from 'primeng/progressspinner';
 import { AutoCompleteModule } from 'primeng/autocomplete';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
-import { AccountingService, LedgerRowDto, ChartOfAccountDto } from '../services/accounting.service';
+import {
+  AccountingService,
+  BalanceRowDto,
+  ChartOfAccountDto,
+  GeneralLedgerDto,
+  LedgerRowDto
+} from '../services/accounting.service';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
 import { AccountingToolbarActionsComponent } from '../shared/accounting-toolbar-actions.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -28,6 +34,9 @@ import {
 } from '../shared/accounting-date-utils';
 import { AccountingExportMenuComponent } from '../shared/accounting-export-menu.component';
 import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
+
+/** Éditions du grand livre : un compte, une plage de comptes, ou le récapitulatif par racine. */
+type LedgerMode = 'single' | 'range' | 'recap';
 
 @Component({
   selector: 'app-accounting-ledger',
@@ -64,9 +73,34 @@ export class LedgerComponent implements OnInit {
   readonly loading = signal(true);
   readonly exporting = signal(false);
 
+  /**
+   * Édition demandée. `single` reste le mode d'ouverture : l'écran, son compte par défaut et le
+   * drill-down depuis la balance se comportent exactement comme avant.
+   */
+  mode: LedgerMode = 'single';
+  accountFrom = '';
+  accountTo = '';
+  includeUnmoved = false;
+  recapLevel = 2;
+
+  readonly generalLedger = signal<GeneralLedgerDto | null>(null);
+  readonly recapRows = signal<BalanceRowDto[]>([]);
+
   readonly showEmpty = computed(
     () => this.rows().length === 0 && !this.loading() && !this.error()
   );
+
+  /** Vrai quand l'édition courante a produit des données exportables. */
+  readonly hasResults = computed(() => {
+    switch (this.mode) {
+      case 'range':
+        return (this.generalLedger()?.accounts.length ?? 0) > 0;
+      case 'recap':
+        return this.recapRows().length > 0;
+      default:
+        return this.rows().length > 0;
+    }
+  });
 
   readonly totals = computed(() => {
     let debit = 0, credit = 0;
@@ -163,7 +197,25 @@ export class LedgerComponent implements OnInit {
       .slice(0, 20);
   }
 
+  /** Change d'édition : on repart d'un état propre, sans conserver le résultat du mode précédent. */
+  onModeChange(): void {
+    this.error.set(null);
+    this.rows.set([]);
+    this.generalLedger.set(null);
+    this.recapRows.set([]);
+    this.load();
+  }
+
   load(): void {
+    if (this.mode === 'range') {
+      this.loadGeneralLedger();
+      return;
+    }
+    if (this.mode === 'recap') {
+      this.loadRecap();
+      return;
+    }
+
     if (!this.account.trim()) {
       this.loading.set(false);
       this.rows.set([]);
@@ -196,7 +248,65 @@ export class LedgerComponent implements OnInit {
       });
   }
 
+  private loadGeneralLedger(): void {
+    const range = this.resolvePeriod();
+    if (!range) return;
+
+    this.error.set(null);
+    this.loading.set(true);
+    this.api
+      .getGeneralLedger(range.from, range.to, this.accountFrom.trim() || undefined, this.accountTo.trim() || undefined, this.includeUnmoved)
+      .pipe(finalize(() => this.loading.set(false)))
+      .subscribe({
+        next: res => {
+          if (res.success && res.data) this.generalLedger.set(res.data);
+          else this.error.set(res.error ?? 'Erreur');
+        },
+        error: () => this.error.set('Erreur réseau')
+      });
+  }
+
+  private loadRecap(): void {
+    const range = this.resolvePeriod();
+    if (!range) return;
+
+    this.error.set(null);
+    this.loading.set(true);
+    this.api
+      .getLedgerRecap(range.from, range.to, this.recapLevel)
+      .pipe(finalize(() => this.loading.set(false)))
+      .subscribe({
+        next: res => {
+          if (res.success && res.data) this.recapRows.set(res.data);
+          else this.error.set(res.error ?? 'Erreur');
+        },
+        error: () => this.error.set('Erreur réseau')
+      });
+  }
+
+  /** Période validée, ou null après publication du message d'erreur. */
+  private resolvePeriod(): { from: Date; to: Date } | null {
+    const from = parseLocalDateString(this.fromStr);
+    const to = parseLocalDateString(this.toStr);
+    const vr = validateDateRange(from, to);
+    if (!vr.valid) {
+      this.loading.set(false);
+      this.error.set(vr.message ?? 'Période invalide.');
+      return null;
+    }
+    return { from, to };
+  }
+
   onExport(format: AccountingExportFormat): void {
+    if (this.mode === 'range') {
+      this.exportGeneralLedger(format);
+      return;
+    }
+    if (this.mode === 'recap') {
+      this.exportRecap(format);
+      return;
+    }
+
     const account = this.account.trim();
     if (!account) {
       this.error.set('Saisissez un numéro de compte avant d\'exporter.');
@@ -214,6 +324,52 @@ export class LedgerComponent implements OnInit {
       next: blob => {
         this.exporting.set(false);
         downloadBlob(blob, `grand_livre_${account}_${this.fromStr}_${this.toStr}.${exportExtension(format)}`);
+      },
+      error: () => {
+        this.exporting.set(false);
+        this.error.set("Erreur lors de l'export.");
+      }
+    });
+  }
+
+  private exportGeneralLedger(format: AccountingExportFormat): void {
+    const range = this.resolvePeriod();
+    if (!range) return;
+
+    this.exporting.set(true);
+    this.api
+      .exportGeneralLedger(
+        range.from,
+        range.to,
+        this.accountFrom.trim() || undefined,
+        this.accountTo.trim() || undefined,
+        this.includeUnmoved,
+        format
+      )
+      .subscribe({
+        next: blob => {
+          this.exporting.set(false);
+          downloadBlob(blob, `grand_livre_general_${this.fromStr}_${this.toStr}.${exportExtension(format)}`);
+        },
+        error: () => {
+          this.exporting.set(false);
+          this.error.set("Erreur lors de l'export.");
+        }
+      });
+  }
+
+  private exportRecap(format: AccountingExportFormat): void {
+    const range = this.resolvePeriod();
+    if (!range) return;
+
+    this.exporting.set(true);
+    this.api.exportLedgerRecap(range.from, range.to, this.recapLevel, format).subscribe({
+      next: blob => {
+        this.exporting.set(false);
+        downloadBlob(
+          blob,
+          `recap_grand_livre_n${this.recapLevel}_${this.fromStr}_${this.toStr}.${exportExtension(format)}`
+        );
       },
       error: () => {
         this.exporting.set(false);

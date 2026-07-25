@@ -8,6 +8,7 @@ import { RegisterComponent } from './register.component';
 import { AuthService, ApiResponse, AuthResponse, RegisterRequest } from '@core/services/auth.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
+import { cleanNifValue, validateCompanyRegisterFormData } from '../shared/auth-registration.helpers';
 
 /** Mock ApiResponse success pour register */
 function validRegisterResponse(): ApiResponse<AuthResponse> {
@@ -81,52 +82,52 @@ describe('RegisterComponent', () => {
     const expectedNif = '1234567/A/B/C/000';
 
     it('should remove underscores (placeholders) from NIF', () => {
-      const result = (component as any).cleanNifValue('1234567A/B/C/000_');
+      const result = cleanNifValue('1234567A/B/C/000_');
       expect(result).toBe(expectedNif);
     });
 
     it('should remove spaces from NIF', () => {
-      const result = (component as any).cleanNifValue('1234567 A/B/C/000');
+      const result = cleanNifValue('1234567 A/B/C/000');
       expect(result).toBe(expectedNif);
     });
 
     it('should convert lowercase to uppercase', () => {
-      const result = (component as any).cleanNifValue('1234567a/b/c/000');
+      const result = cleanNifValue('1234567a/b/c/000');
       expect(result).toBe(expectedNif);
     });
 
     it('should handle multiple underscores', () => {
-      const result = (component as any).cleanNifValue('1234567A/B/C/000___');
+      const result = cleanNifValue('1234567A/B/C/000___');
       expect(result).toBe(expectedNif);
     });
 
     it('should handle mixed issues', () => {
-      const result = (component as any).cleanNifValue('_1234567 a/b/c/000_');
+      const result = cleanNifValue('_1234567 a/b/c/000_');
       expect(result).toBe(expectedNif);
     });
 
     it('should handle null', () => {
-      const result = (component as any).cleanNifValue(null);
+      const result = cleanNifValue(null);
       expect(result).toBe('');
     });
 
     it('should handle undefined', () => {
-      const result = (component as any).cleanNifValue(undefined);
+      const result = cleanNifValue(undefined);
       expect(result).toBe('');
     });
 
     it('should handle empty string', () => {
-      const result = (component as any).cleanNifValue('');
+      const result = cleanNifValue('');
       expect(result).toBe('');
     });
 
     it('should normalize NIF with missing first slash (1234567A/B/C/000)', () => {
-      const result = (component as any).cleanNifValue('1234567A/B/C/000');
+      const result = cleanNifValue('1234567A/B/C/000');
       expect(result).toBe(expectedNif);
     });
 
     it('should normalize NIF without slashes (ex. InputMask unmask)', () => {
-      const result = (component as any).cleanNifValue('1234567ABC000');
+      const result = cleanNifValue('1234567ABC000');
       expect(result).toBe(expectedNif);
     });
   });
@@ -140,7 +141,7 @@ describe('RegisterComponent', () => {
         nif: '1234567A/B/C/000'
       };
 
-      const errors = (component as any).validateFormData(formValue);
+      const errors = validateCompanyRegisterFormData(formValue);
       expect(errors).toEqual([]);
     });
 
@@ -152,7 +153,7 @@ describe('RegisterComponent', () => {
         nif: '1234567A/B/C/000_' // With placeholder
       };
 
-      const errors = (component as any).validateFormData(formValue);
+      const errors = validateCompanyRegisterFormData(formValue);
       expect(errors).toEqual([]); // Should pass after cleaning
     });
 
@@ -164,7 +165,7 @@ describe('RegisterComponent', () => {
         nif: '1234567 A/B/C/000' // With spaces
       };
 
-      const errors = (component as any).validateFormData(formValue);
+      const errors = validateCompanyRegisterFormData(formValue);
       expect(errors).toEqual([]); // Should pass after cleaning
     });
 
@@ -176,7 +177,7 @@ describe('RegisterComponent', () => {
         nif: '1234567a/b/c/000' // Lowercase
       };
 
-      const errors = (component as any).validateFormData(formValue);
+      const errors = validateCompanyRegisterFormData(formValue);
       expect(errors).toEqual([]); // Should pass after cleaning
     });
 
@@ -188,7 +189,7 @@ describe('RegisterComponent', () => {
         nif: '1234567A/B/C' // Incomplete
       };
 
-      const errors = (component as any).validateFormData(formValue);
+      const errors = validateCompanyRegisterFormData(formValue);
       expect(errors.length).toBeGreaterThan(0);
       expect(errors[0]).toContain('format du NIF');
     });
@@ -201,7 +202,7 @@ describe('RegisterComponent', () => {
         nif: '1234567A/B/C/000'
       };
 
-      const errors = (component as any).validateFormData(formValue);
+      const errors = validateCompanyRegisterFormData(formValue);
       expect(errors).toContain('Le régime fiscal est requis');
     });
 
@@ -213,7 +214,7 @@ describe('RegisterComponent', () => {
         nif: '1234567A/B/C/000'
       };
 
-      const errors = (component as any).validateFormData(formValue);
+      const errors = validateCompanyRegisterFormData(formValue);
       expect(errors).toContain('Le gouvernorat est requis');
     });
 
@@ -225,7 +226,7 @@ describe('RegisterComponent', () => {
         nif: '1234567A/B/C/000'
       };
 
-      const errors = (component as any).validateFormData(formValue);
+      const errors = validateCompanyRegisterFormData(formValue);
       expect(errors.length).toBeGreaterThan(0);
       expect(errors[0]).toContain('téléphone');
     });
@@ -238,7 +239,7 @@ describe('RegisterComponent', () => {
         nif: '_______/__/__/___' // Only placeholders
       };
 
-      const errors = (component as any).validateFormData(formValue);
+      const errors = validateCompanyRegisterFormData(formValue);
       // Should not add NIF error for placeholders only
       const nifErrors = errors.filter((e: string) => e.includes('NIF'));
       expect(nifErrors.length).toBe(0);

@@ -23,6 +23,8 @@ import { AccountingTableActionsComponent } from '../shared/accounting-table-acti
 import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
 import { AuthService } from '@core/services/auth.service';
 import { canValidateAccountingEntries } from '@core/utils/accounting-access';
+import { AccountingJournalCatalogService } from '../shared/accounting-journal-catalog.service';
+import { AccountingJournalTab } from '../shared/accounting-journal-tabs.model';
 
 type JournalFlatRow = {
   entryId: string;
@@ -92,11 +94,9 @@ type JournalFlatRow = {
               class="journal-date-input"
               [disabled]="loading()">
               <option value="">Tous</option>
-              <option value="JV">JV — Ventes</option>
-              <option value="JA">JA — Achats</option>
-              <option value="JC">JC — Caisse</option>
-              <option value="JB">JB — Banque</option>
-              <option value="JOD">JOD — Opérations diverses</option>
+              @for (j of journals(); track j.code) {
+                <option [value]="j.code">{{ j.code }} — {{ j.label }}</option>
+              }
             </select>
           </div>
         </div>
@@ -677,6 +677,7 @@ export class JournalComponent implements OnInit {
   private readonly api = inject(AccountingService);
   private readonly monitoring = inject(AccountingMonitoringService);
   private readonly auth = inject(AuthService);
+  private readonly journalCatalog = inject(AccountingJournalCatalogService);
 
   readonly canValidate = computed(() => canValidateAccountingEntries(this.auth));
 
@@ -686,6 +687,9 @@ export class JournalComponent implements OnInit {
   toStr = '';
   journalCode = '';
   searchTerm = '';
+
+  /** Journaux du catalogue (repli sur les journaux standards) — alimente le filtre. */
+  readonly journals = signal<readonly AccountingJournalTab[]>([]);
 
   readonly error = signal<string | null>(null);
   readonly loading = signal(false);
@@ -727,6 +731,7 @@ export class JournalComponent implements OnInit {
   ngOnInit(): void {
     this.fromStr = firstDayOfMonthLocalYmd();
     this.toStr = todayLocalYmd();
+    this.journalCatalog.list().subscribe(list => this.journals.set(list));
     this.load();
   }
 

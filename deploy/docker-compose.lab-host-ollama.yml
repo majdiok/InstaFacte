@@ -1,0 +1,36 @@
+# Lab override: use host-installed Ollama instead of pulling the huge
+# ollama/ollama image (~3 GB compressed) when Docker Hub is too slow.
+#
+# Prerequisites on the VM:
+#   curl -fsSL https://ollama.com/install.sh | sh
+#   sudo systemctl enable --now ollama
+#
+# Usage:
+#   docker compose -f deploy/docker-compose.yml \
+#     -f deploy/docker-compose.lab.yml \
+#     -f deploy/docker-compose.lab-host-ollama.yml up -d
+
+services:
+  ollama:
+    # Lightweight stand-in so compose does not pull ollama/ollama:latest.
+    # Real Ollama runs on the host (systemd service).
+    # Reuse already-local nginx:alpine (avoids Docker Hub when network is slow).
+    image: nginx:alpine
+    container_name: factutrust-ollama
+    entrypoint: ["/bin/true"]
+    restart: "no"
+    volumes: !reset []
+    expose: !reset []
+    environment: !reset {}
+    ports: !reset []
+
+  api:
+    environment:
+      Ollama__BaseUrl: http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on: !reset
+      sqlserver:
+        condition: service_healthy
+      ollama:
+        condition: service_completed_successfully

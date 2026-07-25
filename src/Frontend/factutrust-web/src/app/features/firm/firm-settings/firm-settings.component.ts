@@ -13,11 +13,11 @@ import { PageHeaderComponent } from '@shared/components/page-header/page-header.
       subtitle="Gérez la configuration de votre cabinet comptable">
     </app-page-header>
 
-    <a routerLink="/firm/settings/users" class="fs-card-link">
+    <a routerLink="/firm/collaborateurs" class="fs-card-link">
       <div class="fs-card">
         <div class="fs-card__icon"><i class="pi pi-users"></i></div>
         <div class="fs-card__body">
-          <h2 class="fs-card__title">Utilisateurs du cabinet</h2>
+          <h2 class="fs-card__title">Collaborateurs</h2>
           <p class="fs-card__desc">Gérer les comptables et responsables du cabinet.</p>
         </div>
         <i class="pi pi-chevron-right fs-card__chevron"></i>

@@ -1586,6 +1586,12 @@ namespace FactuTrust.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTime?>("CompanyProfileCapturedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CompanyProfileSnapshotJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<Guid>("CompanyTenantId")
                         .HasColumnType("uniqueidentifier");
 
@@ -1648,6 +1654,1011 @@ namespace FactuTrust.Infrastructure.Migrations
                     b.HasIndex("CompanyTenantId", "FirmTenantId", "Status");
 
                     b.ToTable("FirmClientAssignments", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.FirmActivityCode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Category")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("FirmTenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsBillableByDefault")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FirmTenantId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("FirmActivityCodes", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.FirmCollaboratorLink", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ChildUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsSecondManager")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("ParentUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChildUserId");
+
+                    b.HasIndex("ParentUserId", "ChildUserId")
+                        .IsUnique();
+
+                    b.ToTable("FirmCollaboratorLinks", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.FirmCollaboratorProfile", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AddressLine")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("City")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("Civility")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CniContentType")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("CniFileName")
+                        .HasMaxLength(260)
+                        .HasColumnType("nvarchar(260)");
+
+                    b.Property<DateTime?>("CniUploadedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Country")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<decimal?>("HourlyCostRate")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<Guid?>("PayrollEmployeeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PhoneLandline")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("PostalCode")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Qualification")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("UseFirmAddress")
+                        .HasColumnType("bit");
+
+                    b.HasKey("UserId");
+
+                    b.HasIndex("PayrollEmployeeId");
+
+                    b.ToTable("FirmCollaboratorProfiles", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.FirmCollaboratorRentability", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CollaboratorDisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("CollaboratorUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("FirmTenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("LegacyRentability")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<DateTime?>("RecalculatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("Rentability")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FirmTenantId", "CollaboratorUserId", "Year")
+                        .IsUnique();
+
+                    b.ToTable("FirmCollaboratorRentabilities", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.FirmCollaboratorRentabilityLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CollaboratorRentabilityId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("LineCollaboratorUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ReferenceCode")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("Value")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CollaboratorRentabilityId", "ReferenceCode", "LineCollaboratorUserId");
+
+                    b.ToTable("FirmCollaboratorRentabilityLines", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.FirmCollaboratorYearCost", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CollaboratorUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("EmployerContributions")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<Guid>("FirmTenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("GrossAnnualSalary")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal?>("HourlyRateOverride")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<DateTime?>("ImportedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OverrideJustification")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<decimal>("PayrollExtras")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FirmTenantId", "CollaboratorUserId", "Year")
+                        .IsUnique();
+
+                    b.ToTable("FirmCollaboratorYearCosts", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.FirmDossierAssignmentHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AccountantDisplayName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid?>("AccountantUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("AssignedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("AssignedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyTenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("EndedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("FirmClientAssignmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("FirmTenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountantUserId");
+
+                    b.HasIndex("FirmTenantId", "FirmClientAssignmentId", "EndedAt");
+
+                    b.ToTable("FirmDossierAssignmentHistories", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.FirmDossierYearBudget", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("BudgetAnnuel")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("FirmClientAssignmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("FirmTenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FirmClientAssignmentId", "Year")
+                        .IsUnique();
+
+                    b.HasIndex("FirmTenantId", "Year");
+
+                    b.ToTable("FirmDossierYearBudgets", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.FirmExpenseNote", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CompanyName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("FirmClientAssignmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("FirmTenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("LegalRepresentativeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("MileageAllowance")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal>("MixedCharges")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<decimal>("OperatingExpenses")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<int>("PeriodMonth")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PeriodYear")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RepresentativeName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<decimal>("SalesAmount")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("TotalToReimburse")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FirmTenantId", "FirmClientAssignmentId", "PeriodYear", "PeriodMonth")
+                        .IsUnique();
+
+                    b.ToTable("FirmExpenseNotes", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.FirmTimeSheetEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActivityCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("ClientCompanyName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("FirmClientAssignmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("FirmTenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Hours")
+                        .HasPrecision(9, 3)
+                        .HasColumnType("decimal(9,3)");
+
+                    b.Property<bool>("IsBillable")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsValidated")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("UserDisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ValidatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ValidatedByDisplayName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid?>("ValidatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("WorkDate")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FirmTenantId", "WorkDate");
+
+                    b.HasIndex("FirmTenantId", "UserId", "WorkDate");
+
+                    b.ToTable("FirmTimeSheetEntries", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.FirmTimeSheetPeriodLock", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("FirmTenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsLocked")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LockReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime>("LockedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("LockedByDisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("LockedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Month")
+                        .HasColumnType("int");
+
+                    b.Property<string>("UnlockReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("UnlockedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UnlockedByDisplayName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid?>("UnlockedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FirmTenantId", "Year", "Month")
+                        .IsUnique();
+
+                    b.ToTable("FirmTimeSheetPeriodLocks", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.FirmTimeSheetYearSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AllowFutureEntryDays")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("CnssEmployerRate")
+                        .HasPrecision(9, 3)
+                        .HasColumnType("decimal(9,3)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("EnforceHardLimits")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("FirmTenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("FoprolosRate")
+                        .HasPrecision(9, 3)
+                        .HasColumnType("decimal(9,3)");
+
+                    b.Property<int>("MaxBackdatingDays")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("MaxDailyHours")
+                        .HasPrecision(9, 3)
+                        .HasColumnType("decimal(9,3)");
+
+                    b.Property<decimal>("MaxWeeklyHours")
+                        .HasPrecision(9, 3)
+                        .HasColumnType("decimal(9,3)");
+
+                    b.Property<decimal>("PaidLeaveDaysPerYear")
+                        .HasPrecision(9, 3)
+                        .HasColumnType("decimal(9,3)");
+
+                    b.Property<decimal>("ProductivityRatePercent")
+                        .HasPrecision(9, 3)
+                        .HasColumnType("decimal(9,3)");
+
+                    b.Property<decimal>("PublicHolidayDaysPerYear")
+                        .HasPrecision(9, 3)
+                        .HasColumnType("decimal(9,3)");
+
+                    b.Property<decimal>("TfpRate")
+                        .HasPrecision(9, 3)
+                        .HasColumnType("decimal(9,3)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("WeeklyRegime")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("WorkAccidentRate")
+                        .HasPrecision(9, 3)
+                        .HasColumnType("decimal(9,3)");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FirmTenantId", "Year")
+                        .IsUnique();
+
+                    b.ToTable("FirmTimeSheetYearSettings", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.FiscalCalendarRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("ApplicableTaxRegime")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("DueDayOfMonth")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Label")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("MonthsAfterPeriod")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ObligationType")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("ShiftWeekendsAndHolidays")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ObligationType", "ApplicableTaxRegime");
+
+                    b.ToTable("FiscalCalendarRules", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.LegalRepresentative", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Cin")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("CnssNumber")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("FirstName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("HasProSpace")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LastName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Nationality")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid>("PermanentFileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Phone")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PermanentFileId");
+
+                    b.ToTable("LegalRepresentatives", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.PermanentFile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("AnnualFeeAmount")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<string>("AssignedAccountantName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid?>("AssignedAccountantUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("BillingFrequency")
+                        .HasColumnType("int");
+
+                    b.Property<string>("BillingNotes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("City")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("CompanyName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("CompanyTenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)")
+                        .HasDefaultValue("TND");
+
+                    b.Property<string>("CurrentLegalAct")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("FirmClientAssignmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("FirmTenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("FiscalYearEndMonth")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("FiscalYearStartMonth")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Governorate")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("HasTaxCertificate")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("IncorporationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsDigitized")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("LabCompleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("LabCompletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("LegalForm")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("MissionAccepted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("MissionAcceptedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("MissionResigned")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("MissionStatus")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Nif")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("PostalCode")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<int?>("ResignationFiscalYear")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ResignationNotes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("RneIdentifier")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<decimal?>("ShareCapital")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Street")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime?>("SyncedToTenantAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("TaxOffice")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int?>("TaxRegime")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
+                    b.Property<int>("WizardStep")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FirmClientAssignmentId")
+                        .IsUnique();
+
+                    b.HasIndex("FirmTenantId");
+
+                    b.ToTable("PermanentFiles", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.Shareholder", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CinOrNif")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsLegalEntity")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("PermanentFileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("ShareCount")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal>("SharePercentage")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PermanentFileId");
+
+                    b.ToTable("Shareholders", (string)null);
                 });
 
             modelBuilder.Entity("FactuTrust.Domain.Entities.Storefront.StorefrontOrder", b =>
@@ -2640,6 +3651,39 @@ namespace FactuTrust.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.FirmCollaboratorLink", b =>
+                {
+                    b.HasOne("FactuTrust.Infrastructure.Persistence.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ChildUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FactuTrust.Infrastructure.Persistence.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ParentUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.FirmCollaboratorProfile", b =>
+                {
+                    b.HasOne("FactuTrust.Infrastructure.Persistence.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.FirmCollaboratorRentabilityLine", b =>
+                {
+                    b.HasOne("FactuTrust.Domain.Entities.FirmGovernance.FirmCollaboratorRentability", null)
+                        .WithMany("Lines")
+                        .HasForeignKey("CollaboratorRentabilityId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("FactuTrust.Domain.Entities.Storefront.StorefrontOrder", b =>
                 {
                     b.OwnsOne("FactuTrust.Domain.ValueObjects.Address", "GuestDeliveryAddress", b1 =>
@@ -2973,6 +4017,11 @@ namespace FactuTrust.Infrastructure.Migrations
                     b.Navigation("Lines");
 
                     b.Navigation("Receipts");
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.FirmCollaboratorRentability", b =>
+                {
+                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("FactuTrust.Domain.Entities.Storefront.StorefrontOrder", b =>

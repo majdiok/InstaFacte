@@ -62,5 +62,61 @@ describe('fiscal-schedule.view-model', () => {
       createdAt: '2026-07-10',
       version: 1
     })).toBe('/accounting/vat-declaration?year=2026&month=6');
+    expect(fiscalSourceRoute({
+      id: '3',
+      obligationType: FiscalObligationType.WithholdingTax,
+      obligationTypeDisplay: 'TEJ',
+      obligationLabel: 'Retenue a la source',
+      fiscalYear: 2026,
+      periodMonth: 7,
+      periodDisplay: 'Juillet 2026',
+      dueDate: '2026-08-22',
+      estimatedAmount: 0,
+      currency: 'TND',
+      status: FiscalScheduleStatus.UpcomingAfter7Days,
+      statusDisplay: 'A venir',
+      sourceType: 2,
+      attachmentCount: 0,
+      historyCount: 0,
+      createdAt: '2026-07-10',
+      version: 1
+    })).toBe('/withholding-tax/tej-export');
+    expect(fiscalSourceRoute({
+      id: '4',
+      obligationType: FiscalObligationType.CnssDtsQuarterly,
+      obligationTypeDisplay: 'DTS CNSS',
+      obligationLabel: 'DTS CNSS trimestrielle',
+      fiscalYear: 2026,
+      periodQuarter: 2,
+      periodDisplay: 'T2 2026',
+      dueDate: '2026-07-15',
+      estimatedAmount: 0,
+      currency: 'TND',
+      status: FiscalScheduleStatus.UpcomingAfter7Days,
+      statusDisplay: 'A venir',
+      sourceType: 5,
+      attachmentCount: 0,
+      historyCount: 0,
+      createdAt: '2026-07-10',
+      version: 1
+    })).toBe('/payroll/declarations?year=2026&quarter=2');
+    expect(fiscalSourceRoute({
+      id: '5',
+      obligationType: FiscalObligationType.FinancialStatements,
+      obligationTypeDisplay: 'Etats financiers',
+      obligationLabel: 'Liasse annuelle',
+      fiscalYear: 2026,
+      periodDisplay: '2025',
+      dueDate: '2026-03-31',
+      estimatedAmount: 0,
+      currency: 'TND',
+      status: FiscalScheduleStatus.UpcomingAfter7Days,
+      statusDisplay: 'A venir',
+      sourceType: 4,
+      attachmentCount: 0,
+      historyCount: 0,
+      createdAt: '2026-07-10',
+      version: 1
+    })).toBe('/accounting/nct-statements?fiscalYear=2026');
   });
 });

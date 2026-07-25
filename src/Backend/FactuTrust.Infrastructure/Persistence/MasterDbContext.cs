@@ -32,6 +32,24 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
     public DbSet<FirmClientAssignment> FirmClientAssignments => Set<FirmClientAssignment>();
     public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
 
+    // Firm governance (cabinet TN)
+    public DbSet<Domain.Entities.FirmGovernance.PermanentFile> PermanentFiles => Set<Domain.Entities.FirmGovernance.PermanentFile>();
+    public DbSet<Domain.Entities.FirmGovernance.LegalRepresentative> LegalRepresentatives => Set<Domain.Entities.FirmGovernance.LegalRepresentative>();
+    public DbSet<Domain.Entities.FirmGovernance.Shareholder> Shareholders => Set<Domain.Entities.FirmGovernance.Shareholder>();
+    public DbSet<Domain.Entities.FirmGovernance.FirmTimeSheetEntry> FirmTimeSheetEntries => Set<Domain.Entities.FirmGovernance.FirmTimeSheetEntry>();
+    public DbSet<Domain.Entities.FirmGovernance.FirmTimeSheetYearSettings> FirmTimeSheetYearSettings => Set<Domain.Entities.FirmGovernance.FirmTimeSheetYearSettings>();
+    public DbSet<Domain.Entities.FirmGovernance.FirmTimeSheetPeriodLock> FirmTimeSheetPeriodLocks => Set<Domain.Entities.FirmGovernance.FirmTimeSheetPeriodLock>();
+    public DbSet<Domain.Entities.FirmGovernance.FirmActivityCode> FirmActivityCodes => Set<Domain.Entities.FirmGovernance.FirmActivityCode>();
+    public DbSet<Domain.Entities.FirmGovernance.FirmCollaboratorYearCost> FirmCollaboratorYearCosts => Set<Domain.Entities.FirmGovernance.FirmCollaboratorYearCost>();
+    public DbSet<Domain.Entities.FirmGovernance.FirmExpenseNote> FirmExpenseNotes => Set<Domain.Entities.FirmGovernance.FirmExpenseNote>();
+    public DbSet<Domain.Entities.FirmGovernance.FiscalCalendarRule> FiscalCalendarRules => Set<Domain.Entities.FirmGovernance.FiscalCalendarRule>();
+    public DbSet<Domain.Entities.FirmGovernance.FirmCollaboratorProfile> FirmCollaboratorProfiles => Set<Domain.Entities.FirmGovernance.FirmCollaboratorProfile>();
+    public DbSet<Domain.Entities.FirmGovernance.FirmCollaboratorLink> FirmCollaboratorLinks => Set<Domain.Entities.FirmGovernance.FirmCollaboratorLink>();
+    public DbSet<Domain.Entities.FirmGovernance.FirmDossierAssignmentHistory> FirmDossierAssignmentHistories => Set<Domain.Entities.FirmGovernance.FirmDossierAssignmentHistory>();
+    public DbSet<Domain.Entities.FirmGovernance.FirmDossierYearBudget> FirmDossierYearBudgets => Set<Domain.Entities.FirmGovernance.FirmDossierYearBudget>();
+    public DbSet<Domain.Entities.FirmGovernance.FirmCollaboratorRentability> FirmCollaboratorRentabilities => Set<Domain.Entities.FirmGovernance.FirmCollaboratorRentability>();
+    public DbSet<Domain.Entities.FirmGovernance.FirmCollaboratorRentabilityLine> FirmCollaboratorRentabilityLines => Set<Domain.Entities.FirmGovernance.FirmCollaboratorRentabilityLine>();
+
     // Public Virtual Street (3D storefront projection)
     public DbSet<StorefrontProfile> StorefrontProfiles => Set<StorefrontProfile>();
     public DbSet<StorefrontProduct> StorefrontProducts => Set<StorefrontProduct>();
@@ -274,6 +292,8 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.HasIndex(a => a.FirmTenantId);
             entity.Property(a => a.Notes).HasMaxLength(1000);
             entity.Property(a => a.RejectionReason).HasMaxLength(500);
+            entity.Property(a => a.CompanyProfileSnapshotJson).HasColumnType("nvarchar(max)");
+            entity.Property(a => a.CompanyProfileCapturedAt).HasColumnType("datetime2");
 
             // Une seule liaison « ouverte » (pending=0 ou active=1) par société — garde anti-course au niveau DB.
             entity.HasIndex(a => a.CompanyTenantId)
@@ -281,6 +301,8 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
                 .HasFilter("[Status] IN (0, 1)")
                 .HasDatabaseName("IX_FirmClientAssignments_CompanyTenantId_Open");
         });
+
+        ConfigureFirmGovernance(builder);
 
         builder.Entity<UserNotification>(entity =>
         {
@@ -844,6 +866,233 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
 
             entity.Property(e => e.AggregateType).HasMaxLength(80).IsRequired();
         });
+    }
+
+    private static void ConfigureFirmGovernance(ModelBuilder builder)
+    {
+        builder.Entity<Domain.Entities.FirmGovernance.PermanentFile>(entity =>
+        {
+            entity.ToTable("PermanentFiles");
+            entity.HasKey(p => p.Id);
+            entity.HasIndex(p => p.FirmClientAssignmentId).IsUnique();
+            entity.HasIndex(p => p.FirmTenantId);
+            entity.Property(p => p.CompanyName).HasMaxLength(200);
+            entity.Property(p => p.Nif).HasMaxLength(30);
+            entity.Property(p => p.RneIdentifier).HasMaxLength(50);
+            entity.Property(p => p.Currency).HasMaxLength(3).HasDefaultValue("TND");
+            entity.Property(p => p.ShareCapital).HasPrecision(18, 3);
+            entity.Property(p => p.Street).HasMaxLength(200);
+            entity.Property(p => p.City).HasMaxLength(100);
+            entity.Property(p => p.Governorate).HasMaxLength(100);
+            entity.Property(p => p.PostalCode).HasMaxLength(10);
+            entity.Property(p => p.TaxOffice).HasMaxLength(200);
+            entity.Property(p => p.CurrentLegalAct).HasMaxLength(200);
+            entity.Property(p => p.MissionStatus).HasMaxLength(200);
+            entity.Property(p => p.ResignationNotes).HasMaxLength(2000);
+            entity.Property(p => p.BillingNotes).HasMaxLength(2000);
+            entity.Property(p => p.AnnualFeeAmount).HasPrecision(18, 3);
+            entity.Property(p => p.AssignedAccountantName).HasMaxLength(200);
+        });
+
+        builder.Entity<Domain.Entities.FirmGovernance.LegalRepresentative>(entity =>
+        {
+            entity.ToTable("LegalRepresentatives");
+            entity.HasKey(r => r.Id);
+            entity.HasIndex(r => r.PermanentFileId);
+            entity.Property(r => r.LastName).HasMaxLength(100).IsRequired();
+            entity.Property(r => r.FirstName).HasMaxLength(100).IsRequired();
+            entity.Property(r => r.Cin).HasMaxLength(20);
+            entity.Property(r => r.Nationality).HasMaxLength(100);
+            entity.Property(r => r.Email).HasMaxLength(256);
+            entity.Property(r => r.Phone).HasMaxLength(20);
+            entity.Property(r => r.CnssNumber).HasMaxLength(30);
+            entity.Property(r => r.Role).HasMaxLength(100);
+        });
+
+        builder.Entity<Domain.Entities.FirmGovernance.Shareholder>(entity =>
+        {
+            entity.ToTable("Shareholders");
+            entity.HasKey(s => s.Id);
+            entity.HasIndex(s => s.PermanentFileId);
+            entity.Property(s => s.Name).HasMaxLength(200).IsRequired();
+            entity.Property(s => s.CinOrNif).HasMaxLength(30);
+            entity.Property(s => s.ShareCount).HasPrecision(18, 3);
+            entity.Property(s => s.SharePercentage).HasPrecision(5, 2);
+        });
+
+        builder.Entity<Domain.Entities.FirmGovernance.FirmTimeSheetEntry>(entity =>
+        {
+            entity.ToTable("FirmTimeSheetEntries");
+            entity.HasKey(t => t.Id);
+            entity.HasIndex(t => new { t.FirmTenantId, t.WorkDate });
+            entity.Property(t => t.UserDisplayName).HasMaxLength(200).IsRequired();
+            entity.Property(t => t.ClientCompanyName).HasMaxLength(200);
+            entity.Property(t => t.Hours).HasPrecision(9, 3);
+            entity.Property(t => t.ActivityCode).HasMaxLength(50);
+            entity.Property(t => t.Notes).HasMaxLength(1000);
+            entity.Property(t => t.ValidatedByDisplayName).HasMaxLength(200);
+            // Sert les cumuls jour et semaine ISO d'un collaborateur lors du contrôle de saisie.
+            entity.HasIndex(t => new { t.FirmTenantId, t.UserId, t.WorkDate });
+        });
+
+        builder.Entity<Domain.Entities.FirmGovernance.FirmTimeSheetYearSettings>(entity =>
+        {
+            entity.ToTable("FirmTimeSheetYearSettings");
+            entity.HasKey(s => s.Id);
+            entity.HasIndex(s => new { s.FirmTenantId, s.Year }).IsUnique();
+            entity.Property(s => s.WeeklyRegime).HasConversion<int>();
+            entity.Property(s => s.MaxDailyHours).HasPrecision(9, 3);
+            entity.Property(s => s.MaxWeeklyHours).HasPrecision(9, 3);
+            entity.Property(s => s.PaidLeaveDaysPerYear).HasPrecision(9, 3);
+            entity.Property(s => s.PublicHolidayDaysPerYear).HasPrecision(9, 3);
+            entity.Property(s => s.ProductivityRatePercent).HasPrecision(9, 3);
+            entity.Property(s => s.CnssEmployerRate).HasPrecision(9, 3);
+            entity.Property(s => s.TfpRate).HasPrecision(9, 3);
+            entity.Property(s => s.FoprolosRate).HasPrecision(9, 3);
+            entity.Property(s => s.WorkAccidentRate).HasPrecision(9, 3);
+            entity.Ignore(s => s.AnnualWorkingDays);
+            entity.Ignore(s => s.AnnualBaseHours);
+            entity.Ignore(s => s.DailyHours);
+            entity.Ignore(s => s.AnnualProductiveHours);
+            entity.Ignore(s => s.TotalEmployerChargeRate);
+        });
+
+        builder.Entity<Domain.Entities.FirmGovernance.FirmCollaboratorYearCost>(entity =>
+        {
+            entity.ToTable("FirmCollaboratorYearCosts");
+            entity.HasKey(c => c.Id);
+            entity.HasIndex(c => new { c.FirmTenantId, c.CollaboratorUserId, c.Year }).IsUnique();
+            entity.Property(c => c.GrossAnnualSalary).HasPrecision(18, 3);
+            entity.Property(c => c.EmployerContributions).HasPrecision(18, 3);
+            entity.Property(c => c.PayrollExtras).HasPrecision(18, 3);
+            entity.Property(c => c.HourlyRateOverride).HasPrecision(18, 3);
+            entity.Property(c => c.OverrideJustification).HasMaxLength(500);
+            entity.Property(c => c.Source).HasConversion<int>();
+            entity.Ignore(c => c.TotalEmployerCost);
+        });
+
+        builder.Entity<Domain.Entities.FirmGovernance.FirmActivityCode>(entity =>
+        {
+            entity.ToTable("FirmActivityCodes");
+            entity.HasKey(a => a.Id);
+            entity.HasIndex(a => new { a.FirmTenantId, a.Code }).IsUnique();
+            entity.Property(a => a.Code).HasMaxLength(50).IsRequired();
+            entity.Property(a => a.Label).HasMaxLength(200).IsRequired();
+            entity.Property(a => a.Category).HasConversion<int>();
+        });
+
+        builder.Entity<Domain.Entities.FirmGovernance.FirmTimeSheetPeriodLock>(entity =>
+        {
+            entity.ToTable("FirmTimeSheetPeriodLocks");
+            entity.HasKey(p => p.Id);
+            entity.HasIndex(p => new { p.FirmTenantId, p.Year, p.Month }).IsUnique();
+            entity.Property(p => p.LockedByDisplayName).HasMaxLength(200).IsRequired();
+            entity.Property(p => p.UnlockedByDisplayName).HasMaxLength(200);
+            entity.Property(p => p.LockReason).HasMaxLength(500);
+            entity.Property(p => p.UnlockReason).HasMaxLength(500);
+        });
+
+        builder.Entity<Domain.Entities.FirmGovernance.FirmExpenseNote>(entity =>
+        {
+            entity.ToTable("FirmExpenseNotes");
+            entity.HasKey(n => n.Id);
+            entity.HasIndex(n => new { n.FirmTenantId, n.FirmClientAssignmentId, n.PeriodYear, n.PeriodMonth }).IsUnique();
+            entity.Property(n => n.CompanyName).HasMaxLength(200).IsRequired();
+            entity.Property(n => n.RepresentativeName).HasMaxLength(200);
+            entity.Property(n => n.TotalToReimburse).HasPrecision(18, 3);
+            entity.Property(n => n.MixedCharges).HasPrecision(18, 3);
+            entity.Property(n => n.OperatingExpenses).HasPrecision(18, 3);
+            entity.Property(n => n.MileageAllowance).HasPrecision(18, 3);
+            entity.Property(n => n.SalesAmount).HasPrecision(18, 3);
+            entity.Property(n => n.Notes).HasMaxLength(2000);
+        });
+
+        builder.Entity<Domain.Entities.FirmGovernance.FiscalCalendarRule>(entity =>
+        {
+            entity.ToTable("FiscalCalendarRules");
+            entity.HasKey(r => r.Id);
+            entity.HasIndex(r => new { r.ObligationType, r.ApplicableTaxRegime });
+            entity.Property(r => r.Label).HasMaxLength(200);
+        });
+
+        builder.Entity<Domain.Entities.FirmGovernance.FirmCollaboratorProfile>(entity =>
+        {
+            entity.ToTable("FirmCollaboratorProfiles");
+            entity.HasKey(p => p.UserId);
+            entity.Property(p => p.Qualification).HasMaxLength(200).IsRequired();
+            entity.Property(p => p.PhoneLandline).HasMaxLength(40);
+            entity.Property(p => p.AddressLine).HasMaxLength(300);
+            entity.Property(p => p.PostalCode).HasMaxLength(20);
+            entity.Property(p => p.City).HasMaxLength(100);
+            entity.Property(p => p.Country).HasMaxLength(100);
+            entity.Property(p => p.CniFileName).HasMaxLength(260);
+            entity.Property(p => p.CniContentType).HasMaxLength(100);
+            entity.Property(p => p.HourlyCostRate).HasPrecision(18, 3);
+            entity.HasIndex(p => p.PayrollEmployeeId);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(p => p.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<Domain.Entities.FirmGovernance.FirmCollaboratorLink>(entity =>
+        {
+            entity.ToTable("FirmCollaboratorLinks");
+            entity.HasKey(l => l.Id);
+            entity.HasIndex(l => new { l.ParentUserId, l.ChildUserId }).IsUnique();
+            entity.HasIndex(l => l.ChildUserId);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(l => l.ParentUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(l => l.ChildUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<Domain.Entities.FirmGovernance.FirmDossierAssignmentHistory>(entity =>
+        {
+            entity.ToTable("FirmDossierAssignmentHistories");
+            entity.HasKey(h => h.Id);
+            entity.Property(h => h.AccountantDisplayName).HasMaxLength(200);
+            entity.HasIndex(h => new { h.FirmTenantId, h.FirmClientAssignmentId, h.EndedAt });
+            entity.HasIndex(h => h.AccountantUserId);
+        });
+
+        builder.Entity<Domain.Entities.FirmGovernance.FirmDossierYearBudget>(entity =>
+        {
+            entity.ToTable("FirmDossierYearBudgets");
+            entity.HasKey(b => b.Id);
+            entity.HasIndex(b => new { b.FirmClientAssignmentId, b.Year }).IsUnique();
+            entity.HasIndex(b => new { b.FirmTenantId, b.Year });
+            entity.Property(b => b.BudgetAnnuel).HasPrecision(18, 3);
+        });
+
+        builder.Entity<Domain.Entities.FirmGovernance.FirmCollaboratorRentability>(entity =>
+        {
+            entity.ToTable("FirmCollaboratorRentabilities");
+            entity.HasKey(r => r.Id);
+            entity.HasIndex(r => new { r.FirmTenantId, r.CollaboratorUserId, r.Year }).IsUnique();
+            entity.Property(r => r.CollaboratorDisplayName).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.Rentability).HasPrecision(18, 3);
+            entity.Property(r => r.LegacyRentability).HasPrecision(18, 3);
+            entity.HasMany(r => r.Lines)
+                .WithOne()
+                .HasForeignKey(l => l.CollaboratorRentabilityId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.Navigation(r => r.Lines).HasField("_lines").UsePropertyAccessMode(PropertyAccessMode.Field);
+        });
+
+        builder.Entity<Domain.Entities.FirmGovernance.FirmCollaboratorRentabilityLine>(entity =>
+        {
+            entity.ToTable("FirmCollaboratorRentabilityLines");
+            entity.HasKey(l => l.Id);
+            entity.HasIndex(l => new { l.CollaboratorRentabilityId, l.ReferenceCode, l.LineCollaboratorUserId });
+            entity.Property(l => l.Value).HasPrecision(18, 3);
+            entity.Property(l => l.ReferenceCode).HasConversion<int>();
+        });
+
     }
 }
 

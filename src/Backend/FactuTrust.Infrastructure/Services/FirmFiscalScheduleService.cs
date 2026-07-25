@@ -1,3 +1,4 @@
+using FactuTrust.Application.Common;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Accounting.FiscalSchedule;
@@ -14,6 +15,8 @@ public sealed class FirmFiscalScheduleService : IFirmFiscalScheduleService
     private readonly MasterDbContext _masterContext;
     private readonly ITenantService _tenantService;
     private readonly IFirmAssignmentService _assignmentService;
+    private readonly IFirmDossierAccessService _dossierAccess;
+    private readonly ICurrentUser _currentUser;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<FirmFiscalScheduleService> _logger;
 
@@ -21,12 +24,16 @@ public sealed class FirmFiscalScheduleService : IFirmFiscalScheduleService
         MasterDbContext masterContext,
         ITenantService tenantService,
         IFirmAssignmentService assignmentService,
+        IFirmDossierAccessService dossierAccess,
+        ICurrentUser currentUser,
         TimeProvider timeProvider,
         ILogger<FirmFiscalScheduleService> logger)
     {
         _masterContext = masterContext;
         _tenantService = tenantService;
         _assignmentService = assignmentService;
+        _dossierAccess = dossierAccess;
+        _currentUser = currentUser;
         _timeProvider = timeProvider;
         _logger = logger;
     }
@@ -36,11 +43,33 @@ public sealed class FirmFiscalScheduleService : IFirmFiscalScheduleService
         FiscalScheduleFiltersDto filters,
         CancellationToken cancellationToken = default)
     {
+        IReadOnlySet<Guid>? allowedCompanyIds = null;
+        if (_currentUser.TryGetAccessScope(out var scope))
+        {
+            allowedCompanyIds = await _dossierAccess.GetAccessibleCompanyTenantIdsAsync(
+                firmTenantId, scope, cancellationToken);
+            if (allowedCompanyIds is { Count: 0 })
+            {
+                return new FiscalScheduleListDto
+                {
+                    Items = [],
+                    Companies = [],
+                    Summary = FiscalScheduleMappings.BuildSummary([], _timeProvider.GetLocalNow().DateTime.Date),
+                    Page = Math.Max(filters.Page, 1),
+                    PageSize = Math.Clamp(filters.PageSize, 1, 200),
+                    TotalCount = 0
+                };
+            }
+        }
+
         var clientsQuery =
             from assignment in _masterContext.FirmClientAssignments.AsNoTracking()
             join tenant in _masterContext.Tenants.AsNoTracking() on assignment.CompanyTenantId equals tenant.Id
             where assignment.FirmTenantId == firmTenantId && assignment.Status == FirmAssignmentStatus.Active
             select new { assignment.CompanyTenantId, tenant.CompanyName };
+
+        if (allowedCompanyIds is not null)
+            clientsQuery = clientsQuery.Where(c => allowedCompanyIds.Contains(c.CompanyTenantId));
 
         if (filters.CompanyTenantId.HasValue)
             clientsQuery = clientsQuery.Where(c => c.CompanyTenantId == filters.CompanyTenantId.Value);

@@ -68,7 +68,10 @@ public sealed class SaveVatDeclarationCommandTests
         });
 
         var sync = new DeclarationScheduleSynchronizer(
-            Mock.Of<IFiscalScheduleRepository>(), settings, NullLogger<DeclarationScheduleSynchronizer>.Instance);
+            Mock.Of<IFiscalScheduleRepository>(),
+            Mock.Of<ITunisianFiscalDeadlineService>(),
+            settings,
+            NullLogger<DeclarationScheduleSynchronizer>.Instance);
 
         return new SaveVatDeclarationCommandHandler(
             _repo.Object, _mediator.Object, _audit.Object, _currentUser.Object,

@@ -1,5 +1,6 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.Products;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
@@ -76,28 +77,11 @@ public sealed class GetProductsQueryHandler : IRequestHandler<GetProductsQuery, 
                 cancellationToken);
         }
 
-        var dtos = items.Select(p => new ProductListDto
-        {
-            Id = p.Id,
-            Code = p.Code,
-            Name = p.Name,
-            Type = p.Type.ToString(), // "Product" or "Service"
-            UnitPrice = p.UnitPrice.Amount,
-            PurchasePrice = p.PurchasePrice?.Amount,
-            Currency = p.UnitPrice.Currency,
-            VatRatePercent = (int)p.VatRate,
-            VatRateDisplay = p.VatRate.ToShortString(),
-            Unit = p.Unit,
-            IsActive = p.IsActive,
-            IsStockManaged = p.IsStockManaged,
-            IsFodecApplicable = p.IsFodecApplicable,
-            CategoryId = p.CategoryId,
-            CategoryName = p.Category.Name,
-            ImageUrl = p.ImageUrl,
-            QuantityAvailable = p.IsStockManaged && stockWarehouse != null
+        var dtos = items.Select(p => ProductDetailMapper.ToListDto(
+            p,
+            p.IsStockManaged && stockWarehouse != null
                 ? (qtyByProduct.TryGetValue(p.Id, out var q) ? q : 0m)
-                : null
-        }).ToList();
+                : null)).ToList();
 
         return Result.Success(PagedResult<ProductListDto>.Create(dtos, request.Page, request.PageSize, totalCount));
     }

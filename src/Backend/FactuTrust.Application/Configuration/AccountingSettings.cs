@@ -43,6 +43,12 @@ public sealed class AccountingSettings
     public bool NctStatementsEnabled { get; set; }
 
     /// <summary>
+    /// Active la partie fiscale de la liasse (détermination du résultat fiscal, calcul IS/IRPP,
+    /// export consolidé). Défaut true — mettre à false pour masquer la fonctionnalité.
+    /// </summary>
+    public bool FiscalLiasseEnabled { get; set; } = true;
+
+    /// <summary>
     /// Taux du FODEC (%) appliqué à la base HT de la période pour préremplir la déclaration mensuelle.
     /// Standard tunisien : 1 %. Mis à 0 pour désactiver le préremplissage FODEC.
     /// </summary>

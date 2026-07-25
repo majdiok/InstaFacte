@@ -1,4 +1,5 @@
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.Persistence;
@@ -28,8 +29,26 @@ public sealed class FirmAssignmentNotificationTests
         return new MasterDbContext(options);
     }
 
-    private static FirmAssignmentService BuildService(MasterDbContext db, INotificationService notifications) =>
-        new(db, notifications, NullLogger<FirmAssignmentService>.Instance);
+    private static FirmAssignmentService BuildService(MasterDbContext db, INotificationService notifications)
+    {
+        var dossierAccess = new Mock<IFirmDossierAccessService>();
+        var currentUser = new Mock<ICurrentUser>();
+        currentUser.SetupGet(u => u.IsAuthenticated).Returns(false);
+        return new FirmAssignmentService(
+            db,
+            notifications,
+            CreateNoopSnapshotProvider(),
+            dossierAccess.Object,
+            currentUser.Object,
+            NullLogger<FirmAssignmentService>.Instance);
+    }
+
+    private static ICompanyProfileSnapshotProvider CreateNoopSnapshotProvider()
+    {
+        var mock = new Mock<ICompanyProfileSnapshotProvider>();
+        mock.Setup(p => p.TryDeserialize(It.IsAny<string?>())).Returns((CompanyProfileSnapshotDto?)null);
+        return mock.Object;
+    }
 
     private static async Task<FirmClientAssignment> SeedPendingAssignmentAsync(MasterDbContext db)
     {

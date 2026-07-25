@@ -426,4 +426,83 @@ describe('AccountingService', () => {
       req.flush(blob);
     });
   });
+
+  describe('liasse fiscale (détermination du résultat fiscal)', () => {
+    const blob = new Blob(['x'], { type: 'application/octet-stream' });
+
+    it('getFiscalAdjustmentCatalog should GET fiscal-result/catalog', () => {
+      service.getFiscalAdjustmentCatalog().subscribe();
+      const req = httpMock.expectOne(`${base}/fiscal-result/catalog`);
+      expect(req.request.method).toBe('GET');
+      req.flush({ success: true, data: [] });
+    });
+
+    it('getFiscalResult should GET fiscal-result/{year}', () => {
+      service.getFiscalResult(2025).subscribe();
+      const req = httpMock.expectOne(`${base}/fiscal-result/2025`);
+      expect(req.request.method).toBe('GET');
+      req.flush({ success: true, data: null });
+    });
+
+    it('upsertFiscalResult should POST fiscal-result/{year} with the request body', () => {
+      const request = {
+        taxpayerKind: 0, accountingResult: 100000, appliedIsRate: 0.15, localTurnoverTtc: 500000,
+        minimumTaxRegime: 0,
+        acomptesPaid: 0, withholdingSuffered: 0, priorTaxCredit: 0,
+        adjustments: [{ catalogCode: null, kind: 0, label: 'IS', amount: 15000, isAutoSuggested: false }],
+        carryForwards: []
+      };
+      service.upsertFiscalResult(2025, request).subscribe();
+      const req = httpMock.expectOne(`${base}/fiscal-result/2025`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body.accountingResult).toBe(100000);
+      expect(req.request.body.adjustments.length).toBe(1);
+      req.flush({ success: true, data: null });
+    });
+
+    it('finalizeFiscalResult should POST fiscal-result/{year}/finalize', () => {
+      service.finalizeFiscalResult(2025).subscribe();
+      const req = httpMock.expectOne(`${base}/fiscal-result/2025/finalize`);
+      expect(req.request.method).toBe('POST');
+      req.flush({ success: true, data: null });
+    });
+
+    it('exportFiscalResult should GET fiscal-result/{year}/export with format and blob', () => {
+      service.exportFiscalResult(2025, 'pdf').subscribe();
+      const req = httpMock.expectOne(r => r.url === `${base}/fiscal-result/2025/export`);
+      expect(req.request.params.get('format')).toBe('pdf');
+      expect(req.request.responseType).toBe('blob');
+      req.flush(blob);
+    });
+
+    it('exportConsolidatedLiasse should GET liasse/{year}/export with format and blob', () => {
+      service.exportConsolidatedLiasse(2025, 'excel').subscribe();
+      const req = httpMock.expectOne(r => r.url === `${base}/liasse/2025/export`);
+      expect(req.request.params.get('format')).toBe('excel');
+      expect(req.request.responseType).toBe('blob');
+      req.flush(blob);
+    });
+
+    it('getIncomeTaxParameters should GET income-tax-parameters/{year}', () => {
+      service.getIncomeTaxParameters(2025).subscribe();
+      const req = httpMock.expectOne(`${base}/income-tax-parameters/2025`);
+      expect(req.request.method).toBe('GET');
+      req.flush({ success: true, data: null });
+    });
+
+    it('updateIncomeTaxParameters should PUT income-tax-parameters/{year} with the payload', () => {
+      const params = {
+        fiscalYear: 2025, isStandardRate: 0.15, isReducedRate: 0.1, isSectorRate: 0.35,
+        minTaxRate: 0.002, minTaxReducedRate: 0.001, minTaxFloorTnd: 500, minTaxFloorReducedTnd: 300,
+        cssApplies: true, cssRate: 0.01, cssFloorTnd: 0,
+        acompteRate: 0.3, acompteCount: 3, deficitCarryForwardYears: 5,
+        roundTaxableToDinar: true, irppBracketsJson: '[]', isUserModified: false
+      };
+      service.updateIncomeTaxParameters(2025, params).subscribe();
+      const req = httpMock.expectOne(`${base}/income-tax-parameters/2025`);
+      expect(req.request.method).toBe('PUT');
+      expect(req.request.body.cssRate).toBe(0.01);
+      req.flush({ success: true, data: params });
+    });
+  });
 });

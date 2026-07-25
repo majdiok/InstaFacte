@@ -180,6 +180,328 @@ public partial class PdfService
         return Task.FromResult(bytes);
     }
 
+    // ── Récapitulatifs de journaux (centralisateur / récapitulation / totaux) ──────────────
+
+    public Task<byte[]> GenerateJournalSummaryPdfAsync(JournalSummaryDto summary, AccountingReportHeader header, CancellationToken cancellationToken = default)
+    {
+        var bytes = BuildReport(header, landscape: true, col =>
+        {
+            if (summary.JournalTotals.Count == 0)
+            {
+                EmptyNotice(col, "Aucun mouvement sur la période.");
+                return;
+            }
+
+            if (summary.Grouping != JournalSummaryGrouping.Totals && summary.Cells.Count > 0)
+            {
+                var isMonthly = summary.Grouping == JournalSummaryGrouping.Month;
+                col.Item().PaddingBottom(2)
+                    .Text(isMonthly ? "Détail par mois" : "Détail par compte")
+                    .FontSize(11).Bold().FontColor(Colors.Blue.Darken2);
+
+                col.Item().Table(table =>
+                {
+                    table.ColumnsDefinition(c =>
+                    {
+                        c.ConstantColumn(60);   // journal
+                        c.RelativeColumn(2);    // libellé journal
+                        c.ConstantColumn(80);   // mois / compte
+                        c.RelativeColumn(2);    // intitulé compte (vide en mensuel)
+                        c.ConstantColumn(90);   // débit
+                        c.ConstantColumn(90);   // crédit
+                    });
+
+                    table.Header(h =>
+                    {
+                        h.Cell().Element(HeadCell).Text("Journal").Bold();
+                        h.Cell().Element(HeadCell).Text("Libellé").Bold();
+                        h.Cell().Element(HeadCell).Text(isMonthly ? "Période" : "Compte").Bold();
+                        h.Cell().Element(HeadCell).Text(isMonthly ? string.Empty : "Intitulé").Bold();
+                        h.Cell().Element(HeadCell).AlignRight().Text("Débit").Bold();
+                        h.Cell().Element(HeadCell).AlignRight().Text("Crédit").Bold();
+                    });
+
+                    foreach (var cell in summary.Cells)
+                    {
+                        table.Cell().Element(BodyCell).Text(cell.JournalCode);
+                        table.Cell().Element(BodyCell).Text(PdfRenderHelpers.CleanTextForPdf(cell.JournalLabel));
+                        table.Cell().Element(BodyCell).Text(isMonthly
+                            ? $"{cell.Month:00}/{cell.Year}"
+                            : cell.AccountNumber ?? string.Empty);
+                        table.Cell().Element(BodyCell).Text(isMonthly
+                            ? string.Empty
+                            : PdfRenderHelpers.CleanTextForPdf(cell.AccountLabel ?? string.Empty));
+                        table.Cell().Element(BodyCell).AlignRight().Text(AmountOrBlank(cell.Debit));
+                        table.Cell().Element(BodyCell).AlignRight().Text(AmountOrBlank(cell.Credit));
+                    }
+                });
+            }
+
+            col.Item().PaddingTop(12).PaddingBottom(2)
+                .Text("Totaux par journal").FontSize(11).Bold().FontColor(Colors.Blue.Darken2);
+
+            col.Item().Table(table =>
+            {
+                table.ColumnsDefinition(c =>
+                {
+                    c.ConstantColumn(60);   // journal
+                    c.RelativeColumn(3);    // libellé
+                    c.ConstantColumn(70);   // écritures
+                    c.ConstantColumn(90);   // débit
+                    c.ConstantColumn(90);   // crédit
+                });
+
+                table.Header(h =>
+                {
+                    h.Cell().Element(HeadCell).Text("Journal").Bold();
+                    h.Cell().Element(HeadCell).Text("Libellé").Bold();
+                    h.Cell().Element(HeadCell).AlignRight().Text("Écritures").Bold();
+                    h.Cell().Element(HeadCell).AlignRight().Text("Total débit").Bold();
+                    h.Cell().Element(HeadCell).AlignRight().Text("Total crédit").Bold();
+                });
+
+                foreach (var t in summary.JournalTotals)
+                {
+                    table.Cell().Element(BodyCell).Text(t.JournalCode);
+                    table.Cell().Element(BodyCell).Text(PdfRenderHelpers.CleanTextForPdf(t.JournalLabel));
+                    table.Cell().Element(BodyCell).AlignRight().Text(t.EntryCount.ToString(CultureInfo.InvariantCulture));
+                    table.Cell().Element(BodyCell).AlignRight().Text(Amount(t.Debit));
+                    table.Cell().Element(BodyCell).AlignRight().Text(Amount(t.Credit));
+                }
+
+                table.Cell().ColumnSpan(3).Element(TotalCell).AlignRight().Text("TOTAL GÉNÉRAL").Bold();
+                table.Cell().Element(TotalCell).AlignRight().Text(Amount(summary.TotalDebit)).Bold();
+                table.Cell().Element(TotalCell).AlignRight().Text(Amount(summary.TotalCredit)).Bold();
+            });
+
+            if (!summary.IsBalanced)
+            {
+                col.Item().PaddingTop(8)
+                    .Text("Contrôle : total débit ≠ total crédit — vérifier les écritures de la période.")
+                    .FontSize(9).Bold().FontColor(Colors.Red.Darken2);
+            }
+        });
+
+        return Task.FromResult(bytes);
+    }
+
+    // ── Balance détaillée (soldes + détail des mouvements) ─────────────────────────────────
+
+    public Task<byte[]> GenerateDetailedBalancePdfAsync(DetailedBalanceDto balance, AccountingReportHeader header, CancellationToken cancellationToken = default)
+    {
+        var bytes = BuildReport(header, landscape: true, col =>
+        {
+            if (balance.Accounts.Count == 0)
+            {
+                EmptyNotice(col, "Aucun mouvement sur la période.");
+                return;
+            }
+
+            foreach (var account in balance.Accounts)
+            {
+                var b = account.Balance;
+                col.Item().PaddingTop(10).PaddingBottom(2).Row(row =>
+                {
+                    row.RelativeItem().Text($"{b.AccountNumber} — {PdfRenderHelpers.CleanTextForPdf(b.Label)}")
+                        .FontSize(11).Bold().FontColor(Colors.Blue.Darken2);
+                    row.ConstantItem(300).AlignRight()
+                        .Text($"Ouverture {Amount(b.OpeningDebit - b.OpeningCredit)}  ·  "
+                              + $"Clôture {Amount(b.ClosingDebit - b.ClosingCredit)}")
+                        .FontSize(9).FontColor(Colors.Grey.Darken2);
+                });
+
+                col.Item().Table(table =>
+                {
+                    table.ColumnsDefinition(c =>
+                    {
+                        c.ConstantColumn(62);   // date
+                        c.ConstantColumn(50);   // journal
+                        c.ConstantColumn(42);   // pièce
+                        c.RelativeColumn(3);    // libellé
+                        c.ConstantColumn(90);   // débit
+                        c.ConstantColumn(90);   // crédit
+                    });
+
+                    table.Header(h =>
+                    {
+                        h.Cell().Element(HeadCell).Text("Date").Bold();
+                        h.Cell().Element(HeadCell).Text("Journal").Bold();
+                        h.Cell().Element(HeadCell).Text("Pièce").Bold();
+                        h.Cell().Element(HeadCell).Text("Libellé").Bold();
+                        h.Cell().Element(HeadCell).AlignRight().Text("Débit").Bold();
+                        h.Cell().Element(HeadCell).AlignRight().Text("Crédit").Bold();
+                    });
+
+                    foreach (var row in account.Rows)
+                    {
+                        table.Cell().Element(BodyCell).Text(ShortDate(row.EntryDate));
+                        table.Cell().Element(BodyCell).Text(row.JournalCode);
+                        table.Cell().Element(BodyCell).Text(row.PieceNumber.ToString(CultureInfo.InvariantCulture));
+                        table.Cell().Element(BodyCell).Text(PdfRenderHelpers.CleanTextForPdf(row.Label));
+                        table.Cell().Element(BodyCell).AlignRight().Text(AmountOrBlank(row.Debit));
+                        table.Cell().Element(BodyCell).AlignRight().Text(AmountOrBlank(row.Credit));
+                    }
+
+                    table.Cell().ColumnSpan(4).Element(TotalCell).AlignRight().Text($"Mouvements {b.AccountNumber}").Bold();
+                    table.Cell().Element(TotalCell).AlignRight().Text(Amount(b.MovementDebit)).Bold();
+                    table.Cell().Element(TotalCell).AlignRight().Text(Amount(b.MovementCredit)).Bold();
+                });
+            }
+
+            col.Item().PaddingTop(12).Row(row =>
+            {
+                row.RelativeItem().AlignRight().PaddingRight(10).Text("TOTAL GÉNÉRAL").Bold().FontSize(10);
+                row.ConstantItem(90).AlignRight().Text(Amount(balance.TotalMovementDebit)).Bold().FontSize(10);
+                row.ConstantItem(90).AlignRight().Text(Amount(balance.TotalMovementCredit)).Bold().FontSize(10);
+            });
+        });
+
+        return Task.FromResult(bytes);
+    }
+
+    // ── Balance par période (12 colonnes mensuelles) ───────────────────────────────────────
+
+    public Task<byte[]> GeneratePeriodicBalancePdfAsync(PeriodicBalanceDto balance, AccountingReportHeader header, CancellationToken cancellationToken = default)
+    {
+        var bytes = BuildReport(header, landscape: true, col =>
+        {
+            if (balance.Rows.Count == 0)
+            {
+                EmptyNotice(col, "Aucun mouvement sur l'exercice.");
+                return;
+            }
+
+            // Douze paires débit/crédit tiendraient mal sur une page : on présente le mouvement net
+            // du mois (débit − crédit), l'ouverture et la clôture encadrant les colonnes.
+            col.Item().PaddingBottom(4)
+                .Text("Mouvement net par mois (débit − crédit)")
+                .FontSize(9).Italic().FontColor(Colors.Grey.Darken2);
+
+            col.Item().Table(table =>
+            {
+                table.ColumnsDefinition(c =>
+                {
+                    c.ConstantColumn(60);           // compte
+                    c.RelativeColumn(2);            // libellé
+                    c.ConstantColumn(62);           // ouverture
+                    for (var m = 0; m < 12; m++)
+                        c.ConstantColumn(48);       // mois
+                    c.ConstantColumn(62);           // clôture
+                });
+
+                table.Header(h =>
+                {
+                    h.Cell().Element(HeadCell).Text("Compte").Bold();
+                    h.Cell().Element(HeadCell).Text("Libellé").Bold();
+                    h.Cell().Element(HeadCell).AlignRight().Text("Ouv.").Bold();
+                    for (var m = 1; m <= 12; m++)
+                        h.Cell().Element(HeadCell).AlignRight().Text($"{m:00}").Bold();
+                    h.Cell().Element(HeadCell).AlignRight().Text("Clôture").Bold();
+                });
+
+                foreach (var row in balance.Rows)
+                {
+                    table.Cell().Element(BodyCell).Text(row.AccountNumber);
+                    table.Cell().Element(BodyCell).Text(PdfRenderHelpers.CleanTextForPdf(row.Label));
+                    table.Cell().Element(BodyCell).AlignRight().Text(Amount(row.Opening));
+                    for (var m = 0; m < 12; m++)
+                    {
+                        var net = row.MonthlyDebit[m] - row.MonthlyCredit[m];
+                        table.Cell().Element(BodyCell).AlignRight().Text(AmountOrBlank(net)).FontSize(7);
+                    }
+                    table.Cell().Element(BodyCell).AlignRight().Text(Amount(row.Closing));
+                }
+            });
+
+            col.Item().PaddingTop(12).Row(row =>
+            {
+                row.RelativeItem().AlignRight().PaddingRight(10).Text("TOTAL MOUVEMENTS").Bold().FontSize(10);
+                row.ConstantItem(90).AlignRight().Text(Amount(balance.TotalDebit)).Bold().FontSize(10);
+                row.ConstantItem(90).AlignRight().Text(Amount(balance.TotalCredit)).Bold().FontSize(10);
+            });
+        });
+
+        return Task.FromResult(bytes);
+    }
+
+    // ── Grand livre général (comptes en séquence) ──────────────────────────────────────────
+
+    public Task<byte[]> GenerateGeneralLedgerPdfAsync(GeneralLedgerDto ledger, AccountingReportHeader header, CancellationToken cancellationToken = default)
+    {
+        var bytes = BuildReport(header, landscape: true, col =>
+        {
+            if (ledger.Accounts.Count == 0)
+            {
+                EmptyNotice(col, "Aucun compte mouvementé sur la période.");
+                return;
+            }
+
+            foreach (var account in ledger.Accounts)
+            {
+                col.Item().PaddingTop(10).PaddingBottom(2)
+                    .Text($"{account.AccountNumber} — {PdfRenderHelpers.CleanTextForPdf(account.Label)}")
+                    .FontSize(11).Bold().FontColor(Colors.Blue.Darken2);
+
+                col.Item().Table(table =>
+                {
+                    table.ColumnsDefinition(c =>
+                    {
+                        c.ConstantColumn(62);   // date
+                        c.ConstantColumn(50);   // journal
+                        c.ConstantColumn(42);   // pièce
+                        c.RelativeColumn(3);    // libellé
+                        c.ConstantColumn(90);   // débit
+                        c.ConstantColumn(90);   // crédit
+                        c.ConstantColumn(90);   // solde
+                    });
+
+                    table.Header(h =>
+                    {
+                        h.Cell().Element(HeadCell).Text("Date").Bold();
+                        h.Cell().Element(HeadCell).Text("Journal").Bold();
+                        h.Cell().Element(HeadCell).Text("Pièce").Bold();
+                        h.Cell().Element(HeadCell).Text("Libellé").Bold();
+                        h.Cell().Element(HeadCell).AlignRight().Text("Débit").Bold();
+                        h.Cell().Element(HeadCell).AlignRight().Text("Crédit").Bold();
+                        h.Cell().Element(HeadCell).AlignRight().Text("Solde").Bold();
+                    });
+
+                    // Report à nouveau : première ligne de chaque compte, comme sur une édition légale.
+                    table.Cell().ColumnSpan(4).Element(BodyCell).Text("Report à nouveau").Italic();
+                    table.Cell().Element(BodyCell).AlignRight().Text(string.Empty);
+                    table.Cell().Element(BodyCell).AlignRight().Text(string.Empty);
+                    table.Cell().Element(BodyCell).AlignRight().Text(Amount(account.OpeningBalance)).Italic();
+
+                    foreach (var row in account.Rows)
+                    {
+                        table.Cell().Element(BodyCell).Text(ShortDate(row.EntryDate));
+                        table.Cell().Element(BodyCell).Text(row.JournalCode);
+                        table.Cell().Element(BodyCell).Text(row.PieceNumber.ToString(CultureInfo.InvariantCulture));
+                        table.Cell().Element(BodyCell).Text(PdfRenderHelpers.CleanTextForPdf(row.Label));
+                        table.Cell().Element(BodyCell).AlignRight().Text(AmountOrBlank(row.Debit));
+                        table.Cell().Element(BodyCell).AlignRight().Text(AmountOrBlank(row.Credit));
+                        table.Cell().Element(BodyCell).AlignRight().Text(Amount(row.RunningBalance));
+                    }
+
+                    table.Cell().ColumnSpan(4).Element(TotalCell).AlignRight().Text($"Total {account.AccountNumber}").Bold();
+                    table.Cell().Element(TotalCell).AlignRight().Text(Amount(account.TotalDebit)).Bold();
+                    table.Cell().Element(TotalCell).AlignRight().Text(Amount(account.TotalCredit)).Bold();
+                    table.Cell().Element(TotalCell).AlignRight().Text(Amount(account.ClosingBalance)).Bold();
+                });
+            }
+
+            col.Item().PaddingTop(12).Row(row =>
+            {
+                row.RelativeItem().AlignRight().PaddingRight(10).Text("TOTAL GÉNÉRAL").Bold().FontSize(10);
+                row.ConstantItem(90).AlignRight().Text(Amount(ledger.TotalDebit)).Bold().FontSize(10);
+                row.ConstantItem(90).AlignRight().Text(Amount(ledger.TotalCredit)).Bold().FontSize(10);
+                row.ConstantItem(90).AlignRight().Text(string.Empty);
+            });
+        });
+
+        return Task.FromResult(bytes);
+    }
+
     // ── Grand livre d'un compte ────────────────────────────────────────────────────────────
 
     public Task<byte[]> GenerateLedgerPdfAsync(string accountNumber, IReadOnlyList<LedgerRowDto> rows, AccountingReportHeader header, CancellationToken cancellationToken = default)

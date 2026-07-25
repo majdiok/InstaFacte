@@ -93,13 +93,27 @@ public static class DependencyInjection
             services.AddScoped<ITenantContext, TenantContext>();
             services.AddScoped<ITenantService, TenantService>();
             services.AddScoped<ITenantAuthTokenService, TenantAuthTokenService>();
+            services.AddScoped<ICompanyProfileSnapshotProvider, CompanyProfileSnapshotProvider>();
             services.AddScoped<IFirmAssignmentService, FirmAssignmentService>();
+            services.AddScoped<IFirmDossierAccessService, FirmDossierAccessService>();
             services.AddScoped<IFirmDashboardService, FirmDashboardService>();
+            services.AddScoped<IFirmFiscalOpsAggregator, FirmFiscalOpsAggregator>();
+            services.AddScoped<IFirmGovernanceService, FirmGovernanceService>();
+            services.AddScoped<IFirmTimeProfitabilityService, FirmTimeProfitabilityService>();
+            services.AddScoped<IFirmCollaboratorRentabilityService, FirmCollaboratorRentabilityService>();
+            services.AddScoped<IFirmPayrollCostProvider, FirmPayrollCostProvider>();
+            services.AddScoped<IFirmCollaboratorCostService, FirmCollaboratorCostService>();
             services.AddScoped<IFirmFiscalScheduleService, FirmFiscalScheduleService>();
             services.AddScoped<IFirmFiscalScheduleWriteService, FirmFiscalScheduleWriteService>();
             services.AddScoped<IFirmContextService, FirmContextService>();
+            services.AddScoped<IFirmCollaboratorService, FirmCollaboratorService>();
+            services.Configure<FirmCollaboratorStorageOptions>(
+                configuration.GetSection(FirmCollaboratorStorageOptions.SectionName));
             services.AddScoped<INotificationService, NotificationService>();
             services.AddSingleton<IAccountingFirmsFeature, AccountingFirmsFeature>();
+            services.AddSingleton<IFirmGovernanceFeature, FirmGovernanceFeature>();
+            services.AddSingleton<IFirmFiscalOpsFeature, FirmFiscalOpsFeature>();
+            services.AddScoped<ITunisianFiscalDeadlineService, TunisianFiscalDeadlineService>();
             services.AddScoped<ITenantMigrationGuard, TenantMigrationGuard>();
             // TenantDbContextFactory is already registered above
         }
@@ -148,6 +162,8 @@ public static class DependencyInjection
         // Withholding Tax (TEJ)
         services.AddScoped<IWithholdingTaxRepository, WithholdingTaxRepository>();
         services.AddScoped<IWithholdingFiscalYearParameterRepository, WithholdingFiscalYearParameterRepository>();
+        services.AddScoped<IIncomeTaxYearParameterRepository, IncomeTaxYearParameterRepository>();
+        services.AddScoped<IFiscalResultDeclarationRepository, FiscalResultDeclarationRepository>();
         services.AddScoped<ITejXmlExportLogRepository, TejXmlExportLogRepository>();
 
         // Payroll (RH & Paie)
@@ -345,6 +361,8 @@ public static class DependencyInjection
         services.Configure<FixedAssetsOptions>(configuration.GetSection(FixedAssetsOptions.SectionName));
         services.Configure<AccountingAttachmentsOptions>(configuration.GetSection(AccountingAttachmentsOptions.SectionName));
         services.Configure<AccountingFirmsOptions>(configuration.GetSection(AccountingFirmsOptions.SectionName));
+        services.Configure<FirmGovernanceOptions>(configuration.GetSection(FirmGovernanceOptions.SectionName));
+        services.Configure<FirmFiscalOpsOptions>(configuration.GetSection(FirmFiscalOpsOptions.SectionName));
         services.Configure<AccountingSettings>(configuration.GetSection(AccountingSettings.SectionName));
         services.Configure<StorefrontOptions>(configuration.GetSection(StorefrontOptions.SectionName));
         services.Configure<ChannelsSettings>(configuration.GetSection(ChannelsSettings.SectionName));

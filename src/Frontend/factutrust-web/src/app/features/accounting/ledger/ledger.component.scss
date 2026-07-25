@@ -164,3 +164,39 @@
     }
   }
 }
+
+/* ── Grand livre général (plage de comptes) ──────────────────────────────── */
+.ledger-account-block { margin-bottom: var(--spacing-6); }
+
+.ledger-account-title {
+  margin: 0 0 var(--spacing-2);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+
+.ledger-report-row td {
+  font-style: italic;
+  color: var(--color-text-secondary);
+  background: var(--color-background-subtle);
+}
+
+.ledger-account-empty {
+  text-align: center;
+  padding: var(--spacing-4);
+  color: var(--color-text-secondary);
+}
+
+.ledger-grand-total {
+  margin: var(--spacing-4) 0 0;
+  text-align: right;
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger-field-check .ledger-label {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-weight: var(--font-weight-regular);
+}

@@ -65,6 +65,25 @@ public sealed record RequestFirmAssignmentDto
     public string? Notes { get; init; }
 }
 
+/// <summary>Profil société capturé au moment de l'invitation cabinet (snapshot immuable).</summary>
+public sealed record CompanyProfileSnapshotDto
+{
+    public int SchemaVersion { get; init; } = 1;
+    public DateTime CapturedAtUtc { get; init; }
+    public string CompanyName { get; init; } = null!;
+    public string? TradeName { get; init; }
+    public string Nif { get; init; } = null!;
+    public int TaxRegime { get; init; }
+    public string? RneIdentifier { get; init; }
+    public string Street { get; init; } = null!;
+    public string? StreetLine2 { get; init; }
+    public string City { get; init; } = null!;
+    public string Governorate { get; init; } = null!;
+    public string? PostalCode { get; init; }
+    public string Email { get; init; } = null!;
+    public string? Phone { get; init; }
+}
+
 public sealed record FirmClientAssignmentDto
 {
     public Guid Id { get; init; }
@@ -79,6 +98,7 @@ public sealed record FirmClientAssignmentDto
     public DateTime? RevokedAt { get; init; }
     public string? Notes { get; init; }
     public string? RejectionReason { get; init; }
+    public CompanyProfileSnapshotDto? CompanyProfile { get; init; }
 }
 
 public sealed record RejectFirmAssignmentDto
@@ -92,6 +112,22 @@ public sealed record FirmClientDossierDto
     public Guid CompanyTenantId { get; init; }
     public string CompanyName { get; init; } = null!;
     public DateTime ActiveSince { get; init; }
+    public bool HasPermanentFile { get; init; }
+    public int? PermanentFileStatus { get; init; }
+    public string? PermanentFileStatusDisplay { get; init; }
+    public Guid? AssignedAccountantUserId { get; init; }
+    public string? AssignedAccountantName { get; init; }
+    /// <summary>True si aucun gestionnaire comptable n'est encore affecté.</summary>
+    public bool IsAwaitingAccountantAssignment { get; init; }
+}
+
+public sealed record FirmAssignableAccountantDto
+{
+    public Guid Id { get; init; }
+    public string FullName { get; init; } = null!;
+    public string Email { get; init; } = null!;
+    public UserRole Role { get; init; }
+    public string RoleDisplay { get; init; } = null!;
 }
 
 public sealed record SwitchFirmContextDto
@@ -111,8 +147,71 @@ public sealed record CreateFirmUserDto
     public string Email { get; init; } = null!;
     public string FirstName { get; init; } = null!;
     public string LastName { get; init; } = null!;
-    public string Password { get; init; } = null!;
+    /// <summary>Optionnel : si vide, un mot de passe aléatoire est généré et une invitation est envoyée.</summary>
+    public string? Password { get; init; }
     public UserRole Role { get; init; }
+    public CollaboratorCivility Civility { get; init; } = CollaboratorCivility.Mr;
+    public string? Qualification { get; init; }
+    public string? PhoneNumber { get; init; }
+    public string? PhoneLandline { get; init; }
+    public bool UseFirmAddress { get; init; } = true;
+    public string? AddressLine { get; init; }
+    public string? PostalCode { get; init; }
+    public string? City { get; init; }
+    public string? Country { get; init; }
+    /// <summary>Si true et Password vide, EmailConfirmed=false + email d'invitation. Défaut false pour rétrocompat MVP (password fourni).</summary>
+    public bool SendInvite { get; init; }
+}
+
+public sealed record UpdateFirmUserDto
+{
+    public string? FirstName { get; init; }
+    public string? LastName { get; init; }
+    public UserRole? Role { get; init; }
+    public string? NewPassword { get; init; }
+    public CollaboratorCivility? Civility { get; init; }
+    public string? Qualification { get; init; }
+    public string? PhoneNumber { get; init; }
+    public string? PhoneLandline { get; init; }
+    public bool? UseFirmAddress { get; init; }
+    public string? AddressLine { get; init; }
+    public string? PostalCode { get; init; }
+    public string? City { get; init; }
+    public string? Country { get; init; }
+}
+
+public sealed record UpdateFirmUserStatusDto
+{
+    public bool IsActive { get; init; }
+}
+
+public sealed record SetFirmUserBinomesDto
+{
+    public IReadOnlyList<Guid> BinomeUserIds { get; init; } = Array.Empty<Guid>();
+}
+
+public sealed record FirmAddressSnapshotDto
+{
+    public string AddressLine { get; init; } = string.Empty;
+    public string? PostalCode { get; init; }
+    public string City { get; init; } = string.Empty;
+    public string Country { get; init; } = string.Empty;
+    public string? Governorate { get; init; }
+}
+
+public sealed record FirmCollaboratorCniInfoDto
+{
+    public bool HasCni { get; init; }
+    public string? FileName { get; init; }
+    public string? ContentType { get; init; }
+    public DateTime? UploadedAt { get; init; }
+}
+
+public sealed record FirmUserBinomeDto
+{
+    public Guid Id { get; init; }
+    public string FullName { get; init; } = null!;
+    public string Email { get; init; } = null!;
 }
 
 public sealed record FirmUserDto
@@ -124,6 +223,20 @@ public sealed record FirmUserDto
     public UserRole Role { get; init; }
     public string RoleDisplay { get; init; } = null!;
     public bool IsActive { get; init; }
+    public bool EmailConfirmed { get; init; }
+    public CollaboratorCivility? Civility { get; init; }
+    public string? Qualification { get; init; }
+    public string? PhoneNumber { get; init; }
+    public string? PhoneLandline { get; init; }
+    public bool UseFirmAddress { get; init; }
+    public string? AddressLine { get; init; }
+    public string? PostalCode { get; init; }
+    public string? City { get; init; }
+    public string? Country { get; init; }
+    public bool HasCni { get; init; }
+    public DateTime? CniUploadedAt { get; init; }
+    public string? BinomesDisplay { get; init; }
+    public IReadOnlyList<FirmUserBinomeDto> Binomes { get; init; } = Array.Empty<FirmUserBinomeDto>();
 }
 
 public sealed record FirmDashboardClientRowDto
@@ -150,6 +263,13 @@ public sealed record FirmDashboardDto
     public int PendingInvitationsCount { get; init; }
     public int InactiveDossiersCount { get; init; }
     public int VatDraftsCount { get; init; }
+    public int OverdueSchedulesCount { get; init; }
+    public int UpcomingWithin7DaysCount { get; init; }
+    public int TejPendingCount { get; init; }
+    public int LiasseDraftsCount { get; init; }
+    public int DtsPendingCount { get; init; }
+    public decimal OverdueEstimatedAmount { get; init; }
+    public decimal Upcoming7DaysEstimatedAmount { get; init; }
     public IReadOnlyList<FirmDashboardClientRowDto> Clients { get; init; } = Array.Empty<FirmDashboardClientRowDto>();
     public IReadOnlyList<FirmDashboardInvitationRowDto> PendingInvitations { get; init; } = Array.Empty<FirmDashboardInvitationRowDto>();
 }

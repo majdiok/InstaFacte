@@ -168,8 +168,10 @@
         <div class="login-footer__divider" role="presentation"></div>
         <p class="login-footer__intro">Pas encore de compte ?</p>
         <a routerLink="/auth/register" class="login-footer__cta">Créer un compte gratuitement</a>
-        <p class="login-footer__intro mt-2">Vous êtes un cabinet comptable ?</p>
-        <a routerLink="/auth/register-firm" class="login-footer__cta login-footer__cta--secondary">Créer un compte cabinet</a>
+        @if (environment.accountingFirmsEnabled) {
+          <p class="login-footer__intro mt-2">Vous êtes un cabinet comptable ?</p>
+          <a routerLink="/auth/register-firm" class="login-footer__cta login-footer__cta--secondary">Créer un compte cabinet</a>
+        }
       </div>
     </div>
   </main>

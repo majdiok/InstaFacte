@@ -223,6 +223,14 @@ public sealed class CreateInvoiceCommandHandler : IRequestHandler<CreateInvoiceC
             {
                 if (lineDto.DiscountPercent.Value < 0 || lineDto.DiscountPercent.Value > 100)
                     return Result.Failure<Guid>(Error.Validation("DiscountPercent", "La remise doit être comprise entre 0% et 100%"));
+
+                if (product.IsDiscountEnabled && product.MaxDiscountPercent.HasValue &&
+                    lineDto.DiscountPercent.Value > product.MaxDiscountPercent.Value)
+                {
+                    return Result.Failure<Guid>(Error.Validation(
+                        "DiscountPercent",
+                        $"La remise ne peut pas dépasser {product.MaxDiscountPercent.Value}% pour le produit '{product.Name}'"));
+                }
             }
 
             // Add line to invoice

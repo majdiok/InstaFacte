@@ -14,6 +14,11 @@ import { SupplierService } from '@core/services/supplier.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { AuthService } from '@core/services/auth.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
+import {
+  calculateFodecAmount,
+  calculateSaleTtc,
+  calculateVatAmount
+} from '@shared/utils/product-pricing.utils';
 
 const VAT_OPTIONS: { label: string; value: number }[] = [
   { label: '19% - Taux normal', value: 19 },
@@ -152,29 +157,52 @@ const VAT_OPTIONS: { label: string; value: number }[] = [
         <app-form-section title="Tarification" icon="pi-dollar" [number]="2">
           <div class="form-row">
             <div class="form-group">
-              <span class="field-label">Prix unitaire HT</span>
+              <span class="field-label">Prix d'achat HT</span>
+              <p class="field-value mono">{{ formatMoney(p.purchasePrice) }}</p>
+            </div>
+            <div class="form-group">
+              <span class="field-label">Dernier prix d'achat HT</span>
+              <p class="field-value mono">{{ formatMoney(p.lastPurchasePrice) }}</p>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <span class="field-label">CMUP HT</span>
+              <p class="field-value mono">{{ formatMoney(p.weightedAverageCost) }}</p>
+            </div>
+            <div class="form-group">
+              <span class="field-label">Marge bénéficiaire</span>
+              <p class="field-value mono">
+                @if (p.profitMarginPercent != null) {
+                  {{ p.profitMarginPercent | number:'1.3-3' }} %
+                } @else {
+                  —
+                }
+              </p>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <span class="field-label">Prix de vente HT</span>
               <p class="field-value mono strong">{{ p.unitPrice | number:'1.3-3' }} TND</p>
             </div>
+            <div class="form-group">
+              <span class="field-label">Prix de vente TTC</span>
+              <p class="field-value mono strong">{{ (p.salePriceTtc ?? calculateTtc(p)) | number:'1.3-3' }} TND</p>
+            </div>
+          </div>
+
+          <div class="form-row">
             <div class="form-group">
               <span class="field-label">Unité de mesure</span>
               <p class="field-value">{{ p.unit }}</p>
             </div>
-          </div>
-
-          <div class="form-group">
-            <span class="field-label">Prix d'achat HT</span>
-            <p class="field-value mono">
-              @if (p.purchasePrice != null && p.purchasePrice !== undefined) {
-                {{ p.purchasePrice | number:'1.3-3' }} TND
-              } @else {
-                —
-              }
-            </p>
-          </div>
-
-          <div class="form-group">
-            <span class="field-label">Taux de TVA</span>
-            <p class="field-value">{{ vatLabel(p.vatRate) }}</p>
+            <div class="form-group">
+              <span class="field-label">Taux de TVA</span>
+              <p class="field-value">{{ vatLabel(p.vatRate) }}</p>
+            </div>
           </div>
 
           <div class="form-group">
@@ -182,24 +210,31 @@ const VAT_OPTIONS: { label: string; value: number }[] = [
             <p class="field-value">{{ p.isFodecApplicable ? 'Applicable (1%)' : 'Non applicable' }}</p>
           </div>
 
+          <div class="form-row">
+            <div class="form-group">
+              <span class="field-label">Remise produit</span>
+              <p class="field-value">{{ p.isDiscountEnabled ? 'Activée' : 'Désactivée' }}</p>
+            </div>
+            <div class="form-group">
+              <span class="field-label">Remise maximale</span>
+              <p class="field-value mono">
+                @if (p.isDiscountEnabled && p.maxDiscountPercent != null) {
+                  {{ p.maxDiscountPercent | number:'1.1-1' }} %
+                } @else {
+                  —
+                }
+              </p>
+            </div>
+          </div>
+
           <div class="price-preview" aria-label="Récapitulatif des prix">
             <div class="preview-row">
-              <span>Prix HT</span>
-              <span class="value">{{ p.unitPrice | number:'1.3-3' }} TND</span>
+              <span>FODEC (1%)</span>
+              <span class="value">{{ calculateFodec(p) | number:'1.3-3' }} TND</span>
             </div>
-            @if (p.isFodecApplicable) {
-              <div class="preview-row">
-                <span>FODEC (1%)</span>
-                <span class="value">{{ calculateFodec(p) | number:'1.3-3' }} TND</span>
-              </div>
-            }
             <div class="preview-row">
               <span>TVA ({{ p.vatRate }}%)</span>
               <span class="value">{{ calculateVat(p) | number:'1.3-3' }} TND</span>
-            </div>
-            <div class="preview-row total">
-              <span>Prix TTC</span>
-              <span class="value">{{ calculateTtc(p) | number:'1.3-3' }} TND</span>
             </div>
           </div>
         </app-form-section>
@@ -402,25 +437,21 @@ export class ProductDetailComponent implements OnInit {
     return opt?.label ?? `${rate}%`;
   }
 
+  formatMoney(value: number | null | undefined): string {
+    if (value == null) return '—';
+    return `${value.toLocaleString('fr-FR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} TND`;
+  }
+
   calculateFodec(p: Product): number {
-    if (!p.isFodecApplicable) return 0;
-    return this.round3((p.unitPrice || 0) * 0.01);
+    return calculateFodecAmount(p.unitPrice || 0, p.isFodecApplicable ?? false);
   }
 
   calculateVat(p: Product): number {
-    const price = p.unitPrice || 0;
-    const vatRate = p.vatRate || 0;
-    const vatBase = price + this.calculateFodec(p);
-    return this.round3(vatBase * (vatRate / 100));
+    return calculateVatAmount(p.unitPrice || 0, this.calculateFodec(p), p.vatRate || 0);
   }
 
   calculateTtc(p: Product): number {
-    const price = p.unitPrice || 0;
-    return this.round3(price + this.calculateFodec(p) + this.calculateVat(p));
-  }
-
-  private round3(n: number): number {
-    return Math.round(n * 1000) / 1000;
+    return calculateSaleTtc(p.unitPrice || 0, p.vatRate || 0, p.isFodecApplicable ?? false);
   }
 
   private loadProduct(id: string): void {

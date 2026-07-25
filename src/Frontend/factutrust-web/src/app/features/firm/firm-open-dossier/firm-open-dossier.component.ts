@@ -21,6 +21,7 @@ export class FirmOpenDossierComponent implements OnInit {
     void this.firmContext.switchClient(tenantId).then(() => {
       void this.router.navigate(['/accounting/chart']);
     }).catch(() => {
+      // Message d'erreur déjà affiché par FirmContextService (403 ACL).
       void this.router.navigate(['/firm/clients']);
     });
   }

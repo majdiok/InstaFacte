@@ -38,6 +38,27 @@ public sealed class GetJournalEntriesQueryHandler
         => _reporting.GetJournalEntriesAsync(request.JournalCode, request.From, request.To, cancellationToken);
 }
 
+public sealed record GetJournalSummaryQuery(
+    DateTime From,
+    DateTime To,
+    JournalSummaryGrouping Grouping,
+    string? JournalCode = null) : IRequest<Result<JournalSummaryDto>>;
+
+public sealed class GetJournalSummaryQueryHandler
+    : IRequestHandler<GetJournalSummaryQuery, Result<JournalSummaryDto>>
+{
+    private readonly IAccountingReportingService _reporting;
+
+    public GetJournalSummaryQueryHandler(IAccountingReportingService reporting)
+    {
+        _reporting = reporting;
+    }
+
+    public Task<Result<JournalSummaryDto>> Handle(GetJournalSummaryQuery request, CancellationToken cancellationToken)
+        => _reporting.GetJournalSummaryAsync(
+            request.From, request.To, request.Grouping, request.JournalCode, cancellationToken);
+}
+
 public sealed record GetLedgerQuery(string AccountNumber, DateTime From, DateTime To)
     : IRequest<Result<IReadOnlyList<LedgerRowDto>>>;
 
@@ -54,6 +75,45 @@ public sealed class GetLedgerQueryHandler : IRequestHandler<GetLedgerQuery, Resu
         => _reporting.GetLedgerAsync(request.AccountNumber, request.From, request.To, cancellationToken);
 }
 
+public sealed record GetGeneralLedgerQuery(
+    string? AccountFrom,
+    string? AccountTo,
+    DateTime From,
+    DateTime To,
+    bool IncludeUnmoved = false) : IRequest<Result<GeneralLedgerDto>>;
+
+public sealed class GetGeneralLedgerQueryHandler
+    : IRequestHandler<GetGeneralLedgerQuery, Result<GeneralLedgerDto>>
+{
+    private readonly IAccountingReportingService _reporting;
+
+    public GetGeneralLedgerQueryHandler(IAccountingReportingService reporting)
+    {
+        _reporting = reporting;
+    }
+
+    public Task<Result<GeneralLedgerDto>> Handle(GetGeneralLedgerQuery request, CancellationToken cancellationToken)
+        => _reporting.GetLedgerRangeAsync(
+            request.AccountFrom, request.AccountTo, request.From, request.To, request.IncludeUnmoved, cancellationToken);
+}
+
+public sealed record GetLedgerRecapQuery(int Level, DateTime From, DateTime To)
+    : IRequest<Result<IReadOnlyList<BalanceRowDto>>>;
+
+public sealed class GetLedgerRecapQueryHandler
+    : IRequestHandler<GetLedgerRecapQuery, Result<IReadOnlyList<BalanceRowDto>>>
+{
+    private readonly IAccountingReportingService _reporting;
+
+    public GetLedgerRecapQueryHandler(IAccountingReportingService reporting)
+    {
+        _reporting = reporting;
+    }
+
+    public Task<Result<IReadOnlyList<BalanceRowDto>>> Handle(GetLedgerRecapQuery request, CancellationToken cancellationToken)
+        => _reporting.GetLedgerRecapAsync(request.Level, request.From, request.To, cancellationToken);
+}
+
 public sealed record GetBalanceQuery(DateTime From, DateTime To)
     : IRequest<Result<IReadOnlyList<BalanceRowDto>>>;
 
@@ -68,6 +128,40 @@ public sealed class GetBalanceQueryHandler : IRequestHandler<GetBalanceQuery, Re
 
     public Task<Result<IReadOnlyList<BalanceRowDto>>> Handle(GetBalanceQuery request, CancellationToken cancellationToken)
         => _reporting.GetBalanceAsync(request.From, request.To, cancellationToken);
+}
+
+public sealed record GetDetailedBalanceQuery(string? AccountFrom, string? AccountTo, DateTime From, DateTime To)
+    : IRequest<Result<DetailedBalanceDto>>;
+
+public sealed class GetDetailedBalanceQueryHandler
+    : IRequestHandler<GetDetailedBalanceQuery, Result<DetailedBalanceDto>>
+{
+    private readonly IAccountingReportingService _reporting;
+
+    public GetDetailedBalanceQueryHandler(IAccountingReportingService reporting)
+    {
+        _reporting = reporting;
+    }
+
+    public Task<Result<DetailedBalanceDto>> Handle(GetDetailedBalanceQuery request, CancellationToken cancellationToken)
+        => _reporting.GetDetailedBalanceAsync(
+            request.AccountFrom, request.AccountTo, request.From, request.To, cancellationToken);
+}
+
+public sealed record GetPeriodicBalanceQuery(int FiscalYear) : IRequest<Result<PeriodicBalanceDto>>;
+
+public sealed class GetPeriodicBalanceQueryHandler
+    : IRequestHandler<GetPeriodicBalanceQuery, Result<PeriodicBalanceDto>>
+{
+    private readonly IAccountingReportingService _reporting;
+
+    public GetPeriodicBalanceQueryHandler(IAccountingReportingService reporting)
+    {
+        _reporting = reporting;
+    }
+
+    public Task<Result<PeriodicBalanceDto>> Handle(GetPeriodicBalanceQuery request, CancellationToken cancellationToken)
+        => _reporting.GetBalanceByPeriodAsync(request.FiscalYear, cancellationToken);
 }
 
 public sealed record GetAccountingDashboardQuery : IRequest<Result<AccountingDashboardDto>>;

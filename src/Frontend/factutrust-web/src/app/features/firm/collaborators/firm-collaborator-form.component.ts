@@ -1,0 +1,514 @@
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { CommonModule, Location } from '@angular/common';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { ButtonModule } from 'primeng/button';
+import { InputTextModule } from 'primeng/inputtext';
+import { DropdownModule } from 'primeng/dropdown';
+import { CheckboxModule } from 'primeng/checkbox';
+import { SelectButtonModule } from 'primeng/selectbutton';
+import { MultiSelectModule } from 'primeng/multiselect';
+import { TabViewModule } from 'primeng/tabview';
+import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
+import { ToastService } from '@core/services/toast.service';
+import {
+  CollaboratorCivility,
+  CreateFirmUserPayload,
+  FirmCollaboratorsService,
+  FirmUser,
+  FirmUserRole,
+  UpdateFirmUserPayload
+} from '@core/services/firm-collaborators.service';
+import { downloadBlob } from '@features/accounting/shared/accounting-download.util';
+
+type FormMode = 'create' | 'edit' | 'view';
+
+@Component({
+  selector: 'app-firm-collaborator-form',
+  standalone: true,
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    FormsModule,
+    RouterModule,
+    ButtonModule,
+    InputTextModule,
+    DropdownModule,
+    CheckboxModule,
+    SelectButtonModule,
+    MultiSelectModule,
+    TabViewModule,
+    PageHeaderComponent
+  ],
+  template: `
+    <app-page-header [title]="title" [subtitle]="subtitle">
+      <p-button label="Retour" icon="pi pi-arrow-left" [outlined]="true" (onClick)="back()"></p-button>
+      <p-button
+        *ngIf="mode !== 'view'"
+        label="Enregistrer"
+        icon="pi pi-save"
+        [loading]="saving()"
+        [disabled]="form.invalid || saving()"
+        (onClick)="save()"></p-button>
+      <p-button *ngIf="mode !== 'view'" label="Annuler" [outlined]="true" (onClick)="back()"></p-button>
+      <p-button
+        *ngIf="mode === 'view' && collaborator()"
+        label="Modifier"
+        icon="pi pi-pencil"
+        (onClick)="goEdit()"></p-button>
+      <p-button
+        *ngIf="mode === 'edit' && collaborator() && !collaborator()!.emailConfirmed"
+        label="Renvoyer le lien de création de compte"
+        icon="pi pi-envelope"
+        [outlined]="true"
+        [loading]="resending()"
+        (onClick)="resendInvite()"></p-button>
+    </app-page-header>
+
+    <div class="fc-card" *ngIf="!loading(); else loadingTpl">
+      <p-tabView>
+        <p-tabPanel header="Informations générales">
+          <form [formGroup]="form" class="form-grid">
+            <label class="full">Civilité
+              <p-selectButton
+                formControlName="civility"
+                [options]="civilityOptions"
+                optionLabel="label"
+                optionValue="value"
+                [disabled]="readOnly"></p-selectButton>
+            </label>
+            <label>Nom
+              <input pInputText formControlName="lastName" placeholder="Nom" />
+            </label>
+            <label>Prénom
+              <input pInputText formControlName="firstName" placeholder="Prénom" />
+            </label>
+            <label>Qualification
+              <input pInputText formControlName="qualification" placeholder="Qualification" />
+            </label>
+            <label>Email
+              <input pInputText formControlName="email" placeholder="Email" [readonly]="mode !== 'create'" />
+            </label>
+            <label>Téléphone mobile professionnel
+              <input pInputText formControlName="phoneNumber" placeholder="+216…" />
+            </label>
+            <label>Téléphone fixe
+              <input pInputText formControlName="phoneLandline" placeholder="+216…" />
+            </label>
+            <label class="full checkbox-row">
+              <p-checkbox formControlName="useFirmAddress" [binary]="true" inputId="useFirmAddress" [disabled]="readOnly"></p-checkbox>
+              <span>Utiliser la même adresse du cabinet</span>
+            </label>
+            <label class="full">Adresse
+              <input pInputText formControlName="addressLine" placeholder="Adresse" />
+            </label>
+            <label>Code postal
+              <input pInputText formControlName="postalCode" placeholder="Code postal" />
+            </label>
+            <label>Ville
+              <input pInputText formControlName="city" placeholder="Ville" />
+            </label>
+            <label>Pays
+              <input pInputText formControlName="country" placeholder="Pays" />
+            </label>
+            <label>Rôle
+              <p-dropdown
+                formControlName="role"
+                [options]="roleOptions"
+                optionLabel="label"
+                optionValue="value"
+                [disabled]="readOnly"
+                appendTo="body"></p-dropdown>
+            </label>
+            <label *ngIf="mode === 'create'">Mot de passe (optionnel — laissez vide pour invitation)
+              <input pInputText type="password" formControlName="password" placeholder="Mot de passe" autocomplete="new-password" />
+            </label>
+            <label *ngIf="mode === 'create'" class="full checkbox-row">
+              <p-checkbox formControlName="sendInvite" [binary]="true" inputId="sendInvite"></p-checkbox>
+              <span>Envoyer une invitation par email</span>
+            </label>
+            <div class="full cni-block" *ngIf="mode !== 'create' || true">
+              <div class="cni-row">
+                <strong>Copie de carte d'identité (PDF)</strong>
+                <span *ngIf="collaborator()?.hasCni" class="cni-ok">Fichier présent</span>
+              </div>
+              <input *ngIf="!readOnly" type="file" accept=".pdf,application/pdf" (change)="onCniSelected($event)" />
+              <div class="cni-actions" *ngIf="collaborator()?.hasCni">
+                <p-button label="Télécharger" icon="pi pi-download" [outlined]="true" size="small" (onClick)="downloadCni()"></p-button>
+                <p-button *ngIf="!readOnly" label="Supprimer" icon="pi pi-trash" severity="danger" [outlined]="true" size="small" (onClick)="deleteCni()"></p-button>
+              </div>
+            </div>
+          </form>
+        </p-tabPanel>
+
+        <p-tabPanel header="Binômes" [disabled]="mode === 'create' || !collaborator()">
+          <div class="binomes" *ngIf="mode !== 'create' && collaborator(); else noBinomes">
+            <p class="hint">Sélectionnez les collaborateurs binômes (second manager).</p>
+            <p-multiSelect
+              [options]="binomeCandidates()"
+              [(ngModel)]="selectedBinomeIds"
+              [ngModelOptions]="{standalone: true}"
+              optionLabel="label"
+              optionValue="value"
+              placeholder="Binômes"
+              [disabled]="readOnly"
+              display="chip"
+              appendTo="body"
+              styleClass="full-ms"></p-multiSelect>
+            <p-button
+              *ngIf="!readOnly"
+              class="mt"
+              label="Enregistrer les binômes"
+              icon="pi pi-save"
+              [loading]="savingBinomes()"
+              (onClick)="saveBinomes()"></p-button>
+          </div>
+          <ng-template #noBinomes>
+            <p class="hint">Enregistrez d'abord le collaborateur pour gérer les binômes.</p>
+          </ng-template>
+        </p-tabPanel>
+      </p-tabView>
+    </div>
+
+    <ng-template #loadingTpl>
+      <p class="loading">Chargement…</p>
+    </ng-template>
+  `,
+  styles: [`
+    :host { display: block; }
+    .fc-card {
+      background: var(--color-surface, #fff);
+      border: 1px solid var(--color-border-subtle, #e2e8f0);
+      border-radius: var(--radius-xl, 16px);
+      padding: 1rem 1.25rem 1.5rem;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: .9rem 1rem;
+      max-width: 820px;
+    }
+    .form-grid label { display: flex; flex-direction: column; gap: .35rem; font-size: .875rem; }
+    .full { grid-column: 1 / -1; }
+    .checkbox-row { flex-direction: row !important; align-items: center; gap: .6rem; }
+    .cni-block { display: flex; flex-direction: column; gap: .5rem; }
+    .cni-row { display: flex; gap: .75rem; align-items: center; }
+    .cni-ok { color: var(--color-success-600, #16a34a); font-size: .85rem; }
+    .cni-actions { display: flex; gap: .5rem; }
+    .binomes { display: flex; flex-direction: column; gap: .75rem; max-width: 640px; }
+    .hint { margin: 0; color: var(--color-text-secondary, #64748b); font-size: .875rem; }
+    .mt { margin-top: .5rem; align-self: flex-start; }
+    .loading { padding: 2rem; color: var(--color-text-secondary, #64748b); }
+    :host ::ng-deep .full-ms { width: 100%; }
+    @media (max-width: 700px) {
+      .form-grid { grid-template-columns: 1fr; }
+    }
+  `]
+})
+export class FirmCollaboratorFormComponent implements OnInit {
+  private readonly fb = inject(FormBuilder);
+  private readonly api = inject(FirmCollaboratorsService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly location = inject(Location);
+  private readonly toast = inject(ToastService);
+
+  mode: FormMode = 'create';
+  readOnly = false;
+  title = 'Collaborateur';
+  subtitle = '';
+
+  readonly loading = signal(false);
+  readonly saving = signal(false);
+  readonly resending = signal(false);
+  readonly savingBinomes = signal(false);
+  readonly collaborator = signal<FirmUser | null>(null);
+  readonly allUsers = signal<FirmUser[]>([]);
+  readonly binomeCandidates = signal<{ label: string; value: string }[]>([]);
+
+  selectedBinomeIds: string[] = [];
+  private pendingCni: File | null = null;
+  private collaboratorId: string | null = null;
+
+  readonly civilityOptions = [
+    { label: 'Mme.', value: 1 as CollaboratorCivility },
+    { label: 'M.', value: 2 as CollaboratorCivility }
+  ];
+  readonly roleOptions = [
+    { label: 'Comptable cabinet', value: 12 as FirmUserRole },
+    { label: 'Responsable cabinet', value: 11 as FirmUserRole }
+  ];
+
+  readonly form = this.fb.nonNullable.group({
+    civility: [2 as CollaboratorCivility, Validators.required],
+    lastName: ['', Validators.required],
+    firstName: ['', Validators.required],
+    qualification: [''],
+    email: ['', [Validators.required, Validators.email]],
+    phoneNumber: [''],
+    phoneLandline: [''],
+    useFirmAddress: [true],
+    addressLine: [{ value: '', disabled: true }],
+    postalCode: [{ value: '', disabled: true }],
+    city: [{ value: '', disabled: true }],
+    country: [{ value: 'Tunisie', disabled: true }],
+    role: [12 as FirmUserRole, Validators.required],
+    password: [''],
+    sendInvite: [true]
+  });
+
+  ngOnInit(): void {
+    const path = this.route.snapshot.routeConfig?.path ?? '';
+    if (path === 'new') {
+      this.mode = 'create';
+      this.title = "Création d'un nouveau collaborateur";
+      this.subtitle = 'Informations générales';
+      this.loadFirmAddress();
+    } else if (path?.endsWith('edit')) {
+      this.mode = 'edit';
+      this.title = 'Modification du collaborateur';
+      this.collaboratorId = this.route.snapshot.paramMap.get('id');
+      this.loadCollaborator();
+    } else {
+      this.mode = 'view';
+      this.readOnly = true;
+      this.title = 'Consultation du collaborateur';
+      this.collaboratorId = this.route.snapshot.paramMap.get('id');
+      this.form.disable({ emitEvent: false });
+      this.loadCollaborator();
+    }
+
+    this.form.controls.useFirmAddress.valueChanges.subscribe(checked => {
+      this.onUseFirmAddressChanged(!!checked);
+    });
+  }
+
+  private loadFirmAddress(): void {
+    this.api.getFirmAddress().subscribe({
+      next: addr => {
+        this.form.patchValue({
+          addressLine: addr.addressLine,
+          postalCode: addr.postalCode ?? '',
+          city: addr.city,
+          country: addr.country || 'Tunisie'
+        }, { emitEvent: false });
+      },
+      error: () => { /* optional */ }
+    });
+  }
+
+  private loadCollaborator(): void {
+    if (!this.collaboratorId) return;
+    this.loading.set(true);
+    this.api.getById(this.collaboratorId).subscribe({
+      next: user => {
+        this.collaborator.set(user);
+        this.subtitle = `${user.firstName} ${user.lastName}`;
+        this.form.patchValue({
+          civility: (user.civility ?? 2) as CollaboratorCivility,
+          lastName: user.lastName,
+          firstName: user.firstName,
+          qualification: user.qualification ?? '',
+          email: user.email,
+          phoneNumber: user.phoneNumber ?? '',
+          phoneLandline: user.phoneLandline ?? '',
+          useFirmAddress: user.useFirmAddress,
+          addressLine: user.addressLine ?? '',
+          postalCode: user.postalCode ?? '',
+          city: user.city ?? '',
+          country: user.country ?? 'Tunisie',
+          role: user.role
+        }, { emitEvent: false });
+        this.onUseFirmAddressChanged(user.useFirmAddress);
+        if (this.readOnly) this.form.disable({ emitEvent: false });
+        this.selectedBinomeIds = user.binomes.map(b => b.id);
+        this.loading.set(false);
+        this.loadBinomeCandidates(user.id);
+      },
+      error: err => {
+        this.loading.set(false);
+        this.toast.add({ severity: 'error', summary: 'Erreur', detail: err?.message || 'Chargement impossible' });
+        void this.router.navigate(['/firm/collaborateurs']);
+      }
+    });
+  }
+
+  private loadBinomeCandidates(excludeId: string): void {
+    this.api.list({ isActive: true }).subscribe({
+      next: rows => {
+        this.allUsers.set(rows);
+        this.binomeCandidates.set(
+          rows
+            .filter(u => u.id !== excludeId)
+            .map(u => ({ label: `${u.firstName} ${u.lastName}`, value: u.id }))
+        );
+      }
+    });
+  }
+
+  private onUseFirmAddressChanged(useFirmAddress: boolean): void {
+    const controls = [
+      this.form.controls.addressLine,
+      this.form.controls.postalCode,
+      this.form.controls.city,
+      this.form.controls.country
+    ];
+    if (this.readOnly) return;
+    if (useFirmAddress) {
+      controls.forEach(c => c.disable({ emitEvent: false }));
+      this.loadFirmAddress();
+    } else {
+      controls.forEach(c => c.enable({ emitEvent: false }));
+    }
+  }
+
+  onCniSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
+      this.toast.add({ severity: 'error', summary: 'Erreur', detail: 'Seuls les fichiers PDF sont acceptés' });
+      input.value = '';
+      return;
+    }
+    this.pendingCni = file;
+    if (this.mode !== 'create' && this.collaboratorId) {
+      this.api.uploadCni(this.collaboratorId, file).subscribe({
+        next: () => {
+          this.toast.add({ severity: 'success', summary: 'Collaborateurs', detail: 'CNI enregistrée' });
+          this.pendingCni = null;
+          this.loadCollaborator();
+        },
+        error: err => this.toast.add({ severity: 'error', summary: 'Erreur', detail: err?.message || 'Upload impossible' })
+      });
+    }
+  }
+
+  downloadCni(): void {
+    if (!this.collaboratorId) return;
+    this.api.downloadCni(this.collaboratorId).subscribe({
+      next: blob => downloadBlob(blob, 'cni.pdf'),
+      error: () => this.toast.add({ severity: 'error', summary: 'Erreur', detail: 'Téléchargement impossible' })
+    });
+  }
+
+  deleteCni(): void {
+    if (!this.collaboratorId) return;
+    this.api.deleteCni(this.collaboratorId).subscribe({
+      next: () => {
+        this.toast.add({ severity: 'success', summary: 'Collaborateurs', detail: 'CNI supprimée' });
+        this.loadCollaborator();
+      },
+      error: err => this.toast.add({ severity: 'error', summary: 'Erreur', detail: err?.message || 'Suppression impossible' })
+    });
+  }
+
+  save(): void {
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      return;
+    }
+    this.saving.set(true);
+    const raw = this.form.getRawValue();
+
+    if (this.mode === 'create') {
+      const payload: CreateFirmUserPayload = {
+        email: raw.email.trim(),
+        firstName: raw.firstName.trim(),
+        lastName: raw.lastName.trim(),
+        password: raw.password?.trim() || null,
+        role: raw.role,
+        civility: raw.civility,
+        qualification: raw.qualification?.trim() || null,
+        phoneNumber: raw.phoneNumber?.trim() || null,
+        phoneLandline: raw.phoneLandline?.trim() || null,
+        useFirmAddress: raw.useFirmAddress,
+        addressLine: raw.addressLine?.trim() || null,
+        postalCode: raw.postalCode?.trim() || null,
+        city: raw.city?.trim() || null,
+        country: raw.country?.trim() || null,
+        sendInvite: !raw.password?.trim() || raw.sendInvite
+      };
+      this.api.create(payload, this.pendingCni).subscribe({
+        next: user => {
+          this.saving.set(false);
+          this.toast.add({ severity: 'success', summary: 'Collaborateurs', detail: 'Collaborateur créé' });
+          void this.router.navigate(['/firm/collaborateurs', user.id, 'edit']);
+        },
+        error: err => {
+          this.saving.set(false);
+          this.toast.add({ severity: 'error', summary: 'Erreur', detail: err?.message || 'Création impossible' });
+        }
+      });
+      return;
+    }
+
+    if (!this.collaboratorId) return;
+    const payload: UpdateFirmUserPayload = {
+      firstName: raw.firstName.trim(),
+      lastName: raw.lastName.trim(),
+      role: raw.role,
+      civility: raw.civility,
+      qualification: raw.qualification?.trim() || null,
+      phoneNumber: raw.phoneNumber?.trim() || null,
+      phoneLandline: raw.phoneLandline?.trim() || null,
+      useFirmAddress: raw.useFirmAddress,
+      addressLine: raw.addressLine?.trim() || null,
+      postalCode: raw.postalCode?.trim() || null,
+      city: raw.city?.trim() || null,
+      country: raw.country?.trim() || null
+    };
+    this.api.update(this.collaboratorId, payload).subscribe({
+      next: user => {
+        this.saving.set(false);
+        this.collaborator.set(user);
+        this.toast.add({ severity: 'success', summary: 'Collaborateurs', detail: 'Collaborateur mis à jour' });
+      },
+      error: err => {
+        this.saving.set(false);
+        this.toast.add({ severity: 'error', summary: 'Erreur', detail: err?.message || 'Mise à jour impossible' });
+      }
+    });
+  }
+
+  saveBinomes(): void {
+    if (!this.collaboratorId) return;
+    this.savingBinomes.set(true);
+    this.api.setBinomes(this.collaboratorId, this.selectedBinomeIds).subscribe({
+      next: () => {
+        this.savingBinomes.set(false);
+        this.toast.add({ severity: 'success', summary: 'Collaborateurs', detail: 'Binômes mis à jour' });
+        this.loadCollaborator();
+      },
+      error: err => {
+        this.savingBinomes.set(false);
+        this.toast.add({ severity: 'error', summary: 'Erreur', detail: err?.message || 'Erreur binômes' });
+      }
+    });
+  }
+
+  resendInvite(): void {
+    if (!this.collaboratorId) return;
+    this.resending.set(true);
+    this.api.resendInvite(this.collaboratorId).subscribe({
+      next: () => {
+        this.resending.set(false);
+        this.toast.add({ severity: 'success', summary: 'Collaborateurs', detail: 'Invitation renvoyée' });
+      },
+      error: err => {
+        this.resending.set(false);
+        this.toast.add({ severity: 'error', summary: 'Erreur', detail: err?.message || 'Renvoi impossible' });
+      }
+    });
+  }
+
+  goEdit(): void {
+    if (!this.collaboratorId) return;
+    void this.router.navigate(['/firm/collaborateurs', this.collaboratorId, 'edit']);
+  }
+
+  back(): void {
+    this.location.back();
+  }
+}

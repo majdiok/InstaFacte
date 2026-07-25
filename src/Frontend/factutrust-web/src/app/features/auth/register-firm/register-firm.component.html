@@ -1,0 +1,475 @@
+<div class="auth-page">
+  <aside class="branding-panel">
+    <div class="branding-background">
+      <div class="blob shape-1"></div>
+      <div class="blob shape-2"></div>
+      <div class="blob shape-3"></div>
+      <div class="glass-overlay"></div>
+    </div>
+
+    <div class="branding-content">
+      <div class="brand-header">
+        <app-logo size="large" variant="lockup" routerLink="/"></app-logo>
+      </div>
+
+      <div class="value-prop">
+        <span class="badge">Espace cabinet</span>
+        <h1 class="title">Centralisez la comptabilité <br>de vos clients sociétés</h1>
+        <p class="description">
+          Gérez vos dossiers clients, répondez aux invitations et pilotez votre activité depuis un espace dédié aux cabinets d'expertise comptable.
+        </p>
+
+        <ul class="features-list">
+          <li>
+            <div class="icon-wrapper"><i class="pi pi-folder-open" aria-hidden="true"></i></div>
+            <span>Accès délégué aux dossiers clients</span>
+          </li>
+          <li>
+            <div class="icon-wrapper"><i class="pi pi-search" aria-hidden="true"></i></div>
+            <span>Annuaire des cabinets partenaires</span>
+          </li>
+          <li>
+            <div class="icon-wrapper"><i class="pi pi-chart-line" aria-hidden="true"></i></div>
+            <span>Tableau de bord et invitations en un clic</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="social-proof">
+        <div class="avatars">
+          <div class="avatar bg-1"><i class="pi pi-briefcase"></i></div>
+          <div class="avatar bg-2"><i class="pi pi-users"></i></div>
+          <div class="avatar bg-3"><i class="pi pi-building"></i></div>
+          <div class="avatar-more">EC</div>
+        </div>
+        <p>Pensé pour les experts-comptables et leurs équipes.</p>
+      </div>
+    </div>
+  </aside>
+
+  <main class="form-panel">
+    <div class="form-scrollable-container">
+      @if (!environment.accountingFirmsEnabled) {
+        <p-message severity="warn" text="Fonctionnalité non disponible."></p-message>
+        <p class="login-prompt"><a routerLink="/auth/login" class="link-primary fw-semibold">Retour à la connexion</a></p>
+      } @else {
+        <div class="form-top-bar">
+          <span class="form-top-bar__spacer" aria-hidden="true"></span>
+          <a routerLink="/auth/login" class="form-top-bar__link">
+            <i class="pi pi-sign-in" aria-hidden="true"></i>
+            Déjà un compte ? Connexion
+          </a>
+        </div>
+
+        <div class="form-header mobile-only">
+          <app-logo size="medium" variant="lockup" routerLink="/"></app-logo>
+        </div>
+
+        <div class="form-header-text">
+          <h2>Inscription cabinet comptable</h2>
+          <p>Créez votre espace cabinet pour gérer les dossiers de vos clients sociétés.</p>
+        </div>
+
+        <div class="stepper-wrapper" [attr.data-current-step]="currentStep()" role="group" [attr.aria-label]="'Progression : étape ' + stepHumanIndex() + ' sur 3'">
+          <p-steps [model]="steps" [activeIndex]="currentStep()" [readonly]="true" styleClass="custom-steps"></p-steps>
+        </div>
+
+        <form [formGroup]="form" (ngSubmit)="submit()" class="registration-form" [attr.aria-label]="registrationFormAriaLabel()">
+          @if (error()) {
+            <div class="global-error" role="alert" @fadeInOut>
+              <div class="error-icon"><i class="pi pi-exclamation-triangle"></i></div>
+              <div class="error-content">
+                <h4>Erreur lors de l'inscription</h4>
+                <p>{{ error() }}</p>
+              </div>
+              <button type="button" class="close-btn" (click)="error.set(null)" aria-label="Fermer">
+                <i class="pi pi-times"></i>
+              </button>
+            </div>
+          }
+
+          <div class="steps-container">
+            @if (currentStep() === 0) {
+              <div class="step-pane" @stepSlide>
+                <h3 class="step-title">1. Informations de connexion</h3>
+
+                <div class="form-row">
+                  <div class="form-group flex-1">
+                    <label for="firstName" class="sr-only">Prénom</label>
+                    <div class="input-icon-wrapper">
+                      <i class="pi pi-user icon"></i>
+                      <input pInputText id="firstName" formControlName="firstName" placeholder="Prénom *"
+                             autocomplete="given-name" [attr.aria-required]="true"
+                             [class.ng-invalid]="isInvalid('firstName')"
+                             [attr.aria-describedby]="isInvalid('firstName') ? 'firstName-error' : null">
+                    </div>
+                    @if (isInvalid('firstName')) {
+                      <div class="field-error" id="firstName-error" role="alert" @fadeInOut>
+                        <i class="pi pi-info-circle"></i> {{ errorMessageService.getErrorMessage(form.get('firstName')) }}
+                      </div>
+                    }
+                  </div>
+
+                  <div class="form-group flex-1">
+                    <label for="lastName" class="sr-only">Nom</label>
+                    <div class="input-icon-wrapper">
+                      <i class="pi pi-user icon"></i>
+                      <input pInputText id="lastName" formControlName="lastName" placeholder="Nom *"
+                             autocomplete="family-name" [attr.aria-required]="true"
+                             [class.ng-invalid]="isInvalid('lastName')"
+                             [attr.aria-describedby]="isInvalid('lastName') ? 'lastName-error' : null">
+                    </div>
+                    @if (isInvalid('lastName')) {
+                      <div class="field-error" id="lastName-error" role="alert" @fadeInOut>
+                        <i class="pi pi-info-circle"></i> {{ errorMessageService.getErrorMessage(form.get('lastName')) }}
+                      </div>
+                    }
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label for="email" class="sr-only">Email connexion</label>
+                  <div class="input-icon-wrapper">
+                    <i class="pi pi-envelope icon"></i>
+                    <input pInputText id="email" type="email" formControlName="email" placeholder="Email connexion *"
+                           autocomplete="email" [attr.aria-required]="true"
+                           [class.ng-invalid]="isInvalid('email')"
+                           [attr.aria-describedby]="isInvalid('email') ? 'email-error' : null">
+                  </div>
+                  @if (isInvalid('email')) {
+                    <div class="field-error" id="email-error" role="alert" @fadeInOut>
+                      <i class="pi pi-info-circle"></i> {{ errorMessageService.getErrorMessage(form.get('email')) }}
+                    </div>
+                  }
+                </div>
+
+                <div class="password-section">
+                  <div class="form-row">
+                    <div class="form-group flex-1">
+                      <label for="password" class="sr-only">Mot de passe</label>
+                      <div class="input-icon-wrapper p-password-wrapper">
+                        <i class="pi pi-lock icon"></i>
+                        <p-password id="password" formControlName="password" [toggleMask]="true" [feedback]="false"
+                                    placeholder="Mot de passe *" styleClass="w-full" inputStyleClass="w-full"
+                                    [attr.aria-required]="true"
+                                    [attr.aria-describedby]="passwordFieldAriaDescribedBy()"
+                                    autocomplete="new-password">
+                        </p-password>
+                      </div>
+                      <small class="field-hint">12 caractères minimum</small>
+                      @if (isInvalid('password')) {
+                        <div class="field-error" id="password-error" role="alert" @fadeInOut>
+                          <i class="pi pi-info-circle"></i> {{ errorMessageService.getErrorMessage(form.get('password')) }}
+                        </div>
+                      }
+                    </div>
+
+                    <div class="form-group flex-1">
+                      <label for="confirmPassword" class="sr-only">Confirmer mot de passe</label>
+                      <div class="input-icon-wrapper p-password-wrapper">
+                        <i class="pi pi-check-circle icon"></i>
+                        <p-password id="confirmPassword" formControlName="confirmPassword" [toggleMask]="true" [feedback]="false"
+                                    placeholder="Confirmer mot de passe *" styleClass="w-full" inputStyleClass="w-full"
+                                    [class.ng-invalid]="isInvalid('confirmPassword') || passwordMismatch()"
+                                    [attr.aria-required]="true"
+                                    [attr.aria-describedby]="confirmPasswordAriaDescribedBy()"
+                                    autocomplete="new-password">
+                        </p-password>
+                      </div>
+                      @if (isInvalid('confirmPassword')) {
+                        <div class="field-error" id="confirmPassword-error" role="alert" @fadeInOut>
+                          <i class="pi pi-info-circle"></i> {{ errorMessageService.getErrorMessage(form.get('confirmPassword')) }}
+                        </div>
+                      } @else if (passwordMismatch()) {
+                        <div class="field-error" id="confirmPassword-error" role="alert" @fadeInOut>
+                          <i class="pi pi-info-circle"></i> Les mots de passe ne correspondent pas.
+                        </div>
+                      } @else if (passwordMatches() && form.get('confirmPassword')?.value) {
+                        <div class="field-success" id="confirmPassword-success" role="status" @fadeInOut>
+                          <i class="pi pi-check-circle"></i> Correspondance exacte
+                        </div>
+                      }
+                    </div>
+                  </div>
+
+                  <span id="password-strength-hint" class="sr-only">
+                    Exigences : au moins 12 caractères, une majuscule, une minuscule, un chiffre et un caractère spécial.
+                  </span>
+
+                  <div class="password-criteria-card">
+                    <div class="criteria-header-row">
+                      <div class="criteria-header">Critères de sécurité</div>
+                      @if (passwordStrengthLevel() !== 'empty') {
+                        <span class="password-strength-label" [attr.data-level]="passwordStrengthLevel()">{{ passwordStrengthLabel() }}</span>
+                      }
+                    </div>
+                    <div class="password-strength-meter" role="progressbar" aria-live="polite"
+                         [attr.aria-valuenow]="passwordStrengthMetCount()" aria-valuemin="0" aria-valuemax="5"
+                         [attr.aria-label]="passwordStrengthLabel() || 'Force du mot de passe'">
+                      @for (seg of strengthSegments; track seg) {
+                        <span class="password-strength-segment" [class.filled]="passwordStrengthMetCount() >= seg" [attr.data-level]="passwordStrengthLevel()"></span>
+                      }
+                    </div>
+                    <div class="criteria-grid">
+                      <span class="criterion" [class.met]="passwordCriteria().minLength" [class.unmet]="!passwordCriteria().minLength && form.get('password')?.value">
+                        <i class="pi" [class.pi-check-circle]="passwordCriteria().minLength" [class.pi-circle]="!passwordCriteria().minLength"></i> 12+ caractères
+                      </span>
+                      <span class="criterion" [class.met]="passwordCriteria().hasUpper" [class.unmet]="!passwordCriteria().hasUpper && form.get('password')?.value">
+                        <i class="pi" [class.pi-check-circle]="passwordCriteria().hasUpper" [class.pi-circle]="!passwordCriteria().hasUpper"></i> Majuscule
+                      </span>
+                      <span class="criterion" [class.met]="passwordCriteria().hasLower" [class.unmet]="!passwordCriteria().hasLower && form.get('password')?.value">
+                        <i class="pi" [class.pi-check-circle]="passwordCriteria().hasLower" [class.pi-circle]="!passwordCriteria().hasLower"></i> Minuscule
+                      </span>
+                      <span class="criterion" [class.met]="passwordCriteria().hasDigit" [class.unmet]="!passwordCriteria().hasDigit && form.get('password')?.value">
+                        <i class="pi" [class.pi-check-circle]="passwordCriteria().hasDigit" [class.pi-circle]="!passwordCriteria().hasDigit"></i> Chiffre
+                      </span>
+                      <span class="criterion" [class.met]="passwordCriteria().hasSpecial" [class.unmet]="!passwordCriteria().hasSpecial && form.get('password')?.value">
+                        <i class="pi" [class.pi-check-circle]="passwordCriteria().hasSpecial" [class.pi-circle]="!passwordCriteria().hasSpecial"></i> Caractère spécial
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="terms-group">
+                  <p-checkbox inputId="acceptTerms" formControlName="acceptTerms" [binary]="true"></p-checkbox>
+                  <label for="acceptTerms">
+                    En continuant, j'accepte les <a routerLink="/legal/terms" target="_blank" class="link-primary">Conditions d'Utilisation</a> et la <a routerLink="/legal/privacy" target="_blank" class="link-primary">Politique de Confidentialité</a>.
+                  </label>
+                </div>
+                @if (form.get('acceptTerms')?.invalid && form.get('acceptTerms')?.touched) {
+                  <div class="field-error block mt-2" role="alert" @fadeInOut>
+                    <i class="pi pi-info-circle"></i> Vous devez accepter les conditions pour continuer.
+                  </div>
+                }
+              </div>
+            }
+
+            @if (currentStep() === 1) {
+              <div class="step-pane" @stepSlide>
+                <h3 class="step-title">2. Votre cabinet</h3>
+
+                <div class="form-group">
+                  <label for="firmName" class="sr-only">Raison sociale du cabinet</label>
+                  <div class="input-icon-wrapper">
+                    <i class="pi pi-building icon"></i>
+                    <input pInputText id="firmName" formControlName="firmName" placeholder="Raison sociale du cabinet *"
+                           autocomplete="organization" [attr.aria-required]="true"
+                           [class.ng-invalid]="isInvalid('firmName')">
+                  </div>
+                  @if (isInvalid('firmName')) {
+                    <div class="field-error" role="alert" @fadeInOut>
+                      <i class="pi pi-info-circle"></i> {{ errorMessageService.getErrorMessage(form.get('firmName')) }}
+                    </div>
+                  }
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group flex-1">
+                    <label for="nif" class="sr-only">NIF</label>
+                    <div class="input-icon-wrapper p-inputmask-wrapper">
+                      <i class="pi pi-hashtag icon"></i>
+                      <p-inputMask id="nif" formControlName="nif" mask="9999999/a/a/a/999" placeholder="NIF : 1234567/A/B/C/000"
+                                   styleClass="w-full uppercase" (onBlur)="onNifBlur()"
+                                   [attr.aria-required]="true" [class.ng-invalid]="isInvalid('nif')">
+                      </p-inputMask>
+                    </div>
+                    @if (isInvalid('nif')) {
+                      <div class="field-error" role="alert" @fadeInOut>
+                        <i class="pi pi-info-circle"></i> Format attendu: 1234567/A/B/C/000
+                      </div>
+                    }
+                  </div>
+
+                  <div class="form-group flex-1">
+                    <label for="phone" class="sr-only">Téléphone</label>
+                    <div class="input-icon-wrapper p-inputmask-wrapper">
+                      <i class="pi pi-phone icon"></i>
+                      <p-inputMask id="phone" formControlName="phone" mask="99 999 999" placeholder="Téléphone *"
+                                   styleClass="w-full" [attr.aria-required]="true" [class.ng-invalid]="isInvalid('phone')">
+                      </p-inputMask>
+                    </div>
+                    @if (isInvalid('phone')) {
+                      <div class="field-error" role="alert" @fadeInOut>
+                        <i class="pi pi-info-circle"></i> {{ errorMessageService.getFieldSuggestion('phone', 'pattern') || 'Téléphone invalide' }}
+                      </div>
+                    }
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label for="firmEmail" class="sr-only">Email cabinet</label>
+                  <div class="input-icon-wrapper">
+                    <i class="pi pi-envelope icon"></i>
+                    <input pInputText id="firmEmail" type="email" formControlName="firmEmail" placeholder="Email cabinet *"
+                           autocomplete="email" [attr.aria-required]="true" [class.ng-invalid]="isInvalid('firmEmail')">
+                  </div>
+                  @if (isInvalid('firmEmail')) {
+                    <div class="field-error" role="alert" @fadeInOut>
+                      <i class="pi pi-info-circle"></i> {{ errorMessageService.getErrorMessage(form.get('firmEmail')) }}
+                    </div>
+                  }
+                </div>
+
+                <div class="optional-section">
+                  <div class="toggle-group" (click)="showOptionalProfile.set(!showOptionalProfile())" [attr.aria-expanded]="showOptionalProfile()">
+                    <div class="toggle-info">
+                      <i class="pi pi-id-card text-primary-600" aria-hidden="true"></i>
+                      <span id="profile-label">Profil cabinet (optionnel)</span>
+                    </div>
+                    <p-inputSwitch inputId="profile-toggle" [ngModel]="showOptionalProfile()"
+                                   (ngModelChange)="showOptionalProfile.set($event)"
+                                   [ngModelOptions]="{standalone: true}"
+                                   [attr.aria-labelledby]="'profile-label'"
+                                   (click)="$event.stopPropagation()">
+                    </p-inputSwitch>
+                  </div>
+                  <p class="optional-hint">Ces informations enrichissent votre fiche dans l'annuaire des cabinets.</p>
+
+                  @if (showOptionalProfile()) {
+                    <div class="slide-down mt-3" @fadeInOut>
+                      <div class="form-group">
+                        <label for="website" class="sr-only">Site web</label>
+                        <div class="input-icon-wrapper">
+                          <i class="pi pi-globe icon"></i>
+                          <input pInputText id="website" formControlName="website" placeholder="Site web (optionnel)">
+                        </div>
+                      </div>
+
+                      <div class="form-group">
+                        <label for="professionalRegistrationNumber" class="sr-only">N° inscription professionnelle</label>
+                        <div class="input-icon-wrapper">
+                          <i class="pi pi-bookmark icon"></i>
+                          <input pInputText id="professionalRegistrationNumber" formControlName="professionalRegistrationNumber"
+                                 placeholder="N° inscription professionnelle (optionnel)">
+                        </div>
+                      </div>
+
+                      <div class="form-group">
+                        <label for="description" class="sr-only">Description</label>
+                        <textarea pInputTextarea id="description" formControlName="description" rows="3"
+                                  placeholder="Description du cabinet (optionnel)" class="w-full"></textarea>
+                      </div>
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+
+            @if (currentStep() === 2) {
+              <div class="step-pane" @stepSlide>
+                <h3 class="step-title">3. Adresse & visibilité</h3>
+
+                <div class="form-group">
+                  <label for="street" class="sr-only">Adresse</label>
+                  <div class="input-icon-wrapper">
+                    <i class="pi pi-map-marker icon"></i>
+                    <input pInputText id="street" formControlName="street" placeholder="Adresse *"
+                           autocomplete="street-address" [attr.aria-required]="true" [class.ng-invalid]="isInvalid('street')">
+                  </div>
+                  @if (isInvalid('street')) {
+                    <div class="field-error" role="alert" @fadeInOut>
+                      <i class="pi pi-info-circle"></i> L'adresse est requise
+                    </div>
+                  }
+                </div>
+
+                <div class="form-group">
+                  <label for="streetLine2" class="sr-only">Complément d'adresse</label>
+                  <div class="input-icon-wrapper">
+                    <i class="pi pi-building icon"></i>
+                    <input pInputText id="streetLine2" formControlName="streetLine2" placeholder="Complément d'adresse (optionnel)">
+                  </div>
+                </div>
+
+                <div class="form-row address-row">
+                  <div class="form-group flex-2">
+                    <label for="city" class="sr-only">Ville</label>
+                    <div class="input-icon-wrapper">
+                      <i class="pi pi-map icon"></i>
+                      <input pInputText id="city" formControlName="city" placeholder="Ville *"
+                             autocomplete="address-level2" [attr.aria-required]="true" [class.ng-invalid]="isInvalid('city')">
+                    </div>
+                    @if (isInvalid('city')) {
+                      <div class="field-error" role="alert" @fadeInOut>
+                        <i class="pi pi-info-circle"></i> Requis
+                      </div>
+                    }
+                  </div>
+
+                  <div class="form-group flex-1">
+                    <label for="postalCode" class="sr-only">Code postal</label>
+                    <p-inputMask id="postalCode" formControlName="postalCode" mask="9999" placeholder="Code postal" styleClass="w-full"
+                                 [class.ng-invalid]="isInvalid('postalCode')">
+                    </p-inputMask>
+                    @if (isInvalid('postalCode')) {
+                      <div class="field-error" role="alert" @fadeInOut>
+                        <i class="pi pi-info-circle"></i> Code postal invalide (4 chiffres)
+                      </div>
+                    }
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label for="governorate" class="sr-only">Gouvernorat</label>
+                  <p-dropdown id="governorate" [options]="governorates" formControlName="governorate"
+                              optionLabel="label" optionValue="value" placeholder="Gouvernorat *"
+                              [filter]="true" filterBy="label" styleClass="w-full custom-dropdown"
+                              [class.ng-invalid]="isInvalid('governorate')" [attr.aria-required]="true">
+                  </p-dropdown>
+                  @if (isInvalid('governorate')) {
+                    <div class="field-error" role="alert" @fadeInOut>
+                      <i class="pi pi-info-circle"></i> Le gouvernorat est requis
+                    </div>
+                  }
+                </div>
+
+                <div class="directory-visibility">
+                  <div class="terms-group" style="margin-top: 0">
+                    <p-checkbox formControlName="isPublicInDirectory" [binary]="true" inputId="pub"></p-checkbox>
+                    <label for="pub">Visible dans l'annuaire des cabinets</label>
+                  </div>
+                  <p class="directory-visibility__hint">
+                    Les sociétés pourront vous trouver et vous adresser une demande de prise en charge comptable.
+                  </p>
+                </div>
+              </div>
+            }
+          </div>
+
+          <div class="navigation-footer">
+            @if (currentStep() > 0) {
+              <button type="button" class="btn-back" (click)="previousStep()" aria-label="Étape précédente">
+                <i class="pi pi-arrow-left" aria-hidden="true"></i> Retour
+              </button>
+            } @else {
+              <div class="spacer"></div>
+            }
+
+            <p class="step-indicator" aria-live="polite">
+              Étape <span class="step-indicator__num">{{ stepHumanIndex() }}</span> sur 3
+            </p>
+
+            @if (currentStep() < 2) {
+              <button type="button" class="btn-next" [class.btn-next--ready]="isCurrentStepValid()"
+                      [disabled]="!isCurrentStepValid()" (click)="nextStep()" aria-label="Étape suivante">
+                Continuer <i class="pi pi-arrow-right" aria-hidden="true"></i>
+              </button>
+            } @else {
+              <button type="submit" class="btn-submit" [disabled]="form.invalid || loading()" [class.is-loading]="loading()">
+                @if (loading()) {
+                  <i class="pi pi-spin pi-spinner mr-2" aria-hidden="true"></i> Création...
+                } @else {
+                  <i class="pi pi-check mr-2" aria-hidden="true"></i> Créer le cabinet
+                }
+              </button>
+            }
+          </div>
+        </form>
+
+        <div class="login-prompt">
+          <p>Inscription société ? <a routerLink="/auth/register" class="link-primary fw-semibold">Créer un compte entreprise</a></p>
+        </div>
+      }
+    </div>
+  </main>
+</div>

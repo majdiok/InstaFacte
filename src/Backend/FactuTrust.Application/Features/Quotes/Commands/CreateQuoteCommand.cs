@@ -176,6 +176,20 @@ public sealed class CreateQuoteCommandHandler : IRequestHandler<CreateQuoteComma
                 if (!product.IsActive)
                     return Result.Failure<Guid>(Error.Validation("Produit", $"Le produit '{product.Name}' est désactivé"));
 
+                if (lineDto.DiscountPercent.HasValue)
+                {
+                    if (lineDto.DiscountPercent.Value < 0 || lineDto.DiscountPercent.Value > 100)
+                        return Result.Failure<Guid>(Error.Validation("DiscountPercent", "La remise doit être comprise entre 0% et 100%"));
+
+                    if (product.IsDiscountEnabled && product.MaxDiscountPercent.HasValue &&
+                        lineDto.DiscountPercent.Value > product.MaxDiscountPercent.Value)
+                    {
+                        return Result.Failure<Guid>(Error.Validation(
+                            "DiscountPercent",
+                            $"La remise ne peut pas dépasser {product.MaxDiscountPercent.Value}% pour le produit '{product.Name}'"));
+                    }
+                }
+
                 Money? customPrice = lineDto.UnitPrice > 0 
                     ? Money.Create(lineDto.UnitPrice) 
                     : null;

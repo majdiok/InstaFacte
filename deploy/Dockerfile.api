@@ -1,0 +1,53 @@
+# FactuTrust API — multi-stage build (publish .NET, tessdata OCR, WhatsApp bridge Node deps)
+# Build context: repository root (..)
+#   docker build -f deploy/Dockerfile.api -t factutrust-api .
+
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS dotnet-build
+WORKDIR /src
+COPY src/Backend/ ./
+RUN dotnet restore FactuTrust.sln
+RUN dotnet publish FactuTrust.API/FactuTrust.API.csproj -c Release -o /app/publish --no-restore
+
+FROM node:20-alpine AS whatsapp-build
+WORKDIR /bridge
+# Lab/VM DNS often cannot reach storage.googleapis.com; skip Chromium download at build time.
+ENV PUPPETEER_SKIP_DOWNLOAD=1
+COPY src/Backend/FactuTrust.API/WhatsAppBridge/package.json src/Backend/FactuTrust.API/WhatsAppBridge/package-lock.json* ./
+RUN npm ci --omit=dev 2>/dev/null || npm install --omit=dev
+COPY src/Backend/FactuTrust.API/WhatsAppBridge/ ./
+
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS tessdata
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && mkdir -p /tessdata \
+    && for lang in fra eng ara; do \
+         curl -fsSL "https://github.com/tesseract-ocr/tessdata_fast/raw/main/${lang}.traineddata" \
+           -o "/tessdata/${lang}.traineddata"; \
+       done \
+    && rm -rf /var/lib/apt/lists/*
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+         tesseract-ocr libtesseract5 \
+         libfontconfig1 libfreetype6 libharfbuzz0b libpng16-16 libjpeg62-turbo libgif7 \
+         curl ca-certificates \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY --from=dotnet-build /app/publish .
+COPY --from=whatsapp-build /bridge ./WhatsAppBridge
+COPY --from=tessdata /tessdata ./Resources/Tessdata
+
+RUN mkdir -p wwwroot logs App_Data whatsapp-session certs
+
+ENV ASPNETCORE_URLS=http://+:8080
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=5 \
+  CMD curl -f http://localhost:8080/health/ready || exit 1
+
+ENTRYPOINT ["dotnet", "FactuTrust.API.dll"]

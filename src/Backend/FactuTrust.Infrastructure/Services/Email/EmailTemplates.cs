@@ -64,6 +64,25 @@ URL : {{ inviteUrl }}
 (à changer immédiatement à votre première connexion)
 "),
 
+        ["firm-collaborator-invited"] = new(
+            Code: "firm-collaborator-invited",
+            SubjectTemplate: "Invitation collaborateur — {{ companyName }}",
+            HtmlBodyTemplate: WrapHtml(
+                "Invitation collaborateur",
+                @"<p>Bonjour <strong>{{ recipientName }}</strong>,</p>
+<p>Vous venez d'être ajouté comme collaborateur du cabinet <strong>{{ companyName }}</strong> sur InstaFact.</p>
+<p>Connectez-vous avec ce mot de passe initial :</p>
+<p style=""font-family:monospace;background:#f4f4f4;padding:10px;border-radius:4px;font-size:14px;"">{{ initialPassword }}</p>
+<p><a href=""{{ inviteUrl }}"" style=""display:inline-block;padding:10px 20px;background:#58a6ff;color:white;text-decoration:none;border-radius:4px;"">Accéder à InstaFact</a></p>
+<p style=""color:#666;font-size:12px;"">Changez ce mot de passe dès votre première connexion.</p>"),
+            TextBodyTemplate: @"Bonjour {{ recipientName }},
+
+Vous venez d'être ajouté comme collaborateur du cabinet {{ companyName }} sur InstaFact.
+
+Mot de passe initial : {{ initialPassword }}
+URL : {{ inviteUrl }}
+"),
+
         ["password-reset"] = new(
             Code: "password-reset",
             SubjectTemplate: "Votre nouveau mot de passe InstaFact",

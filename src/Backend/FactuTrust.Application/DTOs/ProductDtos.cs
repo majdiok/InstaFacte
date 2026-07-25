@@ -14,6 +14,10 @@ public sealed record ProductListDto
     public string Type { get; init; } = null!;
     public decimal UnitPrice { get; init; }
     public decimal? PurchasePrice { get; init; }
+    public decimal? LastPurchasePrice { get; init; }
+    public decimal? WeightedAverageCost { get; init; }
+    public decimal? ProfitMarginPercent { get; init; }
+    public decimal SalePriceTtc { get; init; }
     public string Currency { get; init; } = null!;
     public int VatRatePercent { get; init; }
     public string VatRateDisplay { get; init; } = null!;
@@ -21,6 +25,8 @@ public sealed record ProductListDto
     public bool IsActive { get; init; }
     public bool IsStockManaged { get; init; }
     public bool IsFodecApplicable { get; init; }
+    public bool IsDiscountEnabled { get; init; }
+    public decimal? MaxDiscountPercent { get; init; }
     public Guid CategoryId { get; init; }
     public string CategoryName { get; init; } = "general";
     public string? ImageUrl { get; init; }
@@ -44,6 +50,10 @@ public sealed record ProductDetailDto
     public string TypeDisplay { get; init; } = null!;
     public decimal UnitPrice { get; init; }
     public decimal? PurchasePrice { get; init; }
+    public decimal? LastPurchasePrice { get; init; }
+    public decimal? WeightedAverageCost { get; init; }
+    public decimal? ProfitMarginPercent { get; init; }
+    public decimal SalePriceTtc { get; init; }
     public string Currency { get; init; } = null!;
     public VatRate VatRate { get; init; }
     public int VatRatePercent { get; init; }
@@ -52,6 +62,8 @@ public sealed record ProductDetailDto
     public bool IsActive { get; init; }
     public bool IsStockManaged { get; init; }
     public bool IsFodecApplicable { get; init; }
+    public bool IsDiscountEnabled { get; init; }
+    public decimal? MaxDiscountPercent { get; init; }
     public Guid CategoryId { get; init; }
     public string CategoryName { get; init; } = "general";
     public string? ImageUrl { get; init; }
@@ -79,6 +91,8 @@ public sealed record ProductSelectDto
     public int VatRatePercent { get; init; }
     public string? Unit { get; init; }
     public bool IsFodecApplicable { get; init; }
+    public bool IsDiscountEnabled { get; init; }
+    public decimal? MaxDiscountPercent { get; init; }
 }
 
 /// <summary>
@@ -92,6 +106,7 @@ public sealed record CreateProductDto
     public ProductType Type { get; init; }
     public decimal UnitPrice { get; init; }
     public decimal? PurchasePrice { get; init; }
+    public decimal? ProfitMarginPercent { get; init; }
     public VatRate VatRate { get; init; }
     public string? Unit { get; init; }
     public bool? IsStockManaged { get; init; }
@@ -102,6 +117,12 @@ public sealed record CreateProductDto
 
     /// <summary>FODEC applicable (1% sur le HT) sur les ventes.</summary>
     public bool IsFodecApplicable { get; init; }
+
+    /// <summary>Active un plafond de remise sur les lignes de vente.</summary>
+    public bool IsDiscountEnabled { get; init; }
+
+    /// <summary>Remise maximale (%) autorisée sur les lignes de vente.</summary>
+    public decimal? MaxDiscountPercent { get; init; }
 }
 
 /// <summary>
@@ -113,6 +134,7 @@ public sealed record UpdateProductDto
     public string? Description { get; init; }
     public decimal UnitPrice { get; init; }
     public decimal? PurchasePrice { get; init; }
+    public decimal? ProfitMarginPercent { get; init; }
     public VatRate VatRate { get; init; }
     public string? Unit { get; init; }
     public bool? IsStockManaged { get; init; }
@@ -123,4 +145,10 @@ public sealed record UpdateProductDto
 
     /// <summary>FODEC applicable (1% sur le HT) sur les ventes.</summary>
     public bool IsFodecApplicable { get; init; }
+
+    /// <summary>Active un plafond de remise sur les lignes de vente.</summary>
+    public bool IsDiscountEnabled { get; init; }
+
+    /// <summary>Remise maximale (%) autorisée sur les lignes de vente.</summary>
+    public decimal? MaxDiscountPercent { get; init; }
 }

@@ -1,8 +1,11 @@
 using System.Security.Claims;
 using System.Text.Json;
+using FactuTrust.Application.Common;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Auth;
+using FactuTrust.Domain.Enums;
+using FactuTrust.Infrastructure.Services;
 
 namespace FactuTrust.API.Middleware;
 
@@ -27,7 +30,8 @@ public sealed class TenantMiddleware
         ITenantContext tenantContext,
         ITenantService tenantService,
         ITenantMigrationGuard migrationGuard,
-        IFirmAssignmentService firmAssignmentService)
+        IFirmAssignmentService firmAssignmentService,
+        IFirmDossierAccessService firmDossierAccessService)
     {
         var path = context.Request.Path.Value ?? "";
         if (path.StartsWith("/api/public/", StringComparison.OrdinalIgnoreCase))
@@ -71,10 +75,32 @@ public sealed class TenantMiddleware
                 return;
             }
 
-            var isValid = await firmAssignmentService.HasActiveAssignmentAsync(homeTenantId, contextTenantId, context.RequestAborted);
-            if (!isValid)
+            var hasActive = await firmAssignmentService.HasActiveAssignmentAsync(homeTenantId, contextTenantId, context.RequestAborted);
+            if (!hasActive)
             {
-                await WriteForbiddenAsync(context, "Affectation cabinet inactive ou expirée.");
+                await WriteForbiddenAsync(context, FirmDossierAccessService.InactiveAssignmentMessage);
+                return;
+            }
+
+            var userIdClaim = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var roleClaim = context.User.FindFirstValue(ClaimTypes.Role);
+            if (Guid.TryParse(userIdClaim, out var userId) && !string.IsNullOrWhiteSpace(roleClaim))
+            {
+                var scope = FirmDossierAccessScope.ForUser(userId, roleClaim);
+                var canAccess = await firmDossierAccessService.CanAccessClientDossierAsync(
+                    homeTenantId, scope, contextTenantId, context.RequestAborted);
+                if (!canAccess)
+                {
+                    var message = scope.IsFirmAccountant
+                        ? FirmDossierAccessService.NotAssignedMessage
+                        : FirmDossierAccessService.InactiveAssignmentMessage;
+                    await WriteForbiddenAsync(context, message);
+                    return;
+                }
+            }
+            else if (context.User.IsInRole(nameof(UserRole.FirmAccountant)))
+            {
+                await WriteForbiddenAsync(context, FirmDossierAccessService.NotAssignedMessage);
                 return;
             }
 

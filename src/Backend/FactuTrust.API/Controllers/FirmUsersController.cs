@@ -1,111 +1,284 @@
 using System.Security.Claims;
+using System.Text.Json;
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
-using FactuTrust.Domain.Enums;
-using FactuTrust.Infrastructure.Persistence;
-using FactuTrust.Infrastructure.Services;
+using FactuTrust.API.Authorization;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace FactuTrust.API.Controllers;
 
 [ApiController]
 [Route("api/firm/users")]
-[Authorize(Roles = nameof(UserRole.FirmManager))]
+[Authorize(Policy = PermissionPolicies.FirmUsersManage)]
 [Filters.RequireAccountingFirmsFeature]
 public sealed class FirmUsersController : ControllerBase
 {
-    private readonly UserManager<ApplicationUser> _userManager;
-    private readonly MasterDbContext _masterContext;
+    private readonly IFirmCollaboratorService _collaborators;
+    private readonly ICurrentUser _currentUser;
 
-    public FirmUsersController(UserManager<ApplicationUser> userManager, MasterDbContext masterContext)
+    public FirmUsersController(IFirmCollaboratorService collaborators, ICurrentUser currentUser)
     {
-        _userManager = userManager;
-        _masterContext = masterContext;
+        _collaborators = collaborators;
+        _currentUser = currentUser;
     }
 
     [HttpGet]
-    public async Task<ActionResult<ApiResponse<IReadOnlyList<FirmUserDto>>>> List(CancellationToken cancellationToken)
-    {
-        var tenantId = GetHomeTenantId();
-        if (tenantId is null)
-            return Unauthorized();
-
-        var users = await _masterContext.Users.AsNoTracking()
-            .Where(u => u.TenantId == tenantId.Value)
-            .OrderBy(u => u.LastName)
-            .ToListAsync(cancellationToken);
-
-        var result = new List<FirmUserDto>();
-        foreach (var user in users)
-        {
-            var roles = await _userManager.GetRolesAsync(user);
-            var roleName = roles.FirstOrDefault() ?? UserRole.FirmAccountant.ToString();
-            var role = Enum.TryParse<UserRole>(roleName, out var r) ? r : UserRole.FirmAccountant;
-
-            result.Add(new FirmUserDto
-            {
-                Id = user.Id,
-                Email = user.Email!,
-                FirstName = user.FirstName,
-                LastName = user.LastName,
-                Role = role,
-                RoleDisplay = role.ToDisplayString(),
-                IsActive = user.IsActive
-            });
-        }
-
-        return Ok(ApiResponse<IReadOnlyList<FirmUserDto>>.Ok(result));
-    }
-
-    [HttpPost]
-    public async Task<ActionResult<ApiResponse<FirmUserDto>>> Create(
-        [FromBody] CreateFirmUserDto dto,
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<FirmUserDto>>>> List(
+        [FromQuery] string? name,
+        [FromQuery] string? qualification,
+        [FromQuery] bool? isActive,
         CancellationToken cancellationToken)
     {
         var tenantId = GetHomeTenantId();
         if (tenantId is null)
             return Unauthorized();
 
-        if (dto.Role is not (UserRole.FirmManager or UserRole.FirmAccountant))
-            return BadRequest(ApiResponse<FirmUserDto>.Fail("Rôle cabinet invalide"));
+        var result = await _collaborators.ListAsync(tenantId.Value, name, qualification, isActive, cancellationToken);
+        if (!result.IsSuccess)
+            return BadRequest(ApiResponse<IReadOnlyList<FirmUserDto>>.Fail(result.Error.Description));
 
-        var tenant = await _masterContext.Tenants.FindAsync([tenantId.Value], cancellationToken);
-        if (tenant is null || tenant.Kind != TenantKind.AccountingFirm)
-            return BadRequest(ApiResponse<FirmUserDto>.Fail("Contexte cabinet invalide"));
+        return Ok(ApiResponse<IReadOnlyList<FirmUserDto>>.Ok(result.Value));
+    }
 
-        var user = new ApplicationUser
+    [HttpGet("export")]
+    public async Task<IActionResult> Export(
+        [FromQuery] string? name,
+        [FromQuery] string? qualification,
+        [FromQuery] bool? isActive,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = GetHomeTenantId();
+        if (tenantId is null)
+            return Unauthorized();
+
+        var result = await _collaborators.ExportExcelAsync(tenantId.Value, name, qualification, isActive, cancellationToken);
+        if (!result.IsSuccess)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return File(
+            result.Value.Content,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            result.Value.FileName);
+    }
+
+    [HttpGet("firm-address")]
+    public async Task<ActionResult<ApiResponse<FirmAddressSnapshotDto>>> FirmAddress(CancellationToken cancellationToken)
+    {
+        var tenantId = GetHomeTenantId();
+        if (tenantId is null)
+            return Unauthorized();
+
+        var result = await _collaborators.GetFirmAddressAsync(tenantId.Value, cancellationToken);
+        if (!result.IsSuccess)
+            return BadRequest(ApiResponse<FirmAddressSnapshotDto>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<FirmAddressSnapshotDto>.Ok(result.Value));
+    }
+
+    [HttpGet("{id:guid}")]
+    public async Task<ActionResult<ApiResponse<FirmUserDto>>> GetById(Guid id, CancellationToken cancellationToken)
+    {
+        var tenantId = GetHomeTenantId();
+        if (tenantId is null)
+            return Unauthorized();
+
+        var result = await _collaborators.GetByIdAsync(tenantId.Value, id, cancellationToken);
+        if (!result.IsSuccess)
+            return NotFound(ApiResponse<FirmUserDto>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<FirmUserDto>.Ok(result.Value));
+    }
+
+    [HttpPost]
+    [Consumes("application/json", "multipart/form-data")]
+    public async Task<ActionResult<ApiResponse<FirmUserDto>>> Create(CancellationToken cancellationToken)
+    {
+        var tenantId = GetHomeTenantId();
+        if (tenantId is null)
+            return Unauthorized();
+
+        CreateFirmUserDto? dto;
+        Stream? cniStream = null;
+        string? cniFileName = null;
+        string? cniContentType = null;
+
+        if (Request.HasFormContentType)
         {
-            UserName = dto.Email,
-            Email = dto.Email,
-            FirstName = dto.FirstName,
-            LastName = dto.LastName,
-            TenantId = tenantId.Value,
-            EmailConfirmed = true,
-            IsActive = true
-        };
+            var form = await Request.ReadFormAsync(cancellationToken);
+            var userJson = form["user"].ToString();
+            if (string.IsNullOrWhiteSpace(userJson))
+                userJson = form["dto"].ToString();
+            if (string.IsNullOrWhiteSpace(userJson))
+                return BadRequest(ApiResponse<FirmUserDto>.Fail("Payload collaborateur manquant"));
 
-        var createResult = await _userManager.CreateAsync(user, dto.Password);
-        if (!createResult.Succeeded)
+            dto = JsonSerializer.Deserialize<CreateFirmUserDto>(userJson, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            var file = form.Files.GetFile("file") ?? form.Files.GetFile("cni");
+            if (file is { Length: > 0 })
+            {
+                cniStream = file.OpenReadStream();
+                cniFileName = file.FileName;
+                cniContentType = file.ContentType;
+            }
+        }
+        else
         {
-            var errors = IdentityErrorTranslator.TranslateToFrench(createResult.Errors);
-            return BadRequest(ApiResponse<FirmUserDto>.Fail(errors));
+            dto = await HttpContext.Request.ReadFromJsonAsync<CreateFirmUserDto>(cancellationToken: cancellationToken);
         }
 
-        await _userManager.AddToRoleAsync(user, dto.Role.ToString());
+        if (dto is null)
+            return BadRequest(ApiResponse<FirmUserDto>.Fail("Payload invalide"));
 
-        return Ok(ApiResponse<FirmUserDto>.Ok(new FirmUserDto
+        try
         {
-            Id = user.Id,
-            Email = user.Email!,
-            FirstName = user.FirstName,
-            LastName = user.LastName,
-            Role = dto.Role,
-            RoleDisplay = dto.Role.ToDisplayString(),
-            IsActive = user.IsActive
-        }, "Utilisateur créé"));
+            var result = await _collaborators.CreateAsync(
+                tenantId.Value, dto, cniStream, cniFileName, cniContentType, cancellationToken);
+            if (!result.IsSuccess)
+                return BadRequest(ApiResponse<FirmUserDto>.Fail(result.Error.Description));
+
+            return Ok(ApiResponse<FirmUserDto>.Ok(result.Value, "Utilisateur créé"));
+        }
+        finally
+        {
+            if (cniStream is not null)
+                await cniStream.DisposeAsync();
+        }
+    }
+
+    [HttpPatch("{id:guid}")]
+    public async Task<ActionResult<ApiResponse<FirmUserDto>>> Update(
+        Guid id,
+        [FromBody] UpdateFirmUserDto dto,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = GetHomeTenantId();
+        if (tenantId is null)
+            return Unauthorized();
+
+        var currentUserId = _currentUser.UserId;
+        if (currentUserId is null)
+            return Unauthorized();
+
+        var result = await _collaborators.UpdateAsync(tenantId.Value, id, currentUserId.Value, dto, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            if (result.Error.Code.Contains("NotFound", StringComparison.Ordinal))
+                return NotFound(ApiResponse<FirmUserDto>.Fail(result.Error.Description));
+            return BadRequest(ApiResponse<FirmUserDto>.Fail(result.Error.Description));
+        }
+
+        return Ok(ApiResponse<FirmUserDto>.Ok(result.Value, "Collaborateur mis à jour"));
+    }
+
+    [HttpPatch("{id:guid}/status")]
+    public async Task<ActionResult<ApiResponse<object>>> SetStatus(
+        Guid id,
+        [FromBody] UpdateFirmUserStatusDto dto,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = GetHomeTenantId();
+        if (tenantId is null)
+            return Unauthorized();
+
+        var currentUserId = _currentUser.UserId;
+        if (currentUserId is null)
+            return Unauthorized();
+
+        var result = await _collaborators.SetActiveAsync(tenantId.Value, id, currentUserId.Value, dto.IsActive, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            if (result.Error.Code.Contains("NotFound", StringComparison.Ordinal))
+                return NotFound(ApiResponse<object>.Fail(result.Error.Description));
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+        }
+
+        return Ok(ApiResponse<object>.Ok(null!, dto.IsActive ? "Collaborateur activé" : "Collaborateur désactivé"));
+    }
+
+    [HttpPost("{id:guid}/resend-invite")]
+    public async Task<ActionResult<ApiResponse<object>>> ResendInvite(Guid id, CancellationToken cancellationToken)
+    {
+        var tenantId = GetHomeTenantId();
+        if (tenantId is null)
+            return Unauthorized();
+
+        var result = await _collaborators.ResendInviteAsync(tenantId.Value, id, cancellationToken);
+        if (!result.IsSuccess)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<object>.Ok(null!, "Invitation renvoyée"));
+    }
+
+    [HttpPut("{id:guid}/binomes")]
+    public async Task<ActionResult<ApiResponse<object>>> SetBinomes(
+        Guid id,
+        [FromBody] SetFirmUserBinomesDto dto,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = GetHomeTenantId();
+        if (tenantId is null)
+            return Unauthorized();
+
+        var result = await _collaborators.SetBinomesAsync(tenantId.Value, id, dto.BinomeUserIds, cancellationToken);
+        if (!result.IsSuccess)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<object>.Ok(null!, "Binômes mis à jour"));
+    }
+
+    [HttpPost("{id:guid}/cni")]
+    [Consumes("multipart/form-data")]
+    public async Task<ActionResult<ApiResponse<FirmCollaboratorCniInfoDto>>> UploadCni(
+        Guid id,
+        IFormFile file,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = GetHomeTenantId();
+        if (tenantId is null)
+            return Unauthorized();
+
+        if (file is null || file.Length == 0)
+            return BadRequest(ApiResponse<FirmCollaboratorCniInfoDto>.Fail("Fichier requis"));
+
+        await using var stream = file.OpenReadStream();
+        var result = await _collaborators.UploadCniAsync(
+            tenantId.Value, id, stream, file.FileName, file.ContentType, file.Length, cancellationToken);
+        if (!result.IsSuccess)
+            return BadRequest(ApiResponse<FirmCollaboratorCniInfoDto>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<FirmCollaboratorCniInfoDto>.Ok(result.Value, "CNI enregistrée"));
+    }
+
+    [HttpGet("{id:guid}/cni")]
+    public async Task<IActionResult> DownloadCni(Guid id, CancellationToken cancellationToken)
+    {
+        var tenantId = GetHomeTenantId();
+        if (tenantId is null)
+            return Unauthorized();
+
+        var result = await _collaborators.DownloadCniAsync(tenantId.Value, id, cancellationToken);
+        if (!result.IsSuccess)
+            return NotFound(ApiResponse<object>.Fail(result.Error.Description));
+
+        return File(result.Value.Stream, result.Value.ContentType, result.Value.FileName);
+    }
+
+    [HttpDelete("{id:guid}/cni")]
+    public async Task<ActionResult<ApiResponse<object>>> DeleteCni(Guid id, CancellationToken cancellationToken)
+    {
+        var tenantId = GetHomeTenantId();
+        if (tenantId is null)
+            return Unauthorized();
+
+        var result = await _collaborators.DeleteCniAsync(tenantId.Value, id, cancellationToken);
+        if (!result.IsSuccess)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<object>.Ok(null!, "CNI supprimée"));
     }
 
     private Guid? GetHomeTenantId()

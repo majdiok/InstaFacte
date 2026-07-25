@@ -1,5 +1,6 @@
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.Services;
 using FactuTrust.Domain.ValueObjects;
 
 namespace FactuTrust.Domain.Entities;
@@ -28,6 +29,26 @@ public sealed class Product : AggregateRoot
     /// When true, FODEC (1%) applies on this product's HT amount on sales invoices.
     /// </summary>
     public bool IsFodecApplicable { get; private set; }
+
+    /// <summary>
+    /// Profit margin (%) relative to <see cref="PurchasePrice"/>. Recalculated on save from catalog prices.
+    /// </summary>
+    public decimal? ProfitMarginPercent { get; private set; }
+
+    /// <summary>
+    /// Last purchase price (HT) from the most recent goods receipt. Updated automatically on PO receipt.
+    /// </summary>
+    public Money? LastPurchasePrice { get; private set; }
+
+    /// <summary>
+    /// When true, line discounts on sales documents are capped by <see cref="MaxDiscountPercent"/>.
+    /// </summary>
+    public bool IsDiscountEnabled { get; private set; }
+
+    /// <summary>
+    /// Maximum allowed discount (%) on sales lines when <see cref="IsDiscountEnabled"/> is true.
+    /// </summary>
+    public decimal? MaxDiscountPercent { get; private set; }
 
     public bool IsActive { get; private set; }
     
@@ -131,7 +152,10 @@ public sealed class Product : AggregateRoot
         string? unit = null,
         bool isStockManaged = false,
         Money? purchasePrice = null,
-        bool isFodecApplicable = false)
+        bool isFodecApplicable = false,
+        decimal? profitMarginPercent = null,
+        bool isDiscountEnabled = false,
+        decimal? maxDiscountPercent = null)
     {
         if (string.IsNullOrWhiteSpace(code))
             return Result.Failure<Product>(Error.Validation("Code", "Le code produit est obligatoire"));
@@ -158,6 +182,19 @@ public sealed class Product : AggregateRoot
         if (categoryId == Guid.Empty)
             return Result.Failure<Product>(Error.Validation("CategoryId", "La catégorie produit est obligatoire"));
 
+        var discountValidation = ValidateDiscountSettings(isDiscountEnabled, maxDiscountPercent);
+        if (discountValidation.IsFailure)
+            return Result.Failure<Product>(discountValidation.Error);
+
+        if (profitMarginPercent.HasValue &&
+            (profitMarginPercent.Value < ProductPricingCalculator.MinProfitMarginPercent ||
+             profitMarginPercent.Value > ProductPricingCalculator.MaxProfitMarginPercent))
+        {
+            return Result.Failure<Product>(Error.Validation(
+                "ProfitMarginPercent",
+                $"La marge doit être comprise entre {ProductPricingCalculator.MinProfitMarginPercent} % et {ProductPricingCalculator.MaxProfitMarginPercent} %"));
+        }
+
         var product = new Product
         {
             Code = code.Trim().ToUpperInvariant(),
@@ -171,7 +208,12 @@ public sealed class Product : AggregateRoot
             IsActive = true,
             IsStockManaged = isStockManaged,
             CategoryId = categoryId,
-            IsFodecApplicable = isFodecApplicable
+            IsFodecApplicable = isFodecApplicable,
+            ProfitMarginPercent = ProductPricingCalculator.ResolveProfitMarginPercent(
+                purchasePrice?.Amount,
+                unitPrice.Amount) ?? profitMarginPercent,
+            IsDiscountEnabled = isDiscountEnabled,
+            MaxDiscountPercent = isDiscountEnabled ? maxDiscountPercent : null
         };
 
         return Result.Success(product);
@@ -184,7 +226,10 @@ public sealed class Product : AggregateRoot
         VatRate vatRate,
         string? unit,
         Money? purchasePrice = null,
-        Guid? categoryId = null)
+        Guid? categoryId = null,
+        bool? isFodecApplicable = null,
+        bool? isDiscountEnabled = null,
+        decimal? maxDiscountPercent = null)
     {
         if (!string.IsNullOrWhiteSpace(name))
             Name = name.Trim();
@@ -201,11 +246,83 @@ public sealed class Product : AggregateRoot
 
         if (categoryId.HasValue && categoryId.Value != Guid.Empty)
             CategoryId = categoryId.Value;
+
+        if (isFodecApplicable.HasValue)
+            IsFodecApplicable = isFodecApplicable.Value;
+
+        ProfitMarginPercent = ProductPricingCalculator.ResolveProfitMarginPercent(
+            PurchasePrice?.Amount,
+            UnitPrice.Amount);
+
+        if (isDiscountEnabled.HasValue || maxDiscountPercent.HasValue)
+        {
+            var enabled = isDiscountEnabled ?? IsDiscountEnabled;
+            var maxDiscount = maxDiscountPercent ?? MaxDiscountPercent;
+            ApplyDiscountSettings(enabled, maxDiscount);
+        }
     }
 
     public void SetFodecApplicable(bool value)
     {
         IsFodecApplicable = value;
+    }
+
+    /// <summary>
+    /// Updates discount settings on the product catalog.
+    /// </summary>
+    public Result UpdateDiscountSettings(bool isDiscountEnabled, decimal? maxDiscountPercent)
+    {
+        var validation = ValidateDiscountSettings(isDiscountEnabled, maxDiscountPercent);
+        if (validation.IsFailure)
+            return validation;
+
+        ApplyDiscountSettings(isDiscountEnabled, maxDiscountPercent);
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Updates the last purchase price from a goods receipt (does not change catalog purchase price).
+    /// </summary>
+    public void UpdateLastPurchasePrice(Money price)
+    {
+        if (price.Amount < 0)
+            throw new ArgumentException("Le dernier prix d'achat ne peut pas être négatif", nameof(price));
+
+        LastPurchasePrice = price;
+    }
+
+    /// <summary>
+    /// Sale price TTC derived from current catalog prices.
+    /// </summary>
+    public decimal CalculateSalePriceTtc() =>
+        ProductPricingCalculator.CalculateSaleTtc(UnitPrice.Amount, VatRate, IsFodecApplicable);
+
+    private void ApplyDiscountSettings(bool isDiscountEnabled, decimal? maxDiscountPercent)
+    {
+        IsDiscountEnabled = isDiscountEnabled;
+        MaxDiscountPercent = isDiscountEnabled ? maxDiscountPercent : null;
+    }
+
+    private static Result ValidateDiscountSettings(bool isDiscountEnabled, decimal? maxDiscountPercent)
+    {
+        if (!isDiscountEnabled)
+            return Result.Success();
+
+        if (!maxDiscountPercent.HasValue)
+        {
+            return Result.Failure(Error.Validation(
+                "MaxDiscountPercent",
+                "La remise maximale est obligatoire lorsque la remise produit est activée"));
+        }
+
+        if (maxDiscountPercent.Value < 0 || maxDiscountPercent.Value > 100)
+        {
+            return Result.Failure(Error.Validation(
+                "MaxDiscountPercent",
+                "La remise maximale doit être comprise entre 0 % et 100 %"));
+        }
+
+        return Result.Success();
     }
 
     /// <summary>

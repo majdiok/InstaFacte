@@ -1,6 +1,7 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Common.Validation;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
@@ -31,6 +32,14 @@ public sealed class CreateProductCommandValidator : AbstractValidator<CreateProd
             .GreaterThanOrEqualTo(0)
             .When(x => x.Dto.PurchasePrice.HasValue)
             .WithMessage("Le prix d'achat ne peut pas être négatif");
+        RuleFor(x => x.Dto.MaxDiscountPercent)
+            .InclusiveBetween(0, TunisianValidationRules.NumericLimits.MaxDiscountPercent)
+            .When(x => x.Dto.IsDiscountEnabled && x.Dto.MaxDiscountPercent.HasValue)
+            .WithMessage("La remise maximale doit être comprise entre 0 % et 100 %");
+        RuleFor(x => x.Dto.MaxDiscountPercent)
+            .NotNull()
+            .When(x => x.Dto.IsDiscountEnabled)
+            .WithMessage("La remise maximale est obligatoire lorsque la remise produit est activée");
     }
 }
 
@@ -107,7 +116,10 @@ public sealed class CreateProductCommandHandler : IRequestHandler<CreateProductC
             dto.Unit?.Trim(),
             dto.IsStockManaged ?? false,
             purchasePrice,
-            dto.IsFodecApplicable);
+            dto.IsFodecApplicable,
+            dto.ProfitMarginPercent,
+            dto.IsDiscountEnabled,
+            dto.MaxDiscountPercent);
 
         if (productResult.IsFailure)
             return Result.Failure<Guid>(productResult.Error);

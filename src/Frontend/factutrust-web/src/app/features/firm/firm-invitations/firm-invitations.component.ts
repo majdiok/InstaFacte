@@ -29,6 +29,9 @@ import { FirmInvitationActionsService } from '../shared/firm-invitation-actions.
           <ng-template pTemplate="header">
             <tr>
               <th>Société</th>
+              <th>NIF</th>
+              <th>Localisation</th>
+              <th>Contact</th>
               <th>Demandée le</th>
               <th>Notes</th>
               <th class="fi-actions-col"></th>
@@ -36,7 +39,18 @@ import { FirmInvitationActionsService } from '../shared/firm-invitation-actions.
           </ng-template>
           <ng-template pTemplate="body" let-row>
             <tr>
-              <td>{{ row.companyName }}</td>
+              <td>
+                <div class="fi-company">{{ row.companyName }}</div>
+                @if (row.companyProfile?.tradeName) {
+                  <div class="fi-muted">{{ row.companyProfile.tradeName }}</div>
+                }
+                @if (row.companyProfile?.rneIdentifier) {
+                  <div class="fi-muted">RNE : {{ row.companyProfile.rneIdentifier }}</div>
+                }
+              </td>
+              <td>{{ row.companyProfile?.nif || '—' }}</td>
+              <td>{{ formatLocation(row) }}</td>
+              <td>{{ formatContact(row) }}</td>
               <td>{{ row.requestedAt | date:'dd/MM/yyyy HH:mm' }}</td>
               <td>{{ row.notes || '—' }}</td>
               <td class="fi-actions">
@@ -65,6 +79,8 @@ import { FirmInvitationActionsService } from '../shared/firm-invitation-actions.
       padding: var(--spacing-2, 8px);
     }
     .fi-actions-col { width: 1%; }
+    .fi-company { font-weight: 600; }
+    .fi-muted { font-size: 0.8rem; color: var(--color-text-muted, #64748b); margin-top: 0.15rem; }
     .fi-actions { display: flex; gap: 0.5rem; justify-content: flex-end; }
     .fi-btn {
       display: inline-flex;
@@ -117,5 +133,19 @@ export class FirmInvitationsComponent implements OnInit {
 
   async reject(row: FirmClientAssignment): Promise<void> {
     if (await this.actions.reject(row)) this.load();
+  }
+
+  formatLocation(row: FirmClientAssignment): string {
+    const p = row.companyProfile;
+    if (!p) return '—';
+    const parts = [p.city, p.governorate].filter(Boolean);
+    return parts.length ? parts.join(', ') : '—';
+  }
+
+  formatContact(row: FirmClientAssignment): string {
+    const p = row.companyProfile;
+    if (!p) return '—';
+    const parts = [p.email, p.phone].filter(Boolean);
+    return parts.length ? parts.join(' · ') : '—';
   }
 }

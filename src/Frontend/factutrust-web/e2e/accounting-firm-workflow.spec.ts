@@ -8,6 +8,19 @@ test.describe('Cabinet comptable — workflow', () => {
   test('register firm page is reachable', async ({ page }) => {
     await page.goto('/auth/register-firm');
     await expect(page.getByRole('heading', { name: /cabinet comptable/i })).toBeVisible();
+    await expect(page.getByRole('group', { name: /progression : étape 1 sur 3/i })).toBeVisible();
+  });
+
+  test('register firm wizard advances from step 1 to step 2', async ({ page }) => {
+    await page.goto('/auth/register-firm');
+    await page.getByPlaceholder('Prénom *').fill('Jean');
+    await page.getByPlaceholder('Nom *').fill('Dupont');
+    await page.getByPlaceholder('Email connexion *').fill('jean.dupont@example.com');
+    await page.locator('#password input').fill('SecurePass123!');
+    await page.locator('#confirmPassword input').fill('SecurePass123!');
+    await page.getByLabel(/conditions d'utilisation/i).check();
+    await page.getByRole('button', { name: /étape suivante/i }).click();
+    await expect(page.getByRole('heading', { name: /2\. votre cabinet/i })).toBeVisible();
   });
 
   test('login page loads for firm users', async ({ page }) => {
@@ -17,7 +30,9 @@ test.describe('Cabinet comptable — workflow', () => {
 });
 
 test.describe('Cabinet comptable — authenticated (staging)', () => {
-  test.skip(true, 'Requires dedicated test tenants; run manually in staging');
+  const authEnabled = process.env['E2E_FIRM_AUTH'] === '1';
+
+  test.skip(!authEnabled, 'Set E2E_FIRM_AUTH=1 with dedicated test tenants to run authenticated firm flows');
 
   test('firm manager sees firm sidemenu without Ventes', async ({ page }) => {
     // Login as FirmManager test account, assert sidemenu labels
@@ -53,7 +68,9 @@ test.describe('Cabinet comptable — authenticated (staging)', () => {
  * test dédiés ne sont pas provisionnés.
  */
 test.describe('Cabinet comptable — invitation & acceptation (staging)', () => {
-  test.skip(true, 'Requires two dedicated test tenants (company + firm); run manually in staging');
+  const authEnabled = process.env['E2E_FIRM_AUTH'] === '1';
+
+  test.skip(!authEnabled, 'Set E2E_FIRM_AUTH=1 with two dedicated test tenants (company + firm)');
 
   test('company sends a request with rich autocomplete, no dropdown overlap', async ({ page }) => {
     // 1. Login admin société → /settings/accounting-firm
@@ -88,5 +105,25 @@ test.describe('Cabinet comptable — invitation & acceptation (staging)', () => 
   test('bell shows an in-app notification after each firm decision', async ({ page }) => {
     // After accept/reject, the recipient's header bell badge increments and the
     // dropdown lists the notification with a working navigation link.
+  });
+});
+
+test.describe('Cabinet comptable — gouvernance (staging)', () => {
+  const authEnabled = process.env['E2E_FIRM_AUTH'] === '1';
+
+  test.skip(!authEnabled, 'Set E2E_FIRM_AUTH=1 with dedicated test tenants to run governance flows');
+
+  test('governance workflow: permanent file, timesheet, expense note', async ({ page }) => {
+    // 1. Login FirmManager → /firm/dashboard (KPI DP complets / en cours visibles, section gouvernance)
+    // 2. Clic KPI « Dossiers permanents complets » → /permanent-files?status=2 → tableau visible
+    // 3. « Ouvrir » sur Complet → ?mode=view → titre « Consultation dossier permanent »
+    // 4. « Modifier » → wizard étape 6 (pas étape 1)
+    // 5. Liste : section « Clients actifs sans dossier permanent » sous le tableau
+    // 6. Hadad : « Prochaine action » → Compléter avec ?mode=edit&step=4
+    // 7. Si GET /permanent-files échoue → bannière erreur + bouton Réessayer (pas init seule)
+    // 8. /firm/governance/time-sheets → select client → submit → validate (manager)
+    // 9. /firm/governance/dossier-time-profitability → filters + export PDF
+    // 10. /firm/governance/collaborator-rentability → prefill → save snapshot année
+    // 11. /firm/governance/expense-notes → create note → submit
   });
 });

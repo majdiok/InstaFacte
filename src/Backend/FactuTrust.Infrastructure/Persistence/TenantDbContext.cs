@@ -154,6 +154,12 @@ public partial class TenantDbContext : DbContext
     public DbSet<TejXmlExportLog> TejXmlExportLogs => Set<TejXmlExportLog>();
     public DbSet<WithholdingFiscalYearParameter> WithholdingFiscalYearParameters => Set<WithholdingFiscalYearParameter>();
 
+    // Liasse fiscale (détermination du résultat fiscal + paramètres IS/IRPP par exercice)
+    public DbSet<Domain.Entities.Fiscal.IncomeTaxYearParameter> IncomeTaxYearParameters => Set<Domain.Entities.Fiscal.IncomeTaxYearParameter>();
+    public DbSet<Domain.Entities.Fiscal.FiscalResultDeclaration> FiscalResultDeclarations => Set<Domain.Entities.Fiscal.FiscalResultDeclaration>();
+    public DbSet<Domain.Entities.Fiscal.FiscalAdjustmentLine> FiscalAdjustmentLines => Set<Domain.Entities.Fiscal.FiscalAdjustmentLine>();
+    public DbSet<Domain.Entities.Fiscal.FiscalCarryForwardItem> FiscalCarryForwardItems => Set<Domain.Entities.Fiscal.FiscalCarryForwardItem>();
+
     // CRM
     public DbSet<Opportunity> Opportunities => Set<Opportunity>();
     public DbSet<SalesActivity> SalesActivities => Set<SalesActivity>();
@@ -323,6 +329,10 @@ public partial class TenantDbContext : DbContext
         ConfigureWithholdingTaxType(builder);
         ConfigureWithholdingFiscalYearParameter(builder);
         ConfigureTejXmlExportLog(builder);
+
+        // Liasse fiscale
+        ConfigureIncomeTaxYearParameter(builder);
+        ConfigureFiscalResultDeclaration(builder);
 
         ConfigureOpportunity(builder);
         ConfigureSalesActivity(builder);
@@ -648,6 +658,26 @@ public partial class TenantDbContext : DbContext
                     .HasColumnName("PurchasePriceCurrency")
                     .HasMaxLength(3);
             });
+
+            entity.OwnsOne(p => p.LastPurchasePrice, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("LastPurchasePrice")
+                    .HasPrecision(18, 3);
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("LastPurchasePriceCurrency")
+                    .HasMaxLength(3);
+            });
+
+            entity.Property(p => p.ProfitMarginPercent)
+                .HasPrecision(7, 3);
+
+            entity.Property(p => p.IsDiscountEnabled)
+                .HasDefaultValue(false);
+
+            entity.Property(p => p.MaxDiscountPercent)
+                .HasPrecision(5, 2);
 
             entity.HasIndex(p => p.Code).IsUnique();
             entity.HasIndex(p => p.Name);
@@ -3216,6 +3246,85 @@ public partial class TenantDbContext : DbContext
             entity.Property(e => e.FiscalYear).IsRequired();
             entity.Property(e => e.Rs7TtcThresholdTnd).HasPrecision(18, 3).IsRequired();
             entity.HasIndex(e => e.FiscalYear).IsUnique();
+        });
+    }
+
+    private static void ConfigureIncomeTaxYearParameter(ModelBuilder builder)
+    {
+        builder.Entity<Domain.Entities.Fiscal.IncomeTaxYearParameter>(entity =>
+        {
+            entity.ToTable("IncomeTaxYearParameters");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.FiscalYear).IsRequired();
+            entity.Property(e => e.IsStandardRate).HasPrecision(9, 5);
+            entity.Property(e => e.IsReducedRate).HasPrecision(9, 5);
+            entity.Property(e => e.IsSectorRate).HasPrecision(9, 5);
+            entity.Property(e => e.MinTaxRate).HasPrecision(9, 5);
+            entity.Property(e => e.MinTaxReducedRate).HasPrecision(9, 5);
+            entity.Property(e => e.MinTaxFloorTnd).HasPrecision(18, 3);
+            entity.Property(e => e.MinTaxFloorReducedTnd).HasPrecision(18, 3);
+            entity.Property(e => e.CssRate).HasPrecision(9, 5);
+            entity.Property(e => e.CssFloorTnd).HasPrecision(18, 3);
+            entity.Property(e => e.AcompteRate).HasPrecision(9, 5);
+            entity.Property(e => e.IrppBracketsJson).IsRequired();
+            entity.HasIndex(e => e.FiscalYear).IsUnique();
+        });
+    }
+
+    private static void ConfigureFiscalResultDeclaration(ModelBuilder builder)
+    {
+        builder.Entity<Domain.Entities.Fiscal.FiscalResultDeclaration>(entity =>
+        {
+            entity.ToTable("FiscalResultDeclarations");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.FiscalYear).IsRequired();
+            entity.Property(e => e.TaxpayerKind).HasConversion<int>();
+            entity.Property(e => e.MinimumTaxRegime).HasConversion<int>();
+            entity.Property(e => e.Status).HasConversion<int>();
+            entity.Property(e => e.AccountingResult).HasPrecision(18, 3);
+            entity.Property(e => e.AppliedIsRate).HasPrecision(9, 5);
+            entity.Property(e => e.LocalTurnoverTtc).HasPrecision(18, 3);
+            entity.Property(e => e.AcomptesPaid).HasPrecision(18, 3);
+            entity.Property(e => e.WithholdingSuffered).HasPrecision(18, 3);
+            entity.Property(e => e.PriorTaxCredit).HasPrecision(18, 3);
+            entity.Property(e => e.FinalizedBy).HasMaxLength(320);
+            entity.HasIndex(e => e.FiscalYear).IsUnique();
+
+            entity.HasMany(e => e.Adjustments)
+                .WithOne()
+                .HasForeignKey(l => l.FiscalResultDeclarationId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(e => e.CarryForwards)
+                .WithOne()
+                .HasForeignKey(i => i.FiscalResultDeclarationId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.Metadata.FindNavigation(nameof(Domain.Entities.Fiscal.FiscalResultDeclaration.Adjustments))!
+                .SetPropertyAccessMode(PropertyAccessMode.Field);
+            entity.Metadata.FindNavigation(nameof(Domain.Entities.Fiscal.FiscalResultDeclaration.CarryForwards))!
+                .SetPropertyAccessMode(PropertyAccessMode.Field);
+        });
+
+        builder.Entity<Domain.Entities.Fiscal.FiscalAdjustmentLine>(entity =>
+        {
+            entity.ToTable("FiscalAdjustmentLines");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Kind).HasConversion<int>();
+            entity.Property(e => e.CatalogCode).HasMaxLength(40);
+            entity.Property(e => e.Label).HasMaxLength(300).IsRequired();
+            entity.Property(e => e.Amount).HasPrecision(18, 3);
+            entity.HasIndex(e => e.FiscalResultDeclarationId);
+        });
+
+        builder.Entity<Domain.Entities.Fiscal.FiscalCarryForwardItem>(entity =>
+        {
+            entity.ToTable("FiscalCarryForwardItems");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Kind).HasConversion<int>();
+            entity.Property(e => e.InitialAmount).HasPrecision(18, 3);
+            entity.Property(e => e.ImputedThisYear).HasPrecision(18, 3);
+            entity.HasIndex(e => e.FiscalResultDeclarationId);
         });
     }
 

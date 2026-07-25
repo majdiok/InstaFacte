@@ -1,0 +1,7 @@
+{
+  "VmHost": "192.168.1.50",
+  "VmUser": "deploy",
+  "SshPort": 22,
+  "RemotePath": "/opt/factutrust/src",
+  "LabDomain": "factutrust.local"
+}

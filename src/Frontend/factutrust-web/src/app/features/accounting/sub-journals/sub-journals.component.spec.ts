@@ -21,6 +21,10 @@ describe('SubJournalsComponent', () => {
     component = fixture.componentInstance;
     httpMock = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
+
+    // Le catalogue de journaux est interrogé au démarrage ; servi vide, les onglets restent
+    // exactement les 6 journaux standards attendus par les scénarios ci-dessous.
+    httpMock.expectOne(r => r.url === `${base}/journals`).flush({ success: true, data: [] });
   });
 
   afterEach(() => {

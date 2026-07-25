@@ -1,3 +1,4 @@
+using FactuTrust.Application.Common;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Common;
@@ -22,15 +23,24 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
 
     private readonly MasterDbContext _masterContext;
     private readonly INotificationService _notificationService;
+    private readonly ICompanyProfileSnapshotProvider _companyProfileSnapshot;
+    private readonly IFirmDossierAccessService _dossierAccess;
+    private readonly ICurrentUser _currentUser;
     private readonly ILogger<FirmAssignmentService> _logger;
 
     public FirmAssignmentService(
         MasterDbContext masterContext,
         INotificationService notificationService,
+        ICompanyProfileSnapshotProvider companyProfileSnapshot,
+        IFirmDossierAccessService dossierAccess,
+        ICurrentUser currentUser,
         ILogger<FirmAssignmentService> logger)
     {
         _masterContext = masterContext;
         _notificationService = notificationService;
+        _companyProfileSnapshot = companyProfileSnapshot;
+        _dossierAccess = dossierAccess;
+        _currentUser = currentUser;
         _logger = logger;
     }
 
@@ -113,7 +123,20 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
         if (createResult.IsFailure)
             return Result.Failure<FirmClientAssignmentDto>(createResult.Error);
 
-        _masterContext.FirmClientAssignments.Add(createResult.Value);
+        var assignment = createResult.Value;
+        try
+        {
+            var snapshot = await _companyProfileSnapshot.CaptureForCompanyTenantAsync(companyTenantId, cancellationToken);
+            assignment.AttachCompanyProfileSnapshot(
+                _companyProfileSnapshot.Serialize(snapshot),
+                snapshot.CapturedAtUtc);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Capture du profil société ignorée pour le tenant {TenantId}", companyTenantId);
+        }
+
+        _masterContext.FirmClientAssignments.Add(assignment);
         try
         {
             await _masterContext.SaveChangesAsync(cancellationToken);
@@ -121,7 +144,7 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
         catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
         {
             // Course entre deux demandes concurrentes : l'index unique filtré fait foi.
-            _masterContext.FirmClientAssignments.Remove(createResult.Value);
+            _masterContext.FirmClientAssignments.Remove(assignment);
             return Result.Failure<FirmClientAssignmentDto>(Error.Validation("Assignment", "Une demande ou affectation est déjà en cours"));
         }
 
@@ -133,7 +156,7 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
             $"{company.CompanyName} souhaite vous confier sa comptabilité.",
             "/firm/invitations");
 
-        var mapped = await MapAssignmentAsync(createResult.Value, cancellationToken);
+        var mapped = await MapAssignmentAsync(assignment, cancellationToken);
         return Result.Success(mapped);
     }
 
@@ -203,18 +226,75 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
     public async Task<IReadOnlyList<FirmClientDossierDto>> GetActiveClientsAsync(
         Guid firmTenantId, CancellationToken cancellationToken = default)
     {
-        return await (
+        IReadOnlySet<Guid>? allowedCompanyIds = null;
+        if (_currentUser.TryGetAccessScope(out var scope))
+        {
+            allowedCompanyIds = await _dossierAccess.GetAccessibleCompanyTenantIdsAsync(
+                firmTenantId, scope, cancellationToken);
+            if (allowedCompanyIds is { Count: 0 })
+                return [];
+        }
+        else if (_currentUser.IsAuthenticated
+                 && _currentUser.Role is UserRole.FirmAccountant)
+        {
+            // Fail-closed: comptable sans scope exploitable.
+            return [];
+        }
+
+        var clientsQuery =
             from a in _masterContext.FirmClientAssignments.AsNoTracking()
             join t in _masterContext.Tenants.AsNoTracking() on a.CompanyTenantId equals t.Id
             where a.FirmTenantId == firmTenantId && a.Status == FirmAssignmentStatus.Active
-            orderby t.CompanyName
-            select new FirmClientDossierDto
+            select new
             {
-                AssignmentId = a.Id,
-                CompanyTenantId = a.CompanyTenantId,
-                CompanyName = t.CompanyName,
+                a.Id,
+                a.CompanyTenantId,
+                t.CompanyName,
                 ActiveSince = a.RespondedAt ?? a.RequestedAt
-            }).ToListAsync(cancellationToken);
+            };
+
+        if (allowedCompanyIds is not null)
+            clientsQuery = clientsQuery.Where(c => allowedCompanyIds.Contains(c.CompanyTenantId));
+
+        var clients = await clientsQuery.OrderBy(c => c.CompanyName).ToListAsync(cancellationToken);
+
+        var permanentByAssignment = await _masterContext.PermanentFiles.AsNoTracking()
+            .Where(p => p.FirmTenantId == firmTenantId)
+            .Select(p => new
+            {
+                p.FirmClientAssignmentId,
+                p.Status,
+                p.AssignedAccountantUserId,
+                p.AssignedAccountantName
+            })
+            .ToDictionaryAsync(p => p.FirmClientAssignmentId, cancellationToken);
+
+        return clients.Select(c =>
+        {
+            permanentByAssignment.TryGetValue(c.Id, out var pf);
+            var awaiting = pf is null || pf.AssignedAccountantUserId is null;
+            return new FirmClientDossierDto
+            {
+                AssignmentId = c.Id,
+                CompanyTenantId = c.CompanyTenantId,
+                CompanyName = c.CompanyName,
+                ActiveSince = c.ActiveSince,
+                HasPermanentFile = pf is not null,
+                PermanentFileStatus = pf is not null ? (int?)pf.Status : null,
+                PermanentFileStatusDisplay = pf is null
+                    ? null
+                    : pf.Status == PermanentFileStatus.Complete
+                        ? "Complet"
+                        : pf.Status == PermanentFileStatus.InProgress
+                            ? "En cours"
+                            : pf.Status == PermanentFileStatus.Archived
+                                ? "Archivé"
+                                : "Brouillon",
+                AssignedAccountantUserId = pf?.AssignedAccountantUserId,
+                AssignedAccountantName = pf?.AssignedAccountantName,
+                IsAwaitingAccountantAssignment = awaiting
+            };
+        }).ToList();
     }
 
     public async Task<Result> AcceptAssignmentAsync(
@@ -384,7 +464,8 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
             RespondedAt = assignment.RespondedAt,
             RevokedAt = assignment.RevokedAt,
             Notes = assignment.Notes,
-            RejectionReason = assignment.RejectionReason
+            RejectionReason = assignment.RejectionReason,
+            CompanyProfile = _companyProfileSnapshot.TryDeserialize(assignment.CompanyProfileSnapshotJson)
         }).ToList();
     }
 

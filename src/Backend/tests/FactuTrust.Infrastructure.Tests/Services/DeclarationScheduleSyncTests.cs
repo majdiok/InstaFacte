@@ -1,3 +1,6 @@
+using FactuTrust.Application.Common;
+using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.Accounting.FiscalSchedule;
 using FactuTrust.Domain.Entities;
@@ -44,8 +47,17 @@ public sealed class DeclarationScheduleSyncTests
 
     private DeclarationScheduleSynchronizer BuildSync(bool enabled = true) =>
         new(_repository,
+            new DefaultVatDeadlineService(),
             Options.Create(new AccountingSettings { DeclarationScheduleSyncEnabled = enabled }),
             NullLogger<DeclarationScheduleSynchronizer>.Instance);
+
+    private sealed class DefaultVatDeadlineService : ITunisianFiscalDeadlineService
+    {
+        public DateTime ComputeVatFilingDeadline(int periodYear, int periodMonth, TaxRegime? taxRegime = null) =>
+            VatFilingDeadline.ForPeriod(periodYear, periodMonth);
+
+        public DateTime AdjustForWeekendsAndHolidays(DateTime dueDate) => dueDate;
+    }
 
     private static VatDeclaration Declaration(int year = 2026, int month = 7, bool submit = false)
     {

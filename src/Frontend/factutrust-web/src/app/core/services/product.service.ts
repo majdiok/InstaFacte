@@ -19,9 +19,15 @@ export interface Product {
   category: string;
   unitPrice: number;
   purchasePrice?: number | null;
+  lastPurchasePrice?: number | null;
+  weightedAverageCost?: number | null;
+  profitMarginPercent?: number | null;
+  salePriceTtc?: number;
   unit: string;
   vatRate: number;
   isFodecApplicable?: boolean;
+  isDiscountEnabled?: boolean;
+  maxDiscountPercent?: number | null;
   isActive: boolean;
   isStockManaged: boolean;
   /** URL of product image (uploaded or from external search) */
@@ -45,9 +51,15 @@ export interface ProductListItem {
   category: string;
   unitPrice: number;
   purchasePrice?: number | null;
+  lastPurchasePrice?: number | null;
+  weightedAverageCost?: number | null;
+  profitMarginPercent?: number | null;
+  salePriceTtc?: number;
   unit: string;
   vatRate: number;
   isFodecApplicable?: boolean;
+  isDiscountEnabled?: boolean;
+  maxDiscountPercent?: number | null;
   isActive: boolean;
   isStockManaged: boolean;
   /** URL of product image from external search (Unsplash/Google) */
@@ -81,10 +93,13 @@ export interface CreateProductRequest {
   productCategoryId?: string;
   unitPrice: number;
   purchasePrice?: number | null;
+  profitMarginPercent?: number | null;
   unit: string;
   vatRate: number;
   isStockManaged: boolean;
   isFodecApplicable?: boolean;
+  isDiscountEnabled?: boolean;
+  maxDiscountPercent?: number | null;
   /** Fournisseur préféré (optionnel) ; null/undefined = aucun. */
   preferredSupplierId?: string | null;
 }
@@ -155,9 +170,15 @@ export class ProductService {
           category: item.categoryName ?? 'general',
           unitPrice: item.unitPrice,
           purchasePrice: item.purchasePrice ?? null,
+          lastPurchasePrice: item.lastPurchasePrice ?? null,
+          weightedAverageCost: item.weightedAverageCost ?? null,
+          profitMarginPercent: item.profitMarginPercent ?? null,
+          salePriceTtc: item.salePriceTtc,
           unit: item.unit || 'Unité',
           vatRate: item.vatRatePercent || item.vatRate,
           isFodecApplicable: item.isFodecApplicable ?? false,
+          isDiscountEnabled: item.isDiscountEnabled ?? false,
+          maxDiscountPercent: item.maxDiscountPercent ?? null,
           isActive: item.isActive,
           isStockManaged: item.isStockManaged ?? false,
           imageUrl: item.imageUrl ?? null,
@@ -208,9 +229,15 @@ export class ProductService {
           category: response.data.categoryName ?? 'general',
           unitPrice: response.data.unitPrice,
           purchasePrice: response.data.purchasePrice ?? null,
+          lastPurchasePrice: response.data.lastPurchasePrice ?? null,
+          weightedAverageCost: response.data.weightedAverageCost ?? null,
+          profitMarginPercent: response.data.profitMarginPercent ?? null,
+          salePriceTtc: response.data.salePriceTtc,
           unit: response.data.unit || 'Unité',
           vatRate: response.data.vatRatePercent || response.data.vatRate,
           isFodecApplicable: response.data.isFodecApplicable ?? false,
+          isDiscountEnabled: response.data.isDiscountEnabled ?? false,
+          maxDiscountPercent: response.data.maxDiscountPercent ?? null,
           isActive: response.data.isActive,
           isStockManaged: response.data.isStockManaged ?? false,
           imageUrl: response.data.imageUrl ?? null,
@@ -246,10 +273,13 @@ export class ProductService {
       categoryId: request.productCategoryId,
       unitPrice: request.unitPrice,
       purchasePrice: request.purchasePrice ?? undefined,
+      profitMarginPercent: request.profitMarginPercent ?? undefined,
       vatRate: request.vatRate, // Backend expects VatRate enum value (0, 7, 13, 19)
       unit: request.unit,
       isStockManaged: request.isStockManaged,
       isFodecApplicable: request.isFodecApplicable ?? false,
+      isDiscountEnabled: request.isDiscountEnabled ?? false,
+      maxDiscountPercent: request.isDiscountEnabled ? request.maxDiscountPercent ?? undefined : undefined,
       preferredSupplierId: request.preferredSupplierId ?? undefined
     };
 
@@ -262,11 +292,14 @@ export class ProductService {
       description: request.description,
       unitPrice: request.unitPrice,
       purchasePrice: request.purchasePrice ?? undefined,
+      profitMarginPercent: request.profitMarginPercent ?? undefined,
       vatRate: request.vatRate, // Backend expects VatRate enum value (0, 7, 13, 19)
       unit: request.unit,
       isActive: request.isActive,
       isStockManaged: request.isStockManaged,
       isFodecApplicable: request.isFodecApplicable ?? false,
+      isDiscountEnabled: request.isDiscountEnabled ?? false,
+      maxDiscountPercent: request.isDiscountEnabled ? request.maxDiscountPercent ?? undefined : undefined,
       categoryId: request.productCategoryId,
       preferredSupplierId: request.preferredSupplierId ?? null
     };

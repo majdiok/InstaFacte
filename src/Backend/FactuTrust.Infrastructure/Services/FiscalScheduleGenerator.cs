@@ -13,11 +13,16 @@ public sealed class FiscalScheduleGenerator : IFiscalScheduleGenerator
 {
     private readonly IFiscalScheduleRepository _repository;
     private readonly ICurrentUser _currentUser;
+    private readonly ITunisianFiscalDeadlineService _deadlines;
 
-    public FiscalScheduleGenerator(IFiscalScheduleRepository repository, ICurrentUser currentUser)
+    public FiscalScheduleGenerator(
+        IFiscalScheduleRepository repository,
+        ICurrentUser currentUser,
+        ITunisianFiscalDeadlineService deadlines)
     {
         _repository = repository;
         _currentUser = currentUser;
+        _deadlines = deadlines;
     }
 
     public async Task<Result<int>> EnsureFiscalYearAsync(int fiscalYear, CancellationToken cancellationToken = default)
@@ -26,7 +31,7 @@ public sealed class FiscalScheduleGenerator : IFiscalScheduleGenerator
             return Result.Failure<int>(Error.Validation("FiscalYear", "L'exercice doit etre compris entre 2000 et 2100."));
 
         var created = 0;
-        foreach (var seed in BuildSeeds(fiscalYear))
+        foreach (var seed in BuildSeeds(fiscalYear, _deadlines))
         {
             var exists = await _repository.ExistsAsync(
                 seed.ObligationType,
@@ -66,7 +71,7 @@ public sealed class FiscalScheduleGenerator : IFiscalScheduleGenerator
         return Result.Success(created);
     }
 
-    private static IReadOnlyList<FiscalScheduleSeed> BuildSeeds(int fiscalYear)
+    private static IReadOnlyList<FiscalScheduleSeed> BuildSeeds(int fiscalYear, ITunisianFiscalDeadlineService deadlines)
     {
         var seeds = new List<FiscalScheduleSeed>();
 
@@ -74,7 +79,7 @@ public sealed class FiscalScheduleGenerator : IFiscalScheduleGenerator
         {
             var start = new DateTime(fiscalYear, month, 1);
             var end = start.AddMonths(1).AddDays(-1);
-            var due = VatFilingDeadline.ForPeriod(fiscalYear, month);
+            var due = deadlines.ComputeVatFilingDeadline(fiscalYear, month);
 
             seeds.Add(new FiscalScheduleSeed(
                 FiscalObligationType.MonthlyDeclaration,
@@ -149,7 +154,7 @@ public sealed class FiscalScheduleGenerator : IFiscalScheduleGenerator
             seeds.Add(new FiscalScheduleSeed(
                 FiscalObligationType.QuarterlyVat,
                 fiscalYear,
-                VatFilingDeadline.ForPeriod(end.Year, end.Month),
+                deadlines.ComputeVatFilingDeadline(end.Year, end.Month),
                 null,
                 quarter,
                 start,

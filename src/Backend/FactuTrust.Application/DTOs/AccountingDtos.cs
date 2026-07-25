@@ -148,6 +148,151 @@ public sealed record BalanceRowDto
     public decimal ClosingCredit { get; init; }
 }
 
+/// <summary>
+/// Un compte du grand livre général : report à nouveau, mouvements de la période avec solde
+/// progressif, totaux et solde de clôture.
+/// </summary>
+public sealed record GeneralLedgerAccountDto
+{
+    public string AccountNumber { get; init; } = null!;
+    public string Label { get; init; } = null!;
+    /// <summary>Solde reporté à l'ouverture de la période (débit − crédit).</summary>
+    public decimal OpeningBalance { get; init; }
+    public IReadOnlyList<LedgerRowDto> Rows { get; init; } = Array.Empty<LedgerRowDto>();
+    public decimal TotalDebit { get; init; }
+    public decimal TotalCredit { get; init; }
+    /// <summary>Solde de clôture = ouverture + débits − crédits.</summary>
+    public decimal ClosingBalance { get; init; }
+}
+
+/// <summary>
+/// Grand livre général : les comptes d'une plage restitués en séquence. Le total des mouvements
+/// s'articule avec la balance générale de la même période.
+/// </summary>
+public sealed record GeneralLedgerDto
+{
+    public DateTime From { get; init; }
+    public DateTime To { get; init; }
+    public IReadOnlyList<GeneralLedgerAccountDto> Accounts { get; init; } = Array.Empty<GeneralLedgerAccountDto>();
+    public decimal TotalDebit { get; init; }
+    public decimal TotalCredit { get; init; }
+    /// <summary>Contrôle d'auto-cohérence : total débit = total crédit au millime.</summary>
+    public bool IsBalanced { get; init; }
+}
+
+/// <summary>Ligne de balance détaillée : le solde du compte suivi de ses mouvements.</summary>
+public sealed record DetailedBalanceAccountDto
+{
+    public BalanceRowDto Balance { get; init; } = null!;
+    public IReadOnlyList<LedgerRowDto> Rows { get; init; } = Array.Empty<LedgerRowDto>();
+}
+
+/// <summary>
+/// Balance détaillée : la balance générale et, sous chaque compte, le détail de ses mouvements.
+/// Composition de la balance et du grand livre général — aucune règle de calcul propre.
+/// </summary>
+public sealed record DetailedBalanceDto
+{
+    public DateTime From { get; init; }
+    public DateTime To { get; init; }
+    public IReadOnlyList<DetailedBalanceAccountDto> Accounts { get; init; } = Array.Empty<DetailedBalanceAccountDto>();
+    public decimal TotalMovementDebit { get; init; }
+    public decimal TotalMovementCredit { get; init; }
+}
+
+/// <summary>Ligne de balance par période : ouverture, 12 colonnes mensuelles, clôture.</summary>
+public sealed record PeriodicBalanceRowDto
+{
+    public string AccountNumber { get; init; } = null!;
+    public string Label { get; init; } = null!;
+    /// <summary>Solde d'ouverture de l'exercice (débit − crédit).</summary>
+    public decimal Opening { get; init; }
+    /// <summary>Débits par mois, indices 0 (janvier) à 11 (décembre).</summary>
+    public IReadOnlyList<decimal> MonthlyDebit { get; init; } = Array.Empty<decimal>();
+    /// <summary>Crédits par mois, indices 0 (janvier) à 11 (décembre).</summary>
+    public IReadOnlyList<decimal> MonthlyCredit { get; init; } = Array.Empty<decimal>();
+    /// <summary>Solde de clôture = ouverture + Σ débits − Σ crédits.</summary>
+    public decimal Closing { get; init; }
+}
+
+/// <summary>Balance par période : un exercice ventilé en 12 colonnes mensuelles.</summary>
+public sealed record PeriodicBalanceDto
+{
+    public int FiscalYear { get; init; }
+    public IReadOnlyList<PeriodicBalanceRowDto> Rows { get; init; } = Array.Empty<PeriodicBalanceRowDto>();
+    public decimal TotalDebit { get; init; }
+    public decimal TotalCredit { get; init; }
+    /// <summary>Contrôle d'auto-cohérence : total débit = total crédit au millime.</summary>
+    public bool IsBalanced { get; init; }
+}
+
+/// <summary>Axe de regroupement d'un récapitulatif de journaux.</summary>
+public enum JournalSummaryGrouping
+{
+    /// <summary>Centralisateur : journaux × mois.</summary>
+    Month = 0,
+
+    /// <summary>Récapitulation : journaux × comptes.</summary>
+    Account = 1,
+
+    /// <summary>Totaux journaux : sous-totaux par journal, sans détail.</summary>
+    Totals = 2
+}
+
+/// <summary>Mois couvert par un récapitulatif (pilote les colonnes du centralisateur).</summary>
+public sealed record JournalSummaryPeriodDto
+{
+    public int Year { get; init; }
+    public int Month { get; init; }
+    /// <summary>Libellé court « MM/yyyy ».</summary>
+    public string Label { get; init; } = null!;
+}
+
+/// <summary>
+/// Case d'un récapitulatif : croisement d'un journal avec un mois (centralisateur) ou un compte
+/// (récapitulation). Les champs de l'axe non retenu restent nuls.
+/// </summary>
+public sealed record JournalSummaryCellDto
+{
+    public string JournalCode { get; init; } = null!;
+    public string JournalLabel { get; init; } = null!;
+    public int? Year { get; init; }
+    public int? Month { get; init; }
+    public string? AccountNumber { get; init; }
+    public string? AccountLabel { get; init; }
+    public decimal Debit { get; init; }
+    public decimal Credit { get; init; }
+}
+
+/// <summary>Sous-total d'un journal sur la période (toujours renseigné, quel que soit l'axe).</summary>
+public sealed record JournalSummaryTotalDto
+{
+    public string JournalCode { get; init; } = null!;
+    public string JournalLabel { get; init; } = null!;
+    public decimal Debit { get; init; }
+    public decimal Credit { get; init; }
+    /// <summary>Nombre d'écritures (pièces) distinctes, pas de lignes.</summary>
+    public int EntryCount { get; init; }
+}
+
+/// <summary>
+/// Récapitulatif de journaux sur une période : centralisateur (journaux × mois), récapitulation
+/// (journaux × comptes) ou totaux seuls. Même politique brouillard que le journal.
+/// </summary>
+public sealed record JournalSummaryDto
+{
+    public JournalSummaryGrouping Grouping { get; init; }
+    public DateTime From { get; init; }
+    public DateTime To { get; init; }
+    public IReadOnlyList<JournalSummaryPeriodDto> Periods { get; init; } = Array.Empty<JournalSummaryPeriodDto>();
+    public IReadOnlyList<JournalSummaryCellDto> Cells { get; init; } = Array.Empty<JournalSummaryCellDto>();
+    public IReadOnlyList<JournalSummaryTotalDto> JournalTotals { get; init; } = Array.Empty<JournalSummaryTotalDto>();
+    public decimal TotalDebit { get; init; }
+    public decimal TotalCredit { get; init; }
+    /// <summary>Contrôle d'auto-cohérence : total débit = total crédit au millime.</summary>
+    public bool IsBalanced { get; init; }
+}
+
 /// <summary>Ligne de balance auxiliaire : soldes d'un tiers (client ou fournisseur) sur ses comptes rattachés.</summary>
 public sealed record AuxiliaryBalanceRowDto
 {

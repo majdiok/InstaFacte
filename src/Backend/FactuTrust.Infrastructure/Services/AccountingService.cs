@@ -1245,15 +1245,20 @@ public sealed class AccountingService : IAccountingService
         await using var ctx = _contextFactory.CreateContext();
         var endDate = new DateTime(closedFiscalYear, 12, 31);
 
+        // Agrégation par compte ET par tiers : un à-nouveau qui perd le tiers n'est plus justifiable
+        // dans la balance auxiliaire ni dans le grand livre tiers. Les lignes sans tiers (la très
+        // grande majorité des comptes) forment un groupe unique par compte — comportement inchangé.
         var accountBalances = await ctx.JournalEntryLines
             .AsNoTracking()
             .Include(l => l.JournalEntry)
             .Where(l => l.JournalEntry.EntryDate <= endDate
                         && l.JournalEntry.Status != JournalEntryStatus.Brouillon)
-            .GroupBy(l => l.AccountNumber)
+            .GroupBy(l => new { l.AccountNumber, l.ThirdPartyId, l.ThirdPartyKind })
             .Select(g => new
             {
-                AccountNumber = g.Key,
+                g.Key.AccountNumber,
+                g.Key.ThirdPartyId,
+                g.Key.ThirdPartyKind,
                 TotalDebit = g.Sum(l => l.DebitAmount.Amount),
                 TotalCredit = g.Sum(l => l.CreditAmount.Amount)
             })
@@ -1265,24 +1270,24 @@ public sealed class AccountingService : IAccountingService
         foreach (var ab in accountBalances
             .Where(a => a.AccountNumber.Length > 0 &&
                         a.AccountNumber[0] >= '1' && a.AccountNumber[0] <= '5')
-            .OrderBy(a => a.AccountNumber))
+            .OrderBy(a => a.AccountNumber, StringComparer.Ordinal)
+            .ThenBy(a => a.ThirdPartyId))
         {
             var balance = Math.Round(ab.TotalDebit - ab.TotalCredit, 3);
             if (balance == 0) continue;
 
+            var lineLabel = $"À-nouveau {closedFiscalYear} — {ab.AccountNumber}";
             if (balance > 0)
             {
                 lines.Add(new JournalLineInput(
-                    ab.AccountNumber,
-                    $"À-nouveau {closedFiscalYear} — {ab.AccountNumber}",
-                    balance, 0, null, ThirdPartyKind.None));
+                    ab.AccountNumber, lineLabel,
+                    balance, 0, ab.ThirdPartyId, ab.ThirdPartyKind));
             }
             else
             {
                 lines.Add(new JournalLineInput(
-                    ab.AccountNumber,
-                    $"À-nouveau {closedFiscalYear} — {ab.AccountNumber}",
-                    0, Math.Abs(balance), null, ThirdPartyKind.None));
+                    ab.AccountNumber, lineLabel,
+                    0, Math.Abs(balance), ab.ThirdPartyId, ab.ThirdPartyKind));
             }
         }
 

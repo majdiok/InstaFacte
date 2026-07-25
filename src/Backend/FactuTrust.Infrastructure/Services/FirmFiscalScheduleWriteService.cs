@@ -1,3 +1,4 @@
+using FactuTrust.Application.Common;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
@@ -11,6 +12,8 @@ namespace FactuTrust.Infrastructure.Services;
 public sealed class FirmFiscalScheduleWriteService : IFirmFiscalScheduleWriteService
 {
     private readonly IFirmAssignmentService _assignmentService;
+    private readonly IFirmDossierAccessService _dossierAccess;
+    private readonly ICurrentUser _currentUser;
     private readonly ITenantService _tenantService;
     private readonly ITenantContext _tenantContext;
     private readonly IMediator _mediator;
@@ -18,12 +21,16 @@ public sealed class FirmFiscalScheduleWriteService : IFirmFiscalScheduleWriteSer
 
     public FirmFiscalScheduleWriteService(
         IFirmAssignmentService assignmentService,
+        IFirmDossierAccessService dossierAccess,
+        ICurrentUser currentUser,
         ITenantService tenantService,
         ITenantContext tenantContext,
         IMediator mediator,
         IFiscalScheduleAttachmentService attachments)
     {
         _assignmentService = assignmentService;
+        _dossierAccess = dossierAccess;
+        _currentUser = currentUser;
         _tenantService = tenantService;
         _tenantContext = tenantContext;
         _mediator = mediator;
@@ -130,7 +137,17 @@ public sealed class FirmFiscalScheduleWriteService : IFirmFiscalScheduleWriteSer
         CancellationToken cancellationToken)
     {
         if (!await _assignmentService.HasActiveAssignmentAsync(firmTenantId, companyTenantId, cancellationToken))
-            return Result.Failure<string>(Error.Forbidden("Aucune affectation active pour cette societe."));
+            return Result.Failure<string>(Error.Forbidden(FirmDossierAccessService.InactiveAssignmentMessage));
+
+        if (_currentUser.TryGetAccessScope(out var scope))
+        {
+            if (!await _dossierAccess.CanAccessClientDossierAsync(firmTenantId, scope, companyTenantId, cancellationToken))
+                return Result.Failure<string>(Error.Forbidden(FirmDossierAccessService.NotAssignedMessage));
+        }
+        else if (_currentUser.IsAuthenticated && _currentUser.Role is Domain.Enums.UserRole.FirmAccountant)
+        {
+            return Result.Failure<string>(Error.Forbidden(FirmDossierAccessService.NotAssignedMessage));
+        }
 
         var connectionString = await _tenantService.GetConnectionStringAsync(companyTenantId, cancellationToken);
         if (string.IsNullOrWhiteSpace(connectionString))

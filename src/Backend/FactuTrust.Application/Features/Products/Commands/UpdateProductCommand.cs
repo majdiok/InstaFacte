@@ -1,8 +1,9 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Common.Validation;
 using FactuTrust.Application.DTOs;
-using FactuTrust.Application.Features.Products.Queries;
+using FactuTrust.Application.Features.Products;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
@@ -32,6 +33,14 @@ public sealed class UpdateProductCommandValidator : AbstractValidator<UpdateProd
             .GreaterThanOrEqualTo(0)
             .When(x => x.Dto.PurchasePrice.HasValue)
             .WithMessage("Le prix d'achat ne peut pas être négatif");
+        RuleFor(x => x.Dto.MaxDiscountPercent)
+            .InclusiveBetween(0, TunisianValidationRules.NumericLimits.MaxDiscountPercent)
+            .When(x => x.Dto.IsDiscountEnabled && x.Dto.MaxDiscountPercent.HasValue)
+            .WithMessage("La remise maximale doit être comprise entre 0 % et 100 %");
+        RuleFor(x => x.Dto.MaxDiscountPercent)
+            .NotNull()
+            .When(x => x.Dto.IsDiscountEnabled)
+            .WithMessage("La remise maximale est obligatoire lorsque la remise produit est activée");
     }
 }
 
@@ -95,9 +104,10 @@ public sealed class UpdateProductCommandHandler : IRequestHandler<UpdateProductC
             vatRate,
             dto.Unit?.Trim(),
             purchasePrice,
-            dto.CategoryId);
-
-        product.SetFodecApplicable(dto.IsFodecApplicable);
+            dto.CategoryId,
+            dto.IsFodecApplicable,
+            dto.IsDiscountEnabled,
+            dto.MaxDiscountPercent);
 
         if (dto.IsStockManaged.HasValue)
         {
@@ -135,31 +145,7 @@ public sealed class UpdateProductCommandHandler : IRequestHandler<UpdateProductC
             newValues: new { product.Code, product.Name, product.UnitPrice.Amount },
             cancellationToken: cancellationToken);
 
-        var detail = new ProductDetailDto
-        {
-            Id = product.Id,
-            Code = product.Code,
-            Name = product.Name,
-            Description = product.Description,
-            Type = product.Type,
-            TypeDisplay = product.Type.ToDisplayString(),
-            UnitPrice = product.UnitPrice.Amount,
-            PurchasePrice = product.PurchasePrice?.Amount,
-            Currency = product.UnitPrice.Currency,
-            VatRate = product.VatRate,
-            VatRatePercent = (int)product.VatRate,
-            VatRateDisplay = product.VatRate.ToDisplayString(),
-            Unit = product.Unit,
-            IsActive = product.IsActive,
-            IsStockManaged = product.IsStockManaged,
-            IsFodecApplicable = product.IsFodecApplicable,
-            CategoryId = product.CategoryId,
-            CategoryName = product.Category.Name,
-            PreferredSupplierId = product.PreferredSupplierId,
-            CreatedAt = product.CreatedAt,
-            UpdatedAt = product.UpdatedAt
-        };
-
+        var detail = ProductDetailMapper.ToDetailDto(product);
         return Result.Success(detail);
     }
 }

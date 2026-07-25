@@ -16,6 +16,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -375,6 +376,17 @@ builder.Services.AddHostedService<FactuTrust.API.Services.Channels.WhatsAppBridg
 builder.Services.AddScoped<FactuTrust.Application.Common.Interfaces.Services.IChannelOutboundSender,
     FactuTrust.API.Services.Channels.WhatsAppBridgeOutboundSender>();
 
+var forwardedHeadersEnabled = builder.Configuration.GetValue<bool>("ASPNETCORE_FORWARDEDHEADERS_ENABLED");
+if (forwardedHeadersEnabled)
+{
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+        options.KnownNetworks.Clear();
+        options.KnownProxies.Clear();
+    });
+}
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
@@ -420,8 +432,16 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-// HTTPS redirection
-app.UseHttpsRedirection();
+// Derrière Nginx (TLS terminé en amont) : respecter X-Forwarded-Proto et ne pas forcer
+// une redirection HTTPS interne sur Kestrel HTTP.
+if (forwardedHeadersEnabled)
+{
+    app.UseForwardedHeaders();
+}
+else
+{
+    app.UseHttpsRedirection();
+}
 
 // Static files (e.g. product images under wwwroot/uploads).
 // EXCEPTION : les fichiers Studio (pièces jointes / signatures) ne sont jamais servis statiquement —
@@ -537,6 +557,8 @@ using (var scope = app.Services.CreateScope())
 
             // Lot C1 — Seed des 3 plans initiaux (Free / Monthly / Annual) idempotent.
             await FactuTrust.Infrastructure.Persistence.Seeds.PlanSeeder.SeedAsync(context);
+
+            await DatabaseSeeder.SeedFiscalCalendarRulesAsync(context);
 
             logger.LogInformation("Database seeding completed successfully.");
         }

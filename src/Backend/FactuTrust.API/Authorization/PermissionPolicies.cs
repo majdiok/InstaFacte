@@ -132,4 +132,6 @@ public static class PermissionPolicies
     public const string PayrollDeclare = "perm:" + Permissions.Payroll.Declare;
     public const string PayrollExport = "perm:" + Permissions.Payroll.Export;
     public const string PayrollSettings = "perm:" + Permissions.Payroll.Settings;
+
+    public const string FirmUsersManage = "perm:" + Permissions.Firm.UsersManage;
 }

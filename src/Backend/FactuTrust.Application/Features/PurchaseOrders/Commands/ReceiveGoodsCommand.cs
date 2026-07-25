@@ -4,6 +4,7 @@ using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.ValueObjects;
 using AuditActions = FactuTrust.Domain.Entities.AuditActions;
 using MediatR;
 
@@ -23,17 +24,20 @@ public sealed class ReceiveGoodsCommandHandler : IRequestHandler<ReceiveGoodsCom
     private readonly IPurchaseOrderRepository _purchaseOrderRepository;
     private readonly IStockItemRepository _stockItemRepository;
     private readonly IWarehouseRepository _warehouseRepository;
+    private readonly IProductRepository _productRepository;
     private readonly IAuditService _auditService;
 
     public ReceiveGoodsCommandHandler(
         IPurchaseOrderRepository purchaseOrderRepository,
         IStockItemRepository stockItemRepository,
         IWarehouseRepository warehouseRepository,
+        IProductRepository productRepository,
         IAuditService auditService)
     {
         _purchaseOrderRepository = purchaseOrderRepository;
         _stockItemRepository = stockItemRepository;
         _warehouseRepository = warehouseRepository;
+        _productRepository = productRepository;
         _auditService = auditService;
     }
 
@@ -129,6 +133,13 @@ public sealed class ReceiveGoodsCommandHandler : IRequestHandler<ReceiveGoodsCom
                     return entryResult;
 
                 await _stockItemRepository.UpdateAsync(stockItem, cancellationToken);
+            }
+
+            var product = await _productRepository.GetByIdAsync(line.ProductId, cancellationToken);
+            if (product is not null)
+            {
+                product.UpdateLastPurchasePrice(Money.Create(line.UnitPrice.Amount, line.UnitPrice.Currency));
+                await _productRepository.UpdateAsync(product, cancellationToken);
             }
         }
 

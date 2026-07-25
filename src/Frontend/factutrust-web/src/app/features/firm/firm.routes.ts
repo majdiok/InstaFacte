@@ -1,5 +1,7 @@
 import { Routes } from '@angular/router';
 import { firmNativeGuard, accountingFirmsFeatureGuard } from '@core/guards/accounting-firms.guard';
+import { firmManagerGuard } from '@core/guards/firm-manager.guard';
+import { firmGovernanceFeatureGuard } from '@core/guards/firm-governance.guard';
 
 export const FIRM_ROUTES: Routes = [
   {
@@ -15,6 +17,13 @@ export const FIRM_ROUTES: Routes = [
         path: 'clients',
         loadComponent: () => import('./firm-clients/firm-clients.component').then(m => m.FirmClientsComponent),
         title: 'Cabinet — Dossiers clients'
+      },
+      {
+        path: 'affectation',
+        canActivate: [firmGovernanceFeatureGuard, firmManagerGuard],
+        loadComponent: () =>
+          import('./affectation/firm-dossier-affectation.component').then(m => m.FirmDossierAffectationComponent),
+        title: 'Cabinet — Affectation des dossiers'
       },
       {
         path: 'fiscal-schedule',
@@ -41,8 +50,36 @@ export const FIRM_ROUTES: Routes = [
       },
       {
         path: 'settings/users',
-        loadComponent: () => import('./firm-settings/firm-users.component').then(m => m.FirmUsersComponent),
-        title: 'Cabinet — Utilisateurs'
+        redirectTo: '/firm/collaborateurs',
+        pathMatch: 'full'
+      },
+      {
+        path: 'collaborateurs',
+        loadComponent: () =>
+          import('./collaborators/firm-collaborators-list.component').then(m => m.FirmCollaboratorsListComponent),
+        title: 'Cabinet — Collaborateurs'
+      },
+      {
+        path: 'collaborateurs/new',
+        loadComponent: () =>
+          import('./collaborators/firm-collaborator-form.component').then(m => m.FirmCollaboratorFormComponent),
+        title: 'Cabinet — Nouveau collaborateur'
+      },
+      {
+        path: 'collaborateurs/:id',
+        loadComponent: () =>
+          import('./collaborators/firm-collaborator-form.component').then(m => m.FirmCollaboratorFormComponent),
+        title: 'Cabinet — Consultation collaborateur'
+      },
+      {
+        path: 'collaborateurs/:id/edit',
+        loadComponent: () =>
+          import('./collaborators/firm-collaborator-form.component').then(m => m.FirmCollaboratorFormComponent),
+        title: 'Cabinet — Modification collaborateur'
+      },
+      {
+        path: 'governance',
+        loadChildren: () => import('./governance/governance.routes').then(m => m.FIRM_GOVERNANCE_ROUTES)
       },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]

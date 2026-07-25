@@ -86,6 +86,12 @@ export const TUNISIAN_GOVERNORATES = [
   'Sousse', 'Tataouine', 'Tozeur', 'Tunis', 'Zaghouan'
 ] as const;
 
+/** PrimeNG dropdown options for Tunisian governorates. */
+export const TUNISIAN_GOVERNORATE_OPTIONS = TUNISIAN_GOVERNORATES.map(g => ({
+  label: g,
+  value: g
+}));
+
 // ============================================
 // LENGTH CONSTRAINTS
 // ============================================

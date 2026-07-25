@@ -57,6 +57,12 @@ export const ACCOUNTING_ROUTES: Routes = [
     title: 'Journaux auxiliaires - InstaFact'
   },
   {
+    path: 'journal-summary',
+    loadComponent: () =>
+      import('./journal-summary/journal-summary.component').then(m => m.JournalSummaryComponent),
+    title: 'Récapitulatifs de journaux - InstaFact'
+  },
+  {
     path: 'balance',
     loadComponent: () => import('./balance/balance.component').then(m => m.BalanceComponent),
     title: 'Balance - InstaFact'
@@ -154,6 +160,18 @@ export const ACCOUNTING_ROUTES: Routes = [
     loadComponent: () =>
       import('./nct-statements/nct-statements.component').then(m => m.NctStatementsComponent),
     title: 'États financiers NCT - InstaFact'
+  },
+  {
+    path: 'fiscal-result',
+    loadComponent: () =>
+      import('./fiscal-result/fiscal-result.component').then(m => m.FiscalResultComponent),
+    title: 'Détermination du résultat fiscal - InstaFact'
+  },
+  {
+    path: 'fiscal-parameters',
+    loadComponent: () =>
+      import('./fiscal-parameters/fiscal-parameters.component').then(m => m.FiscalParametersComponent),
+    title: 'Paramètres fiscaux - InstaFact'
   },
   {
     path: 'lettering',

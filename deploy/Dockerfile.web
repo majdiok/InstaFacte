@@ -1,0 +1,26 @@
+# FactuTrust Web (Angular) — production static assets
+# Build context: repository root
+#   docker build -f deploy/Dockerfile.web -t factutrust-web .
+
+FROM node:20-alpine AS build
+WORKDIR /work
+
+COPY src/Frontend/factutrust-web/package.json src/Frontend/factutrust-web/package-lock.json \
+     ./src/Frontend/factutrust-web/
+
+WORKDIR /work/src/Frontend/factutrust-web
+RUN npm ci --legacy-peer-deps
+
+COPY src/Frontend/factutrust-web/ ./
+COPY docs/utilisateur /work/docs/utilisateur
+COPY docs/screenshots /work/docs/screenshots
+
+RUN npm run build:prod
+
+FROM alpine:3.19 AS export
+COPY --from=build /work/src/Frontend/factutrust-web/dist/factutrust-web/ /dist-src/
+RUN mkdir -p /dist \
+    && if [ -d /dist-src/browser ]; then cp -a /dist-src/browser/. /dist/; else cp -a /dist-src/. /dist/; fi
+
+WORKDIR /dist
+CMD ["sh", "-c", "echo 'Web static assets ready in /dist'"]

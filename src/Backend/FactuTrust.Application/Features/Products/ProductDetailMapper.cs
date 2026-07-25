@@ -1,0 +1,102 @@
+using FactuTrust.Application.DTOs;
+using FactuTrust.Domain.Entities;
+using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.Services;
+
+namespace FactuTrust.Application.Features.Products;
+
+/// <summary>
+/// Maps domain <see cref="Product"/> to API DTOs with computed pricing fields.
+/// </summary>
+internal static class ProductDetailMapper
+{
+    public static ProductDetailDto ToDetailDto(
+        Product product,
+        decimal? weightedAverageCost = null)
+    {
+        return new ProductDetailDto
+        {
+            Id = product.Id,
+            Code = product.Code,
+            Name = product.Name,
+            Description = product.Description,
+            Type = product.Type,
+            TypeDisplay = product.Type.ToDisplayString(),
+            UnitPrice = product.UnitPrice.Amount,
+            PurchasePrice = product.PurchasePrice?.Amount,
+            LastPurchasePrice = product.LastPurchasePrice?.Amount,
+            WeightedAverageCost = weightedAverageCost,
+            ProfitMarginPercent = product.ProfitMarginPercent,
+            SalePriceTtc = product.CalculateSalePriceTtc(),
+            Currency = product.UnitPrice.Currency,
+            VatRate = product.VatRate,
+            VatRatePercent = (int)product.VatRate,
+            VatRateDisplay = product.VatRate.ToDisplayString(),
+            Unit = product.Unit,
+            IsActive = product.IsActive,
+            IsStockManaged = product.IsStockManaged,
+            IsFodecApplicable = product.IsFodecApplicable,
+            IsDiscountEnabled = product.IsDiscountEnabled,
+            MaxDiscountPercent = product.MaxDiscountPercent,
+            CategoryId = product.CategoryId,
+            CategoryName = product.Category.Name,
+            ImageUrl = product.ImageUrl,
+            PreferredSupplierId = product.PreferredSupplierId,
+            CreatedAt = product.CreatedAt,
+            UpdatedAt = product.UpdatedAt
+        };
+    }
+
+    public static ProductListDto ToListDto(
+        Product product,
+        decimal? quantityAvailable = null,
+        decimal? weightedAverageCost = null)
+    {
+        return new ProductListDto
+        {
+            Id = product.Id,
+            Code = product.Code,
+            Name = product.Name,
+            Type = product.Type.ToString(),
+            UnitPrice = product.UnitPrice.Amount,
+            PurchasePrice = product.PurchasePrice?.Amount,
+            LastPurchasePrice = product.LastPurchasePrice?.Amount,
+            WeightedAverageCost = weightedAverageCost,
+            ProfitMarginPercent = product.ProfitMarginPercent,
+            SalePriceTtc = ProductPricingCalculator.CalculateSaleTtc(
+                product.UnitPrice.Amount,
+                product.VatRate,
+                product.IsFodecApplicable),
+            Currency = product.UnitPrice.Currency,
+            VatRatePercent = (int)product.VatRate,
+            VatRateDisplay = product.VatRate.ToShortString(),
+            Unit = product.Unit,
+            IsActive = product.IsActive,
+            IsStockManaged = product.IsStockManaged,
+            IsFodecApplicable = product.IsFodecApplicable,
+            IsDiscountEnabled = product.IsDiscountEnabled,
+            MaxDiscountPercent = product.MaxDiscountPercent,
+            CategoryId = product.CategoryId,
+            CategoryName = product.Category.Name,
+            ImageUrl = product.ImageUrl,
+            QuantityAvailable = quantityAvailable
+        };
+    }
+
+    public static ProductSelectDto ToSelectDto(Product product)
+    {
+        return new ProductSelectDto
+        {
+            Id = product.Id,
+            Code = product.Code,
+            Name = product.Name,
+            UnitPrice = product.UnitPrice.Amount,
+            PurchasePrice = product.PurchasePrice?.Amount,
+            VatRatePercent = (int)product.VatRate,
+            Unit = product.Unit,
+            IsFodecApplicable = product.IsFodecApplicable,
+            IsDiscountEnabled = product.IsDiscountEnabled,
+            MaxDiscountPercent = product.MaxDiscountPercent
+        };
+    }
+}

@@ -118,6 +118,9 @@ export interface InvoiceLine {
   discountValue: number | null;
   vatRate: TunisianVatRate;
   isFodecApplicable: boolean;
+  /** Product-level discount cap (from catalog). */
+  productIsDiscountEnabled?: boolean;
+  productMaxDiscountPercent?: number | null;
   
   // Calculs automatiques
   discountAmount: number;

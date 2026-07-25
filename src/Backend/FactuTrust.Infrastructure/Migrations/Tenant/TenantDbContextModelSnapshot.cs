@@ -4556,6 +4556,11 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
 
+                    b.Property<bool>("IsDiscountEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
                     b.Property<bool>("IsPubliclyListed")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
@@ -4570,6 +4575,10 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.Property<decimal?>("MinimumOrderQuantity")
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal?>("MaxDiscountPercent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -4586,6 +4595,10 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
 
                     b.Property<Guid?>("PreferredSupplierId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("ProfitMarginPercent")
+                        .HasPrecision(7, 3)
+                        .HasColumnType("decimal(7,3)");
 
                     b.Property<int>("Type")
                         .HasColumnType("int");
@@ -8516,6 +8529,30 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "LastPurchasePrice", b1 =>
+                        {
+                            b1.Property<Guid>("ProductId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("LastPurchasePrice");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("LastPurchasePriceCurrency");
+
+                            b1.HasKey("ProductId");
+
+                            b1.ToTable("Products");
+
+                            b1.WithOwner()
+                                .HasForeignKey("ProductId");
+                        });
+
                     b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "PurchasePrice", b1 =>
                         {
                             b1.Property<Guid>("ProductId")
@@ -8565,6 +8602,8 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         });
 
                     b.Navigation("Category");
+
+                    b.Navigation("LastPurchasePrice");
 
                     b.Navigation("PurchasePrice");
 

@@ -1,0 +1,66 @@
+# HTTP-only bootstrap (before TLS certificates exist)
+# Enable by renaming to factutrust.conf and disabling the SSL config, OR run init-secrets.sh first.
+upstream factutrust_api {
+    server api:8080;
+    keepalive 32;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name _;
+
+    client_max_body_size 50M;
+
+    location /health {
+        proxy_pass http://factutrust_api/health;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        access_log off;
+    }
+
+    location /health/ready {
+        proxy_pass http://factutrust_api/health/ready;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        access_log off;
+    }
+
+    location /api/ {
+        proxy_pass http://factutrust_api/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+
+    location /assets/powerpoint/ {
+        proxy_pass http://factutrust_api/assets/powerpoint/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
+
+    location /hangfire {
+        proxy_pass http://factutrust_api/hangfire;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto http;
+    }
+
+    location = /admin {
+        return 301 /admin/;
+    }
+
+    location /admin/ {
+        root /usr/share/nginx/html;
+        try_files $uri $uri/ /admin/index.html;
+    }
+
+    location / {
+        root /usr/share/nginx/html/app;
+        try_files $uri $uri/ /index.html;
+    }
+}

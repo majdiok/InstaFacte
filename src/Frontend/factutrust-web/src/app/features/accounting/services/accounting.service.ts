@@ -91,6 +91,105 @@ export interface BalanceRowDto {
   closingCredit: number;
 }
 
+/** Ligne de balance détaillée : le solde du compte et le détail de ses mouvements. */
+export interface DetailedBalanceAccountDto {
+  balance: BalanceRowDto;
+  rows: LedgerRowDto[];
+}
+
+export interface DetailedBalanceDto {
+  from: string;
+  to: string;
+  accounts: DetailedBalanceAccountDto[];
+  totalMovementDebit: number;
+  totalMovementCredit: number;
+}
+
+/** Ligne de balance par période : ouverture, 12 colonnes mensuelles, clôture. */
+export interface PeriodicBalanceRowDto {
+  accountNumber: string;
+  label: string;
+  opening: number;
+  monthlyDebit: number[];
+  monthlyCredit: number[];
+  closing: number;
+}
+
+export interface PeriodicBalanceDto {
+  fiscalYear: number;
+  rows: PeriodicBalanceRowDto[];
+  totalDebit: number;
+  totalCredit: number;
+  isBalanced: boolean;
+}
+
+/** Un compte du grand livre général : report, mouvements, sous-total et solde de clôture. */
+export interface GeneralLedgerAccountDto {
+  accountNumber: string;
+  label: string;
+  openingBalance: number;
+  rows: LedgerRowDto[];
+  totalDebit: number;
+  totalCredit: number;
+  closingBalance: number;
+}
+
+export interface GeneralLedgerDto {
+  from: string;
+  to: string;
+  accounts: GeneralLedgerAccountDto[];
+  totalDebit: number;
+  totalCredit: number;
+  isBalanced: boolean;
+}
+
+/** Axe de regroupement d'un récapitulatif de journaux (aligné sur l'enum backend). */
+export type JournalSummaryGrouping = 0 | 1 | 2;
+
+export const JOURNAL_SUMMARY_MONTH: JournalSummaryGrouping = 0;
+export const JOURNAL_SUMMARY_ACCOUNT: JournalSummaryGrouping = 1;
+export const JOURNAL_SUMMARY_TOTALS: JournalSummaryGrouping = 2;
+
+/** Mois couvert par un récapitulatif (colonnes du centralisateur). */
+export interface JournalSummaryPeriodDto {
+  year: number;
+  month: number;
+  label: string;
+}
+
+/** Case d'un récapitulatif : journal × mois (centralisateur) ou journal × compte (récapitulation). */
+export interface JournalSummaryCellDto {
+  journalCode: string;
+  journalLabel: string;
+  year?: number | null;
+  month?: number | null;
+  accountNumber?: string | null;
+  accountLabel?: string | null;
+  debit: number;
+  credit: number;
+}
+
+/** Sous-total d'un journal sur la période. */
+export interface JournalSummaryTotalDto {
+  journalCode: string;
+  journalLabel: string;
+  debit: number;
+  credit: number;
+  entryCount: number;
+}
+
+export interface JournalSummaryDto {
+  grouping: JournalSummaryGrouping;
+  from: string;
+  to: string;
+  periods: JournalSummaryPeriodDto[];
+  cells: JournalSummaryCellDto[];
+  journalTotals: JournalSummaryTotalDto[];
+  totalDebit: number;
+  totalCredit: number;
+  isBalanced: boolean;
+}
+
 /** Ligne de balance auxiliaire : soldes d'un tiers (client ou fournisseur). */
 export interface AuxiliaryBalanceRowDto {
   thirdPartyId: string;
@@ -722,6 +821,115 @@ interface ApiResponse<T> {
   error?: string;
 }
 
+// ── Liasse fiscale : détermination du résultat fiscal ──
+export interface FiscalAdjustmentLineDto {
+  catalogCode?: string | null;
+  /** 0 = réintégration, 1 = déduction. */
+  kind: number;
+  label: string;
+  amount: number;
+  isAutoSuggested: boolean;
+}
+export interface FiscalCarryForwardDto {
+  /** 0 = déficit reportable, 1 = amortissement différé. */
+  kind: number;
+  originYear: number;
+  initialAmount: number;
+  imputedThisYear: number;
+  expiryYear?: number | null;
+}
+export interface IncomeTaxComputationDto {
+  accountingResult: number;
+  totalReintegrations: number;
+  totalDeductions: number;
+  resultBeforeCarryForward: number;
+  deficitsImputed: number;
+  deferredDepreciationImputed: number;
+  taxableResult: number;
+  deficitGeneratedThisYear: number;
+  taxpayerKind: number;
+  appliedIsRate: number;
+  taxOnResult: number;
+  /** Régime de minimum d'impôt retenu : 0 = droit commun, 1 = réduit, 2 = exonéré. */
+  minimumTaxRegime: number;
+  minimumTax: number;
+  taxDue: number;
+  css: number;
+  totalTaxDue: number;
+  acomptesPaid: number;
+  withholdingSuffered: number;
+  priorTaxCredit: number;
+  netToPay: number;
+  creditToCarry: number;
+}
+export interface FiscalResultDeclarationDto {
+  fiscalYear: number;
+  /** 0 = société (IS), 1 = personne physique (IRPP-BIC). */
+  taxpayerKind: number;
+  status: number;
+  /** Résultat comptable NET (après impôt) — l'IS comptabilisé est réintégré via une ligne d'ajustement. */
+  accountingResult: number;
+  appliedIsRate: number;
+  localTurnoverTtc: number;
+  /** Régime de minimum d'impôt : 0 = droit commun, 1 = réduit, 2 = exonéré. */
+  minimumTaxRegime: number;
+  /** CA local TTC calculé depuis la comptabilité, proposé en aide à la saisie. */
+  suggestedLocalTurnoverTtc: number;
+  acomptesPaid: number;
+  withholdingSuffered: number;
+  priorTaxCredit: number;
+  adjustments: FiscalAdjustmentLineDto[];
+  carryForwards: FiscalCarryForwardDto[];
+  computation: IncomeTaxComputationDto;
+  isFinalized: boolean;
+  finalizedAt?: string | null;
+  isNew: boolean;
+  fiscalLiasseEnabled: boolean;
+  /** Avertissements fiscaux non bloquants (déficit prescrit, imputation plafonnée…). */
+  warnings: string[];
+}
+/** Paramètres fiscaux d'un exercice (indicatifs — à valider selon la loi de finances). */
+export interface IncomeTaxYearParameterDto {
+  fiscalYear: number;
+  isStandardRate: number;
+  isReducedRate: number;
+  isSectorRate: number;
+  minTaxRate: number;
+  minTaxReducedRate: number;
+  minTaxFloorTnd: number;
+  minTaxFloorReducedTnd: number;
+  cssApplies: boolean;
+  cssRate: number;
+  cssFloorTnd: number;
+  acompteRate: number;
+  acompteCount: number;
+  deficitCarryForwardYears: number;
+  roundTaxableToDinar: boolean;
+  irppBracketsJson: string;
+  /** Vrai si le comptable a déjà validé ces paramètres (les défauts ne sont plus réappliqués). */
+  isUserModified: boolean;
+}
+
+export interface FiscalAdjustmentCatalogEntryDto {
+  code: string;
+  kind: number;
+  label: string;
+  hint?: string | null;
+}
+export interface UpsertFiscalResultRequest {
+  taxpayerKind: number;
+  accountingResult: number;
+  appliedIsRate: number;
+  localTurnoverTtc: number;
+  acomptesPaid: number;
+  withholdingSuffered: number;
+  priorTaxCredit: number;
+  adjustments: FiscalAdjustmentLineDto[];
+  carryForwards: FiscalCarryForwardDto[];
+  /** Régime de minimum d'impôt : 0 = droit commun, 1 = réduit, 2 = exonéré. */
+  minimumTaxRegime: number;
+}
+
 @Injectable({ providedIn: 'root' })
 export class AccountingService {
   private readonly http = inject(HttpClient);
@@ -744,6 +952,137 @@ export class AccountingService {
       .set('from', formatLocalDate(from))
       .set('to', formatLocalDate(to));
     return this.http.get<ApiResponse<LedgerRowDto[]>>(`${this.base}/ledger`, { params: p });
+  }
+
+  /** Balance détaillée : la balance générale, chaque compte suivi de ses mouvements. */
+  getDetailedBalance(
+    from: Date,
+    to: Date,
+    accountFrom?: string,
+    accountTo?: string
+  ): Observable<ApiResponse<DetailedBalanceDto>> {
+    let p = new HttpParams().set('from', formatLocalDate(from)).set('to', formatLocalDate(to));
+    if (accountFrom) p = p.set('accountFrom', accountFrom);
+    if (accountTo) p = p.set('accountTo', accountTo);
+    return this.http.get<ApiResponse<DetailedBalanceDto>>(`${this.base}/balance-detailed`, { params: p });
+  }
+
+  /** Export de la balance détaillée (csv / excel / pdf). */
+  exportDetailedBalance(
+    from: Date,
+    to: Date,
+    accountFrom: string | undefined,
+    accountTo: string | undefined,
+    format: AccountingExportFormat
+  ): Observable<Blob> {
+    let p = new HttpParams()
+      .set('from', formatLocalDate(from))
+      .set('to', formatLocalDate(to))
+      .set('format', format);
+    if (accountFrom) p = p.set('accountFrom', accountFrom);
+    if (accountTo) p = p.set('accountTo', accountTo);
+    return this.http.get(`${this.base}/balance-detailed/export`, { params: p, responseType: 'blob' });
+  }
+
+  /** Balance par période : un exercice ventilé en 12 colonnes mensuelles. */
+  getPeriodicBalance(fiscalYear: number): Observable<ApiResponse<PeriodicBalanceDto>> {
+    return this.http.get<ApiResponse<PeriodicBalanceDto>>(`${this.base}/balance-periodic/${fiscalYear}`);
+  }
+
+  /** Export de la balance par période (csv / excel / pdf). */
+  exportPeriodicBalance(fiscalYear: number, format: AccountingExportFormat): Observable<Blob> {
+    const p = new HttpParams().set('format', format);
+    return this.http.get(`${this.base}/balance-periodic/${fiscalYear}/export`, { params: p, responseType: 'blob' });
+  }
+
+  /** Grand livre général : comptes en séquence sur une plage (bornes facultatives = tous les comptes). */
+  getGeneralLedger(
+    from: Date,
+    to: Date,
+    accountFrom?: string,
+    accountTo?: string,
+    includeUnmoved = false
+  ): Observable<ApiResponse<GeneralLedgerDto>> {
+    let p = new HttpParams()
+      .set('from', formatLocalDate(from))
+      .set('to', formatLocalDate(to))
+      .set('includeUnmoved', includeUnmoved);
+    if (accountFrom) p = p.set('accountFrom', accountFrom);
+    if (accountTo) p = p.set('accountTo', accountTo);
+    return this.http.get<ApiResponse<GeneralLedgerDto>>(`${this.base}/general-ledger`, { params: p });
+  }
+
+  /** Export du grand livre général (csv / excel / pdf). */
+  exportGeneralLedger(
+    from: Date,
+    to: Date,
+    accountFrom: string | undefined,
+    accountTo: string | undefined,
+    includeUnmoved: boolean,
+    format: AccountingExportFormat
+  ): Observable<Blob> {
+    let p = new HttpParams()
+      .set('from', formatLocalDate(from))
+      .set('to', formatLocalDate(to))
+      .set('includeUnmoved', includeUnmoved)
+      .set('format', format);
+    if (accountFrom) p = p.set('accountFrom', accountFrom);
+    if (accountTo) p = p.set('accountTo', accountTo);
+    return this.http.get(`${this.base}/general-ledger/export`, { params: p, responseType: 'blob' });
+  }
+
+  /** Récapitulatif du grand livre : soldes agrégés par racine de compte à `level` chiffres. */
+  getLedgerRecap(from: Date, to: Date, level: number): Observable<ApiResponse<BalanceRowDto[]>> {
+    const p = new HttpParams()
+      .set('from', formatLocalDate(from))
+      .set('to', formatLocalDate(to))
+      .set('level', level);
+    return this.http.get<ApiResponse<BalanceRowDto[]>>(`${this.base}/ledger-recap`, { params: p });
+  }
+
+  /** Export du récapitulatif du grand livre (csv / excel / pdf). */
+  exportLedgerRecap(from: Date, to: Date, level: number, format: AccountingExportFormat): Observable<Blob> {
+    const p = new HttpParams()
+      .set('from', formatLocalDate(from))
+      .set('to', formatLocalDate(to))
+      .set('level', level)
+      .set('format', format);
+    return this.http.get(`${this.base}/ledger-recap/export`, { params: p, responseType: 'blob' });
+  }
+
+  /**
+   * Récapitulatif de journaux. grouping : 0 = centralisateur (journaux × mois),
+   * 1 = récapitulation (journaux × comptes), 2 = totaux journaux.
+   */
+  getJournalSummary(
+    from: Date,
+    to: Date,
+    grouping: JournalSummaryGrouping,
+    journalCode?: string
+  ): Observable<ApiResponse<JournalSummaryDto>> {
+    let p = new HttpParams()
+      .set('from', formatLocalDate(from))
+      .set('to', formatLocalDate(to))
+      .set('grouping', grouping);
+    if (journalCode) p = p.set('journalCode', journalCode);
+    return this.http.get<ApiResponse<JournalSummaryDto>>(`${this.base}/journal-summary`, { params: p });
+  }
+
+  /** Export d'un récapitulatif de journaux (csv / excel / pdf). */
+  exportJournalSummary(
+    from: Date,
+    to: Date,
+    grouping: JournalSummaryGrouping,
+    journalCode: string | undefined,
+    format: AccountingExportFormat
+  ): Observable<Blob> {
+    let p = new HttpParams()
+      .set('from', formatLocalDate(from))
+      .set('to', formatLocalDate(to))
+      .set('grouping', grouping)
+      .set('format', format);
+    if (journalCode) p = p.set('journalCode', journalCode);
+    return this.http.get(`${this.base}/journal-summary/export`, { params: p, responseType: 'blob' });
   }
 
   getBalance(from: Date, to: Date): Observable<ApiResponse<BalanceRowDto[]>> {
@@ -1023,6 +1362,50 @@ export class AccountingService {
   getNctStatements(fiscalYear: number): Observable<ApiResponse<NctFinancialStatementsDto>> {
     const p = new HttpParams().set('fiscalYear', fiscalYear);
     return this.http.get<ApiResponse<NctFinancialStatementsDto>>(`${this.base}/nct-statements`, { params: p });
+  }
+
+  // ── Liasse fiscale : détermination du résultat fiscal ──
+
+  /** Catalogue des lignes standard de réintégration / déduction. */
+  getFiscalAdjustmentCatalog(): Observable<ApiResponse<FiscalAdjustmentCatalogEntryDto[]>> {
+    return this.http.get<ApiResponse<FiscalAdjustmentCatalogEntryDto[]>>(`${this.base}/fiscal-result/catalog`);
+  }
+
+  /** Feuille de détermination du résultat fiscal d'un exercice (aperçu avec suggestions si jamais enregistrée). */
+  getFiscalResult(fiscalYear: number): Observable<ApiResponse<FiscalResultDeclarationDto>> {
+    return this.http.get<ApiResponse<FiscalResultDeclarationDto>>(`${this.base}/fiscal-result/${fiscalYear}`);
+  }
+
+  /** Enregistre (brouillon) la feuille de détermination et renvoie le calcul recalculé. */
+  upsertFiscalResult(fiscalYear: number, request: UpsertFiscalResultRequest): Observable<ApiResponse<FiscalResultDeclarationDto>> {
+    return this.http.post<ApiResponse<FiscalResultDeclarationDto>>(`${this.base}/fiscal-result/${fiscalYear}`, request);
+  }
+
+  /** Finalise la feuille (réservé au cabinet en mode dossier délégué). */
+  finalizeFiscalResult(fiscalYear: number): Observable<ApiResponse<unknown>> {
+    return this.http.post<ApiResponse<unknown>>(`${this.base}/fiscal-result/${fiscalYear}/finalize`, {});
+  }
+
+  /** Export de la détermination du résultat fiscal (csv / excel / pdf). */
+  exportFiscalResult(fiscalYear: number, format: AccountingExportFormat): Observable<Blob> {
+    const p = new HttpParams().set('format', format);
+    return this.http.get(`${this.base}/fiscal-result/${fiscalYear}/export`, { params: p, responseType: 'blob' });
+  }
+
+  /** Export de la liasse fiscale consolidée (états NCT + détermination + tableaux) — pdf / excel. */
+  exportConsolidatedLiasse(fiscalYear: number, format: AccountingExportFormat): Observable<Blob> {
+    const p = new HttpParams().set('format', format);
+    return this.http.get(`${this.base}/liasse/${fiscalYear}/export`, { params: p, responseType: 'blob' });
+  }
+
+  /** Paramètres fiscaux de l'exercice (taux IS, minimum d'impôt, CSS, barème IRPP). */
+  getIncomeTaxParameters(fiscalYear: number): Observable<ApiResponse<IncomeTaxYearParameterDto>> {
+    return this.http.get<ApiResponse<IncomeTaxYearParameterDto>>(`${this.base}/income-tax-parameters/${fiscalYear}`);
+  }
+
+  /** Enregistre les paramètres fiscaux de l'exercice (les défauts ne seront plus réappliqués). */
+  updateIncomeTaxParameters(fiscalYear: number, parameters: IncomeTaxYearParameterDto): Observable<ApiResponse<IncomeTaxYearParameterDto>> {
+    return this.http.put<ApiResponse<IncomeTaxYearParameterDto>>(`${this.base}/income-tax-parameters/${fiscalYear}`, parameters);
   }
 
   // ── Catalogue des journaux ──

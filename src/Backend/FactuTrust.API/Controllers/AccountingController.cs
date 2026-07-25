@@ -5,6 +5,7 @@ using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Accounting.Budgeting;
 using FactuTrust.Application.Features.Accounting.ThirdPartyDirectory;
 using FactuTrust.Application.Features.Accounting.Commands;
+using FactuTrust.Application.Features.Accounting.Fiscal;
 using FactuTrust.Application.Features.Accounting.JournalCatalog;
 using FactuTrust.Application.Features.Accounting.Queries;
 using MediatR;
@@ -87,6 +88,55 @@ public sealed class AccountingController : ControllerBase
         if (r.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
         return Ok(ApiResponse<IReadOnlyList<JournalEntryDto>>.Ok(r.Value));
+    }
+
+    /// <summary>
+    /// Récapitulatifs de journaux : centralisateur (journaux × mois), récapitulation
+    /// (journaux × comptes) ou totaux journaux, selon <paramref name="grouping"/>.
+    /// </summary>
+    [HttpGet("journal-summary")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> GetJournalSummary(
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        [FromQuery] JournalSummaryGrouping grouping = JournalSummaryGrouping.Month,
+        [FromQuery] string? journalCode = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!from.HasValue || !to.HasValue)
+            return BadRequest(ApiResponse<object>.Fail("Les paramètres from et to sont requis."));
+        var r = await _mediator.Send(
+            new GetJournalSummaryQuery(from.Value, to.Value, grouping, journalCode), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<JournalSummaryDto>.Ok(r.Value));
+    }
+
+    [HttpGet("journal-summary/export")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> ExportJournalSummary(
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        [FromQuery] JournalSummaryGrouping grouping = JournalSummaryGrouping.Month,
+        [FromQuery] string? journalCode = null,
+        [FromQuery] AccountingExportFormat format = AccountingExportFormat.Csv,
+        CancellationToken cancellationToken = default)
+    {
+        if (!from.HasValue || !to.HasValue)
+            return BadRequest(ApiResponse<object>.Fail("Les paramètres from et to sont requis."));
+
+        var r = await _mediator.Send(
+            new ExportJournalSummaryQuery(from.Value, to.Value, grouping, journalCode, format), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+
+        var baseName = grouping switch
+        {
+            JournalSummaryGrouping.Month => "journal_centralisateur",
+            JournalSummaryGrouping.Account => "recapitulation_journaux",
+            _ => "totaux_journaux"
+        };
+        return FileFor(r.Value, format, $"{baseName}_{from.Value:yyyyMMdd}_{to.Value:yyyyMMdd}");
     }
 
     [HttpPost("journal")]
@@ -233,6 +283,88 @@ public sealed class AccountingController : ControllerBase
         return Ok(ApiResponse<IReadOnlyList<LedgerRowDto>>.Ok(r.Value));
     }
 
+    /// <summary>
+    /// Grand livre général : les comptes d'une plage en séquence (report à nouveau, mouvements,
+    /// sous-total). Complète — sans le modifier — le grand livre mono-compte de <c>GET ledger</c>.
+    /// </summary>
+    [HttpGet("general-ledger")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> GetGeneralLedger(
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        [FromQuery] string? accountFrom = null,
+        [FromQuery] string? accountTo = null,
+        [FromQuery] bool includeUnmoved = false,
+        CancellationToken cancellationToken = default)
+    {
+        if (!from.HasValue || !to.HasValue)
+            return BadRequest(ApiResponse<object>.Fail("Les paramètres from et to sont requis."));
+        var r = await _mediator.Send(
+            new GetGeneralLedgerQuery(accountFrom, accountTo, from.Value, to.Value, includeUnmoved), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<GeneralLedgerDto>.Ok(r.Value));
+    }
+
+    [HttpGet("general-ledger/export")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> ExportGeneralLedger(
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        [FromQuery] string? accountFrom = null,
+        [FromQuery] string? accountTo = null,
+        [FromQuery] bool includeUnmoved = false,
+        [FromQuery] AccountingExportFormat format = AccountingExportFormat.Csv,
+        CancellationToken cancellationToken = default)
+    {
+        if (!from.HasValue || !to.HasValue)
+            return BadRequest(ApiResponse<object>.Fail("Les paramètres from et to sont requis."));
+
+        var r = await _mediator.Send(
+            new ExportGeneralLedgerQuery(accountFrom, accountTo, from.Value, to.Value, includeUnmoved, format),
+            cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+
+        return FileFor(r.Value, format, $"grand_livre_general_{from.Value:yyyyMMdd}_{to.Value:yyyyMMdd}");
+    }
+
+    /// <summary>Récapitulatif du grand livre : soldes agrégés par racine de compte à N chiffres.</summary>
+    [HttpGet("ledger-recap")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> GetLedgerRecap(
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        [FromQuery] int level = 2,
+        CancellationToken cancellationToken = default)
+    {
+        if (!from.HasValue || !to.HasValue)
+            return BadRequest(ApiResponse<object>.Fail("Les paramètres from et to sont requis."));
+        var r = await _mediator.Send(new GetLedgerRecapQuery(level, from.Value, to.Value), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<IReadOnlyList<BalanceRowDto>>.Ok(r.Value));
+    }
+
+    [HttpGet("ledger-recap/export")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> ExportLedgerRecap(
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        [FromQuery] int level = 2,
+        [FromQuery] AccountingExportFormat format = AccountingExportFormat.Csv,
+        CancellationToken cancellationToken = default)
+    {
+        if (!from.HasValue || !to.HasValue)
+            return BadRequest(ApiResponse<object>.Fail("Les paramètres from et to sont requis."));
+
+        var r = await _mediator.Send(new ExportLedgerRecapQuery(level, from.Value, to.Value, format), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+
+        return FileFor(r.Value, format, $"recap_grand_livre_n{level}_{from.Value:yyyyMMdd}_{to.Value:yyyyMMdd}");
+    }
+
     [HttpGet("balance")]
     [Authorize(Policy = PermissionPolicies.AccountingRead)]
     public async Task<IActionResult> GetBalance([FromQuery] DateTime? from, [FromQuery] DateTime? to, CancellationToken cancellationToken)
@@ -243,6 +375,71 @@ public sealed class AccountingController : ControllerBase
         if (r.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
         return Ok(ApiResponse<IReadOnlyList<BalanceRowDto>>.Ok(r.Value));
+    }
+
+    /// <summary>Balance détaillée : la balance générale, chaque compte suivi de ses mouvements.</summary>
+    [HttpGet("balance-detailed")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> GetDetailedBalance(
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        [FromQuery] string? accountFrom = null,
+        [FromQuery] string? accountTo = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!from.HasValue || !to.HasValue)
+            return BadRequest(ApiResponse<object>.Fail("Les paramètres from et to sont requis."));
+        var r = await _mediator.Send(
+            new GetDetailedBalanceQuery(accountFrom, accountTo, from.Value, to.Value), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<DetailedBalanceDto>.Ok(r.Value));
+    }
+
+    [HttpGet("balance-detailed/export")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> ExportDetailedBalance(
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        [FromQuery] string? accountFrom = null,
+        [FromQuery] string? accountTo = null,
+        [FromQuery] AccountingExportFormat format = AccountingExportFormat.Csv,
+        CancellationToken cancellationToken = default)
+    {
+        if (!from.HasValue || !to.HasValue)
+            return BadRequest(ApiResponse<object>.Fail("Les paramètres from et to sont requis."));
+
+        var r = await _mediator.Send(
+            new ExportDetailedBalanceQuery(accountFrom, accountTo, from.Value, to.Value, format), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+
+        return FileFor(r.Value, format, $"balance_detaillee_{from.Value:yyyyMMdd}_{to.Value:yyyyMMdd}");
+    }
+
+    /// <summary>Balance par période : un exercice ventilé en 12 colonnes mensuelles.</summary>
+    [HttpGet("balance-periodic/{fiscalYear:int}")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> GetPeriodicBalance(int fiscalYear, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new GetPeriodicBalanceQuery(fiscalYear), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<PeriodicBalanceDto>.Ok(r.Value));
+    }
+
+    [HttpGet("balance-periodic/{fiscalYear:int}/export")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> ExportPeriodicBalance(
+        int fiscalYear,
+        [FromQuery] AccountingExportFormat format = AccountingExportFormat.Csv,
+        CancellationToken cancellationToken = default)
+    {
+        var r = await _mediator.Send(new ExportPeriodicBalanceQuery(fiscalYear, format), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+
+        return FileFor(r.Value, format, $"balance_par_periode_{fiscalYear}");
     }
 
     [HttpGet("auxiliary-balance")]
@@ -667,6 +864,97 @@ public sealed class AccountingController : ControllerBase
         if (r.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
         return Ok(ApiResponse<NctFinancialStatementsDto>.Ok(r.Value));
+    }
+
+    // ── Liasse fiscale : détermination du résultat fiscal ────────────────────────────────
+
+    [HttpGet("fiscal-result/catalog")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> GetFiscalAdjustmentCatalog(CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new GetFiscalAdjustmentCatalogQuery(), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<IReadOnlyList<FiscalAdjustmentCatalogEntryDto>>.Ok(r.Value));
+    }
+
+    [HttpGet("fiscal-result/{fiscalYear:int}")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> GetFiscalResult(int fiscalYear, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new GetFiscalResultDeclarationQuery(fiscalYear), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<FiscalResultDeclarationDto>.Ok(r.Value));
+    }
+
+    [HttpPost("fiscal-result/{fiscalYear:int}")]
+    [Authorize(Policy = PermissionPolicies.AccountingCreate)]
+    public async Task<IActionResult> UpsertFiscalResult(int fiscalYear, [FromBody] UpsertFiscalResultRequest request, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new UpsertFiscalResultDeclarationCommand(fiscalYear, request), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<FiscalResultDeclarationDto>.Ok(r.Value));
+    }
+
+    [HttpPost("fiscal-result/{fiscalYear:int}/finalize")]
+    [Authorize(Policy = PermissionPolicies.FirmDelegatedContext)]
+    public async Task<IActionResult> FinalizeFiscalResult(int fiscalYear, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new FinalizeFiscalResultDeclarationCommand(fiscalYear), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<object>.Ok(null!));
+    }
+
+    [HttpGet("fiscal-result/{fiscalYear:int}/export")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> ExportFiscalResult(
+        int fiscalYear,
+        [FromQuery] AccountingExportFormat format = AccountingExportFormat.Csv,
+        CancellationToken cancellationToken = default)
+    {
+        var r = await _mediator.Send(new ExportFiscalResultQuery(fiscalYear, format), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return FileFor(r.Value, format, $"determination_fiscale_{fiscalYear}");
+    }
+
+    [HttpGet("liasse/{fiscalYear:int}/export")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> ExportConsolidatedLiasse(
+        int fiscalYear,
+        [FromQuery] AccountingExportFormat format = AccountingExportFormat.Pdf,
+        CancellationToken cancellationToken = default)
+    {
+        var r = await _mediator.Send(new ExportConsolidatedLiasseQuery(fiscalYear, format), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return FileFor(r.Value, format, $"liasse_fiscale_{fiscalYear}");
+    }
+
+    // ── Paramètres fiscaux par exercice (taux IS, minimum d'impôt, CSS, barème IRPP) ─────
+
+    [HttpGet("income-tax-parameters/{fiscalYear:int}")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> GetIncomeTaxParameters(int fiscalYear, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new GetIncomeTaxParametersQuery(fiscalYear), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<IncomeTaxYearParameterDto>.Ok(r.Value));
+    }
+
+    [HttpPut("income-tax-parameters/{fiscalYear:int}")]
+    [Authorize(Policy = PermissionPolicies.AccountingCreate)]
+    public async Task<IActionResult> UpdateIncomeTaxParameters(
+        int fiscalYear, [FromBody] IncomeTaxYearParameterDto parameters, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new UpdateIncomeTaxParametersCommand(fiscalYear, parameters), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<IncomeTaxYearParameterDto>.Ok(r.Value));
     }
 
     [HttpGet("account-replacement/preview")]

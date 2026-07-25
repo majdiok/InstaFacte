@@ -250,6 +250,7 @@ export class AuthService {
     () => this.isAccountingFirm() && this.isDelegatedMode()
   );
   readonly isFirmManager = computed(() => this.userSignal()?.role === 'FirmManager');
+  readonly isFirmAccountant = computed(() => this.userSignal()?.role === 'FirmAccountant');
 
   constructor(
     private http: HttpClient,

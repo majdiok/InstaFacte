@@ -1,4 +1,5 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
+import { createClientUuid } from '@core/utils/safe-random-uuid.util';
 import { ProductListItem } from '@core/services/product.service';
 import { PosDualScreenService } from './pos-dual-screen.service';
 import { ClientListItem } from '@core/services/client.service';
@@ -13,6 +14,7 @@ import {
   DEFAULT_FODEC_RATE_PERCENT,
   roundTnd
 } from '../../invoices/invoice-wizard/services/invoice-wizard-calculation.utils';
+import { getEffectiveMaxDiscountPercent } from '@shared/utils/product-pricing.utils';
 import { POS_PASSENGER_CLIENT_EMAIL } from '../constants/pos-client.constants';
 import { LinkedInvoiceRef } from '@core/services/invoice-reference-resolver.service';
 
@@ -37,6 +39,8 @@ export interface PosOrderLine {
   unitPriceHT: number;
   vatRate: TunisianVatRate;
   isFodecApplicable: boolean;
+  productIsDiscountEnabled?: boolean;
+  productMaxDiscountPercent?: number | null;
   fodecAmount: number;
   totalHT: number;
   vatAmount: number;
@@ -278,7 +282,7 @@ export class PosStateService {
       this.recalculateLine(existing);
     } else {
       const newLine: PosOrderLine = {
-        id: crypto.randomUUID(),
+        id: createClientUuid(),
         productId: product.id,
         productCode: product.code,
         designation: product.name,
@@ -288,6 +292,8 @@ export class PosStateService {
         unitPriceHT: product.unitPrice,
         vatRate: this.resolveVatRate(product.vatRate),
         isFodecApplicable: product.isFodecApplicable ?? false,
+        productIsDiscountEnabled: product.isDiscountEnabled ?? false,
+        productMaxDiscountPercent: product.maxDiscountPercent ?? null,
         fodecAmount: 0,
         totalHT: 0,
         vatAmount: 0,
@@ -318,7 +324,7 @@ export class PosStateService {
       this.recalculateLine(existing);
     } else {
       const newLine: PosOrderLine = {
-        id: crypto.randomUUID(),
+        id: createClientUuid(),
         productId: product.id,
         productCode: product.code,
         designation: product.name,
@@ -328,6 +334,8 @@ export class PosStateService {
         unitPriceHT: product.unitPrice,
         vatRate: this.resolveVatRate(product.vatRate),
         isFodecApplicable: product.isFodecApplicable ?? false,
+        productIsDiscountEnabled: product.isDiscountEnabled ?? false,
+        productMaxDiscountPercent: product.maxDiscountPercent ?? null,
         fodecAmount: 0,
         totalHT: 0,
         vatAmount: 0,
@@ -625,7 +633,12 @@ export class PosStateService {
     const rawHT = line.quantity * line.unitPriceHT;
     let discount = 0;
     if (line.discountType === 'PERCENT' && line.discountValue != null) {
-      discount = rawHT * (Math.min(100, Math.max(0, line.discountValue)) / 100);
+      const maxPercent = getEffectiveMaxDiscountPercent(
+        line.productIsDiscountEnabled,
+        line.productMaxDiscountPercent
+      );
+      const cappedValue = Math.min(maxPercent, Math.max(0, line.discountValue));
+      discount = rawHT * (cappedValue / 100);
     } else if (line.discountType === 'AMOUNT' && line.discountValue != null) {
       discount = Math.min(rawHT, Math.max(0, line.discountValue));
     }

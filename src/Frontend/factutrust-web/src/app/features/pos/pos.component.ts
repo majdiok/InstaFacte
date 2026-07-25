@@ -24,6 +24,7 @@ import { HeldOrdersPanelComponent } from './components/held-orders-panel/held-or
 import { ChangeCalculatorComponent } from './components/change-calculator/change-calculator.component';
 import { PosHistoryPanelComponent } from './components/pos-history-panel/pos-history-panel.component';
 import { formatLocalDate } from '@core/utils/date.util';
+import { createClientUuid } from '@core/utils/safe-random-uuid.util';
 import { PosReceiptComponent, PosReceiptModel } from './components/pos-receipt/pos-receipt.component';
 import { CompanyService } from '@core/services/company.service';
 import { ProductCatalogComponent } from './components/product-catalog/product-catalog.component';
@@ -912,7 +913,7 @@ export class PosComponent implements OnInit, OnDestroy {
       tap(() => this.prepareCreditNoteWizardState()),
       switchMap(() => this.wizardService.saveDraft()),
       switchMap(draftId => {
-        const idempotencyKey = `pos-${Date.now()}-${crypto.randomUUID()}`.slice(0, 64);
+        const idempotencyKey = `pos-${Date.now()}-${createClientUuid()}`.slice(0, 64);
         return this.http.post<
           ApiResponse<{ invoiceId: string; invoiceNumber: string }>
         >(`${this.WIZARD_API_URL}/drafts/${draftId}/submit`, { idempotencyKey }).pipe(
@@ -946,7 +947,7 @@ export class PosComponent implements OnInit, OnDestroy {
 
   private mapWizardLinesToPosLines(lines: WizardInvoiceLine[]): PosOrderLine[] {
     return lines.map(line => ({
-      id: crypto.randomUUID(),
+      id: createClientUuid(),
       productId: line.productId ?? '',
       productCode: '',
       designation: line.designation,
@@ -1064,7 +1065,7 @@ export class PosComponent implements OnInit, OnDestroy {
 
     this.wizardService.saveDraft().pipe(
       switchMap(draftId => {
-        const idempotencyKey = `pos-${Date.now()}-${crypto.randomUUID()}`.slice(0, 64);
+        const idempotencyKey = `pos-${Date.now()}-${createClientUuid()}`.slice(0, 64);
         return this.http.post<
           ApiResponse<{ invoiceId: string; invoiceNumber: string }>
         >(`${this.WIZARD_API_URL}/drafts/${draftId}/submit`, { idempotencyKey }).pipe(

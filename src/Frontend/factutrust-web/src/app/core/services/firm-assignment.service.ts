@@ -13,6 +13,23 @@ export interface AccountingFirmDirectoryItem {
   professionalRegistrationNumber?: string;
 }
 
+export interface CompanyProfileSnapshot {
+  schemaVersion: number;
+  capturedAtUtc: string;
+  companyName: string;
+  tradeName?: string;
+  nif: string;
+  taxRegime: number;
+  rneIdentifier?: string;
+  street: string;
+  streetLine2?: string;
+  city: string;
+  governorate: string;
+  postalCode?: string;
+  email: string;
+  phone?: string;
+}
+
 export interface FirmClientAssignment {
   id: string;
   companyTenantId: string;
@@ -26,6 +43,7 @@ export interface FirmClientAssignment {
   revokedAt?: string;
   notes?: string;
   rejectionReason?: string;
+  companyProfile?: CompanyProfileSnapshot;
 }
 
 export interface FirmClientDossier {
@@ -33,6 +51,12 @@ export interface FirmClientDossier {
   companyTenantId: string;
   companyName: string;
   activeSince: string;
+  hasPermanentFile?: boolean;
+  permanentFileStatus?: number | null;
+  permanentFileStatusDisplay?: string | null;
+  assignedAccountantUserId?: string | null;
+  assignedAccountantName?: string | null;
+  isAwaitingAccountantAssignment?: boolean;
 }
 
 @Injectable({ providedIn: 'root' })

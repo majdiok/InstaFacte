@@ -118,26 +118,34 @@ Efforts en **jours/homme (j/h)** pour une équipe senior connaissant le codebase
 |---|---|---|---|---|
 | Plan comptable | ✅ | — | — | — |
 | Journal / Grand livre / Balance | ✅ | — | — | — |
+| Grand livre général multi-comptes + récap. par racine | ✅ | — | — | — |
+| Balance détaillée + balance par période (12 mois) | ✅ | — | — | — |
+| Journaux : centralisateur / récapitulation / totaux | ✅ | — | — | — |
 | Balance générale / Compte de résultat | ✅ | — | — | — |
 | Lettrage | ✅ | — | — | — |
 | Balance âgée clients/fournisseurs | ✅ | — | — | — |
 | Déclaration TVA | ✅ | — | — | — |
-| Clôture période / exercice / à-nouveaux | ✅ | — | — | — |
+| Clôture période / exercice / à-nouveaux (auxiliarisés) | ✅ | — | — | — |
 | Export FEC | ✅ | — | — | — |
 | Modèles d’écritures | ✅ | — | — | — |
 | Écritures auto (ventes/achats/paiements) | ✅ | — | — | — |
+| Budgets & contrôle de gestion | ✅ | — | — | — |
+| Immobilisations & amortissements | ✅ | — | — | — |
+| Liasse fiscale tunisienne (états NCT + résultat fiscal) | ✅ | — | — | — |
 | Comptabilité analytique (centres de coûts) | ❌ | P1 | 45 | 1 |
-| Budgets & contrôle de gestion | ❌ | P1 | 60 | 1 |
 | Trésorerie prévisionnelle (cash flow) | ❌ | P1 | 35 | 1 |
 | Multi-devises + réévaluation | ❌ | P2 | 55 | 2 |
 | Consolidation multi-sociétés | ❌ | P2 | 80 | 4 |
 | Intercompagnie automatique | ❌ | P2 | 50 | 4 |
-| Immobilisations & amortissements | ❌ | P1 | 70 | 4 |
 | Provisions ( créances douteuses, stock ) | ❌ | P2 | 40 | 2 |
-| Liasse fiscale tunisienne complète | ❌ | P1 | 90 | 2 |
 | Notes de frais → compta | ❌ | P2 | 35 | 2 |
+| Livre d’inventaire légal + annexes éditables | ❌ | P2 | 40 | 2 |
+| État de rapprochement bancaire imprimable | ❌ | P2 | 20 | 2 |
+| Outillage maintenance (contrôle intégrité, sauvegarde, import étendu) | ❌ | P2 | 60 | 2 |
 
-**Sous-total gaps compta/finance : ~560 j/h**
+**Sous-total gaps compta/finance restants : ~460 j/h** _(budgets, immobilisations et liasse
+fiscale livrés ; grand livre général, balances détaillée/par période et récapitulatifs de journaux
+ajoutés en 2026-07 — cf. [audit de couverture menu Éditions/Maintenance](../../src/Backend/FactuTrust.Application/Features/Accounting))._
 
 ---
 
@@ -326,6 +334,7 @@ Efforts en **jours/homme (j/h)** pour une équipe senior connaissant le codebase
 | Fonctionnalité | Statut | Priorité | Effort (j/h) | Phase |
 |---|---|---|---|---|
 | Rapports opérationnels (18+ endpoints) | ✅ | — | — | — |
+| États comptables de recoupement (centralisateur, récap. GL, balances détaillée/périodique) | ✅ | — | — | — |
 | Forecasting IA + ABC/XYZ | ✅ | — | — | — |
 | Tableaux de bord configurables | ❌ | P1 | 50 | 2 |
 | Report builder self-service | ❌ | P2 | 70 | 3 |

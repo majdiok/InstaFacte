@@ -1,0 +1,24 @@
+# FactuTrust Backoffice (Angular) — production static assets under /admin base href
+# Build context: repository root
+#   docker build -f deploy/Dockerfile.backoffice -t factutrust-backoffice .
+
+FROM node:20-alpine AS build
+WORKDIR /work
+
+COPY src/Frontend/factutrust-backoffice/package.json src/Frontend/factutrust-backoffice/package-lock.json \
+     ./src/Frontend/factutrust-backoffice/
+
+WORKDIR /work/src/Frontend/factutrust-backoffice
+RUN npm ci --legacy-peer-deps
+
+COPY src/Frontend/factutrust-backoffice/ ./
+
+RUN npx ng build --configuration production
+
+FROM alpine:3.19 AS export
+COPY --from=build /work/src/Frontend/factutrust-backoffice/dist/factutrust-backoffice/ /dist-src/
+RUN mkdir -p /dist \
+    && if [ -d /dist-src/browser ]; then cp -a /dist-src/browser/. /dist/; else cp -a /dist-src/. /dist/; fi
+
+WORKDIR /dist
+CMD ["sh", "-c", "echo 'Backoffice static assets ready in /dist'"]

@@ -14,6 +14,8 @@ export enum FiscalObligationType {
   FinancialStatements = 5,
   SemiAnnualFinancialStatements = 6,
   PersonalIncomeTaxInstallment = 7,
+  CnssDtsQuarterly = 8,
+  PayrollIrppWithholding = 9,
   Other = 99
 }
 

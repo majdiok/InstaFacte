@@ -71,6 +71,7 @@ export const ACCOUNTING_MODULES: AccountingModuleDef[] = [
       { label: 'Journal', route: '/accounting/journal', icon: 'fa-solid fa-book', perms: ['accounting:read'] },
       { label: 'Grand livre', route: '/accounting/ledger', icon: 'fa-solid fa-book-open', perms: ['accounting:read'] },
       { label: 'Journaux auxiliaires', route: '/accounting/sub-journals', icon: 'fa-solid fa-books', perms: ['accounting:read'] },
+      { label: 'Récapitulatifs journaux', route: '/accounting/journal-summary', icon: 'fa-solid fa-table-cells-large', perms: ['accounting:read'] },
       { label: 'Balance', route: '/accounting/balance', icon: 'fa-solid fa-scale-balanced', perms: ['accounting:read'] },
       { label: 'Balance auxiliaire', route: '/accounting/auxiliary-balance', icon: 'fa-solid fa-address-book', perms: ['accounting:read'] },
       { label: 'Grand livre tiers', route: '/accounting/third-party-ledger', icon: 'fa-solid fa-user-tag', perms: ['accounting:read'] },
@@ -103,9 +104,11 @@ export const ACCOUNTING_MODULES: AccountingModuleDef[] = [
   {
     title: 'Liasse fiscale',
     icon: 'fa-solid fa-file-contract',
-    description: 'États financiers NCT (bilan, résultat, flux, notes)',
+    description: 'États financiers NCT + détermination du résultat fiscal',
     links: [
-      { label: 'États financiers NCT', route: '/accounting/nct-statements', icon: 'fa-solid fa-file-contract', perms: ['accounting:read'] }
+      { label: 'États financiers NCT', route: '/accounting/nct-statements', icon: 'fa-solid fa-file-contract', perms: ['accounting:read'] },
+      { label: 'Détermination du résultat fiscal', route: '/accounting/fiscal-result', icon: 'fa-solid fa-scale-balanced', perms: ['accounting:read'] },
+      { label: 'Paramètres fiscaux', route: '/accounting/fiscal-parameters', icon: 'fa-solid fa-sliders', perms: ['accounting:read'] }
     ]
   },
   {

@@ -142,5 +142,10 @@ export const PERMISSIONS = {
     declare: 'payroll:declare',
     export: 'payroll:export',
     settings: 'payroll:settings'
+  },
+  firm: {
+    manage: 'firm:manage',
+    usersManage: 'firm:users:manage',
+    assignmentsManage: 'firm:assignments:manage'
   }
 } as const;

@@ -1,4 +1,5 @@
 import { isConfiguredDocumentNumber } from '@core/utils/numbering-validation';
+import { createClientUuid } from '@core/utils/safe-random-uuid.util';
 import { Injectable, inject, computed, signal, effect, DestroyRef } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { HttpClient } from '@angular/common/http';
@@ -585,7 +586,7 @@ export class InvoiceWizardService {
       const discountValue = discountType === 'PERCENT' ? apiLine.discountPercent : null;
 
       const line: InvoiceLine = {
-        id: crypto.randomUUID(),
+        id: createClientUuid(),
         lineNumber: index + 1,
         productId: apiLine.productId || null,
         designation: apiLine.productName || '',
@@ -947,7 +948,7 @@ export class InvoiceWizardService {
   addLine(line: Partial<InvoiceLine>): void {
     const lines = [...this.state().lines];
     const newLine: InvoiceLine = {
-      id: crypto.randomUUID(),
+      id: createClientUuid(),
       lineNumber: lines.length + 1,
       productId: line.productId || null,
       designation: line.designation || '',
@@ -1848,7 +1849,7 @@ export class InvoiceWizardService {
         return draftId;
       }),
       switchMap(draftId => {
-        const idempotencyKey = `credit-note-${Date.now()}-${Math.random().toString(36).slice(2)}-${typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'fallback'}`.slice(0, 64);
+        const idempotencyKey = `credit-note-${Date.now()}-${createClientUuid()}`.slice(0, 64);
         return this.http.post<ApiResponse<{ invoiceId: string }>>(
           `${this.WIZARD_API_URL}/drafts/${draftId}/submit`,
           { idempotencyKey }

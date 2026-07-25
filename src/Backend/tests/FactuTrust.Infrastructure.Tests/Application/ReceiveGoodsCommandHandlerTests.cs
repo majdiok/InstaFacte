@@ -180,9 +180,16 @@ public sealed class ReceiveGoodsCommandHandlerTests
         Mock<IPurchaseOrderRepository> poRepo,
         Mock<IStockItemRepository> stockRepo,
         Mock<IWarehouseRepository> whRepo,
-        Mock<IAuditService> audit)
+        Mock<IAuditService> audit,
+        Mock<IProductRepository>? productRepo = null)
     {
-        return new ReceiveGoodsCommandHandler(poRepo.Object, stockRepo.Object, whRepo.Object, audit.Object);
+        productRepo ??= new Mock<IProductRepository>();
+        return new ReceiveGoodsCommandHandler(
+            poRepo.Object,
+            stockRepo.Object,
+            whRepo.Object,
+            productRepo.Object,
+            audit.Object);
     }
 
     private static PurchaseOrder BuildConfirmedOrderWithLine(Guid? warehouseId = null)

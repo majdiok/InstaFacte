@@ -19,6 +19,8 @@ public sealed class FirmClientAssignment : AggregateRoot
     public DateTime? RevokedAt { get; private set; }
     public string? Notes { get; private set; }
     public string? RejectionReason { get; private set; }
+    public string? CompanyProfileSnapshotJson { get; private set; }
+    public DateTime? CompanyProfileCapturedAt { get; private set; }
 
     public const int RejectionReasonMaxLength = 500;
 
@@ -118,5 +120,14 @@ public sealed class FirmClientAssignment : AggregateRoot
         RevokedByUserId = revokedByUserId;
         RevokedAt = DateTime.UtcNow;
         return Result.Success();
+    }
+
+    public void AttachCompanyProfileSnapshot(string snapshotJson, DateTime capturedAtUtc)
+    {
+        if (string.IsNullOrWhiteSpace(snapshotJson))
+            return;
+
+        CompanyProfileSnapshotJson = snapshotJson;
+        CompanyProfileCapturedAt = capturedAtUtc;
     }
 }

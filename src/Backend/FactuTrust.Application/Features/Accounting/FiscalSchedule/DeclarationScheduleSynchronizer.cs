@@ -1,5 +1,6 @@
 using FactuTrust.Application.Common;
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
@@ -27,15 +28,18 @@ namespace FactuTrust.Application.Features.Accounting.FiscalSchedule;
 public sealed class DeclarationScheduleSynchronizer
 {
     private readonly IFiscalScheduleRepository _schedule;
+    private readonly ITunisianFiscalDeadlineService _deadlines;
     private readonly AccountingSettings _settings;
     private readonly ILogger<DeclarationScheduleSynchronizer> _logger;
 
     public DeclarationScheduleSynchronizer(
         IFiscalScheduleRepository schedule,
+        ITunisianFiscalDeadlineService deadlines,
         IOptions<AccountingSettings> settings,
         ILogger<DeclarationScheduleSynchronizer> logger)
     {
         _schedule = schedule;
+        _deadlines = deadlines;
         _settings = settings.Value;
         _logger = logger;
     }
@@ -57,7 +61,7 @@ public sealed class DeclarationScheduleSynchronizer
                 FiscalObligationType.MonthlyDeclaration,
                 FiscalScheduleMappings.GetObligationDisplay(FiscalObligationType.MonthlyDeclaration),
                 declaration.Year,
-                VatFilingDeadline.ForPeriod(declaration.Year, declaration.Month),
+                _deadlines.ComputeVatFilingDeadline(declaration.Year, declaration.Month),
                 amount,
                 periodMonth: declaration.Month,
                 periodStart: new DateTime(declaration.Year, declaration.Month, 1),

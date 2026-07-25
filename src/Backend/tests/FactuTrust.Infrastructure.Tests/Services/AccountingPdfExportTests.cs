@@ -184,6 +184,57 @@ public sealed class AccountingPdfExportTests
         AssertIsPdf(bytes);
     }
 
+    private static FiscalResultDeclarationDto SampleFiscalResult() => new()
+    {
+        FiscalYear = 2025,
+        TaxpayerKind = 0,
+        Status = 0,
+        AccountingResult = 100000m,
+        AppliedIsRate = 0.15m,
+        Adjustments = new List<FiscalAdjustmentLineDto>
+        {
+            new() { CatalogCode = "R-IS", Kind = 0, Label = "Impôt sur les sociétés (compte 69)", Amount = 15000m, IsAutoSuggested = true },
+            new() { CatalogCode = "D-DIVIDENDES", Kind = 1, Label = "Dividendes", Amount = 2000m }
+        },
+        Computation = new IncomeTaxComputationDto
+        {
+            AccountingResult = 100000m, TotalReintegrations = 15000m, TotalDeductions = 2000m,
+            ResultBeforeCarryForward = 113000m, TaxableResult = 113000m, TaxOnResult = 16950m,
+            MinimumTax = 500m, TaxDue = 16950m, TotalTaxDue = 16950m, NetToPay = 16950m
+        }
+    };
+
+    [Fact]
+    public async Task GenerateFiscalResultPdf_ProducesPdf()
+    {
+        var bytes = await BuildPdfService().GenerateFiscalResultPdfAsync(SampleFiscalResult(), Header("Détermination du résultat fiscal"), CancellationToken.None);
+        AssertIsPdf(bytes);
+    }
+
+    [Fact]
+    public async Task GenerateConsolidatedLiassePdf_ProducesPdf()
+    {
+        var current = new Dictionary<string, decimal>
+        {
+            ["221"] = 10000m, ["281"] = -2000m, ["31"] = 3000m, ["411"] = 5000m, ["532"] = 8000m,
+            ["101"] = -15000m, ["401"] = -4000m, ["70"] = -20000m, ["601"] = 12000m, ["64"] = 3000m, ["15"] = -3000m
+        };
+        var liasse = NctStatementBuilder.Build(2025, current, new Dictionary<string, decimal>(), enabled: true);
+
+        var consolidated = new ConsolidatedLiasseDto
+        {
+            FiscalYear = 2025,
+            FinancialStatements = liasse,
+            FiscalResult = SampleFiscalResult(),
+            AmortizationTable = new List<FiscalTableRowDto> { new() { Code = "IMM-1", Label = "Matériel", Amount = 1000m, PreviousAmount = 5000m } },
+            ProvisionsTable = new List<FiscalTableRowDto> { new() { Code = "15", Label = "Provisions pour risques et charges", Amount = 3000m, PreviousAmount = 2000m } },
+            CompanyName = "Ma Société SARL"
+        };
+
+        var bytes = await BuildPdfService().GenerateConsolidatedLiassePdfAsync(consolidated, Header("Liasse fiscale"), CancellationToken.None);
+        AssertIsPdf(bytes);
+    }
+
     [Fact]
     public async Task GenerateNctLiassePdf_ProducesNonEmptyPdf()
     {

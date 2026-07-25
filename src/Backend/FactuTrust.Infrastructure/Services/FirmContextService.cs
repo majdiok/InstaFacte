@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using FactuTrust.Application.Common;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Auth;
@@ -12,15 +13,21 @@ public sealed class FirmContextService : IFirmContextService
 {
     private readonly MasterDbContext _masterContext;
     private readonly IFirmAssignmentService _assignmentService;
+    private readonly IFirmDossierAccessService _dossierAccess;
+    private readonly ICurrentUser _currentUser;
     private readonly ITenantAuthTokenService _tokenService;
 
     public FirmContextService(
         MasterDbContext masterContext,
         IFirmAssignmentService assignmentService,
+        IFirmDossierAccessService dossierAccess,
+        ICurrentUser currentUser,
         ITenantAuthTokenService tokenService)
     {
         _masterContext = masterContext;
         _assignmentService = assignmentService;
+        _dossierAccess = dossierAccess;
+        _currentUser = currentUser;
         _tokenService = tokenService;
     }
 
@@ -36,7 +43,11 @@ public sealed class FirmContextService : IFirmContextService
 
         var hasAssignment = await _assignmentService.HasActiveAssignmentAsync(homeTenantId, clientTenantId, cancellationToken);
         if (!hasAssignment)
-            throw new UnauthorizedAccessException("Aucune affectation active pour cette société.");
+            throw new UnauthorizedAccessException(FirmDossierAccessService.InactiveAssignmentMessage);
+
+        var scope = ResolveScope(userId);
+        if (!await _dossierAccess.CanAccessClientDossierAsync(homeTenantId, scope, clientTenantId, cancellationToken))
+            throw new UnauthorizedAccessException(FirmDossierAccessService.NotAssignedMessage);
 
         var clientTenant = await _masterContext.Tenants.AsNoTracking()
             .FirstOrDefaultAsync(t => t.Id == clientTenantId && t.IsActive, cancellationToken)
@@ -44,6 +55,16 @@ public sealed class FirmContextService : IFirmContextService
 
         return await _tokenService.GenerateTokensAsync(
             userId, homeTenantId, clientTenantId, clientTenant.CompanyName, cancellationToken);
+    }
+
+    private FirmDossierAccessScope ResolveScope(Guid userId)
+    {
+        if (_currentUser.TryGetAccessScope(out var scope) && scope.UserId == userId)
+            return scope;
+
+        // Fallback défensif : rôle issu du claim courant, sinon FirmAccountant (fail-closed).
+        var role = _currentUser.Role?.ToString() ?? nameof(UserRole.FirmAccountant);
+        return FirmDossierAccessScope.ForUser(userId, role);
     }
 
     public Task<AuthResponseDto> ClearContextAsync(

@@ -2,6 +2,7 @@ import {
   DELEGATED_FIRM_ACHATS_ALLOWED_ROUTES,
   DELEGATED_FIRM_VENTES_ALLOWED_ROUTES,
   FIRM_NATIVE_NAV,
+  filterFirmGovernanceNav,
   filterDelegatedFirmSectionChildren,
   isDelegatedFirmBlockedSalesPurchasesRoute,
   isDelegatedReadOnlyRoute,
@@ -10,8 +11,37 @@ import {
 import { NavSubItem } from './app-navigation.registry';
 
 describe('firm-navigation.registry — FIRM_NATIVE_NAV', () => {
-  it('FIRM_NATIVE_NAV does not include fiscal schedule route', () => {
-    expect(FIRM_NATIVE_NAV.some(i => i.route === '/firm/fiscal-schedule')).toBe(false);
+  it('FIRM_NATIVE_NAV includes fiscal schedule route', () => {
+    expect(FIRM_NATIVE_NAV.some(i => i.route === '/firm/fiscal-schedule')).toBe(true);
+  });
+
+  it('FIRM_NATIVE_NAV includes governance section', () => {
+    expect(FIRM_NATIVE_NAV.some(i => i.label === 'Gouvernance')).toBe(true);
+  });
+
+  it('FIRM_NATIVE_NAV governance has no dedicated dashboard child (unified on /firm/dashboard)', () => {
+    const gov = FIRM_NATIVE_NAV.find(i => i.label === 'Gouvernance');
+    expect(gov?.children?.some(c => c.route === '/firm/governance/dashboard')).toBe(false);
+    expect(gov?.children?.map(c => c.route)).toEqual([
+      '/firm/governance/permanent-files',
+      '/firm/affectation',
+      '/firm/governance/time-sheets',
+      '/firm/governance/dossier-time-profitability',
+      '/firm/governance/collaborator-rentability',
+      '/firm/governance/expense-notes',
+      '/firm/governance/social'
+    ]);
+  });
+
+  it('filterFirmGovernanceNav removes governance when flag off', () => {
+    const filtered = filterFirmGovernanceNav(FIRM_NATIVE_NAV, false);
+    expect(filtered.some(i => i.label === 'Gouvernance')).toBe(false);
+    expect(filtered.some(i => i.route?.startsWith('/firm/governance'))).toBe(false);
+  });
+
+  it('filterFirmGovernanceNav keeps governance when flag on', () => {
+    const filtered = filterFirmGovernanceNav(FIRM_NATIVE_NAV, true);
+    expect(filtered.some(i => i.label === 'Gouvernance')).toBe(true);
   });
 });
 

@@ -1,4 +1,5 @@
 import { Injectable, signal } from '@angular/core';
+import { createClientUuid } from '@core/utils/safe-random-uuid.util';
 
 export interface AiPromptFavorite {
   id: string;
@@ -40,7 +41,7 @@ export class AiPromptFavoritesService {
     }
     const next: AiPromptFavorite[] = [
       {
-        id: crypto.randomUUID(),
+        id: createClientUuid(),
         text: t,
         createdAtUtc: new Date().toISOString()
       },

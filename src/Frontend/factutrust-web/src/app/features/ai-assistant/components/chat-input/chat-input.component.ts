@@ -14,6 +14,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { createClientUuid } from '@core/utils/safe-random-uuid.util';
 import { ChatSpeechTranscriptionService } from '../../services/chat-speech-transcription.service';
 import { AiChatService } from '../../services/ai-chat.service';
 import { ChatAttachmentCardComponent } from '../chat-attachment-card/chat-attachment-card.component';
@@ -487,7 +488,7 @@ export class ChatInputComponent implements OnDestroy, OnChanges, AfterViewChecke
       next: res => {
         this.extractingFileName.set(null);
         const attachment: ChatAttachment = {
-          id: this.generateId(),
+          id: createClientUuid(),
           fileName: res.fileName,
           format: (res.format ?? this.inferFormat(file)) as ChatAttachment['format'],
           sizeBytes: res.sizeBytes ?? file.size,
@@ -512,13 +513,6 @@ export class ChatInputComponent implements OnDestroy, OnChanges, AfterViewChecke
         this.extractError.set("Impossible d'extraire le document. Formats acceptés : .txt, .csv, .pdf, .png, .jpg, .jpeg, .webp, .docx, .xlsx (max 10 Mo).");
       }
     });
-  }
-
-  private generateId(): string {
-    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-      return crypto.randomUUID();
-    }
-    return `att-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   }
 
   private inferFormat(file: File): ChatAttachment['format'] {

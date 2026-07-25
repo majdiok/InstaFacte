@@ -176,7 +176,16 @@
       "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\('xlsx:', \\(p.dependencies&&p.dependencies.xlsx\\)||\\(p.devDependencies&&p.devDependencies.xlsx\\)||'NOT in package.json'\\); console.log\\('chart.js:', p.dependencies&&p.dependencies['chart.js']\\)\")",
       "Bash(cd /c/Solution/'FactuTrust - Copy' && find . -type f -name \"*.cs\" | grep -iE \"\\(studio|ai\\)\" | head -30)",
       "Bash(xargs grep -l \"passager\\\\|Client passager\")",
-      "Bash(xargs grep -l \"passager\\\\|DefaultPassenger\\\\|walkIn\")"
+      "Bash(xargs grep -l \"passager\\\\|DefaultPassenger\\\\|walkIn\")",
+      "Bash(grep -n \"record\\\\|class\\\\|///\" src/Backend/FactuTrust.Application/Features/Accounting/Commands/AccountingCommands.cs)",
+      "Bash(grep -n \"record\\\\|public byte\\\\[\\\\]\\\\|///\" src/Backend/FactuTrust.Application/Features/Accounting/Queries/ExportAccountingReportsQueries.cs)",
+      "Bash(grep -n \"record\\\\|///\" src/Backend/FactuTrust.Application/Features/Accounting/Queries/ExportAccountingPdfQueries.cs)",
+      "Bash(grep -n \"public byte\\\\[\\\\]\\\\|Render.*Pdf\\\\|///\" src/Backend/FactuTrust.Application/Common/Interfaces/Services/IPdfService.cs)",
+      "Bash(grep -n \"///\\\\|public async\\\\|Missing\\\\|ChartOfAccount\\\\|Unknown\" src/Backend/FactuTrust.Infrastructure/Services/JournalImportService.cs)",
+      "Bash(python -c ' *)",
+      "Bash(grep -n \"///\\\\|Kind\\\\|Label\" src/Backend/FactuTrust.Application/Features/Accounting/InventoryEntryDefaults.cs)",
+      "Bash(grep -n \"///\\\\|public.*Task<\\\\|Pdf\\\\|Export\" src/Backend/FactuTrust.Application/Common/Interfaces/Services/IBankReconciliationService.cs)",
+      "Bash(grep -n \"///\\\\|public\\\\|Task<\" src/Backend/FactuTrust.Application/Common/Interfaces/Services/IFecExportService.cs)"
     ]
   }
 }

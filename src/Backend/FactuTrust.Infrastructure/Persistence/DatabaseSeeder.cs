@@ -1,8 +1,10 @@
 using FactuTrust.Domain.Auth;
+using FactuTrust.Domain.Entities.FirmGovernance;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.Persistence;
 using FactuTrust.Infrastructure.Services;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -59,6 +61,29 @@ public static class DatabaseSeeder
         }
 
         await EnsurePlatformRoleAsync(roleManager, logger, PlatformRoles.PlatformAdmin, "Plateforme : administration globale (tenants, migrations)");
+    }
+
+    /// <summary>
+    /// Seeds default Tunisian fiscal calendar rules (TVA jour 22, report week-end/fériés). Idempotent.
+    /// </summary>
+    public static async Task SeedFiscalCalendarRulesAsync(MasterDbContext context)
+    {
+        if (await context.FiscalCalendarRules.AnyAsync())
+            return;
+
+        context.FiscalCalendarRules.AddRange(
+            FiscalCalendarRule.CreateDefault(
+                FiscalObligationType.MonthlyDeclaration,
+                dueDayOfMonth: 22,
+                monthsAfterPeriod: 1,
+                label: "TVA mensuelle — déclaration et paiement"),
+            FiscalCalendarRule.CreateDefault(
+                FiscalObligationType.QuarterlyVat,
+                dueDayOfMonth: 22,
+                monthsAfterPeriod: 1,
+                label: "TVA trimestrielle — déclaration et paiement"));
+
+        await context.SaveChangesAsync();
     }
 
     /// <summary>

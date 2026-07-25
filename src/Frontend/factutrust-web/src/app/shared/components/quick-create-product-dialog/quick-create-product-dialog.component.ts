@@ -24,6 +24,11 @@ import { DrawerOverlayService } from '@core/services/drawer-overlay.service';
 import { HttpErrorResponse } from '@angular/common/http';
 import { switchMap } from 'rxjs/operators';
 import { of } from 'rxjs';
+import {
+  calculateFodecAmount,
+  calculateSaleTtc,
+  calculateVatAmount
+} from '@shared/utils/product-pricing.utils';
 
 interface TypeOption {
   label: string;
@@ -678,21 +683,15 @@ export class QuickCreateProductDialogComponent {
   });
 
   calculateFodec(): number {
-    if (!this.isFodecApplicable()) return 0;
-    return this.round3(this.unitPrice() * 0.01);
+    return calculateFodecAmount(this.unitPrice(), this.isFodecApplicable());
   }
 
   calculateVat(): number {
-    const vatBase = this.unitPrice() + this.calculateFodec();
-    return this.round3(vatBase * (this.vatRate() / 100));
+    return calculateVatAmount(this.unitPrice(), this.calculateFodec(), this.vatRate());
   }
 
   calculateTTC(): number {
-    return this.round3(this.unitPrice() + this.calculateFodec() + this.calculateVat());
-  }
-
-  private round3(n: number): number {
-    return Math.round(n * 1000) / 1000;
+    return calculateSaleTtc(this.unitPrice(), this.vatRate(), this.isFodecApplicable());
   }
 
   onHide(): void {

@@ -1,17 +1,50 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router, RouterModule } from '@angular/router';
+import { FormBuilder, FormGroup, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
+import { RouterModule } from '@angular/router';
+import { trigger, transition, style, animate } from '@angular/animations';
+import { HttpErrorResponse } from '@angular/common/http';
 import { InputTextModule } from 'primeng/inputtext';
 import { PasswordModule } from 'primeng/password';
 import { ButtonModule } from 'primeng/button';
 import { DropdownModule } from 'primeng/dropdown';
-import { CheckboxModule } from 'primeng/checkbox';
+import { InputMaskModule } from 'primeng/inputmask';
+import { StepsModule } from 'primeng/steps';
 import { MessageModule } from 'primeng/message';
+import { DividerModule } from 'primeng/divider';
+import { CheckboxModule } from 'primeng/checkbox';
+import { InputSwitchModule } from 'primeng/inputswitch';
+import { InputTextarea } from 'primeng/inputtextarea';
+import { MenuItem } from '@shared/models/menu-item.model';
 import { AuthService, RegisterAccountingFirmRequest } from '@core/services/auth.service';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
+import { ErrorMessageService } from '@core/services/error-message.service';
 import { LogoComponent } from '@shared/components/logo/logo.component';
+import { TunisianValidators } from '@shared/validation/tunisian-validators';
+import { MAX_LENGTHS } from '@shared/validation/validation-rules';
 import { environment } from '@environments/environment';
+import { GOVERNORATE_OPTIONS } from '../shared/auth-governorate.options';
+import {
+  AUTH_PASSWORD_VALIDATORS_PATTERN,
+  passwordCriteria as computePasswordCriteria,
+  passwordMatches as checkPasswordMatches,
+  passwordMismatch as checkPasswordMismatch,
+  passwordStrengthLabel as getPasswordStrengthLabel,
+  passwordStrengthLevel as computePasswordStrengthLevel,
+  passwordStrengthMetCount
+} from '../shared/auth-password.helpers';
+import {
+  applyNifBlurCleanup,
+  cleanNifValue,
+  cleanPhoneValue,
+  dropdownStringValue,
+  markAllFormControlsTouched,
+  scrollToFirstInvalidField,
+  trimOptional,
+  trimRequired,
+  validateFirmRegisterFormData
+} from '../shared/auth-registration.helpers';
 
 @Component({
   selector: 'app-register-firm',
@@ -19,137 +52,299 @@ import { environment } from '@environments/environment';
   imports: [
     CommonModule,
     ReactiveFormsModule,
+    FormsModule,
     RouterModule,
     InputTextModule,
     PasswordModule,
     ButtonModule,
     DropdownModule,
-    CheckboxModule,
+    InputMaskModule,
+    StepsModule,
     MessageModule,
+    DividerModule,
+    CheckboxModule,
+    InputSwitchModule,
+    InputTextarea,
     LogoComponent
   ],
-  template: `
-    <div class="auth-page">
-      <div class="auth-card">
-        <app-logo />
-        <h1>Inscription cabinet comptable</h1>
-        <p class="subtitle">Créez votre espace cabinet pour gérer les dossiers de vos clients sociétés.</p>
-
-        @if (!environment.accountingFirmsEnabled) {
-          <p-message severity="warn" text="Fonctionnalité non disponible."></p-message>
-        } @else {
-          <form [formGroup]="form" (ngSubmit)="submit()">
-            <div class="grid">
-              <input pInputText formControlName="firstName" placeholder="Prénom" />
-              <input pInputText formControlName="lastName" placeholder="Nom" />
-              <input pInputText formControlName="email" placeholder="Email connexion" class="full" />
-              <input pInputText formControlName="firmName" placeholder="Raison sociale du cabinet" class="full" />
-              <input pInputText formControlName="nif" placeholder="NIF" class="full" />
-              <input pInputText formControlName="street" placeholder="Adresse" class="full" />
-              <input pInputText formControlName="city" placeholder="Ville" />
-              <p-dropdown formControlName="governorate" [options]="governorates" placeholder="Gouvernorat" />
-              <input pInputText formControlName="firmEmail" placeholder="Email cabinet" class="full" />
-              <input pInputText formControlName="phone" placeholder="Téléphone" class="full" />
-              <p-password formControlName="password" placeholder="Mot de passe" [toggleMask]="true" class="full" />
-              <p-password formControlName="confirmPassword" placeholder="Confirmer" [toggleMask]="true" class="full" />
-            </div>
-            <div class="checkbox-row">
-              <p-checkbox formControlName="isPublicInDirectory" [binary]="true" inputId="pub" />
-              <label for="pub">Visible dans l'annuaire des cabinets</label>
-            </div>
-            @if (error()) {
-              <p-message severity="error" [text]="error()!" class="mt-2"></p-message>
-            }
-            <button pButton type="submit" label="Créer le cabinet" class="w-full mt-3" [loading]="loading()"></button>
-          </form>
-        }
-        <p class="footer-link"><a routerLink="/auth/login">Déjà un compte ? Connexion</a></p>
-        <p class="footer-link"><a routerLink="/auth/register">Inscription société</a></p>
-      </div>
-    </div>
-  `,
-  styles: [`
-    .auth-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem; background: var(--color-neutral-50); }
-    .auth-card { width: 100%; max-width: 520px; background: white; padding: 2rem; border-radius: var(--radius-xl); box-shadow: var(--shadow-lg); }
-    .subtitle { color: var(--color-neutral-600); margin-bottom: 1.5rem; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
-    .full { grid-column: 1 / -1; }
-    .checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; }
-    .footer-link { margin-top: 1rem; text-align: center; font-size: 0.875rem; }
-    .w-full { width: 100%; }
-    .mt-2 { margin-top: 0.5rem; display: block; }
-    .mt-3 { margin-top: 1rem; }
-  `]
+  animations: [
+    trigger('fadeInOut', [
+      transition(':enter', [
+        style({ opacity: 0, transform: 'translateY(10px)' }),
+        animate('300ms ease-out', style({ opacity: 1, transform: 'translateY(0)' }))
+      ]),
+      transition(':leave', [
+        animate('200ms ease-in', style({ opacity: 0, transform: 'translateY(-10px)' }))
+      ])
+    ]),
+    trigger('stepSlide', [
+      transition(':enter', [
+        style({ opacity: 0, transform: 'translateX(16px)' }),
+        animate('320ms cubic-bezier(0.16, 1, 0.3, 1)', style({ opacity: 1, transform: 'translateX(0)' }))
+      ]),
+      transition(':leave', [
+        animate('220ms ease-in', style({ opacity: 0, transform: 'translateX(-12px)' }))
+      ])
+    ])
+  ],
+  templateUrl: './register-firm.component.html',
+  styleUrl: './register-firm.component.scss'
 })
-export class RegisterFirmComponent {
+export class RegisterFirmComponent implements OnInit {
   readonly environment = environment;
+
   private readonly fb = inject(FormBuilder);
   private readonly auth = inject(AuthService);
   private readonly warehouseContext = inject(WarehouseContextService);
-  private readonly router = inject(Router);
+  private readonly errorHandler = inject(ErrorHandlerService);
+  readonly errorMessageService = inject(ErrorMessageService);
 
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
+  readonly currentStep = signal(0);
+  readonly showOptionalProfile = signal(false);
 
-  readonly governorates = [
-    'Tunis', 'Ariana', 'Ben Arous', 'Manouba', 'Nabeul', 'Zaghouan', 'Bizerte', 'Béja', 'Jendouba',
-    'Kef', 'Siliana', 'Sousse', 'Monastir', 'Mahdia', 'Sfax', 'Kairouan', 'Kasserine', 'Sidi Bouzid',
-    'Gabès', 'Medenine', 'Tataouine', 'Gafsa', 'Tozeur', 'Kebili'
-  ].map(g => ({ label: g, value: g }));
+  readonly registrationFormAriaLabel = computed(() => {
+    const stepNames = ['Compte', 'Cabinet', 'Adresse & visibilité'];
+    const cur = this.currentStep();
+    const prev = cur > 0 ? 'Étapes précédentes complétées. ' : '';
+    return `${prev}Étape ${cur + 1} sur 3 : ${stepNames[cur]}.`;
+  });
 
-  readonly form = this.fb.group({
-    firstName: ['', Validators.required],
-    lastName: ['', Validators.required],
+  readonly steps: MenuItem[] = [
+    { label: 'Compte' },
+    { label: 'Cabinet' },
+    { label: 'Adresse & visibilité' }
+  ];
+
+  readonly strengthSegments: readonly number[] = [1, 2, 3, 4, 5];
+  readonly governorates = GOVERNORATE_OPTIONS;
+
+  readonly form: FormGroup = this.fb.group({
+    firstName: ['', [Validators.required, Validators.minLength(2)]],
+    lastName: ['', [Validators.required, Validators.minLength(2)]],
     email: ['', [Validators.required, Validators.email]],
-    firmName: ['', Validators.required],
-    nif: ['', Validators.required],
-    street: ['', Validators.required],
-    city: ['', Validators.required],
-    governorate: ['', Validators.required],
-    firmEmail: ['', [Validators.required, Validators.email]],
-    phone: ['', Validators.required],
-    password: ['', Validators.required],
+    password: ['', [
+      Validators.required,
+      Validators.minLength(12),
+      Validators.pattern(AUTH_PASSWORD_VALIDATORS_PATTERN)
+    ]],
     confirmPassword: ['', Validators.required],
+    acceptTerms: [false, Validators.requiredTrue],
+    firmName: ['', [Validators.required, Validators.minLength(2), Validators.maxLength(200)]],
+    nif: ['', [Validators.required, TunisianValidators.nif()]],
+    firmEmail: ['', [Validators.required, Validators.email]],
+    phone: ['', [Validators.required, TunisianValidators.tunisianPhone()]],
+    website: [''],
+    description: ['', Validators.maxLength(MAX_LENGTHS.description)],
+    professionalRegistrationNumber: ['', Validators.maxLength(100)],
+    street: ['', [Validators.required, Validators.maxLength(MAX_LENGTHS.street)]],
+    streetLine2: ['', Validators.maxLength(MAX_LENGTHS.street)],
+    city: ['', [Validators.required, Validators.maxLength(MAX_LENGTHS.city)]],
+    postalCode: ['', TunisianValidators.postalCode()],
+    governorate: ['', [Validators.required, TunisianValidators.governorate()]],
     isPublicInDirectory: [true]
   });
 
-  submit(): void {
-    if (this.form.invalid) return;
-    const v = this.form.getRawValue();
-    if (v.password !== v.confirmPassword) {
-      this.error.set('Les mots de passe ne correspondent pas');
+  ngOnInit(): void {
+    this.form.get('password')?.valueChanges.subscribe(() => {
+      this.form.get('confirmPassword')?.updateValueAndValidity();
+    });
+  }
+
+  passwordMismatch(): boolean {
+    return checkPasswordMismatch(this.form.get('password')?.value, this.form.get('confirmPassword')?.value);
+  }
+
+  passwordMatches(): boolean {
+    return checkPasswordMatches(this.form.get('password')?.value, this.form.get('confirmPassword')?.value);
+  }
+
+  passwordCriteria() {
+    return computePasswordCriteria(this.form.get('password')?.value);
+  }
+
+  passwordStrengthMetCount(): number {
+    return passwordStrengthMetCount(this.passwordCriteria());
+  }
+
+  passwordStrengthLevel() {
+    return computePasswordStrengthLevel(this.form.get('password')?.value, this.passwordCriteria());
+  }
+
+  passwordStrengthLabel(): string {
+    return getPasswordStrengthLabel(this.passwordStrengthLevel());
+  }
+
+  stepHumanIndex(): number {
+    return this.currentStep() + 1;
+  }
+
+  passwordFieldAriaDescribedBy(): string {
+    const ids: string[] = ['password-strength-hint'];
+    if (this.isInvalid('password')) {
+      ids.unshift('password-error');
+    }
+    return ids.join(' ');
+  }
+
+  confirmPasswordAriaDescribedBy(): string | null {
+    if (this.isInvalid('confirmPassword') || this.passwordMismatch()) {
+      return 'confirmPassword-error';
+    }
+    if (this.passwordMatches() && this.form.get('confirmPassword')?.value) {
+      return 'confirmPassword-success';
+    }
+    return null;
+  }
+
+  isInvalid(field: string): boolean {
+    const control = this.form.get(field);
+    return !!(control?.invalid && control?.touched);
+  }
+
+  isCurrentStepValid(): boolean {
+    const step = this.currentStep();
+
+    if (step === 0) {
+      const fields = ['firstName', 'lastName', 'email', 'password', 'confirmPassword', 'acceptTerms'];
+      return fields.every(f => this.form.get(f)?.valid) && !this.passwordMismatch();
+    }
+
+    if (step === 1) {
+      const fields = ['firmName', 'nif', 'firmEmail', 'phone', 'website', 'description', 'professionalRegistrationNumber'];
+      return fields.every(f => this.form.get(f)?.valid);
+    }
+
+    if (step === 2) {
+      const fields = ['street', 'city', 'governorate', 'streetLine2', 'postalCode'];
+      return fields.every(f => this.form.get(f)?.valid);
+    }
+
+    return false;
+  }
+
+  nextStep(): void {
+    if (!this.isCurrentStepValid()) {
+      this.markCurrentStepTouched();
+      scrollToFirstInvalidField();
       return;
     }
+    if (this.currentStep() < 2) {
+      this.currentStep.update(s => s + 1);
+    }
+  }
+
+  previousStep(): void {
+    if (this.currentStep() > 0) {
+      this.currentStep.update(s => s - 1);
+    }
+  }
+
+  onNifBlur(): void {
+    applyNifBlurCleanup(this.form);
+  }
+
+  submit(): void {
+    if (this.form.invalid) {
+      markAllFormControlsTouched(this.form);
+      scrollToFirstInvalidField();
+      return;
+    }
+
+    if (!this.form.get('acceptTerms')?.value) {
+      this.form.get('acceptTerms')?.markAsTouched();
+      scrollToFirstInvalidField();
+      return;
+    }
+
+    if (this.passwordMismatch()) {
+      this.error.set('Les mots de passe ne correspondent pas');
+      this.form.get('confirmPassword')?.markAsTouched();
+      return;
+    }
+
     this.loading.set(true);
     this.error.set(null);
+
+    const nifControl = this.form.get('nif');
+    const rawNif = nifControl?.value ?? '';
+    const cleanedNif = cleanNifValue(rawNif);
+    if (nifControl && cleanedNif !== rawNif) {
+      nifControl.setValue(cleanedNif, { emitEvent: false });
+      nifControl.updateValueAndValidity({ emitEvent: false });
+    }
+
+    const formValue = this.form.getRawValue();
+    const validationErrors = validateFirmRegisterFormData(
+      formValue,
+      cleanedNif,
+      !!nifControl?.touched
+    );
+    if (validationErrors.length > 0) {
+      this.error.set(validationErrors.join(', '));
+      this.loading.set(false);
+      return;
+    }
+
     const payload: RegisterAccountingFirmRequest = {
-      email: v.email!,
-      password: v.password!,
-      confirmPassword: v.confirmPassword!,
-      firstName: v.firstName!,
-      lastName: v.lastName!,
-      firmName: v.firmName!,
-      nif: v.nif!,
-      street: v.street!,
-      city: v.city!,
-      governorate: v.governorate as string,
-      firmEmail: v.firmEmail!,
-      phone: v.phone!,
-      isPublicInDirectory: v.isPublicInDirectory ?? true
+      email: trimRequired(formValue.email),
+      password: formValue.password || '',
+      confirmPassword: formValue.confirmPassword || '',
+      firstName: trimRequired(formValue.firstName),
+      lastName: trimRequired(formValue.lastName),
+      firmName: trimRequired(formValue.firmName),
+      nif: cleanedNif,
+      street: trimRequired(formValue.street),
+      streetLine2: trimOptional(formValue.streetLine2),
+      city: trimRequired(formValue.city),
+      postalCode: trimOptional(formValue.postalCode),
+      governorate: dropdownStringValue(formValue.governorate),
+      firmEmail: trimRequired(formValue.firmEmail),
+      phone: cleanPhoneValue(formValue.phone),
+      website: trimOptional(formValue.website),
+      description: trimOptional(formValue.description),
+      professionalRegistrationNumber: trimOptional(formValue.professionalRegistrationNumber),
+      isPublicInDirectory: formValue.isPublicInDirectory ?? true
     };
+
     this.auth.registerFirm(payload).subscribe({
-      next: r => {
+      next: response => {
         this.loading.set(false);
-        if (r.success) {
+        if (response.success) {
           this.warehouseContext.navigateAfterSuccessfulAuth('/firm/dashboard');
         } else {
-          this.error.set(r.message ?? 'Erreur inscription');
+          const errorMessage = response.errors?.length
+            ? response.errors.join(', ')
+            : response.message ?? 'Une erreur est survenue lors de l\'inscription';
+          this.error.set(errorMessage);
+          this.errorHandler.logError('Firm registration failed (success: false)', { response });
         }
       },
-      error: err => {
+      error: (err: HttpErrorResponse) => {
+        let errorMessage = this.errorHandler.extractErrorMessage(err);
+        if (!errorMessage || errorMessage === 'undefined' || errorMessage.trim() === '') {
+          if (!err?.status) {
+            errorMessage = 'Impossible de se connecter au serveur. Vérifiez que le backend est démarré.';
+          } else {
+            errorMessage = `Une erreur est survenue lors de l'inscription (${err.status}). Veuillez réessayer.`;
+          }
+        }
+        this.error.set(errorMessage);
+        this.errorHandler.logError('Firm registration HTTP error', err);
         this.loading.set(false);
-        this.error.set(err.error?.message ?? 'Erreur inscription');
       }
+    });
+  }
+
+  private markCurrentStepTouched(): void {
+    const stepFields: Record<number, string[]> = {
+      0: ['firstName', 'lastName', 'email', 'password', 'confirmPassword', 'acceptTerms'],
+      1: ['firmName', 'nif', 'firmEmail', 'phone', 'website', 'description', 'professionalRegistrationNumber'],
+      2: ['street', 'streetLine2', 'city', 'postalCode', 'governorate', 'isPublicInDirectory']
+    };
+    stepFields[this.currentStep()]?.forEach(field => {
+      this.form.get(field)?.markAsTouched();
     });
   }
 }

@@ -3,6 +3,7 @@ import { Injectable, inject, PLATFORM_ID, signal, effect } from '@angular/core';
 import { Subscription, fromEvent, firstValueFrom } from 'rxjs';
 import { debounceTime, filter } from 'rxjs/operators';
 import { AuthService } from '@core/services/auth.service';
+import { createClientUuid } from '@core/utils/safe-random-uuid.util';
 import { AiChatService } from './ai-chat.service';
 import { AiStreamService } from './ai-stream.service';
 import { AiUiContextService } from './ai-ui-context.service';
@@ -371,7 +372,7 @@ export class AiChatSessionService {
     const attachmentsPayload = this.buildAttachmentRequests(normalized.attachments, visionCapable);
 
     const userMsg: ChatMessage = {
-      id: crypto.randomUUID(),
+      id: createClientUuid(),
       role: MessageRole.User,
       content: normalized.displayText,
       createdAt: new Date(),
@@ -383,7 +384,7 @@ export class AiChatSessionService {
     this.messages.update(msgs => [...msgs, userMsg]);
 
     const assistantMsg: ChatMessage = {
-      id: crypto.randomUUID(),
+      id: createClientUuid(),
       role: MessageRole.Assistant,
       content: '',
       createdAt: new Date(),

@@ -117,6 +117,23 @@ public sealed class Tenant : AggregateRoot
         TaxRegime = newRegime;
     }
 
+    /// <summary>Sync raison sociale depuis le dossier permanent cabinet (usage interne gouvernance).</summary>
+    public void UpdateCompanyNameFromPermanentFile(string companyName)
+    {
+        if (!string.IsNullOrWhiteSpace(companyName))
+            CompanyName = companyName.Trim();
+    }
+
+    /// <summary>Sync NIF depuis le dossier permanent cabinet (usage interne gouvernance).</summary>
+    public Result UpdateNifFromPermanentFile(string nifValue)
+    {
+        var nif = NIF.Create(nifValue);
+        if (nif.IsFailure)
+            return Result.Failure(nif.Error);
+        NIF = nif.Value;
+        return Result.Success();
+    }
+
     public void Deactivate()
     {
         if (!IsActive)

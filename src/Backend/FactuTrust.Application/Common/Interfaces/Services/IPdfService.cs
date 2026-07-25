@@ -20,11 +20,23 @@ public interface IPdfService
     /// <summary>Génère le PDF du journal, regroupé par code journal, avec sous-totaux et total général.</summary>
     Task<byte[]> GenerateJournalPdfAsync(IReadOnlyList<JournalEntryDto> entries, AccountingReportHeader header, CancellationToken cancellationToken = default);
 
+    /// <summary>Génère le PDF d'un récapitulatif de journaux (centralisateur, récapitulation ou totaux).</summary>
+    Task<byte[]> GenerateJournalSummaryPdfAsync(JournalSummaryDto summary, AccountingReportHeader header, CancellationToken cancellationToken = default);
+
     /// <summary>Génère le PDF du grand livre d'un compte (mouvements + solde progressif).</summary>
     Task<byte[]> GenerateLedgerPdfAsync(string accountNumber, IReadOnlyList<LedgerRowDto> rows, AccountingReportHeader header, CancellationToken cancellationToken = default);
 
+    /// <summary>Génère le PDF du grand livre général : comptes en séquence, report à nouveau, sous-total par compte.</summary>
+    Task<byte[]> GenerateGeneralLedgerPdfAsync(GeneralLedgerDto ledger, AccountingReportHeader header, CancellationToken cancellationToken = default);
+
     /// <summary>Génère le PDF de la balance générale (ouverture / mouvements / clôture) avec totaux.</summary>
     Task<byte[]> GenerateBalancePdfAsync(IReadOnlyList<BalanceRowDto> rows, AccountingReportHeader header, CancellationToken cancellationToken = default);
+
+    /// <summary>Génère le PDF de la balance détaillée (soldes + détail des mouvements par compte).</summary>
+    Task<byte[]> GenerateDetailedBalancePdfAsync(DetailedBalanceDto balance, AccountingReportHeader header, CancellationToken cancellationToken = default);
+
+    /// <summary>Génère le PDF de la balance par période (12 colonnes mensuelles).</summary>
+    Task<byte[]> GeneratePeriodicBalancePdfAsync(PeriodicBalanceDto balance, AccountingReportHeader header, CancellationToken cancellationToken = default);
 
     /// <summary>Génère le PDF de la balance auxiliaire (une ligne par tiers) avec totaux.</summary>
     Task<byte[]> GenerateAuxiliaryBalancePdfAsync(IReadOnlyList<AuxiliaryBalanceRowDto> rows, AccountingReportHeader header, CancellationToken cancellationToken = default);
@@ -40,6 +52,12 @@ public interface IPdfService
 
     /// <summary>Génère le PDF du compte de résultat (produits / charges) avec comparatif N-1.</summary>
     Task<byte[]> GenerateIncomeStatementPdfAsync(IncomeStatementDto dto, AccountingReportHeader header, CancellationToken cancellationToken = default);
+
+    /// <summary>Génère le PDF de la détermination du résultat fiscal (réintégrations/déductions + calcul de l'impôt).</summary>
+    Task<byte[]> GenerateFiscalResultPdfAsync(FiscalResultDeclarationDto dto, AccountingReportHeader header, CancellationToken cancellationToken = default);
+
+    /// <summary>Génère le PDF de la liasse consolidée (états NCT + détermination fiscale + tableaux annexes).</summary>
+    Task<byte[]> GenerateConsolidatedLiassePdfAsync(ConsolidatedLiasseDto dto, AccountingReportHeader header, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Generates a PDF for a sales invoice (full layout with issuer branding).

@@ -16,8 +16,10 @@ import {
 import { AccountingJournalTabsComponent } from '../shared/accounting-journal-tabs.component';
 import {
   ACCOUNTING_SUB_JOURNALS,
+  AccountingJournalTab,
   AccountingJournalTabChange
 } from '../shared/accounting-journal-tabs.model';
+import { AccountingJournalCatalogService } from '../shared/accounting-journal-catalog.service';
 
 type JournalFlatRow = {
   date: string;
@@ -76,7 +78,7 @@ type JournalFlatRow = {
     </div>
 
     <app-accounting-journal-tabs
-      [tabs]="tabs"
+      [tabs]="tabs()"
       [activeIndex]="activeTabIndex"
       (tabChange)="onJournalTabChange($event)" />
 
@@ -241,8 +243,13 @@ type JournalFlatRow = {
 })
 export class SubJournalsComponent implements OnInit {
   private readonly api = inject(AccountingService);
+  private readonly journalCatalog = inject(AccountingJournalCatalogService);
 
-  readonly tabs = ACCOUNTING_SUB_JOURNALS;
+  /**
+   * Onglets initialisés sur les 6 journaux standards puis étendus au catalogue : l'écran s'affiche
+   * immédiatement à l'identique de l'existant, et les journaux personnalisés viennent s'y ajouter.
+   */
+  readonly tabs = signal<readonly AccountingJournalTab[]>(ACCOUNTING_SUB_JOURNALS);
   fromStr = '';
   toStr = '';
   activeTabIndex = 0;
@@ -262,7 +269,7 @@ export class SubJournalsComponent implements OnInit {
   });
 
   get activeJournalCode(): string {
-    return this.tabs[this.activeTabIndex]?.code ?? 'JV';
+    return this.tabs()[this.activeTabIndex]?.code ?? 'JV';
   }
 
   readonly buildSubJournalsAnalyzePayload = (): unknown =>
@@ -273,8 +280,8 @@ export class SubJournalsComponent implements OnInit {
         filters: {
           from: this.fromStr || null,
           to: this.toStr || null,
-          activeJournal: this.tabs[this.activeTabIndex]?.code ?? null,
-          activeJournalLabel: this.tabs[this.activeTabIndex]?.label ?? null
+          activeJournal: this.tabs()[this.activeTabIndex]?.code ?? null,
+          activeJournalLabel: this.tabs()[this.activeTabIndex]?.label ?? null
         },
         summary: {
           totalRows: this.flatRows().length,
@@ -296,7 +303,10 @@ export class SubJournalsComponent implements OnInit {
   ngOnInit(): void {
     this.fromStr = firstDayOfMonthLocalYmd();
     this.toStr = todayLocalYmd();
-    this.loadJournal(this.tabs[0].code);
+    // Le catalogue ne change pas l'onglet actif : il ne fait qu'étendre la liste, les journaux
+    // standards restant en tête dans leur ordre historique.
+    this.journalCatalog.list().subscribe(list => this.tabs.set(list));
+    this.loadJournal(this.tabs()[0].code);
   }
 
   onJournalTabChange(event: AccountingJournalTabChange): void {
@@ -308,7 +318,7 @@ export class SubJournalsComponent implements OnInit {
   }
 
   onDatesChange(): void {
-    this.loadJournal(this.tabs[this.activeTabIndex].code);
+    this.loadJournal(this.activeJournalCode);
   }
 
   loadJournal(journalCode: string): void {

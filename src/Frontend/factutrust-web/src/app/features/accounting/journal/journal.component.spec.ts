@@ -43,6 +43,8 @@ describe('JournalComponent', () => {
             exportJournal: () => of(new Blob()),
             validateJournalEntry: () => of({ success: true }),
             reverseJournalEntry: () => of({ success: true }),
+            // Catalogue de journaux : vide ici, le sélecteur retombe sur les journaux standards.
+            getJournals: () => of({ success: true, data: [] }),
             getJournalEntryAttachments: () => of({ success: true, data: [] }),
             uploadJournalEntryAttachment: () => of({ success: true }),
             deleteJournalEntryAttachment: () => of({ success: true }),
@@ -50,7 +52,18 @@ describe('JournalComponent', () => {
           }
         },
         { provide: AccountingMonitoringService, useValue: { logError: jasmine.createSpy('logError') } },
-        { provide: AuthService, useValue: { hasAllPermissions: () => false } }
+        {
+          // Depuis la réserve de la validation au cabinet en mode délégué, l'action « Valider »
+          // n'apparaît que pour un tel utilisateur : le doublon doit donc en incarner un, sinon
+          // le scénario teste un écran où le bouton est légitimement absent.
+          provide: AuthService,
+          useValue: {
+            hasAllPermissions: () => true,
+            hasPermission: () => true,
+            isAccountingFirm: () => true,
+            isDelegatedMode: () => true
+          }
+        }
       ]
     }).compileComponents();
     fixture = TestBed.createComponent(JournalComponent);

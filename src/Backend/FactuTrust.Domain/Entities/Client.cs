@@ -49,7 +49,7 @@ public sealed class Client : AggregateRoot
         if (name.Length > 200)
             return Result.Failure<Client>(Error.Validation("Name", "Le nom du client ne peut pas dépasser 200 caractères"));
 
-        if (type == ClientType.Business && nif is null)
+        if ((type == ClientType.Business || type == ClientType.Government || type == ClientType.Association) && nif is null)
             return Result.Failure<Client>(Error.Validation("NIF", "Le NIF est obligatoire pour les clients professionnels"));
 
         var client = new Client
@@ -141,7 +141,17 @@ public enum ClientType
     /// <summary>
     /// Business/company.
     /// </summary>
-    Business = 1
+    Business = 1,
+
+    /// <summary>
+    /// Public administration or government entity.
+    /// </summary>
+    Government = 2,
+
+    /// <summary>
+    /// Non-profit association or NGO.
+    /// </summary>
+    Association = 3
 }
 
 public static class ClientTypeExtensions
@@ -150,6 +160,8 @@ public static class ClientTypeExtensions
     {
         ClientType.Individual => "Particulier",
         ClientType.Business => "Entreprise",
+        ClientType.Government => "Administration",
+        ClientType.Association => "Association",
         _ => throw new ArgumentOutOfRangeException(nameof(type))
     };
 }

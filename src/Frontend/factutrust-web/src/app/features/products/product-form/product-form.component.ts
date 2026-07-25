@@ -1,6 +1,6 @@
 import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormBuilder, FormGroup, ReactiveFormsModule, Validators, FormsModule } from '@angular/forms';
 import { Router, RouterModule, ActivatedRoute } from '@angular/router';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputTextarea } from 'primeng/inputtextarea';
@@ -25,6 +25,13 @@ import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { AuthService } from '@core/services/auth.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
 import { AppModule } from '@core/models/app-module';
+import {
+  calculateFodecAmount,
+  calculateSaleTtc,
+  calculateVatAmount,
+  PricingEditSource,
+  recalculatePricing
+} from '@shared/utils/product-pricing.utils';
 
 interface CategoryOption {
   label: string;
@@ -47,6 +54,7 @@ interface VatOption {
   imports: [
     CommonModule,
     ReactiveFormsModule,
+    FormsModule,
     RouterModule,
     InputTextModule,
     InputTextarea,
@@ -260,127 +268,196 @@ interface VatOption {
 
         <!-- Pricing -->
         <app-form-section title="Tarification" icon="pi-dollar" [number]="2">
-          <div class="form-row">
+          <div class="pricing-block">
+            <h4 class="pricing-block-title">Coûts d'achat</h4>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="purchasePrice">Prix d'achat HT</label>
+                <p-inputNumber
+                  id="purchasePrice"
+                  formControlName="purchasePrice"
+                  mode="decimal"
+                  [minFractionDigits]="3"
+                  [maxFractionDigits]="3"
+                  suffix=" TND"
+                  placeholder="Optionnel"
+                  styleClass="w-full"
+                  (onInput)="onPricingChange('purchasePrice')">
+                </p-inputNumber>
+                <small class="form-hint">
+                  Prix par défaut pour les bons de commande et factures fournisseurs.
+                </small>
+              </div>
+
+              <div class="form-group">
+                <label for="lastPurchasePrice">Dernier prix d'achat HT</label>
+                <p-inputNumber
+                  id="lastPurchasePrice"
+                  [ngModel]="lastPurchasePrice()"
+                  [ngModelOptions]="{ standalone: true }"
+                  mode="decimal"
+                  [minFractionDigits]="3"
+                  [maxFractionDigits]="3"
+                  suffix=" TND"
+                  [disabled]="true"
+                  styleClass="w-full readonly-field">
+                </p-inputNumber>
+                <small class="form-hint">Mis à jour automatiquement à chaque réception BC.</small>
+              </div>
+            </div>
+
             <div class="form-group">
-              <label for="unitPrice">Prix unitaire HT <span class="required">*</span></label>
-              <p-inputNumber 
-                id="unitPrice" 
-                formControlName="unitPrice"
+              <label for="weightedAverageCost">Coût unitaire moyen pondéré (CMUP) HT</label>
+              <p-inputNumber
+                id="weightedAverageCost"
+                [ngModel]="weightedAverageCost()"
+                [ngModelOptions]="{ standalone: true }"
+                mode="decimal"
+                [minFractionDigits]="3"
+                [maxFractionDigits]="3"
+                suffix=" TND"
+                [disabled]="true"
+                styleClass="w-full readonly-field">
+              </p-inputNumber>
+              <small class="form-hint">Calculé depuis le stock (entrepôt par défaut).</small>
+            </div>
+          </div>
+
+          <div class="pricing-block">
+            <h4 class="pricing-block-title">Prix de vente</h4>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="profitMarginPercent">Marge bénéficiaire</label>
+                <p-inputNumber
+                  id="profitMarginPercent"
+                  formControlName="profitMarginPercent"
+                  mode="decimal"
+                  [minFractionDigits]="3"
+                  [maxFractionDigits]="3"
+                  suffix=" %"
+                  placeholder="—"
+                  styleClass="w-full"
+                  (onInput)="onPricingChange('margin')">
+                </p-inputNumber>
+                @if (!canEditMargin()) {
+                  <small class="form-hint">Renseignez un prix d'achat HT pour activer la marge.</small>
+                }
+              </div>
+
+              <div class="form-group">
+                <label for="unitPrice">Prix de vente HT <span class="required">*</span></label>
+                <p-inputNumber
+                  id="unitPrice"
+                  formControlName="unitPrice"
+                  mode="decimal"
+                  [minFractionDigits]="3"
+                  [maxFractionDigits]="3"
+                  suffix=" TND"
+                  placeholder="0.000"
+                  styleClass="w-full"
+                  [class.ng-invalid]="isInvalid('unitPrice')"
+                  (onInput)="onPricingChange('unitPriceHt')">
+                </p-inputNumber>
+                @if (isInvalid('unitPrice')) {
+                  <div class="form-error">
+                    <i class="pi pi-exclamation-circle"></i>
+                    <span>{{ errorMessageService.getErrorMessage(form.get('unitPrice')) }}</span>
+                  </div>
+                }
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="unit">Unité de mesure <span class="required">*</span></label>
+                <p-dropdown
+                  id="unit"
+                  [options]="unitOptions"
+                  formControlName="unit"
+                  placeholder="Sélectionner"
+                  [editable]="true"
+                  styleClass="w-full">
+                </p-dropdown>
+              </div>
+
+              <div class="form-group">
+                <label for="vatRate">Taux de TVA <span class="required">*</span></label>
+                <p-dropdown
+                  id="vatRate"
+                  [options]="vatOptions"
+                  formControlName="vatRate"
+                  placeholder="Sélectionner"
+                  styleClass="w-full"
+                  (onChange)="onPricingChange('vatRate')">
+                </p-dropdown>
+              </div>
+            </div>
+
+            <div class="form-group fodec-group">
+              <div class="fodec-checkbox">
+                <p-checkbox
+                  inputId="isFodecApplicable"
+                  formControlName="isFodecApplicable"
+                  [binary]="true"
+                  (onChange)="onPricingChange('fodec')">
+                </p-checkbox>
+                <label for="isFodecApplicable">FODEC applicable (1%)</label>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="salePriceTtc">Prix de vente TTC <span class="required">*</span></label>
+              <p-inputNumber
+                id="salePriceTtc"
+                formControlName="salePriceTtc"
                 mode="decimal"
                 [minFractionDigits]="3"
                 [maxFractionDigits]="3"
                 suffix=" TND"
                 placeholder="0.000"
                 styleClass="w-full"
-                [class.ng-invalid]="isInvalid('unitPrice')">
+                (onInput)="onPricingChange('saleTtc')">
               </p-inputNumber>
-              @if (isInvalid('unitPrice')) {
-                <div class="form-error">
-                  <i class="pi pi-exclamation-circle"></i>
-                  <span>{{ errorMessageService.getErrorMessage(form.get('unitPrice')) }}</span>
-                  @if (errorMessageService.getFieldSuggestion('unitPrice', 'min')) {
-                    <small class="form-hint">
-                      {{ errorMessageService.getFieldSuggestion('unitPrice', 'min') }}
-                    </small>
-                  }
-                </div>
-              }
             </div>
 
-            <div class="form-group">
-              <label for="unit">Unité de mesure <span class="required">*</span></label>
-              <p-dropdown 
-                id="unit"
-                [options]="unitOptions" 
-                formControlName="unit"
-                placeholder="Sélectionner"
-                [editable]="true"
-                styleClass="w-full">
-              </p-dropdown>
-              @if (isInvalid('unit')) {
-                <div class="form-error">
-                  <i class="pi pi-exclamation-circle"></i>
-                  <span>{{ errorMessageService.getErrorMessage(form.get('unit')) }}</span>
-                </div>
-              }
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label for="purchasePrice">Prix d'achat HT</label>
-            <p-inputNumber 
-              id="purchasePrice" 
-              formControlName="purchasePrice"
-              mode="decimal"
-              [minFractionDigits]="3"
-              [maxFractionDigits]="3"
-              suffix=" TND"
-              placeholder="Optionnel"
-              styleClass="w-full"
-              [class.ng-invalid]="isInvalid('purchasePrice')">
-            </p-inputNumber>
-            <small class="form-hint">
-              Prix par défaut pour les bons de commande et factures fournisseurs. Si vide, le prix de vente est utilisé.
-            </small>
-            @if (isInvalid('purchasePrice')) {
-              <div class="form-error">
-                <i class="pi pi-exclamation-circle"></i>
-                <span>{{ errorMessageService.getErrorMessage(form.get('purchasePrice')) }}</span>
-              </div>
-            }
-          </div>
-
-          <div class="form-group">
-            <label for="vatRate">Taux de TVA <span class="required">*</span></label>
-            <p-dropdown 
-              id="vatRate"
-              [options]="vatOptions" 
-              formControlName="vatRate"
-              placeholder="Sélectionner"
-              styleClass="w-full">
-            </p-dropdown>
-            <small class="form-hint">
-              Taux de TVA applicable selon la législation tunisienne
-            </small>
-            @if (isInvalid('vatRate')) {
-              <div class="form-error">
-                <i class="pi pi-exclamation-circle"></i>
-                <span>{{ errorMessageService.getErrorMessage(form.get('vatRate')) }}</span>
-              </div>
-            }
-          </div>
-
-          <div class="form-group fodec-group">
-            <div class="fodec-checkbox">
-              <p-checkbox
-                inputId="isFodecApplicable"
-                formControlName="isFodecApplicable"
-                [binary]="true">
-              </p-checkbox>
-              <label for="isFodecApplicable">FODEC applicable (1%)</label>
-            </div>
-            <small class="form-hint">Fonds de Développement de la Compétitivité</small>
-          </div>
-
-          <!-- Calculated preview -->
-          <div class="price-preview">
-            <div class="preview-row">
-              <span>Prix HT</span>
-              <span class="value">{{ form.get('unitPrice')?.value | number:'1.3-3' }} TND</span>
-            </div>
-            @if (form.get('isFodecApplicable')?.value) {
+            <div class="price-preview">
               <div class="preview-row">
                 <span>FODEC (1%)</span>
-                <span class="value">{{ calculateFodec() | number:'1.3-3' }} TND</span>
+                <span class="value">{{ previewFodec() | number:'1.3-3' }} TND</span>
               </div>
-            }
-            <div class="preview-row">
-              <span>TVA ({{ form.get('vatRate')?.value || 0 }}%)</span>
-              <span class="value">{{ calculateVat() | number:'1.3-3' }} TND</span>
+              <div class="preview-row">
+                <span>TVA ({{ form.get('vatRate')?.value || 0 }}%)</span>
+                <span class="value">{{ previewVat() | number:'1.3-3' }} TND</span>
+              </div>
             </div>
-            <div class="preview-row total">
-              <span>Prix TTC</span>
-              <span class="value">{{ calculateTTC() | number:'1.3-3' }} TND</span>
+          </div>
+
+          <div class="pricing-block">
+            <h4 class="pricing-block-title">Remise produit</h4>
+            <div class="form-group">
+              <div class="fodec-checkbox">
+                <p-checkbox
+                  inputId="isDiscountEnabled"
+                  formControlName="isDiscountEnabled"
+                  [binary]="true">
+                </p-checkbox>
+                <label for="isDiscountEnabled">Activer la remise</label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="maxDiscountPercent">Remise maximale</label>
+              <p-inputNumber
+                id="maxDiscountPercent"
+                formControlName="maxDiscountPercent"
+                mode="decimal"
+                [minFractionDigits]="1"
+                [maxFractionDigits]="1"
+                suffix=" %"
+                placeholder="0.0"
+                styleClass="w-full"
+                [class.ng-invalid]="isInvalid('maxDiscountPercent')">
+              </p-inputNumber>
+              <small class="form-hint discount-hint">(Remise globale maximale : 100,0 %)</small>
             </div>
           </div>
         </app-form-section>
@@ -569,6 +646,36 @@ interface VatOption {
       border-radius: var(--radius-lg);
     }
 
+    .pricing-block {
+      margin-bottom: var(--spacing-5);
+      padding-bottom: var(--spacing-4);
+      border-bottom: 1px solid var(--color-neutral-200);
+
+      &:last-child {
+        border-bottom: none;
+        margin-bottom: 0;
+        padding-bottom: 0;
+      }
+    }
+
+    .pricing-block-title {
+      margin: 0 0 var(--spacing-4);
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .discount-hint {
+      color: var(--color-error-600);
+    }
+
+    :host ::ng-deep .readonly-field .p-inputnumber-input {
+      background: var(--color-neutral-100);
+      color: var(--color-neutral-600);
+    }
+
     .preview-row {
       display: flex;
       justify-content: space-between;
@@ -636,8 +743,15 @@ export class ProductFormComponent implements OnInit {
   selectedImageFile = signal<File | null>(null);
   previewDataUrl = signal<string | null>(null);
   imageToRemove = signal(false);
+  lastPurchasePrice = signal<number | null>(null);
+  weightedAverageCost = signal<number | null>(null);
+  private pricingSync = false;
 
   isEditMode = computed(() => !!this.productId());
+  canEditMargin = computed(() => {
+    const purchase = this.form.get('purchasePrice')?.value;
+    return purchase != null && purchase > 0;
+  });
 
   canMutateProduct = computed(() =>
     this.isEditMode()
@@ -707,9 +821,13 @@ export class ProductFormComponent implements OnInit {
     productCategoryId: [null as string | null],
     unitPrice: [0, [Validators.required, Validators.min(0)]],
     purchasePrice: [null as number | null, [Validators.min(0)]],
+    profitMarginPercent: [null as number | null],
+    salePriceTtc: [0, [Validators.required, Validators.min(0)]],
     unit: ['Unité', Validators.required],
     vatRate: [19, Validators.required],
     isFodecApplicable: [false],
+    isDiscountEnabled: [false],
+    maxDiscountPercent: [null as number | null, [Validators.min(0), Validators.max(100)]],
     isStockManaged: [false],
     preferredSupplierId: [null as string | null],
     isActive: [true]
@@ -730,6 +848,24 @@ export class ProductFormComponent implements OnInit {
     categoryControl?.valueChanges.subscribe((value) => {
       this.syncStockManagement(value ?? null);
     });
+
+    this.form.get('isDiscountEnabled')?.valueChanges.subscribe((enabled) => {
+      const maxCtrl = this.form.get('maxDiscountPercent');
+      if (!maxCtrl) return;
+      if (enabled) {
+        maxCtrl.enable({ emitEvent: false });
+        if (maxCtrl.value == null) {
+          maxCtrl.setValue(100, { emitEvent: false });
+        }
+      } else {
+        maxCtrl.disable({ emitEvent: false });
+        maxCtrl.setValue(null, { emitEvent: false });
+      }
+    });
+
+    this.syncDiscountControls(this.form.get('isDiscountEnabled')?.value ?? false);
+    this.syncMarginControl();
+    this.onPricingChange('unitPriceHt');
   }
 
   isInvalid(field: string): boolean {
@@ -754,26 +890,68 @@ export class ProductFormComponent implements OnInit {
     this.currentImageUrl.set(null);
   }
 
-  calculateFodec(): number {
-    if (!this.form.get('isFodecApplicable')?.value) return 0;
-    const price = this.form.get('unitPrice')?.value || 0;
-    return this.round3(price * 0.01);
+  onPricingChange(source: PricingEditSource): void {
+    if (this.pricingSync) return;
+
+    const purchasePrice = this.form.get('purchasePrice')?.value ?? null;
+    this.syncMarginControl();
+
+    const result = recalculatePricing(
+      {
+        purchasePrice,
+        profitMarginPercent: this.form.get('profitMarginPercent')?.value ?? null,
+        unitPriceHt: this.form.get('unitPrice')?.value ?? 0,
+        saleTtc: this.form.get('salePriceTtc')?.value ?? 0,
+        vatRatePercent: this.form.get('vatRate')?.value ?? 0,
+        isFodecApplicable: this.form.get('isFodecApplicable')?.value ?? false
+      },
+      source
+    );
+
+    this.pricingSync = true;
+    this.form.patchValue(
+      {
+        unitPrice: result.unitPriceHt,
+        profitMarginPercent: result.profitMarginPercent,
+        salePriceTtc: result.saleTtc
+      },
+      { emitEvent: false }
+    );
+    this.pricingSync = false;
   }
 
-  calculateVat(): number {
-    const price = this.form.get('unitPrice')?.value || 0;
-    const vatRate = this.form.get('vatRate')?.value || 0;
-    const vatBase = price + this.calculateFodec();
-    return this.round3(vatBase * (vatRate / 100));
+  previewFodec(): number {
+    return calculateFodecAmount(
+      this.form.get('unitPrice')?.value ?? 0,
+      this.form.get('isFodecApplicable')?.value ?? false
+    );
   }
 
-  calculateTTC(): number {
-    const price = this.form.get('unitPrice')?.value || 0;
-    return this.round3(price + this.calculateFodec() + this.calculateVat());
+  previewVat(): number {
+    const unitPrice = this.form.get('unitPrice')?.value ?? 0;
+    const fodec = this.previewFodec();
+    return calculateVatAmount(unitPrice, fodec, this.form.get('vatRate')?.value ?? 0);
   }
 
-  private round3(n: number): number {
-    return Math.round(n * 1000) / 1000;
+  private syncMarginControl(): void {
+    const marginCtrl = this.form.get('profitMarginPercent');
+    if (!marginCtrl) return;
+    if (this.canEditMargin()) {
+      marginCtrl.enable({ emitEvent: false });
+    } else {
+      marginCtrl.disable({ emitEvent: false });
+      marginCtrl.setValue(null, { emitEvent: false });
+    }
+  }
+
+  private syncDiscountControls(enabled: boolean): void {
+    const maxCtrl = this.form.get('maxDiscountPercent');
+    if (!maxCtrl) return;
+    if (enabled) {
+      maxCtrl.enable({ emitEvent: false });
+    } else {
+      maxCtrl.disable({ emitEvent: false });
+    }
   }
 
   private loadProductCategories(): void {
@@ -804,6 +982,8 @@ export class ProductFormComponent implements OnInit {
       next: (response) => {
         if (response.success && response.data) {
           const product = response.data;
+          this.lastPurchasePrice.set(product.lastPurchasePrice ?? null);
+          this.weightedAverageCost.set(product.weightedAverageCost ?? null);
           this.form.patchValue({
             code: product.code,
             name: product.name,
@@ -812,13 +992,24 @@ export class ProductFormComponent implements OnInit {
             productCategoryId: product.categoryId || null,
             unitPrice: product.unitPrice,
             purchasePrice: product.purchasePrice ?? null,
+            profitMarginPercent: product.profitMarginPercent ?? null,
+            salePriceTtc: product.salePriceTtc ?? calculateSaleTtc(
+              product.unitPrice,
+              product.vatRate,
+              product.isFodecApplicable ?? false
+            ),
             unit: product.unit || 'Unité',
             vatRate: product.vatRate,
             isFodecApplicable: product.isFodecApplicable ?? false,
+            isDiscountEnabled: product.isDiscountEnabled ?? false,
+            maxDiscountPercent: product.maxDiscountPercent ?? null,
             isStockManaged: product.isStockManaged ?? false,
             preferredSupplierId: product.preferredSupplierId ?? null,
             isActive: product.isActive ?? true
           });
+
+          this.syncDiscountControls(product.isDiscountEnabled ?? false);
+          this.syncMarginControl();
 
           this.syncStockManagement(product.typeDisplay || 'Service', true);
           this.currentImageUrl.set(product.imageUrl ?? null);
@@ -871,9 +1062,12 @@ export class ProductFormComponent implements OnInit {
         productCategoryId: formValue.productCategoryId || undefined,
         unitPrice: formValue.unitPrice,
         purchasePrice: formValue.purchasePrice ?? null,
+        profitMarginPercent: formValue.profitMarginPercent ?? null,
         unit: formValue.unit,
         vatRate: formValue.vatRate,
         isFodecApplicable: formValue.isFodecApplicable ?? false,
+        isDiscountEnabled: formValue.isDiscountEnabled ?? false,
+        maxDiscountPercent: formValue.isDiscountEnabled ? formValue.maxDiscountPercent ?? null : null,
         isStockManaged: formValue.isStockManaged ?? false,
         preferredSupplierId: formValue.preferredSupplierId || null,
         isActive: formValue.isActive ?? true
@@ -951,9 +1145,12 @@ export class ProductFormComponent implements OnInit {
         productCategoryId: formValue.productCategoryId || undefined,
         unitPrice: formValue.unitPrice,
         purchasePrice: formValue.purchasePrice ?? null,
+        profitMarginPercent: formValue.profitMarginPercent ?? null,
         unit: formValue.unit,
         vatRate: formValue.vatRate,
         isFodecApplicable: formValue.isFodecApplicable ?? false,
+        isDiscountEnabled: formValue.isDiscountEnabled ?? false,
+        maxDiscountPercent: formValue.isDiscountEnabled ? formValue.maxDiscountPercent ?? null : null,
         isStockManaged: formValue.isStockManaged ?? false,
         preferredSupplierId: formValue.preferredSupplierId || null
       };

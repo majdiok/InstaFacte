@@ -1,0 +1,13 @@
+.env
+.env.local
+vm.lab.local.json
+vm.guest-password.local
+certs/*.pfx
+certs/*.key
+certs/*.crt
+nginx/certs/*.pem
+!nginx/certs/README.md
+.cache/
+scripts/tmp-*.sh
+ollama-pull.log
+compose-up-out.log

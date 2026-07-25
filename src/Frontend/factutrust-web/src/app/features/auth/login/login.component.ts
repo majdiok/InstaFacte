@@ -11,6 +11,7 @@ import { AuthService } from '@core/services/auth.service';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
 import { ErrorMessageService } from '@core/services/error-message.service';
 import { LogoComponent } from '@shared/components/logo/logo.component';
+import { environment } from '@environments/environment';
 
 @Component({
   selector: 'app-login',
@@ -30,6 +31,7 @@ import { LogoComponent } from '@shared/components/logo/logo.component';
   styleUrl: './login.component.scss'
 })
 export class LoginComponent {
+  readonly environment = environment;
   private fb = inject(FormBuilder);
   private authService = inject(AuthService);
   private warehouseContext = inject(WarehouseContextService);

@@ -30,6 +30,7 @@ import { ButtonComponent } from '@shared/components/button/button.component';
 import { QuoteService, CreateQuoteRequest, CreateQuoteLine } from '@core/services/quote.service';
 import { ClientService, ClientListItem } from '@core/services/client.service';
 import { ProductService, ProductListItem } from '@core/services/product.service';
+import { getEffectiveMaxDiscountPercent } from '@shared/utils/product-pricing.utils';
 import { CrmService } from '@features/crm/services/crm.service';
 
 interface LineRow {
@@ -41,6 +42,8 @@ interface LineRow {
   unitPrice: number;
   vatRatePercent: number;
   discountPercent?: number;
+  productIsDiscountEnabled?: boolean;
+  productMaxDiscountPercent?: number | null;
 }
 
 @Component({
@@ -828,6 +831,8 @@ export class QuoteFormComponent implements OnInit {
     line.unit = product.unit;
     line.unitPrice = product.unitPrice;
     line.vatRatePercent = product.vatRate;
+    line.productIsDiscountEnabled = product.isDiscountEnabled ?? false;
+    line.productMaxDiscountPercent = product.maxDiscountPercent ?? null;
   }
 
   openQuickCreateProduct(lineIndex: number): void {
@@ -860,6 +865,8 @@ export class QuoteFormComponent implements OnInit {
       line.unit = product.unit;
       line.unitPrice = product.unitPrice;
       line.vatRatePercent = product.vatRate;
+      line.productIsDiscountEnabled = product.isDiscountEnabled ?? false;
+      line.productMaxDiscountPercent = product.maxDiscountPercent ?? null;
     }
     this.productSuggestions.set([product, ...this.productSuggestions()]);
     this.quickCreateProductVisible = false;
@@ -902,6 +909,22 @@ export class QuoteFormComponent implements OnInit {
         detail: 'Ajoutez au moins une ligne avec un produit sélectionné.',
       });
       return;
+    }
+
+    for (const line of this.lines) {
+      if (!line.product || !line.discountPercent || line.discountPercent <= 0) continue;
+      const maxAllowed = getEffectiveMaxDiscountPercent(
+        line.productIsDiscountEnabled,
+        line.productMaxDiscountPercent
+      );
+      if (line.discountPercent > maxAllowed) {
+        this.toastService.add({
+          severity: 'error',
+          summary: 'Remise invalide',
+          detail: `La remise ne peut pas dépasser ${maxAllowed}% pour « ${line.designation} ».`,
+        });
+        return;
+      }
     }
 
     this.submitError.set(null);

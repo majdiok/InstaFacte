@@ -1,8 +1,7 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.Products;
 using FactuTrust.Domain.Common;
-using FactuTrust.Domain.Entities;
-using FactuTrust.Domain.Enums;
 using MediatR;
 
 namespace FactuTrust.Application.Features.Products.Queries;
@@ -18,10 +17,17 @@ public sealed record GetProductByIdQuery(Guid Id) : IRequest<Result<ProductDetai
 public sealed class GetProductByIdQueryHandler : IRequestHandler<GetProductByIdQuery, Result<ProductDetailDto>>
 {
     private readonly IProductRepository _productRepository;
+    private readonly IWarehouseRepository _warehouseRepository;
+    private readonly IStockItemRepository _stockItemRepository;
 
-    public GetProductByIdQueryHandler(IProductRepository productRepository)
+    public GetProductByIdQueryHandler(
+        IProductRepository productRepository,
+        IWarehouseRepository warehouseRepository,
+        IStockItemRepository stockItemRepository)
     {
         _productRepository = productRepository;
+        _warehouseRepository = warehouseRepository;
+        _stockItemRepository = stockItemRepository;
     }
 
     public async Task<Result<ProductDetailDto>> Handle(GetProductByIdQuery request, CancellationToken cancellationToken)
@@ -30,32 +36,20 @@ public sealed class GetProductByIdQueryHandler : IRequestHandler<GetProductByIdQ
         if (product is null)
             return Result.Failure<ProductDetailDto>(Error.NotFound("Product", request.Id));
 
-        var dto = new ProductDetailDto
+        decimal? weightedAverageCost = null;
+        if (product.IsStockManaged)
         {
-            Id = product.Id,
-            Code = product.Code,
-            Name = product.Name,
-            Description = product.Description,
-            Type = product.Type,
-            TypeDisplay = product.Type.ToDisplayString(),
-            UnitPrice = product.UnitPrice.Amount,
-            PurchasePrice = product.PurchasePrice?.Amount,
-            Currency = product.UnitPrice.Currency,
-            VatRate = product.VatRate,
-            VatRatePercent = (int)product.VatRate,
-            VatRateDisplay = product.VatRate.ToDisplayString(),
-            Unit = product.Unit,
-            IsActive = product.IsActive,
-            IsStockManaged = product.IsStockManaged,
-            IsFodecApplicable = product.IsFodecApplicable,
-            CategoryId = product.CategoryId,
-            CategoryName = product.Category.Name,
-            ImageUrl = product.ImageUrl,
-            PreferredSupplierId = product.PreferredSupplierId,
-            CreatedAt = product.CreatedAt,
-            UpdatedAt = product.UpdatedAt
-        };
+            var defaultWarehouse = await _warehouseRepository.GetDefaultAsync(cancellationToken);
+            if (defaultWarehouse is not null)
+            {
+                var stockItem = await _stockItemRepository.GetByProductAndWarehouseAsync(
+                    product.Id,
+                    defaultWarehouse.Id,
+                    cancellationToken);
+                weightedAverageCost = stockItem?.AverageCost;
+            }
+        }
 
-        return Result.Success(dto);
+        return Result.Success(ProductDetailMapper.ToDetailDto(product, weightedAverageCost));
     }
 }

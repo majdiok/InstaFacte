@@ -106,6 +106,58 @@ public sealed class AccountingExportServiceTests
     }
 
     [Fact]
+    public void ExportFiscalResult_ProducesCsvInMillimes_AndReadableWorkbook()
+    {
+        var dto = new FiscalResultDeclarationDto
+        {
+            FiscalYear = 2025,
+            TaxpayerKind = 0,
+            AccountingResult = 100000m,
+            Adjustments = new List<FiscalAdjustmentLineDto>
+            {
+                new() { Kind = 0, Label = "Impôt sur les sociétés", Amount = 15000m }
+            },
+            Computation = new IncomeTaxComputationDto
+            {
+                AccountingResult = 100000m, TotalReintegrations = 15000m, TaxableResult = 115000m,
+                TaxOnResult = 17250m, MinimumTax = 1000m, TaxDue = 17250m, TotalTaxDue = 17250m, NetToPay = 17250m
+            }
+        };
+
+        var csv = CsvText(Svc.ExportFiscalResultToCsv(dto));
+        Assert.Contains("17250.000", csv);
+        Assert.Contains("RÉINTÉGRATIONS", csv);
+
+        AssertIsXlsx(Svc.ExportFiscalResultToExcel(dto));
+    }
+
+    [Fact]
+    public void ExportConsolidatedLiasse_ProducesMultiSheetWorkbook()
+    {
+        var current = new Dictionary<string, decimal>
+        {
+            ["221"] = 10000m, ["101"] = -15000m, ["70"] = -20000m, ["601"] = 12000m
+        };
+        var liasse = FactuTrust.Infrastructure.Services.NctStatementBuilder.Build(2025, current, new Dictionary<string, decimal>(), enabled: true);
+
+        var dto = new ConsolidatedLiasseDto
+        {
+            FiscalYear = 2025,
+            FinancialStatements = liasse,
+            FiscalResult = new FiscalResultDeclarationDto { FiscalYear = 2025, Computation = new IncomeTaxComputationDto() },
+            AmortizationTable = new List<FiscalTableRowDto> { new() { Code = "IMM-1", Label = "Matériel", Amount = 1000m } },
+            ProvisionsTable = new List<FiscalTableRowDto> { new() { Code = "15", Label = "Provisions", Amount = 3000m, PreviousAmount = 2000m } }
+        };
+
+        var bytes = Svc.ExportConsolidatedLiasseToExcel(dto);
+        AssertIsXlsx(bytes);
+
+        using var ms = new MemoryStream(bytes);
+        using var wb = new XLWorkbook(ms);
+        Assert.True(wb.Worksheets.Count >= 4);
+    }
+
+    [Fact]
     public void ExportBalanceSheetAndIncomeStatement_ProduceWorkbooks()
     {
         var bs = new BalanceSheetDto

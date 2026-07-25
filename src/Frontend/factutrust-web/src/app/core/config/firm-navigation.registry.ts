@@ -30,6 +30,98 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
 
   {
 
+    label: 'Échéancier fiscal',
+
+    icon: 'fa-solid fa-calendar-days',
+
+    route: '/firm/fiscal-schedule'
+
+  },
+
+  {
+
+    label: 'Gouvernance',
+
+    icon: 'fa-solid fa-landmark',
+
+    children: [
+
+      {
+
+        label: 'Dossiers permanents',
+
+        route: '/firm/governance/permanent-files',
+
+        icon: 'fa-solid fa-folder-open'
+
+      },
+
+      {
+
+        label: 'Affectation des dossiers',
+
+        route: '/firm/affectation',
+
+        icon: 'fa-solid fa-user-tag'
+
+      },
+
+      {
+
+        label: 'Feuilles de temps',
+
+        route: '/firm/governance/time-sheets',
+
+        icon: 'fa-solid fa-clock'
+
+      },
+
+      {
+
+        label: 'Feuilles de temps et rentabilité',
+
+        route: '/firm/governance/dossier-time-profitability',
+
+        icon: 'fa-solid fa-chart-line'
+
+      },
+
+      {
+
+        label: 'Rentabilité collaborateurs',
+
+        route: '/firm/governance/collaborator-rentability',
+
+        icon: 'fa-solid fa-chart-pie'
+
+      },
+
+      {
+
+        label: 'Notes de frais dirigeants',
+
+        route: '/firm/governance/expense-notes',
+
+        icon: 'fa-solid fa-receipt'
+
+      },
+
+      {
+
+        label: 'Suivi social',
+
+        route: '/firm/governance/social',
+
+        icon: 'fa-solid fa-users'
+
+      }
+
+    ]
+
+  },
+
+  {
+
     label: 'Invitations',
 
     icon: 'fa-solid fa-envelope-open-text',
@@ -45,6 +137,16 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
     icon: 'fa-solid fa-building-columns',
 
     children: [
+
+      {
+
+        label: 'Collaborateurs',
+
+        route: '/firm/collaborateurs',
+
+        icon: 'fa-solid fa-users'
+
+      },
 
       {
 
@@ -357,4 +459,23 @@ export const FIRM_DELEGATED_QUICK_ACCESS = [
   }
 
 ];
+
+/** Masque la section Gouvernance lorsque le feature flag cabinet est désactivé. */
+export function filterFirmGovernanceNav(items: NavItem[], governanceEnabled: boolean): NavItem[] {
+  if (governanceEnabled) {
+    return items;
+  }
+
+  return items
+    .filter(item => item.label !== 'Gouvernance')
+    .map(item =>
+      item.children?.length
+        ? {
+            ...item,
+            children: item.children.filter(c => !c.route?.startsWith('/firm/governance'))
+          }
+        : item
+    )
+    .filter(item => !item.route?.startsWith('/firm/governance'));
+}
 

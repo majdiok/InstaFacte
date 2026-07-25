@@ -47,9 +47,9 @@ public sealed class FirmContextController : ControllerBase
             var tokens = await _contextService.SwitchToClientAsync(userId.Value, tenantId.Value, dto.ClientTenantId, cancellationToken);
             return Ok(ApiResponse<AuthResponseDto>.Ok(tokens, "Contexte dossier activé"));
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException ex)
         {
-            return Forbid();
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<AuthResponseDto>.Fail(ex.Message));
         }
         catch (InvalidOperationException ex)
         {

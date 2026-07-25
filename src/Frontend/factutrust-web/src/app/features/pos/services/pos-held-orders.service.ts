@@ -1,4 +1,5 @@
 import { Injectable, signal, computed } from '@angular/core';
+import { createClientUuid } from '@core/utils/safe-random-uuid.util';
 import { PosStateService, PosState } from './pos-state.service';
 
 const DB_NAME = 'pos-held-orders';
@@ -69,7 +70,7 @@ export class PosHeldOrdersService {
     const label = `${clientName} - ${lineCount} article${lineCount > 1 ? 's' : ''}`;
 
     const held: HeldOrder = {
-      id: crypto.randomUUID(),
+      id: createClientUuid(),
       label,
       state,
       lineCount,

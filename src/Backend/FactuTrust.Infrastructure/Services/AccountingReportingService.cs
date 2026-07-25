@@ -30,6 +30,79 @@ public sealed class AccountingReportingService : IAccountingReportingService
     /// </summary>
     private bool ShowDrafts => _settings.IncludeBrouillardInReports;
 
+    // ── Ancrage d'exercice (à-nouveaux) ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Ancrage de l'ouverture sur l'exercice contenant la date de début demandée.
+    /// <para>
+    /// Quand l'exercice porte une écriture d'à-nouveau, celle-ci RÉSUME les soldes des exercices
+    /// antérieurs. L'ouverture doit alors partir de cette écriture, et non de tout l'historique :
+    /// sinon les soldes reportés sont comptés deux fois — une fois par l'historique conservé en
+    /// base, une fois par l'à-nouveau lui-même.
+    /// </para>
+    /// <para>
+    /// Sans à-nouveau sur l'exercice, l'ancrage est NEUTRE (<see cref="OpeningEntryId"/> nul) et
+    /// les états conservent exactement le comportement cumulatif historique — aucun chiffre ne
+    /// bouge sur un dossier qui n'a jamais reporté d'à-nouveaux.
+    /// </para>
+    /// L'exercice est l'année civile : c'est la seule notion d'exercice du modèle
+    /// (cf. <c>AccountingPeriod.FiscalYear</c> et le filtre annuel des états de synthèse).
+    /// </summary>
+    private readonly record struct FiscalAnchor(DateTime FiscalYearStart, Guid? OpeningEntryId)
+    {
+        /// <summary>Vrai quand l'exercice porte un à-nouveau : l'ouverture s'ancre sur lui.</summary>
+        public bool IsAnchored => OpeningEntryId.HasValue;
+    }
+
+    private static async Task<FiscalAnchor> ResolveFiscalAnchorAsync(
+        Persistence.TenantDbContext ctx, DateTime from, CancellationToken ct)
+    {
+        var fiscalYearStart = new DateTime(from.Year, 1, 1);
+        var fiscalYearEnd = new DateTime(from.Year, 12, 31);
+
+        // L'à-nouveau est unique par exercice (idempotence garantie à la génération).
+        var openingEntryId = await ctx.JournalEntries.AsNoTracking()
+            .Where(e => e.SourceEntityType == AccountingService.SourceOpeningBalance
+                        && e.EntryDate >= fiscalYearStart
+                        && e.EntryDate <= fiscalYearEnd)
+            .Select(e => (Guid?)e.Id)
+            .FirstOrDefaultAsync(ct);
+
+        return new FiscalAnchor(fiscalYearStart, openingEntryId);
+    }
+
+    /// <summary>
+    /// Lignes constituant l'ouverture : l'à-nouveau de l'exercice plus les mouvements de l'exercice
+    /// antérieurs à la période (ancrage actif), ou tout l'historique antérieur (comportement
+    /// historique, ancrage neutre).
+    /// </summary>
+    private static IQueryable<JournalEntryLine> OpeningLines(
+        IQueryable<JournalEntryLine> source, FiscalAnchor anchor, DateTime from)
+    {
+        if (!anchor.IsAnchored)
+            return source.Where(l => l.JournalEntry.EntryDate < from);
+
+        var openingEntryId = anchor.OpeningEntryId!.Value;
+        var fiscalYearStart = anchor.FiscalYearStart;
+        return source.Where(l => l.JournalEntryId == openingEntryId
+                                 || (l.JournalEntry.EntryDate >= fiscalYearStart
+                                     && l.JournalEntry.EntryDate < from));
+    }
+
+    /// <summary>
+    /// Lignes de mouvement de la période. Quand l'ancrage est actif, les écritures d'à-nouveau en
+    /// sont exclues : celle de l'exercice est déjà comptée dans l'ouverture, et celles des exercices
+    /// suivants (période à cheval sur plusieurs exercices) ne sont que des reports.
+    /// </summary>
+    private static IQueryable<JournalEntryLine> MovementLines(
+        IQueryable<JournalEntryLine> source, FiscalAnchor anchor, DateTime from, DateTime to)
+    {
+        var movements = source.Where(l => l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to);
+        return anchor.IsAnchored
+            ? movements.Where(l => l.JournalEntry.SourceEntityType != AccountingService.SourceOpeningBalance)
+            : movements;
+    }
+
     public async Task<Result<IReadOnlyList<ChartOfAccountDto>>> GetChartOfAccountsAsync(CancellationToken cancellationToken = default)
     {
         await using var ctx = _contextFactory.CreateContext();
@@ -92,6 +165,153 @@ public sealed class AccountingReportingService : IAccountingReportingService
         return Result.Success<IReadOnlyList<JournalEntryDto>>(dtos);
     }
 
+    public async Task<Result<JournalSummaryDto>> GetJournalSummaryAsync(
+        DateTime from,
+        DateTime to,
+        JournalSummaryGrouping grouping,
+        string? journalCode = null,
+        CancellationToken cancellationToken = default)
+    {
+        var f = from.Date;
+        var t = to.Date;
+        if (t < f)
+            return Result.Failure<JournalSummaryDto>(
+                Error.Validation("Period", "La date de fin ne peut pas précéder la date de début."));
+
+        await using var ctx = _contextFactory.CreateContext();
+
+        var lines = ctx.JournalEntryLines.AsNoTracking()
+            .Include(l => l.JournalEntry)
+            .Where(l => l.JournalEntry.EntryDate >= f && l.JournalEntry.EntryDate <= t);
+        if (!ShowDrafts)
+            lines = lines.Where(l => l.JournalEntry.Status != JournalEntryStatus.Brouillon);
+        if (!string.IsNullOrWhiteSpace(journalCode))
+        {
+            var jc = journalCode.Trim().ToUpperInvariant();
+            lines = lines.Where(l => l.JournalEntry.JournalCode == jc);
+        }
+
+        var journalLabels = await ctx.Journals.AsNoTracking()
+            .ToDictionaryAsync(j => j.Code, j => j.Label, cancellationToken);
+        string LabelOf(string code) => journalLabels.TryGetValue(code, out var label) ? label : code;
+
+        // Sous-totaux par journal : calculés quel que soit l'axe, en une seule requête agrégée.
+        var totalsRaw = await lines
+            .GroupBy(l => l.JournalEntry.JournalCode)
+            .Select(g => new
+            {
+                JournalCode = g.Key,
+                Debit = g.Sum(l => l.DebitAmount.Amount),
+                Credit = g.Sum(l => l.CreditAmount.Amount),
+                EntryCount = g.Select(l => l.JournalEntryId).Distinct().Count()
+            })
+            .ToListAsync(cancellationToken);
+
+        var journalTotals = totalsRaw
+            .OrderBy(x => x.JournalCode, StringComparer.Ordinal)
+            .Select(x => new JournalSummaryTotalDto
+            {
+                JournalCode = x.JournalCode,
+                JournalLabel = LabelOf(x.JournalCode),
+                Debit = x.Debit,
+                Credit = x.Credit,
+                EntryCount = x.EntryCount
+            })
+            .ToList();
+
+        var cells = new List<JournalSummaryCellDto>();
+        var periods = new List<JournalSummaryPeriodDto>();
+
+        if (grouping == JournalSummaryGrouping.Month)
+        {
+            var raw = await lines
+                .GroupBy(l => new
+                {
+                    l.JournalEntry.JournalCode,
+                    l.JournalEntry.EntryDate.Year,
+                    l.JournalEntry.EntryDate.Month
+                })
+                .Select(g => new
+                {
+                    g.Key.JournalCode,
+                    g.Key.Year,
+                    g.Key.Month,
+                    Debit = g.Sum(l => l.DebitAmount.Amount),
+                    Credit = g.Sum(l => l.CreditAmount.Amount)
+                })
+                .ToListAsync(cancellationToken);
+
+            cells.AddRange(raw
+                .OrderBy(x => x.JournalCode, StringComparer.Ordinal)
+                .ThenBy(x => x.Year).ThenBy(x => x.Month)
+                .Select(x => new JournalSummaryCellDto
+                {
+                    JournalCode = x.JournalCode,
+                    JournalLabel = LabelOf(x.JournalCode),
+                    Year = x.Year,
+                    Month = x.Month,
+                    Debit = x.Debit,
+                    Credit = x.Credit
+                }));
+
+            // Colonnes du centralisateur : tous les mois de la période, même sans mouvement.
+            for (var cursor = new DateTime(f.Year, f.Month, 1); cursor <= t; cursor = cursor.AddMonths(1))
+            {
+                periods.Add(new JournalSummaryPeriodDto
+                {
+                    Year = cursor.Year,
+                    Month = cursor.Month,
+                    Label = $"{cursor.Month:00}/{cursor.Year}"
+                });
+            }
+        }
+        else if (grouping == JournalSummaryGrouping.Account)
+        {
+            var raw = await lines
+                .GroupBy(l => new { l.JournalEntry.JournalCode, l.AccountNumber })
+                .Select(g => new
+                {
+                    g.Key.JournalCode,
+                    g.Key.AccountNumber,
+                    Debit = g.Sum(l => l.DebitAmount.Amount),
+                    Credit = g.Sum(l => l.CreditAmount.Amount)
+                })
+                .ToListAsync(cancellationToken);
+
+            var accountLabels = await ctx.ChartOfAccounts.AsNoTracking()
+                .ToDictionaryAsync(c => c.AccountNumber, c => c.Label, cancellationToken);
+
+            cells.AddRange(raw
+                .OrderBy(x => x.JournalCode, StringComparer.Ordinal)
+                .ThenBy(x => x.AccountNumber, StringComparer.Ordinal)
+                .Select(x => new JournalSummaryCellDto
+                {
+                    JournalCode = x.JournalCode,
+                    JournalLabel = LabelOf(x.JournalCode),
+                    AccountNumber = x.AccountNumber,
+                    AccountLabel = accountLabels.TryGetValue(x.AccountNumber, out var al) ? al : x.AccountNumber,
+                    Debit = x.Debit,
+                    Credit = x.Credit
+                }));
+        }
+
+        var totalDebit = journalTotals.Sum(x => x.Debit);
+        var totalCredit = journalTotals.Sum(x => x.Credit);
+
+        return Result.Success(new JournalSummaryDto
+        {
+            Grouping = grouping,
+            From = f,
+            To = t,
+            Periods = periods,
+            Cells = cells,
+            JournalTotals = journalTotals,
+            TotalDebit = totalDebit,
+            TotalCredit = totalCredit,
+            IsBalanced = Math.Round(totalDebit - totalCredit, 3) == 0m
+        });
+    }
+
     public async Task<Result<IReadOnlyList<LedgerRowDto>>> GetLedgerAsync(
         string accountNumber,
         DateTime from,
@@ -137,6 +357,184 @@ public sealed class AccountingReportingService : IAccountingReportingService
         return Result.Success<IReadOnlyList<LedgerRowDto>>(rows);
     }
 
+    /// <summary>
+    /// Garde-fou : au-delà de ce nombre de comptes, l'édition est refusée explicitement plutôt que
+    /// de partir en délai d'attente côté navigateur.
+    /// </summary>
+    private const int MaxGeneralLedgerAccounts = 5000;
+
+    public async Task<Result<GeneralLedgerDto>> GetLedgerRangeAsync(
+        string? accountFrom,
+        string? accountTo,
+        DateTime from,
+        DateTime to,
+        bool includeUnmoved = false,
+        CancellationToken cancellationToken = default)
+    {
+        var f = from.Date;
+        var t = to.Date;
+        if (t < f)
+            return Result.Failure<GeneralLedgerDto>(
+                Error.Validation("Period", "La date de fin ne peut pas précéder la date de début."));
+
+        var lower = string.IsNullOrWhiteSpace(accountFrom) ? null : accountFrom.Trim();
+        var upper = string.IsNullOrWhiteSpace(accountTo) ? null : accountTo.Trim();
+        if (lower is not null && upper is not null && string.CompareOrdinal(lower, upper) > 0)
+            return Result.Failure<GeneralLedgerDto>(
+                Error.Validation("Accounts", "Le compte de début doit précéder le compte de fin."));
+
+        await using var ctx = _contextFactory.CreateContext();
+        var anchor = await ResolveFiscalAnchorAsync(ctx, f, cancellationToken);
+
+        IQueryable<JournalEntryLine> Scope()
+        {
+            IQueryable<JournalEntryLine> q = ctx.JournalEntryLines.AsNoTracking().Include(l => l.JournalEntry);
+            if (lower is not null)
+                q = q.Where(l => l.AccountNumber.CompareTo(lower) >= 0);
+            if (upper is not null)
+                q = q.Where(l => l.AccountNumber.CompareTo(upper) <= 0);
+            if (!ShowDrafts)
+                q = q.Where(l => l.JournalEntry.Status != JournalEntryStatus.Brouillon);
+            return q;
+        }
+
+        var openings = await OpeningLines(Scope(), anchor, f)
+            .GroupBy(l => l.AccountNumber)
+            .Select(g => new
+            {
+                Account = g.Key,
+                Balance = g.Sum(l => l.DebitAmount.Amount) - g.Sum(l => l.CreditAmount.Amount)
+            })
+            .ToListAsync(cancellationToken);
+        var openingMap = openings.ToDictionary(x => x.Account, x => x.Balance, StringComparer.Ordinal);
+
+        var movements = await MovementLines(Scope(), anchor, f, t)
+            .OrderBy(l => l.AccountNumber)
+            .ThenBy(l => l.JournalEntry.EntryDate)
+            .ThenBy(l => l.JournalEntry.EntryNumber)
+            .ThenBy(l => l.LineNumber)
+            .ToListAsync(cancellationToken);
+
+        var accountsInScope = new HashSet<string>(movements.Select(l => l.AccountNumber), StringComparer.Ordinal);
+        if (includeUnmoved)
+            foreach (var account in openingMap.Where(kv => kv.Value != 0m).Select(kv => kv.Key))
+                accountsInScope.Add(account);
+
+        if (accountsInScope.Count > MaxGeneralLedgerAccounts)
+            return Result.Failure<GeneralLedgerDto>(Error.Validation("Accounts",
+                $"{accountsInScope.Count} comptes dans la plage demandée (maximum {MaxGeneralLedgerAccounts}). Restreignez la plage de comptes."));
+
+        var labels = await ctx.ChartOfAccounts.AsNoTracking()
+            .ToDictionaryAsync(c => c.AccountNumber, c => c.Label, cancellationToken);
+
+        var movementsByAccount = movements
+            .GroupBy(l => l.AccountNumber, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+
+        var accounts = new List<GeneralLedgerAccountDto>(accountsInScope.Count);
+        foreach (var account in accountsInScope.OrderBy(a => a, StringComparer.Ordinal))
+        {
+            openingMap.TryGetValue(account, out var opening);
+            var rows = new List<LedgerRowDto>();
+            decimal debit = 0, credit = 0;
+            var running = opening;
+
+            if (movementsByAccount.TryGetValue(account, out var lines))
+            {
+                foreach (var line in lines)
+                {
+                    var d = line.DebitAmount.Amount;
+                    var c = line.CreditAmount.Amount;
+                    debit += d;
+                    credit += c;
+                    running += d - c;
+                    rows.Add(new LedgerRowDto
+                    {
+                        EntryDate = line.JournalEntry.EntryDate,
+                        JournalCode = line.JournalEntry.JournalCode,
+                        PieceNumber = line.JournalEntry.EntryNumber,
+                        Label = line.Label,
+                        Debit = d,
+                        Credit = c,
+                        RunningBalance = running
+                    });
+                }
+            }
+
+            accounts.Add(new GeneralLedgerAccountDto
+            {
+                AccountNumber = account,
+                Label = labels.TryGetValue(account, out var lb) ? lb : account,
+                OpeningBalance = opening,
+                Rows = rows,
+                TotalDebit = debit,
+                TotalCredit = credit,
+                ClosingBalance = running
+            });
+        }
+
+        var totalDebit = accounts.Sum(a => a.TotalDebit);
+        var totalCredit = accounts.Sum(a => a.TotalCredit);
+
+        return Result.Success(new GeneralLedgerDto
+        {
+            From = f,
+            To = t,
+            Accounts = accounts,
+            TotalDebit = totalDebit,
+            TotalCredit = totalCredit,
+            // L'équilibre n'a de sens que sur le grand livre complet : une plage de comptes
+            // n'a aucune raison d'être équilibrée à elle seule.
+            IsBalanced = lower is null && upper is null && Math.Round(totalDebit - totalCredit, 3) == 0m
+        });
+    }
+
+    public async Task<Result<IReadOnlyList<BalanceRowDto>>> GetLedgerRecapAsync(
+        int level,
+        DateTime from,
+        DateTime to,
+        CancellationToken cancellationToken = default)
+    {
+        if (level is < 1 or > 6)
+            return Result.Failure<IReadOnlyList<BalanceRowDto>>(
+                Error.Validation("Level", "Le niveau de regroupement doit être compris entre 1 et 6."));
+
+        // Même source que la balance générale : le récapitulatif ne peut pas en diverger.
+        var balance = await GetBalanceAsync(from, to, cancellationToken);
+        if (balance.IsFailure)
+            return balance;
+
+        await using var ctx = _contextFactory.CreateContext();
+        var labels = await ctx.ChartOfAccounts.AsNoTracking()
+            .ToDictionaryAsync(c => c.AccountNumber, c => c.Label, cancellationToken);
+
+        var rows = balance.Value
+            .GroupBy(r => r.AccountNumber.Length <= level ? r.AccountNumber : r.AccountNumber[..level],
+                     StringComparer.Ordinal)
+            .OrderBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g =>
+            {
+                // Les soldes se recomposent en net puis se reventilent : additionner les colonnes
+                // débit et crédit telles quelles gonflerait artificiellement les deux côtés.
+                var openingNet = g.Sum(r => r.OpeningDebit - r.OpeningCredit);
+                var closingNet = g.Sum(r => r.ClosingDebit - r.ClosingCredit);
+                return new BalanceRowDto
+                {
+                    AccountNumber = g.Key,
+                    Label = labels.TryGetValue(g.Key, out var lb) ? lb : $"Racine {g.Key}",
+                    OpeningDebit = openingNet > 0 ? openingNet : 0m,
+                    OpeningCredit = openingNet < 0 ? -openingNet : 0m,
+                    MovementDebit = g.Sum(r => r.MovementDebit),
+                    MovementCredit = g.Sum(r => r.MovementCredit),
+                    ClosingDebit = closingNet > 0 ? closingNet : 0m,
+                    ClosingCredit = closingNet < 0 ? -closingNet : 0m
+                };
+            })
+            .ToList();
+
+        return Result.Success<IReadOnlyList<BalanceRowDto>>(rows);
+    }
+
     public async Task<Result<IReadOnlyList<BalanceRowDto>>> GetBalanceAsync(
         DateTime from,
         DateTime to,
@@ -146,9 +544,11 @@ public sealed class AccountingReportingService : IAccountingReportingService
         var t = to.Date;
         await using var ctx = _contextFactory.CreateContext();
 
-        var openingQuery = ctx.JournalEntryLines.AsNoTracking()
-            .Include(l => l.JournalEntry)
-            .Where(l => l.JournalEntry.EntryDate < f);
+        // Ancrage sur l'à-nouveau de l'exercice quand il existe (sinon : comportement historique).
+        var anchor = await ResolveFiscalAnchorAsync(ctx, f, cancellationToken);
+
+        var openingQuery = OpeningLines(
+            ctx.JournalEntryLines.AsNoTracking().Include(l => l.JournalEntry), anchor, f);
         if (!ShowDrafts)
             openingQuery = openingQuery.Where(l => l.JournalEntry.Status != JournalEntryStatus.Brouillon);
 
@@ -165,9 +565,8 @@ public sealed class AccountingReportingService : IAccountingReportingService
         var openingMap = openingLines.ToDictionary(x => x.Account, x => (x.Debit, x.Credit));
 
         // Aggregate movements server-side instead of loading all lines into memory
-        var movementQuery = ctx.JournalEntryLines.AsNoTracking()
-            .Include(l => l.JournalEntry)
-            .Where(l => l.JournalEntry.EntryDate >= f && l.JournalEntry.EntryDate <= t);
+        var movementQuery = MovementLines(
+            ctx.JournalEntryLines.AsNoTracking().Include(l => l.JournalEntry), anchor, f, t);
         if (!ShowDrafts)
             movementQuery = movementQuery.Where(l => l.JournalEntry.Status != JournalEntryStatus.Brouillon);
 
@@ -221,6 +620,133 @@ public sealed class AccountingReportingService : IAccountingReportingService
         }
 
         return Result.Success<IReadOnlyList<BalanceRowDto>>(rows);
+    }
+
+    public async Task<Result<DetailedBalanceDto>> GetDetailedBalanceAsync(
+        string? accountFrom,
+        string? accountTo,
+        DateTime from,
+        DateTime to,
+        CancellationToken cancellationToken = default)
+    {
+        // Composition stricte : la balance fournit les colonnes de soldes, le grand livre général
+        // le détail. Aucune agrégation propre — les deux états ne peuvent donc pas diverger.
+        var balance = await GetBalanceAsync(from, to, cancellationToken);
+        if (balance.IsFailure)
+            return Result.Failure<DetailedBalanceDto>(balance.Error);
+
+        var ledger = await GetLedgerRangeAsync(accountFrom, accountTo, from, to, includeUnmoved: true, cancellationToken);
+        if (ledger.IsFailure)
+            return Result.Failure<DetailedBalanceDto>(ledger.Error);
+
+        var balanceByAccount = balance.Value.ToDictionary(r => r.AccountNumber, StringComparer.Ordinal);
+
+        var accounts = new List<DetailedBalanceAccountDto>(ledger.Value.Accounts.Count);
+        foreach (var account in ledger.Value.Accounts)
+        {
+            if (!balanceByAccount.TryGetValue(account.AccountNumber, out var row))
+                continue;
+            accounts.Add(new DetailedBalanceAccountDto { Balance = row, Rows = account.Rows });
+        }
+
+        return Result.Success(new DetailedBalanceDto
+        {
+            From = from.Date,
+            To = to.Date,
+            Accounts = accounts,
+            TotalMovementDebit = accounts.Sum(a => a.Balance.MovementDebit),
+            TotalMovementCredit = accounts.Sum(a => a.Balance.MovementCredit)
+        });
+    }
+
+    public async Task<Result<PeriodicBalanceDto>> GetBalanceByPeriodAsync(
+        int fiscalYear,
+        CancellationToken cancellationToken = default)
+    {
+        var f = new DateTime(fiscalYear, 1, 1);
+        var t = new DateTime(fiscalYear, 12, 31);
+
+        await using var ctx = _contextFactory.CreateContext();
+        var anchor = await ResolveFiscalAnchorAsync(ctx, f, cancellationToken);
+
+        IQueryable<JournalEntryLine> Base()
+        {
+            IQueryable<JournalEntryLine> q = ctx.JournalEntryLines.AsNoTracking().Include(l => l.JournalEntry);
+            if (!ShowDrafts)
+                q = q.Where(l => l.JournalEntry.Status != JournalEntryStatus.Brouillon);
+            return q;
+        }
+
+        var openings = await OpeningLines(Base(), anchor, f)
+            .GroupBy(l => l.AccountNumber)
+            .Select(g => new
+            {
+                Account = g.Key,
+                Balance = g.Sum(l => l.DebitAmount.Amount) - g.Sum(l => l.CreditAmount.Amount)
+            })
+            .ToListAsync(cancellationToken);
+        var openingMap = openings.ToDictionary(x => x.Account, x => x.Balance, StringComparer.Ordinal);
+
+        // Agrégation compte × mois en une requête — même motif que l'état budgétaire.
+        var monthly = await MovementLines(Base(), anchor, f, t)
+            .GroupBy(l => new { l.AccountNumber, l.JournalEntry.EntryDate.Month })
+            .Select(g => new
+            {
+                g.Key.AccountNumber,
+                g.Key.Month,
+                Debit = g.Sum(l => l.DebitAmount.Amount),
+                Credit = g.Sum(l => l.CreditAmount.Amount)
+            })
+            .ToListAsync(cancellationToken);
+
+        var labels = await ctx.ChartOfAccounts.AsNoTracking()
+            .ToDictionaryAsync(c => c.AccountNumber, c => c.Label, cancellationToken);
+
+        var accounts = new HashSet<string>(monthly.Select(m => m.AccountNumber), StringComparer.Ordinal);
+        foreach (var account in openingMap.Where(kv => kv.Value != 0m).Select(kv => kv.Key))
+            accounts.Add(account);
+
+        var byAccount = monthly
+            .GroupBy(m => m.AccountNumber, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+
+        var rows = new List<PeriodicBalanceRowDto>(accounts.Count);
+        foreach (var account in accounts.OrderBy(a => a, StringComparer.Ordinal))
+        {
+            var debits = new decimal[12];
+            var credits = new decimal[12];
+            if (byAccount.TryGetValue(account, out var cells))
+            {
+                foreach (var cell in cells)
+                {
+                    debits[cell.Month - 1] = cell.Debit;
+                    credits[cell.Month - 1] = cell.Credit;
+                }
+            }
+
+            openingMap.TryGetValue(account, out var opening);
+            rows.Add(new PeriodicBalanceRowDto
+            {
+                AccountNumber = account,
+                Label = labels.TryGetValue(account, out var lb) ? lb : account,
+                Opening = opening,
+                MonthlyDebit = debits,
+                MonthlyCredit = credits,
+                Closing = opening + debits.Sum() - credits.Sum()
+            });
+        }
+
+        var totalDebit = rows.Sum(r => r.MonthlyDebit.Sum());
+        var totalCredit = rows.Sum(r => r.MonthlyCredit.Sum());
+
+        return Result.Success(new PeriodicBalanceDto
+        {
+            FiscalYear = fiscalYear,
+            Rows = rows,
+            TotalDebit = totalDebit,
+            TotalCredit = totalCredit,
+            IsBalanced = Math.Round(totalDebit - totalCredit, 3) == 0m
+        });
     }
 
     public async Task<Result<AccountingDashboardDto>> GetDashboardAsync(CancellationToken cancellationToken = default)
@@ -539,14 +1065,15 @@ public sealed class AccountingReportingService : IAccountingReportingService
                     .Where(l => l.ThirdPartyId != null && l.ThirdPartyKind == kind
                                 && l.JournalEntry.Status != JournalEntryStatus.Brouillon);
 
-        var opening = await Base()
-            .Where(l => l.JournalEntry.EntryDate < f)
+        // Même ancrage que la balance générale : l'à-nouveau auxiliarisé porte l'ouverture des tiers.
+        var anchor = await ResolveFiscalAnchorAsync(ctx, f, cancellationToken);
+
+        var opening = await OpeningLines(Base(), anchor, f)
             .GroupBy(l => l.ThirdPartyId!.Value)
             .Select(g => new { Id = g.Key, Debit = g.Sum(l => l.DebitAmount.Amount), Credit = g.Sum(l => l.CreditAmount.Amount) })
             .ToListAsync(cancellationToken);
 
-        var movements = await Base()
-            .Where(l => l.JournalEntry.EntryDate >= f && l.JournalEntry.EntryDate <= t)
+        var movements = await MovementLines(Base(), anchor, f, t)
             .GroupBy(l => l.ThirdPartyId!.Value)
             .Select(g => new { Id = g.Key, Debit = g.Sum(l => l.DebitAmount.Amount), Credit = g.Sum(l => l.CreditAmount.Amount) })
             .ToListAsync(cancellationToken);
@@ -607,12 +1134,14 @@ public sealed class AccountingReportingService : IAccountingReportingService
                     .Where(l => l.ThirdPartyId == thirdPartyId && l.ThirdPartyKind == kind
                                 && l.JournalEntry.Status != JournalEntryStatus.Brouillon);
 
-        var openingBalance = await Base()
-            .Where(l => l.JournalEntry.EntryDate < f)
+        // Même ancrage que la balance auxiliaire : sans quoi le solde d'ouverture et la ligne
+        // d'à-nouveau du tiers compteraient deux fois le même report.
+        var anchor = await ResolveFiscalAnchorAsync(ctx, f, cancellationToken);
+
+        var openingBalance = await OpeningLines(Base(), anchor, f)
             .SumAsync(l => l.DebitAmount.Amount - l.CreditAmount.Amount, cancellationToken);
 
-        var lines = await Base()
-            .Where(l => l.JournalEntry.EntryDate >= f && l.JournalEntry.EntryDate <= t)
+        var lines = await MovementLines(Base(), anchor, f, t)
             .OrderBy(l => l.JournalEntry.EntryDate)
             .ThenBy(l => l.JournalEntry.EntryNumber)
             .ThenBy(l => l.LineNumber)
