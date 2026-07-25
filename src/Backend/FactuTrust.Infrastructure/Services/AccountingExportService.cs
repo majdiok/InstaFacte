@@ -156,6 +156,48 @@ public sealed class AccountingExportService : IAccountingExportService
         return BuildBytes(sb);
     }
 
+    /// <summary>
+    /// État de rapprochement bancaire : soldes (comptable / relevé), les deux blocs de suspens
+    /// avec une colonne « Bloc », les soldes corrigés et l'écart.
+    /// </summary>
+    public byte[] ExportBankReconciliationStatementToCsv(BankReconciliationStatementDto s)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"État de rapprochement;{Escape(s.BankName)};{Escape(s.AccountNumber)};compte {Escape(s.ChartOfAccountNumber)}");
+        sb.AppendLine($"Période;{FormatDate(s.PeriodStart)};{FormatDate(s.PeriodEnd)}");
+        sb.AppendLine();
+        sb.AppendLine("Solde comptable;" + FormatDecimal(s.AccountingBalance));
+        sb.AppendLine("Solde relevé;" + FormatDecimal(s.StatementClosingBalance));
+        sb.AppendLine();
+
+        sb.AppendLine("Bloc;Date;Référence;Libellé;Débit;Crédit");
+        foreach (var i in s.UnreconciledBookItems)
+        {
+            sb.Append("Écriture non pointée").Append(Separator);
+            sb.Append(FormatDate(i.Date)).Append(Separator);
+            sb.Append(Escape(i.Reference)).Append(Separator);
+            sb.Append(Escape(i.Label)).Append(Separator);
+            sb.Append(FormatDecimal(i.Debit)).Append(Separator);
+            sb.AppendLine(FormatDecimal(i.Credit));
+        }
+        foreach (var i in s.UnreconciledStatementItems)
+        {
+            sb.Append("Relevé non comptabilisé").Append(Separator);
+            sb.Append(FormatDate(i.Date)).Append(Separator);
+            sb.Append(Escape(i.Reference)).Append(Separator);
+            sb.Append(Escape(i.Label)).Append(Separator);
+            sb.Append(FormatDecimal(i.Debit)).Append(Separator);
+            sb.AppendLine(FormatDecimal(i.Credit));
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("Solde relevé corrigé;" + FormatDecimal(s.AdjustedStatementBalance));
+        sb.AppendLine("Solde comptable corrigé;" + FormatDecimal(s.AdjustedAccountingBalance));
+        sb.AppendLine("Écart;" + FormatDecimal(s.Difference));
+
+        return BuildBytes(sb);
+    }
+
     public byte[] ExportBalanceToCsv(IReadOnlyList<BalanceRowDto> rows)
     {
         var sb = new StringBuilder();
@@ -449,6 +491,70 @@ public sealed class AccountingExportService : IAccountingExportService
             ws.Cell(row, 7).Value = r.RunningBalance;
             ws.Cell(row, 7).Style.NumberFormat.Format = "#,##0.000";
             row++;
+        }
+
+        ws.Columns().AdjustToContents();
+        return WorkbookToBytes(wb);
+    }
+
+    /// <summary>
+    /// État de rapprochement bancaire : bloc de synthèse (soldes, corrigés, écart) et une feuille
+    /// listant les suspens des deux côtés.
+    /// </summary>
+    public byte[] ExportBankReconciliationStatementToExcel(BankReconciliationStatementDto s)
+    {
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("État de rapprochement");
+
+        ws.Cell(1, 1).Value = "Banque";
+        ws.Cell(1, 2).Value = $"{s.BankName} — {s.AccountNumber} (compte {s.ChartOfAccountNumber})";
+        ws.Cell(2, 1).Value = "Période";
+        ws.Cell(2, 2).Value = $"{s.PeriodStart:dd/MM/yyyy} → {s.PeriodEnd:dd/MM/yyyy}";
+        ws.Cell(3, 1).Value = "Solde comptable";
+        ws.Cell(3, 2).Value = s.AccountingBalance;
+        ws.Cell(4, 1).Value = "Solde relevé";
+        ws.Cell(4, 2).Value = s.StatementClosingBalance;
+        for (var r = 3; r <= 4; r++)
+            ws.Cell(r, 2).Style.NumberFormat.Format = "#,##0.000";
+
+        var headers = new[] { "Bloc", "Date", "Référence", "Libellé", "Débit", "Crédit" };
+        var row = 6;
+        for (var c = 0; c < headers.Length; c++)
+            ws.Cell(row, c + 1).Value = headers[c];
+        StyleHeaderRow(ws, headers.Length, row);
+        row++;
+
+        void WriteItems(string bloc, IReadOnlyList<BankReconciliationItemDto> items)
+        {
+            foreach (var i in items)
+            {
+                ws.Cell(row, 1).Value = bloc;
+                ws.Cell(row, 2).Value = i.Date;
+                ws.Cell(row, 2).Style.NumberFormat.Format = "dd/MM/yyyy";
+                ws.Cell(row, 3).Value = i.Reference;
+                ws.Cell(row, 4).Value = i.Label;
+                ws.Cell(row, 5).Value = i.Debit;
+                ws.Cell(row, 6).Value = i.Credit;
+                for (var c = 5; c <= 6; c++)
+                    ws.Cell(row, c).Style.NumberFormat.Format = "#,##0.000";
+                row++;
+            }
+        }
+
+        WriteItems("Écriture non pointée", s.UnreconciledBookItems);
+        WriteItems("Relevé non comptabilisé", s.UnreconciledStatementItems);
+
+        row++;
+        ws.Cell(row, 1).Value = "Solde relevé corrigé";
+        ws.Cell(row, 2).Value = s.AdjustedStatementBalance;
+        ws.Cell(row + 1, 1).Value = "Solde comptable corrigé";
+        ws.Cell(row + 1, 2).Value = s.AdjustedAccountingBalance;
+        ws.Cell(row + 2, 1).Value = "Écart";
+        ws.Cell(row + 2, 2).Value = s.Difference;
+        for (var r = row; r <= row + 2; r++)
+        {
+            ws.Cell(r, 1).Style.Font.Bold = true;
+            ws.Cell(r, 2).Style.NumberFormat.Format = "#,##0.000";
         }
 
         ws.Columns().AdjustToContents();

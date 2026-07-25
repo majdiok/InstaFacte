@@ -285,6 +285,98 @@ public partial class PdfService
         return Task.FromResult(bytes);
     }
 
+    // ── État de rapprochement bancaire ─────────────────────────────────────────────────────
+
+    public Task<byte[]> GenerateBankReconciliationStatementPdfAsync(BankReconciliationStatementDto s, AccountingReportHeader header, CancellationToken cancellationToken = default)
+    {
+        var bytes = BuildReport(header, landscape: false, col =>
+        {
+            col.Item().PaddingBottom(6).Text($"{s.BankName} — {s.AccountNumber} (compte {s.ChartOfAccountNumber})")
+                .FontSize(10).FontColor(Colors.Grey.Darken2);
+
+            // Deux soldes de départ, côte à côte.
+            col.Item().Row(row =>
+            {
+                row.RelativeItem().Text(t =>
+                {
+                    t.Span("Solde comptable : ").SemiBold();
+                    t.Span(Amount(s.AccountingBalance));
+                });
+                row.RelativeItem().AlignRight().Text(t =>
+                {
+                    t.Span("Solde relevé : ").SemiBold();
+                    t.Span(Amount(s.StatementClosingBalance));
+                });
+            });
+
+            void ItemsBlock(string title, IReadOnlyList<BankReconciliationItemDto> items)
+            {
+                col.Item().PaddingTop(10).PaddingBottom(2).Text(title).FontSize(11).Bold().FontColor(Colors.Blue.Darken2);
+                if (items.Count == 0)
+                {
+                    col.Item().Text("Aucun.").Italic().FontColor(Colors.Grey.Darken1);
+                    return;
+                }
+                col.Item().Table(table =>
+                {
+                    table.ColumnsDefinition(c =>
+                    {
+                        c.ConstantColumn(62);   // date
+                        c.ConstantColumn(90);   // référence
+                        c.RelativeColumn(3);    // libellé
+                        c.ConstantColumn(90);   // débit
+                        c.ConstantColumn(90);   // crédit
+                    });
+                    table.Header(h =>
+                    {
+                        h.Cell().Element(HeadCell).Text("Date").Bold();
+                        h.Cell().Element(HeadCell).Text("Référence").Bold();
+                        h.Cell().Element(HeadCell).Text("Libellé").Bold();
+                        h.Cell().Element(HeadCell).AlignRight().Text("Débit").Bold();
+                        h.Cell().Element(HeadCell).AlignRight().Text("Crédit").Bold();
+                    });
+                    foreach (var i in items)
+                    {
+                        table.Cell().Element(BodyCell).Text(ShortDate(i.Date));
+                        table.Cell().Element(BodyCell).Text(PdfRenderHelpers.CleanTextForPdf(i.Reference));
+                        table.Cell().Element(BodyCell).Text(PdfRenderHelpers.CleanTextForPdf(i.Label));
+                        table.Cell().Element(BodyCell).AlignRight().Text(AmountOrBlank(i.Debit));
+                        table.Cell().Element(BodyCell).AlignRight().Text(AmountOrBlank(i.Credit));
+                    }
+                });
+            }
+
+            ItemsBlock("Écritures non pointées (chèques émis non débités, remises non créditées)", s.UnreconciledBookItems);
+            ItemsBlock("Opérations du relevé non comptabilisées (frais, agios)", s.UnreconciledStatementItems);
+
+            // Soldes corrigés et écart.
+            col.Item().PaddingTop(14).LineHorizontal(1).LineColor(Colors.Grey.Medium);
+            col.Item().PaddingTop(6).Row(row =>
+            {
+                row.RelativeItem().Text(t =>
+                {
+                    t.Span("Solde relevé corrigé : ").SemiBold();
+                    t.Span(Amount(s.AdjustedStatementBalance));
+                });
+                row.RelativeItem().AlignRight().Text(t =>
+                {
+                    t.Span("Solde comptable corrigé : ").SemiBold();
+                    t.Span(Amount(s.AdjustedAccountingBalance));
+                });
+            });
+            col.Item().PaddingTop(6).AlignCenter().Text(t =>
+            {
+                t.Span("Écart : ").Bold().FontSize(12);
+                t.Span(Amount(s.Difference)).Bold().FontSize(12)
+                    .FontColor(s.IsReconciled ? Colors.Green.Darken2 : Colors.Red.Darken2);
+                t.Span(s.IsReconciled ? "  — rapproché" : "  — à justifier").FontSize(10)
+                    .FontColor(s.IsReconciled ? Colors.Green.Darken2 : Colors.Red.Darken2);
+            });
+        });
+
+        return Task.FromResult(bytes);
+    }
+
     // ── Balance détaillée (soldes + détail des mouvements) ─────────────────────────────────
 
     public Task<byte[]> GenerateDetailedBalancePdfAsync(DetailedBalanceDto balance, AccountingReportHeader header, CancellationToken cancellationToken = default)

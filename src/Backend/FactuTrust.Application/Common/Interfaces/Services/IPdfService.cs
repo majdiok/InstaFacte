@@ -41,6 +41,9 @@ public interface IPdfService
     /// <summary>Génère le PDF de la balance auxiliaire (une ligne par tiers) avec totaux.</summary>
     Task<byte[]> GenerateAuxiliaryBalancePdfAsync(IReadOnlyList<AuxiliaryBalanceRowDto> rows, AccountingReportHeader header, CancellationToken cancellationToken = default);
 
+    /// <summary>Génère le PDF de l'état de rapprochement bancaire (soldes confrontés, suspens, écart).</summary>
+    Task<byte[]> GenerateBankReconciliationStatementPdfAsync(BankReconciliationStatementDto statement, AccountingReportHeader header, CancellationToken cancellationToken = default);
+
     /// <summary>Génère le PDF du grand livre d'un tiers (solde d'ouverture + mouvements + lettrage).</summary>
     Task<byte[]> GenerateThirdPartyLedgerPdfAsync(ThirdPartyLedgerDto ledger, AccountingReportHeader header, CancellationToken cancellationToken = default);
 

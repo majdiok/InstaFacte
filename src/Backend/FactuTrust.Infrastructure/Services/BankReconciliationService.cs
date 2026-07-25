@@ -27,6 +27,7 @@ public sealed class BankReconciliationService : IBankReconciliationService
     private readonly OfxBankStatementParser _ofxParser = new();
     private readonly Mt940BankStatementParser _mt940Parser = new();
     private readonly IBankStatementPdfImportService _pdfImportService;
+    private readonly IAccountingReportingService _reporting;
     private readonly AccountingSettings _settings;
 
     public BankReconciliationService(
@@ -34,12 +35,14 @@ public sealed class BankReconciliationService : IBankReconciliationService
         IAuditService auditService,
         ICurrentUser currentUser,
         IBankStatementPdfImportService pdfImportService,
+        IAccountingReportingService reporting,
         IOptions<AccountingSettings> settings)
     {
         _contextFactory = contextFactory;
         _auditService = auditService;
         _currentUser = currentUser;
         _pdfImportService = pdfImportService;
+        _reporting = reporting;
         _settings = settings.Value;
     }
 
@@ -617,6 +620,111 @@ public sealed class BankReconciliationService : IBankReconciliationService
             SuggestedClosingBalance = closingBalance,
             ExtractionMethod = BankStatementExtractionMethod.TextParser
         };
+    }
+
+    public async Task<Result<BankReconciliationStatementDto>> GetReconciliationStatementAsync(
+        Guid statementId, CancellationToken cancellationToken = default)
+    {
+        await using var ctx = _contextFactory.CreateContext();
+
+        var statement = await ctx.BankStatements.AsNoTracking()
+            .Include(s => s.Lines)
+            .FirstOrDefaultAsync(s => s.Id == statementId, cancellationToken);
+        if (statement is null)
+            return Result.Failure<BankReconciliationStatementDto>(Error.NotFound("BankStatement", statementId));
+
+        var chart = statement.ChartOfAccountNumber;
+        if (string.IsNullOrWhiteSpace(chart))
+            return Result.Failure<BankReconciliationStatementDto>(Error.Validation("BankAccount",
+                "Le relevé n'est pas lié à un compte banque 512x — associez le compte bancaire avant d'éditer l'état de rapprochement."));
+
+        var asOf = statement.PeriodEnd.Date;
+
+        // Solde comptable ANCRÉ du compte banque à la date de fin : réutilise la balance générale
+        // (corrigée du double comptage des à-nouveaux au lot 0) plutôt que le grand livre mono-compte,
+        // dont le solde progressif n'est pas ancré.
+        var balance = await _reporting.GetBalanceAsync(new DateTime(asOf.Year, 1, 1), asOf, cancellationToken);
+        if (balance.IsFailure)
+            return Result.Failure<BankReconciliationStatementDto>(balance.Error);
+        var bankRow = balance.Value.FirstOrDefault(r => r.AccountNumber == chart);
+        var accountingBalance = bankRow is null ? 0m : bankRow.ClosingDebit - bankRow.ClosingCredit;
+
+        // Toute ligne d'écriture déjà pointée par un relevé (celui-ci ou un autre) est exclue des suspens.
+        var reconciledLineIds = await ctx.BankStatementLines.AsNoTracking()
+            .Where(l => l.ReconciledJournalEntryLineId != null)
+            .Select(l => l.ReconciledJournalEntryLineId!.Value)
+            .ToListAsync(cancellationToken);
+        var reconciledSet = new HashSet<Guid>(reconciledLineIds);
+
+        // Suspens comptables : écritures validées sur le compte banque jusqu'à la date de fin,
+        // non encore pointées → chèques émis non débités, remises non créditées.
+        var bookLines = await ctx.JournalEntryLines.AsNoTracking()
+            .Include(l => l.JournalEntry)
+            .Where(l => l.AccountNumber == chart
+                        && l.JournalEntry.EntryDate <= asOf
+                        && l.JournalEntry.Status != JournalEntryStatus.Brouillon)
+            .OrderBy(l => l.JournalEntry.EntryDate)
+            .ThenBy(l => l.JournalEntry.EntryNumber)
+            .ThenBy(l => l.LineNumber)
+            .ToListAsync(cancellationToken);
+
+        var unreconciledBookItems = bookLines
+            .Where(l => !reconciledSet.Contains(l.Id))
+            .Select(l => new BankReconciliationItemDto
+            {
+                Date = l.JournalEntry.EntryDate,
+                Reference = l.JournalEntry.PieceRef ?? l.JournalEntry.EntryNumber.ToString(),
+                Label = l.Label,
+                Debit = l.DebitAmount.Amount,
+                Credit = l.CreditAmount.Amount
+            })
+            .ToList();
+
+        // Suspens relevé : lignes du relevé non encore comptabilisées → frais, agios.
+        var unreconciledStatementItems = statement.Lines
+            .Where(l => !l.IsReconciled)
+            .OrderBy(l => l.TransactionDate)
+            .ThenBy(l => l.Reference, StringComparer.Ordinal)
+            .Select(l => new BankReconciliationItemDto
+            {
+                Date = l.TransactionDate,
+                Reference = l.Reference,
+                Label = l.Description,
+                // Présentation en débit/crédit du compte banque : décaissement (IsDebit) = crédit banque.
+                Debit = l.IsDebit ? 0m : l.Amount.Amount,
+                Credit = l.IsDebit ? l.Amount.Amount : 0m
+            })
+            .ToList();
+
+        var statementClosing = statement.ClosingBalance.Amount;
+
+        // B_rel_corrigé = relevé + Σ impact comptable des écritures non pointées (Débit − Crédit).
+        var adjustedStatement = statementClosing
+            + unreconciledBookItems.Sum(i => i.Debit - i.Credit);
+
+        // B_acc_corrigé = comptable + Σ impact des lignes de relevé non comptabilisées (Débit − Crédit banque).
+        var adjustedAccounting = accountingBalance
+            + unreconciledStatementItems.Sum(i => i.Debit - i.Credit);
+
+        var difference = Math.Round(adjustedAccounting - adjustedStatement, 3);
+
+        return Result.Success(new BankReconciliationStatementDto
+        {
+            StatementId = statement.Id,
+            BankName = statement.BankName,
+            AccountNumber = statement.AccountNumber,
+            ChartOfAccountNumber = chart,
+            PeriodStart = statement.PeriodStart,
+            PeriodEnd = statement.PeriodEnd,
+            StatementClosingBalance = statementClosing,
+            AccountingBalance = accountingBalance,
+            UnreconciledBookItems = unreconciledBookItems,
+            UnreconciledStatementItems = unreconciledStatementItems,
+            AdjustedStatementBalance = adjustedStatement,
+            AdjustedAccountingBalance = adjustedAccounting,
+            Difference = difference,
+            IsReconciled = difference == 0m
+        });
     }
 
     private static bool AccountMatchesChart(string journalAccount, string chartAccount) =>

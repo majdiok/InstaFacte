@@ -36,4 +36,12 @@ public interface IBankReconciliationService
     /// rapproche la ligne sur la ligne du compte banque créée.
     /// </summary>
     Task<Result> CreateEntryForLineAsync(Guid bankStatementLineId, CreateEntryForLineRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// État de rapprochement d'un relevé : confronte le solde comptable ancré du compte banque au
+    /// solde du relevé, liste les suspens des deux côtés et calcule l'écart (qui doit être nul).
+    /// Lecture seule — aucune écriture ni persistance.
+    /// </summary>
+    Task<Result<BankReconciliationStatementDto>> GetReconciliationStatementAsync(
+        Guid statementId, CancellationToken cancellationToken = default);
 }

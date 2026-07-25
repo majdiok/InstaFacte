@@ -140,7 +140,7 @@ Efforts en **jours/homme (j/h)** pour une équipe senior connaissant le codebase
 | Provisions ( créances douteuses, stock ) | ❌ | P2 | 40 | 2 |
 | Notes de frais → compta | ❌ | P2 | 35 | 2 |
 | Livre d’inventaire légal + annexes éditables | ❌ | P2 | 40 | 2 |
-| État de rapprochement bancaire imprimable | ❌ | P2 | 20 | 2 |
+| État de rapprochement bancaire imprimable | ✅ | — | — | — |
 | Outillage maintenance (contrôle intégrité, sauvegarde, import étendu) | ❌ | P2 | 60 | 2 |
 
 **Sous-total gaps compta/finance restants : ~460 j/h** _(budgets, immobilisations et liasse

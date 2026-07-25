@@ -22,6 +22,8 @@ public interface IAccountingExportService
     byte[] ExportAuxiliaryBalanceToExcel(IReadOnlyList<AuxiliaryBalanceRowDto> rows);
     byte[] ExportThirdPartyLedgerToCsv(ThirdPartyLedgerDto ledger);
     byte[] ExportThirdPartyLedgerToExcel(ThirdPartyLedgerDto ledger);
+    byte[] ExportBankReconciliationStatementToCsv(BankReconciliationStatementDto statement);
+    byte[] ExportBankReconciliationStatementToExcel(BankReconciliationStatementDto statement);
     byte[] ExportAgingToCsv(IReadOnlyList<AgingReportRowDto> rows, string kindLabel);
     byte[] ExportAgingToExcel(IReadOnlyList<AgingReportRowDto> rows, string kindLabel);
     byte[] ExportBalanceSheetToCsv(BalanceSheetDto dto);

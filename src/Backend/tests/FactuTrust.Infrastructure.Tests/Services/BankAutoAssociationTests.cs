@@ -61,8 +61,9 @@ public sealed class BankAutoAssociationTests
                 It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
         var pdf = new Mock<IBankStatementPdfImportService>();
+        var reporting = new AccountingReportingService(_factory, Options.Create(new AccountingSettings()));
         return new BankReconciliationService(_factory, audit.Object, currentUser.Object, pdf.Object,
-            Options.Create(new AccountingSettings { BankMatchWindowDays = 10, BrouillardEnabled = brouillard }));
+            reporting, Options.Create(new AccountingSettings { BankMatchWindowDays = 10, BrouillardEnabled = brouillard }));
     }
 
     /// <summary>Relevé lié au compte banque 532, avec les lignes fournies.</summary>

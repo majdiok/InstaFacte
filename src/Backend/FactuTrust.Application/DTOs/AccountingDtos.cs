@@ -800,6 +800,47 @@ public sealed record BankStatementLineDto
     public Guid? ReconciledJournalEntryLineId { get; init; }
 }
 
+/// <summary>Poste de suspens d'un état de rapprochement (écriture non pointée ou ligne de relevé non comptabilisée).</summary>
+public sealed record BankReconciliationItemDto
+{
+    public DateTime Date { get; init; }
+    public string Reference { get; init; } = null!;
+    public string Label { get; init; } = null!;
+    public decimal Debit { get; init; }
+    public decimal Credit { get; init; }
+}
+
+/// <summary>
+/// État de rapprochement d'un relevé bancaire : confrontation du solde comptable du compte banque
+/// (ancré, cf. lot 0) et du solde du relevé, suspens des deux côtés, et écart qui doit être nul.
+/// Lecture seule — aucune écriture, aucune persistance.
+/// </summary>
+public sealed record BankReconciliationStatementDto
+{
+    public Guid StatementId { get; init; }
+    public string BankName { get; init; } = null!;
+    public string AccountNumber { get; init; } = null!;
+    public string ChartOfAccountNumber { get; init; } = null!;
+    public DateTime PeriodStart { get; init; }
+    public DateTime PeriodEnd { get; init; }
+    /// <summary>Solde du relevé (B_rel).</summary>
+    public decimal StatementClosingBalance { get; init; }
+    /// <summary>Solde comptable ancré du compte banque à la date de fin (B_acc = débit − crédit).</summary>
+    public decimal AccountingBalance { get; init; }
+    /// <summary>Écritures sur le compte banque non encore pointées sur un relevé (chèques émis non débités…).</summary>
+    public IReadOnlyList<BankReconciliationItemDto> UnreconciledBookItems { get; init; } = Array.Empty<BankReconciliationItemDto>();
+    /// <summary>Lignes du relevé non encore comptabilisées (frais, agios…).</summary>
+    public IReadOnlyList<BankReconciliationItemDto> UnreconciledStatementItems { get; init; } = Array.Empty<BankReconciliationItemDto>();
+    /// <summary>Solde du relevé corrigé des écritures non pointées (B_rel_corrigé).</summary>
+    public decimal AdjustedStatementBalance { get; init; }
+    /// <summary>Solde comptable corrigé des lignes de relevé non comptabilisées (B_acc_corrigé).</summary>
+    public decimal AdjustedAccountingBalance { get; init; }
+    /// <summary>Écart = B_acc_corrigé − B_rel_corrigé, doit être nul.</summary>
+    public decimal Difference { get; init; }
+    /// <summary>Vrai si l'écart est nul au millime.</summary>
+    public bool IsReconciled { get; init; }
+}
+
 public sealed record ImportBankStatementRequest
 {
     public string BankName { get; init; } = null!;

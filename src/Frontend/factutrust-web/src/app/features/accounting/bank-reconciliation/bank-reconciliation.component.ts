@@ -7,12 +7,15 @@ import { ButtonComponent } from '@shared/components/button/button.component';
 import { ToastService } from '@core/services/toast.service';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
 import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.component';
+import { AccountingExportMenuComponent } from '../shared/accounting-export-menu.component';
+import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
 import { AccountingService, JournalSearchRowDto } from '../services/accounting.service';
 import {
   AutoAssociationResultDto,
   BankLineAssociationDto,
   BankLineAssociationStatus,
   BankReconciliationService,
+  BankReconciliationStatementDto,
   BankReconciliationSummaryDto,
   BankStatementDto,
   BankStatementExtractionMethod,
@@ -41,7 +44,8 @@ interface WizardStepDef {
     PageHeaderComponent,
     ButtonComponent,
     AccountingStatusBannerComponent,
-    AccountingFilterBarComponent
+    AccountingFilterBarComponent,
+    AccountingExportMenuComponent
   ],
   template: `
     <app-page-header
@@ -131,6 +135,7 @@ interface WizardStepDef {
               </td>
               <td>
                 <button type="button" class="br-link-btn" (click)="openStatement(s.id)">Ouvrir l'assistant</button>
+                <button type="button" class="br-link-btn" (click)="openReconciliationStatement(s.id)">État de rapprochement</button>
               </td>
             </tr>
           </ng-template>
@@ -144,6 +149,83 @@ interface WizardStepDef {
           </ng-template>
         </p-table>
       </div>
+
+      <!-- ── État de rapprochement (édition imprimable) ─────────────────── -->
+      @if (reconStatement(); as rs) {
+        <div class="card br-card br-recon-card">
+          <div class="br-detail-head">
+            <h2 class="br-section-title">État de rapprochement — {{ rs.bankName }} · {{ rs.accountNumber }}</h2>
+            <div class="br-recon-actions">
+              <app-accounting-export-menu
+                [disabled]="exportingRecon()"
+                (exportFormat)="onExportReconciliation($event)" />
+              <button type="button" class="br-link-btn" (click)="closeReconciliationStatement()">Fermer</button>
+            </div>
+          </div>
+          <p class="br-help">
+            Compte banque {{ rs.chartOfAccountNumber }} · période {{ rs.periodStart | date : 'shortDate' }}
+            → {{ rs.periodEnd | date : 'shortDate' }}
+          </p>
+
+          <div class="br-recon-balances">
+            <div><span class="br-recon-lbl">Solde comptable</span><span class="br-recon-val">{{ rs.accountingBalance | number : '1.3-3' }}</span></div>
+            <div><span class="br-recon-lbl">Solde relevé</span><span class="br-recon-val">{{ rs.statementClosingBalance | number : '1.3-3' }}</span></div>
+          </div>
+
+          <h3 class="br-recon-sub">Écritures non pointées (chèques émis non débités, remises non créditées)</h3>
+          @if (rs.unreconciledBookItems.length === 0) {
+            <p class="br-help">Aucune.</p>
+          } @else {
+            <p-table [value]="rs.unreconciledBookItems" styleClass="p-datatable-sm accounting-datatable" [rowHover]="true">
+              <ng-template pTemplate="header">
+                <tr><th scope="col">Date</th><th scope="col">Référence</th><th scope="col">Libellé</th><th scope="col" class="br-amt">Débit</th><th scope="col" class="br-amt">Crédit</th></tr>
+              </ng-template>
+              <ng-template pTemplate="body" let-i>
+                <tr>
+                  <td data-label="Date">{{ i.date | date : 'shortDate' }}</td>
+                  <td data-label="Référence" class="br-mono">{{ i.reference }}</td>
+                  <td data-label="Libellé">{{ i.label }}</td>
+                  <td data-label="Débit" class="br-amt">{{ i.debit | number : '1.3-3' }}</td>
+                  <td data-label="Crédit" class="br-amt">{{ i.credit | number : '1.3-3' }}</td>
+                </tr>
+              </ng-template>
+            </p-table>
+          }
+
+          <h3 class="br-recon-sub">Opérations du relevé non comptabilisées (frais, agios)</h3>
+          @if (rs.unreconciledStatementItems.length === 0) {
+            <p class="br-help">Aucune.</p>
+          } @else {
+            <p-table [value]="rs.unreconciledStatementItems" styleClass="p-datatable-sm accounting-datatable" [rowHover]="true">
+              <ng-template pTemplate="header">
+                <tr><th scope="col">Date</th><th scope="col">Référence</th><th scope="col">Libellé</th><th scope="col" class="br-amt">Débit</th><th scope="col" class="br-amt">Crédit</th></tr>
+              </ng-template>
+              <ng-template pTemplate="body" let-i>
+                <tr>
+                  <td data-label="Date">{{ i.date | date : 'shortDate' }}</td>
+                  <td data-label="Référence" class="br-mono">{{ i.reference }}</td>
+                  <td data-label="Libellé">{{ i.label }}</td>
+                  <td data-label="Débit" class="br-amt">{{ i.debit | number : '1.3-3' }}</td>
+                  <td data-label="Crédit" class="br-amt">{{ i.credit | number : '1.3-3' }}</td>
+                </tr>
+              </ng-template>
+            </p-table>
+          }
+
+          <div class="br-recon-balances br-recon-adjusted">
+            <div><span class="br-recon-lbl">Solde relevé corrigé</span><span class="br-recon-val">{{ rs.adjustedStatementBalance | number : '1.3-3' }}</span></div>
+            <div><span class="br-recon-lbl">Solde comptable corrigé</span><span class="br-recon-val">{{ rs.adjustedAccountingBalance | number : '1.3-3' }}</span></div>
+          </div>
+          <p class="br-recon-diff" [class.br-recon-ok]="rs.isReconciled" [class.br-recon-ko]="!rs.isReconciled">
+            Écart : {{ rs.difference | number : '1.3-3' }}
+            <span>{{ rs.isReconciled ? '— rapproché' : '— à justifier' }}</span>
+          </p>
+        </div>
+      } @else if (reconError()) {
+        <div class="card br-card">
+          <app-accounting-status-banner variant="warning" [message]="reconError() ?? ''" />
+        </div>
+      }
     }
 
     <!-- ══ ÉTAPE 1 — Import du relevé ═════════════════════════════════════ -->
@@ -703,6 +785,18 @@ interface WizardStepDef {
     .br-empty-title { margin: 0 0 var(--spacing-1); font-weight: var(--font-weight-semibold); color: var(--color-text-primary); }
     .br-empty-hint { margin: 0; font-size: var(--font-size-sm); }
     .br-create-panel { border: 1px solid var(--color-primary-200, #bfdbfe); }
+    .br-recon-card { margin-top: var(--spacing-4); }
+    .br-recon-actions { display: flex; align-items: center; gap: var(--spacing-3); }
+    .br-recon-balances { display: flex; flex-wrap: wrap; gap: var(--spacing-6); margin: var(--spacing-3) 0; }
+    .br-recon-balances > div { display: flex; flex-direction: column; }
+    .br-recon-lbl { font-size: var(--font-size-sm); color: var(--color-text-secondary); }
+    .br-recon-val { font-weight: var(--font-weight-bold); font-variant-numeric: tabular-nums; }
+    .br-recon-adjusted { border-top: 1px solid var(--color-border-default); padding-top: var(--spacing-3); margin-top: var(--spacing-4); }
+    .br-recon-sub { margin: var(--spacing-4) 0 var(--spacing-2); font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); }
+    .br-recon-diff { font-weight: var(--font-weight-bold); font-variant-numeric: tabular-nums; font-size: var(--font-size-lg); }
+    .br-recon-diff span { font-size: var(--font-size-sm); font-weight: var(--font-weight-regular); margin-left: var(--spacing-2); }
+    .br-recon-ok { color: var(--color-success-600, #16a34a); }
+    .br-recon-ko { color: var(--color-danger-600, #dc2626); }
   `
 })
 export class BankReconciliationComponent implements OnInit {
@@ -744,6 +838,12 @@ export class BankReconciliationComponent implements OnInit {
   // Détail
   readonly selected = signal<BankStatementDto | null>(null);
   readonly loadingDetail = signal(false);
+
+  // État de rapprochement (édition imprimable, hors wizard)
+  readonly reconStatement = signal<BankReconciliationStatementDto | null>(null);
+  readonly reconError = signal<string | null>(null);
+  readonly exportingRecon = signal(false);
+  private reconStatementId: string | null = null;
 
   // Import fichier
   fileFormat: BankStatementFileFormat = BankStatementFileFormat.Csv;
@@ -915,6 +1015,42 @@ export class BankReconciliationComponent implements OnInit {
       error: () => {
         this.loadingDetail.set(false);
         this.error.set('Erreur réseau lors du chargement du relevé.');
+      }
+    });
+  }
+
+  /** Ouvre l'état de rapprochement d'un relevé (hors wizard, en lecture seule). */
+  openReconciliationStatement(id: string): void {
+    this.reconStatementId = id;
+    this.reconError.set(null);
+    this.reconStatement.set(null);
+    this.api.getReconciliationStatement(id).subscribe({
+      next: res => {
+        if (res.success && res.data) this.reconStatement.set(res.data);
+        else this.reconError.set(res.error ?? "Impossible d'établir l'état de rapprochement.");
+      },
+      error: () => this.reconError.set("Erreur réseau lors du chargement de l'état de rapprochement.")
+    });
+  }
+
+  closeReconciliationStatement(): void {
+    this.reconStatement.set(null);
+    this.reconError.set(null);
+    this.reconStatementId = null;
+  }
+
+  onExportReconciliation(format: AccountingExportFormat): void {
+    const id = this.reconStatementId;
+    if (!id) return;
+    this.exportingRecon.set(true);
+    this.api.exportReconciliationStatement(id, format).subscribe({
+      next: blob => {
+        this.exportingRecon.set(false);
+        downloadBlob(blob, `etat_rapprochement_${id}.${exportExtension(format)}`);
+      },
+      error: () => {
+        this.exportingRecon.set(false);
+        this.toast.add({ severity: 'error', summary: "Erreur lors de l'export de l'état de rapprochement.", life: 4000 });
       }
     });
   }

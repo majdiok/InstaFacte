@@ -3,6 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '@environments/environment';
 import { formatLocalDate } from '../shared/accounting-date-utils';
+import { AccountingExportFormat } from '../shared/accounting-download.util';
 
 export enum BankStatementFileFormat {
   Csv = 0,
@@ -57,6 +58,33 @@ export interface BankStatementDto {
   importMethod?: number;
   lines: BankStatementLineDto[];
   skippedDuplicateCount?: number;
+}
+
+/** Poste de suspens d'un état de rapprochement. */
+export interface BankReconciliationItemDto {
+  date: string;
+  reference: string;
+  label: string;
+  debit: number;
+  credit: number;
+}
+
+/** État de rapprochement : confrontation solde comptable ↔ solde relevé, suspens, écart. */
+export interface BankReconciliationStatementDto {
+  statementId: string;
+  bankName: string;
+  accountNumber: string;
+  chartOfAccountNumber: string;
+  periodStart: string;
+  periodEnd: string;
+  statementClosingBalance: number;
+  accountingBalance: number;
+  unreconciledBookItems: BankReconciliationItemDto[];
+  unreconciledStatementItems: BankReconciliationItemDto[];
+  adjustedStatementBalance: number;
+  adjustedAccountingBalance: number;
+  difference: number;
+  isReconciled: boolean;
 }
 
 export interface ImportBankStatementLineRequest {
@@ -228,5 +256,18 @@ export class BankReconciliationService {
   createEntryForLine(statementId: string, lineId: string, request: CreateEntryForLineRequest): Observable<ApiResponse<boolean>> {
     return this.http.post<ApiResponse<boolean>>(
       `${this.base}/statements/${statementId}/lines/${lineId}/create-entry`, request);
+  }
+
+  /** État de rapprochement d'un relevé (lecture seule). */
+  getReconciliationStatement(statementId: string): Observable<ApiResponse<BankReconciliationStatementDto>> {
+    return this.http.get<ApiResponse<BankReconciliationStatementDto>>(
+      `${this.base}/statements/${statementId}/reconciliation-statement`);
+  }
+
+  /** Export de l'état de rapprochement (csv / excel / pdf). */
+  exportReconciliationStatement(statementId: string, format: AccountingExportFormat): Observable<Blob> {
+    const p = new HttpParams().set('format', format);
+    return this.http.get(`${this.base}/statements/${statementId}/reconciliation-statement/export`,
+      { params: p, responseType: 'blob' });
   }
 }

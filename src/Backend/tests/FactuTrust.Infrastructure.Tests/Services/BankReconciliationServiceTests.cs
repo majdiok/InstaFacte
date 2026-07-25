@@ -47,8 +47,9 @@ public sealed class BankReconciliationServiceTests
         var currentUser = new Mock<ICurrentUser>();
         currentUser.SetupGet(u => u.Email).Returns("comptable@test.tn");
         var pdfImport = new Mock<IBankStatementPdfImportService>();
+        var reporting = new AccountingReportingService(_factory, Options.Create(new AccountingSettings()));
         return new BankReconciliationService(_factory, new Mock<IAuditService>().Object, currentUser.Object, pdfImport.Object,
-            Options.Create(new AccountingSettings()));
+            reporting, Options.Create(new AccountingSettings()));
     }
 
     private static ImportBankStatementRequest StatementRequest(params ImportBankStatementLineRequest[] lines) => new()

@@ -1,6 +1,9 @@
 using FactuTrust.API.Authorization;
+using FactuTrust.Application.Common.Enums;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.Accounting.Queries;
+using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -12,11 +15,20 @@ namespace FactuTrust.API.Controllers;
 public sealed class BankReconciliationController : ControllerBase
 {
     private readonly IBankReconciliationService _reconciliationService;
+    private readonly IMediator _mediator;
 
-    public BankReconciliationController(IBankReconciliationService reconciliationService)
+    public BankReconciliationController(IBankReconciliationService reconciliationService, IMediator mediator)
     {
         _reconciliationService = reconciliationService;
+        _mediator = mediator;
     }
+
+    private FileContentResult FileFor(byte[] bytes, AccountingExportFormat format, string baseName) => format switch
+    {
+        AccountingExportFormat.Excel => File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"{baseName}.xlsx"),
+        AccountingExportFormat.Pdf => File(bytes, "application/pdf", $"{baseName}.pdf"),
+        _ => File(bytes, "text/csv", $"{baseName}.csv")
+    };
 
     [HttpPost("statements")]
     [Authorize(Policy = PermissionPolicies.AccountingCreate)]
@@ -154,5 +166,35 @@ public sealed class BankReconciliationController : ControllerBase
         if (result.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
         return Ok(ApiResponse<bool>.Ok(true, "Écriture comptabilisée."));
+    }
+
+    /// <summary>
+    /// État de rapprochement d'un relevé : confrontation solde comptable ↔ solde relevé, suspens
+    /// des deux côtés, écart. Lecture seule.
+    /// </summary>
+    [HttpGet("statements/{id:guid}/reconciliation-statement")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    [ProducesResponseType(typeof(ApiResponse<BankReconciliationStatementDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetReconciliationStatement(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetBankReconciliationStatementQuery(id), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+        return Ok(ApiResponse<BankReconciliationStatementDto>.Ok(result.Value));
+    }
+
+    [HttpGet("statements/{id:guid}/reconciliation-statement/export")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> ExportReconciliationStatement(
+        Guid id,
+        [FromQuery] AccountingExportFormat format = AccountingExportFormat.Csv,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(new ExportBankReconciliationStatementQuery(id, format), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return FileFor(result.Value, format, $"etat_rapprochement_{id:N}");
     }
 }
