@@ -363,6 +363,32 @@ export interface PreClosingChecklistDto {
   checks: PreClosingCheckDto[];
 }
 
+/** Rapport du centre de contrôle d'intégrité (lecture seule). fiscalYear null = global. */
+export interface AccountingHealthReportDto {
+  fiscalYear: number | null;
+  generatedAt: string;
+  hasAnomalies: boolean;
+  checks: PreClosingCheckDto[];
+}
+
+/** Ligne d'un tableau annexe (livre d'inventaire : provisions détaillées). */
+export interface FiscalTableRowDto {
+  code: string;
+  label: string;
+  amount: number;
+  previousAmount?: number | null;
+}
+
+/** Résumé du livre d'inventaire (le PDF porte l'édition légale complète). */
+export interface InventoryBookDto {
+  fiscalYear: number;
+  companyName: string;
+  closingBalance: BalanceRowDto[];
+  detailedProvisions: FiscalTableRowDto[];
+  isYearLocked: boolean;
+  lockedAt?: string | null;
+}
+
 export interface AccountingPeriodDto {
   id: string;
   fiscalYear: number;
@@ -613,6 +639,35 @@ export interface JournalImportPreviewDto {
 export interface JournalImportCommitResultDto {
   importedEntries: number;
   importedLines: number;
+}
+
+/** Cible d'un import de référentiel (miroir de ReferenceImportTarget backend). */
+export enum ReferenceImportTarget {
+  ChartOfAccounts = 0,
+  ThirdParties = 1,
+  OpeningBalance = 2,
+}
+
+export interface ReferenceImportRowDto {
+  ref: string;
+  summary: string;
+  alreadyExists: boolean;
+}
+
+export interface ReferenceImportPreviewDto {
+  target: ReferenceImportTarget;
+  totalRows: number;
+  validRows: number;
+  rowsWithErrors: number;
+  existingRows: number;
+  canCommit: boolean;
+  issues: ImportIssueDto[];
+  sample: ReferenceImportRowDto[];
+}
+
+export interface ReferenceImportCommitResultDto {
+  createdCount: number;
+  skippedCount: number;
 }
 
 export interface CreateSubAccountRequest {
@@ -1227,6 +1282,13 @@ export class AccountingService {
     return this.http.get<ApiResponse<PreClosingChecklistDto>>(`${this.base}/pre-closing-checklist`, { params: p });
   }
 
+  /** Centre de contrôle d'intégrité (lecture seule). fiscalYear omis = diagnostic global. */
+  getAccountingHealth(fiscalYear?: number): Observable<ApiResponse<AccountingHealthReportDto>> {
+    let p = new HttpParams();
+    if (fiscalYear != null) p = p.set('fiscalYear', fiscalYear);
+    return this.http.get<ApiResponse<AccountingHealthReportDto>>(`${this.base}/health`, { params: p });
+  }
+
   /** Catalogue des types d'écritures d'inventaire (comptes par défaut). */
   getInventoryKinds(): Observable<ApiResponse<InventoryEntryKindDto[]>> {
     return this.http.get<ApiResponse<InventoryEntryKindDto[]>>(`${this.base}/inventory-entries/kinds`);
@@ -1301,6 +1363,36 @@ export class AccountingService {
     form.append('file', file);
     form.append('format', String(format));
     return this.http.post<ApiResponse<JournalImportCommitResultDto>>(`${this.base}/import/commit`, form);
+  }
+
+  /** Aperçu (dry-run) d'un import de référentiel (plan comptable / plan tiers / balance d'ouverture). */
+  previewReferenceImport(
+    file: File,
+    target: ReferenceImportTarget,
+    format: JournalImportFormat,
+    fiscalYear?: number
+  ): Observable<ApiResponse<ReferenceImportPreviewDto>> {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('target', String(target));
+    form.append('format', String(format));
+    if (fiscalYear != null) form.append('fiscalYear', String(fiscalYear));
+    return this.http.post<ApiResponse<ReferenceImportPreviewDto>>(`${this.base}/reference-import/preview`, form);
+  }
+
+  /** Commit d'un import de référentiel : création additive tout-ou-rien (jamais d'écrasement). */
+  commitReferenceImport(
+    file: File,
+    target: ReferenceImportTarget,
+    format: JournalImportFormat,
+    fiscalYear?: number
+  ): Observable<ApiResponse<ReferenceImportCommitResultDto>> {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('target', String(target));
+    form.append('format', String(format));
+    if (fiscalYear != null) form.append('fiscalYear', String(fiscalYear));
+    return this.http.post<ApiResponse<ReferenceImportCommitResultDto>>(`${this.base}/reference-import/commit`, form);
   }
 
   createSubAccount(request: CreateSubAccountRequest): Observable<ApiResponse<string>> {
@@ -1396,6 +1488,17 @@ export class AccountingService {
   exportConsolidatedLiasse(fiscalYear: number, format: AccountingExportFormat): Observable<Blob> {
     const p = new HttpParams().set('format', format);
     return this.http.get(`${this.base}/liasse/${fiscalYear}/export`, { params: p, responseType: 'blob' });
+  }
+
+  /** Livre d'inventaire d'un exercice (résumé : statut de verrouillage + provisions détaillées). */
+  getInventoryBook(fiscalYear: number): Observable<ApiResponse<InventoryBookDto>> {
+    return this.http.get<ApiResponse<InventoryBookDto>>(`${this.base}/inventory-book/${fiscalYear}`);
+  }
+
+  /** Export du livre d'inventaire (pdf légal / excel / csv). */
+  exportInventoryBook(fiscalYear: number, format: AccountingExportFormat): Observable<Blob> {
+    const p = new HttpParams().set('format', format);
+    return this.http.get(`${this.base}/inventory-book/${fiscalYear}/export`, { params: p, responseType: 'blob' });
   }
 
   /** Paramètres fiscaux de l'exercice (taux IS, minimum d'impôt, CSS, barème IRPP). */

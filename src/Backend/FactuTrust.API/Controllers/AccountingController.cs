@@ -231,6 +231,48 @@ public sealed class AccountingController : ControllerBase
         return Ok(ApiResponse<JournalImportCommitResultDto>.Ok(r.Value, $"{r.Value.ImportedEntries} écriture(s) importée(s) en brouillard."));
     }
 
+    /// <summary>Aperçu (dry-run) d'un import de référentiel : plan comptable, plan tiers ou balance d'ouverture.</summary>
+    [HttpPost("reference-import/preview")]
+    [Authorize(Policy = PermissionPolicies.AccountingImport)]
+    [RequestSizeLimit(25_000_000)]
+    public async Task<IActionResult> PreviewReferenceImport(
+        [FromForm] IFormFile file,
+        [FromForm] ReferenceImportTarget target,
+        [FromForm] JournalImportFormat format,
+        [FromForm] int? fiscalYear,
+        CancellationToken cancellationToken)
+    {
+        if (file is null || file.Length == 0)
+            return BadRequest(ApiResponse<object>.Fail("Fichier requis."));
+
+        var content = await ReadFileAsync(file, cancellationToken);
+        var r = await _mediator.Send(new PreviewReferenceImportCommand(content, target, format, fiscalYear), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<ReferenceImportPreviewDto>.Ok(r.Value));
+    }
+
+    [HttpPost("reference-import/commit")]
+    [Authorize(Policy = PermissionPolicies.AccountingImport)]
+    [RequestSizeLimit(25_000_000)]
+    public async Task<IActionResult> CommitReferenceImport(
+        [FromForm] IFormFile file,
+        [FromForm] ReferenceImportTarget target,
+        [FromForm] JournalImportFormat format,
+        [FromForm] int? fiscalYear,
+        CancellationToken cancellationToken)
+    {
+        if (file is null || file.Length == 0)
+            return BadRequest(ApiResponse<object>.Fail("Fichier requis."));
+
+        var content = await ReadFileAsync(file, cancellationToken);
+        var r = await _mediator.Send(new CommitReferenceImportCommand(content, target, format, fiscalYear), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<ReferenceImportCommitResultDto>.Ok(r.Value,
+            $"{r.Value.CreatedCount} élément(s) créé(s), {r.Value.SkippedCount} ignoré(s)."));
+    }
+
     private static async Task<byte[]> ReadFileAsync(IFormFile file, CancellationToken cancellationToken)
     {
         using var ms = new MemoryStream();
@@ -770,6 +812,20 @@ public sealed class AccountingController : ControllerBase
         return Ok(ApiResponse<PreClosingChecklistDto>.Ok(r.Value));
     }
 
+    /// <summary>
+    /// Centre de contrôle d'intégrité comptable (lecture seule). <paramref name="fiscalYear"/> absent
+    /// = diagnostic global. N'effectue aucune mutation.
+    /// </summary>
+    [HttpGet("health")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> GetAccountingHealth([FromQuery] int? fiscalYear, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new GetAccountingHealthQuery(fiscalYear), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<AccountingHealthReportDto>.Ok(r.Value));
+    }
+
     [HttpGet("inventory-entries/kinds")]
     [Authorize(Policy = PermissionPolicies.AccountingRead)]
     public async Task<IActionResult> GetInventoryEntryKinds(CancellationToken cancellationToken)
@@ -932,6 +988,30 @@ public sealed class AccountingController : ControllerBase
         if (r.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
         return FileFor(r.Value, format, $"liasse_fiscale_{fiscalYear}");
+    }
+
+    /// <summary>Livre d'inventaire d'un exercice (édition légale figée) : états NCT + provisions détaillées + balance de clôture.</summary>
+    [HttpGet("inventory-book/{fiscalYear:int}")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> GetInventoryBook(int fiscalYear, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new GetInventoryBookQuery(fiscalYear), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<InventoryBookDto>.Ok(r.Value));
+    }
+
+    [HttpGet("inventory-book/{fiscalYear:int}/export")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> ExportInventoryBook(
+        int fiscalYear,
+        [FromQuery] AccountingExportFormat format = AccountingExportFormat.Pdf,
+        CancellationToken cancellationToken = default)
+    {
+        var r = await _mediator.Send(new ExportInventoryBookQuery(fiscalYear, format), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return FileFor(r.Value, format, $"livre_inventaire_{fiscalYear}");
     }
 
     // ── Paramètres fiscaux par exercice (taux IS, minimum d'impôt, CSS, barème IRPP) ─────

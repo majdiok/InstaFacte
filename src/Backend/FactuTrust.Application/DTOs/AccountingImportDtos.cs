@@ -66,3 +66,48 @@ public sealed record JournalImportCommitResultDto
     public int ImportedEntries { get; init; }
     public int ImportedLines { get; init; }
 }
+
+/// <summary>Nature du référentiel importé par la reprise étendue (au-delà des écritures).</summary>
+public enum ReferenceImportTarget
+{
+    /// <summary>Plan comptable : colonnes compte, libelle, classe, nature.</summary>
+    ChartOfAccounts = 0,
+
+    /// <summary>Plan tiers : colonnes type, nom, email, rue, ville, gouvernorat (nif, code optionnels).</summary>
+    ThirdParties = 1,
+
+    /// <summary>Balance d'ouverture : colonnes compte, debit, credit → une écriture d'à-nouveau en brouillon.</summary>
+    OpeningBalance = 2
+}
+
+/// <summary>Ligne d'aperçu d'un import de référentiel (résumé lisible + statut).</summary>
+public sealed record ReferenceImportRowDto
+{
+    public string Ref { get; init; } = null!;
+    public string Summary { get; init; } = null!;
+    /// <summary>Vrai si la ligne existe déjà et sera ignorée (jamais écrasée).</summary>
+    public bool AlreadyExists { get; init; }
+}
+
+/// <summary>Aperçu (dry-run) d'un import de référentiel : mêmes règles que le commit, sans persistance.</summary>
+public sealed record ReferenceImportPreviewDto
+{
+    public ReferenceImportTarget Target { get; init; }
+    public int TotalRows { get; init; }
+    public int ValidRows { get; init; }
+    public int RowsWithErrors { get; init; }
+    /// <summary>Lignes déjà présentes qui seront ignorées au commit (additif, jamais d'écrasement).</summary>
+    public int ExistingRows { get; init; }
+    /// <summary>Vrai si aucune anomalie bloquante.</summary>
+    public bool CanCommit { get; init; }
+    public IReadOnlyList<ImportIssueDto> Issues { get; init; } = Array.Empty<ImportIssueDto>();
+    public IReadOnlyList<ReferenceImportRowDto> Sample { get; init; } = Array.Empty<ReferenceImportRowDto>();
+}
+
+public sealed record ReferenceImportCommitResultDto
+{
+    /// <summary>Éléments effectivement créés (comptes, tiers, ou lignes d'à-nouveau).</summary>
+    public int CreatedCount { get; init; }
+    /// <summary>Éléments ignorés car déjà présents.</summary>
+    public int SkippedCount { get; init; }
+}

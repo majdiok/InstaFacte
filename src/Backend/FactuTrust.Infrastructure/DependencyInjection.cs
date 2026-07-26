@@ -205,6 +205,7 @@ public static class DependencyInjection
         services.AddScoped<IAuditLogQueryService, AuditLogQueryService>();
         services.AddScoped<IFecExportService, FecExportService>();
         services.AddScoped<IJournalImportService, JournalImportService>();
+        services.AddScoped<IReferenceDataImportService, ReferenceDataImportService>();
         services.AddScoped<IJournalEntryAttachmentService, JournalEntryAttachmentService>();
         services.AddScoped<IFiscalScheduleGenerator, FiscalScheduleGenerator>();
         services.AddScoped<IFiscalScheduleAttachmentService, FiscalScheduleAttachmentService>();
@@ -309,6 +310,7 @@ public static class DependencyInjection
         services.AddScoped<RecurringEntryGenerator>();
         services.AddScoped<IRecurringEntryService, RecurringEntryService>();
         services.AddScoped<IPreClosingControlService, PreClosingControlService>();
+        services.AddScoped<IAccountingHealthService, AccountingHealthService>();
         services.AddScoped<IAssistedInventoryEntryService, AssistedInventoryEntryService>();
         services.AddScoped<IFiscalYearLockService, FiscalYearLockService>();
         services.AddScoped<FactuTrust.Infrastructure.Services.Background.RecurringEntriesJob>();

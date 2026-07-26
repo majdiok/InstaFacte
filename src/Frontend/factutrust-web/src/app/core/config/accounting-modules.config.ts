@@ -60,6 +60,7 @@ export const ACCOUNTING_MODULES: AccountingModuleDef[] = [
       { label: "Recherche d'écriture", route: '/accounting/entry-search', icon: 'fa-solid fa-magnifying-glass', perms: ['accounting:read'] },
       { label: 'Remplacement de compte', route: '/accounting/account-replacement', icon: 'fa-solid fa-right-left', perms: ['accounting:create'] },
       { label: 'Contrôles de pré-clôture', route: '/accounting/pre-closing', icon: 'fa-solid fa-list-check', perms: ['accounting:read'] },
+      { label: "Contrôle d'intégrité", route: '/accounting/health', icon: 'fa-solid fa-heart-pulse', perms: ['accounting:read'] },
       { label: 'Clôture', route: '/accounting/closing', icon: 'fa-solid fa-lock', perms: ['accounting:close'] }
     ]
   },
@@ -107,6 +108,7 @@ export const ACCOUNTING_MODULES: AccountingModuleDef[] = [
     description: 'États financiers NCT + détermination du résultat fiscal',
     links: [
       { label: 'États financiers NCT', route: '/accounting/nct-statements', icon: 'fa-solid fa-file-contract', perms: ['accounting:read'] },
+      { label: "Livre d'inventaire", route: '/accounting/inventory-book', icon: 'fa-solid fa-book-bookmark', perms: ['accounting:read'] },
       { label: 'Détermination du résultat fiscal', route: '/accounting/fiscal-result', icon: 'fa-solid fa-scale-balanced', perms: ['accounting:read'] },
       { label: 'Paramètres fiscaux', route: '/accounting/fiscal-parameters', icon: 'fa-solid fa-sliders', perms: ['accounting:read'] }
     ]

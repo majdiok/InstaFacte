@@ -128,6 +128,12 @@ export const ACCOUNTING_ROUTES: Routes = [
     title: 'Contrôles de pré-clôture - InstaFact'
   },
   {
+    path: 'health',
+    loadComponent: () =>
+      import('./health/health.component').then(m => m.AccountingHealthComponent),
+    title: "Contrôle d'intégrité - InstaFact"
+  },
+  {
     path: 'inventory-assistant',
     loadComponent: () =>
       import('./inventory-assistant/inventory-assistant.component').then(m => m.InventoryAssistantComponent),
@@ -140,7 +146,7 @@ export const ACCOUNTING_ROUTES: Routes = [
   },
   {
     path: 'import',
-    loadComponent: () => import('./import/import.component').then(m => m.ImportComponent),
+    loadComponent: () => import('./import/import-hub.component').then(m => m.ImportHubComponent),
     title: 'Reprise de dossier - InstaFact'
   },
   {
@@ -160,6 +166,12 @@ export const ACCOUNTING_ROUTES: Routes = [
     loadComponent: () =>
       import('./nct-statements/nct-statements.component').then(m => m.NctStatementsComponent),
     title: 'États financiers NCT - InstaFact'
+  },
+  {
+    path: 'inventory-book',
+    loadComponent: () =>
+      import('./inventory-book/inventory-book.component').then(m => m.InventoryBookComponent),
+    title: "Livre d'inventaire - InstaFact"
   },
   {
     path: 'fiscal-result',

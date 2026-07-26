@@ -62,6 +62,9 @@ public interface IPdfService
     /// <summary>Génère le PDF de la liasse consolidée (états NCT + détermination fiscale + tableaux annexes).</summary>
     Task<byte[]> GenerateConsolidatedLiassePdfAsync(ConsolidatedLiasseDto dto, AccountingReportHeader header, CancellationToken cancellationToken = default);
 
+    /// <summary>Génère le PDF du livre d'inventaire (états NCT + provisions détaillées + balance de clôture).</summary>
+    Task<byte[]> GenerateInventoryBookPdfAsync(InventoryBookDto dto, AccountingReportHeader header, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Generates a PDF for a sales invoice (full layout with issuer branding).
     /// </summary>

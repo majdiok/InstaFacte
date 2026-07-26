@@ -94,3 +94,44 @@ public sealed class ExportConsolidatedLiasseQueryHandler : IRequestHandler<Expor
         return new AccountingReportHeader(company?.Name ?? fallbackName, company?.VatCode, title, $"Exercice {fiscalYear}");
     }
 }
+
+// ── Export du livre d'inventaire ─────────────────────────────────────────────────────────
+
+public sealed record ExportInventoryBookQuery(int FiscalYear, AccountingExportFormat Format = AccountingExportFormat.Pdf)
+    : IRequest<Result<byte[]>>;
+
+public sealed class ExportInventoryBookQueryHandler : IRequestHandler<ExportInventoryBookQuery, Result<byte[]>>
+{
+    private readonly IMediator _mediator;
+    private readonly IAccountingExportService _export;
+    private readonly IPdfService _pdf;
+    private readonly ICompanyRepository _companies;
+
+    public ExportInventoryBookQueryHandler(IMediator mediator, IAccountingExportService export, IPdfService pdf, ICompanyRepository companies)
+    {
+        _mediator = mediator;
+        _export = export;
+        _pdf = pdf;
+        _companies = companies;
+    }
+
+    public async Task<Result<byte[]>> Handle(ExportInventoryBookQuery request, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new GetInventoryBookQuery(request.FiscalYear), cancellationToken);
+        if (r.IsFailure)
+            return Result.Failure<byte[]>(r.Error);
+
+        var company = await _companies.GetDefaultAsync(cancellationToken);
+        var header = new AccountingReportHeader(
+            company?.Name ?? r.Value.CompanyName, company?.VatCode,
+            "Livre d'inventaire", $"Exercice {request.FiscalYear}");
+
+        return request.Format switch
+        {
+            // Excel/CSV : repli sur la balance de clôture (le PDF reste l'édition légale de référence).
+            AccountingExportFormat.Excel => _export.ExportBalanceToExcel(r.Value.ClosingBalance),
+            AccountingExportFormat.Csv => _export.ExportBalanceToCsv(r.Value.ClosingBalance),
+            _ => await _pdf.GenerateInventoryBookPdfAsync(r.Value, header, cancellationToken)
+        };
+    }
+}

@@ -71,6 +71,40 @@ public sealed record PreClosingChecklistDto
     public IReadOnlyList<PreClosingCheckDto> Checks { get; init; } = Array.Empty<PreClosingCheckDto>();
 }
 
+/// <summary>
+/// Livre d'inventaire d'un exercice : photographie légale figée (états financiers NCT + balance de
+/// clôture + provisions détaillées par compte). Composition d'états existants — aucune donnée propre.
+/// Un exercice verrouillé (<see cref="IsYearLocked"/>) rend cette photographie immuable.
+/// </summary>
+public sealed record InventoryBookDto
+{
+    public int FiscalYear { get; init; }
+    public string CompanyName { get; init; } = "Société";
+    /// <summary>Liasse consolidée (états NCT + résultat fiscal + amortissements + provisions 5-groupes).</summary>
+    public ConsolidatedLiasseDto Liasse { get; init; } = new();
+    /// <summary>Balance générale au 31/12 de l'exercice (ouverture ancrée, cf. lot 0).</summary>
+    public IReadOnlyList<BalanceRowDto> ClosingBalance { get; init; } = Array.Empty<BalanceRowDto>();
+    /// <summary>Provisions détaillées : une ligne par compte des racines 15/29/39/49/59.</summary>
+    public IReadOnlyList<FiscalTableRowDto> DetailedProvisions { get; init; } = Array.Empty<FiscalTableRowDto>();
+    /// <summary>Vrai si l'exercice est verrouillé définitivement (édition figée) ; sinon provisoire.</summary>
+    public bool IsYearLocked { get; init; }
+    public DateTime? LockedAt { get; init; }
+}
+
+/// <summary>
+/// Rapport du centre de contrôle d'intégrité (lecture seule). Réutilise <see cref="PreClosingCheckDto"/>
+/// pour chaque contrôle. <see cref="FiscalYear"/> null = diagnostic sur tout l'historique.
+/// </summary>
+public sealed record AccountingHealthReportDto
+{
+    /// <summary>Exercice ciblé, ou null pour un diagnostic global (tout l'historique).</summary>
+    public int? FiscalYear { get; init; }
+    public DateTime GeneratedAt { get; init; }
+    /// <summary>Vrai si au moins un contrôle non satisfait (Count &gt; 0), toutes sévérités confondues.</summary>
+    public bool HasAnomalies { get; init; }
+    public IReadOnlyList<PreClosingCheckDto> Checks { get; init; } = Array.Empty<PreClosingCheckDto>();
+}
+
 public sealed record ChartOfAccountDto
 {
     public Guid Id { get; init; }

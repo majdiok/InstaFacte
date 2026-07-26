@@ -2,7 +2,6 @@ import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
-import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
 import {
@@ -14,12 +13,8 @@ import {
 @Component({
   selector: 'app-accounting-import',
   standalone: true,
-  imports: [CommonModule, FormsModule, TableModule, PageHeaderComponent, ButtonComponent, AccountingStatusBannerComponent],
+  imports: [CommonModule, FormsModule, TableModule, ButtonComponent, AccountingStatusBannerComponent],
   template: `
-    <app-page-header
-      title="Reprise de dossier — import"
-      subtitle="Importer des écritures (et la balance d'ouverture) depuis un fichier CSV, Excel ou FEC" />
-
     <div class="card import-card">
       <div class="import-fields">
         <div class="form-field">

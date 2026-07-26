@@ -721,6 +721,88 @@ public partial class PdfService
         return Task.FromResult(bytes);
     }
 
+    // ── Livre d'inventaire (photographie légale figée de l'exercice) ───────────────────────
+
+    public Task<byte[]> GenerateInventoryBookPdfAsync(InventoryBookDto dto, AccountingReportHeader header, CancellationToken cancellationToken = default)
+    {
+        var bytes = BuildReport(header, landscape: false, col =>
+        {
+            // Mention du statut de verrouillage : une édition sur exercice verrouillé est définitive.
+            col.Item().PaddingBottom(6).Text(dto.IsYearLocked
+                    ? $"Exercice verrouillé définitivement le {ShortDate(dto.LockedAt!.Value)} — édition figée."
+                    : "Exercice non verrouillé — édition provisoire (les données peuvent encore évoluer).")
+                .FontSize(9).Italic()
+                .FontColor(dto.IsYearLocked ? Colors.Green.Darken2 : Colors.Orange.Darken2);
+
+            // I. États financiers NCT (réutilise le rendu de la liasse consolidée).
+            col.Item().Text("I. ÉTATS FINANCIERS (NCT)").FontSize(12).Bold().FontColor(Colors.Blue.Darken2);
+            col.Item().PaddingTop(6).Text("Bilan — Actif").Bold();
+            NctLinesTable(col, dto.Liasse.FinancialStatements.BalanceSheet.Assets);
+            col.Item().PaddingTop(6).Text("Bilan — Capitaux propres et passifs").Bold();
+            NctLinesTable(col, dto.Liasse.FinancialStatements.BalanceSheet.EquityAndLiabilities);
+            col.Item().PaddingTop(6).Text("Compte de résultat").Bold();
+            NctLinesTable(col, dto.Liasse.FinancialStatements.IncomeStatement.Lines);
+
+            // II. Provisions détaillées par compte.
+            col.Item().PageBreak();
+            if (dto.DetailedProvisions.Count > 0)
+            {
+                FiscalAnnexTable(col, "II. PROVISIONS ET DÉPRÉCIATIONS (détail par compte)", dto.DetailedProvisions, "Montant", "—");
+            }
+            else
+            {
+                col.Item().Text("II. PROVISIONS ET DÉPRÉCIATIONS").FontSize(12).Bold().FontColor(Colors.Blue.Darken2);
+                col.Item().PaddingTop(4).Text("Aucune provision ni dépréciation à la clôture.").Italic().FontColor(Colors.Grey.Darken1);
+            }
+
+            // III. Balance de clôture (compact : compte, libellé, soldes débiteur/créditeur).
+            col.Item().PageBreak();
+            col.Item().Text("III. BALANCE DE CLÔTURE").FontSize(12).Bold().FontColor(Colors.Blue.Darken2);
+            if (dto.ClosingBalance.Count == 0)
+            {
+                EmptyNotice(col, "Aucun compte mouvementé sur l'exercice.");
+            }
+            else
+            {
+                col.Item().PaddingTop(6).Table(table =>
+                {
+                    table.ColumnsDefinition(c =>
+                    {
+                        c.ConstantColumn(70);   // compte
+                        c.RelativeColumn(3);    // libellé
+                        c.ConstantColumn(100);  // solde débiteur
+                        c.ConstantColumn(100);  // solde créditeur
+                    });
+
+                    table.Header(h =>
+                    {
+                        h.Cell().Element(HeadCell).Text("Compte").Bold();
+                        h.Cell().Element(HeadCell).Text("Libellé").Bold();
+                        h.Cell().Element(HeadCell).AlignRight().Text("Solde débiteur").Bold();
+                        h.Cell().Element(HeadCell).AlignRight().Text("Solde créditeur").Bold();
+                    });
+
+                    decimal totalDebit = 0, totalCredit = 0;
+                    foreach (var r in dto.ClosingBalance)
+                    {
+                        table.Cell().Element(BodyCell).Text(r.AccountNumber);
+                        table.Cell().Element(BodyCell).Text(PdfRenderHelpers.CleanTextForPdf(r.Label));
+                        table.Cell().Element(BodyCell).AlignRight().Text(AmountOrBlank(r.ClosingDebit));
+                        table.Cell().Element(BodyCell).AlignRight().Text(AmountOrBlank(r.ClosingCredit));
+                        totalDebit += r.ClosingDebit;
+                        totalCredit += r.ClosingCredit;
+                    }
+
+                    table.Cell().ColumnSpan(2).Element(TotalCell).AlignRight().Text("TOTAUX").Bold();
+                    table.Cell().Element(TotalCell).AlignRight().Text(Amount(totalDebit)).Bold();
+                    table.Cell().Element(TotalCell).AlignRight().Text(Amount(totalCredit)).Bold();
+                });
+            }
+        });
+
+        return Task.FromResult(bytes);
+    }
+
     // ── Balance auxiliaire ─────────────────────────────────────────────────────────────────
 
     public Task<byte[]> GenerateAuxiliaryBalancePdfAsync(IReadOnlyList<AuxiliaryBalanceRowDto> rows, AccountingReportHeader header, CancellationToken cancellationToken = default)

@@ -139,13 +139,17 @@ Efforts en **jours/homme (j/h)** pour une équipe senior connaissant le codebase
 | Intercompagnie automatique | ❌ | P2 | 50 | 4 |
 | Provisions ( créances douteuses, stock ) | ❌ | P2 | 40 | 2 |
 | Notes de frais → compta | ❌ | P2 | 35 | 2 |
-| Livre d’inventaire légal + annexes éditables | ❌ | P2 | 40 | 2 |
+| Livre d’inventaire légal (PDF figé + provisions détaillées) | ✅ | — | — | — |
 | État de rapprochement bancaire imprimable | ✅ | — | — | — |
-| Outillage maintenance (contrôle intégrité, sauvegarde, import étendu) | ❌ | P2 | 60 | 2 |
+| Contrôle d’intégrité comptable (lecture seule) | ✅ | — | — | — |
+| Import étendu (plan comptable / plan tiers / balance d’ouverture) | ✅ | — | — | — |
+| Annexes NCT éditables (surcharge des notes auto) | ❌ | P2 | 15 | 2 |
+| Maintenance mutante (modifs de masse, sauvegarde/restauration) | ❌ | P2 | 45 | 2 |
 
-**Sous-total gaps compta/finance restants : ~460 j/h** _(budgets, immobilisations et liasse
-fiscale livrés ; grand livre général, balances détaillée/par période et récapitulatifs de journaux
-ajoutés en 2026-07 — cf. [audit de couverture menu Éditions/Maintenance](../../src/Backend/FactuTrust.Application/Features/Accounting))._
+**Sous-total gaps compta/finance restants : ~415 j/h** _(budgets, immobilisations, liasse fiscale
+livrés ; grand livre général, balances détaillée/par période, récapitulatifs de journaux, état de
+rapprochement, livre d’inventaire, contrôle d’intégrité et import étendu ajoutés en 2026-07 — cf.
+[audit de couverture menu Éditions/Maintenance](../../src/Backend/FactuTrust.Application/Features/Accounting))._
 
 ---
 

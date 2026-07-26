@@ -144,4 +144,12 @@ public sealed class AccountingSettings
     /// et export FEC avec CompAuxNum lisible. OFF = feature inerte (comportement historique).
     /// </summary>
     public bool ThirdPartyDirectoryEnabled { get; set; }
+
+    /// <summary>
+    /// Active le centre de contrôle d'intégrité comptable (lecture seule) : diagnostics à la demande
+    /// hors clôture — contrôles de pré-clôture partagés + détection d'anomalies structurelles
+    /// (comptes hors plan, écritures hors période, doublons de pièce, tiers non auxiliarisables).
+    /// Aucune action corrective (jamais de mutation). OFF = endpoint indisponible.
+    /// </summary>
+    public bool AccountingHealthEnabled { get; set; }
 }
