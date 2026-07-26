@@ -36,25 +36,42 @@ public sealed class JournalImportService : IJournalImportService
         _settings = settings.Value;
     }
 
-    public async Task<Result<JournalImportPreviewDto>> PreviewAsync(byte[] content, JournalImportFormat format, CancellationToken cancellationToken = default)
+    // Surcharges historiques : délèguent sans table de correspondance (comportement strictement inchangé).
+    public Task<Result<JournalImportPreviewDto>> PreviewAsync(byte[] content, JournalImportFormat format, CancellationToken cancellationToken = default)
+        => PreviewAsync(content, format, null, cancellationToken);
+
+    public Task<Result<JournalImportCommitResultDto>> CommitAsync(byte[] content, JournalImportFormat format, CancellationToken cancellationToken = default)
+        => CommitAsync(content, format, null, cancellationToken);
+
+    public async Task<Result<JournalImportPreviewDto>> PreviewAsync(
+        byte[] content, JournalImportFormat format,
+        byte[]? accountMappingContent, CancellationToken cancellationToken = default)
     {
         if (!_settings.DossierImportEnabled)
             return Result.Failure<JournalImportPreviewDto>(Error.Validation("Import", "La reprise de dossier par import n'est pas activée."));
 
         var (entries, parseIssues) = _parser.Parse(content, format);
         var issues = new List<ImportIssueDto>(parseIssues);
+
+        var (mappedEntries, mapping) = await ApplyMappingAsync(entries, accountMappingContent, format, issues, cancellationToken);
+        entries = mappedEntries;
         issues.AddRange(await ValidateAsync(entries, cancellationToken));
 
-        return Result.Success(BuildPreview(entries, issues));
+        return Result.Success(BuildPreview(entries, issues, mapping));
     }
 
-    public async Task<Result<JournalImportCommitResultDto>> CommitAsync(byte[] content, JournalImportFormat format, CancellationToken cancellationToken = default)
+    public async Task<Result<JournalImportCommitResultDto>> CommitAsync(
+        byte[] content, JournalImportFormat format,
+        byte[]? accountMappingContent, CancellationToken cancellationToken = default)
     {
         if (!_settings.DossierImportEnabled)
             return Result.Failure<JournalImportCommitResultDto>(Error.Validation("Import", "La reprise de dossier par import n'est pas activée."));
 
         var (entries, parseIssues) = _parser.Parse(content, format);
         var issues = new List<ImportIssueDto>(parseIssues);
+
+        var (mappedEntries, _) = await ApplyMappingAsync(entries, accountMappingContent, format, issues, cancellationToken);
+        entries = mappedEntries;
         issues.AddRange(await ValidateAsync(entries, cancellationToken));
 
         if (issues.Any(i => i.IsBlocking) || entries.Count == 0)
@@ -146,6 +163,60 @@ public sealed class JournalImportService : IJournalImportService
         });
     }
 
+    // ── Table de correspondance de comptes (facultative) ──────────────────────
+
+    /// <summary>
+    /// Applique la table de correspondance aux comptes des lignes, AVANT toute validation.
+    /// Sans table fournie, renvoie les écritures telles quelles — comportement historique strict.
+    /// Une table dont une CIBLE est absente du plan comptable est une anomalie bloquante (erreur de
+    /// table, pas de données).
+    /// </summary>
+    private async Task<(IReadOnlyList<ImportEntryDto> Entries, AccountMappingTable? Mapping)> ApplyMappingAsync(
+        IReadOnlyList<ImportEntryDto> entries,
+        byte[]? mappingContent,
+        JournalImportFormat format,
+        List<ImportIssueDto> issues,
+        CancellationToken cancellationToken)
+    {
+        if (mappingContent is not { Length: > 0 })
+            return (entries, null);
+
+        var (table, mappingIssues) = AccountMappingTable.Parse(mappingContent, format);
+        issues.AddRange(mappingIssues);
+        if (table is null)
+            return (entries, null);
+
+        // Les cibles doivent exister au plan comptable, sinon la traduction produirait des comptes
+        // introuvables et l'anomalie serait attribuée à tort au fichier de données.
+        await using (var ctx = _contextFactory.CreateContext())
+        {
+            var known = await ctx.ChartOfAccounts.AsNoTracking()
+                .Select(c => c.AccountNumber)
+                .ToListAsync(cancellationToken);
+            var knownSet = new HashSet<string>(known, StringComparer.Ordinal);
+            foreach (var target in table.TargetAccounts.Where(t => !knownSet.Contains(t)))
+            {
+                issues.Add(new ImportIssueDto
+                {
+                    Ref = "correspondance",
+                    Message = $"Le compte cible {target} de la table de correspondance est absent du plan comptable.",
+                    IsBlocking = true
+                });
+            }
+        }
+
+        var translated = entries
+            .Select(e => e with
+            {
+                Lines = e.Lines
+                    .Select(l => l with { AccountNumber = table.Translate(l.AccountNumber) })
+                    .ToList()
+            })
+            .ToList();
+
+        return (translated, table);
+    }
+
     // ── Validation métier partagée (aperçu + commit) ──────────────────────────
 
     private async Task<List<ImportIssueDto>> ValidateAsync(IReadOnlyList<ImportEntryDto> entries, CancellationToken cancellationToken)
@@ -190,7 +261,8 @@ public sealed class JournalImportService : IJournalImportService
         return issues;
     }
 
-    private static JournalImportPreviewDto BuildPreview(IReadOnlyList<ImportEntryDto> entries, List<ImportIssueDto> issues)
+    private static JournalImportPreviewDto BuildPreview(
+        IReadOnlyList<ImportEntryDto> entries, List<ImportIssueDto> issues, AccountMappingTable? mapping = null)
     {
         var blocking = issues.Count(i => i.IsBlocking);
         var refsWithIssues = new HashSet<string>(issues.Where(i => i.IsBlocking).Select(i => i.Ref));
@@ -206,7 +278,9 @@ public sealed class JournalImportService : IJournalImportService
             TotalCredit = entries.Sum(e => e.TotalCredit),
             CanCommit = blocking == 0 && entries.Count > 0,
             Issues = issues,
-            Sample = entries.Take(SampleSize).ToList()
+            Sample = entries.Take(SampleSize).ToList(),
+            MappedAccountCount = mapping?.AppliedCount ?? 0,
+            UnusedMappings = mapping?.UnusedSources ?? Array.Empty<string>()
         };
     }
 

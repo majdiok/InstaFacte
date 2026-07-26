@@ -59,6 +59,12 @@ public sealed record JournalImportPreviewDto
     public IReadOnlyList<ImportIssueDto> Issues { get; init; } = Array.Empty<ImportIssueDto>();
     /// <summary>Échantillon des premières écritures (aperçu), limité côté serveur.</summary>
     public IReadOnlyList<ImportEntryDto> Sample { get; init; } = Array.Empty<ImportEntryDto>();
+    /// <summary>
+    /// Nombre de comptes traduits par la table de correspondance (0 si aucune table fournie).
+    /// </summary>
+    public int MappedAccountCount { get; init; }
+    /// <summary>Correspondances déclarées mais jamais rencontrées — informatif, non bloquant.</summary>
+    public IReadOnlyList<string> UnusedMappings { get; init; } = Array.Empty<string>();
 }
 
 public sealed record JournalImportCommitResultDto
@@ -102,6 +108,12 @@ public sealed record ReferenceImportPreviewDto
     public bool CanCommit { get; init; }
     public IReadOnlyList<ImportIssueDto> Issues { get; init; } = Array.Empty<ImportIssueDto>();
     public IReadOnlyList<ReferenceImportRowDto> Sample { get; init; } = Array.Empty<ReferenceImportRowDto>();
+    /// <summary>
+    /// Nombre de comptes traduits par la table de correspondance (0 si aucune table fournie).
+    /// </summary>
+    public int MappedAccountCount { get; init; }
+    /// <summary>Correspondances déclarées mais jamais rencontrées — informatif, non bloquant.</summary>
+    public IReadOnlyList<string> UnusedMappings { get; init; } = Array.Empty<string>();
 }
 
 public sealed record ReferenceImportCommitResultDto

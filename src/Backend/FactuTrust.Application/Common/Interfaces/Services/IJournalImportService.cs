@@ -10,6 +10,20 @@ namespace FactuTrust.Application.Common.Interfaces.Services;
 /// </summary>
 public interface IJournalImportService
 {
+    // Signatures historiques — INCHANGÉES (aucun appelant existant n'est impacté).
     Task<Result<JournalImportPreviewDto>> PreviewAsync(byte[] content, JournalImportFormat format, CancellationToken cancellationToken = default);
     Task<Result<JournalImportCommitResultDto>> CommitAsync(byte[] content, JournalImportFormat format, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Surcharge avec table de correspondance de comptes (« source;cible »), appliquée AVANT
+    /// validation pour reprendre un dossier venu d'un autre progiciel. Passer <c>null</c> équivaut
+    /// exactement à la surcharge historique.
+    /// </summary>
+    Task<Result<JournalImportPreviewDto>> PreviewAsync(
+        byte[] content, JournalImportFormat format,
+        byte[]? accountMappingContent, CancellationToken cancellationToken = default);
+
+    Task<Result<JournalImportCommitResultDto>> CommitAsync(
+        byte[] content, JournalImportFormat format,
+        byte[]? accountMappingContent, CancellationToken cancellationToken = default);
 }

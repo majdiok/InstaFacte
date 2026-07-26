@@ -25,7 +25,6 @@ namespace FactuTrust.Infrastructure.Services;
 /// </summary>
 public sealed class ReferenceDataImportService : IReferenceDataImportService
 {
-    private const int MaxRows = 50_000;
     private const int SampleSize = 20;
 
     private readonly ITenantDbContextFactory _contextFactory;
@@ -449,101 +448,11 @@ public sealed class ReferenceDataImportService : IReferenceDataImportService
     }
 
     // ── Lecture tabulaire générique (CSV / Excel) ─────────────────────────────
+    // Déléguée à TabularRowReader (extraction verbatim, partagée avec AccountMappingTable).
 
     private static (List<Dictionary<string, string>> Rows, List<ImportIssueDto> Issues) ReadRows(
         byte[] content, JournalImportFormat format, IReadOnlyDictionary<string, string[]> synonyms, string[] required, string expected)
-    {
-        return format == JournalImportFormat.Excel
-            ? ReadExcelRows(content, synonyms, required, expected)
-            : ReadCsvRows(content, synonyms, required, expected);
-    }
-
-    private static (List<Dictionary<string, string>>, List<ImportIssueDto>) ReadCsvRows(
-        byte[] content, IReadOnlyDictionary<string, string[]> synonyms, string[] required, string expected)
-    {
-        var issues = new List<ImportIssueDto>();
-        var text = TabularFileParsing.DecodeText(content);
-        using var reader = new StringReader(text);
-        var config = new CsvConfiguration(CultureInfo.InvariantCulture)
-        {
-            Delimiter = TabularFileParsing.DetectDelimiter(text),
-            HasHeaderRecord = true,
-            MissingFieldFound = null,
-            BadDataFound = null,
-            TrimOptions = TrimOptions.Trim,
-            DetectDelimiter = false
-        };
-        using var csv = new CsvReader(reader, config);
-        if (!csv.Read() || !csv.ReadHeader())
-        {
-            issues.Add(Blocking("fichier", "En-tête introuvable (première ligne)."));
-            return (new(), issues);
-        }
-
-        var map = TabularFileParsing.ResolveColumns(csv.HeaderRecord ?? Array.Empty<string>(), synonyms);
-        var missing = required.FirstOrDefault(r => map.GetValueOrDefault(r, -1) < 0);
-        if (missing is not null)
-        {
-            issues.Add(Blocking("en-tête", $"Colonne obligatoire absente : {missing}. Colonnes attendues : {expected}."));
-            return (new(), issues);
-        }
-
-        var rows = new List<Dictionary<string, string>>();
-        while (csv.Read())
-        {
-            if (rows.Count >= MaxRows) { issues.Add(Blocking("fichier", $"Fichier tronqué : plus de {MaxRows} lignes.")); break; }
-            var row = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var (key, idx) in map)
-                row[key] = idx >= 0 ? (csv.GetField(idx) ?? string.Empty).Trim() : string.Empty;
-            if (row.Values.All(string.IsNullOrWhiteSpace)) continue;
-            rows.Add(row);
-        }
-        return (rows, issues);
-    }
-
-    private static (List<Dictionary<string, string>>, List<ImportIssueDto>) ReadExcelRows(
-        byte[] content, IReadOnlyDictionary<string, string[]> synonyms, string[] required, string expected)
-    {
-        var issues = new List<ImportIssueDto>();
-        using var stream = new MemoryStream(content);
-        using var workbook = new XLWorkbook(stream);
-        var sheet = workbook.Worksheets.FirstOrDefault();
-        var used = sheet?.RangeUsed();
-        if (used is null)
-        {
-            issues.Add(Blocking("fichier", "Classeur Excel vide."));
-            return (new(), issues);
-        }
-
-        var rowsUsed = used.RowsUsed().ToList();
-        if (rowsUsed.Count < 2)
-        {
-            issues.Add(Blocking("fichier", "Aucune ligne de données sous l'en-tête."));
-            return (new(), issues);
-        }
-
-        var header = rowsUsed[0].Cells().Select(c => c.GetString()).ToArray();
-        var map = TabularFileParsing.ResolveColumns(header, synonyms);
-        var missing = required.FirstOrDefault(r => map.GetValueOrDefault(r, -1) < 0);
-        if (missing is not null)
-        {
-            issues.Add(Blocking("en-tête", $"Colonne obligatoire absente : {missing}. Colonnes attendues : {expected}."));
-            return (new(), issues);
-        }
-
-        var rows = new List<Dictionary<string, string>>();
-        for (var r = 1; r < rowsUsed.Count; r++)
-        {
-            if (rows.Count >= MaxRows) { issues.Add(Blocking("fichier", $"Fichier tronqué : plus de {MaxRows} lignes.")); break; }
-            var cells = rowsUsed[r];
-            var row = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var (key, idx) in map)
-                row[key] = idx >= 0 ? cells.Cell(idx + 1).GetString().Trim() : string.Empty;
-            if (row.Values.All(string.IsNullOrWhiteSpace)) continue;
-            rows.Add(row);
-        }
-        return (rows, issues);
-    }
+        => TabularRowReader.Read(content, format, synonyms, required, expected);
 
     // ── Utilitaires ───────────────────────────────────────────────────────────
 

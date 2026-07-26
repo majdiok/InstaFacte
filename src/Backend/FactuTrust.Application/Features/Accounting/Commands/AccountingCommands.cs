@@ -909,7 +909,9 @@ public sealed class ReverseJournalEntryCommandHandler : IRequestHandler<ReverseJ
 
 // ── Phase 3 : reprise de dossier par import ────────────────────────────────────────
 
-public sealed record PreviewJournalImportCommand(byte[] Content, JournalImportFormat Format) : IRequest<Result<JournalImportPreviewDto>>;
+public sealed record PreviewJournalImportCommand(
+    byte[] Content, JournalImportFormat Format, byte[]? AccountMappingContent = null)
+    : IRequest<Result<JournalImportPreviewDto>>;
 
 public sealed class PreviewJournalImportCommandHandler : IRequestHandler<PreviewJournalImportCommand, Result<JournalImportPreviewDto>>
 {
@@ -921,10 +923,12 @@ public sealed class PreviewJournalImportCommandHandler : IRequestHandler<Preview
     }
 
     public Task<Result<JournalImportPreviewDto>> Handle(PreviewJournalImportCommand request, CancellationToken cancellationToken)
-        => _importService.PreviewAsync(request.Content, request.Format, cancellationToken);
+        => _importService.PreviewAsync(request.Content, request.Format, request.AccountMappingContent, cancellationToken);
 }
 
-public sealed record CommitJournalImportCommand(byte[] Content, JournalImportFormat Format) : IRequest<Result<JournalImportCommitResultDto>>;
+public sealed record CommitJournalImportCommand(
+    byte[] Content, JournalImportFormat Format, byte[]? AccountMappingContent = null)
+    : IRequest<Result<JournalImportCommitResultDto>>;
 
 public sealed class CommitJournalImportCommandHandler : IRequestHandler<CommitJournalImportCommand, Result<JournalImportCommitResultDto>>
 {
@@ -939,7 +943,7 @@ public sealed class CommitJournalImportCommandHandler : IRequestHandler<CommitJo
 
     public async Task<Result<JournalImportCommitResultDto>> Handle(CommitJournalImportCommand request, CancellationToken cancellationToken)
     {
-        var result = await _importService.CommitAsync(request.Content, request.Format, cancellationToken);
+        var result = await _importService.CommitAsync(request.Content, request.Format, request.AccountMappingContent, cancellationToken);
         if (result.IsSuccess)
         {
             await _auditService.LogAsync(
