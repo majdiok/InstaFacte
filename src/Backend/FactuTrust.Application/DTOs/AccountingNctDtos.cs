@@ -93,6 +93,39 @@ public sealed record NctDetailedNoteDto
 }
 
 /// <summary>
+/// Entrée du catalogue des notes annexes détaillées, exposée à l'écran de personnalisation.
+/// DTO dédié : <c>NctDetailedNoteDefinition</c> porte un prédicat de comptes (délégué) qui n'est
+/// pas sérialisable — seuls le numéro, le libellé par défaut et la famille sont publiés.
+/// </summary>
+public sealed record NctNoteCatalogEntryDto
+{
+    public int Number { get; init; }
+    /// <summary>Libellé du catalogue, utilisé tant qu'aucune personnalisation ne le remplace.</summary>
+    public string DefaultTitle { get; init; } = null!;
+    public NctAnnexFamily Family { get; init; }
+}
+
+/// <summary>Personnalisation d'une note annexe pour un exercice (null = valeur du catalogue).</summary>
+public sealed record NctNoteOverrideDto
+{
+    public int FiscalYear { get; init; }
+    public int NoteNumber { get; init; }
+    public string? CustomTitle { get; init; }
+    public string? CustomDescription { get; init; }
+    public bool IsHidden { get; init; }
+}
+
+/// <summary>Requête d'enregistrement d'une personnalisation de note.</summary>
+public sealed record UpsertNctNoteOverrideRequest
+{
+    public int FiscalYear { get; init; }
+    public int NoteNumber { get; init; }
+    public string? CustomTitle { get; init; }
+    public string? CustomDescription { get; init; }
+    public bool IsHidden { get; init; }
+}
+
+/// <summary>
 /// Liasse NCT (Normes Comptables Tunisiennes) : bilan + compte de résultat structurés, tableau de flux
 /// de trésorerie, état de variation des capitaux propres et notes annexes. Calculée sur les écritures
 /// VALIDÉES, avec comparatif N-1. Additive — n'altère pas <c>BalanceSheetDto</c>/<c>IncomeStatementDto</c>.

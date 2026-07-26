@@ -164,6 +164,7 @@ public static class DependencyInjection
         services.AddScoped<IWithholdingTaxRepository, WithholdingTaxRepository>();
         services.AddScoped<IWithholdingFiscalYearParameterRepository, WithholdingFiscalYearParameterRepository>();
         services.AddScoped<IIncomeTaxYearParameterRepository, IncomeTaxYearParameterRepository>();
+        services.AddScoped<INctNoteOverrideRepository, NctNoteOverrideRepository>();
         services.AddScoped<IFiscalResultDeclarationRepository, FiscalResultDeclarationRepository>();
         services.AddScoped<ITejXmlExportLogRepository, TejXmlExportLogRepository>();
 

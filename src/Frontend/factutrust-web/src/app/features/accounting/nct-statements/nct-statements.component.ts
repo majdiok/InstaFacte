@@ -7,6 +7,7 @@ import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.co
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
 import { AccountingService, NctFinancialStatementsDto, NctLineDto } from '../services/accounting.service';
 import { FinancialStatementsExportDialogComponent } from './financial-statements-export-dialog.component';
+import { NctNoteOverridesDialogComponent } from './nct-note-overrides-dialog.component';
 
 type NctTab = 'bilan' | 'resultat' | 'flux' | 'capitaux' | 'notes';
 
@@ -20,7 +21,8 @@ type NctTab = 'bilan' | 'resultat' | 'flux' | 'capitaux' | 'notes';
     ButtonComponent,
     AccountingFilterBarComponent,
     AccountingStatusBannerComponent,
-    FinancialStatementsExportDialogComponent
+    FinancialStatementsExportDialogComponent,
+    NctNoteOverridesDialogComponent
   ],
   template: `
     <app-page-header title="États financiers NCT" subtitle="Liasse : bilan, résultat, flux de trésorerie, capitaux propres et notes" />
@@ -40,6 +42,8 @@ type NctTab = 'bilan' | 'resultat' | 'flux' | 'capitaux' | 'notes';
             ariaLabel="Aperçu et impression des états financiers">Aperçu / Impression</app-button>
           <app-button variant="secondary" icon="pi pi-file-pdf" type="button" (click)="exportPdf()" [disabled]="loading() || !data()"
             ariaLabel="Exporter la liasse NCT en PDF">Exporter PDF</app-button>
+          <app-button variant="secondary" icon="pi pi-pencil" type="button" (click)="overridesDialogVisible = true" [disabled]="loading()"
+            ariaLabel="Personnaliser les notes annexes">Personnaliser les annexes</app-button>
         </div>
       </app-accounting-filter-bar>
     </div>
@@ -48,6 +52,11 @@ type NctTab = 'bilan' | 'resultat' | 'flux' | 'capitaux' | 'notes';
       [(visible)]="exportDialogVisible"
       [fiscalYear]="fiscalYear"
       [statements]="data()" />
+
+    <app-nct-note-overrides-dialog
+      [(visible)]="overridesDialogVisible"
+      [fiscalYear]="fiscalYear"
+      (changed)="load()" />
 
     <app-accounting-status-banner variant="error" [message]="error() ?? ''" [showRetry]="!!error()" retryLabel="Réessayer" (retry)="load()" />
 
@@ -148,6 +157,7 @@ export class NctStatementsComponent implements OnInit {
   private readonly api = inject(AccountingService);
   fiscalYear = new Date().getFullYear();
   exportDialogVisible = false;
+  overridesDialogVisible = false;
   readonly data = signal<NctFinancialStatementsDto | null>(null);
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);

@@ -288,6 +288,8 @@ public static class AuditActions
         public const string DraftDeleted = "Accounting.DraftDeleted";
         public const string EntryReversed = "Accounting.EntryReversed";
         public const string DossierImported = "Accounting.DossierImported";
+        /// <summary>Personnalisation d'une note annexe NCT (titre, texte, masquage) créée, modifiée ou rétablie.</summary>
+        public const string NctNoteOverrideChanged = "Accounting.NctNoteOverrideChanged";
         public const string PeriodClosed = "Accounting.PeriodClosed";
         public const string PeriodReopened = "Accounting.PeriodReopened";
         public const string FiscalYearClosed = "Accounting.FiscalYearClosed";

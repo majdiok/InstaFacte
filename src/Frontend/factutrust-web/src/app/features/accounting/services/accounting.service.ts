@@ -917,6 +917,22 @@ export interface NctDetailedNoteDto {
   previousTotal: number;
 }
 
+/** Entrée du catalogue des notes annexes (libellé par défaut, avant personnalisation). */
+export interface NctNoteCatalogEntryDto {
+  number: number;
+  defaultTitle: string;
+  family: NctAnnexFamily;
+}
+
+/** Personnalisation d'une note annexe pour un exercice. */
+export interface NctNoteOverrideDto {
+  fiscalYear: number;
+  noteNumber: number;
+  customTitle?: string | null;
+  customDescription?: string | null;
+  isHidden: boolean;
+}
+
 export interface NctFinancialStatementsDto {
   fiscalYear: number;
   balanceSheet: NctBalanceSheetDto;
@@ -1637,6 +1653,33 @@ export class AccountingService {
   getNctStatements(fiscalYear: number): Observable<ApiResponse<NctFinancialStatementsDto>> {
     const p = new HttpParams().set('fiscalYear', fiscalYear);
     return this.http.get<ApiResponse<NctFinancialStatementsDto>>(`${this.base}/nct-statements`, { params: p });
+  }
+
+  /** Catalogue des notes annexes : toutes les notes, y compris celles masquées par une personnalisation. */
+  getNctNoteCatalog(): Observable<ApiResponse<NctNoteCatalogEntryDto[]>> {
+    return this.http.get<ApiResponse<NctNoteCatalogEntryDto[]>>(`${this.base}/nct-note-catalog`);
+  }
+
+  /** Personnalisations des notes annexes pour un exercice. */
+  getNctNoteOverrides(fiscalYear: number): Observable<ApiResponse<NctNoteOverrideDto[]>> {
+    const p = new HttpParams().set('fiscalYear', fiscalYear);
+    return this.http.get<ApiResponse<NctNoteOverrideDto[]>>(`${this.base}/nct-note-overrides`, { params: p });
+  }
+
+  /** Enregistre la personnalisation d'une note (titre, texte narratif, masquage). */
+  upsertNctNoteOverride(request: {
+    fiscalYear: number;
+    noteNumber: number;
+    customTitle?: string | null;
+    customDescription?: string | null;
+    isHidden: boolean;
+  }): Observable<ApiResponse<NctNoteOverrideDto>> {
+    return this.http.put<ApiResponse<NctNoteOverrideDto>>(`${this.base}/nct-note-overrides`, request);
+  }
+
+  /** « Rétablir » : la note reprend le libellé du catalogue. */
+  deleteNctNoteOverride(fiscalYear: number, noteNumber: number): Observable<ApiResponse<boolean>> {
+    return this.http.delete<ApiResponse<boolean>>(`${this.base}/nct-note-overrides/${fiscalYear}/${noteNumber}`);
   }
 
   // ── Liasse fiscale : détermination du résultat fiscal ──

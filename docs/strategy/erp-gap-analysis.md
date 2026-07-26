@@ -146,7 +146,7 @@ Efforts en **jours/homme (j/h)** pour une équipe senior connaissant le codebase
 | Import étendu (plan comptable / plan tiers / balance d’ouverture) | ✅ | — | — | — |
 | Export d’archive de dossier (ZIP, lecture seule) | ✅ | — | — | — |
 | Modifications de masse des brouillons (journal/date/libellé + suppression) | ✅ | — | — | — |
-| Annexes NCT éditables (surcharge des notes auto) | ❌ | P2 | 15 | 2 |
+| Annexes NCT éditables (titre, texte narratif, masquage par exercice) | ✅ | — | — | — |
 | Migration de dossier avec mapping de comptes | ❌ | P2 | 10 | 2 |
 | Restauration de dossier + mass-edit du validé + extension tiers | ❌ | P3 | 60 | 4 |
 

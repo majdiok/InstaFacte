@@ -1033,6 +1033,55 @@ public sealed class AccountingController : ControllerBase
         return FileFor(r.Value, format, $"liasse_fiscale_{fiscalYear}");
     }
 
+    // ── Personnalisation des notes annexes NCT ───────────────────────────────
+
+    /// <summary>
+    /// Catalogue des notes annexes (numéro, libellé par défaut, famille). Lecture pure, sans base —
+    /// permet à l'écran de personnalisation de lister TOUTES les notes, y compris celles masquées
+    /// (absentes de la liasse par construction).
+    /// </summary>
+    [HttpGet("nct-note-catalog")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> GetNctNoteCatalog(CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new GetNctNoteCatalogQuery(), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<IReadOnlyList<NctNoteCatalogEntryDto>>.Ok(r.Value));
+    }
+
+    [HttpGet("nct-note-overrides")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> GetNctNoteOverrides([FromQuery] int fiscalYear, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new GetNctNoteOverridesQuery(fiscalYear), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<IReadOnlyList<NctNoteOverrideDto>>.Ok(r.Value));
+    }
+
+    [HttpPut("nct-note-overrides")]
+    [Authorize(Policy = PermissionPolicies.AccountingCreate)]
+    public async Task<IActionResult> UpsertNctNoteOverride(
+        [FromBody] UpsertNctNoteOverrideRequest request, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new UpsertNctNoteOverrideCommand(request), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<NctNoteOverrideDto>.Ok(r.Value, "Personnalisation enregistrée."));
+    }
+
+    /// <summary>« Rétablir » : la note reprend le libellé du catalogue.</summary>
+    [HttpDelete("nct-note-overrides/{fiscalYear:int}/{noteNumber:int}")]
+    [Authorize(Policy = PermissionPolicies.AccountingCreate)]
+    public async Task<IActionResult> DeleteNctNoteOverride(int fiscalYear, int noteNumber, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new DeleteNctNoteOverrideCommand(fiscalYear, noteNumber), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<bool>.Ok(true, "Personnalisation rétablie."));
+    }
+
     /// <summary>Livre d'inventaire d'un exercice (édition légale figée) : états NCT + provisions détaillées + balance de clôture.</summary>
     [HttpGet("inventory-book/{fiscalYear:int}")]
     [Authorize(Policy = PermissionPolicies.AccountingRead)]
