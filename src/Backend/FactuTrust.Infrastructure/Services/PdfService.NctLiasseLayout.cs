@@ -176,6 +176,9 @@ public partial class PdfService
             col.Item().PaddingTop(8).PaddingBottom(2)
                 .Text($"Note: {note.Number}  {note.Title}")
                 .FontSize(10).Bold();
+            // Texte narratif saisi par le comptable (personnalisation d'annexe), s'il existe.
+            if (!string.IsNullOrWhiteSpace(note.Description))
+                col.Item().PaddingBottom(3).Text(note.Description).FontSize(8).Italic().FontColor(Colors.Grey.Darken2);
             NctDetailedNoteTable(col, note, nLabel, n1Label);
         }
     }

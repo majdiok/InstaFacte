@@ -1,3 +1,4 @@
+using FactuTrust.Application.Accounting;
 using FactuTrust.Application.Common;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
@@ -1049,6 +1050,14 @@ public sealed class AccountingReportingService : IAccountingReportingService
 
         var dto = NctStatementBuilder.Build(fiscalYear, current, previous, _settings.NctStatementsEnabled);
         var detailed = NctDetailedNotesBuilder.Build(current, previous, labels);
+
+        // Personnalisation des annexes par le comptable : superposition NEUTRE en l'absence de
+        // ligne d'override (la liasse reste alors rigoureusement identique).
+        var overrides = await ctx.NctNoteOverrides.AsNoTracking()
+            .Where(o => o.FiscalYear == fiscalYear)
+            .ToListAsync(cancellationToken);
+        detailed = NctNoteOverrideApplier.Apply(detailed, overrides);
+
         return Result.Success(dto with { DetailedNotes = detailed });
     }
 

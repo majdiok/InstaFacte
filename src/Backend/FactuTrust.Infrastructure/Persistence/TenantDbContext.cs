@@ -175,6 +175,7 @@ public partial class TenantDbContext : DbContext
     public DbSet<DepreciationScheduleLine> DepreciationScheduleLines => Set<DepreciationScheduleLine>();
     public DbSet<Loan> Loans => Set<Loan>();
     public DbSet<LoanScheduleLine> LoanScheduleLines => Set<LoanScheduleLine>();
+    public DbSet<NctNoteOverride> NctNoteOverrides => Set<NctNoteOverride>();
     public DbSet<FixedAssetEvent> FixedAssetEvents => Set<FixedAssetEvent>();
 
     // AI Assistant
@@ -350,6 +351,7 @@ public partial class TenantDbContext : DbContext
         ConfigureFixedAssetEvent(builder);
         ConfigureLoan(builder);
         ConfigureLoanScheduleLine(builder);
+        ConfigureNctNoteOverride(builder);
 
         ConfigureConversation(builder);
         ConfigureConversationMessage(builder);
@@ -3262,6 +3264,20 @@ public partial class TenantDbContext : DbContext
                 .WithMany(l => l.ScheduleLines)
                 .HasForeignKey(e => e.LoanId)
                 .OnDelete(DeleteBehavior.Cascade);
+            entity.Ignore(e => e.DomainEvents);
+        });
+    }
+
+    private static void ConfigureNctNoteOverride(ModelBuilder builder)
+    {
+        builder.Entity<NctNoteOverride>(entity =>
+        {
+            entity.ToTable("NctNoteOverrides");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.CustomTitle).HasMaxLength(300);
+            entity.Property(e => e.CustomDescription).HasMaxLength(2000);
+            // Clé métier : une seule personnalisation par note et par exercice.
+            entity.HasIndex(e => new { e.FiscalYear, e.NoteNumber }).IsUnique();
             entity.Ignore(e => e.DomainEvents);
         });
     }

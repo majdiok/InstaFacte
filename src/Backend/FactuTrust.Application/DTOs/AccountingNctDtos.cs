@@ -85,6 +85,11 @@ public sealed record NctDetailedNoteDto
     public IReadOnlyList<NctDetailedNoteLineDto> Lines { get; init; } = Array.Empty<NctDetailedNoteLineDto>();
     public decimal Total { get; init; }
     public decimal PreviousTotal { get; init; }
+    /// <summary>
+    /// Texte narratif saisi par le comptable (personnalisation d'annexe) ; null par défaut —
+    /// le catalogue n'en produit aucun.
+    /// </summary>
+    public string? Description { get; init; }
 }
 
 /// <summary>
