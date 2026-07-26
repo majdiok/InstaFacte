@@ -1,4 +1,5 @@
 using System.Net.Http;
+using FactuTrust.Application.Accounting;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Infrastructure.Services;
@@ -246,6 +247,34 @@ public sealed class AccountingPdfExportTests
         var liasse = NctStatementBuilder.Build(2026, current, new Dictionary<string, decimal>(), enabled: true);
 
         var bytes = await BuildPdfService().GenerateNctLiassePdfAsync(liasse, "Ma Société SARL", CancellationToken.None);
+
+        Assert.NotNull(bytes);
+        Assert.True(bytes.Length > 500);
+        Assert.Equal((byte)'%', bytes[0]);
+    }
+
+    [Fact]
+    public async Task GenerateNctLiassePdf_Filtered_HeaderShowsAsOfDate()
+    {
+        var current = new Dictionary<string, decimal>
+        {
+            ["221"] = 10000m, ["281"] = -2000m, ["31"] = 3000m, ["411"] = 5000m, ["532"] = 8000m,
+            ["101"] = -15000m, ["401"] = -4000m, ["70"] = -20000m, ["601"] = 12000m, ["64"] = 3000m
+        };
+        var liasse = NctStatementBuilder.Build(2025, current, new Dictionary<string, decimal>(), enabled: true)
+            with { DetailedNotes = NctDetailedNotesBuilder.Build(current, new Dictionary<string, decimal>()) };
+
+        var options = new NctLiasseExportOptions
+        {
+            FiscalYear = 2025,
+            AsOfDate = new DateOnly(2025, 12, 31),
+            IncludeAssets = true,
+            IncludeAnnexAssets = true,
+            SelectedNoteNumbers = new[] { 3, 4 }
+        };
+        var view = NctLiasseExportFilter.Apply(liasse, options).Value;
+
+        var bytes = await BuildPdfService().GenerateNctLiassePdfAsync(view, "Ma Société SARL", CancellationToken.None);
 
         Assert.NotNull(bytes);
         Assert.True(bytes.Length > 500);

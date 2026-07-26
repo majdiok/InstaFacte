@@ -1,5 +1,7 @@
+using FactuTrust.Application.Accounting;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Common;
 using MediatR;
 
@@ -36,7 +38,8 @@ public sealed class ExportVatDeclarationPdfQueryHandler : IRequestHandler<Export
 
 // ── Export PDF de la liasse NCT ────────────────────────────────────────────────
 
-public sealed record ExportNctStatementsPdfQuery(int FiscalYear) : IRequest<Result<byte[]>>;
+/// <param name="Options">Null = chemin legacy (PDF intégral, notes agrégées). Non-null = dialogue filtré.</param>
+public sealed record ExportNctStatementsPdfQuery(int FiscalYear, NctLiasseExportOptions? Options = null) : IRequest<Result<byte[]>>;
 
 public sealed class ExportNctStatementsPdfQueryHandler : IRequestHandler<ExportNctStatementsPdfQuery, Result<byte[]>>
 {
@@ -58,7 +61,34 @@ public sealed class ExportNctStatementsPdfQueryHandler : IRequestHandler<ExportN
             return Result.Failure<byte[]>(statements.Error);
 
         var company = await _companies.GetDefaultAsync(cancellationToken);
-        var bytes = await _pdf.GenerateNctLiassePdfAsync(statements.Value, company?.Name ?? "Société", cancellationToken);
+        var companyName = company?.Name ?? "Société";
+
+        if (request.Options is null)
+        {
+            var legacyBytes = await _pdf.GenerateNctLiassePdfAsync(statements.Value, companyName, cancellationToken);
+            return Result.Success(legacyBytes);
+        }
+
+        var options = request.Options;
+        // Si aucune note explicite mais familles annexes cochées → toutes les notes non vides de ces familles.
+        if (options.SelectedNoteNumbers.Count == 0 && options.HasAnyAnnexFamily)
+        {
+            var autoNotes = statements.Value.DetailedNotes
+                .Where(n =>
+                    (n.Family == NctAnnexFamily.Actif && options.IncludeAnnexAssets) ||
+                    (n.Family == NctAnnexFamily.Passif && options.IncludeAnnexLiabilities) ||
+                    (n.Family == NctAnnexFamily.IncomeStatement && options.IncludeAnnexIncomeStatement) ||
+                    (n.Family == NctAnnexFamily.CashFlow && options.IncludeAnnexCashFlow))
+                .Select(n => n.Number)
+                .ToList();
+            options = options with { SelectedNoteNumbers = autoNotes };
+        }
+
+        var filtered = NctLiasseExportFilter.Apply(statements.Value, options);
+        if (filtered.IsFailure)
+            return Result.Failure<byte[]>(filtered.Error);
+
+        var bytes = await _pdf.GenerateNctLiassePdfAsync(filtered.Value, companyName, cancellationToken);
         return Result.Success(bytes);
     }
 }

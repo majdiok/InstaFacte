@@ -1,0 +1,367 @@
+import { Component, EventEmitter, Input, OnChanges, Output, computed, inject, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { DialogModule } from 'primeng/dialog';
+import { CheckboxModule } from 'primeng/checkbox';
+import { CalendarModule } from 'primeng/calendar';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import {
+  AccountingService,
+  NctAnnexFamily,
+  NctDetailedNoteDto,
+  NctFinancialStatementsDto,
+  NctLiasseExportOptions
+} from '../services/accounting.service';
+import { PrintPreviewService } from '@core/services/print-preview.service';
+import { ToastService } from '@core/services/toast.service';
+
+const FAMILY_ACTIF: NctAnnexFamily = 'Actif';
+const FAMILY_PASSIF: NctAnnexFamily = 'Passif';
+const FAMILY_CDR: NctAnnexFamily = 'IncomeStatement';
+const FAMILY_FLUX: NctAnnexFamily = 'CashFlow';
+
+@Component({
+  selector: 'app-financial-statements-export-dialog',
+  standalone: true,
+  imports: [CommonModule, FormsModule, DialogModule, CheckboxModule, CalendarModule, ButtonComponent],
+  template: `
+    <p-dialog
+      header="États financiers"
+      [visible]="visible"
+      (visibleChange)="onVisibleChange($event)"
+      [modal]="true"
+      [style]="{ width: '36rem' }"
+      [draggable]="false"
+      [closable]="!busy()"
+      styleClass="fs-export-dialog">
+      <div class="fs-params">
+        <div class="fs-field">
+          <label for="fs-asof">Arrêtée au</label>
+          <p-calendar
+            inputId="fs-asof"
+            [(ngModel)]="asOfDate"
+            dateFormat="dd/mm/yy"
+            [showIcon]="true"
+            appendTo="body"
+            [disabled]="busy()" />
+        </div>
+        <div class="fs-radios" role="radiogroup" aria-label="Comparatif N-1">
+          <label class="fs-radio">
+            <input type="radio" name="n1Mode" [ngModel]="previousYearLabelMode" (ngModelChange)="setPreviousYearMode($event)" [value]="0" [disabled]="busy()" />
+            N-1 arrêtée au 31/12
+          </label>
+          <label class="fs-radio">
+            <input type="radio" name="n1Mode" [ngModel]="previousYearLabelMode" (ngModelChange)="setPreviousYearMode($event)" [value]="1" [disabled]="busy()" />
+            N-1 arrêtée à la période sélectionnée
+          </label>
+        </div>
+      </div>
+
+      <div class="fs-grid">
+        <div class="fs-col">
+          <label class="fs-check"><p-checkbox [(ngModel)]="includeAssets" [binary]="true" inputId="fs-actif" [disabled]="busy()" /> Actif</label>
+          <label class="fs-check"><p-checkbox [(ngModel)]="includeLiabilities" [binary]="true" inputId="fs-passif" [disabled]="busy()" /> Passif</label>
+          <label class="fs-check"><p-checkbox [(ngModel)]="includeIncomeStatement" [binary]="true" inputId="fs-cdr" [disabled]="busy()" /> Comptes de résultat</label>
+          <label class="fs-check"><p-checkbox [(ngModel)]="includeCashFlow" [binary]="true" inputId="fs-flux" [disabled]="busy()" /> Flux de trésorerie</label>
+        </div>
+        <div class="fs-col">
+          <label class="fs-check">
+            <p-checkbox
+              [(ngModel)]="includeAnnexAssets"
+              [binary]="true"
+              inputId="fs-ann-actif"
+              [disabled]="busy()"
+              (ngModelChange)="onAnnexToggle(FAMILY_ACTIF, $event)" />
+            Annexes actif
+          </label>
+          @if (includeAnnexAssets) {
+            <div class="fs-notes">
+              @for (n of notesFor(FAMILY_ACTIF); track n.number) {
+                <label class="fs-note">
+                  <p-checkbox
+                    [ngModel]="isNoteSelected(n.number)"
+                    (ngModelChange)="setNoteSelected(n.number, $event)"
+                    [binary]="true"
+                    [inputId]="'fs-note-' + n.number"
+                    [disabled]="busy()" />
+                  Note {{ n.number }} — {{ n.title }}
+                </label>
+              }
+            </div>
+          }
+
+          <label class="fs-check">
+            <p-checkbox
+              [(ngModel)]="includeAnnexLiabilities"
+              [binary]="true"
+              inputId="fs-ann-passif"
+              [disabled]="busy()"
+              (ngModelChange)="onAnnexToggle(FAMILY_PASSIF, $event)" />
+            Annexes passif
+          </label>
+          @if (includeAnnexLiabilities) {
+            <div class="fs-notes">
+              @for (n of notesFor(FAMILY_PASSIF); track n.number) {
+                <label class="fs-note">
+                  <p-checkbox
+                    [ngModel]="isNoteSelected(n.number)"
+                    (ngModelChange)="setNoteSelected(n.number, $event)"
+                    [binary]="true"
+                    [inputId]="'fs-note-' + n.number"
+                    [disabled]="busy()" />
+                  Note {{ n.number }} — {{ n.title }}
+                </label>
+              }
+            </div>
+          }
+
+          <label class="fs-check">
+            <p-checkbox
+              [(ngModel)]="includeAnnexIncomeStatement"
+              [binary]="true"
+              inputId="fs-ann-cdr"
+              [disabled]="busy()"
+              (ngModelChange)="onAnnexToggle(FAMILY_CDR, $event)" />
+            Annexes comptes de résultat
+          </label>
+          @if (includeAnnexIncomeStatement) {
+            <div class="fs-notes">
+              @for (n of notesFor(FAMILY_CDR); track n.number) {
+                <label class="fs-note">
+                  <p-checkbox
+                    [ngModel]="isNoteSelected(n.number)"
+                    (ngModelChange)="setNoteSelected(n.number, $event)"
+                    [binary]="true"
+                    [inputId]="'fs-note-' + n.number"
+                    [disabled]="busy()" />
+                  Note {{ n.number }} — {{ n.title }}
+                </label>
+              }
+            </div>
+          }
+
+          <label class="fs-check">
+            <p-checkbox
+              [(ngModel)]="includeAnnexCashFlow"
+              [binary]="true"
+              inputId="fs-ann-flux"
+              [disabled]="busy()"
+              (ngModelChange)="onAnnexToggle(FAMILY_FLUX, $event)" />
+            Annexes flux de trésorerie
+          </label>
+          @if (includeAnnexCashFlow) {
+            <div class="fs-notes">
+              @for (n of notesFor(FAMILY_FLUX); track n.number) {
+                <label class="fs-note">
+                  <p-checkbox
+                    [ngModel]="isNoteSelected(n.number)"
+                    (ngModelChange)="setNoteSelected(n.number, $event)"
+                    [binary]="true"
+                    [inputId]="'fs-note-' + n.number"
+                    [disabled]="busy()" />
+                  Note {{ n.number }} — {{ n.title }}
+                </label>
+              }
+            </div>
+          }
+        </div>
+      </div>
+
+      @if (localError()) {
+        <p class="fs-error" role="alert">{{ localError() }}</p>
+      }
+
+      <ng-template pTemplate="footer">
+        <div class="fs-footer">
+          <i class="pi pi-print fs-footer-icon" aria-hidden="true"></i>
+          <div class="fs-footer-actions">
+            <app-button variant="secondary" icon="pi pi-eye" type="button" (click)="preview()" [disabled]="busy() || !hasSelection()">
+              Aperçu
+            </app-button>
+            <app-button variant="primary" icon="pi pi-print" type="button" (click)="print()" [disabled]="busy() || !hasSelection()">
+              Imprimer
+            </app-button>
+            <app-button variant="secondary" type="button" (click)="close()" [disabled]="busy()">Fermer</app-button>
+          </div>
+        </div>
+      </ng-template>
+    </p-dialog>
+  `,
+  styles: `
+    .fs-params { display:flex; flex-direction:column; gap:var(--spacing-3); margin-bottom:var(--spacing-4); }
+    .fs-field { display:flex; flex-direction:column; gap:0.35rem; font-size:var(--font-size-sm); font-weight:var(--font-weight-medium); }
+    .fs-radios { display:flex; flex-direction:column; gap:0.4rem; }
+    .fs-radio { display:flex; align-items:center; gap:0.5rem; font-size:var(--font-size-sm); font-weight:var(--font-weight-normal); cursor:pointer; }
+    .fs-grid { display:grid; grid-template-columns:1fr 1fr; gap:var(--spacing-4); }
+    .fs-col { display:flex; flex-direction:column; gap:0.55rem; }
+    .fs-check { display:flex; align-items:center; gap:0.5rem; font-size:var(--font-size-sm); cursor:pointer; }
+    .fs-notes { display:flex; flex-direction:column; gap:0.35rem; margin:0 0 0.35rem 1.35rem; }
+    .fs-note { display:flex; align-items:flex-start; gap:0.45rem; font-size:var(--font-size-xs); color:var(--color-text-secondary); cursor:pointer; }
+    .fs-error { margin:var(--spacing-3) 0 0; color:var(--color-danger-700,#b91c1c); font-size:var(--font-size-sm); }
+    .fs-footer { display:flex; align-items:center; justify-content:space-between; gap:var(--spacing-3); width:100%; }
+    .fs-footer-icon { color:var(--color-text-tertiary); }
+    .fs-footer-actions { display:flex; flex-wrap:wrap; gap:var(--spacing-2); justify-content:flex-end; }
+    @media (max-width: 640px) {
+      .fs-grid { grid-template-columns:1fr; }
+    }
+  `
+})
+export class FinancialStatementsExportDialogComponent implements OnChanges {
+  readonly FAMILY_ACTIF = FAMILY_ACTIF;
+  readonly FAMILY_PASSIF = FAMILY_PASSIF;
+  readonly FAMILY_CDR = FAMILY_CDR;
+  readonly FAMILY_FLUX = FAMILY_FLUX;
+
+  private readonly api = inject(AccountingService);
+  private readonly printPreview = inject(PrintPreviewService);
+  private readonly toast = inject(ToastService);
+
+  @Input() visible = false;
+  @Input() fiscalYear = new Date().getFullYear();
+  @Input() statements: NctFinancialStatementsDto | null = null;
+  @Output() visibleChange = new EventEmitter<boolean>();
+
+  asOfDate: Date = new Date();
+  previousYearLabelMode: 0 | 1 = 0;
+  includeAssets = true;
+  includeLiabilities = true;
+  includeIncomeStatement = true;
+  includeCashFlow = true;
+  includeAnnexAssets = true;
+  includeAnnexLiabilities = true;
+  includeAnnexIncomeStatement = true;
+  includeAnnexCashFlow = true;
+  private selectedNotes = new Set<number>();
+
+  readonly busy = signal(false);
+  readonly localError = signal<string | null>(null);
+
+  readonly detailedNotes = computed(() => this.statements?.detailedNotes ?? []);
+
+  ngOnChanges(): void {
+    if (this.visible) {
+      this.resetDefaults();
+    }
+  }
+
+  notesFor(family: NctAnnexFamily): NctDetailedNoteDto[] {
+    return this.detailedNotes().filter(n => n.family === family);
+  }
+
+  isNoteSelected(num: number): boolean {
+    return this.selectedNotes.has(num);
+  }
+
+  setNoteSelected(num: number, selected: boolean): void {
+    if (selected) this.selectedNotes.add(num);
+    else this.selectedNotes.delete(num);
+    this.localError.set(null);
+  }
+
+  setPreviousYearMode(value: string | number): void {
+    this.previousYearLabelMode = Number(value) === 1 ? 1 : 0;
+  }
+
+  onAnnexToggle(family: NctAnnexFamily, checked: boolean): void {
+    const nums = this.notesFor(family).map(n => n.number);
+    for (const n of nums) {
+      if (checked) this.selectedNotes.add(n);
+      else this.selectedNotes.delete(n);
+    }
+    this.localError.set(null);
+  }
+
+  hasSelection(): boolean {
+    const docs =
+      this.includeAssets ||
+      this.includeLiabilities ||
+      this.includeIncomeStatement ||
+      this.includeCashFlow;
+    const annex =
+      (this.includeAnnexAssets ||
+        this.includeAnnexLiabilities ||
+        this.includeAnnexIncomeStatement ||
+        this.includeAnnexCashFlow) &&
+      this.selectedNotes.size > 0;
+    return docs || annex;
+  }
+
+  onVisibleChange(v: boolean): void {
+    this.visibleChange.emit(v);
+  }
+
+  close(): void {
+    this.visibleChange.emit(false);
+  }
+
+  preview(): void {
+    this.runExport(blob => this.printPreview.openPdfForPrintPreview(blob, `liasse_nct_${this.fiscalYear}.pdf`));
+  }
+
+  print(): void {
+    this.runExport(blob => this.printPreview.openPdfForPrintPreview(blob, `liasse_nct_${this.fiscalYear}.pdf`));
+  }
+
+  private runExport(onBlob: (blob: Blob) => void): void {
+    if (!this.hasSelection()) {
+      this.localError.set('Sélectionnez au moins un état ou une note annexe.');
+      return;
+    }
+    const options = this.buildOptions();
+    this.busy.set(true);
+    this.localError.set(null);
+    this.api.exportNctStatementsPdfWithOptions(options).subscribe({
+      next: blob => {
+        this.busy.set(false);
+        onBlob(blob);
+      },
+      error: () => {
+        this.busy.set(false);
+        this.localError.set("La génération du PDF a échoué.");
+        this.toast.add({
+          severity: 'error',
+          summary: 'États financiers',
+          detail: "La génération du PDF a échoué.",
+          life: 5000
+        });
+      }
+    });
+  }
+
+  private buildOptions(): NctLiasseExportOptions {
+    const d = this.asOfDate instanceof Date ? this.asOfDate : new Date(this.fiscalYear, 11, 31);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return {
+      fiscalYear: this.fiscalYear,
+      asOfDate: `${yyyy}-${mm}-${dd}`,
+      previousYearLabelMode: this.previousYearLabelMode,
+      includeAssets: this.includeAssets,
+      includeLiabilities: this.includeLiabilities,
+      includeIncomeStatement: this.includeIncomeStatement,
+      includeCashFlow: this.includeCashFlow,
+      includeAnnexAssets: this.includeAnnexAssets,
+      includeAnnexLiabilities: this.includeAnnexLiabilities,
+      includeAnnexIncomeStatement: this.includeAnnexIncomeStatement,
+      includeAnnexCashFlow: this.includeAnnexCashFlow,
+      selectedNoteNumbers: Array.from(this.selectedNotes).sort((a, b) => a - b)
+    };
+  }
+
+  private resetDefaults(): void {
+    this.asOfDate = new Date(this.fiscalYear, 11, 31);
+    this.previousYearLabelMode = 0;
+    this.includeAssets = true;
+    this.includeLiabilities = true;
+    this.includeIncomeStatement = true;
+    this.includeCashFlow = true;
+    this.includeAnnexAssets = true;
+    this.includeAnnexLiabilities = true;
+    this.includeAnnexIncomeStatement = true;
+    this.includeAnnexCashFlow = true;
+    this.selectedNotes = new Set(this.detailedNotes().map(n => n.number));
+    this.localError.set(null);
+    this.busy.set(false);
+  }
+}

@@ -826,6 +826,26 @@ export interface NctNoteDto {
   title: string;
   lines: NctLineDto[];
 }
+
+/** Famille d'annexe NCT (JsonStringEnumConverter côté API). */
+export type NctAnnexFamily = 'Actif' | 'Passif' | 'IncomeStatement' | 'CashFlow';
+
+export interface NctDetailedNoteLineDto {
+  accountNumber: string;
+  label: string;
+  amount: number;
+  previousAmount: number;
+}
+
+export interface NctDetailedNoteDto {
+  number: number;
+  title: string;
+  family: NctAnnexFamily;
+  lines: NctDetailedNoteLineDto[];
+  total: number;
+  previousTotal: number;
+}
+
 export interface NctFinancialStatementsDto {
   fiscalYear: number;
   balanceSheet: NctBalanceSheetDto;
@@ -833,7 +853,24 @@ export interface NctFinancialStatementsDto {
   cashFlow: NctCashFlowDto;
   equityChanges: NctEquityChangeDto;
   notes: NctNoteDto[];
+  detailedNotes?: NctDetailedNoteDto[];
   nctStatementsEnabled: boolean;
+}
+
+/** Options PDF du dialogue « États financiers » (filtered=true côté API). */
+export interface NctLiasseExportOptions {
+  fiscalYear: number;
+  asOfDate: string; // yyyy-MM-dd
+  previousYearLabelMode: 0 | 1; // YearEnd31Dec | SameCalendarDate
+  includeAssets: boolean;
+  includeLiabilities: boolean;
+  includeIncomeStatement: boolean;
+  includeCashFlow: boolean;
+  includeAnnexAssets: boolean;
+  includeAnnexLiabilities: boolean;
+  includeAnnexIncomeStatement: boolean;
+  includeAnnexCashFlow: boolean;
+  selectedNoteNumbers: number[];
 }
 
 // ── Plan tiers unifié : répertoire clients + fournisseurs + fiche comptable ──
@@ -1688,6 +1725,27 @@ export class AccountingService {
   /** PDF de la liasse NCT (téléchargement blob). */
   exportNctStatementsPdf(fiscalYear: number): Observable<Blob> {
     const p = new HttpParams().set('fiscalYear', fiscalYear);
+    return this.http.get(`${this.base}/nct-statements/pdf`, { params: p, responseType: 'blob' });
+  }
+
+  /** Export PDF NCT filtré (dialogue Aperçu / Impression). */
+  exportNctStatementsPdfWithOptions(options: NctLiasseExportOptions): Observable<Blob> {
+    let p = new HttpParams()
+      .set('fiscalYear', String(options.fiscalYear))
+      .set('filtered', 'true')
+      .set('asOfDate', options.asOfDate)
+      .set('previousYearLabelMode', String(options.previousYearLabelMode))
+      .set('includeAssets', String(options.includeAssets))
+      .set('includeLiabilities', String(options.includeLiabilities))
+      .set('includeIncomeStatement', String(options.includeIncomeStatement))
+      .set('includeCashFlow', String(options.includeCashFlow))
+      .set('includeAnnexAssets', String(options.includeAnnexAssets))
+      .set('includeAnnexLiabilities', String(options.includeAnnexLiabilities))
+      .set('includeAnnexIncomeStatement', String(options.includeAnnexIncomeStatement))
+      .set('includeAnnexCashFlow', String(options.includeAnnexCashFlow));
+    if (options.selectedNoteNumbers.length) {
+      p = p.set('notes', options.selectedNoteNumbers.join(','));
+    }
     return this.http.get(`${this.base}/nct-statements/pdf`, { params: p, responseType: 'blob' });
   }
 

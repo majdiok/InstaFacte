@@ -1,3 +1,5 @@
+using FactuTrust.Application.Accounting;
+
 namespace FactuTrust.Application.DTOs;
 
 /// <summary>
@@ -65,6 +67,26 @@ public sealed record NctNoteDto
     public IReadOnlyList<NctLineDto> Lines { get; init; } = Array.Empty<NctLineDto>();
 }
 
+/// <summary>Ligne détaillée d'une note annexe (compte / intitulé / N / N-1).</summary>
+public sealed record NctDetailedNoteLineDto
+{
+    public string AccountNumber { get; init; } = null!;
+    public string Label { get; init; } = null!;
+    public decimal Amount { get; init; }
+    public decimal PreviousAmount { get; init; }
+}
+
+/// <summary>Note annexe détaillée compte par compte (format NOTES ACTIF/PASSIF BILAN).</summary>
+public sealed record NctDetailedNoteDto
+{
+    public int Number { get; init; }
+    public string Title { get; init; } = null!;
+    public NctAnnexFamily Family { get; init; }
+    public IReadOnlyList<NctDetailedNoteLineDto> Lines { get; init; } = Array.Empty<NctDetailedNoteLineDto>();
+    public decimal Total { get; init; }
+    public decimal PreviousTotal { get; init; }
+}
+
 /// <summary>
 /// Liasse NCT (Normes Comptables Tunisiennes) : bilan + compte de résultat structurés, tableau de flux
 /// de trésorerie, état de variation des capitaux propres et notes annexes. Calculée sur les écritures
@@ -78,5 +100,7 @@ public sealed record NctFinancialStatementsDto
     public NctCashFlowDto CashFlow { get; init; } = new();
     public NctEquityChangeDto EquityChanges { get; init; } = new();
     public IReadOnlyList<NctNoteDto> Notes { get; init; } = Array.Empty<NctNoteDto>();
+    /// <summary>Notes détaillées compte par compte (additif — n'altère pas <see cref="Notes"/>).</summary>
+    public IReadOnlyList<NctDetailedNoteDto> DetailedNotes { get; init; } = Array.Empty<NctDetailedNoteDto>();
     public bool NctStatementsEnabled { get; init; }
 }

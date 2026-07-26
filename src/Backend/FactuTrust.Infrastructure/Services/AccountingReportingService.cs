@@ -1044,8 +1044,12 @@ public sealed class AccountingReportingService : IAccountingReportingService
         var current = await LoadYearNetAsync(ctx, fiscalYear, cancellationToken);
         var previous = await LoadYearNetAsync(ctx, fiscalYear - 1, cancellationToken);
 
+        var labels = await ctx.ChartOfAccounts.AsNoTracking()
+            .ToDictionaryAsync(c => c.AccountNumber, c => c.Label, cancellationToken);
+
         var dto = NctStatementBuilder.Build(fiscalYear, current, previous, _settings.NctStatementsEnabled);
-        return Result.Success(dto);
+        var detailed = NctDetailedNotesBuilder.Build(current, previous, labels);
+        return Result.Success(dto with { DetailedNotes = detailed });
     }
 
     public async Task<Result<IReadOnlyList<AuxiliaryBalanceRowDto>>> GetAuxiliaryBalanceAsync(

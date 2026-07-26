@@ -12,8 +12,11 @@ public interface IPdfService
     /// <summary>Génère le PDF de la déclaration mensuelle des impôts (toutes les cases).</summary>
     Task<byte[]> GenerateVatDeclarationPdfAsync(VatDeclarationDto declaration, string companyName, CancellationToken cancellationToken = default);
 
-    /// <summary>Génère le PDF de la liasse NCT (bilan, résultat, flux, capitaux, notes).</summary>
+    /// <summary>Génère le PDF de la liasse NCT (bilan, résultat, flux, capitaux, notes agrégées) — chemin legacy.</summary>
     Task<byte[]> GenerateNctLiassePdfAsync(NctFinancialStatementsDto statements, string companyName, CancellationToken cancellationToken = default);
+
+    /// <summary>Génère le PDF NCT filtré (dialogue États financiers) avec notes détaillées compte/compte.</summary>
+    Task<byte[]> GenerateNctLiassePdfAsync(NctLiasseExportView exportView, string companyName, CancellationToken cancellationToken = default);
 
     // ── États comptables cœur & complémentaires (rendu tabulaire professionnel) ────────────
 

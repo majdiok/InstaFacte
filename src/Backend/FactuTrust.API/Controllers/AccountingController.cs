@@ -1427,14 +1427,80 @@ public sealed class AccountingController : ControllerBase
         return File(r.Value, "application/pdf", $"declaration_{year}_{month:D2}.pdf");
     }
 
+    /// <summary>
+    /// Export PDF NCT. Sans paramètres de filtre → PDF legacy intégral (notes agrégées).
+    /// Avec <paramref name="filtered"/>=true (ou tout paramètre de sélection) → PDF dialogue filtré.
+    /// </summary>
     [HttpGet("nct-statements/pdf")]
     [Authorize(Policy = PermissionPolicies.AccountingRead)]
-    public async Task<IActionResult> ExportNctStatementsPdf([FromQuery] int fiscalYear, CancellationToken cancellationToken)
+    public async Task<IActionResult> ExportNctStatementsPdf(
+        [FromQuery] int fiscalYear,
+        [FromQuery] bool? filtered = null,
+        [FromQuery] DateOnly? asOfDate = null,
+        [FromQuery] NctPreviousYearLabelMode? previousYearLabelMode = null,
+        [FromQuery] bool? includeAssets = null,
+        [FromQuery] bool? includeLiabilities = null,
+        [FromQuery] bool? includeIncomeStatement = null,
+        [FromQuery] bool? includeCashFlow = null,
+        [FromQuery] bool? includeAnnexAssets = null,
+        [FromQuery] bool? includeAnnexLiabilities = null,
+        [FromQuery] bool? includeAnnexIncomeStatement = null,
+        [FromQuery] bool? includeAnnexCashFlow = null,
+        [FromQuery] string? notes = null,
+        CancellationToken cancellationToken = default)
     {
-        var r = await _mediator.Send(new ExportNctStatementsPdfQuery(fiscalYear), cancellationToken);
+        NctLiasseExportOptions? options = null;
+        var useFiltered = filtered == true
+            || asOfDate.HasValue
+            || previousYearLabelMode.HasValue
+            || includeAssets.HasValue
+            || includeLiabilities.HasValue
+            || includeIncomeStatement.HasValue
+            || includeCashFlow.HasValue
+            || includeAnnexAssets.HasValue
+            || includeAnnexLiabilities.HasValue
+            || includeAnnexIncomeStatement.HasValue
+            || includeAnnexCashFlow.HasValue
+            || !string.IsNullOrWhiteSpace(notes);
+
+        if (useFiltered)
+        {
+            var noteNumbers = ParseNoteNumbers(notes);
+            options = new NctLiasseExportOptions
+            {
+                FiscalYear = fiscalYear,
+                AsOfDate = asOfDate ?? new DateOnly(fiscalYear, 12, 31),
+                PreviousYearLabelMode = previousYearLabelMode ?? NctPreviousYearLabelMode.YearEnd31Dec,
+                IncludeAssets = includeAssets ?? false,
+                IncludeLiabilities = includeLiabilities ?? false,
+                IncludeIncomeStatement = includeIncomeStatement ?? false,
+                IncludeCashFlow = includeCashFlow ?? false,
+                IncludeAnnexAssets = includeAnnexAssets ?? false,
+                IncludeAnnexLiabilities = includeAnnexLiabilities ?? false,
+                IncludeAnnexIncomeStatement = includeAnnexIncomeStatement ?? false,
+                IncludeAnnexCashFlow = includeAnnexCashFlow ?? false,
+                SelectedNoteNumbers = noteNumbers
+            };
+        }
+
+        var r = await _mediator.Send(new ExportNctStatementsPdfQuery(fiscalYear, options), cancellationToken);
         if (r.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
         return File(r.Value, "application/pdf", $"liasse_nct_{fiscalYear}.pdf");
+    }
+
+    private static IReadOnlyList<int> ParseNoteNumbers(string? notes)
+    {
+        if (string.IsNullOrWhiteSpace(notes))
+            return Array.Empty<int>();
+
+        return notes
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => int.TryParse(s, out var n) ? n : (int?)null)
+            .Where(n => n.HasValue)
+            .Select(n => n!.Value)
+            .Distinct()
+            .ToList();
     }
 
     /// <summary>
