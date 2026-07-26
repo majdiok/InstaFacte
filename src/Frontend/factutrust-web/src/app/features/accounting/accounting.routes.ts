@@ -134,6 +134,12 @@ export const ACCOUNTING_ROUTES: Routes = [
     title: "Contrôle d'intégrité - InstaFact"
   },
   {
+    path: 'draft-batch',
+    loadComponent: () =>
+      import('./draft-batch/draft-batch.component').then(m => m.DraftBatchComponent),
+    title: 'Édition en lot des brouillons - InstaFact'
+  },
+  {
     path: 'inventory-assistant',
     loadComponent: () =>
       import('./inventory-assistant/inventory-assistant.component').then(m => m.InventoryAssistantComponent),

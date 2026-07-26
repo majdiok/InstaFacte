@@ -201,6 +201,30 @@ public sealed class AccountingController : ControllerBase
         return Ok(ApiResponse<Guid>.Ok(r.Value, "Écriture extournée."));
     }
 
+    /// <summary>Édition de masse d'écritures EN BROUILLON (journal / date / libellé). Ignore le validé.</summary>
+    [HttpPost("journal/mass-update-drafts")]
+    [Authorize(Policy = PermissionPolicies.AccountingCreate)]
+    public async Task<IActionResult> MassUpdateDrafts([FromBody] MassUpdateDraftEntriesRequest request, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(
+            new MassUpdateDraftEntriesCommand(request.Ids, request.NewJournalCode, request.NewDate, request.NewLabel), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<MassDraftUpdateResultDto>.Ok(r.Value,
+            $"{r.Value.Updated} brouillon(s) modifié(s), {r.Value.Skipped} ignoré(s)."));
+    }
+
+    [HttpPost("journal/mass-delete-drafts")]
+    [Authorize(Policy = PermissionPolicies.AccountingCreate)]
+    public async Task<IActionResult> MassDeleteDrafts([FromBody] MassDeleteDraftEntriesRequest request, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new MassDeleteDraftEntriesCommand(request.Ids), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<MassDraftDeleteResultDto>.Ok(r.Value,
+            $"{r.Value.Deleted} brouillon(s) supprimé(s), {r.Value.Skipped} ignoré(s)."));
+    }
+
     [HttpPost("import/preview")]
     [Authorize(Policy = PermissionPolicies.AccountingImport)]
     [RequestSizeLimit(25_000_000)]
@@ -1012,6 +1036,17 @@ public sealed class AccountingController : ControllerBase
         if (r.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
         return FileFor(r.Value, format, $"livre_inventaire_{fiscalYear}");
+    }
+
+    /// <summary>Archive ZIP du dossier (lecture seule) : plan comptable, journal, balance, tiers, FEC, manifeste.</summary>
+    [HttpGet("dossier-export/{fiscalYear:int}")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> ExportDossierArchive(int fiscalYear, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new ExportDossierArchiveQuery(fiscalYear), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return File(r.Value, "application/zip", $"dossier_{fiscalYear}.zip");
     }
 
     // ── Paramètres fiscaux par exercice (taux IS, minimum d'impôt, CSS, barème IRPP) ─────

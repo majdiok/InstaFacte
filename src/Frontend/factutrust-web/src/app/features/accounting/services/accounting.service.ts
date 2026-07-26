@@ -670,6 +670,17 @@ export interface ReferenceImportCommitResultDto {
   skippedCount: number;
 }
 
+/** Résultat d'une édition de masse de brouillons. */
+export interface MassDraftUpdateResultDto {
+  updated: number;
+  skipped: number;
+}
+
+export interface MassDraftDeleteResultDto {
+  deleted: number;
+  skipped: number;
+}
+
 export interface CreateSubAccountRequest {
   accountNumber: string;
   label: string;
@@ -993,6 +1004,28 @@ export class AccountingService {
 
   getChartOfAccounts(): Observable<ApiResponse<ChartOfAccountDto[]>> {
     return this.http.get<ApiResponse<ChartOfAccountDto[]>>(`${this.base}/chart-of-accounts`);
+  }
+
+  /** Archive ZIP du dossier (lecture seule) : plan, journal, balance, tiers, FEC, manifeste. */
+  exportDossierArchive(fiscalYear: number): Observable<Blob> {
+    return this.http.get(`${this.base}/dossier-export/${fiscalYear}`, { responseType: 'blob' });
+  }
+
+  /** Édition de masse d'écritures EN BROUILLON (journal / date / libellé). Ignore le validé. */
+  massUpdateDrafts(
+    ids: string[],
+    changes: { newJournalCode?: string; newDate?: Date; newLabel?: string }
+  ): Observable<ApiResponse<MassDraftUpdateResultDto>> {
+    const body: Record<string, unknown> = { ids };
+    if (changes.newJournalCode) body['newJournalCode'] = changes.newJournalCode;
+    if (changes.newDate) body['newDate'] = formatLocalDate(changes.newDate);
+    if (changes.newLabel) body['newLabel'] = changes.newLabel;
+    return this.http.post<ApiResponse<MassDraftUpdateResultDto>>(`${this.base}/journal/mass-update-drafts`, body);
+  }
+
+  /** Suppression de masse d'écritures EN BROUILLON. Ignore le validé. */
+  massDeleteDrafts(ids: string[]): Observable<ApiResponse<MassDraftDeleteResultDto>> {
+    return this.http.post<ApiResponse<MassDraftDeleteResultDto>>(`${this.base}/journal/mass-delete-drafts`, { ids });
   }
 
   getJournal(journalCode: string | undefined, from: Date, to: Date): Observable<ApiResponse<JournalEntryDto[]>> {

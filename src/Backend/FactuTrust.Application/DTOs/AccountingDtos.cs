@@ -260,6 +260,21 @@ public sealed record PeriodicBalanceDto
     public bool IsBalanced { get; init; }
 }
 
+/// <summary>Résultat d'une édition de masse de brouillons : appliqués vs ignorés (non-brouillon / refusés).</summary>
+public sealed record MassDraftUpdateResultDto
+{
+    public int Updated { get; init; }
+    /// <summary>Ids ignorés : introuvables, non-brouillon, ou en période clôturée.</summary>
+    public int Skipped { get; init; }
+}
+
+/// <summary>Résultat d'une suppression de masse de brouillons.</summary>
+public sealed record MassDraftDeleteResultDto
+{
+    public int Deleted { get; init; }
+    public int Skipped { get; init; }
+}
+
 /// <summary>Axe de regroupement d'un récapitulatif de journaux.</summary>
 public enum JournalSummaryGrouping
 {
@@ -555,6 +570,21 @@ public sealed record ValidateJournalEntriesBatchRequest
 {
     public Guid PeriodId { get; init; }
     public string? JournalCode { get; init; }
+}
+
+/// <summary>Requête d'édition de masse de brouillons : ids + champs à changer (tous facultatifs).</summary>
+public sealed record MassUpdateDraftEntriesRequest
+{
+    public IReadOnlyList<Guid> Ids { get; init; } = Array.Empty<Guid>();
+    public string? NewJournalCode { get; init; }
+    public DateTime? NewDate { get; init; }
+    public string? NewLabel { get; init; }
+}
+
+/// <summary>Requête de suppression de masse de brouillons.</summary>
+public sealed record MassDeleteDraftEntriesRequest
+{
+    public IReadOnlyList<Guid> Ids { get; init; } = Array.Empty<Guid>();
 }
 
 /// <summary>Extourne (contre-passation) manuelle d'une écriture validée.</summary>

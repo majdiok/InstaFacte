@@ -143,12 +143,15 @@ Efforts en **jours/homme (j/h)** pour une équipe senior connaissant le codebase
 | État de rapprochement bancaire imprimable | ✅ | — | — | — |
 | Contrôle d’intégrité comptable (lecture seule) | ✅ | — | — | — |
 | Import étendu (plan comptable / plan tiers / balance d’ouverture) | ✅ | — | — | — |
+| Export d’archive de dossier (ZIP, lecture seule) | ✅ | — | — | — |
+| Modifications de masse des brouillons (journal/date/libellé + suppression) | ✅ | — | — | — |
 | Annexes NCT éditables (surcharge des notes auto) | ❌ | P2 | 15 | 2 |
-| Maintenance mutante (modifs de masse, sauvegarde/restauration) | ❌ | P2 | 45 | 2 |
+| Restauration de dossier + mass-edit du validé + extension tiers | ❌ | P3 | 60 | 4 |
 
-**Sous-total gaps compta/finance restants : ~415 j/h** _(budgets, immobilisations, liasse fiscale
+**Sous-total gaps compta/finance restants : ~355 j/h** _(budgets, immobilisations, liasse fiscale
 livrés ; grand livre général, balances détaillée/par période, récapitulatifs de journaux, état de
-rapprochement, livre d’inventaire, contrôle d’intégrité et import étendu ajoutés en 2026-07 — cf.
+rapprochement, livre d’inventaire, contrôle d’intégrité, import étendu, export ZIP de dossier et
+modifications de masse des brouillons ajoutés en 2026-07 — cf.
 [audit de couverture menu Éditions/Maintenance](../../src/Backend/FactuTrust.Application/Features/Accounting))._
 
 ---

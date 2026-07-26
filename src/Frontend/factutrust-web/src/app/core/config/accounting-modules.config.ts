@@ -61,6 +61,7 @@ export const ACCOUNTING_MODULES: AccountingModuleDef[] = [
       { label: 'Remplacement de compte', route: '/accounting/account-replacement', icon: 'fa-solid fa-right-left', perms: ['accounting:create'] },
       { label: 'Contrôles de pré-clôture', route: '/accounting/pre-closing', icon: 'fa-solid fa-list-check', perms: ['accounting:read'] },
       { label: "Contrôle d'intégrité", route: '/accounting/health', icon: 'fa-solid fa-heart-pulse', perms: ['accounting:read'] },
+      { label: 'Brouillons en lot', route: '/accounting/draft-batch', icon: 'fa-solid fa-layer-group', perms: ['accounting:create'] },
       { label: 'Clôture', route: '/accounting/closing', icon: 'fa-solid fa-lock', perms: ['accounting:close'] }
     ]
   },

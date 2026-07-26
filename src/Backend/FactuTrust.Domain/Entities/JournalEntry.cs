@@ -212,6 +212,53 @@ public sealed class JournalEntry : AggregateRoot
         return Result.Success();
     }
 
+    /// <summary>
+    /// Change le code journal d'un BROUILLON (édition de masse post-import). Interdit hors brouillon.
+    /// Ne valide pas l'existence du journal (responsabilité de la couche applicative / catalogue).
+    /// </summary>
+    public Result ChangeDraftJournal(string journalCode)
+    {
+        if (Status != JournalEntryStatus.Brouillon)
+            return Result.Failure(Error.Validation("Status", "Seule une écriture en brouillon peut être modifiée."));
+
+        journalCode = journalCode?.Trim().ToUpperInvariant() ?? string.Empty;
+        if (string.IsNullOrEmpty(journalCode))
+            return Result.Failure(Error.Validation("JournalCode", "Le journal est obligatoire"));
+
+        JournalCode = journalCode;
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Change la date d'un BROUILLON et la rattache à la période fournie (à charge de l'appelant de
+    /// fournir une période OUVERTE couvrant la nouvelle date). Interdit hors brouillon.
+    /// </summary>
+    public Result ChangeDraftDate(DateTime date, Guid accountingPeriodId)
+    {
+        if (Status != JournalEntryStatus.Brouillon)
+            return Result.Failure(Error.Validation("Status", "Seule une écriture en brouillon peut être modifiée."));
+        if (accountingPeriodId == Guid.Empty)
+            return Result.Failure(Error.Validation("Period", "La période comptable est obligatoire."));
+
+        EntryDate = date.Date;
+        AccountingPeriodId = accountingPeriodId;
+        return Result.Success();
+    }
+
+    /// <summary>Change le libellé d'un BROUILLON (n'affecte pas les lignes). Interdit hors brouillon.</summary>
+    public Result ChangeDraftLabel(string label)
+    {
+        if (Status != JournalEntryStatus.Brouillon)
+            return Result.Failure(Error.Validation("Status", "Seule une écriture en brouillon peut être modifiée."));
+
+        label = label?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(label))
+            return Result.Failure(Error.Validation("Label", "Le libellé est obligatoire"));
+
+        Label = label;
+        return Result.Success();
+    }
+
     /// <summary>Normalise la référence de pièce (trim, vide → null, ≤ 50 caractères).</summary>
     private static Result<string?> NormalizePieceRef(string? pieceRef)
     {

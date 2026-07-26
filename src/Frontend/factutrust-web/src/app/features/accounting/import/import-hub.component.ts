@@ -4,6 +4,7 @@ import { TabViewModule } from 'primeng/tabview';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ImportComponent } from './import.component';
 import { ReferenceImportComponent } from './reference-import.component';
+import { DossierExportComponent } from './dossier-export.component';
 import { ReferenceImportTarget } from '../services/accounting.service';
 
 /**
@@ -14,11 +15,11 @@ import { ReferenceImportTarget } from '../services/accounting.service';
 @Component({
   selector: 'app-import-hub',
   standalone: true,
-  imports: [CommonModule, TabViewModule, PageHeaderComponent, ImportComponent, ReferenceImportComponent],
+  imports: [CommonModule, TabViewModule, PageHeaderComponent, ImportComponent, ReferenceImportComponent, DossierExportComponent],
   template: `
     <app-page-header
       title="Reprise de dossier"
-      subtitle="Importer écritures, plan comptable, plan tiers et balance d'ouverture depuis un fichier" />
+      subtitle="Importer écritures / référentiels, ou exporter l'archive du dossier" />
 
     <p-tabView>
       <p-tabPanel header="Écritures">
@@ -32,6 +33,9 @@ import { ReferenceImportTarget } from '../services/accounting.service';
       </p-tabPanel>
       <p-tabPanel header="Balance d'ouverture">
         <app-reference-import [target]="targets.OpeningBalance" />
+      </p-tabPanel>
+      <p-tabPanel header="Export dossier">
+        <app-dossier-export />
       </p-tabPanel>
     </p-tabView>
   `
