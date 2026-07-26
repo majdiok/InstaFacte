@@ -13,6 +13,8 @@ public interface IAccountingExportService
     byte[] ExportLedgerToExcel(IReadOnlyList<LedgerRowDto> rows, string accountNumber);
     byte[] ExportGeneralLedgerToCsv(GeneralLedgerDto ledger);
     byte[] ExportGeneralLedgerToExcel(GeneralLedgerDto ledger);
+    byte[] ExportLoanScheduleToCsv(LoanScheduleDto schedule);
+    byte[] ExportLoanScheduleToExcel(LoanScheduleDto schedule);
     byte[] ExportBalanceToExcel(IReadOnlyList<BalanceRowDto> rows);
     byte[] ExportDetailedBalanceToCsv(DetailedBalanceDto balance);
     byte[] ExportDetailedBalanceToExcel(DetailedBalanceDto balance);

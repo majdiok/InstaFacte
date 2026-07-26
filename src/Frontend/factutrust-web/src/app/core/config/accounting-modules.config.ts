@@ -115,13 +115,16 @@ export const ACCOUNTING_MODULES: AccountingModuleDef[] = [
     ]
   },
   {
+    // Titre conservé tel quel : il est asservi par accounting-modules.config.spec.ts et
+    // sidebar.component.spec.ts — le renommer casserait des tests existants.
     title: 'Gestion immobilisations',
     icon: 'fa-solid fa-building',
-    description: 'Registre et dotations aux amortissements',
+    description: 'Registres, dotations et tableaux d’amortissement (immobilisations et emprunts)',
     links: [
       { label: 'Immobilisations', route: '/accounting/fixed-assets', icon: 'fa-solid fa-building', perms: ['accounting:read'] },
       { label: 'Dotations', route: '/accounting/fixed-assets/depreciation-run', icon: 'fa-solid fa-calendar-check', perms: ['accounting:read'] },
-      { label: 'Tableau amortissements', route: '/accounting/fixed-assets/amortization-table', icon: 'fa-solid fa-table-list', perms: ['accounting:read'] }
+      { label: 'Tableau amortissements', route: '/accounting/fixed-assets/amortization-table', icon: 'fa-solid fa-table-list', perms: ['accounting:read'] },
+      { label: 'Emprunts', route: '/accounting/loans', icon: 'fa-solid fa-hand-holding-dollar', perms: ['accounting:read'] }
     ]
   }
 ];

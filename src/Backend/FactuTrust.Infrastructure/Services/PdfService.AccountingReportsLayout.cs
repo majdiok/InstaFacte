@@ -721,6 +721,88 @@ public partial class PdfService
         return Task.FromResult(bytes);
     }
 
+    // ── Tableau d'amortissement d'emprunt ──────────────────────────────────────────────────
+
+    public Task<byte[]> GenerateLoanSchedulePdfAsync(LoanScheduleDto schedule, AccountingReportHeader header, CancellationToken cancellationToken = default)
+    {
+        var bytes = BuildReport(header, landscape: true, col =>
+        {
+            var loan = schedule.Loan;
+
+            // Caractéristiques de l'emprunt, en tête du tableau.
+            col.Item().PaddingBottom(6).Text(t =>
+            {
+                t.Span($"{loan.LoanNumber} — {PdfRenderHelpers.CleanTextForPdf(loan.Label)}").Bold().FontSize(11);
+                t.Span($"   ·   Prêteur : {PdfRenderHelpers.CleanTextForPdf(loan.LenderName)}").FontSize(9);
+                t.Span($"   ·   Capital : {Amount(loan.Principal)}").FontSize(9);
+                t.Span($"   ·   Taux : {loan.AnnualRatePercent.ToString("0.####", CultureInfo.InvariantCulture)} %").FontSize(9);
+                t.Span($"   ·   {loan.InstallmentCount} échéance(s)").FontSize(9);
+            });
+
+            // Mention explicite : l'échéancier est un état, pas une comptabilisation.
+            col.Item().PaddingBottom(6)
+                .Text("Échéancier indicatif — les échéances ne sont pas comptabilisées automatiquement.")
+                .FontSize(8).Italic().FontColor(Colors.Grey.Darken1);
+
+            if (schedule.Lines.Count == 0)
+            {
+                EmptyNotice(col, "Aucune échéance.");
+                return;
+            }
+
+            col.Item().Table(table =>
+            {
+                table.ColumnsDefinition(c =>
+                {
+                    c.ConstantColumn(38);   // n°
+                    c.ConstantColumn(70);   // échéance
+                    c.RelativeColumn(1);    // capital restant dû
+                    c.RelativeColumn(1);    // intérêt
+                    c.RelativeColumn(1);    // capital remboursé
+                    c.RelativeColumn(1);    // annuité
+                    c.RelativeColumn(1);    // solde
+                });
+
+                table.Header(h =>
+                {
+                    h.Cell().Element(HeadCell).Text("N°").Bold();
+                    h.Cell().Element(HeadCell).Text("Échéance").Bold();
+                    h.Cell().Element(HeadCell).AlignRight().Text("Capital restant dû").Bold();
+                    h.Cell().Element(HeadCell).AlignRight().Text("Intérêt").Bold();
+                    h.Cell().Element(HeadCell).AlignRight().Text("Capital remboursé").Bold();
+                    h.Cell().Element(HeadCell).AlignRight().Text("Annuité").Bold();
+                    h.Cell().Element(HeadCell).AlignRight().Text("Solde").Bold();
+                });
+
+                foreach (var l in schedule.Lines)
+                {
+                    table.Cell().Element(BodyCell).Text(l.InstallmentNumber.ToString(CultureInfo.InvariantCulture));
+                    table.Cell().Element(BodyCell).Text(ShortDate(l.DueDate));
+                    table.Cell().Element(BodyCell).AlignRight().Text(Amount(l.OpeningBalance));
+                    table.Cell().Element(BodyCell).AlignRight().Text(Amount(l.InterestAmount));
+                    table.Cell().Element(BodyCell).AlignRight().Text(Amount(l.PrincipalAmount));
+                    table.Cell().Element(BodyCell).AlignRight().Text(Amount(l.InstallmentAmount));
+                    table.Cell().Element(BodyCell).AlignRight().Text(Amount(l.ClosingBalance));
+                }
+
+                table.Cell().ColumnSpan(3).Element(TotalCell).AlignRight().Text("TOTAUX").Bold();
+                table.Cell().Element(TotalCell).AlignRight().Text(Amount(schedule.TotalInterest)).Bold();
+                table.Cell().Element(TotalCell).AlignRight().Text(Amount(schedule.TotalPrincipal)).Bold();
+                table.Cell().Element(TotalCell).AlignRight().Text(Amount(schedule.TotalInstallments)).Bold();
+                table.Cell().Element(TotalCell).AlignRight().Text(string.Empty);
+            });
+
+            if (!schedule.IsSettled)
+            {
+                col.Item().PaddingTop(8)
+                    .Text("Contrôle : l'échéancier ne solde pas exactement le capital emprunté.")
+                    .FontSize(9).Bold().FontColor(Colors.Red.Darken2);
+            }
+        });
+
+        return Task.FromResult(bytes);
+    }
+
     // ── Livre d'inventaire (photographie légale figée de l'exercice) ───────────────────────
 
     public Task<byte[]> GenerateInventoryBookPdfAsync(InventoryBookDto dto, AccountingReportHeader header, CancellationToken cancellationToken = default)

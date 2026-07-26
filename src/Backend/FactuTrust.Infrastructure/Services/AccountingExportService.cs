@@ -198,6 +198,40 @@ public sealed class AccountingExportService : IAccountingExportService
         return BuildBytes(sb);
     }
 
+    /// <summary>
+    /// Tableau d'amortissement d'un emprunt : une ligne par échéance, close par le total
+    /// (capital + intérêts = total remboursé).
+    /// </summary>
+    public byte[] ExportLoanScheduleToCsv(LoanScheduleDto schedule)
+    {
+        var sb = new StringBuilder();
+        sb.Append("Emprunt;").Append(Escape(schedule.Loan.LoanNumber)).Append(" — ").AppendLine(Escape(schedule.Loan.Label));
+        sb.Append("Prêteur;").AppendLine(Escape(schedule.Loan.LenderName));
+        sb.Append("Capital;").AppendLine(FormatDecimal(schedule.Loan.Principal));
+        sb.Append("Taux annuel;").AppendLine(FormatDecimal(schedule.Loan.AnnualRatePercent));
+        sb.AppendLine();
+
+        sb.AppendLine("N°;Échéance;Capital restant dû;Intérêt;Capital remboursé;Annuité;Solde");
+        foreach (var l in schedule.Lines)
+        {
+            sb.Append(l.InstallmentNumber).Append(Separator);
+            sb.Append(FormatDate(l.DueDate)).Append(Separator);
+            sb.Append(FormatDecimal(l.OpeningBalance)).Append(Separator);
+            sb.Append(FormatDecimal(l.InterestAmount)).Append(Separator);
+            sb.Append(FormatDecimal(l.PrincipalAmount)).Append(Separator);
+            sb.Append(FormatDecimal(l.InstallmentAmount)).Append(Separator);
+            sb.AppendLine(FormatDecimal(l.ClosingBalance));
+        }
+
+        sb.Append("TOTAUX").Append(Separator).Append(Separator).Append(Separator);
+        sb.Append(FormatDecimal(schedule.TotalInterest)).Append(Separator);
+        sb.Append(FormatDecimal(schedule.TotalPrincipal)).Append(Separator);
+        sb.Append(FormatDecimal(schedule.TotalInstallments)).Append(Separator);
+        sb.AppendLine();
+
+        return BuildBytes(sb);
+    }
+
     public byte[] ExportBalanceToCsv(IReadOnlyList<BalanceRowDto> rows)
     {
         var sb = new StringBuilder();
@@ -704,6 +738,57 @@ public sealed class AccountingExportService : IAccountingExportService
         ws.Cell(row, 7).Value = ledger.TotalDebit;
         ws.Cell(row, 8).Value = ledger.TotalCredit;
         for (var c = 7; c <= 8; c++)
+            ws.Cell(row, c).Style.NumberFormat.Format = "#,##0.000";
+        ws.Row(row).Style.Font.Bold = true;
+
+        ws.Columns().AdjustToContents();
+        return WorkbookToBytes(wb);
+    }
+
+    /// <summary>Tableau d'amortissement d'emprunt : en-tête de l'emprunt puis échéancier et totaux.</summary>
+    public byte[] ExportLoanScheduleToExcel(LoanScheduleDto schedule)
+    {
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("Échéancier");
+
+        ws.Cell(1, 1).Value = "Emprunt";
+        ws.Cell(1, 2).Value = $"{schedule.Loan.LoanNumber} — {schedule.Loan.Label}";
+        ws.Cell(2, 1).Value = "Prêteur";
+        ws.Cell(2, 2).Value = schedule.Loan.LenderName;
+        ws.Cell(3, 1).Value = "Capital";
+        ws.Cell(3, 2).Value = schedule.Loan.Principal;
+        ws.Cell(3, 2).Style.NumberFormat.Format = "#,##0.000";
+        ws.Cell(4, 1).Value = "Taux annuel (%)";
+        ws.Cell(4, 2).Value = schedule.Loan.AnnualRatePercent;
+        ws.Range(1, 1, 4, 1).Style.Font.Bold = true;
+
+        const int headerRow = 6;
+        var headers = new[] { "N°", "Échéance", "Capital restant dû", "Intérêt", "Capital remboursé", "Annuité", "Solde" };
+        for (var c = 0; c < headers.Length; c++)
+            ws.Cell(headerRow, c + 1).Value = headers[c];
+        StyleHeaderRow(ws, headers.Length, headerRow);
+
+        var row = headerRow + 1;
+        foreach (var l in schedule.Lines)
+        {
+            ws.Cell(row, 1).Value = l.InstallmentNumber;
+            ws.Cell(row, 2).Value = l.DueDate;
+            ws.Cell(row, 2).Style.DateFormat.Format = "dd/MM/yyyy";
+            ws.Cell(row, 3).Value = l.OpeningBalance;
+            ws.Cell(row, 4).Value = l.InterestAmount;
+            ws.Cell(row, 5).Value = l.PrincipalAmount;
+            ws.Cell(row, 6).Value = l.InstallmentAmount;
+            ws.Cell(row, 7).Value = l.ClosingBalance;
+            for (var c = 3; c <= 7; c++)
+                ws.Cell(row, c).Style.NumberFormat.Format = "#,##0.000";
+            row++;
+        }
+
+        ws.Cell(row, 1).Value = "TOTAUX";
+        ws.Cell(row, 4).Value = schedule.TotalInterest;
+        ws.Cell(row, 5).Value = schedule.TotalPrincipal;
+        ws.Cell(row, 6).Value = schedule.TotalInstallments;
+        for (var c = 4; c <= 6; c++)
             ws.Cell(row, c).Style.NumberFormat.Format = "#,##0.000";
         ws.Row(row).Style.Font.Bold = true;
 

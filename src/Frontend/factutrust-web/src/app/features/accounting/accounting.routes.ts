@@ -245,6 +245,18 @@ export const ACCOUNTING_ROUTES: Routes = [
     title: 'Tableau des amortissements - InstaFact'
   },
   {
+    path: 'loans',
+    loadComponent: () =>
+      import('./loans/loans-list.component').then(m => m.LoansListComponent),
+    title: 'Emprunts - InstaFact'
+  },
+  {
+    path: 'loans/:id',
+    loadComponent: () =>
+      import('./loans/loan-schedule.component').then(m => m.LoanScheduleComponent),
+    title: "Tableau d'amortissement d'emprunt - InstaFact"
+  },
+  {
     path: 'fixed-assets/:id',
     loadComponent: () =>
       import('./fixed-assets/fixed-asset-detail.component').then(m => m.FixedAssetDetailComponent),

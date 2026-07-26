@@ -131,6 +131,7 @@ Efforts en **jours/homme (j/h)** pour une équipe senior connaissant le codebase
 | Écritures auto (ventes/achats/paiements) | ✅ | — | — | — |
 | Budgets & contrôle de gestion | ✅ | — | — | — |
 | Immobilisations & amortissements | ✅ | — | — | — |
+| Emprunts & tableau d’amortissement (annuité / capital constants) | ✅ | — | — | — |
 | Liasse fiscale tunisienne (états NCT + résultat fiscal) | ✅ | — | — | — |
 | Comptabilité analytique (centres de coûts) | ❌ | P1 | 45 | 1 |
 | Trésorerie prévisionnelle (cash flow) | ❌ | P1 | 35 | 1 |
@@ -146,12 +147,13 @@ Efforts en **jours/homme (j/h)** pour une équipe senior connaissant le codebase
 | Export d’archive de dossier (ZIP, lecture seule) | ✅ | — | — | — |
 | Modifications de masse des brouillons (journal/date/libellé + suppression) | ✅ | — | — | — |
 | Annexes NCT éditables (surcharge des notes auto) | ❌ | P2 | 15 | 2 |
+| Migration de dossier avec mapping de comptes | ❌ | P2 | 10 | 2 |
 | Restauration de dossier + mass-edit du validé + extension tiers | ❌ | P3 | 60 | 4 |
 
-**Sous-total gaps compta/finance restants : ~355 j/h** _(budgets, immobilisations, liasse fiscale
+**Sous-total gaps compta/finance restants : ~340 j/h** _(budgets, immobilisations, liasse fiscale
 livrés ; grand livre général, balances détaillée/par période, récapitulatifs de journaux, état de
-rapprochement, livre d’inventaire, contrôle d’intégrité, import étendu, export ZIP de dossier et
-modifications de masse des brouillons ajoutés en 2026-07 — cf.
+rapprochement, livre d’inventaire, contrôle d’intégrité, import étendu, export ZIP de dossier,
+modifications de masse des brouillons et emprunts/tableau d’amortissement ajoutés en 2026-07 — cf.
 [audit de couverture menu Éditions/Maintenance](../../src/Backend/FactuTrust.Application/Features/Accounting))._
 
 ---

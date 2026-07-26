@@ -157,6 +157,7 @@ public static class DependencyInjection
         services.AddScoped<IVatDeclarationRepository, VatDeclarationRepository>();
         services.AddScoped<IFiscalScheduleRepository, FiscalScheduleRepository>();
         services.AddScoped<IFixedAssetRepository, FixedAssetRepository>();
+        services.AddScoped<ILoanRepository, LoanRepository>();
         services.AddScoped<IDepreciationRateCategoryRepository, DepreciationRateCategoryRepository>();
 
         // Withholding Tax (TEJ)

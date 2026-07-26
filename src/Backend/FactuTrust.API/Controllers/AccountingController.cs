@@ -7,6 +7,7 @@ using FactuTrust.Application.Features.Accounting.ThirdPartyDirectory;
 using FactuTrust.Application.Features.Accounting.Commands;
 using FactuTrust.Application.Features.Accounting.Fiscal;
 using FactuTrust.Application.Features.Accounting.JournalCatalog;
+using FactuTrust.Application.Features.Accounting.Loans;
 using FactuTrust.Application.Features.Accounting.Queries;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -1036,6 +1037,57 @@ public sealed class AccountingController : ControllerBase
         if (r.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
         return FileFor(r.Value, format, $"livre_inventaire_{fiscalYear}");
+    }
+
+    // ── Emprunts et tableau d'amortissement (édition — aucune comptabilisation) ──────────
+
+    [HttpGet("loans")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> GetLoans(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 25,
+        [FromQuery] string? search = null,
+        [FromQuery] int? status = null,
+        CancellationToken cancellationToken = default)
+    {
+        var r = await _mediator.Send(new GetLoansQuery(page, pageSize, search, status), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<LoanListDto>.Ok(r.Value));
+    }
+
+    [HttpPost("loans")]
+    [Authorize(Policy = PermissionPolicies.AccountingCreate)]
+    public async Task<IActionResult> CreateLoan([FromBody] CreateLoanRequest request, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new CreateLoanCommand(request), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<Guid>.Ok(r.Value, "Emprunt créé et échéancier généré."));
+    }
+
+    /// <summary>Tableau d'amortissement d'un emprunt (échéancier + totaux + contrôle de solde).</summary>
+    [HttpGet("loans/{id:guid}/schedule")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> GetLoanSchedule(Guid id, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new GetLoanScheduleQuery(id), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<LoanScheduleDto>.Ok(r.Value));
+    }
+
+    [HttpGet("loans/{id:guid}/schedule/export")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> ExportLoanSchedule(
+        Guid id,
+        [FromQuery] AccountingExportFormat format = AccountingExportFormat.Pdf,
+        CancellationToken cancellationToken = default)
+    {
+        var r = await _mediator.Send(new ExportLoanScheduleQuery(id, format), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return FileFor(r.Value, format, $"echeancier_emprunt_{id:N}");
     }
 
     /// <summary>Archive ZIP du dossier (lecture seule) : plan comptable, journal, balance, tiers, FEC, manifeste.</summary>

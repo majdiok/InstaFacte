@@ -670,6 +670,69 @@ export interface ReferenceImportCommitResultDto {
   skippedCount: number;
 }
 
+/** Une échéance de l'échéancier d'un emprunt. */
+export interface LoanScheduleLineDto {
+  installmentNumber: number;
+  dueDate: string;
+  openingBalance: number;
+  interestAmount: number;
+  principalAmount: number;
+  installmentAmount: number;
+  closingBalance: number;
+}
+
+/** Emprunt du registre. periodicity : 0=mensuelle 1=trim. 2=sem. 3=annuelle ; method : 0=annuité 1=capital. */
+export interface LoanDto {
+  id: string;
+  loanNumber: string;
+  label: string;
+  lenderName: string;
+  principal: number;
+  annualRatePercent: number;
+  startDate: string;
+  installmentCount: number;
+  periodicity: number;
+  method: number;
+  loanAccountNumber: string;
+  interestAccountNumber: string;
+  bankAccountNumber: string;
+  status: number;
+  notes?: string | null;
+  totalInterest: number;
+  totalRepayment: number;
+}
+
+export interface LoanScheduleDto {
+  loan: LoanDto;
+  lines: LoanScheduleLineDto[];
+  totalPrincipal: number;
+  totalInterest: number;
+  totalInstallments: number;
+  /** Contrôle : Σ capital == capital emprunté et solde final nul. */
+  isSettled: boolean;
+}
+
+export interface LoanListDto {
+  items: LoanDto[];
+  totalCount: number;
+}
+
+export interface CreateLoanRequest {
+  loanNumber?: string | null;
+  label: string;
+  lenderName: string;
+  principal: number;
+  annualRatePercent: number;
+  startDate: string;
+  installmentCount: number;
+  periodicity: number;
+  method: number;
+  loanAccountNumber: string;
+  interestAccountNumber: string;
+  bankAccountNumber: string;
+  notes?: string | null;
+}
+
 /** Résultat d'une édition de masse de brouillons. */
 export interface MassDraftUpdateResultDto {
   updated: number;
@@ -1041,6 +1104,30 @@ export class AccountingService {
 
   getChartOfAccounts(): Observable<ApiResponse<ChartOfAccountDto[]>> {
     return this.http.get<ApiResponse<ChartOfAccountDto[]>>(`${this.base}/chart-of-accounts`);
+  }
+
+  /** Registre des emprunts (paginé). */
+  getLoans(page = 1, pageSize = 25, search?: string, status?: number): Observable<ApiResponse<LoanListDto>> {
+    let p = new HttpParams().set('page', page).set('pageSize', pageSize);
+    if (search) p = p.set('search', search);
+    if (status != null) p = p.set('status', status);
+    return this.http.get<ApiResponse<LoanListDto>>(`${this.base}/loans`, { params: p });
+  }
+
+  /** Crée un emprunt ; l'échéancier est généré automatiquement côté serveur. */
+  createLoan(request: CreateLoanRequest): Observable<ApiResponse<string>> {
+    return this.http.post<ApiResponse<string>>(`${this.base}/loans`, request);
+  }
+
+  /** Tableau d'amortissement d'un emprunt. */
+  getLoanSchedule(id: string): Observable<ApiResponse<LoanScheduleDto>> {
+    return this.http.get<ApiResponse<LoanScheduleDto>>(`${this.base}/loans/${id}/schedule`);
+  }
+
+  /** Export du tableau d'amortissement (pdf / excel / csv). */
+  exportLoanSchedule(id: string, format: AccountingExportFormat): Observable<Blob> {
+    const p = new HttpParams().set('format', format);
+    return this.http.get(`${this.base}/loans/${id}/schedule/export`, { params: p, responseType: 'blob' });
   }
 
   /** Archive ZIP du dossier (lecture seule) : plan, journal, balance, tiers, FEC, manifeste. */

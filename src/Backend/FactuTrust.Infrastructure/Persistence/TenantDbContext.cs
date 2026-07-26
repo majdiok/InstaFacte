@@ -173,6 +173,8 @@ public partial class TenantDbContext : DbContext
     public DbSet<DepreciationRateCategory> DepreciationRateCategories => Set<DepreciationRateCategory>();
     public DbSet<FixedAsset> FixedAssets => Set<FixedAsset>();
     public DbSet<DepreciationScheduleLine> DepreciationScheduleLines => Set<DepreciationScheduleLine>();
+    public DbSet<Loan> Loans => Set<Loan>();
+    public DbSet<LoanScheduleLine> LoanScheduleLines => Set<LoanScheduleLine>();
     public DbSet<FixedAssetEvent> FixedAssetEvents => Set<FixedAssetEvent>();
 
     // AI Assistant
@@ -346,6 +348,8 @@ public partial class TenantDbContext : DbContext
         ConfigureFixedAsset(builder);
         ConfigureDepreciationScheduleLine(builder);
         ConfigureFixedAssetEvent(builder);
+        ConfigureLoan(builder);
+        ConfigureLoanScheduleLine(builder);
 
         ConfigureConversation(builder);
         ConfigureConversationMessage(builder);
@@ -3212,6 +3216,53 @@ public partial class TenantDbContext : DbContext
                 .WithMany(a => a.Events)
                 .HasForeignKey(e => e.FixedAssetId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureLoan(ModelBuilder builder)
+    {
+        builder.Entity<Loan>(entity =>
+        {
+            entity.ToTable("Loans");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.LoanNumber).HasMaxLength(32).IsRequired();
+            entity.HasIndex(e => e.LoanNumber).IsUnique();
+            entity.Property(e => e.Label).HasMaxLength(300).IsRequired();
+            entity.Property(e => e.LenderName).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Principal).HasPrecision(18, 3);
+            entity.Property(e => e.AnnualRatePercent).HasPrecision(8, 4);
+            entity.Property(e => e.LoanAccountNumber).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.InterestAccountNumber).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.BankAccountNumber).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.Notes).HasMaxLength(2000);
+            entity.Property(e => e.Periodicity).HasConversion<int>();
+            entity.Property(e => e.Method).HasConversion<int>();
+            entity.Property(e => e.Status).HasConversion<int>();
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => e.StartDate);
+            entity.Property(e => e.Version).IsConcurrencyToken();
+            entity.Ignore(e => e.DomainEvents);
+        });
+    }
+
+    private static void ConfigureLoanScheduleLine(ModelBuilder builder)
+    {
+        builder.Entity<LoanScheduleLine>(entity =>
+        {
+            entity.ToTable("LoanScheduleLines");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.OpeningBalance).HasPrecision(18, 3);
+            entity.Property(e => e.InterestAmount).HasPrecision(18, 3);
+            entity.Property(e => e.PrincipalAmount).HasPrecision(18, 3);
+            entity.Property(e => e.InstallmentAmount).HasPrecision(18, 3);
+            entity.Property(e => e.ClosingBalance).HasPrecision(18, 3);
+            entity.HasIndex(e => new { e.LoanId, e.InstallmentNumber }).IsUnique();
+            entity.HasIndex(e => e.DueDate);
+            entity.HasOne(e => e.Loan)
+                .WithMany(l => l.ScheduleLines)
+                .HasForeignKey(e => e.LoanId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.Ignore(e => e.DomainEvents);
         });
     }
 

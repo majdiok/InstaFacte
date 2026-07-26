@@ -68,6 +68,9 @@ public interface IPdfService
     /// <summary>Génère le PDF du livre d'inventaire (états NCT + provisions détaillées + balance de clôture).</summary>
     Task<byte[]> GenerateInventoryBookPdfAsync(InventoryBookDto dto, AccountingReportHeader header, CancellationToken cancellationToken = default);
 
+    /// <summary>Génère le PDF du tableau d'amortissement d'un emprunt (échéancier + totaux).</summary>
+    Task<byte[]> GenerateLoanSchedulePdfAsync(LoanScheduleDto schedule, AccountingReportHeader header, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Generates a PDF for a sales invoice (full layout with issuer branding).
     /// </summary>
