@@ -39,6 +39,12 @@ import {
           <label class="field-label" for="ri-file-{{ target }}">Fichier</label>
           <input id="ri-file-{{ target }}" type="file" class="ri-input" (change)="onFileSelected($event)" [disabled]="busy()" accept=".csv,.txt,.xlsx,.tsv" />
         </div>
+        @if (target !== 1) {
+          <div class="form-field ri-field-file">
+            <label class="field-label" for="ri-mapping-{{ target }}">Table de correspondance (facultatif)</label>
+            <input id="ri-mapping-{{ target }}" type="file" class="ri-input" (change)="onMappingSelected($event)" [disabled]="busy()" accept=".csv,.txt,.xlsx,.tsv" />
+          </div>
+        }
         <div class="ri-actions">
           <app-button variant="secondary" icon="pi pi-search" type="button"
             (click)="runPreview()" [disabled]="!selectedFile() || busy()"
@@ -63,7 +69,17 @@ import {
           <div class="ri-kpi"><span class="ri-kpi-label">Valides</span><span class="ri-kpi-value ri-ok">{{ p.validRows }}</span></div>
           <div class="ri-kpi"><span class="ri-kpi-label">En erreur</span><span class="ri-kpi-value" [class.ri-err]="p.rowsWithErrors > 0">{{ p.rowsWithErrors }}</span></div>
           <div class="ri-kpi"><span class="ri-kpi-label">Déjà présents</span><span class="ri-kpi-value">{{ p.existingRows }}</span></div>
+          @if (p.mappedAccountCount > 0) {
+            <div class="ri-kpi"><span class="ri-kpi-label">Comptes traduits</span><span class="ri-kpi-value">{{ p.mappedAccountCount }}</span></div>
+          }
         </div>
+
+        @if (p.unusedMappings.length > 0) {
+          <p class="ri-help">
+            {{ p.unusedMappings.length }} correspondance(s) jamais rencontrée(s) :
+            <code>{{ p.unusedMappings.slice(0, 10).join(', ') }}</code>@if (p.unusedMappings.length > 10) { … }
+          </p>
+        }
 
         @if (p.issues.length > 0) {
           <div class="ri-issues">
@@ -133,6 +149,8 @@ export class ReferenceImportComponent {
   format: JournalImportFormat = JournalImportFormat.Csv;
   fiscalYear = new Date().getFullYear() - 1;
   readonly selectedFile = signal<File | null>(null);
+  /** Table de correspondance facultative (sans objet pour le plan tiers). */
+  readonly mappingFile = signal<File | null>(null);
   readonly preview = signal<ReferenceImportPreviewDto | null>(null);
   readonly loading = signal(false);
   readonly committing = signal(false);
@@ -158,6 +176,16 @@ export class ReferenceImportComponent {
   onFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
     this.selectedFile.set(input.files && input.files.length > 0 ? input.files[0] : null);
+    this.resetPreview();
+  }
+
+  onMappingSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.mappingFile.set(input.files && input.files.length > 0 ? input.files[0] : null);
+    this.resetPreview();
+  }
+
+  private resetPreview(): void {
     this.preview.set(null);
     this.successMessage.set(null);
     this.error.set(null);
@@ -169,7 +197,7 @@ export class ReferenceImportComponent {
     this.error.set(null);
     this.successMessage.set(null);
     this.loading.set(true);
-    this.api.previewReferenceImport(file, this.target, this.format, this.yearParam).subscribe({
+    this.api.previewReferenceImport(file, this.target, this.format, this.yearParam, this.mappingFile()).subscribe({
       next: res => {
         this.loading.set(false);
         if (!res.success || !res.data) {
@@ -191,7 +219,7 @@ export class ReferenceImportComponent {
     if (!file || !p?.canCommit || this.busy()) return;
     this.error.set(null);
     this.committing.set(true);
-    this.api.commitReferenceImport(file, this.target, this.format, this.yearParam).subscribe({
+    this.api.commitReferenceImport(file, this.target, this.format, this.yearParam, this.mappingFile()).subscribe({
       next: res => {
         this.committing.set(false);
         if (!res.success || !res.data) {
@@ -201,6 +229,7 @@ export class ReferenceImportComponent {
         this.successMessage.set(`${res.data.createdCount} élément(s) créé(s), ${res.data.skippedCount} ignoré(s).`);
         this.preview.set(null);
         this.selectedFile.set(null);
+        this.mappingFile.set(null);
       },
       error: () => {
         this.committing.set(false);

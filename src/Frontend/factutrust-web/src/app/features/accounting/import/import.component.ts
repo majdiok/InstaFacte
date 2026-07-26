@@ -30,6 +30,11 @@ import {
           <input id="imp-file" type="file" class="import-input" (change)="onFileSelected($event)" [disabled]="busy()"
             accept=".csv,.txt,.xlsx,.tsv" />
         </div>
+        <div class="form-field import-field-file">
+          <label class="field-label" for="imp-mapping">Table de correspondance (facultatif)</label>
+          <input id="imp-mapping" type="file" class="import-input" (change)="onMappingSelected($event)" [disabled]="busy()"
+            accept=".csv,.txt,.xlsx,.tsv" />
+        </div>
         <div class="import-actions">
           <app-button variant="secondary" icon="pi pi-search" type="button"
             (click)="runPreview()" [disabled]="!selectedFile() || busy()"
@@ -43,6 +48,11 @@ import {
         Colonnes attendues (CSV/Excel, 1<sup>re</sup> ligne = en-têtes) : <code>journal, numero, date, compte, libelle, debit, credit</code>.
         Les lignes de même <code>journal</code>+<code>numero</code> forment une pièce. Pour une balance d'ouverture,
         utilisez le journal <code>JAN</code>. Les écritures importées arrivent <strong>en brouillard</strong> et devront être validées.
+      </p>
+      <p class="import-help">
+        <strong>Table de correspondance</strong> (reprise depuis un autre progiciel) : colonnes
+        <code>source, cible</code>. Chaque compte listé est traduit vers le plan comptable local avant
+        contrôle ; un compte absent de la table passe <strong>inchangé</strong>.
       </p>
     </div>
 
@@ -64,7 +74,17 @@ import {
           <div class="import-kpi"><span class="import-kpi-label">En erreur</span><span class="import-kpi-value" [class.import-err]="p.entriesWithErrors > 0">{{ p.entriesWithErrors }}</span></div>
           <div class="import-kpi"><span class="import-kpi-label">Total débit</span><span class="import-kpi-value">{{ p.totalDebit | number : '1.3-3' }}</span></div>
           <div class="import-kpi"><span class="import-kpi-label">Total crédit</span><span class="import-kpi-value">{{ p.totalCredit | number : '1.3-3' }}</span></div>
+          @if (p.mappedAccountCount > 0) {
+            <div class="import-kpi"><span class="import-kpi-label">Comptes traduits</span><span class="import-kpi-value">{{ p.mappedAccountCount }}</span></div>
+          }
         </div>
+
+        @if (p.unusedMappings.length > 0) {
+          <p class="import-help import-unused">
+            {{ p.unusedMappings.length }} correspondance(s) jamais rencontrée(s) :
+            <code>{{ p.unusedMappings.slice(0, 10).join(', ') }}</code>@if (p.unusedMappings.length > 10) { … }
+          </p>
+        }
 
         @if (p.issues.length > 0) {
           <div class="import-issues">
@@ -210,6 +230,8 @@ export class ImportComponent {
 
   format: JournalImportFormat = JournalImportFormat.Csv;
   readonly selectedFile = signal<File | null>(null);
+  /** Table de correspondance facultative — null = import inchangé. */
+  readonly mappingFile = signal<File | null>(null);
   readonly preview = signal<JournalImportPreviewDto | null>(null);
   readonly loading = signal(false);
   readonly committing = signal(false);
@@ -223,6 +245,17 @@ export class ImportComponent {
   onFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
     this.selectedFile.set(input.files && input.files.length > 0 ? input.files[0] : null);
+    this.resetPreview();
+  }
+
+  onMappingSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.mappingFile.set(input.files && input.files.length > 0 ? input.files[0] : null);
+    // L'aperçu dépend de la table : il doit être rejoué après un changement.
+    this.resetPreview();
+  }
+
+  private resetPreview(): void {
     this.preview.set(null);
     this.successMessage.set(null);
     this.error.set(null);
@@ -234,7 +267,7 @@ export class ImportComponent {
     this.error.set(null);
     this.successMessage.set(null);
     this.loading.set(true);
-    this.api.previewJournalImport(file, this.format).subscribe({
+    this.api.previewJournalImport(file, this.format, this.mappingFile()).subscribe({
       next: res => {
         this.loading.set(false);
         if (!res.success || !res.data) {
@@ -256,7 +289,7 @@ export class ImportComponent {
     if (!file || !p?.canCommit || this.busy()) return;
     this.error.set(null);
     this.committing.set(true);
-    this.api.commitJournalImport(file, this.format).subscribe({
+    this.api.commitJournalImport(file, this.format, this.mappingFile()).subscribe({
       next: res => {
         this.committing.set(false);
         if (!res.success || !res.data) {
@@ -268,6 +301,7 @@ export class ImportComponent {
         );
         this.preview.set(null);
         this.selectedFile.set(null);
+        this.mappingFile.set(null);
       },
       error: () => {
         this.committing.set(false);

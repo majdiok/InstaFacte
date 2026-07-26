@@ -634,6 +634,10 @@ export interface JournalImportPreviewDto {
   canCommit: boolean;
   issues: ImportIssueDto[];
   sample: ImportEntryDto[];
+  /** Comptes traduits par la table de correspondance (0 si aucune table fournie). */
+  mappedAccountCount: number;
+  /** Correspondances déclarées mais jamais rencontrées — informatif. */
+  unusedMappings: string[];
 }
 
 export interface JournalImportCommitResultDto {
@@ -663,6 +667,10 @@ export interface ReferenceImportPreviewDto {
   canCommit: boolean;
   issues: ImportIssueDto[];
   sample: ReferenceImportRowDto[];
+  /** Comptes traduits par la table de correspondance (0 si aucune table fournie). */
+  mappedAccountCount: number;
+  /** Correspondances déclarées mais jamais rencontrées — informatif. */
+  unusedMappings: string[];
 }
 
 export interface ReferenceImportCommitResultDto {
@@ -1506,19 +1514,33 @@ export class AccountingService {
     return this.http.post<ApiResponse<string>>(`${this.base}/journal/${id}/reverse`, { reason });
   }
 
-  /** Aperçu (dry-run) d'une reprise de dossier : valide sans rien écrire, retourne le rapport. */
-  previewJournalImport(file: File, format: JournalImportFormat): Observable<ApiResponse<JournalImportPreviewDto>> {
+  /**
+   * Aperçu (dry-run) d'une reprise de dossier : valide sans rien écrire, retourne le rapport.
+   * `accountMapping` : table de correspondance de comptes facultative (« source;cible ») —
+   * omise, le comportement est strictement inchangé.
+   */
+  previewJournalImport(
+    file: File,
+    format: JournalImportFormat,
+    accountMapping?: File | null
+  ): Observable<ApiResponse<JournalImportPreviewDto>> {
     const form = new FormData();
     form.append('file', file);
     form.append('format', String(format));
+    if (accountMapping) form.append('accountMapping', accountMapping);
     return this.http.post<ApiResponse<JournalImportPreviewDto>>(`${this.base}/import/preview`, form);
   }
 
   /** Commit d'une reprise de dossier : crée les écritures EN BROUILLON (tout-ou-rien). */
-  commitJournalImport(file: File, format: JournalImportFormat): Observable<ApiResponse<JournalImportCommitResultDto>> {
+  commitJournalImport(
+    file: File,
+    format: JournalImportFormat,
+    accountMapping?: File | null
+  ): Observable<ApiResponse<JournalImportCommitResultDto>> {
     const form = new FormData();
     form.append('file', file);
     form.append('format', String(format));
+    if (accountMapping) form.append('accountMapping', accountMapping);
     return this.http.post<ApiResponse<JournalImportCommitResultDto>>(`${this.base}/import/commit`, form);
   }
 
@@ -1527,13 +1549,15 @@ export class AccountingService {
     file: File,
     target: ReferenceImportTarget,
     format: JournalImportFormat,
-    fiscalYear?: number
+    fiscalYear?: number,
+    accountMapping?: File | null
   ): Observable<ApiResponse<ReferenceImportPreviewDto>> {
     const form = new FormData();
     form.append('file', file);
     form.append('target', String(target));
     form.append('format', String(format));
     if (fiscalYear != null) form.append('fiscalYear', String(fiscalYear));
+    if (accountMapping) form.append('accountMapping', accountMapping);
     return this.http.post<ApiResponse<ReferenceImportPreviewDto>>(`${this.base}/reference-import/preview`, form);
   }
 
@@ -1542,13 +1566,15 @@ export class AccountingService {
     file: File,
     target: ReferenceImportTarget,
     format: JournalImportFormat,
-    fiscalYear?: number
+    fiscalYear?: number,
+    accountMapping?: File | null
   ): Observable<ApiResponse<ReferenceImportCommitResultDto>> {
     const form = new FormData();
     form.append('file', file);
     form.append('target', String(target));
     form.append('format', String(format));
     if (fiscalYear != null) form.append('fiscalYear', String(fiscalYear));
+    if (accountMapping) form.append('accountMapping', accountMapping);
     return this.http.post<ApiResponse<ReferenceImportCommitResultDto>>(`${this.base}/reference-import/commit`, form);
   }
 
