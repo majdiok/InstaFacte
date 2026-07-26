@@ -41,14 +41,25 @@ public sealed class ReferenceDataImportService : IReferenceDataImportService
         _settings = settings.Value;
     }
 
-    public async Task<Result<ReferenceImportPreviewDto>> PreviewAsync(
+    // Surcharges historiques : délèguent sans table de correspondance (comportement inchangé).
+    public Task<Result<ReferenceImportPreviewDto>> PreviewAsync(
         byte[] content, ReferenceImportTarget target, JournalImportFormat format,
         int? fiscalYear = null, CancellationToken cancellationToken = default)
+        => PreviewAsync(content, target, format, fiscalYear, null, cancellationToken);
+
+    public Task<Result<ReferenceImportCommitResultDto>> CommitAsync(
+        byte[] content, ReferenceImportTarget target, JournalImportFormat format,
+        int? fiscalYear = null, CancellationToken cancellationToken = default)
+        => CommitAsync(content, target, format, fiscalYear, null, cancellationToken);
+
+    public async Task<Result<ReferenceImportPreviewDto>> PreviewAsync(
+        byte[] content, ReferenceImportTarget target, JournalImportFormat format,
+        int? fiscalYear, byte[]? accountMappingContent, CancellationToken cancellationToken = default)
     {
         if (!_settings.DossierImportEnabled)
             return Result.Failure<ReferenceImportPreviewDto>(Error.Validation("Import", "La reprise de dossier par import n'est pas activée."));
 
-        var prepared = await PrepareAsync(content, target, format, fiscalYear, cancellationToken);
+        var prepared = await PrepareAsync(content, target, format, fiscalYear, accountMappingContent, cancellationToken);
         if (prepared.IsFailure)
             return Result.Failure<ReferenceImportPreviewDto>(prepared.Error);
 
@@ -57,12 +68,12 @@ public sealed class ReferenceDataImportService : IReferenceDataImportService
 
     public async Task<Result<ReferenceImportCommitResultDto>> CommitAsync(
         byte[] content, ReferenceImportTarget target, JournalImportFormat format,
-        int? fiscalYear = null, CancellationToken cancellationToken = default)
+        int? fiscalYear, byte[]? accountMappingContent, CancellationToken cancellationToken = default)
     {
         if (!_settings.DossierImportEnabled)
             return Result.Failure<ReferenceImportCommitResultDto>(Error.Validation("Import", "La reprise de dossier par import n'est pas activée."));
 
-        var prepared = await PrepareAsync(content, target, format, fiscalYear, cancellationToken);
+        var prepared = await PrepareAsync(content, target, format, fiscalYear, accountMappingContent, cancellationToken);
         if (prepared.IsFailure)
             return Result.Failure<ReferenceImportCommitResultDto>(prepared.Error);
 
@@ -89,7 +100,8 @@ public sealed class ReferenceDataImportService : IReferenceDataImportService
     private sealed record Prepared(ReferenceImportPreviewDto Preview, List<Dictionary<string, string>> Rows);
 
     private async Task<Result<Prepared>> PrepareAsync(
-        byte[] content, ReferenceImportTarget target, JournalImportFormat format, int? fiscalYear, CancellationToken ct)
+        byte[] content, ReferenceImportTarget target, JournalImportFormat format, int? fiscalYear,
+        byte[]? accountMappingContent, CancellationToken ct)
     {
         if (format == JournalImportFormat.Fec)
             return Result.Failure<Prepared>(Error.Validation("Format", "Le format FEC ne s'applique qu'à l'import d'écritures."));
@@ -101,6 +113,11 @@ public sealed class ReferenceDataImportService : IReferenceDataImportService
         var (rows, readIssues) = ReadRows(content, format, synonyms, required, expected);
 
         var issues = new List<ImportIssueDto>(readIssues);
+
+        // Table de correspondance facultative : traduit la colonne « compte » AVANT toute validation.
+        // Sans table, aucune traduction — comportement historique strict.
+        var mapping = await ApplyAccountMappingAsync(rows, target, accountMappingContent, format, issues, ct);
+
         var existing = 0;
         if (rows.Count > 0)
         {
@@ -127,9 +144,77 @@ public sealed class ReferenceDataImportService : IReferenceDataImportService
             ExistingRows = existing,
             CanCommit = blocking == 0 && rows.Count > 0,
             Issues = issues,
-            Sample = sample
+            Sample = sample,
+            MappedAccountCount = mapping?.AppliedCount ?? 0,
+            UnusedMappings = mapping?.UnusedSources ?? Array.Empty<string>()
         };
         return Result.Success(new Prepared(preview, rows));
+    }
+
+    /// <summary>
+    /// Applique la table de correspondance à la colonne « compte » des lignes lues, EN PLACE et
+    /// AVANT validation. Ne concerne que les cibles portant des numéros de compte (plan comptable et
+    /// balance d'ouverture) — le plan tiers n'en a pas. Une CIBLE absente du plan comptable est une
+    /// anomalie bloquante (erreur de table, pas de données).
+    /// </summary>
+    private async Task<AccountMappingTable?> ApplyAccountMappingAsync(
+        List<Dictionary<string, string>> rows,
+        ReferenceImportTarget target,
+        byte[]? accountMappingContent,
+        JournalImportFormat format,
+        List<ImportIssueDto> issues,
+        CancellationToken ct)
+    {
+        if (accountMappingContent is not { Length: > 0 })
+            return null;
+
+        if (target == ReferenceImportTarget.ThirdParties)
+        {
+            issues.Add(new ImportIssueDto
+            {
+                Ref = "correspondance",
+                Message = "La table de correspondance de comptes ne s'applique pas à l'import du plan tiers.",
+                IsBlocking = true
+            });
+            return null;
+        }
+
+        var (table, mappingIssues) = AccountMappingTable.Parse(accountMappingContent, format);
+        issues.AddRange(mappingIssues);
+        if (table is null)
+            return null;
+
+        await using (var ctx = _contextFactory.CreateContext())
+        {
+            var known = await ctx.ChartOfAccounts.AsNoTracking()
+                .Select(c => c.AccountNumber)
+                .ToListAsync(ct);
+            var knownSet = new HashSet<string>(known, StringComparer.Ordinal);
+
+            // Pour le plan comptable, la cible EST créée par l'import : on n'exige pas sa présence
+            // préalable. Pour la balance d'ouverture, elle doit déjà exister.
+            if (target == ReferenceImportTarget.OpeningBalance)
+            {
+                foreach (var missing in table.TargetAccounts.Where(t => !knownSet.Contains(t)))
+                {
+                    issues.Add(new ImportIssueDto
+                    {
+                        Ref = "correspondance",
+                        Message = $"Le compte cible {missing} de la table de correspondance est absent du plan comptable.",
+                        IsBlocking = true
+                    });
+                }
+            }
+        }
+
+        foreach (var row in rows)
+        {
+            if (!row.TryGetValue("compte", out var account) || string.IsNullOrWhiteSpace(account))
+                continue;
+            row["compte"] = table.Translate(account);
+        }
+
+        return table;
     }
 
     // ── Schémas de colonnes par cible ─────────────────────────────────────────

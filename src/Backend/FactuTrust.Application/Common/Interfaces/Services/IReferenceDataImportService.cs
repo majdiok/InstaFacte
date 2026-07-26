@@ -11,6 +11,7 @@ namespace FactuTrust.Application.Common.Interfaces.Services;
 /// </summary>
 public interface IReferenceDataImportService
 {
+    // Signatures historiques — INCHANGÉES (des appelants passent le CancellationToken en position).
     /// <summary><paramref name="fiscalYear"/> n'est requis que pour <see cref="ReferenceImportTarget.OpeningBalance"/>.</summary>
     Task<Result<ReferenceImportPreviewDto>> PreviewAsync(
         byte[] content, ReferenceImportTarget target, JournalImportFormat format,
@@ -19,4 +20,17 @@ public interface IReferenceDataImportService
     Task<Result<ReferenceImportCommitResultDto>> CommitAsync(
         byte[] content, ReferenceImportTarget target, JournalImportFormat format,
         int? fiscalYear = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Surcharge avec table de correspondance de comptes (« source;cible »), appliquée AVANT
+    /// validation — utile pour une balance d'ouverture venue d'un autre progiciel. Passer
+    /// <c>null</c> équivaut exactement à la surcharge historique.
+    /// </summary>
+    Task<Result<ReferenceImportPreviewDto>> PreviewAsync(
+        byte[] content, ReferenceImportTarget target, JournalImportFormat format,
+        int? fiscalYear, byte[]? accountMappingContent, CancellationToken cancellationToken = default);
+
+    Task<Result<ReferenceImportCommitResultDto>> CommitAsync(
+        byte[] content, ReferenceImportTarget target, JournalImportFormat format,
+        int? fiscalYear, byte[]? accountMappingContent, CancellationToken cancellationToken = default);
 }

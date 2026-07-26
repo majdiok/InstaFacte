@@ -8,7 +8,8 @@ namespace FactuTrust.Application.Features.Accounting.Commands;
 
 /// <summary>Aperçu (dry-run) d'un import de référentiel (plan comptable / plan tiers / balance d'ouverture).</summary>
 public sealed record PreviewReferenceImportCommand(
-    byte[] Content, ReferenceImportTarget Target, JournalImportFormat Format, int? FiscalYear)
+    byte[] Content, ReferenceImportTarget Target, JournalImportFormat Format, int? FiscalYear,
+    byte[]? AccountMappingContent = null)
     : IRequest<Result<ReferenceImportPreviewDto>>;
 
 public sealed class PreviewReferenceImportCommandHandler
@@ -22,11 +23,14 @@ public sealed class PreviewReferenceImportCommandHandler
     }
 
     public Task<Result<ReferenceImportPreviewDto>> Handle(PreviewReferenceImportCommand request, CancellationToken cancellationToken)
-        => _importService.PreviewAsync(request.Content, request.Target, request.Format, request.FiscalYear, cancellationToken);
+        => _importService.PreviewAsync(
+            request.Content, request.Target, request.Format, request.FiscalYear,
+            request.AccountMappingContent, cancellationToken);
 }
 
 public sealed record CommitReferenceImportCommand(
-    byte[] Content, ReferenceImportTarget Target, JournalImportFormat Format, int? FiscalYear)
+    byte[] Content, ReferenceImportTarget Target, JournalImportFormat Format, int? FiscalYear,
+    byte[]? AccountMappingContent = null)
     : IRequest<Result<ReferenceImportCommitResultDto>>;
 
 public sealed class CommitReferenceImportCommandHandler
@@ -43,7 +47,9 @@ public sealed class CommitReferenceImportCommandHandler
 
     public async Task<Result<ReferenceImportCommitResultDto>> Handle(CommitReferenceImportCommand request, CancellationToken cancellationToken)
     {
-        var result = await _importService.CommitAsync(request.Content, request.Target, request.Format, request.FiscalYear, cancellationToken);
+        var result = await _importService.CommitAsync(
+            request.Content, request.Target, request.Format, request.FiscalYear,
+            request.AccountMappingContent, cancellationToken);
         if (result.IsSuccess)
         {
             await _auditService.LogAsync(

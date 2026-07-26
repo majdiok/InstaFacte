@@ -229,13 +229,18 @@ public sealed class AccountingController : ControllerBase
     [HttpPost("import/preview")]
     [Authorize(Policy = PermissionPolicies.AccountingImport)]
     [RequestSizeLimit(25_000_000)]
-    public async Task<IActionResult> PreviewImport([FromForm] IFormFile file, [FromForm] JournalImportFormat format, CancellationToken cancellationToken)
+    public async Task<IActionResult> PreviewImport(
+        [FromForm] IFormFile file,
+        [FromForm] JournalImportFormat format,
+        [FromForm] IFormFile? accountMapping,
+        CancellationToken cancellationToken)
     {
         if (file is null || file.Length == 0)
             return BadRequest(ApiResponse<object>.Fail("Fichier requis."));
 
         var content = await ReadFileAsync(file, cancellationToken);
-        var r = await _mediator.Send(new PreviewJournalImportCommand(content, format), cancellationToken);
+        var mapping = await ReadOptionalFileAsync(accountMapping, cancellationToken);
+        var r = await _mediator.Send(new PreviewJournalImportCommand(content, format, mapping), cancellationToken);
         if (r.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
         return Ok(ApiResponse<JournalImportPreviewDto>.Ok(r.Value));
@@ -244,13 +249,18 @@ public sealed class AccountingController : ControllerBase
     [HttpPost("import/commit")]
     [Authorize(Policy = PermissionPolicies.AccountingImport)]
     [RequestSizeLimit(25_000_000)]
-    public async Task<IActionResult> CommitImport([FromForm] IFormFile file, [FromForm] JournalImportFormat format, CancellationToken cancellationToken)
+    public async Task<IActionResult> CommitImport(
+        [FromForm] IFormFile file,
+        [FromForm] JournalImportFormat format,
+        [FromForm] IFormFile? accountMapping,
+        CancellationToken cancellationToken)
     {
         if (file is null || file.Length == 0)
             return BadRequest(ApiResponse<object>.Fail("Fichier requis."));
 
         var content = await ReadFileAsync(file, cancellationToken);
-        var r = await _mediator.Send(new CommitJournalImportCommand(content, format), cancellationToken);
+        var mapping = await ReadOptionalFileAsync(accountMapping, cancellationToken);
+        var r = await _mediator.Send(new CommitJournalImportCommand(content, format, mapping), cancellationToken);
         if (r.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
         return Ok(ApiResponse<JournalImportCommitResultDto>.Ok(r.Value, $"{r.Value.ImportedEntries} écriture(s) importée(s) en brouillard."));
@@ -265,13 +275,15 @@ public sealed class AccountingController : ControllerBase
         [FromForm] ReferenceImportTarget target,
         [FromForm] JournalImportFormat format,
         [FromForm] int? fiscalYear,
+        [FromForm] IFormFile? accountMapping,
         CancellationToken cancellationToken)
     {
         if (file is null || file.Length == 0)
             return BadRequest(ApiResponse<object>.Fail("Fichier requis."));
 
         var content = await ReadFileAsync(file, cancellationToken);
-        var r = await _mediator.Send(new PreviewReferenceImportCommand(content, target, format, fiscalYear), cancellationToken);
+        var mapping = await ReadOptionalFileAsync(accountMapping, cancellationToken);
+        var r = await _mediator.Send(new PreviewReferenceImportCommand(content, target, format, fiscalYear, mapping), cancellationToken);
         if (r.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
         return Ok(ApiResponse<ReferenceImportPreviewDto>.Ok(r.Value));
@@ -285,13 +297,15 @@ public sealed class AccountingController : ControllerBase
         [FromForm] ReferenceImportTarget target,
         [FromForm] JournalImportFormat format,
         [FromForm] int? fiscalYear,
+        [FromForm] IFormFile? accountMapping,
         CancellationToken cancellationToken)
     {
         if (file is null || file.Length == 0)
             return BadRequest(ApiResponse<object>.Fail("Fichier requis."));
 
         var content = await ReadFileAsync(file, cancellationToken);
-        var r = await _mediator.Send(new CommitReferenceImportCommand(content, target, format, fiscalYear), cancellationToken);
+        var mapping = await ReadOptionalFileAsync(accountMapping, cancellationToken);
+        var r = await _mediator.Send(new CommitReferenceImportCommand(content, target, format, fiscalYear, mapping), cancellationToken);
         if (r.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
         return Ok(ApiResponse<ReferenceImportCommitResultDto>.Ok(r.Value,
@@ -304,6 +318,10 @@ public sealed class AccountingController : ControllerBase
         await file.CopyToAsync(ms, cancellationToken);
         return ms.ToArray();
     }
+
+    /// <summary>Lit un fichier facultatif (table de correspondance) — null si absent ou vide.</summary>
+    private static async Task<byte[]?> ReadOptionalFileAsync(IFormFile? file, CancellationToken cancellationToken)
+        => file is null || file.Length == 0 ? null : await ReadFileAsync(file, cancellationToken);
 
     private static string BuildFiscalScheduleCsv(IReadOnlyList<FiscalScheduleEntryDto> rows)
     {
