@@ -133,16 +133,17 @@ public sealed class StockDeductionPathsCharacterizationTests
     }
 
     [Fact]
-    public async Task Handle_WhenReferenceStartsWithBl_SkipsDeduction_KnownDefect()
+    public async Task Handle_WhenInvoiceCameFromDeliveryNote_SkipsDeduction()
     {
-        // DÉFAUT DOCUMENTÉ — corrigé au lot B.
-        // Le garde-fou anti-double-déduction repose sur un préfixe de chaîne dans un champ
-        // libre : une facture directe intitulée « BL … » échappe donc à la déduction, et
-        // symétriquement une facture issue d'un BL avec référence personnalisée est
-        // décrémentée deux fois. Ce test sera remplacé par des assertions sur
-        // Invoice.SourceDeliveryNoteId.
+        // Lot B : le garde-fou porte désormais sur la clé étrangère typée. Même avec une
+        // référence entièrement personnalisée, le stock n'est pas décrémenté une seconde fois
+        // (il l'a déjà été à la livraison).
         var product = NewProduct(stockManaged: true);
-        var invoice = NewInvoiceWith(product, quantity: 4m, reference: "BL du 12/07 — saisie libre");
+        var invoice = NewInvoiceWith(
+            product,
+            quantity: 4m,
+            reference: "Cde 4471 — client Sfax",
+            sourceDeliveryNoteId: Guid.NewGuid());
         var notification = ValidatedEvent(invoice);
 
         var ctx = new HandlerContext();
@@ -153,6 +154,27 @@ public sealed class StockDeductionPathsCharacterizationTests
 
         ctx.ProductRepo.VerifyNoOtherCalls();
         ctx.StockItemRepo.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Handle_WhenReferenceLooksLikeADeliveryNoteButIsADirectInvoice_StillDeducts()
+    {
+        // Lot B — non-régression symétrique : une facture directe dont la référence commence
+        // par « BL » échappait à toute déduction de stock. Elle doit désormais être traitée
+        // normalement, la référence n'ayant plus aucun rôle décisionnel.
+        var product = NewProduct(stockManaged: true);
+        var invoice = NewInvoiceWith(product, quantity: 4m, reference: "BL du 12/07 — saisie libre");
+        var notification = ValidatedEvent(invoice);
+
+        var ctx = new HandlerContext();
+        ctx.WithInvoice(invoice);
+        var warehouse = ctx.WithDefaultWarehouse();
+        ctx.WithProduct(product);
+        var stockItem = ctx.WithStockItem(product.Id, warehouse.Id, onHand: 10m);
+
+        await ctx.Handler.Handle(notification, CancellationToken.None);
+
+        Assert.Equal(6m, stockItem.QuantityOnHand);
     }
 
     // ─────────────────────────────── Fabriques de test ───────────────────────────────
@@ -171,17 +193,24 @@ public sealed class StockDeductionPathsCharacterizationTests
             unit: "Unité",
             isStockManaged: stockManaged).Value;
 
-    private static Invoice NewInvoiceWith(Product product, decimal quantity, string? reference = null)
+    private static Invoice NewInvoiceWith(
+        Product product,
+        decimal quantity,
+        string? reference = null,
+        Guid? sourceDeliveryNoteId = null)
     {
         var address = Address.Create("1 rue de la République", "Tunis", "Tunis").Value;
         var email = Email.Create("client@example.com").Value;
         var client = Client.Create("Client test", ClientType.Individual, address, email).Value;
+        var number = InvoiceNumber.Create("FAC", 2026, 42);
+        var issueDate = new DateTime(2026, 7, 20);
 
-        var invoice = Invoice.Create(
-            InvoiceNumber.Create("FAC", 2026, 42),
-            client,
-            new DateTime(2026, 7, 20),
-            reference: reference).Value;
+        var result = sourceDeliveryNoteId.HasValue
+            ? Invoice.CreateFromDeliveryNote(number, client, issueDate, sourceDeliveryNoteId.Value, reference: reference)
+            : Invoice.Create(number, client, issueDate, reference: reference);
+
+        Assert.True(result.IsSuccess, result.Error?.Description);
+        var invoice = result.Value;
 
         Assert.True(invoice.AddLine(product, quantity).IsSuccess);
         return invoice;

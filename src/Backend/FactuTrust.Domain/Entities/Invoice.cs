@@ -68,6 +68,15 @@ public sealed class Invoice : AggregateRoot
     public Guid? SourceQuoteId { get; private set; }
 
     /// <summary>
+    /// Source delivery note ID when the invoice was generated from a bon de livraison.
+    /// Lien permanent BL ↔ facture, symétrique de <see cref="SourceQuoteId"/>.
+    /// C'est la seule source de vérité pour savoir si le stock a déjà été sorti à la
+    /// livraison : ne jamais redéduire cette information d'un champ texte libre
+    /// (<see cref="Reference"/> est saisissable par l'utilisateur).
+    /// </summary>
+    public Guid? SourceDeliveryNoteId { get; private set; }
+
+    /// <summary>
     /// Issuing company (seller) for PDF/branding. When null, the tenant default company is used at render time.
     /// </summary>
     public Guid? IssuerCompanyId { get; private set; }
@@ -168,6 +177,33 @@ public sealed class Invoice : AggregateRoot
 
         invoice.AddDomainEvent(new InvoiceCreatedEvent(invoice.Id, invoice.Number.Value, client.Id));
         return Result.Success(invoice);
+    }
+
+    /// <summary>
+    /// Creates an invoice from a delivered bon de livraison. Sets <see cref="SourceDeliveryNoteId"/>,
+    /// qui signale aux abonnés de <c>InvoiceValidatedEvent</c> que le stock a déjà été sorti à la
+    /// livraison et ne doit pas l'être une seconde fois à la validation de la facture.
+    /// </summary>
+    public static Result<Invoice> CreateFromDeliveryNote(
+        InvoiceNumber number,
+        Client client,
+        DateTime issueDate,
+        Guid sourceDeliveryNoteId,
+        DateTime? dueDate = null,
+        string? reference = null,
+        string? notes = null,
+        string? paymentTerms = null,
+        Guid? warehouseId = null)
+    {
+        if (sourceDeliveryNoteId == Guid.Empty)
+            return Result.Failure<Invoice>(Error.Validation("SourceDeliveryNoteId", "Le bon de livraison source est obligatoire"));
+
+        var result = Create(number, client, issueDate, dueDate, reference, notes, paymentTerms, warehouseId);
+        if (result.IsFailure)
+            return result;
+
+        result.Value.SourceDeliveryNoteId = sourceDeliveryNoteId;
+        return result;
     }
 
     public Result AddLine(

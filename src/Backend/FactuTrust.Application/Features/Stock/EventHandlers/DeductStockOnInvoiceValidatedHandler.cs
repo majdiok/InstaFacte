@@ -82,12 +82,15 @@ public sealed class DeductStockOnInvoiceValidatedHandler : INotificationHandler<
         }
 
         // Skip stock deduction if this invoice was generated from a delivery note
-        // (stock was already decremented during delivery via DeductStockOnDeliveryNoteDeliveredHandler)
-        if (invoice.Reference != null && invoice.Reference.StartsWith("BL "))
+        // (stock was already decremented during delivery via DeductStockOnDeliveryNoteDeliveredHandler).
+        // Le test porte sur la clé étrangère typée, jamais sur Reference : ce champ est une
+        // chaîne libre saisissable par l'appelant, et s'y fier décrémentait le stock deux fois
+        // dès qu'une référence personnalisée était fournie à la facturation du BL.
+        if (invoice.SourceDeliveryNoteId.HasValue)
         {
             _logger.LogInformation(
-                "Invoice {InvoiceNumber} was generated from a delivery note ({Reference}) — skipping stock deduction (already done at delivery)",
-                notification.InvoiceNumber, invoice.Reference);
+                "Invoice {InvoiceNumber} was generated from delivery note {DeliveryNoteId} — skipping stock deduction (already done at delivery)",
+                notification.InvoiceNumber, invoice.SourceDeliveryNoteId.Value);
             return;
         }
 

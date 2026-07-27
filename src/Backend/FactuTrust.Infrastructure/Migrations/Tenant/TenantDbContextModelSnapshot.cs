@@ -2744,6 +2744,9 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<Guid?>("SourceDeliveryNoteId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid?>("SourceQuoteId")
                         .HasColumnType("uniqueidentifier");
 
@@ -2777,6 +2780,9 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.HasIndex("IssueDate");
 
                     b.HasIndex("IssuerCompanyId");
+
+                    b.HasIndex("SourceDeliveryNoteId")
+                        .HasFilter("[SourceDeliveryNoteId] IS NOT NULL");
 
                     b.HasIndex("SourceQuoteId");
 

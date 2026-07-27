@@ -88,10 +88,11 @@ public sealed class GenerateInvoiceFromDeliveryNoteCommandHandler
 
         // 6. Create invoice using the BL's client
         var client = deliveryNote.Client!;
-        var invoiceResult = Invoice.Create(
+        var invoiceResult = Invoice.CreateFromDeliveryNote(
             invoiceNumber,
             client,
             issueDate,
+            deliveryNote.Id,
             dto.DueDate,
             dto.Reference ?? $"BL {deliveryNote.Number.Value}",
             dto.Notes,

@@ -728,6 +728,11 @@ public partial class TenantDbContext : DbContext
 
             entity.Property(i => i.SourceQuoteId);
 
+            // Lien BL → facture. Index filtré : seules les factures issues d'un BL sont indexées.
+            entity.Property(i => i.SourceDeliveryNoteId);
+            entity.HasIndex(i => i.SourceDeliveryNoteId)
+                .HasFilter("[SourceDeliveryNoteId] IS NOT NULL");
+
             entity.Property(i => i.IssuerCompanyId);
 
             entity.Property(i => i.ElectronicInvoiceTtn)
