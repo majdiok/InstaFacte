@@ -147,14 +147,20 @@ Efforts en **jours/homme (j/h)** pour une équipe senior connaissant le codebase
 | Export d’archive de dossier (ZIP, lecture seule) | ✅ | — | — | — |
 | Modifications de masse des brouillons (journal/date/libellé + suppression) | ✅ | — | — | — |
 | Annexes NCT éditables (titre, texte narratif, masquage par exercice) | ✅ | — | — | — |
-| Migration de dossier avec mapping de comptes | ❌ | P2 | 10 | 2 |
-| Restauration de dossier + mass-edit du validé + extension tiers | ❌ | P3 | 60 | 4 |
+| Migration de dossier avec mapping de comptes | ✅ | — | — | — |
+| Correction de masse par extourne (écritures validées) | ✅ | — | — | — |
+| Restauration de dossier + extension `ThirdPartyKind` | ❌ | P3 | 50 | 4 |
 
-**Sous-total gaps compta/finance restants : ~340 j/h** _(budgets, immobilisations, liasse fiscale
-livrés ; grand livre général, balances détaillée/par période, récapitulatifs de journaux, état de
-rapprochement, livre d’inventaire, contrôle d’intégrité, import étendu, export ZIP de dossier,
-modifications de masse des brouillons et emprunts/tableau d’amortissement ajoutés en 2026-07 — cf.
-[audit de couverture menu Éditions/Maintenance](../../src/Backend/FactuTrust.Application/Features/Accounting))._
+**Sous-total gaps compta/finance restants : ~330 j/h** _(budgets, immobilisations et liasse fiscale
+livrés ; ajoutés en 2026-07 : grand livre général, balances détaillée/par période, récapitulatifs de
+journaux, état de rapprochement, livre d’inventaire, contrôle d’intégrité, import étendu **avec
+table de correspondance de comptes**, export ZIP de dossier, modifications de masse des brouillons,
+emprunts/tableau d’amortissement, **annexes NCT éditables** et **correction de masse par extourne** —
+cf. [audit de couverture menu Éditions/Maintenance](../../src/Backend/FactuTrust.Application/Features/Accounting))._
+
+> **Note sur le « mass-edit du validé ».** Il ne figure plus comme écart : comptablement, une écriture
+> validée ne se modifie pas — elle s’**extourne** puis se ressaisit, ce qui préserve la piste d’audit.
+> C’est ce que couvre la correction de masse par extourne ci-dessus.
 
 ---
 

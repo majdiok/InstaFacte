@@ -202,6 +202,23 @@ public sealed class AccountingController : ControllerBase
         return Ok(ApiResponse<Guid>.Ok(r.Value, "Écriture extournée."));
     }
 
+    /// <summary>
+    /// Correction de masse d'écritures VALIDÉES par extourne : chaque écriture est contre-passée,
+    /// jamais modifiée — la piste d'audit est préservée. Brouillons et écritures déjà extournées
+    /// sont ignorés et comptés à part.
+    /// </summary>
+    [HttpPost("journal/mass-reverse")]
+    [Authorize(Policy = PermissionPolicies.AccountingReverse)]
+    public async Task<IActionResult> MassReverseEntries(
+        [FromBody] MassReverseEntriesRequest request, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new MassReverseEntriesCommand(request.Ids, request.Reason), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<MassReversalResultDto>.Ok(r.Value,
+            $"{r.Value.Reversed} écriture(s) extournée(s), {r.Value.Skipped} ignorée(s)."));
+    }
+
     /// <summary>Édition de masse d'écritures EN BROUILLON (journal / date / libellé). Ignore le validé.</summary>
     [HttpPost("journal/mass-update-drafts")]
     [Authorize(Policy = PermissionPolicies.AccountingCreate)]

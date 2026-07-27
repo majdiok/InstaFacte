@@ -275,6 +275,25 @@ public sealed record MassDraftDeleteResultDto
     public int Skipped { get; init; }
 }
 
+/// <summary>
+/// Résultat d'une correction de masse par extourne : écritures effectivement contre-passées vs
+/// ignorées (brouillon, déjà extournée, introuvable). Aucune écriture n'est jamais modifiée.
+/// </summary>
+public sealed record MassReversalResultDto
+{
+    public int Reversed { get; init; }
+    public int Skipped { get; init; }
+    /// <summary>Identifiants des écritures d'extourne créées.</summary>
+    public IReadOnlyList<Guid> ReversalEntryIds { get; init; } = Array.Empty<Guid>();
+}
+
+/// <summary>Requête de correction de masse par extourne. Le motif est obligatoire (il est repris dans chaque libellé).</summary>
+public sealed record MassReverseEntriesRequest
+{
+    public IReadOnlyList<Guid> Ids { get; init; } = Array.Empty<Guid>();
+    public string Reason { get; init; } = string.Empty;
+}
+
 /// <summary>Axe de regroupement d'un récapitulatif de journaux.</summary>
 public enum JournalSummaryGrouping
 {

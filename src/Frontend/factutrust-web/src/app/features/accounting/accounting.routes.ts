@@ -140,6 +140,12 @@ export const ACCOUNTING_ROUTES: Routes = [
     title: 'Édition en lot des brouillons - InstaFact'
   },
   {
+    path: 'mass-reversal',
+    loadComponent: () =>
+      import('./mass-reversal/mass-reversal.component').then(m => m.MassReversalComponent),
+    title: 'Correction en lot par extourne - InstaFact'
+  },
+  {
     path: 'inventory-assistant',
     loadComponent: () =>
       import('./inventory-assistant/inventory-assistant.component').then(m => m.InventoryAssistantComponent),

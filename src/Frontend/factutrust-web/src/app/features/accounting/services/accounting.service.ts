@@ -752,6 +752,13 @@ export interface MassDraftDeleteResultDto {
   skipped: number;
 }
 
+/** Résultat d'une correction de masse par extourne (aucune écriture n'est modifiée). */
+export interface MassReversalResultDto {
+  reversed: number;
+  skipped: number;
+  reversalEntryIds: string[];
+}
+
 export interface CreateSubAccountRequest {
   accountNumber: string;
   label: string;
@@ -1174,6 +1181,14 @@ export class AccountingService {
   /** Suppression de masse d'écritures EN BROUILLON. Ignore le validé. */
   massDeleteDrafts(ids: string[]): Observable<ApiResponse<MassDraftDeleteResultDto>> {
     return this.http.post<ApiResponse<MassDraftDeleteResultDto>>(`${this.base}/journal/mass-delete-drafts`, { ids });
+  }
+
+  /**
+   * Correction de masse d'écritures VALIDÉES par extourne : chaque écriture est contre-passée,
+   * jamais modifiée. Brouillons et écritures déjà extournées sont ignorés côté serveur.
+   */
+  massReverseEntries(ids: string[], reason: string): Observable<ApiResponse<MassReversalResultDto>> {
+    return this.http.post<ApiResponse<MassReversalResultDto>>(`${this.base}/journal/mass-reverse`, { ids, reason });
   }
 
   getJournal(journalCode: string | undefined, from: Date, to: Date): Observable<ApiResponse<JournalEntryDto[]>> {
