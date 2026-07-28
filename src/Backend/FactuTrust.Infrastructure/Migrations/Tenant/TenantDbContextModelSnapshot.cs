@@ -2972,6 +2972,9 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.Property<Guid?>("IssuerCompanyId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("LinkedInvoiceId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("Notes")
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
@@ -3043,6 +3046,9 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.HasIndex("IssueDate");
 
                     b.HasIndex("IssuerCompanyId");
+
+                    b.HasIndex("LinkedInvoiceId")
+                        .HasFilter("[LinkedInvoiceId] IS NOT NULL");
 
                     b.HasIndex("SourceDeliveryNoteId")
                         .HasFilter("[SourceDeliveryNoteId] IS NOT NULL");

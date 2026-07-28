@@ -171,17 +171,39 @@ public sealed class SubmitInvoiceCommandHandler
                 "Reserved invoice number {Number} for draft {DraftId}",
                 invoiceNumber.Value, draft.Id);
 
-            // 9. Create invoice
-            var invoiceResult = Invoice.Create(
-                invoiceNumber,
-                client,
-                metadata.IssueDate,
-                metadata.DueDate,
-                metadata.InternalReference,
-                notes: null,
-                paymentTerms: draft.GetPaymentLegal()?.PaymentTerms,
-                warehouseId: metadata.WarehouseId,
-                type: draft.Type);
+            // 9. Create invoice — un avoir porte le lien vers la facture rectifiée, jusqu'ici
+            //    présent dans les métadonnées du brouillon mais jamais reporté sur l'agrégat.
+            Result<Invoice> invoiceResult;
+            if (draft.Type == InvoiceType.CreditNote)
+            {
+                if (metadata.LinkedInvoiceId is not { } linkedInvoiceId || linkedInvoiceId == Guid.Empty)
+                    return FailSubmission(draft,
+                        Error.Validation("LinkedInvoiceId", "La facture d'origine est obligatoire pour un avoir"));
+
+                invoiceResult = Invoice.CreateCreditNote(
+                    invoiceNumber,
+                    client,
+                    metadata.IssueDate,
+                    linkedInvoiceId,
+                    metadata.DueDate,
+                    metadata.InternalReference,
+                    notes: null,
+                    paymentTerms: draft.GetPaymentLegal()?.PaymentTerms,
+                    warehouseId: metadata.WarehouseId);
+            }
+            else
+            {
+                invoiceResult = Invoice.Create(
+                    invoiceNumber,
+                    client,
+                    metadata.IssueDate,
+                    metadata.DueDate,
+                    metadata.InternalReference,
+                    notes: null,
+                    paymentTerms: draft.GetPaymentLegal()?.PaymentTerms,
+                    warehouseId: metadata.WarehouseId,
+                    type: draft.Type);
+            }
 
             if (invoiceResult.IsFailure)
                 return FailSubmission(draft, invoiceResult.Error);

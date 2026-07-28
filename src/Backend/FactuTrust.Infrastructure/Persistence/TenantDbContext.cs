@@ -733,6 +733,11 @@ public partial class TenantDbContext : DbContext
             entity.HasIndex(i => i.SourceDeliveryNoteId)
                 .HasFilter("[SourceDeliveryNoteId] IS NOT NULL");
 
+            // Lien avoir → facture rectifiée. Index filtré : seuls les avoirs sont indexés.
+            entity.Property(i => i.LinkedInvoiceId);
+            entity.HasIndex(i => i.LinkedInvoiceId)
+                .HasFilter("[LinkedInvoiceId] IS NOT NULL");
+
             entity.Property(i => i.IssuerCompanyId);
 
             entity.Property(i => i.ElectronicInvoiceTtn)

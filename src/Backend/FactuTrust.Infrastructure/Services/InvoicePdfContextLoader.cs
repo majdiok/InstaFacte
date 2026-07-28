@@ -9,13 +9,16 @@ public sealed class InvoicePdfContextLoader : IInvoicePdfContextLoader
 {
     private readonly ICompanyRepository _companyRepository;
     private readonly IQuoteRepository _quoteRepository;
+    private readonly IInvoiceRepository _invoiceRepository;
 
     public InvoicePdfContextLoader(
         ICompanyRepository companyRepository,
-        IQuoteRepository quoteRepository)
+        IQuoteRepository quoteRepository,
+        IInvoiceRepository invoiceRepository)
     {
         _companyRepository = companyRepository;
         _quoteRepository = quoteRepository;
+        _invoiceRepository = invoiceRepository;
     }
 
     public async Task<InvoicePdfContext> LoadAsync(Invoice invoice, CancellationToken cancellationToken = default)
@@ -33,6 +36,15 @@ public sealed class InvoicePdfContextLoader : IInvoicePdfContextLoader
             quoteNumber = quote?.Number.Value;
         }
 
-        return new InvoicePdfContext(invoice, issuer, quoteNumber);
+        // Numéro de la facture rectifiée : imprimé sur le PDF de l'avoir (exigence de
+        // traçabilité — une facture rectificative doit référencer la facture d'origine).
+        string? linkedInvoiceNumber = null;
+        if (invoice.LinkedInvoiceId.HasValue)
+        {
+            var linked = await _invoiceRepository.GetByIdAsync(invoice.LinkedInvoiceId.Value, cancellationToken);
+            linkedInvoiceNumber = linked?.Number.Value;
+        }
+
+        return new InvoicePdfContext(invoice, issuer, quoteNumber, linkedInvoiceNumber);
     }
 }

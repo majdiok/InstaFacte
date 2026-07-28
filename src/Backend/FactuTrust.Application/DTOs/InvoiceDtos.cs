@@ -154,6 +154,11 @@ public sealed record InvoiceDetailDto
     public Guid? WarehouseId { get; init; }
     public string? WarehouseName { get; init; }
 
+    /// <summary>Facture rectifiée par cet avoir (null hors avoir, ou avoir historique).</summary>
+    public Guid? LinkedInvoiceId { get; init; }
+    /// <summary>Numéro de la facture rectifiée, pour affichage et impression.</summary>
+    public string? LinkedInvoiceNumber { get; init; }
+
     public DateTime CreatedAt { get; init; }
     public DateTime? UpdatedAt { get; init; }
 }

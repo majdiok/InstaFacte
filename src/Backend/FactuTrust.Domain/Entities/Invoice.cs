@@ -77,6 +77,14 @@ public sealed class Invoice : AggregateRoot
     public Guid? SourceDeliveryNoteId { get; private set; }
 
     /// <summary>
+    /// Facture rectifiée par cet avoir. Obligatoire à la création d'un nouvel avoir : une
+    /// facture rectificative doit référencer la facture d'origine.
+    /// Reste nullable pour ne pas invalider les avoirs historiques, émis avant que le lien
+    /// ne soit persisté (il ne vivait alors que dans le JSON du brouillon).
+    /// </summary>
+    public Guid? LinkedInvoiceId { get; private set; }
+
+    /// <summary>
     /// Issuing company (seller) for PDF/branding. When null, the tenant default company is used at render time.
     /// </summary>
     public Guid? IssuerCompanyId { get; private set; }
@@ -203,6 +211,36 @@ public sealed class Invoice : AggregateRoot
             return result;
 
         result.Value.SourceDeliveryNoteId = sourceDeliveryNoteId;
+        return result;
+    }
+
+    /// <summary>
+    /// Creates a credit note (facture d'avoir) rectifying <paramref name="linkedInvoiceId"/>.
+    /// Le lien vers la facture d'origine est obligatoire : c'est une exigence de traçabilité
+    /// fiscale, et le PDF de l'avoir l'imprime.
+    /// </summary>
+    public static Result<Invoice> CreateCreditNote(
+        InvoiceNumber number,
+        Client client,
+        DateTime issueDate,
+        Guid linkedInvoiceId,
+        DateTime? dueDate = null,
+        string? reference = null,
+        string? notes = null,
+        string? paymentTerms = null,
+        Guid? warehouseId = null)
+    {
+        if (linkedInvoiceId == Guid.Empty)
+            return Result.Failure<Invoice>(Error.Validation("LinkedInvoiceId", "La facture d'origine est obligatoire pour un avoir"));
+
+        var result = Create(
+            number, client, issueDate, dueDate, reference, notes, paymentTerms, warehouseId,
+            type: InvoiceType.CreditNote);
+
+        if (result.IsFailure)
+            return result;
+
+        result.Value.LinkedInvoiceId = linkedInvoiceId;
         return result;
     }
 

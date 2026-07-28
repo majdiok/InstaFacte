@@ -39,6 +39,14 @@ public sealed class GetInvoiceByIdQueryHandler : IRequestHandler<GetInvoiceByIdQ
         // Remaining magnitude — UI always shows a positive "amount still due/to refund".
         var remainingAmount = Math.Max(0m, Math.Abs(invoice.TotalAmount.Amount) - totalPaid);
 
+        // Numéro de la facture rectifiée (avoirs uniquement) — affiché au détail et imprimé.
+        string? linkedInvoiceNumber = null;
+        if (invoice.LinkedInvoiceId.HasValue)
+        {
+            var linked = await _invoiceRepository.GetByIdAsync(invoice.LinkedInvoiceId.Value, cancellationToken);
+            linkedInvoiceNumber = linked?.Number.Value;
+        }
+
         var vatBreakdown = invoice.GetVatBreakdown();
 
         var dto = new InvoiceDetailDto
@@ -62,6 +70,8 @@ public sealed class GetInvoiceByIdQueryHandler : IRequestHandler<GetInvoiceByIdQ
             },
             WarehouseId = invoice.WarehouseId,
             WarehouseName = invoice.Warehouse?.Name,
+            LinkedInvoiceId = invoice.LinkedInvoiceId,
+            LinkedInvoiceNumber = linkedInvoiceNumber,
             Reference = invoice.Reference,
             Notes = invoice.Notes,
             PaymentTerms = invoice.PaymentTerms,

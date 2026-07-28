@@ -116,6 +116,10 @@ public static class DocumentRenderMappers
         if (!string.IsNullOrWhiteSpace(ctx.SourceQuoteNumber))
             notes.Add($"Basé sur devis : {ctx.SourceQuoteNumber}");
 
+        // Mention obligatoire sur un avoir : la facture qu'il rectifie.
+        if (isCredit && !string.IsNullOrWhiteSpace(ctx.LinkedInvoiceNumber))
+            meta.Add(new("Facture rectifiée", ctx.LinkedInvoiceNumber!));
+
         return new DocumentRenderModel
         {
             DocumentType = isCredit ? PrintableDocumentType.CreditNote : PrintableDocumentType.SalesInvoice,
