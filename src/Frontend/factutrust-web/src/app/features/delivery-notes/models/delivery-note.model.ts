@@ -60,6 +60,15 @@ export interface DeliveryNoteLineDto {
   totalTTC: number;
   isFullyDelivered: boolean;
   notes?: string;
+  /** Remise de ligne en % (null = aucune). Reprise telle quelle sur la facture générée. */
+  discountPercent?: number | null;
+  /** Montant de la remise sur la quantité commandée. */
+  discountAmount: number;
+  /** Assujettissement FODEC figé à la création de la ligne. */
+  isFodecApplicable: boolean;
+  fodecRatePercent: number;
+  /** FODEC sur la quantité commandée (assiette : HT après remise). */
+  fodecAmount: number;
 }
 
 /**
@@ -105,6 +114,8 @@ export interface CreateDeliveryNoteLineDto {
   productId: string;
   orderedQuantity: number;
   notes?: string;
+  /** Remise de ligne en % (0–100). Omise = aucune remise. */
+  discountPercent?: number | null;
 }
 
 /**

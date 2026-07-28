@@ -115,10 +115,14 @@ public sealed class GenerateInvoiceFromDeliveryNoteCommandHandler
 
             var snapshotPrice = Money.Create(blLine.UnitPriceHT);
 
+            // Remise et taux FODEC repris du BL : sans eux, la facture générée ignorait la
+            // remise négociée à la livraison et pouvait diverger du bon signé par le client.
             var addLineResult = invoice.AddLine(
                 product,
                 blLine.DeliveredQuantity,
-                snapshotPrice);
+                snapshotPrice,
+                blLine.DiscountPercent,
+                blLine.FodecRatePercent);
 
             if (addLineResult.IsFailure)
                 return Result.Failure<Guid>(addLineResult.Error);

@@ -267,14 +267,20 @@ public static class DocumentRenderMappers
             UnitPriceHt = l.UnitPriceHT,
             VatLabel = VatLineLabel(l.VatRatePercent),
             VatRatePercent = l.VatRatePercent,
+            DiscountPercent = l.DiscountPercent,
             LineTotalHt = l.TotalHT,
             OrderedQuantity = l.OrderedQuantity,
             DeliveredQuantity = l.DeliveredQuantity
         }).ToList();
 
+        // Assiette TVA = HT après remise + FODEC, comme sur la facture (cf. FromInvoice).
         var vatBreakdown = dn.Lines
             .GroupBy(l => l.VatRatePercent).OrderBy(g => g.Key)
-            .Select(g => new VatBreakdownLine(VatGroupLabel(g.Key), g.Key, g.Sum(x => x.TotalHT), g.Sum(x => x.TotalVAT)))
+            .Select(g => new VatBreakdownLine(
+                VatGroupLabel(g.Key),
+                g.Key,
+                g.Sum(x => x.TotalHT + x.FodecAmount),
+                g.Sum(x => x.TotalVAT)))
             .ToList();
 
         var meta = new List<DocumentMetaItem>
@@ -301,8 +307,10 @@ public static class DocumentRenderMappers
             MetaItems = meta,
             Lines = lines,
             ShowDeliveryQuantities = true,
+            ShowDiscountColumn = lines.Any(l => l.DiscountPercent is > 0),
             SubTotal = dn.TotalHT,
             VatBreakdown = vatBreakdown,
+            Fodec = dn.TotalFodec,
             Total = dn.TotalTTC,
             Currency = "TND",
             AmountInWords = PdfRenderHelpers.FormatAmountInFrench(dn.TotalTTC),

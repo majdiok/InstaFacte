@@ -158,6 +158,7 @@ import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDel
                     <th class="text-right">Qté Comm.</th>
                     <th class="text-right">Qté Livrée</th>
                     <th class="text-right">Qté Rejetée</th>
+                    <th class="text-right">Remise</th>
                     <th class="text-right">TVA</th>
                     <th class="text-right">Total HT</th>
                     <th class="text-right">Total TTC</th>
@@ -185,6 +186,13 @@ import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDel
                           <i class="pi pi-info-circle" [pTooltip]="line.rejectionReason"></i>
                         }
                       </td>
+                      <td class="text-right mono">
+                        @if (line.discountPercent) {
+                          {{ line.discountPercent | number:'1.0-2' }}%
+                        } @else {
+                          —
+                        }
+                      </td>
                       <td class="text-right mono">{{ line.vatRatePercent }}%</td>
                       <td class="text-right mono">{{ line.totalHT | currency:'EUR':'symbol':'1.2-2' }}</td>
                       <td class="text-right mono">{{ line.totalTTC | currency:'EUR':'symbol':'1.2-2' }}</td>
@@ -198,6 +206,12 @@ import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDel
                   <span>Total HT</span>
                   <span class="mono">{{ deliveryNote()!.totalHT | currency:'EUR':'symbol':'1.2-2' }}</span>
                 </div>
+                @if (totalFodec() > 0) {
+                  <div class="total-row">
+                    <span>FODEC</span>
+                    <span class="mono">{{ totalFodec() | currency:'EUR':'symbol':'1.2-2' }}</span>
+                  </div>
+                }
                 <div class="total-row">
                   <span>Total TVA</span>
                   <span class="mono">{{ deliveryNote()!.totalVAT | currency:'EUR':'symbol':'1.2-2' }}</span>
@@ -898,6 +912,10 @@ export class DeliveryNoteDetailComponent implements OnInit {
       { label: note?.number || 'Bon de livraison' }
     ];
   });
+
+  /** FODEC agrégé du bon (0 si aucune ligne n'y est assujettie). */
+  totalFodec = computed<number>(() =>
+    (this.deliveryNote()?.lines ?? []).reduce((sum, line) => sum + (line.fodecAmount ?? 0), 0));
 
   ngOnInit(): void {
     const id = this.route.snapshot.paramMap.get('id');

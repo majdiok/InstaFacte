@@ -102,7 +102,12 @@ public sealed class DeliveryNote : AggregateRoot
         return Result.Success(deliveryNote);
     }
 
-    public Result AddLine(Product product, decimal orderedQuantity, string? notes = null)
+    public Result AddLine(
+        Product product,
+        decimal orderedQuantity,
+        string? notes = null,
+        decimal? discountPercent = null,
+        decimal fodecRatePercent = DeliveryNoteLine.DefaultFodecRatePercent)
     {
         if (!Status.CanBeEdited())
             return Result.Failure(Error.Validation("Status", "Ce bon de livraison ne peut plus être modifié"));
@@ -112,7 +117,8 @@ public sealed class DeliveryNote : AggregateRoot
 
         var lineNumber = _lines.Count + 1;
 
-        var lineResult = DeliveryNoteLine.Create(this, lineNumber, product, orderedQuantity, notes);
+        var lineResult = DeliveryNoteLine.Create(
+            this, lineNumber, product, orderedQuantity, notes, discountPercent, fodecRatePercent);
         if (lineResult.IsFailure)
             return Result.Failure(lineResult.Error);
 
@@ -136,7 +142,11 @@ public sealed class DeliveryNote : AggregateRoot
         return Result.Success();
     }
 
-    public Result UpdateLine(Guid lineId, decimal orderedQuantity, string? notes = null)
+    public Result UpdateLine(
+        Guid lineId,
+        decimal orderedQuantity,
+        string? notes = null,
+        decimal? discountPercent = null)
     {
         if (!Status.CanBeEdited())
             return Result.Failure(Error.Validation("Status", "Ce bon de livraison ne peut plus être modifié"));
@@ -145,7 +155,7 @@ public sealed class DeliveryNote : AggregateRoot
         if (line is null)
             return Result.Failure(Error.NotFound("DeliveryNoteLine", lineId));
 
-        return line.Update(orderedQuantity, notes);
+        return line.Update(orderedQuantity, notes, discountPercent);
     }
 
     /// <summary>
@@ -342,9 +352,14 @@ public sealed class DeliveryNote : AggregateRoot
     public decimal TotalDeliveredQuantity => _lines.Sum(l => l.DeliveredQuantity);
 
     /// <summary>
-    /// Aggregate total HT (sum of all line TotalHT).
+    /// Aggregate total HT (sum of all line TotalHT, remises déduites).
     /// </summary>
     public decimal TotalHT => _lines.Sum(l => l.TotalHT);
+
+    /// <summary>
+    /// Aggregate FODEC (sum of all line FodecAmount).
+    /// </summary>
+    public decimal TotalFodec => _lines.Sum(l => l.FodecAmount);
 
     /// <summary>
     /// Aggregate total VAT (sum of all line TotalVAT).
@@ -352,7 +367,7 @@ public sealed class DeliveryNote : AggregateRoot
     public decimal TotalVAT => _lines.Sum(l => l.TotalVAT);
 
     /// <summary>
-    /// Aggregate total TTC (sum of all line TotalTTC).
+    /// Aggregate total TTC (sum of all line TotalTTC, FODEC inclus).
     /// </summary>
     public decimal TotalTTC => _lines.Sum(l => l.TotalTTC);
 }

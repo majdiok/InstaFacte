@@ -54,6 +54,22 @@ public sealed class DeliveryNoteLine : Entity
     public int VatRatePercent { get; private set; }
 
     /// <summary>
+    /// Line discount in percent (0–100), négociée à la livraison. <c>null</c> = pas de remise.
+    /// Propagée telle quelle à la facture générée depuis ce bon de livraison.
+    /// </summary>
+    public decimal? DiscountPercent { get; private set; }
+
+    /// <summary>
+    /// Snapshot of <see cref="Product.IsFodecApplicable"/> at creation time.
+    /// </summary>
+    public bool IsFodecApplicable { get; private set; }
+
+    /// <summary>
+    /// FODEC rate in percent applied when <see cref="IsFodecApplicable"/> is true (1 % par défaut).
+    /// </summary>
+    public decimal FodecRatePercent { get; private set; }
+
+    /// <summary>
     /// Quantity ordered/expected to be delivered.
     /// </summary>
     public decimal OrderedQuantity { get; private set; }
@@ -85,7 +101,9 @@ public sealed class DeliveryNoteLine : Entity
         int lineNumber,
         Product product,
         decimal orderedQuantity,
-        string? notes = null)
+        string? notes = null,
+        decimal? discountPercent = null,
+        decimal fodecRatePercent = DefaultFodecRatePercent)
     {
         if (product is null)
             return Result.Failure<DeliveryNoteLine>(
@@ -98,6 +116,12 @@ public sealed class DeliveryNoteLine : Entity
         if (product.UnitPrice.Amount <= 0)
             return Result.Failure<DeliveryNoteLine>(
                 Error.Validation("UnitPrice", "Le prix unitaire du produit doit être supérieur à zéro"));
+
+        // Même règle que InvoiceLine.Create : le plafond catalogue du produit
+        // (Product.MaxDiscountPercent) reste contrôlé par la couche applicative.
+        if (discountPercent.HasValue && (discountPercent.Value < 0 || discountPercent.Value > 100))
+            return Result.Failure<DeliveryNoteLine>(
+                Error.Validation("DiscountPercent", "La remise doit être comprise entre 0% et 100%"));
 
         var line = new DeliveryNoteLine
         {
@@ -115,7 +139,10 @@ public sealed class DeliveryNoteLine : Entity
             OrderedQuantity = orderedQuantity,
             DeliveredQuantity = 0,
             RejectedQuantity = 0,
-            Notes = notes?.Trim()
+            Notes = notes?.Trim(),
+            DiscountPercent = discountPercent,
+            IsFodecApplicable = product.IsFodecApplicable,
+            FodecRatePercent = fodecRatePercent
         };
 
         return Result.Success(line);
@@ -124,7 +151,7 @@ public sealed class DeliveryNoteLine : Entity
     /// <summary>
     /// Updates only the editable fields (quantity, notes). Product snapshot is immutable.
     /// </summary>
-    public Result Update(decimal orderedQuantity, string? notes = null)
+    public Result Update(decimal orderedQuantity, string? notes = null, decimal? discountPercent = null)
     {
         if (!DeliveryNote.Status.CanBeEdited())
             return Result.Failure(Error.Validation("Status", "Ce bon de livraison ne peut plus être modifié"));
@@ -132,8 +159,12 @@ public sealed class DeliveryNoteLine : Entity
         if (orderedQuantity <= 0)
             return Result.Failure(Error.Validation("OrderedQuantity", "La quantité doit être supérieure à zéro"));
 
+        if (discountPercent.HasValue && (discountPercent.Value < 0 || discountPercent.Value > 100))
+            return Result.Failure(Error.Validation("DiscountPercent", "La remise doit être comprise entre 0% et 100%"));
+
         OrderedQuantity = orderedQuantity;
         Notes = notes?.Trim();
+        DiscountPercent = discountPercent;
 
         return Result.Success();
     }
@@ -177,30 +208,72 @@ public sealed class DeliveryNoteLine : Entity
         LineNumber = lineNumber;
     }
 
-    /// <summary>
-    /// Computed total HT for this line (UnitPriceHT × OrderedQuantity).
-    /// </summary>
-    public decimal TotalHT => Math.Round(UnitPriceHT * OrderedQuantity, 3);
+    // ─────────────────────────── Moteur de calcul de la ligne ───────────────────────────
+    //
+    // Rigoureusement aligné sur InvoiceLine.Calculate() : remise → FODEC → base TVA, avec un
+    // arrondi au millime à CHAQUE étape (Money arrondit à 3 décimales à chaque opération).
+    // C'est ce qui garantit que le BL et la facture qu'il engendre affichent les mêmes
+    // montants, au millime près. Les montants ne sont pas persistés : seuls les paramètres
+    // le sont, si bien qu'un changement de quantité ne peut pas laisser un total périmé.
+
+    /// <summary>Taux FODEC par défaut (1 %), aligné sur <see cref="Invoice.AddLine"/>.</summary>
+    public const decimal DefaultFodecRatePercent = 1.0m;
+
+    /// <summary>Montant de la remise sur la quantité commandée.</summary>
+    public decimal DiscountAmount => DiscountFor(OrderedQuantity);
 
     /// <summary>
-    /// Computed total VAT for this line.
+    /// Computed total HT for this line (UnitPriceHT × OrderedQuantity, remise déduite).
     /// </summary>
-    public decimal TotalVAT => Math.Round(TotalHT * VatRatePercent / 100m, 3);
+    public decimal TotalHT => SubTotalFor(OrderedQuantity);
+
+    /// <summary>FODEC sur la quantité commandée (assiette : HT après remise).</summary>
+    public decimal FodecAmount => FodecFor(OrderedQuantity);
 
     /// <summary>
-    /// Computed total TTC for this line (HT + VAT).
+    /// Computed total VAT for this line. Assiette = HT après remise + FODEC.
     /// </summary>
-    public decimal TotalTTC => Math.Round(TotalHT + TotalVAT, 3);
+    public decimal TotalVAT => VatFor(OrderedQuantity);
+
+    /// <summary>
+    /// Computed total TTC for this line (HT + FODEC + VAT).
+    /// </summary>
+    public decimal TotalTTC => Math.Round(TotalHT + FodecAmount + TotalVAT, 3);
 
     /// <summary>
     /// Total HT based on delivered quantity only — used for invoicing.
     /// </summary>
-    public decimal DeliveredTotalHT => Math.Round(UnitPriceHT * DeliveredQuantity, 3);
+    public decimal DeliveredTotalHT => SubTotalFor(DeliveredQuantity);
+
+    /// <summary>FODEC sur la quantité livrée — base de la facturation.</summary>
+    public decimal DeliveredFodecAmount => FodecFor(DeliveredQuantity);
+
+    /// <summary>TVA sur la quantité livrée — base de la facturation.</summary>
+    public decimal DeliveredTotalVAT => VatFor(DeliveredQuantity);
 
     /// <summary>
     /// Total TTC based on delivered quantity only — used for invoicing.
     /// </summary>
-    public decimal DeliveredTotalTTC => Math.Round(DeliveredTotalHT * (1 + VatRatePercent / 100m), 3);
+    public decimal DeliveredTotalTTC =>
+        Math.Round(DeliveredTotalHT + DeliveredFodecAmount + DeliveredTotalVAT, 3);
+
+    private decimal GrossFor(decimal quantity) => Math.Round(UnitPriceHT * quantity, 3);
+
+    private decimal DiscountFor(decimal quantity) =>
+        DiscountPercent is > 0
+            ? Math.Round(GrossFor(quantity) * DiscountPercent.Value / 100m, 3)
+            : 0m;
+
+    private decimal SubTotalFor(decimal quantity) =>
+        Math.Round(GrossFor(quantity) - DiscountFor(quantity), 3);
+
+    private decimal FodecFor(decimal quantity) =>
+        IsFodecApplicable && FodecRatePercent > 0
+            ? Math.Round(SubTotalFor(quantity) * FodecRatePercent / 100m, 3)
+            : 0m;
+
+    private decimal VatFor(decimal quantity) =>
+        Math.Round(Math.Round(SubTotalFor(quantity) + FodecFor(quantity), 3) * VatRatePercent / 100m, 3);
 
     /// <summary>
     /// Returns true if all ordered quantity was delivered.

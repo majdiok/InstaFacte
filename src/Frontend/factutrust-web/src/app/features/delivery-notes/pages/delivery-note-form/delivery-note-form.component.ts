@@ -41,6 +41,7 @@ interface LineRow {
   unit: string; // Read-only snapshot
   unitPriceHT: number; // Read-only snapshot for display
   vatRatePercent: number; // Read-only snapshot for display
+  discountPercent: number | null; // Remise de ligne, propagée à la facture générée
   notes: string;
 }
 
@@ -157,12 +158,13 @@ interface LineRow {
             <table class="lines-table">
               <thead>
                 <tr>
-                  <th style="width: 25%">Article (Recherche) *</th>
-                  <th style="width: 20%">Désignation</th>
+                  <th style="width: 23%">Article (Recherche) *</th>
+                  <th style="width: 17%">Désignation</th>
                   <th style="width: 10%">Qté *</th>
-                  <th style="width: 10%">Unité</th>
+                  <th style="width: 8%">Unité</th>
                   <th style="width: 10%">P.U. HT</th>
-                  <th style="width: 10%">Total HT</th>
+                  <th style="width: 9%">Remise %</th>
+                  <th style="width: 13%">Total HT</th>
                   <th style="width: 10%"></th>
                 </tr>
               </thead>
@@ -235,8 +237,21 @@ interface LineRow {
                       </div>
                     </td>
                     <td>
+                      <p-inputNumber
+                        [(ngModel)]="line.discountPercent"
+                        [ngModelOptions]="{ standalone: true }"
+                        [min]="0"
+                        [max]="100"
+                        [minFractionDigits]="0"
+                        [maxFractionDigits]="2"
+                        mode="decimal"
+                        placeholder="0"
+                        class="w-full">
+                      </p-inputNumber>
+                    </td>
+                    <td>
                       <div class="text-right px-2 font-bold">
-                        {{ (line.unitPriceHT * line.orderedQuantity) | number:'1.3-3' }}
+                        {{ lineTotalHT(line) | number:'1.3-3' }}
                       </div>
                     </td>
                     <td>
@@ -252,7 +267,7 @@ interface LineRow {
                     </td>
                   </tr>
                   <tr> <!-- Optional Second Row for Description/Notes -->
-                     <td colspan="7" class="pb-4 border-b">
+                     <td colspan="8" class="pb-4 border-b">
                         <input
                           pInputText
                           [(ngModel)]="line.notes"
@@ -265,7 +280,7 @@ interface LineRow {
               </tbody>
               <tfoot>
                  <tr>
-                    <td colspan="5" class="text-right font-bold py-3">Total HT Estimé :</td>
+                    <td colspan="6" class="text-right font-bold py-3">Total HT Estimé :</td>
                     <td class="text-right font-bold py-3">{{ totalHT() | number:'1.3-3' }} TND</td>
                     <td></td>
                  </tr>
@@ -582,6 +597,7 @@ export class DeliveryNoteFormComponent implements OnInit {
       unit: '',
       unitPriceHT: 0,
       vatRatePercent: 0,
+      discountPercent: null,
       notes: ''
     };
   }
@@ -669,8 +685,24 @@ export class DeliveryNoteFormComponent implements OnInit {
     if (this.lines.length > 1) this.lines.splice(i, 1);
   }
 
+  /**
+   * Total HT d'une ligne, remise déduite. Arrondi au millime à chaque étape pour rester
+   * aligné sur le calcul serveur (DeliveryNoteLine) et sur la facture qui en découlera.
+   */
+  lineTotalHT(line: LineRow): number {
+    const gross = this.roundMillimes(line.unitPriceHT * line.orderedQuantity);
+    const discount = line.discountPercent && line.discountPercent > 0
+      ? this.roundMillimes(gross * line.discountPercent / 100)
+      : 0;
+    return this.roundMillimes(gross - discount);
+  }
+
   totalHT(): number {
-    return this.lines.reduce((sum, line) => sum + (line.unitPriceHT * line.orderedQuantity), 0);
+    return this.lines.reduce((sum, line) => sum + this.lineTotalHT(line), 0);
+  }
+
+  private roundMillimes(value: number): number {
+    return Math.round(value * 1000) / 1000;
   }
 
   canSubmit(): boolean {
@@ -694,6 +726,7 @@ export class DeliveryNoteFormComponent implements OnInit {
         productId: l.product!.id,
         orderedQuantity: l.orderedQuantity,
         notes: l.notes?.trim() || undefined,
+        discountPercent: l.discountPercent && l.discountPercent > 0 ? l.discountPercent : null,
       }));
 
     if (lineDtos.length === 0) {

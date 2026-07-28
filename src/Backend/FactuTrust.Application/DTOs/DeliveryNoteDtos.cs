@@ -103,7 +103,12 @@ public record DeliveryNoteLineDto(
     decimal TotalVAT,
     decimal TotalTTC,
     bool IsFullyDelivered,
-    string? Notes);
+    string? Notes,
+    decimal? DiscountPercent = null,
+    decimal DiscountAmount = 0m,
+    bool IsFodecApplicable = false,
+    decimal FodecRatePercent = 0m,
+    decimal FodecAmount = 0m);
 
 /// <summary>
 /// DTO for creating a new delivery note.
@@ -128,7 +133,8 @@ public record CreateDeliveryNoteDto(
 public record CreateDeliveryNoteLineDto(
     Guid ProductId,
     decimal OrderedQuantity,
-    string? Notes);
+    string? Notes,
+    decimal? DiscountPercent = null);
 
 /// <summary>
 /// DTO for recording delivery completion.

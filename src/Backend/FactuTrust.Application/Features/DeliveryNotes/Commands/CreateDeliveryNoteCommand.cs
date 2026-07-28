@@ -181,7 +181,8 @@ public sealed class CreateDeliveryNoteCommandHandler : IRequestHandler<CreateDel
             if (!product.IsActive)
                 return Result.Failure<Guid>(Error.Validation("Produit", $"Le produit '{product.Name}' est désactivé"));
 
-            var addResult = deliveryNote.AddLine(product, lineDto.OrderedQuantity, lineDto.Notes);
+            var addResult = deliveryNote.AddLine(
+                product, lineDto.OrderedQuantity, lineDto.Notes, lineDto.DiscountPercent);
             if (addResult.IsFailure)
                 return Result.Failure<Guid>(addResult.Error);
         }

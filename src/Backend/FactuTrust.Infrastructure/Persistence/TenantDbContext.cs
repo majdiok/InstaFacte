@@ -1979,6 +1979,18 @@ public partial class TenantDbContext : DbContext
             entity.Property(l => l.VatRatePercent)
                 .IsRequired();
 
+            // Remise et FODEC : seuls les paramètres sont persistés, les montants restent
+            // calculés (DiscountAmount, FodecAmount, TotalHT… sont des propriétés dérivées).
+            entity.Property(l => l.DiscountPercent)
+                .HasPrecision(5, 2);
+
+            entity.Property(l => l.IsFodecApplicable)
+                .IsRequired();
+
+            entity.Property(l => l.FodecRatePercent)
+                .HasPrecision(5, 2)
+                .IsRequired();
+
             entity.Property(l => l.OrderedQuantity)
                 .HasPrecision(18, 4)
                 .IsRequired();

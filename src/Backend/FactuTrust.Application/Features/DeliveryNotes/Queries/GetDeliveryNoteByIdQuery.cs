@@ -49,7 +49,12 @@ public sealed class GetDeliveryNoteByIdQueryHandler : IRequestHandler<GetDeliver
             l.TotalVAT,
             l.TotalTTC,
             l.IsFullyDelivered,
-            l.Notes)).ToList();
+            l.Notes,
+            l.DiscountPercent,
+            l.DiscountAmount,
+            l.IsFodecApplicable,
+            l.FodecRatePercent,
+            l.FodecAmount)).ToList();
 
         var dto = new DeliveryNoteDetailDto(
             deliveryNote.Id,
