@@ -165,6 +165,11 @@ public record GenerateInvoiceFromDeliveryNoteDto(
 
 /// <summary>
 /// DTO for generating invoice from multiple delivery notes (group invoicing).
+///
+/// ⚠️ Aucun handler ni endpoint ne consomme encore ce contrat : la facturation groupée
+/// multi-BL (facturation périodique) est planifiée en vague 1. Conservé délibérément pour
+/// figer le contrat attendu — ne pas le prendre pour du code actif.
+/// Le drapeau <c>DeliveryNote.AllowGroupInvoicing</c> relève du même chantier.
 /// </summary>
 public record GenerateInvoiceFromDeliveryNotesDto(
     IReadOnlyList<Guid> DeliveryNoteIds,

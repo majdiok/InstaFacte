@@ -554,16 +554,12 @@ public sealed class Invoice : AggregateRoot
         }
     }
 
-    public void CheckOverdue()
-    {
-        if (DueDate.HasValue && 
-            DueDate.Value < DateTime.UtcNow.Date && 
-            (Status == InvoiceStatus.Signed || Status == InvoiceStatus.Validated))
-        {
-            Status = InvoiceStatus.Overdue;
-            AddDomainEvent(new InvoiceOverdueEvent(Id, Number.Value, DueDate.Value));
-        }
-    }
+    // Note : le dépassement d'échéance n'est PAS un changement d'état persisté. Il est calculé
+    // à la volée côté requête (GetInvoicesQuery.IsOverdue), ce qui évite d'avoir à balayer
+    // périodiquement les factures pour basculer un statut. L'ancienne méthode CheckOverdue(),
+    // jamais appelée et dont l'événement était explicitement ignoré par le DbContext, a été
+    // retirée. InvoiceStatus.Overdue reste dans l'énumération : il est lu par
+    // CanBePaymentRecorded() et par les libellés d'affichage, côté serveur comme côté client.
 
     private void RecalculateTotals()
     {

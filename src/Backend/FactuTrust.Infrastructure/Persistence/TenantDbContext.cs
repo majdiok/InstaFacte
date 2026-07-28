@@ -228,7 +228,6 @@ public partial class TenantDbContext : DbContext
         builder.Ignore<InvoicePaidEvent>();
         builder.Ignore<InvoiceCancelledEvent>();
         builder.Ignore<InvoiceArchivedEvent>();
-        builder.Ignore<InvoiceOverdueEvent>();
         builder.Ignore<QuoteCreatedEvent>();
         builder.Ignore<QuoteSentEvent>();
         builder.Ignore<QuoteAcceptedEvent>();

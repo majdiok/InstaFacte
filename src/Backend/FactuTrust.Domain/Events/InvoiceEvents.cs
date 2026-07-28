@@ -85,16 +85,5 @@ public sealed class InvoiceArchivedEvent : DomainEvent
     }
 }
 
-public sealed class InvoiceOverdueEvent : DomainEvent
-{
-    public Guid InvoiceId { get; }
-    public string InvoiceNumber { get; }
-    public DateTime DueDate { get; }
-
-    public InvoiceOverdueEvent(Guid invoiceId, string invoiceNumber, DateTime dueDate)
-    {
-        InvoiceId = invoiceId;
-        InvoiceNumber = invoiceNumber;
-        DueDate = dueDate;
-    }
-}
+// InvoiceOverdueEvent retiré (vague 0, correctif 8) : jamais produit, et explicitement ignoré
+// par le DbContext. Le dépassement d'échéance est calculé à la volée en requête.
