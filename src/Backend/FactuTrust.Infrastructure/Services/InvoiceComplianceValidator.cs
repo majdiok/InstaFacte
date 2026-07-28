@@ -868,18 +868,48 @@ public sealed class InvoiceComplianceValidator : IInvoiceComplianceValidator
         };
     }
 
+    /// <summary>
+    /// Recalcule les totaux à partir des lignes et les confronte à l'en-tête, au millime.
+    ///
+    /// Reproduit exactement <c>Invoice.RecalculateTotals()</c> :
+    /// les lignes restent positives, l'en-tête porte le signe (négatif pour un avoir), et le
+    /// TTC vaut HT + FODEC + TVA + timbre. Le timbre est déjà signé par
+    /// <c>IFiscalStampResolver</c> — il ne faut donc pas lui réappliquer le signe.
+    ///
+    /// Avant correction, cette règle ignorait le FODEC et le timbre et ne gérait pas le signe
+    /// des avoirs : elle aurait rejeté toute facture portant un timbre fiscal, soit la
+    /// quasi-totalité. Elle n'avait jamais été exécutée (ValidateInvoiceAsync était du code
+    /// mort), ce qui avait masqué le défaut.
+    /// </summary>
     private WizardValidationCheckDto CheckInvoiceCalculations(Invoice invoice)
     {
-        // Verify totals match with millime precision
-        var calculatedHT = invoice.Lines?.Sum(l => l.SubTotal.Amount) ?? 0;
-        var calculatedVat = invoice.Lines?.Sum(l => l.VatAmount.Amount) ?? 0;
-        var calculatedTTC = calculatedHT + calculatedVat;
+        var lines = invoice.Lines ?? new List<InvoiceLine>();
+        var sign = invoice.IsCreditNote ? -1m : 1m;
+
+        var calculatedHT = sign * lines.Sum(l => l.SubTotal.Amount);
+        var calculatedFodec = sign * lines.Sum(l => l.FodecAmount.Amount);
+        var calculatedVat = sign * lines.Sum(l => l.VatAmount.Amount);
+
+        // Le timbre n'est repris que s'il est exprimé dans la devise du document,
+        // exactement comme le fait Invoice.RecalculateTotals().
+        var stamp = invoice.FiscalStampAmount.Currency == invoice.SubTotal.Currency
+            ? invoice.FiscalStampAmount.Amount
+            : 0m;
+
+        var calculatedTTC = calculatedHT + calculatedFodec + calculatedVat + stamp;
 
         var htMatch = TunisianValidationRules.AmountsEqual(calculatedHT, invoice.SubTotal.Amount);
+        var fodecMatch = TunisianValidationRules.AmountsEqual(calculatedFodec, invoice.FodecAmount.Amount);
         var vatMatch = TunisianValidationRules.AmountsEqual(calculatedVat, invoice.TotalVat.Amount);
         var ttcMatch = TunisianValidationRules.AmountsEqual(calculatedTTC, invoice.TotalAmount.Amount);
 
-        var isValid = htMatch && vatMatch && ttcMatch;
+        var isValid = htMatch && fodecMatch && vatMatch && ttcMatch;
+
+        var details = new List<string>();
+        if (!htMatch) details.Add($"HT recalculé {calculatedHT:N3} ≠ {invoice.SubTotal.Amount:N3}");
+        if (!fodecMatch) details.Add($"FODEC recalculé {calculatedFodec:N3} ≠ {invoice.FodecAmount.Amount:N3}");
+        if (!vatMatch) details.Add($"TVA recalculée {calculatedVat:N3} ≠ {invoice.TotalVat.Amount:N3}");
+        if (!ttcMatch) details.Add($"TTC recalculé {calculatedTTC:N3} ≠ {invoice.TotalAmount.Amount:N3}");
 
         return new WizardValidationCheckDto
         {
@@ -888,7 +918,7 @@ public sealed class InvoiceComplianceValidator : IInvoiceComplianceValidator
             Label = "Calculs",
             Description = isValid
                 ? "Calculs vérifiés"
-                : "Incohérence dans les calculs",
+                : $"Incohérence dans les calculs : {string.Join(" ; ", details)}",
             Status = isValid ? "VALID" : "ERROR",
             IsBlocking = true,
             Field = "totals"

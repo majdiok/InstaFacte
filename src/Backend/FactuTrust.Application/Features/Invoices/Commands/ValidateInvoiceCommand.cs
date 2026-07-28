@@ -28,19 +28,22 @@ public sealed class ValidateInvoiceCommandHandler : IRequestHandler<ValidateInvo
     private readonly ITenantUnitOfWork _unitOfWork;
     private readonly ICurrentUser _currentUser;
     private readonly IAuditService _auditService;
+    private readonly IInvoiceComplianceValidator _complianceValidator;
 
     public ValidateInvoiceCommandHandler(
         IInvoiceRepository invoiceRepository,
         IAccountingService accountingService,
         ITenantUnitOfWork unitOfWork,
         ICurrentUser currentUser,
-        IAuditService auditService)
+        IAuditService auditService,
+        IInvoiceComplianceValidator complianceValidator)
     {
         _invoiceRepository = invoiceRepository;
         _accountingService = accountingService;
         _unitOfWork = unitOfWork;
         _currentUser = currentUser;
         _auditService = auditService;
+        _complianceValidator = complianceValidator;
     }
 
     public async Task<Result> Handle(ValidateInvoiceCommand request, CancellationToken cancellationToken)
@@ -51,6 +54,24 @@ public sealed class ValidateInvoiceCommandHandler : IRequestHandler<ValidateInvo
 
             if (invoice is null)
                 return Result.Failure(Error.NotFound("Facture", request.InvoiceId));
+
+            // Conformité fiscale : ce handler est le point de passage unique de tous les
+            // chemins hors assistant (création directe, conversion devis, conversion BL).
+            // L'assistant conserve sa propre validation, plus riche, au niveau du brouillon.
+            var compliance = await _complianceValidator.ValidateInvoiceAsync(invoice, ct);
+            if (!compliance.CanProceed)
+            {
+                var blocking = compliance.Checks
+                    .Where(c => c.Status == "ERROR" && c.IsBlocking)
+                    .Select(c => $"{c.Label} : {c.Description}")
+                    .ToList();
+
+                return Result.Failure(Error.Validation(
+                    "Compliance",
+                    blocking.Count > 0
+                        ? $"Facture non conforme — {string.Join(" ; ", blocking)}"
+                        : "Facture non conforme"));
+            }
 
             var validateResult = invoice.Validate();
 
