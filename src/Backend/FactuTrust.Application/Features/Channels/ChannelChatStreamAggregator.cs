@@ -15,7 +15,7 @@ public sealed record ChannelChatAggregate(string Content, string? Error, Guid? C
 ///   <item><c>error</c> — capturé (le flux peut continuer) ;</item>
 ///   <item><c>done</c> — porte le ConversationId ;</item>
 ///   <item>tout le reste (phase, tool_call_*, heartbeat, sources, suggested_prompts, dashboard,
-///     client_actions, studio_progress) — ignoré : sans équivalent sur un canal texte.</item>
+///     client_actions, studio_progress, studio_plan) — ignoré : sans équivalent sur un canal texte.</item>
 /// </list>
 /// Statique et sans dépendance : testable unitairement avec des flux synthétiques.
 /// </summary>

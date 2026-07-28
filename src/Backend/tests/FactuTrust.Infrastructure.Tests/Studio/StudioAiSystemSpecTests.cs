@@ -96,6 +96,56 @@ public sealed class StudioAiSystemSpecTests
     }
 
     [Fact]
+    public void Form_fields_accept_string_or_object_with_width_and_label()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "contrats", "displayName": "Contrats", "fields": [
+            { "label": "Nom", "type": "text" },
+            { "label": "Date de debut", "type": "date" },
+            { "label": "Montant", "type": "money" }
+          ],
+          "form": { "sections": [ { "title": "Général", "fields": [
+            "nom",
+            { "field": "date_de_debut", "width": "half" },
+            { "field": "Montant", "width": "large", "label": "  Montant TTC  " },
+            { "field": "inconnu", "width": "half" }
+          ] } ] } }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        var form = spec!.Entities[0].Form;
+        Assert.NotNull(form);
+        var fields = form!.Sections[0].Fields;
+        Assert.Equal(3, fields.Count);                        // champ inconnu ignoré, jamais d'échec
+        Assert.Equal("nom", fields[0].Key);
+        Assert.Null(fields[0].Width);                         // entrée chaîne → largeur par défaut (full)
+        Assert.Null(fields[0].LabelOverride);
+        Assert.Equal("half", fields[1].Width);
+        Assert.Null(fields[2].Width);                         // largeur invalide → défaut (full)
+        Assert.Equal("Montant TTC", fields[2].LabelOverride); // libellé nettoyé (trim)
+    }
+
+    [Fact]
+    public void Legacy_form_with_plain_string_fields_still_parses()
+    {
+        const string json = """
+        { "system": { "displayName": "T" }, "entities": [
+          { "ref": "a", "displayName": "A", "fields": [
+            { "label": "Nom", "type": "text" },
+            { "label": "Ville", "type": "text" }
+          ],
+          "form": { "sections": [ { "fields": [ "nom", "ville" ] } ] } }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var error), error);
+        var fields = spec!.Entities[0].Form!.Sections[0].Fields;
+        Assert.Equal(new[] { "nom", "ville" }, fields.Select(f => f.Key).ToArray());
+        Assert.All(fields, f => Assert.Null(f.Width));
+        Assert.All(fields, f => Assert.Null(f.LabelOverride));
+    }
+
+    [Fact]
     public void Field_with_relationTo_and_no_options_becomes_relation()
     {
         const string json = """

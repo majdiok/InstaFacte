@@ -109,7 +109,13 @@ public static class AiToolFrenchLabels
 
         // ── Studio ───────────────────────────────────────────────────────────
         ["studio_generate_app"] = "la génération d'application Studio",
-        ["studio_generate_system"] = "la génération de système Studio"
+        ["studio_generate_system"] = "la génération de système Studio",
+        ["studio_plan_app"] = "la préparation d'un plan de table Studio",
+        ["studio_plan_system"] = "la préparation d'un plan de système Studio",
+        ["studio_plan_changes"] = "la préparation d'une modification Studio",
+        ["studio_get_table_schema"] = "la lecture du schéma d'une table Studio",
+        ["studio_plan_view"] = "la préparation d'une fenêtre Studio",
+        ["studio_list_sql_tables"] = "la liste des tables consultables"
     };
 
     /// <summary>Libellé FR de l'outil, ou libellé générique si l'identifiant est inconnu.</summary>

@@ -324,7 +324,9 @@ public sealed class SendChatMessageHandler
         OllamaInferenceProfile? inferenceProfile = null;
         if (modelRef.Kind == LlmProviderKind.Ollama)
             inferenceProfile = await _inferenceProfileResolver.ResolveForPlatformAsync(cancellationToken);
-        var tools = BuildOllamaTools(assistantMode, effectiveMutationTools, toolIntent, inferenceProfile, agentScope);
+        var tools = BuildOllamaTools(assistantMode, effectiveMutationTools, toolIntent, inferenceProfile, agentScope,
+            _ollamaSettings.EnableStudioAiPlanPreview, _ollamaSettings.EnableStudioAiModifyTools,
+            _ollamaSettings.EnableStudioAiViewTools);
         // Les schémas d'outils sont injectés dans le contexte du modèle : on les compte dans
         // l'estimation de taille pour dimensionner num_ctx (sinon Ollama tronque silencieusement
         // l'invite quand de nombreux outils sont exposés → réponses dégradées / hors-sujet).
@@ -1018,6 +1020,20 @@ public sealed class SendChatMessageHandler
                         // l'afficher telle quelle après la boucle, au lieu de la paraphrase du petit modèle.
                         studioBuilderToolError = string.IsNullOrWhiteSpace(toolResult.ErrorMessage)
                             ? "La création du système a échoué."
+                            : toolResult.ErrorMessage;
+                    }
+                    // Flux plan → aperçu → confirmation : le payload du plan est poussé au client
+                    // (événement studio_plan) pour afficher la carte d'aperçu avec Valider/Annuler.
+                    if ((toolCall.Function.Name == "studio_plan_app" || toolCall.Function.Name == "studio_plan_system")
+                        && toolResult.Success && !string.IsNullOrWhiteSpace(toolResult.Data))
+                    {
+                        yield return ChatStreamEvent.StudioPlanEvent(toolResult.Data);
+                    }
+                    else if ((toolCall.Function.Name == "studio_plan_app" || toolCall.Function.Name == "studio_plan_system")
+                        && !toolResult.Success && assistantMode == AssistantMode.StudioBuilder)
+                    {
+                        studioBuilderToolError = string.IsNullOrWhiteSpace(toolResult.ErrorMessage)
+                            ? "La préparation du plan a échoué."
                             : toolResult.ErrorMessage;
                     }
                 }
@@ -1874,7 +1890,10 @@ public sealed class SendChatMessageHandler
         bool enableMutationTools,
         AiToolIntentRouter.AiToolIntent toolIntent,
         OllamaInferenceProfile? inferenceProfile,
-        AssistantAgentScope agentScope = AssistantAgentScope.None)
+        AssistantAgentScope agentScope = AssistantAgentScope.None,
+        bool studioPlanPreview = false,
+        bool studioModifyTools = false,
+        bool studioViewTools = false)
     {
         var isCpuOnly = inferenceProfile?.Device == OllamaInferenceDevice.CpuOnly;
         var isScoped = mode == AssistantMode.Default && agentScope != AssistantAgentScope.None;
@@ -1890,7 +1909,7 @@ public sealed class SendChatMessageHandler
         var useCpuIntentSubset = isCpuOnly && !isScoped && effectiveIntent is AiToolIntentRouter.AiToolIntent.Sales
             or AiToolIntentRouter.AiToolIntent.Stock
             or AiToolIntentRouter.AiToolIntent.Accounting;
-        var definitions = AiToolRegistry.GetDefinitionsForMode(mode, enableMutationTools, agentScope)
+        var definitions = AiToolRegistry.GetDefinitionsForMode(mode, enableMutationTools, agentScope, studioPlanPreview, studioModifyTools, studioViewTools)
             .Where(tool => AiToolIntentRouter.ShouldIncludeTool(
                 tool.Name,
                 effectiveIntent,

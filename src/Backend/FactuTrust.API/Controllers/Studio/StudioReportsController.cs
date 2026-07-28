@@ -1,10 +1,12 @@
 using FactuTrust.API.Authorization;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Application.Features.Studio.Reports;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace FactuTrust.API.Controllers.Studio;
 
@@ -18,8 +20,13 @@ namespace FactuTrust.API.Controllers.Studio;
 public sealed class StudioReportsController : ControllerBase
 {
     private readonly IMediator _mediator;
+    private readonly OllamaSettings _ollamaSettings;
 
-    public StudioReportsController(IMediator mediator) => _mediator = mediator;
+    public StudioReportsController(IMediator mediator, IOptions<OllamaSettings> ollamaSettings)
+    {
+        _mediator = mediator;
+        _ollamaSettings = ollamaSettings.Value;
+    }
 
     [HttpGet]
     [Authorize(Policy = PermissionPolicies.StudioDesignReports)]
@@ -102,5 +109,22 @@ public sealed class StudioReportsController : ControllerBase
         return result.IsFailure
             ? NotFound(ApiResponse<object>.Fail(result.Error.Description, result.Error.Code))
             : Ok(ApiResponse<ReportResultDto>.Ok(result.Value));
+    }
+
+    /// <summary>
+    /// Imprime un état enregistré (PDF). Même exécution que <c>run</c> : ce qui est imprimé est
+    /// exactement ce qui est affiché. Coupe-circuit : <c>Ollama:EnableStudioReportPdf</c>.
+    /// </summary>
+    [HttpGet("{id:guid}/pdf")]
+    [Authorize(Policy = PermissionPolicies.CustomReportsView)]
+    public async Task<IActionResult> ExportPdf(Guid id, CancellationToken cancellationToken)
+    {
+        if (!_ollamaSettings.EnableStudioReportPdf)
+            return NotFound(ApiResponse<object>.Fail("L'impression des états Studio est désactivée.", "Disabled"));
+
+        var result = await _mediator.Send(new ExportStudioReportPdfQuery(id), cancellationToken);
+        return result.IsFailure
+            ? NotFound(ApiResponse<object>.Fail(result.Error.Description, result.Error.Code))
+            : File(result.Value.Content, result.Value.ContentType, result.Value.FileName);
     }
 }

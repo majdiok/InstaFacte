@@ -54,7 +54,14 @@ public sealed partial class AiToolExecutor
         string? reportName = null;
         if (spec.Report is not null && _currentUser.HasPermission(Permissions.Studio.DesignReports))
         {
-            var def = new ReportDefinition { Grouping = spec.Report.Grouping, Aggregations = spec.Report.Aggregations };
+            var def = new ReportDefinition
+            {
+                Fields = spec.Report.Fields,
+                Filters = spec.Report.Filters,
+                Grouping = spec.Report.Grouping,
+                Aggregations = spec.Report.Aggregations,
+                Sort = spec.Report.Sort
+            };
             var reportReq = new SaveCustomReportRequest(null, spec.Report.DisplayName, CustomReportDataSourceKind.CustomEntity, entity.Key, def);
             var rr = await _mediator.Send(new UpsertCustomReportCommand(null, reportReq), ct);
             if (rr.IsSuccess) reportName = rr.Value.DisplayName;

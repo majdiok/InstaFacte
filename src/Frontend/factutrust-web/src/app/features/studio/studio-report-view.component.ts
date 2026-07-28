@@ -2,7 +2,9 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule, ActivatedRoute } from '@angular/router';
 import { ToastModule } from 'primeng/toast';
+import { ButtonModule } from 'primeng/button';
 import { MessageService } from 'primeng/api';
+import { PrintPreviewService } from '@core/services/print-preview.service';
 import { DynamicReportComponent } from '@shared/studio-runtime/dynamic-report.component';
 import { StudioService } from './studio.service';
 import { ReportResult } from './studio.models';
@@ -13,33 +15,59 @@ import { BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.compone
 @Component({
   selector: 'app-studio-report-view',
   standalone: true,
-  imports: [CommonModule, RouterModule, ToastModule, DynamicReportComponent, StudioPageShellComponent],
+  imports: [CommonModule, RouterModule, ToastModule, ButtonModule, DynamicReportComponent, StudioPageShellComponent],
   template: `
     <p-toast></p-toast>
     <app-studio-page-shell
       [title]="reportName()"
       subtitle="Rapport analytique — consultation et export."
       [breadcrumbs]="breadcrumbs()">
+      <div class="srv-actions">
+        <button pButton type="button" class="p-button-outlined p-button-sm"
+          icon="fa-solid fa-file-pdf" label="Imprimer (PDF)"
+          [disabled]="loading() || exporting() || !result()" (click)="exportPdf()"></button>
+      </div>
       <app-dynamic-report
         [result]="result()"
         [loading]="loading()"
         [exportName]="reportName()" />
     </app-studio-page-shell>
   `,
+  styles: [`.srv-actions { display: flex; justify-content: flex-end; margin-bottom: .5rem; }`],
   styleUrl: './shared/studio-layout.scss',
 })
 export class StudioReportViewComponent implements OnInit {
   private readonly studio = inject(StudioService);
   private readonly toast = inject(MessageService);
   private readonly route = inject(ActivatedRoute);
+  private readonly printPreview = inject(PrintPreviewService);
 
   readonly result = signal<ReportResult | null>(null);
   readonly loading = signal(true);
+  readonly exporting = signal(false);
   readonly reportName = signal('Rapport');
   readonly breadcrumbs = signal<BreadcrumbItem[]>(STUDIO_BREADCRUMBS.reportView('Rapport'));
 
+  private reportId = '';
+
+  exportPdf(): void {
+    if (!this.reportId || this.exporting()) return;
+    this.exporting.set(true);
+    this.studio.exportReportPdf(this.reportId).subscribe({
+      next: blob => {
+        this.exporting.set(false);
+        this.printPreview.openPdfForPrintPreview(blob, `${this.reportName()}.pdf`);
+      },
+      error: () => {
+        this.exporting.set(false);
+        this.toast.add({ severity: 'error', summary: 'Erreur', detail: "L'édition PDF a échoué." });
+      }
+    });
+  }
+
   ngOnInit(): void {
     const id = this.route.snapshot.paramMap.get('id') ?? '';
+    this.reportId = id;
     this.studio.getReport(id).subscribe({
       next: res => {
         if (res.success && res.data) {

@@ -18,6 +18,14 @@ public interface IPdfService
     /// <summary>Génère le PDF NCT filtré (dialogue États financiers) avec notes détaillées compte/compte.</summary>
     Task<byte[]> GenerateNctLiassePdfAsync(NctLiasseExportView exportView, string companyName, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Génère le PDF d'un état Studio (low-code). Rendu GÉNÉRIQUE piloté par le seul
+    /// <c>ReportResultDto</c> : colonnes dimension/mesure, lignes, totaux — donc tout état créé dans
+    /// le Studio (y compris par l'IA) devient imprimable sans rendu dédié.
+    /// </summary>
+    Task<byte[]> GenerateStudioReportPdfAsync(
+        Features.Studio.Common.StudioReportPdfContext context, CancellationToken cancellationToken = default);
+
     // ── États comptables cœur & complémentaires (rendu tabulaire professionnel) ────────────
 
     /// <summary>Génère le PDF du journal, regroupé par code journal, avec sous-totaux et total général.</summary>

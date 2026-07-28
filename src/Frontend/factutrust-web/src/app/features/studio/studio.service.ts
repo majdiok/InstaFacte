@@ -166,6 +166,11 @@ export class StudioService {
     return this.http.get<ApiResponse<ReportResult>>(`${this.base}/reports/${id}/run`);
   }
 
+  /** Édition PDF d'un état enregistré (même exécution que `runReport`, rendue par QuestPDF). */
+  exportReportPdf(id: string): Observable<Blob> {
+    return this.http.get(`${this.base}/reports/${id}/pdf`, { responseType: 'blob' });
+  }
+
   // ---- SQL schema introspection (read-only) ----
   listSchemaTables(): Observable<ApiResponse<SqlTable[]>> {
     return this.http.get<ApiResponse<SqlTable[]>>(`${this.base}/schema/tables`);

@@ -12,7 +12,9 @@ public static class StudioTextToolCallRecovery
     private static readonly HashSet<string> RecoverableTools = new(StringComparer.Ordinal)
     {
         "studio_generate_system",
-        "studio_generate_app"
+        "studio_generate_app",
+        "studio_plan_system",
+        "studio_plan_app"
     };
 
     /// <summary>

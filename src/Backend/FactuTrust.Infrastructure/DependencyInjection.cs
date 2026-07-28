@@ -257,6 +257,9 @@ public static class DependencyInjection
         // ERP bridge (Studio automations).
         services.AddScoped<ICustomAutomationRepository, Repositories.Studio.CustomAutomationRepository>();
         services.AddScoped<IStudioBridgeExecutor, Services.Studio.StudioBridgeExecutor>();
+        // Studio IA — plans « aperçu → confirmation » (flux EnableStudioAiPlanPreview).
+        services.AddScoped<IStudioAiBuildPlanRepository, Repositories.Studio.StudioAiBuildPlanRepository>();
+        services.AddScoped<FactuTrust.Application.Features.Studio.Ai.IStudioAiPlanExecutor, Services.Studio.StudioAiPlanExecutor>();
         services.AddScoped<IDocumentTemplateResolver, DocumentTemplateResolver>();
         services.AddScoped<ISignatureService, SignatureService>();
         services.AddScoped<IAuditService, AuditService>();

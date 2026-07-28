@@ -12,7 +12,11 @@ export interface ChatStreamEvent {
     | 'sources'
     | 'phase'
     | 'dashboard'
-    | 'studio_progress';
+    | 'studio_progress'
+    /** Plan Studio en attente de validation utilisateur (flux aperçu → confirmation). */
+    | 'studio_plan'
+    /** Résultat final d'un plan Studio exécuté (émis par l'endpoint de confirmation). */
+    | 'studio_result';
   content?: string;
   toolName?: string;
   toolCallId?: string;

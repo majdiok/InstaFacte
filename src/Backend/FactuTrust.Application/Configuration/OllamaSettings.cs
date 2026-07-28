@@ -247,6 +247,35 @@ public sealed class OllamaSettings
     /// </summary>
     public bool EnableStudioSystemGeneration { get; set; } = true;
 
+    /// <summary>
+    /// Flux « plan → aperçu → confirmation » du Studio IA : quand true, le mode StudioBuilder expose
+    /// les outils <c>studio_plan_*</c> (l'IA prépare un plan validé par l'utilisateur, exécuté via un
+    /// endpoint REST déterministe) à la place de la génération directe. False (défaut) = comportement
+    /// historique strictement inchangé.
+    /// </summary>
+    public bool EnableStudioAiPlanPreview { get; set; }
+
+    /// <summary>
+    /// Outils de MODIFICATION d'artefacts Studio existants (<c>studio_plan_changes</c>,
+    /// <c>studio_get_table_schema</c>). Sans effet si <see cref="EnableStudioAiPlanPreview"/> est false :
+    /// une modification ne s'applique jamais sans aperçu validé. False (défaut) = l'assistant ne peut
+    /// que créer, comme aujourd'hui.
+    /// </summary>
+    public bool EnableStudioAiModifyTools { get; set; }
+
+    /// <summary>
+    /// Coupe-circuit de l'impression PDF des états Studio (endpoint purement additif).
+    /// True par défaut : le désactiver retire seulement le bouton d'export, rien d'autre.
+    /// </summary>
+    public bool EnableStudioReportPdf { get; set; } = true;
+
+    /// <summary>
+    /// Outils de création de FENÊTRES par l'assistant (<c>studio_plan_view</c>, <c>studio_list_sql_tables</c>) :
+    /// vues LECTURE SEULE sur des tables réelles, via le même fournisseur gardé (<c>SqlSchemaGuard</c>)
+    /// que le concepteur humain. Sans effet si <see cref="EnableStudioAiPlanPreview"/> est false.
+    /// </summary>
+    public bool EnableStudioAiViewTools { get; set; }
+
     /// <summary>Maximum conversation messages included in LLM context. Lower values suit smaller models.</summary>
     public int MaxContextMessages { get; set; } = 10;
 

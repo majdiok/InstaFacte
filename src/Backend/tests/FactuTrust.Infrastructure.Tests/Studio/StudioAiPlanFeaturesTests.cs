@@ -1,0 +1,199 @@
+using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Features.Studio.Ai;
+using FactuTrust.Domain.Entities.Studio;
+using FactuTrust.Domain.Enums;
+using Moq;
+using Xunit;
+
+namespace FactuTrust.Infrastructure.Tests.Studio;
+
+/// <summary>
+/// Cycle de vie d'un plan Studio IA : création → aperçu → confirmation/annulation, avec les gardes
+/// (expiration, double confirmation via RowVersion, permissions) qui protègent des créations
+/// accidentelles ou dupliquées.
+/// </summary>
+public sealed class StudioAiPlanFeaturesTests
+{
+    private static readonly Guid TenantId = Guid.NewGuid();
+    private static readonly Guid UserId = Guid.NewGuid();
+
+    private readonly Mock<IStudioAiBuildPlanRepository> _plans = new();
+    private readonly Mock<IAuditService> _audit = new();
+    private readonly Mock<ICurrentUser> _currentUser = new();
+    private readonly Mock<IStudioAiPlanExecutor> _executor = new();
+
+    public StudioAiPlanFeaturesTests()
+    {
+        _currentUser.Setup(x => x.TenantId).Returns(TenantId);
+        _currentUser.Setup(x => x.UserId).Returns(UserId);
+        _currentUser.Setup(x => x.HasPermission(It.IsAny<string>())).Returns(true);
+        _plans.Setup(p => p.TryUpdateAsync(It.IsAny<StudioAiBuildPlan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+    }
+
+    [Fact]
+    public async Task Create_persists_a_pending_plan_with_its_summary()
+    {
+        StudioAiBuildPlan? saved = null;
+        _plans.Setup(p => p.AddAsync(It.IsAny<StudioAiBuildPlan>(), It.IsAny<CancellationToken>()))
+            .Callback((StudioAiBuildPlan p, CancellationToken _) => saved = p)
+            .Returns(Task.CompletedTask);
+
+        var result = await CreateHandler().Handle(
+            new CreateStudioAiPlanCommand(StudioAiPlanKind.CreateSystem, "{\"system\":{}}", "{\"title\":\"Congés\"}"),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(StudioAiPlanStatus.Pending.ToString(), result.Value.Status);
+        Assert.NotNull(saved);
+        Assert.Equal(TenantId, saved!.TenantId);
+        Assert.True(saved.ExpiresAt > saved.CreatedAt);
+    }
+
+    [Fact]
+    public async Task Create_without_design_permission_is_refused()
+    {
+        _currentUser.Setup(x => x.HasPermission(It.IsAny<string>())).Returns(false);
+
+        var result = await CreateHandler().Handle(
+            new CreateStudioAiPlanCommand(StudioAiPlanKind.CreateApp, "{}", "{}"), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        _plans.Verify(p => p.AddAsync(It.IsAny<StudioAiBuildPlan>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Confirm_executes_the_plan_and_marks_it_completed()
+    {
+        var plan = PendingPlan();
+        SetupGet(plan);
+        _executor.Setup(e => e.ExecuteAsync(plan, It.IsAny<IStudioBuildProgress?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((true, (string?)null, (object?)new { systemKey = "conges" }));
+
+        var result = await ConfirmHandler().Handle(new ConfirmStudioAiPlanCommand(plan.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(StudioAiPlanStatus.Completed, plan.Status);
+        Assert.Contains("conges", plan.ResultJson);
+        _executor.Verify(e => e.ExecuteAsync(plan, It.IsAny<IStudioBuildProgress?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Confirm_of_an_expired_plan_creates_nothing()
+    {
+        var plan = PendingPlan(lifetime: TimeSpan.FromMinutes(-1));
+        SetupGet(plan);
+
+        var result = await ConfirmHandler().Handle(new ConfirmStudioAiPlanCommand(plan.Id), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains("expiré", result.Error.Description);
+        Assert.Equal(StudioAiPlanStatus.Expired, plan.Status);
+        _executor.Verify(e => e.ExecuteAsync(It.IsAny<StudioAiBuildPlan>(), It.IsAny<IStudioBuildProgress?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Concurrent_confirm_loses_the_rowversion_race_and_executes_nothing()
+    {
+        var plan = PendingPlan();
+        SetupGet(plan);
+        // Une autre requête a déjà fait passer le plan en Executing : la mise à jour échoue.
+        _plans.Setup(p => p.TryUpdateAsync(It.IsAny<StudioAiBuildPlan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var result = await ConfirmHandler().Handle(new ConfirmStudioAiPlanCommand(plan.Id), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        _executor.Verify(e => e.ExecuteAsync(It.IsAny<StudioAiBuildPlan>(), It.IsAny<IStudioBuildProgress?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Confirm_of_an_already_completed_plan_is_refused()
+    {
+        var plan = PendingPlan();
+        plan.MarkCompleted(null);
+        SetupGet(plan);
+
+        var result = await ConfirmHandler().Handle(new ConfirmStudioAiPlanCommand(plan.Id), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        _executor.Verify(e => e.ExecuteAsync(It.IsAny<StudioAiBuildPlan>(), It.IsAny<IStudioBuildProgress?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Failed_execution_marks_the_plan_failed_and_surfaces_the_real_error()
+    {
+        var plan = PendingPlan();
+        SetupGet(plan);
+        _executor.Setup(e => e.ExecuteAsync(plan, It.IsAny<IStudioBuildProgress?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((false, "Limite du plan atteinte : 50 tables maximum.", (object?)null));
+
+        var result = await ConfirmHandler().Handle(new ConfirmStudioAiPlanCommand(plan.Id), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains("Limite du plan", result.Error.Description);
+        Assert.Equal(StudioAiPlanStatus.Failed, plan.Status);
+    }
+
+    [Fact]
+    public async Task Cancel_leaves_the_plan_unexecuted()
+    {
+        var plan = PendingPlan();
+        SetupGet(plan);
+
+        var result = await CancelHandler().Handle(new CancelStudioAiPlanCommand(plan.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(StudioAiPlanStatus.Cancelled, plan.Status);
+        _executor.Verify(e => e.ExecuteAsync(It.IsAny<StudioAiBuildPlan>(), It.IsAny<IStudioBuildProgress?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Get_reports_an_overdue_pending_plan_as_expired_without_writing()
+    {
+        var plan = PendingPlan(lifetime: TimeSpan.FromMinutes(-5));
+        SetupGet(plan);
+
+        var result = await new GetStudioAiPlanQueryHandler(_plans.Object, _currentUser.Object)
+            .Handle(new GetStudioAiPlanQuery(plan.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(StudioAiPlanStatus.Expired.ToString(), result.Value.Status);
+        Assert.Equal(StudioAiPlanStatus.Pending, plan.Status); // état persistant intact
+        _plans.Verify(p => p.TryUpdateAsync(It.IsAny<StudioAiBuildPlan>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Plan_of_another_tenant_is_not_found()
+    {
+        _plans.Setup(p => p.GetByIdAsync(TenantId, It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((StudioAiBuildPlan?)null);
+
+        var result = await ConfirmHandler().Handle(new ConfirmStudioAiPlanCommand(Guid.NewGuid()), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains("NotFound", result.Error.Code, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static StudioAiBuildPlan PendingPlan(TimeSpan? lifetime = null) =>
+        StudioAiBuildPlan.Create(TenantId, StudioAiPlanKind.CreateSystem, "{\"system\":{}}", "{}", UserId,
+            lifetime ?? StudioAiPlanDefaults.Lifetime);
+
+    private void SetupGet(StudioAiBuildPlan plan) =>
+        _plans.Setup(p => p.GetByIdAsync(TenantId, plan.Id, It.IsAny<CancellationToken>())).ReturnsAsync(plan);
+
+    private CreateStudioAiPlanCommandHandler CreateHandler() =>
+        new(_plans.Object, _audit.Object, _currentUser.Object);
+
+    private ConfirmStudioAiPlanCommandHandler ConfirmHandler() =>
+        new(_plans.Object, _executor.Object, _audit.Object, _currentUser.Object);
+
+    private CancelStudioAiPlanCommandHandler CancelHandler() =>
+        new(_plans.Object, _audit.Object, _currentUser.Object);
+}

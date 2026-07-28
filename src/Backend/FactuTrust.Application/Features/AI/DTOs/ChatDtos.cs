@@ -111,6 +111,13 @@ public sealed record ChatStreamEvent
     public static ChatStreamEvent StudioProgressEvent(string stepJson) =>
         new() { Type = "studio_progress", Content = stepJson };
 
+    /// <summary>
+    /// Plan de construction Studio en attente de validation utilisateur (type <c>studio_plan</c>),
+    /// émis juste après le succès d'un outil <c>studio_plan_*</c> pour afficher l'aperçu.
+    /// </summary>
+    public static ChatStreamEvent StudioPlanEvent(string planJson) =>
+        new() { Type = "studio_plan", Content = planJson };
+
     public static ChatStreamEvent PhaseEvent(
         string phase,
         string phaseStatus,

@@ -57,6 +57,8 @@ public sealed partial class AiToolExecutor : IAiToolExecutor
     // Studio plan-quota service — used by studio_generate_system for a pre-flight table-quota check.
     // Optional (default null) so existing test constructions remain valid; production resolves it via DI.
     private readonly IStudioQuotaService? _studioQuota;
+    // Introspection SQL en lecture seule (fenêtres Studio) — même fournisseur gardé que le designer humain.
+    private readonly Application.Features.Studio.Common.ISqlSchemaProvider? _sqlSchema;
     // Forecasting module — optional. Resolved as singleton if registered (Features:Forecasting:Enabled=true), else null.
     private readonly IForecastingService? _forecasting;
     private readonly IReplenishmentService? _replenishment;
@@ -87,8 +89,12 @@ public sealed partial class AiToolExecutor : IAiToolExecutor
         ITunisianCalendarService? calendar = null,
         IAiDeterministicToolCache? deterministicCache = null,
         IAiReadOnlyToolCache? readOnlyCache = null,
-        IStudioQuotaService? studioQuota = null)
+        IStudioQuotaService? studioQuota = null,
+        // Introspection SQL en lecture seule — nécessaire aux outils de FENÊTRE (studio_plan_view).
+        // Optionnelle (défaut null) pour ne pas casser les constructions existantes des tests.
+        Application.Features.Studio.Common.ISqlSchemaProvider? sqlSchema = null)
     {
+        _sqlSchema = sqlSchema;
         _mediator = mediator;
         _logger = logger;
         _timeProvider = timeProvider;
@@ -229,6 +235,13 @@ public sealed partial class AiToolExecutor : IAiToolExecutor
                 // ── Studio IA-native ──
                 "studio_generate_app" => await HandleStudioGenerateApp(arguments, cancellationToken),
                 "studio_generate_system" => await HandleStudioGenerateSystem(arguments, cancellationToken),
+                // ── Studio plan → aperçu → confirmation ──
+                "studio_plan_app" => await HandleStudioPlanApp(arguments, cancellationToken),
+                "studio_plan_system" => await HandleStudioPlanSystem(arguments, cancellationToken),
+                "studio_plan_changes" => await HandleStudioPlanChanges(arguments, cancellationToken),
+                "studio_get_table_schema" => await HandleStudioGetTableSchema(arguments, cancellationToken),
+                "studio_plan_view" => await HandleStudioPlanView(arguments, cancellationToken),
+                "studio_list_sql_tables" => await HandleStudioListSqlTables(arguments, cancellationToken),
                 // ── Studio ERP bridge actions ──
                 "generate_invoice" => await HandleGenerateInvoice(arguments, cancellationToken),
                 "create_cash_expense" => await HandleCreateCashExpense(arguments, cancellationToken),

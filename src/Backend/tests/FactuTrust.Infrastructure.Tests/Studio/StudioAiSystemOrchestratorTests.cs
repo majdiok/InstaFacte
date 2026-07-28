@@ -4,7 +4,9 @@ using FactuTrust.Application.Features.Studio.Ai;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Application.Features.Studio.Entities;
 using FactuTrust.Application.Features.Studio.Fields;
+using FactuTrust.Application.Features.Studio.Forms;
 using FactuTrust.Application.Features.Studio.Records;
+using FactuTrust.Application.Features.Studio.Reports;
 using FactuTrust.Application.Features.Studio.Systems;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Enums;
@@ -141,6 +143,65 @@ public sealed class StudioAiSystemOrchestratorTests
         // Rien n'est créé : pas de système ni de table (donc pas d'orphelin).
         _mediator.Verify(m => m.Send(It.IsAny<CreateCustomSystemCommand>(), It.IsAny<CancellationToken>()), Times.Never);
         _mediator.Verify(m => m.Send(It.IsAny<CreateCustomEntityCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Form_widths_labels_and_report_filters_flow_into_commands()
+    {
+        const string json = """
+        { "system": { "displayName": "Contrats" }, "entities": [
+          { "ref": "contrats", "displayName": "Contrats", "fields": [
+            { "label": "Nom", "type": "text" },
+            { "label": "Date de debut", "type": "date" },
+            { "label": "Montant", "type": "money" },
+            { "label": "Statut", "type": "select", "options": [ {"value":"actif","label":"Actif"}, {"value":"expire","label":"Expiré"} ] }
+          ],
+          "form": { "sections": [ { "title": "Général", "fields": [
+            "nom",
+            { "field": "date_de_debut", "width": "half" },
+            { "field": "montant", "width": "half", "label": "Montant TTC" },
+            { "field": "statut", "width": "sideways" }
+          ] } ] },
+          "report": { "displayName": "Contrats actifs", "groupBy": ["statut"], "measures": [ {"field":"montant","fn":"sum"} ],
+            "filters": [ { "field": "statut", "op": "eq", "value": "actif" } ],
+            "sort": [ { "field": "sum_montant", "dir": "desc" } ] } }
+        ] }
+        """;
+        Assert.True(StudioAiSystemSpec.TryParse(json, out var spec, out var err), err);
+
+        SetupHappyStructure();
+        FormLayout? savedLayout = null;
+        _mediator.Setup(m => m.Send(It.IsAny<UpsertDefaultFormCommand>(), It.IsAny<CancellationToken>()))
+            .Callback((IRequest<Result<CustomFormDto>> cmd, CancellationToken _) =>
+                savedLayout = ((UpsertDefaultFormCommand)cmd).Request.Layout)
+            .ReturnsAsync(Result.Success(new CustomFormDto(Guid.NewGuid(), "f", "F", true, new FormLayout())));
+        ReportDefinition? savedDef = null;
+        _mediator.Setup(m => m.Send(It.IsAny<UpsertCustomReportCommand>(), It.IsAny<CancellationToken>()))
+            .Callback((IRequest<Result<CustomReportDto>> cmd, CancellationToken _) =>
+                savedDef = ((UpsertCustomReportCommand)cmd).Request.Definition)
+            .ReturnsAsync(Result.Success(new CustomReportDto(Guid.NewGuid(), "r", "R",
+                CustomReportDataSourceKind.CustomEntity, "contrats", new ReportDefinition(), true)));
+
+        var orchestrator = new StudioAiSystemOrchestrator(_mediator.Object, _currentUser.Object);
+        var (success, error, _) = await orchestrator.ExecuteAsync(spec!, null, CancellationToken.None);
+
+        Assert.True(success, error);
+        Assert.NotNull(savedLayout);
+        var fields = savedLayout!.Sections[0].Fields;
+        Assert.Equal("full", fields[0].Width);                // entrée chaîne → pleine largeur
+        Assert.Equal("half", fields[1].Width);
+        Assert.Equal("half", fields[2].Width);
+        Assert.Equal("Montant TTC", fields[2].LabelOverride);
+        Assert.Equal("full", fields[3].Width);                // largeur invalide → full
+
+        Assert.NotNull(savedDef);
+        Assert.Single(savedDef!.Filters);
+        Assert.Equal("statut", savedDef.Filters[0].Field);
+        Assert.Equal("eq", savedDef.Filters[0].Op);
+        Assert.Single(savedDef.Sort);
+        Assert.Equal("sum_montant", savedDef.Sort[0].Field);
+        Assert.Equal("desc", savedDef.Sort[0].Dir);
+        Assert.Contains("statut", savedDef.Grouping);
     }
 
     private void SetupHappyStructure()

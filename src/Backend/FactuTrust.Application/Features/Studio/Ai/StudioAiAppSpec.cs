@@ -17,7 +17,10 @@ public sealed record ParsedAppField(
 public sealed record ParsedAppReport(
     string DisplayName,
     IReadOnlyList<string> Grouping,
-    IReadOnlyList<ReportAggregation> Aggregations);
+    IReadOnlyList<ReportAggregation> Aggregations,
+    IReadOnlyList<string> Fields,
+    IReadOnlyList<ReportFilter> Filters,
+    IReadOnlyList<ReportSort> Sort);
 
 public sealed record ParsedAppSpec(
     string EntityDisplayName,
@@ -63,6 +66,21 @@ public static class StudioAiAppSpec
     };
 
     private static readonly HashSet<string> AggFns = new(StringComparer.OrdinalIgnoreCase) { "sum", "avg", "count", "min", "max" };
+
+    // Alias tolérants (petits modèles, EN/FR/symboles) → opérateur canonique du CustomReportRunner.
+    // Liste blanche stricte : un op hors de cette table fait ignorer le filtre, jamais échouer le spec.
+    private static readonly Dictionary<string, string> FilterOpAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["eq"] = "eq", ["="] = "eq", ["=="] = "eq", ["equals"] = "eq", ["is"] = "eq", ["egal"] = "eq",
+        ["neq"] = "neq", ["!="] = "neq", ["<>"] = "neq", ["ne"] = "neq", ["not"] = "neq", ["different"] = "neq",
+        ["gt"] = "gt", [">"] = "gt", ["greater"] = "gt", ["superieur"] = "gt", ["apres"] = "gt",
+        ["gte"] = "gte", [">="] = "gte",
+        ["lt"] = "lt", ["<"] = "lt", ["less"] = "lt", ["inferieur"] = "lt", ["avant"] = "lt",
+        ["lte"] = "lte", ["<="] = "lte",
+        ["contains"] = "contains", ["like"] = "contains", ["contient"] = "contains",
+        ["in"] = "in", ["dans"] = "in",
+        ["between"] = "between", ["entre"] = "between", ["range"] = "between"
+    };
 
     public static bool TryParse(string? specJson, out ParsedAppSpec? spec, out string? error)
     {
@@ -227,12 +245,21 @@ public static class StudioAiAppSpec
         }
     }
 
-    private static ParsedAppReport? ParseReport(JsonNode? node, IReadOnlyList<ParsedAppField> fields)
+    private static ParsedAppReport? ParseReport(JsonNode? node, IReadOnlyList<ParsedAppField> fields) =>
+        ParseReportForFields(node, fields.Select(f => (f.Key, f.Label)).ToList());
+
+    /// <summary>
+    /// Analyse un nœud <c>report</c> en résolvant ses références (clé OU libellé) contre une liste de
+    /// champs fournie — utilisée aussi bien pour un spec de création que pour un état posé sur une
+    /// table EXISTANTE (modification), où les champs viennent du schéma réel.
+    /// </summary>
+    public static ParsedAppReport? ParseReportForFields(JsonNode? node, IReadOnlyList<(string Key, string Label)> fields)
     {
         if (node is not JsonObject obj) return null;
         var displayName = Str(obj["displayName"]) ?? Str(obj["title"]) ?? "Rapport";
 
-        var byKey = fields.ToDictionary(f => f.Key, StringComparer.Ordinal);
+        var byKey = fields.GroupBy(f => f.Key, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().Key, StringComparer.Ordinal);
         var byLabel = fields.GroupBy(f => SlugKey(f.Label)).ToDictionary(g => g.Key, g => g.First().Key, StringComparer.Ordinal);
 
         string? ResolveField(string? raw)
@@ -273,9 +300,100 @@ public static class StudioAiAppSpec
             aggs.Add(new ReportAggregation { Field = field ?? grouping.FirstOrDefault() ?? string.Empty, Fn = fnName });
         }
 
-        if (grouping.Count == 0 && aggs.Count == 0) return null;
-        if (aggs.Count == 0) aggs.Add(new ReportAggregation { Field = string.Empty, Fn = "count" });
-        return new ParsedAppReport(displayName!.Trim(), grouping, aggs);
+        // Un regroupement sans mesure reçoit un « count » implicite (comportement historique) —
+        // ajouté AVANT le parsing du tri pour qu'un tri sur `count` se résolve.
+        if (grouping.Count > 0 && aggs.Count == 0)
+            aggs.Add(new ReportAggregation { Field = string.Empty, Fn = "count" });
+
+        // Colonnes projetées (rapport de détail sans regroupement) : champ inconnu ignoré.
+        var columns = new List<string>();
+        foreach (var c in (obj["columns"] ?? obj["select"] ?? obj["fields"])?.AsArray() ?? new JsonArray())
+        {
+            var f = ResolveField(Str(c) ?? Str((c as JsonObject)?["field"]));
+            if (f is not null && !columns.Contains(f)) columns.Add(f);
+        }
+
+        var filters = ParseFilters(obj["filters"] ?? obj["filtres"] ?? obj["where"], ResolveField);
+        var sort = ParseSort(obj["sort"] ?? obj["orderBy"] ?? obj["tri"], ResolveField, aggs);
+
+        if (grouping.Count == 0 && aggs.Count == 0 && columns.Count == 0 && filters.Count == 0 && sort.Count == 0)
+            return null;
+        return new ParsedAppReport(displayName!.Trim(), grouping, aggs, columns, filters, sort);
+    }
+
+    private static IReadOnlyList<ReportFilter> ParseFilters(JsonNode? node, Func<string?, string?> resolveField)
+    {
+        var result = new List<ReportFilter>();
+        if (node is not JsonArray arr) return result;
+        foreach (var it in arr)
+        {
+            if (it is not JsonObject fo) continue;
+            var field = resolveField(Str(fo["field"]) ?? Str(fo["champ"]));
+            if (field is null) continue; // champ inconnu → filtre ignoré
+            var rawOp = (Str(fo["op"]) ?? Str(fo["operator"]) ?? "eq").Trim();
+            if (!FilterOpAliases.TryGetValue(rawOp, out var op)) continue; // op hors liste blanche → ignoré
+            var value = fo["value"] ?? fo["valeur"] ?? fo["values"];
+            var value2 = fo["value2"] ?? fo["to"] ?? fo["max"];
+            if (op == "in" && value is not JsonArray) op = "eq"; // scalaire toléré sur un `in`
+            if (op == "between" && (value is null || value2 is null)) continue;
+            if (value is null) continue;
+            result.Add(new ReportFilter { Field = field, Op = op, Value = value.DeepClone(), Value2 = value2?.DeepClone() });
+        }
+        return result;
+    }
+
+    private static IReadOnlyList<ReportSort> ParseSort(
+        JsonNode? node, Func<string?, string?> resolveField, IReadOnlyList<ReportAggregation> aggs)
+    {
+        var result = new List<ReportSort>();
+        var arr = node as JsonArray;
+        if (arr is null && node is not null) arr = new JsonArray(node.DeepClone()); // entrée unique tolérée
+        if (arr is null) return result;
+
+        // Un tri peut aussi viser une colonne d'agrégat du rapport groupé (count, sum_montant, …).
+        var aggKeys = aggs
+            .Select(a => string.Equals(a.Fn, "count", StringComparison.OrdinalIgnoreCase)
+                ? "count"
+                : $"{a.Fn.ToLowerInvariant()}_{a.Field}")
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var it in arr)
+        {
+            string? rawField;
+            var dir = "asc";
+            if (it is JsonObject so)
+            {
+                rawField = Str(so["field"]) ?? Str(so["champ"]);
+                dir = NormalizeSortDir(Str(so["dir"]) ?? Str(so["direction"]) ?? Str(so["order"]));
+            }
+            else
+            {
+                rawField = Str(it);
+                // « montant desc » toléré sur une entrée chaîne.
+                var parts = rawField?.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts is { Length: >= 2 })
+                {
+                    var last = parts[^1].ToLowerInvariant();
+                    if (last is "asc" or "desc" or "descending" or "descendant" or "decroissant" or "croissant")
+                    {
+                        dir = NormalizeSortDir(last);
+                        rawField = string.Join(' ', parts[..^1]);
+                    }
+                }
+            }
+            var field = resolveField(rawField)
+                ?? (rawField is not null && aggKeys.Contains(SlugKey(rawField)) ? SlugKey(rawField) : null);
+            if (field is null) continue; // champ inconnu → tri ignoré
+            if (result.Any(s => s.Field == field)) continue;
+            result.Add(new ReportSort { Field = field, Dir = dir });
+        }
+        return result;
+    }
+
+    private static string NormalizeSortDir(string? raw)
+    {
+        var d = raw?.Trim().ToLowerInvariant();
+        return d is "desc" or "descending" or "descendant" or "decroissant" or "za" ? "desc" : "asc";
     }
 
     private static string? Str(JsonNode? n)

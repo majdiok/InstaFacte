@@ -20,6 +20,7 @@ public partial class TenantDbContext
     public DbSet<CustomSystemDefinition> CustomSystemDefinitions => Set<CustomSystemDefinition>();
     public DbSet<CustomEntityAutomation> CustomEntityAutomations => Set<CustomEntityAutomation>();
     public DbSet<CustomAutomationRun> CustomAutomationRuns => Set<CustomAutomationRun>();
+    public DbSet<StudioAiBuildPlan> StudioAiBuildPlans => Set<StudioAiBuildPlan>();
 
     private static void ConfigureStudio(ModelBuilder builder)
     {
@@ -182,6 +183,24 @@ public partial class TenantDbContext
 
             // Lookups: runs of an automation, and "did this record already run successfully?" (idempotency).
             entity.HasIndex(e => new { e.TenantId, e.AutomationId, e.RecordId });
+        });
+
+        builder.Entity<StudioAiBuildPlan>(entity =>
+        {
+            entity.ToTable("StudioAiBuildPlans");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Kind).HasConversion<int>();
+            entity.Property(e => e.Status).HasConversion<int>();
+            entity.Property(e => e.SpecJson).HasColumnType("nvarchar(max)").IsRequired();
+            entity.Property(e => e.SummaryJson).HasColumnType("nvarchar(max)").IsRequired();
+            entity.Property(e => e.ResultJson).HasColumnType("nvarchar(max)");
+            entity.Property(e => e.ErrorMessage).HasMaxLength(2048);
+
+            // La transition Pending → Executing s'appuie sur ce jeton pour bloquer la double confirmation.
+            entity.Property(e => e.RowVersion).IsRowVersion();
+
+            entity.HasIndex(e => new { e.TenantId, e.Status, e.CreatedAt });
         });
     }
 }

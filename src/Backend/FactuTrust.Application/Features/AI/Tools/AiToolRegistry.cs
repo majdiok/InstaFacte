@@ -49,21 +49,67 @@ public static class AiToolRegistry
         "propose_follow_up_prompts"
     };
 
+    /// <summary>
+    /// Variante « plan → aperçu → confirmation » du catalogue StudioBuilder : les outils de génération
+    /// directe sont remplacés par les outils de PLAN (l'exécution passe par l'endpoint REST de
+    /// confirmation, jamais par le LLM). Activée par <c>EnableStudioAiPlanPreview</c>.
+    /// </summary>
+    private static readonly HashSet<string> StudioBuilderPlanToolNames = new(StringComparer.Ordinal)
+    {
+        "studio_plan_app",
+        "studio_plan_system",
+        "studio_build_report",
+        "studio_extract_record",
+        "studio_list_custom_tables",
+        "studio_query_records",
+        "propose_follow_up_prompts"
+    };
+
+    /// <summary>Modification de l'existant (EnableStudioAiModifyTools) : lecture du schéma + plan de diff.</summary>
+    private static readonly HashSet<string> StudioModifyToolNames = new(StringComparer.Ordinal)
+    {
+        "studio_get_table_schema",
+        "studio_plan_changes"
+    };
+
+    /// <summary>Fenêtres sur des tables réelles (EnableStudioAiViewTools) : introspection + plan de vue.</summary>
+    private static readonly HashSet<string> StudioViewToolNames = new(StringComparer.Ordinal)
+    {
+        "studio_list_sql_tables",
+        "studio_plan_view"
+    };
+
     /// <param name="enableMutationTools">When false, tools with <see cref="AiToolDefinition.IsMutating"/> are excluded.</param>
     /// <param name="agentScope">
     /// Expert de module optionnel : ne restreint le catalogue qu'en mode Default (les autres modes ont déjà
     /// leur sous-ensemble focalisé). None = comportement historique inchangé.
     /// </param>
+    /// <param name="studioPlanPreview">
+    /// Quand true, le mode StudioBuilder expose les outils de plan (aperçu + confirmation) à la place des
+    /// outils de génération directe. False (défaut) = catalogue historique strictement inchangé.
+    /// </param>
     public static IReadOnlyList<AiToolDefinition> GetDefinitionsForMode(
         AssistantMode mode,
         bool enableMutationTools,
-        AssistantAgentScope agentScope = AssistantAgentScope.None)
+        AssistantAgentScope agentScope = AssistantAgentScope.None,
+        bool studioPlanPreview = false,
+        bool studioModifyTools = false,
+        bool studioViewTools = false)
     {
+        var studioSet = studioPlanPreview ? StudioBuilderPlanToolNames : StudioBuilderToolNames;
+        // Modification et fenêtres ne sont proposées qu'en mode aperçu (rien ne s'applique sans validation).
+        if (studioPlanPreview && (studioModifyTools || studioViewTools))
+        {
+            var expanded = new HashSet<string>(StudioBuilderPlanToolNames, StringComparer.Ordinal);
+            if (studioModifyTools) expanded.UnionWith(StudioModifyToolNames);
+            if (studioViewTools) expanded.UnionWith(StudioViewToolNames);
+            studioSet = expanded;
+        }
         IEnumerable<AiToolDefinition> q = mode switch
         {
             AssistantMode.Compliance => All.Where(t => ComplianceToolNames.Contains(t.Name)),
             AssistantMode.ScreenAnalysis => All.Where(t => ScreenAnalysisToolNames.Contains(t.Name)),
-            AssistantMode.StudioBuilder => All.Where(t => StudioBuilderToolNames.Contains(t.Name)),
+            AssistantMode.StudioBuilder => All.Where(t => studioSet.Contains(t.Name)),
             _ => All
         };
         if (mode == AssistantMode.Default && agentScope != AssistantAgentScope.None)
@@ -1323,7 +1369,9 @@ public static class AiToolRegistry
                 + "{ \"entity\": { \"displayName\": string, \"displayNamePlural\"?: string, \"icon\"?: string, \"description\"?: string }, "
                 + "\"fields\": [ { \"label\": string, \"type\": string, \"required\"?: bool, \"unique\"?: bool, "
                 + "\"options\"?: [ { \"value\": string, \"label\": string } ] } ], "
-                + "\"report\"?: { \"displayName\": string, \"groupBy\": [labels], \"measures\": [ { \"field\": label, \"fn\": \"sum|avg|count|min|max\" } ] } }. "
+                + "\"report\"?: { \"displayName\": string, \"groupBy\": [labels], \"measures\": [ { \"field\": label, \"fn\": \"sum|avg|count|min|max\" } ], "
+                + "\"columns\"?: [labels] (rapport de détail), \"filters\"?: [ { \"field\": label, \"op\": \"eq|neq|gt|gte|lt|lte|contains|in|between\", \"value\": any, \"value2\"?: any } ], "
+                + "\"sort\"?: [ { \"field\": label, \"dir\": \"asc|desc\" } ] } }. "
                 + "Types de champ autorisés : text, multilinetext, number, decimal, money, percentage, rating, boolean, date, datetime, select, multiselect, qrcode, barcode, autonumber, attachment, signature. "
                 + "Pour select/multiselect, fournir `options`. N'émets QU'UN seul appel à cet outil.",
             Parameters = new Dictionary<string, AiToolParameter>
@@ -1347,7 +1395,9 @@ public static class AiToolRegistry
                 + "Fournir UN seul argument `spec_json` (chaîne JSON) : "
                 + "{ \"system\": { \"displayName\": string, \"icon\"?: string, \"description\"?: string, \"onboarding\"?: [string] }, "
                 + "\"entities\": [ { \"ref\": string, \"displayName\": string, \"fields\": [ { \"label\": string, \"type\": string, "
-                + "\"relationTo\"?: ref, \"options\"?: [...] } ], \"form\"?: { \"sections\": [...] }, \"report\"?: {...} } ], "
+                + "\"relationTo\"?: ref, \"options\"?: [...] } ], "
+                + "\"form\"?: { \"sections\": [ { \"title\"?: string, \"fields\": [ clé | { \"field\": clé, \"width\": \"half|full\", \"label\"?: string } ] } ] }, "
+                + "\"report\"?: { \"displayName\", \"groupBy\"?, \"measures\"?, \"columns\"?, \"filters\"?: [{ \"field\", \"op\": \"eq|neq|gt|gte|lt|lte|contains|in|between\", \"value\", \"value2\"? }], \"sort\"?: [{ \"field\", \"dir\": \"asc|desc\" }] } } ], "
                 + "\"seed\"?: [ { \"entityRef\": ref, \"records\": [ { fieldKey: value } ] } ] }. "
                 + "Types : text, date, select, relation (avec relationTo), money, boolean, etc. "
                 + "Un `select` porte `options` et JAMAIS `relationTo` ; `relationTo` ne sert qu'à lier une autre table. "
@@ -1363,6 +1413,148 @@ public static class AiToolRegistry
             RequiredParameters = new() { "spec_json" },
             IsMutating = true,
             RequiredPermission = Permissions.Studio.DesignEntities
+        },
+
+        // ════════════════════════════════════════════════════════════════════
+        //  Studio « plan → aperçu → confirmation » — l'IA PRÉPARE un plan, rien
+        //  n'est créé tant que l'utilisateur n'a pas validé l'aperçu (endpoint
+        //  REST déterministe). Exposés uniquement quand EnableStudioAiPlanPreview
+        //  est actif (le catalogue StudioBuilder substitue alors les generate_*).
+        //  Append-only.
+        // ════════════════════════════════════════════════════════════════════
+        new()
+        {
+            Name = "studio_plan_app",
+            Description =
+                "PRÉPARE un plan de création d'une TABLE personnalisée soumis à VALIDATION utilisateur (rien n'est créé immédiatement). "
+                + "Même schéma `spec_json` que studio_generate_app : "
+                + "{ \"entity\": { \"displayName\": string, \"displayNamePlural\"?: string, \"icon\"?: string, \"description\"?: string }, "
+                + "\"fields\": [ { \"label\": string, \"type\": string, \"required\"?: bool, \"unique\"?: bool, \"options\"?: [...] } ], "
+                + "\"report\"?: { \"displayName\": string, \"groupBy\": [labels], \"measures\": [ { \"field\": label, \"fn\": \"sum|avg|count|min|max\" } ], "
+                + "\"columns\"?: [labels], \"filters\"?: [ { \"field\": label, \"op\": \"eq|neq|gt|gte|lt|lte|contains|in|between\", \"value\": any, \"value2\"?: any } ], "
+                + "\"sort\"?: [ { \"field\": label, \"dir\": \"asc|desc\" } ] } }. "
+                + "Types de champ autorisés : text, multilinetext, number, decimal, money, percentage, rating, boolean, date, datetime, select, multiselect, qrcode, barcode, autonumber, attachment, signature. "
+                + "Après l'appel, un APERÇU est montré à l'utilisateur qui valide ou annule. N'émets QU'UN seul appel.",
+            Parameters = new Dictionary<string, AiToolParameter>
+            {
+                ["spec_json"] = new()
+                {
+                    Type = "string",
+                    Description = "Spécification JSON de la table (entity + fields + report optionnel) conforme au schéma de la description."
+                }
+            },
+            RequiredParameters = new() { "spec_json" },
+            IsMutating = true,
+            RequiredPermission = Permissions.Studio.DesignEntities
+        },
+        new()
+        {
+            Name = "studio_plan_system",
+            Description =
+                "PRÉPARE un plan de création d'un SYSTÈME multi-tables soumis à VALIDATION utilisateur (rien n'est créé immédiatement). "
+                + "Utiliser quand l'utilisateur demande plusieurs tables liées, un « système », ou des relations entre entités. "
+                + "Même schéma `spec_json` que studio_generate_system : "
+                + "{ \"system\": { \"displayName\": string, \"icon\"?: string, \"description\"?: string, \"onboarding\"?: [string] }, "
+                + "\"entities\": [ { \"ref\": string, \"displayName\": string, \"fields\": [ { \"label\": string, \"type\": string, "
+                + "\"relationTo\"?: ref, \"options\"?: [...] } ], "
+                + "\"form\"?: { \"sections\": [ { \"title\"?: string, \"fields\": [ clé | { \"field\": clé, \"width\": \"half|full\", \"label\"?: string } ] } ] }, "
+                + "\"report\"?: { \"displayName\", \"groupBy\"?, \"measures\"?, \"columns\"?, \"filters\"?, \"sort\"? } } ], "
+                + "\"seed\"?: [ { \"entityRef\": ref, \"records\": [ { fieldKey: value } ] } ] }. "
+                + "Un `select` porte `options` et JAMAIS `relationTo` ; `relationTo` ne sert qu'à lier une autre table ou une source ERP (clients/products). "
+                + "Après l'appel, un APERÇU est montré à l'utilisateur qui valide ou annule. N'émets QU'UN seul appel.",
+            Parameters = new Dictionary<string, AiToolParameter>
+            {
+                ["spec_json"] = new()
+                {
+                    Type = "string",
+                    Description = "Spécification JSON du système multi-tables conforme au schéma."
+                }
+            },
+            RequiredParameters = new() { "spec_json" },
+            IsMutating = true,
+            RequiredPermission = Permissions.Studio.DesignEntities
+        },
+        new()
+        {
+            Name = "studio_get_table_schema",
+            Description =
+                "Lit le SCHÉMA RÉEL d'une table personnalisée existante (clés, libellés, types, options). "
+                + "À APPELER AVANT toute modification pour t'appuyer sur les vraies clés au lieu de les deviner. "
+                + "Lecture seule : ne modifie rien.",
+            Parameters = new Dictionary<string, AiToolParameter>
+            {
+                ["entity_key"] = new() { Type = "string", Description = "Clé de la table personnalisée (ex. « contrats »)." }
+            },
+            RequiredParameters = new() { "entity_key" },
+            RequiredPermission = Permissions.Studio.DesignEntities
+        },
+        new()
+        {
+            Name = "studio_plan_changes",
+            Description =
+                "PRÉPARE un plan de MODIFICATION d'une table personnalisée EXISTANTE, soumis à validation utilisateur "
+                + "(rien n'est modifié immédiatement). UTILISER pour « ajoute un champ X sur la table Y », "
+                + "« rends le champ Z obligatoire », « réorganise le formulaire », « ajoute un état ». "
+                + "Appelle d'abord studio_get_table_schema pour connaître les vraies clés. "
+                + "Fournir UN seul argument `spec_json` : "
+                + "{ \"target\": { \"entityKey\": string }, \"operations\": [ "
+                + "{ \"op\": \"add_field\", \"label\": string, \"type\": string, \"required\"?: bool, \"options\"?: [...] } | "
+                + "{ \"op\": \"update_field\", \"key\": clé, \"label\"?: string, \"required\"?: bool, \"unique\"?: bool, \"addOptions\"?: [...] } | "
+                + "{ \"op\": \"remove_field\", \"key\": clé } | "
+                + "{ \"op\": \"update_entity\", \"displayName\"?: string, \"icon\"?: string, \"description\"?: string } | "
+                + "{ \"op\": \"set_form\", \"sections\": [ { \"title\"?: string, \"fields\": [ clé | { \"field\": clé, \"width\": \"half|full\" } ] } ] } | "
+                + "{ \"op\": \"set_report\", \"displayName\": string, \"definition\": { \"groupBy\"?, \"measures\"?, \"columns\"?, \"filters\"?, \"sort\"? } } ] }. "
+                + "Maximum 20 opérations. La SUPPRESSION d'une table ou d'un système est IMPOSSIBLE par cet outil. "
+                + "Retirer un champ le masque seulement : les données saisies sont conservées.",
+            Parameters = new Dictionary<string, AiToolParameter>
+            {
+                ["spec_json"] = new()
+                {
+                    Type = "string",
+                    Description = "Spécification JSON de la modification (target + operations) conforme au schéma."
+                }
+            },
+            RequiredParameters = new() { "spec_json" },
+            IsMutating = true,
+            RequiredPermission = Permissions.Studio.DesignEntities
+        },
+
+        new()
+        {
+            Name = "studio_list_sql_tables",
+            Description =
+                "Liste les TABLES de la base consultables pour créer une FENÊTRE, ou — si `table` est fourni — "
+                + "les colonnes de cette table. À APPELER AVANT studio_plan_view pour t'appuyer sur les vrais "
+                + "noms au lieu de les deviner. Lecture seule.",
+            Parameters = new Dictionary<string, AiToolParameter>
+            {
+                ["table"] = new() { Type = "string", Description = "Nom de table (optionnel) : renvoie alors ses colonnes." }
+            },
+            RequiredParameters = new(),
+            RequiredPermission = Permissions.Studio.DesignForms
+        },
+        new()
+        {
+            Name = "studio_plan_view",
+            Description =
+                "PRÉPARE un plan de création d'une FENÊTRE (vue LECTURE SEULE sur une table existante de la base), "
+                + "soumis à validation utilisateur. UTILISER pour « affiche-moi un écran des factures avec date, client et total ». "
+                + "Appelle d'abord studio_list_sql_tables pour connaître les vrais noms. "
+                + "Fournir UN seul argument `spec_json` : "
+                + "{ \"title\": string, \"table\": string, \"columns\": [ nomColonne | { \"name\": string, \"label\"?: string, "
+                + "\"format\"?: \"text|date|datetime|number|money|boolean|uuid|status|fk\" } ], \"search\"?: bool }. "
+                + "Omettre `columns` affiche toutes les colonnes. Une fenêtre n'écrit JAMAIS de données.",
+            Parameters = new Dictionary<string, AiToolParameter>
+            {
+                ["spec_json"] = new()
+                {
+                    Type = "string",
+                    Description = "Spécification JSON de la fenêtre (title + table + columns) conforme au schéma."
+                }
+            },
+            RequiredParameters = new() { "spec_json" },
+            IsMutating = true,
+            RequiredPermission = Permissions.Studio.DesignForms
         },
 
         // ════════════════════════════════════════════════════════════════════

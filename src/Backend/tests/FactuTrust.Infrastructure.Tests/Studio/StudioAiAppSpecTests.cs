@@ -101,6 +101,105 @@ public sealed class StudioAiAppSpecTests
         Assert.Equal(4, (int)spec.Fields[1].Config!["max"]!);
     }
 
+    [Fact]
+    public void Report_parses_columns_filters_and_sort()
+    {
+        const string json = """
+        {
+          "entity": { "displayName": "Contrats" },
+          "fields": [
+            { "label": "Nom", "type": "text" },
+            { "label": "Montant", "type": "money" },
+            { "label": "Statut", "type": "select", "options": [ {"value":"actif"}, {"value":"expire"} ] },
+            { "label": "Date de fin", "type": "date" }
+          ],
+          "report": {
+            "displayName": "Contrats actifs",
+            "columns": ["Nom", "Montant", "Inconnu"],
+            "filters": [
+              { "field": "Statut", "op": "eq", "value": "actif" },
+              { "field": "Montant", "op": ">=", "value": 100 },
+              { "field": "Inconnu", "op": "eq", "value": "x" },
+              { "field": "Nom", "op": "wibble", "value": "x" }
+            ],
+            "sort": [ { "field": "Date de fin", "dir": "desc" }, "Nom" ]
+          }
+        }
+        """;
+        Assert.True(StudioAiAppSpec.TryParse(json, out var spec, out var error), error);
+        var report = spec!.Report;
+        Assert.NotNull(report);
+        Assert.Equal(new[] { "nom", "montant" }, report!.Fields); // colonne inconnue ignorée
+        Assert.Equal(2, report.Filters.Count);                    // champ inconnu + op hors liste ignorés
+        Assert.Equal("eq", report.Filters[0].Op);
+        Assert.Equal("gte", report.Filters[1].Op);                // alias « >= » normalisé
+        Assert.Equal(2, report.Sort.Count);
+        Assert.Equal("date_de_fin", report.Sort[0].Field);
+        Assert.Equal("desc", report.Sort[0].Dir);
+        Assert.Equal("nom", report.Sort[1].Field);                // entrée chaîne tolérée
+        Assert.Equal("asc", report.Sort[1].Dir);
+        Assert.Empty(report.Grouping);                            // rapport de détail : pas de count implicite
+        Assert.Empty(report.Aggregations);
+    }
+
+    [Fact]
+    public void Report_between_needs_two_values_and_scalar_in_becomes_eq()
+    {
+        const string json = """
+        {
+          "entity": { "displayName": "T" },
+          "fields": [ { "label": "Montant", "type": "money" }, { "label": "Statut", "type": "text" } ],
+          "report": {
+            "filters": [
+              { "field": "Montant", "op": "between", "value": 10 },
+              { "field": "Montant", "op": "between", "value": 10, "value2": 20 },
+              { "field": "Statut", "op": "in", "value": "actif" }
+            ]
+          }
+        }
+        """;
+        Assert.True(StudioAiAppSpec.TryParse(json, out var spec, out var error), error);
+        var filters = spec!.Report!.Filters;
+        Assert.Equal(2, filters.Count);        // between sans value2 ignoré
+        Assert.Equal("between", filters[0].Op);
+        Assert.NotNull(filters[0].Value2);
+        Assert.Equal("eq", filters[1].Op);     // `in` scalaire toléré → eq
+    }
+
+    [Fact]
+    public void Report_sort_resolves_aggregate_key_with_string_direction()
+    {
+        const string json = """
+        {
+          "entity": { "displayName": "T" },
+          "fields": [ { "label": "Montant", "type": "money" }, { "label": "Statut", "type": "text" } ],
+          "report": { "groupBy": ["Statut"], "measures": [ { "field": "Montant", "fn": "sum" } ],
+            "sort": [ "sum_montant desc" ] }
+        }
+        """;
+        Assert.True(StudioAiAppSpec.TryParse(json, out var spec, out var error), error);
+        var report = spec!.Report!;
+        Assert.Single(report.Sort);
+        Assert.Equal("sum_montant", report.Sort[0].Field); // colonne d'agrégat du rapport groupé
+        Assert.Equal("desc", report.Sort[0].Dir);
+    }
+
+    [Fact]
+    public void Legacy_report_without_new_attributes_is_unchanged()
+    {
+        const string json = """
+        { "entity": { "displayName": "T" }, "fields": [ { "label": "Statut", "type": "text" } ],
+          "report": { "groupBy": ["Statut"] } }
+        """;
+        Assert.True(StudioAiAppSpec.TryParse(json, out var spec, out var error), error);
+        var report = spec!.Report!;
+        Assert.Single(report.Aggregations);                 // count implicite conservé
+        Assert.Equal("count", report.Aggregations[0].Fn);
+        Assert.Empty(report.Fields);
+        Assert.Empty(report.Filters);
+        Assert.Empty(report.Sort);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("not json")]

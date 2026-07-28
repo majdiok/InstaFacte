@@ -29,9 +29,15 @@ public sealed record ParsedSystemField(
 public sealed record ParsedFormSpec(
     IReadOnlyList<ParsedFormSection> Sections);
 
+/// <summary>Width: <c>half</c> ou null (= full). LabelOverride: libellé d'affichage optionnel.</summary>
+public sealed record ParsedFormFieldRef(
+    string Key,
+    string? Width,
+    string? LabelOverride);
+
 public sealed record ParsedFormSection(
     string? Title,
-    IReadOnlyList<string> FieldKeys);
+    IReadOnlyList<ParsedFormFieldRef> Fields);
 
 public sealed record ParsedSeedBatch(
     string EntityRef,
@@ -238,19 +244,40 @@ public static class StudioAiSystemSpec
         var sections = new List<ParsedFormSection>();
         foreach (var sec in node["sections"]?.AsArray() ?? new JsonArray())
         {
-            var keys = new List<string>();
+            var refs = new List<ParsedFormFieldRef>();
             foreach (var fk in sec?["fields"]?.AsArray() ?? new JsonArray())
             {
-                var raw = Str(fk);
+                // Tolérant : entrée chaîne ("cle") OU objet ({"field","width","label"}). Un attribut de
+                // mise en forme invalide dégrade (width → full, label → null), jamais d'échec du spec.
+                string? raw;
+                string? width = null;
+                string? labelOverride = null;
+                if (fk is JsonObject fo)
+                {
+                    raw = Str(fo["field"]) ?? Str(fo["key"]) ?? Str(fo["name"]);
+                    width = NormalizeFormWidth(Str(fo["width"]));
+                    labelOverride = Str(fo["label"]) ?? Str(fo["labelOverride"]);
+                }
+                else
+                {
+                    raw = Str(fk);
+                }
                 if (string.IsNullOrWhiteSpace(raw)) continue;
                 var resolved = ResolveFieldKey(raw, fields);
                 if (resolved is not null && byKey.ContainsKey(resolved))
-                    keys.Add(resolved);
+                    refs.Add(new ParsedFormFieldRef(resolved, width,
+                        string.IsNullOrWhiteSpace(labelOverride) ? null : labelOverride!.Trim()));
             }
-            if (keys.Count > 0)
-                sections.Add(new ParsedFormSection(Str(sec?["title"]), keys));
+            if (refs.Count > 0)
+                sections.Add(new ParsedFormSection(Str(sec?["title"]), refs));
         }
         return sections.Count > 0 ? new ParsedFormSpec(sections) : null;
+    }
+
+    private static string? NormalizeFormWidth(string? raw)
+    {
+        var w = raw?.Trim().ToLowerInvariant();
+        return w is "half" or "demi" or "moitie" or "moitié" or "1/2" or "50%" ? "half" : null;
     }
 
     private static IReadOnlyList<ParsedSeedBatch> ParseSeed(JsonNode? node, HashSet<string> refs, out string? error)

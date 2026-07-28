@@ -1,0 +1,176 @@
+using System.Text.Json.Nodes;
+using FactuTrust.Application.Features.AI.DTOs;
+using FactuTrust.Application.Features.Studio.Ai;
+using FactuTrust.Application.Features.Studio.Common;
+using FactuTrust.Application.Features.Studio.Fields;
+using FactuTrust.Domain.Enums;
+using MediatR;
+
+namespace FactuTrust.Infrastructure.Services.AI;
+
+/// <summary>
+/// Outils Studio « plan → aperçu → confirmation » : l'IA PRÉPARE un plan (persisté, en attente),
+/// l'utilisateur le valide dans l'interface, et l'exécution passe par un endpoint REST déterministe
+/// (<c>StudioAiPlansController</c>) — jamais par le LLM. Orchestration mince, aucune logique métier.
+/// </summary>
+public sealed partial class AiToolExecutor
+{
+    private async Task<AiToolResult> HandleStudioPlanApp(Dictionary<string, object?> args, CancellationToken ct)
+    {
+        if (!_ollamaSettings.EnableStudioAiPlanPreview)
+            return AiToolResult.Error("Le flux d'aperçu Studio n'est pas activé.");
+
+        var specJson = GetStringArg(args, "spec_json");
+        if (!StudioAiAppSpec.TryParse(specJson, out var spec, out var parseError) || spec is null)
+            return AiToolResult.Error(parseError ?? "Spécification d'application invalide.");
+
+        return await CreatePlanAsync(StudioAiPlanKind.CreateApp, specJson!, StudioAiPlanSummary.ForApp(spec), ct);
+    }
+
+    private async Task<AiToolResult> HandleStudioPlanSystem(Dictionary<string, object?> args, CancellationToken ct)
+    {
+        if (!_ollamaSettings.EnableStudioAiPlanPreview)
+            return AiToolResult.Error("Le flux d'aperçu Studio n'est pas activé.");
+        if (!_ollamaSettings.EnableStudioSystemGeneration)
+            return AiToolResult.Error("La génération de systèmes multi-tables n'est pas activée.");
+
+        var specJson = GetStringArg(args, "spec_json");
+        if (!StudioAiSystemSpec.TryParse(specJson, out var spec, out var parseError) || spec is null)
+            return AiToolResult.Error(parseError ?? "Spécification système invalide.");
+
+        return await CreatePlanAsync(StudioAiPlanKind.CreateSystem, specJson!, StudioAiPlanSummary.ForSystem(spec), ct);
+    }
+
+    private async Task<AiToolResult> HandleStudioPlanChanges(Dictionary<string, object?> args, CancellationToken ct)
+    {
+        if (!_ollamaSettings.EnableStudioAiPlanPreview)
+            return AiToolResult.Error("Le flux d'aperçu Studio n'est pas activé.");
+        if (!_ollamaSettings.EnableStudioAiModifyTools)
+            return AiToolResult.Error("La modification de tables par l'assistant n'est pas activée.");
+
+        var specJson = GetStringArg(args, "spec_json");
+        if (!StudioAiAmendmentSpec.TryParse(specJson, out var spec, out var parseError) || spec is null)
+            return AiToolResult.Error(parseError ?? "Spécification de modification invalide.");
+
+        // Le diff est calculé contre le schéma RÉEL : ce que l'utilisateur valide est ce qui sera appliqué.
+        var schemaResult = await _mediator.Send(new GetCustomEntitySchemaQuery(spec.TargetEntityRef), ct);
+        if (!schemaResult.IsSuccess)
+            return AiToolResult.Error($"Table « {spec.TargetEntityRef} » introuvable. Vérifiez son nom avec studio_get_table_schema.");
+
+        var preview = StudioAiAmendmentPlanner.BuildPreview(spec, schemaResult.Value);
+        if (preview.Items.Count == 0)
+        {
+            var reason = preview.Warnings.Count > 0
+                ? string.Join(" ", preview.Warnings)
+                : "Aucune modification applicable sur cette table.";
+            return AiToolResult.Error(reason);
+        }
+
+        return await CreatePlanAsync(StudioAiPlanKind.Amendment, specJson!,
+            StudioAiAmendmentPlanner.ToSummaryJson(preview), ct);
+    }
+
+    /// <summary>
+    /// Schéma réel d'une table personnalisée (lecture seule) : ancre le modèle sur les vraies clés et
+    /// libellés AVANT qu'il ne propose une modification, au lieu de les deviner.
+    /// </summary>
+    private async Task<AiToolResult> HandleStudioGetTableSchema(Dictionary<string, object?> args, CancellationToken ct)
+    {
+        var entityKey = GetStringArg(args, "entity_key");
+        if (string.IsNullOrWhiteSpace(entityKey))
+            return AiToolResult.Error("entity_key est requis (clé de la table personnalisée).");
+
+        var result = await _mediator.Send(new GetCustomEntitySchemaQuery(entityKey!.Trim()), ct);
+        if (!result.IsSuccess)
+            return AiToolResult.Error($"Table « {entityKey} » introuvable.");
+
+        var schema = result.Value;
+        var payload = new
+        {
+            entityKey = schema.Entity.Key,
+            displayName = schema.Entity.DisplayName,
+            fields = schema.Fields.Where(f => f.IsActive).Select(f => new
+            {
+                key = f.Key,
+                label = f.Label,
+                type = f.FieldType.ToString(),
+                required = f.IsRequired,
+                unique = f.IsUnique,
+                options = f.Options?.Select(o => o.Value).ToList()
+            }).ToList(),
+            formSections = schema.Form.Sections.Count
+        };
+        return AiToolResult.Ok(Serialize(payload));
+    }
+
+    private async Task<AiToolResult> HandleStudioPlanView(Dictionary<string, object?> args, CancellationToken ct)
+    {
+        if (!_ollamaSettings.EnableStudioAiPlanPreview)
+            return AiToolResult.Error("Le flux d'aperçu Studio n'est pas activé.");
+        if (!_ollamaSettings.EnableStudioAiViewTools)
+            return AiToolResult.Error("La création de fenêtres par l'assistant n'est pas activée.");
+        if (_sqlSchema is null || !StudioContext.TryGet(_currentUser, out var tenantId, out _, out _))
+            return AiToolResult.Error("Introspection des tables indisponible.");
+
+        var specJson = GetStringArg(args, "spec_json");
+        if (!StudioAiViewSpec.TryParse(specJson, out var spec, out var parseError) || spec is null)
+            return AiToolResult.Error(parseError ?? "Spécification de fenêtre invalide.");
+
+        // Le fournisseur renvoie null pour une table interdite ou absente : deny-by-default.
+        var columns = await _sqlSchema.ListColumnsAsync(tenantId, spec.Table, ct);
+        if (columns is null)
+            return AiToolResult.Error($"Table « {spec.Table} » non autorisée ou introuvable. Listez les tables avec studio_list_sql_tables.");
+
+        var (definition, warnings) = StudioAiViewSpec.ResolveAgainstSchema(spec, columns);
+        if (definition.Columns.Count == 0)
+            return AiToolResult.Error($"Aucune colonne reconnue sur la table « {spec.Table} ».");
+
+        return await CreatePlanAsync(StudioAiPlanKind.View, specJson!,
+            StudioAiPlanSummary.ForView(spec.Title, spec.Table, definition, warnings), ct);
+    }
+
+    /// <summary>Tables SQL consultables (liste blanche vivante) — ancre le modèle sur le schéma réel.</summary>
+    private async Task<AiToolResult> HandleStudioListSqlTables(Dictionary<string, object?> args, CancellationToken ct)
+    {
+        if (_sqlSchema is null || !StudioContext.TryGet(_currentUser, out var tenantId, out _, out _))
+            return AiToolResult.Error("Introspection des tables indisponible.");
+
+        var table = GetStringArg(args, "table");
+        if (!string.IsNullOrWhiteSpace(table))
+        {
+            var columns = await _sqlSchema.ListColumnsAsync(tenantId, table!.Trim(), ct);
+            if (columns is null)
+                return AiToolResult.Error($"Table « {table} » non autorisée ou introuvable.");
+            return AiToolResult.Ok(Serialize(new
+            {
+                table = table.Trim(),
+                columns = columns.Select(c => new { name = c.Name, type = c.DataType, format = c.SuggestedFormat }).ToList()
+            }));
+        }
+
+        var tables = await _sqlSchema.ListTablesAsync(tenantId, ct);
+        return AiToolResult.Ok(Serialize(new { tables = tables.Select(t => t.Name).ToList() }));
+    }
+
+    private async Task<AiToolResult> CreatePlanAsync(
+        StudioAiPlanKind kind, string specJson, string summaryJson, CancellationToken ct)
+    {
+        var planResult = await _mediator.Send(new CreateStudioAiPlanCommand(kind, specJson, summaryJson), ct);
+        if (!planResult.IsSuccess)
+            return AiToolResult.Error(planResult.Error.Description);
+
+        var dto = planResult.Value;
+        var payload = new
+        {
+            success = true,
+            requiresConfirmation = true,
+            planId = dto.Id,
+            kind = dto.Kind,
+            status = dto.Status,
+            expiresAt = dto.ExpiresAt,
+            summary = JsonNode.Parse(dto.SummaryJson),
+            message = "Plan prêt. L'utilisateur doit VALIDER l'aperçu avant toute création — rien n'a encore été créé."
+        };
+        return AiToolResult.Ok(Serialize(payload));
+    }
+}

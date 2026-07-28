@@ -133,7 +133,14 @@ public sealed class StudioAiSystemOrchestrator
                 if (entitySpec.Report is not null && _currentUser.HasPermission(Permissions.Studio.DesignReports))
                 {
                     Report("creating_report", $"Rapport « {entitySpec.Report.DisplayName} »", "running", entitySpec.Ref);
-                    var def = new ReportDefinition { Grouping = entitySpec.Report.Grouping, Aggregations = entitySpec.Report.Aggregations };
+                    var def = new ReportDefinition
+                    {
+                        Fields = entitySpec.Report.Fields,
+                        Filters = entitySpec.Report.Filters,
+                        Grouping = entitySpec.Report.Grouping,
+                        Aggregations = entitySpec.Report.Aggregations,
+                        Sort = entitySpec.Report.Sort
+                    };
                     var rr = await _mediator.Send(new UpsertCustomReportCommand(null,
                         new SaveCustomReportRequest(null, entitySpec.Report.DisplayName,
                             CustomReportDataSourceKind.CustomEntity, entity.Key, def)), ct);
@@ -266,7 +273,12 @@ public sealed class StudioAiSystemOrchestrator
         var sections = form.Sections.Select(s => new FormSection
         {
             Title = s.Title,
-            Fields = s.FieldKeys.Select(k => new FormFieldRef { Key = k, Width = "full" }).ToList()
+            Fields = s.Fields.Select(f => new FormFieldRef
+            {
+                Key = f.Key,
+                Width = f.Width ?? "full",
+                LabelOverride = f.LabelOverride
+            }).ToList()
         }).ToList();
         return new FormLayout { Sections = sections };
     }

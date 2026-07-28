@@ -76,3 +76,16 @@ public sealed record RunReportPreviewRequest(
 
 /// <summary>A selectable report data source (custom entity or whitelisted existing source) + its fields.</summary>
 public sealed record ReportSourceDto(string Kind, string Ref, string DisplayName, IReadOnlyList<ReportFieldMeta> Fields);
+
+/// <summary>
+/// Tout ce qu'il faut pour imprimer un état Studio : en-tête société, titre, description de la
+/// définition (filtres/tris résumés) et le résultat déjà exécuté. Le rendu est générique — il ne
+/// connaît que <see cref="ReportResultDto"/>, donc tout état Studio devient imprimable sans code dédié.
+/// </summary>
+public sealed record StudioReportPdfContext(
+    string CompanyName,
+    string? MatriculeFiscal,
+    string Title,
+    string? SourceLabel,
+    IReadOnlyList<string> Criteria,
+    ReportResultDto Result);
