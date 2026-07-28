@@ -374,15 +374,17 @@
   overflow: visible;
 }
 
-.main-header .icon_info ul.user_profile_dd li > a.main-header__user-trigger {
+.main-header .icon_info ul.user_profile_dd li > a.main-header__user-trigger,
+.main-header .icon_info ul.user_profile_dd li > button.main-header__user-trigger {
   position: relative;
 }
 
-.main-header .icon_info ul.user_profile_dd li > a.main-header__user-trigger::after {
+.main-header .icon_info ul.user_profile_dd li > a.main-header__user-trigger::after,
+.main-header .icon_info ul.user_profile_dd li > button.main-header__user-trigger::after {
   position: static;
   top: auto;
   right: auto;
-  display: inline-block;
+  display: none;
   margin-left: 0.2rem;
   vertical-align: middle;
   transform: none;
@@ -396,7 +398,8 @@
   line-height: 0;
 }
 
-.main-header .icon_info ul.user_profile_dd > li > a.main-header__user-trigger .name_user {
+.main-header .icon_info ul.user_profile_dd > li > a.main-header__user-trigger .name_user,
+.main-header .icon_info ul.user_profile_dd > li > button.main-header__user-trigger .name_user {
   padding: 0 !important;
 }
 

@@ -22,6 +22,19 @@ function assertFullyInViewport(
   expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1);
 }
 
+/** Guards against ng-bootstrap static/navbar mode: menu must sit below the trigger. */
+async function assertMenuBelowTrigger(
+  trigger: import('@playwright/test').Locator,
+  menu: import('@playwright/test').Locator
+): Promise<void> {
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  const triggerBox = await trigger.boundingBox();
+  const menuBox = await menu.boundingBox();
+  expect(triggerBox).toBeTruthy();
+  expect(menuBox).toBeTruthy();
+  expect(menuBox!.y).toBeGreaterThanOrEqual(triggerBox!.y + triggerBox!.height - 8);
+}
+
 test.describe('Header dropdowns', () => {
   test('notifications panel is fully visible and not clipped', async ({ page }) => {
     if (!(await ensureAuthenticated(page))) {
@@ -38,6 +51,7 @@ test.describe('Header dropdowns', () => {
 
     const menu = page.locator('.notif-menu.dropdown-menu.show, .notif-menu.show, .notif-menu').first();
     await expect(menu).toBeVisible();
+    await assertMenuBelowTrigger(bell, menu);
 
     const box = await menu.boundingBox();
     expect(box).toBeTruthy();
@@ -69,6 +83,7 @@ test.describe('Header dropdowns', () => {
 
     const menu = page.locator('.main-header__user-menu.dropdown-menu.show, .main-header__user-menu').first();
     await expect(menu).toBeVisible();
+    await assertMenuBelowTrigger(trigger, menu);
 
     const box = await menu.boundingBox();
     expect(box).toBeTruthy();
@@ -98,6 +113,7 @@ test.describe('Header dropdowns', () => {
 
     const menu = page.locator('.quick-access__panel.dropdown-menu.show, .quick-access__panel').first();
     await expect(menu).toBeVisible();
+    await assertMenuBelowTrigger(trigger, menu);
 
     const box = await menu.boundingBox();
     expect(box).toBeTruthy();
