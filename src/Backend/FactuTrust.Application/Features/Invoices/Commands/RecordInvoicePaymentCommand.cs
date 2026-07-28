@@ -4,6 +4,7 @@ using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Accounting.Notifications;
+using FactuTrust.Application.Features.Invoices.Services;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
@@ -62,28 +63,15 @@ public sealed class RecordInvoicePaymentCommandHandler : IRequestHandler<RecordI
             .Where(p => !p.IsRefunded)
             .Sum(p => p.GetTotalAppliedTowardInvoice());
 
-        // Compare on magnitudes — for credit notes (AVO) TotalAmount is negative but the
-        // refund payment is recorded as a positive scalar pointing in the opposite direction.
-        var remainingAmount = Math.Abs(invoice.TotalAmount.Amount) - totalPaid;
         var withholding = request.Request.ClientWithholdingAmount ?? 0m;
-        if (withholding < 0)
-            return Result.Failure(Error.Validation("ClientWithholdingAmount", "La retenue subie ne peut pas être négative"));
 
-        decimal netReceived;
-        if (request.Request.Amount.HasValue)
-            netReceived = request.Request.Amount.Value;
-        else if (withholding > 0)
-            netReceived = remainingAmount - withholding;
-        else
-            netReceived = remainingAmount;
+        var resolved = InvoicePaymentCalculator.Resolve(
+            invoice, totalPaid, request.Request.Amount, withholding);
 
-        if (netReceived <= 0)
-            return Result.Failure(Error.Validation("Amount", "Le montant du paiement doit être positif"));
+        if (resolved.IsFailure)
+            return Result.Failure(resolved.Error);
 
-        var appliedTowardInvoice = netReceived + withholding;
-        if (appliedTowardInvoice > remainingAmount)
-            return Result.Failure(Error.Validation("Amount",
-                $"Le total (net + retenue subie) ne peut pas dépasser le restant dû ({remainingAmount:N3} {invoice.TotalAmount.Currency})"));
+        var (netReceived, appliedTowardInvoice) = resolved.Value;
 
         var money = Money.Create(netReceived, invoice.TotalAmount.Currency);
         var paymentDate = request.Request.PaymentDate;

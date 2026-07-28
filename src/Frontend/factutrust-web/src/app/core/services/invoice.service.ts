@@ -339,6 +339,22 @@ export class InvoiceService {
     );
   }
 
+  /**
+   * Enregistre plusieurs règlements sur une facture en une seule transaction serveur.
+   * Utilisé par l'encaissement fractionné du point de vente : un règlement par mode,
+   * chacun donnant lieu à sa propre ligne Payment (et donc à sa propre écriture).
+   */
+  recordPayments(id: string, requests: RecordPaymentRequest[]): Observable<ApiResponse<void>> {
+    return this.http.post<ApiResponse<void>>(`${this.API_URL}/${id}/record-payments`, requests).pipe(
+      tap(res => {
+        const firstDate = requests.find(r => r.paymentDate?.trim())?.paymentDate?.trim();
+        if (res.success && firstDate) {
+          this.cashDesk.invalidateCachesAfterCashLedgerMutation(firstDate);
+        }
+      })
+    );
+  }
+
   /** Encaisse (ou marque impayé) un effet de commerce client à échéance. */
   settleEffet(invoiceId: string, paymentId: string, request: SettleEffetRequest): Observable<ApiResponse<void>> {
     return this.http.post<ApiResponse<void>>(

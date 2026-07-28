@@ -5,7 +5,7 @@ import { HttpClient } from '@angular/common/http';
 import { switchMap, map, catchError, tap } from 'rxjs/operators';
 import { throwError, of } from 'rxjs';
 import { PosStateService } from './services/pos-state.service';
-import { PosOrderLine } from './services/pos-state.service';
+import { PosOrderLine, PaymentSplit } from './services/pos-state.service';
 import { PosBarcodeService } from './services/pos-barcode.service';
 import { PosHeldOrdersService } from './services/pos-held-orders.service';
 import { PosDualScreenService } from './services/pos-dual-screen.service';
@@ -1129,11 +1129,11 @@ export class PosComponent implements OnInit, OnDestroy {
     let paymentTerms = 'Paiement comptant';
 
     if (this.posState.isSplitPayment() && this.posState.paymentSplits().length > 0) {
+      // La ventilation n'est plus concaténée dans PaymentTerms : chaque mode donne lieu à
+      // sa propre ligne Payment, enregistrée via recordPayments (cf. recordSplitPayments).
+      // Le mode retenu ici n'est qu'un libellé d'en-tête de facture.
       paymentMethod = this.posState.paymentSplits()[0].method;
-      const parts = this.posState.paymentSplits().map(s =>
-        `${s.method}: ${this.posState.formatAmount(s.amount)} TND`
-      );
-      paymentTerms = `Paiement fractionne: ${parts.join(', ')}`;
+      paymentTerms = 'Paiement fractionne';
     }
     const orderNotes = this.posState.orderNotes()?.trim();
     if (orderNotes) {
@@ -1245,6 +1245,8 @@ export class PosComponent implements OnInit, OnDestroy {
   private onInvoiceCreated(payload: { invoiceId: string; invoiceNumber: string }): void {
     const soldProductIds = [...new Set(this.posState.lines().map(l => l.productId))];
     const { invoiceId, invoiceNumber } = payload;
+    // Capturé AVANT resetOrder(), qui vide la ventilation.
+    const splits = this.posState.isSplitPayment() ? [...this.posState.paymentSplits()] : [];
     const client = this.posState.client();
     if (client && !client.isWalkIn) {
       const productIds = this.posState.lines().map(l => l.productId);
@@ -1270,6 +1272,12 @@ export class PosComponent implements OnInit, OnDestroy {
     this.posStockService.invalidateOrderStockCache();
     this.posStockService.loadCatalogAlerts();
     this.catalogComponent?.refreshStockAfterSale(soldProductIds);
+
+    if (splits.length > 0) {
+      // Encaissement fractionné : une ligne Payment par mode, en une seule transaction.
+      this.recordSplitPayments(invoiceId, splits);
+      return;
+    }
 
     if (paymentMethod === PaymentMethod.Cash) {
       this.lastCreatedInvoiceIdForCash = invoiceId;
@@ -1420,6 +1428,36 @@ export class PosComponent implements OnInit, OnDestroy {
     this.showChangeCalculator = false;
     this.changeCalculatorTotal = 0;
     this.showToast('Transaction terminee');
+  }
+
+  /**
+   * Enregistre la ventilation d'un encaissement fractionné : un règlement par mode, dans une
+   * seule transaction serveur. Auparavant seul le premier mode survivait, le reste finissant
+   * concaténé dans le champ texte des conditions de règlement — ce qui rendait le
+   * rapprochement bancaire et le comptage de caisse invérifiables.
+   */
+  private recordSplitPayments(invoiceId: string, splits: PaymentSplit[]): void {
+    const paymentDate = formatLocalDate(new Date());
+    const requests = splits.map(split => ({
+      paymentDate,
+      method: Number(split.method),
+      amount: split.amount
+    }));
+
+    this.isRecordingPayment = true;
+    this.invoiceService.recordPayments(invoiceId, requests).subscribe({
+      next: () => {
+        this.isRecordingPayment = false;
+        this.showToast(`Encaissement fractionné enregistré (${splits.length} règlements)`);
+      },
+      error: err => {
+        this.isRecordingPayment = false;
+        const message = this.extractErrorMessage(
+          err, "Erreur lors de l'enregistrement de l'encaissement fractionné");
+        this.posState.setError(message);
+        this.audioService.beepError();
+      }
+    });
   }
 
   private downloadPdf(invoiceId: string): void {

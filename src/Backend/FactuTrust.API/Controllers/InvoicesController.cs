@@ -278,6 +278,35 @@ public class InvoicesController : ControllerBase
     }
 
     /// <summary>
+    /// Enregistre plusieurs règlements sur une même facture, de façon atomique.
+    /// Destiné à l'encaissement fractionné du point de vente : un règlement par mode
+    /// (espèces, carte, chèque…), chacun donnant lieu à sa propre ligne Payment.
+    /// Les N lignes et le statut de la facture sont écrits dans une seule transaction.
+    /// </summary>
+    [HttpPost("{id:guid}/record-payments")]
+    [Authorize(Policy = PermissionPolicies.PaymentsCreate)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> RecordPayments(
+        Guid id,
+        [FromBody] IReadOnlyList<RecordInvoicePaymentRequest> requests,
+        CancellationToken cancellationToken)
+    {
+        var command = new RecordInvoicePaymentsBatchCommand(id, requests);
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            if (result.Error.Code == "NotFound")
+                return NotFound(ApiResponse<object>.Fail(result.Error.Description));
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+        }
+
+        return Ok(ApiResponse<object>.Ok(null!, "Règlements enregistrés avec succès"));
+    }
+
+    /// <summary>
     /// Règle un effet de commerce (traite) client à échéance : encaissé ou impayé.
     /// </summary>
     [HttpPost("{id:guid}/payments/{paymentId:guid}/settle-effet")]
