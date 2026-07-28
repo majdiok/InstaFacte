@@ -82,6 +82,8 @@ public partial class TenantDbContext : DbContext
     public DbSet<InvoiceLine> InvoiceLines => Set<InvoiceLine>();
     public DbSet<Quote> Quotes => Set<Quote>();
     public DbSet<QuoteLine> QuoteLines => Set<QuoteLine>();
+    public DbSet<SalesOrder> SalesOrders => Set<SalesOrder>();
+    public DbSet<SalesOrderLine> SalesOrderLines => Set<SalesOrderLine>();
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<CashOperation> CashOperations => Set<CashOperation>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
@@ -267,6 +269,8 @@ public partial class TenantDbContext : DbContext
         ConfigureInvoiceLine(builder);
         ConfigureQuote(builder);
         ConfigureQuoteLine(builder);
+        ConfigureSalesOrder(builder);
+        ConfigureSalesOrderLine(builder);
         ConfigurePayment(builder);
         ConfigureAuditLog(builder);
         ConfigureInvoiceDraft(builder);
@@ -1587,6 +1591,138 @@ public partial class TenantDbContext : DbContext
             entity.Property(q => q.OriginStorefrontOrderId);
             entity.HasIndex(q => q.OriginStorefrontOrderId)
                 .HasFilter("[OriginStorefrontOrderId] IS NOT NULL");
+        });
+    }
+
+    /// <summary>
+    /// Commande client. Calquée sur <see cref="ConfigureQuote"/> : mêmes types possédés Money,
+    /// même numéro possédé, mêmes conventions d'index. Les index portent sur ce qui pilote le
+    /// carnet de commandes — statut, date, client — et sur les liens de traçabilité amont.
+    /// </summary>
+    private static void ConfigureSalesOrder(ModelBuilder builder)
+    {
+        builder.Entity<SalesOrder>(entity =>
+        {
+            entity.ToTable("SalesOrders");
+            entity.HasKey(o => o.Id);
+
+            entity.Property(o => o.Reference).HasMaxLength(100);
+            entity.Property(o => o.Notes).HasMaxLength(2000);
+            entity.Property(o => o.PaymentTerms).HasMaxLength(500);
+            entity.Property(o => o.CancellationReason).HasMaxLength(500);
+            entity.Property(o => o.ClosureReason).HasMaxLength(500);
+            entity.Property(o => o.IsStockReserved).IsRequired();
+
+            entity.OwnsOne(o => o.Number, num =>
+            {
+                num.Property(n => n.Value)
+                    .HasColumnName("Number").HasMaxLength(50).IsRequired();
+                num.Property(n => n.Prefix)
+                    .HasColumnName("NumberPrefix").HasMaxLength(10).IsRequired();
+                num.Property(n => n.Year)
+                    .HasColumnName("NumberYear").IsRequired();
+                num.Property(n => n.Sequence)
+                    .HasColumnName("NumberSequence").IsRequired();
+
+                num.HasIndex(n => n.Value).HasDatabaseName("IX_SalesOrders_Number");
+            });
+
+            ConfigureOwnedMoney(entity, o => o.SubTotal, "SubTotal");
+            ConfigureOwnedMoney(entity, o => o.FodecAmount, "FodecAmount");
+            ConfigureOwnedMoney(entity, o => o.TotalVat, "TotalVat");
+            ConfigureOwnedMoney(entity, o => o.FiscalStampAmount, "FiscalStampAmount");
+            ConfigureOwnedMoney(entity, o => o.TotalAmount, "TotalAmount");
+
+            entity.HasOne(o => o.Client)
+                .WithMany()
+                .HasForeignKey(o => o.ClientId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(o => o.Warehouse)
+                .WithMany()
+                .HasForeignKey(o => o.WarehouseId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(o => o.Lines)
+                .WithOne(l => l.SalesOrder)
+                .HasForeignKey(l => l.SalesOrderId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Le carnet de commandes se filtre sur statut + date ; la fiche client sur ClientId.
+            entity.HasIndex(o => o.Status);
+            entity.HasIndex(o => o.OrderDate);
+            entity.HasIndex(o => o.ClientId);
+            entity.HasIndex(o => o.ExpectedDeliveryDate);
+
+            entity.HasIndex(o => o.SourceQuoteId)
+                .HasFilter("[SourceQuoteId] IS NOT NULL");
+        });
+    }
+
+    /// <summary>
+    /// Ligne de commande client. Calquée sur <see cref="ConfigureQuoteLine"/>, avec les trois
+    /// quantités (commandée, livrée, facturée) qui portent les reliquats.
+    /// </summary>
+    private static void ConfigureSalesOrderLine(ModelBuilder builder)
+    {
+        builder.Entity<SalesOrderLine>(entity =>
+        {
+            entity.ToTable("SalesOrderLines");
+            entity.HasKey(l => l.Id);
+
+            entity.Property(l => l.ProductCode).HasMaxLength(50).IsRequired();
+            entity.Property(l => l.ProductName).HasMaxLength(200).IsRequired();
+            entity.Property(l => l.ProductDescription).HasMaxLength(1000);
+            entity.Property(l => l.Unit).HasMaxLength(50);
+            entity.Property(l => l.Notes).HasMaxLength(500);
+
+            entity.Property(l => l.Quantity).HasPrecision(18, 4).IsRequired();
+            entity.Property(l => l.DeliveredQuantity).HasPrecision(18, 4).IsRequired();
+            entity.Property(l => l.InvoicedQuantity).HasPrecision(18, 4).IsRequired();
+
+            entity.Property(l => l.DiscountPercent).HasPrecision(5, 2);
+            entity.Property(l => l.IsFodecApplicable).IsRequired();
+            entity.Property(l => l.FodecRatePercent).HasPrecision(5, 2).IsRequired();
+
+            ConfigureOwnedMoney(entity, l => l.UnitPrice, "UnitPrice");
+            ConfigureOwnedMoney(entity, l => l.DiscountAmount, "DiscountAmount");
+            ConfigureOwnedMoney(entity, l => l.FodecAmount, "FodecAmount");
+            ConfigureOwnedMoney(entity, l => l.SubTotal, "SubTotal");
+            ConfigureOwnedMoney(entity, l => l.VatAmount, "VatAmount");
+            ConfigureOwnedMoney(entity, l => l.Total, "Total");
+
+            entity.HasOne(l => l.Product)
+                .WithMany()
+                .HasForeignKey(l => l.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(l => l.SalesOrderId);
+            entity.HasIndex(l => l.ProductId);
+        });
+    }
+
+    /// <summary>
+    /// Déclare un <c>Money</c> possédé sous la convention du contexte : montant en
+    /// decimal(18,3) dans <paramref name="columnName"/> et devise dans
+    /// <c>{columnName}Currency</c>. Évite de répéter onze blocs identiques.
+    /// </summary>
+    private static void ConfigureOwnedMoney<TEntity>(
+        Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<TEntity> entity,
+        System.Linq.Expressions.Expression<Func<TEntity, Domain.ValueObjects.Money?>> navigation,
+        string columnName)
+        where TEntity : class
+    {
+        entity.OwnsOne(navigation, money =>
+        {
+            money.Property(m => m.Amount)
+                .HasColumnName(columnName)
+                .HasPrecision(18, 3)
+                .IsRequired();
+
+            money.Property(m => m.Currency)
+                .HasColumnName($"{columnName}Currency")
+                .HasMaxLength(3)
+                .IsRequired();
         });
     }
 

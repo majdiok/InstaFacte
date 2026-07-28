@@ -5621,6 +5621,182 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.ToTable("SalesActivities", (string)null);
                 });
 
+            modelBuilder.Entity("FactuTrust.Domain.Entities.SalesOrder", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("CancelledAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CancellationReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ClosedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ClosureReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("ConfirmedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("ExpectedDeliveryDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsStockReserved")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime>("OrderDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PaymentTerms")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Reference")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid?>("SourceQuoteId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("WarehouseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId");
+
+                    b.HasIndex("ExpectedDeliveryDate");
+
+                    b.HasIndex("OrderDate");
+
+                    b.HasIndex("SourceQuoteId")
+                        .HasFilter("[SourceQuoteId] IS NOT NULL");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("WarehouseId");
+
+                    b.ToTable("SalesOrders", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.SalesOrderLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("DeliveredQuantity")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<decimal?>("DiscountPercent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<decimal>("FodecRatePercent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<decimal>("InvoicedQuantity")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<bool>("IsFodecApplicable")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("LineNumber")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("ProductCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("ProductDescription")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ProductName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<Guid>("SalesOrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Unit")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("VatRate")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("SalesOrderId");
+
+                    b.ToTable("SalesOrderLines", (string)null);
+                });
+
             modelBuilder.Entity("FactuTrust.Domain.Entities.SalesTarget", b =>
                 {
                     b.Property<Guid>("Id")
@@ -9834,6 +10010,379 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.Navigation("QuoteTemplate");
                 });
 
+            modelBuilder.Entity("FactuTrust.Domain.Entities.SalesOrder", b =>
+                {
+                    b.HasOne("FactuTrust.Domain.Entities.Client", "Client")
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FactuTrust.Domain.Entities.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "FiscalStampAmount", b1 =>
+                        {
+                            b1.Property<Guid>("SalesOrderId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("FiscalStampAmount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("FiscalStampAmountCurrency");
+
+                            b1.HasKey("SalesOrderId");
+
+                            b1.ToTable("SalesOrders");
+
+                            b1.WithOwner()
+                                .HasForeignKey("SalesOrderId");
+                        });
+
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "FodecAmount", b1 =>
+                        {
+                            b1.Property<Guid>("SalesOrderId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("FodecAmount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("FodecAmountCurrency");
+
+                            b1.HasKey("SalesOrderId");
+
+                            b1.ToTable("SalesOrders");
+
+                            b1.WithOwner()
+                                .HasForeignKey("SalesOrderId");
+                        });
+
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.SalesOrderNumber", "Number", b1 =>
+                        {
+                            b1.Property<Guid>("SalesOrderId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<string>("Prefix")
+                                .IsRequired()
+                                .HasMaxLength(10)
+                                .HasColumnType("nvarchar(10)")
+                                .HasColumnName("NumberPrefix");
+
+                            b1.Property<int>("Sequence")
+                                .HasColumnType("int")
+                                .HasColumnName("NumberSequence");
+
+                            b1.Property<string>("Value")
+                                .IsRequired()
+                                .HasMaxLength(50)
+                                .HasColumnType("nvarchar(50)")
+                                .HasColumnName("Number");
+
+                            b1.Property<int>("Year")
+                                .HasColumnType("int")
+                                .HasColumnName("NumberYear");
+
+                            b1.HasKey("SalesOrderId");
+
+                            b1.HasIndex("Value")
+                                .HasDatabaseName("IX_SalesOrders_Number");
+
+                            b1.ToTable("SalesOrders");
+
+                            b1.WithOwner()
+                                .HasForeignKey("SalesOrderId");
+                        });
+
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "SubTotal", b1 =>
+                        {
+                            b1.Property<Guid>("SalesOrderId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("SubTotal");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("SubTotalCurrency");
+
+                            b1.HasKey("SalesOrderId");
+
+                            b1.ToTable("SalesOrders");
+
+                            b1.WithOwner()
+                                .HasForeignKey("SalesOrderId");
+                        });
+
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "TotalAmount", b1 =>
+                        {
+                            b1.Property<Guid>("SalesOrderId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("TotalAmount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("TotalAmountCurrency");
+
+                            b1.HasKey("SalesOrderId");
+
+                            b1.ToTable("SalesOrders");
+
+                            b1.WithOwner()
+                                .HasForeignKey("SalesOrderId");
+                        });
+
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "TotalVat", b1 =>
+                        {
+                            b1.Property<Guid>("SalesOrderId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("TotalVat");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("TotalVatCurrency");
+
+                            b1.HasKey("SalesOrderId");
+
+                            b1.ToTable("SalesOrders");
+
+                            b1.WithOwner()
+                                .HasForeignKey("SalesOrderId");
+                        });
+
+                    b.Navigation("Client");
+
+                    b.Navigation("FiscalStampAmount")
+                        .IsRequired();
+
+                    b.Navigation("FodecAmount")
+                        .IsRequired();
+
+                    b.Navigation("Number")
+                        .IsRequired();
+
+                    b.Navigation("SubTotal")
+                        .IsRequired();
+
+                    b.Navigation("TotalAmount")
+                        .IsRequired();
+
+                    b.Navigation("TotalVat")
+                        .IsRequired();
+
+                    b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.SalesOrderLine", b =>
+                {
+                    b.HasOne("FactuTrust.Domain.Entities.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FactuTrust.Domain.Entities.SalesOrder", "SalesOrder")
+                        .WithMany("Lines")
+                        .HasForeignKey("SalesOrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "DiscountAmount", b1 =>
+                        {
+                            b1.Property<Guid>("SalesOrderLineId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("DiscountAmount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("DiscountAmountCurrency");
+
+                            b1.HasKey("SalesOrderLineId");
+
+                            b1.ToTable("SalesOrderLines");
+
+                            b1.WithOwner()
+                                .HasForeignKey("SalesOrderLineId");
+                        });
+
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "FodecAmount", b1 =>
+                        {
+                            b1.Property<Guid>("SalesOrderLineId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("FodecAmount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("FodecAmountCurrency");
+
+                            b1.HasKey("SalesOrderLineId");
+
+                            b1.ToTable("SalesOrderLines");
+
+                            b1.WithOwner()
+                                .HasForeignKey("SalesOrderLineId");
+                        });
+
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "SubTotal", b1 =>
+                        {
+                            b1.Property<Guid>("SalesOrderLineId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("SubTotal");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("SubTotalCurrency");
+
+                            b1.HasKey("SalesOrderLineId");
+
+                            b1.ToTable("SalesOrderLines");
+
+                            b1.WithOwner()
+                                .HasForeignKey("SalesOrderLineId");
+                        });
+
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "Total", b1 =>
+                        {
+                            b1.Property<Guid>("SalesOrderLineId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("Total");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("TotalCurrency");
+
+                            b1.HasKey("SalesOrderLineId");
+
+                            b1.ToTable("SalesOrderLines");
+
+                            b1.WithOwner()
+                                .HasForeignKey("SalesOrderLineId");
+                        });
+
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "UnitPrice", b1 =>
+                        {
+                            b1.Property<Guid>("SalesOrderLineId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("UnitPrice");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("UnitPriceCurrency");
+
+                            b1.HasKey("SalesOrderLineId");
+
+                            b1.ToTable("SalesOrderLines");
+
+                            b1.WithOwner()
+                                .HasForeignKey("SalesOrderLineId");
+                        });
+
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "VatAmount", b1 =>
+                        {
+                            b1.Property<Guid>("SalesOrderLineId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("VatAmount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("VatAmountCurrency");
+
+                            b1.HasKey("SalesOrderLineId");
+
+                            b1.ToTable("SalesOrderLines");
+
+                            b1.WithOwner()
+                                .HasForeignKey("SalesOrderLineId");
+                        });
+
+                    b.Navigation("DiscountAmount")
+                        .IsRequired();
+
+                    b.Navigation("FodecAmount")
+                        .IsRequired();
+
+                    b.Navigation("Product");
+
+                    b.Navigation("SalesOrder");
+
+                    b.Navigation("SubTotal")
+                        .IsRequired();
+
+                    b.Navigation("Total")
+                        .IsRequired();
+
+                    b.Navigation("UnitPrice")
+                        .IsRequired();
+
+                    b.Navigation("VatAmount")
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("FactuTrust.Domain.Entities.SalesTarget", b =>
                 {
                     b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "TargetAmount", b1 =>
@@ -10668,6 +11217,11 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                 });
 
             modelBuilder.Entity("FactuTrust.Domain.Entities.Quote", b =>
+                {
+                    b.Navigation("Lines");
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.SalesOrder", b =>
                 {
                     b.Navigation("Lines");
                 });
