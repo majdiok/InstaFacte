@@ -137,7 +137,7 @@ import { GlobalSearchResult, GlobalSearchService } from '../../services/global-s
       border: none;
       border-radius: 0;
       color: var(--topbar-fg, #fff);
-      padding: 8px 72px 8px 40px;
+      padding: 6px 72px 6px 40px;
     }
     .global-search--header .global-search__input::placeholder {
       color: var(--topbar-fg-muted, rgba(255, 255, 255, 0.75));

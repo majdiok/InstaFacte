@@ -3,9 +3,12 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import {
   applyCompanyAccountingSidebar,
+  buildCompanyEtatsComptablesNavChildren,
   canShowVatDeclarationDocLinks,
+  COMPANY_ACCOUNTING_SIDEBAR_CHILDREN,
   isCompanyAllowedAccountingPath
 } from './company-accounting-nav.config';
+import { ACCOUNTING_MODULES } from './accounting-modules.config';
 import { NavItem } from './app-navigation.registry';
 import { AuthService, User } from '../services/auth.service';
 
@@ -105,6 +108,20 @@ describe('company-accounting-nav.config', () => {
       'Déclaration mensuelle',
       'Liste des immobilisations'
     ]);
+  });
+
+  it('nests the 11 états under États comptables from ACCOUNTING_MODULES', () => {
+    const etatsModule = ACCOUNTING_MODULES.find(m => m.title === 'États');
+    expect(etatsModule?.links.length).toBe(11);
+
+    const children = buildCompanyEtatsComptablesNavChildren();
+    expect(children.length).toBe(11);
+    expect(children.map(c => c.route)).toEqual(etatsModule!.links.map(l => l.route));
+    expect(children.map(c => c.label)).toEqual(etatsModule!.links.map(l => l.label));
+
+    const etatsEntry = COMPANY_ACCOUNTING_SIDEBAR_CHILDREN.find(c => c.label === 'États comptables');
+    expect(etatsEntry?.children?.length).toBe(11);
+    expect(etatsEntry?.children?.map(c => c.route)).toEqual(etatsModule!.links.map(l => l.route));
   });
 });
 

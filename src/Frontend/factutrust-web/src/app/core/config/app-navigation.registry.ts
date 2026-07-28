@@ -21,6 +21,8 @@ export interface NavSubItem {
   modules?: AppModule[];
   permissionsAll?: string[];
   platformSettingsOnly?: boolean;
+  /** One nesting level max (e.g. secondary-nav flyout). UI must not recurse further. */
+  children?: NavSubItem[];
 }
 
 export interface NavItem {
@@ -811,11 +813,31 @@ export function getVisibleNavSearchEntries(auth: AuthService): NavSearchEntry[] 
   return entries;
 }
 
+function filterNavSubItems(auth: AuthService, children: NavSubItem[]): NavSubItem[] {
+  const out: NavSubItem[] = [];
+  for (const child of children) {
+    if (!canSeeNavEntry(auth, child)) {
+      continue;
+    }
+    if (child.children?.length) {
+      const nested = filterNavSubItems(auth, child.children);
+      // Keep hub parents that have their own route even if all nested children are filtered out.
+      if (nested.length === 0 && !child.route) {
+        continue;
+      }
+      out.push({ ...child, children: nested });
+      continue;
+    }
+    out.push(child);
+  }
+  return out;
+}
+
 export function filterNavItems(auth: AuthService, items: NavItem[]): NavItem[] {
   const out: NavItem[] = [];
   for (const item of items) {
     if (item.children?.length) {
-      const children = item.children.filter(c => canSeeNavEntry(auth, c));
+      const children = filterNavSubItems(auth, item.children);
       if (children.length === 0) {
         continue;
       }

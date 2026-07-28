@@ -1,0 +1,240 @@
+@use '../nav-icon-colors' as icons;
+
+:host {
+  display: block;
+  position: relative;
+  z-index: var(--z-dropdown, 100);
+  flex-shrink: 0;
+}
+
+.secondary-nav {
+  display: none;
+  background: linear-gradient(
+    to right,
+    var(--topbar-gradient-start, #0073b7),
+    var(--topbar-gradient-end, #00c0ef)
+  );
+  border-bottom: none;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
+  position: relative;
+}
+
+:host-context(.theme-superieur) .secondary-nav {
+  background: var(--superieur-primary, #3862f5);
+  box-shadow: 0 2px 8px rgba(56, 98, 245, 0.2);
+}
+
+.secondary-nav__list {
+  display: flex;
+  align-items: stretch;
+  gap: 0.125rem;
+  margin: 0;
+  padding: 0 1rem;
+  list-style: none;
+  min-height: var(--secondary-nav-height, 2.75rem);
+  /* No overflow-x here: it would clip absolute/body dropdowns (CSS overflow coercion). */
+}
+
+.secondary-nav__item {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.secondary-nav__dropdown-host {
+  display: block;
+  height: 100%;
+}
+
+.secondary-nav__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  height: var(--secondary-nav-height, 2.75rem);
+  padding: 0 0.85rem;
+  border: 0;
+  background: transparent;
+  color: var(--color-neutral-900, #0f172a);
+  font-size: var(--font-size-base, 1rem);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  text-transform: none;
+  white-space: nowrap;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.secondary-nav__label {
+  color: var(--color-neutral-900, #0f172a);
+  font-size: inherit;
+  line-height: 1.2;
+}
+
+.secondary-nav__trigger::after {
+  /* Hide Bootstrap caret; we use our own chevron. */
+  display: none !important;
+}
+
+.secondary-nav__trigger:hover,
+.secondary-nav__trigger:focus-visible {
+  color: var(--color-neutral-900, #0f172a);
+  background: var(--topbar-hover-bg, rgba(255, 255, 255, 0.12));
+  outline: none;
+}
+
+.secondary-nav__trigger.is-active,
+.secondary-nav__item.is-active > .secondary-nav__trigger,
+.secondary-nav__item.is-active .secondary-nav__trigger {
+  color: var(--color-neutral-900, #0f172a);
+  border-bottom-color: var(--color-neutral-900, #0f172a);
+  background: var(--topbar-hover-bg, rgba(255, 255, 255, 0.12));
+}
+
+.secondary-nav__icon {
+  font-size: 0.9rem;
+  width: 1rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* Colored section icons (do not inherit label text color). */
+.secondary-nav__trigger > i.secondary-nav__icon {
+  @include icons.nav-rail-fa-icon-colors;
+}
+
+.secondary-nav__chevron {
+  font-size: 0.7rem;
+  color: var(--color-neutral-700, #334155);
+  opacity: 1;
+  transition: transform 0.15s ease;
+}
+
+.secondary-nav__dropdown-host.show .secondary-nav__chevron,
+.secondary-nav__item:has(.show) .secondary-nav__chevron {
+  transform: rotate(180deg);
+}
+
+/* Namespaced panel: works with body container (Ngb) and local menu. */
+.secondary-nav__dropdown.dropdown-menu {
+  min-width: 14rem;
+  max-width: 20rem;
+  margin: 0;
+  padding: 0.4rem 0;
+  background: #fff;
+  border: 1px solid var(--color-neutral-200, #e5e7eb);
+  border-radius: 0 0 0.5rem 0.5rem;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  /* Body portal: Bootstrap-scale stacking (below modals 1100+). */
+  z-index: 1000;
+  overflow: visible;
+}
+
+.secondary-nav__link {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.9rem;
+  color: var(--color-neutral-700, #374151);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+}
+
+.secondary-nav__link.dropdown-item {
+  /* Override Bootstrap .dropdown-item defaults inside our namespace. */
+  clear: both;
+  width: 100%;
+}
+
+.secondary-nav__link i.secondary-nav__icon {
+  width: 1rem;
+  text-align: center;
+  flex-shrink: 0;
+  @include icons.nav-submenu-fa-icon-colors;
+}
+
+.secondary-nav__link:hover,
+.secondary-nav__link:focus-visible,
+.secondary-nav__link.dropdown-item:hover,
+.secondary-nav__link.dropdown-item:focus {
+  background: var(--color-primary-50, #eff6ff);
+  color: var(--color-primary-700, #1d4ed8);
+  outline: none;
+}
+
+.secondary-nav__link.is-active,
+.secondary-nav__link.dropdown-item.is-active {
+  background: var(--color-primary-50, #eff6ff);
+  color: var(--color-primary-700, #1d4ed8);
+  font-weight: 600;
+}
+
+/* Keep pictogram colors on hover/active — do not force primary blue on icons. */
+.secondary-nav__link:hover i.secondary-nav__icon,
+.secondary-nav__link:focus-visible i.secondary-nav__icon,
+.secondary-nav__link.is-active i.secondary-nav__icon,
+.secondary-nav__link.dropdown-item:hover i.secondary-nav__icon,
+.secondary-nav__link.dropdown-item:focus i.secondary-nav__icon,
+.secondary-nav__link.dropdown-item.is-active i.secondary-nav__icon {
+  @include icons.nav-submenu-fa-icon-colors;
+}
+
+/* Nested flyout (one level): e.g. États comptables → Journal, Grand livre, … */
+.secondary-nav__submenu {
+  position: relative;
+}
+
+.secondary-nav__submenu-trigger {
+  width: 100%;
+  cursor: pointer;
+}
+
+.secondary-nav__submenu-label {
+  flex: 1 1 auto;
+  text-align: left;
+}
+
+.secondary-nav__submenu-chevron {
+  margin-left: auto;
+  font-size: 0.65rem;
+  color: var(--color-neutral-400, #9ca3af);
+  flex-shrink: 0;
+}
+
+.secondary-nav__submenu-panel {
+  display: none;
+  position: absolute;
+  left: 100%;
+  top: 0;
+  min-width: 14rem;
+  max-width: 22rem;
+  max-height: min(70vh, 28rem);
+  overflow-y: auto;
+  padding: 0.4rem 0;
+  background: #fff;
+  border: 1px solid var(--color-neutral-200, #e5e7eb);
+  border-radius: 0.5rem;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  z-index: calc(var(--z-dropdown, 100) + 1);
+}
+
+.secondary-nav__submenu.is-open > .secondary-nav__submenu-panel {
+  display: block;
+}
+
+.secondary-nav__submenu.is-open > .secondary-nav__submenu-trigger {
+  background: var(--color-primary-50, #eff6ff);
+  color: var(--color-primary-700, #1d4ed8);
+}
+
+/* Desktop-only: masquée sur mobile/tablette (choix validé). */
+@media (min-width: 992px) {
+  .secondary-nav {
+    display: block;
+  }
+}

@@ -10,12 +10,12 @@
   --sidebar-rail-width: 176px;
   --sidebar-rail-width-collapsed: 72px;
   --sidebar-submenu-width: 260px;
-  --sidebar-brand-height: var(--topbar-height, 56px);
-  --sidebar-brand-height-collapsed: 56px;
-  --sidebar-brand-logo-icon-size-collapsed: 36px;
-  --sidebar-brand-logo-max-height: 42px;
+  --sidebar-brand-height: var(--topbar-height, 48px);
+  --sidebar-brand-height-collapsed: var(--topbar-height, 48px);
+  --sidebar-brand-logo-icon-size-collapsed: 32px;
+  --sidebar-brand-logo-max-height: 36px;
   --sidebar-brand-logo-max-width: 160px;
-  --sidebar-brand-logo-icon-size: 44px;
+  --sidebar-brand-logo-icon-size: 36px;
   --sidebar-rail-icon-size: 24px;
   --sidebar-rail-icon-raster-size: 26px;
   --sidebar-rail-icon-assistant-size: 28px;
@@ -62,6 +62,18 @@
   transition: width 0.3s ease;
   overflow: hidden;
   position: relative;
+}
+
+/* Desktop + 2e barre visible : brand = header + secondary-nav (alignement bloc bleu). */
+@media (min-width: 992px) {
+  :host-context(.layout-has-secondary-nav) #sidebar {
+    --sidebar-brand-height: calc(
+      var(--topbar-height, 48px) + var(--secondary-nav-height, 2.75rem)
+    );
+    --sidebar-brand-height-collapsed: calc(
+      var(--topbar-height, 48px) + var(--secondary-nav-height, 2.75rem)
+    );
+  }
 }
 
 /* -------------------------------------

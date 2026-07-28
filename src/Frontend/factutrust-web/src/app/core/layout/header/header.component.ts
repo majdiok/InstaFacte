@@ -85,19 +85,30 @@ import { GlobalSearchService } from '../../services/global-search.service';
                     <i class="fa-solid fa-share-nodes"></i>
                   </a>
                 </li>
-                <li ngbDropdown placement="bottom-end" (openChange)="onNotificationsOpenChange($event)">
-                  <a
+                <li
+                  ngbDropdown
+                  placement="bottom-end"
+                  container="body"
+                  display="dynamic"
+                  (openChange)="onNotificationsOpenChange($event)"
+                  class="main-header__dropdown-host">
+                  <button
+                    type="button"
                     ngbDropdownToggle
                     id="notificationsDropdown"
-                    role="button"
                     class="notif-bell"
-                    aria-label="Notifications">
+                    aria-label="Notifications"
+                    aria-haspopup="menu">
                     <i class="fa-regular fa-bell"></i>
                     @if (notifications.unreadCount() > 0) {
                       <span class="badge">{{ notifications.unreadCount() > 99 ? '99+' : notifications.unreadCount() }}</span>
                     }
-                  </a>
-                  <div ngbDropdownMenu aria-labelledby="notificationsDropdown" class="notif-menu">
+                  </button>
+                  <div
+                    ngbDropdownMenu
+                    aria-labelledby="notificationsDropdown"
+                    class="notif-menu dropdown-menu"
+                    role="menu">
                     <div class="notif-menu__header">
                       <span class="notif-menu__title">Notifications</span>
                       @if (notifications.unreadCount() > 0) {
@@ -133,17 +144,29 @@ import { GlobalSearchService } from '../../services/global-search.service';
                 </li>
               </ul>
               <ul class="user_profile_dd">
-                <li ngbDropdown placement="bottom-end">
-                  <a
+                <li
+                  ngbDropdown
+                  placement="bottom-end"
+                  container="body"
+                  display="dynamic"
+                  class="main-header__dropdown-host">
+                  <button
+                    type="button"
                     ngbDropdownToggle
                     class="dropdown-toggle main-header__user-trigger"
-                    id="userDropdown">
+                    id="userDropdown"
+                    aria-label="Menu utilisateur"
+                    aria-haspopup="menu">
                     <div class="user_avatar_image">
                       <img src="assets/theme/pluto/images/layout_img/user_img.jpg" alt="User avatar" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
                       <div class="user_avatar_circle" style="display: none;">{{ getInitials() }}</div>
                     </div>
-                  </a>
-                  <div ngbDropdownMenu aria-labelledby="userDropdown">
+                  </button>
+                  <div
+                    ngbDropdownMenu
+                    aria-labelledby="userDropdown"
+                    class="main-header__user-menu dropdown-menu"
+                    role="menu">
                     <a ngbDropdownItem routerLink="/settings/profile">Mon profil</a>
                     @if (authService.canAccessPlatformSettings()) {
                       <a ngbDropdownItem routerLink="/settings">Paramètres</a>
@@ -181,8 +204,8 @@ import { GlobalSearchService } from '../../services/global-search.service';
       display: flex;
       align-items: center;
       width: 100%;
-      min-height: var(--topbar-height, 56px);
-      padding: 8px 20px;
+      min-height: var(--topbar-height, 48px);
+      padding: 4px 20px;
       gap: 0;
     }
 
@@ -192,7 +215,7 @@ import { GlobalSearchService } from '../../services/global-search.service';
       color: var(--topbar-fg);
       font-size: 20px;
       cursor: pointer;
-      padding: 8px 12px;
+      padding: 6px 12px;
       margin-right: 0;
       border-right: 1px solid var(--topbar-divider);
       border-radius: 0;
@@ -218,8 +241,8 @@ import { GlobalSearchService } from '../../services/global-search.service';
       display: none;
       align-items: center;
       justify-content: center;
-      width: 38px;
-      height: 38px;
+      width: 36px;
+      height: 36px;
       border: none;
       border-radius: 0;
       background: transparent;
@@ -248,7 +271,7 @@ import { GlobalSearchService } from '../../services/global-search.service';
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 6px 14px;
+      padding: 4px 12px;
       background: rgba(255, 255, 255, 0.15);
       border: 1px solid rgba(255, 255, 255, 0.25);
       border-radius: 999px;
@@ -283,27 +306,44 @@ import { GlobalSearchService } from '../../services/global-search.service';
       list-style: none;
       margin: 0;
       padding: 0;
+      float: none;
+      width: auto;
 
-      li {
+      /* Neutralise Pluto .icon_info ul li { 35×35 } */
+      > li {
         display: flex;
         align-items: center;
+        float: none;
+        width: auto;
+        height: auto;
+        margin: 0;
+        border-radius: 0;
+        line-height: normal;
+        overflow: visible;
+        text-align: left;
+        position: relative;
       }
 
       li + li {
         border-left: 1px solid var(--topbar-divider);
       }
 
-      li a {
+      li a,
+      li button.notif-bell {
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 44px;
-        height: 44px;
+        width: 36px;
+        height: 36px;
         border-radius: 0;
+        border: none;
+        background: transparent;
         color: var(--topbar-fg);
-        font-size: 18px;
+        font-size: 16px;
         transition: background 0.2s;
         position: relative;
+        cursor: pointer;
+        padding: 0;
 
         &:hover {
           background: var(--topbar-hover-bg);
@@ -331,18 +371,26 @@ import { GlobalSearchService } from '../../services/global-search.service';
       }
     }
 
-    .notif-bell {
-      cursor: pointer;
+    .main-header__dropdown-host {
+      position: relative;
     }
 
-    .notif-menu {
+    .notif-bell::after {
+      display: none;
+    }
+
+    /* Namespaced panel: works with body container (Ngb) and local menu. */
+    .notif-menu.dropdown-menu {
       width: 360px;
       max-width: calc(100vw - 32px);
-      padding: 0;
+      margin: 0;
+      padding: 0 !important;
       border: 1px solid var(--color-neutral-200);
       border-radius: 14px;
       box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
       overflow: hidden;
+      z-index: 1000;
+      background: var(--color-white, #fff);
     }
 
     .notif-menu__header {
@@ -467,6 +515,35 @@ import { GlobalSearchService } from '../../services/global-search.service';
       list-style: none;
       border-left: 1px solid var(--topbar-divider);
       margin-left: 0;
+      float: none;
+      width: auto;
+
+      > li {
+        float: none;
+        width: auto;
+        height: auto;
+        margin: 0;
+        padding: 4px 8px;
+        border-radius: 0;
+        background: transparent;
+        line-height: normal;
+        overflow: visible;
+      }
+    }
+
+    /* Namespaced panel: cancels Pluto .user_profile_dd .dropdown-menu { width: 100% }. */
+    .main-header__user-menu.dropdown-menu {
+      width: auto;
+      min-width: 12rem;
+      max-width: calc(100vw - 32px);
+      margin: 0;
+      padding: 8px 0;
+      z-index: 1000;
+      float: none;
+      background: var(--color-white, #fff);
+      border: 1px solid var(--color-neutral-200, #e5e7eb);
+      border-radius: var(--radius-lg, 12px);
+      box-shadow: var(--shadow-lg, 0 10px 25px rgba(15, 23, 42, 0.12));
     }
 
     .main-header__user-trigger {
@@ -476,7 +553,12 @@ import { GlobalSearchService } from '../../services/global-search.service';
       padding: 4px;
       border-radius: 50%;
       border: 2px solid rgba(255, 255, 255, 0.85);
+      background: transparent;
       transition: all 0.2s;
+
+      &::after {
+        display: none;
+      }
 
       &:hover {
         border-color: var(--topbar-fg);
@@ -490,8 +572,8 @@ import { GlobalSearchService } from '../../services/global-search.service';
     }
 
     .user_avatar_image {
-      width: 40px;
-      height: 40px;
+      width: 32px;
+      height: 32px;
       border-radius: 50%;
       overflow: hidden;
       

@@ -1,0 +1,82 @@
+/**
+ * Couleurs d’icônes Font Awesome — miroir de sidebar.component.scss / pluto-menu-theme.scss.
+ * Utilisé par secondary-nav uniquement (évite de toucher sidebar/pluto dans cette livraison).
+ */
+
+@mixin nav-rail-fa-icon-colors {
+  &.fa-gauge-high          { color: #2563eb; } /* Tableau de bord — primary */
+  &.fa-chart-line          { color: #059669; } /* Prévisions IA — emerald */
+  &.fa-cash-register       { color: #ea580c; } /* Point de Vente — orange */
+  &.fa-bag-shopping        { color: #db2777; } /* Ventes — pink */
+  &.fa-cart-shopping       { color: #0891b2; } /* Achats — cyan */
+  &.fa-folder-open         { color: #ca8a04; } /* Fiches — yellow */
+  &.fa-boxes-stacked       { color: #4f46e5; } /* Stock — indigo */
+  &.fa-credit-card         { color: #0d9488; } /* Trésorerie — teal */
+  &.fa-handshake           { color: #c026d3; } /* CRM — fuchsia */
+  &.fa-file-invoice-dollar { color: #d97706; } /* Fiscal/TEJ — amber */
+  &.fa-calculator          { color: #e11d48; } /* Comptabilité — rose */
+  &.fa-users-gear          { color: #7c3aed; } /* RH & Paie — violet */
+  &.fa-gear                { color: #475569; } /* Paramètres — slate */
+  &.fa-book                { color: #0284c7; } /* Documentation — sky */
+}
+
+@mixin nav-submenu-fa-icon-colors {
+  &.fa-gauge-high           { color: #2563eb; }
+  &.fa-chart-line           { color: #059669; }
+  &.fa-chart-column         { color: #c026d3; }
+  &.fa-chart-pie            { color: #e11d48; }
+  &.fa-file-lines           { color: #2563eb; }
+  &.fa-file                 { color: #2563eb; }
+  &.fa-file-invoice         { color: #2563eb; }
+  &.fa-file-invoice-dollar  { color: #d97706; }
+  &.fa-file-export          { color: #ea580c; }
+  &.fa-file-import          { color: #0891b2; }
+  &.fa-file-contract        { color: #0284c7; }
+  &.fa-truck                { color: #d97706; }
+  &.fa-truck-ramp-box       { color: #ea580c; }
+  &.fa-circle-exclamation   { color: #e11d48; }
+  &.fa-percent              { color: #0d9488; }
+  &.fa-tags                 { color: #ca8a04; }
+  &.fa-table-cells          { color: #4f46e5; }
+  &.fa-table-cells-large    { color: #4f46e5; }
+  &.fa-table-list           { color: #4f46e5; }
+  &.fa-calendar-days        { color: #0891b2; }
+  &.fa-calendar-check       { color: #059669; }
+  &.fa-users                { color: #7c3aed; }
+  &.fa-users-gear           { color: #7c3aed; }
+  &.fa-id-card              { color: #7c3aed; }
+  &.fa-cube                 { color: #4f46e5; }
+  &.fa-building             { color: #0891b2; }
+  &.fa-building-columns     { color: #0d9488; }
+  &.fa-money-bill-wave      { color: #059669; }
+  &.fa-money-check-dollar   { color: #059669; }
+  &.fa-boxes-stacked        { color: #4f46e5; }
+  &.fa-right-left           { color: #0d9488; }
+  &.fa-clipboard-list       { color: #d97706; }
+  &.fa-list-ol              { color: #0891b2; }
+  &.fa-list-check           { color: #7c3aed; }
+  &.fa-credit-card          { color: #0d9488; }
+  &.fa-filter-circle-dollar { color: #059669; }
+  &.fa-sliders              { color: #475569; }
+  &.fa-sitemap              { color: #2563eb; }
+  &.fa-book                 { color: #0284c7; }
+  &.fa-book-open            { color: #0284c7; }
+  &.fa-books                { color: #0284c7; }
+  &.fa-book-bookmark        { color: #0284c7; }
+  &.fa-scale-balanced       { color: #4f46e5; }
+  &.fa-clock                { color: #d97706; }
+  &.fa-link                 { color: #0891b2; }
+  &.fa-pen-to-square        { color: #7c3aed; }
+  &.fa-lock                 { color: #475569; }
+  &.fa-shield-halved        { color: #059669; }
+  &.fa-house                { color: #2563eb; }
+  &.fa-right-to-bracket     { color: #059669; }
+  &.fa-bag-shopping         { color: #db2777; }
+  &.fa-cart-shopping        { color: #0891b2; }
+  &.fa-folder-open          { color: #ca8a04; }
+  &.fa-gear                 { color: #475569; }
+  &.fa-calculator           { color: #e11d48; }
+  &.fa-clone                { color: #7c3aed; }
+  &.fa-wand-magic-sparkles  { color: #7c3aed; }
+  &.fa-magnifying-glass     { color: #475569; }
+}

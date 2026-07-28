@@ -2,7 +2,12 @@ import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { AuthService, User } from '../services/auth.service';
-import { buildFlatNavSearchEntries, getVisibleNavSearchEntries } from './app-navigation.registry';
+import {
+  buildFlatNavSearchEntries,
+  filterNavItems,
+  getVisibleNavSearchEntries,
+  NavItem
+} from './app-navigation.registry';
 
 const companyUser: User = {
   id: 'u1',
@@ -123,6 +128,53 @@ describe('app-navigation.registry', () => {
 
       const routes = getVisibleNavSearchEntries(auth).map(e => e.route);
       expect(routes).not.toContain('/ai-assistant/comptabilite');
+    });
+  });
+
+  describe('filterNavItems — nested children', () => {
+    beforeEach(() => {
+      TestBed.configureTestingModule({
+        providers: [provideHttpClient(), provideHttpClientTesting()]
+      });
+    });
+
+    it('removes Journal d\'audit without audit:read but keeps hub and other états', () => {
+      const auth = TestBed.inject(AuthService);
+      setUser(auth, companyUser);
+
+      const items: NavItem[] = [
+        {
+          label: 'Comptabilité',
+          children: [
+            {
+              label: 'États comptables',
+              route: '/accounting/financial-statements',
+              modules: [0],
+              permissionsAll: ['accounting:read'],
+              children: [
+                {
+                  label: 'Journal',
+                  route: '/accounting/journal',
+                  modules: [0],
+                  permissionsAll: ['accounting:read']
+                },
+                {
+                  label: "Journal d'audit",
+                  route: '/audit',
+                  modules: [0],
+                  permissionsAll: ['audit:read']
+                }
+              ]
+            }
+          ]
+        }
+      ];
+
+      const filtered = filterNavItems(auth, items);
+      const etats = filtered[0]?.children?.[0];
+      expect(etats?.label).toBe('États comptables');
+      expect(etats?.children?.map(c => c.label)).toEqual(['Journal']);
+      expect(etats?.children?.some(c => c.label === "Journal d'audit")).toBeFalse();
     });
   });
 

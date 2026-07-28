@@ -5,6 +5,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { filter, map, startWith } from 'rxjs';
 import { SidebarComponent } from '../sidebar/sidebar.component';
 import { HeaderComponent } from '../header/header.component';
+import { SecondaryNavComponent } from '../secondary-nav/secondary-nav.component';
 import { ChatPanelComponent } from '../../../features/ai-assistant/components/chat-panel/chat-panel.component';
 import { AuthService } from '../../services/auth.service';
 import { AiChatSessionService } from '../../../features/ai-assistant/services/ai-chat-session.service';
@@ -15,14 +16,24 @@ import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
 import { FirmContextService } from '../../services/firm-context.service';
 import { LayoutRouteService } from '../layout-route.service';
 import { DrawerOverlayService } from '../../services/drawer-overlay.service';
+import { AppNavService } from '../../services/app-nav.service';
 
 @Component({
   selector: 'app-main-layout',
   standalone: true,
-  imports: [CommonModule, RouterModule, SidebarComponent, HeaderComponent, ChatPanelComponent],
+  imports: [
+    CommonModule,
+    RouterModule,
+    SidebarComponent,
+    HeaderComponent,
+    SecondaryNavComponent,
+    ChatPanelComponent
+  ],
   template: `
     <div class="full_container">
-      <div class="inner_container">
+      <div
+        class="inner_container"
+        [class.layout-has-secondary-nav]="appNav.hasSecondaryNav() && !layoutFlags().hideLayout">
         <app-sidebar
           [collapsed]="sidebarCollapsed()"
           (toggleCollapse)="toggleSidebar()"
@@ -34,6 +45,9 @@ import { DrawerOverlayService } from '../../services/drawer-overlay.service';
               [sidebarCollapsed]="sidebarCollapsed()"
               (toggleSidebar)="toggleSidebar()">
             </app-header>
+            @if (appNav.hasSecondaryNav()) {
+              <app-secondary-nav />
+            }
           }
           <div
             class="midde_cont"
@@ -209,6 +223,7 @@ export class MainLayoutComponent implements OnInit {
   private readonly aiAssistantShell = inject(AiAssistantShellService);
   private readonly layoutRoute = inject(LayoutRouteService);
   private readonly firmContext = inject(FirmContextService);
+  readonly appNav = inject(AppNavService);
   readonly drawerOverlay = inject(DrawerOverlayService);
 
   readonly layoutFlags = this.layoutRoute.flags;

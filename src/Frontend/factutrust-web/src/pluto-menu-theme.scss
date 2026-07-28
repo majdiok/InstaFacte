@@ -250,7 +250,7 @@
   background: transparent !important;
   box-shadow: none !important;
   border-bottom: none !important;
-  min-height: var(--topbar-height, 56px);
+  min-height: var(--topbar-height, 48px);
   padding: 0 !important;
 }
 
@@ -338,6 +338,42 @@
   width: auto;
 }
 
+/* Neutralise Pluto .icon_info ul li { 35×35 } — host des dropdowns toolbar. */
+.main-header .icon_info ul.main-header__toolbar-icons {
+  float: none;
+  width: auto;
+  margin: 0;
+  padding: 0;
+}
+
+.main-header .icon_info ul.main-header__toolbar-icons > li {
+  float: none;
+  width: auto;
+  height: auto;
+  margin: 0;
+  border-radius: 0;
+  line-height: normal;
+  overflow: visible;
+  text-align: left;
+  position: relative;
+}
+
+.main-header .icon_info ul.user_profile_dd {
+  float: none;
+  margin: 0;
+}
+
+.main-header .icon_info ul.user_profile_dd > li {
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 4px 8px;
+  border-radius: 0;
+  background: transparent !important;
+  line-height: normal;
+  overflow: visible;
+}
+
 .main-header .icon_info ul.user_profile_dd li > a.main-header__user-trigger {
   position: relative;
 }
@@ -362,6 +398,31 @@
 
 .main-header .icon_info ul.user_profile_dd > li > a.main-header__user-trigger .name_user {
   padding: 0 !important;
+}
+
+/* Body-ported header panels (Ngb container=body) — cancel Pluto width:100% / stacking. */
+.notif-menu.dropdown-menu {
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  padding: 0 !important;
+  z-index: 1000;
+}
+
+.main-header__user-menu.dropdown-menu,
+.user_profile_dd .main-header__user-menu.dropdown-menu {
+  width: auto !important;
+  min-width: 12rem;
+  max-width: calc(100vw - 32px);
+  float: none;
+  z-index: 1000;
+}
+
+.quick-access__panel.dropdown-menu {
+  z-index: 1000;
+}
+
+.secondary-nav__dropdown.dropdown-menu {
+  z-index: 1000;
 }
 
 // --------------------------------------------

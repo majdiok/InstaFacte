@@ -1,0 +1,130 @@
+<nav
+  class="secondary-nav"
+  role="navigation"
+  aria-label="Modules métier">
+  <ul class="secondary-nav__list">
+    @for (section of sections(); track section.label) {
+      <li
+        class="secondary-nav__item"
+        [class.is-active]="isSectionActive(section)">
+        @if (section.children?.length) {
+          <div
+            ngbDropdown
+            placement="bottom-start"
+            container="body"
+            #sectionDd="ngbDropdown"
+            class="secondary-nav__dropdown-host"
+            (ngbDropdownOpen)="closeSubmenu()"
+            (ngbDropdownClose)="closeSubmenu()">
+            <button
+              type="button"
+              ngbDropdownToggle
+              class="secondary-nav__trigger"
+              [class.is-active]="isTopLevelActive(section)"
+              [id]="'secondary-nav-trigger-' + section.label"
+              [attr.aria-controls]="menuId(section)"
+              aria-haspopup="menu">
+              @if (section.icon) {
+                <i class="secondary-nav__icon" [ngClass]="section.icon" aria-hidden="true"></i>
+              }
+              <span class="secondary-nav__label">{{ displayLabel(section) }}</span>
+              <i class="fa-solid fa-chevron-down secondary-nav__chevron" aria-hidden="true"></i>
+            </button>
+            <div
+              ngbDropdownMenu
+              class="secondary-nav__dropdown dropdown-menu"
+              [id]="menuId(section)"
+              [attr.aria-labelledby]="'secondary-nav-trigger-' + section.label"
+              role="menu">
+              @for (child of section.children; track child.route ?? child.label) {
+                @if (hasNestedChildren(child)) {
+                  <div
+                    class="secondary-nav__submenu"
+                    [class.is-open]="isSubmenuOpen(child)"
+                    (mouseenter)="openSubmenu(child)"
+                    (mouseleave)="closeSubmenu()"
+                    (focusin)="openSubmenu(child)">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="secondary-nav__link secondary-nav__submenu-trigger dropdown-item"
+                      [class.is-active]="isChildActive(section, child)"
+                      [attr.aria-expanded]="isSubmenuOpen(child)"
+                      [attr.aria-controls]="submenuId(child)"
+                      aria-haspopup="menu"
+                      (click)="toggleSubmenu(child, $event)"
+                      (keydown)="onSubmenuKeydown(child, $event)">
+                      @if (child.icon) {
+                        <i class="secondary-nav__icon" [ngClass]="child.icon" aria-hidden="true"></i>
+                      }
+                      <span class="secondary-nav__submenu-label">{{ child.label }}</span>
+                      <i class="fa-solid fa-chevron-right secondary-nav__submenu-chevron" aria-hidden="true"></i>
+                    </button>
+                    <div
+                      class="secondary-nav__submenu-panel"
+                      [id]="submenuId(child)"
+                      role="menu"
+                      [attr.aria-label]="child.label"
+                      [attr.aria-hidden]="!isSubmenuOpen(child)">
+                      <a
+                        role="menuitem"
+                        class="secondary-nav__link dropdown-item"
+                        [class.is-active]="isNestedChildActive(nestedHubItem(child))"
+                        [attr.aria-current]="isNestedChildActive(nestedHubItem(child)) ? 'page' : null"
+                        [routerLink]="child.route || null"
+                        (click)="onChildClick(nestedHubItem(child), sectionDd, $event)">
+                        @if (child.icon) {
+                          <i class="secondary-nav__icon" [ngClass]="child.icon" aria-hidden="true"></i>
+                        }
+                        <span>Tous les états</span>
+                      </a>
+                      @for (grand of child.children; track grand.route ?? grand.label) {
+                        <a
+                          role="menuitem"
+                          class="secondary-nav__link dropdown-item"
+                          [class.is-active]="isNestedChildActive(grand)"
+                          [attr.aria-current]="isNestedChildActive(grand) ? 'page' : null"
+                          [routerLink]="grand.route || null"
+                          (click)="onChildClick(grand, sectionDd, $event)">
+                          @if (grand.icon) {
+                            <i class="secondary-nav__icon" [ngClass]="grand.icon" aria-hidden="true"></i>
+                          }
+                          <span>{{ grand.label }}</span>
+                        </a>
+                      }
+                    </div>
+                  </div>
+                } @else {
+                  <a
+                    role="menuitem"
+                    class="secondary-nav__link dropdown-item"
+                    [class.is-active]="isChildActive(section, child)"
+                    [attr.aria-current]="isChildActive(section, child) ? 'page' : null"
+                    [routerLink]="child.route || null"
+                    (click)="onChildClick(child, sectionDd, $event)">
+                    @if (child.icon) {
+                      <i class="secondary-nav__icon" [ngClass]="child.icon" aria-hidden="true"></i>
+                    }
+                    <span>{{ child.label }}</span>
+                  </a>
+                }
+              }
+            </div>
+          </div>
+        } @else {
+          <a
+            class="secondary-nav__trigger"
+            [class.is-active]="isTopLevelActive(section)"
+            [attr.aria-current]="isTopLevelActive(section) ? 'page' : null"
+            [routerLink]="section.route || null"
+            (click)="onTopLevelClick(section, $event)">
+            @if (section.icon) {
+              <i class="secondary-nav__icon" [ngClass]="section.icon" aria-hidden="true"></i>
+            }
+            <span class="secondary-nav__label">{{ displayLabel(section) }}</span>
+          </a>
+        }
+      </li>
+    }
+  </ul>
+</nav>

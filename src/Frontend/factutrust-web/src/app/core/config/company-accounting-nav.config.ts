@@ -29,6 +29,11 @@ function accountingModuleLinkToNavSubItem(link: AccountingModuleLink): NavSubIte
   };
 }
 
+/** Feuilles du sous-menu « États comptables » — même liste que le hub (source ACCOUNTING_MODULES). */
+export function buildCompanyEtatsComptablesNavChildren(): NavSubItem[] {
+  return (ETATS_MODULE?.links ?? []).map(accountingModuleLinkToNavSubItem);
+}
+
 /** Routes autorisées pour la société (assistant, états, déclaration, immobilisations). */
 export const COMPANY_ACCOUNTING_ALLOWED_ROUTE_PREFIXES: readonly string[] = [
   COMPANY_ACCOUNTING_AI_ASSISTANT_ROUTE,
@@ -54,7 +59,8 @@ export const COMPANY_ACCOUNTING_SIDEBAR_CHILDREN: NavSubItem[] = [
     route: '/accounting/financial-statements',
     icon: 'fa-solid fa-table-list',
     modules: [M.Accounting],
-    permissionsAll: ['accounting:read']
+    permissionsAll: ['accounting:read'],
+    children: buildCompanyEtatsComptablesNavChildren()
   },
   {
     label: 'Déclaration mensuelle',

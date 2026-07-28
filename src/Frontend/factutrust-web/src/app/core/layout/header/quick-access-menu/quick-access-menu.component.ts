@@ -32,6 +32,8 @@ const SECTION_ORDER: QuickAccessSection[] = ['navigation', 'create'];
       <div
         ngbDropdown
         placement="bottom-start"
+        container="body"
+        display="dynamic"
         #quickAccessDropdown="ngbDropdown"
         class="quick-access">
         <button
@@ -146,15 +148,18 @@ const SECTION_ORDER: QuickAccessSection[] = ['navigation', 'create'];
       transform: rotate(180deg);
     }
 
+    /* Namespaced panel: works with body container (Ngb) and local menu. */
     .quick-access__panel.dropdown-menu {
       min-width: 360px;
       max-width: calc(100vw - 24px);
       padding: 12px !important;
+      margin: 0;
       margin-top: 8px;
       border: 1px solid var(--color-neutral-200, #e2e8f0) !important;
       border-radius: var(--radius-lg, 16px) !important;
       box-shadow: var(--shadow-lg, 0 10px 25px rgba(15, 23, 42, 0.12)) !important;
       background: var(--color-white, #fff) !important;
+      z-index: 1000;
     }
 
     .quick-access__section-label {
