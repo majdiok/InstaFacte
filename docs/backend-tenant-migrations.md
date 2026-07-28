@@ -123,6 +123,35 @@ Balayage : `GET /api/platform/migrations/tenants/invoice-number-integrity`
 
 ---
 
+## Vague 0 « Ventes & Distribution » — 5 migrations tenant (27/07/2026)
+
+Cinq migrations **strictement additives**, livrées ensemble sur la branche
+`fix/vague0-ventes-distribution`. Chacune possède un `Down()` complet et un script SQL
+idempotent, et aucune ne modifie de document déjà émis.
+
+| Migration | Objet | Script idempotent |
+|---|---|---|
+| `20260727100000_AddInvoiceSourceDeliveryNote_Tenant` | `Invoices.SourceDeliveryNoteId` — fin de la double déduction de stock. Backfill exhaustif depuis `DeliveryNotes.InvoiceId`. | [AddInvoiceSourceDeliveryNote_Tenant.idempotent.sql](runbooks/sql/AddInvoiceSourceDeliveryNote_Tenant.idempotent.sql) |
+| `20260727110000_AddDeliveryNoteLineDiscountFodec_Tenant` | Remise et FODEC sur les lignes de BL. Aucun backfill : les BL existants gardent leurs totaux. | [AddDeliveryNoteLineDiscountFodec_Tenant.idempotent.sql](runbooks/sql/AddDeliveryNoteLineDiscountFodec_Tenant.idempotent.sql) |
+| `20260727120000_AddQuoteFodecAndFiscalStamp_Tenant` | FODEC + timbre sur devis. **Aucun recalcul rétroactif.** Normalise aussi à `'TND'` les devises FODEC laissées vides par `20260713171729`. | [AddQuoteFodecAndFiscalStamp_Tenant.idempotent.sql](runbooks/sql/AddQuoteFodecAndFiscalStamp_Tenant.idempotent.sql) |
+| `20260727130000_AddInvoiceLinkedInvoice_Tenant` | `Invoices.LinkedInvoiceId` — lien avoir → facture d'origine. Backfill best-effort depuis les brouillons convertis. | [AddInvoiceLinkedInvoice_Tenant.idempotent.sql](runbooks/sql/AddInvoiceLinkedInvoice_Tenant.idempotent.sql) |
+| `20260727140000_AddStockMovementShortfall_Tenant` | `StockMovements.ShortfallQuantity` — traçabilité des ruptures. Comportement fonctionnel inchangé. | [AddStockMovementShortfall_Tenant.idempotent.sql](runbooks/sql/AddStockMovementShortfall_Tenant.idempotent.sql) |
+
+### Contrôle à exécuter AVANT le déploiement
+
+La validation de facture applique désormais les règles de conformité fiscale sur **tous** les
+chemins (création directe, conversion devis, conversion BL), et plus seulement dans l'assistant.
+Les factures déjà validées ne sont pas concernées — `Validate()` exige `Status = Draft`. Seuls
+des **brouillons** existants pourraient devenir non validables.
+
+Exécuter sur chaque base tenant, en lecture seule :
+[`docs/runbooks/sql/CheckDraftInvoiceCompliance_Tenant.sql`](runbooks/sql/CheckDraftInvoiceCompliance_Tenant.sql)
+
+Un résultat vide signifie qu'aucun brouillon existant ne sera bloqué. Sinon, la colonne
+`MotifBlocage` indique la conduite à tenir pour chaque ligne.
+
+---
+
 ## Configuration
 
 ```json
