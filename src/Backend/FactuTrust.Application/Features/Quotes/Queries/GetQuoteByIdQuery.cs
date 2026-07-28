@@ -67,11 +67,16 @@ public sealed class GetQuoteByIdQueryHandler : IRequestHandler<GetQuoteByIdQuery
                 DiscountPercent = l.DiscountPercent,
                 DiscountAmount = l.DiscountAmount.Amount,
                 SubTotal = l.SubTotal.Amount,
+                IsFodecApplicable = l.IsFodecApplicable,
+                FodecRatePercent = l.FodecRatePercent,
+                FodecAmount = l.FodecAmount.Amount,
                 VatAmount = l.VatAmount.Amount,
                 Total = l.Total.Amount
             }).ToList(),
             SubTotal = quote.SubTotal.Amount,
+            FodecAmount = quote.FodecAmount.Amount,
             TotalVat = quote.TotalVat.Amount,
+            FiscalStampAmount = quote.FiscalStampAmount.Amount,
             TotalAmount = quote.TotalAmount.Amount,
             Currency = quote.TotalAmount.Currency,
             VatBreakdown = vatBreakdown.Select(kv => new VatBreakdownDto

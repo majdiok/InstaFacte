@@ -5387,6 +5387,13 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .HasPrecision(5, 2)
                         .HasColumnType("decimal(5,2)");
 
+                    b.Property<decimal>("FodecRatePercent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<bool>("IsFodecApplicable")
+                        .HasColumnType("bit");
+
                     b.Property<int>("LineNumber")
                         .HasColumnType("int");
 
@@ -9449,6 +9456,54 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                                 .HasForeignKey("QuoteId");
                         });
 
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "FiscalStampAmount", b1 =>
+                        {
+                            b1.Property<Guid>("QuoteId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("FiscalStampAmount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("FiscalStampAmountCurrency");
+
+                            b1.HasKey("QuoteId");
+
+                            b1.ToTable("Quotes");
+
+                            b1.WithOwner()
+                                .HasForeignKey("QuoteId");
+                        });
+
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "FodecAmount", b1 =>
+                        {
+                            b1.Property<Guid>("QuoteId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("FodecAmount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("FodecAmountCurrency");
+
+                            b1.HasKey("QuoteId");
+
+                            b1.ToTable("Quotes");
+
+                            b1.WithOwner()
+                                .HasForeignKey("QuoteId");
+                        });
+
                     b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "TotalAmount", b1 =>
                         {
                             b1.Property<Guid>("QuoteId")
@@ -9532,6 +9587,12 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
 
                     b.Navigation("Client");
 
+                    b.Navigation("FiscalStampAmount")
+                        .IsRequired();
+
+                    b.Navigation("FodecAmount")
+                        .IsRequired();
+
                     b.Navigation("Number")
                         .IsRequired();
 
@@ -9558,6 +9619,30 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .HasForeignKey("QuoteId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "FodecAmount", b1 =>
+                        {
+                            b1.Property<Guid>("QuoteLineId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("FodecAmount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("FodecAmountCurrency");
+
+                            b1.HasKey("QuoteLineId");
+
+                            b1.ToTable("QuoteLines");
+
+                            b1.WithOwner()
+                                .HasForeignKey("QuoteLineId");
+                        });
 
                     b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "DiscountAmount", b1 =>
                         {
@@ -9680,6 +9765,9 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         });
 
                     b.Navigation("DiscountAmount")
+                        .IsRequired();
+
+                    b.Navigation("FodecAmount")
                         .IsRequired();
 
                     b.Navigation("Product");

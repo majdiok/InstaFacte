@@ -28,12 +28,28 @@ public sealed class QuoteLine : Entity
     
     public decimal? DiscountPercent { get; private set; }
     public Money DiscountAmount { get; private set; } = null!;
-    
+
+    /// <summary>
+    /// Snapshot de <see cref="Product.IsFodecApplicable"/> à la création de la ligne.
+    /// Le devis doit annoncer le FODEC que la facture appliquera, sans quoi le client
+    /// reçoit une facture supérieure au devis qu'il a accepté.
+    /// </summary>
+    public bool IsFodecApplicable { get; private set; }
+
+    /// <summary>Montant FODEC de la ligne (assiette : HT après remise).</summary>
+    public Money FodecAmount { get; private set; } = null!;
+
     public Money SubTotal { get; private set; } = null!;
     public Money VatAmount { get; private set; } = null!;
     public Money Total { get; private set; } = null!;
 
+    /// <summary>Taux FODEC appliqué, aligné sur InvoiceLine (1 % par défaut).</summary>
+    public decimal FodecRatePercent { get; private set; }
+
     private QuoteLine() { }
+
+    /// <summary>Taux FODEC par défaut (1 %), aligné sur <see cref="Invoice.AddLine"/>.</summary>
+    public const decimal DefaultFodecRatePercent = 1.0m;
 
     internal static Result<QuoteLine> Create(
         Quote quote,
@@ -41,7 +57,8 @@ public sealed class QuoteLine : Entity
         Product product,
         decimal quantity,
         Money unitPrice,
-        decimal? discountPercent = null)
+        decimal? discountPercent = null,
+        decimal fodecRatePercent = DefaultFodecRatePercent)
     {
         if (quantity <= 0)
             return Result.Failure<QuoteLine>(Error.Validation("Quantity", "La quantité doit être supérieure à zéro"));
@@ -63,7 +80,9 @@ public sealed class QuoteLine : Entity
             Unit = product.Unit,
             UnitPrice = unitPrice,
             VatRate = product.VatRate,
-            DiscountPercent = discountPercent
+            DiscountPercent = discountPercent,
+            IsFodecApplicable = product.IsFodecApplicable,
+            FodecRatePercent = fodecRatePercent
         };
 
         line.Calculate();
@@ -83,7 +102,9 @@ public sealed class QuoteLine : Entity
         string unit,
         Money unitPrice,
         VatRate vatRate,
-        decimal? discountPercent = null)
+        decimal? discountPercent = null,
+        bool isFodecApplicable = false,
+        decimal fodecRatePercent = DefaultFodecRatePercent)
     {
         if (quantity <= 0)
             return Result.Failure<QuoteLine>(Error.Validation("Quantity", "La quantité doit être supérieure à zéro"));
@@ -107,7 +128,9 @@ public sealed class QuoteLine : Entity
             Unit = unit,
             UnitPrice = unitPrice,
             VatRate = vatRate,
-            DiscountPercent = discountPercent
+            DiscountPercent = discountPercent,
+            IsFodecApplicable = isFodecApplicable,
+            FodecRatePercent = fodecRatePercent
         };
 
         line.Calculate();
@@ -140,6 +163,11 @@ public sealed class QuoteLine : Entity
         LineNumber = lineNumber;
     }
 
+    /// <summary>
+    /// Rigoureusement identique à <c>InvoiceLine.Calculate()</c> : remise → FODEC → base TVA.
+    /// C'est cette identité qui garantit qu'un devis accepté et la facture qui en découle
+    /// portent le même total.
+    /// </summary>
     private void Calculate()
     {
         var grossAmount = UnitPrice.Multiply(Quantity);
@@ -155,7 +183,12 @@ public sealed class QuoteLine : Entity
             SubTotal = grossAmount;
         }
 
-        VatAmount = SubTotal.ApplyPercentage(VatRate.ToDecimal());
-        Total = SubTotal.Add(VatAmount);
+        FodecAmount = IsFodecApplicable && FodecRatePercent > 0
+            ? SubTotal.ApplyPercentage(FodecRatePercent)
+            : Money.Zero(UnitPrice.Currency);
+
+        var vatBase = SubTotal.Add(FodecAmount);
+        VatAmount = vatBase.ApplyPercentage(VatRate.ToDecimal());
+        Total = SubTotal.Add(FodecAmount).Add(VatAmount);
     }
 }

@@ -182,10 +182,22 @@ interface TimelineEvent {
                 <span>Total HT</span>
                 <span class="mono">{{ quote()!.subTotal | number:'1.3-3' }} {{ quote()!.currency }}</span>
               </div>
+              @if (quote()!.fodecAmount) {
+                <div class="total-row">
+                  <span>FODEC</span>
+                  <span class="mono">{{ quote()!.fodecAmount | number:'1.3-3' }} {{ quote()!.currency }}</span>
+                </div>
+              }
               <div class="total-row">
                 <span>Total TVA</span>
                 <span class="mono">{{ quote()!.totalVat | number:'1.3-3' }} {{ quote()!.currency }}</span>
               </div>
+              @if (quote()!.fiscalStampAmount) {
+                <div class="total-row">
+                  <span>Timbre fiscal</span>
+                  <span class="mono">{{ quote()!.fiscalStampAmount | number:'1.3-3' }} {{ quote()!.currency }}</span>
+                </div>
+              }
               <div class="total-row grand">
                 <span>Total TTC</span>
                 <span class="mono">{{ quote()!.totalAmount | number:'1.3-3' }} {{ quote()!.currency }}</span>

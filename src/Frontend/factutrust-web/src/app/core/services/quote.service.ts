@@ -34,6 +34,10 @@ export interface QuoteLine {
   discountPercent: number | null;
   discountAmount: number;
   subTotal: number;
+  isFodecApplicable: boolean;
+  fodecRatePercent: number;
+  /** FODEC de ligne (assiette : HT après remise) — repris tel quel sur la facture. */
+  fodecAmount: number;
   vatAmount: number;
   total: number;
 }
@@ -67,7 +71,11 @@ export interface QuoteDetail {
   termsAndConditions: string | null;
   lines: QuoteLine[];
   subTotal: number;
+  /** FODEC agrégé annoncé au devis. */
+  fodecAmount: number;
   totalVat: number;
+  /** Timbre fiscal annoncé au devis. */
+  fiscalStampAmount: number;
   totalAmount: number;
   currency: string;
   vatBreakdown: VatBreakdown[];

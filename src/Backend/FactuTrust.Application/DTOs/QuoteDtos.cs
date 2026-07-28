@@ -60,10 +60,14 @@ public sealed record QuoteDetailDto
     public IReadOnlyList<QuoteLineDto> Lines { get; init; } = Array.Empty<QuoteLineDto>();
     
     public decimal SubTotal { get; init; }
+    /// <summary>FODEC agrégé annoncé au devis — repris tel quel sur la facture.</summary>
+    public decimal FodecAmount { get; init; }
     public decimal TotalVat { get; init; }
+    /// <summary>Timbre fiscal annoncé au devis — repris tel quel sur la facture.</summary>
+    public decimal FiscalStampAmount { get; init; }
     public decimal TotalAmount { get; init; }
     public string Currency { get; init; } = null!;
-    
+
     public IReadOnlyList<VatBreakdownDto> VatBreakdown { get; init; } = Array.Empty<VatBreakdownDto>();
     
     public DateTime? SentAt { get; init; }
@@ -98,6 +102,9 @@ public sealed record QuoteLineDto
     public decimal? DiscountPercent { get; init; }
     public decimal DiscountAmount { get; init; }
     public decimal SubTotal { get; init; }
+    public bool IsFodecApplicable { get; init; }
+    public decimal FodecRatePercent { get; init; }
+    public decimal FodecAmount { get; init; }
     public decimal VatAmount { get; init; }
     public decimal Total { get; init; }
 }

@@ -168,9 +168,14 @@ public static class DocumentRenderMappers
             LineTotalHt = l.SubTotal.Amount
         }).ToList();
 
+        // Assiette TVA = HT après remise + FODEC, comme sur la facture (cf. FromInvoice).
         var vatBreakdown = quote.Lines
             .GroupBy(l => l.VatRate).OrderBy(g => (int)g.Key)
-            .Select(g => new VatBreakdownLine(VatGroupLabel(g.Key), (int)g.Key, g.Sum(x => x.SubTotal.Amount), g.Sum(x => x.VatAmount.Amount)))
+            .Select(g => new VatBreakdownLine(
+                VatGroupLabel(g.Key),
+                (int)g.Key,
+                g.Sum(x => x.SubTotal.Amount + x.FodecAmount.Amount),
+                g.Sum(x => x.VatAmount.Amount)))
             .ToList();
 
         return new DocumentRenderModel
@@ -193,6 +198,8 @@ public static class DocumentRenderMappers
             ShowDiscountColumn = lines.Any(l => l.DiscountPercent is > 0),
             SubTotal = quote.SubTotal.Amount,
             VatBreakdown = vatBreakdown,
+            Fodec = quote.FodecAmount.Amount,
+            FiscalStamp = quote.FiscalStampAmount.Amount,
             Total = quote.TotalAmount.Amount,
             Currency = quote.TotalAmount.Currency,
             AmountInWords = PdfRenderHelpers.FormatAmountInFrench(quote.TotalAmount.Amount),

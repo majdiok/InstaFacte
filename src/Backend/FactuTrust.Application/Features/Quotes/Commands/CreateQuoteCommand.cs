@@ -78,6 +78,7 @@ public sealed class CreateQuoteCommandHandler : IRequestHandler<CreateQuoteComma
     private readonly ITenantContext _tenantContext;
 
     private readonly ISubscriptionResolver _subscriptionResolver;
+    private readonly IFiscalStampResolver _fiscalStampResolver;
 
     public CreateQuoteCommandHandler(
         IQuoteRepository quoteRepository,
@@ -89,7 +90,8 @@ public sealed class CreateQuoteCommandHandler : IRequestHandler<CreateQuoteComma
         ICurrentUser currentUser,
         IAuditService auditService,
         ITenantContext tenantContext,
-        ISubscriptionResolver subscriptionResolver)
+        ISubscriptionResolver subscriptionResolver,
+        IFiscalStampResolver fiscalStampResolver)
     {
         _quoteRepository = quoteRepository;
         _clientRepository = clientRepository;
@@ -101,6 +103,7 @@ public sealed class CreateQuoteCommandHandler : IRequestHandler<CreateQuoteComma
         _auditService = auditService;
         _tenantContext = tenantContext;
         _subscriptionResolver = subscriptionResolver;
+        _fiscalStampResolver = fiscalStampResolver;
     }
 
     public async Task<Result<Guid>> Handle(CreateQuoteCommand request, CancellationToken cancellationToken)
@@ -218,6 +221,13 @@ public sealed class CreateQuoteCommandHandler : IRequestHandler<CreateQuoteComma
             if (addLineResult.IsFailure)
                 return Result.Failure<Guid>(addLineResult.Error);
         }
+
+        // Timbre fiscal annoncé dès le devis, avec le même résolveur que la facture :
+        // sans lui, la facture dépassait systématiquement le devis accepté.
+        var stamp = await _fiscalStampResolver.ResolveSignedStampAsync(isCreditNote: false, cancellationToken);
+        var stampResult = quote.SetFiscalStampAmount(stamp);
+        if (stampResult.IsFailure)
+            return Result.Failure<Guid>(stampResult.Error);
 
         // Set audit info
         quote.SetAuditInfo(_currentUser.UserId?.ToString() ?? "system");

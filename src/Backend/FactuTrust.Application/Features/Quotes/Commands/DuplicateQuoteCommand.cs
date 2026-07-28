@@ -25,6 +25,7 @@ public sealed class DuplicateQuoteCommandHandler : IRequestHandler<DuplicateQuot
     private readonly ICurrentUser _currentUser;
     private readonly IAuditService _auditService;
     private readonly ITenantContext _tenantContext;
+    private readonly IFiscalStampResolver _fiscalStampResolver;
 
     public DuplicateQuoteCommandHandler(
         IQuoteRepository quoteRepository,
@@ -33,7 +34,8 @@ public sealed class DuplicateQuoteCommandHandler : IRequestHandler<DuplicateQuot
         IUnitOfWork unitOfWork,
         ICurrentUser currentUser,
         IAuditService auditService,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        IFiscalStampResolver fiscalStampResolver)
     {
         _quoteRepository = quoteRepository;
         _quoteNumberGenerator = quoteNumberGenerator;
@@ -42,6 +44,7 @@ public sealed class DuplicateQuoteCommandHandler : IRequestHandler<DuplicateQuot
         _currentUser = currentUser;
         _auditService = auditService;
         _tenantContext = tenantContext;
+        _fiscalStampResolver = fiscalStampResolver;
     }
 
     public async Task<Result<Guid>> Handle(DuplicateQuoteCommand request, CancellationToken cancellationToken)
@@ -88,7 +91,9 @@ public sealed class DuplicateQuoteCommandHandler : IRequestHandler<DuplicateQuot
                         line.Unit ?? "unité",
                         line.UnitPrice,
                         line.VatRate,
-                        line.DiscountPercent);
+                        line.DiscountPercent,
+                        line.IsFodecApplicable,
+                        line.FodecRatePercent);
                 }
                 else
                 {
@@ -104,7 +109,9 @@ public sealed class DuplicateQuoteCommandHandler : IRequestHandler<DuplicateQuot
                     line.Unit ?? "unité",
                     line.UnitPrice,
                     line.VatRate,
-                    line.DiscountPercent);
+                    line.DiscountPercent,
+                    line.IsFodecApplicable,
+                    line.FodecRatePercent);
             }
 
             if (addResult.IsFailure)
@@ -113,6 +120,13 @@ public sealed class DuplicateQuoteCommandHandler : IRequestHandler<DuplicateQuot
 
         foreach (var mention in quote.LegalMentions)
             newQuote.AddLegalMention(mention);
+
+        // Le duplicata est un nouveau devis : il porte le timbre en vigueur aujourd'hui,
+        // pas celui figé sur le devis d'origine.
+        var stamp = await _fiscalStampResolver.ResolveSignedStampAsync(isCreditNote: false, cancellationToken);
+        var stampResult = newQuote.SetFiscalStampAmount(stamp);
+        if (stampResult.IsFailure)
+            return Result.Failure<Guid>(stampResult.Error);
 
         newQuote.SetAuditInfo(_currentUser.UserId?.ToString() ?? "system");
         await _quoteRepository.AddAsync(newQuote, cancellationToken);

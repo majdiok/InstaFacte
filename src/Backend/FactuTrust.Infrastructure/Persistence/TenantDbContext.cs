@@ -1510,6 +1510,32 @@ public partial class TenantDbContext : DbContext
                     .IsRequired();
             });
 
+            entity.OwnsOne(q => q.FodecAmount, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("FodecAmount")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("FodecAmountCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
+            entity.OwnsOne(q => q.FiscalStampAmount, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("FiscalStampAmount")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("FiscalStampAmountCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+
             entity.OwnsOne(q => q.TotalVat, price =>
             {
                 price.Property(m => m.Amount)
@@ -1586,6 +1612,26 @@ public partial class TenantDbContext : DbContext
 
             entity.Property(l => l.DiscountPercent)
                 .HasPrecision(5, 2);
+
+            entity.Property(l => l.IsFodecApplicable)
+                .IsRequired();
+
+            entity.Property(l => l.FodecRatePercent)
+                .HasPrecision(5, 2)
+                .IsRequired();
+
+            entity.OwnsOne(l => l.FodecAmount, price =>
+            {
+                price.Property(m => m.Amount)
+                    .HasColumnName("FodecAmount")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+
+                price.Property(m => m.Currency)
+                    .HasColumnName("FodecAmountCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
 
             entity.OwnsOne(l => l.UnitPrice, price =>
             {

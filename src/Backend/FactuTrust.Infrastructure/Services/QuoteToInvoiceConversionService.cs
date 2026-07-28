@@ -123,13 +123,16 @@ public sealed class QuoteToInvoiceConversionService : IQuoteToInvoiceConversionS
                 foreach (var line in quote.Lines.OrderBy(l => l.LineNumber))
                 {
                     Result addResult;
+                    // Le devis est la source de vérité du FODEC : le taux annoncé au client
+                    // est repris tel quel, pour que la facture égale le devis accepté.
                     if (line.ProductId != Guid.Empty && line.Product != null)
                     {
                         addResult = invoice.AddLine(
                             line.Product,
                             line.Quantity,
                             line.UnitPrice,
-                            line.DiscountPercent);
+                            line.DiscountPercent,
+                            line.FodecRatePercent);
                     }
                     else
                     {
@@ -140,7 +143,9 @@ public sealed class QuoteToInvoiceConversionService : IQuoteToInvoiceConversionS
                             line.Unit ?? "unité",
                             line.UnitPrice,
                             line.VatRate,
-                            line.DiscountPercent);
+                            line.DiscountPercent,
+                            line.IsFodecApplicable,
+                            line.FodecRatePercent);
                     }
 
                     if (addResult.IsFailure)

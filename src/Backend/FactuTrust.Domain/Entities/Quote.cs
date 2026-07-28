@@ -30,7 +30,19 @@ public sealed class Quote : AggregateRoot
     public IReadOnlyCollection<QuoteLine> Lines => _lines.AsReadOnly();
 
     public Money SubTotal { get; private set; } = null!;
+
+    /// <summary>FODEC agrégé des lignes — annoncé au devis, repris tel quel à la facture.</summary>
+    public Money FodecAmount { get; private set; } = null!;
+
     public Money TotalVat { get; private set; } = null!;
+
+    /// <summary>
+    /// Timbre fiscal annoncé sur le devis, résolu depuis le catalogue de taxes du tenant à la
+    /// création. Sans lui, la facture dépassait systématiquement le devis accepté du montant
+    /// du timbre.
+    /// </summary>
+    public Money FiscalStampAmount { get; private set; } = null!;
+
     public Money TotalAmount { get; private set; } = null!;
 
     public DateTime? SentAt { get; private set; }
@@ -98,7 +110,9 @@ public sealed class Quote : AggregateRoot
             Notes = notes?.Trim(),
             TermsAndConditions = termsAndConditions?.Trim(),
             SubTotal = Money.Zero(),
+            FodecAmount = Money.Zero(),
             TotalVat = Money.Zero(),
+            FiscalStampAmount = Money.Zero(),
             TotalAmount = Money.Zero()
         };
 
@@ -107,7 +121,12 @@ public sealed class Quote : AggregateRoot
         return Result.Success(quote);
     }
 
-    public Result AddLine(Product product, decimal quantity, Money? customUnitPrice = null, decimal? discountPercent = null)
+    public Result AddLine(
+        Product product,
+        decimal quantity,
+        Money? customUnitPrice = null,
+        decimal? discountPercent = null,
+        decimal fodecRatePercent = QuoteLine.DefaultFodecRatePercent)
     {
         if (!Status.CanBeEdited())
             return Result.Failure(Error.Validation("Status", "Ce devis ne peut plus être modifié"));
@@ -124,7 +143,8 @@ public sealed class Quote : AggregateRoot
             product,
             quantity,
             unitPrice,
-            discountPercent);
+            discountPercent,
+            fodecRatePercent);
 
         if (lineResult.IsFailure)
             return Result.Failure(lineResult.Error);
@@ -179,7 +199,9 @@ public sealed class Quote : AggregateRoot
         string unit,
         Money unitPrice,
         VatRate vatRate,
-        decimal? discountPercent = null)
+        decimal? discountPercent = null,
+        bool isFodecApplicable = false,
+        decimal fodecRatePercent = QuoteLine.DefaultFodecRatePercent)
     {
         if (!Status.CanBeEdited())
             return Result.Failure(Error.Validation("Status", "Ce devis ne peut plus être modifié"));
@@ -201,7 +223,9 @@ public sealed class Quote : AggregateRoot
             unit,
             unitPrice,
             vatRate,
-            discountPercent);
+            discountPercent,
+            isFodecApplicable,
+            fodecRatePercent);
 
         if (lineResult.IsFailure)
             return Result.Failure(lineResult.Error);
@@ -209,6 +233,24 @@ public sealed class Quote : AggregateRoot
         _lines.Add(lineResult.Value);
         RecalculateTotals();
 
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Fixe le timbre fiscal annoncé sur le devis (résolu depuis le catalogue de taxes du
+    /// tenant). Refusé dès que le devis n'est plus modifiable, pour ne jamais altérer un
+    /// document déjà transmis au client.
+    /// </summary>
+    public Result SetFiscalStampAmount(Money stamp)
+    {
+        if (!Status.CanBeEdited())
+            return Result.Failure(Error.Validation("Status", "Ce devis ne peut plus être modifié"));
+
+        if (stamp.Currency != SubTotal.Currency)
+            return Result.Failure(Error.Validation("FiscalStampAmount", "La devise du timbre ne correspond pas au devis"));
+
+        FiscalStampAmount = stamp;
+        RecalculateTotals();
         return Result.Success();
     }
 
@@ -329,19 +371,33 @@ public sealed class Quote : AggregateRoot
         ExpiryDate = newExpiryDate.Date;
     }
 
+    /// <summary>
+    /// Même formule que <c>Invoice.RecalculateTotals()</c> :
+    /// TTC = HT + FODEC + TVA + timbre fiscal.
+    /// </summary>
     private void RecalculateTotals()
     {
         var currency = Money.DefaultCurrency;
-        
+
         SubTotal = _lines.Aggregate(
-            Money.Zero(currency), 
+            Money.Zero(currency),
             (sum, line) => sum.Add(line.SubTotal));
 
+        FodecAmount = _lines.Aggregate(
+            Money.Zero(currency),
+            (sum, line) => sum.Add(line.FodecAmount));
+
         TotalVat = _lines.Aggregate(
-            Money.Zero(currency), 
+            Money.Zero(currency),
             (sum, line) => sum.Add(line.VatAmount));
 
-        TotalAmount = SubTotal.Add(TotalVat);
+        var stamp = FiscalStampAmount.Currency == currency
+            ? FiscalStampAmount.Amount
+            : 0m;
+
+        TotalAmount = Money.FromSignedAmount(
+            SubTotal.Amount + FodecAmount.Amount + TotalVat.Amount + stamp,
+            currency);
     }
 
     private void RenumberLines()
