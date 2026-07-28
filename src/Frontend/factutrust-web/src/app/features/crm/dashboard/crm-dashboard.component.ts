@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { StatCardComponent } from '@shared/components/stat-card/stat-card.component';
+import { DashboardPanelComponent } from '@shared/components/dashboard/dashboard-panel.component';
 import { CrmService, OpportunityDto, SalesActivityDto } from '../services/crm.service';
 import { DecimalPipe } from '@angular/common';
 import { ToastService } from '@core/services/toast.service';
@@ -11,25 +12,22 @@ import { ToastService } from '@core/services/toast.service';
   selector: 'app-crm-dashboard',
   standalone: true,
   providers: [DecimalPipe],
-  imports: [CommonModule, RouterModule, PageHeaderComponent, StatCardComponent],
+  imports: [CommonModule, RouterModule, PageHeaderComponent, StatCardComponent, DashboardPanelComponent],
   template: `
     <app-page-header title="CRM Commercial" subtitle="Tableau de bord" />
 
     <div class="stats-wrapper">
       <div class="stats-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:1rem; margin-bottom:1.5rem;">
-        <app-stat-card label="Mes relances" [value]="reminders().length" icon="pi-bell"
+        <app-stat-card appearance="solid" label="Mes relances" [value]="reminders().length" icon="pi-bell"
           [variant]="reminders().length > 0 ? 'warning' : 'success'" />
-        <app-stat-card label="Pipeline pondéré" [value]="formatAmount(pipelineTotal())" icon="pi-chart-bar" variant="primary" />
-        <app-stat-card label="Opportunités ouvertes" [value]="openOpps().length" icon="pi-bullseye" variant="primary" />
+        <app-stat-card appearance="solid" label="Pipeline pondéré" [value]="formatAmount(pipelineTotal())" icon="pi-chart-bar" variant="primary" />
+        <app-stat-card appearance="solid" label="Opportunités ouvertes" [value]="openOpps().length" icon="pi-bullseye" variant="primary" />
       </div>
     </div>
 
     @if (reminders().length > 0) {
-      <div class="card p-4 mb-4">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; flex-wrap:wrap; gap:0.5rem">
-          <h3 style="margin:0">Relances à venir</h3>
-          <a routerLink="/crm/activities" [queryParams]="{ mine: 1, completed: 'false' }" class="crm-dash-link">Voir toutes mes activités</a>
-        </div>
+      <app-dashboard-panel title="Relances à venir" [hasActions]="true" class="mb-4">
+        <a panel-actions routerLink="/crm/activities" [queryParams]="{ mine: 1, completed: 'false' }" class="crm-dash-link">Voir toutes mes activités</a>
         <div class="reminder-list">
           @for (r of reminders(); track r.id) {
             <div style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem 0; border-bottom:1px solid var(--border-subtle);">
@@ -41,12 +39,11 @@ import { ToastService } from '@core/services/toast.service';
             </div>
           }
         </div>
-      </div>
+      </app-dashboard-panel>
     }
 
     @if (openOpps().length > 0) {
-      <div class="card p-4">
-        <h3 style="margin-bottom: 0.75rem">Top opportunités</h3>
+      <app-dashboard-panel title="Top opportunités">
         @for (o of openOpps().slice(0, 5); track o.id) {
           <div style="display:flex; justify-content:space-between; padding:0.5rem 0; border-bottom:1px solid var(--border-subtle);">
             <div>
@@ -56,7 +53,7 @@ import { ToastService } from '@core/services/toast.service';
             <span>{{ o.weightedAmount | number:'1.0-0' }} {{ o.currency }}</span>
           </div>
         }
-      </div>
+      </app-dashboard-panel>
     }
   `,
   styles: [

@@ -62,15 +62,15 @@ import { RouterModule } from '@angular/router';
     }
 
     .btn-primary {
-      background: var(--gradient-primary, linear-gradient(135deg, #3b82f6 0%, #6366f1 100%));
-      background-color: var(--color-primary-600);
+      background: var(--color-primary-600);
+      background-image: none;
       color: white;
-      box-shadow: var(--shadow-primary);
+      box-shadow: 0 4px 14px rgba(56, 98, 245, 0.22);
     }
     .btn-primary:hover:not(:disabled) {
-      background: var(--gradient-accent, linear-gradient(135deg, #6366f1 0%, #4f46e5 100%));
-      background-color: var(--color-primary-700);
-      box-shadow: var(--shadow-primary-hover);
+      background: var(--color-primary-700);
+      background-image: none;
+      box-shadow: 0 6px 18px rgba(56, 98, 245, 0.28);
       transform: translateY(-2px);
     }
     .btn-primary:active:not(:disabled) { transform: translateY(0); }

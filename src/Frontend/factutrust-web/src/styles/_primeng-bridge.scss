@@ -186,3 +186,49 @@ textarea.p-inputtextarea:enabled:focus {
   font-size: var(--font-size-xs);
   box-shadow: var(--shadow-soft-md);
 }
+
+// --------------------------------------------
+// SUPERIEUR — overlays / tags (scoped)
+// --------------------------------------------
+.theme-superieur {
+  .p-dialog {
+    border-radius: var(--superieur-card-radius, 8px);
+    box-shadow: var(--superieur-card-shadow);
+  }
+
+  .p-tag {
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-size: 11px;
+  }
+
+  .p-tag.p-tag-success {
+    background: var(--superieur-accent-teal) !important;
+  }
+
+  .p-tag.p-tag-warn,
+  .p-tag.p-tag-warning {
+    background: var(--superieur-accent-orange) !important;
+    color: #fff !important;
+  }
+
+  .p-tag.p-tag-danger {
+    background: var(--superieur-accent-red) !important;
+  }
+
+  .p-button.p-button-primary,
+  .p-button:not(.p-button-outlined):not(.p-button-text):not(.p-button-secondary) {
+    background: var(--superieur-primary);
+    border-color: var(--superieur-primary);
+  }
+
+  .p-datatable .p-datatable-tbody > tr:hover {
+    background: rgba(56, 98, 245, 0.06);
+  }
+
+  .p-paginator .p-paginator-pages .p-paginator-page.p-highlight {
+    background: var(--superieur-primary);
+  }
+}

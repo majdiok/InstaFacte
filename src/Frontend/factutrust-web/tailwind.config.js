@@ -114,6 +114,17 @@ module.exports = {
           800: '#131b35',
           900: '#0c1222',
         },
+        // Superieur Admin palette (alignée sur --superieur-* tokens)
+        superieur: {
+          primary: '#3862f5',
+          'primary-dark': '#2962ff',
+          content: '#f4f6f9',
+          teal: '#45bdad',
+          orange: '#febc3b',
+          purple: '#776be8',
+          red: '#f83f37',
+          cyan: '#17a2b8',
+        },
       },
       fontFamily: {
         sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],

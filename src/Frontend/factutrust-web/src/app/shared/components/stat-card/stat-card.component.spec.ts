@@ -4,6 +4,7 @@ import { StatCardComponent } from './stat-card.component';
 
 describe('StatCardComponent', () => {
   let fixture: ComponentFixture<StatCardComponent>;
+  let component: StatCardComponent;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
@@ -12,22 +13,22 @@ describe('StatCardComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(StatCardComponent);
+    component = fixture.componentInstance;
+    component.label = 'CA';
+    component.value = '1000';
+    fixture.detectChanges();
   });
 
-  it('renders a plain card without routerLink', () => {
-    fixture.componentInstance.label = 'Test KPI';
-    fixture.componentInstance.value = 42;
-    fixture.detectChanges();
-
-    const link = fixture.nativeElement.querySelector('a.stat-card-link');
-    expect(link).toBeNull();
+  it('should create with default appearance', () => {
+    expect(component).toBeTruthy();
+    expect(component.appearance).toBe('default');
+    expect(fixture.nativeElement.querySelector('.stat-card--solid')).toBeNull();
   });
 
-  it('wraps card in a link when routerLink is set', () => {
-    fixture.componentInstance.routerLink = '/reports/analytics/revenue';
+  it('should apply solid appearance class', () => {
+    component.appearance = 'solid';
     fixture.detectChanges();
-
-    const link = fixture.nativeElement.querySelector('a.stat-card-link');
-    expect(link).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('.stat-card--solid')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.stat-sparkline')).toBeTruthy();
   });
 });

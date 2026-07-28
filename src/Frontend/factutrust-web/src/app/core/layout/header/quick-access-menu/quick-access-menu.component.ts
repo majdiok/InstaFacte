@@ -99,31 +99,31 @@ const SECTION_ORDER: QuickAccessSection[] = ['navigation', 'create'];
       align-items: center;
       gap: var(--spacing-2, 8px);
       padding: 6px 14px;
-      border: 1px solid var(--color-neutral-200, #e2e8f0);
-      border-radius: 999px;
-      background: var(--color-neutral-50, #f8fafc);
-      color: var(--color-neutral-700, #334155);
+      border: 1px solid var(--topbar-divider, rgba(255, 255, 255, 0.2));
+      border-radius: 4px;
+      background: transparent;
+      color: var(--topbar-fg, #fff);
       font-size: 12px;
       font-weight: 600;
       line-height: 1.2;
       cursor: pointer;
-      transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+      transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 
       &:hover {
-        background: var(--color-neutral-100, #f1f5f9);
-        border-color: var(--color-neutral-300, #cbd5e1);
-        color: var(--color-neutral-900, #0f172a);
+        background: var(--topbar-hover-bg, rgba(255, 255, 255, 0.12));
+        border-color: rgba(255, 255, 255, 0.35);
+        color: var(--topbar-fg, #fff);
       }
 
       &.show {
-        background: var(--color-primary-50, #eff6ff);
-        border-color: var(--color-primary-200, #bfdbfe);
-        color: var(--color-primary-700, #1d4ed8);
+        background: var(--topbar-hover-bg, rgba(255, 255, 255, 0.12));
+        border-color: rgba(255, 255, 255, 0.35);
+        color: var(--topbar-fg, #fff);
       }
 
       &:focus-visible {
         outline: none;
-        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5);
       }
 
       &::after {
@@ -133,12 +133,12 @@ const SECTION_ORDER: QuickAccessSection[] = ['navigation', 'create'];
 
     .quick-access__trigger-icon {
       font-size: 12px;
-      color: var(--color-primary-600, #2563eb);
+      color: var(--topbar-fg, #fff);
     }
 
     .quick-access__trigger-chevron {
       font-size: 8px;
-      color: var(--color-neutral-500, #64748b);
+      color: var(--topbar-fg-muted, rgba(255, 255, 255, 0.75));
       transition: transform 0.2s ease;
     }
 

@@ -424,3 +424,97 @@
     }
   }
 }
+
+// ============================================
+// SUPERIEUR ADMIN — auth re-skin (html.theme-superieur)
+// Préserve la structure split-panel ; change uniquement l'apparence.
+// ============================================
+:host-context(.theme-superieur) {
+  .auth-page {
+    background:
+      linear-gradient(135deg, rgba(15, 23, 42, 0.55) 0%, rgba(56, 98, 245, 0.35) 100%),
+      radial-gradient(ellipse at 20% 50%, #1e3a5f 0%, #0f172a 70%);
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1rem;
+  }
+
+  .branding-panel {
+    flex: 0 0 42%;
+    max-width: 480px;
+    border-radius: 16px 0 0 16px;
+    background: rgba(15, 23, 42, 0.72);
+    padding: 2.5rem;
+
+    @media (max-width: 991px) {
+      border-radius: 16px 16px 0 0;
+      max-width: 100%;
+    }
+
+    .branding-background .shape-1 {
+      background: var(--superieur-primary, #3862f5);
+    }
+    .branding-background .shape-2 {
+      background: var(--superieur-auth-accent, #ff8c00);
+      opacity: 0.45;
+    }
+    .branding-background .shape-3 {
+      background: var(--superieur-accent-purple, #776be8);
+    }
+    .branding-background .glass-overlay {
+      background: linear-gradient(160deg, rgba(0, 0, 0, 0.35) 0%, rgba(0, 0, 0, 0.65) 100%);
+      backdrop-filter: blur(8px);
+    }
+
+    .value-prop .title {
+      color: var(--superieur-auth-accent, #ff8c00);
+      text-transform: uppercase;
+      font-size: 2.25rem;
+      letter-spacing: 0.02em;
+    }
+
+    .value-prop .description {
+      text-transform: uppercase;
+      font-size: 0.9rem;
+      letter-spacing: 0.06em;
+      color: rgba(255, 255, 255, 0.9);
+    }
+
+    .value-prop .badge {
+      background: rgba(255, 140, 0, 0.2);
+      border-color: rgba(255, 140, 0, 0.45);
+      color: #ffd8a8;
+    }
+  }
+
+  .form-panel {
+    border-radius: 0 16px 16px 0;
+    box-shadow: var(--superieur-card-shadow, 0 0 20px rgba(0, 0, 0, 0.08));
+    max-width: 520px;
+    padding: 2.5rem 2rem;
+
+    @media (max-width: 991px) {
+      border-radius: 0 0 16px 16px;
+      margin-top: 0;
+      max-width: 100%;
+    }
+  }
+
+  .form-header-text h2 {
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 1.5rem;
+  }
+
+  .form-top-bar__link {
+    color: var(--superieur-primary, #3862f5);
+  }
+
+  ::ng-deep .login-submit-btn {
+    border-radius: 4px !important;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    background: var(--superieur-primary, #3862f5) !important;
+    border-color: var(--superieur-primary, #3862f5) !important;
+  }
+}

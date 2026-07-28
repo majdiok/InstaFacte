@@ -1,0 +1,96 @@
+// ============================================
+// SUPERIEUR ADMIN — DESIGN TOKENS
+// Réplication du design language Superieur via CSS custom properties.
+// NE PAS importer le CSS/HTML Superieur brut (conflits Pluto/Bootstrap/PrimeNG).
+//
+// Matrice tokens actuels → Superieur (sous .theme-superieur) :
+//   --topbar-gradient-start: #0073b7     →  --superieur-primary #3862F5
+//   --topbar-gradient-end:   #00c0ef     →  --superieur-primary-dark #2962FF
+//   --layout-content-bg:     neutral-50  →  #f4f6f9
+//   --layout-sidebar-bg:     neutral-100 →  #ffffff
+//   --layout-sidebar-item-active-bg: primary-50 → #3862F5 (+ texte blanc)
+//   --radius-xl: 0.75rem                 →  8px
+//   --shadow-sm                          →  --superieur-card-shadow
+//
+// Tokens métier NON remappés : --pos-*, --ai-*, --brand-* marketing.
+// Rollback : retirer la classe .theme-superieur sur <html>.
+// ============================================
+
+:root {
+  --superieur-primary: #3862f5;
+  --superieur-primary-dark: #2962ff;
+  --superieur-primary-light: #5b7cff;
+  --superieur-content-bg: #f4f6f9;
+  --superieur-sidebar-bg: #ffffff;
+  --superieur-sidebar-border: #e8e8e8;
+  --superieur-sidebar-active-bg: var(--superieur-primary);
+  --superieur-sidebar-text: #455a64;
+  --superieur-sidebar-muted: #90a4ae;
+  --superieur-accent-teal: #45bdad;
+  --superieur-accent-orange: #febc3b;
+  --superieur-accent-purple: #776be8;
+  --superieur-accent-red: #f83f37;
+  --superieur-accent-pink: #e83e8c;
+  --superieur-accent-cyan: #17a2b8;
+  --superieur-card-shadow: 0 0 20px rgba(0, 0, 0, 0.08);
+  --superieur-card-radius: 8px;
+  --superieur-table-header-bg: #2f323a;
+  --superieur-auth-accent: #ff8c00;
+  --superieur-compose-teal: #3dbd9d;
+  --superieur-badge-new: #f83f37;
+}
+
+// Remap layout / topbar / cards — activé uniquement sous .theme-superieur
+.theme-superieur {
+  --topbar-gradient-start: var(--superieur-primary);
+  --topbar-gradient-end: var(--superieur-primary-dark);
+  --topbar-fg: #ffffff;
+  --topbar-fg-muted: rgba(255, 255, 255, 0.75);
+  --topbar-divider: rgba(255, 255, 255, 0.2);
+  --topbar-hover-bg: rgba(255, 255, 255, 0.12);
+  --topbar-badge: var(--superieur-accent-red);
+
+  --layout-content-bg: var(--superieur-content-bg);
+  --layout-sidebar-bg: var(--superieur-sidebar-bg);
+  --layout-sidebar-text: var(--superieur-sidebar-text);
+  --layout-sidebar-text-muted: var(--superieur-sidebar-muted);
+  --layout-sidebar-item-hover-bg: rgba(56, 98, 245, 0.08);
+  --layout-sidebar-item-active-bg: var(--superieur-sidebar-active-bg);
+  --layout-sidebar-item-active-text: #ffffff;
+  --layout-sidebar-item-active-border: var(--superieur-primary);
+  --layout-sidebar-border: var(--superieur-sidebar-border);
+  --layout-header-bg: var(--superieur-primary);
+  --layout-header-border: transparent;
+
+  --color-background-base: var(--superieur-content-bg);
+  --radius-xl: var(--superieur-card-radius);
+  --shadow-sm: var(--superieur-card-shadow);
+  --shadow-soft-sm: var(--superieur-card-shadow);
+
+  // Primary brand alignment (UI chrome only — POS/AI tokens untouched)
+  --color-primary-500: var(--superieur-primary);
+  --color-primary-600: var(--superieur-primary-dark);
+  --color-primary-700: #1e4fd6;
+
+  // Sidebar dual-rail remaps (consommés par sidebar.component.scss)
+  --sidebar-rail-bg: var(--superieur-sidebar-bg);
+  --sidebar-rail-bg-gradient: var(--superieur-sidebar-bg);
+  --sidebar-rail-edge: var(--superieur-sidebar-border);
+  --sidebar-rail-item-default: var(--superieur-sidebar-text);
+  --sidebar-rail-item-hover-bg: rgba(56, 98, 245, 0.08);
+  --sidebar-rail-item-active-bg: var(--superieur-sidebar-active-bg);
+  --sidebar-rail-accent: #ffffff;
+  --sidebar-rail-accent-icon: #ffffff;
+  --sidebar-rail-expanded-bg: rgba(56, 98, 245, 0.12);
+  --sidebar-rail-expanded-bar: var(--superieur-primary);
+  --sidebar-submenu-bg: var(--superieur-sidebar-bg);
+  --sidebar-submenu-border: var(--superieur-sidebar-border);
+  --sidebar-submenu-title: var(--superieur-sidebar-muted);
+  --sidebar-submenu-link: var(--superieur-sidebar-text);
+  --sidebar-submenu-link-hover-bg: rgba(56, 98, 245, 0.08);
+  --sidebar-submenu-link-hover-text: var(--superieur-primary-dark);
+  --sidebar-submenu-link-active-bg: var(--superieur-sidebar-active-bg);
+  --sidebar-submenu-link-active-text: #ffffff;
+  --sidebar-submenu-link-active-accent: var(--superieur-primary);
+  --sidebar-submenu-link-active-icon: #ffffff;
+}

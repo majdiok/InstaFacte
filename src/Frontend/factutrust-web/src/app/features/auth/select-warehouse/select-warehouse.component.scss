@@ -89,3 +89,19 @@
   font-size: 0.8125rem;
   color: var(--text-secondary, #64748b);
 }
+
+:host-context(.theme-superieur) {
+  .warehouse-option {
+    border-radius: var(--superieur-card-radius, 8px);
+  }
+
+  .warehouse-option--selected {
+    border-color: var(--superieur-primary, #3862f5);
+    box-shadow: 0 0 0 1px var(--superieur-primary, #3862f5);
+  }
+
+  .warehouse-option__badge {
+    background: rgba(56, 98, 245, 0.1);
+    color: var(--superieur-primary-dark, #2962ff);
+  }
+}

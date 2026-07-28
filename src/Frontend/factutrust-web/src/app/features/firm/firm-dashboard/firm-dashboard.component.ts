@@ -48,7 +48,7 @@ interface GovernanceTile {
       <section class="dash-section">
         <h2 class="section-title">Alertes prioritaires</h2>
         <div class="stats-grid">
-          <app-stat-card
+          <app-stat-card appearance="solid"
             label="Échéances en retard"
             [value]="dashboard()?.overdueSchedulesCount ?? 0"
             icon="fa-solid fa-calendar-xmark"
@@ -58,7 +58,7 @@ interface GovernanceTile {
               {{ (dashboard()?.overdueEstimatedAmount ?? 0) | number:'1.0-3' }} TND estimés
             </span>
           </app-stat-card>
-          <app-stat-card
+          <app-stat-card appearance="solid"
             label="Échéances ≤ 7 jours"
             [value]="dashboard()?.upcomingWithin7DaysCount ?? 0"
             icon="fa-solid fa-calendar-day"
@@ -74,40 +74,40 @@ interface GovernanceTile {
       <section class="dash-section">
         <h2 class="section-title">Opérations &amp; fiscalité</h2>
         <div class="stats-grid">
-          <app-stat-card
+          <app-stat-card appearance="solid"
             label="Dossiers actifs"
             [value]="dashboard()?.activeClientsCount ?? 0"
             icon="fa-solid fa-briefcase"
             variant="primary"
             routerLink="/firm/clients" />
-          <app-stat-card
+          <app-stat-card appearance="solid"
             label="Invitations en attente"
             [value]="dashboard()?.pendingInvitationsCount ?? 0"
             icon="fa-solid fa-envelope-open-text"
             [variant]="(dashboard()?.pendingInvitationsCount ?? 0) > 0 ? 'warning' : 'success'"
             routerLink="/firm/invitations" />
-          <app-stat-card
+          <app-stat-card appearance="solid"
             label="Dossiers inactifs (30j)"
             [value]="dashboard()?.inactiveDossiersCount ?? 0"
             icon="fa-solid fa-clock"
             [variant]="(dashboard()?.inactiveDossiersCount ?? 0) > 0 ? 'warning' : 'success'" />
-          <app-stat-card
+          <app-stat-card appearance="solid"
             label="Déclarations TVA brouillon"
             [value]="dashboard()?.vatDraftsCount ?? 0"
             icon="fa-solid fa-file-invoice"
             variant="primary"
             routerLink="/firm/fiscal-schedule" />
-          <app-stat-card
+          <app-stat-card appearance="solid"
             label="TEJ en attente"
             [value]="dashboard()?.tejPendingCount ?? 0"
             icon="fa-solid fa-file-export"
             variant="primary" />
-          <app-stat-card
+          <app-stat-card appearance="solid"
             label="Liasse IS brouillon"
             [value]="dashboard()?.liasseDraftsCount ?? 0"
             icon="fa-solid fa-file-contract"
             variant="primary" />
-          <app-stat-card
+          <app-stat-card appearance="solid"
             label="DTS CNSS en attente"
             [value]="dashboard()?.dtsPendingCount ?? 0"
             icon="fa-solid fa-users"
@@ -119,33 +119,33 @@ interface GovernanceTile {
         <section class="dash-section">
           <h2 class="section-title">Gouvernance &amp; productivité</h2>
           <div class="stats-grid">
-            <app-stat-card
+            <app-stat-card appearance="solid"
               label="Dossiers permanents complets"
               [value]="governance()!.permanentFilesCompleteCount"
               icon="fa-solid fa-folder-open"
               variant="success"
               routerLink="/firm/governance/permanent-files"
               [queryParams]="{ status: '2' }" />
-            <app-stat-card
+            <app-stat-card appearance="solid"
               label="DP en cours"
               [value]="governance()!.permanentFilesInProgressCount"
               icon="fa-solid fa-pen"
               variant="warning"
               routerLink="/firm/governance/permanent-files"
               [queryParams]="{ status: '1' }" />
-            <app-stat-card
+            <app-stat-card appearance="solid"
               label="Heures facturables (mois)"
               [value]="governance()!.totalBillableHoursMonth"
               icon="fa-solid fa-clock"
               variant="primary"
               routerLink="/firm/governance/time-sheets" />
-            <app-stat-card
+            <app-stat-card appearance="solid"
               label="Heures facturables (année)"
               [value]="governance()!.totalBillableHoursYear"
               icon="fa-solid fa-chart-line"
               variant="primary"
               routerLink="/firm/governance/time-sheets" />
-            <app-stat-card
+            <app-stat-card appearance="solid"
               label="Notes de frais en attente"
               [value]="governance()!.pendingExpenseNotesCount"
               icon="fa-solid fa-receipt"

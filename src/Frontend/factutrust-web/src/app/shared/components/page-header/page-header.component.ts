@@ -8,6 +8,9 @@ import { CommonModule } from '@angular/common';
   template: `
     <div class="page-header">
       <div class="page-header-content">
+        <div class="page-header-breadcrumb">
+          <ng-content select="[page-breadcrumb]"></ng-content>
+        </div>
         <h1 class="page-title">{{ title }}</h1>
         <p class="page-subtitle" *ngIf="subtitle">{{ subtitle }}</p>
       </div>
@@ -35,6 +38,13 @@ import { CommonModule } from '@angular/common';
       ) 1;
     }
 
+    :host-context(.theme-superieur) .page-header {
+      border-image: none;
+      border-bottom: 1px solid var(--color-border-subtle, #e2e8f0);
+      margin-bottom: 1.25rem;
+      padding-bottom: 1rem;
+    }
+
     @keyframes fadeIn {
       from {
         opacity: 0;
@@ -51,6 +61,14 @@ import { CommonModule } from '@angular/common';
       min-width: 0;
     }
 
+    .page-header-breadcrumb:empty {
+      display: none;
+    }
+
+    .page-header-breadcrumb:not(:empty) {
+      margin-bottom: 0.35rem;
+    }
+
     .page-title {
       font-size: var(--font-size-3xl);
       font-weight: var(--font-weight-bold);
@@ -58,6 +76,11 @@ import { CommonModule } from '@angular/common';
       margin: 0 0 var(--spacing-2);
       line-height: 1.2;
       letter-spacing: -0.02em;
+    }
+
+    :host-context(.theme-superieur) .page-title {
+      font-size: 1.75rem;
+      letter-spacing: 0;
     }
 
     .page-subtitle {

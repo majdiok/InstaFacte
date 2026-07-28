@@ -270,3 +270,70 @@
     }
   }
 }
+
+/* Superieur — icon-box + underline inputs + bouton plein */
+:host-context(.theme-superieur) {
+  .form-group .input-icon-wrapper {
+    border-radius: 0;
+    gap: 0;
+
+    .icon {
+      position: static;
+      left: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      height: 44px;
+      flex-shrink: 0;
+      background: var(--superieur-primary, #3862f5);
+      color: #fff !important;
+      border-radius: 4px 0 0 4px;
+      font-size: 1rem;
+      pointer-events: none;
+    }
+
+    input,
+    .p-inputtext,
+    .p-password-input {
+      border: none !important;
+      border-bottom: 1px solid var(--color-neutral-300) !important;
+      border-radius: 0 !important;
+      background: transparent !important;
+      padding-left: 1rem !important;
+      min-height: 44px;
+      box-shadow: none !important;
+
+      &:focus {
+        border-bottom-color: var(--superieur-primary, #3862f5) !important;
+        box-shadow: none !important;
+        background: transparent !important;
+      }
+    }
+  }
+
+  .forgot-link,
+  .login-footer__cta {
+    color: var(--superieur-primary, #3862f5);
+  }
+}
+
+:host-context(.theme-superieur) ::ng-deep .login-form {
+  .p-password .p-password-input,
+  .p-password .p-inputtext {
+    border-radius: 0 !important;
+    background: transparent !important;
+    border: none !important;
+    border-bottom: 1px solid var(--color-neutral-300) !important;
+    padding-left: 1rem !important;
+  }
+
+  .login-submit-btn {
+    border-radius: 4px !important;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    background: var(--superieur-primary, #3862f5) !important;
+    border-color: var(--superieur-primary, #3862f5) !important;
+    box-shadow: 0 4px 14px rgba(56, 98, 245, 0.3) !important;
+  }
+}

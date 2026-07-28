@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 
 type StatVariant = 'primary' | 'success' | 'warning' | 'error';
+type StatAppearance = 'default' | 'solid' | 'mini-sparkline';
 
 /**
  * Carte KPI — style maquette factutrust_design.html :
@@ -11,7 +12,8 @@ type StatVariant = 'primary' | 'success' | 'warning' | 'error';
  * et blob d'angle décoratif teinté.
  *
  * API rétro-compatible : les @Input existants (label, value, icon, variant, change, featured)
- * sont préservés. Ajouts optionnels : `tone` (teinte précise) ; navigation via `routerLink`.
+ * sont préservés. Ajouts optionnels : `tone`, `appearance` (solid / mini-sparkline Superieur),
+ * navigation via `routerLink`.
  */
 @Component({
   selector: 'app-stat-card',
@@ -47,6 +49,17 @@ type StatVariant = 'primary' | 'success' | 'warning' | 'error';
           <span class="stat-label">{{ label }}</span>
           <span class="stat-value">{{ value }}</span>
           <ng-content></ng-content>
+          @if (appearance === 'solid' || appearance === 'mini-sparkline') {
+            <svg class="stat-sparkline" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true">
+              <polyline
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                points="0,22 15,18 30,20 45,12 60,14 75,8 90,10 105,4 120,6" />
+            </svg>
+          }
         </div>
       </div>
     </ng-template>
@@ -162,6 +175,49 @@ type StatVariant = 'primary' | 'success' | 'warning' | 'error';
     .stat-card--featured { padding: var(--spacing-6); }
     .stat-card--featured .stat-value { font-size: var(--font-size-3xl); }
 
+    /* Superieur solid KPI — fond coloré plein + texte blanc */
+    .stat-card--solid {
+      border: none;
+      border-radius: var(--superieur-card-radius, 8px);
+      box-shadow: var(--superieur-card-shadow, 0 0 20px rgba(0,0,0,0.08));
+      color: #fff;
+    }
+    .stat-card--solid::after { opacity: 0.15; color: #fff; }
+    .stat-card--solid .stat-label { color: rgba(255, 255, 255, 0.85); }
+    .stat-card--solid .stat-value { color: #fff; font-family: var(--font-family, Inter, sans-serif); }
+    .stat-card--solid .stat-trend {
+      background: rgba(255, 255, 255, 0.2);
+      color: #fff;
+    }
+    .stat-card--solid .ft-icon-badge {
+      background: rgba(255, 255, 255, 0.22) !important;
+      color: #fff !important;
+    }
+    .stat-card--solid.stat-card--primary { background: var(--superieur-primary, #3862f5); }
+    .stat-card--solid.stat-card--success { background: var(--superieur-accent-teal, #45bdad); }
+    .stat-card--solid.stat-card--warning { background: var(--superieur-accent-orange, #febc3b); }
+    .stat-card--solid.stat-card--error { background: var(--superieur-accent-red, #f83f37); }
+    .stat-card--solid.ft-icon-tone--cyan { background: var(--superieur-accent-cyan, #17a2b8); }
+    .stat-card--solid.ft-icon-tone--purple,
+    .stat-card--solid.ft-icon-tone--violet { background: var(--superieur-accent-purple, #776be8); }
+    .stat-card--solid.ft-icon-tone--emerald { background: var(--superieur-accent-teal, #45bdad); }
+    .stat-card--solid.ft-icon-tone--amber { background: var(--superieur-accent-orange, #febc3b); }
+    .stat-card--solid.ft-icon-tone--rose { background: var(--superieur-accent-red, #f83f37); }
+    .stat-card--solid:hover {
+      transform: translateY(-3px);
+      border-color: transparent;
+      filter: brightness(1.05);
+    }
+
+    .stat-sparkline {
+      display: block;
+      width: 100%;
+      height: 28px;
+      margin-top: var(--spacing-3);
+      opacity: 0.85;
+      color: rgba(255, 255, 255, 0.9);
+    }
+
     @media (max-width: 768px) {
       .stat-card { padding: var(--spacing-4); }
       .stat-value { font-size: var(--font-size-xl); }
@@ -178,6 +234,8 @@ export class StatCardComponent {
   @Input() featured?: boolean;
   /** Teinte précise du badge/blob (clé de la palette $ft-icon-tones). Défaut : dérivée de `variant`. */
   @Input() tone?: string;
+  /** Apparence : default (actuel) | solid (KPI Superieur plein) | mini-sparkline */
+  @Input() appearance: StatAppearance = 'default';
   @Input() routerLink?: string | any[];
   @Input() queryParams?: Record<string, string>;
   @Input() clickable = false;
@@ -203,7 +261,8 @@ export class StatCardComponent {
       'stat-card',
       'stat-card--' + this.variant,
       'ft-icon-tone--' + this.resolvedTone,
-      this.featured ? 'stat-card--featured' : ''
+      this.featured ? 'stat-card--featured' : '',
+      this.appearance !== 'default' ? 'stat-card--solid' : ''
     ].join(' ').trim();
   }
 

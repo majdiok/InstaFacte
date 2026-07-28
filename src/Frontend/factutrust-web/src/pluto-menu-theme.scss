@@ -94,13 +94,14 @@
   }
 
   &.active {
-    color: var(--color-primary-700, #1d4ed8);
+    color: var(--sidebar-rail-accent, var(--color-primary-700, #1d4ed8));
     background: var(--sidebar-rail-item-active-bg);
     box-shadow: inset 3px 0 0 var(--sidebar-rail-accent);
+    border-radius: 4px;
 
-    /* L'icône conserve sa couleur de rubrique (mapping ci-dessous). */
     i {
       opacity: 1;
+      color: inherit;
     }
   }
 }
@@ -241,44 +242,44 @@
 }
 
 // --------------------------------------------
-// TOPBAR (Header Modernization)
+// TOPBAR — Cubic restyle (app-header only)
+// Scoped sous .topbar.main-header pour éviter les effets collatéraux.
 // --------------------------------------------
 
-.topbar .navbar {
-  background: var(--color-white) !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
-  border-bottom: 1px solid var(--color-neutral-200);
-  min-height: 60px;
-  padding: 0 20px !important;
+.topbar.main-header .navbar {
+  background: transparent !important;
+  box-shadow: none !important;
+  border-bottom: none !important;
+  min-height: var(--topbar-height, 56px);
+  padding: 0 !important;
 }
 
-.sidebar_toggle {
+.topbar.main-header .sidebar_toggle {
   background: transparent !important;
-  color: var(--color-neutral-600) !important;
+  color: var(--topbar-fg) !important;
   border: none !important;
   padding: 8px !important;
   border-radius: 8px;
 }
 
-.sidebar_toggle:hover,
-.sidebar_toggle:focus {
-  color: var(--color-primary-600) !important;
-  background: var(--color-neutral-100) !important;
+.topbar.main-header .sidebar_toggle:hover,
+.topbar.main-header .sidebar_toggle:focus {
+  color: var(--topbar-fg) !important;
+  background: var(--topbar-hover-bg) !important;
 }
 
-// Icônes topbar (notifications, paramètres, etc.)
-.icon_info ul li a {
-  color: var(--color-neutral-500) !important;
+.topbar.main-header .icon_info ul li a {
+  color: var(--topbar-fg) !important;
   font-size: 18px;
 }
 
-.icon_info ul li a:hover {
-  color: var(--color-primary-600) !important;
+.topbar.main-header .icon_info ul li a:hover {
+  color: var(--topbar-fg) !important;
+  background: var(--topbar-hover-bg) !important;
 }
 
-// Badge notifications - rouge/orange vif
-.icon_info ul li .badge {
-  background: var(--color-error-500) !important;
+.topbar.main-header .icon_info ul li .badge {
+  background: var(--topbar-badge) !important;
   color: #fff !important;
   font-size: 10px;
   padding: 3px 6px;
@@ -287,14 +288,13 @@
   border-radius: 50%;
 }
 
-// User dropdown dans topbar
-.icon_info ul.user_profile_dd>li {
+.topbar.main-header .icon_info ul.user_profile_dd > li {
   background: transparent !important;
 }
 
-.icon_info ul.user_profile_dd>li span,
-.icon_info ul.user_profile_dd>li .name_user {
-  color: var(--color-neutral-700) !important;
+.topbar.main-header .icon_info ul.user_profile_dd > li span,
+.topbar.main-header .icon_info ul.user_profile_dd > li .name_user {
+  color: var(--topbar-fg) !important;
   font-weight: 500;
 }
 
@@ -351,7 +351,7 @@
   vertical-align: middle;
   transform: none;
   content: "";
-  border-top: 0.35em solid var(--color-neutral-500);
+  border-top: 0.35em solid var(--topbar-fg, #fff);
   border-right: 0.35em solid transparent;
   border-bottom: 0;
   border-left: 0.35em solid transparent;
@@ -362,4 +362,55 @@
 
 .main-header .icon_info ul.user_profile_dd > li > a.main-header__user-trigger .name_user {
   padding: 0 !important;
+}
+
+// --------------------------------------------
+// SUPERIEUR ADMIN — shell overrides (scoped)
+// Activé uniquement sous html.theme-superieur
+// --------------------------------------------
+.theme-superieur {
+  #sidebar {
+    background: var(--superieur-sidebar-bg) !important;
+  }
+
+  #sidebar ul.rail-nav li a.rail-link.active,
+  #sidebar ul.rail-nav li button.rail-link.active {
+    color: #ffffff !important;
+    background: var(--superieur-primary) !important;
+    box-shadow: none !important;
+    border-radius: 4px;
+
+    i,
+    .rail-icon-img {
+      color: #ffffff !important;
+      opacity: 1 !important;
+      filter: none;
+    }
+  }
+
+  #sidebar ul.submenu-list li a.submenu-link.active {
+    color: #ffffff !important;
+    background: var(--superieur-primary) !important;
+    box-shadow: none !important;
+    border-radius: 4px;
+
+    i {
+      color: #ffffff !important;
+      opacity: 1 !important;
+    }
+  }
+
+  #sidebar .sidebar-brand {
+    background: var(--superieur-primary) !important;
+  }
+
+  .topbar.main-header {
+    background: var(--superieur-primary) !important;
+    background-image: none !important;
+  }
+
+  .topbar.main-header .icon_info ul li a .badge,
+  .topbar.main-header .notif-bell .badge {
+    background: var(--superieur-accent-red) !important;
+  }
 }

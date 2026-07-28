@@ -1,0 +1,169 @@
+// ============================================
+// SUPERIEUR ADMIN — BRIDGE Bootstrap remnants
+// Sous .theme-superieur uniquement. Ne touche pas au markup.
+// ============================================
+
+.theme-superieur {
+  // ---- Cards Bootstrap / Pluto ----
+  .card {
+    background: var(--color-background-elevated, #fff);
+    border: 1px solid rgba(0, 0, 0, 0.04);
+    border-radius: var(--superieur-card-radius, 8px);
+    box-shadow: var(--superieur-card-shadow);
+  }
+
+  .card .card-header {
+    background: transparent;
+    border-bottom: 1px solid var(--color-border-subtle, #e2e8f0);
+    font-weight: 600;
+    color: var(--color-text-primary, #0f172a);
+  }
+
+  // ---- Buttons ----
+  .btn.btn-primary,
+  .btn-primary {
+    background: var(--superieur-primary);
+    border-color: var(--superieur-primary);
+    color: #fff;
+    border-radius: 4px;
+    box-shadow: 0 4px 14px rgba(56, 98, 245, 0.25);
+  }
+
+  .btn.btn-primary:hover,
+  .btn-primary:hover {
+    background: var(--superieur-primary-dark);
+    border-color: var(--superieur-primary-dark);
+  }
+
+  .btn.btn-success {
+    background: var(--superieur-accent-teal);
+    border-color: var(--superieur-accent-teal);
+  }
+
+  .btn.btn-warning {
+    background: var(--superieur-accent-orange);
+    border-color: var(--superieur-accent-orange);
+    color: #fff;
+  }
+
+  .btn.btn-danger {
+    background: var(--superieur-accent-red);
+    border-color: var(--superieur-accent-red);
+  }
+
+  // ---- Tables (opt-in dark header) ----
+  .table-dark-header thead th,
+  .p-datatable.table-dark-header .p-datatable-thead > tr > th {
+    background: var(--superieur-table-header-bg) !important;
+    color: #fff !important;
+    border-color: transparent !important;
+    text-transform: uppercase;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+  }
+
+  // ---- Badges / pills ----
+  .badge.bg-success,
+  .status-badge.status-paid,
+  .status-badge.status-complete {
+    background: var(--superieur-accent-teal) !important;
+  }
+
+  .badge.bg-warning,
+  .status-badge.status-new,
+  .status-badge.status-pending {
+    background: var(--superieur-accent-orange) !important;
+    color: #fff !important;
+  }
+
+  .badge.bg-danger {
+    background: var(--superieur-accent-red) !important;
+  }
+
+  // ---- Content surface ----
+  #content,
+  .midde_cont {
+    background: var(--superieur-content-bg);
+  }
+
+  .midde_cont:not(.layout-full-width) {
+    padding: 1.25rem;
+  }
+
+  // ---- Utility accent tiles ----
+  .ft-superieur-tile {
+    border-radius: var(--superieur-card-radius);
+    box-shadow: var(--superieur-card-shadow);
+    background: #fff;
+  }
+
+  .ft-superieur-tile--teal { background: var(--superieur-accent-teal); color: #fff; }
+  .ft-superieur-tile--orange { background: var(--superieur-accent-orange); color: #fff; }
+  .ft-superieur-tile--purple { background: var(--superieur-accent-purple); color: #fff; }
+  .ft-superieur-tile--blue { background: var(--superieur-primary); color: #fff; }
+  .ft-superieur-tile--red { background: var(--superieur-accent-red); color: #fff; }
+
+  // Status badges — pills Superieur
+  .status-badge {
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-size: 11px;
+  }
+
+  .status-badge.status-paid,
+  .status-badge.status-validated,
+  .status-badge.status-accepted,
+  .status-badge.status-active {
+    background: var(--superieur-accent-teal) !important;
+    color: #fff !important;
+    border-color: transparent !important;
+  }
+
+  .status-badge.status-pending,
+  .status-badge.status-draft,
+  .status-badge.status-sent {
+    background: var(--superieur-accent-orange) !important;
+    color: #fff !important;
+    border-color: transparent !important;
+  }
+
+  .status-badge.status-overdue,
+  .status-badge.status-cancelled,
+  .status-badge.status-rejected {
+    background: var(--superieur-accent-red) !important;
+    color: #fff !important;
+    border-color: transparent !important;
+  }
+
+  // Modales Bootstrap / ng-bootstrap
+  .modal-content {
+    border-radius: var(--superieur-card-radius, 8px);
+    box-shadow: var(--superieur-card-shadow);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+  }
+
+  .modal-header {
+    border-bottom-color: var(--color-border-subtle, #e2e8f0);
+  }
+
+  .modal-footer .btn-primary {
+    background: var(--superieur-primary);
+    border-color: var(--superieur-primary);
+  }
+
+  // Ne pas toucher au POS / layout full-width
+  .midde_cont.layout-full-width,
+  .midde_cont.layout-distraction-free {
+    padding: 0;
+    background: transparent;
+  }
+
+  app-pos,
+  .pos-shell {
+    --color-primary-500: #3b82f6;
+    --color-primary-600: #2563eb;
+    --color-primary-700: #1d4ed8;
+  }
+}

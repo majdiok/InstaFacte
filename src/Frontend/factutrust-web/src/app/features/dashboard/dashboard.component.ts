@@ -5,12 +5,15 @@ import { RouterModule, Router } from '@angular/router';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { CardModule } from 'primeng/card';
+import { ChartModule } from 'primeng/chart';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { SkeletonTableComponent, SkeletonColumn } from '@shared/components/skeleton/skeleton-table.component';
 import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { StatusBadgeComponent, StatusBadgeStatus } from '@shared/components/status-badge/status-badge.component';
 import { StatCardComponent } from '@shared/components/stat-card/stat-card.component';
+import { ChartCardComponent } from '@shared/components/dashboard/chart-card.component';
+import { DashboardPanelComponent } from '@shared/components/dashboard/dashboard-panel.component';
 import { InvoiceService, InvoiceListItem } from '@core/services/invoice.service';
 import { isUnpaidInvoice, sumRealizedRevenue } from '@core/utils/invoice-metrics.util';
 import { AuthService } from '@core/services/auth.service';
@@ -55,12 +58,15 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
     TableModule,
     ButtonModule,
     CardModule,
+    ChartModule,
     PageHeaderComponent,
     SkeletonTableComponent,
     EmptyStateComponent,
     ButtonComponent,
     StatusBadgeComponent,
     StatCardComponent,
+    ChartCardComponent,
+    DashboardPanelComponent,
     AnalyzeWithAiButtonComponent
   ],
   template: `
@@ -168,11 +174,11 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
           icon="fa-solid fa-sack-dollar"
           variant="primary"
           tone="primary"
+          appearance="solid"
           [change]="kpiTrends()?.revenueChange"
           [routerLink]="drillDown('totalRevenue')?.route"
           [queryParams]="drillDown('totalRevenue')?.queryParams"
           [navigationAriaLabel]="drillDown('totalRevenue')?.ariaLabel">
-          <div class="kpi-progress"><span class="kpi-progress-fill"></span></div>
         </app-stat-card>
         <app-stat-card
           label="Ventes aujourd'hui"
@@ -180,10 +186,10 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
           icon="fa-solid fa-cart-shopping"
           variant="primary"
           tone="cyan"
+          appearance="solid"
           [routerLink]="drillDown('salesToday')?.route"
           [queryParams]="drillDown('salesToday')?.queryParams"
           [navigationAriaLabel]="drillDown('salesToday')?.ariaLabel">
-          <span class="kpi-sub">Encaissements du jour</span>
         </app-stat-card>
         <app-stat-card
           label="CA du mois en cours"
@@ -191,13 +197,11 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
           icon="fa-solid fa-calendar-check"
           variant="success"
           tone="emerald"
+          appearance="solid"
           [change]="kpiTrends()?.revenueChange"
           [routerLink]="drillDown('currentMonthRevenue')?.route"
           [queryParams]="drillDown('currentMonthRevenue')?.queryParams"
           [navigationAriaLabel]="drillDown('currentMonthRevenue')?.ariaLabel">
-          <svg class="kpi-spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
-            <path d="M0,25 Q10,20 20,22 T40,15 T60,18 T80,8 T100,5" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round"/>
-          </svg>
         </app-stat-card>
         <app-stat-card
           label="Factures impayées"
@@ -205,15 +209,11 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
           icon="fa-solid fa-clock"
           variant="warning"
           tone="amber"
+          appearance="solid"
           [change]="kpiTrends()?.pendingChange"
           [routerLink]="drillDown('pendingInvoices')?.route"
           [queryParams]="drillDown('pendingInvoices')?.queryParams"
           [navigationAriaLabel]="drillDown('pendingInvoices')?.ariaLabel">
-          @if (pendingInvoicesCount() === 0) {
-            <span class="kpi-sub kpi-sub--success"><i class="fa-solid fa-circle-check"></i> Toutes payées</span>
-          } @else {
-            <span class="kpi-sub">{{ pendingInvoicesCount() }} impayée{{ pendingInvoicesCount() > 1 ? 's' : '' }}</span>
-          }
         </app-stat-card>
         <app-stat-card
           label="Produits en alerte"
@@ -221,14 +221,10 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
           icon="fa-solid fa-triangle-exclamation"
           [variant]="stockAlertsCount() > 0 ? 'error' : 'success'"
           [tone]="stockAlertsCount() > 0 ? 'rose' : 'emerald'"
+          appearance="solid"
           [routerLink]="drillDown('stockAlerts')?.route"
           [queryParams]="drillDown('stockAlerts')?.queryParams"
           [navigationAriaLabel]="drillDown('stockAlerts')?.ariaLabel">
-          @if (stockAlertsCount() === 0) {
-            <span class="kpi-sub">Stock stable</span>
-          } @else {
-            <span class="kpi-sub kpi-sub--danger">{{ stockAlertsCount() }} à réapprovisionner</span>
-          }
         </app-stat-card>
       </div>
     }
@@ -375,6 +371,7 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
             [value]="formatAccountingAmount(accountingKpis()!.vatDueEstimate)"
             icon="pi-percentage"
             variant="primary"
+            appearance="solid"
             [routerLink]="drillDown('accountingVat')?.route"
             [queryParams]="drillDown('accountingVat')?.queryParams"
             [navigationAriaLabel]="drillDown('accountingVat')?.ariaLabel">
@@ -384,6 +381,7 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
             [value]="formatAccountingAmount(accountingKpis()!.overdueReceivablesOver90)"
             icon="pi-clock"
             variant="warning"
+            appearance="solid"
             [routerLink]="drillDown('accountingReceivables90')?.route"
             [queryParams]="drillDown('accountingReceivables90')?.queryParams"
             [navigationAriaLabel]="drillDown('accountingReceivables90')?.ariaLabel">
@@ -393,6 +391,7 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
             [value]="accountingKpis()!.unpostedInvoiceCount"
             icon="pi-file-excel"
             variant="primary"
+            appearance="solid"
             [routerLink]="drillDown('accountingUnposted')?.route"
             [queryParams]="drillDown('accountingUnposted')?.queryParams"
             [navigationAriaLabel]="drillDown('accountingUnposted')?.ariaLabel">
@@ -402,6 +401,7 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
             [value]="formatVatDeadline(accountingKpis()!.nextVatDeadline)"
             icon="pi-calendar"
             variant="primary"
+            appearance="solid"
             [routerLink]="drillDown('accountingVatDeadline')?.route"
             [queryParams]="drillDown('accountingVatDeadline')?.queryParams"
             [navigationAriaLabel]="drillDown('accountingVatDeadline')?.ariaLabel">
@@ -425,6 +425,7 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
             [value]="crmRemindersCount()"
             icon="pi-bell"
             [variant]="crmRemindersCount() > 0 ? 'warning' : 'success'"
+            appearance="solid"
             [routerLink]="drillDown('crmReminders')?.route"
             [queryParams]="drillDown('crmReminders')?.queryParams"
             [navigationAriaLabel]="drillDown('crmReminders')?.ariaLabel">
@@ -434,6 +435,7 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
             [value]="crmOpenOppsCount()"
             icon="pi-bullseye"
             variant="primary"
+            appearance="solid"
             [routerLink]="drillDown('crmOpenOpportunities')?.route"
             [queryParams]="drillDown('crmOpenOpportunities')?.queryParams"
             [navigationAriaLabel]="drillDown('crmOpenOpportunities')?.ariaLabel">
@@ -445,51 +447,39 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
     </ng-template>
 
     <ng-template #chartTpl>
-    <!-- Revenue Chart Section -->
+    <!-- Revenue Chart Section (Superieur chart-card + p-chart area) -->
     @if (!loading() && monthlyRevenue().length > 0) {
-      <div class="section chart-section" aria-label="Évolution du chiffre d'affaires sur 6 mois">
-        <div class="section-header">
+      <app-chart-card
+        title="Évolution du CA"
+        subtitle="6 derniers mois"
+        aria-label="Évolution du chiffre d'affaires sur 6 mois">
+        <div chart-actions>
           @if (drillDown('totalRevenue'); as revenueTarget) {
-            <a [routerLink]="revenueTarget.route" [queryParams]="revenueTarget.queryParams" class="section-title section-title--link" [attr.aria-label]="revenueTarget.ariaLabel">Évolution du CA</a>
-          } @else {
-            <h2 class="section-title">Évolution du CA</h2>
+            <a [routerLink]="revenueTarget.route" [queryParams]="revenueTarget.queryParams" class="section-link" [attr.aria-label]="revenueTarget.ariaLabel">
+              Détails
+            </a>
           }
-          <span class="section-subtitle">6 derniers mois</span>
         </div>
-        <div class="chart-container" role="img" aria-label="Graphique en barres du chiffre d'affaires mensuel">
-          <div class="chart-bars">
-            @for (month of monthlyRevenue(); track month.monthShort) {
-              <div
-                class="chart-bar-group"
-                [class.chart-bar-group--clickable]="!!drillDown('chartMonth', month)"
-                [attr.tabindex]="drillDown('chartMonth', month) ? 0 : null"
-                [attr.role]="drillDown('chartMonth', month) ? 'button' : null"
+        <p-chart
+          type="line"
+          [data]="revenueChartData()"
+          [options]="revenueChartOptions"
+          [style]="{ height: '280px' }" />
+        <!-- Fallback CSS bars kept for accessibility drill-down months -->
+        <div class="chart-month-links" role="navigation" aria-label="Mois du graphique">
+          @for (month of monthlyRevenue(); track month.monthShort) {
+            @if (drillDown('chartMonth', month); as monthTarget) {
+              <button
+                type="button"
+                class="chart-month-link"
                 (click)="onChartMonthClick(month)"
-                (keydown.enter)="onChartMonthClick(month, $event)"
-                (keydown.space)="onChartMonthClick(month, $event)">
-                <div class="chart-tooltip" aria-hidden="true">
-                  {{ formatCurrency(month.revenue) }}<br>
-                  <small>{{ month.invoiceCount }} facture{{ month.invoiceCount > 1 ? 's' : '' }}</small>
-                </div>
-                <div class="chart-bar-wrapper">
-                  <div
-                    class="chart-bar"
-                    [style.height.%]="getBarHeight(month.revenue)"
-                    [attr.aria-label]="month.month + ' ' + month.year + ': ' + formatCurrency(month.revenue)">
-                    <span class="chart-bar-value chart-bar-value--full" aria-hidden="true">
-                      {{ formatCurrency(month.revenue) }}
-                    </span>
-                    <span class="chart-bar-value chart-bar-value--compact" aria-hidden="true">
-                      {{ formatCurrencyCompact(month.revenue) }}
-                    </span>
-                  </div>
-                </div>
-                <span class="chart-label">{{ month.monthShort }}</span>
-              </div>
+                [attr.aria-label]="monthTarget.ariaLabel">
+                {{ month.monthShort }}
+              </button>
             }
-          </div>
+          }
         </div>
-      </div>
+      </app-chart-card>
     }
 
     </ng-template>
@@ -501,13 +491,8 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
       <div class="dashboard-col-left">
         <!-- Recent Invoices -->
         @if (canReadInvoices()) {
-        <div class="section">
-          <div class="section-header">
-            <h2 class="section-title">Factures récentes</h2>
-            <a routerLink="/invoices" class="section-link">
-              Voir tout
-            </a>
-          </div>
+        <app-dashboard-panel title="Factures récentes" [hasActions]="true">
+          <a panel-actions routerLink="/invoices" class="section-link">Voir tout</a>
 
           @if (initialLoad()) {
       <app-skeleton-table 
@@ -579,7 +564,7 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
             </ng-template>
             </p-table>
           }
-        </div>
+        </app-dashboard-panel>
         }
       </div>
 
@@ -1723,6 +1708,28 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
     .dash-blocks.cdk-drop-list-dragging .dash-block:not(.cdk-drag-placeholder) {
       transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
     }
+
+    .chart-month-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin-top: 0.75rem;
+    }
+    .chart-month-link {
+      border: 1px solid var(--color-border-subtle, #e2e8f0);
+      background: var(--color-background-subtle, #f1f5f9);
+      border-radius: 4px;
+      padding: 0.25rem 0.55rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--color-text-secondary);
+      cursor: pointer;
+    }
+    .chart-month-link:hover {
+      background: rgba(56, 98, 245, 0.1);
+      color: var(--superieur-primary, #3862f5);
+      border-color: var(--superieur-primary, #3862f5);
+    }
   `]
 })
 export class DashboardComponent implements OnInit {
@@ -2149,6 +2156,50 @@ export class DashboardComponent implements OnInit {
     const percent = (revenue / this.maxRevenue) * 100;
     return Math.max(percent, 4);
   }
+
+  readonly revenueChartData = computed(() => {
+    const months = this.monthlyRevenue();
+    return {
+      labels: months.map(m => m.monthShort),
+      datasets: [
+        {
+          label: 'CA (TND)',
+          data: months.map(m => m.revenue),
+          fill: true,
+          borderColor: '#3862f5',
+          backgroundColor: 'rgba(56, 98, 245, 0.18)',
+          tension: 0.4,
+          pointBackgroundColor: '#3862f5',
+          pointBorderColor: '#fff',
+          pointRadius: 4
+        }
+      ]
+    };
+  });
+
+  readonly revenueChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          label: (ctx: { parsed: { y: number } }) =>
+            `${this.decimalPipe.transform(ctx.parsed.y, '1.3-3') ?? '0'} TND`
+        }
+      }
+    },
+    scales: {
+      x: { grid: { display: false } },
+      y: {
+        beginAtZero: true,
+        grid: { color: 'rgba(0,0,0,0.06)' },
+        ticks: {
+          callback: (value: string | number) => this.formatCurrencyCompact(Number(value))
+        }
+      }
+    }
+  };
 
   formatCurrency(amount: number): string {
     const formatted = this.decimalPipe.transform(amount, '1.3-3') || '0,000';

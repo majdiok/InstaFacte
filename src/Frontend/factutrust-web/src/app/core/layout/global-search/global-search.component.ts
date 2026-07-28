@@ -114,7 +114,7 @@ import { GlobalSearchResult, GlobalSearchService } from '../../services/global-s
   `,
   styles: [`
     .global-search { position: relative; flex: 1; max-width: 560px; }
-    .global-search--header { margin: 0 auto; }
+    .global-search--header { margin: 0 auto; flex: 1; padding: 0 16px; }
     .global-search__input-wrap { position: relative; display: flex; align-items: center; }
     .global-search__icon { position: absolute; left: 14px; color: var(--color-text-secondary, #64748b); font-size: 14px; pointer-events: none; }
     .global-search__input {
@@ -126,6 +126,34 @@ import { GlobalSearchResult, GlobalSearchService } from '../../services/global-s
     .global-search__hint {
       position: absolute; right: 12px; font-size: 11px; padding: 2px 6px; border-radius: 6px;
       border: 1px solid var(--color-border-subtle, #e2e8f0); color: var(--color-text-secondary, #64748b); background: #fff;
+    }
+
+    /* Mode header — style Cubic minimaliste sur dégradé topbar */
+    .global-search--header .global-search__icon {
+      color: var(--topbar-fg-muted, rgba(255, 255, 255, 0.75));
+    }
+    .global-search--header .global-search__input {
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      color: var(--topbar-fg, #fff);
+      padding: 8px 72px 8px 40px;
+    }
+    .global-search--header .global-search__input::placeholder {
+      color: var(--topbar-fg-muted, rgba(255, 255, 255, 0.75));
+    }
+    .global-search--header .global-search__input:focus {
+      outline: none;
+      box-shadow: none;
+    }
+    .global-search--header .global-search__input-wrap:focus-within {
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 4px;
+    }
+    .global-search--header .global-search__hint {
+      border: 1px solid var(--topbar-divider, rgba(255, 255, 255, 0.2));
+      color: var(--topbar-fg-muted, rgba(255, 255, 255, 0.75));
+      background: transparent;
     }
     .global-search__dropdown {
       position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 1200;

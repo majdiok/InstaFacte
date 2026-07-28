@@ -10,10 +10,10 @@
   --sidebar-rail-width: 176px;
   --sidebar-rail-width-collapsed: 72px;
   --sidebar-submenu-width: 260px;
-  --sidebar-brand-height: 68px;
+  --sidebar-brand-height: var(--topbar-height, 56px);
   --sidebar-brand-height-collapsed: 56px;
   --sidebar-brand-logo-icon-size-collapsed: 36px;
-  --sidebar-brand-logo-max-height: 50px;
+  --sidebar-brand-logo-max-height: 42px;
   --sidebar-brand-logo-max-width: 160px;
   --sidebar-brand-logo-icon-size: 44px;
   --sidebar-rail-icon-size: 24px;
@@ -84,23 +84,13 @@
 
 .sidebar-brand {
   height: var(--sidebar-brand-height);
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-bottom: 1px solid var(--sidebar-rail-edge);
+  background: var(--topbar-gradient-start, #0073b7);
+  border-bottom: 1px solid var(--topbar-divider, rgba(255, 255, 255, 0.2));
   position: relative;
-
-  /* Subtil glow accent en bas de la zone brand pour la séparer visuellement */
-  &::after {
-    content: '';
-    position: absolute;
-    left: 18%;
-    right: 18%;
-    bottom: -1px;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--color-neutral-200, #e2e8f0), transparent);
-    pointer-events: none;
-  }
 
   a {
     display: flex;
@@ -109,6 +99,21 @@
     width: 100%;
     height: 100%;
     text-decoration: none;
+    transition: background 0.2s ease;
+
+    &:hover {
+      background: var(--topbar-hover-bg, rgba(255, 255, 255, 0.12));
+    }
+
+    &:focus-visible {
+      outline: none;
+      box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.5);
+    }
+  }
+
+  .icon-brand-lockup,
+  .icon-logo-only {
+    filter: brightness(0) invert(1);
   }
 
   .icon-brand-lockup {
@@ -241,16 +246,17 @@
     }
   }
 
-  /* État actif (maquette claire) : fond primaire léger + barre d'accent 3px.
-     L'icône conserve sa couleur de rubrique (cf. mapping plus bas). */
+  /* État actif : tokens --sidebar-rail-* (Superieur = fond bleu plein + texte blanc). */
   &.active {
-    color: var(--color-primary-700, #1d4ed8);
+    color: var(--sidebar-rail-accent, var(--color-primary-700, #1d4ed8));
     background: var(--sidebar-rail-item-active-bg);
-    box-shadow: inset 3px 0 0 var(--sidebar-rail-accent);
+    box-shadow: inset 3px 0 0 var(--sidebar-rail-accent, var(--color-primary-600));
+    border-radius: 4px;
     transform: translateX(2px);
 
     i {
       opacity: 1;
+      color: inherit;
     }
 
     .rail-icon-img {

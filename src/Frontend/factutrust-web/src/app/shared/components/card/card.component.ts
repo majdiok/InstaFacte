@@ -37,6 +37,12 @@ import { CommonModule } from '@angular/common';
       transition: all var(--transition-normal);
     }
 
+    :host-context(.theme-superieur) .card {
+      border-radius: var(--superieur-card-radius, 8px);
+      box-shadow: var(--superieur-card-shadow, 0 0 20px rgba(0,0,0,0.08));
+      border-color: rgba(0, 0, 0, 0.04);
+    }
+
     .card--default {
       padding: var(--card-padding);
       box-shadow: var(--shadow-sm);
