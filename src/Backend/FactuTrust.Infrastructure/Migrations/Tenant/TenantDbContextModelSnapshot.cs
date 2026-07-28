@@ -5759,6 +5759,10 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<decimal?>("ShortfallQuantity")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
                     b.Property<Guid>("StockItemId")
                         .HasColumnType("uniqueidentifier");
 

@@ -19,6 +19,19 @@ public sealed class StockMovement : Entity
     public string? Notes { get; private set; }
     public DateTime OccurredAt { get; private set; }
 
+    /// <summary>
+    /// Quantité demandée qui n'a PAS pu être honorée, faute de stock disponible.
+    /// <c>null</c> en fonctionnement normal.
+    ///
+    /// Une vente n'est jamais bloquée par une rupture : la sortie est limitée au stock
+    /// disponible. Sans cette colonne, l'écart entre le vendu et le sorti restait invisible et
+    /// donc irréconciliable — il ne vivait que dans un avertissement de journal applicatif.
+    /// </summary>
+    public decimal? ShortfallQuantity { get; private set; }
+
+    /// <summary>Vrai si ce mouvement traduit une rupture partiellement honorée.</summary>
+    public bool HasShortfall => ShortfallQuantity is > 0;
+
     private StockMovement() { }
 
     internal static StockMovement Create(
@@ -29,7 +42,8 @@ public sealed class StockMovement : Entity
         decimal unitCost,
         decimal balanceAfter,
         string? reference = null,
-        string? notes = null)
+        string? notes = null,
+        decimal? shortfallQuantity = null)
     {
         // Use explicit constructor call to ensure Entity base class generates the Id
         var movement = new StockMovement();
@@ -42,6 +56,7 @@ public sealed class StockMovement : Entity
         movement.Reference = reference?.Trim();
         movement.Notes = notes?.Trim();
         movement.OccurredAt = DateTime.UtcNow;
+        movement.ShortfallQuantity = shortfallQuantity is > 0 ? shortfallQuantity : null;
         return movement;
     }
 }

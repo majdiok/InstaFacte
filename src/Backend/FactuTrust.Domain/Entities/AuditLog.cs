@@ -145,6 +145,15 @@ public static class AuditActions
         public const string Deleted = "Client.Deleted";
     }
 
+    public static class Stock
+    {
+        /// <summary>
+        /// Une sortie de stock n'a pu être honorée que partiellement, faute de stock disponible.
+        /// La vente n'est pas bloquée ; l'écart est tracé pour être réconcilié.
+        /// </summary>
+        public const string DeductionShortfall = "Stock.DeductionShortfall";
+    }
+
     public static class Product
     {
         public const string Created = "Product.Created";

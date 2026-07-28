@@ -1,4 +1,5 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Features.Stock.EventHandlers;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
@@ -133,6 +134,59 @@ public sealed class StockDeductionPathsCharacterizationTests
     }
 
     [Fact]
+    public async Task Handle_WhenStockInsufficient_RecordsShortfallAndAudits()
+    {
+        // Lot G : l'écart vendu/sorti devient une donnée de premier ordre, requêtable et
+        // auditée, au lieu d'un simple avertissement de journal applicatif.
+        var product = NewProduct(stockManaged: true);
+        var invoice = NewInvoiceWith(product, quantity: 10m);
+        var notification = ValidatedEvent(invoice);
+
+        var ctx = new HandlerContext();
+        ctx.WithInvoice(invoice);
+        var warehouse = ctx.WithDefaultWarehouse();
+        ctx.WithProduct(product);
+        var stockItem = ctx.WithStockItem(product.Id, warehouse.Id, onHand: 3m);
+
+        await ctx.Handler.Handle(notification, CancellationToken.None);
+
+        var movement = stockItem.Movements.Last();
+        Assert.Equal(7m, movement.ShortfallQuantity); // 10 demandés − 3 disponibles
+        Assert.True(movement.HasShortfall);
+
+        ctx.AuditService.Verify(
+            x => x.LogAsync(
+                AuditActions.Stock.DeductionShortfall,
+                "Invoice",
+                (Guid?)notification.InvoiceId,
+                It.IsAny<object?>(),
+                It.IsAny<object?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_NominalCase_LeavesShortfallNull()
+    {
+        var product = NewProduct(stockManaged: true);
+        var invoice = NewInvoiceWith(product, quantity: 4m);
+        var notification = ValidatedEvent(invoice);
+
+        var ctx = new HandlerContext();
+        ctx.WithInvoice(invoice);
+        var warehouse = ctx.WithDefaultWarehouse();
+        ctx.WithProduct(product);
+        var stockItem = ctx.WithStockItem(product.Id, warehouse.Id, onHand: 10m);
+
+        await ctx.Handler.Handle(notification, CancellationToken.None);
+
+        var movement = stockItem.Movements.Last();
+        Assert.Null(movement.ShortfallQuantity);
+        Assert.False(movement.HasShortfall);
+        ctx.AuditService.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task Handle_WhenInvoiceCameFromDeliveryNote_SkipsDeduction()
     {
         // Lot B : le garde-fou porte désormais sur la clé étrangère typée. Même avec une
@@ -224,6 +278,7 @@ public sealed class StockDeductionPathsCharacterizationTests
         public Mock<IWarehouseRepository> WarehouseRepo { get; } = new();
         public Mock<IProductRepository> ProductRepo { get; } = new();
         public Mock<IStockMovementRepository> MovementRepo { get; } = new();
+        public Mock<IAuditService> AuditService { get; } = new();
 
         public DeductStockOnInvoiceValidatedHandler Handler { get; }
 
@@ -239,6 +294,7 @@ public sealed class StockDeductionPathsCharacterizationTests
                 WarehouseRepo.Object,
                 ProductRepo.Object,
                 MovementRepo.Object,
+                AuditService.Object,
                 NullLogger<DeductStockOnInvoiceValidatedHandler>.Instance);
         }
 

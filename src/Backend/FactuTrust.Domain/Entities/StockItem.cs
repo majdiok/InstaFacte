@@ -115,17 +115,23 @@ public sealed class StockItem : AggregateRoot
     /// <summary>
     /// Records a stock exit (sale, supplier return, damage).
     /// </summary>
+    /// <param name="shortfallQuantity">
+    /// Quantité demandée non honorée, lorsque l'appelant a délibérément réduit la sortie au
+    /// stock disponible. Purement descriptif : n'influence aucun calcul, sert à rendre l'écart
+    /// mesurable et réconciliable au lieu de le laisser dans un journal applicatif.
+    /// </param>
     public Result RecordExit(
         decimal quantity,
         MovementReason reason,
         string? reference = null,
-        string? notes = null)
+        string? notes = null,
+        decimal? shortfallQuantity = null)
     {
         if (quantity <= 0)
             return Result.Failure(Error.Validation("Quantity", "La quantité doit être positive"));
 
         if (quantity > QuantityAvailable)
-            return Result.Failure(Error.Validation("Quantity", 
+            return Result.Failure(Error.Validation("Quantity",
                 $"Stock insuffisant. Disponible: {QuantityAvailable}, Demandé: {quantity}"));
 
         QuantityOnHand -= quantity;
@@ -138,7 +144,8 @@ public sealed class StockItem : AggregateRoot
             AverageCost,
             QuantityOnHand,
             reference,
-            notes);
+            notes,
+            shortfallQuantity);
 
         _movements.Add(movement);
 

@@ -1822,6 +1822,10 @@ public partial class TenantDbContext : DbContext
                 .HasPrecision(18, 4)
                 .IsRequired();
 
+            // Écart vendu/sorti sur rupture partielle. Null en fonctionnement normal.
+            entity.Property(m => m.ShortfallQuantity)
+                .HasPrecision(18, 4);
+
             entity.Property(m => m.Reference)
                 .HasMaxLength(100);
 

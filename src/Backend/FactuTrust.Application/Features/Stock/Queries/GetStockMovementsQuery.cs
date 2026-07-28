@@ -35,7 +35,9 @@ public sealed record StockMovementDto(
     decimal BalanceAfter,
     string? Reference,
     string? Notes,
-    DateTime OccurredAt);
+    DateTime OccurredAt,
+    /// <summary>Quantité vendue non honorée faute de stock. Null en fonctionnement normal.</summary>
+    decimal? ShortfallQuantity = null);
 
 /// <summary>
 /// Handler for GetStockMovementsQuery.
@@ -67,7 +69,8 @@ public sealed class GetStockMovementsQueryHandler : IRequestHandler<GetStockMove
             m.BalanceAfter,
             m.Reference,
             m.Notes,
-            m.OccurredAt
+            m.OccurredAt,
+            m.ShortfallQuantity
         )).ToList();
 
         var totalPages = (int)Math.Ceiling((double)totalCount / request.PageSize);

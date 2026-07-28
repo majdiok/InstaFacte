@@ -1,5 +1,6 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Events;
@@ -19,6 +20,7 @@ public sealed class DeductStockOnInvoiceValidatedHandler : INotificationHandler<
     private readonly IWarehouseRepository _warehouseRepository;
     private readonly IProductRepository _productRepository;
     private readonly IStockMovementRepository _stockMovementRepository;
+    private readonly IAuditService _auditService;
     private readonly ILogger<DeductStockOnInvoiceValidatedHandler> _logger;
 
     public DeductStockOnInvoiceValidatedHandler(
@@ -27,6 +29,7 @@ public sealed class DeductStockOnInvoiceValidatedHandler : INotificationHandler<
         IWarehouseRepository warehouseRepository,
         IProductRepository productRepository,
         IStockMovementRepository stockMovementRepository,
+        IAuditService auditService,
         ILogger<DeductStockOnInvoiceValidatedHandler> logger)
     {
         _invoiceRepository = invoiceRepository;
@@ -34,6 +37,7 @@ public sealed class DeductStockOnInvoiceValidatedHandler : INotificationHandler<
         _warehouseRepository = warehouseRepository;
         _productRepository = productRepository;
         _stockMovementRepository = stockMovementRepository;
+        _auditService = auditService;
         _logger = logger;
     }
 
@@ -140,11 +144,14 @@ public sealed class DeductStockOnInvoiceValidatedHandler : INotificationHandler<
 
                 if (isInsufficientStock && availableToDeduct > 0)
                 {
+                    var shortfall = line.Quantity - availableToDeduct;
+
                     var partialExitResult = stockItem.RecordExit(
                         availableToDeduct,
                         MovementReason.Sale,
                         reference,
-                        "Vente - Ligne de facture (déduction limitée au stock disponible)");
+                        "Vente - Ligne de facture (déduction limitée au stock disponible)",
+                        shortfallQuantity: shortfall);
 
                     if (partialExitResult.IsSuccess)
                     {
@@ -152,6 +159,23 @@ public sealed class DeductStockOnInvoiceValidatedHandler : INotificationHandler<
                         _logger.LogInformation(
                             "Partial stock deduction for product {ProductId}, invoice {InvoiceNumber}: requested {Requested}, deducted {Deducted}. New balance: {NewBalance}",
                             line.ProductId, notification.InvoiceNumber, line.Quantity, availableToDeduct, stockItem.QuantityOnHand);
+
+                        // Trace de premier ordre : l'écart vendu/sorti doit être réconciliable,
+                        // pas seulement présent dans un journal applicatif.
+                        await _auditService.LogAsync(
+                            AuditActions.Stock.DeductionShortfall,
+                            "Invoice",
+                            notification.InvoiceId,
+                            newValues: new
+                            {
+                                notification.InvoiceNumber,
+                                line.ProductId,
+                                Requested = line.Quantity,
+                                Deducted = availableToDeduct,
+                                Shortfall = shortfall,
+                                WarehouseId = targetWarehouse.Id
+                            },
+                            cancellationToken: cancellationToken);
                     }
                     else
                     {
