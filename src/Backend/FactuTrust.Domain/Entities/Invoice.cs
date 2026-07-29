@@ -257,6 +257,31 @@ public sealed class Invoice : AggregateRoot
     }
 
     /// <summary>
+    /// Déclare que cette facture regroupe PLUSIEURS bons de livraison (facturation
+    /// périodique). Le stock a déjà été sorti à chaque livraison : sa validation ne doit donc
+    /// rien redéduire.
+    ///
+    /// <see cref="SourceDeliveryNoteId"/> ne peut porter qu'un seul bon ; on y place le
+    /// premier, ce qui suffit au garde-fou anti-double-déduction — il ne demande que
+    /// « le stock est-il déjà sorti ? ». La liste complète reste lisible dans l'autre sens,
+    /// chaque bon portant <c>DeliveryNote.InvoiceId</c>.
+    ///
+    /// Passer par cette méthode plutôt que d'affecter directement la clé rend l'intention
+    /// explicite à l'appel, et évite qu'on lise « facture issue d'un bon » là où il y en a N.
+    /// </summary>
+    public Result MarkGeneratedFromDeliveryNotes(IReadOnlyList<Guid> deliveryNoteIds)
+    {
+        if (deliveryNoteIds is null || deliveryNoteIds.Count == 0)
+            return Result.Failure(Error.Validation("DeliveryNotes", "Au moins un bon de livraison est requis"));
+
+        if (deliveryNoteIds.Any(id => id == Guid.Empty))
+            return Result.Failure(Error.Validation("DeliveryNotes", "Identifiant de bon de livraison invalide"));
+
+        SourceDeliveryNoteId = deliveryNoteIds[0];
+        return Result.Success();
+    }
+
+    /// <summary>
     /// Rattache la facture à une commande client sans en changer l'origine de stock.
     /// Utilisé quand la facture provient d'un bon de livraison lui-même issu d'une commande :
     /// la traçabilité remonte alors jusqu'à l'engagement, mais le garde-fou de stock reste

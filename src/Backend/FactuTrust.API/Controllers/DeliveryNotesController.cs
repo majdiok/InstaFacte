@@ -280,6 +280,28 @@ public class DeliveryNotesController : ControllerBase
     }
 
     /// <summary>
+    /// Facturation groupée : agrège plusieurs bons de livraison d'un même client en une seule
+    /// facture — la facturation périodique du B2B. Le stock ayant déjà été sorti à chaque
+    /// livraison, la facture produite ne le redéduit pas.
+    /// </summary>
+    [HttpPost("generate-grouped-invoice")]
+    [Authorize(Policy = PermissionPolicies.InvoicesCreate)]
+    [ProducesResponseType(typeof(ApiResponse<Guid>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GenerateGroupedInvoice(
+        [FromBody] GenerateInvoiceFromDeliveryNotesDto dto,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new GenerateInvoiceFromDeliveryNotesCommand(dto), cancellationToken);
+
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<Guid>.Ok(result.Value, "Facture groupée générée avec succès"));
+    }
+
+    /// <summary>
     /// Get uninvoiced delivery notes for a client (for grouping into invoice).
     /// </summary>
     [HttpGet("uninvoiced/{clientId:guid}")]
