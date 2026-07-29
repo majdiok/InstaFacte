@@ -11,6 +11,12 @@ public interface IProductRepository : IRepository<Product>
     /// Gets a product by its code.
     /// </summary>
     Task<Product?> GetByCodeAsync(string code, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Recherche par code-barres, en correspondance EXACTE. Aucune approximation : un scan
+    /// qui ne correspond à rien doit échouer, jamais deviner.
+    /// </summary>
+    Task<Product?> GetByBarcodeAsync(string barcode, CancellationToken cancellationToken = default);
     
     /// <summary>
     /// Gets all active products.

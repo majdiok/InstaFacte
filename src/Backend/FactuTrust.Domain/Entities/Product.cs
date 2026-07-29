@@ -26,6 +26,16 @@ public sealed class Product : AggregateRoot
     public string? Unit { get; private set; }
 
     /// <summary>
+    /// Code-barres EAN-8 / EAN-13 de l'article. <c>null</c> quand l'article n'en a pas.
+    ///
+    /// Distinct de <see cref="Code"/>, qui est la référence interne : le scan du point de
+    /// vente doit interroger CE champ, en correspondance exacte. Auparavant il cherchait dans
+    /// le code interne avec repli sur une correspondance approchée, ce qui pouvait encaisser
+    /// un autre article.
+    /// </summary>
+    public Barcode? Barcode { get; private set; }
+
+    /// <summary>
     /// When true, FODEC (1%) applies on this product's HT amount on sales invoices.
     /// </summary>
     public bool IsFodecApplicable { get; private set; }
@@ -265,6 +275,27 @@ public sealed class Product : AggregateRoot
     public void SetFodecApplicable(bool value)
     {
         IsFodecApplicable = value;
+    }
+
+    /// <summary>
+    /// Affecte ou retire le code-barres. Passer <c>null</c> ou une chaîne vide le retire ;
+    /// une valeur invalide (clé de contrôle fausse, longueur incorrecte) est refusée à la
+    /// saisie plutôt que d'être découverte au premier scan.
+    /// </summary>
+    public Result SetBarcode(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            Barcode = null;
+            return Result.Success();
+        }
+
+        var result = ValueObjects.Barcode.Create(value);
+        if (result.IsFailure)
+            return Result.Failure(result.Error);
+
+        Barcode = result.Value;
+        return Result.Success();
     }
 
     /// <summary>

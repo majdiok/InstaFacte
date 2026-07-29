@@ -92,6 +92,32 @@ public class ProductsController : ControllerBase
     }
 
     /// <summary>
+    /// Recherche un article par code-barres, en correspondance EXACTE.
+    ///
+    /// Destiné au scan en caisse : un code qui ne correspond à aucun article renvoie 404,
+    /// jamais un article approchant. Le scan interrogeait auparavant le code produit interne
+    /// avec repli sur une correspondance partielle, et pouvait encaisser un autre article.
+    /// </summary>
+    [HttpGet("by-barcode/{barcode}")]
+    [Authorize(Policy = PermissionPolicies.ProductsRead)]
+    [ProducesResponseType(typeof(ApiResponse<ProductDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetProductByBarcode(string barcode, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetProductByBarcodeQuery(barcode), cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return result.Error.Code == "NotFound"
+                ? NotFound(ApiResponse<ProductDetailDto>.Fail("Aucun article ne correspond à ce code-barres"))
+                : BadRequest(ApiResponse<ProductDetailDto>.Fail(result.Error.Description));
+        }
+
+        return Ok(ApiResponse<ProductDetailDto>.Ok(result.Value));
+    }
+
+    /// <summary>
     /// Create a new product.
     /// </summary>
     [HttpPost]

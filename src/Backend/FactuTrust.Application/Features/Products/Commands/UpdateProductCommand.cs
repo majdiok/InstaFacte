@@ -109,6 +109,12 @@ public sealed class UpdateProductCommandHandler : IRequestHandler<UpdateProductC
             dto.IsDiscountEnabled,
             dto.MaxDiscountPercent);
 
+        // Code-barres : clé de contrôle vérifiée à l'enregistrement. Un code invalide est
+        // refusé sans laisser le produit dans un état partiellement modifié.
+        var barcodeResult = product.SetBarcode(dto.Barcode);
+        if (barcodeResult.IsFailure)
+            return Result.Failure<ProductDetailDto>(barcodeResult.Error);
+
         if (dto.IsStockManaged.HasValue)
         {
             if (dto.IsStockManaged.Value)

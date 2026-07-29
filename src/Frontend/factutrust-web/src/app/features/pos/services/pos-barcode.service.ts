@@ -94,7 +94,37 @@ export class PosBarcodeService implements OnDestroy {
     this.searchAndAdd(code);
   }
 
+  /**
+   * Résout un code scanné en article, en correspondance EXACTE sur le code-barres.
+   *
+   * L'implémentation précédente cherchait dans le CODE PRODUIT interne, puis retombait sur
+   * un `includes()` bidirectionnel : scanner « 1234 » pouvait ajouter l'article « 12345 »,
+   * et scanner « 12345 » l'article « 1234 ». En caisse, cela encaisse le mauvais article et
+   * fausse le stock. On n'approxime plus : ce qui ne correspond pas échoue.
+   *
+   * Repli volontaire sur le code interne uniquement en correspondance STRICTE, pour les
+   * catalogues dont les articles n'ont pas encore d'EAN renseigné.
+   */
   private searchAndAdd(code: string): void {
+    this.productService.getProductByBarcode(code).subscribe({
+      next: response => {
+        if (response.success && response.data) {
+          this.posState.addProduct(response.data);
+          this.lastScanResult.set('added');
+          return;
+        }
+        this.fallbackToExactInternalCode(code);
+      },
+      error: () => this.fallbackToExactInternalCode(code)
+    });
+  }
+
+  /**
+   * Repli sur le code produit interne, en égalité STRICTE et insensible à la casse.
+   * Aucune correspondance partielle : plusieurs candidats signalent l'ambiguïté au caissier
+   * plutôt que d'en choisir un.
+   */
+  private fallbackToExactInternalCode(code: string): void {
     this.productService.getProducts({
       search: code,
       isActive: true,
@@ -107,11 +137,10 @@ export class PosBarcodeService implements OnDestroy {
           this.lastScanResult.set('not_found');
           return;
         }
-        const items = response.data.items;
-        const exactMatch = items.find(p => p.code === code);
-        const matches = exactMatch ? [exactMatch] : items.filter(p =>
-          p.code.toLowerCase().includes(code.toLowerCase()) ||
-          code.toLowerCase().includes(p.code.toLowerCase())
+
+        const normalized = code.trim().toLowerCase();
+        const matches = response.data.items.filter(
+          p => p.code.trim().toLowerCase() === normalized
         );
 
         if (matches.length === 1) {
@@ -128,23 +157,10 @@ export class PosBarcodeService implements OnDestroy {
   }
 
   /**
-   * Search by code and return the first match. Used when catalog needs to show results.
+   * Recherche déclenchée depuis le catalogue. Même exigence d'exactitude que le scan.
    */
   searchByCode(code: string): void {
-    this.productService.getProducts({
-      search: code,
-      isActive: true,
-      page: 1,
-      pageSize: 1,
-      warehouseId: this.warehouseContext.selectedWarehouseId() ?? undefined
-    }).subscribe({
-      next: response => {
-        if (response.success && response.data?.items?.length === 1) {
-          this.posState.addProduct(response.data.items[0]);
-          this.lastScannedCode.set(code);
-          this.lastScanResult.set('added');
-        }
-      }
-    });
+    this.lastScannedCode.set(code);
+    this.searchAndAdd(code);
   }
 }

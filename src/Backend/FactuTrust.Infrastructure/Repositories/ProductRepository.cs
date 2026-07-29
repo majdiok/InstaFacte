@@ -32,6 +32,19 @@ public sealed class ProductRepository : IProductRepository
             .FirstOrDefaultAsync(p => p.Code == code.ToUpperInvariant(), cancellationToken);
     }
 
+    public async Task<Product?> GetByBarcodeAsync(string barcode, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(barcode))
+            return null;
+
+        var normalized = barcode.Trim();
+
+        await using var context = _contextFactory.CreateContext();
+        return await context.Products
+            .Include(p => p.Category)
+            .FirstOrDefaultAsync(p => p.Barcode!.Value == normalized, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<Product>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();

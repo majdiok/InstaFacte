@@ -254,6 +254,57 @@ export class ProductService {
     );
   }
 
+  /**
+   * Recherche un article par code-barres, en correspondance EXACTE côté serveur.
+   *
+   * Renvoie 404 si aucun article ne porte ce code — jamais un article approchant. C'est la
+   * différence de fond avec l'ancien scan, qui interrogeait le code produit interne et
+   * retombait sur une correspondance partielle, au risque d'encaisser le mauvais article.
+   */
+  getProductByBarcode(barcode: string): Observable<ApiResponse<ProductListItem>> {
+    const encoded = encodeURIComponent(barcode.trim());
+    return this.http
+      .get<ApiResponse<any>>(`${this.API_URL}/by-barcode/${encoded}`, {
+        // Un code inconnu est un cas nominal en caisse : le service le traite lui-même,
+        // sans faire surgir de bandeau d'erreur global au caissier.
+        context: new HttpContext().set(SKIP_ERROR_TOAST, true)
+      })
+      .pipe(
+        map(response => {
+          if (!response.success || !response.data) {
+            return response as ApiResponse<ProductListItem>;
+          }
+
+          const d = response.data;
+          const item: ProductListItem = {
+            id: d.id,
+            code: d.code,
+            name: d.name,
+            description: d.description ?? null,
+            typeDisplay: this.mapTypeToCategory(d.type),
+            categoryId: d.categoryId ?? '',
+            category: d.categoryName ?? 'general',
+            unitPrice: d.unitPrice,
+            purchasePrice: d.purchasePrice ?? null,
+            lastPurchasePrice: d.lastPurchasePrice ?? null,
+            weightedAverageCost: d.weightedAverageCost ?? null,
+            profitMarginPercent: d.profitMarginPercent ?? null,
+            salePriceTtc: d.salePriceTtc,
+            unit: d.unit || 'Unité',
+            vatRate: d.vatRatePercent ?? d.vatRate,
+            isFodecApplicable: d.isFodecApplicable ?? false,
+            isDiscountEnabled: d.isDiscountEnabled ?? false,
+            maxDiscountPercent: d.maxDiscountPercent ?? null,
+            isActive: d.isActive,
+            isStockManaged: d.isStockManaged ?? false,
+            imageUrl: d.imageUrl ?? null
+          };
+
+          return { ...response, data: item } as ApiResponse<ProductListItem>;
+        })
+      );
+  }
+
   createProduct(request: CreateProductRequest): Observable<ApiResponse<string>> {
     // Map category string to ProductType enum
     // Frontend: "Produit" (0), "Service" (1), "Abonnement" (treat as Service for now)

@@ -9272,6 +9272,29 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
 
             modelBuilder.Entity("FactuTrust.Domain.Entities.Product", b =>
                 {
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Barcode", "Barcode", b1 =>
+                        {
+                            b1.Property<Guid>("ProductId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<string>("Value")
+                                .IsRequired()
+                                .HasMaxLength(13)
+                                .HasColumnType("nvarchar(13)")
+                                .HasColumnName("Barcode");
+
+                            b1.HasKey("ProductId");
+
+                            b1.HasIndex("Value")
+                                .HasDatabaseName("IX_Products_Barcode")
+                                .HasFilter("[Barcode] IS NOT NULL");
+
+                            b1.ToTable("Products");
+
+                            b1.WithOwner()
+                                .HasForeignKey("ProductId");
+                        });
+
                     b.HasOne("FactuTrust.Domain.Entities.ProductCategory", "Category")
                         .WithMany()
                         .HasForeignKey("CategoryId")
@@ -9349,6 +9372,8 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                             b1.WithOwner()
                                 .HasForeignKey("ProductId");
                         });
+
+                    b.Navigation("Barcode");
 
                     b.Navigation("Category");
 

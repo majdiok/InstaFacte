@@ -22,6 +22,8 @@ public sealed record ProductListDto
     public int VatRatePercent { get; init; }
     public string VatRateDisplay { get; init; } = null!;
     public string? Unit { get; init; }
+    /// <summary>Code-barres EAN-8 / EAN-13. Distinct du code produit interne.</summary>
+    public string? Barcode { get; init; }
     public bool IsActive { get; init; }
     public bool IsStockManaged { get; init; }
     public bool IsFodecApplicable { get; init; }
@@ -59,6 +61,8 @@ public sealed record ProductDetailDto
     public int VatRatePercent { get; init; }
     public string VatRateDisplay { get; init; } = null!;
     public string? Unit { get; init; }
+    /// <summary>Code-barres EAN-8 / EAN-13. Distinct du code produit interne.</summary>
+    public string? Barcode { get; init; }
     public bool IsActive { get; init; }
     public bool IsStockManaged { get; init; }
     public bool IsFodecApplicable { get; init; }
@@ -109,6 +113,13 @@ public sealed record CreateProductDto
     public decimal? ProfitMarginPercent { get; init; }
     public VatRate VatRate { get; init; }
     public string? Unit { get; init; }
+
+    /// <summary>
+    /// Code-barres EAN-8 / EAN-13. Chaîne vide ou null = aucun. La clé de contrôle est
+    /// vérifiée à l'enregistrement : un code mal recopié est refusé à la saisie.
+    /// </summary>
+    public string? Barcode { get; init; }
+
     public bool? IsStockManaged { get; init; }
     public Guid? CategoryId { get; init; }
 
@@ -137,6 +148,13 @@ public sealed record UpdateProductDto
     public decimal? ProfitMarginPercent { get; init; }
     public VatRate VatRate { get; init; }
     public string? Unit { get; init; }
+
+    /// <summary>
+    /// Code-barres EAN-8 / EAN-13. Chaîne vide ou null = aucun. La clé de contrôle est
+    /// vérifiée à l'enregistrement : un code mal recopié est refusé à la saisie.
+    /// </summary>
+    public string? Barcode { get; init; }
+
     public bool? IsStockManaged { get; init; }
     public Guid? CategoryId { get; init; }
 

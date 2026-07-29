@@ -693,6 +693,21 @@ public partial class TenantDbContext : DbContext
             entity.HasIndex(p => p.IsActive);
 
             entity.Property(p => p.IsPubliclyListed).HasDefaultValue(false);
+            // Code-barres EAN. Type possédé : une colonne nullable, contrainte de format
+            // portée par le value object. L'index est NON unique à ce stade — l'unicité par
+            // tenant ne sera livrée qu'après balayage des doublons sur tout le parc, comme
+            // pour l'unicité des numéros de facture (docs/runbooks/invoice-number-uniqueness.md).
+            entity.OwnsOne(p => p.Barcode, bc =>
+            {
+                bc.Property(x => x.Value)
+                    .HasColumnName("Barcode")
+                    .HasMaxLength(13);
+
+                bc.HasIndex(x => x.Value)
+                    .HasDatabaseName("IX_Products_Barcode")
+                    .HasFilter("[Barcode] IS NOT NULL");
+            });
+
             entity.Property(p => p.IsFodecApplicable).HasDefaultValue(false);
             entity.HasIndex(p => p.IsPubliclyListed);
         });

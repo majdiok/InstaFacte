@@ -126,6 +126,12 @@ public sealed class CreateProductCommandHandler : IRequestHandler<CreateProductC
 
         var product = productResult.Value;
 
+        // Code-barres : la clé de contrôle est vérifiée ici, de sorte qu'un code mal recopié
+        // soit refusé à la saisie plutôt que découvert au premier scan en caisse.
+        var barcodeResult = product.SetBarcode(dto.Barcode);
+        if (barcodeResult.IsFailure)
+            return Result.Failure<Guid>(barcodeResult.Error);
+
         // Fournisseur préféré (optionnel) — Guid.Empty traité comme « aucun ».
         var preferredSupplierId = dto.PreferredSupplierId is { } sid && sid != Guid.Empty ? sid : (Guid?)null;
         if (preferredSupplierId.HasValue)
