@@ -145,6 +145,17 @@ public static class AuditActions
         public const string Deleted = "Client.Deleted";
     }
 
+    public static class SalesOrder
+    {
+        public const string Created = "SalesOrder.Created";
+        public const string Updated = "SalesOrder.Updated";
+        public const string Confirmed = "SalesOrder.Confirmed";
+        public const string Cancelled = "SalesOrder.Cancelled";
+        /// <summary>Soldée en abandonnant le reliquat — distinct de l'annulation.</summary>
+        public const string Closed = "SalesOrder.Closed";
+        public const string Deleted = "SalesOrder.Deleted";
+    }
+
     public static class Stock
     {
         /// <summary>
