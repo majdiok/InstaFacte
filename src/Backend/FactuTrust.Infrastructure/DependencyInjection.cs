@@ -142,6 +142,7 @@ public static class DependencyInjection
         // Purchasing Repositories
         services.AddScoped<ISupplierRepository, SupplierRepository>();
         services.AddScoped<IPurchaseOrderRepository, PurchaseOrderRepository>();
+        services.AddScoped<ISalesOrderRepository, SalesOrderRepository>();
         services.AddScoped<ISupplierInvoiceRepository, SupplierInvoiceRepository>();
         services.AddScoped<ISupplierPaymentRepository, SupplierPaymentRepository>();
         services.AddScoped<ICashOperationRepository, CashOperationRepository>();

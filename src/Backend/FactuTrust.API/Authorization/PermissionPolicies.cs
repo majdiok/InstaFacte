@@ -52,6 +52,11 @@ public static class PermissionPolicies
     public const string PurchaseOrdersUpdate = "perm:" + Permissions.PurchaseOrders.Update;
     public const string PurchaseOrdersDelete = "perm:" + Permissions.PurchaseOrders.Delete;
 
+    public const string SalesOrdersCreate = "perm:" + Permissions.SalesOrders.Create;
+    public const string SalesOrdersRead = "perm:" + Permissions.SalesOrders.Read;
+    public const string SalesOrdersUpdate = "perm:" + Permissions.SalesOrders.Update;
+    public const string SalesOrdersDelete = "perm:" + Permissions.SalesOrders.Delete;
+
     public const string SupplierInvoicesCreate = "perm:" + Permissions.SupplierInvoices.Create;
     public const string SupplierInvoicesRead = "perm:" + Permissions.SupplierInvoices.Read;
     public const string SupplierInvoicesUpdate = "perm:" + Permissions.SupplierInvoices.Update;

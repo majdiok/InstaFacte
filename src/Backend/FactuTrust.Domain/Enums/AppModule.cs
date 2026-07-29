@@ -65,6 +65,10 @@ public static class AppModuleExtensions
         },
         AppModule.Sales => new[]
         {
+            Permissions.SalesOrders.Create,
+            Permissions.SalesOrders.Read,
+            Permissions.SalesOrders.Update,
+            Permissions.SalesOrders.Delete,
             Permissions.Quotes.Create,
             Permissions.Quotes.Read,
             Permissions.Quotes.Update,

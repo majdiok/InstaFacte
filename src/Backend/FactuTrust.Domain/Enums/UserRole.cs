@@ -459,6 +459,18 @@ public static class Permissions
         public const string Delete = "purchase_orders:delete";
     }
 
+    /// <summary>
+    /// Commandes clients (bons de commande client). Distinctes de <see cref="PurchaseOrders"/>,
+    /// qui couvre l'achat fournisseur : un commercial peut avoir l'une sans l'autre.
+    /// </summary>
+    public static class SalesOrders
+    {
+        public const string Create = "sales_orders:create";
+        public const string Read = "sales_orders:read";
+        public const string Update = "sales_orders:update";
+        public const string Delete = "sales_orders:delete";
+    }
+
     public static class SupplierInvoices
     {
         public const string Create = "supplier_invoices:create";
