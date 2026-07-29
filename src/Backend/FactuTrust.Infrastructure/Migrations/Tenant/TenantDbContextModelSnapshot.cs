@@ -1384,6 +1384,9 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.Property<DateTime?>("SignedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<Guid?>("SourceSalesOrderId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
@@ -1408,6 +1411,9 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.HasIndex("InvoiceId");
 
                     b.HasIndex("IssueDate");
+
+                    b.HasIndex("SourceSalesOrderId")
+                        .HasFilter("[SourceSalesOrderId] IS NOT NULL");
 
                     b.HasIndex("Status");
 
@@ -3016,6 +3022,9 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.Property<Guid?>("SourceQuoteId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("SourceSalesOrderId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
@@ -3054,6 +3063,9 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .HasFilter("[SourceDeliveryNoteId] IS NOT NULL");
 
                     b.HasIndex("SourceQuoteId");
+
+                    b.HasIndex("SourceSalesOrderId")
+                        .HasFilter("[SourceSalesOrderId] IS NOT NULL");
 
                     b.HasIndex("Status");
 

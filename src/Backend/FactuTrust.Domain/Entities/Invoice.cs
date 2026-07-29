@@ -77,6 +77,18 @@ public sealed class Invoice : AggregateRoot
     public Guid? SourceDeliveryNoteId { get; private set; }
 
     /// <summary>
+    /// Commande client à l'origine de cette facture, quand elle a été émise directement
+    /// depuis la commande (facturation d'avance, vente sur commande sans bon de livraison).
+    /// Complète <see cref="SourceQuoteId"/> et <see cref="SourceDeliveryNoteId"/> : les trois
+    /// documents amont possibles ont désormais chacun leur lien typé.
+    ///
+    /// ⚠️ Ne dispense PAS de déduire le stock : contrairement à une facture issue d'un bon de
+    /// livraison, une facture émise directement depuis la commande n'a donné lieu à aucune
+    /// sortie. Seul <see cref="SourceDeliveryNoteId"/> vaut garde-fou anti-double-déduction.
+    /// </summary>
+    public Guid? SourceSalesOrderId { get; private set; }
+
+    /// <summary>
     /// Facture rectifiée par cet avoir. Obligatoire à la création d'un nouvel avoir : une
     /// facture rectificative doit référencer la facture d'origine.
     /// Reste nullable pour ne pas invalider les avoirs historiques, émis avant que le lien
@@ -212,6 +224,50 @@ public sealed class Invoice : AggregateRoot
 
         result.Value.SourceDeliveryNoteId = sourceDeliveryNoteId;
         return result;
+    }
+
+    /// <summary>
+    /// Crée une facture émise DIRECTEMENT depuis une commande client, sans bon de livraison
+    /// intermédiaire — facturation d'avance ou vente sur commande.
+    ///
+    /// ⚠️ <see cref="SourceDeliveryNoteId"/> reste nul : le stock n'a donc pas encore été
+    /// sorti, et la validation de cette facture doit le déduire normalement. C'est la
+    /// différence essentielle avec <see cref="CreateFromDeliveryNote"/>.
+    /// </summary>
+    public static Result<Invoice> CreateFromSalesOrder(
+        InvoiceNumber number,
+        Client client,
+        DateTime issueDate,
+        Guid sourceSalesOrderId,
+        DateTime? dueDate = null,
+        string? reference = null,
+        string? notes = null,
+        string? paymentTerms = null,
+        Guid? warehouseId = null)
+    {
+        if (sourceSalesOrderId == Guid.Empty)
+            return Result.Failure<Invoice>(Error.Validation("SourceSalesOrderId", "La commande source est obligatoire"));
+
+        var result = Create(number, client, issueDate, dueDate, reference, notes, paymentTerms, warehouseId);
+        if (result.IsFailure)
+            return result;
+
+        result.Value.SourceSalesOrderId = sourceSalesOrderId;
+        return result;
+    }
+
+    /// <summary>
+    /// Rattache la facture à une commande client sans en changer l'origine de stock.
+    /// Utilisé quand la facture provient d'un bon de livraison lui-même issu d'une commande :
+    /// la traçabilité remonte alors jusqu'à l'engagement, mais le garde-fou de stock reste
+    /// porté par <see cref="SourceDeliveryNoteId"/>.
+    /// </summary>
+    public void AttachSalesOrderOrigin(Guid salesOrderId)
+    {
+        if (salesOrderId == Guid.Empty)
+            throw new ArgumentException("SalesOrderId invalide", nameof(salesOrderId));
+
+        SourceSalesOrderId ??= salesOrderId;
     }
 
     /// <summary>

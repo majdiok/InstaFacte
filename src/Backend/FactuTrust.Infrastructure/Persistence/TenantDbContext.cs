@@ -741,6 +741,11 @@ public partial class TenantDbContext : DbContext
             entity.HasIndex(i => i.LinkedInvoiceId)
                 .HasFilter("[LinkedInvoiceId] IS NOT NULL");
 
+            // Lien commande → facture (facturation directe ou remontée depuis un BL).
+            entity.Property(i => i.SourceSalesOrderId);
+            entity.HasIndex(i => i.SourceSalesOrderId)
+                .HasFilter("[SourceSalesOrderId] IS NOT NULL");
+
             entity.Property(i => i.IssuerCompanyId);
 
             entity.Property(i => i.ElectronicInvoiceTtn)
@@ -2094,6 +2099,12 @@ public partial class TenantDbContext : DbContext
 
             entity.Property(d => d.CancellationReason)
                 .HasMaxLength(500);
+
+            // Lien commande → BL : c'est lui qui rattache la livraison à l'engagement,
+            // et donc qui fait vivre le reliquat.
+            entity.Property(d => d.SourceSalesOrderId);
+            entity.HasIndex(d => d.SourceSalesOrderId)
+                .HasFilter("[SourceSalesOrderId] IS NOT NULL");
 
             entity.OwnsOne(d => d.Number, num =>
             {

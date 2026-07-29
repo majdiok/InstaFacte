@@ -57,6 +57,24 @@ public sealed class DeliveryNote : AggregateRoot
     public Guid? WarehouseId { get; private set; }
     public Warehouse? Warehouse { get; private set; }
 
+    /// <summary>
+    /// Commande client à l'origine de ce bon de livraison.
+    ///
+    /// C'est ce lien qui fait vivre le reliquat : sans lui, le « reste à livrer » d'un bon
+    /// mourait avec lui et rien ne permettait d'émettre un bon complémentaire rattaché au même
+    /// engagement. Avec lui, chaque livraison s'impute sur la commande, qui sait ce qui reste.
+    /// </summary>
+    public Guid? SourceSalesOrderId { get; private set; }
+
+    /// <summary>Rattache ce bon de livraison à une commande client. Idempotent.</summary>
+    public void AttachSalesOrderOrigin(Guid salesOrderId)
+    {
+        if (salesOrderId == Guid.Empty)
+            throw new ArgumentException("SalesOrderId invalide", nameof(salesOrderId));
+
+        SourceSalesOrderId ??= salesOrderId;
+    }
+
     private readonly List<DeliveryNoteLine> _lines = new();
     public IReadOnlyCollection<DeliveryNoteLine> Lines => _lines.AsReadOnly();
 
