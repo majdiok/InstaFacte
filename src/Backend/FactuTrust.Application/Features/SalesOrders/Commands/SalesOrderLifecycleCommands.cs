@@ -2,6 +2,7 @@ using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.SalesOrders.Services;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
@@ -22,15 +23,18 @@ public sealed record ConfirmSalesOrderCommand(Guid SalesOrderId) : IRequest<Resu
 public sealed class ConfirmSalesOrderCommandHandler : IRequestHandler<ConfirmSalesOrderCommand, Result>
 {
     private readonly ISalesOrderRepository _repository;
+    private readonly ISalesOrderStockReservationService _reservationService;
     private readonly ICurrentUser _currentUser;
     private readonly IAuditService _auditService;
 
     public ConfirmSalesOrderCommandHandler(
         ISalesOrderRepository repository,
+        ISalesOrderStockReservationService reservationService,
         ICurrentUser currentUser,
         IAuditService auditService)
     {
         _repository = repository;
+        _reservationService = reservationService;
         _currentUser = currentUser;
         _auditService = auditService;
     }
@@ -44,6 +48,12 @@ public sealed class ConfirmSalesOrderCommandHandler : IRequestHandler<ConfirmSal
         var result = order.Confirm();
         if (result.IsFailure)
             return result;
+
+        // Réservation du stock — sans effet tant que Features:SalesOrders:StockReservationEnabled
+        // est à false, qui est le défaut.
+        var reservation = await _reservationService.ReserveAsync(order, cancellationToken);
+        if (reservation.IsFailure)
+            return reservation;
 
         order.SetAuditInfo(_currentUser.UserId?.ToString() ?? "system", isUpdate: true);
         await _repository.UpdateAsync(order, cancellationToken);
@@ -81,15 +91,18 @@ public sealed class CancelSalesOrderCommandValidator : AbstractValidator<CancelS
 public sealed class CancelSalesOrderCommandHandler : IRequestHandler<CancelSalesOrderCommand, Result>
 {
     private readonly ISalesOrderRepository _repository;
+    private readonly ISalesOrderStockReservationService _reservationService;
     private readonly ICurrentUser _currentUser;
     private readonly IAuditService _auditService;
 
     public CancelSalesOrderCommandHandler(
         ISalesOrderRepository repository,
+        ISalesOrderStockReservationService reservationService,
         ICurrentUser currentUser,
         IAuditService auditService)
     {
         _repository = repository;
+        _reservationService = reservationService;
         _currentUser = currentUser;
         _auditService = auditService;
     }
@@ -103,6 +116,11 @@ public sealed class CancelSalesOrderCommandHandler : IRequestHandler<CancelSales
         var result = order.Cancel(request.Dto.Reason);
         if (result.IsFailure)
             return result;
+
+        // Le stock immobilisé doit redevenir disponible immédiatement.
+        var release = await _reservationService.ReleaseAsync(order, cancellationToken);
+        if (release.IsFailure)
+            return release;
 
         order.SetAuditInfo(_currentUser.UserId?.ToString() ?? "system", isUpdate: true);
         await _repository.UpdateAsync(order, cancellationToken);
@@ -139,15 +157,18 @@ public sealed class CloseSalesOrderCommandValidator : AbstractValidator<CloseSal
 public sealed class CloseSalesOrderCommandHandler : IRequestHandler<CloseSalesOrderCommand, Result>
 {
     private readonly ISalesOrderRepository _repository;
+    private readonly ISalesOrderStockReservationService _reservationService;
     private readonly ICurrentUser _currentUser;
     private readonly IAuditService _auditService;
 
     public CloseSalesOrderCommandHandler(
         ISalesOrderRepository repository,
+        ISalesOrderStockReservationService reservationService,
         ICurrentUser currentUser,
         IAuditService auditService)
     {
         _repository = repository;
+        _reservationService = reservationService;
         _currentUser = currentUser;
         _auditService = auditService;
     }
@@ -164,6 +185,11 @@ public sealed class CloseSalesOrderCommandHandler : IRequestHandler<CloseSalesOr
         var result = order.Close(request.Dto.Reason);
         if (result.IsFailure)
             return result;
+
+        // Le reliquat est abandonné : sa réservation n'a plus lieu d'être.
+        var release = await _reservationService.ReleaseAsync(order, cancellationToken);
+        if (release.IsFailure)
+            return release;
 
         order.SetAuditInfo(_currentUser.UserId?.ToString() ?? "system", isUpdate: true);
         await _repository.UpdateAsync(order, cancellationToken);

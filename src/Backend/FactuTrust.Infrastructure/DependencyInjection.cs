@@ -143,6 +143,8 @@ public static class DependencyInjection
         services.AddScoped<ISupplierRepository, SupplierRepository>();
         services.AddScoped<IPurchaseOrderRepository, PurchaseOrderRepository>();
         services.AddScoped<ISalesOrderRepository, SalesOrderRepository>();
+        services.AddScoped<Application.Features.SalesOrders.Services.ISalesOrderStockReservationService,
+            Application.Features.SalesOrders.Services.SalesOrderStockReservationService>();
         services.AddScoped<ISupplierInvoiceRepository, SupplierInvoiceRepository>();
         services.AddScoped<ISupplierPaymentRepository, SupplierPaymentRepository>();
         services.AddScoped<ICashOperationRepository, CashOperationRepository>();
@@ -373,6 +375,7 @@ public static class DependencyInjection
         services.Configure<FirmFiscalOpsOptions>(configuration.GetSection(FirmFiscalOpsOptions.SectionName));
         services.Configure<AccountingSettings>(configuration.GetSection(AccountingSettings.SectionName));
         services.Configure<StorefrontOptions>(configuration.GetSection(StorefrontOptions.SectionName));
+        services.Configure<SalesOrderOptions>(configuration.GetSection(SalesOrderOptions.SectionName));
         services.Configure<ChannelsSettings>(configuration.GetSection(ChannelsSettings.SectionName));
         // Canaux externes (WhatsApp) : liaison d'identité en base tenant/master. Le pont Node et
         // l'envoi sortant (IChannelOutboundSender) sont hébergés côté API (processus enfant piloté).

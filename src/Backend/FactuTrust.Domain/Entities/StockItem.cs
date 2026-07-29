@@ -171,6 +171,55 @@ public sealed class StockItem : AggregateRoot
     }
 
     /// <summary>
+    /// Libère une réservation PUIS sort la quantité, en une seule opération.
+    ///
+    /// C'est l'opération qu'exige la livraison d'une commande dont le stock a été réservé.
+    /// <see cref="RecordExit"/> contrôle la quantité contre <see cref="QuantityAvailable"/>,
+    /// c'est-à-dire hors réservations : une commande ayant réservé son stock verrait donc sa
+    /// PROPRE livraison refusée. Libérer d'abord, sortir ensuite.
+    ///
+    /// Les deux gestes sont réunis ici plutôt que laissés à l'appelant, pour qu'ils ne
+    /// puissent pas être dissociés ni intervertis. Si la libération échoue, rien n'est sorti.
+    /// </summary>
+    /// <param name="quantity">Quantité à libérer et à sortir.</param>
+    /// <param name="reservedQuantity">
+    /// Quantité réellement réservée pour cette sortie. <c>null</c> = la même que
+    /// <paramref name="quantity"/>. Passer 0 quand rien n'avait été réservé (drapeau désactivé,
+    /// livraison hors commande) : l'opération se comporte alors comme une sortie ordinaire.
+    /// </param>
+    public Result ReleaseAndExit(
+        decimal quantity,
+        MovementReason reason,
+        string? reference = null,
+        string? notes = null,
+        decimal? reservedQuantity = null,
+        decimal? shortfallQuantity = null)
+    {
+        if (quantity <= 0)
+            return Result.Failure(Error.Validation("Quantity", "La quantité doit être positive"));
+
+        // Sans réservation explicite, on libère au plus ce qui est effectivement réservé :
+        // une livraison hors commande, ou faite drapeau désactivé, ne doit pas échouer ici.
+        var toRelease = reservedQuantity ?? Math.Min(quantity, QuantityReserved);
+
+        if (toRelease > 0)
+        {
+            var release = ReleaseReservation(toRelease);
+            if (release.IsFailure)
+                return release;
+        }
+
+        var exit = RecordExit(quantity, reason, reference, notes, shortfallQuantity);
+        if (exit.IsFailure && toRelease > 0)
+        {
+            // Rétablit la réservation : l'opération doit être tout ou rien.
+            QuantityReserved += toRelease;
+        }
+
+        return exit;
+    }
+
+    /// <summary>
     /// Records an inventory adjustment (can be positive or negative).
     /// </summary>
     public Result AdjustStock(
