@@ -104,6 +104,11 @@ public sealed class GenerateInvoiceFromDeliveryNoteCommandHandler
 
         var invoice = invoiceResult.Value;
 
+        // Le BL provient d'une commande : la facture doit remonter jusqu'à l'engagement.
+        // Ceci ne touche PAS SourceDeliveryNoteId, qui reste le seul garde-fou de stock.
+        if (deliveryNote.SourceSalesOrderId is { } salesOrderId)
+            invoice.AttachSalesOrderOrigin(salesOrderId);
+
         // 7. Add invoice lines from BL delivered quantities using snapshot prices.
         //    Products are already loaded via GetByIdWithDetailsAsync (.ThenInclude),
         //    reusing the same instances avoids EF Core tracking conflicts across contexts.
