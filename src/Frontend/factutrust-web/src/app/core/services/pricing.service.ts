@@ -117,6 +117,85 @@ export interface UpsertClientProductPriceRequest {
  * prix negocie -> grille du client -> catalogue. Afficher le prix catalogue sans
  * demander laisserait l'ecran divergent de la facture finalement emise.
  */
+
+export type PromotionDiscountType = 'Percentage' | 'Amount';
+
+export interface Promotion {
+  id: string;
+  name: string;
+  productId: string | null;
+  productCategoryId: string | null;
+  clientId: string | null;
+  discountType: PromotionDiscountType;
+  discountPercent: number | null;
+  discountAmount: number | null;
+  minQuantity: number;
+  startsOn: string;
+  endsOn: string;
+  isActive: boolean;
+  priority: number;
+  /** Active ET dans sa fenetre : c'est ce qui compte, pas seulement l'activation. */
+  isRunningToday: boolean;
+  /** Portee lisible : « tous les produits · un client », etc. */
+  scopeLabel: string;
+}
+
+export interface CreatePromotionRequest {
+  name: string;
+  startsOn: string;
+  endsOn: string;
+  discountType: PromotionDiscountType;
+  discountPercent: number | null;
+  discountAmount: number | null;
+  productId: string | null;
+  productCategoryId: string | null;
+  clientId: string | null;
+  minQuantity: number;
+  priority: number;
+}
+
+export interface UpdatePromotionRequest {
+  name: string;
+  startsOn: string;
+  endsOn: string;
+  discountType: PromotionDiscountType;
+  discountPercent: number | null;
+  discountAmount: number | null;
+  minQuantity: number;
+  priority: number;
+  isActive: boolean;
+}
+
+export type PaymentDueMode = 'NetDays' | 'EndOfMonth' | 'EndOfMonthOnDay';
+
+export interface PaymentTermTemplate {
+  id: string;
+  name: string;
+  delayDays: number;
+  dueMode: PaymentDueMode;
+  dueDayOfMonth: number | null;
+  earlyPaymentDiscountPercent: number | null;
+  earlyPaymentDays: number | null;
+  isActive: boolean;
+  isDefault: boolean;
+  /** Libelle tel qu'il s'imprimera sur le document. */
+  documentLabel: string;
+  /** Echeance qu'aurait un document emis aujourd'hui — rend la regle tangible. */
+  sampleDueDate: string;
+}
+
+export interface UpsertPaymentTermRequest {
+  id: string | null;
+  name: string;
+  delayDays: number;
+  dueMode: PaymentDueMode;
+  dueDayOfMonth: number | null;
+  earlyPaymentDiscountPercent: number | null;
+  earlyPaymentDays: number | null;
+  isActive: boolean;
+  isDefault: boolean;
+}
+
 @Injectable({ providedIn: 'root' })
 export class PricingService {
   private readonly http = inject(HttpClient);
@@ -257,5 +336,40 @@ export class PricingService {
 
   deleteClientProductPrice(id: string): Observable<ApiResponse<object>> {
     return this.http.delete<ApiResponse<object>>(`${this.baseUrl}/client-prices/${id}`);
+  }
+  // ─────────────────────── Promotions ───────────────────────
+
+  getPromotions(): Observable<ApiResponse<Promotion[]>> {
+    return this.http.get<ApiResponse<Promotion[]>>(`${this.baseUrl}/promotions`);
+  }
+
+  createPromotion(request: CreatePromotionRequest): Observable<ApiResponse<string>> {
+    return this.http.post<ApiResponse<string>>(`${this.baseUrl}/promotions`, request);
+  }
+
+  /** Desactiver une promotion n'affecte aucun document emis : la remise y est figee. */
+  updatePromotion(id: string, request: UpdatePromotionRequest): Observable<ApiResponse<object>> {
+    return this.http.put<ApiResponse<object>>(`${this.baseUrl}/promotions/${id}`, request);
+  }
+
+  deletePromotion(id: string): Observable<ApiResponse<object>> {
+    return this.http.delete<ApiResponse<object>>(`${this.baseUrl}/promotions/${id}`);
+  }
+
+  // ─────────────────── Conditions de reglement ───────────────────
+
+  getPaymentTerms(activeOnly = false): Observable<ApiResponse<PaymentTermTemplate[]>> {
+    const params = new HttpParams().set('activeOnly', String(activeOnly));
+    return this.http.get<ApiResponse<PaymentTermTemplate[]>>(`${this.baseUrl}/payment-terms`, {
+      params
+    });
+  }
+
+  upsertPaymentTerm(request: UpsertPaymentTermRequest): Observable<ApiResponse<string>> {
+    return this.http.put<ApiResponse<string>>(`${this.baseUrl}/payment-terms`, request);
+  }
+
+  deletePaymentTerm(id: string): Observable<ApiResponse<object>> {
+    return this.http.delete<ApiResponse<object>>(`${this.baseUrl}/payment-terms/${id}`);
   }
 }

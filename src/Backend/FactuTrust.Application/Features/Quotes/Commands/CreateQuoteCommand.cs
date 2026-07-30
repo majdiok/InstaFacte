@@ -81,6 +81,7 @@ public sealed class CreateQuoteCommandHandler : IRequestHandler<CreateQuoteComma
     private readonly ISubscriptionResolver _subscriptionResolver;
     private readonly IFiscalStampResolver _fiscalStampResolver;
     private readonly IPriceResolver _priceResolver;
+    private readonly IPromotionResolver _promotionResolver;
 
     public CreateQuoteCommandHandler(
         IQuoteRepository quoteRepository,
@@ -94,9 +95,11 @@ public sealed class CreateQuoteCommandHandler : IRequestHandler<CreateQuoteComma
         ITenantContext tenantContext,
         ISubscriptionResolver subscriptionResolver,
         IFiscalStampResolver fiscalStampResolver,
-        IPriceResolver priceResolver)
+        IPriceResolver priceResolver,
+        IPromotionResolver promotionResolver)
     {
         _priceResolver = priceResolver;
+        _promotionResolver = promotionResolver;
         _quoteRepository = quoteRepository;
         _clientRepository = clientRepository;
         _productRepository = productRepository;
@@ -214,7 +217,21 @@ public sealed class CreateQuoteCommandHandler : IRequestHandler<CreateQuoteComma
                     unitPrice = priceResult.Value.UnitPriceHT;
                 }
 
-                addLineResult = quote.AddLine(product, lineDto.Quantity, unitPrice, lineDto.DiscountPercent);
+            // Promotion : appliquée APRÈS le prix, sous forme de remise de ligne. Elle ne
+            // s'impose jamais à une remise saisie — ce serait une surprise silencieuse. La
+            // remise obtenue est figée : la fin de la promotion ne change plus ce document.
+                var linePromoDiscount = lineDto.DiscountPercent;
+                if (linePromoDiscount is null)
+                {
+                    var promo = await _promotionResolver.ResolveAsync(
+                        product.Id, product.CategoryId, dto.ClientId,
+                        lineDto.Quantity, unitPrice, dto.IssueDate, cancellationToken);
+
+                    if (promo.IsSuccess && promo.Value is { } applied)
+                        linePromoDiscount = applied.DiscountPercent;
+                }
+
+                addLineResult = quote.AddLine(product, lineDto.Quantity, unitPrice, linePromoDiscount);
             }
             else
             {

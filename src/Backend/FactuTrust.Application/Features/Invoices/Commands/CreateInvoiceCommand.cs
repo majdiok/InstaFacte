@@ -79,6 +79,8 @@ public sealed class CreateInvoiceCommandHandler : IRequestHandler<CreateInvoiceC
     private readonly IInvoiceNumberGenerator _numberGenerator;
     private readonly AccountingSettings _accountingSettings;
     private readonly IPriceResolver _priceResolver;
+    private readonly IPromotionResolver _promotionResolver;
+    private readonly IPaymentTermTemplateRepository _paymentTermRepository;
 
     public CreateInvoiceCommandHandler(
         IInvoiceRepository invoiceRepository,
@@ -93,9 +95,13 @@ public sealed class CreateInvoiceCommandHandler : IRequestHandler<CreateInvoiceC
         IPlanQuotaService planQuota,
         IInvoiceNumberGenerator numberGenerator,
         IOptions<AccountingSettings> accountingSettings,
-        IPriceResolver priceResolver)
+        IPriceResolver priceResolver,
+        IPromotionResolver promotionResolver,
+        IPaymentTermTemplateRepository paymentTermRepository)
     {
         _priceResolver = priceResolver;
+        _promotionResolver = promotionResolver;
+        _paymentTermRepository = paymentTermRepository;
         _invoiceRepository = invoiceRepository;
         _clientRepository = clientRepository;
         _productRepository = productRepository;
@@ -170,15 +176,30 @@ public sealed class CreateInvoiceCommandHandler : IRequestHandler<CreateInvoiceC
         var invoiceNumber = await _numberGenerator.ReserveNextNumberAsync(
             tenantId.Value, "FAC", year, cancellationToken);
 
+        // Condition de règlement structurée : elle produit le texte imprimé et l'échéance.
+        // Ce qui est saisi à la main reste prioritaire — le modèle propose, il n'impose pas.
+        var paymentTermsLabel = dto.PaymentTerms;
+        var dueDate = dto.DueDate;
+
+        if (dto.PaymentTermTemplateId is { } templateId)
+        {
+            var template = await _paymentTermRepository.GetByIdAsync(templateId, cancellationToken);
+            if (template is null)
+                return Result.Failure<Guid>(Error.NotFound("Condition de règlement", templateId));
+
+            paymentTermsLabel ??= template.ToDocumentLabel();
+            dueDate ??= template.ComputeDueDate(dto.IssueDate);
+        }
+
         // Create invoice
         var invoiceResult = Invoice.Create(
             invoiceNumber,
             client,
             dto.IssueDate,
-            dto.DueDate,
+            dueDate,
             dto.Reference,
             dto.Notes,
-            dto.PaymentTerms,
+            paymentTermsLabel,
             dto.WarehouseId);
 
         if (invoiceResult.IsFailure)
@@ -250,12 +271,26 @@ public sealed class CreateInvoiceCommandHandler : IRequestHandler<CreateInvoiceC
                 customPrice = priceResult.Value.UnitPriceHT;
             }
 
+            // Promotion : appliquée APRÈS le prix, sous forme de remise de ligne. Elle ne
+            // s'impose jamais à une remise saisie — ce serait une surprise silencieuse. La
+            // remise obtenue est figée : la fin de la promotion ne change plus ce document.
+            var lineDiscountPercent = lineDto.DiscountPercent;
+            if (lineDiscountPercent is null)
+            {
+                var promo = await _promotionResolver.ResolveAsync(
+                    product.Id, product.CategoryId, dto.ClientId,
+                    lineDto.Quantity, customPrice, dto.IssueDate, cancellationToken);
+
+                if (promo.IsSuccess && promo.Value is { } applied)
+                    lineDiscountPercent = applied.DiscountPercent;
+            }
+
             // Add line to invoice
             var addResult = invoice.AddLine(
                 product,
                 lineDto.Quantity,
                 customPrice,
-                lineDto.DiscountPercent,
+                lineDiscountPercent,
                 _accountingSettings.FodecRatePercent);
             if (addResult.IsFailure)
                 return Result.Failure<Guid>(addResult.Error);

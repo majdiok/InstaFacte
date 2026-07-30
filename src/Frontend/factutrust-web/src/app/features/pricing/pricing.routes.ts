@@ -14,6 +14,25 @@ export const PRICING_ROUTES: Routes = [
     title: 'Grilles tarifaires - InstaFact'
   },
   {
+    path: 'promotions',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.pricing.read] },
+    loadComponent: () =>
+      import('@features/pricing/promotions/promotions.component').then(m => m.PromotionsComponent),
+    title: 'Promotions - InstaFact'
+  },
+  {
+    path: 'payment-terms',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.pricing.read] },
+    loadComponent: () =>
+      import('@features/pricing/payment-terms/payment-terms.component').then(
+        m => m.PaymentTermsComponent
+      ),
+    title: 'Conditions de règlement - InstaFact'
+  },
+  {
+    // Après les chemins fixes, sinon « promotions » serait pris pour un identifiant.
     path: ':id',
     canActivate: [permissionGuard],
     data: { permissions: [PERMISSIONS.pricing.read] },

@@ -209,6 +209,12 @@ public sealed record CreateInvoiceDto
     public string? Reference { get; init; }
     public string? Notes { get; init; }
     public string? PaymentTerms { get; init; }
+
+    /// <summary>
+    /// Condition de règlement structurée à appliquer. Elle produit le texte imprimé et
+    /// l'échéance ; <c>PaymentTerms</c> et <c>DueDate</c> saisis à la main restent prioritaires.
+    /// </summary>
+    public Guid? PaymentTermTemplateId { get; init; }
     public Guid? WarehouseId { get; init; }
     public IReadOnlyList<CreateInvoiceLineDto> Lines { get; init; } = Array.Empty<CreateInvoiceLineDto>();
 }
