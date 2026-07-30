@@ -147,6 +147,35 @@ public sealed class Client : AggregateRoot
     /// <summary>Affecte une grille tarifaire au client (ou la retire si <paramref name="priceListId"/> est null).</summary>
     public void AssignPriceList(Guid? priceListId) => PriceListId = priceListId;
 
+    /// <summary>
+    /// Plafond d'encours accordé au client, en TND. <c>null</c> = pas de plafond.
+    ///
+    /// ⚠️ <b>Le dépassement AVERTIT, il ne bloque jamais.</b> C'est une décision produit
+    /// assumée : le commercial connaît son client et son contexte mieux que la règle. Bloquer
+    /// une commande sur un plafond mal tenu coûterait plus cher que le risque couvert.
+    /// </summary>
+    public decimal? CreditLimit { get; private set; }
+
+    /// <summary>Délai de règlement habituel du client, en jours. Sert de proposition à la saisie.</summary>
+    public int? DefaultPaymentTermDays { get; private set; }
+
+    /// <summary>
+    /// Fixe (ou retire) le plafond d'encours et le délai de règlement habituel.
+    /// </summary>
+    public Result SetCreditTerms(decimal? creditLimit, int? defaultPaymentTermDays)
+    {
+        if (creditLimit is < 0)
+            return Result.Failure(Error.Validation("CreditLimit", "Le plafond d'encours ne peut pas être négatif"));
+
+        if (defaultPaymentTermDays is < 0 or > 365)
+            return Result.Failure(Error.Validation("DefaultPaymentTermDays", "Le délai doit être compris entre 0 et 365 jours"));
+
+        CreditLimit = creditLimit;
+        DefaultPaymentTermDays = defaultPaymentTermDays;
+
+        return Result.Success();
+    }
+
     public void Deactivate()
     {
         IsActive = false;

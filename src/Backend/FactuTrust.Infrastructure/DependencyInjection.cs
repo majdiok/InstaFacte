@@ -110,6 +110,9 @@ public static class DependencyInjection
             services.Configure<FirmCollaboratorStorageOptions>(
                 configuration.GetSection(FirmCollaboratorStorageOptions.SectionName));
             services.AddScoped<INotificationService, NotificationService>();
+            services.Configure<ExchangeAttachmentsOptions>(
+                configuration.GetSection(ExchangeAttachmentsOptions.SectionName));
+            services.AddScoped<IExchangeService, ExchangeService>();
             services.AddSingleton<IAccountingFirmsFeature, AccountingFirmsFeature>();
             services.AddSingleton<IFirmGovernanceFeature, FirmGovernanceFeature>();
             services.AddSingleton<IFirmFiscalOpsFeature, FirmFiscalOpsFeature>();
@@ -153,6 +156,9 @@ public static class DependencyInjection
             Services.Pricing.PriceResolver>();
         services.AddScoped<IPromotionRepository, PromotionRepository>();
         services.AddScoped<IPaymentTermTemplateRepository, PaymentTermTemplateRepository>();
+
+        // Encours client (lot 6) — alerte seule, aucun blocage.
+        services.AddScoped<IClientOutstandingService, ClientOutstandingService>();
         services.AddScoped<Application.Common.Interfaces.Pricing.IPromotionResolver,
             Services.Pricing.PromotionResolver>();
         services.AddScoped<ISupplierInvoiceRepository, SupplierInvoiceRepository>();

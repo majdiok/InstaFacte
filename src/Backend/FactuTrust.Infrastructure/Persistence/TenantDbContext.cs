@@ -527,6 +527,11 @@ public partial class TenantDbContext : DbContext
             // au tarif catalogue. Pas de contrainte de clé étrangère — l'affectation survit à
             // la désactivation d'une grille, le résolveur ignorant simplement une grille absente.
             entity.Property(c => c.PriceListId).IsRequired(false);
+
+            // Encours client (lot 6). Le plafond AVERTIT, il ne bloque pas : aucune contrainte
+            // ne le fait respecter, c'est un repere pour le commercial.
+            entity.Property(c => c.CreditLimit).HasPrecision(18, 3).IsRequired(false);
+            entity.Property(c => c.DefaultPaymentTermDays).IsRequired(false);
             entity.HasIndex(c => c.PriceListId)
                 .HasFilter("[PriceListId] IS NOT NULL");
         });

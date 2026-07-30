@@ -1,6 +1,7 @@
 using FactuTrust.API.Authorization;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Clients.Commands;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Features.Clients.Queries;
 using FactuTrust.Domain.Entities;
 using MediatR;
@@ -200,5 +201,25 @@ public class ClientsController : ControllerBase
 
         return Ok(ApiResponse<ClientDetailDto>.Ok(result.Value,
             result.Value.IsActive ? "Client activé." : "Client désactivé."));
+    }
+    /// <summary>
+    /// Encours du client : factures non soldees + commandes confirmees non facturees, avec la
+    /// marge restante sous son plafond.
+    ///
+    /// ⚠️ Purement informatif. Aucun traitement ne refuse une operation parce que le plafond est
+    /// depasse — decision produit actee : on avertit, le commercial decide.
+    /// </summary>
+    [HttpGet("{id:guid}/outstanding")]
+    [Authorize(Policy = PermissionPolicies.ClientsRead)]
+    [ProducesResponseType(typeof(ApiResponse<ClientOutstandingDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetOutstanding(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetClientOutstandingQuery(id), cancellationToken);
+
+        if (result.IsFailure)
+            return NotFound(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<ClientOutstandingDto>.Ok(result.Value));
     }
 }
