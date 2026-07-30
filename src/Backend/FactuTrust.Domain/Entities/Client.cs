@@ -28,6 +28,22 @@ public sealed class Client : AggregateRoot
     public bool IsResident { get; private set; } = true;
     public string? Activity { get; private set; }
 
+    /// <summary>
+    /// Régime de TVA du client. Décide si la TVA s'applique et sous quelle justification.
+    ///
+    /// ⚠️ N'est PAS un taux : <c>VatRate</c> reste porté par la ligne, d'après le produit.
+    /// Avant ce champ, exonération, suspension et export étaient tous ramenés à « 0 % »,
+    /// rendant impossible de distinguer un exportateur d'un exonéré, ou de justifier une
+    /// suspension en contrôle.
+    /// </summary>
+    public ClientVatRegime VatRegime { get; private set; } = ClientVatRegime.Normal;
+
+    /// <summary>
+    /// Attestation d'achat en suspension (art. 11). Obligatoire lorsque
+    /// <see cref="VatRegime"/> vaut <see cref="ClientVatRegime.Suspension"/>.
+    /// </summary>
+    public VatExemptionCertificate? VatExemptionCertificate { get; private set; }
+
     private readonly List<Invoice> _invoices = new();
     public IReadOnlyCollection<Invoice> Invoices => _invoices.AsReadOnly();
 
@@ -90,6 +106,37 @@ public sealed class Client : AggregateRoot
     {
         NIF = nif;
     }
+
+    /// <summary>
+    /// Fixe le régime de TVA et, s'il l'exige, l'attestation qui le justifie.
+    ///
+    /// Le couple est posé d'un seul geste : un régime de suspension sans attestation est
+    /// refusé ici plutôt que découvert à la validation d'une facture, quand il est trop tard
+    /// pour que le commercial réagisse.
+    /// </summary>
+    public Result SetVatRegime(ClientVatRegime regime, VatExemptionCertificate? certificate = null)
+    {
+        if (regime.RequiresCertificate() && certificate is null)
+        {
+            return Result.Failure(Error.Validation("VatExemptionCertificate",
+                "Une attestation de suspension est obligatoire pour ce régime"));
+        }
+
+        VatRegime = regime;
+
+        // L'attestation ne survit pas à un changement de régime qui ne l'exige plus :
+        // la conserver laisserait croire à une justification encore active.
+        VatExemptionCertificate = regime.RequiresCertificate() ? certificate : null;
+
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Vrai si le client peut être facturé en suspension à la date donnée — attestation
+    /// présente ET couvrant cette date.
+    /// </summary>
+    public bool HasValidVatExemptionAt(DateTime date) =>
+        VatExemptionCertificate is not null && VatExemptionCertificate.CoversDate(date);
 
     public void Deactivate()
     {

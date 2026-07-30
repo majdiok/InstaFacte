@@ -481,6 +481,34 @@ public partial class TenantDbContext : DbContext
             entity.Property(c => c.CountryCode).HasMaxLength(3).IsRequired(false);
             entity.Property(c => c.IsResident).HasDefaultValue(true);
             entity.Property(c => c.Activity).HasMaxLength(200).IsRequired(false);
+
+            // Régime de TVA du client. Normal par défaut : les clients existants conservent
+            // exactement leur comportement de facturation.
+            entity.Property(c => c.VatRegime)
+                .HasConversion<int>()
+                .HasDefaultValue(ClientVatRegime.Normal)
+                .IsRequired();
+
+            // Index filtré : retrouver les clients à régime particulier — et parmi eux ceux
+            // dont l'attestation expire — est une requête de pilotage courante. Le filtre
+            // écarte les assujettis ordinaires, qui sont l'immense majorité.
+            entity.HasIndex(c => c.VatRegime)
+                .HasFilter("[VatRegime] <> 0");
+
+            // Attestation de suspension (art. 11). Type possédé nullable : les trois colonnes
+            // n'existent que pour les clients en suspension.
+            entity.OwnsOne(c => c.VatExemptionCertificate, cert =>
+            {
+                cert.Property(x => x.Number)
+                    .HasColumnName("VatExemptionCertificateNumber")
+                    .HasMaxLength(50);
+
+                cert.Property(x => x.ValidFrom)
+                    .HasColumnName("VatExemptionValidFrom");
+
+                cert.Property(x => x.ValidUntil)
+                    .HasColumnName("VatExemptionValidUntil");
+            });
         });
     }
 

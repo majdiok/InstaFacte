@@ -152,6 +152,26 @@ Un résultat vide signifie qu'aucun brouillon existant ne sera bloqué. Sinon, l
 
 ---
 
+## Vague 1 « Socle ERP commercial » — migrations tenant
+
+Migrations **strictement additives** de la vague 1 (commande client, conversions, tarification,
+régimes TVA, code-barres). Chacune possède un `Down()` complet et un script SQL idempotent, et
+aucune ne modifie de document déjà émis.
+
+| Migration | Objet | Script idempotent |
+|---|---|---|
+| `20260728120000_AddSalesOrders_Tenant` | Tables `SalesOrders` / `SalesOrderLines` — l'agrégat commande client (numérotation `CDE`). Création de tables uniquement. | [AddSalesOrders_Tenant.idempotent.sql](runbooks/sql/AddSalesOrders_Tenant.idempotent.sql) |
+| `20260729100000_AddProductBarcode_Tenant` | `Products.Barcode` (EAN-8/13) + index filtré **non unique**. L'unicité par tenant n'est livrée qu'après balayage des doublons. | [AddProductBarcode_Tenant.idempotent.sql](runbooks/sql/AddProductBarcode_Tenant.idempotent.sql) |
+| `20260729140000_AddClientVatRegime_Tenant` | `Clients.VatRegime` (défaut 0 = Normal) + attestation de suspension (3 colonnes nullables) + index filtré. Les clients existants gardent leur comportement de facturation. | [AddClientVatRegime_Tenant.idempotent.sql](runbooks/sql/AddClientVatRegime_Tenant.idempotent.sql) |
+
+Le régime de TVA du client est un attribut du **client**, non du taux de ligne (`VatRate`
+inchangé). La validation de facture (`ValidateInvoiceCommand`) refuse désormais toute TVA pour un
+client dont le régime la supprime (exonéré, suspension, export) et exige, pour une suspension, une
+attestation en cours de validité **à la date d'émission** de la facture. Aucun client existant
+n'est concerné : ils sont tous en régime `Normal` par défaut.
+
+---
+
 ## Configuration
 
 ```json

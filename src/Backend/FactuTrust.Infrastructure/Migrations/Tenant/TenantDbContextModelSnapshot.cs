@@ -1214,6 +1214,11 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.Property<string>("UpdatedBy")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<int>("VatRegime")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
                     b.Property<int>("Version")
                         .HasColumnType("int");
 
@@ -1224,6 +1229,9 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.HasIndex("IsActive");
 
                     b.HasIndex("Name");
+
+                    b.HasIndex("VatRegime")
+                        .HasFilter("[VatRegime] <> 0");
 
                     b.ToTable("Clients", (string)null);
                 });
@@ -8145,6 +8153,33 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                                 .HasForeignKey("ClientId");
                         });
 
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.VatExemptionCertificate", "VatExemptionCertificate", b1 =>
+                        {
+                            b1.Property<Guid>("ClientId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<string>("Number")
+                                .IsRequired()
+                                .HasMaxLength(50)
+                                .HasColumnType("nvarchar(50)")
+                                .HasColumnName("VatExemptionCertificateNumber");
+
+                            b1.Property<DateTime>("ValidFrom")
+                                .HasColumnType("datetime2")
+                                .HasColumnName("VatExemptionValidFrom");
+
+                            b1.Property<DateTime>("ValidUntil")
+                                .HasColumnType("datetime2")
+                                .HasColumnName("VatExemptionValidUntil");
+
+                            b1.HasKey("ClientId");
+
+                            b1.ToTable("Clients");
+
+                            b1.WithOwner()
+                                .HasForeignKey("ClientId");
+                        });
+
                     b.Navigation("Address")
                         .IsRequired();
 
@@ -8154,6 +8189,8 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.Navigation("NIF");
 
                     b.Navigation("Phone");
+
+                    b.Navigation("VatExemptionCertificate");
                 });
 
             modelBuilder.Entity("FactuTrust.Domain.Entities.Company", b =>

@@ -101,6 +101,7 @@ public sealed class InvoiceComplianceValidator : IInvoiceComplianceValidator
         checks.Add(CheckInvoiceClient(invoice));
         checks.Add(CheckInvoiceLines(invoice));
         checks.Add(CheckInvoiceVatRates(invoice));
+        checks.Add(CheckClientVatRegime(invoice));
         checks.Add(CheckInvoiceCalculations(invoice));
 
         var errorCount = checks.Count(c => c.Status == "ERROR");
@@ -865,6 +866,81 @@ public sealed class InvoiceComplianceValidator : IInvoiceComplianceValidator
             Status = allValid ? "VALID" : "ERROR",
             IsBlocking = true,
             Field = "lines.vatRate"
+        };
+    }
+
+    /// <summary>
+    /// Vérifie la cohérence entre le régime de TVA du client et la facture émise.
+    ///
+    /// Deux exigences fiscales, toutes deux bloquantes :
+    ///  - un client dont le régime supprime la TVA (exonéré, suspension art. 11, export) ne
+    ///    peut pas recevoir une facture portant de la TVA ;
+    ///  - un client en suspension exige une attestation en cours de validité <b>à la date
+    ///    d'émission</b> de la facture — non à la date du jour, sans quoi une facture
+    ///    régulière à son émission deviendrait irrégulière avec le temps.
+    ///
+    /// Le régime est un attribut du CLIENT ; le taux de ligne (VatRate) n'est pas touché.
+    /// Un client au régime ordinaire ou assujetti partiel ne déclenche aucun contrôle.
+    /// </summary>
+    private WizardValidationCheckDto CheckClientVatRegime(Invoice invoice)
+    {
+        var client = invoice.Client;
+        var regime = client?.VatRegime ?? ClientVatRegime.Normal;
+
+        if (!regime.SuppressesVat())
+        {
+            return new WizardValidationCheckDto
+            {
+                Id = "client-vat-regime",
+                Category = "FISCAL",
+                Label = "Régime de TVA du client",
+                Description = regime == ClientVatRegime.Normal
+                    ? "Assujetti ordinaire — aucun contrôle particulier"
+                    : $"Régime : {regime.ToDisplayString()}",
+                Status = "VALID",
+                IsBlocking = false,
+                Field = "client.vatRegime"
+            };
+        }
+
+        var problems = new List<string>();
+
+        // 1) Aucune TVA n'est admissible pour un régime qui la supprime.
+        var lines = invoice.Lines ?? new List<InvoiceLine>();
+        if (lines.Any(l => (int)l.VatRate > 0))
+        {
+            problems.Add($"le client est en régime « {regime.ToDisplayString()} » : "
+                + "aucune ligne ne peut porter de TVA");
+        }
+
+        // 2) Une suspension exige une attestation valide à la date d'émission.
+        if (regime == ClientVatRegime.Suspension)
+        {
+            var cert = client?.VatExemptionCertificate;
+            if (cert is null)
+            {
+                problems.Add("une attestation de suspension (art. 11) est obligatoire");
+            }
+            else if (!cert.CoversDate(invoice.IssueDate))
+            {
+                problems.Add($"l'attestation {cert.Number} ne couvre pas la date d'émission "
+                    + $"({invoice.IssueDate:dd/MM/yyyy})");
+            }
+        }
+
+        var isValid = problems.Count == 0;
+
+        return new WizardValidationCheckDto
+        {
+            Id = "client-vat-regime",
+            Category = "FISCAL",
+            Label = "Régime de TVA du client",
+            Description = isValid
+                ? $"Conforme au régime « {regime.ToDisplayString()} »"
+                : $"Non conforme — {string.Join(" ; ", problems)}",
+            Status = isValid ? "VALID" : "ERROR",
+            IsBlocking = true,
+            Field = "client.vatRegime"
         };
     }
 
