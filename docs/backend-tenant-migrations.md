@@ -165,6 +165,7 @@ aucune ne modifie de document déjà émis.
 | `20260729140000_AddClientVatRegime_Tenant` | `Clients.VatRegime` (défaut 0 = Normal) + attestation de suspension (3 colonnes nullables) + index filtré. Les clients existants gardent leur comportement de facturation. | [AddClientVatRegime_Tenant.idempotent.sql](runbooks/sql/AddClientVatRegime_Tenant.idempotent.sql) |
 | `20260730100000_AddPricing_Tenant` | Tables `PriceLists` / `PriceListItems` / `ClientProductPrices` (tarification, tranche 5A) + colonne `Clients.PriceListId` nullable + index. Création de tables + colonne additive. | [AddPricing_Tenant.idempotent.sql](runbooks/sql/AddPricing_Tenant.idempotent.sql) |
 | `20260730160000_AddPriceListItemTiers_Tenant` | Table `PriceListItemTiers` — paliers quantitatifs (tranche 5B). Création de table uniquement ; les prix existants restent des prix de base sans palier. | [AddPriceListItemTiers_Tenant.idempotent.sql](runbooks/sql/AddPriceListItemTiers_Tenant.idempotent.sql) |
+| `20260730180000_AddGlobalDiscount_Tenant` | Remise de pied (tranche 5B) : `GlobalDiscountPercent` / `GlobalDiscountAmount` sur `Invoices`, `Quotes`, `SalesOrders`, et `AllocatedGlobalDiscount` sur les trois tables de lignes. Montants à 0 par défaut ⇒ calcul inchangé sur l'existant. | [AddGlobalDiscount_Tenant.idempotent.sql](runbooks/sql/AddGlobalDiscount_Tenant.idempotent.sql) |
 
 Le régime de TVA du client est un attribut du **client**, non du taux de ligne (`VatRate`
 inchangé). La validation de facture (`ValidateInvoiceCommand`) refuse désormais toute TVA pour un
@@ -179,6 +180,16 @@ la résolution au moment de créer une ligne : le prix reste **figé** sur les d
 document existant ne change de prix quand une grille bouge. Les grilles et prix négociés bornés
 dans le temps (validité, activation) ne sont consultés que s'ils sont applicables à la date du
 document. Sans affectation ni prix négocié, le comportement est identique à aujourd'hui (catalogue).
+
+**Remise de pied de document (tranche 5B) — décision de traitement fiscal.** La remise réduit la
+base de TVA **et** le FODEC, parce qu'elle réduit le montant HT réellement facturé : le client ne
+doit pas payer de TVA sur ce qu'il ne règle pas. Techniquement, elle est **répartie sur les lignes
+au prorata de leur base HT** (`GlobalDiscountAllocator`), et non soustraite du total : chaque ligne
+recalcule alors son FODEC et sa TVA sur sa base réduite, si bien que la ventilation par taux reste
+juste même avec des taux mêlés (7 / 13 / 19 %), et que la comptabilité, le PDF et l'export fiscal
+continuent de fonctionner sans modification. Le **timbre fiscal n'est pas touché** : c'est un droit
+fixe, appliqué après la remise. La somme des parts imputées vaut exactement la remise annoncée, le
+résidu d'arrondi étant donné à la ligne de plus forte base.
 
 ---
 

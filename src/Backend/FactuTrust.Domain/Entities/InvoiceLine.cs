@@ -33,6 +33,27 @@ public sealed class InvoiceLine : Entity
     public Money DiscountAmount { get; private set; } = null!;
     
     public Money SubTotal { get; private set; } = null!;
+
+    /// <summary>
+    /// Part de la remise de pied de document imputée à cette ligne, répartie au prorata de sa
+    /// base HT par <see cref="FactuTrust.Domain.Services.GlobalDiscountAllocator"/>.
+    ///
+    /// Distincte de <c>DiscountAmount</c>, qui est la remise négociée SUR la ligne : les deux
+    /// doivent rester lisibles séparément sur le document. Vaut zéro tant qu'aucune remise de
+    /// pied n'est posée — la ligne se calcule alors exactement comme avant la tranche 5B.
+    /// </summary>
+    public Money AllocatedGlobalDiscount { get; private set; } = Money.Zero();
+
+    /// <summary>Base HT de la ligne AVANT imputation de la remise de pied.</summary>
+    public Money SubTotalBeforeGlobalDiscount => SubTotal.Add(AllocatedGlobalDiscount);
+
+    /// <summary>Appelé par l'agrégat lors de la répartition ; recalcule la ligne dans la foulée.</summary>
+    internal void SetAllocatedGlobalDiscount(Money allocated)
+    {
+        AllocatedGlobalDiscount = allocated;
+        Calculate();
+    }
+
     public Money FodecAmount { get; private set; } = null!;
     public Money VatAmount { get; private set; } = null!;
     public Money Total { get; private set; } = null!;
@@ -181,6 +202,13 @@ public sealed class InvoiceLine : Entity
             DiscountAmount = Money.Zero(UnitPrice.Currency);
             SubTotal = grossAmount;
         }
+
+
+        // Remise de pied : imputée APRÈS la remise de ligne et AVANT le FODEC, si bien que le
+        // FODEC et la TVA portent sur la base réellement facturée. Zéro tant qu'aucune remise
+        // de pied n'est posée — le calcul est alors identique à celui d'avant la tranche 5B.
+        if (AllocatedGlobalDiscount is { Amount: > 0 })
+            SubTotal = SubTotal.Subtract(AllocatedGlobalDiscount);
 
         FodecAmount = IsFodecApplicable && _fodecRatePercent > 0
             ? SubTotal.ApplyPercentage(_fodecRatePercent)

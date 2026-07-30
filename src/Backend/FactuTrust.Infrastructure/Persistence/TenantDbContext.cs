@@ -1014,6 +1014,15 @@ public partial class TenantDbContext : DbContext
             entity.HasIndex(i => i.SourceQuoteId);
             entity.HasIndex(i => i.WarehouseId);
             entity.HasIndex(i => i.IssuerCompanyId);
+
+            // Remise de pied de document (tranche 5B). Le montant est persisté : il fait foi au
+            // rechargement, quand le pourcentage n'est pas renseigné.
+            entity.Property(x => x.GlobalDiscountPercent).HasPrecision(5, 2).IsRequired(false);
+            ConfigureOwnedMoney(entity, x => x.GlobalDiscountAmount, "GlobalDiscountAmount");
+
+            // Dérivé de SubTotal + GlobalDiscountAmount : calculé, jamais stocké.
+            entity.Ignore(x => x.SubTotalBeforeGlobalDiscount);
+
         });
     }
 
@@ -1131,6 +1140,12 @@ public partial class TenantDbContext : DbContext
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(l => l.InvoiceId);
+
+            // Part de la remise de pied imputée à la ligne (tranche 5B). Zéro sur tout
+            // l'existant : la ligne se calcule alors comme avant.
+            ConfigureOwnedMoney(entity, x => x.AllocatedGlobalDiscount, "AllocatedGlobalDiscount");
+            entity.Ignore(x => x.SubTotalBeforeGlobalDiscount);
+
         });
     }
 
@@ -1736,6 +1751,15 @@ public partial class TenantDbContext : DbContext
             entity.Property(q => q.OriginStorefrontOrderId);
             entity.HasIndex(q => q.OriginStorefrontOrderId)
                 .HasFilter("[OriginStorefrontOrderId] IS NOT NULL");
+
+            // Remise de pied de document (tranche 5B). Le montant est persisté : il fait foi au
+            // rechargement, quand le pourcentage n'est pas renseigné.
+            entity.Property(x => x.GlobalDiscountPercent).HasPrecision(5, 2).IsRequired(false);
+            ConfigureOwnedMoney(entity, x => x.GlobalDiscountAmount, "GlobalDiscountAmount");
+
+            // Dérivé de SubTotal + GlobalDiscountAmount : calculé, jamais stocké.
+            entity.Ignore(x => x.SubTotalBeforeGlobalDiscount);
+
         });
     }
 
@@ -1801,6 +1825,15 @@ public partial class TenantDbContext : DbContext
 
             entity.HasIndex(o => o.SourceQuoteId)
                 .HasFilter("[SourceQuoteId] IS NOT NULL");
+
+            // Remise de pied de document (tranche 5B). Le montant est persisté : il fait foi au
+            // rechargement, quand le pourcentage n'est pas renseigné.
+            entity.Property(x => x.GlobalDiscountPercent).HasPrecision(5, 2).IsRequired(false);
+            ConfigureOwnedMoney(entity, x => x.GlobalDiscountAmount, "GlobalDiscountAmount");
+
+            // Dérivé de SubTotal + GlobalDiscountAmount : calculé, jamais stocké.
+            entity.Ignore(x => x.SubTotalBeforeGlobalDiscount);
+
         });
     }
 
@@ -1843,6 +1876,12 @@ public partial class TenantDbContext : DbContext
 
             entity.HasIndex(l => l.SalesOrderId);
             entity.HasIndex(l => l.ProductId);
+
+            // Part de la remise de pied imputée à la ligne (tranche 5B). Zéro sur tout
+            // l'existant : la ligne se calcule alors comme avant.
+            ConfigureOwnedMoney(entity, x => x.AllocatedGlobalDiscount, "AllocatedGlobalDiscount");
+            entity.Ignore(x => x.SubTotalBeforeGlobalDiscount);
+
         });
     }
 
@@ -1989,6 +2028,12 @@ public partial class TenantDbContext : DbContext
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(l => l.QuoteId);
+
+            // Part de la remise de pied imputée à la ligne (tranche 5B). Zéro sur tout
+            // l'existant : la ligne se calcule alors comme avant.
+            ConfigureOwnedMoney(entity, x => x.AllocatedGlobalDiscount, "AllocatedGlobalDiscount");
+            entity.Ignore(x => x.SubTotalBeforeGlobalDiscount);
+
         });
     }
 

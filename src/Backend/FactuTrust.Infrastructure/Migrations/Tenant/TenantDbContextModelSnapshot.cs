@@ -3060,6 +3060,10 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.Property<Guid?>("WarehouseId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<decimal?>("GlobalDiscountPercent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ClientId");
@@ -5543,6 +5547,10 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.Property<int>("Version")
                         .HasColumnType("int");
 
+                    b.Property<decimal?>("GlobalDiscountPercent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ClientId");
@@ -5880,6 +5888,10 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
 
                     b.Property<Guid?>("WarehouseId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("GlobalDiscountPercent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
 
                     b.HasKey("Id");
 
@@ -9070,6 +9082,33 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                                 .HasForeignKey("InvoiceLineId");
                         });
 
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "AllocatedGlobalDiscount", b1 =>
+                        {
+                            b1.Property<Guid>("InvoiceLineId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("AllocatedGlobalDiscount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("AllocatedGlobalDiscountCurrency");
+
+                            b1.HasKey("InvoiceLineId");
+
+                            b1.ToTable("InvoiceLines");
+
+                            b1.WithOwner()
+                                .HasForeignKey("InvoiceLineId");
+                        });
+
+                    b.Navigation("AllocatedGlobalDiscount")
+                        .IsRequired();
+
                     b.Navigation("DiscountAmount")
                         .IsRequired();
 
@@ -10299,6 +10338,33 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                                 .HasForeignKey("QuoteLineId");
                         });
 
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "AllocatedGlobalDiscount", b1 =>
+                        {
+                            b1.Property<Guid>("QuoteLineId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("AllocatedGlobalDiscount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("AllocatedGlobalDiscountCurrency");
+
+                            b1.HasKey("QuoteLineId");
+
+                            b1.ToTable("QuoteLines");
+
+                            b1.WithOwner()
+                                .HasForeignKey("QuoteLineId");
+                        });
+
+                    b.Navigation("AllocatedGlobalDiscount")
+                        .IsRequired();
+
                     b.Navigation("DiscountAmount")
                         .IsRequired();
 
@@ -10708,6 +10774,33 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                             b1.WithOwner()
                                 .HasForeignKey("SalesOrderLineId");
                         });
+
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "AllocatedGlobalDiscount", b1 =>
+                        {
+                            b1.Property<Guid>("SalesOrderLineId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("AllocatedGlobalDiscount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("AllocatedGlobalDiscountCurrency");
+
+                            b1.HasKey("SalesOrderLineId");
+
+                            b1.ToTable("SalesOrderLines");
+
+                            b1.WithOwner()
+                                .HasForeignKey("SalesOrderLineId");
+                        });
+
+                    b.Navigation("AllocatedGlobalDiscount")
+                        .IsRequired();
 
                     b.Navigation("DiscountAmount")
                         .IsRequired();
@@ -11507,6 +11600,33 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
 
             modelBuilder.Entity("FactuTrust.Domain.Entities.Invoice", b =>
                 {
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "GlobalDiscountAmount", b1 =>
+                        {
+                            b1.Property<Guid>("InvoiceId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("GlobalDiscountAmount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("GlobalDiscountAmountCurrency");
+
+                            b1.HasKey("InvoiceId");
+
+                            b1.ToTable("Invoices");
+
+                            b1.WithOwner()
+                                .HasForeignKey("InvoiceId");
+                        });
+
+                    b.Navigation("GlobalDiscountAmount")
+                        .IsRequired();
+
                     b.Navigation("Lines");
                 });
 
@@ -11567,11 +11687,65 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
 
             modelBuilder.Entity("FactuTrust.Domain.Entities.Quote", b =>
                 {
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "GlobalDiscountAmount", b1 =>
+                        {
+                            b1.Property<Guid>("QuoteId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("GlobalDiscountAmount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("GlobalDiscountAmountCurrency");
+
+                            b1.HasKey("QuoteId");
+
+                            b1.ToTable("Quotes");
+
+                            b1.WithOwner()
+                                .HasForeignKey("QuoteId");
+                        });
+
+                    b.Navigation("GlobalDiscountAmount")
+                        .IsRequired();
+
                     b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("FactuTrust.Domain.Entities.SalesOrder", b =>
                 {
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "GlobalDiscountAmount", b1 =>
+                        {
+                            b1.Property<Guid>("SalesOrderId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("GlobalDiscountAmount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("GlobalDiscountAmountCurrency");
+
+                            b1.HasKey("SalesOrderId");
+
+                            b1.ToTable("SalesOrders");
+
+                            b1.WithOwner()
+                                .HasForeignKey("SalesOrderId");
+                        });
+
+                    b.Navigation("GlobalDiscountAmount")
+                        .IsRequired();
+
                     b.Navigation("Lines");
                 });
 

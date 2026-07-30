@@ -1,4 +1,5 @@
 using FactuTrust.Domain.Common;
+using FactuTrust.Domain.Services;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Events;
 using FactuTrust.Domain.ValueObjects;
@@ -642,8 +643,86 @@ public sealed class Invoice : AggregateRoot
     // retirée. InvoiceStatus.Overdue reste dans l'énumération : il est lu par
     // CanBePaymentRecorded() et par les libellés d'affichage, côté serveur comme côté client.
 
+
+    /// <summary>
+    /// Remise de pied de document, en pourcentage de la base HT. Exclusive du montant fixe.
+    /// </summary>
+    public decimal? GlobalDiscountPercent { get; private set; }
+
+    /// <summary>
+    /// Remise de pied effectivement appliquée, en montant. Renseignée dans les deux cas : saisie
+    /// directe, ou dérivée du pourcentage. C'est ce montant qui figure au pied du document.
+    /// </summary>
+    public Money GlobalDiscountAmount { get; private set; } = Money.Zero();
+
+    /// <summary>Total HT AVANT remise de pied — le « sous-total » affiché au-dessus de la remise.</summary>
+    public Money SubTotalBeforeGlobalDiscount => SubTotal.Add(GlobalDiscountAmount);
+
+    /// <summary>
+    /// Pose (ou retire) la remise de pied. Elle est répartie sur les lignes au prorata de leur
+    /// base HT, de sorte que le FODEC et la TVA portent sur ce qui est réellement facturé.
+    ///
+    /// Un seul mode à la fois : passer un pourcentage écrase un montant, et inversement. Les
+    /// deux à la fois est refusé plutôt que départagé en silence.
+    /// </summary>
+    public Result SetGlobalDiscount(decimal? percent, Money? amount)
+    {
+        if (percent.HasValue && amount is { Amount: > 0 })
+        {
+            return Result.Failure(Error.Validation("GlobalDiscount",
+                "Choisissez un pourcentage OU un montant de remise, pas les deux"));
+        }
+
+        if (percent is < 0 or > 100)
+            return Result.Failure(Error.Validation("GlobalDiscountPercent", "La remise doit être comprise entre 0 % et 100 %"));
+
+        if (amount is { Amount: < 0 })
+            return Result.Failure(Error.Validation("GlobalDiscountAmount", "La remise ne peut pas être négative"));
+
+        GlobalDiscountPercent = percent is > 0 ? percent : null;
+
+        // Le montant demandé est stocké dans GlobalDiscountAmount, qui EST persisté : au
+        // rechargement du document, la remise se rejoue donc à l'identique. Un champ privé non
+        // persisté aurait été effacé au premier recalcul après relecture.
+        GlobalDiscountAmount = amount is { Amount: > 0 } ? amount : Money.Zero();
+
+        RecalculateTotals();
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Répartit la remise de pied sur les lignes. Rejouée à chaque recalcul : ajouter une ligne
+    /// change la base, donc les parts. Sans remise, chaque ligne reçoit zéro et se calcule
+    /// exactement comme avant la tranche 5B.
+    /// </summary>
+    private void ApplyGlobalDiscountToLines()
+    {
+        if (_lines.Count == 0)
+        {
+            GlobalDiscountAmount = Money.Zero();
+            return;
+        }
+
+        var currency = _lines[0].SubTotal.Currency;
+        var bases = _lines.Select(l => l.SubTotalBeforeGlobalDiscount.Amount).ToList();
+        var totalBase = bases.Sum();
+
+        var requested = GlobalDiscountPercent.HasValue
+            ? GlobalDiscountAllocator.FromPercent(totalBase, GlobalDiscountPercent.Value)
+            : GlobalDiscountAmount.Amount;
+
+        var parts = GlobalDiscountAllocator.Allocate(bases, requested);
+
+        for (var i = 0; i < _lines.Count; i++)
+            _lines[i].SetAllocatedGlobalDiscount(Money.Create(parts[i], currency));
+
+        GlobalDiscountAmount = Money.Create(parts.Sum(), currency);
+    }
+
     private void RecalculateTotals()
     {
+        ApplyGlobalDiscountToLines();
+
         var currency = Money.DefaultCurrency;
         if (_lines.Count > 0)
             currency = _lines[0].SubTotal.Currency;
