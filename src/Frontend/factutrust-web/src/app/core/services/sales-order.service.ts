@@ -119,6 +119,12 @@ export interface SalesOrderDetail {
   sourceQuoteNumber: string | null;
   lines: SalesOrderLine[];
   subTotal: number;
+  /** Total HT AVANT remise de pied, affiché au-dessus de la remise. */
+  subTotalBeforeGlobalDiscount: number;
+  /** Remise de pied en pourcentage, si elle a été saisie ainsi. */
+  globalDiscountPercent: number | null;
+  /** Montant de la remise de pied effectivement appliquée. */
+  globalDiscountAmount: number;
   fodecAmount: number;
   totalVat: number;
   fiscalStampAmount: number;
@@ -256,6 +262,22 @@ export class SalesOrderService {
 
   cancelSalesOrder(id: string, reason: string): Observable<ApiResponse<object>> {
     return this.http.post<ApiResponse<object>>(`${this.API_URL}/${id}/cancel`, { reason });
+  }
+
+  /**
+   * Pose ou retire la remise de pied. Pourcentage et montant sont exclusifs ; les deux à
+   * `null` retirent la remise. Le serveur la répartit sur les lignes, de sorte que le FODEC
+   * et la base de TVA portent sur ce qui est réellement facturé.
+   */
+  setGlobalDiscount(
+    id: string,
+    percent: number | null,
+    amount: number | null
+  ): Observable<ApiResponse<object>> {
+    return this.http.put<ApiResponse<object>>(`${this.API_URL}/${id}/global-discount`, {
+      percent,
+      amount
+    });
   }
 
   /** Solde la commande en renonçant au reliquat — distinct d'une annulation. */

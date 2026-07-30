@@ -37,14 +37,23 @@ export interface PriceListListItem {
   isApplicableToday: boolean;
 }
 
+/** Palier quantitatif : a partir de minQuantity, le prix devient unitPriceHT. */
+export interface PriceListTier {
+  minQuantity: number;
+  unitPriceHT: number;
+}
+
 export interface PriceListItem {
   productId: string;
   productCode: string;
   productName: string;
+  /** Prix de base, applique en deca du premier palier. */
   unitPriceHT: number;
   currency: string;
   /** Prix catalogue, pour montrer l'ecart introduit par la grille. */
   catalogUnitPriceHT: number;
+  /** Paliers degressifs, du seuil le plus bas au plus haut. */
+  tiers: PriceListTier[];
 }
 
 export interface PriceListDetail {
@@ -187,6 +196,28 @@ export class PricingService {
     return this.http.put<ApiResponse<object>>(
       `${this.baseUrl}/price-lists/${id}/items/${productId}`,
       { unitPriceHT }
+    );
+  }
+
+  setPriceListTier(
+    id: string,
+    productId: string,
+    minQuantity: number,
+    unitPriceHT: number
+  ): Observable<ApiResponse<object>> {
+    return this.http.put<ApiResponse<object>>(
+      `${this.baseUrl}/price-lists/${id}/items/${productId}/tiers/${minQuantity}`,
+      { unitPriceHT }
+    );
+  }
+
+  removePriceListTier(
+    id: string,
+    productId: string,
+    minQuantity: number
+  ): Observable<ApiResponse<object>> {
+    return this.http.delete<ApiResponse<object>>(
+      `${this.baseUrl}/price-lists/${id}/items/${productId}/tiers/${minQuantity}`
     );
   }
 

@@ -77,6 +77,16 @@ public sealed record SalesOrderDetailDto
     public IReadOnlyList<SalesOrderLineDto> Lines { get; init; } = Array.Empty<SalesOrderLineDto>();
 
     public decimal SubTotal { get; init; }
+
+    /// <summary>Total HT AVANT remise de pied, affiché au-dessus de la remise.</summary>
+    public decimal SubTotalBeforeGlobalDiscount { get; init; }
+
+    /// <summary>Remise de pied en pourcentage, si elle a été saisie ainsi.</summary>
+    public decimal? GlobalDiscountPercent { get; init; }
+
+    /// <summary>Montant de la remise de pied effectivement appliquée.</summary>
+    public decimal GlobalDiscountAmount { get; init; }
+
     public decimal FodecAmount { get; init; }
     public decimal TotalVat { get; init; }
     public decimal FiscalStampAmount { get; init; }

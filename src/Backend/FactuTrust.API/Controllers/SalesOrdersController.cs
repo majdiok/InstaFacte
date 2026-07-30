@@ -1,5 +1,6 @@
 using FactuTrust.API.Authorization;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.Pricing.Commands;
 using FactuTrust.Application.Features.SalesOrders.Commands;
 using FactuTrust.Application.Features.SalesOrders.Queries;
 using FactuTrust.Domain.Enums;
@@ -132,6 +133,31 @@ public sealed class SalesOrdersController : ControllerBase
     }
 
     /// <summary>
+    /// Pose ou retire la remise de pied de document. Pourcentage et montant sont exclusifs ;
+    /// les deux absents retirent la remise.
+    ///
+    /// La remise est répartie sur les lignes au prorata de leur base HT : le FODEC et la base
+    /// de TVA portent donc sur ce qui est réellement facturé.
+    /// </summary>
+    [HttpPut("{id:guid}/global-discount")]
+    [Authorize(Policy = PermissionPolicies.SalesOrdersUpdate)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> SetGlobalDiscount(
+        Guid id,
+        [FromBody] SetGlobalDiscountRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new SetSalesOrderGlobalDiscountCommand(id, request.Percent, request.Amount),
+            cancellationToken);
+
+        return result.IsFailure
+            ? MapFailure(result.Error)
+            : Ok(ApiResponse<object>.Ok(null!, "Remise de pied enregistrée"));
+    }
+
+    /// <summary>
     /// Confirme la commande : engagement ferme, entrée au carnet de commandes.
     /// </summary>
     [HttpPost("{id:guid}/confirm")]
@@ -184,4 +210,11 @@ public sealed class SalesOrdersController : ControllerBase
         error.Code == "NotFound"
             ? NotFound(ApiResponse<object>.Fail(error.Description))
             : BadRequest(ApiResponse<object>.Fail(error.Description));
+}
+
+/// <summary>Corps de requête de la remise de pied : pourcentage OU montant, jamais les deux.</summary>
+public sealed class SetGlobalDiscountRequest
+{
+    public decimal? Percent { get; init; }
+    public decimal? Amount { get; init; }
 }

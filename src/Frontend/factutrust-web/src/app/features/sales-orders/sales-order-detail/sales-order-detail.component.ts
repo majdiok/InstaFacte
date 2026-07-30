@@ -6,6 +6,7 @@ import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputTextarea } from 'primeng/inputtextarea';
+import { InputNumberModule } from 'primeng/inputnumber';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { DialogModule } from 'primeng/dialog';
@@ -37,6 +38,7 @@ import { PERMISSIONS } from '@core/config/permission-keys';
     ButtonModule,
     InputTextModule,
     InputTextarea,
+    InputNumberModule,
     TagModule,
     TooltipModule,
     DialogModule,
@@ -54,6 +56,16 @@ import { PERMISSIONS } from '@core/config/permission-keys';
         @if (canConfirm()) {
           <app-button variant="primary" icon="pi-check" iconPos="left" (clicked)="confirmOrder()">
             Confirmer
+          </app-button>
+        }
+        @if (canEditDiscount()) {
+          <app-button
+            variant="secondary"
+            icon="pi-percentage"
+            iconPos="left"
+            (clicked)="openDiscount()"
+            pTooltip="La remise réduit la base de TVA et le FODEC, répartie sur les lignes.">
+            Remise de pied
           </app-button>
         }
         @if (canClose()) {
@@ -208,7 +220,27 @@ import { PERMISSIONS } from '@core/config/permission-keys';
 
       <!-- Totaux -->
       <div class="ft-totals">
-        <div class="ft-totals__row"><span>Sous-total HT</span><span>{{ o.subTotal | number: '1.3-3' }}</span></div>
+        @if (o.globalDiscountAmount > 0) {
+          <div class="ft-totals__row">
+            <span>Sous-total HT</span>
+            <span>{{ o.subTotalBeforeGlobalDiscount | number: '1.3-3' }}</span>
+          </div>
+          <div class="ft-totals__row ft-totals__row--discount">
+            <span>
+              Remise de pied
+              @if (o.globalDiscountPercent) {
+                ({{ o.globalDiscountPercent }} %)
+              }
+            </span>
+            <span>- {{ o.globalDiscountAmount | number: '1.3-3' }}</span>
+          </div>
+          <div class="ft-totals__row">
+            <span>HT après remise</span>
+            <span>{{ o.subTotal | number: '1.3-3' }}</span>
+          </div>
+        } @else {
+          <div class="ft-totals__row"><span>Sous-total HT</span><span>{{ o.subTotal | number: '1.3-3' }}</span></div>
+        }
         @if (o.fodecAmount > 0) {
           <div class="ft-totals__row"><span>FODEC</span><span>{{ o.fodecAmount | number: '1.3-3' }}</span></div>
         }
@@ -263,6 +295,56 @@ import { PERMISSIONS } from '@core/config/permission-keys';
       </ng-template>
     </p-dialog>
 
+    <!-- Remise de pied -->
+    <p-dialog
+      header="Remise de pied de document"
+      [(visible)]="discountVisible"
+      [modal]="true"
+      [style]="{ width: '34rem' }"
+      [draggable]="false">
+      <p class="ft-dialog-intro">
+        La remise est répartie sur les lignes au prorata de leur base HT : elle réduit donc la
+        base de TVA et le FODEC. Le timbre fiscal, droit fixe, n'est pas touché.
+        Laissez les deux champs vides pour retirer la remise.
+      </p>
+
+      <div class="ft-form-grid">
+        <div class="ft-field">
+          <label for="so-disc-pct">Pourcentage</label>
+          <p-inputNumber
+            inputId="so-disc-pct"
+            [(ngModel)]="discountPercent"
+            (onInput)="onPercentInput()"
+            mode="decimal"
+            [minFractionDigits]="0"
+            [maxFractionDigits]="2"
+            [min]="0"
+            [max]="100"
+            suffix=" %"></p-inputNumber>
+        </div>
+
+        <div class="ft-field">
+          <label for="so-disc-amt">ou Montant HT</label>
+          <p-inputNumber
+            inputId="so-disc-amt"
+            [(ngModel)]="discountAmount"
+            (onInput)="onAmountInput()"
+            mode="decimal"
+            [minFractionDigits]="3"
+            [maxFractionDigits]="3"
+            [min]="0"></p-inputNumber>
+          <small class="ft-hint">Un seul des deux : saisir l'un efface l'autre.</small>
+        </div>
+      </div>
+
+      <ng-template pTemplate="footer">
+        <app-button variant="secondary" (clicked)="discountVisible = false">Annuler</app-button>
+        <app-button variant="primary" [disabled]="acting()" (clicked)="saveDiscount()">
+          Enregistrer
+        </app-button>
+      </ng-template>
+    </p-dialog>
+
     <!-- Solde -->
     <p-dialog
       header="Solder la commande"
@@ -307,6 +389,9 @@ export class SalesOrderDetailComponent implements OnInit {
 
   cancelVisible = false;
   cancelReason = '';
+  discountVisible = false;
+  discountPercent: number | null = null;
+  discountAmount: number | null = null;
   closeVisible = false;
   closeReason = '';
 
@@ -337,6 +422,11 @@ export class SalesOrderDetailComponent implements OnInit {
     return open && o.totalPendingDeliveryQuantity > 0
       && this.auth.hasPermission(PERMISSIONS.salesOrders.update);
   });
+
+  /** La remise ne se pose que tant que la commande est modifiable. */
+  readonly canEditDiscount = computed(
+    () => this.order()?.status === 'Draft' && this.auth.hasPermission(PERMISSIONS.salesOrders.update)
+  );
 
   readonly canCancel = computed(() => {
     const o = this.order();
@@ -429,6 +519,46 @@ export class SalesOrderDetailComponent implements OnInit {
         this.acting.set(false);
       }
     });
+  }
+
+  openDiscount(): void {
+    const o = this.order();
+    this.discountPercent = o?.globalDiscountPercent ?? null;
+    this.discountAmount = o?.globalDiscountPercent ? null : (o?.globalDiscountAmount || null);
+    this.discountVisible = true;
+  }
+
+  // Pourcentage et montant sont exclusifs côté serveur : on efface l'autre plutôt que de
+  // laisser l'utilisateur soumettre une saisie qui sera refusée.
+  onPercentInput(): void {
+    if (this.discountPercent) this.discountAmount = null;
+  }
+
+  onAmountInput(): void {
+    if (this.discountAmount) this.discountPercent = null;
+  }
+
+  saveDiscount(): void {
+    this.acting.set(true);
+    this.salesOrderService
+      .setGlobalDiscount(this.orderId, this.discountPercent, this.discountAmount)
+      .subscribe({
+        next: () => {
+          this.toastService.add({
+            severity: 'success',
+            summary: 'Succès',
+            detail: 'Remise de pied enregistrée.'
+          });
+          this.discountVisible = false;
+          this.acting.set(false);
+          this.load();
+        },
+        error: err => {
+          this.showError(err, 'Enregistrement de la remise impossible');
+          this.errorHandler.logError('Set global discount failed', err);
+          this.acting.set(false);
+        }
+      });
   }
 
   openCancel(): void {

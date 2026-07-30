@@ -15,7 +15,7 @@ import { PageHeaderComponent } from '@shared/components/page-header/page-header.
 import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
 import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
-import { PricingService, PriceListDetail, PriceListItem } from '@core/services/pricing.service';
+import { PricingService, PriceListDetail, PriceListItem, PriceListTier } from '@core/services/pricing.service';
 import { ProductService } from '@core/services/product.service';
 import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
@@ -103,6 +103,7 @@ interface ProductOption {
                 <th class="ft-num">Prix catalogue HT</th>
                 <th class="ft-num">Prix de la grille HT</th>
                 <th class="ft-num">Écart</th>
+                <th>Paliers</th>
                 <th class="ft-actions-col">Actions</th>
               </tr>
             </ng-template>
@@ -117,6 +118,29 @@ interface ProductOption {
                 </td>
                 <td class="ft-num">
                   <span [class]="deltaClass(item)">{{ deltaLabel(item) }}</span>
+                </td>
+                <td>
+                  @if (item.tiers.length === 0) {
+                    <span class="ft-muted">Prix unique</span>
+                  } @else {
+                    @for (tier of item.tiers; track tier.minQuantity) {
+                      <p-tag
+                        severity="info"
+                        [value]="tierLabel(tier)"
+                        [pTooltip]="canUpdate() ? 'Cliquer pour retirer ce palier' : ''"
+                        [style.cursor]="canUpdate() ? 'pointer' : 'default'"
+                        (click)="onTierClick(item, tier)"></p-tag>
+                    }
+                  }
+                  @if (canUpdate()) {
+                    <button
+                      pButton
+                      type="button"
+                      icon="pi pi-plus"
+                      class="p-button-text p-button-sm"
+                      pTooltip="Ajouter un palier"
+                      (click)="openAddTier(item)"></button>
+                  }
                 </td>
                 <td class="ft-actions-col">
                   @if (canUpdate()) {
@@ -243,6 +267,54 @@ interface ProductOption {
         </app-button>
       </ng-template>
     </p-dialog>
+
+    <!-- Palier quantitatif -->
+    <p-dialog
+      header="Ajouter un palier"
+      [(visible)]="tierVisible"
+      [modal]="true"
+      [style]="{ width: '32rem' }"
+      [draggable]="false">
+      @if (tierTarget) {
+        <p class="ft-dialog-intro">
+          <strong>{{ tierTarget.productCode }}</strong> — prix de base
+          {{ tierTarget.unitPriceHT | number: '1.3-3' }}. Le palier remplace ce prix à partir
+          de la quantité indiquée.
+        </p>
+      }
+
+      <div class="ft-form-grid">
+        <div class="ft-field">
+          <label for="pl-tier-qty">À partir de la quantité <span class="ft-required">*</span></label>
+          <p-inputNumber
+            inputId="pl-tier-qty"
+            [(ngModel)]="tierMinQuantity"
+            mode="decimal"
+            [minFractionDigits]="0"
+            [maxFractionDigits]="4"
+            [min]="2"></p-inputNumber>
+          <small class="ft-hint">Au moins 2 : en deçà, c'est le prix de base qui s'applique.</small>
+        </div>
+
+        <div class="ft-field">
+          <label for="pl-tier-price">Prix HT du palier <span class="ft-required">*</span></label>
+          <p-inputNumber
+            inputId="pl-tier-price"
+            [(ngModel)]="tierPrice"
+            mode="decimal"
+            [minFractionDigits]="3"
+            [maxFractionDigits]="3"
+            [min]="0"></p-inputNumber>
+        </div>
+      </div>
+
+      <ng-template pTemplate="footer">
+        <app-button variant="secondary" (clicked)="tierVisible = false">Annuler</app-button>
+        <app-button variant="primary" [disabled]="!canSaveTier() || saving()" (clicked)="saveTier()">
+          Enregistrer
+        </app-button>
+      </ng-template>
+    </p-dialog>
   `
 })
 export class PriceListDetailComponent implements OnInit {
@@ -264,6 +336,11 @@ export class PriceListDetailComponent implements OnInit {
 
   itemVisible = false;
   editingItem: PriceListItem | null = null;
+
+  tierVisible = false;
+  tierTarget: PriceListItem | null = null;
+  tierMinQuantity: number | null = 10;
+  tierPrice: number | null = null;
   selectedProduct: ProductOption | null = null;
   itemPrice: number | null = null;
 
@@ -454,6 +531,97 @@ export class PriceListDetailComponent implements OnInit {
         this.errorHandler.logError('Remove price list item failed', err);
       }
     });
+  }
+
+  // ────────── Paliers quantitatifs ──────────
+
+  tierLabel(tier: PriceListTier): string {
+    return `\u2265 ${tier.minQuantity} : ${tier.unitPriceHT.toFixed(3)}`;
+  }
+
+  onTierClick(item: PriceListItem, tier: PriceListTier): void {
+    if (!this.canUpdate()) return;
+    this.confirmRemoveTier(item, tier);
+  }
+
+  openAddTier(item: PriceListItem): void {
+    this.tierTarget = item;
+    this.tierMinQuantity = 10;
+    this.tierPrice = item.unitPriceHT;
+    this.tierVisible = true;
+  }
+
+  canSaveTier(): boolean {
+    return (
+      this.tierTarget !== null &&
+      this.tierMinQuantity !== null &&
+      this.tierMinQuantity >= 2 &&
+      this.tierPrice !== null &&
+      this.tierPrice >= 0
+    );
+  }
+
+  saveTier(): void {
+    if (!this.canSaveTier() || !this.tierTarget) return;
+
+    this.saving.set(true);
+    this.pricingService
+      .setPriceListTier(
+        this.priceListId,
+        this.tierTarget.productId,
+        this.tierMinQuantity as number,
+        this.tierPrice as number
+      )
+      .subscribe({
+        next: () => {
+          this.toastService.add({
+            severity: 'success',
+            summary: 'Succès',
+            detail: 'Palier enregistré.'
+          });
+          this.tierVisible = false;
+          this.saving.set(false);
+          this.load();
+        },
+        error: err => {
+          this.showError(err, 'Enregistrement du palier impossible');
+          this.errorHandler.logError('Set price list tier failed', err);
+          this.saving.set(false);
+        }
+      });
+  }
+
+  confirmRemoveTier(item: PriceListItem, tier: PriceListTier): void {
+    this.confirmationService.confirm({
+      header: 'Retirer le palier',
+      message:
+        `Retirer le palier « à partir de ${tier.minQuantity} » sur ${item.productCode} ? ` +
+        'Ces quantités retomberont sur le palier inférieur, ou sur le prix de base.',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Retirer',
+      rejectLabel: 'Annuler',
+      acceptButtonStyleClass: 'btn-danger',
+      accept: () => this.removeTier(item, tier)
+    });
+  }
+
+  private removeTier(item: PriceListItem, tier: PriceListTier): void {
+    this.pricingService
+      .removePriceListTier(this.priceListId, item.productId, tier.minQuantity)
+      .subscribe({
+        next: () => {
+          this.toastService.add({
+            severity: 'success',
+            summary: 'Succès',
+            detail: 'Palier retiré.'
+          });
+          this.load();
+        },
+        error: err => {
+          this.showError(err, 'Retrait du palier impossible');
+          this.errorHandler.logError('Remove price list tier failed', err);
+        }
+      });
   }
 
   private showError(err: unknown, fallback: string): void {
