@@ -135,6 +135,13 @@ export const ALL_NAV_ITEMS: NavItem[] = [
         permissionsAll: ['quotes:read']
       },
       {
+        label: 'Commandes clients',
+        route: '/sales-orders',
+        icon: 'fa-solid fa-cart-shopping',
+        modules: [M.Sales],
+        permissionsAll: ['sales_orders:read']
+      },
+      {
         label: 'Bon de Livraison',
         route: '/delivery-notes',
         icon: 'fa-solid fa-truck',

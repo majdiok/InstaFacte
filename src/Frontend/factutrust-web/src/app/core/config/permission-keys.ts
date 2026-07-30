@@ -61,6 +61,12 @@ export const PERMISSIONS = {
     update: 'pricing:update',
     delete: 'pricing:delete'
   },
+  salesOrders: {
+    create: 'sales_orders:create',
+    read: 'sales_orders:read',
+    update: 'sales_orders:update',
+    delete: 'sales_orders:delete'
+  },
   suppliers: {
     create: 'suppliers:create',
     read: 'suppliers:read',
