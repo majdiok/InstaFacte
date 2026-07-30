@@ -323,6 +323,7 @@
                   <label for="taxRegime" class="sr-only">Régime fiscal</label>
                   <p-dropdown id="taxRegime" [options]="taxRegimes" formControlName="taxRegime" 
                               optionLabel="label" optionValue="value" placeholder="Régime fiscal *" 
+                              appendTo="body"
                               styleClass="w-full custom-dropdown" [class.ng-invalid]="isInvalid('taxRegime')"
                               [attr.aria-required]="true">
                   </p-dropdown>
@@ -445,7 +446,8 @@
                 <label for="governorate" class="sr-only">Gouvernorat</label>
                 <p-dropdown id="governorate" [options]="governorates" formControlName="governorate" 
                             optionLabel="label" optionValue="value" placeholder="Gouvernorat *" 
-                            [filter]="true" filterBy="label" styleClass="w-full custom-dropdown"
+                            [filter]="true" filterBy="label" appendTo="body"
+                            styleClass="w-full custom-dropdown"
                             [class.ng-invalid]="isInvalid('governorate')"
                             [attr.aria-required]="true">
                 </p-dropdown>
