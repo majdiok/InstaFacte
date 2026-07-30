@@ -197,6 +197,7 @@ public sealed record PayrollRunDetailDto
     public decimal TotalTfp { get; init; }
     public decimal TotalFoprolos { get; init; }
     public decimal TotalWorkAccident { get; init; }
+    public decimal TotalOtherDeductions { get; init; }
     public DateTime? CalculatedAt { get; init; }
     public DateTime? ValidatedAt { get; init; }
     public string? ValidatedBy { get; init; }
@@ -471,10 +472,17 @@ public sealed record DtsDeclarationDto
 {
     public int Year { get; init; }
     public int Quarter { get; init; }
+    public decimal TotalGross { get; init; }
     public decimal TotalCnssableGross { get; init; }
     public decimal TotalCnssEmployee { get; init; }
     public decimal TotalCnssEmployer { get; init; }
     public decimal TotalContributions { get; init; }
     public int EmployeeCount { get; init; }
+    /// <summary>Mois du trimestre pour lesquels un cycle Validé/Clôturé existe.</summary>
+    public IReadOnlyList<int> IncludedMonths { get; init; } = Array.Empty<int>();
+    /// <summary>Mois du trimestre sans cycle Validé/Clôturé.</summary>
+    public IReadOnlyList<int> MissingMonths { get; init; } = Array.Empty<int>();
+    /// <summary>True si les trois mois du trimestre ont un cycle Validé/Clôturé.</summary>
+    public bool IsComplete { get; init; }
     public IReadOnlyList<DtsLineDto> Lines { get; init; } = Array.Empty<DtsLineDto>();
 }

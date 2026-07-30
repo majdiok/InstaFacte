@@ -266,7 +266,7 @@ export class ReportsHubComponent {
       icon: 'pi-users',
       modules: [AppModule.Reports, AppModule.Clients],
       links: [
-        { label: 'Soldes client', route: '/reports/fiches', queryParams: { tab: 'soldes-client' } },
+        { label: 'Soldes client', route: '/reports/client-balances' },
         { label: 'Chiffre d\'affaires par client', route: '/reports/fiches' }
       ]
     },
@@ -275,7 +275,7 @@ export class ReportsHubComponent {
       icon: 'pi-truck',
       modules: [AppModule.Reports, AppModule.Purchases],
       links: [
-        { label: 'Soldes fournisseur', route: '/reports/purchases', queryParams: { tab: 'soldes-fournisseur' } },
+        { label: 'Soldes fournisseur', route: '/reports/supplier-balances' },
         { label: 'Chiffre d\'affaires par fournisseur', route: '/reports/purchases' }
       ]
     },

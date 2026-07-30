@@ -24,23 +24,25 @@ import { VatChartSegment, canSubmitDeclaration, formatDateFr, shouldShowFilingAl
       <div class="card vat-actions-card">
         <h3 class="vat-zone-title">Actions</h3>
         <div class="vat-actions-stack">
-          @if (canSubmit) {
-            <button type="button" class="btn btn-primary vat-action-btn" (click)="saveDraft.emit()" [disabled]="loading">
-              Enregistrer brouillon
-            </button>
-            <button type="button" class="btn btn-success vat-action-btn" (click)="submit.emit()" [disabled]="loading">
-              Soumettre
-            </button>
-          } @else {
-            <p class="vat-submitted-hint">
-              Déclaration déjà soumise pour cette période. Utilisez « Rectificative » pour la corriger.
-            </p>
-          }
-          @if (v2Enabled) {
-            <button type="button" class="btn btn-secondary vat-action-btn" (click)="rectificative.emit()" [disabled]="loading"
-              title="Corriger une déclaration déjà déposée (rectificative)">
-              Rectificative
-            </button>
+          @if (canManage) {
+            @if (canSubmit) {
+              <button type="button" class="btn btn-primary vat-action-btn" (click)="saveDraft.emit()" [disabled]="loading">
+                Enregistrer brouillon
+              </button>
+              <button type="button" class="btn btn-success vat-action-btn" (click)="submit.emit()" [disabled]="loading">
+                Soumettre
+              </button>
+            } @else {
+              <p class="vat-submitted-hint">
+                Déclaration déjà soumise pour cette période. Utilisez « Rectificative » pour la corriger.
+              </p>
+            }
+            @if (v2Enabled) {
+              <button type="button" class="btn btn-secondary vat-action-btn" (click)="rectificative.emit()" [disabled]="loading"
+                title="Corriger une déclaration déjà déposée (rectificative)">
+                Rectificative
+              </button>
+            }
           }
           <button type="button" class="btn btn-secondary vat-action-btn" (click)="exportPdf.emit()" [disabled]="loading">
             <i class="pi pi-file-pdf" aria-hidden="true"></i> Exporter PDF
@@ -83,6 +85,8 @@ export class VatDeclarationSummaryPanelComponent implements OnChanges {
   @Input() loading = false;
   @Input() v2Enabled = false;
   @Input() chartSegments: VatChartSegment[] = [];
+  /** false pour la société : seules les actions d'export restent visibles. */
+  @Input() canManage = true;
 
   /** Soumettre/Enregistrer visibles uniquement sur un brouillon (statut 0). */
   get canSubmit(): boolean {

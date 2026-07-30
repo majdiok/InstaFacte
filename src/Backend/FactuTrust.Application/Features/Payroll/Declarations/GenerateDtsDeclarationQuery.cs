@@ -27,6 +27,11 @@ public sealed class GenerateDtsDeclarationQueryHandler : IRequestHandler<Generat
 
         var runs = await _runs.ListByQuarterWithPayslipsAsync(request.Year, request.Quarter, cancellationToken);
 
+        var firstMonth = (request.Quarter - 1) * 3 + 1;
+        var expectedMonths = new[] { firstMonth, firstMonth + 1, firstMonth + 2 };
+        var includedMonths = runs.Select(r => r.Month).Distinct().OrderBy(m => m).ToList();
+        var missingMonths = expectedMonths.Except(includedMonths).ToList();
+
         var byEmployee = runs
             .SelectMany(r => r.Payslips)
             .GroupBy(p => p.EmployeeId)
@@ -48,11 +53,15 @@ public sealed class GenerateDtsDeclarationQueryHandler : IRequestHandler<Generat
         {
             Year = request.Year,
             Quarter = request.Quarter,
+            TotalGross = Round(byEmployee.Sum(l => l.TotalGross)),
             TotalCnssableGross = Round(byEmployee.Sum(l => l.TotalCnssableGross)),
             TotalCnssEmployee = Round(byEmployee.Sum(l => l.CnssEmployee)),
             TotalCnssEmployer = Round(byEmployee.Sum(l => l.CnssEmployer)),
             TotalContributions = Round(byEmployee.Sum(l => l.CnssEmployee + l.CnssEmployer)),
             EmployeeCount = byEmployee.Count,
+            IncludedMonths = includedMonths,
+            MissingMonths = missingMonths,
+            IsComplete = missingMonths.Count == 0,
             Lines = byEmployee
         };
 

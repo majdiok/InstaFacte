@@ -42,7 +42,9 @@ public sealed class ExportDtsDeclarationQueryHandler : IRequestHandler<ExportDts
         }
 
         sb.AppendLine();
-        sb.Append("TOTAL;;;;");
+        // 7 colonnes alignées sur l'en-tête : Nom;CNSS;Brut total;Brut CNSS;CNSS salarié;CNSS patronale;Mois
+        sb.Append("TOTAL;;");
+        sb.Append(FormatAmount(dto.TotalGross)).Append(';');
         sb.Append(FormatAmount(dto.TotalCnssableGross)).Append(';');
         sb.Append(FormatAmount(dto.TotalCnssEmployee)).Append(';');
         sb.Append(FormatAmount(dto.TotalCnssEmployer)).Append(';');

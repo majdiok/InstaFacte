@@ -139,6 +139,7 @@ public static class PayrollMappings
             TotalTfp = r.TotalTfp,
             TotalFoprolos = r.TotalFoprolos,
             TotalWorkAccident = r.TotalWorkAccident,
+            TotalOtherDeductions = r.TotalOtherDeductions,
             CalculatedAt = r.CalculatedAt,
             ValidatedAt = r.ValidatedAt,
             ValidatedBy = r.ValidatedBy,

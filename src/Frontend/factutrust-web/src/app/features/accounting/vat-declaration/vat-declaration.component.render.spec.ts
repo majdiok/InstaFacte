@@ -47,6 +47,8 @@ const vatDeclarationDto: VatDeclarationDto = {
   fodecTaxableBase: 8000
 };
 
+const submittedDto: VatDeclarationDto = { ...vatDeclarationDto, status: 1 };
+
 const companyUser: User = {
   id: 'u1',
   email: 'company@test.c',
@@ -88,8 +90,17 @@ function setUser(auth: AuthService, u: User | null): void {
 
 describe('VatDeclarationComponent render', () => {
   let fixture: ComponentFixture<VatDeclarationComponent>;
+  let accountingMock: {
+    getVatDeclaration: jasmine.Spy;
+  };
 
   beforeEach(async () => {
+    accountingMock = {
+      getVatDeclaration: jasmine.createSpy('getVatDeclaration').and.returnValue(
+        of({ success: true, data: vatDeclarationDto })
+      )
+    };
+
     await TestBed.configureTestingModule({
       imports: [VatDeclarationComponent],
       providers: [
@@ -98,13 +109,16 @@ describe('VatDeclarationComponent render', () => {
         provideHttpClientTesting(),
         { provide: Title, useValue: { setTitle: () => undefined } },
         { provide: ToastService, useValue: { add: () => undefined } },
-        { provide: ErrorHandlerService, useValue: { extractErrorMessage: () => 'Erreur' } },
         {
-          provide: AccountingService,
+          provide: ErrorHandlerService,
           useValue: {
-            getVatDeclaration: () => of({ success: true, data: vatDeclarationDto })
+            extractErrorMessage: (err: { error?: { error?: string }; message?: string } | string) => {
+              if (typeof err === 'string') return err;
+              return err?.error?.error ?? err?.message ?? 'Erreur';
+            }
           }
-        }
+        },
+        { provide: AccountingService, useValue: accountingMock }
       ]
     }).compileComponents();
   });
@@ -118,6 +132,7 @@ describe('VatDeclarationComponent render', () => {
   }
 
   it('hides section 5 for a company user', async () => {
+    accountingMock.getVatDeclaration.and.returnValue(of({ success: true, data: submittedDto }));
     await renderForUser(companyUser);
     expect(fixture.nativeElement.textContent).not.toContain('5. Pièces justificatives');
     expect(fixture.nativeElement.textContent).toContain('1. Informations générales');
@@ -127,5 +142,37 @@ describe('VatDeclarationComponent render', () => {
     await renderForUser(firmDelegatedUser);
     expect(fixture.nativeElement.textContent).toContain('5. Pièces justificatives');
     expect(fixture.nativeElement.textContent).toContain('Journal des ventes');
+  });
+
+  it('company with submitted declaration: write actions hidden, PDF visible', async () => {
+    accountingMock.getVatDeclaration.and.returnValue(of({ success: true, data: submittedDto }));
+    await renderForUser(companyUser);
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).not.toContain('Enregistrer brouillon');
+    expect(text).not.toContain('Soumettre');
+    expect(text).not.toContain('Rectificative');
+    expect(text).not.toContain('Aperçu');
+    expect(text).toContain('Exporter PDF');
+    expect(text).toContain('TOTAL À PAYER');
+  });
+
+  it('company without submitted declaration: shows empty state', async () => {
+    accountingMock.getVatDeclaration.and.returnValue(
+      of({ success: false, error: "Aucune déclaration soumise n'est disponible pour cette période." })
+    );
+    await renderForUser(companyUser);
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Aucune déclaration mensuelle soumise par le cabinet');
+    expect(text).not.toContain('1. Informations générales');
+    expect(text).not.toContain('Enregistrer brouillon');
+  });
+
+  it('firm on draft keeps write actions', async () => {
+    await renderForUser(firmDelegatedUser);
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Enregistrer brouillon');
+    expect(text).toContain('Soumettre');
+    expect(text).toContain('Rectificative');
+    expect(text).toContain('Aperçu');
   });
 });

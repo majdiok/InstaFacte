@@ -748,10 +748,8 @@ export class ProductFormComponent implements OnInit {
   private pricingSync = false;
 
   isEditMode = computed(() => !!this.productId());
-  canEditMargin = computed(() => {
-    const purchase = this.form.get('purchasePrice')?.value;
-    return purchase != null && purchase > 0;
-  });
+  /** Writable: FormControl values are not signal deps — must be refreshed in syncMarginControl. */
+  canEditMargin = signal(false);
 
   canMutateProduct = computed(() =>
     this.isEditMode()
@@ -896,6 +894,17 @@ export class ProductFormComponent implements OnInit {
     const purchasePrice = this.form.get('purchasePrice')?.value ?? null;
     this.syncMarginControl();
 
+    // When purchase price is set and margin is still empty, seed margin from existing HT
+    // instead of driving HT from a null margin (preserves unit price on first activation).
+    let effectiveSource = source;
+    if (
+      source === 'purchasePrice' &&
+      this.canEditMargin() &&
+      this.form.get('profitMarginPercent')?.value == null
+    ) {
+      effectiveSource = 'unitPriceHt';
+    }
+
     const result = recalculatePricing(
       {
         purchasePrice,
@@ -905,7 +914,7 @@ export class ProductFormComponent implements OnInit {
         vatRatePercent: this.form.get('vatRate')?.value ?? 0,
         isFodecApplicable: this.form.get('isFodecApplicable')?.value ?? false
       },
-      source
+      effectiveSource
     );
 
     this.pricingSync = true;
@@ -936,7 +945,12 @@ export class ProductFormComponent implements OnInit {
   private syncMarginControl(): void {
     const marginCtrl = this.form.get('profitMarginPercent');
     if (!marginCtrl) return;
-    if (this.canEditMargin()) {
+
+    const purchase = this.form.get('purchasePrice')?.value;
+    const canEdit = purchase != null && Number(purchase) > 0;
+    this.canEditMargin.set(canEdit);
+
+    if (canEdit) {
       marginCtrl.enable({ emitEvent: false });
     } else {
       marginCtrl.disable({ emitEvent: false });

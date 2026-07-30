@@ -4,6 +4,7 @@ import { Subscription, timer } from 'rxjs';
 import { environment } from '@environments/environment';
 import { ApiResponse, AuthService } from './auth.service';
 import { FirmBadgeService } from './firm-badge.service';
+import { ExchangeBadgeService } from './exchange-badge.service';
 
 export interface AppNotification {
   id: string;
@@ -35,6 +36,7 @@ export class NotificationService {
   private readonly http = inject(HttpClient);
   private readonly auth = inject(AuthService);
   private readonly firmBadge = inject(FirmBadgeService);
+  private readonly exchangeBadge = inject(ExchangeBadgeService);
   private readonly baseUrl = `${environment.apiUrl}/notifications`;
 
   readonly unreadCount = signal(0);
@@ -89,6 +91,7 @@ export class NotificationService {
     this.pollSub = timer(0, POLL_INTERVAL_MS).subscribe(() => {
       this.refresh();
       this.firmBadge.refresh();
+      this.exchangeBadge.refresh();
     });
   }
 

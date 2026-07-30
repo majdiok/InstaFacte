@@ -32,6 +32,8 @@ public sealed class PayrollRun : AggregateRoot
     public decimal TotalTfp { get; private set; }
     public decimal TotalFoprolos { get; private set; }
     public decimal TotalWorkAccident { get; private set; }
+    /// <summary>Somme des autres retenues (avances, oppositions) figées au calcul.</summary>
+    public decimal TotalOtherDeductions { get; private set; }
 
     private readonly List<Payslip> _payslips = new();
     public IReadOnlyCollection<Payslip> Payslips => _payslips.AsReadOnly();
@@ -123,6 +125,7 @@ public sealed class PayrollRun : AggregateRoot
         TotalTfp = R(_payslips.Sum(p => p.Tfp));
         TotalFoprolos = R(_payslips.Sum(p => p.Foprolos));
         TotalWorkAccident = R(_payslips.Sum(p => p.WorkAccidentContribution));
+        TotalOtherDeductions = R(_payslips.Sum(p => p.OtherDeductions));
     }
 
     private static decimal R(decimal value) => Math.Round(value, 3, MidpointRounding.AwayFromZero);

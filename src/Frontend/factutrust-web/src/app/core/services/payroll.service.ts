@@ -47,6 +47,7 @@ export interface PayrollRunDetail {
   totalTfp: number;
   totalFoprolos: number;
   totalWorkAccident: number;
+  totalOtherDeductions?: number;
   calculatedAt?: string;
   validatedAt?: string;
   closedAt?: string;
@@ -136,11 +137,15 @@ export interface PayrollParameters {
 export interface DtsDeclaration {
   year: number;
   quarter: number;
+  totalGross: number;
   totalCnssableGross: number;
   totalCnssEmployee: number;
   totalCnssEmployer: number;
   totalContributions: number;
   employeeCount: number;
+  includedMonths: number[];
+  missingMonths: number[];
+  isComplete: boolean;
   lines: {
     employeeId: string;
     employeeName: string;

@@ -113,6 +113,11 @@ export function canSubmitDeclaration(status: number): boolean {
   return status === 0;
 }
 
+/** Statuts visibles pour la société (Soumise / Verrouillée). */
+export function isSubmittedOrLocked(status: number): boolean {
+  return status === 1 || status === 2;
+}
+
 export function statusClass(status: number): string {
   switch (status) {
     case 1: return 'vat-status--submitted';

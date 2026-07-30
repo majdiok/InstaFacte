@@ -1,6 +1,7 @@
 using System.Text;
 using FactuTrust.API.Authorization;
 using FactuTrust.Application.Common.Enums;
+using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Accounting.Budgeting;
 using FactuTrust.Application.Features.Accounting.ThirdPartyDirectory;
@@ -21,10 +22,12 @@ namespace FactuTrust.API.Controllers;
 public sealed class AccountingController : ControllerBase
 {
     private readonly IMediator _mediator;
+    private readonly ICurrentUser _currentUser;
 
-    public AccountingController(IMediator mediator)
+    public AccountingController(IMediator mediator, ICurrentUser currentUser)
     {
         _mediator = mediator;
+        _currentUser = currentUser;
     }
 
     /// <summary>Construit la réponse fichier (content-type + extension) selon le format d'export demandé.</summary>
@@ -681,7 +684,8 @@ public sealed class AccountingController : ControllerBase
     [Authorize(Policy = PermissionPolicies.AccountingRead)]
     public async Task<IActionResult> GetVatDeclaration([FromQuery] int year, [FromQuery] int month, CancellationToken cancellationToken)
     {
-        var r = await _mediator.Send(new GetVatDeclarationQuery(year, month), cancellationToken);
+        var enforceCompanySubmittedOnly = !_currentUser.IsAccountingFirmDelegatedContext;
+        var r = await _mediator.Send(new GetVatDeclarationQuery(year, month, enforceCompanySubmittedOnly), cancellationToken);
         if (r.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
         return Ok(ApiResponse<VatDeclarationDto>.Ok(r.Value));
@@ -1579,7 +1583,8 @@ public sealed class AccountingController : ControllerBase
     [Authorize(Policy = PermissionPolicies.AccountingRead)]
     public async Task<IActionResult> ExportVatDeclarationPdf([FromQuery] int year, [FromQuery] int month, CancellationToken cancellationToken)
     {
-        var r = await _mediator.Send(new ExportVatDeclarationPdfQuery(year, month), cancellationToken);
+        var enforceCompanySubmittedOnly = !_currentUser.IsAccountingFirmDelegatedContext;
+        var r = await _mediator.Send(new ExportVatDeclarationPdfQuery(year, month, enforceCompanySubmittedOnly), cancellationToken);
         if (r.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
         return File(r.Value, "application/pdf", $"declaration_{year}_{month:D2}.pdf");

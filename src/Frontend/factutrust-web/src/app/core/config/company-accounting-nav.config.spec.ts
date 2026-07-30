@@ -4,9 +4,11 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import {
   applyCompanyAccountingSidebar,
   buildCompanyEtatsComptablesNavChildren,
+  canManageVatDeclaration,
   canShowVatDeclarationDocLinks,
   COMPANY_ACCOUNTING_SIDEBAR_CHILDREN,
-  isCompanyAllowedAccountingPath
+  isCompanyAllowedAccountingPath,
+  isCompanyVatDeclarationReadOnly
 } from './company-accounting-nav.config';
 import { ACCOUNTING_MODULES } from './accounting-modules.config';
 import { NavItem } from './app-navigation.registry';
@@ -148,5 +150,27 @@ describe('canShowVatDeclarationDocLinks', () => {
     const auth = TestBed.inject(AuthService);
     setUser(auth, firmDelegatedUser);
     expect(canShowVatDeclarationDocLinks(auth)).toBe(true);
+  });
+});
+
+describe('canManageVatDeclaration / isCompanyVatDeclarationReadOnly', () => {
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()]
+    });
+  });
+
+  it('company is read-only and cannot manage', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, companyUser);
+    expect(canManageVatDeclaration(auth)).toBe(false);
+    expect(isCompanyVatDeclarationReadOnly(auth)).toBe(true);
+  });
+
+  it('firm can manage and is not company read-only', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, firmDelegatedUser);
+    expect(canManageVatDeclaration(auth)).toBe(true);
+    expect(isCompanyVatDeclarationReadOnly(auth)).toBe(false);
   });
 });

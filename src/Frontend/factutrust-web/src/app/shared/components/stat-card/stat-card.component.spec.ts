@@ -31,4 +31,18 @@ describe('StatCardComponent', () => {
     expect(fixture.nativeElement.querySelector('.stat-card--solid')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('.stat-sparkline')).toBeTruthy();
   });
+
+  it('should use black label color in solid appearance', () => {
+    component.appearance = 'solid';
+    fixture.detectChanges();
+    const label = fixture.nativeElement.querySelector('.stat-label') as HTMLElement;
+    expect(getComputedStyle(label).color).toBe('rgb(0, 0, 0)');
+  });
+
+  it('should not force black label color in default appearance', () => {
+    component.appearance = 'default';
+    fixture.detectChanges();
+    const label = fixture.nativeElement.querySelector('.stat-label') as HTMLElement;
+    expect(getComputedStyle(label).color).not.toBe('rgb(0, 0, 0)');
+  });
 });

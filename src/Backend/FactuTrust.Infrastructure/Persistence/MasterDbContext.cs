@@ -32,6 +32,15 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
     public DbSet<FirmClientAssignment> FirmClientAssignments => Set<FirmClientAssignment>();
     public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
 
+    // Company ↔ Firm exchange workspace
+    public DbSet<Domain.Entities.Exchange.ExchangeThread> ExchangeThreads => Set<Domain.Entities.Exchange.ExchangeThread>();
+    public DbSet<Domain.Entities.Exchange.ExchangeMessage> ExchangeMessages => Set<Domain.Entities.Exchange.ExchangeMessage>();
+    public DbSet<Domain.Entities.Exchange.ExchangeMessageRead> ExchangeMessageReads => Set<Domain.Entities.Exchange.ExchangeMessageRead>();
+    public DbSet<Domain.Entities.Exchange.ExchangeRequest> ExchangeRequests => Set<Domain.Entities.Exchange.ExchangeRequest>();
+    public DbSet<Domain.Entities.Exchange.ExchangeTask> ExchangeTasks => Set<Domain.Entities.Exchange.ExchangeTask>();
+    public DbSet<Domain.Entities.Exchange.ExchangeDocument> ExchangeDocuments => Set<Domain.Entities.Exchange.ExchangeDocument>();
+    public DbSet<Domain.Entities.Exchange.ExchangeAuditEvent> ExchangeAuditEvents => Set<Domain.Entities.Exchange.ExchangeAuditEvent>();
+
     // Firm governance (cabinet TN)
     public DbSet<Domain.Entities.FirmGovernance.PermanentFile> PermanentFiles => Set<Domain.Entities.FirmGovernance.PermanentFile>();
     public DbSet<Domain.Entities.FirmGovernance.LegalRepresentative> LegalRepresentatives => Set<Domain.Entities.FirmGovernance.LegalRepresentative>();
@@ -315,6 +324,8 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.HasIndex(n => new { n.RecipientTenantId, n.ReadAt });
             entity.HasIndex(n => new { n.RecipientTenantId, n.CreatedAt }).IsDescending(false, true);
         });
+
+        ConfigureExchange(builder);
 
         builder.Entity<UserModuleGrant>(entity =>
         {
@@ -1098,6 +1109,81 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Property(l => l.ReferenceCode).HasConversion<int>();
         });
 
+    }
+
+    private static void ConfigureExchange(ModelBuilder builder)
+    {
+        builder.Entity<Domain.Entities.Exchange.ExchangeThread>(entity =>
+        {
+            entity.ToTable("ExchangeThreads");
+            entity.HasKey(t => t.Id);
+            entity.HasIndex(t => t.FirmClientAssignmentId).IsUnique();
+            entity.HasIndex(t => new { t.FirmTenantId, t.Status });
+            entity.HasIndex(t => new { t.CompanyTenantId, t.Status });
+            entity.Property(t => t.Subject).HasMaxLength(Domain.Entities.Exchange.ExchangeThread.SubjectMaxLength);
+            entity.Property(t => t.Status).HasConversion<int>();
+        });
+
+        builder.Entity<Domain.Entities.Exchange.ExchangeMessage>(entity =>
+        {
+            entity.ToTable("ExchangeMessages");
+            entity.HasKey(m => m.Id);
+            entity.HasIndex(m => new { m.ThreadId, m.SentAt });
+            entity.Property(m => m.AuthorDisplayName).HasMaxLength(Domain.Entities.Exchange.ExchangeMessage.AuthorDisplayNameMaxLength).IsRequired();
+            entity.Property(m => m.Body).HasMaxLength(Domain.Entities.Exchange.ExchangeMessage.BodyMaxLength).IsRequired();
+            entity.Property(m => m.Visibility).HasConversion<int>();
+        });
+
+        builder.Entity<Domain.Entities.Exchange.ExchangeMessageRead>(entity =>
+        {
+            entity.ToTable("ExchangeMessageReads");
+            entity.HasKey(r => r.Id);
+            entity.HasIndex(r => new { r.MessageId, r.UserId }).IsUnique();
+        });
+
+        builder.Entity<Domain.Entities.Exchange.ExchangeRequest>(entity =>
+        {
+            entity.ToTable("ExchangeRequests");
+            entity.HasKey(r => r.Id);
+            entity.HasIndex(r => new { r.ThreadId, r.Number }).IsUnique();
+            entity.HasIndex(r => new { r.ThreadId, r.Status });
+            entity.Property(r => r.Title).HasMaxLength(Domain.Entities.Exchange.ExchangeRequest.TitleMaxLength).IsRequired();
+            entity.Property(r => r.Description).HasMaxLength(Domain.Entities.Exchange.ExchangeRequest.DescriptionMaxLength).IsRequired();
+            entity.Property(r => r.Category).HasConversion<int>();
+            entity.Property(r => r.Priority).HasConversion<int>();
+            entity.Property(r => r.Status).HasConversion<int>();
+        });
+
+        builder.Entity<Domain.Entities.Exchange.ExchangeTask>(entity =>
+        {
+            entity.ToTable("ExchangeTasks");
+            entity.HasKey(t => t.Id);
+            entity.HasIndex(t => new { t.ThreadId, t.Status });
+            entity.Property(t => t.Title).HasMaxLength(Domain.Entities.Exchange.ExchangeTask.TitleMaxLength).IsRequired();
+            entity.Property(t => t.Description).HasMaxLength(Domain.Entities.Exchange.ExchangeTask.DescriptionMaxLength);
+            entity.Property(t => t.Status).HasConversion<int>();
+        });
+
+        builder.Entity<Domain.Entities.Exchange.ExchangeDocument>(entity =>
+        {
+            entity.ToTable("ExchangeDocuments");
+            entity.HasKey(d => d.Id);
+            entity.HasIndex(d => d.ThreadId);
+            entity.HasIndex(d => d.MessageId);
+            entity.Property(d => d.FileName).HasMaxLength(Domain.Entities.Exchange.ExchangeDocument.FileNameMaxLength).IsRequired();
+            entity.Property(d => d.StoragePath).HasMaxLength(Domain.Entities.Exchange.ExchangeDocument.StoragePathMaxLength).IsRequired();
+            entity.Property(d => d.ContentType).HasMaxLength(Domain.Entities.Exchange.ExchangeDocument.ContentTypeMaxLength).IsRequired();
+        });
+
+        builder.Entity<Domain.Entities.Exchange.ExchangeAuditEvent>(entity =>
+        {
+            entity.ToTable("ExchangeAuditEvents");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.ThreadId, e.OccurredAt });
+            entity.Property(e => e.ActorDisplayName).HasMaxLength(Domain.Entities.Exchange.ExchangeAuditEvent.ActorDisplayNameMaxLength).IsRequired();
+            entity.Property(e => e.PayloadJson).HasMaxLength(Domain.Entities.Exchange.ExchangeAuditEvent.PayloadMaxLength);
+            entity.Property(e => e.EventType).HasConversion<int>();
+        });
     }
 }
 

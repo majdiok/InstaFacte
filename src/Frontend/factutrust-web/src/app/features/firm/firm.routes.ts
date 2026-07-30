@@ -44,6 +44,12 @@ export const FIRM_ROUTES: Routes = [
         title: 'Cabinet — Invitations'
       },
       {
+        path: 'exchanges',
+        loadChildren: () =>
+          import('../exchanges/exchanges.routes').then(m => m.EXCHANGES_ROUTES),
+        title: 'Cabinet — Échanges'
+      },
+      {
         path: 'settings',
         loadComponent: () => import('./firm-settings/firm-settings.component').then(m => m.FirmSettingsComponent),
         title: 'Cabinet — Paramètres'

@@ -362,6 +362,9 @@ public sealed class SaveVatDeclarationCommandHandler : IRequestHandler<SaveVatDe
 
     public async Task<Result<Guid>> Handle(SaveVatDeclarationCommand request, CancellationToken cancellationToken)
     {
+        if (!_currentUser.IsAccountingFirmDelegatedContext)
+            return Result.Failure<Guid>(Error.Forbidden(VatDeclarationAccess.WriteDeniedMessage));
+
         var r = request.Request;
         var computed = await _mediator.Send(new GetVatDeclarationQuery(r.Year, r.Month), cancellationToken);
         if (computed.IsFailure)

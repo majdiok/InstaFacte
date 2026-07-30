@@ -52,4 +52,37 @@ describe('product-pricing.utils', () => {
 
     expect(calculateMarginPercent(45000, result.unitPriceHt)).toBe(12);
   });
+
+  it('matches product-form capture case: 1400 HT purchase → 1500 HT sale ≈ 7.143% margin', () => {
+    expect(calculateMarginPercent(1400, 1500)).toBe(7.143);
+
+    const fromHt = recalculatePricing(
+      {
+        purchasePrice: 1400,
+        profitMarginPercent: null,
+        unitPriceHt: 1500,
+        saleTtc: 0,
+        vatRatePercent: 19,
+        isFodecApplicable: false
+      },
+      'unitPriceHt'
+    );
+    expect(fromHt.profitMarginPercent).toBe(7.143);
+    expect(fromHt.saleTtc).toBe(1785);
+
+    // Reverse path: 3-decimal margin rounding can drift by a few millimes (1400 × 1.07143).
+    const fromMargin = recalculatePricing(
+      {
+        purchasePrice: 1400,
+        profitMarginPercent: 7.143,
+        unitPriceHt: 0,
+        saleTtc: 0,
+        vatRatePercent: 19,
+        isFodecApplicable: false
+      },
+      'margin'
+    );
+    expect(fromMargin.unitPriceHt).toBeCloseTo(1500, 2);
+    expect(fromMargin.saleTtc).toBeCloseTo(1785, 2);
+  });
 });

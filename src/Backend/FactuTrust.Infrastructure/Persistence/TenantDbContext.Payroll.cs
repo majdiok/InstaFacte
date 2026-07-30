@@ -152,6 +152,7 @@ public partial class TenantDbContext
             entity.Property(r => r.TotalTfp).HasPrecision(18, 3);
             entity.Property(r => r.TotalFoprolos).HasPrecision(18, 3);
             entity.Property(r => r.TotalWorkAccident).HasPrecision(18, 3);
+            entity.Property(r => r.TotalOtherDeductions).HasPrecision(18, 3);
 
             entity.HasMany(r => r.Payslips)
                   .WithOne()

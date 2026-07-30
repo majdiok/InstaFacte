@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -22,6 +22,8 @@ import {
   SupplierBalanceReportRow,
   SupplierWithholdingReportRow
 } from '@core/services/reports-api.service';
+import { PartyBalancesTableComponent, PartyBalanceRow } from '../shared/party-balances-table.component';
+import { mapSupplierBalanceRows } from '../shared/party-balances.util';
 
 interface PeriodOption {
   label: string;
@@ -39,7 +41,8 @@ interface PeriodOption {
     TabViewModule,
     PageHeaderComponent,
     StatCardComponent,
-    ButtonComponent
+    ButtonComponent,
+    PartyBalancesTableComponent
   ],
   template: `
     <app-page-header 
@@ -323,31 +326,15 @@ interface PeriodOption {
       <div class="section-header">
         <h2 class="section-title">Soldes fournisseur</h2>
         <span class="section-subtitle">Total facturé, total payé et solde par fournisseur</span>
+        <a class="section-link" routerLink="/reports/supplier-balances">Voir la fenêtre dédiée</a>
       </div>
-      @if (supplierBalancesLoading()) {
-        <div class="loading-placeholder"><i class="pi pi-spin pi-spinner"></i><span>Chargement...</span></div>
-      } @else if (!supplierBalances().length) {
-        <div class="empty-placeholder"><i class="pi pi-info-circle"></i><p>Aucun solde fournisseur</p></div>
-      } @else {
-        <p-table [value]="supplierBalances()" styleClass="p-datatable-sm reports-table" aria-label="Soldes fournisseurs">
-          <ng-template pTemplate="header">
-            <tr>
-              <th>Fournisseur</th>
-              <th class="text-right">Total facturé</th>
-              <th class="text-right">Total payé</th>
-              <th class="text-right">Solde</th>
-            </tr>
-          </ng-template>
-          <ng-template pTemplate="body" let-row>
-            <tr>
-              <td>{{ row.supplierName }}</td>
-              <td class="text-right amount">{{ row.totalInvoiced | number:'1.3-3' }} {{ row.currency }}</td>
-              <td class="text-right amount">{{ row.totalPaid | number:'1.3-3' }} {{ row.currency }}</td>
-              <td class="text-right amount" [class.balance-negative]="row.balance < 0">{{ row.balance | number:'1.3-3' }} {{ row.currency }}</td>
-            </tr>
-          </ng-template>
-        </p-table>
-      }
+      <app-party-balances-table
+        [rows]="supplierBalanceRows()"
+        [loading]="supplierBalancesLoading()"
+        partyLabel="Fournisseur"
+        emptyMessage="Aucun solde fournisseur"
+        ariaLabel="Soldes fournisseurs">
+      </app-party-balances-table>
     </div>
         </div>
       </p-tabPanel>
@@ -886,7 +873,15 @@ interface PeriodOption {
       vertical-align: middle;
     }
 
-    .section-subtitle { font-size: var(--font-size-sm); color: var(--color-text-secondary); width: 100%; }
+    .section-subtitle { font-size: var(--font-size-sm); color: var(--color-text-secondary); width: 100%; display: block; }
+    .section-link {
+      display: inline-block;
+      margin-top: var(--spacing-2);
+      font-size: var(--font-size-sm);
+      color: var(--color-primary-600);
+      text-decoration: none;
+    }
+    .section-link:hover { text-decoration: underline; }
 
     .chart-placeholder {
       min-height: 300px;
@@ -1277,6 +1272,7 @@ export class PurchasesReportsComponent implements OnInit {
   purchasesVatLoading = signal(false);
   supplierBalances = signal<SupplierBalanceReportRow[]>([]);
   supplierBalancesLoading = signal(false);
+  supplierBalanceRows = computed<PartyBalanceRow[]>(() => mapSupplierBalanceRows(this.supplierBalances()));
   supplierWithholdings = signal<SupplierWithholdingReportRow[]>([]);
   supplierWithholdingsLoading = signal(false);
   selectedPeriod: ReportPeriod = 'month';

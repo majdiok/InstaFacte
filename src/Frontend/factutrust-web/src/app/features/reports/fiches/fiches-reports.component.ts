@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { TableModule } from 'primeng/table';
@@ -9,6 +9,8 @@ import { ButtonComponent } from '@shared/components/button/button.component';
 import { formatLocalDate } from '@core/utils/date.util';
 import { FichesReportsService, FichesReportsData } from '../services/fiches-reports.service';
 import { ReportsApiService, ClientBalanceReportRow } from '@core/services/reports-api.service';
+import { PartyBalancesTableComponent, PartyBalanceRow } from '../shared/party-balances-table.component';
+import { mapClientBalanceRows } from '../shared/party-balances.util';
 
 @Component({
   selector: 'app-fiches-reports',
@@ -20,7 +22,8 @@ import { ReportsApiService, ClientBalanceReportRow } from '@core/services/report
     TabViewModule,
     PageHeaderComponent,
     StatCardComponent,
-    ButtonComponent
+    ButtonComponent,
+    PartyBalancesTableComponent
   ],
   template: `
     <app-page-header 
@@ -109,31 +112,15 @@ import { ReportsApiService, ClientBalanceReportRow } from '@core/services/report
               <div class="section-header">
                 <h2 class="section-title">Soldes client</h2>
                 <span class="section-subtitle">Total facturé, total payé et solde par client</span>
+                <a class="section-link" routerLink="/reports/client-balances">Voir la fenêtre dédiée</a>
               </div>
-              @if (clientBalancesLoading()) {
-                <div class="loading-placeholder"><i class="pi pi-spin pi-spinner"></i><span>Chargement...</span></div>
-              } @else if (!clientBalances().length) {
-                <div class="empty-placeholder"><i class="pi pi-info-circle"></i><p>Aucun solde client</p></div>
-              } @else {
-                <p-table [value]="clientBalances()" styleClass="p-datatable-sm reports-table" aria-label="Soldes clients">
-                  <ng-template pTemplate="header">
-                    <tr>
-                      <th>Client</th>
-                      <th class="text-right">Total facturé</th>
-                      <th class="text-right">Total payé</th>
-                      <th class="text-right">Solde</th>
-                    </tr>
-                  </ng-template>
-                  <ng-template pTemplate="body" let-row>
-                    <tr>
-                      <td>{{ row.clientName }}</td>
-                      <td class="text-right amount">{{ row.totalInvoiced | number:'1.3-3' }} {{ row.currency }}</td>
-                      <td class="text-right amount">{{ row.totalPaid | number:'1.3-3' }} {{ row.currency }}</td>
-                      <td class="text-right amount" [class.balance-negative]="row.balance < 0">{{ row.balance | number:'1.3-3' }} {{ row.currency }}</td>
-                    </tr>
-                  </ng-template>
-                </p-table>
-              }
+              <app-party-balances-table
+                [rows]="clientBalanceRows()"
+                [loading]="clientBalancesLoading()"
+                partyLabel="Client"
+                emptyMessage="Aucun solde client"
+                ariaLabel="Soldes clients">
+              </app-party-balances-table>
             </div>
           </div>
         </p-tabPanel>
@@ -246,7 +233,15 @@ import { ReportsApiService, ClientBalanceReportRow } from '@core/services/report
       vertical-align: middle;
     }
 
-    .section-subtitle { font-size: var(--font-size-sm); color: var(--color-text-secondary); width: 100%; }
+    .section-subtitle { font-size: var(--font-size-sm); color: var(--color-text-secondary); width: 100%; display: block; }
+    .section-link {
+      display: inline-block;
+      margin-top: var(--spacing-2);
+      font-size: var(--font-size-sm);
+      color: var(--color-primary-600);
+      text-decoration: none;
+    }
+    .section-link:hover { text-decoration: underline; }
 
     .empty-placeholder {
       padding: var(--spacing-8);
@@ -260,7 +255,6 @@ import { ReportsApiService, ClientBalanceReportRow } from '@core/services/report
     .client-code, .product-code { font-size: var(--font-size-sm); color: var(--color-text-secondary); }
     .text-right { text-align: right; }
     .amount { font-family: 'JetBrains Mono', 'SF Mono', 'Monaco', 'Consolas', monospace; font-weight: var(--font-weight-semibold); color: var(--color-text-primary); }
-    .balance-negative { color: var(--color-error-600, #dc2626); }
 
     :host ::ng-deep .reports-table {
       .p-datatable-thead > tr > th {
@@ -293,6 +287,7 @@ export class FichesReportsComponent implements OnInit {
   reportsData = signal<FichesReportsData | null>(null);
   clientBalances = signal<ClientBalanceReportRow[]>([]);
   clientBalancesLoading = signal(false);
+  clientBalanceRows = computed<PartyBalanceRow[]>(() => mapClientBalanceRows(this.clientBalances()));
 
   ngOnInit(): void {
     this.loadReportsData();

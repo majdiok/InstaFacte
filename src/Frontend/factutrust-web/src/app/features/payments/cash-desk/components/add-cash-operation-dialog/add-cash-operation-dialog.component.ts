@@ -16,9 +16,7 @@ import {
   CreateCashOperationPayload,
   CashOperationListItem,
   CASH_EXPENSE_CATEGORY_GROUPS,
-  CASH_REVENUE_CATEGORY_GROUPS,
-  getCashExpenseCategoryLabel,
-  getCashRevenueCategoryLabel
+  CASH_REVENUE_CATEGORY_GROUPS
 } from '@core/services/cash-desk.service';
 
 const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] = [
@@ -55,7 +53,7 @@ const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] 
       [draggable]="false"
       [closable]="true"
       (onHide)="onHide()"
-      [contentStyle]="{ overflow: 'visible', padding: 0 }">
+      [contentStyle]="{ overflow: 'auto', padding: 0 }">
 
       <div class="dialog-content">
         @if (errorMessage()) {
@@ -67,7 +65,7 @@ const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] 
 
         <!-- Operation Type Toggle -->
         <div class="form-group">
-          <label>Type de paiement <span class="required">*</span></label>
+          <label>Type d'opération <span class="required">*</span></label>
           <div class="type-toggle" role="radiogroup" aria-label="Type d'opération">
             <div
               class="type-card"
@@ -78,7 +76,7 @@ const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] 
               tabindex="0"
               role="radio"
               [attr.aria-checked]="operationType === CashOperationType.Debit">
-              <span class="type-label">Débit</span>
+              <span class="type-label">Décaissement</span>
             </div>
             <div
               class="type-card type-card-credit"
@@ -89,7 +87,7 @@ const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] 
               tabindex="0"
               role="radio"
               [attr.aria-checked]="operationType === CashOperationType.Credit">
-              <span class="type-label">Crédit</span>
+              <span class="type-label">Encaissement</span>
             </div>
           </div>
         </div>
@@ -117,6 +115,12 @@ const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] 
               filterPlaceholder="Rechercher…"
               appendTo="body"
               styleClass="w-full category-dropdown">
+              <ng-template let-item pTemplate="selectedItem">
+                @if (item) {
+                  <span [class]="item.icon + ' category-option-icon'" aria-hidden="true"></span>
+                  <span class="category-option-label">{{ item.label }}</span>
+                }
+              </ng-template>
               <ng-template let-item pTemplate="item">
                 <span [class]="item.icon + ' category-option-icon'" aria-hidden="true"></span>
                 <span class="category-option-label">{{ item.label }}</span>
@@ -137,6 +141,12 @@ const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] 
               [showClear]="false"
               appendTo="body"
               styleClass="w-full category-dropdown">
+              <ng-template let-item pTemplate="selectedItem">
+                @if (item) {
+                  <span [class]="item.icon + ' category-option-icon'" aria-hidden="true"></span>
+                  <span class="category-option-label">{{ item.label }}</span>
+                }
+              </ng-template>
               <ng-template let-item pTemplate="item">
                 <span [class]="item.icon + ' category-option-icon'" aria-hidden="true"></span>
                 <span class="category-option-label">{{ item.label }}</span>
@@ -187,7 +197,7 @@ const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] 
           </div>
 
           <div class="form-group">
-            <label for="operationDate">Date de règlement</label>
+            <label for="operationDate">Date de règlement <span class="required">*</span></label>
             <p-calendar
               id="operationDate"
               [(ngModel)]="operationDate"

@@ -163,9 +163,30 @@ export const ALL_NAV_ITEMS: NavItem[] = [
         permissionsAll: ['invoices:read']
       },
       {
+        label: 'Solde par client',
+        route: '/reports/client-balances',
+        icon: 'fa-solid fa-wallet',
+        modules: [M.Reports, M.Sales],
+        permissionsAll: ['reports:view', 'invoices:read']
+      },
+      {
         label: 'Grilles tarifaires',
         route: '/pricing',
         icon: 'fa-solid fa-tags',
+        modules: [M.Sales],
+        permissionsAll: ['pricing:read']
+      },
+      {
+        label: 'Promotions',
+        route: '/pricing/promotions',
+        icon: 'fa-solid fa-bullhorn',
+        modules: [M.Sales],
+        permissionsAll: ['pricing:read']
+      },
+      {
+        label: 'Conditions de règlement',
+        route: '/pricing/payment-terms',
+        icon: 'fa-solid fa-calendar-check',
         modules: [M.Sales],
         permissionsAll: ['pricing:read']
       },
@@ -230,6 +251,13 @@ export const ALL_NAV_ITEMS: NavItem[] = [
         icon: 'fa-solid fa-circle-exclamation',
         modules: [M.Purchases],
         permissionsAll: ['supplier_invoices:read']
+      },
+      {
+        label: 'Solde par fournisseur',
+        route: '/reports/supplier-balances',
+        icon: 'fa-solid fa-wallet',
+        modules: [M.Reports, M.Purchases],
+        permissionsAll: ['reports:view', 'supplier_invoices:read']
       },
       {
         label: 'États analytiques',
@@ -668,6 +696,37 @@ export const ALL_NAV_ITEMS: NavItem[] = [
     ]
   },
   {
+    label: 'Échanges',
+    icon: 'fa-solid fa-comments',
+    children: [
+      {
+        label: 'Messagerie',
+        route: '/exchanges',
+        icon: 'fa-solid fa-envelope'
+      },
+      {
+        label: 'Documents',
+        route: '/exchanges',
+        icon: 'fa-solid fa-folder-open'
+      },
+      {
+        label: 'Demandes',
+        route: '/exchanges',
+        icon: 'fa-solid fa-clipboard-list'
+      },
+      {
+        label: 'Partage',
+        route: '/exchanges',
+        icon: 'fa-solid fa-share-nodes'
+      },
+      {
+        label: 'Notifications',
+        route: '/exchanges',
+        icon: 'fa-solid fa-bell'
+      }
+    ]
+  },
+  {
     label: 'Paramètres',
     icon: 'fa-solid fa-gear',
     route: '/settings',
@@ -696,7 +755,9 @@ const ROUTE_KEYWORDS: Record<string, string[]> = {
   '/withholding-tax/tej-export': ['TEJ', 'export fiscal', 'retenue'],
   '/accounting/journal': ['écriture', 'compta'],
   '/accounting/fiscal-schedule': ['echeancier', 'échéancier', 'fiscal', 'declaration', 'déclaration', 'rappel', 'echeance', 'échéance'],
-  '/settings': ['paramètre', 'configuration', 'réglage']
+  '/settings': ['paramètre', 'configuration', 'réglage'],
+  '/exchanges': ['échange', 'echanges', 'messagerie', 'réclamation', 'reclamation', 'demande', 'cabinet'],
+  '/firm/exchanges': ['échange', 'echanges', 'messagerie', 'réclamation', 'cabinet', 'société']
 };
 
 const ROUTE_SEARCH_GROUP: Record<string, NavSearchGroup> = {

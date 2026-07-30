@@ -29,13 +29,19 @@ import { isCompanyAccountingRestricted } from '@core/config/company-accounting-n
           <app-button variant="secondary" icon="pi pi-refresh" iconPos="left" type="button" (click)="refresh.emit()" [disabled]="loading" ariaLabel="Actualiser la déclaration">
             Actualiser
           </app-button>
-          <app-analyze-with-ai-button screenId="accounting-vat-declaration" density="toolbar" [payloadBuilder]="payloadBuilder" [disabled]="loading" />
-          <app-button variant="secondary" icon="pi pi-eye" iconPos="left" type="button" (click)="previewPdf.emit()" [disabled]="loading || !hasData" ariaLabel="Aperçu avant impression">
-            Aperçu
-          </app-button>
-          <app-button variant="secondary" icon="pi pi-file-pdf" iconPos="left" type="button" (click)="exportPdf.emit()" [disabled]="loading || !hasData" ariaLabel="Exporter en PDF">
-            Exporter PDF
-          </app-button>
+          @if (showAiAnalyze) {
+            <app-analyze-with-ai-button screenId="accounting-vat-declaration" density="toolbar" [payloadBuilder]="payloadBuilder" [disabled]="loading" />
+          }
+          @if (showPreview) {
+            <app-button variant="secondary" icon="pi pi-eye" iconPos="left" type="button" (click)="previewPdf.emit()" [disabled]="loading || !hasData" ariaLabel="Aperçu avant impression">
+              Aperçu
+            </app-button>
+          }
+          @if (showExportPdf) {
+            <app-button variant="secondary" icon="pi pi-file-pdf" iconPos="left" type="button" (click)="exportPdf.emit()" [disabled]="loading || !hasData" ariaLabel="Exporter en PDF">
+              Exporter PDF
+            </app-button>
+          }
           @if (showPreClosingControls) {
             <a class="vat-toolbar-link" routerLink="/accounting/pre-closing" aria-label="Contrôles de pré-clôture">
               <i class="pi pi-shield" aria-hidden="true"></i> Contrôles
@@ -78,6 +84,9 @@ export class VatDeclarationToolbarComponent {
   @Input() loading = false;
   @Input() hasData = false;
   @Input() showCompanySettings = true;
+  @Input() showAiAnalyze = true;
+  @Input() showPreview = true;
+  @Input() showExportPdf = true;
   @Input() payloadBuilder: () => unknown = () => ({});
 
   @Output() yearChange = new EventEmitter<number>();

@@ -9,5 +9,10 @@ public enum NotificationType
     FirmAssignmentAccepted = 1,
     FirmAssignmentRejected = 2,
     FirmAssignmentRevoked = 3,
-    FirmAssignmentCancelled = 4
+    FirmAssignmentCancelled = 4,
+    ExchangeMessageReceived = 5,
+    ExchangeRequestCreated = 6,
+    ExchangeRequestStatusChanged = 7,
+    ExchangeTaskAssigned = 8,
+    ExchangeThreadClosed = 9
 }

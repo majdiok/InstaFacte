@@ -6,6 +6,7 @@ using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Accounting.Commands;
 using FactuTrust.Application.Features.Accounting.FiscalSchedule;
 using FactuTrust.Application.Features.Accounting.Queries;
+using FactuTrust.Domain.Authorization;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
@@ -21,7 +22,7 @@ namespace FactuTrust.Infrastructure.Tests.Application;
 /// <summary>
 /// SaveVatDeclarationCommandHandler : un brouillon existant est re-enregistrable/soumettable EN PLACE
 /// (sans rectificative) ; une déclaration soumise n'accepte qu'une rectificative V2 (sinon Conflict
-/// avec message clair) ; la création reste inchangée.
+/// avec message clair) ; la création reste inchangée. Écriture réservée au cabinet délégué.
 /// </summary>
 public sealed class SaveVatDeclarationCommandTests
 {
@@ -34,6 +35,7 @@ public sealed class SaveVatDeclarationCommandTests
     public SaveVatDeclarationCommandTests()
     {
         _currentUser.SetupGet(u => u.Email).Returns("comptable@cabinet.tn");
+        _currentUser.SetupGet(u => u.IsAccountingFirmDelegatedContext).Returns(true);
     }
 
     private static VatDeclarationDto Dto(decimal vatDue = 800m) => new()
@@ -175,5 +177,21 @@ public sealed class SaveVatDeclarationCommandTests
         Assert.True(existing.IsRectificative);
         Assert.Equal(VatDeclarationStatus.Submitted, existing.Status); // ApplyRevision → Draft puis Submit
         _repo.Verify(r => r.UpdateAsync(existing, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CompanyUser_Save_IsForbidden_DoesNotTouchRepository()
+    {
+        _currentUser.SetupGet(u => u.IsAccountingFirmDelegatedContext).Returns(false);
+
+        var result = await BuildHandler().Handle(Command(submit: true), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Forbidden", result.Error.Code);
+        Assert.Equal(VatDeclarationAccess.WriteDeniedMessage, result.Error.Description);
+        _repo.Verify(r => r.GetByYearMonthAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+        _repo.Verify(r => r.AddAsync(It.IsAny<VatDeclaration>(), It.IsAny<CancellationToken>()), Times.Never);
+        _repo.Verify(r => r.UpdateAsync(It.IsAny<VatDeclaration>(), It.IsAny<CancellationToken>()), Times.Never);
+        _mediator.Verify(m => m.Send(It.IsAny<GetVatDeclarationQuery>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

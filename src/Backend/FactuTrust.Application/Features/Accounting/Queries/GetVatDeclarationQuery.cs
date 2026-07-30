@@ -5,6 +5,7 @@ using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Reports.Queries;
 using FactuTrust.Application.Features.WithholdingTax.Queries;
+using FactuTrust.Domain.Authorization;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
@@ -14,7 +15,14 @@ using Microsoft.Extensions.Options;
 
 namespace FactuTrust.Application.Features.Accounting.Queries;
 
-public sealed record GetVatDeclarationQuery(int Year, int Month) : IRequest<Result<VatDeclarationDto>>;
+/// <param name="EnforceCompanySubmittedOnly">
+/// Quand true (GET/PDF HTTP société), n'expose que les déclarations Soumise/Verrouillée.
+/// Laisser false pour les appels internes (save, reporting) afin de ne pas casser le recalcul.
+/// </param>
+public sealed record GetVatDeclarationQuery(
+    int Year,
+    int Month,
+    bool EnforceCompanySubmittedOnly = false) : IRequest<Result<VatDeclarationDto>>;
 
 public sealed class GetVatDeclarationQueryHandler : IRequestHandler<GetVatDeclarationQuery, Result<VatDeclarationDto>>
 {
@@ -51,6 +59,15 @@ public sealed class GetVatDeclarationQueryHandler : IRequestHandler<GetVatDeclar
 
     public async Task<Result<VatDeclarationDto>> Handle(GetVatDeclarationQuery request, CancellationToken cancellationToken)
     {
+        // Filtre société : early-return avant tout recalcul pour ne pas fuiter les montants d'un brouillon.
+        if (request.EnforceCompanySubmittedOnly)
+        {
+            var companyVisible = await _vatDeclarationRepository.GetByYearMonthAsync(
+                request.Year, request.Month, cancellationToken);
+            if (companyVisible is null || !VatDeclarationAccess.IsVisibleToCompany(companyVisible.Status))
+                return Result.Failure<VatDeclarationDto>(VatDeclarationAccess.NotSubmitted());
+        }
+
         var start = new DateTime(request.Year, request.Month, 1);
         var end = start.AddMonths(1).AddDays(-1);
 

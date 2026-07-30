@@ -8,7 +8,7 @@ import {
   isDelegatedReadOnlyRoute,
   isFirmDelegatedReadonly
 } from './firm-navigation.registry';
-import { NavSubItem } from './app-navigation.registry';
+import { NavItem, NavSubItem } from './app-navigation.registry';
 
 describe('firm-navigation.registry — FIRM_NATIVE_NAV', () => {
   const governanceRoutes = [
@@ -21,6 +21,23 @@ describe('firm-navigation.registry — FIRM_NATIVE_NAV', () => {
     '/firm/governance/social'
   ];
 
+  function collectRoutes(items: NavItem[]): string[] {
+    const routes: string[] = [];
+    for (const item of items) {
+      if (item.route) {
+        routes.push(item.route);
+      }
+      if (item.children?.length) {
+        for (const child of item.children) {
+          if (child.route) {
+            routes.push(child.route);
+          }
+        }
+      }
+    }
+    return routes;
+  }
+
   it('FIRM_NATIVE_NAV includes fiscal schedule route', () => {
     expect(FIRM_NATIVE_NAV.some(i => i.route === '/firm/fiscal-schedule')).toBe(true);
   });
@@ -29,45 +46,61 @@ describe('firm-navigation.registry — FIRM_NATIVE_NAV', () => {
     expect(FIRM_NATIVE_NAV.some(i => i.label === 'Gouvernance')).toBe(false);
   });
 
-  it('FIRM_NATIVE_NAV exposes governance routes as top-level items in expected order', () => {
-    const topLevelRoutes = FIRM_NATIVE_NAV.map(i => i.route).filter((route): route is string => !!route);
-    const extractedGovernanceRoutes = topLevelRoutes.filter(route => governanceRoutes.includes(route));
+  it('FIRM_NATIVE_NAV groups dossier and collaborator rentability under one parent', () => {
+    const parent = FIRM_NATIVE_NAV.find(i => i.label === 'Rentabilité de collaborateurs');
+    expect(parent).toBeTruthy();
+    expect(parent!.route).toBeUndefined();
+    expect(parent!.children?.map(c => c.route)).toEqual([
+      '/firm/governance/dossier-time-profitability',
+      '/firm/governance/collaborator-rentability'
+    ]);
+    expect(FIRM_NATIVE_NAV.some(i => i.label === 'Feuilles de temps et rentabilité')).toBe(false);
+    expect(FIRM_NATIVE_NAV.some(i => i.label === 'Rentabilité collaborateurs')).toBe(false);
+  });
+
+  it('FIRM_NATIVE_NAV exposes governance routes in expected order (top-level + children)', () => {
+    const extractedGovernanceRoutes = collectRoutes(FIRM_NATIVE_NAV).filter(route =>
+      governanceRoutes.includes(route)
+    );
     expect(extractedGovernanceRoutes).toEqual(governanceRoutes);
   });
 
   it('FIRM_NATIVE_NAV has no governance dashboard route', () => {
-    expect(FIRM_NATIVE_NAV.some(i => i.route === '/firm/governance/dashboard')).toBe(false);
+    expect(collectRoutes(FIRM_NATIVE_NAV).includes('/firm/governance/dashboard')).toBe(false);
   });
 
   it('filterFirmGovernanceNav removes governance when flag off', () => {
     const filtered = filterFirmGovernanceNav(FIRM_NATIVE_NAV, false);
     expect(filtered.some(i => i.label === 'Gouvernance')).toBe(false);
-    expect(filtered.some(i => i.route?.startsWith('/firm/governance'))).toBe(false);
-    expect(filtered.some(i => i.route === '/firm/affectation')).toBe(false);
+    expect(filtered.some(i => i.label === 'Rentabilité de collaborateurs')).toBe(false);
+    expect(collectRoutes(filtered).some(route => route.startsWith('/firm/governance'))).toBe(false);
+    expect(collectRoutes(filtered).includes('/firm/affectation')).toBe(false);
   });
 
   it('filterFirmGovernanceNav keeps governance when flag on', () => {
     const filtered = filterFirmGovernanceNav(FIRM_NATIVE_NAV, true);
-    const topLevelRoutes = filtered.map(i => i.route).filter((route): route is string => !!route);
-    const extractedGovernanceRoutes = topLevelRoutes.filter(route => governanceRoutes.includes(route));
+    const extractedGovernanceRoutes = collectRoutes(filtered).filter(route =>
+      governanceRoutes.includes(route)
+    );
     expect(extractedGovernanceRoutes).toEqual(governanceRoutes);
+    expect(filtered.some(i => i.label === 'Rentabilité de collaborateurs')).toBe(true);
   });
 
   it('manager/off matrix keeps visibility equivalent to old behavior', () => {
-    const managerFlagOn = filterFirmGovernanceNav(FIRM_NATIVE_NAV, true).filter(i =>
-      governanceRoutes.includes(i.route ?? '')
+    const managerFlagOn = collectRoutes(filterFirmGovernanceNav(FIRM_NATIVE_NAV, true)).filter(route =>
+      governanceRoutes.includes(route)
     );
     expect(managerFlagOn).toHaveSize(7);
 
-    const managerFlagOff = filterFirmGovernanceNav(FIRM_NATIVE_NAV, false).filter(i =>
-      governanceRoutes.includes(i.route ?? '')
+    const managerFlagOff = collectRoutes(filterFirmGovernanceNav(FIRM_NATIVE_NAV, false)).filter(route =>
+      governanceRoutes.includes(route)
     );
     expect(managerFlagOff).toHaveSize(0);
 
-    const nonManagerFlagOn = managerFlagOn.filter(i => i.route !== '/firm/affectation');
+    const nonManagerFlagOn = managerFlagOn.filter(route => route !== '/firm/affectation');
     expect(nonManagerFlagOn).toHaveSize(6);
 
-    const nonManagerFlagOff = managerFlagOff.filter(i => i.route !== '/firm/affectation');
+    const nonManagerFlagOff = managerFlagOff.filter(route => route !== '/firm/affectation');
     expect(nonManagerFlagOff).toHaveSize(0);
   });
 });

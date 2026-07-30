@@ -23,7 +23,9 @@ import {
 import { FirmContextService } from '@core/services/firm-context.service';
 import { FirmAssignmentService, FirmClientDossier } from '@core/services/firm-assignment.service';
 import { FirmBadgeService } from '@core/services/firm-badge.service';
+import { ExchangeBadgeService } from '@core/services/exchange-badge.service';
 import { FirmFeatureFlagsService } from '@core/services/firm-feature-flags.service';
+import { environment } from '@environments/environment';
 import { AccountingFeatureFlagsService } from '@features/accounting/shared/accounting-feature-flags.service';
 import { AppModule } from '@core/models/app-module';
 import { PERMISSIONS } from '@core/config/permission-keys';
@@ -43,6 +45,7 @@ export class AppNavService {
   private readonly firmContext = inject(FirmContextService);
   private readonly firmAssignments = inject(FirmAssignmentService);
   private readonly firmBadge = inject(FirmBadgeService);
+  private readonly exchangeBadge = inject(ExchangeBadgeService);
   private readonly firmFeatureFlags = inject(FirmFeatureFlagsService);
   private readonly accountingFlags = inject(AccountingFeatureFlagsService);
   private readonly studioNav = inject(StudioNavService);
@@ -59,6 +62,7 @@ export class AppNavService {
     this.firmContext.context();
     this.activeClients();
     this.firmBadge.pendingInvitationsCount();
+    this.exchangeBadge.unreadCount();
 
     if (this.auth.isAccountingFirm()) {
       if (this.auth.isDelegatedMode()) {
@@ -69,6 +73,7 @@ export class AppNavService {
 
     const fixedAssetsEnabled = this.accountingFlags.flags().fixedAssetsEnabled;
     let items = filterNavItems(this.auth, ALL_NAV_ITEMS);
+    items = this.filterCompanyExchangesNav(items);
     items = applyCompanyAccountingSidebar(items);
     items = filterNavItems(this.auth, items);
     if (!fixedAssetsEnabled) {
@@ -148,13 +153,16 @@ export class AppNavService {
     }
 
     const pending = this.firmBadge.pendingInvitationsCount();
+    const exchangeUnread = this.exchangeBadge.unreadCount();
     const dashboard = FIRM_NATIVE_NAV.find(i => i.route === '/firm/dashboard')!;
     const invitations = FIRM_NATIVE_NAV.find(i => i.route === '/firm/invitations')!;
+    const exchanges = FIRM_NATIVE_NAV.find(i => i.route === '/firm/exchanges');
     const tail = FIRM_NATIVE_NAV.filter(
       i =>
         i.route !== '/firm/dashboard' &&
         i.route !== '/firm/clients' &&
-        i.route !== '/firm/invitations'
+        i.route !== '/firm/invitations' &&
+        i.route !== '/firm/exchanges'
     );
 
     return [
@@ -176,10 +184,22 @@ export class AppNavService {
         ...invitations,
         badge: pending > 0 ? pending : undefined
       },
+      ...(exchanges
+        ? [{ ...exchanges, badge: exchangeUnread > 0 ? exchangeUnread : undefined }]
+        : []),
       ...this.filterFirmManagerOnlyNav(
         filterFirmGovernanceNav(tail, this.firmFeatureFlags.isEnabled('firmGovernance'))
       )
     ];
+  }
+
+  private filterCompanyExchangesNav(items: NavItem[]): NavItem[] {
+    const show =
+      environment.accountingFirmsEnabled &&
+      this.auth.isAdmin() &&
+      !this.auth.isAccountingFirm();
+    if (show) return items;
+    return items.filter(i => i.label !== 'Échanges');
   }
 
   private filterFirmManagerOnlyNav(items: NavItem[]): NavItem[] {

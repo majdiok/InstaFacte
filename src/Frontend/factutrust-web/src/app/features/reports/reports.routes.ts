@@ -96,6 +96,16 @@ export const REPORTS_ROUTES: Routes = [
     title: 'Rapport Bénéfices - InstaFact'
   },
   {
+    path: 'client-balances',
+    loadComponent: () => import('./client-balances/client-balances.component').then(m => m.ClientBalancesComponent),
+    title: 'Solde par client - InstaFact'
+  },
+  {
+    path: 'supplier-balances',
+    loadComponent: () => import('./supplier-balances/supplier-balances.component').then(m => m.SupplierBalancesComponent),
+    title: 'Solde par fournisseur - InstaFact'
+  },
+  {
     path: 'product-sales-analytics',
     loadComponent: () => import('./product-sales-analytics/product-sales-analytics.component').then(m => m.ProductSalesAnalyticsComponent),
     title: 'Rapports décisionnels ventes produits - InstaFact'

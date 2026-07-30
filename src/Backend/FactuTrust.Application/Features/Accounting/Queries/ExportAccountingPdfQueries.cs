@@ -9,7 +9,10 @@ namespace FactuTrust.Application.Features.Accounting.Queries;
 
 // ── Export PDF de la déclaration mensuelle ─────────────────────────────────────
 
-public sealed record ExportVatDeclarationPdfQuery(int Year, int Month) : IRequest<Result<byte[]>>;
+public sealed record ExportVatDeclarationPdfQuery(
+    int Year,
+    int Month,
+    bool EnforceCompanySubmittedOnly = false) : IRequest<Result<byte[]>>;
 
 public sealed class ExportVatDeclarationPdfQueryHandler : IRequestHandler<ExportVatDeclarationPdfQuery, Result<byte[]>>
 {
@@ -26,7 +29,9 @@ public sealed class ExportVatDeclarationPdfQueryHandler : IRequestHandler<Export
 
     public async Task<Result<byte[]>> Handle(ExportVatDeclarationPdfQuery request, CancellationToken cancellationToken)
     {
-        var declaration = await _mediator.Send(new GetVatDeclarationQuery(request.Year, request.Month), cancellationToken);
+        var declaration = await _mediator.Send(
+            new GetVatDeclarationQuery(request.Year, request.Month, request.EnforceCompanySubmittedOnly),
+            cancellationToken);
         if (declaration.IsFailure)
             return Result.Failure<byte[]>(declaration.Error);
 

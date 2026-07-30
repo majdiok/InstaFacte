@@ -87,6 +87,16 @@ export function canShowVatDeclarationDocLinks(auth: AuthService): boolean {
   return !isCompanyAccountingRestricted(auth);
 }
 
+/** Préparation / soumission / rectificative : réservées au cabinet (pas à la société). */
+export function canManageVatDeclaration(auth: AuthService): boolean {
+  return !isCompanyAccountingRestricted(auth);
+}
+
+/** Société connectée : lecture seule des déclarations soumises + export PDF. */
+export function isCompanyVatDeclarationReadOnly(auth: AuthService): boolean {
+  return isCompanyAccountingRestricted(auth);
+}
+
 function pathMatchesPrefix(path: string, prefix: string): boolean {
   if (path === prefix) {
     return true;

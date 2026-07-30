@@ -122,6 +122,43 @@ export function applySupplierListFiltersFromQuery(
   return { search: state.search };
 }
 
+export interface SupplierInvoiceListFilterState {
+  selectedStatus: number | null;
+  selectedSupplierId: string | null;
+  search: string | null;
+}
+
+export function applySupplierInvoiceListFiltersFromQuery(
+  params: ParamMap,
+  state: SupplierInvoiceListFilterState
+): SupplierInvoiceListFilterState {
+  const next: SupplierInvoiceListFilterState = {
+    selectedStatus: state.selectedStatus,
+    selectedSupplierId: state.selectedSupplierId,
+    search: state.search
+  };
+
+  const statusRaw = params.get('status');
+  if (statusRaw !== null && statusRaw !== '') {
+    const status = Number(statusRaw);
+    if (!Number.isNaN(status)) {
+      next.selectedStatus = status;
+    }
+  }
+
+  const supplierId = params.get('supplierId');
+  if (supplierId) {
+    next.selectedSupplierId = supplierId;
+  }
+
+  const search = parseSearchQueryParam(params);
+  if (search) {
+    next.search = search;
+  }
+
+  return next;
+}
+
 export interface DeliveryNoteListFilterState {
   selectedStatus: DeliveryNoteStatus | null;
   search: string | null;

@@ -70,21 +70,33 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
 
   {
 
-    label: 'Feuilles de temps et rentabilité',
+    label: 'Rentabilité de collaborateurs',
 
-    route: '/firm/governance/dossier-time-profitability',
+    icon: 'fa-solid fa-chart-pie',
 
-    icon: 'fa-solid fa-chart-line'
+    children: [
 
-  },
+      {
 
-  {
+        label: 'Feuilles de temps et rentabilité',
 
-    label: 'Rentabilité collaborateurs',
+        route: '/firm/governance/dossier-time-profitability',
 
-    route: '/firm/governance/collaborator-rentability',
+        icon: 'fa-solid fa-chart-line'
 
-    icon: 'fa-solid fa-chart-pie'
+      },
+
+      {
+
+        label: 'Rentabilité collaborateurs',
+
+        route: '/firm/governance/collaborator-rentability',
+
+        icon: 'fa-solid fa-chart-pie'
+
+      }
+
+    ]
 
   },
 
@@ -115,6 +127,16 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
     icon: 'fa-solid fa-envelope-open-text',
 
     route: '/firm/invitations'
+
+  },
+
+  {
+
+    label: 'Échanges',
+
+    icon: 'fa-solid fa-comments',
+
+    route: '/firm/exchanges'
 
   },
 
@@ -206,6 +228,8 @@ export const DELEGATED_FIRM_VENTES_ALLOWED_ROUTES = new Set([
 
   '/invoices/unpaid',
 
+  '/reports/client-balances',
+
   '/reports/sales'
 
 ]);
@@ -219,6 +243,8 @@ export const DELEGATED_FIRM_ACHATS_ALLOWED_ROUTES = new Set([
   '/supplier-invoices',
 
   '/supplier-invoices/unpaid',
+
+  '/reports/supplier-balances',
 
   '/reports/purchases'
 

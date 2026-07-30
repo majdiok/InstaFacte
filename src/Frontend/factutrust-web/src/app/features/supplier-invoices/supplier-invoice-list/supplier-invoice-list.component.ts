@@ -1,6 +1,6 @@
 import { Component, OnInit, OnDestroy, inject, signal, computed } from '@angular/core';
 import { CommonModule, CurrencyPipe, DatePipe } from '@angular/common';
-import { RouterModule, ActivatedRoute } from '@angular/router';
+import { RouterModule, ActivatedRoute, ParamMap } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { InputTextModule } from 'primeng/inputtext';
@@ -21,7 +21,9 @@ import {
     SupplierInvoiceListSummary,
     SupplierInvoiceStatus
 } from '@core/services/supplier-invoice.service';
+import { SupplierService, SupplierListItem } from '@core/services/supplier.service';
 import { ToastService } from '@core/services/toast.service';
+import { applySupplierInvoiceListFiltersFromQuery } from '@core/utils/list-filter-from-query';
 
 interface StatusOption {
     label: string;
@@ -72,6 +74,18 @@ interface StatusOption {
           placeholder="Tous les statuts"
           [showClear]="true"
           (onChange)="onFilterChange()">
+        </p-dropdown>
+        <p-dropdown
+          [options]="supplierOptions"
+          [(ngModel)]="selectedSupplierId"
+          optionLabel="name"
+          optionValue="id"
+          placeholder="Tous les fournisseurs"
+          [showClear]="true"
+          [filter]="true"
+          filterBy="name"
+          (onChange)="onFilterChange()"
+          styleClass="supplier-filter">
         </p-dropdown>
       </div>
     </div>
@@ -173,6 +187,7 @@ interface StatusOption {
 })
 export class SupplierInvoiceListComponent implements OnInit, OnDestroy {
     private service = inject(SupplierInvoiceService);
+    private supplierService = inject(SupplierService);
     private toastService = inject(ToastService);
     private route = inject(ActivatedRoute);
     private destroy$ = new Subject<void>();
@@ -187,6 +202,8 @@ export class SupplierInvoiceListComponent implements OnInit, OnDestroy {
     unpaidOnlyMode = signal(false);
     searchTerm = '';
     selectedStatus: SupplierInvoiceStatus | null = null;
+    selectedSupplierId: string | null = null;
+    supplierOptions: SupplierListItem[] = [];
     page = 1;
     pageSize = 20;
 
@@ -237,8 +254,35 @@ export class SupplierInvoiceListComponent implements OnInit, OnDestroy {
         this.route.data.pipe(takeUntil(this.destroy$)).subscribe((data) => {
             this.unpaidOnlyMode.set(data['unpaidOnly'] === true);
         });
+        this.applyFiltersFromQuery(this.route.snapshot.queryParamMap);
         this.searchSubject.pipe(debounceTime(300), distinctUntilChanged(), takeUntil(this.destroy$)).subscribe(() => this.onSearch());
+        this.loadSuppliers();
         this.loadInvoices();
+    }
+
+    private applyFiltersFromQuery(paramMap: ParamMap): void {
+        const applied = applySupplierInvoiceListFiltersFromQuery(paramMap, {
+            selectedStatus: this.selectedStatus,
+            selectedSupplierId: this.selectedSupplierId,
+            search: this.searchTerm || null
+        });
+        this.selectedStatus = applied.selectedStatus as SupplierInvoiceStatus | null;
+        if (applied.selectedSupplierId) {
+            this.selectedSupplierId = applied.selectedSupplierId;
+        }
+        if (applied.search) {
+            this.searchTerm = applied.search;
+        }
+    }
+
+    private loadSuppliers(): void {
+        this.supplierService.getSuppliers({ pageSize: 200, isActive: true }).subscribe({
+            next: (response) => {
+                if (response.success && response.data?.items) {
+                    this.supplierOptions = response.data.items;
+                }
+            }
+        });
     }
 
     ngOnDestroy(): void {
@@ -253,6 +297,7 @@ export class SupplierInvoiceListComponent implements OnInit, OnDestroy {
         const params: SupplierInvoiceSearchParams = {
             search: this.searchTerm || undefined,
             status: this.selectedStatus ?? undefined,
+            supplierId: this.selectedSupplierId || undefined,
             page: this.page,
             pageSize: this.pageSize,
             ...(this.unpaidOnlyMode() ? { unpaidOnly: true } : {})
@@ -324,13 +369,14 @@ export class SupplierInvoiceListComponent implements OnInit, OnDestroy {
     }
 
     hasActiveFilters(): boolean {
-        return !!this.searchTerm || this.selectedStatus !== null;
+        return !!this.searchTerm || this.selectedStatus !== null || !!this.selectedSupplierId;
     }
 
     activeFiltersCount(): number {
         let c = 0;
         if (this.searchTerm) c++;
         if (this.selectedStatus !== null) c++;
+        if (this.selectedSupplierId) c++;
         return c;
     }
 
@@ -342,6 +388,7 @@ export class SupplierInvoiceListComponent implements OnInit, OnDestroy {
     resetFilters(): void {
         this.searchTerm = '';
         this.selectedStatus = null;
+        this.selectedSupplierId = null;
         this.page = 1;
         this.loadInvoices();
     }

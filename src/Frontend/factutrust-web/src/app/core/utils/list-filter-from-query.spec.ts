@@ -2,6 +2,7 @@ import {
   applyDeliveryNoteListFiltersFromQuery,
   applyInvoiceListFiltersFromQuery,
   applyQuoteListFiltersFromQuery,
+  applySupplierInvoiceListFiltersFromQuery,
   isActiveQuoteStatus,
   parseDateQueryParam,
   parseSearchQueryParam
@@ -62,6 +63,25 @@ describe('list-filter-from-query', () => {
       expect(result.dateRange?.[1]?.getFullYear()).toBe(2026);
       expect(result.dateRange?.[1]?.getMonth()).toBe(0);
       expect(result.dateRange?.[1]?.getDate()).toBe(31);
+    });
+  });
+
+  describe('applySupplierInvoiceListFiltersFromQuery', () => {
+    it('applies supplierId and search', () => {
+      const result = applySupplierInvoiceListFiltersFromQuery(
+        paramMap({ supplierId: 'sup-123', search: 'FS-2026' }) as any,
+        { selectedStatus: null, selectedSupplierId: null, search: null }
+      );
+      expect(result.selectedSupplierId).toBe('sup-123');
+      expect(result.search).toBe('FS-2026');
+    });
+
+    it('applies numeric status', () => {
+      const result = applySupplierInvoiceListFiltersFromQuery(
+        paramMap({ status: '3' }) as any,
+        { selectedStatus: null, selectedSupplierId: null, search: null }
+      );
+      expect(result.selectedStatus).toBe(3);
     });
   });
 

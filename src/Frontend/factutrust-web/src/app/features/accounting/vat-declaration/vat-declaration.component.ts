@@ -5,7 +5,11 @@ import { Title } from '@angular/platform-browser';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { AccountingService, VatDeclarationDto } from '../services/accounting.service';
 import { AuthService } from '@core/services/auth.service';
-import { canShowVatDeclarationDocLinks } from '@core/config/company-accounting-nav.config';
+import {
+  canManageVatDeclaration,
+  canShowVatDeclarationDocLinks,
+  isCompanyVatDeclarationReadOnly
+} from '@core/config/company-accounting-nav.config';
 import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { wrapLegacyAnalyzePayload } from '@features/ai-assistant/utils/ai-screen-payload.factory';
@@ -30,6 +34,12 @@ import {
   shiftPeriod
 } from './vat-declaration.view-model';
 
+/** Message aligné sur VatDeclarationAccess.NotSubmittedMessage (backend). */
+const COMPANY_NOT_SUBMITTED_MARKER = 'Aucune déclaration soumise';
+
+const COMPANY_EMPTY_STATE_MESSAGE =
+  'Aucune déclaration mensuelle soumise par le cabinet pour cette période. Vous pourrez consulter et exporter le PDF dès qu’elle aura été soumise.';
+
 @Component({
   selector: 'app-vat-declaration',
   standalone: true,
@@ -48,14 +58,19 @@ import {
   template: `
     <app-page-header
       title="Déclaration mensuelle des impôts et taxes"
-      subtitle="Préremplissage à partir des ventes et achats du mois" />
+      [subtitle]="isCompanyReadOnly
+        ? 'Consultation des déclarations soumises par le cabinet'
+        : 'Préremplissage à partir des ventes et achats du mois'" />
 
     <app-vat-declaration-toolbar
       [year]="year"
       [month]="month"
       [loading]="loading()"
       [hasData]="!!data()"
-      [showCompanySettings]="!auth.isFirmDelegatedReadonly()"
+      [showCompanySettings]="!isCompanyReadOnly && !auth.isFirmDelegatedReadonly()"
+      [showAiAnalyze]="canManage"
+      [showPreview]="canManage"
+      [showExportPdf]="true"
       [payloadBuilder]="buildVatAnalyzePayload"
       (yearChange)="onYearChange($event)"
       (monthChange)="onMonthChange($event)"
@@ -72,6 +87,13 @@ import {
       retryLabel="Réessayer"
       (retry)="load()" />
 
+    @if (unavailableReason(); as reason) {
+      <div class="vat-empty-state card" role="status">
+        <i class="pi pi-info-circle" aria-hidden="true"></i>
+        <p>{{ reason }}</p>
+      </div>
+    }
+
     @if (data(); as d) {
       <div class="vat-page-layout">
         <div class="vat-main-column">
@@ -85,7 +107,7 @@ import {
           <app-vat-declaration-taxes-table
             [rows]="taxRows()"
             [extras]="extras()"
-            [disabled]="loading()"
+            [disabled]="loading() || isCompanyReadOnly"
             (extraChange)="onExtraChange($event.key, $event.value)" />
 
           <app-vat-declaration-vat-detail-table [declaration]="d" />
@@ -103,6 +125,7 @@ import {
           [loading]="loading()"
           [v2Enabled]="d.monthlyDeclarationV2Enabled"
           [chartSegments]="chartSegments()"
+          [canManage]="canManage"
           (saveDraft)="save(false)"
           (submit)="save(true)"
           (rectificative)="save(true, true)"
@@ -124,12 +147,31 @@ import {
     }
     .vat-main-column { min-width: 0; }
     .vat-side-column { min-width: 0; }
+    .vat-empty-state {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--spacing-3);
+      padding: var(--spacing-5);
+      margin-bottom: var(--spacing-4);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      color: var(--color-text-secondary);
+      font-size: var(--font-size-sm);
+    }
+    .vat-empty-state i {
+      margin-top: 0.15rem;
+      color: var(--color-primary-600, #2563eb);
+      font-size: 1.25rem;
+    }
+    .vat-empty-state p { margin: 0; line-height: 1.5; }
   `
 })
 export class VatDeclarationComponent implements OnInit {
   private readonly api = inject(AccountingService);
   readonly auth = inject(AuthService);
   readonly showDocLinks = canShowVatDeclarationDocLinks(this.auth);
+  readonly isCompanyReadOnly = isCompanyVatDeclarationReadOnly(this.auth);
+  readonly canManage = canManageVatDeclaration(this.auth);
   private readonly toast = inject(ToastService);
   private readonly title = inject(Title);
   private readonly route = inject(ActivatedRoute);
@@ -140,6 +182,7 @@ export class VatDeclarationComponent implements OnInit {
 
   readonly data = signal<VatDeclarationDto | null>(null);
   readonly error = signal<string | null>(null);
+  readonly unavailableReason = signal<string | null>(null);
   readonly loading = signal(false);
 
   readonly extras = signal<VatDeclarationExtras>({
@@ -198,6 +241,7 @@ export class VatDeclarationComponent implements OnInit {
   }
 
   onExtraChange(key: VatExtrasKey, value: unknown): void {
+    if (this.isCompanyReadOnly) return;
     this.patchExtras(key, value);
   }
 
@@ -256,6 +300,7 @@ export class VatDeclarationComponent implements OnInit {
     this.clampPeriod();
     this.loading.set(true);
     this.error.set(null);
+    this.unavailableReason.set(null);
 
     this.api.getVatDeclaration(this.year, this.month).subscribe({
       next: res => {
@@ -273,17 +318,18 @@ export class VatDeclarationComponent implements OnInit {
             acomptes: d.acomptes
           });
         } else {
-          this.error.set(res.error ?? 'Erreur');
+          this.handleLoadFailure(res.error ?? 'Erreur');
         }
       },
       error: (err) => {
         this.loading.set(false);
-        this.error.set(this.errorHandler.extractErrorMessage(err));
+        this.handleLoadFailure(this.errorHandler.extractErrorMessage(err));
       }
     });
   }
 
   save(submit: boolean, rectificative = false): void {
+    if (!this.canManage) return;
     this.clampPeriod();
     this.loading.set(true);
     this.error.set(null);
@@ -314,6 +360,15 @@ export class VatDeclarationComponent implements OnInit {
   }
 
   exportPdf(): void {
+    if (!this.data()) {
+      this.toast.add({
+        severity: 'warn',
+        summary: 'Export PDF',
+        detail: 'Aucune déclaration soumise à exporter pour cette période.',
+        life: 5000
+      });
+      return;
+    }
     this.clampPeriod();
     this.api.exportVatDeclarationPdf(this.year, this.month).subscribe({
       next: blob => this.downloadPdf(blob),
@@ -322,6 +377,7 @@ export class VatDeclarationComponent implements OnInit {
   }
 
   previewPdf(): void {
+    if (!this.canManage || !this.data()) return;
     this.clampPeriod();
     this.api.exportVatDeclarationPdf(this.year, this.month).subscribe({
       next: blob => {
@@ -331,6 +387,21 @@ export class VatDeclarationComponent implements OnInit {
       },
       error: () => this.toast.add({ severity: 'error', summary: 'Aperçu PDF', detail: "L'aperçu PDF a échoué.", life: 5000 })
     });
+  }
+
+  private handleLoadFailure(message: string): void {
+    this.data.set(null);
+    if (this.isCompanyReadOnly && this.isCompanyNotSubmittedMessage(message)) {
+      this.unavailableReason.set(COMPANY_EMPTY_STATE_MESSAGE);
+      this.error.set(null);
+      return;
+    }
+    this.unavailableReason.set(null);
+    this.error.set(message);
+  }
+
+  private isCompanyNotSubmittedMessage(message: string): boolean {
+    return message.includes(COMPANY_NOT_SUBMITTED_MARKER);
   }
 
   private downloadPdf(blob: Blob): void {

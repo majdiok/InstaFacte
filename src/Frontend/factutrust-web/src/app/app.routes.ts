@@ -153,6 +153,11 @@ export const routes: Routes = [
         loadChildren: () => import('./features/forecasting/forecasting.routes').then(m => m.FORECASTING_ROUTES)
       },
       {
+        path: 'exchanges',
+        loadChildren: () =>
+          import('./features/exchanges/exchanges.routes').then(m => m.EXCHANGES_ROUTES)
+      },
+      {
         path: 'firm',
         loadChildren: () => import('./features/firm/firm.routes').then(m => m.FIRM_ROUTES)
       },

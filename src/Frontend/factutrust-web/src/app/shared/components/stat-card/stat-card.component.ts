@@ -183,7 +183,7 @@ type StatAppearance = 'default' | 'solid' | 'mini-sparkline';
       color: #fff;
     }
     .stat-card--solid::after { opacity: 0.15; color: #fff; }
-    .stat-card--solid .stat-label { color: rgba(255, 255, 255, 0.85); }
+    .stat-card--solid .stat-label { color: #000; }
     .stat-card--solid .stat-value { color: #fff; font-family: var(--font-family, Inter, sans-serif); }
     .stat-card--solid .stat-trend {
       background: rgba(255, 255, 255, 0.2);

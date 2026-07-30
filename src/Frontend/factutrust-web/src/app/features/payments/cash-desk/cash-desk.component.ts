@@ -472,7 +472,7 @@ const MONTH_OPTIONS: { label: string; value: number }[] = [
       border: 1px solid rgba(22, 163, 74, 0.15);
     }
 
-    .dialog-body { padding: var(--spacing-4) 0; }
+    .dialog-body { padding: var(--spacing-4) var(--spacing-6); }
     .dialog-message { color: var(--color-text-secondary); margin: 0 0 var(--spacing-4) 0; }
     .alert { margin-top: var(--spacing-3); padding: var(--spacing-3) var(--spacing-4); border-radius: var(--radius-lg); border: 1px solid var(--color-danger-300); background: rgba(220, 38, 38, 0.06); font-size: var(--font-size-sm); }
     .dialog-footer { display: flex; justify-content: flex-end; gap: var(--spacing-3); }

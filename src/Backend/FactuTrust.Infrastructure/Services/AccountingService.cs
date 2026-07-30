@@ -6,6 +6,7 @@ using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Entities.Payroll;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.Services.Payroll;
 using FactuTrust.Domain.ValueObjects;
 using FactuTrust.Infrastructure.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
@@ -1670,13 +1671,6 @@ public sealed class AccountingService : IAccountingService
         return Result.Success(affected);
     }
 
-    /// <summary>Comptes SCE paie (paramétrables ultérieurement via settings).</summary>
-    private const string PayrollSalaryAccount = "640";
-    private const string PayrollEmployerChargesAccount = "647";
-    private const string PayrollPersonnelPayableAccount = "421";
-    private const string PayrollStateWithholdingAccount = "432";
-    private const string PayrollSocialOrgAccount = "453";
-
     public async Task<Result> GeneratePayrollRunEntryAsync(PayrollRun payrollRun, CancellationToken cancellationToken = default)
     {
         if (await _chartOfAccounts.CountAsync(cancellationToken) == 0)
@@ -1695,20 +1689,27 @@ public sealed class AccountingService : IAccountingService
         var label = $"Paie {payrollRun.Month:D2}/{payrollRun.Year}";
         var currency = Money.DefaultCurrency;
 
-        var employerCharges = payrollRun.TotalCnssEmployer + payrollRun.TotalTfp
-            + payrollRun.TotalFoprolos + payrollRun.TotalWorkAccident;
-        var stateWithholding = payrollRun.TotalIrpp + payrollRun.TotalCss
-            + payrollRun.TotalTfp + payrollRun.TotalFoprolos;
-        var socialOrg = payrollRun.TotalCnssEmployee + payrollRun.TotalCnssEmployer + payrollRun.TotalWorkAccident;
+        // Prefer payslip sum when loaded (covers cycles calculated before TotalOtherDeductions).
+        var otherDeductions = payrollRun.Payslips.Count > 0
+            ? Math.Round(payrollRun.Payslips.Sum(p => p.OtherDeductions), 3, MidpointRounding.AwayFromZero)
+            : payrollRun.TotalOtherDeductions;
 
-        var lines = new List<JournalLineInput>
-        {
-            new(PayrollSalaryAccount, label, payrollRun.TotalGross, 0, null, ThirdPartyKind.None),
-            new(PayrollEmployerChargesAccount, label, employerCharges, 0, null, ThirdPartyKind.None),
-            new(PayrollPersonnelPayableAccount, label, 0, payrollRun.TotalNet, null, ThirdPartyKind.None),
-            new(PayrollStateWithholdingAccount, label, 0, stateWithholding, null, ThirdPartyKind.None),
-            new(PayrollSocialOrgAccount, label, 0, socialOrg, null, ThirdPartyKind.None)
-        };
+        var linesResult = PayrollJournalEntryBuilder.BuildLines(
+            payrollRun.TotalGross,
+            payrollRun.TotalNet,
+            payrollRun.TotalCnssEmployee,
+            payrollRun.TotalCnssEmployer,
+            payrollRun.TotalIrpp,
+            payrollRun.TotalCss,
+            payrollRun.TotalTfp,
+            payrollRun.TotalFoprolos,
+            payrollRun.TotalWorkAccident,
+            otherDeductions,
+            label);
+        if (linesResult.IsFailure)
+            return Result.Failure(linesResult.Error);
+
+        var lines = linesResult.Value;
 
         var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
         if (accountValidation.IsFailure)

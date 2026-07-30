@@ -7,6 +7,7 @@ import {
   clampExtrasValue,
   computeTotalToPay,
   hasSuggestionMismatch,
+  isSubmittedOrLocked,
   resolveCompanyDisplay,
   round3,
   shiftPeriod,
@@ -178,6 +179,12 @@ describe('vat-declaration.view-model', () => {
     expect(canSubmitDeclaration(0)).toBeTrue();
     expect(canSubmitDeclaration(1)).toBeFalse(); // soumise
     expect(canSubmitDeclaration(2)).toBeFalse(); // verrouillée
+  });
+
+  it('isSubmittedOrLocked is true for submitted and locked only', () => {
+    expect(isSubmittedOrLocked(0)).toBeFalse();
+    expect(isSubmittedOrLocked(1)).toBeTrue();
+    expect(isSubmittedOrLocked(2)).toBeTrue();
   });
 
   it('buildDocLinks includes the fiscal schedule link with period query params', () => {
