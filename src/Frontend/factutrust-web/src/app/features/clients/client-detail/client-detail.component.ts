@@ -21,7 +21,7 @@ import { SkeletonTableComponent, SkeletonColumn } from '@shared/components/skele
 import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { StatusBadgeComponent } from '@shared/components/status-badge/status-badge.component';
-import { ClientService, Client, ClientType, ClientStats } from '@core/services/client.service';
+import { ClientOutstanding, ClientService, Client, ClientType, ClientStats } from '@core/services/client.service';
 import { InvoiceService, InvoiceListItem, InvoiceSearchParams } from '@core/services/invoice.service';
 import { QuoteService, QuoteListItem } from '@core/services/quote.service';
 
@@ -79,6 +79,66 @@ import { QuoteService, QuoteListItem } from '@core/services/quote.service';
         </app-button>
       }
     </app-page-header>
+
+    <!-- Encours : ce que le client doit avant qu'on lui vende a nouveau. -->
+    @if (outstanding(); as enc) {
+      <div class="ft-panel">
+        <h3 class="ft-panel__title">Encours</h3>
+
+        @if (enc.isOverLimit) {
+          <div class="ft-alert ft-alert--warning">
+            <i class="pi pi-exclamation-triangle"></i>
+            Encours de <strong>{{ enc.totalOutstanding | number: '1.3-3' }} {{ enc.currency }}</strong>
+            au-dela du plafond de {{ enc.creditLimit | number: '1.3-3' }}.
+            <span class="ft-muted">
+              Information seulement : aucune vente n'est bloquee.
+            </span>
+          </div>
+        }
+
+        @if (enc.overdueAmount > 0) {
+          <div class="ft-alert ft-alert--danger">
+            <i class="pi pi-clock"></i>
+            <strong>{{ enc.overdueAmount | number: '1.3-3' }} {{ enc.currency }}</strong>
+            echus depuis plus de 30 jours.
+          </div>
+        }
+
+        <div class="ft-info-grid">
+          <div>
+            <span class="ft-info__label">Factures non soldees</span>
+            {{ enc.unpaidInvoicesAmount | number: '1.3-3' }} {{ enc.currency }}
+            <small class="ft-muted">({{ enc.unpaidInvoiceCount }})</small>
+          </div>
+          <div>
+            <span class="ft-info__label">Commandes non facturees</span>
+            {{ enc.confirmedOrdersAmount | number: '1.3-3' }} {{ enc.currency }}
+          </div>
+          <div>
+            <span class="ft-info__label">Encours total</span>
+            <strong>{{ enc.totalOutstanding | number: '1.3-3' }} {{ enc.currency }}</strong>
+          </div>
+          <div>
+            <span class="ft-info__label">Plafond</span>
+            @if (enc.creditLimit === null) {
+              <span class="ft-muted">Aucun</span>
+            } @else {
+              {{ enc.creditLimit | number: '1.3-3' }} {{ enc.currency }}
+            }
+          </div>
+          <div>
+            <span class="ft-info__label">Marge restante</span>
+            @if (enc.availableCredit === null) {
+              <span class="ft-muted">—</span>
+            } @else {
+              <span [class.ft-delta--down]="enc.availableCredit < 0">
+                {{ enc.availableCredit | number: '1.3-3' }} {{ enc.currency }}
+              </span>
+            }
+          </div>
+        </div>
+      </div>
+    }
 
     @if (loading()) {
       <div class="detail-grid">
@@ -639,6 +699,8 @@ import { QuoteService, QuoteListItem } from '@core/services/quote.service';
   `]
 })
 export class ClientDetailComponent implements OnInit {
+  readonly outstanding = signal<ClientOutstanding | null>(null);
+
   private clientService = inject(ClientService);
   private invoiceService = inject(InvoiceService);
   private quoteService = inject(QuoteService);
@@ -679,6 +741,7 @@ export class ClientDetailComponent implements OnInit {
     if (id) {
       this.loadClient(id);
       this.loadStats(id);
+      this.loadOutstanding(id);
       this.loadInvoices(id);
       this.loadQuotes(id);
     } else {
@@ -704,6 +767,17 @@ export class ClientDetailComponent implements OnInit {
         this.initialLoad.set(false);
         this.client.set(null);
       }
+    });
+  }
+
+  /**
+   * L'encours est un confort d'affichage : son echec ne doit pas empecher de consulter la
+   * fiche client. On le laisse simplement vide.
+   */
+  private loadOutstanding(id: string): void {
+    this.clientService.getClientOutstanding(id).subscribe({
+      next: response => this.outstanding.set(response.success ? response.data : null),
+      error: () => this.outstanding.set(null)
     });
   }
 

@@ -106,6 +106,31 @@ export interface PagedResult<T> {
   hasPreviousPage: boolean;
 }
 
+
+/**
+ * Encours d'un client : ce qu'il doit, et ce qu'il s'apprete a devoir.
+ *
+ * ⚠️ `isOverLimit` est purement informatif. Aucun ecran ne doit refuser une operation sur
+ * cette base — decision produit : on avertit, le commercial decide.
+ */
+export interface ClientOutstanding {
+  clientId: string;
+  clientName: string;
+  /** Factures emises et non soldees : TTC restant apres encaissements. */
+  unpaidInvoicesAmount: number;
+  /** Commandes confirmees pas encore facturees : un engagement, pas encore une creance. */
+  confirmedOrdersAmount: number;
+  totalOutstanding: number;
+  creditLimit: number | null;
+  /** Negatif en depassement, null si le client n'a pas de plafond. */
+  availableCredit: number | null;
+  isOverLimit: boolean;
+  unpaidInvoiceCount: number;
+  /** Echu depuis plus de 30 jours — le signal qui appelle une relance. */
+  overdueAmount: number;
+  currency: string;
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   data: T;
@@ -165,6 +190,16 @@ export class ClientService {
       httpOpts.context = createHttpContextSkipGlobalErrorUi();
     }
     return this.http.get<ApiResponse<Client>>(`${this.API_URL}/${id}`, httpOpts);
+  }
+
+  /**
+   * Encours du client. Appele a l'affichage de la fiche et avant la confirmation d'une
+   * commande : c'est le moment ou l'information a une valeur.
+   */
+  getClientOutstanding(id: string): Observable<ApiResponse<ClientOutstanding>> {
+    return this.http.get<ApiResponse<ClientOutstanding>>(`${this.API_URL}/${id}/outstanding`, {
+      context: createHttpContextSkipGlobalErrorUi()
+    });
   }
 
   createClient(request: CreateClientRequest): Observable<ApiResponse<string>> {

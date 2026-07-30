@@ -25,6 +25,7 @@ import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { AuthService } from '@core/services/auth.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
+import { ClientService, ClientOutstanding } from '@core/services/client.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
 
 @Component({
@@ -382,6 +383,7 @@ export class SalesOrderDetailComponent implements OnInit {
   private readonly errorHandler = inject(ErrorHandlerService);
   private readonly auth = inject(AuthService);
   private readonly confirmationService = inject(ConfirmationService);
+  private readonly clientService = inject(ClientService);
 
   readonly order = signal<SalesOrderDetail | null>(null);
   readonly loading = signal(true);
@@ -492,12 +494,43 @@ export class SalesOrderDetailComponent implements OnInit {
     }
   }
 
+  /**
+   * Avant de confirmer, on regarde l'encours du client et on l'affiche dans la demande de
+   * confirmation.
+   *
+   * ⚠️ C'est un AVERTISSEMENT, pas un verrou : le bouton reste « Confirmer » même en
+   * dépassement. Décision produit — le commercial connaît son client mieux que la règle.
+   */
   confirmOrder(): void {
+    const clientId = this.order()?.clientId;
+    if (!clientId) return;
+
+    this.clientService.getClientOutstanding(clientId).subscribe({
+      next: res => this.askConfirmation(res.success ? res.data : null),
+      // L'encours indisponible ne doit pas empêcher de confirmer : on demande sans lui.
+      error: () => this.askConfirmation(null)
+    });
+  }
+
+  private askConfirmation(outstanding: ClientOutstanding | null): void {
+    let message =
+      'Confirmer engage fermement la commande et rend les lignes non modifiables. ' +
+      'Si la réservation de stock est activée, le stock sera réservé.';
+
+    if (outstanding?.isOverLimit) {
+      message +=
+        `\n\n⚠️ Encours du client : ${outstanding.totalOutstanding.toFixed(3)} ` +
+        `${outstanding.currency}, au-delà de son plafond de ` +
+        `${(outstanding.creditLimit ?? 0).toFixed(3)}. La commande reste confirmable.`;
+    } else if (outstanding && outstanding.overdueAmount > 0) {
+      message +=
+        `\n\n⚠️ ${outstanding.overdueAmount.toFixed(3)} ${outstanding.currency} ` +
+        'échus depuis plus de 30 jours chez ce client.';
+    }
+
     this.confirmationService.confirm({
       header: 'Confirmer la commande',
-      message:
-        'Confirmer engage fermement la commande et rend les lignes non modifiables. ' +
-        'Si la réservation de stock est activée, le stock sera réservé.',
+      message,
       icon: 'pi pi-check-circle',
       acceptLabel: 'Confirmer',
       rejectLabel: 'Retour',
