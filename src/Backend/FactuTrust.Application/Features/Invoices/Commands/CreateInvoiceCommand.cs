@@ -1,5 +1,6 @@
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Interfaces.Pricing;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
@@ -77,6 +78,7 @@ public sealed class CreateInvoiceCommandHandler : IRequestHandler<CreateInvoiceC
     private readonly IPlanQuotaService _planQuota;
     private readonly IInvoiceNumberGenerator _numberGenerator;
     private readonly AccountingSettings _accountingSettings;
+    private readonly IPriceResolver _priceResolver;
 
     public CreateInvoiceCommandHandler(
         IInvoiceRepository invoiceRepository,
@@ -90,8 +92,10 @@ public sealed class CreateInvoiceCommandHandler : IRequestHandler<CreateInvoiceC
         ITenantContext tenantContext,
         IPlanQuotaService planQuota,
         IInvoiceNumberGenerator numberGenerator,
-        IOptions<AccountingSettings> accountingSettings)
+        IOptions<AccountingSettings> accountingSettings,
+        IPriceResolver priceResolver)
     {
+        _priceResolver = priceResolver;
         _invoiceRepository = invoiceRepository;
         _clientRepository = clientRepository;
         _productRepository = productRepository;
@@ -231,6 +235,19 @@ public sealed class CreateInvoiceCommandHandler : IRequestHandler<CreateInvoiceC
                         "DiscountPercent",
                         $"La remise ne peut pas dépasser {product.MaxDiscountPercent.Value}% pour le produit '{product.Name}'"));
                 }
+            }
+
+            // Prix forcé par l'utilisateur, sinon résolu par le point unique (prix négocié →
+            // grille → catalogue). Le prix obtenu est gravé sur la ligne : la facture ne
+            // bougera plus si une grille change ensuite.
+            if (customPrice is null)
+            {
+                var priceResult = await _priceResolver.ResolveUnitPriceAsync(
+                    dto.ClientId, product.Id, lineDto.Quantity, dto.IssueDate, cancellationToken);
+                if (priceResult.IsFailure)
+                    return Result.Failure<Guid>(priceResult.Error);
+
+                customPrice = priceResult.Value.UnitPriceHT;
             }
 
             // Add line to invoice

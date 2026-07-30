@@ -1,4 +1,5 @@
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Interfaces.Pricing;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
@@ -47,6 +48,7 @@ public sealed class CreateSalesOrderCommandHandler : IRequestHandler<CreateSales
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
     private readonly IAuditService _auditService;
+    private readonly IPriceResolver _priceResolver;
 
     public CreateSalesOrderCommandHandler(
         ISalesOrderRepository salesOrderRepository,
@@ -57,8 +59,10 @@ public sealed class CreateSalesOrderCommandHandler : IRequestHandler<CreateSales
         IFiscalStampResolver fiscalStampResolver,
         ITenantContext tenantContext,
         ICurrentUser currentUser,
-        IAuditService auditService)
+        IAuditService auditService,
+        IPriceResolver priceResolver)
     {
+        _priceResolver = priceResolver;
         _salesOrderRepository = salesOrderRepository;
         _clientRepository = clientRepository;
         _productRepository = productRepository;
@@ -139,12 +143,24 @@ public sealed class CreateSalesOrderCommandHandler : IRequestHandler<CreateSales
                     $"La remise ne peut pas dépasser {product.MaxDiscountPercent.Value}% pour le produit '{product.Name}'"));
             }
 
-            Money? customPrice = lineDto.UnitPrice > 0 ? Money.Create(lineDto.UnitPrice) : null;
+            // Prix forcé par le vendeur, sinon résolu par le point unique (prix négocié →
+            // grille → catalogue). Le prix obtenu est gravé sur la ligne : la commande ne
+            // bougera plus si une grille change ensuite.
+            Money? unitPrice = lineDto.UnitPrice > 0 ? Money.Create(lineDto.UnitPrice) : null;
+            if (unitPrice is null)
+            {
+                var priceResult = await _priceResolver.ResolveUnitPriceAsync(
+                    dto.ClientId, product.Id, lineDto.Quantity, dto.OrderDate, cancellationToken);
+                if (priceResult.IsFailure)
+                    return Result.Failure<Guid>(priceResult.Error);
+
+                unitPrice = priceResult.Value.UnitPriceHT;
+            }
 
             var addResult = order.AddLine(
                 product,
                 lineDto.Quantity,
-                customPrice,
+                unitPrice,
                 lineDto.DiscountPercent,
                 notes: lineDto.Notes);
 

@@ -1,4 +1,5 @@
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Interfaces.Pricing;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
@@ -79,6 +80,7 @@ public sealed class CreateQuoteCommandHandler : IRequestHandler<CreateQuoteComma
 
     private readonly ISubscriptionResolver _subscriptionResolver;
     private readonly IFiscalStampResolver _fiscalStampResolver;
+    private readonly IPriceResolver _priceResolver;
 
     public CreateQuoteCommandHandler(
         IQuoteRepository quoteRepository,
@@ -91,8 +93,10 @@ public sealed class CreateQuoteCommandHandler : IRequestHandler<CreateQuoteComma
         IAuditService auditService,
         ITenantContext tenantContext,
         ISubscriptionResolver subscriptionResolver,
-        IFiscalStampResolver fiscalStampResolver)
+        IFiscalStampResolver fiscalStampResolver,
+        IPriceResolver priceResolver)
     {
+        _priceResolver = priceResolver;
         _quoteRepository = quoteRepository;
         _clientRepository = clientRepository;
         _productRepository = productRepository;
@@ -193,11 +197,24 @@ public sealed class CreateQuoteCommandHandler : IRequestHandler<CreateQuoteComma
                     }
                 }
 
-                Money? customPrice = lineDto.UnitPrice > 0 
-                    ? Money.Create(lineDto.UnitPrice) 
+                // Prix forcé par le commercial, sinon résolu par le point unique (prix négocié
+                // → grille → catalogue). Le prix obtenu est gravé sur la ligne : le devis ne
+                // bougera plus si une grille change ensuite.
+                Money? unitPrice = lineDto.UnitPrice > 0
+                    ? Money.Create(lineDto.UnitPrice)
                     : null;
 
-                addLineResult = quote.AddLine(product, lineDto.Quantity, customPrice, lineDto.DiscountPercent);
+                if (unitPrice is null)
+                {
+                    var priceResult = await _priceResolver.ResolveUnitPriceAsync(
+                        dto.ClientId, product.Id, lineDto.Quantity, dto.IssueDate, cancellationToken);
+                    if (priceResult.IsFailure)
+                        return Result.Failure<Guid>(priceResult.Error);
+
+                    unitPrice = priceResult.Value.UnitPriceHT;
+                }
+
+                addLineResult = quote.AddLine(product, lineDto.Quantity, unitPrice, lineDto.DiscountPercent);
             }
             else
             {
