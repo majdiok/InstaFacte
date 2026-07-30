@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges, inject, signal } from '@angular/core';
+import { Component, EventEmitter, HostListener, Input, OnChanges, OnInit, Output, SimpleChanges, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { StepsModule } from 'primeng/steps';
@@ -48,7 +48,7 @@ const DEPOSIT_TO_METHOD: Record<BankDepositType, number> = {
   templateUrl: './bank-deposit-wizard.component.html',
   styleUrl: './bank-deposit-wizard.component.scss'
 })
-export class BankDepositWizardComponent implements OnChanges {
+export class BankDepositWizardComponent implements OnChanges, OnInit {
   @Input() visible = false;
   @Input() year = new Date().getFullYear();
   @Input() month = new Date().getMonth() + 1;
@@ -92,6 +92,16 @@ export class BankDepositWizardComponent implements OnChanges {
   readonly serverBalancesLoading = signal(false);
 
   readonly maxDate = new Date();
+  dialogPosition: 'right' | 'center' = 'right';
+
+  ngOnInit(): void {
+    this.updateDialogPosition();
+  }
+
+  @HostListener('window:resize')
+  onWindowResize(): void {
+    this.updateDialogPosition();
+  }
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['visible']?.currentValue) {
@@ -370,5 +380,13 @@ export class BankDepositWizardComponent implements OnChanges {
 
   decQty(): void {
     this.quantity = Math.max(1, this.quantity - 1);
+  }
+
+  private updateDialogPosition(): void {
+    if (typeof window === 'undefined') {
+      this.dialogPosition = 'right';
+      return;
+    }
+    this.dialogPosition = window.innerWidth <= 768 ? 'center' : 'right';
   }
 }

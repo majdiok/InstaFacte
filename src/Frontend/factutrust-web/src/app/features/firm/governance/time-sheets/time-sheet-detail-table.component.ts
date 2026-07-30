@@ -20,6 +20,9 @@ import { FirmClientDossier } from '@core/services/firm-assignment.service';
   template: `
     <div class="fc-card">
       <h3>Détail des temps saisis</h3>
+      @if (activityCodes.length === 0) {
+        <p class="activity-hint">Aucun type d'activité configuré. Un manager peut les ajouter depuis Paramètres cabinet.</p>
+      }
       <p-table
         [value]="entries"
         [(selection)]="selection"
@@ -80,6 +83,7 @@ import { FirmClientDossier } from '@core/services/firm-assignment.service';
                   (ngModelChange)="emitPatch(row, { activityCode: $event })"
                   [showClear]="true"
                   placeholder="—"
+                  [emptyMessage]="'Aucun type d\\'activité configuré'"
                   styleClass="cell-select" />
               } @else {
                 {{ row.activityCode || '—' }}
@@ -157,6 +161,7 @@ import { FirmClientDossier } from '@core/services/firm-assignment.service';
       padding: .75rem; margin-bottom: 1rem;
     }
     h3 { margin: 0 0 .5rem; font-size: .95rem; }
+    .activity-hint { margin: 0 0 .5rem; color: var(--color-text-secondary, #64748b); font-size: .85rem; }
     .notes { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
     .acts { white-space: nowrap; }
     .lieu { display: inline-flex; gap: .3rem; align-items: center; font-size: .85rem; }

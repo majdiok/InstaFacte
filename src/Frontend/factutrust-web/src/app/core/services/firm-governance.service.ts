@@ -146,6 +146,14 @@ export interface FirmActivityCode {
   sortOrder: number;
 }
 
+export interface SaveFirmActivityCodeBody {
+  code: string;
+  label: string;
+  category: number;
+  isBillableByDefault: boolean;
+  sortOrder: number;
+}
+
 export interface FirmTimeSheetYearSettings {
   year: number;
   weeklyRegime: number;
@@ -603,18 +611,20 @@ export class FirmGovernanceService {
     return this.http.post<ApiResponse<FirmActivityCode[]>>(`${this.base}/activity-codes/seed-defaults`, {});
   }
 
-  createActivityCode(body: {
-    code: string;
-    label: string;
-    category: number;
-    isBillableByDefault: boolean;
-    sortOrder: number;
-  }): Observable<ApiResponse<FirmActivityCode>> {
+  createActivityCode(body: SaveFirmActivityCodeBody): Observable<ApiResponse<FirmActivityCode>> {
     return this.http.post<ApiResponse<FirmActivityCode>>(`${this.base}/activity-codes`, body);
+  }
+
+  updateActivityCode(id: string, body: SaveFirmActivityCodeBody): Observable<ApiResponse<FirmActivityCode>> {
+    return this.http.put<ApiResponse<FirmActivityCode>>(`${this.base}/activity-codes/${id}`, body);
   }
 
   deactivateActivityCode(id: string): Observable<ApiResponse<FirmActivityCode>> {
     return this.http.delete<ApiResponse<FirmActivityCode>>(`${this.base}/activity-codes/${id}`);
+  }
+
+  activateActivityCode(id: string): Observable<ApiResponse<FirmActivityCode>> {
+    return this.http.post<ApiResponse<FirmActivityCode>>(`${this.base}/activity-codes/${id}/activate`, {});
   }
 
   listExpenseNotes(): Observable<ApiResponse<FirmExpenseNote[]>> {

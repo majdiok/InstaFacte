@@ -54,6 +54,13 @@ export const FIRM_ROUTES: Routes = [
         pathMatch: 'full'
       },
       {
+        path: 'settings/activity-codes',
+        canActivate: [firmManagerGuard],
+        loadComponent: () =>
+          import('./activity-codes/firm-activity-codes.component').then(m => m.FirmActivityCodesComponent),
+        title: 'Cabinet — Types d’activité'
+      },
+      {
         path: 'collaborateurs',
         loadComponent: () =>
           import('./collaborators/firm-collaborators-list.component').then(m => m.FirmCollaboratorsListComponent),

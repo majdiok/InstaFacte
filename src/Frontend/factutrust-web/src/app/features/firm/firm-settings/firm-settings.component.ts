@@ -1,7 +1,8 @@
-import { Component } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
+import { AuthService } from '@core/services/auth.service';
 
 @Component({
   selector: 'app-firm-settings',
@@ -13,19 +14,35 @@ import { PageHeaderComponent } from '@shared/components/page-header/page-header.
       subtitle="Gérez la configuration de votre cabinet comptable">
     </app-page-header>
 
-    <a routerLink="/firm/collaborateurs" class="fs-card-link">
-      <div class="fs-card">
-        <div class="fs-card__icon"><i class="pi pi-users"></i></div>
-        <div class="fs-card__body">
-          <h2 class="fs-card__title">Collaborateurs</h2>
-          <p class="fs-card__desc">Gérer les comptables et responsables du cabinet.</p>
+    <div class="fs-cards">
+      <a routerLink="/firm/collaborateurs" class="fs-card-link">
+        <div class="fs-card">
+          <div class="fs-card__icon"><i class="pi pi-users"></i></div>
+          <div class="fs-card__body">
+            <h2 class="fs-card__title">Collaborateurs</h2>
+            <p class="fs-card__desc">Gérer les comptables et responsables du cabinet.</p>
+          </div>
+          <i class="pi pi-chevron-right fs-card__chevron"></i>
         </div>
-        <i class="pi pi-chevron-right fs-card__chevron"></i>
-      </div>
-    </a>
+      </a>
+
+      @if (canManageActivityTypes()) {
+        <a routerLink="/firm/settings/activity-codes" class="fs-card-link">
+          <div class="fs-card">
+            <div class="fs-card__icon"><i class="pi pi-tags"></i></div>
+            <div class="fs-card__body">
+              <h2 class="fs-card__title">Types d’activité</h2>
+              <p class="fs-card__desc">Définir les codes de diligence utilisés dans les feuilles de temps.</p>
+            </div>
+            <i class="pi pi-chevron-right fs-card__chevron"></i>
+          </div>
+        </a>
+      }
+    </div>
   `,
   styles: [`
     :host { display: block; }
+    .fs-cards { display: grid; gap: 12px; max-width: 560px; }
     .fs-card-link { text-decoration: none; color: inherit; display: block; max-width: 480px; }
     .fs-card {
       display: flex;
@@ -57,4 +74,7 @@ import { PageHeaderComponent } from '@shared/components/page-header/page-header.
     .fs-card__chevron { color: var(--color-text-tertiary, #94a3b8); }
   `]
 })
-export class FirmSettingsComponent {}
+export class FirmSettingsComponent {
+  private readonly auth = inject(AuthService);
+  readonly canManageActivityTypes = computed(() => this.auth.isFirmManager());
+}

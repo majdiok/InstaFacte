@@ -35,7 +35,8 @@ export interface TimeSheetFilters {
         optionValue="value"
         [ngModel]="filters.activityCode"
         (ngModelChange)="patch({ activityCode: $event })"
-        placeholder="Type d'activité"
+        [placeholder]="activityCodes.length ? 'Type d\\'activité' : 'Aucun type d\\'activité configuré'"
+        [emptyMessage]="'Aucun type d\\'activité configuré'"
         [showClear]="true" />
       <p-select
         [options]="accountantOptions"

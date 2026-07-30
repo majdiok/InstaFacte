@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Input, Output, OnChanges, SimpleChanges, inject, signal } from '@angular/core';
+import { Component, EventEmitter, HostListener, Input, Output, OnChanges, OnInit, SimpleChanges, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { InputNumberModule } from 'primeng/inputnumber';
@@ -49,7 +49,9 @@ const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] 
       header="Enregistrer l'opération"
       [(visible)]="visible"
       [modal]="true"
+      [position]="dialogPosition"
       [style]="{ width: '580px' }"
+      styleClass="cash-desk-right-dialog"
       [draggable]="false"
       [closable]="true"
       (onHide)="onHide()"
@@ -504,7 +506,7 @@ const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] 
     }
   `]
 })
-export class AddCashOperationDialogComponent implements OnChanges {
+export class AddCashOperationDialogComponent implements OnChanges, OnInit {
   @Input() visible = false;
   @Output() visibleChange = new EventEmitter<boolean>();
   @Output() operationCreated = new EventEmitter<CashOperationListItem>();
@@ -530,6 +532,16 @@ export class AddCashOperationDialogComponent implements OnChanges {
 
   submitting = signal(false);
   errorMessage = signal('');
+  dialogPosition: 'right' | 'center' = 'right';
+
+  ngOnInit(): void {
+    this.updateDialogPosition();
+  }
+
+  @HostListener('window:resize')
+  onWindowResize(): void {
+    this.updateDialogPosition();
+  }
 
   onHide(): void {
     this.visibleChange.emit(false);
@@ -545,6 +557,14 @@ export class AddCashOperationDialogComponent implements OnChanges {
   onTypeChange(type: CashOperationType): void {
     this.operationType = type;
     this.errorMessage.set('');
+  }
+
+  private updateDialogPosition(): void {
+    if (typeof window === 'undefined') {
+      this.dialogPosition = 'right';
+      return;
+    }
+    this.dialogPosition = window.innerWidth <= 768 ? 'center' : 'right';
   }
 
   private resetForm(): void {

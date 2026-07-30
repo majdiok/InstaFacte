@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { Component, HostListener, OnInit, inject, signal, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { TableModule } from 'primeng/table';
@@ -341,7 +341,9 @@ const MONTH_OPTIONS: { label: string; value: number }[] = [
       header="Annuler l'opération"
       [(visible)]="cancelDialogVisible"
       [modal]="true"
+      [position]="dialogPosition"
       [style]="{ width: '480px' }"
+      styleClass="cash-desk-right-dialog"
       [draggable]="false"
       [closable]="true"
       (onHide)="closeCancelDialog()">
@@ -528,6 +530,7 @@ export class CashDeskComponent implements OnInit {
   cancelReason = '';
   cancelError = signal('');
   cancelling = signal(false);
+  dialogPosition: 'right' | 'center' = 'right';
 
   skeletonColumns: SkeletonColumn[] = [
     { width: '130px' },
@@ -542,6 +545,7 @@ export class CashDeskComponent implements OnInit {
   ];
 
   ngOnInit(): void {
+    this.updateDialogPosition();
     const now = new Date();
     const currentYear = now.getFullYear();
     this.yearOptions = Array.from({ length: 6 }, (_, i) => {
@@ -550,6 +554,11 @@ export class CashDeskComponent implements OnInit {
     });
 
     this.loadAll();
+  }
+
+  @HostListener('window:resize')
+  onWindowResize(): void {
+    this.updateDialogPosition();
   }
 
   private periodParams() {
@@ -658,6 +667,14 @@ export class CashDeskComponent implements OnInit {
     this.cancelError.set('');
     this.cancelling.set(false);
     this.operationToCancel = null;
+  }
+
+  private updateDialogPosition(): void {
+    if (typeof window === 'undefined') {
+      this.dialogPosition = 'right';
+      return;
+    }
+    this.dialogPosition = window.innerWidth <= 768 ? 'center' : 'right';
   }
 
   readonly buildCashDeskAnalyzePayload = (): unknown => {
