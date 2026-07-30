@@ -166,6 +166,7 @@ aucune ne modifie de document déjà émis.
 | `20260730100000_AddPricing_Tenant` | Tables `PriceLists` / `PriceListItems` / `ClientProductPrices` (tarification, tranche 5A) + colonne `Clients.PriceListId` nullable + index. Création de tables + colonne additive. | [AddPricing_Tenant.idempotent.sql](runbooks/sql/AddPricing_Tenant.idempotent.sql) |
 | `20260730160000_AddPriceListItemTiers_Tenant` | Table `PriceListItemTiers` — paliers quantitatifs (tranche 5B). Création de table uniquement ; les prix existants restent des prix de base sans palier. | [AddPriceListItemTiers_Tenant.idempotent.sql](runbooks/sql/AddPriceListItemTiers_Tenant.idempotent.sql) |
 | `20260730180000_AddGlobalDiscount_Tenant` | Remise de pied (tranche 5B) : `GlobalDiscountPercent` / `GlobalDiscountAmount` sur `Invoices`, `Quotes`, `SalesOrders`, et `AllocatedGlobalDiscount` sur les trois tables de lignes. Montants à 0 par défaut ⇒ calcul inchangé sur l'existant. | [AddGlobalDiscount_Tenant.idempotent.sql](runbooks/sql/AddGlobalDiscount_Tenant.idempotent.sql) |
+| `20260730200000_AddPromotionsAndPaymentTerms_Tenant` | Tables `Promotions` et `PaymentTermTemplates` (tranche 5C). Creation de tables uniquement ; le champ texte `PaymentTerms` des documents n'est pas touche. | [AddPromotionsAndPaymentTerms_Tenant.idempotent.sql](runbooks/sql/AddPromotionsAndPaymentTerms_Tenant.idempotent.sql) |
 
 Le régime de TVA du client est un attribut du **client**, non du taux de ligne (`VatRate`
 inchangé). La validation de facture (`ValidateInvoiceCommand`) refuse désormais toute TVA pour un

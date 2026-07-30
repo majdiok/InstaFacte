@@ -88,6 +88,8 @@ public partial class TenantDbContext : DbContext
     public DbSet<PriceList> PriceLists => Set<PriceList>();
     public DbSet<PriceListItem> PriceListItems => Set<PriceListItem>();
     public DbSet<PriceListItemTier> PriceListItemTiers => Set<PriceListItemTier>();
+    public DbSet<Promotion> Promotions => Set<Promotion>();
+    public DbSet<PaymentTermTemplate> PaymentTermTemplates => Set<PaymentTermTemplate>();
     public DbSet<ClientProductPrice> ClientProductPrices => Set<ClientProductPrice>();
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<CashOperation> CashOperations => Set<CashOperation>();
@@ -279,6 +281,8 @@ public partial class TenantDbContext : DbContext
         ConfigurePriceList(builder);
         ConfigurePriceListItem(builder);
         ConfigurePriceListItemTier(builder);
+        ConfigurePromotion(builder);
+        ConfigurePaymentTermTemplate(builder);
         ConfigureClientProductPrice(builder);
         ConfigurePayment(builder);
         ConfigureAuditLog(builder);
@@ -586,6 +590,61 @@ public partial class TenantDbContext : DbContext
 
             // Un seul palier par seuil : l'upsert du domaine s'y appuie.
             entity.HasIndex(t => new { t.PriceListItemId, t.MinQuantity }).IsUnique();
+        });
+    }
+
+    private static void ConfigurePromotion(ModelBuilder builder)
+    {
+        builder.Entity<Promotion>(entity =>
+        {
+            entity.ToTable("Promotions");
+            entity.HasKey(p => p.Id);
+
+            entity.Property(p => p.Name).HasMaxLength(100).IsRequired();
+            entity.Property(p => p.DiscountType).HasConversion<int>().IsRequired();
+            entity.Property(p => p.DiscountPercent).HasPrecision(5, 2).IsRequired(false);
+            entity.Property(p => p.MinQuantity).HasPrecision(18, 4).IsRequired();
+            entity.Property(p => p.StartsOn).IsRequired();
+            entity.Property(p => p.EndsOn).IsRequired();
+            entity.Property(p => p.IsActive).IsRequired();
+            entity.Property(p => p.Priority).IsRequired();
+
+            // Remise en valeur : optionnelle, seule la forme « montant » la renseigne.
+            entity.OwnsOne(p => p.DiscountAmount, money =>
+            {
+                money.Property(m => m.Amount)
+                    .HasColumnName("DiscountAmount").HasPrecision(18, 3);
+                money.Property(m => m.Currency)
+                    .HasColumnName("DiscountAmountCurrency").HasMaxLength(3);
+            });
+
+            // Le résolveur cherche les promotions qui COURENT à une date : c'est le filtre
+            // qui porte la requête, pas les cibles.
+            entity.HasIndex(p => new { p.IsActive, p.StartsOn, p.EndsOn });
+            entity.HasIndex(p => p.ProductId).HasFilter("[ProductId] IS NOT NULL");
+            entity.HasIndex(p => p.ClientId).HasFilter("[ClientId] IS NOT NULL");
+        });
+    }
+
+    private static void ConfigurePaymentTermTemplate(ModelBuilder builder)
+    {
+        builder.Entity<PaymentTermTemplate>(entity =>
+        {
+            entity.ToTable("PaymentTermTemplates");
+            entity.HasKey(t => t.Id);
+
+            entity.Property(t => t.Name).HasMaxLength(100).IsRequired();
+            entity.Property(t => t.DelayDays).IsRequired();
+            entity.Property(t => t.DueMode).HasConversion<int>().IsRequired();
+            entity.Property(t => t.DueDayOfMonth).IsRequired(false);
+            entity.Property(t => t.EarlyPaymentDiscountPercent).HasPrecision(5, 2).IsRequired(false);
+            entity.Property(t => t.EarlyPaymentDays).IsRequired(false);
+            entity.Property(t => t.IsActive).IsRequired();
+            entity.Property(t => t.IsDefault).IsRequired();
+
+            // Une seule condition par défaut : l'index filtré le garantit en base plutôt que
+            // de compter sur la discipline applicative.
+            entity.HasIndex(t => t.IsDefault).IsUnique().HasFilter("[IsDefault] = 1");
         });
     }
 

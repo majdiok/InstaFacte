@@ -5176,6 +5176,134 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.ToTable("PriceListItemTiers", (string)null);
                 });
 
+            modelBuilder.Entity("FactuTrust.Domain.Entities.Pricing.PaymentTermTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("DelayDays")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("DueDayOfMonth")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DueMode")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("EarlyPaymentDays")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("EarlyPaymentDiscountPercent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsDefault")
+                        .IsUnique()
+                        .HasFilter("[IsDefault] = 1");
+
+                    b.ToTable("PaymentTermTemplates", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.Pricing.Promotion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal?>("DiscountPercent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<int>("DiscountType")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("EndsOn")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("MinQuantity")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("ProductCategoryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ProductId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("StartsOn")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId")
+                        .HasFilter("[ClientId] IS NOT NULL");
+
+                    b.HasIndex("ProductId")
+                        .HasFilter("[ProductId] IS NOT NULL");
+
+                    b.HasIndex("IsActive", "StartsOn", "EndsOn");
+
+                    b.ToTable("Promotions", (string)null);
+                });
+
             modelBuilder.Entity("FactuTrust.Domain.Entities.Product", b =>
                 {
                     b.Property<Guid>("Id")
@@ -9619,6 +9747,34 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
 
                     b.Navigation("UnitPriceHT")
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.Pricing.Promotion", b =>
+                {
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "DiscountAmount", b1 =>
+                        {
+                            b1.Property<Guid>("PromotionId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("DiscountAmount");
+
+                            b1.Property<string>("Currency")
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("DiscountAmountCurrency");
+
+                            b1.HasKey("PromotionId");
+
+                            b1.ToTable("Promotions");
+
+                            b1.WithOwner()
+                                .HasForeignKey("PromotionId");
+                        });
+
+                    b.Navigation("DiscountAmount");
                 });
 
             modelBuilder.Entity("FactuTrust.Domain.Entities.Product", b =>
