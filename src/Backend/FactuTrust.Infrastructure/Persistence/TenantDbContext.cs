@@ -3,6 +3,7 @@ using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Entities.AI;
 using FactuTrust.Domain.Entities.Channels;
 using FactuTrust.Domain.Entities.Forecasting;
+using FactuTrust.Domain.Entities.Pricing;
 using FactuTrust.Domain.Entities.Storefront;
 using FactuTrust.Domain.Entities.Studio;
 using FactuTrust.Domain.Enums;
@@ -84,6 +85,9 @@ public partial class TenantDbContext : DbContext
     public DbSet<QuoteLine> QuoteLines => Set<QuoteLine>();
     public DbSet<SalesOrder> SalesOrders => Set<SalesOrder>();
     public DbSet<SalesOrderLine> SalesOrderLines => Set<SalesOrderLine>();
+    public DbSet<PriceList> PriceLists => Set<PriceList>();
+    public DbSet<PriceListItem> PriceListItems => Set<PriceListItem>();
+    public DbSet<ClientProductPrice> ClientProductPrices => Set<ClientProductPrice>();
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<CashOperation> CashOperations => Set<CashOperation>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
@@ -271,6 +275,9 @@ public partial class TenantDbContext : DbContext
         ConfigureQuoteLine(builder);
         ConfigureSalesOrder(builder);
         ConfigureSalesOrderLine(builder);
+        ConfigurePriceList(builder);
+        ConfigurePriceListItem(builder);
+        ConfigureClientProductPrice(builder);
         ConfigurePayment(builder);
         ConfigureAuditLog(builder);
         ConfigureInvoiceDraft(builder);
@@ -509,6 +516,72 @@ public partial class TenantDbContext : DbContext
                 cert.Property(x => x.ValidUntil)
                     .HasColumnName("VatExemptionValidUntil");
             });
+
+            // Grille tarifaire affectée (lot 5). Nullable : la plupart des clients restent
+            // au tarif catalogue. Pas de contrainte de clé étrangère — l'affectation survit à
+            // la désactivation d'une grille, le résolveur ignorant simplement une grille absente.
+            entity.Property(c => c.PriceListId).IsRequired(false);
+            entity.HasIndex(c => c.PriceListId)
+                .HasFilter("[PriceListId] IS NOT NULL");
+        });
+    }
+
+    private static void ConfigurePriceList(ModelBuilder builder)
+    {
+        builder.Entity<PriceList>(entity =>
+        {
+            entity.ToTable("PriceLists");
+            entity.HasKey(p => p.Id);
+
+            entity.Property(p => p.Name).HasMaxLength(100).IsRequired();
+            entity.Property(p => p.Currency).HasMaxLength(3).IsRequired();
+            entity.Property(p => p.IsActive).IsRequired();
+            entity.Property(p => p.ValidFrom).IsRequired(false);
+            entity.Property(p => p.ValidUntil).IsRequired(false);
+
+            entity.HasMany(p => p.Items)
+                .WithOne()
+                .HasForeignKey(i => i.PriceListId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(p => p.IsActive);
+        });
+    }
+
+    private static void ConfigurePriceListItem(ModelBuilder builder)
+    {
+        builder.Entity<PriceListItem>(entity =>
+        {
+            entity.ToTable("PriceListItems");
+            entity.HasKey(i => i.Id);
+
+            entity.Property(i => i.PriceListId).IsRequired();
+            entity.Property(i => i.ProductId).IsRequired();
+
+            ConfigureOwnedMoney(entity, i => i.UnitPriceHT, "UnitPriceHT");
+
+            // Un seul prix par produit dans une grille : l'upsert du domaine s'y appuie.
+            entity.HasIndex(i => new { i.PriceListId, i.ProductId }).IsUnique();
+        });
+    }
+
+    private static void ConfigureClientProductPrice(ModelBuilder builder)
+    {
+        builder.Entity<ClientProductPrice>(entity =>
+        {
+            entity.ToTable("ClientProductPrices");
+            entity.HasKey(p => p.Id);
+
+            entity.Property(p => p.ClientId).IsRequired();
+            entity.Property(p => p.ProductId).IsRequired();
+            entity.Property(p => p.IsActive).IsRequired();
+            entity.Property(p => p.ValidFrom).IsRequired(false);
+            entity.Property(p => p.ValidUntil).IsRequired(false);
+
+            ConfigureOwnedMoney(entity, p => p.UnitPriceHT, "UnitPriceHT");
+
+            // Un prix négocié par couple client / produit : le résolveur en attend au plus un.
+            entity.HasIndex(p => new { p.ClientId, p.ProductId }).IsUnique();
         });
     }
 

@@ -145,6 +145,12 @@ public static class DependencyInjection
         services.AddScoped<ISalesOrderRepository, SalesOrderRepository>();
         services.AddScoped<Application.Features.SalesOrders.Services.ISalesOrderStockReservationService,
             Application.Features.SalesOrders.Services.SalesOrderStockReservationService>();
+
+        // Tarification (lot 5) — grilles, prix négociés, et point de résolution unique.
+        services.AddScoped<IPriceListRepository, PriceListRepository>();
+        services.AddScoped<IClientProductPriceRepository, ClientProductPriceRepository>();
+        services.AddScoped<Application.Common.Interfaces.Pricing.IPriceResolver,
+            Services.Pricing.PriceResolver>();
         services.AddScoped<ISupplierInvoiceRepository, SupplierInvoiceRepository>();
         services.AddScoped<ISupplierPaymentRepository, SupplierPaymentRepository>();
         services.AddScoped<ICashOperationRepository, CashOperationRepository>();

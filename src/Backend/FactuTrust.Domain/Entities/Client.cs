@@ -44,6 +44,12 @@ public sealed class Client : AggregateRoot
     /// </summary>
     public VatExemptionCertificate? VatExemptionCertificate { get; private set; }
 
+    /// <summary>
+    /// Grille tarifaire affectée au client, s'il en a une. Le résolveur de prix la consulte
+    /// après un éventuel prix négocié et avant le prix catalogue. <c>null</c> = tarif catalogue.
+    /// </summary>
+    public Guid? PriceListId { get; private set; }
+
     private readonly List<Invoice> _invoices = new();
     public IReadOnlyCollection<Invoice> Invoices => _invoices.AsReadOnly();
 
@@ -137,6 +143,9 @@ public sealed class Client : AggregateRoot
     /// </summary>
     public bool HasValidVatExemptionAt(DateTime date) =>
         VatExemptionCertificate is not null && VatExemptionCertificate.CoversDate(date);
+
+    /// <summary>Affecte une grille tarifaire au client (ou la retire si <paramref name="priceListId"/> est null).</summary>
+    public void AssignPriceList(Guid? priceListId) => PriceListId = priceListId;
 
     public void Deactivate()
     {

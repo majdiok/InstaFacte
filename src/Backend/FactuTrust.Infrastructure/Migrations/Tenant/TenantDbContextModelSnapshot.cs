@@ -1202,6 +1202,9 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
 
+                    b.Property<Guid?>("PriceListId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<int?>("TejIdentificationType")
                         .HasColumnType("int");
 
@@ -1229,6 +1232,9 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.HasIndex("IsActive");
 
                     b.HasIndex("Name");
+
+                    b.HasIndex("PriceListId")
+                        .HasFilter("[PriceListId] IS NOT NULL");
 
                     b.HasIndex("VatRegime")
                         .HasFilter("[VatRegime] <> 0");
@@ -5004,6 +5010,129 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.HasIndex("WarehouseId", "Status");
 
                     b.ToTable("PhysicalInventories", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.Pricing.ClientProductPrice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("ValidFrom")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("ValidUntil")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId", "ProductId")
+                        .IsUnique();
+
+                    b.ToTable("ClientProductPrices", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.Pricing.PriceList", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("ValidFrom")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("ValidUntil")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsActive");
+
+                    b.ToTable("PriceLists", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.Pricing.PriceListItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("PriceListId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PriceListId", "ProductId")
+                        .IsUnique();
+
+                    b.ToTable("PriceListItems", (string)null);
                 });
 
             modelBuilder.Entity("FactuTrust.Domain.Entities.Product", b =>
@@ -9305,6 +9434,77 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .IsRequired();
 
                     b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.Pricing.ClientProductPrice", b =>
+                {
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "UnitPriceHT", b1 =>
+                        {
+                            b1.Property<Guid>("ClientProductPriceId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("UnitPriceHT");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("UnitPriceHTCurrency");
+
+                            b1.HasKey("ClientProductPriceId");
+
+                            b1.ToTable("ClientProductPrices");
+
+                            b1.WithOwner()
+                                .HasForeignKey("ClientProductPriceId");
+                        });
+
+                    b.Navigation("UnitPriceHT")
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.Pricing.PriceList", b =>
+                {
+                    b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.Pricing.PriceListItem", b =>
+                {
+                    b.HasOne("FactuTrust.Domain.Entities.Pricing.PriceList", null)
+                        .WithMany("Items")
+                        .HasForeignKey("PriceListId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "UnitPriceHT", b1 =>
+                        {
+                            b1.Property<Guid>("PriceListItemId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("UnitPriceHT");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("UnitPriceHTCurrency");
+
+                            b1.HasKey("PriceListItemId");
+
+                            b1.ToTable("PriceListItems");
+
+                            b1.WithOwner()
+                                .HasForeignKey("PriceListItemId");
+                        });
+
+                    b.Navigation("UnitPriceHT")
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("FactuTrust.Domain.Entities.Product", b =>

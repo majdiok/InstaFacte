@@ -163,12 +163,21 @@ aucune ne modifie de document déjà émis.
 | `20260728120000_AddSalesOrders_Tenant` | Tables `SalesOrders` / `SalesOrderLines` — l'agrégat commande client (numérotation `CDE`). Création de tables uniquement. | [AddSalesOrders_Tenant.idempotent.sql](runbooks/sql/AddSalesOrders_Tenant.idempotent.sql) |
 | `20260729100000_AddProductBarcode_Tenant` | `Products.Barcode` (EAN-8/13) + index filtré **non unique**. L'unicité par tenant n'est livrée qu'après balayage des doublons. | [AddProductBarcode_Tenant.idempotent.sql](runbooks/sql/AddProductBarcode_Tenant.idempotent.sql) |
 | `20260729140000_AddClientVatRegime_Tenant` | `Clients.VatRegime` (défaut 0 = Normal) + attestation de suspension (3 colonnes nullables) + index filtré. Les clients existants gardent leur comportement de facturation. | [AddClientVatRegime_Tenant.idempotent.sql](runbooks/sql/AddClientVatRegime_Tenant.idempotent.sql) |
+| `20260730100000_AddPricing_Tenant` | Tables `PriceLists` / `PriceListItems` / `ClientProductPrices` (tarification, tranche 5A) + colonne `Clients.PriceListId` nullable + index. Création de tables + colonne additive. | [AddPricing_Tenant.idempotent.sql](runbooks/sql/AddPricing_Tenant.idempotent.sql) |
 
 Le régime de TVA du client est un attribut du **client**, non du taux de ligne (`VatRate`
 inchangé). La validation de facture (`ValidateInvoiceCommand`) refuse désormais toute TVA pour un
 client dont le régime la supprime (exonéré, suspension, export) et exige, pour une suspension, une
 attestation en cours de validité **à la date d'émission** de la facture. Aucun client existant
 n'est concerné : ils sont tous en régime `Normal` par défaut.
+
+La tarification (tranche 5A) introduit un **point de résolution unique** — `IPriceResolver`
+(`Infrastructure/Services/Pricing/PriceResolver.cs`) — qui répond au prix HT selon la priorité
+**prix négocié client → grille affectée au client → prix catalogue**. Ces tables n'alimentent que
+la résolution au moment de créer une ligne : le prix reste **figé** sur les documents émis, aucun
+document existant ne change de prix quand une grille bouge. Les grilles et prix négociés bornés
+dans le temps (validité, activation) ne sont consultés que s'ils sont applicables à la date du
+document. Sans affectation ni prix négocié, le comportement est identique à aujourd'hui (catalogue).
 
 ---
 
