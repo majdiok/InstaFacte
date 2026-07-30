@@ -47,6 +47,7 @@ import { LinkedInvoiceRef } from '@core/services/invoice-reference-resolver.serv
 import { environment } from '@environments/environment';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
+import { PricingService } from '@core/services/pricing.service';
 
 @Component({
   selector: 'app-pos',
@@ -528,6 +529,7 @@ export class PosComponent implements OnInit, OnDestroy {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly companyService = inject(CompanyService);
   private readonly warehouseContext = inject(WarehouseContextService);
+  private readonly pricingService = inject(PricingService);
 
   showSuccessToast = false;
   showRestoreDraftModal = false;
@@ -580,6 +582,63 @@ export class PosComponent implements OnInit, OnDestroy {
       this.barcodeToastTimeout = setTimeout(() => {
         this.showBarcodeToast = false;
       }, 2500);
+    });
+
+    // Retarification au changement de client : une grille ou un accord client peut donner un
+    // prix different du catalogue. L'effet ne surveille QUE l'identifiant du client — surveiller
+    // les lignes bouclerait, puisqu'il les modifie. Le client de passage (sans identifiant)
+    // ramene au catalogue, soit le comportement d'avant le lot 5.
+    effect(() => {
+      const clientId = this.posState.client()?.id ?? null;
+      this.repriceOrderForClient(clientId);
+    });
+  }
+
+  /**
+   * Aligne les prix du ticket sur ce que le serveur appliquera pour ce client.
+   *
+   * Silencieux en cas d'echec : la caisse ne doit jamais se bloquer sur la tarification. Les
+   * lignes gardent alors le prix catalogue deja affiche.
+   */
+  private repriceOrderForClient(clientId: string | null): void {
+    const lines = this.posState.lines();
+    if (lines.length === 0) return;
+
+    const items = lines.map(l => ({ productId: l.productId, quantity: l.quantity }));
+
+    this.pricingService.resolveBatch(items, clientId).subscribe({
+      next: response => {
+        const resolved = response?.data;
+        if (resolved?.length) {
+          this.posState.applyResolvedPrices(resolved);
+        }
+      },
+      error: () => { /* prix catalogue conserve */ }
+    });
+  }
+
+  /**
+   * Resout le prix d'un produit qui vient d'etre ajoute, lorsqu'un vrai client est rattache.
+   * Sans client identifie, le prix catalogue est deja le bon et aucun appel n'est fait.
+   */
+  private resolvePriceForAddedProduct(productId: string): void {
+    const clientId = this.posState.client()?.id ?? null;
+    if (!clientId) return;
+
+    const line = this.posState.lines().find(l => l.productId === productId);
+
+    this.pricingService.resolve(productId, clientId, line?.quantity ?? 1).subscribe({
+      next: response => {
+        const resolved = response?.data;
+        if (resolved) {
+          this.posState.applyResolvedPrices([{
+            productId,
+            unitPriceHT: resolved.unitPriceHT,
+            isNegotiated: resolved.isNegotiated
+          }]);
+        }
+      },
+      error: () => { /* prix catalogue conserve */ }
     });
   }
 
@@ -749,6 +808,7 @@ export class PosComponent implements OnInit, OnDestroy {
     const orderIds = this.posState.lines().map(l => l.productId);
     this.upsellService.computeSuggestions(product, orderIds, this.catalogComponent?.productCache() ?? new Map());
     this.posState.addProduct(product);
+    this.resolvePriceForAddedProduct(product.id);
     this.audioService.beepSuccess();
   }
 
@@ -756,6 +816,7 @@ export class PosComponent implements OnInit, OnDestroy {
     const orderIds = this.posState.lines().map(l => l.productId);
     this.upsellService.computeSuggestions(event.product, orderIds, this.catalogComponent?.productCache() ?? new Map());
     this.posState.addProductWithQuantity(event.product, event.quantity);
+    this.resolvePriceForAddedProduct(event.product.id);
     this.audioService.beepSuccess();
   }
 

@@ -102,3 +102,67 @@ describe('PosStateService FODEC', () => {
     expect(svc.totals().totalFodec).toBe(0);
   });
 });
+
+describe('PosStateService applyResolvedPrices', () => {
+  beforeEach(() => {
+    TestBed.configureTestingModule({ providers: [PosStateService] });
+  });
+
+  it('applies the resolved price and recalculates the line', () => {
+    const svc = TestBed.inject(PosStateService);
+    svc.addProduct({ ...fodecProduct(), isFodecApplicable: false });
+    expect(svc.lines()[0].unitPriceHT).toBe(100);
+
+    svc.applyResolvedPrices([
+      { productId: 'prod-fodec-1', unitPriceHT: 80, isNegotiated: true }
+    ]);
+
+    const line = svc.lines()[0];
+    expect(line.unitPriceHT).toBe(80);
+    expect(line.isNegotiatedPrice).toBeTrue();
+    expect(line.totalHT).toBe(80);
+    expect(line.vatAmount).toBe(15.2);
+    expect(svc.totals().totalTTC).toBe(95.2);
+  });
+
+  it('leaves untouched the lines absent from the response', () => {
+    const svc = TestBed.inject(PosStateService);
+    svc.addProduct({ ...fodecProduct(), isFodecApplicable: false });
+
+    svc.applyResolvedPrices([
+      { productId: 'un-autre-produit', unitPriceHT: 10, isNegotiated: true }
+    ]);
+
+    expect(svc.lines()[0].unitPriceHT).toBe(100);
+    expect(svc.lines()[0].isNegotiatedPrice).toBeUndefined();
+  });
+
+  it('is a no-op for an empty response', () => {
+    const svc = TestBed.inject(PosStateService);
+    svc.addProduct({ ...fodecProduct(), isFodecApplicable: false });
+
+    svc.applyResolvedPrices([]);
+
+    expect(svc.lines()[0].unitPriceHT).toBe(100);
+  });
+
+  it('restores the catalog price when the client is cleared', () => {
+    const svc = TestBed.inject(PosStateService);
+    svc.addProduct({ ...fodecProduct(), isFodecApplicable: false });
+
+    svc.applyResolvedPrices([
+      { productId: 'prod-fodec-1', unitPriceHT: 80, isNegotiated: true }
+    ]);
+    expect(svc.lines()[0].unitPriceHT).toBe(80);
+
+    // Retour au client de passage : le serveur repond le prix catalogue.
+    svc.applyResolvedPrices([
+      { productId: 'prod-fodec-1', unitPriceHT: 100, isNegotiated: false }
+    ]);
+
+    const line = svc.lines()[0];
+    expect(line.unitPriceHT).toBe(100);
+    expect(line.isNegotiatedPrice).toBeFalse();
+    expect(svc.totals().totalTTC).toBe(119);
+  });
+});

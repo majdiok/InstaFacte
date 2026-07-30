@@ -50,6 +50,11 @@ export interface PosOrderLine {
   discountValue: number | null;
   discountAmount: number;
   notes: string;
+  /**
+   * Vrai lorsque `unitPriceHT` provient d'une grille ou d'un accord client plutot que du
+   * catalogue. Sert a le signaler a l'ecran : sans cela le caissier croirait a une erreur.
+   */
+  isNegotiatedPrice?: boolean;
 }
 
 export interface PosTotals {
@@ -386,6 +391,42 @@ export class PosStateService {
     if (lines.length === 0) return;
     lines.pop();
     this.updateState({ lines, isDirty: lines.length > 0 });
+  }
+
+  /**
+   * Applique les prix resolus par le serveur aux lignes concernees.
+   *
+   * Appelee apres un rattachement client : la caisse affiche d'abord le prix catalogue pour
+   * rester instantanee au scan, puis s'aligne sur le prix que le serveur appliquera. Les
+   * produits absents de la reponse gardent leur prix — une resolution partielle ne doit jamais
+   * vider un ticket en cours.
+   */
+  applyResolvedPrices(prices: ReadonlyArray<{ productId: string; unitPriceHT: number; isNegotiated: boolean }>): void {
+    if (prices.length === 0) return;
+
+    const byProduct = new Map(prices.map(p => [p.productId, p]));
+    let changed = false;
+
+    const lines = this.state().lines.map(line => {
+      const resolved = byProduct.get(line.productId);
+      if (!resolved) return line;
+      if (line.unitPriceHT === resolved.unitPriceHT && !!line.isNegotiatedPrice === resolved.isNegotiated) {
+        return line;
+      }
+
+      const updated = {
+        ...line,
+        unitPriceHT: resolved.unitPriceHT,
+        isNegotiatedPrice: resolved.isNegotiated
+      };
+      this.recalculateLine(updated);
+      changed = true;
+      return updated;
+    });
+
+    if (changed) {
+      this.updateState({ lines });
+    }
   }
 
   selectClient(client: ClientListItem): void {

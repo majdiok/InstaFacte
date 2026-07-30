@@ -45,4 +45,39 @@ public sealed class PricingController : ControllerBase
 
         return Ok(ApiResponse<ResolvedPriceDto>.Ok(result.Value));
     }
+
+    /// <summary>
+    /// Résout le prix de plusieurs produits en une seule requête.
+    ///
+    /// Utilisé par la caisse pour retarifer un ticket entier quand le caissier le rattache à un
+    /// client : ligne à ligne, ce serait autant d'allers-retours qu'il y a d'articles.
+    /// </summary>
+    [HttpPost("resolve-batch")]
+    [Authorize(Policy = PermissionPolicies.QuotesRead)]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<ResolvedPriceLineDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ResolveBatch(
+        [FromBody] ResolvePricesBatchRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new ResolvePricesBatchQuery(
+                request.ClientId,
+                request.Items ?? new List<ResolvePriceItemDto>(),
+                request.Date),
+            cancellationToken);
+
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<IReadOnlyList<ResolvedPriceLineDto>>.Ok(result.Value));
+    }
+}
+
+/// <summary>Corps de requête de la résolution par lot.</summary>
+public sealed class ResolvePricesBatchRequest
+{
+    public Guid? ClientId { get; init; }
+    public List<ResolvePriceItemDto>? Items { get; init; }
+    public DateTime? Date { get; init; }
 }
