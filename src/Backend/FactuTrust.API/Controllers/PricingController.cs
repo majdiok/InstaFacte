@@ -312,6 +312,142 @@ public sealed class PricingController : ControllerBase
 
         return Ok(ApiResponse<object>.Ok(new { }, "Prix négocié supprimé"));
     }
+
+    // ───────────────────────── Promotions ─────────────────────────
+
+    /// <summary>Liste des promotions, avec leur portée et si elles courent aujourd'hui.</summary>
+    [HttpGet("promotions")]
+    [Authorize(Policy = PermissionPolicies.PricingRead)]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<PromotionDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetPromotions(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetPromotionsQuery(), cancellationToken);
+
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<IReadOnlyList<PromotionDto>>.Ok(result.Value));
+    }
+
+    /// <summary>Crée une promotion datée.</summary>
+    [HttpPost("promotions")]
+    [Authorize(Policy = PermissionPolicies.PricingCreate)]
+    [ProducesResponseType(typeof(ApiResponse<Guid>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> CreatePromotion(
+        [FromBody] CreatePromotionCommand command,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<Guid>.Ok(result.Value, "Promotion créée"));
+    }
+
+    /// <summary>Met à jour une promotion. La désactiver n'affecte aucun document émis.</summary>
+    [HttpPut("promotions/{id:guid}")]
+    [Authorize(Policy = PermissionPolicies.PricingUpdate)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> UpdatePromotion(
+        Guid id,
+        [FromBody] UpdatePromotionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new UpdatePromotionCommand(
+                id, request.Name, request.StartsOn, request.EndsOn, request.DiscountType,
+                request.DiscountPercent, request.DiscountAmount, request.MinQuantity,
+                request.Priority, request.IsActive),
+            cancellationToken);
+
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<object>.Ok(new { }, "Promotion mise à jour"));
+    }
+
+    /// <summary>Supprime une promotion.</summary>
+    [HttpDelete("promotions/{id:guid}")]
+    [Authorize(Policy = PermissionPolicies.PricingDelete)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> DeletePromotion(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new DeletePromotionCommand(id), cancellationToken);
+
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<object>.Ok(new { }, "Promotion supprimée"));
+    }
+
+    // ─────────────────── Conditions de règlement ───────────────────
+
+    /// <summary>
+    /// Conditions de règlement, avec le libellé qui s'imprimera et l'échéance qu'aurait un
+    /// document émis aujourd'hui — la règle devient tangible au lieu de rester abstraite.
+    /// </summary>
+    [HttpGet("payment-terms")]
+    [Authorize(Policy = PermissionPolicies.PricingRead)]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<PaymentTermTemplateDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetPaymentTerms(
+        [FromQuery] bool activeOnly = false,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(new GetPaymentTermTemplatesQuery(activeOnly), cancellationToken);
+
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<IReadOnlyList<PaymentTermTemplateDto>>.Ok(result.Value));
+    }
+
+    /// <summary>Crée ou met à jour une condition de règlement.</summary>
+    [HttpPut("payment-terms")]
+    [Authorize(Policy = PermissionPolicies.PricingUpdate)]
+    [ProducesResponseType(typeof(ApiResponse<Guid>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> UpsertPaymentTerm(
+        [FromBody] UpsertPaymentTermTemplateCommand command,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<Guid>.Ok(result.Value, "Condition de règlement enregistrée"));
+    }
+
+    /// <summary>Supprime une condition de règlement. Les documents émis ne sont pas touchés.</summary>
+    [HttpDelete("payment-terms/{id:guid}")]
+    [Authorize(Policy = PermissionPolicies.PricingDelete)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> DeletePaymentTerm(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new DeletePaymentTermTemplateCommand(id), cancellationToken);
+
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<object>.Ok(new { }, "Condition de règlement supprimée"));
+    }
+}
+
+/// <summary>Corps de requête de la mise à jour d'une promotion.</summary>
+public sealed class UpdatePromotionRequest
+{
+    public string Name { get; init; } = string.Empty;
+    public DateTime StartsOn { get; init; }
+    public DateTime EndsOn { get; init; }
+    public FactuTrust.Domain.Enums.PromotionDiscountType DiscountType { get; init; }
+    public decimal? DiscountPercent { get; init; }
+    public decimal? DiscountAmount { get; init; }
+    public decimal MinQuantity { get; init; } = 1m;
+    public int Priority { get; init; }
+    public bool IsActive { get; init; } = true;
 }
 
 /// <summary>Corps de requête de la résolution par lot.</summary>

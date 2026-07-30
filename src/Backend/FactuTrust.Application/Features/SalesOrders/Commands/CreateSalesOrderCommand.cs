@@ -49,6 +49,7 @@ public sealed class CreateSalesOrderCommandHandler : IRequestHandler<CreateSales
     private readonly ICurrentUser _currentUser;
     private readonly IAuditService _auditService;
     private readonly IPriceResolver _priceResolver;
+    private readonly IPromotionResolver _promotionResolver;
 
     public CreateSalesOrderCommandHandler(
         ISalesOrderRepository salesOrderRepository,
@@ -60,9 +61,11 @@ public sealed class CreateSalesOrderCommandHandler : IRequestHandler<CreateSales
         ITenantContext tenantContext,
         ICurrentUser currentUser,
         IAuditService auditService,
-        IPriceResolver priceResolver)
+        IPriceResolver priceResolver,
+        IPromotionResolver promotionResolver)
     {
         _priceResolver = priceResolver;
+        _promotionResolver = promotionResolver;
         _salesOrderRepository = salesOrderRepository;
         _clientRepository = clientRepository;
         _productRepository = productRepository;
@@ -157,11 +160,26 @@ public sealed class CreateSalesOrderCommandHandler : IRequestHandler<CreateSales
                 unitPrice = priceResult.Value.UnitPriceHT;
             }
 
+            // Promotion : appliquée APRÈS le prix, sous forme de remise de ligne. Elle ne
+            // s'impose jamais à une remise saisie par le commercial — ce serait une surprise
+            // silencieuse. La remise obtenue est figée : la fin de la promotion ne change plus
+            // cette commande.
+            var discountPercent = lineDto.DiscountPercent;
+            if (discountPercent is null)
+            {
+                var promo = await _promotionResolver.ResolveAsync(
+                    product.Id, product.CategoryId, dto.ClientId,
+                    lineDto.Quantity, unitPrice, dto.OrderDate, cancellationToken);
+
+                if (promo.IsSuccess && promo.Value is { } applied)
+                    discountPercent = applied.DiscountPercent;
+            }
+
             var addResult = order.AddLine(
                 product,
                 lineDto.Quantity,
                 unitPrice,
-                lineDto.DiscountPercent,
+                discountPercent,
                 notes: lineDto.Notes);
 
             if (addResult.IsFailure)

@@ -151,6 +151,10 @@ public static class DependencyInjection
         services.AddScoped<IClientProductPriceRepository, ClientProductPriceRepository>();
         services.AddScoped<Application.Common.Interfaces.Pricing.IPriceResolver,
             Services.Pricing.PriceResolver>();
+        services.AddScoped<IPromotionRepository, PromotionRepository>();
+        services.AddScoped<IPaymentTermTemplateRepository, PaymentTermTemplateRepository>();
+        services.AddScoped<Application.Common.Interfaces.Pricing.IPromotionResolver,
+            Services.Pricing.PromotionResolver>();
         services.AddScoped<ISupplierInvoiceRepository, SupplierInvoiceRepository>();
         services.AddScoped<ISupplierPaymentRepository, SupplierPaymentRepository>();
         services.AddScoped<ICashOperationRepository, CashOperationRepository>();
