@@ -82,7 +82,11 @@ public static class AppModuleExtensions
             Permissions.Invoices.Update,
             Permissions.Invoices.Delete,
             Permissions.Invoices.Sign,
-            Permissions.Invoices.Send
+            Permissions.Invoices.Send,
+            Permissions.Pricing.Create,
+            Permissions.Pricing.Read,
+            Permissions.Pricing.Update,
+            Permissions.Pricing.Delete
         },
         AppModule.Treasury => new[]
         {

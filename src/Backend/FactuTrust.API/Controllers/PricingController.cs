@@ -1,5 +1,6 @@
 using FactuTrust.API.Authorization;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.Pricing.Commands;
 using FactuTrust.Application.Features.Pricing.Queries;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -27,7 +28,7 @@ public sealed class PricingController : ControllerBase
     /// le prix catalogue, que le serveur remplacerait ensuite en silence par le prix résolu.
     /// </summary>
     [HttpGet("resolve")]
-    [Authorize(Policy = PermissionPolicies.QuotesRead)]
+    [Authorize(Policy = PermissionPolicies.PricingRead)]
     [ProducesResponseType(typeof(ApiResponse<ResolvedPriceDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Resolve(
@@ -53,7 +54,7 @@ public sealed class PricingController : ControllerBase
     /// client : ligne à ligne, ce serait autant d'allers-retours qu'il y a d'articles.
     /// </summary>
     [HttpPost("resolve-batch")]
-    [Authorize(Policy = PermissionPolicies.QuotesRead)]
+    [Authorize(Policy = PermissionPolicies.PricingRead)]
     [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<ResolvedPriceLineDto>>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ResolveBatch(
@@ -72,6 +73,201 @@ public sealed class PricingController : ControllerBase
 
         return Ok(ApiResponse<IReadOnlyList<ResolvedPriceLineDto>>.Ok(result.Value));
     }
+
+    // ───────────────────────── Grilles tarifaires ─────────────────────────
+
+    /// <summary>Liste des grilles tarifaires.</summary>
+    [HttpGet("price-lists")]
+    [Authorize(Policy = PermissionPolicies.PricingRead)]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<PriceListListItemDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetPriceLists(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetPriceListsQuery(), cancellationToken);
+
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<IReadOnlyList<PriceListListItemDto>>.Ok(result.Value));
+    }
+
+    /// <summary>Détail d'une grille, avec ses prix et l'écart au catalogue.</summary>
+    [HttpGet("price-lists/{id:guid}")]
+    [Authorize(Policy = PermissionPolicies.PricingRead)]
+    [ProducesResponseType(typeof(ApiResponse<PriceListDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetPriceList(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetPriceListByIdQuery(id), cancellationToken);
+
+        if (result.IsFailure)
+            return NotFound(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<PriceListDetailDto>.Ok(result.Value));
+    }
+
+    /// <summary>Crée une grille tarifaire.</summary>
+    [HttpPost("price-lists")]
+    [Authorize(Policy = PermissionPolicies.PricingCreate)]
+    [ProducesResponseType(typeof(ApiResponse<Guid>), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> CreatePriceList(
+        [FromBody] CreatePriceListCommand command,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return CreatedAtAction(
+            nameof(GetPriceList),
+            new { id = result.Value },
+            ApiResponse<Guid>.Ok(result.Value, "Grille tarifaire créée"));
+    }
+
+    /// <summary>Renomme une grille, ajuste sa validité et son activation.</summary>
+    [HttpPut("price-lists/{id:guid}")]
+    [Authorize(Policy = PermissionPolicies.PricingUpdate)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> UpdatePriceList(
+        Guid id,
+        [FromBody] UpdatePriceListRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new UpdatePriceListCommand(id, request.Name, request.ValidFrom, request.ValidUntil, request.IsActive),
+            cancellationToken);
+
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<object>.Ok(new { }, "Grille tarifaire mise à jour"));
+    }
+
+    /// <summary>Supprime une grille. Refusé si elle est encore affectée à des clients.</summary>
+    [HttpDelete("price-lists/{id:guid}")]
+    [Authorize(Policy = PermissionPolicies.PricingDelete)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> DeletePriceList(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new DeletePriceListCommand(id), cancellationToken);
+
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<object>.Ok(new { }, "Grille tarifaire supprimée"));
+    }
+
+    /// <summary>Fixe (ou remplace) le prix d'un produit dans une grille.</summary>
+    [HttpPut("price-lists/{id:guid}/items/{productId:guid}")]
+    [Authorize(Policy = PermissionPolicies.PricingUpdate)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> SetPriceListItem(
+        Guid id,
+        Guid productId,
+        [FromBody] SetPriceListItemRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new SetPriceListItemCommand(id, productId, request.UnitPriceHT), cancellationToken);
+
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<object>.Ok(new { }, "Prix enregistré"));
+    }
+
+    /// <summary>Retire un produit d'une grille : il revient au prix catalogue.</summary>
+    [HttpDelete("price-lists/{id:guid}/items/{productId:guid}")]
+    [Authorize(Policy = PermissionPolicies.PricingUpdate)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RemovePriceListItem(
+        Guid id, Guid productId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new RemovePriceListItemCommand(id, productId), cancellationToken);
+
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<object>.Ok(new { }, "Prix retiré"));
+    }
+
+    // ───────────────────── Tarification d'un client ─────────────────────
+
+    /// <summary>Grille affectée et prix négociés d'un client.</summary>
+    [HttpGet("clients/{clientId:guid}")]
+    [Authorize(Policy = PermissionPolicies.PricingRead)]
+    [ProducesResponseType(typeof(ApiResponse<ClientPricingDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetClientPricing(Guid clientId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetClientPricingQuery(clientId), cancellationToken);
+
+        if (result.IsFailure)
+            return NotFound(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<ClientPricingDto>.Ok(result.Value));
+    }
+
+    /// <summary>Affecte une grille au client, ou la retire (corps avec priceListId nul).</summary>
+    [HttpPut("clients/{clientId:guid}/price-list")]
+    [Authorize(Policy = PermissionPolicies.PricingUpdate)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> AssignClientPriceList(
+        Guid clientId,
+        [FromBody] AssignClientPriceListRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new AssignClientPriceListCommand(clientId, request.PriceListId), cancellationToken);
+
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<object>.Ok(new { }, "Grille affectée au client"));
+    }
+
+    /// <summary>Crée ou met à jour un prix négocié pour un couple client / produit.</summary>
+    [HttpPut("clients/{clientId:guid}/products/{productId:guid}")]
+    [Authorize(Policy = PermissionPolicies.PricingUpdate)]
+    [ProducesResponseType(typeof(ApiResponse<Guid>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> UpsertClientProductPrice(
+        Guid clientId,
+        Guid productId,
+        [FromBody] UpsertClientProductPriceRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new UpsertClientProductPriceCommand(
+                clientId, productId, request.UnitPriceHT,
+                request.ValidFrom, request.ValidUntil, request.IsActive),
+            cancellationToken);
+
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<Guid>.Ok(result.Value, "Prix négocié enregistré"));
+    }
+
+    /// <summary>Supprime un prix négocié : le client repasse à sa grille, ou au catalogue.</summary>
+    [HttpDelete("client-prices/{id:guid}")]
+    [Authorize(Policy = PermissionPolicies.PricingDelete)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> DeleteClientProductPrice(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new DeleteClientProductPriceCommand(id), cancellationToken);
+
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<object>.Ok(new { }, "Prix négocié supprimé"));
+    }
 }
 
 /// <summary>Corps de requête de la résolution par lot.</summary>
@@ -80,4 +276,30 @@ public sealed class ResolvePricesBatchRequest
     public Guid? ClientId { get; init; }
     public List<ResolvePriceItemDto>? Items { get; init; }
     public DateTime? Date { get; init; }
+}
+
+public sealed class UpdatePriceListRequest
+{
+    public string Name { get; init; } = string.Empty;
+    public DateTime? ValidFrom { get; init; }
+    public DateTime? ValidUntil { get; init; }
+    public bool IsActive { get; init; } = true;
+}
+
+public sealed class SetPriceListItemRequest
+{
+    public decimal UnitPriceHT { get; init; }
+}
+
+public sealed class AssignClientPriceListRequest
+{
+    public Guid? PriceListId { get; init; }
+}
+
+public sealed class UpsertClientProductPriceRequest
+{
+    public decimal UnitPriceHT { get; init; }
+    public DateTime? ValidFrom { get; init; }
+    public DateTime? ValidUntil { get; init; }
+    public bool IsActive { get; init; } = true;
 }

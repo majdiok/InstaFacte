@@ -9,7 +9,7 @@ public static class ModuleFeatureCatalog
 {
     public static IReadOnlyList<string> GetValidFeatureKeys(AppModule module) => module switch
     {
-        AppModule.Sales => new[] { "sales_orders", "quotes", "delivery_notes", "invoices" },
+        AppModule.Sales => new[] { "sales_orders", "quotes", "delivery_notes", "invoices", "pricing" },
         AppModule.Clients => new[] { "read", "manage" },
         AppModule.Products => new[] { "read", "manage" },
         AppModule.Treasury => new[] { "read", "manage" },
@@ -53,6 +53,11 @@ public static class ModuleFeatureCatalog
             {
                 Permissions.Invoices.Create, Permissions.Invoices.Read, Permissions.Invoices.Update, Permissions.Invoices.Delete,
                 Permissions.Invoices.Sign, Permissions.Invoices.Send
+            },
+            (AppModule.Sales, "pricing") => new[]
+            {
+                Permissions.Pricing.Create, Permissions.Pricing.Read,
+                Permissions.Pricing.Update, Permissions.Pricing.Delete
             },
             (AppModule.Clients, "read") => new[] { Permissions.Clients.Read },
             (AppModule.Clients, "manage") => new[]

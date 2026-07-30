@@ -124,6 +124,10 @@ public static class UserRoleExtensions
             Permissions.Products.Read,
             Permissions.Products.Update,
             Permissions.Products.Delete,
+            Permissions.Pricing.Create,
+            Permissions.Pricing.Read,
+            Permissions.Pricing.Update,
+            Permissions.Pricing.Delete,
             Permissions.Payments.Create,
             Permissions.Payments.Read,
             Permissions.Payments.Update,
@@ -199,6 +203,8 @@ public static class UserRoleExtensions
             Permissions.Products.Create,
             Permissions.Products.Read,
             Permissions.Products.Update,
+            // Le comptable facture : il doit voir le prix qui s'appliquera, sans le fixer.
+            Permissions.Pricing.Read,
             Permissions.Payments.Create,
             Permissions.Payments.Read,
             Permissions.Reports.View,
@@ -249,7 +255,9 @@ public static class UserRoleExtensions
             Permissions.CRM.Read, Permissions.CRM.Create, Permissions.CRM.Update,
             Permissions.SalesTargets.Read,
             Permissions.Reports.SalesOwn,
-            Permissions.Forecasting.View
+            Permissions.Forecasting.View,
+            // Le commercial doit VOIR le prix négocié qui s'appliquera, sans pouvoir le fixer.
+            Permissions.Pricing.Read
         },
         UserRole.SalesManager => new[]
         {
@@ -263,7 +271,10 @@ public static class UserRoleExtensions
             Permissions.CRM.Read, Permissions.CRM.Create, Permissions.CRM.Update, Permissions.CRM.Delete,
             Permissions.SalesTargets.Read, Permissions.SalesTargets.Manage,
             Permissions.Forecasting.View,
-            Permissions.Forecasting.Manage
+            Permissions.Forecasting.Manage,
+            // Fixer les grilles et les prix négociés relève de la direction commerciale.
+            Permissions.Pricing.Create, Permissions.Pricing.Read,
+            Permissions.Pricing.Update, Permissions.Pricing.Delete
         },
         UserRole.Warehouse => new[]
         {
@@ -290,7 +301,10 @@ public static class UserRoleExtensions
             Permissions.Invoices.Create, Permissions.Invoices.Read,
             Permissions.Payments.Create,
             Permissions.Payments.Read,
-            Permissions.Stock.Read
+            Permissions.Stock.Read,
+            // La caisse interroge le résolveur de prix à chaque rattachement client : sans cette
+            // lecture, elle facturerait le catalogue là où une grille s'applique.
+            Permissions.Pricing.Read
         },
         UserRole.Auditor => new[]
         {
@@ -316,6 +330,7 @@ public static class UserRoleExtensions
             Permissions.DeliveryNotes.Create, Permissions.DeliveryNotes.Read, Permissions.DeliveryNotes.Update, Permissions.DeliveryNotes.Delete,
             Permissions.Clients.Create, Permissions.Clients.Read, Permissions.Clients.Update, Permissions.Clients.Delete,
             Permissions.Products.Create, Permissions.Products.Read, Permissions.Products.Update, Permissions.Products.Delete,
+            Permissions.Pricing.Create, Permissions.Pricing.Read, Permissions.Pricing.Update, Permissions.Pricing.Delete,
             Permissions.Payments.Create, Permissions.Payments.Read, Permissions.Payments.Update,
             Permissions.Settings.Read,
             Permissions.Settings.Update,
@@ -469,6 +484,18 @@ public static class Permissions
         public const string Read = "sales_orders:read";
         public const string Update = "sales_orders:update";
         public const string Delete = "sales_orders:delete";
+    }
+
+    /// <summary>
+    /// Grilles tarifaires et prix négociés. Séparé des devis et factures : décider du prix de
+    /// vente est une responsabilité de direction commerciale, pas de saisie documentaire.
+    /// </summary>
+    public static class Pricing
+    {
+        public const string Create = "pricing:create";
+        public const string Read = "pricing:read";
+        public const string Update = "pricing:update";
+        public const string Delete = "pricing:delete";
     }
 
     public static class SupplierInvoices

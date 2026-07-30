@@ -41,6 +41,25 @@ public sealed class PriceListRepository : IPriceListRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<int> CountAssignedClientsAsync(Guid priceListId, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.Clients
+            .CountAsync(c => c.PriceListId == priceListId, cancellationToken);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, int>> GetItemCountsAsync(CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        var counts = await context.PriceListItems
+            .AsNoTracking()
+            .GroupBy(i => i.PriceListId)
+            .Select(g => new { PriceListId = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        return counts.ToDictionary(c => c.PriceListId, c => c.Count);
+    }
+
     public async Task<IReadOnlyList<PriceList>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();
