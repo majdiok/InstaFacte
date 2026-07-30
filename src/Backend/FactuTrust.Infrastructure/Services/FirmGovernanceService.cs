@@ -562,18 +562,31 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
         if (codeError is not null)
             return Result.Failure<FirmTimeSheetEntryDto>(codeError);
 
+        var start = ParseTimeOfDay(dto.StartTime);
+        var end = ParseTimeOfDay(dto.EndTime);
+        if (start.IsFailure) return Result.Failure<FirmTimeSheetEntryDto>(start.Error);
+        if (end.IsFailure) return Result.Failure<FirmTimeSheetEntryDto>(end.Error);
+
+        var hoursResult = FirmTimeSheetEntry.ResolveHours(dto.Hours, start.Value, end.Value);
+        if (hoursResult.IsFailure)
+            return Result.Failure<FirmTimeSheetEntryDto>(hoursResult.Error);
+
         var legal = await CheckLegalLimitsAsync(
-            firmTenantId, targetUserId, dto.WorkDate, dto.Hours, excludedEntryId: null, cancellationToken);
+            firmTenantId, targetUserId, dto.WorkDate, hoursResult.Value,
+            start.Value, end.Value, excludedEntryId: null, cancellationToken);
         if (legal.IsFailure)
             return Result.Failure<FirmTimeSheetEntryDto>(legal.Error);
 
         var create = FirmTimeSheetEntry.Create(
-            firmTenantId, targetUserId, targetUserName, dto.WorkDate, dto.Hours, dto.FirmClientAssignmentId, clientName);
+            firmTenantId, targetUserId, targetUserName, dto.WorkDate, hoursResult.Value,
+            dto.FirmClientAssignmentId, clientName, start.Value, end.Value);
         if (create.IsFailure)
             return Result.Failure<FirmTimeSheetEntryDto>(create.Error);
 
         var entry = create.Value;
-        var apply = entry.Update(dto.WorkDate, dto.Hours, dto.FirmClientAssignmentId, clientName, dto.ActivityCode, dto.Notes, dto.IsBillable);
+        var apply = entry.Update(
+            dto.WorkDate, hoursResult.Value, dto.FirmClientAssignmentId, clientName,
+            dto.ActivityCode, dto.Notes, dto.IsBillable, start.Value, end.Value, dto.WorkLocation, dto.Tags);
         if (apply.IsFailure)
             return Result.Failure<FirmTimeSheetEntryDto>(apply.Error);
 
@@ -599,8 +612,8 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
         if (!isManager && entry.UserId != actorUserId)
             return Result.Failure<FirmTimeSheetEntryDto>(Error.Forbidden("Vous ne pouvez modifier que vos propres saisies."));
 
-        if (entry.IsValidated)
-            return Result.Failure<FirmTimeSheetEntryDto>(Error.Validation("TimeSheet", "Feuille de temps validée — non modifiable."));
+        if (!entry.CanEdit())
+            return Result.Failure<FirmTimeSheetEntryDto>(Error.Validation("TimeSheet", "Feuille de temps non modifiable (soumise ou validée)."));
 
         // La période d'origine et la période cible doivent toutes deux être ouvertes : déplacer une
         // ligne hors d'un mois clôturé reviendrait à modifier ce mois.
@@ -624,12 +637,24 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
         if (codeError is not null)
             return Result.Failure<FirmTimeSheetEntryDto>(codeError);
 
+        var start = ParseTimeOfDay(dto.StartTime);
+        var end = ParseTimeOfDay(dto.EndTime);
+        if (start.IsFailure) return Result.Failure<FirmTimeSheetEntryDto>(start.Error);
+        if (end.IsFailure) return Result.Failure<FirmTimeSheetEntryDto>(end.Error);
+
+        var hoursResult = FirmTimeSheetEntry.ResolveHours(dto.Hours, start.Value, end.Value);
+        if (hoursResult.IsFailure)
+            return Result.Failure<FirmTimeSheetEntryDto>(hoursResult.Error);
+
         var legal = await CheckLegalLimitsAsync(
-            firmTenantId, entry.UserId, dto.WorkDate, dto.Hours, excludedEntryId: entry.Id, cancellationToken);
+            firmTenantId, entry.UserId, dto.WorkDate, hoursResult.Value,
+            start.Value, end.Value, excludedEntryId: entry.Id, cancellationToken);
         if (legal.IsFailure)
             return Result.Failure<FirmTimeSheetEntryDto>(legal.Error);
 
-        var update = entry.Update(dto.WorkDate, dto.Hours, dto.FirmClientAssignmentId, clientName, dto.ActivityCode, dto.Notes, dto.IsBillable);
+        var update = entry.Update(
+            dto.WorkDate, hoursResult.Value, dto.FirmClientAssignmentId, clientName,
+            dto.ActivityCode, dto.Notes, dto.IsBillable, start.Value, end.Value, dto.WorkLocation, dto.Tags);
         if (update.IsFailure)
             return Result.Failure<FirmTimeSheetEntryDto>(update.Error);
 
@@ -667,6 +692,10 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
             return Result.Failure(Error.Validation(
                 "TimeSheet",
                 "Feuille de temps validée — dévalidez-la d'abord pour pouvoir la supprimer."));
+        if (entry.Status == FirmTimeSheetStatus.Submitted)
+            return Result.Failure(Error.Validation(
+                "TimeSheet",
+                "Feuille de temps soumise — non supprimable."));
 
         var periodError = await EnsurePeriodOpenAsync(firmTenantId, entry.WorkDate, cancellationToken);
         if (periodError is not null)
@@ -729,6 +758,251 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
 
         await _master.SaveChangesAsync(cancellationToken);
         return Result.Success(MapTimeSheet(entry));
+    }
+
+    public async Task<Result<FirmTimeSheetEntryDto>> SubmitTimeSheetAsync(
+        Guid firmTenantId,
+        Guid actorUserId,
+        bool isManager,
+        Guid entryId,
+        CancellationToken cancellationToken = default)
+    {
+        var entry = await _master.FirmTimeSheetEntries
+            .FirstOrDefaultAsync(t => t.Id == entryId && t.FirmTenantId == firmTenantId, cancellationToken);
+        if (entry is null)
+            return Result.Failure<FirmTimeSheetEntryDto>(Error.NotFound("TimeSheet", entryId));
+
+        if (!isManager && entry.UserId != actorUserId)
+            return Result.Failure<FirmTimeSheetEntryDto>(Error.Forbidden("Vous ne pouvez soumettre que vos propres saisies."));
+
+        var periodError = await EnsurePeriodOpenAsync(firmTenantId, entry.WorkDate, cancellationToken);
+        if (periodError is not null)
+            return Result.Failure<FirmTimeSheetEntryDto>(periodError);
+
+        if (entry.FirmClientAssignmentId.HasValue)
+        {
+            var accessDenied = await EnsureCanAccessAssignmentAsync(
+                firmTenantId, entry.FirmClientAssignmentId.Value, cancellationToken);
+            if (accessDenied is not null)
+                return Result.Failure<FirmTimeSheetEntryDto>(accessDenied);
+        }
+
+        var submit = entry.Submit();
+        if (submit.IsFailure)
+            return Result.Failure<FirmTimeSheetEntryDto>(submit.Error);
+
+        await _master.SaveChangesAsync(cancellationToken);
+        return Result.Success(MapTimeSheet(entry));
+    }
+
+    public async Task<Result<FirmTimeSheetEntryDto>> StartTimeSheetTimerAsync(
+        Guid firmTenantId,
+        Guid actorUserId,
+        string actorUserName,
+        bool isManager,
+        StartTimeSheetTimerDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        var targetUserId = actorUserId;
+        var targetUserName = actorUserName;
+        if (dto.TargetUserId.HasValue && dto.TargetUserId.Value != actorUserId)
+        {
+            if (!isManager)
+                return Result.Failure<FirmTimeSheetEntryDto>(Error.Forbidden("Seul un manager peut démarrer un timer pour un autre collaborateur."));
+            var target = await _userManager.FindByIdAsync(dto.TargetUserId.Value.ToString());
+            if (target is null || target.TenantId != firmTenantId)
+                return Result.Failure<FirmTimeSheetEntryDto>(Error.NotFound("User", dto.TargetUserId.Value));
+            targetUserId = target.Id;
+            targetUserName = $"{target.FirstName} {target.LastName}".Trim();
+            if (string.IsNullOrWhiteSpace(targetUserName))
+                targetUserName = target.Email ?? "Collaborateur";
+        }
+
+        var existing = await _master.FirmTimeSheetEntries
+            .FirstOrDefaultAsync(t => t.FirmTenantId == firmTenantId
+                                      && t.UserId == targetUserId
+                                      && t.TimerStartedAtUtc != null, cancellationToken);
+        if (existing is not null)
+            return Result.Failure<FirmTimeSheetEntryDto>(Error.Validation("Timer", "Un timer est déjà en cours."));
+
+        var workDate = (dto.WorkDate ?? ReportingPeriodResolver.GetTodayInTunisia(_timeProvider).ToDateTime(TimeOnly.MinValue)).Date;
+        var periodError = await EnsurePeriodOpenAsync(firmTenantId, workDate, cancellationToken);
+        if (periodError is not null)
+            return Result.Failure<FirmTimeSheetEntryDto>(periodError);
+
+        string? clientName = null;
+        if (dto.FirmClientAssignmentId.HasValue)
+        {
+            var accessDenied = await EnsureCanAccessAssignmentAsync(firmTenantId, dto.FirmClientAssignmentId.Value, cancellationToken);
+            if (accessDenied is not null)
+                return Result.Failure<FirmTimeSheetEntryDto>(accessDenied);
+            clientName = await ResolveAssignmentCompanyNameAsync(firmTenantId, dto.FirmClientAssignmentId.Value, cancellationToken);
+        }
+
+        var codeError = await EnsureActivityCodeAllowedAsync(firmTenantId, dto.ActivityCode, cancellationToken);
+        if (codeError is not null)
+            return Result.Failure<FirmTimeSheetEntryDto>(codeError);
+
+        var create = FirmTimeSheetEntry.CreateTimerDraft(
+            firmTenantId, targetUserId, targetUserName, workDate, DateTime.UtcNow,
+            dto.FirmClientAssignmentId, clientName, dto.ActivityCode, dto.IsBillable);
+        if (create.IsFailure)
+            return Result.Failure<FirmTimeSheetEntryDto>(create.Error);
+
+        var entry = create.Value;
+        entry.SetAuditInfo(actorUserName, isUpdate: false);
+        _master.FirmTimeSheetEntries.Add(entry);
+        await _master.SaveChangesAsync(cancellationToken);
+        return Result.Success(MapTimeSheet(entry));
+    }
+
+    public async Task<Result<FirmTimeSheetEntryDto>> StopTimeSheetTimerAsync(
+        Guid firmTenantId,
+        Guid actorUserId,
+        bool isManager,
+        StopTimeSheetTimerDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        var targetUserId = actorUserId;
+        if (dto.TargetUserId.HasValue && dto.TargetUserId.Value != actorUserId)
+        {
+            if (!isManager)
+                return Result.Failure<FirmTimeSheetEntryDto>(Error.Forbidden("Seul un manager peut arrêter un timer pour un autre collaborateur."));
+            targetUserId = dto.TargetUserId.Value;
+        }
+
+        FirmTimeSheetEntry? entry;
+        if (dto.EntryId.HasValue)
+        {
+            entry = await _master.FirmTimeSheetEntries
+                .FirstOrDefaultAsync(t => t.Id == dto.EntryId.Value && t.FirmTenantId == firmTenantId, cancellationToken);
+        }
+        else
+        {
+            entry = await _master.FirmTimeSheetEntries
+                .FirstOrDefaultAsync(t => t.FirmTenantId == firmTenantId
+                                          && t.UserId == targetUserId
+                                          && t.TimerStartedAtUtc != null, cancellationToken);
+        }
+
+        if (entry is null)
+            return Result.Failure<FirmTimeSheetEntryDto>(Error.Validation("Timer", "Aucun timer actif."));
+
+        if (!isManager && entry.UserId != actorUserId)
+            return Result.Failure<FirmTimeSheetEntryDto>(Error.Forbidden("Vous ne pouvez arrêter que votre propre timer."));
+
+        var periodError = await EnsurePeriodOpenAsync(firmTenantId, entry.WorkDate, cancellationToken);
+        if (periodError is not null)
+            return Result.Failure<FirmTimeSheetEntryDto>(periodError);
+
+        var stop = entry.StopTimer(DateTime.UtcNow);
+        if (stop.IsFailure)
+            return Result.Failure<FirmTimeSheetEntryDto>(stop.Error);
+
+        var legal = await CheckLegalLimitsAsync(
+            firmTenantId, entry.UserId, entry.WorkDate, entry.Hours,
+            entry.StartTime, entry.EndTime, excludedEntryId: entry.Id, cancellationToken);
+        if (legal.IsFailure)
+            return Result.Failure<FirmTimeSheetEntryDto>(legal.Error);
+
+        entry.SetAuditInfo(_currentUser.Email ?? actorUserId.ToString(), isUpdate: true);
+        await _master.SaveChangesAsync(cancellationToken);
+        return Result.Success(MapTimeSheet(entry) with { Warnings = legal.Value });
+    }
+
+    public async Task<Result<IReadOnlyList<FirmTimeSheetEntryDto>>> DuplicateTimeSheetWeekAsync(
+        Guid firmTenantId,
+        Guid actorUserId,
+        string actorUserName,
+        bool isManager,
+        DuplicateTimeSheetWeekDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        var targetUserId = actorUserId;
+        var targetUserName = actorUserName;
+        if (dto.UserId.HasValue && dto.UserId.Value != actorUserId)
+        {
+            if (!isManager)
+                return Result.Failure<IReadOnlyList<FirmTimeSheetEntryDto>>(
+                    Error.Forbidden("Seul un manager peut dupliquer la semaine d'un autre collaborateur."));
+            var target = await _userManager.FindByIdAsync(dto.UserId.Value.ToString());
+            if (target is null || target.TenantId != firmTenantId)
+                return Result.Failure<IReadOnlyList<FirmTimeSheetEntryDto>>(Error.NotFound("User", dto.UserId.Value));
+            targetUserId = target.Id;
+            targetUserName = $"{target.FirstName} {target.LastName}".Trim();
+            if (string.IsNullOrWhiteSpace(targetUserName))
+                targetUserName = target.Email ?? "Collaborateur";
+        }
+
+        var sourceStart = dto.SourceWeekStart.Date;
+        var targetStart = dto.TargetWeekStart.Date;
+        var sourceEnd = sourceStart.AddDays(6);
+        var dayOffset = (targetStart - sourceStart).Days;
+
+        var sourceRows = await _master.FirmTimeSheetEntries.AsNoTracking()
+            .Where(t => t.FirmTenantId == firmTenantId
+                        && t.UserId == targetUserId
+                        && t.WorkDate >= sourceStart
+                        && t.WorkDate <= sourceEnd
+                        && t.TimerStartedAtUtc == null)
+            .OrderBy(t => t.WorkDate)
+            .ToListAsync(cancellationToken);
+
+        var created = new List<FirmTimeSheetEntryDto>();
+        var warnings = new List<string>();
+
+        foreach (var src in sourceRows)
+        {
+            var newDate = src.WorkDate.Date.AddDays(dayOffset);
+            var periodError = await EnsurePeriodOpenAsync(firmTenantId, newDate, cancellationToken);
+            if (periodError is not null)
+            {
+                warnings.Add($"{newDate:dd/MM}: {periodError.Description}");
+                continue;
+            }
+
+            var legal = await CheckLegalLimitsAsync(
+                firmTenantId, targetUserId, newDate, src.Hours,
+                src.StartTime, src.EndTime, excludedEntryId: null, cancellationToken);
+            if (legal.IsFailure)
+            {
+                warnings.Add($"{newDate:dd/MM}: {legal.Error.Description}");
+                continue;
+            }
+
+            var create = FirmTimeSheetEntry.Create(
+                firmTenantId, targetUserId, targetUserName, newDate, src.Hours,
+                src.FirmClientAssignmentId, src.ClientCompanyName, src.StartTime, src.EndTime);
+            if (create.IsFailure)
+            {
+                warnings.Add($"{newDate:dd/MM}: {create.Error.Description}");
+                continue;
+            }
+
+            var entry = create.Value;
+            var apply = entry.Update(
+                newDate, src.Hours, src.FirmClientAssignmentId, src.ClientCompanyName,
+                src.ActivityCode, src.Notes, src.IsBillable, src.StartTime, src.EndTime,
+                src.WorkLocation, src.Tags);
+            if (apply.IsFailure)
+            {
+                warnings.Add($"{newDate:dd/MM}: {apply.Error.Description}");
+                continue;
+            }
+
+            entry.SetAuditInfo(actorUserName, isUpdate: false);
+            _master.FirmTimeSheetEntries.Add(entry);
+            created.Add(MapTimeSheet(entry) with { Warnings = legal.Value });
+        }
+
+        if (created.Count > 0)
+            await _master.SaveChangesAsync(cancellationToken);
+
+        if (created.Count == 0 && warnings.Count > 0)
+            return Result.Failure<IReadOnlyList<FirmTimeSheetEntryDto>>(
+                Error.Validation("DuplicateWeek", string.Join(" ", warnings)));
+
+        return Result.Success<IReadOnlyList<FirmTimeSheetEntryDto>>(created);
     }
 
     public async Task<Result<FirmTimeSheetBulkValidationResultDto>> ValidateTimeSheetsBulkAsync(
@@ -1161,6 +1435,8 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
         Guid userId,
         DateTime workDate,
         decimal hours,
+        TimeSpan? startTime,
+        TimeSpan? endTime,
         Guid? excludedEntryId,
         CancellationToken cancellationToken)
     {
@@ -1175,7 +1451,7 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
                         && t.WorkDate >= weekStart
                         && t.WorkDate <= weekEnd
                         && (excludedEntryId == null || t.Id != excludedEntryId))
-            .Select(t => new { t.WorkDate, t.Hours })
+            .Select(t => new { t.WorkDate, t.Hours, t.StartTime, t.EndTime })
             .ToListAsync(cancellationToken);
 
         var otherHoursSameDay = weekRows.Where(r => r.WorkDate.Date == day).Sum(r => r.Hours);
@@ -1183,7 +1459,12 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
 
         var today = ReportingPeriodResolver.GetTodayInTunisia(_timeProvider).ToDateTime(TimeOnly.MinValue);
         var anomalies = TimeSheetLegalValidator.Validate(
-            workDate, hours, otherHoursSameDay, otherHoursSameWeek, today, settings);
+            workDate, hours, otherHoursSameDay, otherHoursSameWeek, today, settings).ToList();
+
+        var otherSlots = weekRows
+            .Where(r => r.WorkDate.Date == day && r.StartTime.HasValue && r.EndTime.HasValue)
+            .Select(r => (r.StartTime!.Value, r.EndTime!.Value));
+        anomalies.AddRange(TimeSheetLegalValidator.ValidateSlotOverlap(startTime, endTime, otherSlots));
 
         if (anomalies.Count == 0)
             return Result.Success<IReadOnlyList<string>>(Array.Empty<string>());
@@ -1195,6 +1476,25 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
 
         return Result.Success<IReadOnlyList<string>>(messages);
     }
+
+    private static Result<TimeSpan?> ParseTimeOfDay(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return Result.Success<TimeSpan?>(null);
+        if (TimeSpan.TryParse(value.Trim(), out var ts))
+            return Result.Success<TimeSpan?>(ts);
+        return Result.Failure<TimeSpan?>(Error.Validation("TimeSlot", $"Heure invalide : {value}"));
+    }
+
+    private static string? FormatTimeOfDay(TimeSpan? value)
+        => value.HasValue ? $"{(int)value.Value.TotalHours:00}:{value.Value.Minutes:00}" : null;
+
+    private static string StatusDisplayOf(FirmTimeSheetStatus status) => status switch
+    {
+        FirmTimeSheetStatus.Submitted => "Soumis",
+        FirmTimeSheetStatus.Validated => "Validé",
+        _ => "Brouillon"
+    };
 
     /// <summary>Refuse toute écriture sur un mois clôturé.</summary>
     private async Task<Error?> EnsurePeriodOpenAsync(
@@ -1924,10 +2224,17 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
         ClientCompanyName = t.ClientCompanyName,
         WorkDate = t.WorkDate,
         Hours = t.Hours,
+        StartTime = t.StartTime.HasValue ? FormatTimeOfDay(t.StartTime) : null,
+        EndTime = t.EndTime.HasValue ? FormatTimeOfDay(t.EndTime) : null,
         ActivityCode = t.ActivityCode,
         Notes = t.Notes,
         IsBillable = t.IsBillable,
+        WorkLocation = t.WorkLocation,
+        Tags = t.Tags,
+        Status = (int)t.Status,
+        StatusDisplay = StatusDisplayOf(t.Status),
         IsValidated = t.IsValidated,
+        TimerStartedAtUtc = t.TimerStartedAtUtc,
         ValidatedAt = t.ValidatedAt,
         ValidatedByDisplayName = t.ValidatedByDisplayName
     };

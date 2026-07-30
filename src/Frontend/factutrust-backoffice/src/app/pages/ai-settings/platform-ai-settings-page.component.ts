@@ -61,7 +61,7 @@ interface InferenceDeviceOption {
         <h3>Moteur d'inférence</h3>
         <p class="hint">
           Choisit si Ollama utilise le GPU (accélération matérielle) ou le CPU uniquement pour
-          l'assistant, l'import de factures et le modèle vision.
+          l'assistant, l'Assistant Studio, l'import de factures et le modèle vision.
         </p>
         <div class="field">
           <label for="inference-device">Exécution</label>
@@ -137,6 +137,27 @@ interface InferenceDeviceOption {
               inputId="ai-import-model"
               [options]="modelOptions()"
               [(ngModel)]="selectedImportModelRef"
+              optionLabel="label"
+              optionValue="value"
+              appendTo="body"
+              styleClass="w-full" />
+          </div>
+        }
+      </section>
+
+      <section class="card">
+        <h3>Modèle IA — Assistant Studio</h3>
+        <p class="hint">
+          Modèle utilisé par l'Assistant Studio (création de tables, systèmes et plans) pour toutes les entreprises.
+          Prioritaire sur le modèle Assistant. « Aucun » = même modèle que l'Assistant / serveur.
+        </p>
+        @if (d.availableModels.length) {
+          <div class="field">
+            <label for="ai-studio-model">Modèle Studio</label>
+            <p-dropdown
+              inputId="ai-studio-model"
+              [options]="modelOptions()"
+              [(ngModel)]="selectedStudioModelRef"
               optionLabel="label"
               optionValue="value"
               appendTo="body"
@@ -290,11 +311,13 @@ export class PlatformAiSettingsPageComponent implements OnInit {
   protected readonly busy = signal<boolean>(false);
   protected readonly savedModelRef = signal<string>('');
   protected readonly savedImportModelRef = signal<string>('');
+  protected readonly savedStudioModelRef = signal<string>('');
   protected readonly savedInferenceDevice = signal<OllamaInferenceDevice>('Gpu');
 
   /** Liée par [(ngModel)] au sélecteur. */
   protected selectedModelRef = '';
   protected selectedImportModelRef = '';
+  protected selectedStudioModelRef = '';
   protected selectedInferenceDevice: OllamaInferenceDevice = 'Gpu';
 
   protected readonly inferenceDeviceOptions: InferenceDeviceOption[] = [
@@ -321,9 +344,17 @@ export class PlatformAiSettingsPageComponent implements OnInit {
       options.push({ label: `${src} · ${m.displayLabel}`, value: m.modelRef });
     }
     // Modèle configuré mais plus installé : on l'ajoute pour ne pas perdre la valeur.
-    const configured = d.configuredModelRef;
-    if (configured && !d.availableModels.some(m => m.modelRef === configured)) {
-      options.push({ label: `${configured} (non installé)`, value: configured });
+    const configuredRefs = [
+      d.configuredModelRef,
+      d.invoiceImportModelRef,
+      d.studioAiModelRef
+    ];
+    for (const configured of configuredRefs) {
+      if (configured
+        && !d.availableModels.some(m => m.modelRef === configured)
+        && !options.some(o => o.value === configured)) {
+        options.push({ label: `${configured} (non installé)`, value: configured });
+      }
     }
     return options;
   });
@@ -342,6 +373,8 @@ export class PlatformAiSettingsPageComponent implements OnInit {
           this.savedModelRef.set(this.selectedModelRef);
           this.selectedImportModelRef = res.data.invoiceImportModelRef ?? '';
           this.savedImportModelRef.set(this.selectedImportModelRef);
+          this.selectedStudioModelRef = res.data.studioAiModelRef ?? '';
+          this.savedStudioModelRef.set(this.selectedStudioModelRef);
           this.selectedInferenceDevice = res.data.inferenceDevice ?? 'Gpu';
           this.savedInferenceDevice.set(this.selectedInferenceDevice);
         }
@@ -361,6 +394,7 @@ export class PlatformAiSettingsPageComponent implements OnInit {
   protected hasChanges(): boolean {
     return this.selectedModelRef !== this.savedModelRef()
       || this.selectedImportModelRef !== this.savedImportModelRef()
+      || this.selectedStudioModelRef !== this.savedStudioModelRef()
       || this.selectedInferenceDevice !== this.savedInferenceDevice();
   }
 
@@ -387,9 +421,11 @@ export class PlatformAiSettingsPageComponent implements OnInit {
     this.busy.set(true);
     const modelRef = this.selectedModelRef ? this.selectedModelRef : null;
     const invoiceImportModelRef = this.selectedImportModelRef ? this.selectedImportModelRef : null;
+    const studioAiModelRef = this.selectedStudioModelRef ? this.selectedStudioModelRef : null;
     this.api.update({
       modelRef,
       invoiceImportModelRef,
+      studioAiModelRef,
       inferenceDevice: this.selectedInferenceDevice
     }).subscribe({
       next: (res) => {
@@ -399,6 +435,8 @@ export class PlatformAiSettingsPageComponent implements OnInit {
           this.savedModelRef.set(this.selectedModelRef);
           this.selectedImportModelRef = res.data.invoiceImportModelRef ?? '';
           this.savedImportModelRef.set(this.selectedImportModelRef);
+          this.selectedStudioModelRef = res.data.studioAiModelRef ?? '';
+          this.savedStudioModelRef.set(this.selectedStudioModelRef);
           this.selectedInferenceDevice = res.data.inferenceDevice ?? 'Gpu';
           this.savedInferenceDevice.set(this.selectedInferenceDevice);
           this.toast.add({

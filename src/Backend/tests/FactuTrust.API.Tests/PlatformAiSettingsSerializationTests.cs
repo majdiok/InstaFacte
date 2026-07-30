@@ -21,6 +21,7 @@ public sealed class PlatformAiSettingsSerializationTests
             null,
             null,
             null,
+            null,
             OllamaInferenceDevice.CpuOnly,
             true,
             Array.Empty<UnifiedAiModelInfo>(),
@@ -29,6 +30,7 @@ public sealed class PlatformAiSettingsSerializationTests
         var json = JsonSerializer.Serialize(dto, ApiJsonOptions);
 
         Assert.Contains("\"inferenceDevice\":\"CpuOnly\"", json);
+        Assert.Contains("\"studioAiModelRef\":null", json);
     }
 
     [Fact]
@@ -38,6 +40,7 @@ public sealed class PlatformAiSettingsSerializationTests
             {
               "configuredModelRef": null,
               "invoiceImportModelRef": null,
+              "studioAiModelRef": "ollama:qwen2.5:7b-instruct",
               "serverInvoiceImportVisionModel": null,
               "inferenceDevice": "Gpu",
               "isOllamaAssistantConfigured": true,
@@ -50,5 +53,6 @@ public sealed class PlatformAiSettingsSerializationTests
 
         Assert.NotNull(dto);
         Assert.Equal(OllamaInferenceDevice.Gpu, dto!.InferenceDevice);
+        Assert.Equal("ollama:qwen2.5:7b-instruct", dto.StudioAiModelRef);
     }
 }

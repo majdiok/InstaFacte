@@ -14,6 +14,11 @@ public sealed class OllamaSettings
     /// </summary>
     public string InvoiceImportModel { get; set; } = "";
 
+    /// <summary>
+    /// Modèle dédié à l'Assistant Studio (IA). Vide => utilise DefaultModelRef plateforme puis <see cref="DefaultModel"/>.
+    /// </summary>
+    public string StudioAiModel { get; set; } = "";
+
     /// <summary>Modèle dédié à l'import de relevé bancaire PDF. Vide => <see cref="InvoiceImportModel"/> puis <see cref="DefaultModel"/>.</summary>
     public string BankStatementImportModel { get; set; } = "";
 

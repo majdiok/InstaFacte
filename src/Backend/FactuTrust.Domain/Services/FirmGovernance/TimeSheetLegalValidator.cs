@@ -14,7 +14,9 @@ public enum TimeSheetAnomalyKind
     /// <summary>La date de travail est postérieure à la tolérance de saisie en avance.</summary>
     FutureDate = 3,
     /// <summary>La date de travail est antérieure à l'antériorité maximale autorisée.</summary>
-    TooOld = 4
+    TooOld = 4,
+    /// <summary>Le créneau chevauche une autre saisie du même collaborateur le même jour.</summary>
+    SlotOverlap = 5
 }
 
 /// <summary>Une anomalie, avec de quoi la restituer telle quelle à l'utilisateur.</summary>
@@ -83,6 +85,35 @@ public static class TimeSheetLegalValidator
         return anomalies;
     }
 
+    /// <summary>
+    /// Détecte un chevauchement de créneaux pour le même collaborateur le même jour.
+    /// Les lignes sans créneau (legacy durée seule) sont ignorées.
+    /// </summary>
+    public static IReadOnlyList<TimeSheetAnomaly> ValidateSlotOverlap(
+        TimeSpan? startTime,
+        TimeSpan? endTime,
+        IEnumerable<(TimeSpan Start, TimeSpan End)> otherSlotsSameDay)
+    {
+        if (!startTime.HasValue || !endTime.HasValue)
+            return Array.Empty<TimeSheetAnomaly>();
+
+        foreach (var other in otherSlotsSameDay)
+        {
+            if (FirmTimeSheetEntry.SlotsOverlap(startTime.Value, endTime.Value, other.Start, other.End))
+            {
+                return
+                [
+                    new TimeSheetAnomaly(
+                        TimeSheetAnomalyKind.SlotOverlap,
+                        $"Le créneau {FmtTime(startTime.Value)}–{FmtTime(endTime.Value)} chevauche "
+                        + $"un autre créneau ({FmtTime(other.Start)}–{FmtTime(other.End)}).")
+                ];
+            }
+        }
+
+        return Array.Empty<TimeSheetAnomaly>();
+    }
+
     /// <summary>Contrôle de datation seul : futur au-delà de la tolérance, antériorité excessive.</summary>
     public static IReadOnlyList<TimeSheetAnomaly> ValidateWorkDate(
         DateTime workDate,
@@ -138,4 +169,7 @@ public static class TimeSheetLegalValidator
 
     private static string Fmt(decimal value) =>
         value.ToString("0.##", CultureInfo.GetCultureInfo("fr-FR"));
+
+    private static string FmtTime(TimeSpan value) =>
+        $"{(int)value.TotalHours:00}:{value.Minutes:00}";
 }

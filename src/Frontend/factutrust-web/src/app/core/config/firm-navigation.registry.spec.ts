@@ -11,37 +11,64 @@ import {
 import { NavSubItem } from './app-navigation.registry';
 
 describe('firm-navigation.registry — FIRM_NATIVE_NAV', () => {
+  const governanceRoutes = [
+    '/firm/governance/permanent-files',
+    '/firm/affectation',
+    '/firm/governance/time-sheets',
+    '/firm/governance/dossier-time-profitability',
+    '/firm/governance/collaborator-rentability',
+    '/firm/governance/expense-notes',
+    '/firm/governance/social'
+  ];
+
   it('FIRM_NATIVE_NAV includes fiscal schedule route', () => {
     expect(FIRM_NATIVE_NAV.some(i => i.route === '/firm/fiscal-schedule')).toBe(true);
   });
 
-  it('FIRM_NATIVE_NAV includes governance section', () => {
-    expect(FIRM_NATIVE_NAV.some(i => i.label === 'Gouvernance')).toBe(true);
+  it('FIRM_NATIVE_NAV no longer includes governance parent section', () => {
+    expect(FIRM_NATIVE_NAV.some(i => i.label === 'Gouvernance')).toBe(false);
   });
 
-  it('FIRM_NATIVE_NAV governance has no dedicated dashboard child (unified on /firm/dashboard)', () => {
-    const gov = FIRM_NATIVE_NAV.find(i => i.label === 'Gouvernance');
-    expect(gov?.children?.some(c => c.route === '/firm/governance/dashboard')).toBe(false);
-    expect(gov?.children?.map(c => c.route)).toEqual([
-      '/firm/governance/permanent-files',
-      '/firm/affectation',
-      '/firm/governance/time-sheets',
-      '/firm/governance/dossier-time-profitability',
-      '/firm/governance/collaborator-rentability',
-      '/firm/governance/expense-notes',
-      '/firm/governance/social'
-    ]);
+  it('FIRM_NATIVE_NAV exposes governance routes as top-level items in expected order', () => {
+    const topLevelRoutes = FIRM_NATIVE_NAV.map(i => i.route).filter((route): route is string => !!route);
+    const extractedGovernanceRoutes = topLevelRoutes.filter(route => governanceRoutes.includes(route));
+    expect(extractedGovernanceRoutes).toEqual(governanceRoutes);
+  });
+
+  it('FIRM_NATIVE_NAV has no governance dashboard route', () => {
+    expect(FIRM_NATIVE_NAV.some(i => i.route === '/firm/governance/dashboard')).toBe(false);
   });
 
   it('filterFirmGovernanceNav removes governance when flag off', () => {
     const filtered = filterFirmGovernanceNav(FIRM_NATIVE_NAV, false);
     expect(filtered.some(i => i.label === 'Gouvernance')).toBe(false);
     expect(filtered.some(i => i.route?.startsWith('/firm/governance'))).toBe(false);
+    expect(filtered.some(i => i.route === '/firm/affectation')).toBe(false);
   });
 
   it('filterFirmGovernanceNav keeps governance when flag on', () => {
     const filtered = filterFirmGovernanceNav(FIRM_NATIVE_NAV, true);
-    expect(filtered.some(i => i.label === 'Gouvernance')).toBe(true);
+    const topLevelRoutes = filtered.map(i => i.route).filter((route): route is string => !!route);
+    const extractedGovernanceRoutes = topLevelRoutes.filter(route => governanceRoutes.includes(route));
+    expect(extractedGovernanceRoutes).toEqual(governanceRoutes);
+  });
+
+  it('manager/off matrix keeps visibility equivalent to old behavior', () => {
+    const managerFlagOn = filterFirmGovernanceNav(FIRM_NATIVE_NAV, true).filter(i =>
+      governanceRoutes.includes(i.route ?? '')
+    );
+    expect(managerFlagOn).toHaveSize(7);
+
+    const managerFlagOff = filterFirmGovernanceNav(FIRM_NATIVE_NAV, false).filter(i =>
+      governanceRoutes.includes(i.route ?? '')
+    );
+    expect(managerFlagOff).toHaveSize(0);
+
+    const nonManagerFlagOn = managerFlagOn.filter(i => i.route !== '/firm/affectation');
+    expect(nonManagerFlagOn).toHaveSize(6);
+
+    const nonManagerFlagOff = managerFlagOff.filter(i => i.route !== '/firm/affectation');
+    expect(nonManagerFlagOff).toHaveSize(0);
   });
 });
 

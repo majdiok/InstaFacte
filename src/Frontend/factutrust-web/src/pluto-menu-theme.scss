@@ -124,6 +124,21 @@
   &.fa-calculator          { color: #e11d48; } /* Comptabilité — rose */
   &.fa-gear                { color: #475569; } /* Paramètres — slate */
   &.fa-book                { color: #0284c7; } /* Documentation — sky */
+  &.fa-briefcase           { color: #ca8a04; } /* Mes dossiers clients — yellow */
+  &.fa-envelope-open-text  { color: #db2777; } /* Invitations — pink */
+  &.fa-calendar-days       { color: #0891b2; } /* Échéancier fiscal — cyan */
+  &.fa-user-tag            { color: #7c3aed; } /* Affectation des dossiers — violet */
+  &.fa-clock               { color: #d97706; } /* Feuilles de temps — amber */
+  &.fa-chart-pie           { color: #e11d48; } /* Rentabilité collaborateurs — rose */
+  &.fa-receipt             { color: #d97706; } /* Notes de frais dirigeants — amber */
+  &.fa-users               { color: #7c3aed; } /* Suivi social — violet */
+  &.fa-building-columns    { color: #0d9488; } /* Mon cabinet — teal */
+  &.fa-users-gear          { color: #7c3aed; } /* RH & Paie — violet */
+  &.fa-table-cells-large   { color: #4f46e5; } /* Comptabilité hub délégué — indigo */
+  &.fa-chart-column        { color: #c026d3; } /* Budgétaire — fuchsia */
+  &.fa-file-signature      { color: #d97706; } /* Declarations — amber */
+  &.fa-building            { color: #0891b2; } /* Gestion immobilisations — cyan */
+  &.fa-shapes              { color: #4f46e5; } /* Studio — indigo */
 }
 
 #sidebar.sidebar-collapsed ul.rail-nav li a.rail-link,
@@ -239,6 +254,21 @@
   &.fa-cart-shopping        { color: #0891b2; }
   &.fa-folder-open          { color: #ca8a04; }
   &.fa-gear                 { color: #475569; }
+  &.fa-briefcase            { color: #ca8a04; } /* Mes dossiers clients — yellow */
+  &.fa-envelope-open-text   { color: #db2777; } /* Invitations — pink */
+  &.fa-user-tag             { color: #7c3aed; } /* Affectation / tiers — violet */
+  &.fa-receipt              { color: #d97706; } /* Notes de frais — amber */
+  &.fa-user                 { color: #0284c7; } /* Mon profil — sky */
+  &.fa-list                 { color: #475569; } /* Voir tous les dossiers — neutral */
+  &.fa-arrow-left           { color: #059669; } /* Retour au cabinet — emerald */
+  &.fa-address-book         { color: #0284c7; } /* Plan tiers — sky */
+  &.fa-gears                { color: #475569; } /* Traitements — neutral */
+  &.fa-heart-pulse          { color: #e11d48; } /* Contrôle d'intégrité — rose */
+  &.fa-layer-group          { color: #4f46e5; } /* Brouillons en lot — indigo */
+  &.fa-rotate-left          { color: #ea580c; } /* Correction en lot — orange */
+  &.fa-hand-holding-dollar  { color: #059669; } /* Emprunts — emerald */
+  &.fa-file-signature       { color: #d97706; } /* Declarations — amber */
+  &.fa-shapes               { color: #4f46e5; } /* Studio — indigo */
 }
 
 // --------------------------------------------

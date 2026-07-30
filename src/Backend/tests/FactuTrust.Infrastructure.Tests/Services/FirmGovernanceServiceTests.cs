@@ -1281,6 +1281,168 @@ public sealed class FirmGovernanceServiceTests
     }
 
     [Fact]
+    public async Task Create_with_start_end_derives_hours_and_maps_status()
+    {
+        await using var db = BuildMaster();
+        var assignment = await SeedActiveAssignmentAsync(db);
+        var service = BuildService(db);
+
+        var created = await service.CreateTimeSheetAsync(
+            FirmId, UserId, "Manager Test", isManager: true,
+            new CreateTimeSheetEntryDto
+            {
+                WorkDate = new DateTime(2026, 7, 15),
+                Hours = 0,
+                StartTime = "09:00",
+                EndTime = "12:30",
+                FirmClientAssignmentId = assignment.Id,
+                IsBillable = true
+            });
+
+        Assert.True(created.IsSuccess);
+        Assert.Equal(3.5m, created.Value.Hours);
+        Assert.Equal("09:00", created.Value.StartTime);
+        Assert.Equal("12:30", created.Value.EndTime);
+        Assert.Equal(0, created.Value.Status);
+        Assert.Equal("Brouillon", created.Value.StatusDisplay);
+    }
+
+    [Fact]
+    public async Task Submit_then_validate_advances_status()
+    {
+        await using var db = BuildMaster();
+        var assignment = await SeedActiveAssignmentAsync(db);
+        var service = BuildService(db);
+
+        var created = await service.CreateTimeSheetAsync(
+            FirmId, UserId, "Manager Test", isManager: true,
+            Entry(new DateTime(2026, 7, 16), 2m, assignment.Id));
+        Assert.True(created.IsSuccess);
+
+        var submitted = await service.SubmitTimeSheetAsync(FirmId, UserId, isManager: true, created.Value.Id);
+        Assert.True(submitted.IsSuccess);
+        Assert.Equal(1, submitted.Value.Status);
+        Assert.False(submitted.Value.IsValidated);
+
+        var validated = await service.ValidateTimeSheetAsync(
+            FirmId, UserId, "Manager Test", isManager: true, created.Value.Id);
+        Assert.True(validated.IsSuccess);
+        Assert.Equal(2, validated.Value.Status);
+        Assert.True(validated.Value.IsValidated);
+    }
+
+    [Fact]
+    public async Task Timer_start_and_stop_materialize_entry()
+    {
+        await using var db = BuildMaster();
+        var assignment = await SeedActiveAssignmentAsync(db);
+        var service = BuildService(db);
+
+        var started = await service.StartTimeSheetTimerAsync(
+            FirmId, UserId, "Manager Test", isManager: true,
+            new StartTimeSheetTimerDto
+            {
+                WorkDate = new DateTime(2026, 7, 17),
+                FirmClientAssignmentId = assignment.Id,
+                IsBillable = true
+            });
+        Assert.True(started.IsSuccess);
+        Assert.NotNull(started.Value.TimerStartedAtUtc);
+
+        // Simule une durée minimale en forçant le stop immédiat (domaine floor à 0.25h).
+        var stopped = await service.StopTimeSheetTimerAsync(
+            FirmId, UserId, isManager: true, new StopTimeSheetTimerDto { EntryId = started.Value.Id });
+        Assert.True(stopped.IsSuccess);
+        Assert.Null(stopped.Value.TimerStartedAtUtc);
+        Assert.True(stopped.Value.Hours >= 0.25m);
+        Assert.NotNull(stopped.Value.StartTime);
+        Assert.NotNull(stopped.Value.EndTime);
+    }
+
+    [Fact]
+    public async Task Duplicate_week_creates_drafts_on_target_week()
+    {
+        await using var db = BuildMaster();
+        var assignment = await SeedActiveAssignmentAsync(db);
+        var service = BuildService(db);
+
+        // Lundi 13/07/2026
+        var sourceMonday = new DateTime(2026, 7, 13);
+        await service.CreateTimeSheetAsync(
+            FirmId, UserId, "Manager Test", isManager: true,
+            Entry(sourceMonday, 2m, assignment.Id));
+        await service.CreateTimeSheetAsync(
+            FirmId, UserId, "Manager Test", isManager: true,
+            Entry(sourceMonday.AddDays(1), 3m, assignment.Id));
+
+        var duplicated = await service.DuplicateTimeSheetWeekAsync(
+            FirmId, UserId, "Manager Test", isManager: true,
+            new DuplicateTimeSheetWeekDto
+            {
+                SourceWeekStart = sourceMonday,
+                TargetWeekStart = sourceMonday.AddDays(7)
+            });
+
+        Assert.True(duplicated.IsSuccess);
+        Assert.Equal(2, duplicated.Value.Count);
+        Assert.All(duplicated.Value, e => Assert.Equal(0, e.Status));
+        Assert.Contains(duplicated.Value, e => e.WorkDate.Date == sourceMonday.AddDays(7));
+        Assert.Contains(duplicated.Value, e => e.WorkDate.Date == sourceMonday.AddDays(8));
+    }
+
+    [Fact]
+    public async Task Overlapping_slots_are_blocked_when_hard_limits_enforced()
+    {
+        await using var db = BuildMaster();
+        var assignment = await SeedActiveAssignmentAsync(db);
+        var service = BuildService(db);
+        await service.SaveTimeSheetYearSettingsAsync(
+            FirmId, 2026,
+            new SaveFirmTimeSheetYearSettingsDto
+            {
+                WeeklyRegime = (int)WeeklyWorkRegime.FortyHours,
+                MaxDailyHours = 10m,
+                MaxWeeklyHours = 40m,
+                AllowFutureEntryDays = 30,
+                MaxBackdatingDays = 365,
+                EnforceHardLimits = true,
+                PaidLeaveDaysPerYear = 30,
+                PublicHolidayDaysPerYear = 10,
+                ProductivityRatePercent = 80,
+                CnssEmployerRate = 16.57m,
+                TfpRate = 2m,
+                FoprolosRate = 1m,
+                WorkAccidentRate = 0.5m
+            });
+
+        var first = await service.CreateTimeSheetAsync(
+            FirmId, UserId, "Manager Test", isManager: true,
+            new CreateTimeSheetEntryDto
+            {
+                WorkDate = new DateTime(2026, 7, 20),
+                Hours = 0,
+                StartTime = "09:00",
+                EndTime = "12:00",
+                FirmClientAssignmentId = assignment.Id,
+                IsBillable = true
+            });
+        Assert.True(first.IsSuccess);
+
+        var overlap = await service.CreateTimeSheetAsync(
+            FirmId, UserId, "Manager Test", isManager: true,
+            new CreateTimeSheetEntryDto
+            {
+                WorkDate = new DateTime(2026, 7, 20),
+                Hours = 0,
+                StartTime = "11:00",
+                EndTime = "13:00",
+                FirmClientAssignmentId = assignment.Id,
+                IsBillable = true
+            });
+        Assert.True(overlap.IsFailure);
+    }
+
+    [Fact]
     public async Task Seeding_defaults_twice_does_not_duplicate_or_resurrect_codes()
     {
         await using var db = BuildMaster();

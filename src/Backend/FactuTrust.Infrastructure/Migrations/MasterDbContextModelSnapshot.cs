@@ -1397,6 +1397,10 @@ namespace FactuTrust.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<string>("StudioAiModelRef")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
 
@@ -1410,7 +1414,7 @@ namespace FactuTrust.Infrastructure.Migrations
                 });
 
             modelBuilder.Entity("FactuTrust.Domain.Entities.AccountingFirmProfile", b =>
-                {
+            {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
@@ -2130,6 +2134,9 @@ namespace FactuTrust.Infrastructure.Migrations
                     b.Property<string>("CreatedBy")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<TimeSpan?>("EndTime")
+                        .HasColumnType("time");
+
                     b.Property<Guid?>("FirmClientAssignmentId")
                         .HasColumnType("uniqueidentifier");
 
@@ -2149,6 +2156,19 @@ namespace FactuTrust.Infrastructure.Migrations
                     b.Property<string>("Notes")
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
+
+                    b.Property<TimeSpan?>("StartTime")
+                        .HasColumnType("time");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Tags")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime?>("TimerStartedAtUtc")
+                        .HasColumnType("datetime2");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -2177,9 +2197,15 @@ namespace FactuTrust.Infrastructure.Migrations
                     b.Property<DateTime>("WorkDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("WorkLocation")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("FirmTenantId", "WorkDate");
+
+                    b.HasIndex("FirmTenantId", "UserId", "TimerStartedAtUtc");
 
                     b.HasIndex("FirmTenantId", "UserId", "WorkDate");
 

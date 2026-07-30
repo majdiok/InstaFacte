@@ -147,6 +147,38 @@ describe('SidebarComponent — firm navigation', () => {
     expect(labels).not.toContain('Documentation');
   });
 
+  it('keeps moved modules in sidebar for delegated accounting-firm mode', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, {
+      ...delegatedUser,
+      enabledModuleIds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14],
+      effectivePermissions: [
+        'accounting:read',
+        'invoices:read',
+        'quotes:read',
+        'delivery_notes:read',
+        'supplier_invoices:read',
+        'suppliers:read',
+        'purchase_orders:read',
+        'payments:read',
+        'payroll:read',
+        'payroll:declare',
+        'payroll:settings',
+        'reports:view'
+      ]
+    });
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.detectChanges();
+
+    const labels = fixture.componentInstance.navItems().map(i => i.label);
+    expect(labels).toContain('Ventes');
+    expect(labels).toContain('Achats');
+    expect(labels).toContain('Trésorerie');
+    expect(labels).toContain('RH & Paie');
+  });
+
   it('uses action items for return and change dossier in delegated mode', () => {
     const auth = TestBed.inject(AuthService);
     setUser(auth, delegatedUser);

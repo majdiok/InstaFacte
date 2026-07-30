@@ -50,6 +50,60 @@ public sealed class PlatformAiSettingsServiceTests
     }
 
     [Fact]
+    public async Task GetStudioAiModelRefAsync_WhenNoRow_ReturnsNull()
+    {
+        var options = new DbContextOptionsBuilder<MasterDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var db = new MasterDbContext(options);
+        var service = CreateService(db);
+
+        var result = await service.GetStudioAiModelRefAsync();
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GetStudioAiModelRefAsync_WhenConfigured_ReturnsNormalizedRef()
+    {
+        var options = new DbContextOptionsBuilder<MasterDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var db = new MasterDbContext(options);
+        var row = PlatformAiSettings.CreateDefaults();
+        row.SetStudioAiModel("qwen2.5:7b-instruct");
+        db.PlatformAiSettings.Add(row);
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db);
+
+        var result = await service.GetStudioAiModelRefAsync();
+
+        Assert.Equal("qwen2.5:7b-instruct", result);
+    }
+
+    [Fact]
+    public async Task SetStudioAiModelRefAsync_Clear_ReturnsNull()
+    {
+        var options = new DbContextOptionsBuilder<MasterDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var db = new MasterDbContext(options);
+        var service = CreateService(db);
+        var actorId = Guid.NewGuid();
+
+        await service.SetStudioAiModelRefAsync("ollama:qwen2.5:7b-instruct", actorId);
+        var cleared = await service.SetStudioAiModelRefAsync("", actorId);
+        var read = await service.GetStudioAiModelRefAsync();
+
+        Assert.Null(cleared);
+        Assert.Null(read);
+    }
+
+    [Fact]
     public async Task GetInferenceDeviceAsync_WhenNoRow_ReturnsGpu()
     {
         var options = new DbContextOptionsBuilder<MasterDbContext>()

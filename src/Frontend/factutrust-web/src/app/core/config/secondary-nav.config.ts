@@ -16,6 +16,14 @@ export const SECONDARY_NAV_SECTION_ORDER = [
 
 export type SecondaryNavSectionLabel = (typeof SECONDARY_NAV_SECTION_ORDER)[number];
 
+/** Sections à masquer dans la 2e barre pour le cabinet comptable. */
+export const ACCOUNTING_FIRM_SECONDARY_EXCLUDED_LABELS: ReadonlySet<string> = new Set([
+  'Ventes',
+  'Achats',
+  'Trésorerie',
+  'RH & Paie'
+]);
+
 /** Libellés courts d’affichage (source de vérité des labels = registry). */
 export const SECONDARY_NAV_DISPLAY_LABELS: Readonly<Partial<Record<SecondaryNavSectionLabel, string>>> = {
   'Fiscal / TEJ': 'TEJ'

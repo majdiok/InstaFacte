@@ -126,4 +126,39 @@ test.describe('Cabinet comptable — gouvernance (staging)', () => {
     // 10. /firm/governance/collaborator-rentability → prefill → save snapshot année
     // 11. /firm/governance/expense-notes → create note → submit
   });
+
+  test('timesheet page exposes speed-oriented views', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('timesheetRichUi', '1'));
+    await page.goto('/firm/governance/time-sheets');
+    await expect(page.getByRole('heading', { name: /feuilles de temps/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^liste$/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^semaine$/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^jour$/i })).toBeVisible();
+
+    await page.getByRole('button', { name: /^semaine$/i }).click();
+    await expect(page.getByText(/vue semaine/i)).toBeVisible();
+
+    await page.getByRole('button', { name: /^jour$/i }).click();
+    await expect(page.getByText(/vue jour/i)).toBeVisible();
+  });
+
+  test('timesheet rich UI shows calendar KPI and timer', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('timesheetRichUi', '1'));
+    await page.goto('/firm/governance/time-sheets');
+    await expect(page.getByRole('heading', { name: /feuilles de temps/i })).toBeVisible();
+
+    await page.getByRole('button', { name: /mode enrichi/i }).click();
+    await expect(page.getByRole('button', { name: /chronomètre/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /dupliquer la semaine/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /exporter csv/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /ajouter du temps/i })).toBeVisible();
+    await expect(page.getByText(/répartition de la période/i)).toBeVisible();
+    await expect(page.locator('.grid-wrap')).toBeVisible();
+    await expect(page.locator('.day-column').first()).toBeVisible();
+    await expect(page.locator('.total-column')).toBeVisible();
+
+    await page.getByRole('button', { name: /ajouter du temps/i }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(page.getByRole('button', { name: /^enregistrer$/i })).toBeVisible();
+  });
 });

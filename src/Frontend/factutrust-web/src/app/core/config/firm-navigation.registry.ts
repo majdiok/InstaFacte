@@ -40,83 +40,71 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
 
   {
 
-    label: 'Gouvernance',
+    label: 'Dossiers permanents',
 
-    icon: 'fa-solid fa-landmark',
+    route: '/firm/governance/permanent-files',
 
-    children: [
+    icon: 'fa-solid fa-folder-open'
 
-      {
+  },
 
-        label: 'Dossiers permanents',
+  {
 
-        route: '/firm/governance/permanent-files',
+    label: 'Affectation des dossiers',
 
-        icon: 'fa-solid fa-folder-open'
+    route: '/firm/affectation',
 
-      },
+    icon: 'fa-solid fa-user-tag'
 
-      {
+  },
 
-        label: 'Affectation des dossiers',
+  {
 
-        route: '/firm/affectation',
+    label: 'Feuilles de temps',
 
-        icon: 'fa-solid fa-user-tag'
+    route: '/firm/governance/time-sheets',
 
-      },
+    icon: 'fa-solid fa-clock'
 
-      {
+  },
 
-        label: 'Feuilles de temps',
+  {
 
-        route: '/firm/governance/time-sheets',
+    label: 'Feuilles de temps et rentabilité',
 
-        icon: 'fa-solid fa-clock'
+    route: '/firm/governance/dossier-time-profitability',
 
-      },
+    icon: 'fa-solid fa-chart-line'
 
-      {
+  },
 
-        label: 'Feuilles de temps et rentabilité',
+  {
 
-        route: '/firm/governance/dossier-time-profitability',
+    label: 'Rentabilité collaborateurs',
 
-        icon: 'fa-solid fa-chart-line'
+    route: '/firm/governance/collaborator-rentability',
 
-      },
+    icon: 'fa-solid fa-chart-pie'
 
-      {
+  },
 
-        label: 'Rentabilité collaborateurs',
+  {
 
-        route: '/firm/governance/collaborator-rentability',
+    label: 'Notes de frais dirigeants',
 
-        icon: 'fa-solid fa-chart-pie'
+    route: '/firm/governance/expense-notes',
 
-      },
+    icon: 'fa-solid fa-receipt'
 
-      {
+  },
 
-        label: 'Notes de frais dirigeants',
+  {
 
-        route: '/firm/governance/expense-notes',
+    label: 'Suivi social',
 
-        icon: 'fa-solid fa-receipt'
+    route: '/firm/governance/social',
 
-      },
-
-      {
-
-        label: 'Suivi social',
-
-        route: '/firm/governance/social',
-
-        icon: 'fa-solid fa-users'
-
-      }
-
-    ]
+    icon: 'fa-solid fa-users'
 
   },
 
@@ -460,22 +448,33 @@ export const FIRM_DELEGATED_QUICK_ACCESS = [
 
 ];
 
-/** Masque la section Gouvernance lorsque le feature flag cabinet est désactivé. */
+function isFirmGovernanceNavRoute(route?: string): boolean {
+  if (!route) {
+    return false;
+  }
+  return (
+    route.startsWith('/firm/governance') ||
+    route === '/firm/affectation' ||
+    route.startsWith('/firm/affectation/')
+  );
+}
+
+/** Masque les entrées Gouvernance lorsque le feature flag cabinet est désactivé. */
 export function filterFirmGovernanceNav(items: NavItem[], governanceEnabled: boolean): NavItem[] {
   if (governanceEnabled) {
     return items;
   }
 
   return items
-    .filter(item => item.label !== 'Gouvernance')
+    .filter(item => !isFirmGovernanceNavRoute(item.route))
     .map(item =>
       item.children?.length
         ? {
             ...item,
-            children: item.children.filter(c => !c.route?.startsWith('/firm/governance'))
+            children: item.children.filter(c => !isFirmGovernanceNavRoute(c.route))
           }
         : item
     )
-    .filter(item => !item.route?.startsWith('/firm/governance'));
+    .filter(item => !item.children || item.children.length > 0);
 }
 

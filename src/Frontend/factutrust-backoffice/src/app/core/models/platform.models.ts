@@ -957,6 +957,7 @@ export type OllamaInferenceDevice = 'Gpu' | 'CpuOnly';
 export interface PlatformAiSettingsDto {
   configuredModelRef: string | null;
   invoiceImportModelRef: string | null;
+  studioAiModelRef: string | null;
   serverInvoiceImportVisionModel: string | null;
   inferenceDevice: OllamaInferenceDevice;
   isOllamaAssistantConfigured: boolean;
@@ -967,6 +968,7 @@ export interface PlatformAiSettingsDto {
 export interface UpdatePlatformAiSettingsRequest {
   modelRef?: string | null;
   invoiceImportModelRef?: string | null;
+  studioAiModelRef?: string | null;
   inferenceDevice?: OllamaInferenceDevice | null;
 }
 

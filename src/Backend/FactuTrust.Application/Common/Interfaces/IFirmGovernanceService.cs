@@ -55,6 +55,32 @@ public interface IFirmGovernanceService
         bool isManager,
         Guid entryId,
         CancellationToken cancellationToken = default);
+    Task<Result<FirmTimeSheetEntryDto>> SubmitTimeSheetAsync(
+        Guid firmTenantId,
+        Guid actorUserId,
+        bool isManager,
+        Guid entryId,
+        CancellationToken cancellationToken = default);
+    Task<Result<FirmTimeSheetEntryDto>> StartTimeSheetTimerAsync(
+        Guid firmTenantId,
+        Guid actorUserId,
+        string actorUserName,
+        bool isManager,
+        StartTimeSheetTimerDto dto,
+        CancellationToken cancellationToken = default);
+    Task<Result<FirmTimeSheetEntryDto>> StopTimeSheetTimerAsync(
+        Guid firmTenantId,
+        Guid actorUserId,
+        bool isManager,
+        StopTimeSheetTimerDto dto,
+        CancellationToken cancellationToken = default);
+    Task<Result<IReadOnlyList<FirmTimeSheetEntryDto>>> DuplicateTimeSheetWeekAsync(
+        Guid firmTenantId,
+        Guid actorUserId,
+        string actorUserName,
+        bool isManager,
+        DuplicateTimeSheetWeekDto dto,
+        CancellationToken cancellationToken = default);
     Task<Result<FirmTimeSheetBulkValidationResultDto>> ValidateTimeSheetsBulkAsync(
         Guid firmTenantId,
         Guid actorUserId,

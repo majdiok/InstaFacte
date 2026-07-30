@@ -251,6 +251,64 @@ public sealed class FirmGovernanceController : ControllerBase
         return Ok(ApiResponse<FirmTimeSheetEntryDto>.Ok(result.Value, "Feuille de temps repassée en brouillon."));
     }
 
+    [HttpPost("time-sheets/{id:guid}/submit")]
+    public async Task<ActionResult<ApiResponse<FirmTimeSheetEntryDto>>> SubmitTimeSheet(
+        Guid id, CancellationToken cancellationToken)
+    {
+        if (!EnsureEnabled(out var disabled)) return disabled!;
+        var tenantId = GetHomeTenantId();
+        var userId = GetUserId();
+        if (tenantId is null || userId is null) return Unauthorized();
+        var result = await _governance.SubmitTimeSheetAsync(
+            tenantId.Value, userId.Value, IsFirmManager(), id, cancellationToken);
+        if (result.IsFailure) return BadRequest(ApiResponse<FirmTimeSheetEntryDto>.Fail(result.Error.Description));
+        return Ok(ApiResponse<FirmTimeSheetEntryDto>.Ok(result.Value, "Feuille de temps soumise."));
+    }
+
+    [HttpPost("time-sheets/timer/start")]
+    public async Task<ActionResult<ApiResponse<FirmTimeSheetEntryDto>>> StartTimeSheetTimer(
+        [FromBody] StartTimeSheetTimerDto dto, CancellationToken cancellationToken)
+    {
+        if (!EnsureEnabled(out var disabled)) return disabled!;
+        var tenantId = GetHomeTenantId();
+        var userId = GetUserId();
+        if (tenantId is null || userId is null) return Unauthorized();
+        var result = await _governance.StartTimeSheetTimerAsync(
+            tenantId.Value, userId.Value, GetDisplayName(), IsFirmManager(), dto, cancellationToken);
+        if (result.IsFailure) return BadRequest(ApiResponse<FirmTimeSheetEntryDto>.Fail(result.Error.Description));
+        return Ok(ApiResponse<FirmTimeSheetEntryDto>.Ok(result.Value, "Timer démarré."));
+    }
+
+    [HttpPost("time-sheets/timer/stop")]
+    public async Task<ActionResult<ApiResponse<FirmTimeSheetEntryDto>>> StopTimeSheetTimer(
+        [FromBody] StopTimeSheetTimerDto dto, CancellationToken cancellationToken)
+    {
+        if (!EnsureEnabled(out var disabled)) return disabled!;
+        var tenantId = GetHomeTenantId();
+        var userId = GetUserId();
+        if (tenantId is null || userId is null) return Unauthorized();
+        var result = await _governance.StopTimeSheetTimerAsync(
+            tenantId.Value, userId.Value, IsFirmManager(), dto, cancellationToken);
+        if (result.IsFailure) return BadRequest(ApiResponse<FirmTimeSheetEntryDto>.Fail(result.Error.Description));
+        return Ok(ApiResponse<FirmTimeSheetEntryDto>.Ok(result.Value, "Timer arrêté."));
+    }
+
+    [HttpPost("time-sheets/duplicate-week")]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<FirmTimeSheetEntryDto>>>> DuplicateTimeSheetWeek(
+        [FromBody] DuplicateTimeSheetWeekDto dto, CancellationToken cancellationToken)
+    {
+        if (!EnsureEnabled(out var disabled)) return disabled!;
+        var tenantId = GetHomeTenantId();
+        var userId = GetUserId();
+        if (tenantId is null || userId is null) return Unauthorized();
+        var result = await _governance.DuplicateTimeSheetWeekAsync(
+            tenantId.Value, userId.Value, GetDisplayName(), IsFirmManager(), dto, cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<IReadOnlyList<FirmTimeSheetEntryDto>>.Fail(result.Error.Description));
+        return Ok(ApiResponse<IReadOnlyList<FirmTimeSheetEntryDto>>.Ok(
+            result.Value, $"{result.Value.Count} ligne(s) dupliquée(s)."));
+    }
+
     /// <summary>
     /// Contrat historique conservé : renvoie le seul nombre de feuilles validées.
     /// Les clients ayant besoin du détail des échecs utilisent <c>validate-bulk/detailed</c>.

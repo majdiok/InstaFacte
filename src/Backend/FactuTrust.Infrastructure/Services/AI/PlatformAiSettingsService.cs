@@ -18,6 +18,7 @@ public sealed class PlatformAiSettingsService : IPlatformAiSettingsService
 {
     private const string CacheKeyDefaultModel = "platform:ai:default-model";
     private const string CacheKeyImportModel = "platform:ai:import-model";
+    private const string CacheKeyStudioModel = "platform:ai:studio-model";
     private const string CacheKeyInferenceDevice = "platform:ai:inference-device";
     private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(60);
 
@@ -120,6 +121,53 @@ public sealed class PlatformAiSettingsService : IPlatformAiSettingsService
         return current.InvoiceImportModelRef;
     }
 
+    public Task<string?> GetStudioAiModelRefAsync(CancellationToken cancellationToken = default) =>
+        _cache.GetOrCreateAsync(CacheKeyStudioModel, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = CacheTtl;
+            try
+            {
+                return await _db.PlatformAiSettings
+                    .AsNoTracking()
+                    .Select(s => s.StudioAiModelRef)
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
+            catch (Exception ex) when (ex is SqlException or DbUpdateException or InvalidOperationException)
+            {
+                _logger.LogWarning(ex,
+                    "Impossible de lire StudioAiModelRef depuis PlatformAiSettings ; fallback modèle Assistant.");
+                return null;
+            }
+        });
+
+    public async Task<string?> SetStudioAiModelRefAsync(
+        string? modelRef,
+        Guid actorUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var normalized = string.IsNullOrWhiteSpace(modelRef)
+            ? null
+            : ModelRef.NormalizeStored(modelRef);
+
+        var current = await _db.PlatformAiSettings.FirstOrDefaultAsync(cancellationToken);
+        if (current is null)
+        {
+            current = PlatformAiSettings.CreateDefaults();
+            current.SetStudioAiModel(normalized);
+            current.SetAuditInfo(actorUserId.ToString());
+            _db.PlatformAiSettings.Add(current);
+        }
+        else
+        {
+            current.SetStudioAiModel(normalized);
+            current.SetAuditInfo(actorUserId.ToString(), isUpdate: true);
+        }
+
+        await _db.SaveChangesAsync(cancellationToken);
+        InvalidateReadCache();
+        return current.StudioAiModelRef;
+    }
+
     public Task<OllamaInferenceDevice> GetInferenceDeviceAsync(CancellationToken cancellationToken = default) =>
         _cache.GetOrCreateAsync(CacheKeyInferenceDevice, async entry =>
         {
@@ -172,6 +220,7 @@ public sealed class PlatformAiSettingsService : IPlatformAiSettingsService
     {
         _cache.Remove(CacheKeyDefaultModel);
         _cache.Remove(CacheKeyImportModel);
+        _cache.Remove(CacheKeyStudioModel);
         _cache.Remove(CacheKeyInferenceDevice);
     }
 }

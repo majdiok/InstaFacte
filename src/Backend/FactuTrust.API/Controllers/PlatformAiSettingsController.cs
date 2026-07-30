@@ -52,6 +52,7 @@ public sealed class PlatformAiSettingsController : ControllerBase
     {
         var configured = await _settings.GetDefaultModelRefAsync(cancellationToken);
         var importModel = await _settings.GetInvoiceImportModelRefAsync(cancellationToken);
+        var studioModel = await _settings.GetStudioAiModelRefAsync(cancellationToken);
         var inferenceDevice = await _settings.GetInferenceDeviceAsync(cancellationToken);
 
         var models = new List<UnifiedAiModelInfo>();
@@ -95,6 +96,7 @@ public sealed class PlatformAiSettingsController : ControllerBase
         var dto = new PlatformAiSettingsDto(
             configured,
             importModel,
+            studioModel,
             visionServer,
             inferenceDevice,
             isOllamaAssistant,
@@ -139,6 +141,19 @@ public sealed class PlatformAiSettingsController : ControllerBase
 
             await _settings.SetInvoiceImportModelRefAsync(request.InvoiceImportModelRef, actorId, cancellationToken);
             _logger.LogInformation("Platform admin {ActorId} updated the invoice import AI model", actorId);
+        }
+
+        if (request.StudioAiModelRef is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(request.StudioAiModelRef))
+            {
+                var parsedStudio = ModelRef.Parse(request.StudioAiModelRef);
+                if (string.IsNullOrEmpty(parsedStudio.CanonicalModelRef))
+                    return BadRequest(ApiResponse<object>.Fail("Référence de modèle Studio invalide."));
+            }
+
+            await _settings.SetStudioAiModelRefAsync(request.StudioAiModelRef, actorId, cancellationToken);
+            _logger.LogInformation("Platform admin {ActorId} updated the Studio AI model", actorId);
         }
 
         if (request.InferenceDevice is { } device)

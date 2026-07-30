@@ -12,7 +12,10 @@ import {
   filterFirmGovernanceNav,
   filterDelegatedFirmSectionChildren
 } from '@core/config/firm-navigation.registry';
-import { buildFirmDelegatedAccountingModuleNavItems } from '@core/config/accounting-modules.config';
+import {
+  buildAccountingModuleNavItems,
+  buildFirmDelegatedAccountingModuleNavItems
+} from '@core/config/accounting-modules.config';
 import {
   applyCompanyAccountingSidebar,
   COMPANY_ACCOUNTING_FIXED_ASSETS_ROUTE
@@ -26,6 +29,7 @@ import { AppModule } from '@core/models/app-module';
 import { PERMISSIONS } from '@core/config/permission-keys';
 import { StudioNavService } from '@features/studio/studio-nav.service';
 import {
+  ACCOUNTING_FIRM_SECONDARY_EXCLUDED_LABELS,
   SECONDARY_NAV_SECTION_ORDER
 } from '@core/config/secondary-nav.config';
 
@@ -85,10 +89,20 @@ export class AppNavService {
   });
 
   /**
-   * Sections de la 2e barre, dans l’ordre demandé, dérivées du même graphe filtré.
-   * Vide en mode cabinet natif (pas de sections métier company).
+   * Sections de la 2e barre desktop.
+   * - Entreprise : ordre `SECONDARY_NAV_SECTION_ORDER` dérivé de `navItems`.
+   * - Cabinet délégué : modules comptables (`ACCOUNTING_MODULES`) uniquement ;
+   *   Ventes/Achats/Trésorerie/RH&Paie restent dans le sidebar via `navItems`.
+   * - Cabinet natif : vide (pas de sections métier company).
    */
   readonly secondaryNavSections = computed((): NavItem[] => {
+    if (this.auth.isAccountingFirm() && this.auth.isDelegatedMode()) {
+      const moduleSections = filterNavItems(this.auth, buildAccountingModuleNavItems());
+      return moduleSections
+        .filter(item => !ACCOUNTING_FIRM_SECONDARY_EXCLUDED_LABELS.has(item.label))
+        .filter(item => !!item.route || !!item.children?.length);
+    }
+
     const byLabel = new Map(this.navItems().map(item => [item.label, item]));
     const sections: NavItem[] = [];
     for (const label of SECONDARY_NAV_SECTION_ORDER) {

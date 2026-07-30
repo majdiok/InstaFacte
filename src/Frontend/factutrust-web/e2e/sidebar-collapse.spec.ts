@@ -111,4 +111,27 @@ test.describe('Sidebar collapse', () => {
     const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
     expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 1);
   });
+
+  test('moved sections remain available in sidebar for delegated accounting firm', async ({ page }) => {
+    if (!(await ensureAuthenticated(page))) {
+      test.skip(true, 'DOC_EMAIL/DOC_PASSWORD or demo credentials required');
+    }
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await waitForAppReady(page);
+    await page.goto('/dashboard');
+
+    const sidebar = page.locator('#sidebar');
+    await expect(sidebar).toBeVisible();
+
+    const hasDelegatedHeader = (await page.locator('.rail-label', { hasText: 'Dossier :' }).count()) > 0;
+    if (!hasDelegatedHeader) {
+      test.skip(true, 'Delegated accounting-firm context not active for this account');
+    }
+
+    await expect(page.locator('.rail-label', { hasText: 'Ventes' })).toBeVisible();
+    await expect(page.locator('.rail-label', { hasText: 'Achats' })).toBeVisible();
+    await expect(page.locator('.rail-label', { hasText: 'Trésorerie' })).toBeVisible();
+    await expect(page.locator('.rail-label', { hasText: 'RH & Paie' })).toBeVisible();
+  });
 });

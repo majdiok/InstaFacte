@@ -114,4 +114,33 @@ test.describe('Secondary navigation bar', () => {
     await salaries.click();
     await expect(page).toHaveURL(/\/payroll\/employees/);
   });
+
+  test('delegated accounting firm shows accounting modules and hides moved sections', async ({ page }) => {
+    if (!(await ensureAuthenticated(page))) {
+      test.skip(true, 'DOC_EMAIL/DOC_PASSWORD or demo credentials required');
+    }
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await waitForAppReady(page);
+    await page.goto('/dashboard');
+
+    const secondaryNav = page.locator('app-secondary-nav .secondary-nav');
+    if ((await secondaryNav.count()) === 0) {
+      test.skip(true, 'Secondary nav not available for this user/context');
+    }
+
+    const hasAccountingModules = (await secondaryNav.getByText('Configuration', { exact: true }).count()) > 0;
+    if (!hasAccountingModules) {
+      test.skip(true, 'Accounting-firm delegated secondary nav not active for this account');
+    }
+
+    await expect(secondaryNav.getByText('Configuration', { exact: true })).toBeVisible();
+    await expect(secondaryNav.getByText('Traitements', { exact: true })).toBeVisible();
+    await expect(secondaryNav.getByText('États', { exact: true })).toBeVisible();
+
+    await expect(secondaryNav.getByText('Ventes', { exact: true })).toHaveCount(0);
+    await expect(secondaryNav.getByText('Achats', { exact: true })).toHaveCount(0);
+    await expect(secondaryNav.getByText('Trésorerie', { exact: true })).toHaveCount(0);
+    await expect(secondaryNav.getByText('RH & Paie', { exact: true })).toHaveCount(0);
+  });
 });

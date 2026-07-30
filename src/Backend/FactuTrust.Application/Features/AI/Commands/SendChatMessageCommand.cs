@@ -116,8 +116,12 @@ public sealed class SendChatMessageHandler
                 ? reqScope
                 : AssistantAgentScope.None;
 
-        // Pré-chargement parallèle : modèle actif, historique conversation, prompt système (cache mémoire).
-        var configuredModelTask = _platformAiSettings.GetDefaultModelRefAsync(cancellationToken);
+        // Pré-chargement parallèle : modèle actif (Studio ou Assistant), historique, prompt système.
+        var isStudioBuilder = assistantMode == AssistantMode.StudioBuilder;
+        var studioModelTask = isStudioBuilder
+            ? _platformAiSettings.GetStudioAiModelRefAsync(cancellationToken)
+            : Task.FromResult<string?>(null);
+        var defaultModelTask = _platformAiSettings.GetDefaultModelRefAsync(cancellationToken);
         var systemPromptTask = _contextBuilder.BuildSystemPromptAsync(assistantMode, screenId, agentScope, cancellationToken);
 
         Task<Conversation?>? conversationLoadTask = null;
@@ -132,7 +136,8 @@ public sealed class SendChatMessageHandler
         }
 
         await Task.WhenAll(
-            configuredModelTask,
+            studioModelTask,
+            defaultModelTask,
             systemPromptTask,
             conversationLoadTask ?? Task.FromResult<Conversation?>(null));
 
@@ -142,8 +147,24 @@ public sealed class SendChatMessageHandler
 
         // Le modèle est imposé par la configuration globale de la plateforme (back-office) ;
         // le modèle éventuellement transmis par le client et celui de la conversation sont ignorés.
-        var configuredModel = await configuredModelTask;
-        var rawModel = string.IsNullOrWhiteSpace(configuredModel) ? defaultModel : configuredModel;
+        // StudioBuilder : StudioAiModelRef → Ollama:StudioAiModel → DefaultModelRef → DefaultModel.
+        var assistantConfigured = await defaultModelTask;
+        string rawModel;
+        if (isStudioBuilder)
+        {
+            var studioConfigured = await studioModelTask;
+            if (!string.IsNullOrWhiteSpace(studioConfigured))
+                rawModel = studioConfigured;
+            else if (!string.IsNullOrWhiteSpace(_ollamaSettings.StudioAiModel))
+                rawModel = _ollamaSettings.StudioAiModel.Trim();
+            else
+                rawModel = string.IsNullOrWhiteSpace(assistantConfigured) ? defaultModel : assistantConfigured;
+        }
+        else
+        {
+            rawModel = string.IsNullOrWhiteSpace(assistantConfigured) ? defaultModel : assistantConfigured;
+        }
+
         var modelRef = ModelRef.Parse(rawModel);
         if (string.IsNullOrEmpty(modelRef.CanonicalModelRef))
             modelRef = ModelRef.Parse($"{ModelRef.OllamaPrefix}{defaultModel}");

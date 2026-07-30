@@ -26,6 +26,15 @@ public interface IPlatformAiSettingsService
         Guid actorUserId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Modèle de l'Assistant Studio (prioritaire sur le modèle Assistant plateforme).</summary>
+    Task<string?> GetStudioAiModelRefAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Persiste le modèle de l'Assistant Studio.</summary>
+    Task<string?> SetStudioAiModelRefAsync(
+        string? modelRef,
+        Guid actorUserId,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Moteur d'inférence Ollama (GPU auto ou CPU uniquement).</summary>
     Task<OllamaInferenceDevice> GetInferenceDeviceAsync(CancellationToken cancellationToken = default);
 

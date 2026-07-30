@@ -514,6 +514,7 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.HasKey(p => p.Id);
             entity.Property(p => p.DefaultModelRef).HasMaxLength(500);
             entity.Property(p => p.InvoiceImportModelRef).HasMaxLength(500);
+            entity.Property(p => p.StudioAiModelRef).HasMaxLength(500);
             entity.Property(p => p.InferenceDevice).HasConversion<int>().HasDefaultValue(Domain.Enums.OllamaInferenceDevice.Gpu);
             entity.Property(p => p.CreatedBy).HasMaxLength(450);
             entity.Property(p => p.UpdatedBy).HasMaxLength(450);
@@ -931,8 +932,12 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Property(t => t.ActivityCode).HasMaxLength(50);
             entity.Property(t => t.Notes).HasMaxLength(1000);
             entity.Property(t => t.ValidatedByDisplayName).HasMaxLength(200);
+            entity.Property(t => t.WorkLocation).HasMaxLength(20);
+            entity.Property(t => t.Tags).HasMaxLength(200);
+            entity.Property(t => t.Status).HasConversion<int>();
             // Sert les cumuls jour et semaine ISO d'un collaborateur lors du contrôle de saisie.
             entity.HasIndex(t => new { t.FirmTenantId, t.UserId, t.WorkDate });
+            entity.HasIndex(t => new { t.FirmTenantId, t.UserId, t.TimerStartedAtUtc });
         });
 
         builder.Entity<Domain.Entities.FirmGovernance.FirmTimeSheetYearSettings>(entity =>

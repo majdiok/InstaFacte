@@ -16,6 +16,9 @@ public sealed class PlatformAiSettings : Entity
     /// <summary>Modèle dédié à l'import de factures ; null = configuration serveur (Ollama:InvoiceImportModel).</summary>
     public string? InvoiceImportModelRef { get; private set; }
 
+    /// <summary>Modèle dédié à l'Assistant Studio (IA) ; null = modèle Assistant plateforme puis Ollama:DefaultModel.</summary>
+    public string? StudioAiModelRef { get; private set; }
+
     /// <summary>Moteur d'inférence Ollama (GPU auto ou CPU uniquement).</summary>
     public OllamaInferenceDevice InferenceDevice { get; private set; } = OllamaInferenceDevice.Gpu;
 
@@ -28,6 +31,9 @@ public sealed class PlatformAiSettings : Entity
 
     public void SetInvoiceImportModel(string? modelRef)
         => InvoiceImportModelRef = string.IsNullOrWhiteSpace(modelRef) ? null : modelRef.Trim();
+
+    public void SetStudioAiModel(string? modelRef)
+        => StudioAiModelRef = string.IsNullOrWhiteSpace(modelRef) ? null : modelRef.Trim();
 
     public void SetInferenceDevice(OllamaInferenceDevice device)
     {

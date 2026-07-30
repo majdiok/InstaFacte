@@ -122,10 +122,18 @@ public sealed record FirmTimeSheetEntryDto
     public string? ClientCompanyName { get; init; }
     public DateTime WorkDate { get; init; }
     public decimal Hours { get; init; }
+    public string? StartTime { get; init; }
+    public string? EndTime { get; init; }
     public string? ActivityCode { get; init; }
     public string? Notes { get; init; }
     public bool IsBillable { get; init; }
+    public string? WorkLocation { get; init; }
+    public string? Tags { get; init; }
+    /// <summary>0 Draft, 1 Submitted, 2 Validated.</summary>
+    public int Status { get; init; }
+    public string StatusDisplay { get; init; } = null!;
     public bool IsValidated { get; init; }
+    public DateTime? TimerStartedAtUtc { get; init; }
 
     public DateTime? ValidatedAt { get; init; }
     public string? ValidatedByDisplayName { get; init; }
@@ -140,11 +148,16 @@ public sealed record FirmTimeSheetEntryDto
 public sealed record CreateTimeSheetEntryDto
 {
     public DateTime WorkDate { get; init; }
+    /// <summary>Durée ; ignorée si StartTime+EndTime fournis.</summary>
     public decimal Hours { get; init; }
+    public string? StartTime { get; init; }
+    public string? EndTime { get; init; }
     public Guid? FirmClientAssignmentId { get; init; }
     public string? ActivityCode { get; init; }
     public string? Notes { get; init; }
     public bool IsBillable { get; init; } = true;
+    public string? WorkLocation { get; init; }
+    public string? Tags { get; init; }
     /// <summary>Optional: manager may create an entry on behalf of another collaborator.</summary>
     public Guid? TargetUserId { get; init; }
 }
@@ -153,10 +166,37 @@ public sealed record UpdateTimeSheetEntryDto
 {
     public DateTime WorkDate { get; init; }
     public decimal Hours { get; init; }
+    public string? StartTime { get; init; }
+    public string? EndTime { get; init; }
     public Guid? FirmClientAssignmentId { get; init; }
     public string? ActivityCode { get; init; }
     public string? Notes { get; init; }
     public bool IsBillable { get; init; } = true;
+    public string? WorkLocation { get; init; }
+    public string? Tags { get; init; }
+}
+
+public sealed record StartTimeSheetTimerDto
+{
+    public DateTime? WorkDate { get; init; }
+    public Guid? FirmClientAssignmentId { get; init; }
+    public string? ActivityCode { get; init; }
+    public bool IsBillable { get; init; } = true;
+    public Guid? TargetUserId { get; init; }
+}
+
+public sealed record StopTimeSheetTimerDto
+{
+    /// <summary>Si omis, arrête le timer actif de l'acteur (ou TargetUserId).</summary>
+    public Guid? EntryId { get; init; }
+    public Guid? TargetUserId { get; init; }
+}
+
+public sealed record DuplicateTimeSheetWeekDto
+{
+    public DateTime SourceWeekStart { get; init; }
+    public DateTime TargetWeekStart { get; init; }
+    public Guid? UserId { get; init; }
 }
 
 public sealed record ValidateTimeSheetsBulkDto

@@ -49,6 +49,33 @@ const companyUser: User = {
   ]
 };
 
+const delegatedUser: User = {
+  id: 'u-firm-delegated',
+  email: 'firm@test.c',
+  firstName: 'O',
+  lastName: 'G',
+  fullName: 'O G',
+  role: 'FirmManager',
+  roleDisplay: 'Responsable cabinet',
+  tenantId: '00000000-0000-0000-0000-000000000002',
+  companyName: 'Cabinet Test',
+  tenantKind: 'AccountingFirm',
+  twoFactorEnabled: false,
+  enabledModuleIds: ALL_MODULES,
+  accessMode: 'delegated',
+  contextTenantId: '00000000-0000-0000-0000-000000000003',
+  contextCompanyName: 'Ste Bouzgarou',
+  effectivePermissions: [
+    'accounting:read',
+    'accounting:create',
+    'accounting:import',
+    'accounting:close',
+    'accounting:reverse',
+    'treasury:read',
+    'audit:read'
+  ]
+};
+
 function setUser(auth: AuthService, u: User | null): void {
   (auth as unknown as { userSignal: { set: (x: User | null) => void } }).userSignal.set(u);
 }
@@ -239,4 +266,24 @@ describe('SecondaryNavComponent', () => {
 
     expect(navigateSpy).toHaveBeenCalledWith('/accounting/journal');
   }));
+
+  it('renders accounting modules only for delegated accounting-firm context', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, delegatedUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+    fixture.detectChanges();
+
+    const labels = Array.from(
+      fixture.nativeElement.querySelectorAll('.secondary-nav__label') as NodeListOf<HTMLElement>
+    ).map(el => el.textContent?.trim());
+
+    expect(labels).not.toContain('Ventes');
+    expect(labels).not.toContain('Achats');
+    expect(labels).not.toContain('Trésorerie');
+    expect(labels).not.toContain('RH & Paie');
+    expect(labels).toContain('Configuration');
+    expect(labels).toContain('Traitements');
+    expect(labels).toContain('États');
+    expect(labels).toContain('Liasse fiscale');
+  });
 });

@@ -98,10 +98,17 @@ export interface FirmTimeSheetEntry {
   clientCompanyName?: string;
   workDate: string;
   hours: number;
+  startTime?: string;
+  endTime?: string;
   activityCode?: string;
   notes?: string;
   isBillable: boolean;
+  workLocation?: string;
+  tags?: string;
+  status: number;
+  statusDisplay: string;
   isValidated: boolean;
+  timerStartedAtUtc?: string;
   validatedAt?: string;
   validatedByDisplayName?: string;
   /** Dépassements constatés sans blocage, sur un exercice dont les plafonds ne sont pas opposables. */
@@ -476,10 +483,14 @@ export class FirmGovernanceService {
   createTimeSheet(body: {
     workDate: string;
     hours: number;
+    startTime?: string;
+    endTime?: string;
     firmClientAssignmentId?: string;
     activityCode?: string;
     notes?: string;
     isBillable?: boolean;
+    workLocation?: string;
+    tags?: string;
     targetUserId?: string;
   }): Observable<ApiResponse<FirmTimeSheetEntry>> {
     return this.http.post<ApiResponse<FirmTimeSheetEntry>>(`${this.base}/time-sheets`, body);
@@ -488,16 +499,46 @@ export class FirmGovernanceService {
   updateTimeSheet(id: string, body: {
     workDate: string;
     hours: number;
+    startTime?: string;
+    endTime?: string;
     firmClientAssignmentId?: string;
     activityCode?: string;
     notes?: string;
     isBillable?: boolean;
+    workLocation?: string;
+    tags?: string;
   }): Observable<ApiResponse<FirmTimeSheetEntry>> {
     return this.http.put<ApiResponse<FirmTimeSheetEntry>>(`${this.base}/time-sheets/${id}`, body);
   }
 
   deleteTimeSheet(id: string): Observable<ApiResponse<unknown>> {
     return this.http.delete<ApiResponse<unknown>>(`${this.base}/time-sheets/${id}`);
+  }
+
+  submitTimeSheet(id: string): Observable<ApiResponse<FirmTimeSheetEntry>> {
+    return this.http.post<ApiResponse<FirmTimeSheetEntry>>(`${this.base}/time-sheets/${id}/submit`, {});
+  }
+
+  startTimeSheetTimer(body: {
+    workDate?: string;
+    firmClientAssignmentId?: string;
+    activityCode?: string;
+    isBillable?: boolean;
+    targetUserId?: string;
+  } = {}): Observable<ApiResponse<FirmTimeSheetEntry>> {
+    return this.http.post<ApiResponse<FirmTimeSheetEntry>>(`${this.base}/time-sheets/timer/start`, body);
+  }
+
+  stopTimeSheetTimer(body: { entryId?: string; targetUserId?: string } = {}): Observable<ApiResponse<FirmTimeSheetEntry>> {
+    return this.http.post<ApiResponse<FirmTimeSheetEntry>>(`${this.base}/time-sheets/timer/stop`, body);
+  }
+
+  duplicateTimeSheetWeek(body: {
+    sourceWeekStart: string;
+    targetWeekStart: string;
+    userId?: string;
+  }): Observable<ApiResponse<FirmTimeSheetEntry[]>> {
+    return this.http.post<ApiResponse<FirmTimeSheetEntry[]>>(`${this.base}/time-sheets/duplicate-week`, body);
   }
 
   validateTimeSheet(id: string): Observable<ApiResponse<FirmTimeSheetEntry>> {

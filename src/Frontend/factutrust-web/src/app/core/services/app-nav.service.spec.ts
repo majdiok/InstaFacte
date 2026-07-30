@@ -164,25 +164,38 @@ describe('AppNavService — secondary nav parity', () => {
     expect(nav.hasSecondaryNav()).toBeFalse();
   });
 
-  it('respects delegated allowlists for Ventes/Achats in secondary nav', () => {
+  it('shows accounting modules only in secondary nav for delegated accounting-firm mode', () => {
     const auth = TestBed.inject(AuthService);
-    setUser(auth, delegatedUser);
+    setUser(auth, {
+      ...delegatedUser,
+      enabledModuleIds: [...ALL_MODULES, AppModule.Payroll],
+      effectivePermissions: [
+        ...delegatedUser.effectivePermissions!,
+        'payroll:read',
+        'payroll:declare',
+        'payroll:settings'
+      ]
+    });
     TestBed.inject(FirmContextService).syncFromUser();
 
     const nav = TestBed.inject(AppNavService);
-    const ventes = nav.secondaryNavSections().find(s => s.label === 'Ventes');
-    const achats = nav.secondaryNavSections().find(s => s.label === 'Achats');
+    const labels = nav.secondaryNavSections().map(s => s.label);
+    const sidebarLabels = nav.navItems().map(s => s.label);
 
-    expect(ventes?.children?.map(c => c.route)).toEqual([
-      '/invoices',
-      '/invoices/unpaid',
-      '/reports/sales'
-    ]);
-    expect(achats?.children?.map(c => c.route)).toEqual([
-      '/supplier-invoices',
-      '/supplier-invoices/unpaid',
-      '/reports/purchases'
-    ]);
+    expect(labels).not.toContain('Ventes');
+    expect(labels).not.toContain('Achats');
+    expect(labels).not.toContain('Trésorerie');
+    expect(labels).not.toContain('RH & Paie');
+    expect(labels).not.toContain('Fiscal / TEJ');
+    expect(labels).toContain('Configuration');
+    expect(labels).toContain('Traitements');
+    expect(labels).toContain('États');
+    expect(labels).toContain('Liasse fiscale');
+
+    expect(sidebarLabels).toContain('Ventes');
+    expect(sidebarLabels).toContain('Achats');
+    expect(sidebarLabels).toContain('Trésorerie');
+    expect(sidebarLabels).toContain('RH & Paie');
   });
 
   it('omits empty sections after permission filtering', () => {
