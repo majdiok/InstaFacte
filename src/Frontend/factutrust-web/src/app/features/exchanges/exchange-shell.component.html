@@ -172,7 +172,7 @@
                 <div class="form-card">
                   <input placeholder="Titre" [ngModel]="newRequestTitle()" (ngModelChange)="newRequestTitle.set($event)" />
                   <textarea placeholder="Description" [ngModel]="newRequestDescription()" (ngModelChange)="newRequestDescription.set($event)"></textarea>
-                  <select [ngModel]="newRequestCategory()" (ngModelChange)="newRequestCategory.set(+$event)">
+                  <select [ngModel]="newRequestCategory()" (ngModelChange)="setNewRequestCategory($event)">
                     <option [ngValue]="0">Réclamation</option>
                     <option [ngValue]="1">Information</option>
                     <option [ngValue]="2">Document manquant</option>

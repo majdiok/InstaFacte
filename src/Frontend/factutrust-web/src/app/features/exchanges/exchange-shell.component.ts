@@ -281,6 +281,10 @@ export class ExchangeShellComponent implements OnInit, OnDestroy {
     return ['Ouverte', 'En cours', 'Attente client', 'Attente cabinet', 'Résolue', 'Close'][s] ?? '';
   }
 
+  setNewRequestCategory(value: number | string): void {
+    this.newRequestCategory.set(+value as ExchangeRequestCategory);
+  }
+
   categoryLabel(c: ExchangeRequestCategory): string {
     return ['Réclamation', 'Information', 'Document manquant', 'Autre'][c] ?? '';
   }
