@@ -164,6 +164,7 @@ aucune ne modifie de document déjà émis.
 | `20260729100000_AddProductBarcode_Tenant` | `Products.Barcode` (EAN-8/13) + index filtré **non unique**. L'unicité par tenant n'est livrée qu'après balayage des doublons. | [AddProductBarcode_Tenant.idempotent.sql](runbooks/sql/AddProductBarcode_Tenant.idempotent.sql) |
 | `20260729140000_AddClientVatRegime_Tenant` | `Clients.VatRegime` (défaut 0 = Normal) + attestation de suspension (3 colonnes nullables) + index filtré. Les clients existants gardent leur comportement de facturation. | [AddClientVatRegime_Tenant.idempotent.sql](runbooks/sql/AddClientVatRegime_Tenant.idempotent.sql) |
 | `20260730100000_AddPricing_Tenant` | Tables `PriceLists` / `PriceListItems` / `ClientProductPrices` (tarification, tranche 5A) + colonne `Clients.PriceListId` nullable + index. Création de tables + colonne additive. | [AddPricing_Tenant.idempotent.sql](runbooks/sql/AddPricing_Tenant.idempotent.sql) |
+| `20260730160000_AddPriceListItemTiers_Tenant` | Table `PriceListItemTiers` — paliers quantitatifs (tranche 5B). Création de table uniquement ; les prix existants restent des prix de base sans palier. | [AddPriceListItemTiers_Tenant.idempotent.sql](runbooks/sql/AddPriceListItemTiers_Tenant.idempotent.sql) |
 
 Le régime de TVA du client est un attribut du **client**, non du taux de ligne (`VatRate`
 inchangé). La validation de facture (`ValidateInvoiceCommand`) refuse désormais toute TVA pour un

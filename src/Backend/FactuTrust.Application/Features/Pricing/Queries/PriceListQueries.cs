@@ -23,16 +23,28 @@ public sealed class PriceListListItemDto
     public bool IsApplicableToday { get; init; }
 }
 
+/// <summary>Palier quantitatif : « à partir de MinQuantity, le prix devient UnitPriceHT ».</summary>
+public sealed class PriceListTierDto
+{
+    public decimal MinQuantity { get; init; }
+    public decimal UnitPriceHT { get; init; }
+}
+
 public sealed class PriceListItemDto
 {
     public Guid ProductId { get; init; }
     public string ProductCode { get; init; } = string.Empty;
     public string ProductName { get; init; } = string.Empty;
+
+    /// <summary>Prix de base, appliqué en deçà du premier palier.</summary>
     public decimal UnitPriceHT { get; init; }
     public string Currency { get; init; } = string.Empty;
 
     /// <summary>Prix catalogue, pour montrer l'écart que la grille introduit.</summary>
     public decimal CatalogUnitPriceHT { get; init; }
+
+    /// <summary>Paliers dégressifs, du seuil le plus bas au plus haut.</summary>
+    public List<PriceListTierDto> Tiers { get; init; } = new();
 }
 
 public sealed class PriceListDetailDto
@@ -126,7 +138,15 @@ public sealed class GetPriceListByIdQueryHandler
                 ProductName = product?.Name ?? "(produit supprimé)",
                 UnitPriceHT = item.UnitPriceHT.Amount,
                 Currency = item.UnitPriceHT.Currency,
-                CatalogUnitPriceHT = product?.UnitPrice.Amount ?? 0m
+                CatalogUnitPriceHT = product?.UnitPrice.Amount ?? 0m,
+                Tiers = item.Tiers
+                    .OrderBy(t => t.MinQuantity)
+                    .Select(t => new PriceListTierDto
+                    {
+                        MinQuantity = t.MinQuantity,
+                        UnitPriceHT = t.UnitPriceHT.Amount
+                    })
+                    .ToList()
             });
         }
 

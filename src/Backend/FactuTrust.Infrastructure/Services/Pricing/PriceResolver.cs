@@ -63,7 +63,10 @@ public sealed class PriceResolver : IPriceResolver
                     .GetByIdWithItemsAsync(priceListId, cancellationToken);
                 if (priceList is not null && priceList.IsApplicableAt(date))
                 {
-                    var listPrice = priceList.TryGetUnitPrice(productId);
+                    // La quantité choisit le palier : c'est le seul endroit où elle entre dans
+                    // la résolution, et c'est pourquoi l'écran doit redemander un prix quand
+                    // l'utilisateur change la quantité d'une ligne.
+                    var listPrice = priceList.TryGetUnitPrice(productId, quantity);
                     if (listPrice is not null)
                         return Result.Success(new PriceResolution(listPrice, PriceSource.PriceList));
                 }

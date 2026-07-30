@@ -29,6 +29,9 @@ public sealed class PriceListRepository : IPriceListRepository
         await using var context = _contextFactory.CreateContext();
         return await context.PriceLists
             .Include(p => p.Items)
+                // Sans les paliers, la résolution retomberait en silence sur le prix de base :
+                // le dégressif serait ignoré sans qu'aucune erreur ne le signale.
+                .ThenInclude(i => i.Tiers)
             .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
     }
 

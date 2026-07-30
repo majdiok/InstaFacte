@@ -87,6 +87,7 @@ public partial class TenantDbContext : DbContext
     public DbSet<SalesOrderLine> SalesOrderLines => Set<SalesOrderLine>();
     public DbSet<PriceList> PriceLists => Set<PriceList>();
     public DbSet<PriceListItem> PriceListItems => Set<PriceListItem>();
+    public DbSet<PriceListItemTier> PriceListItemTiers => Set<PriceListItemTier>();
     public DbSet<ClientProductPrice> ClientProductPrices => Set<ClientProductPrice>();
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<CashOperation> CashOperations => Set<CashOperation>();
@@ -277,6 +278,7 @@ public partial class TenantDbContext : DbContext
         ConfigureSalesOrderLine(builder);
         ConfigurePriceList(builder);
         ConfigurePriceListItem(builder);
+        ConfigurePriceListItemTier(builder);
         ConfigureClientProductPrice(builder);
         ConfigurePayment(builder);
         ConfigureAuditLog(builder);
@@ -560,8 +562,30 @@ public partial class TenantDbContext : DbContext
 
             ConfigureOwnedMoney(entity, i => i.UnitPriceHT, "UnitPriceHT");
 
+            entity.HasMany(i => i.Tiers)
+                .WithOne()
+                .HasForeignKey(t => t.PriceListItemId)
+                .OnDelete(DeleteBehavior.Cascade);
+
             // Un seul prix par produit dans une grille : l'upsert du domaine s'y appuie.
             entity.HasIndex(i => new { i.PriceListId, i.ProductId }).IsUnique();
+        });
+    }
+
+    private static void ConfigurePriceListItemTier(ModelBuilder builder)
+    {
+        builder.Entity<PriceListItemTier>(entity =>
+        {
+            entity.ToTable("PriceListItemTiers");
+            entity.HasKey(t => t.Id);
+
+            entity.Property(t => t.PriceListItemId).IsRequired();
+            entity.Property(t => t.MinQuantity).HasPrecision(18, 4).IsRequired();
+
+            ConfigureOwnedMoney(entity, t => t.UnitPriceHT, "UnitPriceHT");
+
+            // Un seul palier par seuil : l'upsert du domaine s'y appuie.
+            entity.HasIndex(t => new { t.PriceListItemId, t.MinQuantity }).IsUnique();
         });
     }
 

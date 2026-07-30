@@ -120,7 +120,28 @@ public sealed class PriceList : AggregateRoot
         return true;
     }
 
-    /// <summary>Prix du produit dans la grille, ou <c>null</c> si le produit n'y figure pas.</summary>
-    public Money? TryGetUnitPrice(Guid productId) =>
-        _items.FirstOrDefault(i => i.ProductId == productId)?.UnitPriceHT;
+    /// <summary>
+    /// Ajoute ou remplace un palier quantitatif sur un produit déjà tarifé.
+    /// </summary>
+    public Result SetTier(Guid productId, decimal minQuantity, Money unitPriceHT)
+    {
+        var item = _items.FirstOrDefault(i => i.ProductId == productId);
+        if (item is null)
+        {
+            return Result.Failure(Error.Validation("ProductId",
+                "Fixez d'abord le prix de base du produit dans la grille, puis ses paliers"));
+        }
+
+        return item.SetTier(minQuantity, unitPriceHT);
+    }
+
+    public void RemoveTier(Guid productId, decimal minQuantity) =>
+        _items.FirstOrDefault(i => i.ProductId == productId)?.RemoveTier(minQuantity);
+
+    /// <summary>
+    /// Prix du produit dans la grille pour cette quantité, ou <c>null</c> si le produit n'y
+    /// figure pas. Sans paliers, la quantité n'a aucun effet.
+    /// </summary>
+    public Money? TryGetUnitPrice(Guid productId, decimal quantity = 1m) =>
+        _items.FirstOrDefault(i => i.ProductId == productId)?.ResolveUnitPrice(quantity);
 }

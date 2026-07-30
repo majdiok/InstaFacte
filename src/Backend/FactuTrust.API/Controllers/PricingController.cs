@@ -196,6 +196,50 @@ public sealed class PricingController : ControllerBase
         return Ok(ApiResponse<object>.Ok(new { }, "Prix retiré"));
     }
 
+    /// <summary>
+    /// Fixe un palier quantitatif sur un produit déjà tarifé dans la grille : « à partir de
+    /// <c>minQuantity</c>, le prix unitaire devient <c>unitPriceHT</c> ».
+    /// </summary>
+    [HttpPut("price-lists/{id:guid}/items/{productId:guid}/tiers/{minQuantity:decimal}")]
+    [Authorize(Policy = PermissionPolicies.PricingUpdate)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> SetPriceListTier(
+        Guid id,
+        Guid productId,
+        decimal minQuantity,
+        [FromBody] SetPriceListItemRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new SetPriceListTierCommand(id, productId, minQuantity, request.UnitPriceHT),
+            cancellationToken);
+
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<object>.Ok(new { }, "Palier enregistré"));
+    }
+
+    /// <summary>Retire un palier : la quantité concernée retombe sur le palier inférieur.</summary>
+    [HttpDelete("price-lists/{id:guid}/items/{productId:guid}/tiers/{minQuantity:decimal}")]
+    [Authorize(Policy = PermissionPolicies.PricingUpdate)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RemovePriceListTier(
+        Guid id,
+        Guid productId,
+        decimal minQuantity,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new RemovePriceListTierCommand(id, productId, minQuantity), cancellationToken);
+
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<object>.Ok(new { }, "Palier retiré"));
+    }
+
     // ───────────────────── Tarification d'un client ─────────────────────
 
     /// <summary>Grille affectée et prix négociés d'un client.</summary>

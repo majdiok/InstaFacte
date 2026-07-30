@@ -4605,6 +4605,10 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<decimal>("TotalOtherDeductions")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
                     b.Property<decimal>("TotalTfp")
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
@@ -5133,6 +5137,39 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .IsUnique();
 
                     b.ToTable("PriceListItems", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.Pricing.PriceListItemTier", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("MinQuantity")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<Guid>("PriceListItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PriceListItemId", "MinQuantity")
+                        .IsUnique();
+
+                    b.ToTable("PriceListItemTiers", (string)null);
                 });
 
             modelBuilder.Entity("FactuTrust.Domain.Entities.Product", b =>
@@ -9501,6 +9538,44 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
 
                             b1.WithOwner()
                                 .HasForeignKey("PriceListItemId");
+                        });
+
+                    b.Navigation("UnitPriceHT")
+                        .IsRequired();
+
+                    b.Navigation("Tiers");
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.Pricing.PriceListItemTier", b =>
+                {
+                    b.HasOne("FactuTrust.Domain.Entities.Pricing.PriceListItem", null)
+                        .WithMany("Tiers")
+                        .HasForeignKey("PriceListItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "UnitPriceHT", b1 =>
+                        {
+                            b1.Property<Guid>("PriceListItemTierId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("decimal(18,3)")
+                                .HasColumnName("UnitPriceHT");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("UnitPriceHTCurrency");
+
+                            b1.HasKey("PriceListItemTierId");
+
+                            b1.ToTable("PriceListItemTiers");
+
+                            b1.WithOwner()
+                                .HasForeignKey("PriceListItemTierId");
                         });
 
                     b.Navigation("UnitPriceHT")

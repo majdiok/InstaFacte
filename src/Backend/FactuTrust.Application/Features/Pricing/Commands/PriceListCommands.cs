@@ -211,6 +211,95 @@ public sealed class RemovePriceListItemCommandHandler
     }
 }
 
+// ───────────────────────────── Paliers quantitatifs ─────────────────────────────
+
+public sealed record SetPriceListTierCommand(
+    Guid PriceListId,
+    Guid ProductId,
+    decimal MinQuantity,
+    decimal UnitPriceHT) : IRequest<Result>;
+
+public sealed class SetPriceListTierCommandHandler
+    : IRequestHandler<SetPriceListTierCommand, Result>
+{
+    private readonly IPriceListRepository _repository;
+    private readonly ICurrentUser _currentUser;
+    private readonly IAuditService _auditService;
+
+    public SetPriceListTierCommandHandler(
+        IPriceListRepository repository, ICurrentUser currentUser, IAuditService auditService)
+    {
+        _repository = repository;
+        _currentUser = currentUser;
+        _auditService = auditService;
+    }
+
+    public async Task<Result> Handle(SetPriceListTierCommand request, CancellationToken cancellationToken)
+    {
+        var priceList = await _repository.GetByIdWithItemsAsync(request.PriceListId, cancellationToken);
+        if (priceList is null)
+            return Result.Failure(Error.NotFound("Grille tarifaire", request.PriceListId));
+
+        var result = priceList.SetTier(
+            request.ProductId,
+            request.MinQuantity,
+            Money.Create(request.UnitPriceHT, priceList.Currency));
+
+        if (result.IsFailure)
+            return result;
+
+        priceList.SetAuditInfo(_currentUser.UserId?.ToString() ?? "system");
+        await _repository.UpdateAsync(priceList, cancellationToken);
+
+        await _auditService.LogAsync(
+            "PriceList.TierSet", "PriceList", priceList.Id,
+            newValues: new { request.ProductId, request.MinQuantity, request.UnitPriceHT },
+            cancellationToken: cancellationToken);
+
+        return Result.Success();
+    }
+}
+
+public sealed record RemovePriceListTierCommand(
+    Guid PriceListId,
+    Guid ProductId,
+    decimal MinQuantity) : IRequest<Result>;
+
+public sealed class RemovePriceListTierCommandHandler
+    : IRequestHandler<RemovePriceListTierCommand, Result>
+{
+    private readonly IPriceListRepository _repository;
+    private readonly ICurrentUser _currentUser;
+    private readonly IAuditService _auditService;
+
+    public RemovePriceListTierCommandHandler(
+        IPriceListRepository repository, ICurrentUser currentUser, IAuditService auditService)
+    {
+        _repository = repository;
+        _currentUser = currentUser;
+        _auditService = auditService;
+    }
+
+    public async Task<Result> Handle(RemovePriceListTierCommand request, CancellationToken cancellationToken)
+    {
+        var priceList = await _repository.GetByIdWithItemsAsync(request.PriceListId, cancellationToken);
+        if (priceList is null)
+            return Result.Failure(Error.NotFound("Grille tarifaire", request.PriceListId));
+
+        priceList.RemoveTier(request.ProductId, request.MinQuantity);
+
+        priceList.SetAuditInfo(_currentUser.UserId?.ToString() ?? "system");
+        await _repository.UpdateAsync(priceList, cancellationToken);
+
+        await _auditService.LogAsync(
+            "PriceList.TierRemoved", "PriceList", priceList.Id,
+            newValues: new { request.ProductId, request.MinQuantity },
+            cancellationToken: cancellationToken);
+
+        return Result.Success();
+    }
+}
+
 // ───────────────────────────── Suppression ─────────────────────────────
 
 public sealed record DeletePriceListCommand(Guid Id) : IRequest<Result>;
