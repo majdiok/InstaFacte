@@ -55,6 +55,12 @@ export const PERMISSIONS = {
     update: 'delivery_notes:update',
     delete: 'delivery_notes:delete'
   },
+  pricing: {
+    create: 'pricing:create',
+    read: 'pricing:read',
+    update: 'pricing:update',
+    delete: 'pricing:delete'
+  },
   suppliers: {
     create: 'suppliers:create',
     read: 'suppliers:read',

@@ -25,6 +25,82 @@ export interface ResolvePriceItem {
   quantity: number;
 }
 
+export interface PriceListListItem {
+  id: string;
+  name: string;
+  currency: string;
+  isActive: boolean;
+  validFrom: string | null;
+  validUntil: string | null;
+  itemCount: number;
+  /** Une grille active mais hors periode n'alimente aucun prix. */
+  isApplicableToday: boolean;
+}
+
+export interface PriceListItem {
+  productId: string;
+  productCode: string;
+  productName: string;
+  unitPriceHT: number;
+  currency: string;
+  /** Prix catalogue, pour montrer l'ecart introduit par la grille. */
+  catalogUnitPriceHT: number;
+}
+
+export interface PriceListDetail {
+  id: string;
+  name: string;
+  currency: string;
+  isActive: boolean;
+  validFrom: string | null;
+  validUntil: string | null;
+  isApplicableToday: boolean;
+  assignedClientCount: number;
+  items: PriceListItem[];
+}
+
+export interface ClientProductPrice {
+  id: string;
+  productId: string;
+  productCode: string;
+  productName: string;
+  unitPriceHT: number;
+  currency: string;
+  catalogUnitPriceHT: number;
+  isActive: boolean;
+  validFrom: string | null;
+  validUntil: string | null;
+  isApplicableToday: boolean;
+}
+
+export interface ClientPricing {
+  clientId: string;
+  priceListId: string | null;
+  priceListName: string | null;
+  negotiatedPrices: ClientProductPrice[];
+}
+
+export interface CreatePriceListRequest {
+  name: string;
+  currency?: string | null;
+  validFrom?: string | null;
+  validUntil?: string | null;
+}
+
+export interface UpdatePriceListRequest {
+  name: string;
+  validFrom: string | null;
+  validUntil: string | null;
+  isActive: boolean;
+}
+
+export interface UpsertClientProductPriceRequest {
+  unitPriceHT: number;
+  validFrom: string | null;
+  validUntil: string | null;
+  isActive: boolean;
+}
+
 /**
  * Interroge le point de résolution de prix unique du serveur.
  *
@@ -75,5 +151,80 @@ export class PricingService {
       { clientId, items, date },
       { context: createHttpContextSkipGlobalErrorUi() }
     );
+  }
+
+  // ─────────────────────── Grilles tarifaires ───────────────────────
+
+  getPriceLists(): Observable<ApiResponse<PriceListListItem[]>> {
+    return this.http.get<ApiResponse<PriceListListItem[]>>(`${this.baseUrl}/price-lists`);
+  }
+
+  getPriceList(id: string): Observable<ApiResponse<PriceListDetail>> {
+    return this.http.get<ApiResponse<PriceListDetail>>(`${this.baseUrl}/price-lists/${id}`);
+  }
+
+  createPriceList(request: CreatePriceListRequest): Observable<ApiResponse<string>> {
+    return this.http.post<ApiResponse<string>>(`${this.baseUrl}/price-lists`, request);
+  }
+
+  updatePriceList(id: string, request: UpdatePriceListRequest): Observable<ApiResponse<object>> {
+    return this.http.put<ApiResponse<object>>(`${this.baseUrl}/price-lists/${id}`, request);
+  }
+
+  /**
+   * Supprime une grille. Le serveur refuse si elle est encore affectee a des clients :
+   * ils retomberaient au catalogue sans que personne le voie.
+   */
+  deletePriceList(id: string): Observable<ApiResponse<object>> {
+    return this.http.delete<ApiResponse<object>>(`${this.baseUrl}/price-lists/${id}`);
+  }
+
+  setPriceListItem(
+    id: string,
+    productId: string,
+    unitPriceHT: number
+  ): Observable<ApiResponse<object>> {
+    return this.http.put<ApiResponse<object>>(
+      `${this.baseUrl}/price-lists/${id}/items/${productId}`,
+      { unitPriceHT }
+    );
+  }
+
+  removePriceListItem(id: string, productId: string): Observable<ApiResponse<object>> {
+    return this.http.delete<ApiResponse<object>>(
+      `${this.baseUrl}/price-lists/${id}/items/${productId}`
+    );
+  }
+
+  // ─────────────────────── Tarification d'un client ───────────────────────
+
+  getClientPricing(clientId: string): Observable<ApiResponse<ClientPricing>> {
+    return this.http.get<ApiResponse<ClientPricing>>(`${this.baseUrl}/clients/${clientId}`);
+  }
+
+  /** `priceListId` a `null` fait revenir le client au tarif catalogue. */
+  assignClientPriceList(
+    clientId: string,
+    priceListId: string | null
+  ): Observable<ApiResponse<object>> {
+    return this.http.put<ApiResponse<object>>(
+      `${this.baseUrl}/clients/${clientId}/price-list`,
+      { priceListId }
+    );
+  }
+
+  upsertClientProductPrice(
+    clientId: string,
+    productId: string,
+    request: UpsertClientProductPriceRequest
+  ): Observable<ApiResponse<string>> {
+    return this.http.put<ApiResponse<string>>(
+      `${this.baseUrl}/clients/${clientId}/products/${productId}`,
+      request
+    );
+  }
+
+  deleteClientProductPrice(id: string): Observable<ApiResponse<object>> {
+    return this.http.delete<ApiResponse<object>>(`${this.baseUrl}/client-prices/${id}`);
   }
 }

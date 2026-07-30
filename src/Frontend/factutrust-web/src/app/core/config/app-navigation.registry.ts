@@ -156,6 +156,13 @@ export const ALL_NAV_ITEMS: NavItem[] = [
         permissionsAll: ['invoices:read']
       },
       {
+        label: 'Grilles tarifaires',
+        route: '/pricing',
+        icon: 'fa-solid fa-tags',
+        modules: [M.Sales],
+        permissionsAll: ['pricing:read']
+      },
+      {
         label: 'États analytiques',
         route: '/reports/analytics',
         icon: 'fa-solid fa-chart-line',

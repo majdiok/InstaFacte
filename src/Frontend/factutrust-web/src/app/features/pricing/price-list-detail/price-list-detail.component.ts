@@ -1,0 +1,467 @@
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { RouterModule, ActivatedRoute } from '@angular/router';
+import { FormsModule } from '@angular/forms';
+import { TableModule } from 'primeng/table';
+import { ButtonModule } from 'primeng/button';
+import { InputTextModule } from 'primeng/inputtext';
+import { InputNumberModule } from 'primeng/inputnumber';
+import { InputSwitchModule } from 'primeng/inputswitch';
+import { TagModule } from 'primeng/tag';
+import { TooltipModule } from 'primeng/tooltip';
+import { DialogModule } from 'primeng/dialog';
+import { AutoCompleteModule } from 'primeng/autocomplete';
+import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
+import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
+import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { PricingService, PriceListDetail, PriceListItem } from '@core/services/pricing.service';
+import { ProductService } from '@core/services/product.service';
+import { ToastService } from '@core/services/toast.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
+import { AuthService } from '@core/services/auth.service';
+import { ConfirmationService } from '@core/services/confirmation.service';
+import { PERMISSIONS } from '@core/config/permission-keys';
+
+interface ProductOption {
+  id: string;
+  label: string;
+  unitPrice: number;
+}
+
+@Component({
+  selector: 'app-price-list-detail',
+  standalone: true,
+  imports: [
+    CommonModule,
+    RouterModule,
+    FormsModule,
+    TableModule,
+    ButtonModule,
+    InputTextModule,
+    InputNumberModule,
+    InputSwitchModule,
+    TagModule,
+    TooltipModule,
+    DialogModule,
+    AutoCompleteModule,
+    PageHeaderComponent,
+    BreadcrumbComponent,
+    EmptyStateComponent,
+    ButtonComponent
+  ],
+  template: `
+    <app-breadcrumb [items]="breadcrumbItems()"></app-breadcrumb>
+
+    @if (priceList(); as pl) {
+      <app-page-header [title]="pl.name" [subtitle]="headerSubtitle()">
+        @if (canUpdate()) {
+          <app-button variant="secondary" icon="pi-cog" iconPos="left" (clicked)="openSettings()">
+            Paramètres
+          </app-button>
+          <app-button variant="primary" icon="pi-plus" iconPos="left" (clicked)="openAddItem()">
+            Ajouter un produit
+          </app-button>
+        }
+      </app-page-header>
+
+      <!-- Bandeau d'état : une grille inapplicable ne sert aucun prix, il faut le dire fort. -->
+      @if (!pl.isActive) {
+        <div class="ft-alert ft-alert--muted">
+          <i class="pi pi-info-circle"></i>
+          Cette grille est <strong>désactivée</strong> : aucun prix n'en est tiré. Les documents
+          déjà émis conservent leur prix, qui a été figé à leur création.
+        </div>
+      } @else if (!pl.isApplicableToday) {
+        <div class="ft-alert ft-alert--warning">
+          <i class="pi pi-exclamation-triangle"></i>
+          Grille active mais <strong>hors de sa période de validité</strong> : elle n'applique
+          aucun prix aujourd'hui.
+        </div>
+      }
+
+      @if (pl.assignedClientCount > 0) {
+        <div class="ft-alert ft-alert--info">
+          <i class="pi pi-users"></i>
+          Affectée à <strong>{{ pl.assignedClientCount }}</strong> client(s).
+        </div>
+      }
+
+      @if (pl.items.length === 0) {
+        <app-empty-state
+          icon="pi-tags"
+          title="Aucun prix dans cette grille"
+          message="Ajoutez des produits : ceux qui n'y figurent pas restent au prix catalogue.">
+        </app-empty-state>
+      } @else {
+        <div class="ft-table-card">
+          <p-table [value]="pl.items" [rowHover]="true" styleClass="ft-table">
+            <ng-template pTemplate="header">
+              <tr>
+                <th>Code</th>
+                <th>Produit</th>
+                <th class="ft-num">Prix catalogue HT</th>
+                <th class="ft-num">Prix de la grille HT</th>
+                <th class="ft-num">Écart</th>
+                <th class="ft-actions-col">Actions</th>
+              </tr>
+            </ng-template>
+
+            <ng-template pTemplate="body" let-item>
+              <tr>
+                <td>{{ item.productCode }}</td>
+                <td>{{ item.productName }}</td>
+                <td class="ft-num">{{ item.catalogUnitPriceHT | number: '1.3-3' }}</td>
+                <td class="ft-num">
+                  <strong>{{ item.unitPriceHT | number: '1.3-3' }}</strong>
+                </td>
+                <td class="ft-num">
+                  <span [class]="deltaClass(item)">{{ deltaLabel(item) }}</span>
+                </td>
+                <td class="ft-actions-col">
+                  @if (canUpdate()) {
+                    <button
+                      pButton
+                      type="button"
+                      icon="pi pi-pencil"
+                      class="p-button-text p-button-sm"
+                      pTooltip="Modifier le prix"
+                      (click)="openEditItem(item)"></button>
+                    <button
+                      pButton
+                      type="button"
+                      icon="pi pi-trash"
+                      class="p-button-text p-button-sm p-button-danger"
+                      pTooltip="Retirer de la grille"
+                      (click)="confirmRemove(item)"></button>
+                  }
+                </td>
+              </tr>
+            </ng-template>
+          </p-table>
+        </div>
+      }
+    } @else if (!loading()) {
+      <app-empty-state
+        icon="pi-exclamation-circle"
+        title="Grille introuvable"
+        message="Cette grille tarifaire n'existe pas ou a été supprimée.">
+      </app-empty-state>
+    }
+
+    <!-- Paramètres de la grille -->
+    <p-dialog
+      header="Paramètres de la grille"
+      [(visible)]="settingsVisible"
+      [modal]="true"
+      [style]="{ width: '32rem' }"
+      [draggable]="false">
+      <div class="ft-form-grid">
+        <div class="ft-field">
+          <label for="pl-name">Nom <span class="ft-required">*</span></label>
+          <input id="pl-name" pInputText [(ngModel)]="settingsForm.name" maxlength="100" />
+        </div>
+
+        <div class="ft-field">
+          <label for="pl-from">Début de validité</label>
+          <input id="pl-from" type="date" pInputText [(ngModel)]="settingsForm.validFrom" />
+        </div>
+
+        <div class="ft-field">
+          <label for="pl-until">Fin de validité</label>
+          <input id="pl-until" type="date" pInputText [(ngModel)]="settingsForm.validUntil" />
+        </div>
+
+        <div class="ft-field ft-field--inline">
+          <p-inputSwitch [(ngModel)]="settingsForm.isActive" inputId="pl-active"></p-inputSwitch>
+          <label for="pl-active">Grille active</label>
+          <small class="ft-hint">
+            Désactiver est réversible et n'affecte aucun document déjà émis.
+          </small>
+        </div>
+      </div>
+
+      <ng-template pTemplate="footer">
+        <app-button variant="secondary" (clicked)="settingsVisible = false">Annuler</app-button>
+        <app-button
+          variant="primary"
+          [disabled]="!settingsForm.name.trim() || saving()"
+          (clicked)="saveSettings()">
+          Enregistrer
+        </app-button>
+      </ng-template>
+    </p-dialog>
+
+    <!-- Ajout / modification d'un prix -->
+    <p-dialog
+      [header]="editingItem ? 'Modifier le prix' : 'Ajouter un produit'"
+      [(visible)]="itemVisible"
+      [modal]="true"
+      [style]="{ width: '32rem' }"
+      [draggable]="false">
+      <div class="ft-form-grid">
+        @if (editingItem) {
+          <div class="ft-field">
+            <label>Produit</label>
+            <div class="ft-readonly">{{ editingItem.productCode }} — {{ editingItem.productName }}</div>
+          </div>
+        } @else {
+          <div class="ft-field">
+            <label for="pl-product">Produit <span class="ft-required">*</span></label>
+            <p-autoComplete
+              inputId="pl-product"
+              [(ngModel)]="selectedProduct"
+              [suggestions]="productSuggestions()"
+              (completeMethod)="searchProducts($event)"
+              field="label"
+              [forceSelection]="true"
+              [dropdown]="true"
+              placeholder="Rechercher par code ou nom"
+              appendTo="body"></p-autoComplete>
+          </div>
+        }
+
+        <div class="ft-field">
+          <label for="pl-price">Prix HT ({{ priceList()?.currency }}) <span class="ft-required">*</span></label>
+          <p-inputNumber
+            inputId="pl-price"
+            [(ngModel)]="itemPrice"
+            mode="decimal"
+            [minFractionDigits]="3"
+            [maxFractionDigits]="3"
+            [min]="0"></p-inputNumber>
+          @if (catalogReference() !== null) {
+            <small class="ft-hint">Prix catalogue : {{ catalogReference() | number: '1.3-3' }}</small>
+          }
+        </div>
+      </div>
+
+      <ng-template pTemplate="footer">
+        <app-button variant="secondary" (clicked)="itemVisible = false">Annuler</app-button>
+        <app-button variant="primary" [disabled]="!canSaveItem() || saving()" (clicked)="saveItem()">
+          Enregistrer
+        </app-button>
+      </ng-template>
+    </p-dialog>
+  `
+})
+export class PriceListDetailComponent implements OnInit {
+  private readonly route = inject(ActivatedRoute);
+  private readonly pricingService = inject(PricingService);
+  private readonly productService = inject(ProductService);
+  private readonly toastService = inject(ToastService);
+  private readonly errorHandler = inject(ErrorHandlerService);
+  private readonly auth = inject(AuthService);
+  private readonly confirmationService = inject(ConfirmationService);
+
+  readonly priceList = signal<PriceListDetail | null>(null);
+  readonly loading = signal(true);
+  readonly saving = signal(false);
+  readonly productSuggestions = signal<ProductOption[]>([]);
+
+  settingsVisible = false;
+  settingsForm = { name: '', validFrom: '', validUntil: '', isActive: true };
+
+  itemVisible = false;
+  editingItem: PriceListItem | null = null;
+  selectedProduct: ProductOption | null = null;
+  itemPrice: number | null = null;
+
+  private priceListId = '';
+
+  readonly canUpdate = computed(() => this.auth.hasPermission(PERMISSIONS.pricing.update));
+
+  readonly breadcrumbItems = computed<BreadcrumbItem[]>(() => [
+    { label: 'Ventes' },
+    { label: 'Grilles tarifaires', route: '/pricing' },
+    { label: this.priceList()?.name ?? 'Détail' }
+  ]);
+
+  readonly headerSubtitle = computed(() => {
+    const pl = this.priceList();
+    if (!pl) return '';
+    const count = pl.items.length;
+    return `${count} produit(s) tarifé(s) · devise ${pl.currency}. Les produits absents restent au prix catalogue.`;
+  });
+
+  /** Prix catalogue de référence dans la boîte de dialogue, pour situer la saisie. */
+  readonly catalogReference = computed<number | null>(() => {
+    if (this.editingItem) return this.editingItem.catalogUnitPriceHT;
+    return this.selectedProduct?.unitPrice ?? null;
+  });
+
+  ngOnInit(): void {
+    this.priceListId = this.route.snapshot.paramMap.get('id') ?? '';
+    this.load();
+  }
+
+  load(): void {
+    this.loading.set(true);
+    this.pricingService.getPriceList(this.priceListId).subscribe({
+      next: res => {
+        this.priceList.set(res.data ?? null);
+        this.loading.set(false);
+      },
+      error: err => {
+        this.showError(err, 'Impossible de charger la grille');
+        this.errorHandler.logError('Failed to load price list', err);
+        this.priceList.set(null);
+        this.loading.set(false);
+      }
+    });
+  }
+
+  deltaLabel(item: PriceListItem): string {
+    if (item.catalogUnitPriceHT === 0) return '—';
+    const delta = ((item.unitPriceHT - item.catalogUnitPriceHT) / item.catalogUnitPriceHT) * 100;
+    const sign = delta > 0 ? '+' : '';
+    return `${sign}${delta.toFixed(1)} %`;
+  }
+
+  deltaClass(item: PriceListItem): string {
+    if (item.catalogUnitPriceHT === 0) return '';
+    return item.unitPriceHT < item.catalogUnitPriceHT ? 'ft-delta--down' : 'ft-delta--up';
+  }
+
+  // ─────────────────────────── Paramètres ───────────────────────────
+
+  openSettings(): void {
+    const pl = this.priceList();
+    if (!pl) return;
+
+    this.settingsForm = {
+      name: pl.name,
+      validFrom: pl.validFrom ? pl.validFrom.substring(0, 10) : '',
+      validUntil: pl.validUntil ? pl.validUntil.substring(0, 10) : '',
+      isActive: pl.isActive
+    };
+    this.settingsVisible = true;
+  }
+
+  saveSettings(): void {
+    this.saving.set(true);
+    this.pricingService
+      .updatePriceList(this.priceListId, {
+        name: this.settingsForm.name.trim(),
+        validFrom: this.settingsForm.validFrom || null,
+        validUntil: this.settingsForm.validUntil || null,
+        isActive: this.settingsForm.isActive
+      })
+      .subscribe({
+        next: () => {
+          this.toastService.add({
+            severity: 'success',
+            summary: 'Succès',
+            detail: 'Grille mise à jour.'
+          });
+          this.settingsVisible = false;
+          this.saving.set(false);
+          this.load();
+        },
+        error: err => {
+          this.showError(err, 'Mise à jour impossible');
+          this.errorHandler.logError('Update price list failed', err);
+          this.saving.set(false);
+        }
+      });
+  }
+
+  // ─────────────────────────── Prix produit ───────────────────────────
+
+  openAddItem(): void {
+    this.editingItem = null;
+    this.selectedProduct = null;
+    this.itemPrice = null;
+    this.itemVisible = true;
+  }
+
+  openEditItem(item: PriceListItem): void {
+    this.editingItem = item;
+    this.selectedProduct = null;
+    this.itemPrice = item.unitPriceHT;
+    this.itemVisible = true;
+  }
+
+  searchProducts(event: { query: string }): void {
+    this.productService.getProducts({ search: event.query, pageSize: 20 }).subscribe({
+      next: res => {
+        const items = res.data?.items ?? [];
+        this.productSuggestions.set(
+          items.map(p => ({
+            id: p.id,
+            label: `${p.code} — ${p.name}`,
+            unitPrice: p.unitPrice
+          }))
+        );
+      },
+      error: () => this.productSuggestions.set([])
+    });
+  }
+
+  canSaveItem(): boolean {
+    const hasProduct = this.editingItem !== null || this.selectedProduct !== null;
+    return hasProduct && this.itemPrice !== null && this.itemPrice >= 0;
+  }
+
+  saveItem(): void {
+    const productId = this.editingItem?.productId ?? this.selectedProduct?.id;
+    if (!productId || this.itemPrice === null) return;
+
+    this.saving.set(true);
+    this.pricingService.setPriceListItem(this.priceListId, productId, this.itemPrice).subscribe({
+      next: () => {
+        this.toastService.add({
+          severity: 'success',
+          summary: 'Succès',
+          detail: 'Prix enregistré.'
+        });
+        this.itemVisible = false;
+        this.saving.set(false);
+        this.load();
+      },
+      error: err => {
+        this.showError(err, 'Enregistrement impossible');
+        this.errorHandler.logError('Set price list item failed', err);
+        this.saving.set(false);
+      }
+    });
+  }
+
+  confirmRemove(item: PriceListItem): void {
+    this.confirmationService.confirm({
+      header: 'Retirer de la grille',
+      message: `Retirer « ${item.productName} » de cette grille ? Il repassera au prix catalogue.`,
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Retirer',
+      rejectLabel: 'Annuler',
+      acceptButtonStyleClass: 'btn-danger',
+      accept: () => this.removeItem(item)
+    });
+  }
+
+  private removeItem(item: PriceListItem): void {
+    this.pricingService.removePriceListItem(this.priceListId, item.productId).subscribe({
+      next: () => {
+        this.toastService.add({
+          severity: 'success',
+          summary: 'Succès',
+          detail: 'Produit retiré de la grille.'
+        });
+        this.load();
+      },
+      error: err => {
+        this.showError(err, 'Retrait impossible');
+        this.errorHandler.logError('Remove price list item failed', err);
+      }
+    });
+  }
+
+  private showError(err: unknown, fallback: string): void {
+    const msg = this.errorHandler.extractErrorMessage(err);
+    this.toastService.add({
+      severity: 'error',
+      summary: 'Erreur',
+      detail: msg || fallback
+    });
+  }
+}

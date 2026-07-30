@@ -1,0 +1,287 @@
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { RouterModule } from '@angular/router';
+import { FormsModule } from '@angular/forms';
+import { TableModule } from 'primeng/table';
+import { ButtonModule } from 'primeng/button';
+import { InputTextModule } from 'primeng/inputtext';
+import { TagModule } from 'primeng/tag';
+import { TooltipModule } from 'primeng/tooltip';
+import { DialogModule } from 'primeng/dialog';
+import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
+import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
+import { SkeletonTableComponent, SkeletonColumn } from '@shared/components/skeleton/skeleton-table.component';
+import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { PricingService, PriceListListItem } from '@core/services/pricing.service';
+import { ToastService } from '@core/services/toast.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
+import { AuthService } from '@core/services/auth.service';
+import { ConfirmationService } from '@core/services/confirmation.service';
+import { PERMISSIONS } from '@core/config/permission-keys';
+
+@Component({
+  selector: 'app-price-list-list',
+  standalone: true,
+  imports: [
+    CommonModule,
+    RouterModule,
+    FormsModule,
+    TableModule,
+    ButtonModule,
+    InputTextModule,
+    TagModule,
+    TooltipModule,
+    DialogModule,
+    PageHeaderComponent,
+    BreadcrumbComponent,
+    SkeletonTableComponent,
+    EmptyStateComponent,
+    ButtonComponent
+  ],
+  template: `
+    <app-breadcrumb [items]="breadcrumbItems"></app-breadcrumb>
+
+    <app-page-header
+      title="Grilles tarifaires"
+      subtitle="Définissez des jeux de prix par produit, puis affectez-les à vos clients. Un client sans grille reste au tarif catalogue.">
+      @if (canCreate()) {
+        <app-button variant="primary" icon="pi-plus" iconPos="left" (clicked)="openCreate()">
+          Nouvelle grille
+        </app-button>
+      }
+    </app-page-header>
+
+    @if (loading()) {
+      <app-skeleton-table [columns]="skeletonColumns" [rows]="5"></app-skeleton-table>
+    } @else if (priceLists().length === 0) {
+      <app-empty-state
+        icon="pi-tags"
+        title="Aucune grille tarifaire"
+        message="Créez une grille pour appliquer des prix négociés à un groupe de clients.">
+      </app-empty-state>
+    } @else {
+      <div class="ft-table-card">
+        <p-table [value]="priceLists()" [rowHover]="true" styleClass="ft-table">
+          <ng-template pTemplate="header">
+            <tr>
+              <th>Nom</th>
+              <th class="ft-num">Produits</th>
+              <th>Validité</th>
+              <th>Devise</th>
+              <th>État</th>
+              <th class="ft-actions-col">Actions</th>
+            </tr>
+          </ng-template>
+
+          <ng-template pTemplate="body" let-row>
+            <tr>
+              <td>
+                <a [routerLink]="[row.id]" class="ft-link">{{ row.name }}</a>
+              </td>
+              <td class="ft-num">{{ row.itemCount }}</td>
+              <td>{{ validityLabel(row) }}</td>
+              <td>{{ row.currency }}</td>
+              <td>
+                @if (!row.isActive) {
+                  <p-tag severity="secondary" value="Désactivée"></p-tag>
+                } @else if (!row.isApplicableToday) {
+                  <p-tag
+                    severity="warning"
+                    value="Hors période"
+                    pTooltip="Grille active mais en dehors de sa période de validité : elle n'applique aucun prix aujourd'hui."></p-tag>
+                } @else {
+                  <p-tag severity="success" value="Applicable"></p-tag>
+                }
+              </td>
+              <td class="ft-actions-col">
+                <button
+                  pButton
+                  type="button"
+                  icon="pi pi-pencil"
+                  class="p-button-text p-button-sm"
+                  pTooltip="Ouvrir"
+                  [routerLink]="[row.id]"></button>
+                @if (canDelete()) {
+                  <button
+                    pButton
+                    type="button"
+                    icon="pi pi-trash"
+                    class="p-button-text p-button-sm p-button-danger"
+                    pTooltip="Supprimer"
+                    (click)="confirmDelete(row)"></button>
+                }
+              </td>
+            </tr>
+          </ng-template>
+        </p-table>
+      </div>
+    }
+
+    <!-- Création -->
+    <p-dialog
+      header="Nouvelle grille tarifaire"
+      [(visible)]="createVisible"
+      [modal]="true"
+      [style]="{ width: '32rem' }"
+      [draggable]="false">
+      <div class="ft-form-grid">
+        <div class="ft-field">
+          <label for="pl-name">Nom <span class="ft-required">*</span></label>
+          <input id="pl-name" pInputText [(ngModel)]="form.name" maxlength="100" />
+        </div>
+
+        <div class="ft-field">
+          <label for="pl-from">Début de validité</label>
+          <input id="pl-from" type="date" pInputText [(ngModel)]="form.validFrom" />
+        </div>
+
+        <div class="ft-field">
+          <label for="pl-until">Fin de validité</label>
+          <input id="pl-until" type="date" pInputText [(ngModel)]="form.validUntil" />
+          <small class="ft-hint">Laissez vide pour une grille sans limite de date.</small>
+        </div>
+      </div>
+
+      <ng-template pTemplate="footer">
+        <app-button variant="secondary" (clicked)="createVisible = false">Annuler</app-button>
+        <app-button
+          variant="primary"
+          [disabled]="!form.name.trim() || saving()"
+          (clicked)="create()">
+          Créer
+        </app-button>
+      </ng-template>
+    </p-dialog>
+  `
+})
+export class PriceListListComponent implements OnInit {
+  private readonly pricingService = inject(PricingService);
+  private readonly toastService = inject(ToastService);
+  private readonly errorHandler = inject(ErrorHandlerService);
+  private readonly auth = inject(AuthService);
+  private readonly confirmationService = inject(ConfirmationService);
+
+  readonly priceLists = signal<PriceListListItem[]>([]);
+  readonly loading = signal(true);
+  readonly saving = signal(false);
+
+  createVisible = false;
+  form = { name: '', validFrom: '', validUntil: '' };
+
+  readonly canCreate = computed(() => this.auth.hasPermission(PERMISSIONS.pricing.create));
+  readonly canDelete = computed(() => this.auth.hasPermission(PERMISSIONS.pricing.delete));
+
+  readonly breadcrumbItems: BreadcrumbItem[] = [
+    { label: 'Ventes' },
+    { label: 'Grilles tarifaires' }
+  ];
+
+  readonly skeletonColumns: SkeletonColumn[] = [
+    { width: '30%' },
+    { width: '10%' },
+    { width: '25%' },
+    { width: '10%' },
+    { width: '15%' },
+    { width: '10%' }
+  ];
+
+  ngOnInit(): void {
+    this.load();
+  }
+
+  load(): void {
+    this.loading.set(true);
+    this.pricingService.getPriceLists().subscribe({
+      next: res => {
+        this.priceLists.set(res.data ?? []);
+        this.loading.set(false);
+      },
+      error: err => {
+        this.showError(err, 'Impossible de charger les grilles tarifaires');
+        this.errorHandler.logError('Failed to load price lists', err);
+        this.priceLists.set([]);
+        this.loading.set(false);
+      }
+    });
+  }
+
+  validityLabel(row: PriceListListItem): string {
+    if (!row.validFrom && !row.validUntil) return 'Sans limite';
+    const from = row.validFrom ? new Date(row.validFrom).toLocaleDateString('fr-TN') : '…';
+    const until = row.validUntil ? new Date(row.validUntil).toLocaleDateString('fr-TN') : '…';
+    return `${from} → ${until}`;
+  }
+
+  openCreate(): void {
+    this.form = { name: '', validFrom: '', validUntil: '' };
+    this.createVisible = true;
+  }
+
+  create(): void {
+    this.saving.set(true);
+    this.pricingService
+      .createPriceList({
+        name: this.form.name.trim(),
+        validFrom: this.form.validFrom || null,
+        validUntil: this.form.validUntil || null
+      })
+      .subscribe({
+        next: () => {
+          this.toastService.add({
+            severity: 'success',
+            summary: 'Succès',
+            detail: 'Grille tarifaire créée.'
+          });
+          this.createVisible = false;
+          this.saving.set(false);
+          this.load();
+        },
+        error: err => {
+          this.showError(err, 'Impossible de créer la grille');
+          this.errorHandler.logError('Create price list failed', err);
+          this.saving.set(false);
+        }
+      });
+  }
+
+  confirmDelete(row: PriceListListItem): void {
+    this.confirmationService.confirm({
+      header: 'Supprimer la grille',
+      message: `Supprimer définitivement la grille « ${row.name} » ?`,
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Supprimer',
+      rejectLabel: 'Annuler',
+      acceptButtonStyleClass: 'btn-danger',
+      accept: () => this.delete(row)
+    });
+  }
+
+  private delete(row: PriceListListItem): void {
+    this.pricingService.deletePriceList(row.id).subscribe({
+      next: () => {
+        this.toastService.add({
+          severity: 'success',
+          summary: 'Succès',
+          detail: 'Grille tarifaire supprimée.'
+        });
+        this.load();
+      },
+      // Le serveur refuse la suppression d'une grille encore affectée : son message dit
+      // quoi faire (retirer l'affectation, ou désactiver plutôt que supprimer).
+      error: err => {
+        this.showError(err, 'Suppression impossible');
+        this.errorHandler.logError('Delete price list failed', err);
+      }
+    });
+  }
+
+  private showError(err: unknown, fallback: string): void {
+    const msg = this.errorHandler.extractErrorMessage(err);
+    this.toastService.add({
+      severity: 'error',
+      summary: 'Erreur',
+      detail: msg || fallback
+    });
+  }
+}
