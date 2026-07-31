@@ -7,14 +7,16 @@ using MediatR;
 namespace FactuTrust.Application.Features.Reports.Queries;
 
 /// <summary>
-/// Query to get client balances (solde = total facturé - total payé) for all clients.
+/// Solde par client — total facturé, encaissé, et ventilation par ancienneté d'échéance.
+///
+/// <paramref name="AsOfDate"/> fixe la « date d'observation ». <c>null</c> = aujourd'hui.
+/// Elle sert de référence à la comparaison contre <c>DueDate</c> ; l'exposer permet de
+/// reproduire à l'identique un état imprimé un autre jour, ce qui est le cas d'usage
+/// courant en contrôle.
 /// </summary>
-public sealed record GetClientBalancesReportQuery
+public sealed record GetClientBalancesReportQuery(DateTime? AsOfDate = null)
     : IRequest<Result<IReadOnlyList<ClientBalanceReportRowDto>>>;
 
-/// <summary>
-/// Handler for GetClientBalancesReportQuery.
-/// </summary>
 public sealed class GetClientBalancesReportQueryHandler
     : IRequestHandler<GetClientBalancesReportQuery, Result<IReadOnlyList<ClientBalanceReportRowDto>>>
 {
@@ -42,12 +44,16 @@ public sealed class GetClientBalancesReportQueryHandler
             nonCancelled.Select(i => i.Id),
             cancellationToken);
 
+        var asOf = (request.AsOfDate ?? DateTime.UtcNow).Date;
+
         var byClient = nonCancelled
             .GroupBy(i => new { i.ClientId, ClientName = i.Client?.Name ?? "", Currency = i.TotalAmount.Currency })
             .Select(g =>
             {
                 var totalInvoiced = g.Sum(i => i.TotalAmount.Amount);
                 var totalPaid = g.Sum(i => totalPaidByInvoice.TryGetValue(i.Id, out var paid) ? paid : 0m);
+                var buckets = AgingBuckets.Compute(g, totalPaidByInvoice, asOf);
+
                 return new ClientBalanceReportRowDto
                 {
                     ClientId = g.Key.ClientId,
@@ -55,7 +61,12 @@ public sealed class GetClientBalancesReportQueryHandler
                     TotalInvoiced = totalInvoiced,
                     TotalPaid = totalPaid,
                     Balance = totalInvoiced - totalPaid,
-                    Currency = g.Key.Currency
+                    Currency = g.Key.Currency,
+                    NotDue = buckets.NotDue,
+                    Bucket0To30 = buckets.B0To30,
+                    Bucket31To60 = buckets.B31To60,
+                    Bucket61To90 = buckets.B61To90,
+                    BucketOver90 = buckets.BOver90
                 };
             })
             .OrderBy(r => r.ClientName)

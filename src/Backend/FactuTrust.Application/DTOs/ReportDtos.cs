@@ -153,6 +153,29 @@ public sealed record ClientBalanceReportRowDto
     public decimal TotalPaid { get; init; }
     public decimal Balance { get; init; }
     public string Currency { get; init; } = null!;
+
+    /// <summary>
+    /// Balance âgée commerciale (lot 6) — ventilation du <see cref="Balance"/> par ancienneté
+    /// à partir de <c>DueDate</c>. Sans échéance, le reste bascule dans <see cref="NotDue"/> :
+    /// pas d'échéance = pas encore exigible.
+    ///
+    /// C'est un cockpit de recouvrement commercial. À ne pas confondre avec la balance âgée
+    /// comptable (<c>/accounting/aging</c>), alimentée par le lettrage : elles peuvent diverger
+    /// tant qu'un règlement reçu n'est pas encore lettré.
+    /// </summary>
+    public decimal NotDue { get; init; }
+
+    /// <summary>Échu depuis 1 à 30 jours.</summary>
+    public decimal Bucket0To30 { get; init; }
+
+    /// <summary>Échu depuis 31 à 60 jours.</summary>
+    public decimal Bucket31To60 { get; init; }
+
+    /// <summary>Échu depuis 61 à 90 jours.</summary>
+    public decimal Bucket61To90 { get; init; }
+
+    /// <summary>Échu depuis plus de 90 jours — le signal qui appelle une action ferme.</summary>
+    public decimal BucketOver90 { get; init; }
 }
 
 /// <summary>

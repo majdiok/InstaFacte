@@ -3,7 +3,12 @@ import { CommonModule } from '@angular/common';
 import { TableModule } from 'primeng/table';
 import { ButtonComponent } from '@shared/components/button/button.component';
 
-/** Normalized row for client or supplier commercial balances. */
+/**
+ * Ligne normalisee de solde commercial (client ou fournisseur).
+ *
+ * Les tranches d'anciennete sont OPTIONNELLES : seul le rapport client les alimente
+ * aujourd'hui. Le tableau generique les ignore ; le tableau age dedie s'appuie dessus.
+ */
 export interface PartyBalanceRow {
   partyId: string;
   partyName: string;
@@ -11,6 +16,13 @@ export interface PartyBalanceRow {
   totalPaid: number;
   balance: number;
   currency: string;
+
+  /** Tranches d'anciennete (lot 6). Somme = balance. Non fournies pour les fournisseurs. */
+  notDue?: number;
+  bucket0To30?: number;
+  bucket31To60?: number;
+  bucket61To90?: number;
+  bucketOver90?: number;
 }
 
 @Component({

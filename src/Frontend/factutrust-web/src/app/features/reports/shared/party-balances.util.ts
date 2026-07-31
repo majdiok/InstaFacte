@@ -9,7 +9,14 @@ export function mapClientBalanceRows(rows: ClientBalanceReportRow[]): PartyBalan
     totalInvoiced: r.totalInvoiced,
     totalPaid: r.totalPaid,
     balance: r.balance,
-    currency: r.currency
+    currency: r.currency,
+    // Tranches d'anciennete (lot 6). Toleree comme optionnelle : un backend ancien
+    // renverrait undefined et le tableau age ne montrerait alors rien.
+    notDue: r.notDue,
+    bucket0To30: r.bucket0To30,
+    bucket31To60: r.bucket31To60,
+    bucket61To90: r.bucket61To90,
+    bucketOver90: r.bucketOver90
   }));
 }
 
@@ -48,13 +55,31 @@ export function buildPartyBalanceSummaryMetrics(rows: PartyBalanceRow[]): TotalM
   const totalBalance = rows.reduce((sum, r) => sum + r.balance, 0);
   const positiveCount = rows.filter((r) => r.balance > 0).length;
 
-  return [
+  const metrics: TotalMetric[] = [
     { label: 'Tiers', value: rows.length, format: 'number', icon: 'pi-users', tone: 'primary' },
     { label: 'Total facturé', value: totalInvoiced, format: 'currency', currency, icon: 'pi-file', tone: 'cyan' },
     { label: 'Total payé', value: totalPaid, format: 'currency', currency, icon: 'pi-check', tone: 'emerald' },
     { label: 'Solde total', value: totalBalance, format: 'currency', currency, icon: 'pi-wallet', tone: 'amber' },
     { label: 'Soldes > 0', value: positiveCount, format: 'number', icon: 'pi-exclamation-circle', tone: 'rose' }
   ];
+
+  // Echu > 90 j : la valeur qui appelle une action ferme, mise en avant si le rapport
+  // porte les tranches. Absent quand le backend ne les renvoie pas encore.
+  const hasAging = rows.some((r) => r.bucketOver90 !== undefined);
+  if (hasAging) {
+    const over90 = rows.reduce((sum, r) => sum + (r.bucketOver90 ?? 0), 0);
+    metrics.push({
+      label: 'Échu > 90 j',
+      value: over90,
+      format: 'currency',
+      currency,
+      icon: 'pi-clock',
+      tone: over90 > 0 ? 'rose' : 'emerald',
+      hint: 'À relancer en priorité'
+    });
+  }
+
+  return metrics;
 }
 
 export function exportPartyBalancesCsv(
@@ -63,14 +88,32 @@ export function exportPartyBalancesCsv(
   filenamePrefix: string
 ): void {
   const escape = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+  const hasAging = rows.some((r) => r.bucketOver90 !== undefined);
+
   const header = [partyLabel, 'Total facturé', 'Total payé', 'Solde', 'Devise'];
+  if (hasAging) header.push('Non échu', '1-30 j', '31-60 j', '61-90 j', '> 90 j');
+
   const lines = [
     header.map(escape).join(';'),
-    ...rows.map((r) =>
-      [r.partyName, r.totalInvoiced.toFixed(3), r.totalPaid.toFixed(3), r.balance.toFixed(3), r.currency]
-        .map(escape)
-        .join(';')
-    )
+    ...rows.map((r) => {
+      const base = [
+        r.partyName,
+        r.totalInvoiced.toFixed(3),
+        r.totalPaid.toFixed(3),
+        r.balance.toFixed(3),
+        r.currency
+      ];
+      if (hasAging) {
+        base.push(
+          (r.notDue ?? 0).toFixed(3),
+          (r.bucket0To30 ?? 0).toFixed(3),
+          (r.bucket31To60 ?? 0).toFixed(3),
+          (r.bucket61To90 ?? 0).toFixed(3),
+          (r.bucketOver90 ?? 0).toFixed(3)
+        );
+      }
+      return base.map(escape).join(';');
+    })
   ];
   const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);

@@ -265,6 +265,18 @@ export interface ClientBalanceReportRow {
   totalPaid: number;
   balance: number;
   currency: string;
+
+  /**
+   * Balance agee commerciale (lot 6). Ventilation du solde par anciennete de DueDate.
+   * OPTIONNELLES : un backend anterieur au lot 6 ne les renverrait pas. Sans echeance,
+   * la ligne compte dans notDue : sans date, on ne peut pas la declarer exigible. Quand
+   * elles sont presentes, la somme des cinq tranches egale `balance` au millime pres.
+   */
+  notDue?: number;
+  bucket0To30?: number;
+  bucket31To60?: number;
+  bucket61To90?: number;
+  bucketOver90?: number;
 }
 
 export interface SupplierBalanceReportRow {

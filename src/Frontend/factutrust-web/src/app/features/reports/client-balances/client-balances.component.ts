@@ -11,6 +11,7 @@ import {
   PartyBalancesTableComponent,
   PartyBalanceRow
 } from '../shared/party-balances-table.component';
+import { AgingTableComponent } from '../shared/aging-table.component';
 import {
   buildPartyBalanceSummaryMetrics,
   exportPartyBalancesCsv,
@@ -29,7 +30,8 @@ import {
     BreadcrumbComponent,
     ButtonComponent,
     TableTotalsBarComponent,
-    PartyBalancesTableComponent
+    PartyBalancesTableComponent,
+    AgingTableComponent
   ],
   template: `
     <app-breadcrumb [items]="breadcrumbItems"></app-breadcrumb>
@@ -101,6 +103,19 @@ import {
         (viewParty)="onViewParty($event)">
       </app-party-balances-table>
     </div>
+
+    <!--
+      Balance âgée commerciale (lot 6) : ce qui décompose le solde par ancienneté. Muet si le
+      backend ne porte pas encore les tranches — un rapport ancien se comporte alors comme
+      avant, sans zone vide.
+    -->
+    <div class="ft-table-card aging-card">
+      <h3 class="aging-card__title">
+        <i class="pi pi-clock"></i> Balance âgée
+        <small>À partir de la date d'échéance (DueDate).</small>
+      </h3>
+      <app-aging-table [rows]="filteredRows()" partyLabel="Client"></app-aging-table>
+    </div>
   `,
   styles: [`
     .filter-input {
@@ -126,6 +141,18 @@ import {
       padding: var(--spacing-4);
       border: 1px solid var(--color-border-subtle);
       box-shadow: var(--shadow-sm);
+    }
+    .aging-card { margin-top: var(--spacing-4); }
+    .aging-card__title {
+      display: flex; align-items: baseline; gap: var(--spacing-2);
+      margin: 0 0 var(--spacing-3);
+      font-size: var(--font-size-base);
+      color: var(--color-text-primary);
+    }
+    .aging-card__title small {
+      font-weight: 400;
+      color: var(--color-text-secondary);
+      font-size: var(--font-size-xs);
     }
     @media print {
       :host ::ng-deep app-breadcrumb,
