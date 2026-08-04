@@ -2,12 +2,12 @@ using System.Security.Claims;
 using FactuTrust.API.Authorization;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.AI;
 using FactuTrust.Application.Features.AI.DTOs;
 using FactuTrust.Domain.Auth;
 using FactuTrust.Domain.Enums;
-using FactuTrust.Application.Configuration;
 using FactuTrust.Infrastructure.Services.AI;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -17,7 +17,8 @@ namespace FactuTrust.API.Controllers;
 
 /// <summary>
 /// Platform-wide AI model configuration. A single model is shared by every tenant
-/// (Ollama runs on the shared platform server).
+/// (Ollama runs on the shared platform server). OpenRouter credentials are also
+/// configured here and shared by every tenant.
 /// </summary>
 [ApiController]
 [Route("api/platform/ai-settings")]
@@ -44,7 +45,7 @@ public sealed class PlatformAiSettingsController : ControllerBase
         _logger = logger;
     }
 
-    /// <summary>Configured platform model + installed Ollama models + hardware recommendation.</summary>
+    /// <summary>Configured platform model + installed Ollama models + hardware recommendation + OpenRouter.</summary>
     [HttpGet]
     [Authorize(Policy = "perm:" + PlatformPermissions.AiManage)]
     [ProducesResponseType(typeof(ApiResponse<PlatformAiSettingsDto>), StatusCodes.Status200OK)]
@@ -54,6 +55,7 @@ public sealed class PlatformAiSettingsController : ControllerBase
         var importModel = await _settings.GetInvoiceImportModelRefAsync(cancellationToken);
         var studioModel = await _settings.GetStudioAiModelRefAsync(cancellationToken);
         var inferenceDevice = await _settings.GetInferenceDeviceAsync(cancellationToken);
+        var openRouter = await _settings.GetOpenRouterSettingsAsync(cancellationToken);
 
         var models = new List<UnifiedAiModelInfo>();
         try
@@ -101,11 +103,12 @@ public sealed class PlatformAiSettingsController : ControllerBase
             inferenceDevice,
             isOllamaAssistant,
             models,
-            recommendation);
+            recommendation,
+            openRouter);
         return Ok(ApiResponse<PlatformAiSettingsDto>.Ok(dto));
     }
 
-    /// <summary>Set the platform default model. An empty value clears it (server default applies).</summary>
+    /// <summary>Set the platform default model and/or OpenRouter credentials.</summary>
     [HttpPut]
     [Authorize(Policy = "perm:" + PlatformPermissions.AiManage)]
     [ProducesResponseType(typeof(ApiResponse<PlatformAiSettingsDto>), StatusCodes.Status200OK)]
@@ -167,6 +170,24 @@ public sealed class PlatformAiSettingsController : ControllerBase
                 "Platform admin {ActorId} updated the Ollama inference device to {Device}",
                 actorId,
                 device);
+        }
+
+        if (request.OpenRouter is { } openRouter)
+        {
+            var (success, error) = await _settings.SetOpenRouterConfigAsync(
+                openRouter.IsEnabled,
+                openRouter.DisplayName,
+                openRouter.BaseUrl,
+                openRouter.ApiKey,
+                actorId,
+                cancellationToken);
+            if (!success)
+                return BadRequest(ApiResponse<object>.Fail(error ?? "Configuration OpenRouter invalide."));
+
+            _logger.LogInformation(
+                "Platform admin {ActorId} updated OpenRouter settings (enabled={Enabled})",
+                actorId,
+                openRouter.IsEnabled);
         }
 
         return await Get(cancellationToken);

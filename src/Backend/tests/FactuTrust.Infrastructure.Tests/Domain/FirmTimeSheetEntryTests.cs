@@ -54,6 +54,7 @@ public sealed class FirmTimeSheetEntryTests
     public void Update_blocked_after_validate()
     {
         var entry = FirmTimeSheetEntry.Create(FirmId, UserId, "Jean Test", new DateTime(2026, 7, 20), 2m).Value;
+        entry.Submit();
         entry.Validate(ManagerId, "Chef Test");
         var update = entry.Update(new DateTime(2026, 7, 21), 3m, null, null, "COMPTA", null, true);
         Assert.True(update.IsFailure);
@@ -81,19 +82,20 @@ public sealed class FirmTimeSheetEntryTests
     }
 
     [Fact]
-    public void Validate_from_draft_still_allowed()
+    public void Validate_from_draft_is_refused()
     {
         var entry = FirmTimeSheetEntry.Create(FirmId, UserId, "Jean Test", new DateTime(2026, 7, 20), 2m).Value;
         var result = entry.Validate(ManagerId, "Chef Test");
-        Assert.True(result.IsSuccess);
-        Assert.True(entry.IsValidated);
-        Assert.Equal(FirmTimeSheetStatus.Validated, entry.Status);
+        Assert.True(result.IsFailure);
+        Assert.Equal(FirmTimeSheetStatus.Draft, entry.Status);
+        Assert.False(entry.IsValidated);
     }
 
     [Fact]
     public void Validate_records_author_and_timestamp()
     {
         var entry = FirmTimeSheetEntry.Create(FirmId, UserId, "Jean Test", new DateTime(2026, 7, 20), 2m).Value;
+        entry.Submit();
 
         var result = entry.Validate(ManagerId, "Chef Test");
 
@@ -108,6 +110,7 @@ public sealed class FirmTimeSheetEntryTests
     public void Validate_twice_is_refused()
     {
         var entry = FirmTimeSheetEntry.Create(FirmId, UserId, "Jean Test", new DateTime(2026, 7, 20), 2m).Value;
+        entry.Submit();
         entry.Validate(ManagerId, "Chef Test");
 
         var second = entry.Validate(Guid.NewGuid(), "Autre Chef");
@@ -120,6 +123,7 @@ public sealed class FirmTimeSheetEntryTests
     public void Unvalidate_clears_the_validation_trace_and_reopens_edition()
     {
         var entry = FirmTimeSheetEntry.Create(FirmId, UserId, "Jean Test", new DateTime(2026, 7, 20), 2m).Value;
+        entry.Submit();
         entry.Validate(ManagerId, "Chef Test");
 
         var unvalidated = entry.Unvalidate();

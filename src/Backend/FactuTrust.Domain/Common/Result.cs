@@ -61,6 +61,8 @@ public sealed record Error(string Code, string Description)
 {
     public static readonly Error None = new(string.Empty, string.Empty);
 
+    public IReadOnlyDictionary<string, object?>? Metadata { get; init; }
+
     public static Error NotFound(string entity, Guid id) =>
         new($"{entity}.NotFound", $"{entity} with ID '{id}' was not found.");
 
@@ -69,6 +71,9 @@ public sealed record Error(string Code, string Description)
 
     public static Error Conflict(string message) =>
         new("Conflict", message);
+
+    public static Error Conflict(string message, IReadOnlyDictionary<string, object?> metadata) =>
+        new("Conflict", message) { Metadata = metadata };
 
     public static Error Unauthorized(string message = "Unauthorized access") =>
         new("Unauthorized", message);

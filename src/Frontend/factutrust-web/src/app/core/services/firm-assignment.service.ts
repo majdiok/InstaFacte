@@ -36,7 +36,7 @@ export interface FirmClientAssignment {
   companyName: string;
   firmTenantId: string;
   firmDisplayName: string;
-  status: number;
+  status: number | string;
   statusDisplay: string;
   requestedAt: string;
   respondedAt?: string;
@@ -44,6 +44,8 @@ export interface FirmClientAssignment {
   notes?: string;
   rejectionReason?: string;
   companyProfile?: CompanyProfileSnapshot;
+  /** True si le dossier a été créé et est géré par le cabinet (client sans compte plateforme). */
+  isFirmManaged?: boolean;
 }
 
 export interface FirmClientDossier {
@@ -57,6 +59,8 @@ export interface FirmClientDossier {
   assignedAccountantUserId?: string | null;
   assignedAccountantName?: string | null;
   isAwaitingAccountantAssignment?: boolean;
+  /** True si le dossier a été créé et est géré par le cabinet (client sans compte plateforme). */
+  isFirmManaged?: boolean;
 }
 
 @Injectable({ providedIn: 'root' })

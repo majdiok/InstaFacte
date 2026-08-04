@@ -16,7 +16,8 @@ export enum AppModule {
   AI = 11,
   Forecasting = 12,
   Studio = 13,
-  Payroll = 14
+  Payroll = 14,
+  Honoraires = 15
 }
 
 export const APP_MODULE_OPTIONS: { value: AppModule; label: string }[] = [
@@ -34,5 +35,6 @@ export const APP_MODULE_OPTIONS: { value: AppModule; label: string }[] = [
   { value: AppModule.AI, label: 'Assistant IA' },
   { value: AppModule.Forecasting, label: 'Prévisions IA' },
   { value: AppModule.Studio, label: 'Studio (low-code)' },
-  { value: AppModule.Payroll, label: 'RH & Paie' }
+  { value: AppModule.Payroll, label: 'RH & Paie' },
+  { value: AppModule.Honoraires, label: 'Honoraires' }
 ];

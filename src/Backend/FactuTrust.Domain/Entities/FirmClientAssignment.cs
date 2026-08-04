@@ -11,6 +11,7 @@ public sealed class FirmClientAssignment : AggregateRoot
     public Guid CompanyTenantId { get; private set; }
     public Guid FirmTenantId { get; private set; }
     public FirmAssignmentStatus Status { get; private set; }
+    public FirmAssignmentOrigin Origin { get; private set; }
     public Guid RequestedByUserId { get; private set; }
     public DateTime RequestedAt { get; private set; }
     public Guid? RespondedByUserId { get; private set; }
@@ -46,8 +47,43 @@ public sealed class FirmClientAssignment : AggregateRoot
             CompanyTenantId = companyTenantId,
             FirmTenantId = firmTenantId,
             Status = FirmAssignmentStatus.PendingFirmApproval,
+            Origin = FirmAssignmentOrigin.CompanyRequest,
             RequestedByUserId = requestedByUserId,
             RequestedAt = DateTime.UtcNow,
+            Notes = notes?.Trim()
+        });
+    }
+
+    /// <summary>
+    /// Crée une affectation directement active pour un dossier client créé par le cabinet
+    /// (société gérée sans compte utilisateur plateforme).
+    /// </summary>
+    public static Result<FirmClientAssignment> CreateByFirm(
+        Guid companyTenantId,
+        Guid firmTenantId,
+        Guid firmUserId,
+        string? notes = null)
+    {
+        if (companyTenantId == Guid.Empty || firmTenantId == Guid.Empty)
+            return Result.Failure<FirmClientAssignment>(Error.Validation("Tenant", "Identifiants tenant invalides"));
+
+        if (companyTenantId == firmTenantId)
+            return Result.Failure<FirmClientAssignment>(Error.Validation("Tenant", "Une société ne peut pas s'affecter elle-même"));
+
+        if (firmUserId == Guid.Empty)
+            return Result.Failure<FirmClientAssignment>(Error.Validation("User", "Utilisateur cabinet invalide"));
+
+        var now = DateTime.UtcNow;
+        return Result.Success(new FirmClientAssignment
+        {
+            CompanyTenantId = companyTenantId,
+            FirmTenantId = firmTenantId,
+            Status = FirmAssignmentStatus.Active,
+            Origin = FirmAssignmentOrigin.FirmCreated,
+            RequestedByUserId = firmUserId,
+            RequestedAt = now,
+            RespondedByUserId = firmUserId,
+            RespondedAt = now,
             Notes = notes?.Trim()
         });
     }

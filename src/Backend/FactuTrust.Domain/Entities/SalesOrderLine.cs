@@ -47,6 +47,12 @@ public sealed class SalesOrderLine : Entity
     public decimal? DiscountPercent { get; private set; }
     public Money DiscountAmount { get; private set; } = null!;
 
+    /// <summary>Promotion automatique ayant produit la remise, figée à la création.</summary>
+    public Guid? AppliedPromotionId { get; private set; }
+
+    /// <summary>Libellé de la promotion appliquée, pour affichage documentaire.</summary>
+    public string? AppliedPromotionName { get; private set; }
+
     public bool IsFodecApplicable { get; private set; }
     public decimal FodecRatePercent { get; private set; }
     public Money FodecAmount { get; private set; } = null!;
@@ -103,7 +109,9 @@ public sealed class SalesOrderLine : Entity
         Money unitPrice,
         decimal? discountPercent = null,
         decimal fodecRatePercent = DefaultFodecRatePercent,
-        string? notes = null)
+        string? notes = null,
+        Guid? appliedPromotionId = null,
+        string? appliedPromotionName = null)
     {
         if (product is null)
             return Result.Failure<SalesOrderLine>(Error.Validation("Product", "Le produit est obligatoire"));
@@ -131,6 +139,8 @@ public sealed class SalesOrderLine : Entity
             UnitPrice = unitPrice,
             VatRate = product.VatRate,
             DiscountPercent = discountPercent,
+            AppliedPromotionId = appliedPromotionId,
+            AppliedPromotionName = appliedPromotionName?.Trim(),
             IsFodecApplicable = product.IsFodecApplicable,
             FodecRatePercent = fodecRatePercent,
             Notes = notes?.Trim()

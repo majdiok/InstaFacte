@@ -3,7 +3,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FactuTrust.Application.Common.Interfaces;
-using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.AI;
@@ -20,7 +19,6 @@ public sealed class ImportBankStatementFromFileHandler
 {
     private readonly IOllamaClient _ollamaClient;
     private readonly IOpenAiChatCompletionsClient _openAiClient;
-    private readonly ITenantAiProviderRepository _tenantAiProviderRepository;
     private readonly IOllamaModelReadinessChecker _readinessChecker;
     private readonly IPlatformAiSettingsService _platformAiSettings;
     private readonly IOllamaInferenceProfileResolver _inferenceProfileResolver;
@@ -69,7 +67,6 @@ Schéma :
     public ImportBankStatementFromFileHandler(
         IOllamaClient ollamaClient,
         IOpenAiChatCompletionsClient openAiClient,
-        ITenantAiProviderRepository tenantAiProviderRepository,
         IOllamaModelReadinessChecker readinessChecker,
         IPlatformAiSettingsService platformAiSettings,
         IOllamaInferenceProfileResolver inferenceProfileResolver,
@@ -78,7 +75,6 @@ Schéma :
     {
         _ollamaClient = ollamaClient;
         _openAiClient = openAiClient;
-        _tenantAiProviderRepository = tenantAiProviderRepository;
         _readinessChecker = readinessChecker;
         _platformAiSettings = platformAiSettings;
         _inferenceProfileResolver = inferenceProfileResolver;
@@ -102,7 +98,7 @@ Schéma :
         {
             if (!await _ollamaClient.IsAvailableAsync(cancellationToken))
                 return Result.Failure<LlmBankStatementExtraction>(Error.Validation("BankStatementImport",
-                    "Le service IA (Ollama) est indisponible pour lire ce relevé scanné."));
+                    "Le moteur IA InstaFact est indisponible pour lire ce relevé scanné."));
             var readiness = await _readinessChecker.CheckAsync(modelRef.ProviderModelId!, cancellationToken);
             if (!readiness.IsReady)
                 return Result.Failure<LlmBankStatementExtraction>(Error.Validation("BankStatementImport",
@@ -110,10 +106,10 @@ Schéma :
         }
         else
         {
-            var apiKey = await _tenantAiProviderRepository.GetDecryptedApiKeyForOpenRouterAsync(cancellationToken);
-            if (string.IsNullOrEmpty(apiKey))
+            var credentials = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
+            if (string.IsNullOrEmpty(credentials.ApiKey))
                 return Result.Failure<LlmBankStatementExtraction>(Error.Validation("BankStatementImport",
-                    "Clé OpenRouter manquante pour l'extraction IA du relevé."));
+                    "Clé OpenRouter manquante. Configurez-la dans le back-office plateforme > Configuration IA (OpenRouter)."));
         }
 
         var images = extraction.Pages

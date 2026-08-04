@@ -33,6 +33,9 @@ public sealed class SupplierInvoiceLine : Entity
     public string? AssetAccountNumber { get; private set; }
     public Guid? DepreciationRateCategoryId { get; private set; }
 
+    public Guid? PurchaseOrderLineId { get; private set; }
+    public Guid? PurchaseReceiptLineId { get; private set; }
+
     private SupplierInvoiceLine() { }
 
     internal static SupplierInvoiceLine Create(
@@ -48,7 +51,9 @@ public sealed class SupplierInvoiceLine : Entity
         VatRate vatRate,
         Money subTotal,
         Money vatAmount,
-        Money total)
+        Money total,
+        Guid? purchaseOrderLineId = null,
+        Guid? purchaseReceiptLineId = null)
     {
         return new SupplierInvoiceLine
         {
@@ -65,7 +70,9 @@ public sealed class SupplierInvoiceLine : Entity
             VatRate = vatRate,
             SubTotal = subTotal,
             VatAmount = vatAmount,
-            Total = total
+            Total = total,
+            PurchaseOrderLineId = purchaseOrderLineId,
+            PurchaseReceiptLineId = purchaseReceiptLineId
         };
     }
 

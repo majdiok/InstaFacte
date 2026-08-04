@@ -2,6 +2,7 @@ using FactuTrust.API.Authorization;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Quotes.Commands;
 using FactuTrust.Application.Features.Quotes.Queries;
+using FactuTrust.Application.Features.SalesOrders.Commands;
 using FactuTrust.Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -216,6 +217,41 @@ public class QuotesController : ControllerBase
         _logger.LogInformation("Quote {QuoteId} converted to invoice {InvoiceId}", id, result.Value);
         
         return Ok(ApiResponse<Guid>.Ok(result.Value, "Facture créée à partir du devis avec succès"));
+    }
+
+    /// <summary>
+    /// Transforme un devis accepté en commande client — miroir de la conversion en facture.
+    /// Le devis est verrouillé au passage (statut Converted) : plus aucune autre conversion
+    /// n'est possible ensuite.
+    /// </summary>
+    [HttpPost("{id:guid}/convert-to-sales-order")]
+    [Authorize(Policy = PermissionPolicies.SalesOrdersCreate)]
+    [ProducesResponseType(typeof(ApiResponse<Guid>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ConvertToSalesOrder(
+        Guid id,
+        [FromBody] ConvertQuoteToSalesOrderDto? options,
+        CancellationToken cancellationToken)
+    {
+        var command = new ConvertQuoteToSalesOrderCommand(
+            id,
+            options?.OrderDate,
+            options?.ExpectedDeliveryDate,
+            options?.WarehouseId);
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            if (result.Error.Code == "Conflict")
+                return Conflict(ApiResponse<Guid>.Fail(result.Error.Description));
+
+            return BadRequest(ApiResponse<Guid>.Fail(result.Error.Description));
+        }
+
+        _logger.LogInformation("Quote {QuoteId} converted to sales order {SalesOrderId}", id, result.Value);
+
+        return Ok(ApiResponse<Guid>.Ok(result.Value, "Commande créée à partir du devis avec succès"));
     }
 
     /// <summary>

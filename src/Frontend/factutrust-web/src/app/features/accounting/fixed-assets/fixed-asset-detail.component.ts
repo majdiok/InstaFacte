@@ -570,14 +570,11 @@ export class FixedAssetDetailComponent implements OnInit {
 
   ngOnInit(): void {
     this.api.getRateCategories().subscribe(res => this.categories.set(res.data ?? []));
-    this.supplierApi.getSuppliers({ isActive: true, pageSize: 200 }).subscribe({
-      next: res => this.suppliers.set(res.data?.items ?? []),
-      error: () => this.suppliers.set([])
-    });
 
     const id = this.route.snapshot.paramMap.get('id');
     if (this.route.snapshot.data['mode'] === 'new' || id === 'new' || !id) {
       this.isNew.set(true);
+      this.loadSuppliers();
       return;
     }
     this.loadAsset(id);
@@ -654,7 +651,7 @@ export class FixedAssetDetailComponent implements OnInit {
       depreciationRatePercent: a.depreciationRatePercent || null,
       usefulLifeYears: a.usefulLifeYears || null,
       acquisitionDate: (a.acquisitionDate ?? '').substring(0, 10),
-      supplierId: '',
+      supplierId: a.supplierId ?? '',
       acquisitionCost: a.acquisitionCost,
       vatAmount: a.vatAmount,
       capitalizedFees: a.capitalizedFees,
@@ -960,12 +957,22 @@ export class FixedAssetDetailComponent implements OnInit {
     URL.revokeObjectURL(url);
   }
 
+  private loadSuppliers(): void {
+    this.supplierApi.getSuppliers({ isActive: true, pageSize: 200, skipGlobalErrorUi: true }).subscribe({
+      next: res => this.suppliers.set(res.data?.items ?? []),
+      error: () => this.suppliers.set([])
+    });
+  }
+
   private loadAsset(id: string): void {
     this.api.getById(id).subscribe({
       next: res => {
         this.asset.set(res.data ?? null);
         if (res.data) {
           this.fillFormFromAsset(res.data);
+          if (isDraftStatus(res.data.status)) {
+            this.loadSuppliers();
+          }
           this.api.getSchedule(id).subscribe(s => this.schedule.set(s.data ?? null));
         }
       },

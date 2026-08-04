@@ -31,9 +31,14 @@ public enum PurchaseOrderStatus
     Cancelled = 4,
 
     /// <summary>
-    /// Invoiced - a supplier invoice has been created.
+    /// Invoiced - all received quantities have been invoiced.
     /// </summary>
-    Invoiced = 5
+    Invoiced = 5,
+
+    /// <summary>
+    /// Partially invoiced - some received quantities have been invoiced.
+    /// </summary>
+    PartiallyInvoiced = 6
 }
 
 public static class PurchaseOrderStatusExtensions
@@ -45,13 +50,23 @@ public static class PurchaseOrderStatusExtensions
         status == PurchaseOrderStatus.Draft;
 
     public static bool CanReceiveGoods(this PurchaseOrderStatus status) =>
-        status is PurchaseOrderStatus.Confirmed or PurchaseOrderStatus.PartiallyReceived;
+        status is PurchaseOrderStatus.Confirmed
+            or PurchaseOrderStatus.PartiallyReceived
+            or PurchaseOrderStatus.Received
+            or PurchaseOrderStatus.PartiallyInvoiced;
+
+    public static bool CanBeInvoiced(this PurchaseOrderStatus status) =>
+        status is PurchaseOrderStatus.PartiallyReceived
+            or PurchaseOrderStatus.Received
+            or PurchaseOrderStatus.PartiallyInvoiced;
 
     public static bool CanBeCancelled(this PurchaseOrderStatus status) =>
         status is PurchaseOrderStatus.Draft or PurchaseOrderStatus.Confirmed;
 
     public static bool IsFinalized(this PurchaseOrderStatus status) =>
-        status is PurchaseOrderStatus.Received or PurchaseOrderStatus.Cancelled or PurchaseOrderStatus.Invoiced;
+        status is PurchaseOrderStatus.Received
+            or PurchaseOrderStatus.Cancelled
+            or PurchaseOrderStatus.Invoiced;
 
     public static string ToDisplayString(this PurchaseOrderStatus status) => status switch
     {
@@ -61,6 +76,7 @@ public static class PurchaseOrderStatusExtensions
         PurchaseOrderStatus.Received => "Reçue",
         PurchaseOrderStatus.Cancelled => "Annulée",
         PurchaseOrderStatus.Invoiced => "Facturée",
+        PurchaseOrderStatus.PartiallyInvoiced => "Partiellement facturée",
         _ => throw new ArgumentOutOfRangeException(nameof(status))
     };
 
@@ -72,6 +88,7 @@ public static class PurchaseOrderStatusExtensions
         PurchaseOrderStatus.Received => "status-received",
         PurchaseOrderStatus.Cancelled => "status-cancelled",
         PurchaseOrderStatus.Invoiced => "status-invoiced",
+        PurchaseOrderStatus.PartiallyInvoiced => "status-partial-invoiced",
         _ => "status-unknown"
     };
 }

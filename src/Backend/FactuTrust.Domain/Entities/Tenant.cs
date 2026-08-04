@@ -25,6 +25,14 @@ public sealed class Tenant : AggregateRoot
     public bool IsActive { get; private set; }
     public DateTime? DeactivatedAt { get; private set; }
 
+    /// <summary>
+    /// Cabinet comptable qui a créé et gère ce dossier client (société sans compte plateforme).
+    /// Null pour les tenants auto-inscrits.
+    /// </summary>
+    public Guid? ManagedByFirmTenantId { get; private set; }
+
+    public bool IsFirmManaged => ManagedByFirmTenantId.HasValue;
+
     private Tenant() { }
 
     public static Result<Tenant> Create(
@@ -59,6 +67,30 @@ public sealed class Tenant : AggregateRoot
         tenant.AddDomainEvent(new TenantCreatedEvent(tenant.Id, tenant.CompanyName, tenant.DatabaseName));
 
         return Result.Success(tenant);
+    }
+
+    /// <summary>
+    /// Crée un tenant société géré par un cabinet comptable (client sans compte utilisateur sur la plateforme).
+    /// </summary>
+    public static Result<Tenant> CreateFirmManaged(
+        Guid managedByFirmTenantId,
+        string companyName,
+        NIF nif,
+        Address address,
+        Email email,
+        PhoneNumber phone,
+        TaxRegime taxRegime,
+        string? website = null)
+    {
+        if (managedByFirmTenantId == Guid.Empty)
+            return Result.Failure<Tenant>(Error.Validation("ManagedByFirmTenantId", "Le cabinet gestionnaire est obligatoire"));
+
+        var result = Create(companyName, nif, address, email, phone, taxRegime, website);
+        if (result.IsFailure)
+            return result;
+
+        result.Value.ManagedByFirmTenantId = managedByFirmTenantId;
+        return result;
     }
 
     public static Result<Tenant> CreateAccountingFirm(

@@ -7,6 +7,7 @@ using FactuTrust.Application;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Domain.Constants;
 using FactuTrust.Infrastructure;
+using FactuTrust.Infrastructure.MultiTenancy;
 using FactuTrust.Infrastructure.Persistence;
 using FactuTrust.Infrastructure.Scripts;
 using FactuTrust.Infrastructure.Services.Background;
@@ -628,6 +629,28 @@ using (var scope = app.Services.CreateScope())
                         {
                             logger.LogDebug("Tenant {TenantId} already has migrations applied, skipping", tenant.Id);
                             skippedCount++;
+                        }
+
+                        var tenantConnectionString = await tenantService.GetConnectionStringAsync(tenant.Id);
+                        if (!string.IsNullOrEmpty(tenantConnectionString))
+                        {
+                            var schemaCheck = await TenantCoreSchemaValidator.EnsureCoreDocumentAuditColumnsAsync(
+                                tenantConnectionString);
+                            if (schemaCheck.IsFailure)
+                            {
+                                logger.LogWarning(
+                                    "Tenant {TenantId} ({DatabaseName}) core document audit schema check failed: {Error}",
+                                    tenant.Id,
+                                    tenant.DatabaseName,
+                                    schemaCheck.Error.Description);
+                            }
+                            else
+                            {
+                                logger.LogDebug(
+                                    "Tenant {TenantId} ({DatabaseName}) core document audit schema check passed",
+                                    tenant.Id,
+                                    tenant.DatabaseName);
+                            }
                         }
                     }
 

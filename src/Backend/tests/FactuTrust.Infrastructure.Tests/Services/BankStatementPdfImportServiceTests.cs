@@ -1,5 +1,4 @@
 using FactuTrust.Application.Common.Interfaces;
-using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
@@ -71,7 +70,6 @@ public sealed class BankStatementPdfImportServiceTests
         var llmHandler = new ImportBankStatementFromFileHandler(
             new Mock<IOllamaClient>().Object,
             new Mock<IOpenAiChatCompletionsClient>().Object,
-            new Mock<ITenantAiProviderRepository>().Object,
             new Mock<IOllamaModelReadinessChecker>().Object,
             new Mock<IPlatformAiSettingsService>().Object,
             new Mock<IOllamaInferenceProfileResolver>().Object,

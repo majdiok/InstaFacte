@@ -48,8 +48,7 @@ public sealed class CreateSalesOrderCommandHandler : IRequestHandler<CreateSales
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
     private readonly IAuditService _auditService;
-    private readonly IPriceResolver _priceResolver;
-    private readonly IPromotionResolver _promotionResolver;
+    private readonly ILinePricingOrchestrator _linePricingOrchestrator;
 
     public CreateSalesOrderCommandHandler(
         ISalesOrderRepository salesOrderRepository,
@@ -61,11 +60,9 @@ public sealed class CreateSalesOrderCommandHandler : IRequestHandler<CreateSales
         ITenantContext tenantContext,
         ICurrentUser currentUser,
         IAuditService auditService,
-        IPriceResolver priceResolver,
-        IPromotionResolver promotionResolver)
+        ILinePricingOrchestrator linePricingOrchestrator)
     {
-        _priceResolver = priceResolver;
-        _promotionResolver = promotionResolver;
+        _linePricingOrchestrator = linePricingOrchestrator;
         _salesOrderRepository = salesOrderRepository;
         _clientRepository = clientRepository;
         _productRepository = productRepository;
@@ -100,7 +97,6 @@ public sealed class CreateSalesOrderCommandHandler : IRequestHandler<CreateSales
                 return Result.Failure<Guid>(Error.Validation("Warehouse", "Cet entrepôt est désactivé"));
         }
 
-        // Numéro réservé de façon atomique par le service de numérotation documentaire.
         var docResult = await _documentNumberService.ReserveNextAsync(
             tenantId,
             NumberingDocumentType.SalesOrder,
@@ -135,7 +131,6 @@ public sealed class CreateSalesOrderCommandHandler : IRequestHandler<CreateSales
             if (!product.IsActive)
                 return Result.Failure<Guid>(Error.Validation("Produit", $"Le produit '{product.Name}' est désactivé"));
 
-            // Plafond de remise du catalogue, contrôlé ici comme pour le devis.
             if (lineDto.DiscountPercent is { } discount
                 && product.IsDiscountEnabled
                 && product.MaxDiscountPercent.HasValue
@@ -146,48 +141,33 @@ public sealed class CreateSalesOrderCommandHandler : IRequestHandler<CreateSales
                     $"La remise ne peut pas dépasser {product.MaxDiscountPercent.Value}% pour le produit '{product.Name}'"));
             }
 
-            // Prix forcé par le vendeur, sinon résolu par le point unique (prix négocié →
-            // grille → catalogue). Le prix obtenu est gravé sur la ligne : la commande ne
-            // bougera plus si une grille change ensuite.
-            Money? unitPrice = lineDto.UnitPrice > 0 ? Money.Create(lineDto.UnitPrice) : null;
-            if (unitPrice is null)
-            {
-                var priceResult = await _priceResolver.ResolveUnitPriceAsync(
-                    dto.ClientId, product.Id, lineDto.Quantity, dto.OrderDate, cancellationToken);
-                if (priceResult.IsFailure)
-                    return Result.Failure<Guid>(priceResult.Error);
+            Money? priceOverride = lineDto.UnitPrice > 0 ? Money.Create(lineDto.UnitPrice) : null;
 
-                unitPrice = priceResult.Value.UnitPriceHT;
-            }
+            var pricing = await _linePricingOrchestrator.ResolveAsync(
+                dto.ClientId,
+                product,
+                lineDto.Quantity,
+                dto.OrderDate,
+                lineDto.DiscountPercent,
+                priceOverride,
+                cancellationToken);
 
-            // Promotion : appliquée APRÈS le prix, sous forme de remise de ligne. Elle ne
-            // s'impose jamais à une remise saisie par le commercial — ce serait une surprise
-            // silencieuse. La remise obtenue est figée : la fin de la promotion ne change plus
-            // cette commande.
-            var discountPercent = lineDto.DiscountPercent;
-            if (discountPercent is null)
-            {
-                var promo = await _promotionResolver.ResolveAsync(
-                    product.Id, product.CategoryId, dto.ClientId,
-                    lineDto.Quantity, unitPrice, dto.OrderDate, cancellationToken);
-
-                if (promo.IsSuccess && promo.Value is { } applied)
-                    discountPercent = applied.DiscountPercent;
-            }
+            if (pricing.IsFailure)
+                return Result.Failure<Guid>(pricing.Error);
 
             var addResult = order.AddLine(
                 product,
                 lineDto.Quantity,
-                unitPrice,
-                discountPercent,
-                notes: lineDto.Notes);
+                pricing.Value.UnitPriceHT,
+                pricing.Value.DiscountPercent,
+                notes: lineDto.Notes,
+                appliedPromotionId: pricing.Value.AppliedPromotion?.PromotionId,
+                appliedPromotionName: pricing.Value.AppliedPromotion?.PromotionName);
 
             if (addResult.IsFailure)
                 return Result.Failure<Guid>(addResult.Error);
         }
 
-        // Timbre fiscal annoncé dès la commande, avec le même résolveur que le devis et la
-        // facture : la chaîne documentaire doit afficher le même total de bout en bout.
         var stamp = await _fiscalStampResolver.ResolveSignedStampAsync(isCreditNote: false, cancellationToken);
         var stampResult = order.SetFiscalStampAmount(stamp);
         if (stampResult.IsFailure)

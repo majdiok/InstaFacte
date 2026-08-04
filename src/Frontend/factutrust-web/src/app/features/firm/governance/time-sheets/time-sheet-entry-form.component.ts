@@ -7,6 +7,7 @@ import { InputTextModule } from 'primeng/inputtext';
 import { CheckboxModule } from 'primeng/checkbox';
 import { FirmActivityCode } from '@core/services/firm-governance.service';
 import { FirmClientDossier } from '@core/services/firm-assignment.service';
+import { WORK_LOCATION_OPTIONS } from './time-sheet-work-location';
 
 @Component({
   selector: 'app-time-sheet-entry-form',
@@ -35,7 +36,16 @@ import { FirmClientDossier } from '@core/services/firm-assignment.service';
           </label>
         }
         <label>Heures
-          <input pInputText type="number" step="0.25" min="0.25" max="24" formControlName="hours" (keydown.enter)="handleEnter($event)" />
+          <input
+            pInputText
+            type="number"
+            step="0.25"
+            min="0.25"
+            max="24"
+            formControlName="hours"
+            [readonly]="rich && hasTimeSlot"
+            [attr.title]="rich && hasTimeSlot ? 'Durée calculée depuis le créneau Début/Fin' : null"
+            (keydown.enter)="handleEnter($event)" />
         </label>
         <label>Client
           <p-dropdown
@@ -71,7 +81,14 @@ import { FirmClientDossier } from '@core/services/firm-assignment.service';
         </label>
         @if (rich) {
           <label>Lieu
-            <input pInputText formControlName="workLocation" placeholder="Office / Client / Remote" (keydown.enter)="handleEnter($event)" />
+            <p-dropdown
+              formControlName="workLocation"
+              [options]="locationOptions"
+              optionLabel="label"
+              optionValue="value"
+              placeholder="Sélectionner (optionnel)"
+              [showClear]="true"
+              appendTo="body" />
           </label>
           <label>Tags
             <input pInputText formControlName="tags" placeholder="urgent,client" (keydown.enter)="handleEnter($event)" />
@@ -107,6 +124,10 @@ import { FirmClientDossier } from '@core/services/firm-assignment.service';
     .entry-form label { display: flex; flex-direction: column; font-size: .875rem; gap: .25rem; min-width: 140px; }
     .checkbox-row { flex-direction: row !important; align-items: center; gap: .5rem; min-width: auto; }
     .summary { margin: .75rem 0 0; font-size: .875rem; color: var(--color-text-muted, #64748b); }
+    input[readonly] {
+      background: var(--color-surface-muted, #f1f5f9);
+      cursor: default;
+    }
   `]
 })
 export class TimeSheetEntryFormComponent {
@@ -123,6 +144,14 @@ export class TimeSheetEntryFormComponent {
   @Output() submit = new EventEmitter<void>();
   @Output() cancel = new EventEmitter<void>();
   @Output() activityCodeChange = new EventEmitter<string | null>();
+
+  readonly locationOptions = WORK_LOCATION_OPTIONS;
+
+  get hasTimeSlot(): boolean {
+    const start = (this.form?.value?.startTime ?? '').toString().trim();
+    const end = (this.form?.value?.endTime ?? '').toString().trim();
+    return !!start && !!end;
+  }
 
   handleEnter(event: Event): void {
     event.preventDefault();

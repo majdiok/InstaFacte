@@ -261,3 +261,92 @@ public sealed class GetClientPricingQueryHandler
         });
     }
 }
+
+// ─────────────────── Prix négociés d'un produit ───────────────────
+
+public sealed class ProductClientPriceDto
+{
+    public Guid Id { get; init; }
+    public Guid ClientId { get; init; }
+    public string ClientName { get; init; } = string.Empty;
+    public decimal UnitPriceHT { get; init; }
+    public string Currency { get; init; } = string.Empty;
+    public decimal CatalogUnitPriceHT { get; init; }
+    public bool IsActive { get; init; }
+    public DateTime? ValidFrom { get; init; }
+    public DateTime? ValidUntil { get; init; }
+    public bool IsApplicableToday { get; init; }
+}
+
+public sealed class ProductPricingDto
+{
+    public Guid ProductId { get; init; }
+    public string ProductCode { get; init; } = string.Empty;
+    public string ProductName { get; init; } = string.Empty;
+    public decimal CatalogUnitPriceHT { get; init; }
+    public string Currency { get; init; } = string.Empty;
+    public List<ProductClientPriceDto> ClientPrices { get; init; } = new();
+}
+
+public sealed record GetProductPricingQuery(Guid ProductId)
+    : IRequest<Result<ProductPricingDto>>;
+
+public sealed class GetProductPricingQueryHandler
+    : IRequestHandler<GetProductPricingQuery, Result<ProductPricingDto>>
+{
+    private readonly IClientProductPriceRepository _priceRepository;
+    private readonly IClientRepository _clientRepository;
+    private readonly IProductRepository _productRepository;
+
+    public GetProductPricingQueryHandler(
+        IClientProductPriceRepository priceRepository,
+        IClientRepository clientRepository,
+        IProductRepository productRepository)
+    {
+        _priceRepository = priceRepository;
+        _clientRepository = clientRepository;
+        _productRepository = productRepository;
+    }
+
+    public async Task<Result<ProductPricingDto>> Handle(
+        GetProductPricingQuery request, CancellationToken cancellationToken)
+    {
+        var product = await _productRepository.GetByIdAsync(request.ProductId, cancellationToken);
+        if (product is null)
+            return Result.Failure<ProductPricingDto>(Error.NotFound("Produit", request.ProductId));
+
+        var prices = await _priceRepository.GetByProductAsync(request.ProductId, cancellationToken);
+        var today = DateTime.UtcNow.Date;
+        var catalogPrice = product.UnitPrice.Amount;
+
+        var clientPrices = new List<ProductClientPriceDto>(prices.Count);
+        foreach (var price in prices)
+        {
+            var client = await _clientRepository.GetByIdAsync(price.ClientId, cancellationToken);
+
+            clientPrices.Add(new ProductClientPriceDto
+            {
+                Id = price.Id,
+                ClientId = price.ClientId,
+                ClientName = client?.Name ?? "(client supprimé)",
+                UnitPriceHT = price.UnitPriceHT.Amount,
+                Currency = price.UnitPriceHT.Currency,
+                CatalogUnitPriceHT = catalogPrice,
+                IsActive = price.IsActive,
+                ValidFrom = price.ValidFrom,
+                ValidUntil = price.ValidUntil,
+                IsApplicableToday = price.IsApplicableAt(today)
+            });
+        }
+
+        return Result.Success(new ProductPricingDto
+        {
+            ProductId = product.Id,
+            ProductCode = product.Code,
+            ProductName = product.Name,
+            CatalogUnitPriceHT = catalogPrice,
+            Currency = product.UnitPrice.Currency,
+            ClientPrices = clientPrices.OrderBy(p => p.ClientName).ToList()
+        });
+    }
+}

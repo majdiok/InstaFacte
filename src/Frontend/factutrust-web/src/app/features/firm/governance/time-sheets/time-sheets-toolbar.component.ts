@@ -1,9 +1,10 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, inject, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DropdownModule } from 'primeng/dropdown';
 import { ButtonModule } from 'primeng/button';
 import { RouterLink } from '@angular/router';
+import { AuthService } from '@core/services/auth.service';
 
 @Component({
   selector: 'app-time-sheets-toolbar',
@@ -24,7 +25,9 @@ import { RouterLink } from '@angular/router';
           <button type="button" pButton class="p-button-sm p-button-outlined" [label]="'Jour'" [severity]="mode === 'day' ? 'primary' : 'secondary'" (click)="modeChange.emit('day')"></button>
         </div>
       }
-      <a routerLink="/firm/governance/dossier-time-profitability" class="link-btn">Analyse rentabilité dossiers</a>
+      @if (auth.isFirmManager()) {
+        <a routerLink="/firm/governance/dossier-time-profitability" class="link-btn">Analyse rentabilité dossiers</a>
+      }
     </div>
   `,
   styles: [`
@@ -43,6 +46,8 @@ import { RouterLink } from '@angular/router';
   `]
 })
 export class TimeSheetsToolbarComponent {
+  readonly auth = inject(AuthService);
+
   @Input() yearOptions: { label: string; value: number }[] = [];
   @Input() monthOptions: { label: string; value: number | null }[] = [];
   @Input() selectedYear = new Date().getFullYear();

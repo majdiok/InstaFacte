@@ -6,12 +6,12 @@ import { CommonModule } from '@angular/common';
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="form-section">
+    <div class="form-section" [class.form-section--compact]="variant === 'compact'">
       <div class="form-section-header">
         @if (icon) {
           <i class="pi {{ icon }}"></i>
         }
-        @if (number != null) {
+        @if (number != null && variant !== 'compact') {
           <span class="section-number">{{ number }}</span>
         }
         <h3>{{ title }}</h3>
@@ -67,10 +67,31 @@ import { CommonModule } from '@angular/common';
       color: var(--color-text-primary);
     }
 
+    .form-section--compact {
+      padding: var(--spacing-4);
+      margin-bottom: var(--spacing-3);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .form-section--compact .form-section-header {
+      margin-bottom: var(--spacing-3);
+      padding-bottom: var(--spacing-2);
+      border-bottom-width: 1px;
+    }
+
+    .form-section--compact .form-section-header .pi {
+      font-size: var(--font-size-lg);
+    }
+
+    .form-section--compact .form-section-header h3 {
+      font-size: var(--font-size-base);
+    }
+
   `]
 })
 export class FormSectionComponent {
   @Input() title = '';
   @Input() icon?: string;
   @Input() number?: number;
+  @Input() variant: 'default' | 'compact' = 'default';
 }

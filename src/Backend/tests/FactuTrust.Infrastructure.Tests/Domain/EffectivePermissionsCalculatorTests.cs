@@ -141,6 +141,22 @@ public sealed class EffectivePermissionsCalculatorTests
     }
 
     [Fact]
+    public void Purchases_module_without_sub_features_includes_purchase_receipts()
+    {
+        var grants = Enum.GetValues<AppModule>().ToDictionary(m => m, _ => false);
+        grants[AppModule.Purchases] = true;
+        var set = EffectivePermissionsCalculator.Compute(UserRole.Accountant, grants);
+        // Accountant role ceiling: create/read/update (no delete)
+        Assert.Contains(Permissions.PurchaseReceipts.Create, set);
+        Assert.Contains(Permissions.PurchaseReceipts.Read, set);
+        Assert.Contains(Permissions.PurchaseReceipts.Update, set);
+        Assert.DoesNotContain(Permissions.PurchaseReceipts.Delete, set);
+        Assert.Contains(Permissions.PurchaseOrders.Read, set);
+        Assert.Contains(Permissions.Suppliers.Read, set);
+        Assert.Contains(Permissions.SupplierInvoices.Read, set);
+    }
+
+    [Fact]
     public void Reports_sub_feature_sales_only_grants_view_and_export()
     {
         var grants = Enum.GetValues<AppModule>().ToDictionary(m => m, _ => false);

@@ -4,6 +4,7 @@ import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { Router, RouterModule, ActivatedRoute } from '@angular/router';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputMaskModule } from 'primeng/inputmask';
+import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextarea } from 'primeng/inputtextarea';
 import { DropdownModule } from 'primeng/dropdown';
 import { ButtonModule } from 'primeng/button';
@@ -39,6 +40,7 @@ interface GovernorateOption {
     RouterModule,
     InputTextModule,
     InputMaskModule,
+    InputNumberModule,
     InputTextarea,
     DropdownModule,
     ButtonModule,
@@ -290,6 +292,54 @@ interface GovernorateOption {
               <small class="form-hint">Non visibles par le client.</small>
             </div>
           </app-form-section>
+
+          <!-- Conditions financières -->
+          <app-form-section title="Conditions financières" icon="pi-wallet" [number]="5" class="finance-card">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="creditLimit">Plafond d'encours (TND)</label>
+                <p-inputNumber
+                  inputId="creditLimit"
+                  formControlName="creditLimit"
+                  mode="decimal"
+                  [min]="0"
+                  [minFractionDigits]="3"
+                  [maxFractionDigits]="3"
+                  [useGrouping]="true"
+                  locale="fr-TN"
+                  placeholder="Aucun plafond"
+                  styleClass="w-full">
+                </p-inputNumber>
+                <small class="form-hint">Laisser vide pour aucun plafond. Le dépassement avertit sans bloquer les ventes.</small>
+                @if (isInvalid('creditLimit')) {
+                  <div class="form-error">
+                    <i class="pi pi-exclamation-circle"></i>
+                    <span>{{ errorMessageService.getErrorMessage(form.get('creditLimit')) }}</span>
+                  </div>
+                }
+              </div>
+
+              <div class="form-group">
+                <label for="defaultPaymentTermDays">Délai de règlement (jours)</label>
+                <p-inputNumber
+                  inputId="defaultPaymentTermDays"
+                  formControlName="defaultPaymentTermDays"
+                  [min]="0"
+                  [max]="365"
+                  [useGrouping]="false"
+                  placeholder="Ex. 30"
+                  styleClass="w-full">
+                </p-inputNumber>
+                <small class="form-hint">Proposé à la saisie des factures et commandes.</small>
+                @if (isInvalid('defaultPaymentTermDays')) {
+                  <div class="form-error">
+                    <i class="pi pi-exclamation-circle"></i>
+                    <span>{{ errorMessageService.getErrorMessage(form.get('defaultPaymentTermDays')) }}</span>
+                  </div>
+                }
+              </div>
+            </div>
+          </app-form-section>
         </div>
 
         <!-- Actions -->
@@ -345,6 +395,10 @@ interface GovernorateOption {
       @media (max-width: 1024px) {
         grid-column: 1;
       }
+    }
+
+    .finance-card {
+      grid-column: 1 / -1;
     }
 
     .form-row {
@@ -431,7 +485,9 @@ interface GovernorateOption {
 
     :host ::ng-deep {
       .p-inputmask,
-      .p-dropdown {
+      .p-dropdown,
+      .p-inputnumber,
+      .p-inputnumber-input {
         width: 100%;
       }
     }
@@ -511,7 +567,9 @@ export class ClientFormComponent implements OnInit {
     postalCode: [''],
     governorate: ['', Validators.required],
     notes: [''],
-    isActive: [true]
+    isActive: [true],
+    creditLimit: [null as number | null, [Validators.min(0)]],
+    defaultPaymentTermDays: [null as number | null, [Validators.min(0), Validators.max(365)]]
   });
 
   ngOnInit(): void {
@@ -636,7 +694,9 @@ export class ClientFormComponent implements OnInit {
       postalCode: client.address.postalCode ?? '',
       governorate: client.address.governorate,
       notes: client.notes ?? '',
-      isActive: client.isActive
+      isActive: client.isActive,
+      creditLimit: client.creditLimit ?? null,
+      defaultPaymentTermDays: client.defaultPaymentTermDays ?? null
     });
     this.updateNifValidators();
   }
@@ -676,7 +736,9 @@ export class ClientFormComponent implements OnInit {
         governorate: formValue.governorate,
         contactPerson: (formValue.contactPerson as string)?.trim() || undefined,
         notes: (formValue.notes as string)?.trim() || undefined,
-        isActive: formValue.isActive
+        isActive: formValue.isActive,
+        creditLimit: formValue.creditLimit ?? null,
+        defaultPaymentTermDays: formValue.defaultPaymentTermDays ?? null
       };
 
       this.clientService.updateClient(this.clientId()!, request).subscribe({
@@ -730,7 +792,9 @@ export class ClientFormComponent implements OnInit {
         postalCode: (formValue.postalCode as string)?.trim() || undefined,
         governorate: formValue.governorate,
         contactPerson: (formValue.contactPerson as string)?.trim() || undefined,
-        notes: (formValue.notes as string)?.trim() || undefined
+        notes: (formValue.notes as string)?.trim() || undefined,
+        creditLimit: formValue.creditLimit ?? null,
+        defaultPaymentTermDays: formValue.defaultPaymentTermDays ?? null
       };
 
       this.clientService.createClient(request).subscribe({

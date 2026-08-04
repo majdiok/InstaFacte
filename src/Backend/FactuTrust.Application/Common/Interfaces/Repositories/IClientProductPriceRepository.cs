@@ -17,4 +17,8 @@ public interface IClientProductPriceRepository : IRepository<ClientProductPrice>
     /// <summary>Tous les prix négociés d'un client.</summary>
     Task<IReadOnlyList<ClientProductPrice>> GetByClientAsync(
         Guid clientId, CancellationToken cancellationToken = default);
+
+    /// <summary>Tous les prix négociés d'un produit.</summary>
+    Task<IReadOnlyList<ClientProductPrice>> GetByProductAsync(
+        Guid productId, CancellationToken cancellationToken = default);
 }

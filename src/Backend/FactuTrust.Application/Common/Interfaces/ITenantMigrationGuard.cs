@@ -11,4 +11,9 @@ public interface ITenantMigrationGuard
     /// Ensures migrations are applied for the given tenant.
     /// </summary>
     Task<Result> EnsureMigrationsAppliedAsync(Guid tenantId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Clears the cached migration guard result for the given tenant so the next request re-validates schema.
+    /// </summary>
+    void Invalidate(Guid tenantId);
 }

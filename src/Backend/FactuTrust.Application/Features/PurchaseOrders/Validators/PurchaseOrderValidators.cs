@@ -233,10 +233,14 @@ public sealed class CreateSupplierInvoiceFromPOCommandValidator : AbstractValida
             .WithMessage("L'identifiant de la commande est obligatoire.");
 
         RuleFor(x => x.InvoiceNumber)
-            .NotEmpty()
-            .WithMessage("Le numéro de facture est obligatoire.")
             .MaximumLength(50)
+            .When(x => !x.UseSuggestedNumber && !string.IsNullOrWhiteSpace(x.InvoiceNumber))
             .WithMessage("Le numéro de facture ne peut pas dépasser 50 caractères.");
+
+        RuleFor(x => x.InvoiceNumber)
+            .NotEmpty()
+            .When(x => !x.UseSuggestedNumber)
+            .WithMessage("Le numéro de facture est obligatoire.");
 
         RuleFor(x => x.InvoiceDate)
             .NotEmpty()

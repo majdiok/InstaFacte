@@ -1,6 +1,8 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
+import { forkJoin } from 'rxjs';
 import {
   FirmActivityCode,
   FirmGovernanceService,
@@ -12,10 +14,13 @@ import { FirmAssignmentService, FirmClientDossier } from '@core/services/firm-as
 import { FirmCollaboratorsService } from '@core/services/firm-collaborators.service';
 import { ToastService } from '@core/services/toast.service';
 import { AuthService } from '@core/services/auth.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { isTimesheetRichUiEnabled, setTimesheetRichUiEnabled } from './timesheet-rich-ui.flag';
 import { TimeSheetFilters } from './time-sheet-filters-bar.component';
 import { CollaboratorOption } from './time-sheet-header-bar.component';
 import { activityPastelColor } from './time-sheet-activity-color';
+
+type LoadPeriod = { year: number; month?: number };
 
 export type PeriodScope = 'today' | 'week' | 'month';
 
@@ -42,6 +47,8 @@ export class TimeSheetsFacade {
   private readonly toast = inject(ToastService);
   private readonly route = inject(ActivatedRoute);
   private readonly auth = inject(AuthService);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly errorHandler = inject(ErrorHandlerService);
 
   entries = signal<FirmTimeSheetEntry[]>([]);
   clients = signal<FirmClientDossier[]>([]);
@@ -271,6 +278,9 @@ export class TimeSheetsFacade {
       this.mode.set('week');
       this.periodScope.set('week');
     }
+    this.form.valueChanges
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.syncHoursFromSlot());
     this.loadClients();
     this.loadActivityCodes();
     this.loadPeriods();
@@ -278,6 +288,28 @@ export class TimeSheetsFacade {
     if (this.isManager()) this.loadCollaborators();
     this.load();
     this.startTimerTicker();
+  }
+
+  /** True when both start and end are filled (hours derived from the slot). */
+  hasFormTimeSlot(): boolean {
+    const start = (this.form.value.startTime ?? '').toString().trim();
+    const end = (this.form.value.endTime ?? '').toString().trim();
+    return !!start && !!end;
+  }
+
+  /**
+   * Keep Heures aligned with Début/Fin when both are set (mirrors backend ResolveHours).
+   * Does not force 0.25h when the slot is invalid (end <= start).
+   */
+  syncHoursFromSlot(): void {
+    const start = (this.form.value.startTime ?? '').toString().trim();
+    const end = (this.form.value.endTime ?? '').toString().trim();
+    if (!start || !end) return;
+    const derived = this.hoursBetween(start, end);
+    if (derived == null) return;
+    if (this.form.value.hours !== derived) {
+      this.form.patchValue({ hours: derived }, { emitEvent: false });
+    }
   }
 
   toggleRichUi(): void {
@@ -293,6 +325,7 @@ export class TimeSheetsFacade {
       this.formVisible.set(true);
       this.entryDialogOpen.set(false);
     }
+    this.load();
   }
 
   activityColor(code?: string): string {
@@ -313,6 +346,7 @@ export class TimeSheetsFacade {
     if (mode !== 'list') {
       this.focusedDate.set(this.form.value.workDate || TimeSheetsFacade.todayLocalIso());
     }
+    this.load();
   }
 
   setPeriodScope(scope: PeriodScope): void {
@@ -335,11 +369,16 @@ export class TimeSheetsFacade {
     this.goToday();
     this.periodScope.set('today');
     this.mode.set('week');
+    this.load();
   }
 
   setFocusDate(date: string): void {
+    const before = this.weekMonthsKey();
     this.focusedDate.set(date);
     this.form.patchValue({ workDate: date });
+    if (this.usesWeekSpanLoad() && this.weekMonthsKey() !== before) {
+      this.load();
+    }
   }
 
   shiftWeek(delta: number): void {
@@ -383,9 +422,17 @@ export class TimeSheetsFacade {
     this.loading.set(true);
     this.selection.set([]);
     const userId = this.filterUserId() ?? undefined;
-    this.api.listTimeSheets(this.selectedYear(), this.selectedMonth() ?? undefined, userId).subscribe({
-      next: res => {
-        this.entries.set(res.data ?? []);
+    const periods = this.resolveLoadPeriods();
+    const requests = periods.map(p => this.api.listTimeSheets(p.year, p.month, userId));
+    (requests.length === 1 ? forkJoin([requests[0]]) : forkJoin(requests)).subscribe({
+      next: results => {
+        const map = new Map<string, FirmTimeSheetEntry>();
+        for (const res of results) {
+          for (const e of res.data ?? []) {
+            map.set(e.id, e);
+          }
+        }
+        this.entries.set([...map.values()]);
         this.loading.set(false);
       },
       error: () => {
@@ -393,6 +440,43 @@ export class TimeSheetsFacade {
         this.toast.add({ severity: 'error', summary: 'Erreur', detail: 'Chargement impossible.' });
       }
     });
+  }
+
+  /**
+   * Liste / scope mois : filtre toolbar.
+   * Semaine / jour : tous les mois intersectant weekDays (ex. 27/07–02/08 → juil. + août).
+   */
+  resolveLoadPeriods(): LoadPeriod[] {
+    if (!this.usesWeekSpanLoad()) {
+      return [{ year: this.selectedYear(), month: this.selectedMonth() ?? undefined }];
+    }
+    const keys = new Set<string>();
+    const out: LoadPeriod[] = [];
+    for (const iso of this.weekDays()) {
+      const d = new Date(iso + 'T12:00:00');
+      const year = d.getFullYear();
+      const month = d.getMonth() + 1;
+      const k = `${year}-${month}`;
+      if (!keys.has(k)) {
+        keys.add(k);
+        out.push({ year, month });
+      }
+    }
+    return out.length
+      ? out
+      : [{ year: this.selectedYear(), month: this.selectedMonth() ?? undefined }];
+  }
+
+  private usesWeekSpanLoad(): boolean {
+    return this.mode() === 'week' || this.mode() === 'day'
+      || this.periodScope() === 'week' || this.periodScope() === 'today';
+  }
+
+  private weekMonthsKey(): string {
+    return this.resolveLoadPeriods()
+      .map(p => `${p.year}-${p.month ?? 'all'}`)
+      .sort()
+      .join('|');
   }
 
   private loadPeriods(): void {
@@ -458,8 +542,15 @@ export class TimeSheetsFacade {
   }
 
   validateSelection(): void {
-    const ids = this.selection().filter(e => !e.isValidated).map(e => e.id);
-    if (ids.length === 0) return;
+    const ids = this.selection().filter(e => (e.status ?? 0) === 1 && !e.isValidated).map(e => e.id);
+    if (ids.length === 0) {
+      this.toast.add({
+        severity: 'info',
+        summary: 'Validation',
+        detail: 'Sélectionnez des feuilles soumises à valider.'
+      });
+      return;
+    }
     this.bulkValidating.set(true);
     this.api.validateTimeSheetsBulkDetailed(ids).subscribe({
       next: res => {
@@ -486,12 +577,42 @@ export class TimeSheetsFacade {
 
   submit(): void {
     if (this.form.invalid) return;
+    this.syncHoursFromSlot();
     const v = this.form.getRawValue();
+    const startTime = (v.startTime || '').toString().trim() || undefined;
+    const endTime = (v.endTime || '').toString().trim() || undefined;
+    let hours = v.hours!;
+    if (startTime && endTime) {
+      const derived = this.hoursBetween(startTime, endTime);
+      if (derived == null) {
+        this.toast.add({
+          severity: 'error',
+          summary: 'Créneau invalide',
+          detail: 'L\'heure de fin doit être postérieure au début.'
+        });
+        return;
+      }
+      hours = derived;
+    } else if (startTime || endTime) {
+      this.toast.add({
+        severity: 'error',
+        summary: 'Créneau incomplet',
+        detail: 'Début et fin de créneau sont requis ensemble.'
+      });
+      return;
+    }
+    const workDate = v.workDate!;
+    const editId = this.editingId();
+    const limitMessages = this.evaluateHardLimitMessages(workDate, hours, editId);
+    if (limitMessages.length) {
+      this.reportHardLimitRefusal(limitMessages);
+      return;
+    }
     const body: EntryPayload = {
-      workDate: v.workDate!,
-      hours: v.hours!,
-      startTime: v.startTime || undefined,
-      endTime: v.endTime || undefined,
+      workDate,
+      hours,
+      startTime,
+      endTime,
       firmClientAssignmentId: v.firmClientAssignmentId || undefined,
       activityCode: v.activityCode || undefined,
       notes: v.notes || undefined,
@@ -500,7 +621,6 @@ export class TimeSheetsFacade {
       tags: v.tags || undefined,
       targetUserId: this.filterUserId() ?? undefined
     };
-    const editId = this.editingId();
     const req$ = editId ? this.api.updateTimeSheet(editId, body) : this.api.createTimeSheet(body);
     req$.subscribe({
       next: (res) => {
@@ -515,8 +635,14 @@ export class TimeSheetsFacade {
         });
       },
       error: (err) => {
-        this.anomalies.set([]);
-        this.toast.add({ severity: 'error', summary: 'Erreur', detail: err?.error?.message || 'Saisie impossible.' });
+        const message = this.apiErrorMessage(err, 'Saisie impossible.');
+        this.anomalies.set([message]);
+        this.toast.add({
+          severity: 'error',
+          summary: 'Plafond / saisie refusée',
+          detail: message,
+          life: 8000
+        });
       }
     });
   }
@@ -529,7 +655,7 @@ export class TimeSheetsFacade {
       workDate: range.date,
       startTime: range.startTime,
       endTime: range.endTime,
-      hours: this.hoursBetween(range.startTime, range.endTime)
+      hours: this.hoursBetween(range.startTime, range.endTime) ?? 0.25
     });
     if (this.richUi()) {
       this.entryDialogOpen.set(true);
@@ -574,6 +700,10 @@ export class TimeSheetsFacade {
       return;
     }
     const hours = this.hoursBetween(target.startTime, target.endTime);
+    if (hours == null) {
+      this.toast.add({ severity: 'error', summary: 'Créneau invalide', detail: 'L\'heure de fin doit être postérieure au début.' });
+      return;
+    }
     const body: EntryPayload = {
       workDate: target.date,
       hours,
@@ -596,7 +726,16 @@ export class TimeSheetsFacade {
           detail: 'Créneau mis à jour.'
         });
       },
-      error: (err) => this.toast.add({ severity: 'error', summary: 'Erreur', detail: err?.error?.message || 'Déplacement impossible.' })
+      error: (err) => {
+        const message = this.apiErrorMessage(err, 'Déplacement impossible.');
+        this.anomalies.set([message]);
+        this.toast.add({
+          severity: 'error',
+          summary: 'Plafond / saisie refusée',
+          detail: message,
+          life: 8000
+        });
+      }
     });
   }
 
@@ -606,14 +745,15 @@ export class TimeSheetsFacade {
     if (existing) clearTimeout(existing);
     this.inlineTimers.set(entry.id, setTimeout(() => {
       this.inlineTimers.delete(entry.id);
-      const hours = patch.startTime && patch.endTime
-        ? this.hoursBetween(patch.startTime, patch.endTime)
-        : (patch.hours ?? entry.hours);
+      const startTime = patch.startTime ?? entry.startTime;
+      const endTime = patch.endTime ?? entry.endTime;
+      const derived = startTime && endTime ? this.hoursBetween(startTime, endTime) : null;
+      const hours = derived ?? (patch.hours ?? entry.hours);
       const body: EntryPayload = {
         workDate: (patch.workDate ?? entry.workDate).slice(0, 10),
         hours,
-        startTime: patch.startTime ?? entry.startTime,
-        endTime: patch.endTime ?? entry.endTime,
+        startTime,
+        endTime,
         firmClientAssignmentId: patch.firmClientAssignmentId ?? entry.firmClientAssignmentId,
         activityCode: patch.activityCode ?? entry.activityCode,
         notes: patch.notes ?? entry.notes,
@@ -644,7 +784,14 @@ export class TimeSheetsFacade {
         },
         error: (err) => {
           this.entries.set(snapshot);
-          this.toast.add({ severity: 'error', summary: 'Erreur', detail: err?.error?.message || 'Enregistrement impossible.' });
+          const message = this.apiErrorMessage(err, 'Enregistrement impossible.');
+          this.anomalies.set([message]);
+          this.toast.add({
+            severity: 'error',
+            summary: 'Plafond / saisie refusée',
+            detail: message,
+            life: 8000
+          });
         }
       });
     }, 500));
@@ -892,10 +1039,91 @@ export class TimeSheetsFacade {
     this.timerInterval = setInterval(() => this.timerTick.update(v => v + 1), 1000);
   }
 
-  private hoursBetween(start: string, end: string): number {
-    const [sh, sm] = start.split(':').map(Number);
-    const [eh, em] = end.split(':').map(Number);
-    return Math.max(0.25, (eh + (em || 0) / 60) - (sh + (sm || 0) / 60));
+  /** Messages plafond journalier / hebdo alignés sur TimeSheetLegalValidator (hard only). */
+  evaluateHardLimitMessages(workDate: string, hours: number, excludeEntryId?: string | null): string[] {
+    const settings = this.yearSettings();
+    if (!settings?.enforceHardLimits) return [];
+
+    const day = workDate.slice(0, 10);
+    const dayDate = new Date(day + 'T12:00:00');
+    const editId = excludeEntryId ?? null;
+    const others = this.entries().filter(e => e.id !== editId);
+
+    const otherHoursSameDay = others
+      .filter(e => e.workDate.slice(0, 10) === day)
+      .reduce((s, e) => s + e.hours, 0);
+    const dailyTotal = otherHoursSameDay + hours;
+    const messages: string[] = [];
+    if (dailyTotal > settings.maxDailyHours) {
+      messages.push(
+        `Le total du ${TimeSheetsFacade.formatFrDate(dayDate)} atteindrait ${TimeSheetsFacade.formatHoursFr(dailyTotal)} h, `
+        + `au-delà du plafond journalier de ${TimeSheetsFacade.formatHoursFr(settings.maxDailyHours)} h.`
+      );
+    }
+
+    const weekSet = new Set(this.isoWeekDaysFor(day));
+    const otherHoursSameWeek = others
+      .filter(e => weekSet.has(e.workDate.slice(0, 10)))
+      .reduce((s, e) => s + e.hours, 0);
+    const weeklyTotal = otherHoursSameWeek + hours;
+    if (weeklyTotal > settings.maxWeeklyHours) {
+      const weekNo = TimeSheetsFacade.isoWeekOf(dayDate);
+      messages.push(
+        `Le total de la semaine ${weekNo} atteindrait ${TimeSheetsFacade.formatHoursFr(weeklyTotal)} h, `
+        + `au-delà de la durée hebdomadaire de ${TimeSheetsFacade.formatHoursFr(settings.maxWeeklyHours)} h.`
+      );
+    }
+    return messages;
+  }
+
+  private reportHardLimitRefusal(messages: string[]): void {
+    this.anomalies.set(messages);
+    this.toast.add({
+      severity: 'error',
+      summary: 'Plafond / saisie refusée',
+      detail: messages[0],
+      life: 8000
+    });
+  }
+
+  private apiErrorMessage(err: unknown, fallback: string): string {
+    const extracted = this.errorHandler.extractErrorMessage(err);
+    return extracted || fallback;
+  }
+
+  /** Jours lun–dim de la semaine ISO contenant `isoDate`. */
+  private isoWeekDaysFor(isoDate: string): string[] {
+    const anchor = new Date(isoDate + 'T12:00:00');
+    const day = anchor.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    const monday = new Date(anchor);
+    monday.setDate(anchor.getDate() + diff);
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      return TimeSheetsFacade.toLocalIso(d);
+    });
+  }
+
+  /**
+   * Duration in hours from HH:mm (or HH:mm:ss) strings.
+   * Returns null when either side is missing/invalid or end <= start (no silent 0.25 floor).
+   */
+  hoursBetween(start: string, end: string): number | null {
+    const startMin = TimeSheetsFacade.parseTimeToMinutes(start);
+    const endMin = TimeSheetsFacade.parseTimeToMinutes(end);
+    if (startMin == null || endMin == null) return null;
+    const derived = (endMin - startMin) / 60;
+    if (derived <= 0 || derived > 24) return null;
+    return Math.round(derived * 1000) / 1000;
+  }
+
+  private static parseTimeToMinutes(value: string): number | null {
+    const parts = (value ?? '').trim().split(':').map(Number);
+    if (parts.length < 2 || parts.some(n => Number.isNaN(n))) return null;
+    const [h, m, s = 0] = parts;
+    if (h < 0 || h > 23 || m < 0 || m > 59 || s < 0 || s > 59) return null;
+    return h * 60 + m + s / 60;
   }
 
   static todayLocalIso(): string {
@@ -906,6 +1134,17 @@ export class TimeSheetsFacade {
     const month = `${d.getMonth() + 1}`.padStart(2, '0');
     const day = `${d.getDate()}`.padStart(2, '0');
     return `${d.getFullYear()}-${month}-${day}`;
+  }
+
+  /** Aligné sur TimeSheetLegalValidator.Fmt (fr-FR, 0.##). */
+  static formatHoursFr(value: number): string {
+    return value.toLocaleString('fr-FR', { maximumFractionDigits: 2 });
+  }
+
+  static formatFrDate(d: Date): string {
+    const dd = `${d.getDate()}`.padStart(2, '0');
+    const mm = `${d.getMonth() + 1}`.padStart(2, '0');
+    return `${dd}/${mm}/${d.getFullYear()}`;
   }
 
   /** Semaine ISO 8601 (alignée backend TimeSheetLegalValidator.IsoWeekOf). */

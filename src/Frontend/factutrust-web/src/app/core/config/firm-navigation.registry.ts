@@ -1,5 +1,5 @@
 import { AppModule as M } from '@core/models/app-module';
-
+import { PERMISSIONS } from './permission-keys';
 import { NavItem, NavSubItem } from './app-navigation.registry';
 
 
@@ -54,7 +54,9 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
 
     route: '/firm/affectation',
 
-    icon: 'fa-solid fa-user-tag'
+    icon: 'fa-solid fa-user-tag',
+
+    managerOnly: true
 
   },
 
@@ -70,9 +72,21 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
 
   {
 
+    label: 'Congés & Absences',
+
+    route: '/firm/governance/leaves',
+
+    icon: 'fa-solid fa-umbrella-beach'
+
+  },
+
+  {
+
     label: 'Rentabilité de collaborateurs',
 
     icon: 'fa-solid fa-chart-pie',
+
+    managerOnly: true,
 
     children: [
 
@@ -82,7 +96,9 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
 
         route: '/firm/governance/dossier-time-profitability',
 
-        icon: 'fa-solid fa-chart-line'
+        icon: 'fa-solid fa-chart-line',
+
+        managerOnly: true
 
       },
 
@@ -92,7 +108,9 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
 
         route: '/firm/governance/collaborator-rentability',
 
-        icon: 'fa-solid fa-chart-pie'
+        icon: 'fa-solid fa-chart-pie',
+
+        managerOnly: true
 
       }
 
@@ -118,6 +136,57 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
 
     icon: 'fa-solid fa-users'
 
+  },
+
+  {
+    label: 'Facturation',
+    icon: 'fa-solid fa-file-invoice-dollar',
+    managerOnly: true,
+    modules: [M.Honoraires],
+    permissionsAll: [PERMISSIONS.honorairesInvoices.read],
+    children: [
+      {
+        label: 'Factures',
+        route: '/firm/billing/invoices',
+        icon: 'fa-solid fa-file-invoice',
+        managerOnly: true,
+        modules: [M.Honoraires],
+        permissionsAll: [PERMISSIONS.honorairesInvoices.read]
+      },
+      {
+        label: 'Avoirs',
+        route: '/firm/billing/credit-notes',
+        icon: 'fa-solid fa-file-circle-minus',
+        managerOnly: true,
+        modules: [M.Honoraires],
+        permissionsAll: [PERMISSIONS.honorairesInvoices.read]
+      },
+      {
+        label: 'Devis',
+        route: '/firm/billing/quotes',
+        icon: 'fa-solid fa-file-lines',
+        managerOnly: true,
+        modules: [M.Honoraires],
+        permissionsAll: [PERMISSIONS.honorairesQuotes.read]
+      }
+    ]
+  },
+  {
+    label: 'Paiements',
+    icon: 'fa-solid fa-money-bill-transfer',
+    managerOnly: true,
+    modules: [M.Honoraires],
+    permissionsAll: [PERMISSIONS.honorairesPayments.read],
+    children: [
+      {
+        label: 'Encaissements',
+        route: '/firm/billing/payments',
+        icon: 'fa-solid fa-hand-holding-dollar',
+        managerOnly: true,
+        modules: [M.Honoraires],
+        permissionsAll: [PERMISSIONS.honorairesPayments.read]
+      }
+    ]
   },
 
   {
@@ -154,7 +223,9 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
 
         route: '/firm/collaborateurs',
 
-        icon: 'fa-solid fa-users'
+        icon: 'fa-solid fa-users',
+
+        managerOnly: true
 
       },
 
@@ -206,6 +277,20 @@ export const DELEGATED_SECTION_LABELS = new Set([
 
 
 
+/** Commercial sections hidden when the delegated dossier is firm-managed. */
+
+export const FIRM_MANAGED_HIDDEN_SECTION_LABELS = new Set([
+
+  'Ventes',
+
+  'Achats',
+
+  'Trésorerie'
+
+]);
+
+
+
 /** Read-only routes under sales/purchases/treasury in delegated mode. */
 
 export const DELEGATED_READ_ONLY_ROUTE_PREFIXES = [
@@ -246,7 +331,9 @@ export const DELEGATED_FIRM_ACHATS_ALLOWED_ROUTES = new Set([
 
   '/reports/supplier-balances',
 
-  '/reports/purchases'
+  '/reports/purchases',
+
+  '/purchase-receipts'
 
 ]);
 
@@ -355,6 +442,56 @@ export function isDelegatedFirmBlockedSalesPurchasesRoute(path: string): boolean
   }
 
   return false;
+
+}
+
+
+
+/**
+
+ * Commercial routes blocked for firm-managed dossiers (no platform commercial account).
+
+ * Includes the regular delegated allowlist (invoices, balances, etc.) plus already-blocked paths.
+
+ */
+
+const FIRM_MANAGED_BLOCKED_COMMERCIAL_ROUTE_PREFIXES = [
+
+  '/invoices',
+
+  '/payments',
+
+  '/supplier-invoices',
+
+  '/purchase-receipts',
+
+  '/reports/sales',
+
+  '/reports/purchases',
+
+  '/reports/client-balances',
+
+  '/reports/supplier-balances',
+
+  '/sales-orders',
+
+  '/ai-assistant/tresorerie'
+
+];
+
+
+
+export function isFirmManagedBlockedCommercialRoute(path: string): boolean {
+
+  if (isDelegatedFirmBlockedSalesPurchasesRoute(path)) {
+
+    return true;
+
+  }
+
+  const normalized = path.split('?')[0].split('#')[0];
+
+  return FIRM_MANAGED_BLOCKED_COMMERCIAL_ROUTE_PREFIXES.some(p => pathMatchesPrefix(normalized, p));
 
 }
 

@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { createHttpContextSkipGlobalErrorUi } from '@core/http-context';
 import { environment } from '@environments/environment';
 import { ApiResponse, PagedResult } from './client.service';
 
@@ -78,6 +79,8 @@ export interface SupplierSearchParams {
     isActive?: boolean;
     page?: number;
     pageSize?: number;
+    /** Skip global 403/error modals (auxiliary dropdown loads). */
+    skipGlobalErrorUi?: boolean;
 }
 
 /** Totaux agrégés (backend) de la liste des fournisseurs, sur l'ensemble filtré complet. */
@@ -143,6 +146,7 @@ export class SupplierService {
     private http = inject(HttpClient);
 
     getSuppliers(params: SupplierSearchParams = {}): Observable<ApiResponse<PagedResult<SupplierListItem>>> {
+        const skipGlobalErrorUi = params.skipGlobalErrorUi === true;
         let httpParams = new HttpParams();
 
         if (params.search) httpParams = httpParams.set('search', params.search);
@@ -151,7 +155,13 @@ export class SupplierService {
         if (params.page) httpParams = httpParams.set('page', params.page.toString());
         if (params.pageSize) httpParams = httpParams.set('pageSize', params.pageSize.toString());
 
-        return this.http.get<ApiResponse<PagedResult<SupplierListItem>>>(this.API_URL, { params: httpParams });
+        const opts: { params: HttpParams; context?: ReturnType<typeof createHttpContextSkipGlobalErrorUi> } = {
+            params: httpParams
+        };
+        if (skipGlobalErrorUi) {
+            opts.context = createHttpContextSkipGlobalErrorUi();
+        }
+        return this.http.get<ApiResponse<PagedResult<SupplierListItem>>>(this.API_URL, opts);
     }
 
     /** Totaux agrégés respectant les mêmes filtres que {@link getSuppliers} (calcul backend). */

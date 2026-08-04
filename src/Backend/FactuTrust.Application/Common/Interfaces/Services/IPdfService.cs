@@ -139,6 +139,9 @@ public interface IPdfService
     /// <summary>Génère le PDF d'une facture d'achat (fournisseur) avec un modèle visuel.</summary>
     Task<byte[]> GenerateSupplierInvoicePdfAsync(SupplierInvoice supplierInvoice, Company? issuer, string? templateKey, CancellationToken cancellationToken = default);
 
+    /// <summary>Génère le PDF d'un bon de réception d'achat.</summary>
+    Task<byte[]> GeneratePurchaseReceiptPdfAsync(PurchaseReceipt receipt, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Generates a PDF for a stock transfer between warehouses.
     /// </summary>

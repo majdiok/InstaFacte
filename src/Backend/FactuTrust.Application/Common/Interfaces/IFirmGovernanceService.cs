@@ -117,6 +117,7 @@ public interface IFirmGovernanceService
     Task<IReadOnlyList<FirmActivityCodeDto>> ListActivityCodesAsync(
         Guid firmTenantId,
         bool includeInactive = false,
+        bool billableOnly = false,
         CancellationToken cancellationToken = default);
     /// <summary>Installe la nomenclature par défaut. Sans effet si le cabinet a déjà des codes.</summary>
     Task<IReadOnlyList<FirmActivityCodeDto>> SeedDefaultActivityCodesAsync(

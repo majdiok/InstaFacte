@@ -331,7 +331,9 @@ public sealed class Invoice : AggregateRoot
         decimal quantity,
         Money? customUnitPrice = null,
         decimal? discountPercent = null,
-        decimal fodecRatePercent = 1.0m)
+        decimal fodecRatePercent = 1.0m,
+        Guid? appliedPromotionId = null,
+        string? appliedPromotionName = null)
     {
         if (!Status.CanBeEdited())
             return Result.Failure(Error.Validation("Status", "Cette facture ne peut plus être modifiée"));
@@ -349,7 +351,9 @@ public sealed class Invoice : AggregateRoot
             quantity,
             unitPrice,
             discountPercent,
-            fodecRatePercent);
+            fodecRatePercent,
+            appliedPromotionId,
+            appliedPromotionName);
 
         if (lineResult.IsFailure)
             return Result.Failure(lineResult.Error);

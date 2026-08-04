@@ -17,7 +17,8 @@ namespace FactuTrust.Infrastructure.MultiTenancy;
 /// </summary>
 public sealed class TenantMigrationGuard : ITenantMigrationGuard
 {
-    private const string CacheKeyPrefix = "TenantMigrationGuard.Applied.";
+    public const string CacheKeyPrefix = "TenantMigrationGuard.Applied.";
+    private const string CacheKeyPrefixInternal = CacheKeyPrefix;
     private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> TenantLocks = new();
     private static readonly TimeSpan CacheDuration = TimeSpan.FromHours(1);
     private static readonly TimeSpan CacheDurationDevelopment = TimeSpan.FromMinutes(1);
@@ -45,7 +46,7 @@ public sealed class TenantMigrationGuard : ITenantMigrationGuard
         if (tenantId == Guid.Empty)
             return Result.Failure(Error.Validation("TenantId", "Identifiant d'entreprise invalide."));
 
-        var cacheKey = $"{CacheKeyPrefix}{tenantId}";
+        var cacheKey = $"{CacheKeyPrefixInternal}{tenantId}";
         if (_cache.TryGetValue(cacheKey, out bool isMigrated))
         {
             if (isMigrated)
@@ -92,6 +93,14 @@ public sealed class TenantMigrationGuard : ITenantMigrationGuard
                 _logger.LogInformation("Migrations applied successfully for tenant {TenantId}", tenantId);
             }
 
+            var schemaCheck = await TenantCoreSchemaValidator.EnsureInvoiceAuditColumnsAsync(
+                connectionString, cancellationToken);
+            if (schemaCheck.IsFailure)
+            {
+                _cache.Set(cacheKey, false, FailureCacheDuration);
+                return schemaCheck;
+            }
+
             await EnsureWithholdingTaxCatalogAsync(connectionString, cancellationToken);
             await EnsureWithholdingChartAccountsAsync(connectionString, cancellationToken);
 
@@ -126,6 +135,14 @@ public sealed class TenantMigrationGuard : ITenantMigrationGuard
         {
             semaphore.Release();
         }
+    }
+
+    public void Invalidate(Guid tenantId)
+    {
+        if (tenantId == Guid.Empty)
+            return;
+
+        _cache.Remove($"{CacheKeyPrefixInternal}{tenantId}");
     }
 
     private static async Task<IReadOnlyList<string>> GetPendingMigrationsAsync(

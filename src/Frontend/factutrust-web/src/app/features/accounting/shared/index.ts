@@ -1,4 +1,6 @@
 export * from './accounting-date-utils';
+export * from './accounting-amount.utils';
+export * from './accounting-amount-input.component';
 export * from './accounting-status-banner.component';
 export * from './accounting-filter-bar.component';
 export * from './accounting-table-shell.component';

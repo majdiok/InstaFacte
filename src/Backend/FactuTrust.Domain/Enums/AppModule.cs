@@ -19,7 +19,9 @@ public enum AppModule
     AI = 11,
     Forecasting = 12,
     Studio = 13,
-    Payroll = 14
+    Payroll = 14,
+    /// <summary>Facturation honoraires du cabinet (firm-native).</summary>
+    Honoraires = 15
 }
 
 public static class AppModuleExtensions
@@ -41,6 +43,7 @@ public static class AppModuleExtensions
         AppModule.Forecasting => "Prévisions IA",
         AppModule.Studio => "Studio (low-code)",
         AppModule.Payroll => "RH & Paie",
+        AppModule.Honoraires => "Honoraires",
         _ => throw new ArgumentOutOfRangeException(nameof(module))
     };
 
@@ -118,6 +121,10 @@ public static class AppModuleExtensions
             Permissions.PurchaseOrders.Read,
             Permissions.PurchaseOrders.Update,
             Permissions.PurchaseOrders.Delete,
+            Permissions.PurchaseReceipts.Create,
+            Permissions.PurchaseReceipts.Read,
+            Permissions.PurchaseReceipts.Update,
+            Permissions.PurchaseReceipts.Delete,
             Permissions.SupplierInvoices.Create,
             Permissions.SupplierInvoices.Read,
             Permissions.SupplierInvoices.Update,
@@ -195,6 +202,22 @@ public static class AppModuleExtensions
             Permissions.Payroll.Declare,
             Permissions.Payroll.Export,
             Permissions.Payroll.Settings
+        },
+        AppModule.Honoraires => new[]
+        {
+            Permissions.HonorairesInvoices.Create,
+            Permissions.HonorairesInvoices.Read,
+            Permissions.HonorairesInvoices.Update,
+            Permissions.HonorairesInvoices.Delete,
+            Permissions.HonorairesInvoices.Validate,
+            Permissions.HonorairesInvoices.Send,
+            Permissions.HonorairesQuotes.Create,
+            Permissions.HonorairesQuotes.Read,
+            Permissions.HonorairesQuotes.Update,
+            Permissions.HonorairesQuotes.Delete,
+            Permissions.HonorairesQuotes.Convert,
+            Permissions.HonorairesPayments.Create,
+            Permissions.HonorairesPayments.Read
         },
         _ => Array.Empty<string>()
     };

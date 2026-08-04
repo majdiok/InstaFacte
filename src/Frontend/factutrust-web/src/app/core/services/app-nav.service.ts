@@ -8,10 +8,12 @@ import {
 } from '@core/config/app-navigation.registry';
 import {
   DELEGATED_SECTION_LABELS,
+  FIRM_MANAGED_HIDDEN_SECTION_LABELS,
   FIRM_NATIVE_NAV,
   filterFirmGovernanceNav,
   filterDelegatedFirmSectionChildren
 } from '@core/config/firm-navigation.registry';
+import { filterFirmManagerNav } from '@core/config/firm-manager-access.config';
 import {
   buildAccountingModuleNavItems,
   buildFirmDelegatedAccountingModuleNavItems
@@ -165,7 +167,12 @@ export class AppNavService {
         i.route !== '/firm/exchanges'
     );
 
-    return [
+    const tailFiltered = filterFirmManagerNav(
+      filterFirmGovernanceNav(tail, this.firmFeatureFlags.isEnabled('firmGovernance')),
+      this.auth.isFirmManager()
+    );
+
+    const items: NavItem[] = [
       dashboard,
       {
         label: 'Mes dossiers clients',
@@ -187,10 +194,10 @@ export class AppNavService {
       ...(exchanges
         ? [{ ...exchanges, badge: exchangeUnread > 0 ? exchangeUnread : undefined }]
         : []),
-      ...this.filterFirmManagerOnlyNav(
-        filterFirmGovernanceNav(tail, this.firmFeatureFlags.isEnabled('firmGovernance'))
-      )
+      ...tailFiltered
     ];
+
+    return filterNavItems(this.auth, items);
   }
 
   private filterCompanyExchangesNav(items: NavItem[]): NavItem[] {
@@ -202,27 +209,13 @@ export class AppNavService {
     return items.filter(i => i.label !== 'Échanges');
   }
 
-  private filterFirmManagerOnlyNav(items: NavItem[]): NavItem[] {
-    if (this.auth.isFirmManager()) {
-      return items;
-    }
-    return items
-      .map(item =>
-        item.children?.length
-          ? {
-              ...item,
-              children: item.children.filter(c => c.route !== '/firm/affectation')
-            }
-          : item
-      )
-      .filter(item => item.route !== '/firm/affectation')
-      .filter(item => !item.children || item.children.length > 0);
-  }
-
   private buildDelegatedNav(): NavItem[] {
     const client = this.firmContext.activeClient();
     let items = filterNavItems(this.auth, ALL_NAV_ITEMS);
     items = items.filter(i => DELEGATED_SECTION_LABELS.has(i.label));
+    if (this.auth.isFirmManagedDelegated()) {
+      items = items.filter(i => !FIRM_MANAGED_HIDDEN_SECTION_LABELS.has(i.label));
+    }
     items = items
       .map(item =>
         item.children?.length && (item.label === 'Ventes' || item.label === 'Achats')

@@ -59,7 +59,9 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
         switchMap(processedError => {
           const errorMessage = errorHandler.extractErrorMessage(processedError);
           const isLogoutCall = req.url.includes('/auth/logout');
-          const isRegistrationEndpoint = req.url.includes('/auth/register');
+          const isRegistrationEndpoint =
+            req.url.includes('/auth/register-firm') ||
+            req.url.endsWith('/auth/register');
           const skipGlobalErrorUi = req.context.get(SKIP_ERROR_TOAST);
 
           const willShowValidationDialog =

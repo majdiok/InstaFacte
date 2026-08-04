@@ -5,6 +5,7 @@ using FactuTrust.Application.Features.PurchaseOrders.Commands;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.ValueObjects;
+using FactuTrust.Infrastructure.Services;
 using Moq;
 using Xunit;
 
@@ -25,7 +26,7 @@ public sealed class ReceiveGoodsCommandHandlerTests
         var whRepo = new Mock<IWarehouseRepository>();
         whRepo.Setup(x => x.GetByIdAsync(missingWarehouseId, It.IsAny<CancellationToken>())).ReturnsAsync((Warehouse?)null);
 
-        var handler = CreateHandler(poRepo, new Mock<IStockItemRepository>(), whRepo, new Mock<IAuditService>());
+        var handler = CreateHandler(poRepo, whRepo, new Mock<IStockItemRepository>(), new Mock<IAuditService>());
 
         var dto = new ReceiveGoodsDto
         {
@@ -53,7 +54,7 @@ public sealed class ReceiveGoodsCommandHandlerTests
         var whRepo = new Mock<IWarehouseRepository>();
         whRepo.Setup(x => x.GetByIdAsync(wh.Id, It.IsAny<CancellationToken>())).ReturnsAsync(wh);
 
-        var handler = CreateHandler(poRepo, new Mock<IStockItemRepository>(), whRepo, new Mock<IAuditService>());
+        var handler = CreateHandler(poRepo, whRepo, new Mock<IStockItemRepository>(), new Mock<IAuditService>());
 
         var dto = new ReceiveGoodsDto
         {
@@ -70,7 +71,7 @@ public sealed class ReceiveGoodsCommandHandlerTests
     [Fact]
     public async Task Handle_WithExplicitActiveWarehouse_ShouldUpdateStockAndPurchaseOrder()
     {
-        var order = BuildConfirmedOrderWithLine();
+        var (order, product) = BuildConfirmedOrderWithStockManagedLine();
         var line = order.Lines.First();
         var wh = Warehouse.Create("WH1", "Warehouse 1").Value;
 
@@ -85,9 +86,17 @@ public sealed class ReceiveGoodsCommandHandlerTests
             .Setup(x => x.GetByProductAndWarehouseAsync(line.ProductId, wh.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync((StockItem?)null);
 
+        var productRepo = new Mock<IProductRepository>();
+        productRepo.Setup(x => x.GetByIdAsync(product.Id, It.IsAny<CancellationToken>())).ReturnsAsync(product);
+
+        var movementRepo = new Mock<IStockMovementRepository>();
+        movementRepo
+            .Setup(x => x.GetByReferenceAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<StockMovement>());
+
         var audit = new Mock<IAuditService>();
 
-        var handler = CreateHandler(poRepo, stockRepo, whRepo, audit);
+        var handler = CreateHandler(poRepo, whRepo, stockRepo, audit, productRepo, movementRepo);
 
         var dto = new ReceiveGoodsDto
         {
@@ -123,7 +132,7 @@ public sealed class ReceiveGoodsCommandHandlerTests
         var whRepo = new Mock<IWarehouseRepository>();
         whRepo.Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>())).ReturnsAsync((Warehouse?)null);
 
-        var handler = CreateHandler(poRepo, new Mock<IStockItemRepository>(), whRepo, new Mock<IAuditService>());
+        var handler = CreateHandler(poRepo, whRepo, new Mock<IStockItemRepository>(), new Mock<IAuditService>());
 
         var dto = new ReceiveGoodsDto
         {
@@ -146,7 +155,7 @@ public sealed class ReceiveGoodsCommandHandlerTests
         var defaultWh = Warehouse.Create("DEF", "Default").Value;
         defaultWh.SetAsDefault();
 
-        var order = BuildConfirmedOrderWithLine(inactive.Id);
+        var (order, product) = BuildConfirmedOrderWithStockManagedLine(inactive.Id);
         var line = order.Lines.First();
 
         var poRepo = new Mock<IPurchaseOrderRepository>();
@@ -161,7 +170,15 @@ public sealed class ReceiveGoodsCommandHandlerTests
             .Setup(x => x.GetByProductAndWarehouseAsync(line.ProductId, defaultWh.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync((StockItem?)null);
 
-        var handler = CreateHandler(poRepo, stockRepo, whRepo, new Mock<IAuditService>());
+        var productRepo = new Mock<IProductRepository>();
+        productRepo.Setup(x => x.GetByIdAsync(product.Id, It.IsAny<CancellationToken>())).ReturnsAsync(product);
+
+        var movementRepo = new Mock<IStockMovementRepository>();
+        movementRepo
+            .Setup(x => x.GetByReferenceAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<StockMovement>());
+
+        var handler = CreateHandler(poRepo, whRepo, stockRepo, new Mock<IAuditService>(), productRepo, movementRepo);
 
         var dto = new ReceiveGoodsDto
         {
@@ -178,21 +195,39 @@ public sealed class ReceiveGoodsCommandHandlerTests
 
     private static ReceiveGoodsCommandHandler CreateHandler(
         Mock<IPurchaseOrderRepository> poRepo,
-        Mock<IStockItemRepository> stockRepo,
         Mock<IWarehouseRepository> whRepo,
+        Mock<IStockItemRepository> stockRepo,
         Mock<IAuditService> audit,
-        Mock<IProductRepository>? productRepo = null)
+        Mock<IProductRepository>? productRepo = null,
+        Mock<IStockMovementRepository>? movementRepo = null)
     {
         productRepo ??= new Mock<IProductRepository>();
+        movementRepo ??= new Mock<IStockMovementRepository>();
+        movementRepo
+            .Setup(x => x.GetByReferenceAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<StockMovement>());
+
+        IPurchaseGoodsReceptionService receptionService = new PurchaseGoodsReceptionService(
+            stockRepo.Object,
+            movementRepo.Object,
+            productRepo.Object);
+
         return new ReceiveGoodsCommandHandler(
             poRepo.Object,
-            stockRepo.Object,
             whRepo.Object,
-            productRepo.Object,
+            receptionService,
             audit.Object);
     }
 
     private static PurchaseOrder BuildConfirmedOrderWithLine(Guid? warehouseId = null)
+    {
+        var (order, _) = BuildConfirmedOrderWithStockManagedLine(warehouseId, stockManaged: false);
+        return order;
+    }
+
+    private static (PurchaseOrder Order, Product Product) BuildConfirmedOrderWithStockManagedLine(
+        Guid? warehouseId = null,
+        bool stockManaged = true)
     {
         var address = Address.Create("1 rue test", "Tunis", "Tunis").Value;
         var email = Email.Create("supplier.recv@test.com").Value;
@@ -208,13 +243,14 @@ public sealed class ReceiveGoodsCommandHandlerTests
             unitPrice,
             VatRate.Standard,
             category.Id,
-            purchasePrice: unitPrice).Value;
+            purchasePrice: unitPrice,
+            isStockManaged: stockManaged).Value;
 
         var number = PurchaseOrderNumber.Create("BC", 2026, 200);
         var createResult = PurchaseOrder.Create(number, supplier, new DateTime(2026, 4, 1), warehouseId: warehouseId);
         var order = createResult.Value;
         Assert.True(order.AddLine(product, 5m).IsSuccess);
         Assert.True(order.Confirm().IsSuccess);
-        return order;
+        return (order, product);
     }
 }

@@ -2,7 +2,6 @@ using System.Security.Claims;
 using System.Text.Json;
 using FactuTrust.API.Authorization;
 using FactuTrust.Application.Common.Interfaces;
-using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
@@ -35,15 +34,12 @@ public class AiChatController : ControllerBase
     private readonly SendChatMessageHandler _chatHandler;
     private readonly IOllamaClient _ollamaClient;
     private readonly IOpenAiChatCompletionsClient _openAiClient;
-    private readonly ITenantAiProviderRepository _tenantAiProviderRepository;
     private readonly IPlatformAiSettingsService _platformAiSettings;
     private readonly IOllamaInferenceProfileResolver _inferenceProfileResolver;
     private readonly IAiModelRecommender _modelRecommender;
     private readonly ILogger<AiChatController> _logger;
     private readonly IHostEnvironment _environment;
     private readonly OllamaSettings _ollamaSettings;
-    private readonly OpenRouterSettings _openRouterSettings;
-    private readonly ITenantContext _tenantContext;
     private readonly IAiDocumentTextExtractor _documentTextExtractor;
 
     public AiChatController(
@@ -51,31 +47,25 @@ public class AiChatController : ControllerBase
         SendChatMessageHandler chatHandler,
         IOllamaClient ollamaClient,
         IOpenAiChatCompletionsClient openAiClient,
-        ITenantAiProviderRepository tenantAiProviderRepository,
         IPlatformAiSettingsService platformAiSettings,
         IOllamaInferenceProfileResolver inferenceProfileResolver,
         IAiModelRecommender modelRecommender,
-        ITenantContext tenantContext,
         IAiDocumentTextExtractor documentTextExtractor,
         ILogger<AiChatController> logger,
         IHostEnvironment environment,
-        IOptions<OllamaSettings> ollamaSettings,
-        IOptions<OpenRouterSettings> openRouterSettings)
+        IOptions<OllamaSettings> ollamaSettings)
     {
         _mediator = mediator;
         _chatHandler = chatHandler;
         _ollamaClient = ollamaClient;
         _openAiClient = openAiClient;
-        _tenantAiProviderRepository = tenantAiProviderRepository;
         _platformAiSettings = platformAiSettings;
         _inferenceProfileResolver = inferenceProfileResolver;
         _modelRecommender = modelRecommender;
-        _tenantContext = tenantContext;
         _documentTextExtractor = documentTextExtractor;
         _logger = logger;
         _environment = environment;
         _ollamaSettings = ollamaSettings.Value;
-        _openRouterSettings = openRouterSettings.Value;
     }
 
     private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -334,17 +324,12 @@ public class AiChatController : ControllerBase
                 SupportsVision: AiModelCapabilityDetector.DetectVisionSupport(m.Name)));
         }
 
-        var apiKey = await _tenantAiProviderRepository.GetDecryptedApiKeyForOpenRouterAsync(cancellationToken);
-        if (!string.IsNullOrEmpty(apiKey))
+        var openRouter = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
+        if (!string.IsNullOrEmpty(openRouter.ApiKey))
         {
-            var row = await _tenantAiProviderRepository.GetByProviderKeyAsync("openrouter", cancellationToken);
-            var baseUrl = !string.IsNullOrWhiteSpace(row?.BaseUrl)
-                ? row!.BaseUrl!.TrimEnd('/')
-                : _openRouterSettings.DefaultBaseUrl.TrimEnd('/');
-
             try
             {
-                var remote = await _openAiClient.ListModelsAsync(baseUrl, apiKey, cancellationToken);
+                var remote = await _openAiClient.ListModelsAsync(openRouter.BaseUrl, openRouter.ApiKey, cancellationToken);
                 foreach (var r in remote)
                 {
                     unified.Add(new UnifiedAiModelInfo(
@@ -488,8 +473,8 @@ public class AiChatController : ControllerBase
     }
 
     /// <summary>
-    /// Returns whether any AI provider is properly configured for the current tenant
-    /// (Ollama available and/or cloud provider with valid API key).
+    /// Returns whether any AI provider is properly configured
+    /// (Ollama available and/or platform OpenRouter with valid API key).
     /// </summary>
     [HttpGet("configured-status")]
     [EnableRateLimiting("ai")]
@@ -498,22 +483,8 @@ public class AiChatController : ControllerBase
     {
         var ollamaOk = await _ollamaClient.IsAvailableAsync(cancellationToken);
 
-        var openRouterConfigured = false;
-        var openRouterEnabled = false;
-
-        if (_tenantContext.TenantId.HasValue)
-        {
-            var apiKey = await _tenantAiProviderRepository.GetDecryptedApiKeyForOpenRouterAsync(cancellationToken);
-            openRouterConfigured = !string.IsNullOrEmpty(apiKey);
-
-            if (openRouterConfigured)
-            {
-                var row = await _tenantAiProviderRepository.GetByProviderKeyAsync("openrouter", cancellationToken);
-                openRouterEnabled = row?.IsEnabled ?? false;
-            }
-        }
-
-        var hasCloudProvider = openRouterConfigured && openRouterEnabled;
+        var openRouter = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
+        var hasCloudProvider = openRouter.IsEnabled && !string.IsNullOrEmpty(openRouter.ApiKey);
         var dto = new AiConfiguredStatusDto(
             HasOllamaModels: ollamaOk,
             HasCloudProvider: hasCloudProvider,
@@ -554,12 +525,8 @@ public class AiChatController : ControllerBase
     public async Task<IActionResult> Health(CancellationToken cancellationToken)
     {
         var ollamaOk = await _ollamaClient.IsAvailableAsync(cancellationToken);
-        var cloudOk = false;
-        if (_tenantContext.TenantId.HasValue)
-        {
-            var apiKey = await _tenantAiProviderRepository.GetDecryptedApiKeyForOpenRouterAsync(cancellationToken);
-            cloudOk = !string.IsNullOrEmpty(apiKey);
-        }
+        var openRouter = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
+        var cloudOk = !string.IsNullOrEmpty(openRouter.ApiKey);
 
         return Ok(new { available = ollamaOk || cloudOk });
     }

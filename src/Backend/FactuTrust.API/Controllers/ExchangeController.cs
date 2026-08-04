@@ -28,7 +28,8 @@ public sealed class ExchangeController : ControllerBase
         var ctx = ResolveCaller();
         if (ctx is null) return Unauthorized();
 
-        var items = await _exchange.ListThreadsAsync(ctx.Value.TenantId, ctx.Value.Kind, ctx.Value.FirmScope, cancellationToken);
+        var items = await _exchange.ListThreadsAsync(
+            ctx.Value.TenantId, ctx.Value.Kind, ctx.Value.FirmScope, ctx.Value.UserId, cancellationToken);
         return Ok(ApiResponse<IReadOnlyList<ExchangeThreadListItemDto>>.Ok(items));
     }
 
@@ -42,6 +43,20 @@ public sealed class ExchangeController : ControllerBase
         var summary = await _exchange.GetUnreadSummaryAsync(
             ctx.Value.TenantId, ctx.Value.Kind, ctx.Value.UserId, ctx.Value.Role, ctx.Value.FirmScope, cancellationToken);
         return Ok(ApiResponse<ExchangeUnreadSummaryDto>.Ok(summary));
+    }
+
+    [HttpGet("bootstrap")]
+    [Authorize(Roles = $"{nameof(UserRole.Administrator)},{nameof(UserRole.FirmManager)},{nameof(UserRole.FirmAccountant)}")]
+    public async Task<ActionResult<ApiResponse<ExchangeBootstrapDto>>> Bootstrap(
+        [FromQuery] Guid? threadId, [FromQuery] string? tab, CancellationToken cancellationToken)
+    {
+        var ctx = ResolveCaller();
+        if (ctx is null) return Unauthorized();
+
+        var result = await _exchange.BootstrapAsync(
+            ctx.Value.TenantId, ctx.Value.Kind, ctx.Value.UserId, ctx.Value.DisplayName, ctx.Value.Role,
+            ctx.Value.FirmScope, threadId, tab, cancellationToken);
+        return Map(result);
     }
 
     [HttpGet("{threadId:guid}")]
@@ -98,15 +113,19 @@ public sealed class ExchangeController : ControllerBase
 
     [HttpGet("{threadId:guid}/messages")]
     [Authorize(Roles = $"{nameof(UserRole.Administrator)},{nameof(UserRole.FirmManager)},{nameof(UserRole.FirmAccountant)}")]
-    public async Task<ActionResult<ApiResponse<IReadOnlyList<ExchangeMessageDto>>>> Messages(
-        Guid threadId, [FromQuery] DateTime? after, CancellationToken cancellationToken)
+    public async Task<ActionResult<ApiResponse<PagedExchangeMessagesDto>>> Messages(
+        Guid threadId,
+        [FromQuery] DateTime? after,
+        [FromQuery] DateTime? before,
+        [FromQuery] int? limit,
+        CancellationToken cancellationToken)
     {
         var ctx = ResolveCaller();
         if (ctx is null) return Unauthorized();
 
         var result = await _exchange.GetMessagesAsync(
             threadId, ctx.Value.TenantId, ctx.Value.Kind, ctx.Value.UserId, ctx.Value.Role,
-            ctx.Value.FirmScope, after, cancellationToken);
+            ctx.Value.FirmScope, after, before, limit, cancellationToken);
         return Map(result);
     }
 
@@ -134,6 +153,20 @@ public sealed class ExchangeController : ControllerBase
 
         var result = await _exchange.MarkMessageReadAsync(
             threadId, messageId, ctx.Value.TenantId, ctx.Value.Kind, ctx.Value.UserId,
+            ctx.Value.Role, ctx.Value.FirmScope, cancellationToken);
+        return MapEmpty(result);
+    }
+
+    [HttpPost("{threadId:guid}/messages/read-batch")]
+    [Authorize(Roles = $"{nameof(UserRole.Administrator)},{nameof(UserRole.FirmManager)},{nameof(UserRole.FirmAccountant)}")]
+    public async Task<ActionResult<ApiResponse<object>>> MarkReadBatch(
+        Guid threadId, [FromBody] MarkMessagesReadBatchDto? dto, CancellationToken cancellationToken)
+    {
+        var ctx = ResolveCaller();
+        if (ctx is null) return Unauthorized();
+
+        var result = await _exchange.MarkMessagesReadBatchAsync(
+            threadId, dto?.MessageIds ?? Array.Empty<Guid>(), ctx.Value.TenantId, ctx.Value.Kind, ctx.Value.UserId,
             ctx.Value.Role, ctx.Value.FirmScope, cancellationToken);
         return MapEmpty(result);
     }

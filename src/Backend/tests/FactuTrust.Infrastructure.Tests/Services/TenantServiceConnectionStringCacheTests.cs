@@ -1,3 +1,4 @@
+using FactuTrust.Application.Configuration;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Infrastructure.MultiTenancy;
 using FactuTrust.Infrastructure.Persistence;
@@ -6,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace FactuTrust.Infrastructure.Tests.Services;
@@ -22,7 +24,18 @@ public sealed class TenantServiceConnectionStringCacheTests
             .Options);
 
     private static TenantService NewService(MasterDbContext db, IDataProtectionProvider protectionProvider, IMemoryCache cache)
-        => new(db, protectionProvider, new ConfigurationBuilder().Build(), cache, NullLogger<TenantService>.Instance);
+    {
+        var provisioner = new TenantDatabaseProvisioner(
+            Options.Create(new TenantProvisioningOptions()),
+            NullLogger<TenantDatabaseProvisioner>.Instance);
+        return new TenantService(
+            db,
+            protectionProvider,
+            new ConfigurationBuilder().Build(),
+            cache,
+            NullLogger<TenantService>.Instance,
+            provisioner);
+    }
 
     [Fact]
     public async Task GetConnectionString_IsServedFromCache_OnSecondCall()

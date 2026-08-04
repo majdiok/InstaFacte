@@ -1,6 +1,7 @@
 import { Injectable, effect, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Subscription, timer } from 'rxjs';
+import { createHttpContextSkipGlobalErrorUi } from '@core/http-context';
 import { environment } from '@environments/environment';
 import { ApiResponse, AuthService } from './auth.service';
 import { FirmBadgeService } from './firm-badge.service';
@@ -73,17 +74,25 @@ export class NotificationService {
   }
 
   markRead(id: string): void {
-    this.http.post<ApiResponse<unknown>>(`${this.baseUrl}/${id}/read`, {}).subscribe({
-      next: () => this.refresh(),
-      error: () => {}
-    });
+    this.http
+      .post<ApiResponse<unknown>>(`${this.baseUrl}/${id}/read`, {}, {
+        context: createHttpContextSkipGlobalErrorUi()
+      })
+      .subscribe({
+        next: () => this.refresh(),
+        error: () => {}
+      });
   }
 
   markAllRead(): void {
-    this.http.post<ApiResponse<unknown>>(`${this.baseUrl}/read-all`, {}).subscribe({
-      next: () => this.refresh(),
-      error: () => {}
-    });
+    this.http
+      .post<ApiResponse<unknown>>(`${this.baseUrl}/read-all`, {}, {
+        context: createHttpContextSkipGlobalErrorUi()
+      })
+      .subscribe({
+        next: () => this.refresh(),
+        error: () => {}
+      });
   }
 
   private startPolling(): void {

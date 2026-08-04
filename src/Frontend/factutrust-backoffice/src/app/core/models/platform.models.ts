@@ -919,7 +919,7 @@ export interface UpdatePlatformFiscalSettingsRequest {
 // Configuration IA plateforme (modèle LLM global, partagé par toutes les entreprises)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Modèle IA disponible (issu d'Ollama installé sur le serveur plateforme). */
+/** Modèle IA disponible (issu du moteur IA InstaFact installé sur le serveur plateforme). */
 export interface AiModelInfoDto {
   modelRef: string;
   providerKey: string;
@@ -950,8 +950,26 @@ export interface AiModelRecommendationDto {
   hardwareProfile: AiHardwareProfileDto;
 }
 
-/** Moteur d'inférence Ollama (GPU auto ou CPU uniquement). */
+/** Moteur d'inférence InstaFact IA (GPU auto ou CPU uniquement). */
 export type OllamaInferenceDevice = 'Gpu' | 'CpuOnly';
+
+/** Credentials OpenRouter partagés (masqués — jamais de clé en clair). */
+export interface PlatformOpenRouterSettingsDto {
+  isEnabled: boolean;
+  displayName: string | null;
+  baseUrl: string | null;
+  defaultBaseUrl: string;
+  isApiKeyConfigured: boolean;
+  apiKeyLast4: string | null;
+}
+
+export interface UpdatePlatformOpenRouterRequest {
+  isEnabled: boolean;
+  displayName?: string | null;
+  baseUrl?: string | null;
+  /** Null/vide = conserver la clé existante. */
+  apiKey?: string | null;
+}
 
 /** Configuration IA plateforme : modèle configuré + données pour en choisir un. */
 export interface PlatformAiSettingsDto {
@@ -963,6 +981,7 @@ export interface PlatformAiSettingsDto {
   isOllamaAssistantConfigured: boolean;
   availableModels: AiModelInfoDto[];
   recommendation: AiModelRecommendationDto | null;
+  openRouter: PlatformOpenRouterSettingsDto;
 }
 
 export interface UpdatePlatformAiSettingsRequest {
@@ -970,6 +989,7 @@ export interface UpdatePlatformAiSettingsRequest {
   invoiceImportModelRef?: string | null;
   studioAiModelRef?: string | null;
   inferenceDevice?: OllamaInferenceDevice | null;
+  openRouter?: UpdatePlatformOpenRouterRequest | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

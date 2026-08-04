@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { SKIP_ERROR_TOAST } from '@core/http-context';
 import { environment } from '@environments/environment';
 import { FirmAssignmentService } from './firm-assignment.service';
 import { NotificationList, NotificationService } from './notification.service';
@@ -52,19 +53,25 @@ describe('NotificationService', () => {
     expect(service.latest()[0].title).toBe('Nouvelle demande');
   });
 
-  it('markRead poste sur {id}/read puis rafraîchit', () => {
+  it('markRead poste sur {id}/read avec SKIP_ERROR_TOAST puis rafraîchit', () => {
     service.markRead('n1');
 
-    httpMock.expectOne(`${baseUrl}/n1/read`).flush({ success: true, data: null });
+    const readReq = httpMock.expectOne(`${baseUrl}/n1/read`);
+    expect(readReq.request.method).toBe('POST');
+    expect(readReq.request.context.get(SKIP_ERROR_TOAST)).toBe(true);
+    readReq.flush({ success: true, data: null });
     httpMock.expectOne(r => r.url === baseUrl).flush({ success: true, data: emptyList });
 
     expect(service.unreadCount()).toBe(0);
   });
 
-  it('markAllRead poste sur read-all puis rafraîchit', () => {
+  it('markAllRead poste sur read-all avec SKIP_ERROR_TOAST puis rafraîchit', () => {
     service.markAllRead();
 
-    httpMock.expectOne(`${baseUrl}/read-all`).flush({ success: true, data: null });
+    const readAllReq = httpMock.expectOne(`${baseUrl}/read-all`);
+    expect(readAllReq.request.method).toBe('POST');
+    expect(readAllReq.request.context.get(SKIP_ERROR_TOAST)).toBe(true);
+    readAllReq.flush({ success: true, data: null });
     httpMock.expectOne(r => r.url === baseUrl).flush({ success: true, data: emptyList });
 
     expect(service.unreadCount()).toBe(0);

@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Security.Claims;
 using System.Text.Json;
 using FluentValidation;
 using FactuTrust.Application.DTOs;
@@ -22,6 +24,11 @@ public sealed class ExceptionHandlingMiddleware
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = false
     };
+
+    // Marqueur textuel émis par EF Core quand deux opérations concurrentes ciblent le même
+    // DbContext. Detecté ici pour élever le niveau de log et attacher le contexte HTTP :
+    // la trace serait autrement noyée dans les warnings 400 génériques.
+    private const string DbContextConcurrencyMarker = "second operation was started";
 
     public ExceptionHandlingMiddleware(
         RequestDelegate next,
@@ -61,8 +68,7 @@ public sealed class ExceptionHandlingMiddleware
             _ => HandleUnknownException(exception)
         };
 
-        // Log based on severity
-        LogException(exception, statusCode);
+        LogException(context, exception, statusCode);
 
         context.Response.ContentType = "application/json; charset=utf-8";
         context.Response.StatusCode = statusCode;
@@ -364,8 +370,17 @@ public sealed class ExceptionHandlingMiddleware
         });
     }
 
-    private void LogException(Exception exception, int statusCode)
+    private void LogException(HttpContext context, Exception exception, int statusCode)
     {
+        // Cas spécial : concurrence DbContext EF Core. On élève systématiquement en Error
+        // (même sur 400) et on attache tout le contexte HTTP pour permettre le diagnostic —
+        // ce chemin passe sinon inaperçu au milieu des warnings de validation classiques.
+        if (IsDbContextConcurrencyException(exception))
+        {
+            LogDbContextConcurrencyException(context, exception, statusCode);
+            return;
+        }
+
         var logLevel = statusCode switch
         {
             >= 500 => LogLevel.Error,
@@ -380,6 +395,47 @@ public sealed class ExceptionHandlingMiddleware
             statusCode,
             exception.GetType().Name,
             exception.Message);
+    }
+
+    private static bool IsDbContextConcurrencyException(Exception exception)
+    {
+        var current = exception;
+        while (current is not null)
+        {
+            if (current is InvalidOperationException
+                && current.Message.Contains(DbContextConcurrencyMarker, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+            current = current.InnerException;
+        }
+        return false;
+    }
+
+    private void LogDbContextConcurrencyException(HttpContext context, Exception exception, int statusCode)
+    {
+        var user = context.User;
+        var userId = user?.FindFirstValue(ClaimTypes.NameIdentifier);
+        var tenantId = user?.FindFirstValue("tenant_id");
+        var accessMode = user?.FindFirstValue("access_mode");
+        var role = user?.FindFirstValue(ClaimTypes.Role);
+        var traceId = Activity.Current?.TraceId.ToString() ?? context.TraceIdentifier;
+
+        _logger.LogError(
+            exception,
+            "DBCONTEXT_CONCURRENCY HTTP {StatusCode} — {Method} {Path}{QueryString} " +
+            "user={UserId} tenant={TenantId} role={Role} accessMode={AccessMode} " +
+            "traceId={TraceId} requestId={RequestId}. Full stack included.",
+            statusCode,
+            context.Request.Method,
+            context.Request.Path.Value,
+            context.Request.QueryString.HasValue ? context.Request.QueryString.Value : string.Empty,
+            userId ?? "(anonymous)",
+            tenantId ?? "(none)",
+            role ?? "(none)",
+            accessMode ?? "(direct)",
+            traceId,
+            context.TraceIdentifier);
     }
 }
 

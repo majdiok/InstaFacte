@@ -70,6 +70,9 @@ public sealed class QuoteToInvoiceConversionService : IQuoteToInvoiceConversionS
                 if (quote.ConvertedInvoiceId.HasValue)
                     return Result.Failure<Guid>(Error.Conflict("Ce devis a déjà été transformé en facture"));
 
+                if (quote.ConvertedSalesOrderId.HasValue)
+                    return Result.Failure<Guid>(Error.Conflict("Ce devis a été transformé en commande client — facturez depuis la commande"));
+
                 if (!quote.Lines.Any())
                     return Result.Failure<Guid>(Error.Validation("Lines",
                         "Le devis doit contenir au moins une ligne"));

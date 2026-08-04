@@ -165,13 +165,6 @@ export class SettingsComponent {
           color: 'var(--color-info-600)'
         });
       }
-      items.push({
-        title: 'Fournisseurs IA',
-        description: 'OpenRouter et clés API pour les modèles cloud de l’assistant',
-        icon: 'pi pi-bolt',
-        route: 'ai-providers',
-        color: 'var(--color-primary-400)'
-      });
     }
 
     if (this.auth.hasPermission(PERMISSIONS.storefront.manage)) {
@@ -180,6 +173,16 @@ export class SettingsComponent {
         description: 'Opt-in vitrine modérée, produits publics et présence sur la Rue InstaFact',
         icon: 'pi pi-shop',
         route: 'storefront',
+        color: 'var(--color-primary-500)'
+      });
+    }
+
+    if (this.auth.hasPermission(PERMISSIONS.pricing.read)) {
+      items.push({
+        title: 'Promotions',
+        description: 'Remises temporaires appliquées après le prix sur vos documents de vente',
+        icon: 'pi pi-megaphone',
+        route: 'promotions',
         color: 'var(--color-primary-500)'
       });
     }
@@ -220,6 +223,13 @@ export class SettingsComponent {
           icon: 'pi pi-palette',
           route: 'templates',
           color: 'var(--color-info-500)'
+        },
+        {
+          title: 'Conditions de règlement',
+          description: 'Délai, échéance et escompte. Texte imprimé sur les documents et calcul de la balance âgée.',
+          icon: 'pi pi-calendar',
+          route: 'payment-terms',
+          color: 'var(--color-success-500)'
         },
       );
     }

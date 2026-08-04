@@ -17,10 +17,14 @@ public sealed record GetPurchaseOrderByIdQuery(Guid Id) : IRequest<Result<Purcha
 public sealed class GetPurchaseOrderByIdQueryHandler : IRequestHandler<GetPurchaseOrderByIdQuery, Result<PurchaseOrderDetailDto>>
 {
     private readonly IPurchaseOrderRepository _purchaseOrderRepository;
+    private readonly ISupplierInvoiceRepository _supplierInvoiceRepository;
 
-    public GetPurchaseOrderByIdQueryHandler(IPurchaseOrderRepository purchaseOrderRepository)
+    public GetPurchaseOrderByIdQueryHandler(
+        IPurchaseOrderRepository purchaseOrderRepository,
+        ISupplierInvoiceRepository supplierInvoiceRepository)
     {
         _purchaseOrderRepository = purchaseOrderRepository;
+        _supplierInvoiceRepository = supplierInvoiceRepository;
     }
 
     public async Task<Result<PurchaseOrderDetailDto>> Handle(GetPurchaseOrderByIdQuery request, CancellationToken cancellationToken)
@@ -28,6 +32,9 @@ public sealed class GetPurchaseOrderByIdQueryHandler : IRequestHandler<GetPurcha
         var po = await _purchaseOrderRepository.GetByIdWithLinesAsync(request.Id, cancellationToken);
         if (po is null)
             return Result.Failure<PurchaseOrderDetailDto>(Error.NotFound("PurchaseOrder", request.Id));
+
+        var linkedInvoices = await _supplierInvoiceRepository.GetLinkedSummariesByPurchaseOrderIdAsync(
+            request.Id, cancellationToken);
 
         var dto = new PurchaseOrderDetailDto
         {
@@ -60,6 +67,8 @@ public sealed class GetPurchaseOrderByIdQueryHandler : IRequestHandler<GetPurcha
                 ProductDescription = l.ProductDescription,
                 Quantity = l.Quantity,
                 ReceivedQuantity = l.ReceivedQuantity,
+                InvoicedQuantity = l.InvoicedQuantity,
+                ReceivedNotInvoicedQuantity = l.ReceivedNotInvoicedQuantity,
                 PendingQuantity = l.PendingQuantity,
                 IsFullyReceived = l.IsFullyReceived,
                 Unit = l.Unit,
@@ -74,8 +83,12 @@ public sealed class GetPurchaseOrderByIdQueryHandler : IRequestHandler<GetPurcha
             TotalTTC = po.TotalAmount.Amount,
             ConfirmedAt = po.ConfirmedAt,
             ReceivedAt = po.ReceivedAt,
+            InvoicedAt = po.InvoicedAt,
             CancelledAt = po.CancelledAt,
             CancellationReason = po.CancellationReason,
+            TotalReceivedNotInvoicedQuantity = po.TotalReceivedNotInvoicedQuantity,
+            HasReceivedNotInvoiced = po.HasReceivedNotInvoiced,
+            LinkedSupplierInvoices = linkedInvoices,
             CreatedAt = po.CreatedAt
         };
 

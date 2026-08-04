@@ -62,6 +62,7 @@ export interface FixedAssetDto {
   netBookValue: number;
   location?: string | null;
   creditAccountNumber?: string | null;
+  supplierId?: string | null;
   supplierInvoiceId?: string | null;
   supplierInvoiceLineId?: string | null;
 }

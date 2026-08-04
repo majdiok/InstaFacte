@@ -24,12 +24,14 @@ public static class DelegatedPermissionCatalog
         Permissions.WithholdingTax.Delete,
         Permissions.WithholdingTax.Export,
         Permissions.Audit.Read,
+        Permissions.Clients.Read,
         Permissions.Invoices.Read,
         Permissions.Quotes.Read,
         Permissions.DeliveryNotes.Read,
         Permissions.Payments.Read,
         Permissions.Suppliers.Read,
         Permissions.PurchaseOrders.Read,
+        Permissions.PurchaseReceipts.Read,
         Permissions.SupplierInvoices.Read,
         Permissions.Reports.View,
         Permissions.Reports.Export,
@@ -57,12 +59,14 @@ public static class DelegatedPermissionCatalog
         Permissions.WithholdingTax.Validate,
         Permissions.WithholdingTax.Export,
         Permissions.Audit.Read,
+        Permissions.Clients.Read,
         Permissions.Invoices.Read,
         Permissions.Quotes.Read,
         Permissions.DeliveryNotes.Read,
         Permissions.Payments.Read,
         Permissions.Suppliers.Read,
         Permissions.PurchaseOrders.Read,
+        Permissions.PurchaseReceipts.Read,
         Permissions.SupplierInvoices.Read,
         Permissions.Reports.View,
         // Payroll (RH & Paie) — consultation dossiers salariés ; cycles/DTS/paramètres en écriture.
@@ -88,7 +92,36 @@ public static class DelegatedPermissionCatalog
         Permissions.Firm.UsersManage,
         Permissions.Firm.AssignmentsManage,
         Permissions.Settings.Read,
-        Permissions.Settings.Update
+        Permissions.Settings.Update,
+        Permissions.HonorairesInvoices.Create,
+        Permissions.HonorairesInvoices.Read,
+        Permissions.HonorairesInvoices.Update,
+        Permissions.HonorairesInvoices.Delete,
+        Permissions.HonorairesInvoices.Validate,
+        Permissions.HonorairesInvoices.Send,
+        Permissions.HonorairesQuotes.Create,
+        Permissions.HonorairesQuotes.Read,
+        Permissions.HonorairesQuotes.Update,
+        Permissions.HonorairesQuotes.Delete,
+        Permissions.HonorairesQuotes.Convert,
+        Permissions.HonorairesPayments.Create,
+        Permissions.HonorairesPayments.Read
+    };
+
+    /// <summary>Honoraires permissions for FirmAccountant in native firm context (no delete).</summary>
+    public static readonly IReadOnlyList<string> FirmNativeHonorairesAccountant = new[]
+    {
+        Permissions.HonorairesInvoices.Create,
+        Permissions.HonorairesInvoices.Read,
+        Permissions.HonorairesInvoices.Update,
+        Permissions.HonorairesInvoices.Validate,
+        Permissions.HonorairesInvoices.Send,
+        Permissions.HonorairesQuotes.Create,
+        Permissions.HonorairesQuotes.Read,
+        Permissions.HonorairesQuotes.Update,
+        Permissions.HonorairesQuotes.Convert,
+        Permissions.HonorairesPayments.Create,
+        Permissions.HonorairesPayments.Read
     };
 
     public static bool IsWritePermissionDeniedInDelegatedMode(string permission) =>

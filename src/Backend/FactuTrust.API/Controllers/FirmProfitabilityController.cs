@@ -31,6 +31,7 @@ public sealed class FirmProfitabilityController : ControllerBase
     }
 
     [HttpGet("dossier-time-profitability")]
+    [Authorize(Roles = nameof(UserRole.FirmManager))]
     public async Task<ActionResult<ApiResponse<FirmDossierTimeProfitabilityReportDto>>> GetDossierTimeProfitability(
         [FromQuery] string? company,
         [FromQuery] int? year,
@@ -47,6 +48,7 @@ public sealed class FirmProfitabilityController : ControllerBase
     }
 
     [HttpGet("dossier-time-profitability/export-pdf")]
+    [Authorize(Roles = nameof(UserRole.FirmManager))]
     public async Task<IActionResult> ExportDossierTimeProfitabilityPdf(
         [FromQuery] string? company,
         [FromQuery] int? year,

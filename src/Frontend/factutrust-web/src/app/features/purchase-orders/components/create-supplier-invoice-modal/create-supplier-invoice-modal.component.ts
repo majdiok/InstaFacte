@@ -1,6 +1,8 @@
-import { Component, OnInit, ViewChild, inject } from '@angular/core';
+import { Component, DestroyRef, OnInit, ViewChild, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule, NgForm } from '@angular/forms';
+import { firstValueFrom } from 'rxjs';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { CalendarModule } from 'primeng/calendar';
@@ -8,9 +10,14 @@ import { DropdownModule } from 'primeng/dropdown';
 import { InputTextarea } from 'primeng/inputtextarea';
 import { CheckboxModule } from 'primeng/checkbox';
 import { TableModule } from 'primeng/table';
+import { InputNumberModule } from 'primeng/inputnumber';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { CurrencyPipe } from '@angular/common';
-import { PurchaseOrderLine } from '@core/services/purchase-order.service';
+import {
+  SupplierInvoicePrefill,
+  SupplierInvoicePrefillLine
+} from '@core/services/purchase-order.service';
+import { SupplierInvoiceService } from '@core/services/supplier-invoice.service';
 import { AccountingFeatureFlagsService } from '@features/accounting/shared/accounting-feature-flags.service';
 import {
   DepreciationRateCategoryDto,
@@ -31,9 +38,22 @@ export interface CreateSupplierInvoiceRequest {
   externalReference?: string;
   notes?: string;
   sendEmail?: boolean;
+  lines?: { sourceLineId: string; quantityToInvoice: number }[];
   lineAssetClassifications?: SupplierInvoiceLineAssetClassification[];
   /** Mode de paiement prévu (informatif), ex. « Effet de commerce ». */
   paymentMethod?: string;
+  useSuggestedNumber?: boolean;
+}
+
+interface InvoiceLineRow {
+  sourceLineId: string;
+  lineNumber: number;
+  productCode: string;
+  productName: string;
+  maxQuantity: number;
+  quantity: number;
+  unitPriceHT: number;
+  subTotalHT: number;
 }
 
 interface LineClassificationRow {
@@ -51,28 +71,74 @@ interface LineClassificationRow {
   imports: [
     CommonModule, FormsModule, DialogModule, InputTextModule,
     CalendarModule, DropdownModule, InputTextarea, CheckboxModule,
-    TableModule, ButtonComponent
+    TableModule, InputNumberModule, ButtonComponent
   ],
   template: `
     <p-dialog 
       [header]="modalHeader"
       [(visible)]="visible" 
       [modal]="true" 
-      [style]="{ width: showAssetClassification ? '760px' : '500px' }"
+      [style]="{ width: showAssetClassification ? '900px' : invoiceLines.length > 0 ? '760px' : '500px' }"
       (onHide)="onHide()">
       
       <div class="modal-content">
         <!-- PO Info -->
         <div class="po-info">
           <div class="po-info-item">
-            <span class="label">Commande</span>
-            <span class="value">{{ purchaseOrderNumber }}</span>
+            <span class="label">{{ sourceTypeLabel }}</span>
+            <span class="value">{{ sourceDocumentNumber }}</span>
           </div>
           <div class="po-info-item po-info-item--right">
-            <span class="label">Montant TTC</span>
-            <span class="value amount">{{ totalAmount | currency:'TND':'symbol':'1.3-3' }}</span>
+            <span class="label">Montant TTC sélectionné</span>
+            <span class="value amount">{{ selectedTotalTTC | currency:'TND':'symbol':'1.3-3' }}</span>
           </div>
         </div>
+
+        @if (invoiceLines.length > 0) {
+          <div class="form-group">
+            <label>Quantités à facturer</label>
+            <p-table [value]="invoiceLines" styleClass="p-datatable-sm invoice-lines-table">
+              <ng-template pTemplate="header">
+                <tr>
+                  <th>#</th>
+                  <th>Article</th>
+                  <th class="text-right">Dispo.</th>
+                  <th class="text-right">Qté à facturer</th>
+                  <th class="text-right">HT ligne</th>
+                </tr>
+              </ng-template>
+              <ng-template pTemplate="body" let-row>
+                <tr>
+                  <td>{{ row.lineNumber }}</td>
+                  <td>
+                    <div class="product-cell">
+                      <span>{{ row.productName }}</span>
+                      <small>{{ row.productCode }}</small>
+                    </div>
+                  </td>
+                  <td class="text-right">{{ row.maxQuantity }}</td>
+                  <td class="text-right qty-cell">
+                    <p-inputNumber
+                      [(ngModel)]="row.quantity"
+                      [name]="'qty-' + row.sourceLineId"
+                      [min]="0"
+                      [max]="row.maxQuantity"
+                      [minFractionDigits]="0"
+                      [maxFractionDigits]="3"
+                      (onInput)="onQuantityChanged(row)">
+                    </p-inputNumber>
+                  </td>
+                  <td class="text-right">{{ lineTotalHT(row) | currency:'TND':'symbol':'1.3-3' }}</td>
+                </tr>
+              </ng-template>
+            </p-table>
+            <div class="qty-actions">
+              <app-button type="button" variant="outline" size="sm" (click)="resetQuantitiesToMax()">
+                Tout facturer
+              </app-button>
+            </div>
+          </div>
+        }
 
         <!-- Info Message -->
         <div class="info-message">
@@ -81,7 +147,7 @@ interface LineClassificationRow {
           </div>
           <div class="info-content">
             <strong>Information importante</strong>
-            <p>Cette facture sera créée à partir des articles déjà reçus dans la commande fournisseur. Seules les marchandises réceptionnées seront facturées.</p>
+            <p>Seules les quantités reçues et non encore facturées peuvent être imputées sur cette facture fournisseur.</p>
           </div>
         </div>
 
@@ -90,20 +156,22 @@ interface LineClassificationRow {
           <div class="form-group">
             <label for="invoiceNumber">Numéro de facture <span class="required">*</span></label>
             <div class="input-group">
-              <input 
-                pInputText 
+              <input
+                pInputText
                 id="invoiceNumber"
                 [(ngModel)]="request.invoiceNumber"
                 name="invoiceNumber"
                 required
-                placeholder="FS-2026-00001"
-                class="w-full">
-              <app-button 
+                placeholder="FS-2026-000001"
+                class="w-full"
+                (ngModelChange)="onInvoiceNumberEdited()">
+              <app-button
                 type="button"
                 variant="outline"
                 size="sm"
-                icon="pi-refresh"
+                [icon]="regenerating ? 'pi-spin pi-spinner' : 'pi-refresh'"
                 iconPos="left"
+                [disabled]="regenerating"
                 (click)="generateInvoiceNumber()"
                 class="generate-btn">
                 Générer
@@ -253,13 +321,13 @@ interface LineClassificationRow {
             (click)="onHide()">
             Annuler
           </app-button>
-          <app-button 
-            variant="primary" 
+          <app-button
+            variant="primary"
             icon="pi-check"
             iconPos="left"
-            [disabled]="!isFormValid() || submitting"
+            [disabled]="!isFormValid() || submitting || regenerating || !hasSelectedQuantity()"
             (click)="onSubmit()">
-            {{ submitting ? 'Création...' : 'Créer la facture' }}
+            {{ submitting ? 'Création...' : regenerating ? 'Génération...' : 'Créer la facture' }}
           </app-button>
         </div>
       </ng-template>
@@ -445,6 +513,32 @@ interface LineClassificationRow {
       text-align: right;
     }
 
+    .product-cell {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+
+      small {
+        color: var(--color-text-tertiary);
+        font-size: var(--font-size-xs);
+      }
+    }
+
+    .qty-cell :host ::ng-deep .p-inputnumber,
+    .qty-cell ::ng-deep .p-inputnumber-input {
+      width: 110px;
+    }
+
+    .qty-actions {
+      margin-top: var(--spacing-2);
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    :host ::ng-deep .invoice-lines-table .p-inputnumber-input {
+      text-align: right;
+    }
+
     :host ::ng-deep .asset-lines-table .p-dropdown {
       min-width: 220px;
     }
@@ -487,12 +581,18 @@ export class CreateSupplierInvoiceModalComponent implements OnInit {
 
   private readonly fixedAssetsApi = inject(FixedAssetsService);
   private readonly accountingFlags = inject(AccountingFeatureFlagsService);
+  private readonly supplierInvoiceService = inject(SupplierInvoiceService);
+  private readonly destroyRef = inject(DestroyRef);
 
   visible = false;
   submitting = false;
-  purchaseOrderNumber = '';
-  totalAmount = 0;
+  regenerating = false;
+  invoiceNumberManuallyEdited = false;
+  sourceDocumentNumber = '';
+  sourceTypeLabel = 'Document';
+  selectedTotalTTC = 0;
   showAssetClassification = false;
+  invoiceLines: InvoiceLineRow[] = [];
   lineClassifications: LineClassificationRow[] = [];
   rateCategories: DepreciationRateCategoryDto[] = [];
 
@@ -528,19 +628,46 @@ export class CreateSupplierInvoiceModalComponent implements OnInit {
   }
 
   open(config: {
-    purchaseOrderNumber: string;
-    totalAmount: number;
-    lines?: PurchaseOrderLine[];
+    prefill: SupplierInvoicePrefill;
+    sourceType?: 'po' | 'pr';
     onClose?: () => void;
     onConfirm?: (request: CreateSupplierInvoiceRequest) => void;
   }): void {
-    this.purchaseOrderNumber = config.purchaseOrderNumber;
-    this.totalAmount = config.totalAmount;
+    const prefill = config.prefill;
+    this.sourceDocumentNumber = prefill.purchaseReceiptNumber ?? prefill.purchaseOrderNumber ?? '—';
+    this.sourceTypeLabel = config.sourceType === 'pr' ? 'Bon de réception' : 'Bon de commande';
+    this.request.paymentTermDays = prefill.paymentTermDays ?? 30;
     this.onClose = config.onClose;
     this.onConfirm = config.onConfirm;
-    this.initLineClassifications(config.lines ?? []);
-    this.generateInvoiceNumber();
+    this.initInvoiceLines(prefill.lines);
+    this.initLineClassifications(prefill.lines);
+    this.recalculateSelectedTotal(prefill);
+    this.applySuggestedInvoiceNumber(prefill.suggestedInvoiceNumber);
     this.visible = true;
+  }
+
+  onInvoiceNumberEdited(): void {
+    this.invoiceNumberManuallyEdited = true;
+  }
+
+  lineTotalHT(row: InvoiceLineRow): number {
+    if (row.maxQuantity <= 0) return 0;
+    return (row.subTotalHT / row.maxQuantity) * row.quantity;
+  }
+
+  onQuantityChanged(row: InvoiceLineRow): void {
+    if (row.quantity > row.maxQuantity) row.quantity = row.maxQuantity;
+    if (row.quantity < 0) row.quantity = 0;
+    this.recalculateSelectedTotal();
+  }
+
+  resetQuantitiesToMax(): void {
+    this.invoiceLines.forEach(l => l.quantity = l.maxQuantity);
+    this.recalculateSelectedTotal();
+  }
+
+  hasSelectedQuantity(): boolean {
+    return this.invoiceLines.some(l => l.quantity > 0);
   }
 
   onHide(): void {
@@ -549,11 +676,45 @@ export class CreateSupplierInvoiceModalComponent implements OnInit {
     this.resetForm();
   }
 
-  generateInvoiceNumber(): void {
-    const now = new Date();
-    const year = now.getFullYear();
-    const timestamp = now.getTime().toString(36).toUpperCase().slice(-5);
-    this.request.invoiceNumber = `FS-${year}-${timestamp}`;
+  /**
+   * Fetches a fresh suggested number from the server and patches the form.
+   * Returns the new number (or null if the request failed). Callers can await
+   * it to safely resubmit without racing the async preview call.
+   */
+  async generateInvoiceNumber(): Promise<string | null> {
+    this.regenerating = true;
+    try {
+      const res = await firstValueFrom(
+        this.supplierInvoiceService.previewNumber(this.request.invoiceDate)
+          .pipe(takeUntilDestroyed(this.destroyRef))
+      );
+      if (res?.success && res.data) {
+        this.request.invoiceNumber = res.data;
+        this.invoiceNumberManuallyEdited = false;
+        return res.data;
+      }
+      return null;
+    } catch {
+      return null;
+    } finally {
+      this.regenerating = false;
+    }
+  }
+
+  /**
+   * Handles a 409 duplicate response from create-supplier-invoice.
+   * If the server included a `suggestedInvoiceNumber` in the error payload, patches
+   * the form directly (no round-trip). Otherwise falls back to a fresh preview call.
+   * Returns the new number now shown in the field, or null on failure.
+   */
+  async handleConflict(suggestedFromServer?: string | null): Promise<string | null> {
+    const trimmed = suggestedFromServer?.trim();
+    if (trimmed) {
+      this.request.invoiceNumber = trimmed;
+      this.invoiceNumberManuallyEdited = false;
+      return trimmed;
+    }
+    return this.generateInvoiceNumber();
   }
 
   onSubmit(): void {
@@ -562,9 +723,15 @@ export class CreateSupplierInvoiceModalComponent implements OnInit {
     }
 
     this.submitting = true;
+    const selectedLines = this.invoiceLines
+      .filter(l => l.quantity > 0)
+      .map(l => ({ sourceLineId: l.sourceLineId, quantityToInvoice: l.quantity }));
+    const allMax = this.invoiceLines.every(l => l.quantity === l.maxQuantity || l.quantity === 0);
     const payload: CreateSupplierInvoiceRequest = {
       ...this.request,
-      lineAssetClassifications: this.buildLineAssetClassifications()
+      lines: allMax && selectedLines.length === this.invoiceLines.length ? undefined : selectedLines,
+      lineAssetClassifications: this.buildLineAssetClassifications(),
+      useSuggestedNumber: !this.invoiceNumberManuallyEdited
     };
     this.onConfirm?.(payload);
   }
@@ -604,16 +771,54 @@ export class CreateSupplierInvoiceModalComponent implements OnInit {
       sendEmail: false
     };
     this.lineClassifications = [];
+    this.invoiceLines = [];
     this.showAssetClassification = false;
+    this.selectedTotalTTC = 0;
     this.submitting = false;
+    this.regenerating = false;
+    this.invoiceNumberManuallyEdited = false;
   }
 
-  private initLineClassifications(lines: PurchaseOrderLine[]): void {
-    const receivedLines = lines.filter(l => l.receivedQuantity > 0);
-    this.lineClassifications = receivedLines.map(l => ({
+  private applySuggestedInvoiceNumber(suggested?: string | null): void {
+    if (suggested?.trim()) {
+      this.request.invoiceNumber = suggested.trim();
+      this.invoiceNumberManuallyEdited = false;
+    } else {
+      void this.generateInvoiceNumber();
+    }
+  }
+
+  private initInvoiceLines(lines: SupplierInvoicePrefillLine[]): void {
+    this.invoiceLines = lines
+      .filter(l => l.maxQuantityToInvoice > 0)
+      .map(l => ({
+        sourceLineId: l.sourceLineId,
+        lineNumber: l.lineNumber,
+        productCode: l.productCode,
+        productName: l.productName,
+        maxQuantity: l.maxQuantityToInvoice,
+        quantity: l.quantityToInvoice > 0 ? l.quantityToInvoice : l.maxQuantityToInvoice,
+        unitPriceHT: l.unitPriceHT,
+        subTotalHT: l.subTotalHT
+      }));
+  }
+
+  private recalculateSelectedTotal(prefill?: SupplierInvoicePrefill): void {
+    if (this.invoiceLines.length === 0) {
+      this.selectedTotalTTC = prefill?.totalTTC ?? 0;
+      return;
+    }
+    const ht = this.invoiceLines.reduce((sum, row) => sum + this.lineTotalHT(row), 0);
+    const ratio = prefill && prefill.subTotalHT > 0 ? prefill.totalTTC / prefill.subTotalHT : 1.19;
+    this.selectedTotalTTC = ht * ratio;
+  }
+
+  private initLineClassifications(lines: SupplierInvoicePrefillLine[]): void {
+    const billable = lines.filter(l => l.maxQuantityToInvoice > 0);
+    this.lineClassifications = billable.map(l => ({
       lineNumber: l.lineNumber,
       productName: l.productName,
-      subTotal: l.subTotal,
+      subTotal: l.subTotalHT,
       isFixedAsset: false
     }));
 
@@ -641,6 +846,6 @@ export class CreateSupplierInvoiceModalComponent implements OnInit {
   }
 
   get modalHeader(): string {
-    return `Créer facture fournisseur - ${this.purchaseOrderNumber}`;
+    return `Créer facture fournisseur - ${this.sourceDocumentNumber}`;
   }
 }

@@ -39,6 +39,7 @@ const MODULE_FEATURE_OPTIONS: Record<AppModule, ModuleFeatureOption[]> = {
   [AppModule.Purchases]: [
     { key: 'suppliers', label: 'Fournisseurs' },
     { key: 'purchase_orders', label: 'Bons de commande' },
+    { key: 'purchase_receipts', label: 'Bons de réception' },
     { key: 'supplier_invoices', label: 'Factures fournisseurs' }
   ],
   [AppModule.Stock]: [
@@ -68,7 +69,12 @@ const MODULE_FEATURE_OPTIONS: Record<AppModule, ModuleFeatureOption[]> = {
     { key: 'manage', label: 'Approbation / dismiss / recalcul' }
   ],
   [AppModule.Studio]: [],
-  [AppModule.Payroll]: []
+  [AppModule.Payroll]: [],
+  [AppModule.Honoraires]: [
+    { key: 'invoices', label: 'Factures' },
+    { key: 'quotes', label: 'Devis' },
+    { key: 'payments', label: 'Encaissements' }
+  ]
 };
 
 export function getModuleFeatureOptions(module: AppModule): ModuleFeatureOption[] {

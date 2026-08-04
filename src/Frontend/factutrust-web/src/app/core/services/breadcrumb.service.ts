@@ -18,6 +18,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   stock: 'Rapports Stock',
   fiches: 'Rapports Fiches',
   settings: 'Paramètres',
+  promotions: 'Promotions',
   warehouses: 'Entrepôts',
   profile: 'Mon profil',
   new: 'Nouveau',
@@ -33,6 +34,11 @@ const SEGMENT_LABELS: Record<string, string> = {
   unpaid: 'Factures impayées',
   transfers: 'Transferts',
   create: 'Créer',
+  'purchase-orders': 'Bons de commande',
+  'purchase-receipts': 'Bons de réception',
+  'delivery-notes': 'Bons de livraison',
+  'supplier-invoices': 'Factures fournisseurs',
+  suppliers: 'Fournisseurs',
 };
 
 /** Labels spécifiques pour les sous-routes de /reports (évite ambiguïté avec /payments). */

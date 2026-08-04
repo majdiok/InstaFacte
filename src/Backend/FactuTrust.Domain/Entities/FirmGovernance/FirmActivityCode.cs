@@ -29,6 +29,8 @@ public enum FirmActivityCategory
 /// </remarks>
 public sealed class FirmActivityCode : Entity
 {
+    private const decimal MaxDefaultUnitPrice = 999_999_999.999m;
+
     public Guid FirmTenantId { get; private set; }
 
     /// <summary>Code court, normalisé en majuscules (ex. <c>TENUE</c>, <c>FISC-M</c>).</summary>
@@ -39,6 +41,9 @@ public sealed class FirmActivityCode : Entity
 
     /// <summary>Valeur proposée à la saisie ; l'utilisateur reste libre de la modifier ligne à ligne.</summary>
     public bool IsBillableByDefault { get; private set; }
+
+    /// <summary>Tarif unitaire HT suggéré à la facturation (TND, 3 décimales). Null = non configuré.</summary>
+    public decimal? DefaultUnitPrice { get; private set; }
 
     public bool IsActive { get; private set; } = true;
     public int SortOrder { get; private set; }
@@ -51,7 +56,8 @@ public sealed class FirmActivityCode : Entity
         string label,
         FirmActivityCategory category,
         bool isBillableByDefault = true,
-        int sortOrder = 0)
+        int sortOrder = 0,
+        decimal? defaultUnitPrice = null)
     {
         if (firmTenantId == Guid.Empty)
             return Result.Failure<FirmActivityCode>(Error.Validation("Tenant", "Cabinet requis"));
@@ -64,6 +70,10 @@ public sealed class FirmActivityCode : Entity
         if (string.IsNullOrWhiteSpace(label))
             return Result.Failure<FirmActivityCode>(Error.Validation("Label", "Le libellé est obligatoire."));
 
+        var price = NormalizeDefaultUnitPrice(defaultUnitPrice);
+        if (price.IsFailure)
+            return Result.Failure<FirmActivityCode>(price.Error);
+
         return Result.Success(new FirmActivityCode
         {
             FirmTenantId = firmTenantId,
@@ -71,6 +81,7 @@ public sealed class FirmActivityCode : Entity
             Label = label.Trim(),
             Category = category,
             IsBillableByDefault = isBillableByDefault,
+            DefaultUnitPrice = price.Value,
             IsActive = true,
             SortOrder = sortOrder
         });
@@ -81,15 +92,25 @@ public sealed class FirmActivityCode : Entity
     /// Renommer un code casserait le lien avec les saisies déjà enregistrées, qui le référencent
     /// par sa valeur : pour changer de code, il faut en désactiver un et en créer un autre.
     /// </remarks>
-    public Result Update(string label, FirmActivityCategory category, bool isBillableByDefault, int sortOrder)
+    public Result Update(
+        string label,
+        FirmActivityCategory category,
+        bool isBillableByDefault,
+        int sortOrder,
+        decimal? defaultUnitPrice = null)
     {
         if (string.IsNullOrWhiteSpace(label))
             return Result.Failure(Error.Validation("Label", "Le libellé est obligatoire."));
+
+        var price = NormalizeDefaultUnitPrice(defaultUnitPrice);
+        if (price.IsFailure)
+            return price;
 
         Label = label.Trim();
         Category = category;
         IsBillableByDefault = isBillableByDefault;
         SortOrder = sortOrder;
+        DefaultUnitPrice = price.Value;
         return Result.Success();
     }
 
@@ -101,12 +122,29 @@ public sealed class FirmActivityCode : Entity
     public static string NormalizeCode(string? code) =>
         (code ?? string.Empty).Trim().ToUpperInvariant();
 
+    private static Result<decimal?> NormalizeDefaultUnitPrice(decimal? defaultUnitPrice)
+    {
+        if (defaultUnitPrice is null)
+            return Result.Success<decimal?>(null);
+
+        if (defaultUnitPrice < 0)
+            return Result.Failure<decimal?>(
+                Error.Validation("DefaultUnitPrice", "L'honoraire unitaire ne peut pas être négatif."));
+
+        if (defaultUnitPrice > MaxDefaultUnitPrice)
+            return Result.Failure<decimal?>(
+                Error.Validation("DefaultUnitPrice", "L'honoraire unitaire dépasse la limite autorisée."));
+
+        return Result.Success<decimal?>(Math.Round(defaultUnitPrice.Value, 3, MidpointRounding.AwayFromZero));
+    }
+
     /// <summary>
     /// Nomenclature de départ d'un cabinet d'expertise comptable tunisien.
     /// </summary>
     /// <remarks>
     /// Proposée à la première ouverture de l'écran et jamais réappliquée ensuite : un cabinet qui
     /// adapte, renomme ou désactive des codes ne doit pas les voir réapparaître.
+    /// Les tarifs restent à null — le cabinet les renseigne après installation.
     /// </remarks>
     public static IReadOnlyList<(string Code, string Label, FirmActivityCategory Category, bool Billable)> DefaultCatalog =>
     new[]

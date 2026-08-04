@@ -403,7 +403,9 @@ export class InvoiceListComponent implements OnInit, OnDestroy {
   private router = inject(Router);
   private auth = inject(AuthService);
 
-  canCreateInvoice = computed(() => this.auth.hasPermission(PERMISSIONS.invoices.create));
+  canCreateInvoice = computed(
+    () => !this.auth.isFirmDelegatedReadonly() && this.auth.hasPermission(PERMISSIONS.invoices.create)
+  );
   /** Le bouton d'import requiert la permission de création ET l'accès à l'IA (policy backend AiChat). */
   canImportInvoice = computed(() => this.canCreateInvoice() && this.auth.hasAllPermissions(['ai:chat']));
   importDialogVisible = signal(false);

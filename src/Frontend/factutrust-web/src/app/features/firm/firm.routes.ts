@@ -19,6 +19,13 @@ export const FIRM_ROUTES: Routes = [
         title: 'Cabinet — Dossiers clients'
       },
       {
+        path: 'clients/new',
+        canActivate: [firmManagerGuard],
+        loadComponent: () =>
+          import('./managed-clients/firm-managed-client-wizard.component').then(m => m.FirmManagedClientWizardComponent),
+        title: 'Cabinet — Nouveau dossier client'
+      },
+      {
         path: 'affectation',
         canActivate: [firmGovernanceFeatureGuard, firmManagerGuard],
         loadComponent: () =>
@@ -68,24 +75,28 @@ export const FIRM_ROUTES: Routes = [
       },
       {
         path: 'collaborateurs',
+        canActivate: [firmManagerGuard],
         loadComponent: () =>
           import('./collaborators/firm-collaborators-list.component').then(m => m.FirmCollaboratorsListComponent),
         title: 'Cabinet — Collaborateurs'
       },
       {
         path: 'collaborateurs/new',
+        canActivate: [firmManagerGuard],
         loadComponent: () =>
           import('./collaborators/firm-collaborator-form.component').then(m => m.FirmCollaboratorFormComponent),
         title: 'Cabinet — Nouveau collaborateur'
       },
       {
         path: 'collaborateurs/:id',
+        canActivate: [firmManagerGuard],
         loadComponent: () =>
           import('./collaborators/firm-collaborator-form.component').then(m => m.FirmCollaboratorFormComponent),
         title: 'Cabinet — Consultation collaborateur'
       },
       {
         path: 'collaborateurs/:id/edit',
+        canActivate: [firmManagerGuard],
         loadComponent: () =>
           import('./collaborators/firm-collaborator-form.component').then(m => m.FirmCollaboratorFormComponent),
         title: 'Cabinet — Modification collaborateur'
@@ -93,6 +104,11 @@ export const FIRM_ROUTES: Routes = [
       {
         path: 'governance',
         loadChildren: () => import('./governance/governance.routes').then(m => m.FIRM_GOVERNANCE_ROUTES)
+      },
+      {
+        path: 'billing',
+        canActivate: [firmManagerGuard],
+        loadChildren: () => import('./billing/billing.routes').then(m => m.FIRM_BILLING_ROUTES)
       },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]

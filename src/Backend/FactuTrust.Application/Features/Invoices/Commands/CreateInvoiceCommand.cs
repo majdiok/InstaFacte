@@ -78,8 +78,7 @@ public sealed class CreateInvoiceCommandHandler : IRequestHandler<CreateInvoiceC
     private readonly IPlanQuotaService _planQuota;
     private readonly IInvoiceNumberGenerator _numberGenerator;
     private readonly AccountingSettings _accountingSettings;
-    private readonly IPriceResolver _priceResolver;
-    private readonly IPromotionResolver _promotionResolver;
+    private readonly ILinePricingOrchestrator _linePricingOrchestrator;
     private readonly IPaymentTermTemplateRepository _paymentTermRepository;
 
     public CreateInvoiceCommandHandler(
@@ -95,12 +94,10 @@ public sealed class CreateInvoiceCommandHandler : IRequestHandler<CreateInvoiceC
         IPlanQuotaService planQuota,
         IInvoiceNumberGenerator numberGenerator,
         IOptions<AccountingSettings> accountingSettings,
-        IPriceResolver priceResolver,
-        IPromotionResolver promotionResolver,
+        ILinePricingOrchestrator linePricingOrchestrator,
         IPaymentTermTemplateRepository paymentTermRepository)
     {
-        _priceResolver = priceResolver;
-        _promotionResolver = promotionResolver;
+        _linePricingOrchestrator = linePricingOrchestrator;
         _paymentTermRepository = paymentTermRepository;
         _invoiceRepository = invoiceRepository;
         _clientRepository = clientRepository;
@@ -258,40 +255,28 @@ public sealed class CreateInvoiceCommandHandler : IRequestHandler<CreateInvoiceC
                 }
             }
 
-            // Prix forcé par l'utilisateur, sinon résolu par le point unique (prix négocié →
-            // grille → catalogue). Le prix obtenu est gravé sur la ligne : la facture ne
-            // bougera plus si une grille change ensuite.
-            if (customPrice is null)
-            {
-                var priceResult = await _priceResolver.ResolveUnitPriceAsync(
-                    dto.ClientId, product.Id, lineDto.Quantity, dto.IssueDate, cancellationToken);
-                if (priceResult.IsFailure)
-                    return Result.Failure<Guid>(priceResult.Error);
+            Money? priceOverride = customPrice;
 
-                customPrice = priceResult.Value.UnitPriceHT;
-            }
+            var pricing = await _linePricingOrchestrator.ResolveAsync(
+                dto.ClientId,
+                product,
+                lineDto.Quantity,
+                dto.IssueDate,
+                lineDto.DiscountPercent,
+                priceOverride,
+                cancellationToken);
 
-            // Promotion : appliquée APRÈS le prix, sous forme de remise de ligne. Elle ne
-            // s'impose jamais à une remise saisie — ce serait une surprise silencieuse. La
-            // remise obtenue est figée : la fin de la promotion ne change plus ce document.
-            var lineDiscountPercent = lineDto.DiscountPercent;
-            if (lineDiscountPercent is null)
-            {
-                var promo = await _promotionResolver.ResolveAsync(
-                    product.Id, product.CategoryId, dto.ClientId,
-                    lineDto.Quantity, customPrice, dto.IssueDate, cancellationToken);
+            if (pricing.IsFailure)
+                return Result.Failure<Guid>(pricing.Error);
 
-                if (promo.IsSuccess && promo.Value is { } applied)
-                    lineDiscountPercent = applied.DiscountPercent;
-            }
-
-            // Add line to invoice
             var addResult = invoice.AddLine(
                 product,
                 lineDto.Quantity,
-                customPrice,
-                lineDiscountPercent,
-                _accountingSettings.FodecRatePercent);
+                pricing.Value.UnitPriceHT,
+                pricing.Value.DiscountPercent,
+                _accountingSettings.FodecRatePercent,
+                pricing.Value.AppliedPromotion?.PromotionId,
+                pricing.Value.AppliedPromotion?.PromotionName);
             if (addResult.IsFailure)
                 return Result.Failure<Guid>(addResult.Error);
         }

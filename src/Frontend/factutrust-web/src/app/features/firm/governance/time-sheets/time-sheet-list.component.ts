@@ -39,7 +39,7 @@ import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.
           <ng-template pTemplate="body" let-e>
             <tr>
               @if (isManager) {
-                <td>@if (!e.isValidated) { <p-tableCheckbox [value]="e"></p-tableCheckbox> }</td>
+                <td>@if ((e.status ?? 0) === 1) { <p-tableCheckbox [value]="e"></p-tableCheckbox> }</td>
               }
               <td>{{ e.workDate | date:'shortDate' }}</td>
               <td>{{ e.userDisplayName }}</td>
@@ -47,7 +47,7 @@ import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.
               <td>{{ e.hours | number:'1.2-2' }}</td>
               <td>{{ e.activityCode || '—' }}</td>
               <td>{{ e.isBillable ? 'Oui' : 'Non' }}</td>
-              <td><p-tag [severity]="e.isValidated ? 'success' : 'warn'" [value]="e.isValidated ? 'Validée' : 'Brouillon'" /></td>
+              <td><p-tag [severity]="statusSeverity(e)" [value]="statusLabel(e)" /></td>
               <td class="trace">
                 @if (e.isValidated) {
                   {{ e.validatedByDisplayName || '—' }}
@@ -55,12 +55,12 @@ import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.
                 } @else { — }
               </td>
               <td class="actions">
-                @if (!e.isValidated) {
+                @if ((e.status ?? 0) === 0) {
                   <button type="button" pButton icon="pi pi-clone" class="p-button-text p-button-sm" [disabled]="periodLocked" (click)="duplicate.emit(e)" title="Dupliquer au jour suivant"></button>
                   <button type="button" pButton icon="pi pi-pencil" class="p-button-text p-button-sm" [disabled]="periodLocked" (click)="edit.emit(e)" title="Modifier"></button>
                   <button type="button" pButton icon="pi pi-trash" class="p-button-text p-button-danger p-button-sm" [disabled]="periodLocked" (click)="remove.emit(e)" title="Supprimer"></button>
                 }
-                @if (isManager && !e.isValidated) {
+                @if (isManager && (e.status ?? 0) === 1) {
                   <button type="button" pButton icon="pi pi-check" class="p-button-text p-button-success p-button-sm" [disabled]="periodLocked" (click)="validate.emit(e)" title="Valider"></button>
                 }
                 @if (isManager && e.isValidated) {
@@ -102,4 +102,14 @@ export class TimeSheetListComponent {
   @Output() validate = new EventEmitter<FirmTimeSheetEntry>();
   @Output() unvalidate = new EventEmitter<FirmTimeSheetEntry>();
   @Output() duplicate = new EventEmitter<FirmTimeSheetEntry>();
+
+  statusLabel(e: FirmTimeSheetEntry): string {
+    return e.statusDisplay || (e.isValidated ? 'Validée' : (e.status === 1 ? 'Soumis' : 'Brouillon'));
+  }
+
+  statusSeverity(e: FirmTimeSheetEntry): 'success' | 'warn' | 'info' | 'secondary' {
+    if (e.isValidated || e.status === 2) return 'success';
+    if (e.status === 1) return 'warn';
+    return 'secondary';
+  }
 }

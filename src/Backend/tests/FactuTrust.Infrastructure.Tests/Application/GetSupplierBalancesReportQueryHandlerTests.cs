@@ -179,10 +179,16 @@ public sealed class GetSupplierBalancesReportQueryHandlerTests
         var lineId = po.Lines.First().Id;
         Assert.True(po.ReceiveGoods([(lineId, 1m)]).IsSuccess);
 
+        var lineSelections = po.Lines
+            .Where(l => l.ReceivedNotInvoicedQuantity > 0)
+            .Select(l => (l.Id, l.ReceivedNotInvoicedQuantity))
+            .ToList();
+
         var invoice = SupplierInvoice.CreateFromPurchaseOrder(
             po,
             invoiceNumber,
-            new DateTime(2026, 4, 5)).Value;
+            new DateTime(2026, 4, 5),
+            lineSelections).Value;
 
         return Task.FromResult(invoice);
     }

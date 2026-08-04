@@ -88,6 +88,8 @@ public sealed class GetInvoiceByIdQueryHandler : IRequestHandler<GetInvoiceByIdQ
                 UnitPrice = l.UnitPrice.Amount,
                 VatRatePercent = (int)l.VatRate,
                 DiscountPercent = l.DiscountPercent,
+                AppliedPromotionId = l.AppliedPromotionId,
+                AppliedPromotionName = l.AppliedPromotionName,
                 DiscountAmount = l.DiscountAmount.Amount,
                 SubTotal = l.SubTotal.Amount,
                 IsFodecApplicable = l.IsFodecApplicable,

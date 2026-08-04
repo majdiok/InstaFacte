@@ -29,8 +29,8 @@ test.describe('Sidebar collapse', () => {
     await page.goto('/dashboard');
 
     const expandedWidth = await getRailWidth(page);
-    expect(expandedWidth).toBeGreaterThan(150);
-    expect(expandedWidth).toBeLessThan(200);
+    expect(expandedWidth).toBeGreaterThan(225);
+    expect(expandedWidth).toBeLessThan(255);
 
     await page.locator('.rail-collapse-btn').click();
     await page.waitForTimeout(350);
@@ -61,7 +61,8 @@ test.describe('Sidebar collapse', () => {
     await expect(page.locator('#sidebar.sidebar-collapsed')).toHaveCount(0);
 
     const expandedWidth = await getRailWidth(page);
-    expect(expandedWidth).toBeGreaterThan(150);
+    expect(expandedWidth).toBeGreaterThan(225);
+    expect(expandedWidth).toBeLessThan(255);
   });
 
   test('parent section expands sidebar and shows submenu when rail is collapsed', async ({ page }) => {

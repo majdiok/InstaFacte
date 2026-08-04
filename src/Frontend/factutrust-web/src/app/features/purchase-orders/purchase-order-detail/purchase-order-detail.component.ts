@@ -10,6 +10,8 @@ import { InputTextarea } from 'primeng/inputtextarea';
 import { TooltipModule } from 'primeng/tooltip';
 import { ToastService } from '@core/services/toast.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
+import { AuthService } from '@core/services/auth.service';
+import { PERMISSIONS } from '@core/config/permission-keys';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -20,6 +22,10 @@ import {
   PurchaseOrderStatus,
   mapPurchaseOrderDetailFromApi
 } from '@core/services/purchase-order.service';
+import {
+  PurchaseReceiptService,
+  PurchaseReceiptListItem
+} from '@core/services/purchase-receipt.service';
 
 @Component({
   selector: 'app-purchase-order-detail',
@@ -83,7 +89,8 @@ import {
             
             <ng-container *ngIf="canReceiveGoods()">
               <app-button variant="primary" icon="pi-box" iconPos="left"
-                [routerLink]="['/purchase-orders', po()!.id, 'receive']">
+                [routerLink]="['/purchase-receipts', 'new']"
+                [queryParams]="{ purchaseOrderId: po()!.id }">
                 Réception marchandise
               </app-button>
             </ng-container>
@@ -262,6 +269,38 @@ import {
           <div class="detail-card full-width">
             <h3 class="card-title"><i class="pi pi-file-edit"></i> Notes</h3>
             <p class="notes-text">{{ po()!.notes }}</p>
+          </div>
+        }
+
+        @if (linkedReceipts().length > 0) {
+          <div class="detail-card full-width">
+            <h3 class="card-title"><i class="pi pi-box"></i> Bons de réception liés</h3>
+            <ul class="linked-receipts">
+              @for (br of linkedReceipts(); track br.id) {
+                <li>
+                  <a [routerLink]="['/purchase-receipts', br.id]" class="value link">{{ br.number }}</a>
+                  <span class="date">{{ br.receiptDate | date:'dd/MM/yyyy' }}</span>
+                  <p-tag [value]="br.statusDisplay" [severity]="br.status === 1 ? 'success' : br.status === 2 ? 'danger' : 'secondary'"></p-tag>
+                  <span class="amount">{{ br.totalTTC | currency:'TND':'symbol':'1.3-3' }}</span>
+                </li>
+              }
+            </ul>
+          </div>
+        }
+
+        @if (po()!.linkedSupplierInvoices && po()!.linkedSupplierInvoices!.length > 0) {
+          <div class="detail-card full-width">
+            <h3 class="card-title"><i class="pi pi-money-bill"></i> Factures fournisseur liées</h3>
+            <ul class="linked-receipts">
+              @for (inv of po()!.linkedSupplierInvoices!; track inv.id) {
+                <li>
+                  <a [routerLink]="['/supplier-invoices', inv.id]" class="value link">{{ inv.invoiceNumber }}</a>
+                  <span class="date">{{ inv.invoiceDate | date:'dd/MM/yyyy' }}</span>
+                  <p-tag [value]="inv.statusDisplay" severity="info"></p-tag>
+                  <span class="amount">{{ inv.totalTTC | currency:'TND':'symbol':'1.3-3' }}</span>
+                </li>
+              }
+            </ul>
           </div>
         }
 
@@ -448,6 +487,32 @@ import {
       margin: var(--spacing-2) 0 0;
     }
 
+    .linked-receipts {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-2);
+
+      li {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-3);
+        flex-wrap: wrap;
+        font-size: var(--font-size-sm);
+      }
+
+      .date { color: var(--color-text-secondary); }
+      .link {
+        color: var(--color-primary-600);
+        font-weight: var(--font-weight-semibold);
+        text-decoration: none;
+        font-family: 'JetBrains Mono', monospace;
+        &:hover { text-decoration: underline; }
+      }
+    }
+
     .dialog-message {
       margin: 0 0 var(--spacing-4) 0;
       font-size: var(--font-size-sm);
@@ -583,8 +648,10 @@ export class PurchaseOrderDetailComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly poService = inject(PurchaseOrderService);
+  private readonly receiptService = inject(PurchaseReceiptService);
   private readonly toastService = inject(ToastService);
   private readonly confirmationService = inject(ConfirmationService);
+  private readonly auth = inject(AuthService);
 
   // Rendre l'énumération accessible dans le template
   readonly PurchaseOrderStatus = PurchaseOrderStatus;
@@ -593,6 +660,7 @@ export class PurchaseOrderDetailComponent implements OnInit {
   sending = signal(false);
   confirming = signal(false);
   po = signal<PurchaseOrderDetail | null>(null);
+  linkedReceipts = signal<PurchaseReceiptListItem[]>([]);
   cancelDialogVisible = false;
   cancellationReason = '';
 
@@ -635,6 +703,7 @@ export class PurchaseOrderDetailComponent implements OnInit {
             { label: 'Bons de commande', route: '/purchase-orders' },
             { label: response.data.number }
           ];
+          this.loadLinkedReceipts(normalizedData.id);
         }
         this.loading.set(false);
       },
@@ -643,6 +712,15 @@ export class PurchaseOrderDetailComponent implements OnInit {
         this.toastService.add({ severity: 'error', summary: 'Erreur', detail: 'Commande introuvable' });
         this.router.navigate(['/purchase-orders']);
       }
+    });
+  }
+
+  private loadLinkedReceipts(purchaseOrderId: string): void {
+    this.receiptService.getPurchaseReceipts({ purchaseOrderId, pageSize: 50 }).subscribe({
+      next: (res) => {
+        this.linkedReceipts.set(res.success && res.data ? res.data.items : []);
+      },
+      error: () => this.linkedReceipts.set([])
     });
   }
 
@@ -660,12 +738,15 @@ export class PurchaseOrderDetailComponent implements OnInit {
 
   canReceiveGoods(): boolean {
     const status = this.po()?.status;
-    return status === PurchaseOrderStatus.Confirmed || status === PurchaseOrderStatus.PartiallyReceived;
+    return status === PurchaseOrderStatus.Confirmed
+      || status === PurchaseOrderStatus.PartiallyReceived
+      || status === PurchaseOrderStatus.PartiallyInvoiced;
   }
 
   canCreateSupplierInvoice(): boolean {
-    const status = this.po()?.status;
-    return status === PurchaseOrderStatus.PartiallyReceived || status === PurchaseOrderStatus.Received;
+    const order = this.po();
+    return !!order?.hasReceivedNotInvoiced
+      && this.auth.hasPermission(PERMISSIONS.supplierInvoices.create);
   }
 
   getStatusSeverity(status: PurchaseOrderStatus): 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast' {
@@ -674,6 +755,7 @@ export class PurchaseOrderDetailComponent implements OnInit {
       case PurchaseOrderStatus.Confirmed: return 'info';
       case PurchaseOrderStatus.PartiallyReceived: return 'warn';
       case PurchaseOrderStatus.Received: return 'success';
+      case PurchaseOrderStatus.PartiallyInvoiced: return 'warn';
       case PurchaseOrderStatus.Cancelled: return 'danger';
       case PurchaseOrderStatus.Invoiced: return 'contrast';
       default: return 'secondary';
@@ -789,55 +871,125 @@ export class PurchaseOrderDetailComponent implements OnInit {
     const order = this.po();
     if (!order) return;
 
-    // Open modal with PO information
-    this.createSupplierInvoiceModal?.open({
-      purchaseOrderNumber: order.number,
-      totalAmount: order.totalTTC,
-      lines: order.lines,
-      onClose: () => {
-        // Modal closed without action
-      },
-      onConfirm: (request) => {
-        this.poService.createSupplierInvoice(order.id, {
-          invoiceNumber: request.invoiceNumber,
-          invoiceDate: this.formatDateForApi(request.invoiceDate),
-          paymentTermDays: request.paymentTermDays,
-          externalReference: request.externalReference,
-          notes: request.notes,
-          sendEmail: request.sendEmail,
-          lineAssetClassifications: request.lineAssetClassifications,
-          paymentMethod: request.paymentMethod
-        }).subscribe({
-          next: (response) => {
-            if (response.success) {
-              this.createSupplierInvoiceModal?.closeAfterSuccess();
-              this.toastService.add({
-                severity: 'success',
-                summary: 'Succès',
-                detail: `Facture fournisseur ${request.invoiceNumber} créée`
-              });
-              this.loadOrder(order.id);
+    this.poService.getSupplierInvoicePrefill(order.id).subscribe({
+      next: (prefillRes) => {
+        if (!prefillRes.success || !prefillRes.data) {
+          this.toastService.add({
+            severity: 'error',
+            summary: 'Erreur',
+            detail: prefillRes.message || 'Impossible de préparer la facture'
+          });
+          return;
+        }
 
-              if (request.sendEmail) {
-                this.sendSupplierInvoiceEmail(response.data);
-              }
-            }
-          },
-          error: (err) => {
-            this.createSupplierInvoiceModal?.setSubmitting(false);
-            const errorMsg = err?.error?.errors?.[0] || err?.error?.message || 'Erreur lors de la création';
-            const isDuplicate = err?.status === 409;
-            this.toastService.add({
-              severity: 'error',
-              summary: isDuplicate ? 'Numéro en doublon' : 'Erreur',
-              detail: isDuplicate
-                ? 'Ce numéro de facture existe déjà. Veuillez en saisir un autre ou cliquer sur Générer.'
-                : errorMsg
-            });
+        this.createSupplierInvoiceModal?.open({
+          prefill: prefillRes.data,
+          sourceType: 'po',
+          onConfirm: (request) => {
+            void this.submitSupplierInvoice(order.id, request, false);
           }
+        });
+      },
+      error: (err) => {
+        this.toastService.add({
+          severity: 'error',
+          summary: 'Erreur',
+          detail: err?.error?.errors?.[0] || err?.error?.message || 'Impossible de préparer la facture'
         });
       }
     });
+  }
+
+  /**
+   * See PurchaseReceiptDetailComponent.submitSupplierInvoice — same auto-retry
+   * strategy for the PO sibling endpoint. Keeps behaviour aligned across both paths.
+   */
+  private async submitSupplierInvoice(
+    orderId: string,
+    request: { invoiceNumber: string; invoiceDate: Date; paymentTermDays: number;
+      externalReference?: string; notes?: string; sendEmail?: boolean;
+      lines?: { sourceLineId: string; quantityToInvoice: number }[];
+      lineAssetClassifications?: { lineNumber: number; isFixedAsset: boolean;
+        depreciationRateCategoryId?: string; assetAccountNumber?: string }[];
+      paymentMethod?: string; useSuggestedNumber?: boolean; },
+    isRetryAfterConflict: boolean
+  ): Promise<void> {
+    const payload = {
+      invoiceNumber: request.invoiceNumber,
+      invoiceDate: this.formatDateForApi(request.invoiceDate),
+      paymentTermDays: request.paymentTermDays,
+      externalReference: request.externalReference,
+      notes: request.notes,
+      sendEmail: request.sendEmail,
+      lines: request.lines,
+      lineAssetClassifications: request.lineAssetClassifications,
+      paymentMethod: request.paymentMethod,
+      useSuggestedNumber: isRetryAfterConflict ? true : request.useSuggestedNumber
+    };
+
+    this.poService.createSupplierInvoice(orderId, payload).subscribe({
+      next: (response) => {
+        if (response.success && response.data) {
+          this.createSupplierInvoiceModal?.closeAfterSuccess();
+          this.toastService.add({
+            severity: 'success',
+            summary: 'Succès',
+            detail: `Facture fournisseur ${response.data.invoiceNumber} créée`
+          });
+          void this.router.navigate(['/supplier-invoices', response.data.id]);
+        }
+      },
+      error: (err) => {
+        const isDuplicate = err?.status === 409;
+        const suggested: string | null | undefined = err?.error?.data?.suggestedInvoiceNumber;
+
+        if (isDuplicate && !isRetryAfterConflict) {
+          void this.handleConflictAndRetry(orderId, request, suggested);
+          return;
+        }
+
+        this.createSupplierInvoiceModal?.setSubmitting(false);
+        const errorMsg = err?.error?.errors?.[0] ?? err?.error?.message ?? 'Erreur lors de la création';
+        this.toastService.add({
+          severity: 'error',
+          summary: isDuplicate ? 'Numéro en doublon' : 'Erreur',
+          detail: isDuplicate
+            ? 'Impossible de créer la facture : le numéro proposé est également indisponible. Réessayez ou saisissez un numéro.'
+            : errorMsg
+        });
+      }
+    });
+  }
+
+  private async handleConflictAndRetry(
+    orderId: string,
+    request: { invoiceNumber: string; invoiceDate: Date; paymentTermDays: number;
+      externalReference?: string; notes?: string; sendEmail?: boolean;
+      lines?: { sourceLineId: string; quantityToInvoice: number }[];
+      lineAssetClassifications?: { lineNumber: number; isFixedAsset: boolean;
+        depreciationRateCategoryId?: string; assetAccountNumber?: string }[];
+      paymentMethod?: string; useSuggestedNumber?: boolean; },
+    suggestedFromServer: string | null | undefined
+  ): Promise<void> {
+    const modal = this.createSupplierInvoiceModal;
+    if (!modal) return;
+
+    const newNumber = await modal.handleConflict(suggestedFromServer);
+    if (!newNumber) {
+      modal.setSubmitting(false);
+      this.toastService.add({
+        severity: 'error',
+        summary: 'Erreur',
+        detail: 'Impossible de générer un nouveau numéro de facture. Veuillez réessayer.'
+      });
+      return;
+    }
+
+    void this.submitSupplierInvoice(
+      orderId,
+      { ...request, invoiceNumber: newNumber, useSuggestedNumber: true },
+      true
+    );
   }
 
   private formatDateForApi(date: Date): string {

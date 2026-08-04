@@ -881,6 +881,9 @@ public sealed class FirmGovernanceServiceTests
         Assert.True(updated.IsSuccess);
         Assert.Equal(5m, updated.Value.Hours);
 
+        var submitted = await service.SubmitTimeSheetAsync(FirmId, UserId, isManager: true, created.Value.Id);
+        Assert.True(submitted.IsSuccess);
+
         var validated = await service.ValidateTimeSheetAsync(
             FirmId, UserId, "Manager Test", isManager: true, created.Value.Id);
         Assert.True(validated.IsSuccess);
@@ -1184,6 +1187,8 @@ public sealed class FirmGovernanceServiceTests
         var second = await service.CreateTimeSheetAsync(
             FirmId, UserId, "Manager Test", isManager: true, Entry(new DateTime(2026, 7, 11), 3m, assignment.Id));
 
+        await service.SubmitTimeSheetAsync(FirmId, UserId, isManager: true, first.Value.Id);
+        await service.SubmitTimeSheetAsync(FirmId, UserId, isManager: true, second.Value.Id);
         // La seconde est déjà validée ; un identifiant inconnu complète le lot.
         await service.ValidateTimeSheetAsync(FirmId, UserId, "Manager Test", isManager: true, second.Value.Id);
         var unknownId = Guid.NewGuid();
@@ -1196,6 +1201,29 @@ public sealed class FirmGovernanceServiceTests
         Assert.Equal(1, result.Value.Validated);
         Assert.Equal(2, result.Value.Skipped);
         Assert.Contains(result.Value.Failures, f => f.EntryId == unknownId);
+    }
+
+    [Fact]
+    public async Task Bulk_validate_skips_draft_entries()
+    {
+        await using var db = BuildMaster();
+        var assignment = await SeedActiveAssignmentAsync(db);
+        var service = BuildService(db);
+
+        var draft = await service.CreateTimeSheetAsync(
+            FirmId, UserId, "Manager Test", isManager: true, Entry(new DateTime(2026, 7, 12), 2m, assignment.Id));
+        Assert.True(draft.IsSuccess);
+
+        var result = await service.ValidateTimeSheetsBulkAsync(
+            FirmId, UserId, "Manager Test", isManager: true,
+            new[] { draft.Value.Id });
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(0, result.Value.Validated);
+        Assert.Equal(1, result.Value.Skipped);
+        Assert.Contains(result.Value.Failures, f =>
+            f.EntryId == draft.Value.Id &&
+            f.Error.Contains("soumises", StringComparison.OrdinalIgnoreCase));
     }
 
     // ============================================
@@ -1499,6 +1527,75 @@ public sealed class FirmGovernanceServiceTests
             new SaveFirmActivityCodeDto { Code = "TEST", Label = "Test", Category = 1 });
 
         Assert.True(result.IsFailure);
+    }
+
+    [Fact]
+    public async Task Create_activity_code_persists_default_unit_price()
+    {
+        await using var db = BuildMaster();
+        var service = BuildService(db);
+
+        var created = await service.CreateActivityCodeAsync(
+            FirmId, isManager: true,
+            new SaveFirmActivityCodeDto
+            {
+                Code = "CONSEIL",
+                Label = "Conseil",
+                Category = 5,
+                IsBillableByDefault = true,
+                DefaultUnitPrice = 200.5m,
+                SortOrder = 10
+            });
+
+        Assert.True(created.IsSuccess);
+        Assert.Equal(200.5m, created.Value.DefaultUnitPrice);
+
+        var listed = await service.ListActivityCodesAsync(FirmId, includeInactive: false, billableOnly: false);
+        Assert.Equal(200.5m, listed.Single(c => c.Code == "CONSEIL").DefaultUnitPrice);
+    }
+
+    [Fact]
+    public async Task Update_activity_code_updates_default_unit_price()
+    {
+        await using var db = BuildMaster();
+        var service = BuildService(db);
+
+        var created = await service.CreateActivityCodeAsync(
+            FirmId, isManager: true,
+            new SaveFirmActivityCodeDto
+            {
+                Code = "CAC",
+                Label = "Audit",
+                Category = 4,
+                DefaultUnitPrice = 150m,
+                SortOrder = 10
+            });
+
+        var updated = await service.UpdateActivityCodeAsync(
+            FirmId, isManager: true, created.Value.Id,
+            new SaveFirmActivityCodeDto
+            {
+                Code = "CAC",
+                Label = "Audit légal",
+                Category = 4,
+                DefaultUnitPrice = 300m,
+                SortOrder = 10
+            });
+
+        Assert.True(updated.IsSuccess);
+        Assert.Equal(300m, updated.Value.DefaultUnitPrice);
+        Assert.Equal("Audit légal", updated.Value.Label);
+    }
+
+    [Fact]
+    public async Task Seeded_activity_codes_have_null_default_unit_price()
+    {
+        await using var db = BuildMaster();
+        var service = BuildService(db);
+
+        var codes = await service.SeedDefaultActivityCodesAsync(FirmId);
+
+        Assert.All(codes, c => Assert.Null(c.DefaultUnitPrice));
     }
 
     // ============================================

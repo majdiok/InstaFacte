@@ -3,6 +3,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { AuthService, User } from '../services/auth.service';
 import {
+  ALL_NAV_ITEMS,
   buildFlatNavSearchEntries,
   filterNavItems,
   getVisibleNavSearchEntries,
@@ -203,6 +204,20 @@ describe('app-navigation.registry', () => {
 
       const routes = getVisibleNavSearchEntries(auth).map(e => e.route);
       expect(routes).toContain('/accounting/vat-declaration');
+    });
+  });
+
+  describe('promotions navigation placement', () => {
+    it('lists promotions under Paramètres and not under Ventes', () => {
+      const ventes = ALL_NAV_ITEMS.find(i => i.label === 'Ventes');
+      const settings = ALL_NAV_ITEMS.find(i => i.label === 'Paramètres');
+
+      const ventesRoutes = ventes?.children?.map(c => c.route) ?? [];
+      const settingsRoutes = settings?.children?.map(c => c.route) ?? [];
+
+      expect(ventesRoutes).not.toContain('/settings/promotions');
+      expect(ventesRoutes).not.toContain('/pricing/promotions');
+      expect(settingsRoutes).toContain('/settings/promotions');
     });
   });
 });

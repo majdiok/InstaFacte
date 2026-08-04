@@ -1,0 +1,131 @@
+import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { TabViewModule } from 'primeng/tabview';
+
+const ALLOWED_TYPES = [
+  'application/pdf',
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+];
+const MAX_BYTES = 10 * 1024 * 1024;
+
+@Component({
+  selector: 'app-entry-bottom-tabs',
+  standalone: true,
+  imports: [CommonModule, FormsModule, TabViewModule],
+  template: `
+    <p-tabView styleClass="ft-tabs entry-bottom-tabs">
+      <p-tabPanel [header]="'Pièces jointes (' + pendingFiles.length + ')'">
+        <p class="bottom-tab-hint">
+          Les fichiers seront téléversés après l'enregistrement de l'écriture (max 10 Mo, PDF/images/Office).
+        </p>
+        <div class="attach-zone" (dragover)="$event.preventDefault()" (drop)="onDrop($event)">
+          <input type="file" #fileInput multiple hidden (change)="onFilesSelected($event)" />
+          <button type="button" class="btn btn-outline-secondary btn-sm" (click)="fileInput.click()">
+            Ajouter un fichier
+          </button>
+        </div>
+        @if (pendingFiles.length > 0) {
+          <ul class="attach-list">
+            @for (f of pendingFiles; track f.name; let i = $index) {
+              <li>
+                <span>{{ f.name }} ({{ formatSize(f.size) }})</span>
+                <button type="button" class="btn btn-sm btn-outline-danger" (click)="removeFile(i)">✕</button>
+              </li>
+            }
+          </ul>
+        }
+        @if (attachError) {
+          <p class="attach-error" role="alert">{{ attachError }}</p>
+        }
+      </p-tabPanel>
+
+      <p-tabPanel header="Notes">
+        <label class="field-label" for="work-notes">Note de travail (non comptabilisée)</label>
+        <textarea id="work-notes" class="notes-area" rows="4"
+                  [ngModel]="notes" (ngModelChange)="notesChange.emit($event)"
+                  placeholder="Notes internes pour cette saisie…"></textarea>
+      </p-tabPanel>
+
+      <p-tabPanel header="Ventilation analytique">
+        <div class="locked-panel">
+          <p>Le module de ventilation analytique n'est pas encore disponible dans ce dossier.</p>
+          <p class="locked-panel__sub">Cette fonctionnalité sera proposée dans une prochaine version.</p>
+        </div>
+      </p-tabPanel>
+
+      <p-tabPanel header="Historique">
+        <div class="locked-panel">
+          <p>L'historique des modifications sera disponible après l'enregistrement de l'écriture.</p>
+        </div>
+      </p-tabPanel>
+    </p-tabView>
+  `,
+  styles: `
+    .entry-bottom-tabs { margin-top:var(--spacing-4); }
+    .bottom-tab-hint { font-size:var(--font-size-sm); color:var(--color-text-secondary); margin-bottom:var(--spacing-3); }
+    .attach-zone { border:2px dashed var(--color-border-default); border-radius:var(--radius-lg); padding:var(--spacing-5); text-align:center; margin-bottom:var(--spacing-3); min-height:6rem; display:flex; align-items:center; justify-content:center; }
+    .attach-list { list-style:none; padding:0; margin:0; }
+    .attach-list li { display:flex; justify-content:space-between; align-items:center; padding:var(--spacing-2); border-bottom:1px solid var(--color-border-subtle); font-size:var(--font-size-sm); }
+    .attach-error { color:var(--color-error-600); font-size:var(--font-size-sm); }
+    .notes-area { width:100%; padding:var(--spacing-3); border:1px solid var(--color-border-default); border-radius:var(--radius-md); font-size:var(--font-size-sm); resize:vertical; }
+    .locked-panel { padding:var(--spacing-4); background:var(--color-background-subtle); border-radius:var(--radius-md); color:var(--color-text-secondary); font-size:var(--font-size-sm); }
+    .locked-panel__sub { font-size:var(--font-size-xs); margin-top:var(--spacing-2); }
+    .field-label { display:block; margin-bottom:var(--spacing-2); font-size:var(--font-size-sm); font-weight:var(--font-weight-semibold); }
+  `
+})
+export class EntryBottomTabsComponent {
+  @Input() pendingFiles: File[] = [];
+  @Input() notes = '';
+  @Output() pendingFilesChange = new EventEmitter<File[]>();
+  @Output() notesChange = new EventEmitter<string>();
+
+  attachError: string | null = null;
+
+  onFilesSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    if (!input.files) return;
+    this.addFiles(Array.from(input.files));
+    input.value = '';
+  }
+
+  onDrop(event: DragEvent): void {
+    event.preventDefault();
+    if (event.dataTransfer?.files) {
+      this.addFiles(Array.from(event.dataTransfer.files));
+    }
+  }
+
+  addFiles(files: File[]): void {
+    this.attachError = null;
+    const valid: File[] = [];
+    for (const f of files) {
+      if (f.size > MAX_BYTES) {
+        this.attachError = `${f.name} dépasse 10 Mo.`;
+        continue;
+      }
+      if (!ALLOWED_TYPES.includes(f.type) && !f.name.match(/\.(pdf|jpe?g|png|webp|xlsx|docx)$/i)) {
+        this.attachError = `Type non autorisé : ${f.name}`;
+        continue;
+      }
+      valid.push(f);
+    }
+    this.pendingFilesChange.emit([...this.pendingFiles, ...valid]);
+  }
+
+  removeFile(index: number): void {
+    const next = [...this.pendingFiles];
+    next.splice(index, 1);
+    this.pendingFilesChange.emit(next);
+  }
+
+  formatSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} o`;
+    return `${Math.round(bytes / 1024)} Ko`;
+  }
+}

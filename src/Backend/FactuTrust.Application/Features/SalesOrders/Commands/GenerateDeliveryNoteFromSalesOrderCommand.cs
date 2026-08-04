@@ -125,7 +125,10 @@ public sealed class GenerateDeliveryNoteFromSalesOrderCommandHandler
                 quantity,
                 notes: line.Notes,
                 discountPercent: line.DiscountPercent,
-                fodecRatePercent: line.FodecRatePercent);
+                fodecRatePercent: line.FodecRatePercent,
+                unitPriceOverride: line.UnitPrice,
+                appliedPromotionId: line.AppliedPromotionId,
+                appliedPromotionName: line.AppliedPromotionName);
 
             if (addResult.IsFailure)
                 return Result.Failure<Guid>(addResult.Error);

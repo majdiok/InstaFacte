@@ -14,6 +14,11 @@ export interface ResolvedPrice {
   source: PriceSource;
   /** Vrai si le prix vient d'une grille ou d'un accord client, et non du catalogue. */
   isNegotiated: boolean;
+  promotionDiscountPercent?: number | null;
+  promotionName?: string | null;
+  promotionId?: string | null;
+  promotionEligible?: boolean;
+  promotionMinQuantityRequired?: number | null;
 }
 
 export interface ResolvedPriceLine extends ResolvedPrice {
@@ -87,6 +92,28 @@ export interface ClientPricing {
   priceListId: string | null;
   priceListName: string | null;
   negotiatedPrices: ClientProductPrice[];
+}
+
+export interface ProductClientPrice {
+  id: string;
+  clientId: string;
+  clientName: string;
+  unitPriceHT: number;
+  currency: string;
+  catalogUnitPriceHT: number;
+  isActive: boolean;
+  validFrom: string | null;
+  validUntil: string | null;
+  isApplicableToday: boolean;
+}
+
+export interface ProductPricing {
+  productId: string;
+  productCode: string;
+  productName: string;
+  catalogUnitPriceHT: number;
+  currency: string;
+  clientPrices: ProductClientPrice[];
 }
 
 export interface CreatePriceListRequest {
@@ -164,6 +191,9 @@ export interface UpdatePromotionRequest {
   minQuantity: number;
   priority: number;
   isActive: boolean;
+  productId: string | null;
+  productCategoryId: string | null;
+  clientId: string | null;
 }
 
 export type PaymentDueMode = 'NetDays' | 'EndOfMonth' | 'EndOfMonthOnDay';
@@ -337,6 +367,13 @@ export class PricingService {
   deleteClientProductPrice(id: string): Observable<ApiResponse<object>> {
     return this.http.delete<ApiResponse<object>>(`${this.baseUrl}/client-prices/${id}`);
   }
+
+  // ─────────────────────── Tarification d'un produit ───────────────────────
+
+  getProductPricing(productId: string): Observable<ApiResponse<ProductPricing>> {
+    return this.http.get<ApiResponse<ProductPricing>>(`${this.baseUrl}/products/${productId}`);
+  }
+
   // ─────────────────────── Promotions ───────────────────────
 
   getPromotions(): Observable<ApiResponse<Promotion[]>> {

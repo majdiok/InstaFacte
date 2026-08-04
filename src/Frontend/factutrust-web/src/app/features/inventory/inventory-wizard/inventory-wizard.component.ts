@@ -1,36 +1,34 @@
-import { Component, OnInit, inject, signal, computed, effect, untracked } from '@angular/core';
+import { Component, OnInit, inject, signal, computed, effect, untracked, ViewChild, ElementRef, AfterViewChecked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule, Router } from '@angular/router';
 
-// Services
 import {
     InventoryService,
     ActiveInventoryDto,
     InventorySummaryDto,
     InventoryType,
-    RecordCountResult
+    RecordCountResult,
+    StartInventoryRequest
 } from '@core/services/inventory.service';
-import { StockService, SimpleStockItem } from '@core/services/stock.service';
+import { StockService, SimpleStockItem, Warehouse } from '@core/services/stock.service';
+import { ConfirmationService } from '@core/services/confirmation.service';
 
-// PrimeNG
 import { ButtonModule } from 'primeng/button';
-import { DialogModule } from 'primeng/dialog';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { ToastModule } from 'primeng/toast';
 import { MessageService } from 'primeng/api';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
 import { RippleModule } from 'primeng/ripple';
-import { BadgeModule } from 'primeng/badge';
 import { ProgressBarModule } from 'primeng/progressbar';
-import { CardModule } from 'primeng/card';
-import { RadioButtonModule } from 'primeng/radiobutton';
 import { CheckboxModule } from 'primeng/checkbox';
 import { InputTextModule } from 'primeng/inputtext';
+import { DropdownModule } from 'primeng/dropdown';
 
-// Shared Components
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
+import { FormSectionComponent } from '@shared/components/form-section/form-section.component';
+import { ButtonComponent } from '@shared/components/button/button.component';
 
 type WizardStep = 'start' | 'count' | 'summary' | 'success';
 
@@ -42,28 +40,33 @@ type WizardStep = 'start' | 'count' | 'summary' | 'success';
         FormsModule,
         RouterModule,
         ButtonModule,
-        DialogModule,
         InputNumberModule,
         ToastModule,
         ProgressSpinnerModule,
         RippleModule,
-        BadgeModule,
         ProgressBarModule,
-        CardModule,
-        RadioButtonModule,
         CheckboxModule,
         InputTextModule,
+        DropdownModule,
         PageHeaderComponent,
-        BreadcrumbComponent
+        BreadcrumbComponent,
+        FormSectionComponent,
+        ButtonComponent
     ],
     templateUrl: './inventory-wizard.component.html',
-    styleUrl: './inventory-wizard.component.scss'
+    styleUrl: './inventory-wizard.component.scss',
+    providers: [MessageService]
 })
-export class InventoryWizardComponent implements OnInit {
+export class InventoryWizardComponent implements OnInit, AfterViewChecked {
     private inventoryService = inject(InventoryService);
     private stockService = inject(StockService);
     private messageService = inject(MessageService);
+    private confirmationService = inject(ConfirmationService);
     private router = inject(Router);
+
+    readonly InventoryType = InventoryType;
+
+    @ViewChild('countInput') countInputRef?: ElementRef;
 
     // State
     step = signal<WizardStep>('start');
@@ -80,11 +83,14 @@ export class InventoryWizardComponent implements OnInit {
     selectedProductIds = signal<Set<string>>(new Set());
     productSearchTerm = signal('');
     loadingProducts = signal(false);
+    warehouses: Warehouse[] = [];
+    selectedWarehouse = signal<Warehouse | null>(null);
 
     // Count step
     currentProductIndex = signal(0);
     countedQuantity = signal(0);
     lastCountResult = signal<RecordCountResult | null>(null);
+    private focusCountInputPending = false;
 
     // Computed
     currentProduct = computed(() => {
@@ -100,19 +106,37 @@ export class InventoryWizardComponent implements OnInit {
         return inventory.progressPercent;
     });
 
+    countDifference = computed(() => {
+        const product = this.currentProduct();
+        if (!product) return null;
+        return this.countedQuantity() - product.theoreticalQuantity;
+    });
+
     filteredProducts = computed(() => {
         const products = this.availableProducts();
         const search = this.productSearchTerm().toLowerCase().trim();
         if (!search) return products;
         return products.filter(p =>
             p.productName.toLowerCase().includes(search) ||
-            p.productCode.toLowerCase().includes(search)
+            (p.productCode?.toLowerCase().includes(search) ?? false)
         );
     });
 
     canStartPartialInventory = computed(() => {
         return this.inventoryType() !== InventoryType.Partial ||
             this.selectedProductIds().size > 0;
+    });
+
+    showWarehousePicker = computed(() => this.warehouses.length > 1);
+
+    wizardSteps = computed(() => {
+        const current = this.step();
+        return [
+            { key: 'start' as const, label: 'Lancement', active: current === 'start', done: current !== 'start' },
+            { key: 'count' as const, label: 'Comptage', active: current === 'count', done: current === 'summary' || current === 'success' },
+            { key: 'summary' as const, label: 'Résumé', active: current === 'summary', done: current === 'success' },
+            { key: 'success' as const, label: 'Terminé', active: current === 'success', done: false }
+        ];
     });
 
     // Breadcrumb
@@ -123,30 +147,70 @@ export class InventoryWizardComponent implements OnInit {
     ];
 
     constructor() {
-        // Watch for inventory type changes to load products when partial is selected
         effect(() => {
             const isPartial = this.inventoryType() === InventoryType.Partial;
             const hasNoProducts = this.availableProducts().length === 0;
 
             if (isPartial && hasNoProducts) {
-                // Use untracked to safely call method that writes to signals
                 untracked(() => this.loadAvailableProducts());
             }
         });
     }
 
     ngOnInit(): void {
+        this.loadWarehouses();
+        this.checkActiveInventory();
+    }
+
+    ngAfterViewChecked(): void {
+        if (this.focusCountInputPending && this.countInputRef) {
+            this.focusCountInputPending = false;
+            const input = this.countInputRef.nativeElement?.querySelector?.('input')
+                ?? this.countInputRef.nativeElement;
+            input?.focus?.();
+            input?.select?.();
+        }
+    }
+
+    loadWarehouses(): void {
+        this.stockService.getWarehouses(true).subscribe({
+            next: (response) => {
+                if (response.success && response.data) {
+                    this.warehouses = response.data;
+                    const defaultWh = response.data.find(w => w.isDefault) ?? response.data[0] ?? null;
+                    const previousId = this.selectedWarehouse()?.id;
+                    this.selectedWarehouse.set(defaultWh);
+                    // Re-check active inventory once warehouse is known (multi-warehouse safe)
+                    if (defaultWh && defaultWh.id !== previousId && this.step() === 'start') {
+                        this.checkActiveInventory();
+                    }
+                }
+            },
+            error: () => {
+                // Non-blocking: wizard can still run with default warehouse on backend
+            }
+        });
+    }
+
+    onWarehouseChange(warehouse: Warehouse | null): void {
+        this.selectedWarehouse.set(warehouse);
         this.checkActiveInventory();
     }
 
     checkActiveInventory(): void {
         this.loading.set(true);
-        this.inventoryService.getActiveInventory().subscribe({
+        const warehouseId = this.selectedWarehouse()?.id;
+        this.inventoryService.getActiveInventory(warehouseId).subscribe({
             next: (response) => {
                 if (response.success && response.data) {
                     this.activeInventory.set(response.data);
                     this.step.set('count');
                     this.findNextUncountedProduct();
+                } else {
+                    this.activeInventory.set(null);
+                    if (this.step() === 'count') {
+                        this.step.set('start');
+                    }
                 }
                 this.loading.set(false);
             },
@@ -208,11 +272,15 @@ export class InventoryWizardComponent implements OnInit {
 
     startInventory(): void {
         this.submitting.set(true);
-        const request: any = {
+        const request: StartInventoryRequest = {
             type: this.inventoryType()
         };
 
-        // Add productIds for partial inventory
+        const warehouseId = this.selectedWarehouse()?.id;
+        if (warehouseId) {
+            request.warehouseId = warehouseId;
+        }
+
         if (this.inventoryType() === InventoryType.Partial) {
             request.productIds = Array.from(this.selectedProductIds());
         }
@@ -231,7 +299,6 @@ export class InventoryWizardComponent implements OnInit {
             },
             error: (error) => {
                 this.submitting.set(false);
-                // Extract the actual error message from the backend response
                 const errorMessage = error?.error?.message
                     || error?.error?.error
                     || error?.error?.globalErrors?.[0]
@@ -256,6 +323,7 @@ export class InventoryWizardComponent implements OnInit {
             this.currentProductIndex.set(index);
             const product = inventory.products[index];
             this.countedQuantity.set(product.theoreticalQuantity);
+            this.focusCountInputPending = true;
         }
     }
 
@@ -266,6 +334,18 @@ export class InventoryWizardComponent implements OnInit {
             this.countedQuantity.set(product.isCounted && product.countedQuantity !== null
                 ? product.countedQuantity
                 : product.theoreticalQuantity);
+            this.focusCountInputPending = true;
+        }
+    }
+
+    onCountedQuantityChange(value: number | null): void {
+        this.countedQuantity.set(value ?? 0);
+    }
+
+    onCountKeydown(event: KeyboardEvent): void {
+        if (event.key === 'Enter' && !this.submitting()) {
+            event.preventDefault();
+            this.submitCount();
         }
     }
 
@@ -287,7 +367,6 @@ export class InventoryWizardComponent implements OnInit {
                         summary: 'Comptage enregistré',
                         detail: response.data.humanMessage
                     });
-                    // Refresh and move to next
                     this.refreshAndMoveNext();
                 }
                 this.submitting.set(false);
@@ -304,12 +383,12 @@ export class InventoryWizardComponent implements OnInit {
     }
 
     private refreshAndMoveNext(): void {
-        this.inventoryService.getActiveInventory().subscribe({
+        const warehouseId = this.activeInventory()?.warehouseId ?? this.selectedWarehouse()?.id;
+        this.inventoryService.getActiveInventory(warehouseId).subscribe({
             next: (response) => {
                 if (response.success && response.data) {
                     this.activeInventory.set(response.data);
 
-                    // Check if all products are counted
                     if (response.data.remainingProducts === 0) {
                         this.goToSummary();
                     } else {
@@ -371,6 +450,19 @@ export class InventoryWizardComponent implements OnInit {
                     detail: 'Impossible de valider l\'inventaire'
                 });
             }
+        });
+    }
+
+    confirmCancelInventory(): void {
+        this.confirmationService.confirm({
+            header: 'Annuler l\'inventaire',
+            message: 'Les comptages non validés seront perdus. Voulez-vous vraiment annuler cet inventaire ?',
+            icon: 'pi pi-exclamation-triangle',
+            acceptLabel: 'Annuler l\'inventaire',
+            rejectLabel: 'Continuer le comptage',
+            acceptButtonStyleClass: 'btn-danger',
+            size: 'md',
+            accept: () => this.cancelInventory()
         });
     }
 

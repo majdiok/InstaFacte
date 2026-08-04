@@ -31,6 +31,7 @@ public class AuthController : ControllerBase
     private readonly IConfiguration _configuration;
     private readonly IEffectivePermissionService _effectivePermissionService;
     private readonly IAccountingFirmsFeature _accountingFirmsFeature;
+    private readonly IAccountingFirmRegistrationService _accountingFirmRegistrationService;
     private readonly ILogger<AuthController> _logger;
 
     public AuthController(
@@ -42,6 +43,7 @@ public class AuthController : ControllerBase
         IConfiguration configuration,
         IEffectivePermissionService effectivePermissionService,
         IAccountingFirmsFeature accountingFirmsFeature,
+        IAccountingFirmRegistrationService accountingFirmRegistrationService,
         ILogger<AuthController> logger)
     {
         _userManager = userManager;
@@ -52,6 +54,7 @@ public class AuthController : ControllerBase
         _configuration = configuration;
         _effectivePermissionService = effectivePermissionService;
         _accountingFirmsFeature = accountingFirmsFeature;
+        _accountingFirmRegistrationService = accountingFirmRegistrationService;
         _logger = logger;
     }
 
@@ -341,102 +344,29 @@ public class AuthController : ControllerBase
         if (!_accountingFirmsFeature.IsEnabled)
             return NotFound();
 
-        if (dto.Password != dto.ConfirmPassword)
-            return BadRequest(ApiResponse<AuthResponseDto>.Fail("Les mots de passe ne correspondent pas"));
+        var result = await _accountingFirmRegistrationService.RegisterAsync(dto, cancellationToken);
 
-        var nifResult = NIF.Create(dto.Nif);
-        if (nifResult.IsFailure)
-            return BadRequest(ApiResponse<AuthResponseDto>.Fail(nifResult.Error.Description));
-
-        var addressResult = Address.Create(dto.Street, dto.City, dto.Governorate, dto.StreetLine2, dto.PostalCode);
-        if (addressResult.IsFailure)
-            return BadRequest(ApiResponse<AuthResponseDto>.Fail(addressResult.Error.Description));
-
-        var emailResult = Email.Create(dto.FirmEmail);
-        if (emailResult.IsFailure)
-            return BadRequest(ApiResponse<AuthResponseDto>.Fail(emailResult.Error.Description));
-
-        var phoneResult = PhoneNumber.Create(dto.Phone);
-        if (phoneResult.IsFailure)
-            return BadRequest(ApiResponse<AuthResponseDto>.Fail(phoneResult.Error.Description));
-
-        await using var transaction = await _masterContext.Database.BeginTransactionAsync(cancellationToken);
-
-        try
+        if (result.Success && result.Tokens is not null)
         {
-            var tenantResult = Tenant.CreateAccountingFirm(
-                dto.FirmName,
-                nifResult.Value,
-                addressResult.Value,
-                emailResult.Value,
-                phoneResult.Value,
-                dto.Website);
-
-            if (tenantResult.IsFailure)
-                return BadRequest(ApiResponse<AuthResponseDto>.Fail(tenantResult.Error.Description));
-
-            var tenant = tenantResult.Value;
-            _masterContext.Tenants.Add(tenant);
-            await _masterContext.SaveChangesAsync(cancellationToken);
-
-            await _tenantService.CreateAccountingFirmDatabaseAsync(tenant.Id, tenant.DatabaseName, cancellationToken);
-
-            var subscription = Subscription.CreateFree(tenant.Id);
-            _masterContext.Subscriptions.Add(subscription);
-
-            var profileResult = AccountingFirmProfile.Create(
-                tenant.Id,
-                dto.FirmName,
-                dto.City,
-                dto.Governorate,
-                emailResult.Value,
-                phoneResult.Value,
-                dto.Description,
-                dto.ProfessionalRegistrationNumber,
-                dto.IsPublicInDirectory);
-
-            if (profileResult.IsFailure)
-                return BadRequest(ApiResponse<AuthResponseDto>.Fail(profileResult.Error.Description));
-
-            _masterContext.AccountingFirmProfiles.Add(profileResult.Value);
-
-            var user = new ApplicationUser
-            {
-                UserName = dto.Email,
-                Email = dto.Email,
-                FirstName = dto.FirstName,
-                LastName = dto.LastName,
-                TenantId = tenant.Id,
-                EmailConfirmed = true
-            };
-
-            var createResult = await _userManager.CreateAsync(user, dto.Password);
-            if (!createResult.Succeeded)
-            {
-                var errors = IdentityErrorTranslator.TranslateToFrench(createResult.Errors);
-                return BadRequest(ApiResponse<AuthResponseDto>.Fail(errors));
-            }
-
-            await _userManager.AddToRoleAsync(user, UserRole.FirmManager.ToString());
-
-            await _masterContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-
-            var tokens = await _tokenService.GenerateTokensAsync(user.Id, tenant.Id, cancellationToken: cancellationToken);
-
-            _logger.LogInformation("Accounting firm {FirmName} registered by {Email}", dto.FirmName, dto.Email);
-
-            return CreatedAtAction(nameof(Login), ApiResponse<AuthResponseDto>.Ok(tokens, "Inscription cabinet réussie"));
+            return CreatedAtAction(
+                nameof(Login),
+                ApiResponse<AuthResponseDto>.Ok(result.Tokens, "Inscription cabinet réussie"));
         }
-        catch (Exception ex)
+
+        return result.FailureKind switch
         {
-            await transaction.RollbackAsync(cancellationToken);
-            var correlationId = Guid.NewGuid().ToString("N");
-            _logger.LogError(ex, "Firm registration failed for {Email}. CorrelationId: {CorrelationId}", dto.Email, correlationId);
-            return StatusCode(
+            AccountingFirmRegistrationFailureKind.Validation =>
+                BadRequest(ApiResponse<AuthResponseDto>.Fail(
+                    string.Join(", ", result.Errors))),
+            AccountingFirmRegistrationFailureKind.DuplicateEmail =>
+                BadRequest(ApiResponse<AuthResponseDto>.Fail(
+                    string.Join(", ", result.Errors))),
+            _ => StatusCode(
                 StatusCodes.Status500InternalServerError,
-                ApiResponse<AuthResponseDto>.Fail("L'inscription du cabinet n'a pas pu être finalisée.", $"FIRM-{correlationId}"));
-        }
+                ApiResponse<AuthResponseDto>.Fail(
+                    result.Errors.FirstOrDefault() ?? "L'inscription du cabinet n'a pas pu être finalisée.",
+                    $"FIRM-{result.CorrelationId}"))
+        };
     }
 
     private async Task<UserDto> BuildUserProfileDtoAsync(ApplicationUser user, Tenant? tenant, CancellationToken cancellationToken)
@@ -465,7 +395,7 @@ public class AuthController : ControllerBase
             AccessMode = "native",
             TwoFactorEnabled = user.TwoFactorEnabled,
             EnabledModuleIds = tenant?.Kind == TenantKind.AccountingFirm
-                ? new List<int> { (int)AppModule.Administration }
+                ? new List<int> { (int)AppModule.Administration, (int)AppModule.Honoraires }
                 : snapshot.EnabledModules.Select(m => (int)m).ToList(),
             EffectivePermissions = snapshot.EffectivePermissions.ToList()
         };

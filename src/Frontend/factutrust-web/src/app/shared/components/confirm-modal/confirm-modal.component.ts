@@ -110,11 +110,18 @@ import { NgbActiveModal } from '@ng-bootstrap/ng-bootstrap';
 
     .confirm-modal-footer {
       display: flex;
+      flex-wrap: wrap;
       justify-content: flex-end;
+      align-items: center;
       gap: var(--spacing-3, 0.75rem);
       padding: var(--spacing-4, 1rem) var(--spacing-5, 1.25rem);
       border-top: 1px solid var(--color-border-subtle, #e2e8f0);
       background: var(--color-background-subtle, #f8fafc);
+    }
+
+    /* Neutralise Bootstrap sibling margins that conflict with gap */
+    .confirm-modal-footer > * {
+      margin: 0 !important;
     }
 
     .confirm-modal-footer .btn {
@@ -122,7 +129,12 @@ import { NgbActiveModal } from '@ng-bootstrap/ng-bootstrap';
       cursor: pointer !important;
       position: relative;
       z-index: 1;
-      min-width: 100px;
+      flex: 0 1 auto;
+      min-width: 0;
+      max-width: 100%;
+      white-space: normal;
+      text-align: center;
+      line-height: 1.25;
       padding: var(--spacing-2, 0.5rem) var(--spacing-4, 1rem);
       font-size: var(--font-size-sm, 0.875rem);
       font-weight: var(--font-weight-medium, 500);
@@ -173,12 +185,14 @@ import { NgbActiveModal } from '@ng-bootstrap/ng-bootstrap';
       border-color: var(--color-success-700, #15803d);
     }
 
-    .confirm-modal-btn-accept.p-button-danger {
+    .confirm-modal-btn-accept.p-button-danger,
+    .confirm-modal-btn-accept.btn-danger {
       background: var(--color-error-600, #dc2626);
       border-color: var(--color-error-600, #dc2626);
     }
 
-    .confirm-modal-btn-accept.p-button-danger:hover {
+    .confirm-modal-btn-accept.p-button-danger:hover,
+    .confirm-modal-btn-accept.btn-danger:hover {
       background: var(--color-error-700, #b91c1c);
       border-color: var(--color-error-700, #b91c1c);
     }
@@ -187,6 +201,7 @@ import { NgbActiveModal } from '@ng-bootstrap/ng-bootstrap';
     @media (max-width: 576px) {
       .confirm-modal-footer {
         flex-direction: column;
+        align-items: stretch;
       }
 
       .confirm-modal-footer .btn {

@@ -66,6 +66,8 @@ public sealed record SupplierInvoiceDetailDto
     public SupplierSummaryDto Supplier { get; init; } = null!;
     public Guid PurchaseOrderId { get; init; }
     public string PurchaseOrderNumber { get; init; } = null!;
+    public Guid? SourcePurchaseReceiptId { get; init; }
+    public string? SourcePurchaseReceiptNumber { get; init; }
 
     public IReadOnlyList<SupplierInvoiceLineDto> Lines { get; init; } = Array.Empty<SupplierInvoiceLineDto>();
 
@@ -175,4 +177,58 @@ public sealed record SupplierPaymentDto
     /// <summary>Statut de l'effet (0 En portefeuille, 1 Encaissé/payé, 2 Impayé) ; null si non-traite.</summary>
     public int? EffetStatus { get; init; }
     public string? EffetStatusDisplay { get; init; }
+}
+
+/// <summary>
+/// Prefill data for creating a supplier invoice from a PO or BR.
+/// </summary>
+public sealed record SupplierInvoicePrefillDto
+{
+    public Guid? PurchaseOrderId { get; init; }
+    public string? PurchaseOrderNumber { get; init; }
+    public Guid? PurchaseReceiptId { get; init; }
+    public string? PurchaseReceiptNumber { get; init; }
+    public Guid SupplierId { get; init; }
+    public string SupplierName { get; init; } = null!;
+    public int PaymentTermDays { get; init; }
+    public Guid? WarehouseId { get; init; }
+    public IReadOnlyList<SupplierInvoicePrefillLineDto> Lines { get; init; } = Array.Empty<SupplierInvoicePrefillLineDto>();
+    public decimal SubTotalHT { get; init; }
+    public decimal TotalVat { get; init; }
+    public decimal TotalTTC { get; init; }
+    public string Currency { get; init; } = "TND";
+    /// <summary>Next available internal number (preview; does not consume the sequence).</summary>
+    public string? SuggestedInvoiceNumber { get; init; }
+}
+
+public sealed record SupplierInvoicePrefillLineDto
+{
+    public Guid SourceLineId { get; init; }
+    public Guid? PurchaseOrderLineId { get; init; }
+    public Guid? PurchaseReceiptLineId { get; init; }
+    public int LineNumber { get; init; }
+    public Guid ProductId { get; init; }
+    public string ProductCode { get; init; } = null!;
+    public string ProductName { get; init; } = null!;
+    public string? Unit { get; init; }
+    public decimal ReceivedQuantity { get; init; }
+    public decimal InvoicedQuantity { get; init; }
+    public decimal QuantityToInvoice { get; init; }
+    public decimal MaxQuantityToInvoice { get; init; }
+    public decimal UnitPriceHT { get; init; }
+    public string VatRateDisplay { get; init; } = null!;
+    public decimal SubTotalHT { get; init; }
+}
+
+/// <summary>
+/// Summary of a supplier invoice linked to a purchase document.
+/// </summary>
+public sealed record LinkedSupplierInvoiceSummaryDto
+{
+    public Guid Id { get; init; }
+    public string InvoiceNumber { get; init; } = null!;
+    public DateTime InvoiceDate { get; init; }
+    public SupplierInvoiceStatus Status { get; init; }
+    public string StatusDisplay { get; init; } = null!;
+    public decimal TotalTTC { get; init; }
 }

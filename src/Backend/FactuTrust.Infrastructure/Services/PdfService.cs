@@ -660,6 +660,125 @@ public partial class PdfService : IPdfService
         });
     }
 
+    public Task<byte[]> GeneratePurchaseReceiptPdfAsync(PurchaseReceipt receipt, CancellationToken cancellationToken = default)
+    {
+        var document = Document.Create(container =>
+        {
+            container.Page(page =>
+            {
+                page.Size(PageSizes.A4);
+                page.Margin(30);
+                page.DefaultTextStyle(DefaultTextStyle);
+
+                page.Header().Row(row =>
+                {
+                    row.RelativeItem().Column(column =>
+                    {
+                        column.Item().Text("BON DE RÉCEPTION D'ACHAT").FontSize(22).Bold().FontColor(Colors.Blue.Darken2);
+                        column.Item().Text($"N° {receipt.Number.Value}").FontSize(14);
+                        column.Item().PaddingTop(5).Text($"Date de réception : {receipt.ReceiptDate:dd/MM/yyyy}");
+                        if (receipt.Warehouse != null)
+                            column.Item().Text($"Entrepôt : {receipt.Warehouse.Name}").FontSize(9).FontColor(Colors.Grey.Darken1);
+                    });
+
+                    row.RelativeItem().AlignRight().Column(column =>
+                    {
+                        column.Item().Text($"Statut : {receipt.Status.ToDisplayString()}").Bold();
+                        if (!string.IsNullOrEmpty(receipt.SupplierReference))
+                            column.Item().Text($"Réf. fournisseur : {receipt.SupplierReference}").FontSize(9);
+                        if (!string.IsNullOrEmpty(receipt.DeliveryNoteNumber))
+                            column.Item().Text($"N° BL : {receipt.DeliveryNoteNumber}").FontSize(9);
+                        if (!string.IsNullOrEmpty(receipt.TransporterName))
+                            column.Item().Text($"Transporteur : {receipt.TransporterName}").FontSize(9);
+                    });
+                });
+
+                page.Content().PaddingVertical(20).Column(column =>
+                {
+                    column.Item().Column(c =>
+                    {
+                        c.Item().Text("FOURNISSEUR").Bold().FontColor(Colors.Grey.Darken1);
+                        c.Item().PaddingTop(5).Text(receipt.Supplier?.Name ?? "-").Bold();
+                    });
+
+                    column.Item().PaddingTop(20).Table(table =>
+                    {
+                        table.ColumnsDefinition(columns =>
+                        {
+                            columns.ConstantColumn(30);
+                            columns.RelativeColumn(2);
+                            columns.RelativeColumn(3);
+                            columns.RelativeColumn(1);
+                            columns.RelativeColumn(1);
+                            columns.RelativeColumn(1.5f);
+                            columns.RelativeColumn(1.5f);
+                        });
+
+                        table.Header(header =>
+                        {
+                            header.Cell().Background(Colors.Blue.Darken2).Padding(4).Text("#").FontColor(Colors.White).FontSize(8);
+                            header.Cell().Background(Colors.Blue.Darken2).Padding(4).Text("Article").FontColor(Colors.White).FontSize(8);
+                            header.Cell().Background(Colors.Blue.Darken2).Padding(4).Text("Désignation").FontColor(Colors.White).FontSize(8);
+                            header.Cell().Background(Colors.Blue.Darken2).Padding(4).AlignRight().Text("Qté reçue").FontColor(Colors.White).FontSize(8);
+                            header.Cell().Background(Colors.Blue.Darken2).Padding(4).AlignRight().Text("Remise %").FontColor(Colors.White).FontSize(8);
+                            header.Cell().Background(Colors.Blue.Darken2).Padding(4).AlignRight().Text("P.U. HT").FontColor(Colors.White).FontSize(8);
+                            header.Cell().Background(Colors.Blue.Darken2).Padding(4).AlignRight().Text("Total HT").FontColor(Colors.White).FontSize(8);
+                        });
+
+                        foreach (var line in receipt.Lines.OrderBy(l => l.LineNumber))
+                        {
+                            table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(4).Text(line.LineNumber.ToString()).FontSize(8);
+                            table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(4).Text(line.ProductCode).FontSize(8);
+                            table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(4).Text(line.ProductName).FontSize(8);
+                            table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(4).AlignRight().Text($"{line.ReceivedQuantity:N3}").FontSize(8);
+                            table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(4).AlignRight().Text(line.DiscountPercent?.ToString("N1") ?? "-").FontSize(8);
+                            table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(4).AlignRight().Text($"{line.UnitPrice.Amount:N3}").FontSize(8);
+                            table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(4).AlignRight().Text($"{line.SubTotal.Amount:N3}").FontSize(8);
+                        }
+                    });
+
+                    column.Item().PaddingTop(15).AlignRight().Width(220).Table(table =>
+                    {
+                        table.ColumnsDefinition(columns =>
+                        {
+                            columns.RelativeColumn();
+                            columns.RelativeColumn();
+                        });
+                        table.Cell().Padding(4).Text("Total HT").FontSize(9);
+                        table.Cell().Padding(4).AlignRight().Text($"{receipt.SubTotal.Amount:N3} TND").FontSize(9);
+                        table.Cell().Padding(4).Text("TVA").FontSize(9);
+                        table.Cell().Padding(4).AlignRight().Text($"{receipt.TotalVat.Amount:N3} TND").FontSize(9);
+                        table.Cell().Background(Colors.Blue.Darken2).Padding(5).Text("Total TTC").Bold().FontColor(Colors.White).FontSize(10);
+                        table.Cell().Background(Colors.Blue.Darken2).Padding(5).AlignRight().Text($"{receipt.TotalAmount.Amount:N3} TND").Bold().FontColor(Colors.White).FontSize(10);
+                    });
+
+                    if (!string.IsNullOrEmpty(receipt.Notes))
+                    {
+                        column.Item().PaddingTop(20).Column(c =>
+                        {
+                            c.Item().Text("Observations :").Bold();
+                            c.Item().Text(CleanTextForPdf(receipt.Notes!));
+                        });
+                    }
+                });
+
+                page.Footer().Column(column =>
+                {
+                    column.Item().AlignCenter().Text("Bon de réception d'achat").FontSize(8).FontColor(Colors.Grey.Darken1);
+                    column.Item().AlignCenter().Text(x =>
+                    {
+                        x.Span("Page ");
+                        x.CurrentPageNumber();
+                        x.Span(" / ");
+                        x.TotalPages();
+                    });
+                });
+            });
+        });
+
+        return Task.FromResult(document.GeneratePdf());
+    }
+
     /// <summary>
     /// Nettoie le texte en supprimant les caractères de contrôle (U-000D, U-000A, etc.)
     /// qui peuvent causer des problèmes lors du rendu PDF.

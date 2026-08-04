@@ -80,7 +80,7 @@ public class TaxController : ControllerBase
     /// Taux de TVA actifs (pour listes déroulantes produits / factures).
     /// </summary>
     [HttpGet("vat-rates")]
-    [Authorize(Policy = PermissionPolicies.SettingsRead)]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
     [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<VatRateOptionDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetVatRates(CancellationToken cancellationToken = default)
     {

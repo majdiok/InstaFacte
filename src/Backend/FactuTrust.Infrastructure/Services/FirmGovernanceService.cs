@@ -73,7 +73,19 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
             .Select(g => new { g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.Key, x => x.Count, cancellationToken);
 
-        return files.Select(f => MapPermanentFile(f, activeRepCount: repCounts.GetValueOrDefault(f.Id))).ToList();
+        var companyTenantIds = files.Select(f => f.CompanyTenantId).Distinct().ToList();
+        var managedTenantIds = await _master.Tenants.AsNoTracking()
+            .Where(t => companyTenantIds.Contains(t.Id) && t.ManagedByFirmTenantId != null)
+            .Select(t => t.Id)
+            .ToListAsync(cancellationToken);
+        var managedSet = managedTenantIds.ToHashSet();
+
+        return files
+            .Select(f => MapPermanentFile(f, activeRepCount: repCounts.GetValueOrDefault(f.Id)) with
+            {
+                IsFirmManaged = managedSet.Contains(f.CompanyTenantId)
+            })
+            .ToList();
     }
 
     public async Task<PermanentFileDto?> GetPermanentFileAsync(Guid firmTenantId, Guid assignmentId, CancellationToken cancellationToken = default)
@@ -93,7 +105,10 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
             .Where(s => s.PermanentFileId == file.Id && s.IsActive)
             .ToListAsync(cancellationToken);
 
-        return MapPermanentFile(file, reps, shareholders);
+        var isFirmManaged = await _master.Tenants.AsNoTracking()
+            .AnyAsync(t => t.Id == file.CompanyTenantId && t.ManagedByFirmTenantId != null, cancellationToken);
+
+        return MapPermanentFile(file, reps, shareholders) with { IsFirmManaged = isFirmManaged };
     }
 
     public async Task<Result<PermanentFileDto>> UpsertPermanentFileAsync(
@@ -1176,11 +1191,14 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
     public async Task<IReadOnlyList<FirmActivityCodeDto>> ListActivityCodesAsync(
         Guid firmTenantId,
         bool includeInactive = false,
+        bool billableOnly = false,
         CancellationToken cancellationToken = default)
     {
         var q = _master.FirmActivityCodes.AsNoTracking().Where(a => a.FirmTenantId == firmTenantId);
         if (!includeInactive)
             q = q.Where(a => a.IsActive);
+        if (billableOnly)
+            q = q.Where(a => a.IsBillableByDefault);
 
         var rows = await q.OrderBy(a => a.SortOrder).ThenBy(a => a.Code).ToListAsync(cancellationToken);
         return rows.Select(MapActivityCode).ToList();
@@ -1195,7 +1213,7 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
         var alreadyConfigured = await _master.FirmActivityCodes
             .AnyAsync(a => a.FirmTenantId == firmTenantId, cancellationToken);
         if (alreadyConfigured)
-            return await ListActivityCodesAsync(firmTenantId, includeInactive: false, cancellationToken);
+            return await ListActivityCodesAsync(firmTenantId, includeInactive: false, billableOnly: false, cancellationToken);
 
         var order = 0;
         foreach (var (code, label, category, billable) in FirmActivityCode.DefaultCatalog)
@@ -1206,7 +1224,7 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
         }
 
         await _master.SaveChangesAsync(cancellationToken);
-        return await ListActivityCodesAsync(firmTenantId, includeInactive: false, cancellationToken);
+        return await ListActivityCodesAsync(firmTenantId, includeInactive: false, billableOnly: false, cancellationToken);
     }
 
     public async Task<Result<FirmActivityCodeDto>> CreateActivityCodeAsync(
@@ -1227,7 +1245,7 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
                 Error.Conflict($"Le code activité « {normalized} » existe déjà."));
 
         var create = FirmActivityCode.Create(
-            firmTenantId, dto.Code, dto.Label, ResolveCategory(dto.Category), dto.IsBillableByDefault, dto.SortOrder);
+            firmTenantId, dto.Code, dto.Label, ResolveCategory(dto.Category), dto.IsBillableByDefault, dto.SortOrder, dto.DefaultUnitPrice);
         if (create.IsFailure)
             return Result.Failure<FirmActivityCodeDto>(create.Error);
 
@@ -1252,7 +1270,7 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
         if (entity is null)
             return Result.Failure<FirmActivityCodeDto>(Error.NotFound("ActivityCode", codeId));
 
-        var update = entity.Update(dto.Label, ResolveCategory(dto.Category), dto.IsBillableByDefault, dto.SortOrder);
+        var update = entity.Update(dto.Label, ResolveCategory(dto.Category), dto.IsBillableByDefault, dto.SortOrder, dto.DefaultUnitPrice);
         if (update.IsFailure)
             return Result.Failure<FirmActivityCodeDto>(update.Error);
 
@@ -1335,6 +1353,7 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
             _ => "Autre"
         },
         IsBillableByDefault = a.IsBillableByDefault,
+        DefaultUnitPrice = a.DefaultUnitPrice,
         IsActive = a.IsActive,
         SortOrder = a.SortOrder
     };

@@ -150,6 +150,14 @@ public sealed class Promotion : AggregateRoot
         return Result.Success();
     }
 
+    public Result UpdateScope(Guid? productId, Guid? productCategoryId, Guid? clientId)
+    {
+        ProductId = productId;
+        ProductCategoryId = productId.HasValue ? null : productCategoryId;
+        ClientId = clientId;
+        return Result.Success();
+    }
+
     public void Activate() => IsActive = true;
 
     public void Deactivate() => IsActive = false;
@@ -171,6 +179,12 @@ public sealed class Promotion : AggregateRoot
     {
         if (quantity < MinQuantity) return false;
 
+        return MatchesScope(productId, categoryId, clientId);
+    }
+
+    /// <summary>Vérifie la portée produit / catégorie / client, sans la quantité.</summary>
+    public bool MatchesScope(Guid productId, Guid? categoryId, Guid? clientId)
+    {
         if (ProductId.HasValue && ProductId.Value != productId) return false;
 
         if (!ProductId.HasValue && ProductCategoryId.HasValue

@@ -5,6 +5,7 @@ import { SelectModule } from 'primeng/select';
 import { CheckboxModule } from 'primeng/checkbox';
 import { FirmActivityCode } from '@core/services/firm-governance.service';
 import { FirmClientDossier } from '@core/services/firm-assignment.service';
+import { WORK_LOCATION_OPTIONS } from './time-sheet-work-location';
 
 export interface TimeSheetFilters {
   clientId: string | null;
@@ -95,12 +96,7 @@ export class TimeSheetFiltersBarComponent {
     { label: '100 % (facturable)', value: true },
     { label: '0 % (non facturable)', value: false }
   ];
-  readonly locationOptions = [
-    { label: 'Bureau', value: 'Office' },
-    { label: 'Client', value: 'Client' },
-    { label: 'Télétravail', value: 'Remote' },
-    { label: 'Autre', value: 'Other' }
-  ];
+  readonly locationOptions = WORK_LOCATION_OPTIONS;
 
   get clientOptions() {
     return this.clients.map(c => ({ label: c.companyName, value: c.assignmentId }));

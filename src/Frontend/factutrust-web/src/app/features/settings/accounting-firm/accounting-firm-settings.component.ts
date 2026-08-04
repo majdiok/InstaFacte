@@ -13,9 +13,11 @@ import { PageHeaderComponent } from '@shared/components/page-header/page-header.
 import { StatusBadgeComponent } from '@shared/components/status-badge/status-badge.component';
 import { SkeletonComponent } from '@shared/components/skeleton/skeleton.component';
 import {
-  FirmAssignmentStatusCode,
   firmAssignmentStatusView,
-  isOpenAssignment
+  isActiveAssignment,
+  isOpenAssignment,
+  isPendingAssignment,
+  isRejectedAssignment
 } from './firm-assignment-status';
 
 const NOTES_MAX = 1000;
@@ -56,11 +58,11 @@ const NOTES_MAX = 1000;
               </app-status-badge>
             </div>
 
-            @if (assignment.status === StatusCode.Active) {
+            @if (isActive(assignment.status)) {
               <button type="button" class="af-btn af-btn--danger" (click)="revoke()" [disabled]="acting()">
                 <i class="pi pi-times-circle"></i> Révoquer l'affectation
               </button>
-            } @else if (assignment.status === StatusCode.PendingFirmApproval) {
+            } @else if (isPending(assignment.status)) {
               <button type="button" class="af-btn af-btn--danger-outline" (click)="cancelPending()" [disabled]="acting()">
                 <i class="pi pi-ban"></i> Annuler la demande
               </button>
@@ -68,7 +70,7 @@ const NOTES_MAX = 1000;
           </div>
 
           <dl class="af-meta">
-            @if (assignment.status === StatusCode.Active && assignment.respondedAt) {
+            @if (isActive(assignment.status) && assignment.respondedAt) {
               <div class="af-meta__row">
                 <dt>Actif depuis</dt>
                 <dd>{{ assignment.respondedAt | date: 'dd/MM/yyyy' }}</dd>
@@ -87,7 +89,7 @@ const NOTES_MAX = 1000;
             }
           </dl>
 
-          @if (assignment.status === StatusCode.PendingFirmApproval) {
+          @if (isPending(assignment.status)) {
             <p class="af-hint">
               <i class="pi pi-info-circle"></i>
               Votre demande a été transmise au cabinet. Vous serez notifié dès qu'elle sera acceptée ou refusée.
@@ -100,7 +102,7 @@ const NOTES_MAX = 1000;
       <!-- État : aucune liaison ouverte → recherche + éventuel bandeau de refus -->
       @if (lastClosed(); as closed) {
         <div class="af-banner af-banner--{{ statusView(closed.status).badge }}">
-          <i class="pi" [ngClass]="closed.status === StatusCode.Rejected ? 'pi-times-circle' : 'pi-info-circle'"></i>
+          <i class="pi" [ngClass]="isRejected(closed.status) ? 'pi-times-circle' : 'pi-info-circle'"></i>
           <div class="af-banner__body">
             <strong>{{ closed.firmDisplayName }} — {{ statusView(closed.status).label }}</strong>
             <span class="af-banner__date">{{ (closed.respondedAt || closed.revokedAt || closed.requestedAt) | date: 'dd/MM/yyyy' }}</span>
@@ -394,7 +396,6 @@ export class AccountingFirmSettingsComponent implements OnInit {
   private readonly toast = inject(ToastService);
   private readonly confirmation = inject(ConfirmationService);
 
-  readonly StatusCode = FirmAssignmentStatusCode;
   readonly NOTES_MAX = NOTES_MAX;
 
   readonly loading = signal(true);
@@ -417,8 +418,20 @@ export class AccountingFirmSettingsComponent implements OnInit {
     this.reload();
   }
 
-  statusView(status: number) {
+  statusView(status: number | string) {
     return firmAssignmentStatusView(status);
+  }
+
+  isActive(status: number | string): boolean {
+    return isActiveAssignment(status);
+  }
+
+  isPending(status: number | string): boolean {
+    return isPendingAssignment(status);
+  }
+
+  isRejected(status: number | string): boolean {
+    return isRejectedAssignment(status);
   }
 
   search(event: { query: string }): void {

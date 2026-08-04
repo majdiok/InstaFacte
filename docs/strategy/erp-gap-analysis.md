@@ -280,7 +280,7 @@ cf. [audit de couverture menu Éditions/Maintenance](../../src/Backend/FactuTrus
 | Dossier salarié | ❌ | P0* | 40 | 4 |
 | Contrats de travail | ❌ | P0* | 35 | 4 |
 | Pointage / temps | ❌ | P0* | 50 | 4 |
-| Congés & absences | ❌ | P0* | 35 | 4 |
+| Congés & absences | ✅ cabinet (Firm leave) / ⚠️ paie partielle | P0* | 35 | 4 |
 | Paie & bulletins | ❌ | P0* | 120 | 4 |
 | CNSS / CSS / IRPP (Tunisie) | ❌ | P0* | 90 | 4 |
 | Notes de frais | ❌ | P1 | 40 | 2 |

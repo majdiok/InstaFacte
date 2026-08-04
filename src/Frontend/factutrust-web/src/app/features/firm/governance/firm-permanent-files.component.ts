@@ -10,6 +10,7 @@ import { DropdownModule } from 'primeng/dropdown';
 import { CheckboxModule } from 'primeng/checkbox';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
+import { AuthService } from '@core/services/auth.service';
 import { FirmGovernanceService, PermanentFile } from '@core/services/firm-governance.service';
 import { FirmAssignmentService, FirmClientDossier } from '@core/services/firm-assignment.service';
 import { FirmGovernanceActionsService } from '../shared/firm-governance-actions.service';
@@ -24,7 +25,11 @@ import { ConfirmationService } from '@core/services/confirmation.service';
     InputTextModule, DropdownModule, CheckboxModule, PageHeaderComponent, EmptyStateComponent
   ],
   template: `
-    <app-page-header title="Dossiers permanents" subtitle="Identité juridique et statut administratif (normes TN)" />
+    <app-page-header title="Dossiers permanents" subtitle="Identité juridique et statut administratif (normes TN)">
+      @if (auth.isFirmManager()) {
+        <a routerLink="/firm/clients/new" pButton label="Créer un dossier client" icon="pi pi-plus" class="p-button-sm"></a>
+      }
+    </app-page-header>
 
     @if (loading()) {
       <p>Chargement…</p>
@@ -67,7 +72,12 @@ import { ConfirmationService } from '@core/services/confirmation.service';
           </ng-template>
           <ng-template pTemplate="body" let-f>
             <tr>
-              <td>{{ f.companyName || '—' }}</td>
+              <td>
+                {{ f.companyName || '—' }}
+                @if (f.isFirmManaged) {
+                  <p-tag value="Géré par le cabinet" severity="info" styleClass="managed-tag" />
+                }
+              </td>
               <td>{{ f.nif || '—' }}</td>
               <td>{{ f.legalFormDisplay || '—' }}</td>
               <td>{{ formatHonoraires(f) }}</td>
@@ -150,10 +160,12 @@ import { ConfirmationService } from '@core/services/confirmation.service';
     .init-row:last-child { border-bottom: none; }
     .row-actions { white-space: nowrap; display: flex; gap: .25rem; align-items: center; }
     .next-action { font-size: .875rem; color: #64748b; }
+    :host ::ng-deep .managed-tag { margin-left: 0.5rem; font-size: 0.7rem; }
   `]
 })
 export class FirmPermanentFilesComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
+  readonly auth = inject(AuthService);
   private readonly api = inject(FirmGovernanceService);
   private readonly assignments = inject(FirmAssignmentService);
   private readonly actions = inject(FirmGovernanceActionsService);

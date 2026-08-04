@@ -3,7 +3,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FactuTrust.Application.Common.Interfaces;
-using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
@@ -36,7 +35,6 @@ public sealed class ImportInvoiceFromFileHandler
 {
     private readonly IOllamaClient _ollamaClient;
     private readonly IOpenAiChatCompletionsClient _openAiClient;
-    private readonly ITenantAiProviderRepository _tenantAiProviderRepository;
     private readonly IAiDocumentTextExtractor _documentTextExtractor;
     private readonly IOllamaModelReadinessChecker _readinessChecker;
     private readonly IPlatformAiSettingsService _platformAiSettings;
@@ -44,7 +42,6 @@ public sealed class ImportInvoiceFromFileHandler
     private readonly IMediator _mediator;
     private readonly ILogger<ImportInvoiceFromFileHandler> _logger;
     private readonly OllamaSettings _ollamaSettings;
-    private readonly OpenRouterSettings _openRouterSettings;
 
     private const int MaxTextChars = 60_000;
     private const int MaxImages = 10;
@@ -114,19 +111,16 @@ Schéma: documentType, invoiceNumber, issueDate, dueDate, currency, seller{name,
     public ImportInvoiceFromFileHandler(
         IOllamaClient ollamaClient,
         IOpenAiChatCompletionsClient openAiClient,
-        ITenantAiProviderRepository tenantAiProviderRepository,
         IAiDocumentTextExtractor documentTextExtractor,
         IOllamaModelReadinessChecker readinessChecker,
         IPlatformAiSettingsService platformAiSettings,
         IOllamaInferenceProfileResolver inferenceProfileResolver,
         IMediator mediator,
         ILogger<ImportInvoiceFromFileHandler> logger,
-        IOptions<OllamaSettings> ollamaSettings,
-        IOptions<OpenRouterSettings> openRouterSettings)
+        IOptions<OllamaSettings> ollamaSettings)
     {
         _ollamaClient = ollamaClient;
         _openAiClient = openAiClient;
-        _tenantAiProviderRepository = tenantAiProviderRepository;
         _documentTextExtractor = documentTextExtractor;
         _readinessChecker = readinessChecker;
         _platformAiSettings = platformAiSettings;
@@ -134,7 +128,6 @@ Schéma: documentType, invoiceNumber, issueDate, dueDate, currency, seller{name,
         _mediator = mediator;
         _logger = logger;
         _ollamaSettings = ollamaSettings.Value;
-        _openRouterSettings = openRouterSettings.Value;
     }
 
     public async Task<Result<InvoiceImportResultDto>> HandleAsync(
@@ -179,8 +172,8 @@ Schéma: documentType, invoiceNumber, issueDate, dueDate, currency, seller{name,
         if (extractedText.Length == 0 && !useVisionFallback)
         {
             return Result.Failure<InvoiceImportResultDto>(Error.Validation("InvoiceImport",
-                "Photo illisible : OCR vide et aucun modèle vision d'import configuré (Ollama:InvoiceImportVisionModel, ex. llava). "
-                + "Exécutez scripts/install-tessdata.ps1 ou ollama pull llava."));
+                "Photo illisible : OCR vide et aucun modèle vision d'import configuré (clé InvoiceImportVisionModel, ex. llava). "
+                + "Exécutez scripts/install-tessdata.ps1 ou contactez l'administrateur plateforme."));
         }
 
         var textTruncated = extraction.Truncated;
@@ -209,7 +202,7 @@ Schéma: documentType, invoiceNumber, issueDate, dueDate, currency, seller{name,
             {
                 if (!await _ollamaClient.IsAvailableAsync(cancellationToken))
                     return Result.Failure<InvoiceImportResultDto>(Error.Validation("InvoiceImport",
-                        "Le service IA local (Ollama) est indisponible. Démarrez Ollama sur le serveur."));
+                        "Le moteur IA InstaFact est indisponible. Vérifiez que le service est démarré sur le serveur."));
 
                 var visionReadiness = await _readinessChecker.CheckAsync(activeModelRef.ProviderModelId!, cancellationToken);
                 if (!visionReadiness.IsReady)
@@ -221,7 +214,7 @@ Schéma: documentType, invoiceNumber, issueDate, dueDate, currency, seller{name,
         {
             if (!await _ollamaClient.IsAvailableAsync(cancellationToken))
                 return Result.Failure<InvoiceImportResultDto>(Error.Validation("InvoiceImport",
-                    "Le service IA local (Ollama) est indisponible. Démarrez Ollama sur le serveur."));
+                    "Le moteur IA InstaFact est indisponible. Vérifiez que le service est démarré sur le serveur."));
 
             var readiness = await _readinessChecker.CheckAsync(modelRef.ProviderModelId!, cancellationToken);
             if (!readiness.IsReady)
@@ -230,10 +223,10 @@ Schéma: documentType, invoiceNumber, issueDate, dueDate, currency, seller{name,
         }
         else
         {
-            var apiKey = await _tenantAiProviderRepository.GetDecryptedApiKeyForOpenRouterAsync(cancellationToken);
-            if (string.IsNullOrEmpty(apiKey))
+            var credentials = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
+            if (string.IsNullOrEmpty(credentials.ApiKey))
                 return Result.Failure<InvoiceImportResultDto>(Error.Validation("InvoiceImport",
-                    "Aucune clé API OpenRouter configurée pour cet espace. Configurez-la dans Paramètres > Fournisseurs IA."));
+                    "Aucune clé API OpenRouter configurée. Configurez-la dans le back-office plateforme > Configuration IA (OpenRouter)."));
         }
 
         // 4-5. Appel LLM one-shot (texte seul ou vision hybride).
@@ -544,8 +537,9 @@ Schéma: documentType, invoiceNumber, issueDate, dueDate, currency, seller{name,
         }
         else
         {
-            var baseUrl = await ResolveOpenRouterBaseUrlAsync(cancellationToken);
-            var apiKey = (await _tenantAiProviderRepository.GetDecryptedApiKeyForOpenRouterAsync(cancellationToken))!;
+            var openRouter = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
+            var baseUrl = openRouter.BaseUrl;
+            var apiKey = openRouter.ApiKey!;
             var messages = new List<OpenAiChatMessagePayload>
             {
                 new() { Role = "system", Content = systemPrompt },
@@ -614,14 +608,6 @@ Schéma: documentType, invoiceNumber, issueDate, dueDate, currency, seller{name,
             });
         }
         return new OpenAiChatMessagePayload { Role = "user", Content = parts };
-    }
-
-    private async Task<string> ResolveOpenRouterBaseUrlAsync(CancellationToken cancellationToken)
-    {
-        var row = await _tenantAiProviderRepository.GetByProviderKeyAsync("openrouter", cancellationToken);
-        if (!string.IsNullOrWhiteSpace(row?.BaseUrl))
-            return row.BaseUrl.TrimEnd('/');
-        return _openRouterSettings.DefaultBaseUrl.TrimEnd('/');
     }
 
     // ========================================================================

@@ -1,8 +1,7 @@
-using FactuTrust.Application.Common.Interfaces.Pricing;
 using FactuTrust.Application.Features.Pricing.Queries;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Enums;
-using FactuTrust.Domain.ValueObjects;
+using MediatR;
 using Moq;
 using Xunit;
 
@@ -18,17 +17,23 @@ public sealed class ResolvePricesBatchQueryTests
 {
     private static readonly Guid ClientId = Guid.NewGuid();
 
-    private readonly Mock<IPriceResolver> _resolver = new();
+    private readonly Mock<IMediator> _mediator = new();
 
-    private ResolvePricesBatchQueryHandler CreateHandler() => new(_resolver.Object);
+    private ResolvePricesBatchQueryHandler CreateHandler() => new(_mediator.Object);
 
     private void SetupPrice(Guid productId, decimal amount, PriceSource source)
     {
-        _resolver
-            .Setup(r => r.ResolveUnitPriceAsync(
-                It.IsAny<Guid?>(), productId, It.IsAny<decimal>(), It.IsAny<DateTime>(),
+        _mediator
+            .Setup(m => m.Send(
+                It.Is<ResolvePriceQuery>(q => q.ProductId == productId),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success(new PriceResolution(Money.Create(amount), source)));
+            .ReturnsAsync(Result.Success(new ResolvedPriceDto
+            {
+                UnitPriceHT = amount,
+                Currency = "TND",
+                Source = source.ToString(),
+                IsNegotiated = source is PriceSource.PriceList or PriceSource.ClientPrice
+            }));
     }
 
     [Fact]
@@ -40,7 +45,9 @@ public sealed class ResolvePricesBatchQueryTests
 
         Assert.True(result.IsSuccess);
         Assert.Empty(result.Value);
-        _resolver.VerifyNoOtherCalls();
+        _mediator.Verify(
+            m => m.Send(It.IsAny<ResolvePriceQuery>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -63,9 +70,10 @@ public sealed class ResolvePricesBatchQueryTests
         Assert.Equal(3, result.Value.Count);
         Assert.All(result.Value, r => Assert.Equal(80m, r.UnitPriceHT));
 
-        _resolver.Verify(r => r.ResolveUnitPriceAsync(
-            It.IsAny<Guid?>(), productId, It.IsAny<decimal>(), It.IsAny<DateTime>(),
-            It.IsAny<CancellationToken>()), Times.Once);
+        // Same quantity key (1) is requested once; quantities 3 and 2 are distinct keys.
+        _mediator.Verify(
+            m => m.Send(It.Is<ResolvePriceQuery>(q => q.ProductId == productId), It.IsAny<CancellationToken>()),
+            Times.Exactly(3));
     }
 
     [Fact]
@@ -75,11 +83,11 @@ public sealed class ResolvePricesBatchQueryTests
         var missing = Guid.NewGuid();
 
         SetupPrice(good, 50m, PriceSource.Catalog);
-        _resolver
-            .Setup(r => r.ResolveUnitPriceAsync(
-                It.IsAny<Guid?>(), missing, It.IsAny<decimal>(), It.IsAny<DateTime>(),
+        _mediator
+            .Setup(m => m.Send(
+                It.Is<ResolvePriceQuery>(q => q.ProductId == missing),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Failure<PriceResolution>(Error.NotFound("Product", missing)));
+            .ReturnsAsync(Result.Failure<ResolvedPriceDto>(Error.NotFound("Product", missing)));
 
         var items = new[]
         {
@@ -106,7 +114,9 @@ public sealed class ResolvePricesBatchQueryTests
             new ResolvePricesBatchQuery(ClientId, items, null), CancellationToken.None);
 
         Assert.True(result.IsFailure);
-        _resolver.VerifyNoOtherCalls();
+        _mediator.Verify(
+            m => m.Send(It.IsAny<ResolvePriceQuery>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -121,9 +131,11 @@ public sealed class ResolvePricesBatchQueryTests
             new ResolvePricesBatchQuery(ClientId, items, null), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
-        _resolver.Verify(r => r.ResolveUnitPriceAsync(
-            It.IsAny<Guid?>(), productId, 1m, It.IsAny<DateTime>(),
-            It.IsAny<CancellationToken>()), Times.Once);
+        _mediator.Verify(
+            m => m.Send(
+                It.Is<ResolvePriceQuery>(q => q.ProductId == productId && q.Quantity == 1m),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]

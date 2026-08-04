@@ -3,62 +3,110 @@
 <div class="inventory-page">
     <app-breadcrumb [items]="breadcrumbItems"></app-breadcrumb>
 
-    <app-page-header title="Inventaire physique"
-        subtitle="Comptez vos produits et ajustez votre stock en quelques minutes" icon="pi pi-calculator">
+    <app-page-header
+        title="Inventaire physique"
+        subtitle="Comptez vos produits et ajustez votre stock en quelques minutes">
     </app-page-header>
+
+    <!-- Wizard step indicator -->
+    @if (!loading()) {
+    <nav class="wizard-steps" aria-label="Étapes de l'inventaire">
+        @for (s of wizardSteps(); track s.key; let i = $index; let last = $last) {
+        <div class="wizard-step" [class.active]="s.active" [class.done]="s.done">
+            <span class="step-index" aria-hidden="true">{{ i + 1 }}</span>
+            <span class="step-label">{{ s.label }}</span>
+        </div>
+        @if (!last) {
+        <span class="step-separator" aria-hidden="true">→</span>
+        }
+        }
+    </nav>
+    }
 
     <!-- Loading State -->
     @if (loading()) {
-    <div class="loading-container">
+    <div class="loading-container" role="status" aria-live="polite">
         <p-progressSpinner></p-progressSpinner>
         <p>Chargement en cours...</p>
     </div>
     } @else {
     <!-- STEP 1: START -->
     @if (step() === 'start') {
-    <div class="wizard-section start-section">
+    <app-form-section title="Lancer un inventaire" icon="pi-play" [number]="1">
         <div class="start-card">
-            <div class="start-icon">
-                <i class="pi pi-box" style="font-size: 3.5rem; color: var(--primary-500);"></i>
-            </div>
-            <h2>Lancer un inventaire</h2>
             <p class="subtitle">
                 Comptez vos produits un par un, nous nous occupons du reste.
             </p>
 
+            @if (showWarehousePicker()) {
+            <div class="warehouse-picker">
+                <label for="wizard-warehouse" class="field-label">Entrepôt <span class="required">*</span></label>
+                <p-dropdown
+                    id="wizard-warehouse"
+                    [options]="warehouses"
+                    [ngModel]="selectedWarehouse()"
+                    (ngModelChange)="onWarehouseChange($event)"
+                    optionLabel="name"
+                    placeholder="Sélectionner un entrepôt"
+                    styleClass="w-full"
+                    ariaLabel="Choisir l'entrepôt">
+                </p-dropdown>
+            </div>
+            }
+
             <div class="type-selection">
                 <h3>Type d'inventaire</h3>
 
-                <div class="type-options">
-                    <div class="type-option" [class.selected]="inventoryType() === 1" (click)="inventoryType.set(1)">
+                <div class="type-options" role="radiogroup" aria-label="Type d'inventaire">
+                    <div
+                        class="type-option"
+                        [class.selected]="inventoryType() === InventoryType.Complete"
+                        role="radio"
+                        [attr.aria-checked]="inventoryType() === InventoryType.Complete"
+                        tabindex="0"
+                        (click)="inventoryType.set(InventoryType.Complete)"
+                        (keydown.enter)="inventoryType.set(InventoryType.Complete)"
+                        (keydown.space)="$event.preventDefault(); inventoryType.set(InventoryType.Complete)">
                         <div class="type-icon">
-                            <i class="pi pi-list" style="font-size: 1.5rem; color: var(--primary-600);"></i>
+                            <i class="pi pi-list" aria-hidden="true"></i>
                         </div>
                         <div class="type-content">
                             <strong>Inventaire complet</strong>
                             <span>Tous vos produits</span>
                         </div>
-                        <i class="pi pi-check-circle check-icon" *ngIf="inventoryType() === 1"></i>
+                        @if (inventoryType() === InventoryType.Complete) {
+                        <i class="pi pi-check-circle check-icon" aria-hidden="true"></i>
+                        }
                     </div>
 
-                    <div class="type-option" [class.selected]="inventoryType() === 2" (click)="inventoryType.set(2)">
+                    <div
+                        class="type-option"
+                        [class.selected]="inventoryType() === InventoryType.Partial"
+                        role="radio"
+                        [attr.aria-checked]="inventoryType() === InventoryType.Partial"
+                        tabindex="0"
+                        (click)="inventoryType.set(InventoryType.Partial)"
+                        (keydown.enter)="inventoryType.set(InventoryType.Partial)"
+                        (keydown.space)="$event.preventDefault(); inventoryType.set(InventoryType.Partial)">
                         <div class="type-icon">
-                            <i class="pi pi-filter" style="font-size: 1.5rem; color: var(--primary-600);"></i>
+                            <i class="pi pi-filter" aria-hidden="true"></i>
                         </div>
                         <div class="type-content">
                             <strong>Inventaire partiel</strong>
                             <span>Produits sélectionnés</span>
                         </div>
-                        <i class="pi pi-check-circle check-icon" *ngIf="inventoryType() === 2"></i>
+                        @if (inventoryType() === InventoryType.Partial) {
+                        <i class="pi pi-check-circle check-icon" aria-hidden="true"></i>
+                        }
                     </div>
                 </div>
             </div>
 
             <!-- Product Selection for Partial Inventory -->
-            @if (inventoryType() === 2) {
+            @if (inventoryType() === InventoryType.Partial) {
             <div class="product-selection-section">
                 <h3>Sélectionnez les produits à inventorier</h3>
-                
+
                 @if (loadingProducts()) {
                 <div class="loading-products">
                     <p-progressSpinner [style]="{width: '30px', height: '30px'}"></p-progressSpinner>
@@ -67,32 +115,38 @@
                 } @else {
                 <div class="product-selection-controls">
                     <div class="search-box">
-                        <i class="pi pi-search"></i>
-                        <input type="text" pInputText placeholder="Rechercher un produit..." 
-                               [ngModel]="productSearchTerm()" 
-                               (ngModelChange)="productSearchTerm.set($event)" />
+                        <i class="pi pi-search" aria-hidden="true"></i>
+                        <input
+                            type="text"
+                            pInputText
+                            placeholder="Rechercher un produit..."
+                            [ngModel]="productSearchTerm()"
+                            (ngModelChange)="productSearchTerm.set($event)"
+                            aria-label="Rechercher un produit" />
                     </div>
                     <div class="selection-actions">
-                        <button pButton pRipple type="button" label="Tout sélectionner" 
-                                class="p-button-text p-button-sm" icon="pi pi-check-square"
-                                (click)="selectAllProducts()"></button>
-                        <button pButton pRipple type="button" label="Tout désélectionner" 
-                                class="p-button-text p-button-sm p-button-secondary" icon="pi pi-times"
-                                (click)="clearProductSelection()"></button>
+                        <button pButton pRipple type="button" label="Tout sélectionner"
+                            class="p-button-text p-button-sm" icon="pi pi-check-square"
+                            (click)="selectAllProducts()"></button>
+                        <button pButton pRipple type="button" label="Tout désélectionner"
+                            class="p-button-text p-button-sm p-button-secondary" icon="pi pi-times"
+                            (click)="clearProductSelection()"></button>
                     </div>
                 </div>
 
                 <div class="selected-count">
-                    <i class="pi pi-box"></i>
+                    <i class="pi pi-box" aria-hidden="true"></i>
                     <span>{{ selectedProductIds().size }} produit(s) sélectionné(s)</span>
                 </div>
 
-                <div class="product-selection-list">
+                <div class="product-selection-list" role="list">
                     @for (product of filteredProducts(); track product.productId) {
-                    <div class="product-select-item" 
-                         [class.selected]="isProductSelected(product.productId)"
-                         (click)="toggleProductSelection(product.productId)">
-                        <p-checkbox 
+                    <div
+                        class="product-select-item"
+                        [class.selected]="isProductSelected(product.productId)"
+                        role="listitem"
+                        (click)="toggleProductSelection(product.productId)">
+                        <p-checkbox
                             [ngModel]="isProductSelected(product.productId)"
                             [binary]="true"
                             (click)="$event.stopPropagation()"
@@ -105,7 +159,7 @@
                             }
                         </div>
                         <div class="product-select-quantity">
-                            <span class="qty-label">Stock:</span>
+                            <span class="qty-label">Dispo:</span>
                             <span class="qty-value" [class]="product.status.toLowerCase()">
                                 {{ product.quantityAvailable }}
                             </span>
@@ -113,7 +167,7 @@
                     </div>
                     } @empty {
                     <div class="no-products">
-                        <i class="pi pi-inbox"></i>
+                        <i class="pi pi-inbox" aria-hidden="true"></i>
                         <p>Aucun produit trouvé</p>
                     </div>
                     }
@@ -122,204 +176,304 @@
             </div>
             }
 
-            <button pButton pRipple label="Commencer l'inventaire" icon="pi pi-play" class="start-button"
-                [loading]="submitting()" [disabled]="!canStartPartialInventory()" (click)="startInventory()">
-            </button>
+            <app-button
+                variant="primary"
+                size="lg"
+                icon="pi-play"
+                iconPos="left"
+                [disabled]="!canStartPartialInventory() || submitting() || (showWarehousePicker() && !selectedWarehouse())"
+                (click)="startInventory()"
+                ariaLabel="Commencer l'inventaire">
+                @if (submitting()) {
+                Démarrage...
+                } @else {
+                Commencer l'inventaire
+                }
+            </app-button>
         </div>
-    </div>
+    </app-form-section>
     }
 
     <!-- STEP 2: COUNT -->
     @if (step() === 'count' && activeInventory()) {
-    <div class="wizard-section count-section">
-        <!-- Progress Bar - Enhanced -->
-        <div class="progress-header">
-            <div class="progress-header-enhanced">
-                <div class="progress-stats">
-                    <div class="progress-main">
-                        <span class="progress-count">{{ activeInventory()?.countedProducts }}</span>
-                        <span class="progress-separator">/</span>
-                        <span class="progress-total">{{ activeInventory()?.totalProducts }}</span>
-                    </div>
-                    <span class="progress-label">produits comptés</span>
-                </div>
-                <div class="progress-percent-badge">
-                    <span class="percent-value">{{ activeInventory()?.progressPercent }}</span>
-                    <span class="percent-symbol">%</span>
-                </div>
-            </div>
-            <p-progressBar [value]="progress()" [showValue]="false"></p-progressBar>
+    <div class="count-section">
+        <div class="count-meta">
+            <span class="meta-item">
+                <i class="pi pi-building" aria-hidden="true"></i>
+                {{ activeInventory()?.warehouseName }}
+            </span>
+            <span class="meta-item">
+                <i class="pi pi-tag" aria-hidden="true"></i>
+                {{ activeInventory()?.typeLabel }}
+            </span>
         </div>
 
-        <!-- Product List -->
-        <div class="products-list">
-            @for (product of activeInventory()?.products; track product.productId; let i = $index) {
-            <div class="product-item" 
-                 [class.active]="currentProductIndex() === i" 
-                 [class.counted]="product.isCounted"
-                 [class.pending]="!product.isCounted && currentProductIndex() !== i"
-                (click)="navigateToProduct(i)">
-                <div class="product-status">
-                    @if (product.isCounted) {
-                    <i class="pi pi-check-circle counted-icon"></i>
-                    } @else {
-                    <span class="product-number">{{ i + 1 }}</span>
-                    }
-                </div>
-                <div class="product-info">
-                    <strong>{{ product.productName }}</strong>
-                    @if (product.productCode) {
-                    <span class="product-code">{{ product.productCode }}</span>
-                    }
-                </div>
-                <div class="product-quantity">
-                    <div class="quantity-expected">
-                        <span class="quantity-label">Attendu</span>
-                        <span class="quantity-value">{{ product.theoreticalQuantity }}</span>
+        <div class="count-layout">
+            <!-- Left: progress + product list -->
+            <aside class="count-sidebar">
+                <div class="progress-compact">
+                    <div class="progress-compact-text">
+                        <strong>{{ activeInventory()?.countedProducts }}</strong>
+                        <span>/ {{ activeInventory()?.totalProducts }} produits</span>
+                        <span class="progress-pct">{{ activeInventory()?.progressPercent }}%</span>
                     </div>
-                    @if (product.isCounted && product.countedQuantity !== null) {
-                    <div class="quantity-counted" 
-                         [class.match]="product.countedQuantity === product.theoreticalQuantity"
-                         [class.difference]="product.countedQuantity !== product.theoreticalQuantity">
-                        <span class="quantity-label">Compté</span>
-                        <span class="quantity-value">{{ product.countedQuantity }}</span>
+                    <p-progressBar [value]="progress()" [showValue]="false"></p-progressBar>
+                </div>
+
+                <div class="products-list" role="list" aria-label="Liste des produits à compter">
+                    @for (product of activeInventory()?.products; track product.productId; let i = $index) {
+                    <div
+                        class="product-item"
+                        [class.active]="currentProductIndex() === i"
+                        [class.counted]="product.isCounted"
+                        [class.pending]="!product.isCounted && currentProductIndex() !== i"
+                        role="listitem"
+                        tabindex="0"
+                        (click)="navigateToProduct(i)"
+                        (keydown.enter)="navigateToProduct(i)"
+                        [attr.aria-current]="currentProductIndex() === i ? 'true' : null"
+                        [attr.aria-label]="product.productName">
+                        <div class="product-status">
+                            @if (product.isCounted) {
+                            <i class="pi pi-check-circle counted-icon" aria-hidden="true"></i>
+                            } @else {
+                            <span class="product-number">{{ i + 1 }}</span>
+                            }
+                        </div>
+                        <div class="product-info">
+                            <strong>{{ product.productName }}</strong>
+                            @if (product.productCode) {
+                            <span class="product-code">{{ product.productCode }}</span>
+                            }
+                        </div>
+                        <div class="product-quantity">
+                            <div class="quantity-expected">
+                                <span class="quantity-label">Dispo</span>
+                                <span class="quantity-value">{{ product.theoreticalQuantity }}</span>
+                            </div>
+                            @if (product.isCounted && product.countedQuantity !== null) {
+                            <div
+                                class="quantity-counted"
+                                [class.match]="product.countedQuantity === product.theoreticalQuantity"
+                                [class.difference]="product.countedQuantity !== product.theoreticalQuantity">
+                                <span class="quantity-label">Compté</span>
+                                <span class="quantity-value">{{ product.countedQuantity }}</span>
+                            </div>
+                            }
+                        </div>
                     </div>
                     }
                 </div>
-            </div>
-            }
-        </div>
+            </aside>
 
-        <!-- Count Form -->
-        @if (currentProduct()) {
-        <div class="count-form">
-            <div class="count-header-premium">
-                <div class="product-identity">
-                    <h3 class="product-title">{{ currentProduct()?.productName }}</h3>
-                    @if (currentProduct()?.productCode) {
-                    <span class="product-sku">REF: {{ currentProduct()?.productCode }}</span>
+            <!-- Right: count form -->
+            <div class="count-main">
+                @if (currentProduct()) {
+                <app-form-section
+                    [title]="currentProduct()?.productName ?? ''"
+                    icon="pi-box"
+                    variant="compact">
+                    <div class="count-form" (keydown)="onCountKeydown($event)">
+                        @if (currentProduct()?.productCode) {
+                        <span class="product-sku">REF: {{ currentProduct()?.productCode }}</span>
+                        }
+
+                        <div class="count-input-zone">
+                            <label class="count-question" for="counted-quantity">Quantité comptée</label>
+                            <div class="input-spotlight" #countInput>
+                                <p-inputNumber
+                                    [ngModel]="countedQuantity()"
+                                    (ngModelChange)="onCountedQuantityChange($event)"
+                                    [min]="0"
+                                    [maxFractionDigits]="2"
+                                    inputId="counted-quantity"
+                                    styleClass="count-input"
+                                    [attr.aria-label]="'Quantité comptée pour ' + (currentProduct()?.productName ?? '')">
+                                </p-inputNumber>
+                            </div>
+
+                            @if (countDifference() !== null) {
+                            <div
+                                class="count-diff"
+                                [class.match]="countDifference() === 0"
+                                [class.positive]="countDifference()! > 0"
+                                [class.negative]="countDifference()! < 0"
+                                role="status">
+                                @if (countDifference() === 0) {
+                                <i class="pi pi-check-circle" aria-hidden="true"></i>
+                                Conforme ({{ currentProduct()?.theoreticalQuantity }} disponibles)
+                                } @else if (countDifference()! > 0) {
+                                <i class="pi pi-arrow-up" aria-hidden="true"></i>
+                                +{{ countDifference() }} par rapport au stock ({{ currentProduct()?.theoreticalQuantity }})
+                                } @else {
+                                <i class="pi pi-arrow-down" aria-hidden="true"></i>
+                                {{ countDifference() }} par rapport au stock ({{ currentProduct()?.theoreticalQuantity }})
+                                }
+                            </div>
+                            }
+                        </div>
+
+                        <div class="count-form-actions">
+                            <app-button
+                                variant="primary"
+                                size="lg"
+                                icon="pi-check"
+                                iconPos="left"
+                                [disabled]="submitting()"
+                                (click)="submitCount()"
+                                ariaLabel="Enregistrer ce comptage et passer au suivant">
+                                @if (submitting()) {
+                                Enregistrement...
+                                } @else {
+                                Enregistrer ce comptage
+                                }
+                            </app-button>
+                            <span class="action-hint">Entrée pour valider · produit suivant</span>
+                        </div>
+                    </div>
+                </app-form-section>
+                }
+
+                <div class="count-actions">
+                    @if (activeInventory()?.remainingProducts === 0) {
+                    <app-button
+                        variant="primary"
+                        icon="pi-arrow-right"
+                        iconPos="right"
+                        (click)="goToSummary()">
+                        Voir le résumé
+                    </app-button>
                     }
-                </div>
-                <div class="theoretical-badge">
-                    <span class="theoretical-label">Stock théorique</span>
-                    <span class="theoretical-value">{{ currentProduct()?.theoreticalQuantity }}</span>
-                    <span class="theoretical-unit">unités</span>
-                </div>
-            </div>
-
-            <div class="count-input-zone">
-                <label class="count-question">Quantité comptée physiquement</label>
-                <div class="input-spotlight">
-                    <p-inputNumber [(ngModel)]="countedQuantity" [showButtons]="true" [min]="0" buttonLayout="horizontal"
-                        incrementButtonIcon="pi pi-plus" decrementButtonIcon="pi pi-minus" inputId="counted-quantity"
-                        class="count-input">
-                    </p-inputNumber>
+                    <app-button
+                        variant="ghost"
+                        icon="pi-times"
+                        iconPos="left"
+                        [disabled]="submitting()"
+                        (click)="confirmCancelInventory()"
+                        ariaLabel="Annuler l'inventaire">
+                        Annuler l'inventaire
+                    </app-button>
                 </div>
             </div>
-
-            <button pButton pRipple class="validate-count-button"
-                [loading]="submitting()" (click)="submitCount()">
-                <i class="pi pi-check" style="margin-right: 0.75rem; font-size: 1.25rem;"></i>
-                <span class="button-content">
-                    <span class="button-main">Enregistrer ce comptage</span>
-                    <span class="button-sub">Produit suivant →</span>
-                </span>
-            </button>
-        </div>
-        }
-
-        <!-- Action Buttons -->
-        <div class="count-actions">
-            @if (activeInventory()?.remainingProducts === 0) {
-            <button pButton pRipple label="Voir le résumé" icon="pi pi-arrow-right" class="p-button-success"
-                (click)="goToSummary()">
-            </button>
-            }
-            <button pButton pRipple label="Annuler l'inventaire" icon="pi pi-times"
-                class="p-button-text p-button-secondary" [loading]="submitting()" (click)="cancelInventory()">
-            </button>
         </div>
     </div>
     }
 
     <!-- STEP 3: SUMMARY -->
     @if (step() === 'summary' && inventorySummary()) {
-    <div class="wizard-section summary-section">
-        <div class="summary-header">
-            <h2>{{ inventorySummary()?.statusMessage }}</h2>
-        </div>
+    <app-form-section title="Résumé de l'inventaire" icon="pi-list-check" [number]="3">
+        <div class="summary-section">
+            <div class="summary-header">
+                <h2>{{ inventorySummary()?.statusMessage }}</h2>
+            </div>
 
-        <!-- Products OK -->
-        @if (inventorySummary()?.productsOkList?.length) {
-        <div class="summary-group ok-group">
-            <h3><i class="pi pi-check-circle" style="color: var(--green-600);"></i> Stock conforme ({{
-                inventorySummary()?.productsOk }} produits)</h3>
-            <div class="summary-items">
-                @for (item of inventorySummary()?.productsOkList; track item.productId) {
-                <div class="summary-item ok">
-                    <span class="item-name">{{ item.productName }}</span>
-                    <span class="item-message">{{ item.humanMessage }}</span>
+            @if (inventorySummary()?.productsOkList?.length) {
+            <div class="summary-group ok-group">
+                <h3>
+                    <i class="pi pi-check-circle" aria-hidden="true"></i>
+                    Stock conforme ({{ inventorySummary()?.productsOk }} produits)
+                </h3>
+                <div class="summary-items">
+                    @for (item of inventorySummary()?.productsOkList; track item.productId) {
+                    <div class="summary-item ok">
+                        <span class="item-name">{{ item.productName }}</span>
+                        <span class="item-message">{{ item.humanMessage }}</span>
+                    </div>
+                    }
                 </div>
-                }
+            </div>
+            }
+
+            @if (inventorySummary()?.productsWithDifferenceList?.length) {
+            <div class="summary-group diff-group">
+                <h3>
+                    <i class="pi pi-exclamation-triangle" aria-hidden="true"></i>
+                    Différences détectées ({{ inventorySummary()?.productsWithDifference }} produits)
+                </h3>
+                <div class="summary-items">
+                    @for (item of inventorySummary()?.productsWithDifferenceList; track item.productId) {
+                    <div class="summary-item {{ item.differenceClass }}">
+                        <span class="item-name">{{ item.productName }}</span>
+                        <span
+                            class="item-difference"
+                            [class.positive]="item.difference > 0"
+                            [class.negative]="item.difference < 0">
+                            {{ item.humanMessage }}
+                        </span>
+                    </div>
+                    }
+                </div>
+            </div>
+            }
+
+            @if (inventorySummary()?.productsNotCountedList?.length) {
+            <div class="summary-group not-counted-group">
+                <h3>
+                    <i class="pi pi-clock" aria-hidden="true"></i>
+                    Non comptés ({{ inventorySummary()?.productsNotCounted }} produits)
+                </h3>
+                <div class="summary-items">
+                    @for (item of inventorySummary()?.productsNotCountedList; track item.productId) {
+                    <div class="summary-item not-counted">
+                        <span class="item-name">{{ item.productName }}</span>
+                        <span class="item-message">{{ item.humanMessage || 'Non compté' }}</span>
+                    </div>
+                    }
+                </div>
+            </div>
+            }
+
+            <div class="summary-actions">
+                <app-button
+                    variant="primary"
+                    size="lg"
+                    icon="pi-check-circle"
+                    iconPos="left"
+                    [disabled]="!inventorySummary()?.canValidate || submitting()"
+                    (click)="validateInventory()">
+                    @if (submitting()) {
+                    Validation...
+                    } @else {
+                    Valider et ajuster le stock
+                    }
+                </app-button>
+                <app-button
+                    variant="ghost"
+                    icon="pi-arrow-left"
+                    iconPos="left"
+                    (click)="step.set('count')">
+                    Retourner au comptage
+                </app-button>
             </div>
         </div>
-        }
-
-        <!-- Products with Difference -->
-        @if (inventorySummary()?.productsWithDifferenceList?.length) {
-        <div class="summary-group diff-group">
-            <h3><i class="pi pi-exclamation-triangle" style="color: var(--orange-600);"></i> Différences détectées ({{
-                inventorySummary()?.productsWithDifference }} produits)</h3>
-            <div class="summary-items">
-                @for (item of inventorySummary()?.productsWithDifferenceList; track item.productId) {
-                <div class="summary-item {{ item.differenceClass }}">
-                    <span class="item-name">{{ item.productName }}</span>
-                    <span class="item-difference" [class.positive]="item.difference > 0"
-                        [class.negative]="item.difference < 0">
-                        {{ item.humanMessage }}
-                    </span>
-                </div>
-                }
-            </div>
-        </div>
-        }
-
-        <!-- Validate Actions -->
-        <div class="summary-actions">
-            <button pButton pRipple label="Valider et ajuster le stock" icon="pi pi-check-circle"
-                class="p-button-success validate-button" [loading]="submitting()"
-                [disabled]="!inventorySummary()?.canValidate" (click)="validateInventory()">
-            </button>
-            <button pButton pRipple label="Retourner au comptage" icon="pi pi-arrow-left" class="p-button-text"
-                (click)="step.set('count')">
-            </button>
-        </div>
-    </div>
+    </app-form-section>
     }
 
     <!-- STEP 4: SUCCESS -->
     @if (step() === 'success') {
-    <div class="wizard-section success-section">
-        <div class="success-card">
-            <div class="success-icon">
-                <i class="pi pi-verified" style="font-size: 4rem; color: var(--green-500);"></i>
-            </div>
-            <h2>Inventaire terminé !</h2>
-            <p>Votre stock a été mis à jour avec succès.</p>
+    <app-form-section title="Inventaire terminé" icon="pi-verified">
+        <div class="success-section">
+            <div class="success-card">
+                <div class="success-icon">
+                    <i class="pi pi-verified" aria-hidden="true"></i>
+                </div>
+                <h2>Inventaire terminé !</h2>
+                <p>Votre stock a été mis à jour avec succès.</p>
 
-            <div class="success-actions">
-                <button pButton pRipple label="Voir la liste des inventaires" icon="pi pi-list" class="p-button-primary"
-                    (click)="goToList()">
-                </button>
-                <button pButton pRipple label="Voir mon stock" icon="pi pi-box" class="p-button-secondary"
-                    (click)="goToStock()">
-                </button>
-                <button pButton pRipple label="Nouvel inventaire" icon="pi pi-refresh" class="p-button-text"
-                    (click)="startNew()">
-                </button>
+                <div class="success-actions">
+                    <app-button variant="primary" icon="pi-list" iconPos="left" (click)="goToList()">
+                        Voir la liste des inventaires
+                    </app-button>
+                    <app-button variant="outline" icon="pi-box" iconPos="left" (click)="goToStock()">
+                        Voir mon stock
+                    </app-button>
+                    <app-button variant="ghost" icon="pi-refresh" iconPos="left" (click)="startNew()">
+                        Nouvel inventaire
+                    </app-button>
+                </div>
             </div>
         </div>
-    </div>
+    </app-form-section>
     }
     }
 </div>

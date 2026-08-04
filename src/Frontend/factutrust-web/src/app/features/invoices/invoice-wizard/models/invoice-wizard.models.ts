@@ -114,6 +114,10 @@ export interface InvoiceLine {
   quantity: number;
   unit: string | null;
   unitPriceHT: number;
+  /** True when the user manually set the unit price (bypasses server price resolver on submit). */
+  priceOverridden?: boolean;
+  /** Origine du prix résolu par le serveur (affichage uniquement). */
+  priceSource?: 'Catalog' | 'PriceList' | 'ClientPrice' | null;
   discountType: 'PERCENT' | 'AMOUNT' | null;
   discountValue: number | null;
   vatRate: TunisianVatRate;
@@ -121,6 +125,12 @@ export interface InvoiceLine {
   /** Product-level discount cap (from catalog). */
   productIsDiscountEnabled?: boolean;
   productMaxDiscountPercent?: number | null;
+
+  /** Prévisualisation promotion automatique (non envoyée au serveur). */
+  promotionDiscountPercent?: number | null;
+  promotionName?: string | null;
+  promotionEligible?: boolean;
+  promotionMinQuantityRequired?: number | null;
   
   // Calculs automatiques
   discountAmount: number;

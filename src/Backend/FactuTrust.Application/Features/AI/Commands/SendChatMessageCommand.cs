@@ -30,7 +30,6 @@ public sealed class SendChatMessageHandler
     private readonly IOllamaClient _ollamaClient;
     private readonly IOllamaGenerationGate _ollamaGenerationGate;
     private readonly IOpenAiChatCompletionsClient _openAiClient;
-    private readonly ITenantAiProviderRepository _tenantAiProviderRepository;
     private readonly IPlatformAiSettingsService _platformAiSettings;
     private readonly IOllamaInferenceProfileResolver _inferenceProfileResolver;
     private readonly IAiToolExecutor _toolExecutor;
@@ -41,7 +40,6 @@ public sealed class SendChatMessageHandler
     private readonly IConversationRepository _conversationRepository;
     private readonly ILogger<SendChatMessageHandler> _logger;
     private readonly OllamaSettings _ollamaSettings;
-    private readonly OpenRouterSettings _openRouterSettings;
     private readonly ScreenAnalysisOptions _screenAnalysisOptions;
 
     private static readonly JsonSerializerOptions SourcesJsonOptions = new()
@@ -53,7 +51,6 @@ public sealed class SendChatMessageHandler
         IOllamaClient ollamaClient,
         IOllamaGenerationGate ollamaGenerationGate,
         IOpenAiChatCompletionsClient openAiClient,
-        ITenantAiProviderRepository tenantAiProviderRepository,
         IPlatformAiSettingsService platformAiSettings,
         IOllamaInferenceProfileResolver inferenceProfileResolver,
         IAiToolExecutor toolExecutor,
@@ -64,13 +61,11 @@ public sealed class SendChatMessageHandler
         IConversationRepository conversationRepository,
         ILogger<SendChatMessageHandler> logger,
         IOptions<OllamaSettings> ollamaSettings,
-        IOptions<OpenRouterSettings> openRouterSettings,
         IOptions<ScreenAnalysisOptions> screenAnalysisOptions)
     {
         _ollamaClient = ollamaClient;
         _ollamaGenerationGate = ollamaGenerationGate;
         _openAiClient = openAiClient;
-        _tenantAiProviderRepository = tenantAiProviderRepository;
         _platformAiSettings = platformAiSettings;
         _inferenceProfileResolver = inferenceProfileResolver;
         _toolExecutor = toolExecutor;
@@ -81,7 +76,6 @@ public sealed class SendChatMessageHandler
         _conversationRepository = conversationRepository;
         _logger = logger;
         _ollamaSettings = ollamaSettings.Value;
-        _openRouterSettings = openRouterSettings.Value;
         _screenAnalysisOptions = screenAnalysisOptions.Value;
     }
 
@@ -185,7 +179,7 @@ public sealed class SendChatMessageHandler
                     sw.ElapsedMilliseconds,
                     detail: modelRef.CanonicalModelRef);
                 yield return ChatStreamEvent.ErrorEvent(
-                    "Le service IA local (Ollama) est indisponible. Démarrez Ollama ou choisissez un modèle cloud.");
+                    "Le moteur IA InstaFact est indisponible. Vérifiez que le service est démarré sur le serveur, ou choisissez un modèle cloud.");
                 yield break;
             }
 
@@ -198,16 +192,15 @@ public sealed class SendChatMessageHandler
                     "failed",
                     sw.ElapsedMilliseconds,
                     detail: modelRef.CanonicalModelRef);
-                var shortName = (modelRef.ProviderModelId ?? "").Split(':')[0];
                 yield return ChatStreamEvent.ErrorEvent(
-                    $"Le modèle « {modelRef.ProviderModelId} » n'est pas installé dans Ollama. Exécutez « ollama pull {shortName} » ou choisissez un autre modèle.");
+                    $"Le modèle « {modelRef.ProviderModelId} » n'est pas installé sur le moteur IA InstaFact. Contactez l'administrateur plateforme ou choisissez un autre modèle.");
                 yield break;
             }
         }
         else
         {
-            var apiKey = await _tenantAiProviderRepository.GetDecryptedApiKeyForOpenRouterAsync(cancellationToken);
-            if (string.IsNullOrEmpty(apiKey))
+            var credentials = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
+            if (string.IsNullOrEmpty(credentials.ApiKey))
             {
                 LogPhase("openrouter_credentials", sw.ElapsedMilliseconds);
                 yield return ChatStreamEvent.PhaseEvent(
@@ -216,7 +209,7 @@ public sealed class SendChatMessageHandler
                     sw.ElapsedMilliseconds,
                     detail: modelRef.CanonicalModelRef);
                 yield return ChatStreamEvent.ErrorEvent(
-                    "Aucune clé API OpenRouter configurée pour cet espace. Configurez-la dans Paramètres > Fournisseurs IA.");
+                    "Aucune clé API OpenRouter configurée. Configurez-la dans le back-office plateforme > Configuration IA (OpenRouter).");
                 yield break;
             }
         }
@@ -671,8 +664,9 @@ public sealed class SendChatMessageHandler
             }
             else
             {
-                var baseUrl = await ResolveOpenRouterBaseUrlAsync(cancellationToken);
-                var apiKey = (await _tenantAiProviderRepository.GetDecryptedApiKeyForOpenRouterAsync(cancellationToken))!;
+                var openRouter = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
+                var baseUrl = openRouter.BaseUrl;
+                var apiKey = openRouter.ApiKey!;
                 var openAiMessages = AiConversationMessageMapper.BuildOpenAiMessages(systemPrompt, conversation, _ollamaSettings.MaxContextMessages, _ollamaSettings.MaxToolResultChars);
                 AttachImagesToLastUserOpenAiMessage(openAiMessages, command.Attachments, modelRef.ProviderModelId, toolCallRound);
 
@@ -1204,8 +1198,9 @@ public sealed class SendChatMessageHandler
             }
             else
             {
-                var baseUrl = await ResolveOpenRouterBaseUrlAsync(cancellationToken);
-                var apiKey = (await _tenantAiProviderRepository.GetDecryptedApiKeyForOpenRouterAsync(cancellationToken))!;
+                var openRouter = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
+                var baseUrl = openRouter.BaseUrl;
+                var apiKey = openRouter.ApiKey!;
                 var synthMessages = AiConversationMessageMapper.BuildOpenAiMessages(synthSystemPrompt, conversation, _ollamaSettings.MaxContextMessages, _ollamaSettings.MaxToolResultChars);
 
                 await foreach (var chunk in _openAiClient.StreamChatAsOllamaCompatibleAsync(
@@ -1812,14 +1807,6 @@ public sealed class SendChatMessageHandler
             if (string.IsNullOrEmpty(calls[i].Id))
                 calls[i] = calls[i] with { Id = Guid.NewGuid().ToString("N")[..12] };
         }
-    }
-
-    private async Task<string> ResolveOpenRouterBaseUrlAsync(CancellationToken cancellationToken)
-    {
-        var row = await _tenantAiProviderRepository.GetByProviderKeyAsync("openrouter", cancellationToken);
-        if (!string.IsNullOrWhiteSpace(row?.BaseUrl))
-            return row.BaseUrl.TrimEnd('/');
-        return _openRouterSettings.DefaultBaseUrl.TrimEnd('/');
     }
 
     /// <summary>

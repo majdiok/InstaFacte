@@ -98,6 +98,7 @@ public sealed record FixedAssetDto(
     decimal NetBookValue,
     string? Location,
     string? CreditAccountNumber,
+    Guid? SupplierId,
     Guid? SupplierInvoiceId,
     Guid? SupplierInvoiceLineId);
 

@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { firmGovernanceFeatureGuard } from '@core/guards/firm-governance.guard';
+import { firmManagerGuard } from '@core/guards/firm-manager.guard';
 
 export const FIRM_GOVERNANCE_ROUTES: Routes = [
   {
@@ -31,30 +32,35 @@ export const FIRM_GOVERNANCE_ROUTES: Routes = [
       },
       {
         path: 'dossier-time-profitability',
+        canActivate: [firmManagerGuard],
         loadComponent: () =>
           import('./firm-dossier-time-profitability.component').then(m => m.FirmDossierTimeProfitabilityComponent),
         title: 'Cabinet — Rentabilité dossiers'
       },
       {
         path: 'collaborator-rentability',
+        canActivate: [firmManagerGuard],
         loadComponent: () =>
           import('./firm-collaborator-rentability-list.component').then(m => m.FirmCollaboratorRentabilityListComponent),
         title: 'Cabinet — Rentabilité collaborateurs'
       },
       {
         path: 'collaborator-rentability/new',
+        canActivate: [firmManagerGuard],
         loadComponent: () =>
           import('./firm-collaborator-rentability-form.component').then(m => m.FirmCollaboratorRentabilityFormComponent),
         title: 'Cabinet — Nouvelle rentabilité'
       },
       {
         path: 'collaborator-rentability/:id/edit',
+        canActivate: [firmManagerGuard],
         loadComponent: () =>
           import('./firm-collaborator-rentability-form.component').then(m => m.FirmCollaboratorRentabilityFormComponent),
         title: 'Cabinet — Modifier rentabilité'
       },
       {
         path: 'collaborator-rentability/:id',
+        canActivate: [firmManagerGuard],
         loadComponent: () =>
           import('./firm-collaborator-rentability-form.component').then(m => m.FirmCollaboratorRentabilityFormComponent),
         title: 'Cabinet — Détail rentabilité'
@@ -70,6 +76,12 @@ export const FIRM_GOVERNANCE_ROUTES: Routes = [
         loadComponent: () =>
           import('./firm-social-overview.component').then(m => m.FirmSocialOverviewComponent),
         title: 'Cabinet — Suivi social'
+      },
+      {
+        path: 'leaves',
+        loadChildren: () =>
+          import('./leaves/firm-leaves.routes').then(m => m.FIRM_LEAVES_ROUTES),
+        title: 'Cabinet — Congés & Absences'
       },
       { path: '', redirectTo: '/firm/dashboard', pathMatch: 'full' }
     ]

@@ -55,7 +55,8 @@ public sealed class GetQuotesQueryHandler : IRequestHandler<GetQuotesQuery, Page
             Currency = q.TotalAmount.Currency,
             IsExpired = q.ExpiryDate < DateTime.UtcNow.Date && q.Status != QuoteStatus.Expired,
             IsConverted = q.ConvertedInvoiceId.HasValue,
-            ConvertedInvoiceId = q.ConvertedInvoiceId
+            ConvertedInvoiceId = q.ConvertedInvoiceId,
+            ConvertedSalesOrderId = q.ConvertedSalesOrderId
         }).ToList();
 
         return PagedResult<QuoteListDto>.Create(dtos, request.Page, request.PageSize, totalCount);

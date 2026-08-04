@@ -31,7 +31,7 @@ public sealed class GetPurchasesByLineReportQueryHandler
         var from = request.FromDate.Date;
         var to = request.ToDate.Date;
         var (invoices, _) = await _invoiceRepository.SearchAsync(
-            null, null, null, from, to, 1, 10_000, false, cancellationToken);
+            null, null, null, null, null, from, to, 1, 10_000, false, cancellationToken);
 
         var aggregated = new Dictionary<(Guid ProductId, string SupplierName), (string ProductName, string ProductCode, decimal Quantity, decimal AmountTTC, decimal VatAmount, string Currency)>();
 

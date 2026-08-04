@@ -124,7 +124,13 @@ public sealed class CreateFixedAssetsFromSupplierInvoiceHandlerTests
         var receive = po.ReceiveGoods(new[] { (lineId, 1m) });
         if (receive.IsFailure) throw new InvalidOperationException(receive.Error.Description);
 
-        var invoiceResult = SupplierInvoice.CreateFromPurchaseOrder(po, "FS-2026-IMMO", new DateTime(2026, 4, 5));
+        var lineSelections = po.Lines
+            .Where(l => l.ReceivedNotInvoicedQuantity > 0)
+            .Select(l => (l.Id, l.ReceivedNotInvoicedQuantity))
+            .ToList();
+
+        var invoiceResult = SupplierInvoice.CreateFromPurchaseOrder(
+            po, "FS-2026-IMMO", new DateTime(2026, 4, 5), lineSelections);
         if (invoiceResult.IsFailure) throw new InvalidOperationException(invoiceResult.Error.Description);
 
         var invoice = invoiceResult.Value;

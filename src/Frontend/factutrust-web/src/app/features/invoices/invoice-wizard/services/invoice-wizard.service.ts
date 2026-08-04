@@ -956,6 +956,7 @@ export class InvoiceWizardService {
       quantity: line.quantity || 1,
       unit: line.unit || 'Unité',
       unitPriceHT: line.unitPriceHT || 0,
+      priceOverridden: line.priceOverridden ?? false,
       discountType: line.discountType || null,
       discountValue: line.discountValue || null,
       vatRate: line.vatRate ?? TunisianVatRate.Standard,
@@ -1050,6 +1051,8 @@ export class InvoiceWizardService {
       line.discountAmount = subtotal * (line.discountValue / 100);
     } else if (line.discountType === 'AMOUNT' && line.discountValue) {
       line.discountAmount = line.discountValue;
+    } else if (line.promotionEligible && line.promotionDiscountPercent) {
+      line.discountAmount = subtotal * (line.promotionDiscountPercent / 100);
     } else {
       line.discountAmount = 0;
     }
@@ -1914,6 +1917,7 @@ export class InvoiceWizardService {
         quantity: line.quantity,
         unit: line.unit,
         unitPriceHT: line.unitPriceHT,
+        priceOverridden: line.priceOverridden ?? false,
         discountType: line.discountType,
         discountValue: line.discountValue,
         vatRate: line.vatRate,
@@ -2189,7 +2193,10 @@ export class InvoiceWizardService {
         return {
           productId: line.productId,
           quantity: Number(line.quantity.toFixed(3)), // Ensure proper decimal precision
-          customUnitPrice: line.unitPriceHT > 0 ? Number(line.unitPriceHT.toFixed(3)) : null,
+          customUnitPrice:
+            line.priceOverridden && line.unitPriceHT > 0
+              ? Number(line.unitPriceHT.toFixed(3))
+              : null,
           discountPercent: discountPercent ? Number(discountPercent.toFixed(2)) : null
         };
       });

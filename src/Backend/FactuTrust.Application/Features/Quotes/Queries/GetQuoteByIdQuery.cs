@@ -65,6 +65,8 @@ public sealed class GetQuoteByIdQueryHandler : IRequestHandler<GetQuoteByIdQuery
                 UnitPrice = l.UnitPrice.Amount,
                 VatRatePercent = (int)l.VatRate,
                 DiscountPercent = l.DiscountPercent,
+                AppliedPromotionId = l.AppliedPromotionId,
+                AppliedPromotionName = l.AppliedPromotionName,
                 DiscountAmount = l.DiscountAmount.Amount,
                 SubTotal = l.SubTotal.Amount,
                 IsFodecApplicable = l.IsFodecApplicable,
@@ -95,6 +97,7 @@ public sealed class GetQuoteByIdQueryHandler : IRequestHandler<GetQuoteByIdQuery
             CancelledAt = quote.CancelledAt,
             CancellationReason = quote.CancellationReason,
             ConvertedInvoiceId = quote.ConvertedInvoiceId,
+            ConvertedSalesOrderId = quote.ConvertedSalesOrderId,
             ConvertedAt = quote.ConvertedAt,
             CreatedAt = quote.CreatedAt,
             UpdatedAt = quote.UpdatedAt

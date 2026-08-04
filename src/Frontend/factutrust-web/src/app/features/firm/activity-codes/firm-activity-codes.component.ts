@@ -10,6 +10,7 @@ import { ConfirmationService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogModule } from 'primeng/dialog';
+import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
 import { SelectModule } from 'primeng/select';
 import { TableModule } from 'primeng/table';
@@ -28,6 +29,7 @@ import { ToggleSwitchModule } from 'primeng/toggleswitch';
     ButtonModule,
     ConfirmDialogModule,
     DialogModule,
+    InputNumberModule,
     InputTextModule,
     SelectModule,
     TableModule,
@@ -96,6 +98,7 @@ import { ToggleSwitchModule } from 'primeng/toggleswitch';
               <th>Libellé</th>
               <th>Catégorie</th>
               <th>Facturable par défaut</th>
+              <th>Honoraire HT</th>
               <th>Ordre</th>
               <th>Statut</th>
               <th style="width: 12rem"></th>
@@ -108,6 +111,7 @@ import { ToggleSwitchModule } from 'primeng/toggleswitch';
               <td>{{ row.label }}</td>
               <td>{{ row.categoryDisplay }}</td>
               <td><p-tag [value]="row.isBillableByDefault ? 'Oui' : 'Non'" [severity]="row.isBillableByDefault ? 'success' : 'secondary'" /></td>
+              <td>{{ formatHonoraire(row.defaultUnitPrice) }}</td>
               <td>{{ row.sortOrder }}</td>
               <td><p-tag [value]="row.isActive ? 'Actif' : 'Inactif'" [severity]="row.isActive ? 'info' : 'warn'" /></td>
               <td class="row-actions">
@@ -123,7 +127,7 @@ import { ToggleSwitchModule } from 'primeng/toggleswitch';
             </tr>
           </ng-template>
           <ng-template pTemplate="emptymessage">
-            <tr><td colspan="8">Aucun type d’activité ne correspond aux filtres.</td></tr>
+            <tr><td colspan="9">Aucun type d’activité ne correspond aux filtres.</td></tr>
           </ng-template>
         </p-table>
       }
@@ -148,6 +152,18 @@ import { ToggleSwitchModule } from 'primeng/toggleswitch';
 
         <label>Catégorie</label>
         <p-select formControlName="category" [options]="categoryOptionsNoAll" optionLabel="label" optionValue="value"></p-select>
+
+        <label>Honoraire unitaire HT (TND)</label>
+        <p-inputNumber
+          formControlName="defaultUnitPrice"
+          mode="decimal"
+          [minFractionDigits]="3"
+          [maxFractionDigits]="3"
+          [min]="0"
+          [max]="999999999.999"
+          placeholder="Ex. 200,000"
+          styleClass="w-full" />
+        <small>Tarif proposé automatiquement lors de la facturation. Laissez vide si non applicable.</small>
 
         <label>Ordre d’affichage</label>
         <input pInputText type="number" formControlName="sortOrder" />
@@ -176,6 +192,7 @@ import { ToggleSwitchModule } from 'primeng/toggleswitch';
     .dialog-form label { font-weight: 600; margin-top: .25rem; }
     .dialog-form input.readonly { background: #f8fafc; }
     .dialog-form small { color: var(--color-text-secondary, #64748b); margin-bottom: .25rem; }
+    .dialog-form .w-full { width: 100%; }
     .switch-line { display: flex; justify-content: space-between; align-items: center; margin-top: .5rem; }
   `]
 })
@@ -227,12 +244,13 @@ export class FirmActivityCodesComponent {
   dialogVisible = false;
   editingCodeId: string | null = null;
 
-  readonly form = this.fb.nonNullable.group({
-    code: ['', [Validators.required, Validators.maxLength(50)]],
-    label: ['', [Validators.required, Validators.maxLength(200)]],
-    category: [1, [Validators.required]],
-    isBillableByDefault: [true],
-    sortOrder: [10, [Validators.required]]
+  readonly form = this.fb.group({
+    code: this.fb.nonNullable.control('', [Validators.required, Validators.maxLength(50)]),
+    label: this.fb.nonNullable.control('', [Validators.required, Validators.maxLength(200)]),
+    category: this.fb.nonNullable.control(1, [Validators.required]),
+    isBillableByDefault: this.fb.nonNullable.control(true),
+    defaultUnitPrice: this.fb.control<number | null>(null, [Validators.min(0)]),
+    sortOrder: this.fb.nonNullable.control(10, [Validators.required])
   });
 
   constructor() {
@@ -255,6 +273,7 @@ export class FirmActivityCodesComponent {
       label: '',
       category: 1,
       isBillableByDefault: true,
+      defaultUnitPrice: null,
       sortOrder: this.nextSortOrder()
     });
     this.dialogVisible = true;
@@ -270,6 +289,7 @@ export class FirmActivityCodesComponent {
       label: target.label,
       category: target.category,
       isBillableByDefault: target.isBillableByDefault,
+      defaultUnitPrice: target.defaultUnitPrice ?? null,
       sortOrder: target.sortOrder
     });
     this.dialogVisible = true;
@@ -282,10 +302,11 @@ export class FirmActivityCodesComponent {
     }
     const raw = this.form.getRawValue();
     const body: SaveFirmActivityCodeBody = {
-      code: raw.code.trim().toUpperCase(),
-      label: raw.label.trim(),
+      code: (raw.code ?? '').trim().toUpperCase(),
+      label: (raw.label ?? '').trim(),
       category: Number(raw.category),
       isBillableByDefault: !!raw.isBillableByDefault,
+      defaultUnitPrice: raw.defaultUnitPrice == null ? null : Number(raw.defaultUnitPrice),
       sortOrder: Number(raw.sortOrder)
     };
 
@@ -406,6 +427,11 @@ export class FirmActivityCodesComponent {
   private nextSortOrder(): number {
     const max = this.codes().reduce((acc, item) => Math.max(acc, item.sortOrder || 0), 0);
     return max > 0 ? max + 10 : 10;
+  }
+
+  formatHonoraire(value: number | null | undefined): string {
+    if (value == null || value === 0) return '—';
+    return `${value.toLocaleString('fr-TN', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} TND`;
   }
 
   private notifyError(detail: string): void {

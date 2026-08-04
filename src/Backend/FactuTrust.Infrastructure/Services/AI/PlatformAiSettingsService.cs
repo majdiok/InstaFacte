@@ -1,12 +1,16 @@
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.AI;
+using FactuTrust.Application.Features.AI.DTOs;
 using FactuTrust.Domain.Entities.AI;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.Persistence;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace FactuTrust.Infrastructure.Services.AI;
 
@@ -16,23 +20,32 @@ namespace FactuTrust.Infrastructure.Services.AI;
 /// </summary>
 public sealed class PlatformAiSettingsService : IPlatformAiSettingsService
 {
+    public const string DataProtectionPurpose = "PlatformAiProviderSecrets";
+
     private const string CacheKeyDefaultModel = "platform:ai:default-model";
     private const string CacheKeyImportModel = "platform:ai:import-model";
     private const string CacheKeyStudioModel = "platform:ai:studio-model";
     private const string CacheKeyInferenceDevice = "platform:ai:inference-device";
+    private const string CacheKeyOpenRouter = "platform:ai:openrouter";
     private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(60);
 
     private readonly MasterDbContext _db;
     private readonly IMemoryCache _cache;
+    private readonly IDataProtector _protector;
+    private readonly OpenRouterSettings _openRouterDefaults;
     private readonly ILogger<PlatformAiSettingsService> _logger;
 
     public PlatformAiSettingsService(
         MasterDbContext db,
         IMemoryCache cache,
+        IDataProtectionProvider dataProtectionProvider,
+        IOptions<OpenRouterSettings> openRouterSettings,
         ILogger<PlatformAiSettingsService> logger)
     {
         _db = db;
         _cache = cache;
+        _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
+        _openRouterDefaults = openRouterSettings.Value;
         _logger = logger;
     }
 
@@ -55,19 +68,9 @@ public sealed class PlatformAiSettingsService : IPlatformAiSettingsService
             ? null
             : ModelRef.NormalizeStored(modelRef);
 
-        var current = await _db.PlatformAiSettings.FirstOrDefaultAsync(cancellationToken);
-        if (current is null)
-        {
-            current = PlatformAiSettings.CreateDefaults();
-            current.SetDefaultModel(normalized);
-            current.SetAuditInfo(actorUserId.ToString());
-            _db.PlatformAiSettings.Add(current);
-        }
-        else
-        {
-            current.SetDefaultModel(normalized);
-            current.SetAuditInfo(actorUserId.ToString(), isUpdate: true);
-        }
+        var current = await GetOrCreateRowAsync(actorUserId, cancellationToken);
+        current.SetDefaultModel(normalized);
+        current.SetAuditInfo(actorUserId.ToString(), isUpdate: true);
 
         await _db.SaveChangesAsync(cancellationToken);
         InvalidateReadCache();
@@ -102,19 +105,9 @@ public sealed class PlatformAiSettingsService : IPlatformAiSettingsService
             ? null
             : ModelRef.NormalizeStored(modelRef);
 
-        var current = await _db.PlatformAiSettings.FirstOrDefaultAsync(cancellationToken);
-        if (current is null)
-        {
-            current = PlatformAiSettings.CreateDefaults();
-            current.SetInvoiceImportModel(normalized);
-            current.SetAuditInfo(actorUserId.ToString());
-            _db.PlatformAiSettings.Add(current);
-        }
-        else
-        {
-            current.SetInvoiceImportModel(normalized);
-            current.SetAuditInfo(actorUserId.ToString(), isUpdate: true);
-        }
+        var current = await GetOrCreateRowAsync(actorUserId, cancellationToken);
+        current.SetInvoiceImportModel(normalized);
+        current.SetAuditInfo(actorUserId.ToString(), isUpdate: true);
 
         await _db.SaveChangesAsync(cancellationToken);
         InvalidateReadCache();
@@ -149,19 +142,9 @@ public sealed class PlatformAiSettingsService : IPlatformAiSettingsService
             ? null
             : ModelRef.NormalizeStored(modelRef);
 
-        var current = await _db.PlatformAiSettings.FirstOrDefaultAsync(cancellationToken);
-        if (current is null)
-        {
-            current = PlatformAiSettings.CreateDefaults();
-            current.SetStudioAiModel(normalized);
-            current.SetAuditInfo(actorUserId.ToString());
-            _db.PlatformAiSettings.Add(current);
-        }
-        else
-        {
-            current.SetStudioAiModel(normalized);
-            current.SetAuditInfo(actorUserId.ToString(), isUpdate: true);
-        }
+        var current = await GetOrCreateRowAsync(actorUserId, cancellationToken);
+        current.SetStudioAiModel(normalized);
+        current.SetAuditInfo(actorUserId.ToString(), isUpdate: true);
 
         await _db.SaveChangesAsync(cancellationToken);
         InvalidateReadCache();
@@ -197,23 +180,154 @@ public sealed class PlatformAiSettingsService : IPlatformAiSettingsService
         if (!Enum.IsDefined(device))
             throw new ArgumentOutOfRangeException(nameof(device), device, "Valeur InferenceDevice invalide.");
 
-        var current = await _db.PlatformAiSettings.FirstOrDefaultAsync(cancellationToken);
-        if (current is null)
-        {
-            current = PlatformAiSettings.CreateDefaults();
-            current.SetInferenceDevice(device);
-            current.SetAuditInfo(actorUserId.ToString());
-            _db.PlatformAiSettings.Add(current);
-        }
-        else
-        {
-            current.SetInferenceDevice(device);
-            current.SetAuditInfo(actorUserId.ToString(), isUpdate: true);
-        }
+        var current = await GetOrCreateRowAsync(actorUserId, cancellationToken);
+        current.SetInferenceDevice(device);
+        current.SetAuditInfo(actorUserId.ToString(), isUpdate: true);
 
         await _db.SaveChangesAsync(cancellationToken);
         InvalidateReadCache();
         return current.InferenceDevice;
+    }
+
+    public async Task<PlatformOpenRouterSettingsDto> GetOpenRouterSettingsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var cached = await _cache.GetOrCreateAsync(CacheKeyOpenRouter, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = CacheTtl;
+            try
+            {
+                return await _db.PlatformAiSettings
+                    .AsNoTracking()
+                    .Select(s => new OpenRouterCacheRow(
+                        s.OpenRouterIsEnabled,
+                        s.OpenRouterDisplayName,
+                        s.OpenRouterBaseUrl,
+                        s.OpenRouterEncryptedApiKey,
+                        s.OpenRouterApiKeyLast4))
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
+            catch (Exception ex) when (ex is SqlException or DbUpdateException or InvalidOperationException)
+            {
+                _logger.LogWarning(ex,
+                    "Impossible de lire les credentials OpenRouter depuis PlatformAiSettings.");
+                return null;
+            }
+        });
+
+        return MapOpenRouterDto(cached);
+    }
+
+    public async Task<(bool Success, string? Error)> SetOpenRouterConfigAsync(
+        bool isEnabled,
+        string? displayName,
+        string? baseUrl,
+        string? apiKey,
+        Guid actorUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var current = await GetOrCreateRowAsync(actorUserId, cancellationToken);
+
+        string? encrypted = null;
+        string? last4 = null;
+        var hasNewKey = !string.IsNullOrWhiteSpace(apiKey);
+        if (hasNewKey)
+        {
+            var plain = apiKey!.Trim();
+            encrypted = _protector.Protect(plain);
+            last4 = plain.Length >= 4 ? plain[^4..] : plain;
+        }
+        else if (isEnabled && !current.HasOpenRouterApiKey)
+        {
+            return (false, "Une clé API est requise pour activer OpenRouter.");
+        }
+
+        current.SetOpenRouterConfig(
+            isEnabled,
+            displayName,
+            baseUrl,
+            hasNewKey ? encrypted : null,
+            hasNewKey ? last4 : null);
+        current.SetAuditInfo(actorUserId.ToString(), isUpdate: true);
+
+        await _db.SaveChangesAsync(cancellationToken);
+        InvalidateReadCache();
+        return (true, null);
+    }
+
+    public async Task<PlatformOpenRouterCredentials> GetOpenRouterCredentialsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var defaultBase = (_openRouterDefaults.DefaultBaseUrl ?? "https://openrouter.ai/api/v1").TrimEnd('/');
+
+        OpenRouterCacheRow? row;
+        try
+        {
+            row = await _db.PlatformAiSettings
+                .AsNoTracking()
+                .Select(s => new OpenRouterCacheRow(
+                    s.OpenRouterIsEnabled,
+                    s.OpenRouterDisplayName,
+                    s.OpenRouterBaseUrl,
+                    s.OpenRouterEncryptedApiKey,
+                    s.OpenRouterApiKeyLast4))
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is SqlException or DbUpdateException or InvalidOperationException)
+        {
+            _logger.LogWarning(ex, "Impossible de déchiffrer les credentials OpenRouter plateforme.");
+            return new PlatformOpenRouterCredentials(false, null, defaultBase);
+        }
+
+        var baseUrl = !string.IsNullOrWhiteSpace(row?.BaseUrl)
+            ? row!.BaseUrl!.TrimEnd('/')
+            : defaultBase;
+
+        if (row is null || !row.IsEnabled || string.IsNullOrWhiteSpace(row.EncryptedApiKey))
+            return new PlatformOpenRouterCredentials(row?.IsEnabled ?? false, null, baseUrl);
+
+        try
+        {
+            var plain = _protector.Unprotect(row.EncryptedApiKey);
+            if (string.IsNullOrWhiteSpace(plain))
+                return new PlatformOpenRouterCredentials(true, null, baseUrl);
+            return new PlatformOpenRouterCredentials(true, plain, baseUrl);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Échec du déchiffrement de la clé OpenRouter plateforme.");
+            return new PlatformOpenRouterCredentials(true, null, baseUrl);
+        }
+    }
+
+    private PlatformOpenRouterSettingsDto MapOpenRouterDto(OpenRouterCacheRow? row)
+    {
+        var defaultBase = (_openRouterDefaults.DefaultBaseUrl ?? "https://openrouter.ai/api/v1").TrimEnd('/');
+        var configured = row is not null
+            && !string.IsNullOrWhiteSpace(row.EncryptedApiKey)
+            && !string.IsNullOrWhiteSpace(row.ApiKeyLast4);
+
+        return new PlatformOpenRouterSettingsDto(
+            row?.IsEnabled ?? false,
+            row?.DisplayName,
+            row?.BaseUrl,
+            defaultBase,
+            configured,
+            configured ? row!.ApiKeyLast4 : null);
+    }
+
+    private async Task<PlatformAiSettings> GetOrCreateRowAsync(
+        Guid actorUserId,
+        CancellationToken cancellationToken)
+    {
+        var current = await _db.PlatformAiSettings.FirstOrDefaultAsync(cancellationToken);
+        if (current is not null)
+            return current;
+
+        current = PlatformAiSettings.CreateDefaults();
+        current.SetAuditInfo(actorUserId.ToString());
+        _db.PlatformAiSettings.Add(current);
+        return current;
     }
 
     private void InvalidateReadCache()
@@ -222,5 +336,13 @@ public sealed class PlatformAiSettingsService : IPlatformAiSettingsService
         _cache.Remove(CacheKeyImportModel);
         _cache.Remove(CacheKeyStudioModel);
         _cache.Remove(CacheKeyInferenceDevice);
+        _cache.Remove(CacheKeyOpenRouter);
     }
+
+    private sealed record OpenRouterCacheRow(
+        bool IsEnabled,
+        string? DisplayName,
+        string? BaseUrl,
+        string? EncryptedApiKey,
+        string? ApiKeyLast4);
 }

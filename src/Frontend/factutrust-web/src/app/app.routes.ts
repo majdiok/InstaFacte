@@ -112,6 +112,10 @@ export const routes: Routes = [
         loadChildren: () => import('./features/purchase-orders/purchase-orders.routes').then(m => m.PURCHASE_ORDERS_ROUTES)
       },
       {
+        path: 'purchase-receipts',
+        loadChildren: () => import('./features/purchase-receipts/purchase-receipts.routes').then(m => m.PURCHASE_RECEIPTS_ROUTES)
+      },
+      {
         path: 'supplier-invoices',
         loadChildren: () => import('./features/supplier-invoices/supplier-invoices.routes').then(m => m.SUPPLIER_INVOICES_ROUTES)
       },

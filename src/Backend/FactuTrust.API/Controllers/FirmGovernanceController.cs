@@ -395,12 +395,14 @@ public sealed class FirmGovernanceController : ControllerBase
 
     [HttpGet("activity-codes")]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<FirmActivityCodeDto>>>> ListActivityCodes(
-        [FromQuery] bool includeInactive = false, CancellationToken cancellationToken = default)
+        [FromQuery] bool includeInactive = false,
+        [FromQuery] bool billableOnly = false,
+        CancellationToken cancellationToken = default)
     {
         if (!EnsureEnabled(out var disabled)) return disabled!;
         var tenantId = GetHomeTenantId();
         if (tenantId is null) return Unauthorized();
-        var codes = await _governance.ListActivityCodesAsync(tenantId.Value, includeInactive, cancellationToken);
+        var codes = await _governance.ListActivityCodesAsync(tenantId.Value, includeInactive, billableOnly, cancellationToken);
         return Ok(ApiResponse<IReadOnlyList<FirmActivityCodeDto>>.Ok(codes));
     }
 

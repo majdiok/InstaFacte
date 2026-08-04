@@ -8,6 +8,7 @@ import {
   isDelegatedReadOnlyRoute,
   isFirmDelegatedReadonly
 } from './firm-navigation.registry';
+import { filterFirmManagerNav } from './firm-manager-access.config';
 import { NavItem, NavSubItem } from './app-navigation.registry';
 
 describe('firm-navigation.registry — FIRM_NATIVE_NAV', () => {
@@ -15,6 +16,7 @@ describe('firm-navigation.registry — FIRM_NATIVE_NAV', () => {
     '/firm/governance/permanent-files',
     '/firm/affectation',
     '/firm/governance/time-sheets',
+    '/firm/governance/leaves',
     '/firm/governance/dossier-time-profitability',
     '/firm/governance/collaborator-rentability',
     '/firm/governance/expense-notes',
@@ -90,17 +92,27 @@ describe('firm-navigation.registry — FIRM_NATIVE_NAV', () => {
     const managerFlagOn = collectRoutes(filterFirmGovernanceNav(FIRM_NATIVE_NAV, true)).filter(route =>
       governanceRoutes.includes(route)
     );
-    expect(managerFlagOn).toHaveSize(7);
+    expect(managerFlagOn).toHaveSize(8);
 
     const managerFlagOff = collectRoutes(filterFirmGovernanceNav(FIRM_NATIVE_NAV, false)).filter(route =>
       governanceRoutes.includes(route)
     );
     expect(managerFlagOff).toHaveSize(0);
 
-    const nonManagerFlagOn = managerFlagOn.filter(route => route !== '/firm/affectation');
-    expect(nonManagerFlagOn).toHaveSize(6);
+    const nonManagerFlagOn = collectRoutes(
+      filterFirmManagerNav(filterFirmGovernanceNav(FIRM_NATIVE_NAV, true), false)
+    ).filter(route => governanceRoutes.includes(route));
+    expect(nonManagerFlagOn).toEqual([
+      '/firm/governance/permanent-files',
+      '/firm/governance/time-sheets',
+      '/firm/governance/leaves',
+      '/firm/governance/expense-notes',
+      '/firm/governance/social'
+    ]);
 
-    const nonManagerFlagOff = managerFlagOff.filter(route => route !== '/firm/affectation');
+    const nonManagerFlagOff = collectRoutes(
+      filterFirmManagerNav(filterFirmGovernanceNav(FIRM_NATIVE_NAV, false), false)
+    ).filter(route => governanceRoutes.includes(route));
     expect(nonManagerFlagOff).toHaveSize(0);
   });
 });
@@ -121,9 +133,9 @@ describe('firm-navigation.registry — delegated firm sales/purchases', () => {
     { label: 'Rapports', route: '/reports/purchases' }
   ];
 
-  it('allowlists contain exactly three ventes and achats routes', () => {
-    expect(DELEGATED_FIRM_VENTES_ALLOWED_ROUTES.size).toBe(3);
-    expect(DELEGATED_FIRM_ACHATS_ALLOWED_ROUTES.size).toBe(3);
+  it('allowlists contain exactly four ventes and achats routes', () => {
+    expect(DELEGATED_FIRM_VENTES_ALLOWED_ROUTES.size).toBe(4);
+    expect(DELEGATED_FIRM_ACHATS_ALLOWED_ROUTES.size).toBe(5);
   });
 
   it('filterDelegatedFirmSectionChildren keeps only allowed ventes items', () => {

@@ -7,7 +7,7 @@
 /* Design 2026 — accent indigo vibrant + gradient enrichi + glows. */
 #sidebar {
   /* Dimensions — source unique (consommée aussi par pluto-menu-theme.scss) */
-  --sidebar-rail-width: 176px;
+  --sidebar-rail-width: 240px;
   --sidebar-rail-width-collapsed: 72px;
   --sidebar-submenu-width: 260px;
   --sidebar-brand-height: var(--topbar-height, 48px);
@@ -21,14 +21,14 @@
   --sidebar-rail-icon-assistant-size: 28px;
   --sidebar-rail-label-size: var(--font-size-sm, 0.875rem);
   --sidebar-rail-label-weight: 600;
-  --sidebar-rail-item-min-height: 84px;
+  --sidebar-rail-item-min-height: 44px;
   --sidebar-rail-item-min-height-collapsed: 56px;
-  --sidebar-rail-item-padding-y: 10px;
-  --sidebar-rail-item-padding-x: 4px;
-  --sidebar-rail-icon-gap: 6px;
+  --sidebar-rail-item-padding-y: 8px;
+  --sidebar-rail-item-padding-x: 12px;
+  --sidebar-rail-icon-gap: 10px;
+  --sidebar-rail-icon-slot-width: 28px;
+  --sidebar-rail-label-align: left;
   --sidebar-beta-font-size: 10px;
-  --sidebar-beta-top: 8px;
-  --sidebar-beta-right: 10px;
   --sidebar-collapse-btn-height: 48px;
   --sidebar-submenu-link-size: 15px;
   --sidebar-submenu-icon-size: 18px;
@@ -156,16 +156,17 @@
 }
 
 .rail-item {
-  margin-bottom: 8px;
+  margin-bottom: 4px;
   padding: 0 8px;
 }
 
 .rail-link {
   position: relative;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  gap: var(--sidebar-rail-icon-gap);
   width: 100%;
   min-height: var(--sidebar-rail-item-min-height);
   padding: var(--sidebar-rail-item-padding-y) var(--sidebar-rail-item-padding-x);
@@ -184,8 +185,11 @@
     transform var(--duration-quick, 180ms) var(--ease-out-soft, cubic-bezier(0.16, 1, 0.3, 1));
 
   i {
+    flex-shrink: 0;
+    width: var(--sidebar-rail-icon-slot-width);
     font-size: var(--sidebar-rail-icon-size);
-    margin-bottom: var(--sidebar-rail-icon-gap);
+    margin-bottom: 0;
+    text-align: center;
     transition:
       color var(--transition-normal, 0.2s ease),
       opacity var(--transition-normal, 0.2s ease);
@@ -194,12 +198,12 @@
   }
 
   .rail-icon-img {
+    flex-shrink: 0;
     width: var(--sidebar-rail-icon-raster-size);
     height: var(--sidebar-rail-icon-raster-size);
-    margin-bottom: var(--sidebar-rail-icon-gap);
+    margin-bottom: 0;
     object-fit: contain;
     border-radius: 6px;
-    flex-shrink: 0;
     transition: opacity var(--transition-normal, 0.2s ease);
     opacity: 0.85;
   }
@@ -215,18 +219,15 @@
   }
 
   .rail-label {
+    flex: 1;
+    min-width: 0;
     font-size: var(--sidebar-rail-label-size);
     font-weight: var(--sidebar-rail-label-weight);
-    text-align: center;
+    text-align: var(--sidebar-rail-label-align, left);
     line-height: 1.25;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+    white-space: nowrap;
     overflow: hidden;
-    width: 100%;
-    max-width: 100%;
-    word-break: break-word;
-    hyphens: auto;
+    text-overflow: ellipsis;
     color: inherit;
   }
 
@@ -290,6 +291,7 @@
   }
 
   .rail-link {
+    justify-content: center;
     min-height: var(--sidebar-rail-item-min-height-collapsed);
     padding: 0;
 
@@ -335,11 +337,11 @@
   }
 }
 
-/* Pastille « BETA » sur l'item Assistant IA — accent indigo discret. */
+/* Pastille « BETA » sur l'item Assistant IA — inline après le libellé. */
 .rail-beta-badge {
-  position: absolute;
-  top: var(--sidebar-beta-top);
-  right: var(--sidebar-beta-right);
+  position: static;
+  flex-shrink: 0;
+  margin-left: 4px;
   padding: 1px 5px;
   font-size: var(--sidebar-beta-font-size);
   font-weight: 700;

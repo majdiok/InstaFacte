@@ -206,6 +206,52 @@ public sealed class SalesOrdersController : ControllerBase
             : Ok(ApiResponse<object>.Ok(null!, "Commande clôturée"));
     }
 
+    /// <summary>
+    /// Émet un bon de livraison sur le reste à livrer de la commande (livraison partielle
+    /// possible en précisant les quantités par ligne).
+    /// </summary>
+    [HttpPost("{id:guid}/generate-delivery-note")]
+    [Authorize(Policy = PermissionPolicies.DeliveryNotesCreate)]
+    [ProducesResponseType(typeof(ApiResponse<Guid>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GenerateDeliveryNote(
+        Guid id,
+        [FromBody] GenerateDeliveryNoteFromSalesOrderDto dto,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new GenerateDeliveryNoteFromSalesOrderCommand(id, dto.Lines, dto.IssueDate, dto.DeliveryAddress),
+            cancellationToken);
+
+        return result.IsFailure
+            ? MapFailure(result.Error)
+            : Ok(ApiResponse<Guid>.Ok(result.Value, "Bon de livraison généré"));
+    }
+
+    /// <summary>
+    /// Émet une facture directement depuis la commande : sur le livré-non-facturé par
+    /// défaut, ou sur le reste à facturer en facturation d'avance.
+    /// </summary>
+    [HttpPost("{id:guid}/generate-invoice")]
+    [Authorize(Policy = PermissionPolicies.InvoicesCreate)]
+    [ProducesResponseType(typeof(ApiResponse<Guid>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GenerateInvoice(
+        Guid id,
+        [FromBody] GenerateInvoiceFromSalesOrderDto dto,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new GenerateInvoiceFromSalesOrderCommand(id, dto.Lines, dto.IssueDate, dto.DueDate, dto.AdvanceBilling),
+            cancellationToken);
+
+        return result.IsFailure
+            ? MapFailure(result.Error)
+            : Ok(ApiResponse<Guid>.Ok(result.Value, "Facture générée"));
+    }
+
     private IActionResult MapFailure(Domain.Common.Error error) =>
         error.Code == "NotFound"
             ? NotFound(ApiResponse<object>.Fail(error.Description))

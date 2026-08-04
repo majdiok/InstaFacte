@@ -3,6 +3,8 @@ using FluentValidation;
 using FactuTrust.Application.Features.Accounting.FiscalSchedule;
 using FactuTrust.Application.Features.Search;
 using FactuTrust.Application.Features.Search.Providers;
+using FactuTrust.Application.Features.SupplierInvoices.Services;
+using FactuTrust.Application.Common.Interfaces.Services;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -27,6 +29,8 @@ public static class DependencyInjection
 
         // Synchronisation déclaration mensuelle → échéancier fiscal (best-effort, flag-gated)
         services.AddScoped<DeclarationScheduleSynchronizer>();
+
+        services.AddScoped<ISupplierInvoiceNumberService, SupplierInvoiceNumberService>();
 
         // FluentValidation
         services.AddValidatorsFromAssembly(assembly);

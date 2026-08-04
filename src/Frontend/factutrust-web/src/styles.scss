@@ -4,6 +4,7 @@
 // @use doit précéder toute autre règle (contrainte Dart Sass).
 // ============================================
 @use './styles/design-layer';
+@use './styles/form-layout';
 @use './styles/primeng-bridge';
 @use './styles/cash-desk-dialogs';
 @use './styles/tabs';
@@ -480,6 +481,8 @@
   --z-popover: 400;
   --z-tooltip: 500;
   --z-fab: 1050;
+  /* > header/secondary body dropdowns (1000), < drawer (1100+) */
+  --z-global-search-dropdown: 1050;
   --z-drawer-overlay: 1100;
   --z-drawer-panel: 1101;
   --z-drawer-dropdown: 1200;

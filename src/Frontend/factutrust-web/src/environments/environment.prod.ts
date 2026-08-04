@@ -28,6 +28,7 @@ export const environment = {
   channelsEnabled: false,
   featureFlags: {
     wizardSimplifiedFlow: true,
-    pdfPreview: false
+    pdfPreview: false,
+    exchangeBootstrapV2: true
   }
 };

@@ -80,8 +80,7 @@ public sealed class CreateQuoteCommandHandler : IRequestHandler<CreateQuoteComma
 
     private readonly ISubscriptionResolver _subscriptionResolver;
     private readonly IFiscalStampResolver _fiscalStampResolver;
-    private readonly IPriceResolver _priceResolver;
-    private readonly IPromotionResolver _promotionResolver;
+    private readonly ILinePricingOrchestrator _linePricingOrchestrator;
 
     public CreateQuoteCommandHandler(
         IQuoteRepository quoteRepository,
@@ -95,11 +94,9 @@ public sealed class CreateQuoteCommandHandler : IRequestHandler<CreateQuoteComma
         ITenantContext tenantContext,
         ISubscriptionResolver subscriptionResolver,
         IFiscalStampResolver fiscalStampResolver,
-        IPriceResolver priceResolver,
-        IPromotionResolver promotionResolver)
+        ILinePricingOrchestrator linePricingOrchestrator)
     {
-        _priceResolver = priceResolver;
-        _promotionResolver = promotionResolver;
+        _linePricingOrchestrator = linePricingOrchestrator;
         _quoteRepository = quoteRepository;
         _clientRepository = clientRepository;
         _productRepository = productRepository;
@@ -200,38 +197,29 @@ public sealed class CreateQuoteCommandHandler : IRequestHandler<CreateQuoteComma
                     }
                 }
 
-                // Prix forcé par le commercial, sinon résolu par le point unique (prix négocié
-                // → grille → catalogue). Le prix obtenu est gravé sur la ligne : le devis ne
-                // bougera plus si une grille change ensuite.
-                Money? unitPrice = lineDto.UnitPrice > 0
+                Money? priceOverride = lineDto.UnitPrice > 0
                     ? Money.Create(lineDto.UnitPrice)
                     : null;
 
-                if (unitPrice is null)
-                {
-                    var priceResult = await _priceResolver.ResolveUnitPriceAsync(
-                        dto.ClientId, product.Id, lineDto.Quantity, dto.IssueDate, cancellationToken);
-                    if (priceResult.IsFailure)
-                        return Result.Failure<Guid>(priceResult.Error);
+                var pricing = await _linePricingOrchestrator.ResolveAsync(
+                    dto.ClientId,
+                    product,
+                    lineDto.Quantity,
+                    dto.IssueDate,
+                    lineDto.DiscountPercent,
+                    priceOverride,
+                    cancellationToken);
 
-                    unitPrice = priceResult.Value.UnitPriceHT;
-                }
+                if (pricing.IsFailure)
+                    return Result.Failure<Guid>(pricing.Error);
 
-            // Promotion : appliquée APRÈS le prix, sous forme de remise de ligne. Elle ne
-            // s'impose jamais à une remise saisie — ce serait une surprise silencieuse. La
-            // remise obtenue est figée : la fin de la promotion ne change plus ce document.
-                var linePromoDiscount = lineDto.DiscountPercent;
-                if (linePromoDiscount is null)
-                {
-                    var promo = await _promotionResolver.ResolveAsync(
-                        product.Id, product.CategoryId, dto.ClientId,
-                        lineDto.Quantity, unitPrice, dto.IssueDate, cancellationToken);
-
-                    if (promo.IsSuccess && promo.Value is { } applied)
-                        linePromoDiscount = applied.DiscountPercent;
-                }
-
-                addLineResult = quote.AddLine(product, lineDto.Quantity, unitPrice, linePromoDiscount);
+                addLineResult = quote.AddLine(
+                    product,
+                    lineDto.Quantity,
+                    pricing.Value.UnitPriceHT,
+                    pricing.Value.DiscountPercent,
+                    appliedPromotionId: pricing.Value.AppliedPromotion?.PromotionId,
+                    appliedPromotionName: pricing.Value.AppliedPromotion?.PromotionName);
             }
             else
             {

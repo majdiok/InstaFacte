@@ -179,6 +179,8 @@ public sealed record InvoiceLineDto
     public decimal UnitPrice { get; init; }
     public int VatRatePercent { get; init; }
     public decimal? DiscountPercent { get; init; }
+    public Guid? AppliedPromotionId { get; init; }
+    public string? AppliedPromotionName { get; init; }
     public decimal DiscountAmount { get; init; }
     public decimal SubTotal { get; init; }
     public bool IsFodecApplicable { get; init; }

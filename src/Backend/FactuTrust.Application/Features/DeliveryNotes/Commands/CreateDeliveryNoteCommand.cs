@@ -1,4 +1,5 @@
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Interfaces.Pricing;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
@@ -75,6 +76,7 @@ public sealed class CreateDeliveryNoteCommandHandler : IRequestHandler<CreateDel
     private readonly ILogger<CreateDeliveryNoteCommandHandler> _logger;
     private readonly IDocumentNumberService _documentNumberService;
     private readonly ITenantContext _tenantContext;
+    private readonly ILinePricingOrchestrator _linePricingOrchestrator;
 
     public CreateDeliveryNoteCommandHandler(
         IDeliveryNoteRepository deliveryNoteRepository,
@@ -86,7 +88,8 @@ public sealed class CreateDeliveryNoteCommandHandler : IRequestHandler<CreateDel
         IAuditService auditService,
         ILogger<CreateDeliveryNoteCommandHandler> logger,
         IDocumentNumberService documentNumberService,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        ILinePricingOrchestrator linePricingOrchestrator)
     {
         _deliveryNoteRepository = deliveryNoteRepository;
         _clientRepository = clientRepository;
@@ -98,6 +101,7 @@ public sealed class CreateDeliveryNoteCommandHandler : IRequestHandler<CreateDel
         _logger = logger;
         _documentNumberService = documentNumberService;
         _tenantContext = tenantContext;
+        _linePricingOrchestrator = linePricingOrchestrator;
     }
 
     public async Task<Result<Guid>> Handle(CreateDeliveryNoteCommand request, CancellationToken cancellationToken)
@@ -181,8 +185,36 @@ public sealed class CreateDeliveryNoteCommandHandler : IRequestHandler<CreateDel
             if (!product.IsActive)
                 return Result.Failure<Guid>(Error.Validation("Produit", $"Le produit '{product.Name}' est désactivé"));
 
+            if (lineDto.DiscountPercent is { } discount
+                && product.IsDiscountEnabled
+                && product.MaxDiscountPercent.HasValue
+                && discount > product.MaxDiscountPercent.Value)
+            {
+                return Result.Failure<Guid>(Error.Validation(
+                    "DiscountPercent",
+                    $"La remise ne peut pas dépasser {product.MaxDiscountPercent.Value}% pour le produit '{product.Name}'"));
+            }
+
+            var pricing = await _linePricingOrchestrator.ResolveAsync(
+                dto.ClientId,
+                product,
+                lineDto.OrderedQuantity,
+                dto.IssueDate,
+                lineDto.DiscountPercent,
+                priceOverride: null,
+                cancellationToken);
+
+            if (pricing.IsFailure)
+                return Result.Failure<Guid>(pricing.Error);
+
             var addResult = deliveryNote.AddLine(
-                product, lineDto.OrderedQuantity, lineDto.Notes, lineDto.DiscountPercent);
+                product,
+                lineDto.OrderedQuantity,
+                lineDto.Notes,
+                pricing.Value.DiscountPercent,
+                unitPriceOverride: pricing.Value.UnitPriceHT,
+                appliedPromotionId: pricing.Value.AppliedPromotion?.PromotionId,
+                appliedPromotionName: pricing.Value.AppliedPromotion?.PromotionName);
             if (addResult.IsFailure)
                 return Result.Failure<Guid>(addResult.Error);
         }

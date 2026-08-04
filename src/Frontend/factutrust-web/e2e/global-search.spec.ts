@@ -68,4 +68,33 @@ test.describe('Recherche globale', () => {
     await page.waitForURL(/\/auth\/login/, { timeout: 10000 });
     expect(page.url()).toContain('/auth/login');
   });
+
+  test('dropdown inline ne chevauche pas la navigation secondaire', async ({ page }) => {
+    if (!(await ensureAuthenticated(page))) {
+      test.skip(true, 'DOC_EMAIL/DOC_PASSWORD or demo credentials required');
+    }
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await waitForAppReady(page);
+    await page.goto('/invoices');
+
+    const secondaryNav = page.locator('app-secondary-nav .secondary-nav');
+    await expect(secondaryNav).toBeVisible();
+
+    const headerInput = page.locator('.global-search__input--header');
+    await expect(headerInput).toBeVisible();
+    await headerInput.focus();
+
+    const dropdown = page.locator('body > .global-search__dropdown, .global-search__dropdown').first();
+    await expect(dropdown).toBeVisible();
+
+    const dropBox = await dropdown.boundingBox();
+    const navBox = await secondaryNav.boundingBox();
+    expect(dropBox).toBeTruthy();
+    expect(navBox).toBeTruthy();
+    expect(dropBox!.y).toBeGreaterThanOrEqual(navBox!.y + navBox!.height - 4);
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.global-search__dropdown')).toHaveCount(0);
+  });
 });

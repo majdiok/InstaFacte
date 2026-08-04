@@ -80,6 +80,8 @@ public sealed record WizardStepLineDto
     public decimal Quantity { get; init; }
     public string? Unit { get; init; }
     public decimal UnitPriceHT { get; init; }
+    /// <summary>True when the user manually set the unit price (bypasses server price resolver on submit).</summary>
+    public bool PriceOverridden { get; init; }
     public string? DiscountType { get; init; } // PERCENT or AMOUNT
     public decimal? DiscountValue { get; init; }
     public int VatRate { get; init; } // 0, 7, 13, or 19

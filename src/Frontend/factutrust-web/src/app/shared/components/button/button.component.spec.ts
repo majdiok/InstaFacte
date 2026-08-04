@@ -54,4 +54,34 @@ describe('ButtonComponent', () => {
     expect(link).toBeTruthy();
     expect(link.getAttribute('href')).toContain('/test');
   });
+
+  it('emits clicked event when the button is clicked', () => {
+    const spy = jasmine.createSpy('clicked');
+    fixture.componentRef.setInput('variant', 'primary');
+    fixture.componentInstance.clicked.subscribe(spy);
+    fixture.detectChanges();
+    const btn = fixture.nativeElement.querySelector('button') as HTMLButtonElement;
+    btn.click();
+    expect(spy).toHaveBeenCalled();
+  });
+
+  it('does not emit clicked event when the button is disabled', () => {
+    const spy = jasmine.createSpy('clicked');
+    fixture.componentRef.setInput('disabled', true);
+    fixture.componentInstance.clicked.subscribe(spy);
+    fixture.detectChanges();
+    const btn = fixture.nativeElement.querySelector('button') as HTMLButtonElement;
+    btn.click();
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('emits clicked event when the anchor is clicked', () => {
+    const spy = jasmine.createSpy('clicked');
+    fixture.componentRef.setInput('routerLink', '/test');
+    fixture.componentInstance.clicked.subscribe(spy);
+    fixture.detectChanges();
+    const link = fixture.nativeElement.querySelector('a.btn') as HTMLAnchorElement;
+    link.click();
+    expect(spy).toHaveBeenCalled();
+  });
 });

@@ -48,6 +48,8 @@ export const environment = {
     /** Simplified 4-step invoice wizard (Document, Client, Billing, Review). Falls back to 6-step legacy flow when false. */
     wizardSimplifiedFlow: true,
     /** Enables the "Download PDF" preview button inside the invoice wizard review step. Requires backend endpoint. */
-    pdfPreview: false
+    pdfPreview: false,
+    /** Single GET /exchanges/bootstrap for Échanges cold load. Set false to fall back to legacy multi-call bootstrap. */
+    exchangeBootstrapV2: true
   }
 };

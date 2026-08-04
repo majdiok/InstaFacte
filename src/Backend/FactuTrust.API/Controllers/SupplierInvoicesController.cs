@@ -1,4 +1,5 @@
 using FactuTrust.API.Authorization;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.SupplierInvoices.Commands;
 using FactuTrust.Application.Features.SupplierInvoices.Queries;
@@ -19,11 +20,16 @@ public class SupplierInvoicesController : ControllerBase
 {
     private readonly IMediator _mediator;
     private readonly ILogger<SupplierInvoicesController> _logger;
+    private readonly ISupplierInvoiceNumberService _supplierInvoiceNumberService;
 
-    public SupplierInvoicesController(IMediator mediator, ILogger<SupplierInvoicesController> logger)
+    public SupplierInvoicesController(
+        IMediator mediator,
+        ILogger<SupplierInvoicesController> logger,
+        ISupplierInvoiceNumberService supplierInvoiceNumberService)
     {
         _mediator = mediator;
         _logger = logger;
+        _supplierInvoiceNumberService = supplierInvoiceNumberService;
     }
 
     /// <summary>
@@ -36,6 +42,8 @@ public class SupplierInvoicesController : ControllerBase
         [FromQuery] string? search,
         [FromQuery] SupplierInvoiceStatus? status,
         [FromQuery] Guid? supplierId,
+        [FromQuery] Guid? purchaseOrderId,
+        [FromQuery] Guid? purchaseReceiptId,
         [FromQuery] DateTime? fromDate,
         [FromQuery] DateTime? toDate,
         [FromQuery] int page = 1,
@@ -43,7 +51,8 @@ public class SupplierInvoicesController : ControllerBase
         [FromQuery] bool unpaidOnly = false,
         CancellationToken cancellationToken = default)
     {
-        var query = new GetSupplierInvoicesQuery(search, status, supplierId, fromDate, toDate, page, pageSize, unpaidOnly);
+        var query = new GetSupplierInvoicesQuery(
+            search, status, supplierId, purchaseOrderId, purchaseReceiptId, fromDate, toDate, page, pageSize, unpaidOnly);
         var result = await _mediator.Send(query, cancellationToken);
         return Ok(ApiResponse<PagedResult<SupplierInvoiceListDto>>.Ok(result));
     }
@@ -59,14 +68,32 @@ public class SupplierInvoicesController : ControllerBase
         [FromQuery] string? search,
         [FromQuery] SupplierInvoiceStatus? status,
         [FromQuery] Guid? supplierId,
+        [FromQuery] Guid? purchaseOrderId,
+        [FromQuery] Guid? purchaseReceiptId,
         [FromQuery] DateTime? fromDate,
         [FromQuery] DateTime? toDate,
         [FromQuery] bool unpaidOnly = false,
         CancellationToken cancellationToken = default)
     {
-        var query = new GetSupplierInvoicesSummaryQuery(search, status, supplierId, fromDate, toDate, unpaidOnly);
+        var query = new GetSupplierInvoicesSummaryQuery(
+            search, status, supplierId, purchaseOrderId, purchaseReceiptId, fromDate, toDate, unpaidOnly);
         var result = await _mediator.Send(query, cancellationToken);
         return Ok(ApiResponse<SupplierInvoiceListSummaryDto>.Ok(result));
+    }
+
+    /// <summary>
+    /// Preview the next available internal supplier invoice number (does not consume the sequence).
+    /// </summary>
+    [HttpGet("preview-number")]
+    [Authorize(Policy = PermissionPolicies.SupplierInvoicesCreate)]
+    [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> PreviewNumber(
+        [FromQuery] DateTime? invoiceDate,
+        CancellationToken cancellationToken)
+    {
+        var date = invoiceDate ?? DateTime.UtcNow;
+        var number = await _supplierInvoiceNumberService.PreviewNextAsync(date, cancellationToken);
+        return Ok(ApiResponse<string>.Ok(number));
     }
 
     /// <summary>

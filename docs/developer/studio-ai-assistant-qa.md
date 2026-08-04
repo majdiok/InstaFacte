@@ -2,7 +2,7 @@
 
 ## Feature flags
 
-| Drapeau (`Ollama:*`) | Défaut code | Prod initiale | Rôle |
+| Drapeau (config serveur `Ollama:*`) | Défaut code | Prod initiale | Rôle |
 |---|---|---|---|
 | `EnableMutationTools` | `true` (dev) | `false` | Doit être `true` pour toute génération de table/système. |
 | `EnableStudioAiTools` | `true` | `true` | Interrupteur maître des outils `studio_*`. |

@@ -44,6 +44,14 @@ describe('canSeeNavEntry', () => {
 
 
 
+  it('allows promotions nav without platform settings access', () => {
+    expect(
+      canSeeNavEntry(mockAuth({ platformSettings: false, permissions: ['pricing:read'] }), {
+        permissionsAll: ['pricing:read']
+      })
+    ).toBe(true);
+  });
+
   it('blocks platformSettingsOnly when user cannot access platform settings', () => {
 
     expect(

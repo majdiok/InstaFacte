@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { ColumnVisibility, EntryTabId } from '../models/entry-form.model';
 
 export interface ManualEntryDraftLine {
   accountNumber: string;
@@ -13,70 +14,97 @@ export interface ManualEntryDraft {
   entryLabel: string;
   lines: ManualEntryDraftLine[];
   savedAt: string;
+  /** v2 fields */
+  workNotes?: string;
+  activeTab?: EntryTabId;
+  columnVisibility?: ColumnVisibility;
+  schemaVersion?: number;
 }
 
 /**
  * Persists a single in-progress manual journal entry as JSON in localStorage.
- *
- * - Storage is per-browser (not per-user); the draft is namespaced by a fixed key.
- * - The draft is cleared after a successful submission (called from the host component).
- * - Cleared automatically when the saved payload is older than 7 days to prevent stale drafts.
  */
 @Injectable({ providedIn: 'root' })
 export class ManualEntryDraftService {
-  private static readonly STORAGE_KEY = 'factutrust:manual-entry:draft:v1';
+  private static readonly STORAGE_KEY_V2 = 'ft:manual-entry:draft:v2';
+  private static readonly STORAGE_KEY_V1 = 'factutrust:manual-entry:draft:v1';
   private static readonly TTL_DAYS = 7;
 
-  save(draft: Omit<ManualEntryDraft, 'savedAt'>): void {
+  save(draft: Omit<ManualEntryDraft, 'savedAt' | 'schemaVersion'>): void {
     if (!this.isBrowser()) return;
     try {
-      const payload: ManualEntryDraft = { ...draft, savedAt: new Date().toISOString() };
-      window.localStorage.setItem(ManualEntryDraftService.STORAGE_KEY, JSON.stringify(payload));
+      const payload: ManualEntryDraft = {
+        ...draft,
+        schemaVersion: 2,
+        savedAt: new Date().toISOString()
+      };
+      window.localStorage.setItem(ManualEntryDraftService.STORAGE_KEY_V2, JSON.stringify(payload));
+      window.localStorage.removeItem(ManualEntryDraftService.STORAGE_KEY_V1);
     } catch {
-      // Quota exceeded or unavailable — silently ignore (auto-save is best-effort).
+      // Quota exceeded or unavailable — silently ignore.
     }
   }
 
   load(): ManualEntryDraft | null {
     if (!this.isBrowser()) return null;
+    const v2 = this.loadFromKey(ManualEntryDraftService.STORAGE_KEY_V2);
+    if (v2) return v2;
+    const v1 = this.loadFromKey(ManualEntryDraftService.STORAGE_KEY_V1);
+    if (!v1) return null;
+    return this.migrateV1ToV2(v1);
+  }
+
+  private loadFromKey(key: string): ManualEntryDraft | null {
     try {
-      const raw = window.localStorage.getItem(ManualEntryDraftService.STORAGE_KEY);
+      const raw = window.localStorage.getItem(key);
       if (!raw) return null;
       const parsed = JSON.parse(raw) as ManualEntryDraft;
       if (!parsed || !parsed.savedAt || !Array.isArray(parsed.lines)) {
-        this.clear();
+        this.clearKey(key);
         return null;
       }
-      // Drop expired drafts
       const savedAt = new Date(parsed.savedAt);
       const ageMs = Date.now() - savedAt.getTime();
       const ttlMs = ManualEntryDraftService.TTL_DAYS * 24 * 60 * 60 * 1000;
       if (Number.isNaN(savedAt.getTime()) || ageMs > ttlMs) {
-        this.clear();
+        this.clearKey(key);
         return null;
       }
       return parsed;
     } catch {
-      this.clear();
+      this.clearKey(key);
       return null;
     }
   }
 
+  private migrateV1ToV2(v1: ManualEntryDraft): ManualEntryDraft {
+    const migrated: ManualEntryDraft = {
+      ...v1,
+      schemaVersion: 2,
+      workNotes: '',
+      activeTab: 'standard'
+    };
+    this.save(migrated);
+    return migrated;
+  }
+
   clear(): void {
     if (!this.isBrowser()) return;
+    this.clearKey(ManualEntryDraftService.STORAGE_KEY_V2);
+    this.clearKey(ManualEntryDraftService.STORAGE_KEY_V1);
+  }
+
+  private clearKey(key: string): void {
     try {
-      window.localStorage.removeItem(ManualEntryDraftService.STORAGE_KEY);
+      window.localStorage.removeItem(key);
     } catch {
-      // Ignore — clearing a draft is best-effort.
+      // Ignore
     }
   }
 
-  /**
-   * Returns true when the draft contains at least one piece of user input
-   * (label or any line with account/amount). Empty drafts are treated as "no draft".
-   */
   isMeaningful(draft: ManualEntryDraft): boolean {
     if (draft.entryLabel.trim().length > 0) return true;
+    if ((draft.workNotes ?? '').trim().length > 0) return true;
     return draft.lines.some(l =>
       l.accountNumber.trim().length > 0 ||
       l.lineLabel.trim().length > 0 ||

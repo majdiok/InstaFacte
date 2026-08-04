@@ -2,6 +2,7 @@ using FactuTrust.API.Authorization;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.PurchaseOrders.Commands;
 using FactuTrust.Application.Features.PurchaseOrders.Queries;
+using FactuTrust.Application.Features.SupplierInvoices.Services;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Enums;
 using MediatR;
@@ -257,11 +258,29 @@ public class PurchaseOrdersController : ControllerBase
     }
 
     /// <summary>
+    /// Prefill data for creating a supplier invoice from a received purchase order.
+    /// </summary>
+    [HttpGet("{id:guid}/supplier-invoice-prefill")]
+    [Authorize(Policy = PermissionPolicies.SupplierInvoicesCreate)]
+    [ProducesResponseType(typeof(ApiResponse<SupplierInvoicePrefillDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetSupplierInvoicePrefill(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetSupplierInvoicePrefillFromPOQuery(id), cancellationToken);
+
+        if (result.IsFailure)
+            return MapFailure<SupplierInvoicePrefillDto>(result.Error);
+
+        return Ok(ApiResponse<SupplierInvoicePrefillDto>.Ok(result.Value));
+    }
+
+    /// <summary>
     /// Create a supplier invoice from a received purchase order.
     /// </summary>
     [HttpPost("{id:guid}/create-supplier-invoice")]
     [Authorize(Policy = PermissionPolicies.SupplierInvoicesCreate)]
-    [ProducesResponseType(typeof(ApiResponse<Guid>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse<SupplierInvoiceCreationResponse>), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -278,20 +297,26 @@ public class PurchaseOrdersController : ControllerBase
             request.ExternalReference,
             request.Notes,
             request.SendEmail ?? false,
+            request.Lines,
             request.LineAssetClassifications,
-            request.PaymentMethod);
+            request.PaymentMethod,
+            request.UseSuggestedNumber ?? false);
 
         var result = await _mediator.Send(command, cancellationToken);
 
         if (result.IsFailure)
-            return MapFailure<Guid>(result.Error);
+            return MapFailure<SupplierInvoiceCreationResponse>(result.Error);
 
-        _logger.LogInformation("Supplier invoice created from PO {PurchaseOrderId}: {InvoiceId}", id, result.Value);
+        var payload = new SupplierInvoiceCreationResponse(result.Value.Id, result.Value.InvoiceNumber);
+        _logger.LogInformation(
+            "Supplier invoice created from PO {PurchaseOrderId}: {InvoiceId} ({InvoiceNumber})",
+            id, payload.Id, payload.InvoiceNumber);
 
         return CreatedAtAction(
-            nameof(GetPurchaseOrder),
-            new { id },
-            ApiResponse<Guid>.Ok(result.Value, "Facture fournisseur créée avec succès"));
+            "GetSupplierInvoice",
+            "SupplierInvoices",
+            new { id = payload.Id },
+            ApiResponse<SupplierInvoiceCreationResponse>.Ok(payload, "Facture fournisseur créée avec succès"));
     }
 
     private IActionResult MapFailure(Error error)
@@ -299,7 +324,12 @@ public class PurchaseOrdersController : ControllerBase
         if (error.Code.EndsWith(".NotFound", StringComparison.Ordinal))
             return NotFound(ApiResponse<object>.Fail(error.Description, error.Code));
         if (string.Equals(error.Code, "Conflict", StringComparison.Ordinal))
-            return Conflict(ApiResponse<object>.Fail(error.Description, error.Code));
+        {
+            var response = ApiResponse<object>.Fail(error.Description, error.Code);
+            if (error.Metadata is { Count: > 0 })
+                response = response with { Data = error.Metadata };
+            return Conflict(response);
+        }
 
         return BadRequest(ApiResponse<object>.Fail(error.Description, error.Code));
     }
@@ -309,7 +339,17 @@ public class PurchaseOrdersController : ControllerBase
         if (error.Code.EndsWith(".NotFound", StringComparison.Ordinal))
             return NotFound(ApiResponse<T>.Fail(error.Description, error.Code));
         if (string.Equals(error.Code, "Conflict", StringComparison.Ordinal))
-            return Conflict(ApiResponse<T>.Fail(error.Description, error.Code));
+        {
+            var response = ApiResponse<T>.Fail(error.Description, error.Code);
+            if (error.Metadata is { Count: > 0 })
+            {
+                // Metadata carries the suggested/conflicting invoice numbers; expose them
+                // to the client via a parallel object payload rather than shoehorning them
+                // into T (T is the success-shape). We fall back to the untyped MapFailure.
+                return MapFailure(error);
+            }
+            return Conflict(response);
+        }
 
         return BadRequest(ApiResponse<T>.Fail(error.Description, error.Code));
     }
@@ -334,7 +374,10 @@ public sealed record CreateSupplierInvoiceRequest
     public string? ExternalReference { get; init; }
     public string? Notes { get; init; }
     public bool? SendEmail { get; init; }
+    public IReadOnlyList<CreateSupplierInvoiceLineSelection>? Lines { get; init; }
     public IReadOnlyList<SupplierInvoiceLineAssetRequest>? LineAssetClassifications { get; init; }
     /// <summary>Mode de paiement prévu (informatif), ex. « Effet de commerce ».</summary>
     public string? PaymentMethod { get; init; }
+    /// <summary>When true, the server reserves the next sequential FS number.</summary>
+    public bool? UseSuggestedNumber { get; init; }
 }

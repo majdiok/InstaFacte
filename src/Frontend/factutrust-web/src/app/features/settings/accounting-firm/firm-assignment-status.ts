@@ -2,9 +2,14 @@ import { StatusBadgeStatus } from '@shared/components/status-badge/status-badge.
 
 /**
  * Statuts d'une liaison société ↔ cabinet (miroir de l'enum backend
- * FirmAssignmentStatus). Le front n'affiche PAS le `statusDisplay` renvoyé
- * par l'API : il mappe la valeur numérique vers un libellé FR cohérent + un
- * style de badge du design system (StatusBadgeComponent).
+ * FirmAssignmentStatus).
+ *
+ * Contrat JSON : `Program.cs` sérialise les enums en **PascalCase** via
+ * `JsonStringEnumConverter()` (ex. `"Active"`, `"PendingFirmApproval"`).
+ * Le parseur accepte aussi les entiers 0–5 (tests / compat).
+ *
+ * Le front n'affiche PAS le `statusDisplay` API : il mappe le code vers un
+ * libellé FR + style StatusBadgeComponent.
  */
 export enum FirmAssignmentStatusCode {
   PendingFirmApproval = 0,
@@ -20,7 +25,7 @@ export interface FirmAssignmentStatusView {
   badge: StatusBadgeStatus;
 }
 
-const STATUS_VIEWS: Record<number, FirmAssignmentStatusView> = {
+const STATUS_VIEWS: Record<FirmAssignmentStatusCode, FirmAssignmentStatusView> = {
   [FirmAssignmentStatusCode.PendingFirmApproval]: { label: "En attente d'acceptation", badge: 'pending' },
   [FirmAssignmentStatusCode.Active]: { label: 'Liaison active', badge: 'active' },
   [FirmAssignmentStatusCode.Rejected]: { label: 'Refusée', badge: 'rejected' },
@@ -29,13 +34,62 @@ const STATUS_VIEWS: Record<number, FirmAssignmentStatusView> = {
   [FirmAssignmentStatusCode.CancelledByCompany]: { label: 'Annulée', badge: 'cancelled' }
 };
 
+const PASCAL_TO_CODE: Record<string, FirmAssignmentStatusCode> = {
+  PendingFirmApproval: FirmAssignmentStatusCode.PendingFirmApproval,
+  Active: FirmAssignmentStatusCode.Active,
+  Rejected: FirmAssignmentStatusCode.Rejected,
+  RevokedByCompany: FirmAssignmentStatusCode.RevokedByCompany,
+  RevokedByFirm: FirmAssignmentStatusCode.RevokedByFirm,
+  CancelledByCompany: FirmAssignmentStatusCode.CancelledByCompany
+};
+
 const FALLBACK_VIEW: FirmAssignmentStatusView = { label: 'Inconnu', badge: 'inactive' };
 
-export function firmAssignmentStatusView(status: number): FirmAssignmentStatusView {
-  return STATUS_VIEWS[status] ?? FALLBACK_VIEW;
+/**
+ * Interprète `status` renvoyé par l'API (PascalCase, entier 0–5, ou string numérique).
+ */
+export function parseFirmAssignmentStatus(raw: unknown): FirmAssignmentStatusCode | null {
+  if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 0 && raw <= 5) {
+    return raw as FirmAssignmentStatusCode;
+  }
+
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+
+    const fromPascal = PASCAL_TO_CODE[trimmed];
+    if (fromPascal !== undefined) return fromPascal;
+
+    if (/^[0-5]$/.test(trimmed)) {
+      return Number(trimmed) as FirmAssignmentStatusCode;
+    }
+  }
+
+  return null;
+}
+
+export function firmAssignmentStatusView(raw: unknown): FirmAssignmentStatusView {
+  const code = parseFirmAssignmentStatus(raw);
+  return code === null ? FALLBACK_VIEW : STATUS_VIEWS[code];
 }
 
 /** Une liaison est « ouverte » (bloque une nouvelle demande) si elle est en attente ou active. */
-export function isOpenAssignment(status: number): boolean {
-  return status === FirmAssignmentStatusCode.PendingFirmApproval || status === FirmAssignmentStatusCode.Active;
+export function isOpenAssignment(raw: unknown): boolean {
+  const code = parseFirmAssignmentStatus(raw);
+  return (
+    code === FirmAssignmentStatusCode.PendingFirmApproval ||
+    code === FirmAssignmentStatusCode.Active
+  );
+}
+
+export function isActiveAssignment(raw: unknown): boolean {
+  return parseFirmAssignmentStatus(raw) === FirmAssignmentStatusCode.Active;
+}
+
+export function isPendingAssignment(raw: unknown): boolean {
+  return parseFirmAssignmentStatus(raw) === FirmAssignmentStatusCode.PendingFirmApproval;
+}
+
+export function isRejectedAssignment(raw: unknown): boolean {
+  return parseFirmAssignmentStatus(raw) === FirmAssignmentStatusCode.Rejected;
 }

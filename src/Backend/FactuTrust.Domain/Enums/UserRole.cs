@@ -116,6 +116,10 @@ public static class UserRoleExtensions
             Permissions.DeliveryNotes.Read,
             Permissions.DeliveryNotes.Update,
             Permissions.DeliveryNotes.Delete,
+            Permissions.SalesOrders.Create,
+            Permissions.SalesOrders.Read,
+            Permissions.SalesOrders.Update,
+            Permissions.SalesOrders.Delete,
             Permissions.Clients.Create,
             Permissions.Clients.Read,
             Permissions.Clients.Update,
@@ -154,6 +158,10 @@ public static class UserRoleExtensions
             Permissions.PurchaseOrders.Read,
             Permissions.PurchaseOrders.Update,
             Permissions.PurchaseOrders.Delete,
+            Permissions.PurchaseReceipts.Create,
+            Permissions.PurchaseReceipts.Read,
+            Permissions.PurchaseReceipts.Update,
+            Permissions.PurchaseReceipts.Delete,
             Permissions.SupplierInvoices.Create,
             Permissions.SupplierInvoices.Read,
             Permissions.SupplierInvoices.Update,
@@ -197,6 +205,9 @@ public static class UserRoleExtensions
             Permissions.DeliveryNotes.Create,
             Permissions.DeliveryNotes.Read,
             Permissions.DeliveryNotes.Update,
+            Permissions.SalesOrders.Create,
+            Permissions.SalesOrders.Read,
+            Permissions.SalesOrders.Update,
             Permissions.Clients.Create,
             Permissions.Clients.Read,
             Permissions.Clients.Update,
@@ -221,6 +232,9 @@ public static class UserRoleExtensions
             Permissions.PurchaseOrders.Create,
             Permissions.PurchaseOrders.Read,
             Permissions.PurchaseOrders.Update,
+            Permissions.PurchaseReceipts.Create,
+            Permissions.PurchaseReceipts.Read,
+            Permissions.PurchaseReceipts.Update,
             Permissions.SupplierInvoices.Create,
             Permissions.SupplierInvoices.Read,
             Permissions.SupplierInvoices.Update,
@@ -250,6 +264,7 @@ public static class UserRoleExtensions
             Permissions.Products.Read,
             Permissions.Quotes.Create, Permissions.Quotes.Read, Permissions.Quotes.Update,
             Permissions.DeliveryNotes.Create, Permissions.DeliveryNotes.Read, Permissions.DeliveryNotes.Update, Permissions.DeliveryNotes.Delete,
+            Permissions.SalesOrders.Create, Permissions.SalesOrders.Read, Permissions.SalesOrders.Update,
             Permissions.Invoices.Create, Permissions.Invoices.Read, Permissions.Invoices.Update, Permissions.Invoices.Send,
             Permissions.Payments.Read,
             Permissions.CRM.Read, Permissions.CRM.Create, Permissions.CRM.Update,
@@ -265,6 +280,7 @@ public static class UserRoleExtensions
             Permissions.Products.Read,
             Permissions.Quotes.Create, Permissions.Quotes.Read, Permissions.Quotes.Update, Permissions.Quotes.Delete,
             Permissions.DeliveryNotes.Create, Permissions.DeliveryNotes.Read, Permissions.DeliveryNotes.Update, Permissions.DeliveryNotes.Delete,
+            Permissions.SalesOrders.Create, Permissions.SalesOrders.Read, Permissions.SalesOrders.Update, Permissions.SalesOrders.Delete,
             Permissions.Invoices.Create, Permissions.Invoices.Read, Permissions.Invoices.Update, Permissions.Invoices.Delete, Permissions.Invoices.Sign, Permissions.Invoices.Send,
             Permissions.Payments.Read,
             Permissions.Reports.View, Permissions.Reports.Export, Permissions.Reports.SalesOwn,
@@ -289,6 +305,7 @@ public static class UserRoleExtensions
             Permissions.Products.Read,
             Permissions.Suppliers.Create, Permissions.Suppliers.Read, Permissions.Suppliers.Update, Permissions.Suppliers.Delete,
             Permissions.PurchaseOrders.Create, Permissions.PurchaseOrders.Read, Permissions.PurchaseOrders.Update, Permissions.PurchaseOrders.Delete,
+            Permissions.PurchaseReceipts.Create, Permissions.PurchaseReceipts.Read, Permissions.PurchaseReceipts.Update, Permissions.PurchaseReceipts.Delete,
             Permissions.SupplierInvoices.Create, Permissions.SupplierInvoices.Read, Permissions.SupplierInvoices.Update, Permissions.SupplierInvoices.Delete,
             Permissions.Stock.Read,
             Permissions.Forecasting.View,
@@ -311,12 +328,14 @@ public static class UserRoleExtensions
             Permissions.Clients.Read,
             Permissions.Products.Read,
             Permissions.Invoices.Read,
+            Permissions.SalesOrders.Read,
             Permissions.Payments.Read,
             Permissions.Reports.View, Permissions.Reports.Export,
             Permissions.Accounting.Read,
             Permissions.Audit.Read,
             Permissions.Suppliers.Read,
             Permissions.PurchaseOrders.Read,
+            Permissions.PurchaseReceipts.Read,
             Permissions.SupplierInvoices.Read,
             Permissions.Stock.Read,
             Permissions.WithholdingTax.Read,
@@ -328,6 +347,7 @@ public static class UserRoleExtensions
             Permissions.Invoices.Create, Permissions.Invoices.Read, Permissions.Invoices.Update, Permissions.Invoices.Delete, Permissions.Invoices.Sign, Permissions.Invoices.Send,
             Permissions.Quotes.Create, Permissions.Quotes.Read, Permissions.Quotes.Update, Permissions.Quotes.Delete,
             Permissions.DeliveryNotes.Create, Permissions.DeliveryNotes.Read, Permissions.DeliveryNotes.Update, Permissions.DeliveryNotes.Delete,
+            Permissions.SalesOrders.Create, Permissions.SalesOrders.Read, Permissions.SalesOrders.Update, Permissions.SalesOrders.Delete,
             Permissions.Clients.Create, Permissions.Clients.Read, Permissions.Clients.Update, Permissions.Clients.Delete,
             Permissions.Products.Create, Permissions.Products.Read, Permissions.Products.Update, Permissions.Products.Delete,
             Permissions.Pricing.Create, Permissions.Pricing.Read, Permissions.Pricing.Update, Permissions.Pricing.Delete,
@@ -344,6 +364,7 @@ public static class UserRoleExtensions
             Permissions.Audit.Read,
             Permissions.Suppliers.Create, Permissions.Suppliers.Read, Permissions.Suppliers.Update, Permissions.Suppliers.Delete,
             Permissions.PurchaseOrders.Create, Permissions.PurchaseOrders.Read, Permissions.PurchaseOrders.Update, Permissions.PurchaseOrders.Delete,
+            Permissions.PurchaseReceipts.Create, Permissions.PurchaseReceipts.Read, Permissions.PurchaseReceipts.Update, Permissions.PurchaseReceipts.Delete,
             Permissions.SupplierInvoices.Create, Permissions.SupplierInvoices.Read, Permissions.SupplierInvoices.Update, Permissions.SupplierInvoices.Delete,
             Permissions.Stock.Read, Permissions.Stock.Create, Permissions.Stock.Update, Permissions.Stock.Delete,
             Permissions.StockTransfers.Create, Permissions.StockTransfers.Read, Permissions.StockTransfers.Update, Permissions.StockTransfers.Delete,
@@ -378,7 +399,9 @@ public static class UserRoleExtensions
             .Concat(DelegatedPermissionCatalog.FirmNativePermissions)
             .Distinct()
             .ToArray(),
-        UserRole.FirmAccountant => DelegatedPermissionCatalog.FirmAccountantDelegated.ToArray(),
+        UserRole.FirmAccountant => DelegatedPermissionCatalog.FirmAccountantDelegated
+            .Distinct()
+            .ToArray(),
         _ => Array.Empty<string>()
     };
 }
@@ -472,6 +495,17 @@ public static class Permissions
         public const string Read = "purchase_orders:read";
         public const string Update = "purchase_orders:update";
         public const string Delete = "purchase_orders:delete";
+    }
+
+    /// <summary>
+    /// Bons de réception d'achat (réceptions fournisseur).
+    /// </summary>
+    public static class PurchaseReceipts
+    {
+        public const string Create = "purchase_receipts:create";
+        public const string Read = "purchase_receipts:read";
+        public const string Update = "purchase_receipts:update";
+        public const string Delete = "purchase_receipts:delete";
     }
 
     /// <summary>
@@ -633,6 +667,31 @@ public static class Permissions
         public const string Manage = "firm:manage";
         public const string UsersManage = "firm:users:manage";
         public const string AssignmentsManage = "firm:assignments:manage";
+    }
+
+    public static class HonorairesInvoices
+    {
+        public const string Create = "honoraires.invoices:create";
+        public const string Read = "honoraires.invoices:read";
+        public const string Update = "honoraires.invoices:update";
+        public const string Delete = "honoraires.invoices:delete";
+        public const string Validate = "honoraires.invoices:validate";
+        public const string Send = "honoraires.invoices:send";
+    }
+
+    public static class HonorairesQuotes
+    {
+        public const string Create = "honoraires.quotes:create";
+        public const string Read = "honoraires.quotes:read";
+        public const string Update = "honoraires.quotes:update";
+        public const string Delete = "honoraires.quotes:delete";
+        public const string Convert = "honoraires.quotes:convert";
+    }
+
+    public static class HonorairesPayments
+    {
+        public const string Create = "honoraires.payments:create";
+        public const string Read = "honoraires.payments:read";
     }
 
     /// <summary>

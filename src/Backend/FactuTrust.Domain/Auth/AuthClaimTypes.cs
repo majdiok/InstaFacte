@@ -20,4 +20,10 @@ public static class AuthClaimTypes
 
     /// <summary>Display name of active client company in delegated mode.</summary>
     public const string ContextCompanyName = "context_company_name";
+
+    /// <summary>
+    /// True when the active client dossier was created and is managed by the firm
+    /// (no platform commercial company account). Value: "true" / "false".
+    /// </summary>
+    public const string IsFirmManaged = "is_firm_managed";
 }

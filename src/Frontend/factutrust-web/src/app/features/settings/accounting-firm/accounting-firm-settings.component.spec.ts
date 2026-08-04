@@ -55,12 +55,21 @@ describe('AccountingFirmSettingsComponent', () => {
     expect(html).toContain('Envoyer la demande');
   });
 
-  it('affiche le bouton « Annuler la demande » pour une demande en attente', () => {
+  it('affiche le bouton « Annuler la demande » pour une demande en attente (number)', () => {
     const { fixture } = setup(assignment({ status: 0 }));
     const html = fixture.nativeElement.textContent as string;
     expect(html).toContain('Annuler la demande');
     expect(html).toContain("En attente d'acceptation");
     expect(html).not.toContain('Rechercher un cabinet');
+  });
+
+  it('affiche le badge et « Annuler » pour status PascalCase PendingFirmApproval', () => {
+    const { fixture } = setup(assignment({ status: 'PendingFirmApproval' }));
+    const html = fixture.nativeElement.textContent as string;
+    expect(html).toContain('Annuler la demande');
+    expect(html).toContain("En attente d'acceptation");
+    expect(html).not.toContain('INCONNU');
+    expect(html).not.toContain('Inconnu');
   });
 
   it('affiche « Révoquer l\'affectation » pour une liaison active avec libellé corrigé', () => {
@@ -71,6 +80,17 @@ describe('AccountingFirmSettingsComponent', () => {
     expect(html).not.toContain('Active</'); // pas le libellé backend brut
   });
 
+  it('affiche « Révoquer » et « Actif depuis » pour status PascalCase Active', () => {
+    const { fixture } = setup(
+      assignment({ status: 'Active', respondedAt: '2026-07-18T10:00:00Z' })
+    );
+    const html = fixture.nativeElement.textContent as string;
+    expect(html).toContain("Révoquer l'affectation");
+    expect(html).toContain('Liaison active');
+    expect(html).toContain('Actif depuis');
+    expect(html).not.toContain('Inconnu');
+  });
+
   it('débloque la recherche et affiche le motif après un refus', () => {
     const rejected = assignment({ status: 2, rejectionReason: 'Dossier incomplet', respondedAt: '2026-07-18T11:00:00Z' });
     const { fixture } = setup(null, [rejected]);
@@ -78,6 +98,18 @@ describe('AccountingFirmSettingsComponent', () => {
     expect(html).toContain('Rechercher un cabinet');
     expect(html).toContain('Refusée');
     expect(html).toContain('Dossier incomplet');
+  });
+
+  it('débloque la recherche après un refus PascalCase Rejected', () => {
+    const rejected = assignment({
+      status: 'Rejected',
+      rejectionReason: 'Dossier incomplet',
+      respondedAt: '2026-07-18T11:00:00Z'
+    });
+    const { fixture } = setup(null, [rejected]);
+    const html = fixture.nativeElement.textContent as string;
+    expect(html).toContain('Refusée');
+    expect(html).not.toContain('Inconnu');
   });
 
   it('annule la demande en attente via le service (confirmation auto-acceptée)', () => {

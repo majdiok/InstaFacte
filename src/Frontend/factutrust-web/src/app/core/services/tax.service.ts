@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '@environments/environment';
+import { createHttpContextSkipGlobalErrorUi } from '@core/http-context';
 import { ApiResponse } from './auth.service';
 
 export enum TaxType {
@@ -86,8 +87,14 @@ export class TaxService {
     return this.http.get<ApiResponse<Tax>>(`${this.baseUrl}/${id}`);
   }
 
-  getVatRates(): Observable<ApiResponse<VatRateOption[]>> {
-    return this.http.get<ApiResponse<VatRateOption[]>>(`${this.baseUrl}/vat-rates`);
+  /** Active VAT rates for dropdowns. Use skipGlobalErrorUi when the caller handles errors locally. */
+  getVatRates(options?: { skipGlobalErrorUi?: boolean }): Observable<ApiResponse<VatRateOption[]>> {
+    const skipGlobalErrorUi = options?.skipGlobalErrorUi === true;
+    const httpOpts: { context?: ReturnType<typeof createHttpContextSkipGlobalErrorUi> } = {};
+    if (skipGlobalErrorUi) {
+      httpOpts.context = createHttpContextSkipGlobalErrorUi();
+    }
+    return this.http.get<ApiResponse<VatRateOption[]>>(`${this.baseUrl}/vat-rates`, httpOpts);
   }
 
   createTax(body: CreateTaxRequest): Observable<ApiResponse<Tax>> {

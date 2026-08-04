@@ -74,6 +74,8 @@ export interface SalesOrderLine {
   unitPrice: number;
   vatRatePercent: number;
   discountPercent: number | null;
+  appliedPromotionId?: string | null;
+  appliedPromotionName?: string | null;
   discountAmount: number;
   isFodecApplicable: boolean;
   fodecRatePercent: number;
@@ -206,6 +208,40 @@ export interface UpdateSalesOrderRequest {
   paymentTerms?: string | null;
 }
 
+/** Ligne de BL explicitement demandée : quantité plafonnée au reste à livrer de la ligne. */
+export interface GenerateDeliveryNoteLineRequest {
+  salesOrderLineId: string;
+  quantity: number;
+}
+
+/**
+ * Génération d'un bon de livraison depuis la commande. `lines` omis = tout le reste à
+ * livrer ; sinon livraison partielle, ligne par ligne.
+ */
+export interface GenerateDeliveryNoteRequest {
+  lines?: GenerateDeliveryNoteLineRequest[];
+  issueDate?: string;
+  deliveryAddress?: string;
+}
+
+/** Ligne de facture explicitement demandée : quantité plafonnée selon le mode de facturation. */
+export interface GenerateInvoiceFromOrderLineRequest {
+  salesOrderLineId: string;
+  quantity: number;
+}
+
+/**
+ * Génération d'une facture depuis la commande. Par défaut on facture le livré-non-facturé ;
+ * avec `advanceBilling`, on facture le reste à facturer indépendamment des livraisons.
+ * `lines` omis = tout le reste facturable.
+ */
+export interface GenerateInvoiceFromOrderRequest {
+  lines?: GenerateInvoiceFromOrderLineRequest[];
+  issueDate?: string;
+  dueDate?: string;
+  advanceBilling?: boolean;
+}
+
 @Injectable({ providedIn: 'root' })
 export class SalesOrderService {
   private readonly API_URL = `${environment.apiUrl}/sales-orders`;
@@ -283,6 +319,22 @@ export class SalesOrderService {
   /** Solde la commande en renonçant au reliquat — distinct d'une annulation. */
   closeSalesOrder(id: string, reason: string): Observable<ApiResponse<object>> {
     return this.http.post<ApiResponse<object>>(`${this.API_URL}/${id}/close`, { reason });
+  }
+
+  /**
+   * Génère un bon de livraison sur le reste à livrer. Sans `lines`, le serveur prend tout
+   * le reliquat ; sinon livraison partielle. Retourne l'identifiant du BL créé.
+   */
+  generateDeliveryNote(id: string, request: GenerateDeliveryNoteRequest): Observable<ApiResponse<string>> {
+    return this.http.post<ApiResponse<string>>(`${this.API_URL}/${id}/generate-delivery-note`, request);
+  }
+
+  /**
+   * Génère une facture depuis la commande : livré-non-facturé par défaut, reste à facturer
+   * en facturation d'avance. Retourne l'identifiant de la facture créée.
+   */
+  generateInvoice(id: string, request: GenerateInvoiceFromOrderRequest): Observable<ApiResponse<string>> {
+    return this.http.post<ApiResponse<string>>(`${this.API_URL}/${id}/generate-invoice`, request);
   }
 
   private buildParams(

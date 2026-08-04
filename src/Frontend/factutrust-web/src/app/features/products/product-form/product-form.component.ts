@@ -32,6 +32,7 @@ import {
   PricingEditSource,
   recalculatePricing
 } from '@shared/utils/product-pricing.utils';
+import { ProductClientPricesComponent } from '../product-client-prices/product-client-prices.component';
 
 interface CategoryOption {
   label: string;
@@ -69,7 +70,8 @@ interface VatOption {
     PageHeaderComponent,
     BreadcrumbComponent,
     FormSectionComponent,
-    ButtonComponent
+    ButtonComponent,
+    ProductClientPricesComponent
   ],
   template: `
     <app-breadcrumb [items]="breadcrumbItems()"></app-breadcrumb>
@@ -463,6 +465,24 @@ interface VatOption {
         </app-form-section>
       </div>
 
+      @if (isEditMode() && productId()) {
+        <div class="form-grid-full">
+          <app-form-section title="Tarifs par client" icon="pi-users" [number]="3">
+            <app-product-client-prices
+              [productId]="productId()!"
+              [catalogUnitPriceHT]="form.get('unitPrice')?.value ?? 0">
+            </app-product-client-prices>
+          </app-form-section>
+        </div>
+      } @else if (!isEditMode()) {
+        <div class="form-grid-full">
+          <div class="ft-alert ft-alert--info">
+            <i class="pi pi-info-circle"></i>
+            Enregistrez le produit pour définir des tarifs par client.
+          </div>
+        </div>
+      }
+
       <!-- Actions -->
       <div class="form-actions">
         <app-button 
@@ -495,6 +515,10 @@ interface VatOption {
       @media (max-width: 1024px) {
         grid-template-columns: 1fr;
       }
+    }
+
+    .form-grid-full {
+      margin-top: var(--spacing-4);
     }
 
     .form-row {

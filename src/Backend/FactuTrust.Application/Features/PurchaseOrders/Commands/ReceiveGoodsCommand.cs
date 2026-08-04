@@ -3,8 +3,6 @@ using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
-using FactuTrust.Domain.Enums;
-using FactuTrust.Domain.ValueObjects;
 using AuditActions = FactuTrust.Domain.Entities.AuditActions;
 using MediatR;
 
@@ -17,27 +15,24 @@ namespace FactuTrust.Application.Features.PurchaseOrders.Commands;
 public sealed record ReceiveGoodsCommand(Guid PurchaseOrderId, ReceiveGoodsDto Dto) : IRequest<Result>;
 
 /// <summary>
-/// Handler for ReceiveGoodsCommand.
+/// Handler for ReceiveGoodsCommand. Delegates stock updates to <see cref="IPurchaseGoodsReceptionService"/>.
 /// </summary>
 public sealed class ReceiveGoodsCommandHandler : IRequestHandler<ReceiveGoodsCommand, Result>
 {
     private readonly IPurchaseOrderRepository _purchaseOrderRepository;
-    private readonly IStockItemRepository _stockItemRepository;
     private readonly IWarehouseRepository _warehouseRepository;
-    private readonly IProductRepository _productRepository;
+    private readonly IPurchaseGoodsReceptionService _receptionService;
     private readonly IAuditService _auditService;
 
     public ReceiveGoodsCommandHandler(
         IPurchaseOrderRepository purchaseOrderRepository,
-        IStockItemRepository stockItemRepository,
         IWarehouseRepository warehouseRepository,
-        IProductRepository productRepository,
+        IPurchaseGoodsReceptionService receptionService,
         IAuditService auditService)
     {
         _purchaseOrderRepository = purchaseOrderRepository;
-        _stockItemRepository = stockItemRepository;
         _warehouseRepository = warehouseRepository;
-        _productRepository = productRepository;
+        _receptionService = receptionService;
         _auditService = auditService;
     }
 
@@ -47,7 +42,6 @@ public sealed class ReceiveGoodsCommandHandler : IRequestHandler<ReceiveGoodsCom
         if (po is null)
             return Result.Failure(Error.NotFound("PurchaseOrder", request.PurchaseOrderId));
 
-        // Build the reception dictionary (lineId -> quantity)
         var receptions = new Dictionary<Guid, decimal>();
         foreach (var lineDto in request.Dto.Lines)
         {
@@ -63,7 +57,6 @@ public sealed class ReceiveGoodsCommandHandler : IRequestHandler<ReceiveGoodsCom
         if (result.IsFailure)
             return result;
 
-        // Resolve target warehouse: explicit DTO (validated) > PO warehouse > default
         Warehouse? targetWarehouse = null;
 
         if (request.Dto.WarehouseId is { } dtoWarehouseId)
@@ -92,56 +85,30 @@ public sealed class ReceiveGoodsCommandHandler : IRequestHandler<ReceiveGoodsCom
             return Result.Failure(Error.Validation("Warehouse",
                 "Impossible de déterminer l'entrepôt de réception. Sélectionnez un entrepôt à la réception ou configurez un entrepôt par défaut actif (Paramètres > Entrepôts)."));
 
+        var stockLines = new List<PurchaseReceptionStockLine>();
         foreach (var (lineId, receivedQty) in receptions)
         {
             var line = po.Lines.FirstOrDefault(l => l.Id == lineId);
             if (line is null)
                 return Result.Failure(Error.Validation("Lines", "Ligne de commande introuvable."));
 
-            var stockItem = await _stockItemRepository.GetByProductAndWarehouseAsync(
-                line.ProductId, targetWarehouse.Id, cancellationToken);
-
-            if (stockItem is null)
-            {
-                var createResult = StockItem.Create(line.ProductId, targetWarehouse.Id);
-                if (createResult.IsFailure)
-                    return Result.Failure(createResult.Error);
-
-                stockItem = createResult.Value;
-                var entryResult = stockItem.RecordEntry(
-                    receivedQty,
-                    line.UnitPrice.Amount,
-                    MovementReason.Purchase,
-                    reference: $"BC {po.Number.Value}",
-                    notes: $"Réception fournisseur - {po.Supplier?.Name}");
-
-                if (entryResult.IsFailure)
-                    return entryResult;
-
-                await _stockItemRepository.AddAsync(stockItem, cancellationToken);
-            }
-            else
-            {
-                var entryResult = stockItem.RecordEntry(
-                    receivedQty,
-                    line.UnitPrice.Amount,
-                    MovementReason.Purchase,
-                    reference: $"BC {po.Number.Value}",
-                    notes: $"Réception fournisseur - {po.Supplier?.Name}");
-
-                if (entryResult.IsFailure)
-                    return entryResult;
-
-                await _stockItemRepository.UpdateAsync(stockItem, cancellationToken);
-            }
-
-            var product = await _productRepository.GetByIdAsync(line.ProductId, cancellationToken);
-            if (product is not null)
-            {
-                product.UpdateLastPurchasePrice(Money.Create(line.UnitPrice.Amount, line.UnitPrice.Currency));
-                await _productRepository.UpdateAsync(product, cancellationToken);
-            }
+            stockLines.Add(new PurchaseReceptionStockLine(
+                line.ProductId,
+                receivedQty,
+                line.UnitPrice.Amount,
+                line.UnitPrice.Currency));
         }
+
+        // Legacy stock reference kept as "BC {number}" for compatibility with existing movements.
+        var stockResult = await _receptionService.ApplyStockEntriesAsync(
+            targetWarehouse,
+            stockLines,
+            stockReference: $"BC {po.Number.Value}",
+            notes: $"Réception fournisseur - {po.Supplier?.Name}",
+            cancellationToken);
+
+        if (stockResult.IsFailure)
+            return stockResult;
 
         await _purchaseOrderRepository.UpdateAsync(po, cancellationToken);
 
@@ -160,4 +127,3 @@ public sealed class ReceiveGoodsCommandHandler : IRequestHandler<ReceiveGoodsCom
         return Result.Success();
     }
 }
-

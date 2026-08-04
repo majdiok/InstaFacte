@@ -68,6 +68,12 @@ public sealed record ClientDetailDto
     public string? ContactPerson { get; init; }
     public string? Notes { get; init; }
     public bool IsActive { get; init; }
+
+    /// <summary>Plafond d'encours en TND. <c>null</c> = pas de plafond.</summary>
+    public decimal? CreditLimit { get; init; }
+
+    /// <summary>Délai de règlement habituel en jours. <c>null</c> = non renseigné.</summary>
+    public int? DefaultPaymentTermDays { get; init; }
     
     public DateTime CreatedAt { get; init; }
     public DateTime? UpdatedAt { get; init; }
@@ -106,6 +112,12 @@ public sealed record CreateClientDto
     public string? Phone { get; init; }
     public string? ContactPerson { get; init; }
     public string? Notes { get; init; }
+
+    /// <summary>Plafond d'encours en TND. <c>null</c> = pas de plafond.</summary>
+    public decimal? CreditLimit { get; init; }
+
+    /// <summary>Délai de règlement habituel en jours. <c>null</c> = non renseigné.</summary>
+    public int? DefaultPaymentTermDays { get; init; }
 }
 
 /// <summary>
@@ -126,6 +138,12 @@ public sealed record UpdateClientDto
     public string? ContactPerson { get; init; }
     public string? Notes { get; init; }
     public bool IsActive { get; init; }
+
+    /// <summary>Plafond d'encours en TND. <c>null</c> = pas de plafond.</summary>
+    public decimal? CreditLimit { get; init; }
+
+    /// <summary>Délai de règlement habituel en jours. <c>null</c> = non renseigné.</summary>
+    public int? DefaultPaymentTermDays { get; init; }
 }
 
 /// <summary>

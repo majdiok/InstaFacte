@@ -313,6 +313,21 @@ public sealed class PricingController : ControllerBase
         return Ok(ApiResponse<object>.Ok(new { }, "Prix négocié supprimé"));
     }
 
+    /// <summary>Prix négociés par client pour un produit.</summary>
+    [HttpGet("products/{productId:guid}")]
+    [Authorize(Policy = PermissionPolicies.PricingRead)]
+    [ProducesResponseType(typeof(ApiResponse<ProductPricingDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetProductPricing(Guid productId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetProductPricingQuery(productId), cancellationToken);
+
+        if (result.IsFailure)
+            return NotFound(ApiResponse<object>.Fail(result.Error.Description));
+
+        return Ok(ApiResponse<ProductPricingDto>.Ok(result.Value));
+    }
+
     // ───────────────────────── Promotions ─────────────────────────
 
     /// <summary>Liste des promotions, avec leur portée et si elles courent aujourd'hui.</summary>
@@ -360,7 +375,8 @@ public sealed class PricingController : ControllerBase
             new UpdatePromotionCommand(
                 id, request.Name, request.StartsOn, request.EndsOn, request.DiscountType,
                 request.DiscountPercent, request.DiscountAmount, request.MinQuantity,
-                request.Priority, request.IsActive),
+                request.Priority, request.IsActive, request.ProductId, request.ProductCategoryId,
+                request.ClientId),
             cancellationToken);
 
         if (result.IsFailure)
@@ -448,6 +464,9 @@ public sealed class UpdatePromotionRequest
     public decimal MinQuantity { get; init; } = 1m;
     public int Priority { get; init; }
     public bool IsActive { get; init; } = true;
+    public Guid? ProductId { get; init; }
+    public Guid? ProductCategoryId { get; init; }
+    public Guid? ClientId { get; init; }
 }
 
 /// <summary>Corps de requête de la résolution par lot.</summary>

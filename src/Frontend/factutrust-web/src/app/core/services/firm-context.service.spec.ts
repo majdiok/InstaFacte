@@ -72,6 +72,13 @@ describe('FirmContextService', () => {
     httpMock.expectNone(`${environment.apiUrl}/firm/context/clear`);
   });
 
+  it('syncFromUser copies isFirmManaged from user', () => {
+    setUser(auth, { ...delegatedUser, isFirmManaged: true });
+    service.syncFromUser();
+    expect(service.context().isFirmManaged).toBeTrue();
+    expect(service.context().accessMode).toBe('delegated');
+  });
+
   it('clearContext applies native tokens and returns true', async () => {
     setUser(auth, delegatedUser);
     const promise = service.clearContext();

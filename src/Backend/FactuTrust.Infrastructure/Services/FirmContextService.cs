@@ -73,7 +73,7 @@ public sealed class FirmContextService : IFirmContextService
         return _tokenService.GenerateTokensAsync(userId, homeTenantId, cancellationToken: cancellationToken);
     }
 
-    public Task<FirmContextDto> GetCurrentContextAsync(
+    public async Task<FirmContextDto> GetCurrentContextAsync(
         ClaimsPrincipal principal, CancellationToken cancellationToken = default)
     {
         var accessMode = principal.FindFirstValue(AuthClaimTypes.AccessMode) ?? "native";
@@ -81,11 +81,35 @@ public sealed class FirmContextService : IFirmContextService
         Guid? contextTenantId = Guid.TryParse(contextTenantIdClaim, out var id) ? id : null;
         var contextCompanyName = principal.FindFirstValue(AuthClaimTypes.ContextCompanyName);
 
-        return Task.FromResult(new FirmContextDto
+        var isFirmManaged = false;
+        if (string.Equals(accessMode, "delegated", StringComparison.OrdinalIgnoreCase)
+            && contextTenantId.HasValue)
+        {
+            // Prefer JWT claim (set at switch / refresh); fall back to Master DB.
+            var claim = principal.FindFirstValue(AuthClaimTypes.IsFirmManaged);
+            if (string.Equals(claim, "true", StringComparison.OrdinalIgnoreCase))
+            {
+                isFirmManaged = true;
+            }
+            else if (string.Equals(claim, "false", StringComparison.OrdinalIgnoreCase))
+            {
+                isFirmManaged = false;
+            }
+            else
+            {
+                var homeTenantId = _currentUser.TenantId;
+                var contextTenant = await _masterContext.Tenants.AsNoTracking()
+                    .FirstOrDefaultAsync(t => t.Id == contextTenantId.Value, cancellationToken);
+                isFirmManaged = contextTenant?.ManagedByFirmTenantId == homeTenantId;
+            }
+        }
+
+        return new FirmContextDto
         {
             AccessMode = accessMode,
             ClientTenantId = contextTenantId,
-            ClientCompanyName = contextCompanyName
-        });
+            ClientCompanyName = contextCompanyName,
+            IsFirmManaged = isFirmManaged
+        };
     }
 }

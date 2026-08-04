@@ -138,7 +138,7 @@ import { TimeSheetQuickActionsComponent } from './time-sheet-quick-actions.compo
 
     @if (facade.anomalies().length > 0) {
       <div class="fc-card anomalies">
-        <strong>Dépassements constatés</strong>
+        <strong>Anomalies / refus</strong>
         <ul>
           @for (message of facade.anomalies(); track message) {
             <li>{{ message }}</li>

@@ -48,6 +48,9 @@ public sealed class DelegatedAccessMiddlewareTests
     [InlineData("GET", "/api/firm/context")]
     [InlineData("POST", "/api/auth/refresh")]
     [InlineData("POST", "/api/auth/logout")]
+    [InlineData("POST", "/api/notifications/a94fc082-160a-42f4-a854-0c95b881914d/read")]
+    [InlineData("POST", "/api/notifications/read-all")]
+    [InlineData("GET", "/api/notifications")]
     public async Task Delegated_mode_allows_firm_context_and_auth_session_writes(string method, string path)
     {
         var (statusCode, nextCalled) = await InvokeAsync(method, path, "delegated");
@@ -71,6 +74,9 @@ public sealed class DelegatedAccessMiddlewareTests
     [InlineData("POST", "/api/firm/users")]
     [InlineData("POST", "/api/invoices")]
     [InlineData("POST", "/api/clients")]
+    [InlineData("POST", "/api/suppliers")]
+    [InlineData("PUT", "/api/suppliers/00000000-0000-0000-0000-000000000001")]
+    [InlineData("POST", "/api/exchanges/62b05d91-67a3-4069-817b-da87005c30e8/messages")]
     public async Task Delegated_mode_blocks_non_accounting_writes(string method, string path)
     {
         var (statusCode, nextCalled) = await InvokeAsync(method, path, "delegated");
@@ -123,13 +129,14 @@ public sealed class DelegatedAccessMiddlewareTests
     [Theory]
     [InlineData("GET", "/api/quotes")]
     [InlineData("GET", "/api/suppliers")]
+    [InlineData("GET", "/api/clients")]
     [InlineData("GET", "/api/purchaseorders")]
-    public async Task Delegated_mode_blocks_restricted_sales_purchases_reads(string method, string path)
+    public async Task Delegated_mode_allows_operational_reads(string method, string path)
     {
         var (statusCode, nextCalled) = await InvokeAsync(method, path, "delegated");
 
-        Assert.False(nextCalled);
-        Assert.Equal(StatusCodes.Status403Forbidden, statusCode);
+        Assert.True(nextCalled);
+        Assert.Equal(StatusCodes.Status200OK, statusCode);
     }
 
     [Theory]

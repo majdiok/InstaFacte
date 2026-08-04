@@ -21,6 +21,8 @@ export interface User {
   accessMode?: 'native' | 'delegated';
   contextTenantId?: string;
   contextCompanyName?: string;
+  /** True when the active delegated dossier is firm-managed (no platform commercial account). */
+  isFirmManaged?: boolean;
   twoFactorEnabled: boolean;
   /** AppModule enum values enabled for this user */
   enabledModuleIds?: number[];
@@ -248,6 +250,10 @@ export class AuthService {
   /** Cabinet comptable consulte un dossier client : pas d'écriture trésorerie/paiements côté UI. */
   readonly isFirmDelegatedReadonly = computed(
     () => this.isAccountingFirm() && this.isDelegatedMode()
+  );
+  /** Dossier client créé/géré par le cabinet (sans compte plateforme) en mode délégué. */
+  readonly isFirmManagedDelegated = computed(
+    () => this.isAccountingFirm() && this.isDelegatedMode() && !!this.userSignal()?.isFirmManaged
   );
   readonly isFirmManager = computed(() => this.userSignal()?.role === 'FirmManager');
   readonly isFirmAccountant = computed(() => this.userSignal()?.role === 'FirmAccountant');

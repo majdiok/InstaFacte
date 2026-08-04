@@ -1,5 +1,7 @@
+using FactuTrust.Application.Common;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Interfaces.Pricing;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
@@ -42,6 +44,7 @@ public sealed class SubmitInvoiceCommandHandler
     private readonly IAuditService _auditService;
     private readonly IWarehouseRepository _warehouseRepository;
     private readonly IFiscalStampResolver _fiscalStampResolver;
+    private readonly ILinePricingOrchestrator _linePricingOrchestrator;
     private readonly AccountingSettings _accountingSettings;
     private readonly ILogger<SubmitInvoiceCommandHandler> _logger;
 
@@ -58,6 +61,7 @@ public sealed class SubmitInvoiceCommandHandler
         IAuditService auditService,
         IWarehouseRepository warehouseRepository,
         IFiscalStampResolver fiscalStampResolver,
+        ILinePricingOrchestrator linePricingOrchestrator,
         IOptions<AccountingSettings> accountingSettings,
         ILogger<SubmitInvoiceCommandHandler> logger)
     {
@@ -73,6 +77,7 @@ public sealed class SubmitInvoiceCommandHandler
         _auditService = auditService;
         _warehouseRepository = warehouseRepository;
         _fiscalStampResolver = fiscalStampResolver;
+        _linePricingOrchestrator = linePricingOrchestrator;
         _accountingSettings = accountingSettings.Value;
         _logger = logger;
     }
@@ -117,11 +122,11 @@ public sealed class SubmitInvoiceCommandHandler
             return Result.Failure<InvoiceCreatedResultDto>(startResult.Error);
         }
 
-        await _draftRepository.UpdateAsync(draft, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
         try
         {
+            await _draftRepository.UpdateAsync(draft, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
             // 3. Validate completeness
             if (!draft.IsComplete)
                 return FailSubmission(draft, 
@@ -229,23 +234,18 @@ public sealed class SubmitInvoiceCommandHandler
                         return FailSubmission(draft, Error.NotFound("Produit", productId));
                 }
 
-                var unitPrice = Money.Create(line.UnitPriceHT, metadata.Currency);
-                
                 // Calculate discount percent from value if type is AMOUNT
-                decimal? discountPercent = null;
+                decimal? manualDiscountPercent = null;
                 if (line.DiscountValue.HasValue && line.DiscountValue.Value > 0)
                 {
                     if (line.DiscountType == "PERCENT")
                     {
-                        discountPercent = line.DiscountValue;
+                        manualDiscountPercent = line.DiscountValue;
                     }
                     else
                     {
-                        // AMOUNT discount → convert to a percentage of the line gross.
-                        // Guard against a zero gross (quantity or unit price = 0) which would otherwise
-                        // throw DivideByZeroException; a zero-amount line has no meaningful discount.
                         var gross = line.Quantity * line.UnitPriceHT;
-                        discountPercent = gross > 0 ? (line.DiscountValue / gross) * 100 : null;
+                        manualDiscountPercent = gross > 0 ? (line.DiscountValue / gross) * 100 : null;
                     }
                 }
 
@@ -253,10 +253,35 @@ public sealed class SubmitInvoiceCommandHandler
                 var fodecRate = _accountingSettings.FodecRatePercent;
                 if (product != null)
                 {
-                    addResult = invoice.AddLine(product, line.Quantity, unitPrice, discountPercent, fodecRate);
+                    Money? priceOverride = line.PriceOverridden
+                        ? Money.Create(line.UnitPriceHT, metadata.Currency)
+                        : null;
+
+                    var pricing = await _linePricingOrchestrator.ResolveAsync(
+                        client.Id,
+                        product,
+                        line.Quantity,
+                        metadata.IssueDate,
+                        manualDiscountPercent,
+                        priceOverride,
+                        cancellationToken);
+
+                    if (pricing.IsFailure)
+                        return FailSubmission(draft, pricing.Error);
+
+                    addResult = invoice.AddLine(
+                        product,
+                        line.Quantity,
+                        pricing.Value.UnitPriceHT,
+                        pricing.Value.DiscountPercent,
+                        fodecRate,
+                        pricing.Value.AppliedPromotion?.PromotionId,
+                        pricing.Value.AppliedPromotion?.PromotionName);
                 }
                 else
                 {
+                    var unitPrice = Money.Create(line.UnitPriceHT, metadata.Currency);
+
                     // Create custom line without product reference
                     // Convert numeric VAT rate to enum
                     var vatRate = line.VatRate switch
@@ -275,7 +300,7 @@ public sealed class SubmitInvoiceCommandHandler
                         line.Unit ?? "Unité",
                         unitPrice,
                         vatRate,
-                        discountPercent,
+                        manualDiscountPercent,
                         line.FodecApplicable,
                         fodecRate);
                 }
@@ -351,6 +376,18 @@ public sealed class SubmitInvoiceCommandHandler
         }
         catch (Exception ex)
         {
+            if (SqlExceptionHelper.IsSchemaDrift(ex))
+            {
+                var sqlEx = SqlExceptionHelper.FindSqlException(ex)!;
+                _logger.LogError(ex,
+                    "Schema drift on invoice submit for draft {DraftId} (SqlError {Number}): {Detail}",
+                    command.DraftId, sqlEx.Number, sqlEx.Message);
+
+                return FailSubmission(draft, Error.Validation(
+                    "Submission",
+                    "Le schéma de base de données n'est pas à jour pour cette entreprise. Lancez la migration."));
+            }
+
             var detail = ex.InnerException?.Message ?? ex.Message;
             if (ex is DbUpdateException dbEx)
             {

@@ -129,3 +129,24 @@ public sealed record ExchangeUnreadSummaryDto(
 public sealed record ExchangeThreadUnreadDto(Guid ThreadId, int UnreadCount);
 
 public sealed record EnsureExchangeThreadDto(Guid? FirmClientAssignmentId);
+
+public sealed record PagedExchangeMessagesDto(
+    IReadOnlyList<ExchangeMessageDto> Items,
+    bool HasMore,
+    DateTime? OldestSentAt);
+
+public sealed record MarkMessagesReadBatchDto(IReadOnlyList<Guid> MessageIds);
+
+public sealed record ExchangeBootstrapDto(
+    IReadOnlyList<ExchangeThreadListItemDto>? Threads,
+    FirmClientAssignmentDto? CompanyAssignment,
+    IReadOnlyList<FirmClientDossierDto>? FirmClients,
+    ExchangeThreadDetailDto? ActiveThread,
+    PagedExchangeMessagesDto? Messages,
+    IReadOnlyList<ExchangeRequestDto>? Requests,
+    IReadOnlyList<ExchangeTaskDto>? Tasks,
+    IReadOnlyList<ExchangeDocumentDto>? Documents,
+    IReadOnlyList<ExchangeAuditEventDto>? History,
+    int OpenRequestsCount,
+    int UnreadCount,
+    string? EmptyHint);

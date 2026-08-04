@@ -125,7 +125,10 @@ public sealed class DeliveryNote : AggregateRoot
         decimal orderedQuantity,
         string? notes = null,
         decimal? discountPercent = null,
-        decimal fodecRatePercent = DeliveryNoteLine.DefaultFodecRatePercent)
+        decimal fodecRatePercent = DeliveryNoteLine.DefaultFodecRatePercent,
+        Money? unitPriceOverride = null,
+        Guid? appliedPromotionId = null,
+        string? appliedPromotionName = null)
     {
         if (!Status.CanBeEdited())
             return Result.Failure(Error.Validation("Status", "Ce bon de livraison ne peut plus être modifié"));
@@ -136,7 +139,8 @@ public sealed class DeliveryNote : AggregateRoot
         var lineNumber = _lines.Count + 1;
 
         var lineResult = DeliveryNoteLine.Create(
-            this, lineNumber, product, orderedQuantity, notes, discountPercent, fodecRatePercent);
+            this, lineNumber, product, orderedQuantity, notes, discountPercent, fodecRatePercent, unitPriceOverride,
+            appliedPromotionId, appliedPromotionName);
         if (lineResult.IsFailure)
             return Result.Failure(lineResult.Error);
 

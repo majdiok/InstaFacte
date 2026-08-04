@@ -8,7 +8,6 @@ import { TagModule } from 'primeng/tag';
 import { DividerModule } from 'primeng/divider';
 import { TableModule } from 'primeng/table';
 import { TooltipModule } from 'primeng/tooltip';
-import { MenuModule } from 'primeng/menu';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { ToastModule } from 'primeng/toast';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -23,6 +22,7 @@ import { MenuItem } from '@shared/models/menu-item.model';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
+import { DocumentActionsMenuComponent } from '@shared/components/document-actions-menu/document-actions-menu.component';
 import { StatusBadgeComponent, StatusBadgeStatus } from '@shared/components/status-badge/status-badge.component';
 import { DeliveryNoteService } from '../../services/delivery-note.service';
 import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDeliveryLineDto } from '../../models/delivery-note.model';
@@ -40,7 +40,6 @@ import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDel
     DividerModule,
     TableModule,
     TooltipModule,
-    MenuModule,
     ConfirmDialogModule,
     ToastModule,
     SkeletonModule,
@@ -51,6 +50,7 @@ import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDel
     PageHeaderComponent,
     BreadcrumbComponent,
     ButtonComponent,
+    DocumentActionsMenuComponent,
     StatusBadgeComponent
   ],
   template: `
@@ -66,15 +66,17 @@ import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDel
         routerLink="/delivery-notes">
         Retour
       </app-button>
-      @if (deliveryNote()) {
-        <app-button 
-          variant="secondary"
-          icon="pi-ellipsis-v"
+      @if (primaryAction(); as action) {
+        <app-button
+          [variant]="action.variant"
+          [icon]="action.icon"
           iconPos="left"
-          (click)="menu.toggle($event)">
-          Actions
+          (clicked)="action.command()">
+          {{ action.label }}
         </app-button>
-        <p-menu #menu [model]="menuItems" [popup]="true"></p-menu>
+      }
+      @if (deliveryNote()) {
+        <app-document-actions-menu [items]="menuItems" />
       }
     </app-page-header>
 
@@ -250,75 +252,6 @@ import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDel
                 [status]="getStatusBadgeStatus(deliveryNote()!.status)"
                 [label]="deliveryNote()!.statusDisplay">
               </app-status-badge>
-              
-              <div class="status-actions">
-                @if (deliveryNote()!.status === 'Draft') {
-                  <app-button 
-                    variant="primary"
-                    size="sm"
-                    icon="pi-check"
-                    iconPos="left"
-                    (click)="confirmDeliveryNote()">
-                    Valider
-                  </app-button>
-                }
-                @if (deliveryNote()!.status === 'Confirmed') {
-                  <app-button 
-                    variant="primary"
-                    size="sm"
-                    icon="pi-truck"
-                    iconPos="left"
-                    (click)="startDelivery()">
-                    Démarrer livraison
-                  </app-button>
-                }
-                @if (deliveryNote()!.status === 'InTransit') {
-                  <app-button 
-                    variant="primary"
-                    size="sm"
-                    icon="pi-check-circle"
-                    iconPos="left"
-                    (click)="openRecordDeliveryDialog()">
-                    Enregistrer livraison
-                  </app-button>
-                }
-                @if ((deliveryNote()!.status === 'Delivered' || deliveryNote()!.status === 'PartiallyDelivered') && !deliveryNote()!.invoiceId) {
-                  <app-button 
-                    variant="primary"
-                    size="sm"
-                    icon="pi-file"
-                    iconPos="left"
-                    (click)="generateInvoice()">
-                    Générer facture
-                  </app-button>
-                }
-              </div>
-            </div>
-          </p-card>
-
-          <!-- Actions Card -->
-          <p-card header="Actions rapides" styleClass="actions-card">
-            <div class="quick-actions">
-              @if (deliveryNote()!.status === 'Draft' || deliveryNote()!.status === 'Confirmed') {
-                <app-button 
-                  variant="outline"
-                  icon="pi-times"
-                  iconPos="left"
-                  (click)="cancelDeliveryNote()"
-                  style="width: 100%; margin-bottom: var(--spacing-2);">
-                  Annuler
-                </app-button>
-              }
-              @if (deliveryNote()!.invoiceId) {
-                <app-button 
-                  variant="outline"
-                  icon="pi-file"
-                  iconPos="left"
-                  [routerLink]="['/invoices', deliveryNote()!.invoiceId!]"
-                  style="width: 100%;">
-                  Voir la facture {{ deliveryNote()!.invoiceNumber }}
-                </app-button>
-              }
             </div>
           </p-card>
 
@@ -913,6 +846,28 @@ export class DeliveryNoteDetailComponent implements OnInit {
     ];
   });
 
+  /** Action workflow principale affichée dans l'en-tête selon l'état du BL. */
+  readonly primaryAction = computed(() => {
+    const note = this.deliveryNote();
+    if (!note) return null;
+    if (note.status === DeliveryNoteStatus.Draft) {
+      return { label: 'Valider', icon: 'pi-check', variant: 'primary' as const, command: () => this.confirmDeliveryNote() };
+    }
+    if (note.status === DeliveryNoteStatus.Confirmed) {
+      return { label: 'Démarrer livraison', icon: 'pi-truck', variant: 'primary' as const, command: () => this.startDelivery() };
+    }
+    if (note.status === DeliveryNoteStatus.InTransit) {
+      return { label: 'Enregistrer livraison', icon: 'pi-check-circle', variant: 'primary' as const, command: () => this.openRecordDeliveryDialog() };
+    }
+    if (
+      (note.status === DeliveryNoteStatus.Delivered || note.status === DeliveryNoteStatus.PartiallyDelivered) &&
+      !note.invoiceId
+    ) {
+      return { label: 'Générer facture', icon: 'pi-file', variant: 'primary' as const, command: () => this.generateInvoice() };
+    }
+    return null;
+  });
+
   /** FODEC agrégé du bon (0 si aucune ligne n'y est assujettie). */
   totalFodec = computed<number>(() =>
     (this.deliveryNote()?.lines ?? []).reduce((sum, line) => sum + (line.fodecAmount ?? 0), 0));
@@ -947,31 +902,8 @@ export class DeliveryNoteDetailComponent implements OnInit {
   }
 
   private buildMenu(note: DeliveryNoteDetailDto): void {
+    // Actions secondaires uniquement — le workflow est dans primaryAction (header).
     this.menuItems = [];
-
-    if (note.status === DeliveryNoteStatus.Draft) {
-      this.menuItems.push({
-        label: 'Valider',
-        icon: 'pi pi-check',
-        command: () => this.confirmDeliveryNote()
-      });
-    }
-
-    if (note.status === DeliveryNoteStatus.Confirmed) {
-      this.menuItems.push({
-        label: 'Démarrer livraison',
-        icon: 'pi pi-truck',
-        command: () => this.startDelivery()
-      });
-    }
-
-    if (note.status === DeliveryNoteStatus.InTransit) {
-      this.menuItems.push({
-        label: 'Enregistrer livraison',
-        icon: 'pi pi-check-circle',
-        command: () => this.openRecordDeliveryDialog()
-      });
-    }
 
     if (note.status === DeliveryNoteStatus.Draft || note.status === DeliveryNoteStatus.Confirmed) {
       this.menuItems.push({
@@ -981,11 +913,11 @@ export class DeliveryNoteDetailComponent implements OnInit {
       });
     }
 
-    if ((note.status === DeliveryNoteStatus.Delivered || note.status === DeliveryNoteStatus.PartiallyDelivered) && !note.invoiceId) {
+    if (note.invoiceId) {
       this.menuItems.push({
-        label: 'Générer facture',
+        label: note.invoiceNumber ? `Voir la facture ${note.invoiceNumber}` : 'Voir la facture',
         icon: 'pi pi-file',
-        command: () => this.generateInvoice()
+        routerLink: ['/invoices', note.invoiceId]
       });
     }
   }

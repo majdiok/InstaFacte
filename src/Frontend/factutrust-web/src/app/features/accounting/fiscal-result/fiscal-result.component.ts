@@ -102,7 +102,7 @@ interface EditableModel {
           <span>Feuille finalisée{{ d.finalizedAt ? ' le ' + (d.finalizedAt | date : 'shortDate') : '' }} — lecture seule.</span>
         </div>
       }
-      @if (d.warnings?.length) {
+      @if (d.warnings.length) {
         <div class="fr-alert-banner" role="alert">
           <i class="pi pi-exclamation-triangle" aria-hidden="true"></i>
           <div>

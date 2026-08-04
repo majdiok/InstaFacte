@@ -163,6 +163,8 @@ public sealed class FirmTimeSheetEntry : Entity
     {
         if (Status == FirmTimeSheetStatus.Validated)
             return Result.Failure(Error.Validation("TimeSheet", "Feuille de temps déjà validée."));
+        if (Status != FirmTimeSheetStatus.Submitted)
+            return Result.Failure(Error.Validation("TimeSheet", "Seules les feuilles soumises peuvent être validées."));
         if (validatedByUserId == Guid.Empty)
             return Result.Failure(Error.Validation("User", "Auteur de la validation requis"));
         if (TimerStartedAtUtc.HasValue)

@@ -1,4 +1,5 @@
 using FactuTrust.Application.Common.Interfaces.Pricing;
+using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Domain.Common;
 using MediatR;
 
@@ -19,13 +20,15 @@ public sealed class ResolvedPriceLineDto
     public string Currency { get; init; } = string.Empty;
     public string Source { get; init; } = string.Empty;
     public bool IsNegotiated { get; init; }
+    public decimal? PromotionDiscountPercent { get; init; }
+    public string? PromotionName { get; init; }
+    public Guid? PromotionId { get; init; }
+    public bool PromotionEligible { get; init; }
+    public decimal? PromotionMinQuantityRequired { get; init; }
 }
 
 /// <summary>
 /// Résout le prix de plusieurs produits en une seule fois.
-///
-/// Indispensable en caisse : lorsqu'un caissier rattache une commande de vingt lignes à un
-/// client porteur d'une grille, retarifer ligne à ligne demanderait vingt allers-retours.
 /// </summary>
 public sealed record ResolvePricesBatchQuery(
     Guid? ClientId,
@@ -35,17 +38,13 @@ public sealed record ResolvePricesBatchQuery(
 public sealed class ResolvePricesBatchQueryHandler
     : IRequestHandler<ResolvePricesBatchQuery, Result<IReadOnlyList<ResolvedPriceLineDto>>>
 {
-    /// <summary>
-    /// Garde-fou : une requête de lot n'est pas un moyen d'aspirer le référentiel tarifaire.
-    /// Un ticket de caisse dépasse rarement quelques dizaines de lignes.
-    /// </summary>
     private const int MaxItems = 200;
 
-    private readonly IPriceResolver _priceResolver;
+    private readonly IMediator _mediator;
 
-    public ResolvePricesBatchQueryHandler(IPriceResolver priceResolver)
+    public ResolvePricesBatchQueryHandler(IMediator mediator)
     {
-        _priceResolver = priceResolver;
+        _mediator = mediator;
     }
 
     public async Task<Result<IReadOnlyList<ResolvedPriceLineDto>>> Handle(
@@ -60,43 +59,44 @@ public sealed class ResolvePricesBatchQueryHandler
                 Error.Validation("Items", $"Un lot ne peut pas dépasser {MaxItems} lignes"));
         }
 
-        var date = request.Date ?? DateTime.UtcNow.Date;
         var resolved = new List<ResolvedPriceLineDto>(request.Items.Count);
-
-        // Les produits répétés ne sont résolus qu'une fois : en caisse, le même article revient
-        // souvent sur plusieurs lignes.
-        var seen = new Dictionary<Guid, ResolvedPriceLineDto>();
+        var seen = new Dictionary<(Guid ProductId, decimal Quantity), ResolvedPriceLineDto>();
 
         foreach (var item in request.Items)
         {
             if (item.ProductId == Guid.Empty)
                 continue;
 
-            if (seen.TryGetValue(item.ProductId, out var already))
+            var key = (item.ProductId, item.Quantity <= 0 ? 1m : item.Quantity);
+            if (seen.TryGetValue(key, out var already))
             {
                 resolved.Add(already);
                 continue;
             }
 
-            var result = await _priceResolver.ResolveUnitPriceAsync(
-                request.ClientId, item.ProductId, item.Quantity <= 0 ? 1m : item.Quantity,
-                date, cancellationToken);
+            var result = await _mediator.Send(
+                new ResolvePriceQuery(request.ClientId, item.ProductId, key.Item2, request.Date),
+                cancellationToken);
 
-            // Un produit introuvable n'invalide pas tout le lot : la ligne est simplement
-            // omise, et l'appelant conserve le prix qu'il affichait déjà.
             if (result.IsFailure)
                 continue;
 
+            var dto = result.Value;
             var line = new ResolvedPriceLineDto
             {
                 ProductId = item.ProductId,
-                UnitPriceHT = result.Value.UnitPriceHT.Amount,
-                Currency = result.Value.UnitPriceHT.Currency,
-                Source = result.Value.Source.ToString(),
-                IsNegotiated = result.Value.Source != Domain.Enums.PriceSource.Catalog
+                UnitPriceHT = dto.UnitPriceHT,
+                Currency = dto.Currency,
+                Source = dto.Source,
+                IsNegotiated = dto.IsNegotiated,
+                PromotionDiscountPercent = dto.PromotionDiscountPercent,
+                PromotionName = dto.PromotionName,
+                PromotionId = dto.PromotionId,
+                PromotionEligible = dto.PromotionEligible,
+                PromotionMinQuantityRequired = dto.PromotionMinQuantityRequired
             };
 
-            seen[item.ProductId] = line;
+            seen[key] = line;
             resolved.Add(line);
         }
 

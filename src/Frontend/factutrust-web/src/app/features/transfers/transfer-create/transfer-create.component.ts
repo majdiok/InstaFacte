@@ -144,119 +144,138 @@ interface TransferLine {
           <p class="stock-hint" role="status" aria-live="polite">Chargement des stocks de l'entrepôt source…</p>
         }
 
-        <div class="line-add">
-          <div class="product-search-wrap form-group">
-            <label for="transfer-product-search">Recherche produit</label>
-            <p-autoComplete
-              inputId="transfer-product-search"
-              [(ngModel)]="selectedProduct"
-              [suggestions]="productSuggestions()"
-              (completeMethod)="onProductSearch($event)"
-              field="name"
-              [dropdown]="true"
-              [forceSelection]="true"
-              [minLength]="0"
-              placeholder="Rechercher par nom ou code…"
-              appendTo="body"
-              [style]="{ width: '100%' }"
-              [attr.aria-label]="'Rechercher un produit à ajouter au transfert'">
-              <ng-template let-product pTemplate="item">
-                <div class="product-suggestion">
-                  <div class="product-suggestion-main">
-                    <span class="product-code">{{ product.code }}</span>
-                    <span class="product-name">{{ product.name }}</span>
+        <div class="line-add-panel">
+          <div class="line-add">
+            <div class="product-search-wrap form-group">
+              <label for="transfer-product-search">Recherche produit</label>
+              <p-autoComplete
+                inputId="transfer-product-search"
+                [(ngModel)]="selectedProduct"
+                [suggestions]="productSuggestions()"
+                (completeMethod)="onProductSearch($event)"
+                field="name"
+                [dropdown]="true"
+                [forceSelection]="true"
+                [minLength]="0"
+                placeholder="Rechercher par nom ou code…"
+                appendTo="body"
+                [style]="{ width: '100%' }"
+                [attr.aria-label]="'Rechercher un produit à ajouter au transfert'">
+                <ng-template let-product pTemplate="item">
+                  <div class="product-suggestion">
+                    <div class="product-suggestion-main">
+                      <span class="product-code">{{ product.code }}</span>
+                      <span class="product-name">{{ product.name }}</span>
+                    </div>
+                    <div class="product-suggestion-meta">
+                      <span class="product-unit">{{ product.unit || 'Unité' }}</span>
+                      @if (!product.isStockManaged) {
+                        <span class="badge-non-stock">Non géré en stock</span>
+                      }
+                      @if (sourceWarehouseId) {
+                        <span class="product-dispo">Dispo source : {{ formatAvailability(product.id) }}</span>
+                      }
+                    </div>
                   </div>
-                  <div class="product-suggestion-meta">
-                    <span class="product-unit">{{ product.unit || 'Unité' }}</span>
-                    @if (!product.isStockManaged) {
-                      <span class="badge-non-stock">Non géré en stock</span>
-                    }
-                    @if (sourceWarehouseId) {
-                      <span class="product-dispo">Dispo source : {{ formatAvailability(product.id) }}</span>
+                </ng-template>
+                <ng-template pTemplate="empty">
+                  <div class="product-empty">
+                    @if (productsLoading()) {
+                      <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+                      <span>Chargement des produits…</span>
+                    } @else {
+                      <span>Aucun produit ne correspond à votre recherche</span>
                     }
                   </div>
-                </div>
-              </ng-template>
-              <ng-template pTemplate="empty">
-                <div class="product-empty">
-                  @if (productsLoading()) {
-                    <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
-                    <span>Chargement des produits…</span>
-                  } @else {
-                    <span>Aucun produit ne correspond à votre recherche</span>
-                  }
-                </div>
-              </ng-template>
-            </p-autoComplete>
-          </div>
-          <div class="qty-add form-group">
-            <label for="transfer-qty-add">Quantité</label>
-            <p-inputNumber
-              inputId="transfer-qty-add"
-              [(ngModel)]="selectedQuantity"
-              [min]="0.001"
-              [minFractionDigits]="0"
-              [maxFractionDigits]="3"
-              mode="decimal"
-              placeholder="Qté"
-              [style]="{ width: '120px' }">
-            </p-inputNumber>
-          </div>
-          <div class="btn-add-wrap">
-            <app-button
-              type="button"
-              variant="primary"
-              icon="pi-plus"
-              iconPos="left"
-              (click)="addLine()"
-              [disabled]="!selectedProduct || selectedQuantity <= 0"
-              ariaLabel="Ajouter le produit sélectionné au transfert">
-              Ajouter
-            </app-button>
+                </ng-template>
+              </p-autoComplete>
+            </div>
+            <div class="qty-add form-group">
+              <label for="transfer-qty-add">Quantité</label>
+              <p-inputNumber
+                inputId="transfer-qty-add"
+                [(ngModel)]="selectedQuantity"
+                [min]="0.001"
+                [minFractionDigits]="0"
+                [maxFractionDigits]="3"
+                mode="decimal"
+                placeholder="Qté"
+                styleClass="qty-add-input"
+                [style]="{ width: '120px' }">
+              </p-inputNumber>
+            </div>
+            <div class="btn-add-wrap">
+              <app-button
+                type="button"
+                variant="primary"
+                icon="pi-plus"
+                iconPos="left"
+                (click)="addLine()"
+                [disabled]="!selectedProduct || selectedQuantity <= 0"
+                ariaLabel="Ajouter le produit sélectionné au transfert">
+                Ajouter
+              </app-button>
+            </div>
           </div>
         </div>
 
         @if (lines.length > 0) {
           <div class="lines-table-wrap">
-            <table class="lines-table">
+            <table class="lines-table" [class.lines-table--with-dispo]="!!sourceWarehouseId">
+              <colgroup>
+                <col class="col-code" />
+                <col class="col-product" />
+                <col class="col-unit" />
+                @if (sourceWarehouseId) {
+                  <col class="col-dispo" />
+                }
+                <col class="col-qty" />
+                <col class="col-notes" />
+                <col class="col-actions" />
+              </colgroup>
               <thead>
                 <tr>
-                  <th>Code</th>
-                  <th>Produit</th>
-                  <th>Unité</th>
+                  <th class="col-code">Code</th>
+                  <th class="col-product">Produit</th>
+                  <th class="col-unit">Unité</th>
                   @if (sourceWarehouseId) {
-                    <th>Dispo source</th>
+                    <th class="col-dispo">Dispo source</th>
                   }
-                  <th>Quantité</th>
-                  <th>Notes ligne</th>
-                  <th></th>
+                  <th class="col-qty">Quantité</th>
+                  <th class="col-notes">Notes ligne</th>
+                  <th class="col-actions"></th>
                 </tr>
               </thead>
               <tbody>
                 @for (line of lines; track line.productId; let i = $index) {
                   <tr>
-                    <td>{{ line.productCode }}</td>
-                    <td>{{ line.productName }}</td>
-                    <td>{{ line.unit }}</td>
+                    <td class="col-code">{{ line.productCode }}</td>
+                    <td class="col-product">{{ line.productName }}</td>
+                    <td class="col-unit">{{ line.unit }}</td>
                     @if (sourceWarehouseId) {
-                      <td>{{ formatAvailability(line.productId) }}</td>
+                      <td class="col-dispo">{{ formatAvailability(line.productId) }}</td>
                     }
-                    <td>
-                      <p-inputNumber
-                        [(ngModel)]="line.requestedQuantity"
-                        [ngModelOptions]="{ standalone: true }"
-                        [min]="0.001"
-                        [minFractionDigits]="0"
-                        [maxFractionDigits]="3"
-                        mode="decimal"
-                        [style]="{ width: '100%', maxWidth: '120px' }"
-                        [inputId]="'transfer-line-qty-' + i">
-                      </p-inputNumber>
-                      @if (qtyExceedsSource(line)) {
-                        <span class="qty-warning" role="status">Dépasse la disponibilité</span>
-                      }
+                    <td class="col-qty">
+                      <div class="qty-cell">
+                        <p-inputNumber
+                          [(ngModel)]="line.requestedQuantity"
+                          [ngModelOptions]="{ standalone: true }"
+                          [min]="0.001"
+                          [minFractionDigits]="0"
+                          [maxFractionDigits]="3"
+                          mode="decimal"
+                          [style]="{ width: '100%', maxWidth: '120px' }"
+                          [inputId]="'transfer-line-qty-' + i">
+                        </p-inputNumber>
+                        @if (qtyExceedsSource(line)) {
+                          <span class="qty-warning" role="status">
+                            <i class="pi pi-exclamation-triangle" aria-hidden="true"></i>
+                            Dépasse la disponibilité
+                          </span>
+                        }
+                      </div>
                     </td>
-                    <td>
+                    <td class="col-notes">
                       <input
                         type="text"
                         pInputText
@@ -266,7 +285,7 @@ interface TransferLine {
                         class="notes-input"
                         [attr.aria-label]="'Notes pour la ligne ' + line.productName" />
                     </td>
-                    <td>
+                    <td class="col-actions">
                       <app-button
                         type="button"
                         variant="danger"
@@ -304,10 +323,18 @@ interface TransferLine {
     </div>
   `,
   styles: [`
+    :host {
+      display: block;
+    }
+
+    :host ::ng-deep app-form-section {
+      scroll-margin-top: var(--spacing-4, 1rem);
+    }
+
     .page-container {
-      padding: var(--spacing-6, 1.5rem);
-      max-width: 1000px;
+      max-width: 1200px;
       margin: 0 auto;
+      padding: var(--spacing-6, 1.5rem) 0;
     }
 
     .warehouse-flow {
@@ -349,12 +376,20 @@ interface TransferLine {
       margin: 0 0 var(--spacing-3, 0.75rem) 0;
     }
 
+    .line-add-panel {
+      padding: var(--spacing-4, 1rem);
+      margin-bottom: var(--spacing-4, 1rem);
+      background: var(--color-background-subtle, #f8fafc);
+      border: 1px solid var(--color-border-subtle, #e2e8f0);
+      border-radius: var(--radius-lg, 0.5rem);
+    }
+
     .line-add {
       display: flex;
       gap: var(--spacing-3, 0.75rem);
       align-items: flex-end;
-      margin-bottom: var(--spacing-4, 1rem);
       flex-wrap: wrap;
+      margin-bottom: 0;
     }
 
     .product-search-wrap {
@@ -383,20 +418,41 @@ interface TransferLine {
 
     .lines-table-wrap {
       overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      margin-right: 0;
+      padding-bottom: var(--spacing-1, 0.25rem);
+    }
+
+    .lines-table-wrap::-webkit-scrollbar {
+      height: 6px;
     }
 
     .lines-table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 640px;
+      table-layout: fixed;
+      min-width: 720px;
     }
+
+    .lines-table col.col-code { width: 10%; }
+    .lines-table col.col-product { width: 22%; }
+    .lines-table col.col-unit { width: 8%; }
+    .lines-table col.col-dispo { width: 10%; }
+    .lines-table col.col-qty { width: 14%; }
+    .lines-table col.col-notes { width: auto; }
+    .lines-table col.col-actions { width: 48px; }
+
+    .lines-table--with-dispo col.col-product { width: 20%; }
+    .lines-table--with-dispo col.col-qty { width: 12%; }
 
     .lines-table th,
     .lines-table td {
-      padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+      padding: var(--spacing-3, 0.75rem);
       text-align: left;
       border-bottom: 1px solid var(--color-border-subtle, #e2e8f0);
-      vertical-align: top;
+      vertical-align: middle;
+      min-width: 0;
+      overflow-wrap: break-word;
     }
 
     .lines-table th {
@@ -408,17 +464,48 @@ interface TransferLine {
       background: var(--color-background-subtle, #f8fafc);
     }
 
+    .lines-table .col-notes {
+      min-width: 0;
+    }
+
+    .lines-table .col-actions {
+      width: 48px;
+      text-align: center;
+      padding-inline: var(--spacing-2, 0.5rem);
+    }
+
+    .lines-table .col-product {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .qty-cell {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-1, 0.25rem);
+      min-height: 2.5rem;
+      justify-content: center;
+    }
+
     .notes-input {
       width: 100%;
-      min-width: 120px;
-      max-width: 220px;
+      min-width: 0;
+      max-width: none;
+      box-sizing: border-box;
     }
 
     .qty-warning {
-      display: block;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
       font-size: var(--font-size-xs, 0.75rem);
       color: var(--color-warning-700, #b45309);
-      margin-top: var(--spacing-1, 0.25rem);
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+
+    .qty-warning .pi {
+      font-size: 0.7rem;
     }
 
     .empty-lines {
@@ -450,6 +537,7 @@ interface TransferLine {
       margin-top: var(--spacing-8, 2rem);
       padding-top: var(--spacing-6, 1.5rem);
       border-top: 1px solid var(--color-border-subtle, #e2e8f0);
+      flex-wrap: wrap;
     }
 
     .product-suggestion {
@@ -508,6 +596,22 @@ interface TransferLine {
       width: 100%;
     }
 
+    :host ::ng-deep .qty-add .p-inputnumber,
+    :host ::ng-deep .qty-add .p-inputnumber .p-inputtext {
+      width: 120px;
+    }
+
+    :host ::ng-deep .lines-table p-inputnumber,
+    :host ::ng-deep .lines-table p-inputnumber .p-inputnumber,
+    :host ::ng-deep .lines-table p-inputnumber .p-inputtext {
+      width: 100%;
+      max-width: 120px;
+    }
+
+    :host ::ng-deep .lines-table .p-inputnumber-input {
+      text-align: right;
+    }
+
     :host ::ng-deep .p-calendar {
       display: flex;
       width: 100%;
@@ -519,6 +623,10 @@ interface TransferLine {
     }
 
     @media (max-width: 768px) {
+      .page-container {
+        padding: var(--spacing-4, 1rem) 0;
+      }
+
       .warehouse-flow {
         flex-direction: column;
         align-items: stretch;
@@ -534,8 +642,30 @@ interface TransferLine {
         align-items: stretch;
       }
 
+      .qty-add {
+        width: 100%;
+      }
+
+      :host ::ng-deep .qty-add .p-inputnumber,
+      :host ::ng-deep .qty-add .p-inputnumber .p-inputtext {
+        width: 100%;
+      }
+
       .btn-add-wrap {
         align-self: flex-start;
+        padding-bottom: 0;
+      }
+
+      .lines-table {
+        min-width: 560px;
+      }
+
+      .form-actions {
+        justify-content: stretch;
+      }
+
+      .form-actions app-button {
+        flex: 1;
       }
     }
   `],

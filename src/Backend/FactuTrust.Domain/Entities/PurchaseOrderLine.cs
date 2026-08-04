@@ -24,6 +24,7 @@ public sealed class PurchaseOrderLine : Entity
 
     public decimal Quantity { get; private set; }
     public decimal ReceivedQuantity { get; private set; }
+    public decimal InvoicedQuantity { get; private set; }
     public string? Unit { get; private set; }
     public Money UnitPrice { get; private set; } = null!;
     public VatRate VatRate { get; private set; }
@@ -41,6 +42,11 @@ public sealed class PurchaseOrderLine : Entity
     /// Whether this line has been fully received.
     /// </summary>
     public bool IsFullyReceived => ReceivedQuantity >= Quantity;
+
+    /// <summary>Received quantity not yet invoiced.</summary>
+    public decimal ReceivedNotInvoicedQuantity => Math.Max(0m, ReceivedQuantity - InvoicedQuantity);
+
+    public bool IsFullyInvoiced => ReceivedQuantity > 0 && InvoicedQuantity >= ReceivedQuantity;
 
     private PurchaseOrderLine() { }
 
@@ -66,6 +72,7 @@ public sealed class PurchaseOrderLine : Entity
             ProductDescription = product.Description,
             Quantity = quantity,
             ReceivedQuantity = 0,
+            InvoicedQuantity = 0,
             Unit = product.Unit,
             UnitPrice = unitPrice,
             VatRate = product.VatRate
@@ -105,6 +112,52 @@ public sealed class PurchaseOrderLine : Entity
 
         ReceivedQuantity += receivedQuantity;
 
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Reverses a previously recorded reception (e.g. cancelling a validated purchase receipt).
+    /// </summary>
+    internal Result ReverseReception(decimal quantity)
+    {
+        if (quantity <= 0)
+            return Result.Failure(Error.Validation("ReceivedQuantity", "La quantité à annuler doit être supérieure à zéro"));
+
+        if (quantity > ReceivedQuantity)
+            return Result.Failure(Error.Validation("ReceivedQuantity",
+                $"Impossible d'annuler {quantity} : seule {ReceivedQuantity} a été reçue sur cette ligne"));
+
+        if (ReceivedQuantity - quantity < InvoicedQuantity)
+            return Result.Failure(Error.Validation("ReceivedQuantity",
+                "Impossible d'annuler une réception déjà facturée"));
+
+        ReceivedQuantity -= quantity;
+        return Result.Success();
+    }
+
+    internal Result RecordInvoiced(decimal invoicedQuantity)
+    {
+        if (invoicedQuantity <= 0)
+            return Result.Failure(Error.Validation("InvoicedQuantity", "La quantité facturée doit être positive"));
+
+        if (InvoicedQuantity + invoicedQuantity > ReceivedQuantity)
+            return Result.Failure(Error.Validation("InvoicedQuantity",
+                $"Facturation supérieure au reste reçu non facturé sur la ligne {LineNumber} (reste : {ReceivedNotInvoicedQuantity})"));
+
+        InvoicedQuantity += invoicedQuantity;
+        return Result.Success();
+    }
+
+    internal Result ReverseInvoiced(decimal quantity)
+    {
+        if (quantity <= 0)
+            return Result.Failure(Error.Validation("InvoicedQuantity", "La quantité à annuler doit être positive"));
+
+        if (quantity > InvoicedQuantity)
+            return Result.Failure(Error.Validation("InvoicedQuantity",
+                $"Impossible d'annuler {quantity} : seule {InvoicedQuantity} a été facturée sur cette ligne"));
+
+        InvoicedQuantity -= quantity;
         return Result.Success();
     }
 

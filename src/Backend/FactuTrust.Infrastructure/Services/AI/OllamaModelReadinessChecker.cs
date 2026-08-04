@@ -32,7 +32,7 @@ public sealed class OllamaModelReadinessChecker : IOllamaModelReadinessChecker
         {
             return new OllamaModelReadinessResult(
                 false,
-                "Le service IA local (Ollama) est indisponible. Démarrez Ollama sur le serveur.",
+                "Le moteur IA InstaFact est indisponible. Vérifiez que le service est démarré sur le serveur.",
                 null,
                 null);
         }
@@ -48,7 +48,7 @@ public sealed class OllamaModelReadinessChecker : IOllamaModelReadinessChecker
         {
             return new OllamaModelReadinessResult(
                 false,
-                $"Le modèle « {modelName} » n'est pas installé dans Ollama. Exécutez « ollama pull {modelName} ».",
+                $"Le modèle « {modelName} » n'est pas installé sur le moteur IA InstaFact. Contactez l'administrateur plateforme ou choisissez un autre modèle.",
                 null,
                 Math.Round(availableGiB, 1));
         }

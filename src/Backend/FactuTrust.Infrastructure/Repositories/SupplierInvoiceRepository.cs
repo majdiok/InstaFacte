@@ -36,6 +36,7 @@ public sealed class SupplierInvoiceRepository : ISupplierInvoiceRepository
             .Include(si => si.Supplier)
             .Include(si => si.Warehouse)
             .Include(si => si.PurchaseOrder)
+            .Include(si => si.SourcePurchaseReceipt)
             .Include(si => si.Lines)
             .Include(si => si.Payments)
             .FirstOrDefaultAsync(si => si.Id == id, cancellationToken);
@@ -138,6 +139,8 @@ public sealed class SupplierInvoiceRepository : ISupplierInvoiceRepository
         string? searchTerm,
         SupplierInvoiceStatus? status,
         Guid? supplierId,
+        Guid? purchaseOrderId,
+        Guid? purchaseReceiptId,
         DateTime? fromDate,
         DateTime? toDate,
         int page,
@@ -155,7 +158,7 @@ public sealed class SupplierInvoiceRepository : ISupplierInvoiceRepository
                 .Include(si => si.Lines)
                 .Include(si => si.Payments)
                 .AsQueryable(),
-            searchTerm, status, supplierId, fromDate, toDate, unpaidOnly);
+            searchTerm, status, supplierId, purchaseOrderId, purchaseReceiptId, fromDate, toDate, unpaidOnly);
 
         var totalCount = await query.CountAsync(cancellationToken);
 
@@ -178,6 +181,8 @@ public sealed class SupplierInvoiceRepository : ISupplierInvoiceRepository
         string? searchTerm,
         SupplierInvoiceStatus? status,
         Guid? supplierId,
+        Guid? purchaseOrderId,
+        Guid? purchaseReceiptId,
         DateTime? fromDate,
         DateTime? toDate,
         bool unpaidOnly)
@@ -200,6 +205,12 @@ public sealed class SupplierInvoiceRepository : ISupplierInvoiceRepository
         if (supplierId.HasValue)
             query = query.Where(si => si.SupplierId == supplierId.Value);
 
+        if (purchaseOrderId.HasValue)
+            query = query.Where(si => si.PurchaseOrderId == purchaseOrderId.Value);
+
+        if (purchaseReceiptId.HasValue)
+            query = query.Where(si => si.SourcePurchaseReceiptId == purchaseReceiptId.Value);
+
         if (fromDate.HasValue)
             query = query.Where(si => si.InvoiceDate >= fromDate.Value);
 
@@ -209,10 +220,72 @@ public sealed class SupplierInvoiceRepository : ISupplierInvoiceRepository
         return query;
     }
 
+    public async Task<IReadOnlyList<LinkedSupplierInvoiceSummaryDto>> GetLinkedSummariesByPurchaseOrderIdAsync(
+        Guid purchaseOrderId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        var rows = await context.SupplierInvoices
+            .AsNoTracking()
+            .Where(si => si.PurchaseOrderId == purchaseOrderId)
+            .OrderByDescending(si => si.InvoiceDate)
+            .Select(si => new
+            {
+                si.Id,
+                si.InvoiceNumber,
+                si.InvoiceDate,
+                si.Status,
+                TotalTTC = si.TotalAmount.Amount
+            })
+            .ToListAsync(cancellationToken);
+
+        return rows.Select(si => new LinkedSupplierInvoiceSummaryDto
+        {
+            Id = si.Id,
+            InvoiceNumber = si.InvoiceNumber,
+            InvoiceDate = si.InvoiceDate,
+            Status = si.Status,
+            StatusDisplay = si.Status.ToDisplayString(),
+            TotalTTC = si.TotalTTC
+        }).ToList();
+    }
+
+    public async Task<IReadOnlyList<LinkedSupplierInvoiceSummaryDto>> GetLinkedSummariesByPurchaseReceiptIdAsync(
+        Guid purchaseReceiptId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        var rows = await context.SupplierInvoices
+            .AsNoTracking()
+            .Where(si => si.SourcePurchaseReceiptId == purchaseReceiptId)
+            .OrderByDescending(si => si.InvoiceDate)
+            .Select(si => new
+            {
+                si.Id,
+                si.InvoiceNumber,
+                si.InvoiceDate,
+                si.Status,
+                TotalTTC = si.TotalAmount.Amount
+            })
+            .ToListAsync(cancellationToken);
+
+        return rows.Select(si => new LinkedSupplierInvoiceSummaryDto
+        {
+            Id = si.Id,
+            InvoiceNumber = si.InvoiceNumber,
+            InvoiceDate = si.InvoiceDate,
+            Status = si.Status,
+            StatusDisplay = si.Status.ToDisplayString(),
+            TotalTTC = si.TotalTTC
+        }).ToList();
+    }
+
     public async Task<SupplierInvoiceListSummaryDto> GetSummaryAsync(
         string? searchTerm,
         SupplierInvoiceStatus? status,
         Guid? supplierId,
+        Guid? purchaseOrderId,
+        Guid? purchaseReceiptId,
         DateTime? fromDate,
         DateTime? toDate,
         bool unpaidOnly = false,
@@ -222,7 +295,7 @@ public sealed class SupplierInvoiceRepository : ISupplierInvoiceRepository
 
         var filtered = ApplySupplierInvoiceFilters(
             context.SupplierInvoices.AsNoTracking(),
-            searchTerm, status, supplierId, fromDate, toDate, unpaidOnly);
+            searchTerm, status, supplierId, purchaseOrderId, purchaseReceiptId, fromDate, toDate, unpaidOnly);
 
         // Lightweight per-invoice projection; Paid via the Payments navigation (correlated subquery).
         var rows = await filtered

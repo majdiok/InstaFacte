@@ -21,6 +21,8 @@ export interface NavSubItem {
   modules?: AppModule[];
   permissionsAll?: string[];
   platformSettingsOnly?: boolean;
+  /** Visible only to FirmManager in native accounting-firm mode. */
+  managerOnly?: boolean;
   /** One nesting level max (e.g. secondary-nav flyout). UI must not recurse further. */
   children?: NavSubItem[];
 }
@@ -35,6 +37,8 @@ export interface NavItem {
   modules?: AppModule[];
   permissionsAll?: string[];
   platformSettingsOnly?: boolean;
+  /** Visible only to FirmManager in native accounting-firm mode. */
+  managerOnly?: boolean;
 }
 
 export type NavSearchGroup = 'page' | 'create' | 'report' | 'settings' | 'documentation';
@@ -170,27 +174,6 @@ export const ALL_NAV_ITEMS: NavItem[] = [
         permissionsAll: ['reports:view', 'invoices:read']
       },
       {
-        label: 'Grilles tarifaires',
-        route: '/pricing',
-        icon: 'fa-solid fa-tags',
-        modules: [M.Sales],
-        permissionsAll: ['pricing:read']
-      },
-      {
-        label: 'Promotions',
-        route: '/pricing/promotions',
-        icon: 'fa-solid fa-bullhorn',
-        modules: [M.Sales],
-        permissionsAll: ['pricing:read']
-      },
-      {
-        label: 'Conditions de règlement',
-        route: '/pricing/payment-terms',
-        icon: 'fa-solid fa-calendar-check',
-        modules: [M.Sales],
-        permissionsAll: ['pricing:read']
-      },
-      {
         label: 'États analytiques',
         route: '/reports/analytics',
         icon: 'fa-solid fa-chart-line',
@@ -237,6 +220,13 @@ export const ALL_NAV_ITEMS: NavItem[] = [
         icon: 'fa-solid fa-file-lines',
         modules: [M.Purchases],
         permissionsAll: ['purchase_orders:read']
+      },
+      {
+        label: 'Bons de réception',
+        route: '/purchase-receipts',
+        icon: 'fa-solid fa-dolly',
+        modules: [M.Purchases],
+        permissionsAll: ['purchase_receipts:read']
       },
       {
         label: 'Factures fournisseurs',
@@ -698,41 +688,29 @@ export const ALL_NAV_ITEMS: NavItem[] = [
   {
     label: 'Échanges',
     icon: 'fa-solid fa-comments',
-    children: [
-      {
-        label: 'Messagerie',
-        route: '/exchanges',
-        icon: 'fa-solid fa-envelope'
-      },
-      {
-        label: 'Documents',
-        route: '/exchanges',
-        icon: 'fa-solid fa-folder-open'
-      },
-      {
-        label: 'Demandes',
-        route: '/exchanges',
-        icon: 'fa-solid fa-clipboard-list'
-      },
-      {
-        label: 'Partage',
-        route: '/exchanges',
-        icon: 'fa-solid fa-share-nodes'
-      },
-      {
-        label: 'Notifications',
-        route: '/exchanges',
-        icon: 'fa-solid fa-bell'
-      }
-    ]
+    route: '/exchanges'
   },
   {
     label: 'Paramètres',
     icon: 'fa-solid fa-gear',
-    route: '/settings',
     modules: [M.Administration],
-    permissionsAll: ['settings:read'],
-    platformSettingsOnly: true
+    children: [
+      {
+        label: 'Paramètres généraux',
+        route: '/settings',
+        icon: 'fa-solid fa-sliders',
+        modules: [M.Administration],
+        permissionsAll: ['settings:read'],
+        platformSettingsOnly: true
+      },
+      {
+        label: 'Promotions',
+        route: '/settings/promotions',
+        icon: 'fa-solid fa-bullhorn',
+        modules: [M.Sales],
+        permissionsAll: ['pricing:read']
+      }
+    ]
   }
 ];
 
@@ -756,6 +734,8 @@ const ROUTE_KEYWORDS: Record<string, string[]> = {
   '/accounting/journal': ['écriture', 'compta'],
   '/accounting/fiscal-schedule': ['echeancier', 'échéancier', 'fiscal', 'declaration', 'déclaration', 'rappel', 'echeance', 'échéance'],
   '/settings': ['paramètre', 'configuration', 'réglage'],
+  '/settings/promotions': ['promotion', 'remise', 'réduction', 'offre', 'bullhorn'],
+  '/settings/payment-terms': ['condition', 'règlement', 'échéance', 'escompte', 'paiement', 'délai'],
   '/exchanges': ['échange', 'echanges', 'messagerie', 'réclamation', 'reclamation', 'demande', 'cabinet'],
   '/firm/exchanges': ['échange', 'echanges', 'messagerie', 'réclamation', 'cabinet', 'société']
 };
@@ -770,7 +750,8 @@ const ROUTE_SEARCH_GROUP: Record<string, NavSearchGroup> = {
   '/reports/analytics': 'report',
   '/reports/purchases-analytics': 'report',
   '/reports/profit': 'report',
-  '/settings': 'settings'
+  '/settings': 'settings',
+  '/settings/promotions': 'settings'
 };
 
 function inferSearchGroup(route: string, parentLabel?: string): NavSearchGroup {

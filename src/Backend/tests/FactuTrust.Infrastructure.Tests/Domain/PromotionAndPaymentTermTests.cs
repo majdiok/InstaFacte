@@ -130,6 +130,18 @@ public sealed class PromotionTests
     }
 
     [Fact]
+    public void UpdateScope_SwitchesFromCategoryToProduct()
+    {
+        var promo = NewPercentPromotion(10m, categoryId: CategoryId);
+
+        var result = promo.UpdateScope(ProductId, null, null);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(ProductId, promo.ProductId);
+        Assert.Null(promo.ProductCategoryId);
+    }
+
+    [Fact]
     public void Create_RefusesAnInvertedWindow()
     {
         var result = Promotion.Create(

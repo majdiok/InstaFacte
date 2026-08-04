@@ -58,6 +58,22 @@ textarea.p-inputtextarea:enabled:focus {
   border: 1px solid var(--color-border-subtle);
 }
 
+// Menu Actions document (appendTo="body") — libellés complets, jamais tronqués
+.ft-document-actions-menu.p-menu {
+  min-width: 220px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft-md);
+  border: 1px solid var(--color-border-subtle);
+
+  .p-menuitem-link {
+    white-space: nowrap;
+  }
+
+  .p-menuitem-text {
+    overflow: visible;
+  }
+}
+
 .p-dropdown-panel .p-dropdown-items .p-dropdown-item.p-highlight,
 .p-multiselect-panel .p-multiselect-items .p-multiselect-item.p-highlight {
   background: var(--color-primary-50);

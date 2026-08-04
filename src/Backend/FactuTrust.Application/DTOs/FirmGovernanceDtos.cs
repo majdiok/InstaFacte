@@ -49,6 +49,8 @@ public sealed record PermanentFileDto
     public string? NextActionLabel { get; init; }
     public IReadOnlyList<LegalRepresentativeDto> Representatives { get; init; } = Array.Empty<LegalRepresentativeDto>();
     public IReadOnlyList<ShareholderDto> Shareholders { get; init; } = Array.Empty<ShareholderDto>();
+    /// <summary>True si la société est un dossier créé et géré par le cabinet (sans compte plateforme).</summary>
+    public bool IsFirmManaged { get; init; }
 }
 
 public sealed record LegalRepresentativeDto
@@ -228,6 +230,8 @@ public sealed record FirmActivityCodeDto
     public int Category { get; init; }
     public string CategoryDisplay { get; init; } = null!;
     public bool IsBillableByDefault { get; init; }
+    /// <summary>Tarif unitaire HT suggéré à la facturation (TND). Null = non configuré.</summary>
+    public decimal? DefaultUnitPrice { get; init; }
     public bool IsActive { get; init; }
     public int SortOrder { get; init; }
 }
@@ -239,6 +243,8 @@ public sealed record SaveFirmActivityCodeDto
     public string Label { get; init; } = null!;
     public int Category { get; init; }
     public bool IsBillableByDefault { get; init; } = true;
+    /// <summary>Tarif unitaire HT suggéré à la facturation (TND). Null = non configuré.</summary>
+    public decimal? DefaultUnitPrice { get; init; }
     public int SortOrder { get; init; }
 }
 

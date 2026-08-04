@@ -15,10 +15,11 @@ public static class ModuleFeatureCatalog
         AppModule.Treasury => new[] { "read", "manage" },
         AppModule.Reports => new[] { "sales", "purchases", "stock", "fiches", "payments" },
         AppModule.Administration => new[] { "users", "settings" },
-        AppModule.Purchases => new[] { "suppliers", "purchase_orders", "supplier_invoices" },
+        AppModule.Purchases => new[] { "suppliers", "purchase_orders", "purchase_receipts", "supplier_invoices" },
         AppModule.Stock => new[] { "stock", "stock_transfers", "inventory" },
         AppModule.Accounting => new[] { "journal", "ledger", "aging", "vat_declaration", "closing", "audit_log", "fixed_assets" },
         AppModule.CRM => new[] { "opportunities", "activities", "targets", "templates", "dashboard" },
+        AppModule.Honoraires => new[] { "invoices", "quotes", "payments" },
         _ => Array.Empty<string>()
     };
 
@@ -113,6 +114,11 @@ public static class ModuleFeatureCatalog
                 Permissions.PurchaseOrders.Create, Permissions.PurchaseOrders.Read, Permissions.PurchaseOrders.Update,
                 Permissions.PurchaseOrders.Delete
             },
+            (AppModule.Purchases, "purchase_receipts") => new[]
+            {
+                Permissions.PurchaseReceipts.Create, Permissions.PurchaseReceipts.Read, Permissions.PurchaseReceipts.Update,
+                Permissions.PurchaseReceipts.Delete
+            },
             (AppModule.Purchases, "supplier_invoices") => new[]
             {
                 Permissions.SupplierInvoices.Create, Permissions.SupplierInvoices.Read, Permissions.SupplierInvoices.Update,
@@ -166,6 +172,22 @@ public static class ModuleFeatureCatalog
             (AppModule.CRM, "dashboard") => new[]
             {
                 Permissions.CRM.Read, Permissions.Reports.SalesOwn
+            },
+            (AppModule.Honoraires, "invoices") => new[]
+            {
+                Permissions.HonorairesInvoices.Create, Permissions.HonorairesInvoices.Read,
+                Permissions.HonorairesInvoices.Update, Permissions.HonorairesInvoices.Delete,
+                Permissions.HonorairesInvoices.Validate, Permissions.HonorairesInvoices.Send
+            },
+            (AppModule.Honoraires, "quotes") => new[]
+            {
+                Permissions.HonorairesQuotes.Create, Permissions.HonorairesQuotes.Read,
+                Permissions.HonorairesQuotes.Update, Permissions.HonorairesQuotes.Delete,
+                Permissions.HonorairesQuotes.Convert
+            },
+            (AppModule.Honoraires, "payments") => new[]
+            {
+                Permissions.HonorairesPayments.Create, Permissions.HonorairesPayments.Read
             },
             _ => Array.Empty<string>()
         };

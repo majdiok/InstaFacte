@@ -4,12 +4,12 @@ import { Observable } from 'rxjs';
 import { environment } from '@environments/environment';
 import { ApiResponse } from './auth.service';
 
-export type ExchangeThreadStatus = 0 | 1;
-export type ExchangeMessageVisibility = 0 | 1;
-export type ExchangeRequestCategory = 0 | 1 | 2 | 3;
-export type ExchangeRequestPriority = 0 | 1 | 2;
-export type ExchangeRequestStatus = 0 | 1 | 2 | 3 | 4 | 5;
-export type ExchangeTaskStatus = 0 | 1 | 2 | 3;
+export type ExchangeThreadStatus = number | string;
+export type ExchangeMessageVisibility = number | string;
+export type ExchangeRequestCategory = number | string;
+export type ExchangeRequestPriority = number | string;
+export type ExchangeRequestStatus = number | string;
+export type ExchangeTaskStatus = number | string;
 
 export interface ExchangeThreadListItem {
   id: string;
@@ -126,6 +126,46 @@ export interface ExchangeUnreadSummary {
   threads: { threadId: string; unreadCount: number }[];
 }
 
+export interface PagedExchangeMessages {
+  items: ExchangeMessage[];
+  hasMore: boolean;
+  oldestSentAt?: string;
+}
+
+export interface ExchangeBootstrap {
+  threads?: ExchangeThreadListItem[] | null;
+  companyAssignment?: FirmClientAssignmentLite | null;
+  firmClients?: FirmClientDossierLite[] | null;
+  activeThread?: ExchangeThreadDetail | null;
+  messages?: PagedExchangeMessages | null;
+  requests?: ExchangeRequest[] | null;
+  tasks?: ExchangeTask[] | null;
+  documents?: ExchangeDocument[] | null;
+  history?: ExchangeAuditEvent[] | null;
+  openRequestsCount: number;
+  unreadCount: number;
+  emptyHint?: string | null;
+}
+
+/** Minimal assignment shape returned by bootstrap (matches FirmClientAssignmentDto JSON). */
+export interface FirmClientAssignmentLite {
+  id: string;
+  companyTenantId: string;
+  companyName: string;
+  firmTenantId: string;
+  firmDisplayName: string;
+  status: number | string;
+  statusDisplay: string;
+  requestedAt: string;
+}
+
+export interface FirmClientDossierLite {
+  assignmentId: string;
+  companyTenantId: string;
+  companyName: string;
+  activeSince: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ExchangeService {
   private readonly http = inject(HttpClient);
@@ -133,6 +173,13 @@ export class ExchangeService {
 
   listThreads(): Observable<ApiResponse<ExchangeThreadListItem[]>> {
     return this.http.get<ApiResponse<ExchangeThreadListItem[]>>(this.baseUrl);
+  }
+
+  getBootstrap(threadId?: string | null, tab?: string | null): Observable<ApiResponse<ExchangeBootstrap>> {
+    let params = new HttpParams();
+    if (threadId) params = params.set('threadId', threadId);
+    if (tab && tab !== 'conversation') params = params.set('tab', tab);
+    return this.http.get<ApiResponse<ExchangeBootstrap>>(`${this.baseUrl}/bootstrap`, { params });
   }
 
   getUnreadSummary(): Observable<ApiResponse<ExchangeUnreadSummary>> {
@@ -157,16 +204,23 @@ export class ExchangeService {
     return this.http.post<ApiResponse<unknown>>(`${this.baseUrl}/${threadId}/reopen`, {});
   }
 
-  getMessages(threadId: string, after?: string): Observable<ApiResponse<ExchangeMessage[]>> {
+  getMessages(
+    threadId: string,
+    options?: { after?: string; before?: string; limit?: number }
+  ): Observable<ApiResponse<PagedExchangeMessages>> {
     let params = new HttpParams();
-    if (after) params = params.set('after', after);
-    return this.http.get<ApiResponse<ExchangeMessage[]>>(`${this.baseUrl}/${threadId}/messages`, { params });
+    if (options?.after) params = params.set('after', options.after);
+    if (options?.before) params = params.set('before', options.before);
+    if (options?.limit != null) params = params.set('limit', String(options.limit));
+    return this.http.get<ApiResponse<PagedExchangeMessages>>(`${this.baseUrl}/${threadId}/messages`, {
+      params
+    });
   }
 
   sendMessage(
     threadId: string,
     body: string,
-    visibility: ExchangeMessageVisibility = 0
+    visibility: ExchangeMessageVisibility = 'ClientVisible'
   ): Observable<ApiResponse<ExchangeMessage>> {
     return this.http.post<ApiResponse<ExchangeMessage>>(`${this.baseUrl}/${threadId}/messages`, {
       body,
@@ -179,6 +233,12 @@ export class ExchangeService {
       `${this.baseUrl}/${threadId}/messages/${messageId}/read`,
       {}
     );
+  }
+
+  markReadBatch(threadId: string, messageIds: string[]): Observable<ApiResponse<unknown>> {
+    return this.http.post<ApiResponse<unknown>>(`${this.baseUrl}/${threadId}/messages/read-batch`, {
+      messageIds
+    });
   }
 
   listRequests(threadId: string): Observable<ApiResponse<ExchangeRequest[]>> {

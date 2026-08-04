@@ -52,7 +52,20 @@ public sealed class FirmDossierAccessService : IFirmDossierAccessService
             select a.Id).AnyAsync(cancellationToken);
     }
 
-    public async Task<bool> CanAccessAssignmentAsync(
+    public Task<bool> CanAccessAssignmentAsync(
+        Guid firmTenantId,
+        FirmDossierAccessScope scope,
+        Guid firmClientAssignmentId,
+        CancellationToken cancellationToken = default)
+        => CanAccessAssignmentAsync(_master, firmTenantId, scope, firmClientAssignmentId, cancellationToken);
+
+    /// <summary>
+    /// Surcharge interne : accepte un <see cref="MasterDbContext"/> explicite. Utilisée par
+    /// le flux read-only du bootstrap (ExchangeService) pour rester sur un contexte isolé
+    /// de bout en bout — voir la doc de <see cref="GetAccessibleCompanyTenantIdsAsync(MasterDbContext, Guid, FirmDossierAccessScope, CancellationToken)"/>.
+    /// </summary>
+    internal static async Task<bool> CanAccessAssignmentAsync(
+        MasterDbContext masterContext,
         Guid firmTenantId,
         FirmDossierAccessScope scope,
         Guid firmClientAssignmentId,
@@ -63,7 +76,7 @@ public sealed class FirmDossierAccessService : IFirmDossierAccessService
 
         if (scope.IsFirmManager)
         {
-            return await _master.FirmClientAssignments.AsNoTracking()
+            return await masterContext.FirmClientAssignments.AsNoTracking()
                 .AnyAsync(a =>
                     a.Id == firmClientAssignmentId &&
                     a.FirmTenantId == firmTenantId &&
@@ -75,8 +88,8 @@ public sealed class FirmDossierAccessService : IFirmDossierAccessService
             return false;
 
         return await (
-            from a in _master.FirmClientAssignments.AsNoTracking()
-            join p in _master.PermanentFiles.AsNoTracking()
+            from a in masterContext.FirmClientAssignments.AsNoTracking()
+            join p in masterContext.PermanentFiles.AsNoTracking()
                 on a.Id equals p.FirmClientAssignmentId
             where a.Id == firmClientAssignmentId
                   && a.FirmTenantId == firmTenantId
@@ -86,7 +99,21 @@ public sealed class FirmDossierAccessService : IFirmDossierAccessService
             select a.Id).AnyAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlySet<Guid>?> GetAccessibleCompanyTenantIdsAsync(
+    public Task<IReadOnlySet<Guid>?> GetAccessibleCompanyTenantIdsAsync(
+        Guid firmTenantId,
+        FirmDossierAccessScope scope,
+        CancellationToken cancellationToken = default)
+        => GetAccessibleCompanyTenantIdsAsync(_master, firmTenantId, scope, cancellationToken);
+
+    /// <summary>
+    /// Surcharge interne : accepte un <see cref="MasterDbContext"/> explicite.
+    /// Utilisée par les chemins de lecture concurrentiels (ex : ExchangeService.BootstrapAsync)
+    /// qui doivent opérer sur un contexte EF Core isolé, distinct du scope de la requête HTTP,
+    /// afin d'éviter tout partage d'instance avec DataProtection ou d'autres services scoped.
+    /// Aucun impact sur les appelants existants (ils passent par la surcharge publique).
+    /// </summary>
+    internal static async Task<IReadOnlySet<Guid>?> GetAccessibleCompanyTenantIdsAsync(
+        MasterDbContext masterContext,
         Guid firmTenantId,
         FirmDossierAccessScope scope,
         CancellationToken cancellationToken = default)
@@ -95,8 +122,8 @@ public sealed class FirmDossierAccessService : IFirmDossierAccessService
             return null;
 
         var ids = await (
-            from a in _master.FirmClientAssignments.AsNoTracking()
-            join p in _master.PermanentFiles.AsNoTracking()
+            from a in masterContext.FirmClientAssignments.AsNoTracking()
+            join p in masterContext.PermanentFiles.AsNoTracking()
                 on a.Id equals p.FirmClientAssignmentId
             where a.FirmTenantId == firmTenantId
                   && a.Status == FirmAssignmentStatus.Active

@@ -246,6 +246,18 @@ public static class AuditActions
         public const string Sent = "PurchaseOrder.Sent";
     }
 
+    public static class PurchaseReceipt
+    {
+        public const string Created = "PurchaseReceipt.Created";
+        public const string Updated = "PurchaseReceipt.Updated";
+        public const string Validated = "PurchaseReceipt.Validated";
+        public const string Cancelled = "PurchaseReceipt.Cancelled";
+        public const string Deleted = "PurchaseReceipt.Deleted";
+        public const string Exported = "PurchaseReceipt.Exported";
+        public const string AttachmentAdded = "PurchaseReceipt.AttachmentAdded";
+        public const string AttachmentDeleted = "PurchaseReceipt.AttachmentDeleted";
+    }
+
     public static class SupplierInvoice
     {
         public const string Created = "SupplierInvoice.Created";

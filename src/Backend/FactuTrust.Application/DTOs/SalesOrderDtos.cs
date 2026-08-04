@@ -1,3 +1,4 @@
+using FactuTrust.Application.Features.SalesOrders.Commands;
 using FactuTrust.Domain.Enums;
 
 namespace FactuTrust.Application.DTOs;
@@ -140,6 +141,8 @@ public sealed record SalesOrderLineDto
     public int VatRatePercent { get; init; }
     public decimal? DiscountPercent { get; init; }
     public decimal DiscountAmount { get; init; }
+    public Guid? AppliedPromotionId { get; init; }
+    public string? AppliedPromotionName { get; init; }
     public bool IsFodecApplicable { get; init; }
     public decimal FodecRatePercent { get; init; }
     public decimal FodecAmount { get; init; }
@@ -214,4 +217,43 @@ public sealed record CancelSalesOrderDto
 public sealed record CloseSalesOrderDto
 {
     public string Reason { get; init; } = null!;
+}
+
+/// <summary>
+/// Corps de requête de la génération d'un bon de livraison depuis une commande client.
+/// Sans lignes explicites, le bon reprend l'intégralité du reste à livrer.
+/// </summary>
+public sealed record GenerateDeliveryNoteFromSalesOrderDto
+{
+    /// <summary>Quantités par ligne de commande ; null ou vide = tout le reste à livrer.</summary>
+    public IReadOnlyList<SalesOrderDeliveryLineDto>? Lines { get; init; }
+
+    /// <summary>Date d'émission du bon (défaut : aujourd'hui).</summary>
+    public DateTime? IssueDate { get; init; }
+
+    /// <summary>Adresse de livraison (défaut : l'adresse du client).</summary>
+    public string? DeliveryAddress { get; init; }
+}
+
+/// <summary>
+/// Corps de requête de la génération d'une facture directement depuis une commande client.
+/// Sans lignes explicites, la facture porte sur tout le livré-non-facturé (ou tout le reste
+/// à facturer en facturation d'avance).
+/// </summary>
+public sealed record GenerateInvoiceFromSalesOrderDto
+{
+    /// <summary>Quantités par ligne de commande ; null ou vide = toute l'assiette disponible.</summary>
+    public IReadOnlyList<SalesOrderInvoiceLineDto>? Lines { get; init; }
+
+    /// <summary>Date d'émission de la facture (défaut : aujourd'hui).</summary>
+    public DateTime? IssueDate { get; init; }
+
+    /// <summary>Date d'échéance, si elle diffère des conditions de règlement du client.</summary>
+    public DateTime? DueDate { get; init; }
+
+    /// <summary>
+    /// Facturation d'avance : l'assiette devient le reste à facturer, indépendamment des
+    /// livraisons. Sans elle, seul le livré-non-facturé peut être facturé.
+    /// </summary>
+    public bool AdvanceBilling { get; init; }
 }

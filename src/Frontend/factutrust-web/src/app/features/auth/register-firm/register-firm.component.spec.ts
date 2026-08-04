@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { provideRouter } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { of, throwError } from 'rxjs';
+import { of, throwError, timeout, TimeoutError, catchError } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RegisterFirmComponent } from './register-firm.component';
 import { AuthService, ApiResponse, AuthResponse } from '@core/services/auth.service';

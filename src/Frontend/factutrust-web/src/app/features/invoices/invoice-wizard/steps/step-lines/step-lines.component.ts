@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, inject, signal, computed } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, signal, computed, effect } from '@angular/core';
 import { CommonModule, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject, takeUntil, debounceTime, distinctUntilChanged, switchMap, catchError, of } from 'rxjs';
@@ -15,6 +15,7 @@ import { DividerModule } from 'primeng/divider';
 import { CardModule } from 'primeng/card';
 import { DialogModule } from 'primeng/dialog';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { TagModule } from 'primeng/tag';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { ToastService } from '@core/services/toast.service';
 import { QuickCreateProductDialogComponent } from '@shared/components/quick-create-product-dialog/quick-create-product-dialog.component';
@@ -23,6 +24,9 @@ import { ButtonComponent } from '@shared/components/button/button.component';
 // Services & Models
 import { InvoiceWizardService } from '../../services/invoice-wizard.service';
 import { ProductService, ProductListItem } from '@core/services/product.service';
+import { PriceSource } from '@core/services/pricing.service';
+import { DocumentLinePricingService, mapResolvedPricePromotion } from '@shared/utils/document-line-pricing.helper';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 import {
   InvoiceLine,
   TunisianVatRate,
@@ -62,6 +66,7 @@ import {
     CardModule,
     DialogModule,
     ConfirmDialogModule,
+    TagModule,
     DecimalPipe,
     QuickCreateProductDialogComponent,
     ButtonComponent
@@ -136,6 +141,7 @@ import {
                   <th style="width: 7%">Unité</th>
                 }
                 <th style="width: 10%" class="text-right">Prix unit. HT</th>
+                <th style="width: 9%">Origine</th>
                 @if (!simpleMode()) {
                   <th style="width: 10%">Remise</th>
                   <th style="width: 8%" class="col-vat-rate">TVA</th>
@@ -247,7 +253,8 @@ import {
                       [minFractionDigits]="0"
                       [maxFractionDigits]="3"
                       mode="decimal"
-                      [style]="{ width: '80px' }">
+                      [style]="{ width: '80px' }"
+                      (onInput)="onQuantityEdit()">
                     </p-inputNumber>
                   } @else {
                     {{ line.quantity | number:'1.0-3' }}
@@ -272,17 +279,48 @@ import {
                 <!-- Unit Price HT -->
                 <td class="text-right">
                   @if (editingLineId === line.id) {
-                    <p-inputNumber
-                      [(ngModel)]="editLine.unitPriceHT"
-                      [min]="0"
-                      [minFractionDigits]="3"
-                      [maxFractionDigits]="3"
-                      mode="decimal"
-                      suffix=" TND"
-                      [style]="{ width: '120px' }">
-                    </p-inputNumber>
+                    <div class="price-cell">
+                      @if (linePricing.resolving()) {
+                        <i class="pi pi-spin pi-spinner price-resolving" pTooltip="Résolution du prix…"></i>
+                      }
+                      <p-inputNumber
+                        [(ngModel)]="editLine.unitPriceHT"
+                        [min]="0"
+                        [minFractionDigits]="3"
+                        [maxFractionDigits]="3"
+                        mode="decimal"
+                        suffix=" TND"
+                        [style]="{ width: '120px' }"
+                        (onInput)="onUnitPriceManualEdit()">
+                      </p-inputNumber>
+                    </div>
                   } @else {
                     <span class="amount">{{ line.unitPriceHT | number:'1.3-3' }}</span>
+                  }
+                </td>
+
+                <!-- Price source -->
+                <td>
+                  @if (editingLineId === line.id) {
+                    @if (editLine.priceOverridden) {
+                      <p-tag severity="warning" value="Saisi"></p-tag>
+                    } @else if (editLine.priceSource === 'ClientPrice') {
+                      <p-tag severity="success" value="Prix négocié"></p-tag>
+                    } @else if (editLine.priceSource === 'PriceList') {
+                      <p-tag severity="info" value="Grille"></p-tag>
+                    } @else if (editLine.priceSource === 'Catalog') {
+                      <span class="text-muted">Catalogue</span>
+                    }
+                  } @else {
+                    @if (line.priceOverridden) {
+                      <p-tag severity="warning" value="Saisi"></p-tag>
+                    } @else if (line.priceSource === 'ClientPrice') {
+                      <p-tag severity="success" value="Prix négocié"></p-tag>
+                    } @else if (line.priceSource === 'PriceList') {
+                      <p-tag severity="info" value="Grille"></p-tag>
+                    } @else if (line.priceSource) {
+                      <span class="text-muted">Catalogue</span>
+                    }
                   }
                 </td>
 
@@ -407,7 +445,7 @@ import {
 
             <ng-template pTemplate="emptymessage">
               <tr>
-                <td colspan="11">
+                <td colspan="12">
                   <div class="empty-lines">
                     <i class="pi pi-inbox"></i>
                     <p>Aucune ligne de facturation</p>
@@ -1101,21 +1139,48 @@ import {
     .text-muted {
       color: var(--color-neutral-400);
     }
+
+    .price-cell {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: var(--spacing-2);
+    }
+
+    .price-resolving {
+      color: var(--color-primary-500);
+      font-size: var(--font-size-sm);
+    }
   `]
 })
 export class StepLinesComponent implements OnInit, OnDestroy {
   readonly wizardService = inject(InvoiceWizardService);
   private readonly productService = inject(ProductService);
+  readonly linePricing = inject(DocumentLinePricingService);
+  private readonly errorHandler = inject(ErrorHandlerService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly toastService = inject(ToastService);
 
   private destroy$ = new Subject<void>();
   private searchSubject$ = new Subject<string>();
+  private lastClientKey: string | null = null;
 
   lines = computed(() => this.wizardService.lines());
   totals = computed(() => this.wizardService.totals());
   unmatchedLines = computed(() => this.lines().filter(l => !l.productId));
   currency = Currency.TND;
+
+  constructor() {
+    effect(() => {
+      const client = this.wizardService.client();
+      const clientKey = client?.id ?? client?.name ?? null;
+      if (clientKey === this.lastClientKey) {
+        return;
+      }
+      this.lastClientKey = clientKey;
+      this.reresolveAllLines();
+    });
+  }
 
   // Options
   vatRateOptions = VAT_RATE_OPTIONS;
@@ -1256,13 +1321,22 @@ export class StepLinesComponent implements OnInit, OnDestroy {
 
   saveLineEdit(): void {
     if (this.editingLineId && this.editLine.designation) {
-      this.wizardService.updateLine(this.editingLineId, {
+      const lineId = this.editingLineId;
+      const priceOverridden = this.editLine.priceOverridden ?? false;
+      const serviceLine = this.lines().find(l => l.id === lineId);
+      const unitPriceHT = priceOverridden
+        ? (this.editLine.unitPriceHT || 0)
+        : (serviceLine?.unitPriceHT ?? (this.editLine.unitPriceHT || 0));
+
+      this.wizardService.updateLine(lineId, {
         productId: this.editLine.productId,
         designation: this.editLine.designation,
         description: this.editLine.description,
         quantity: this.editLine.quantity || 1,
         unit: this.editLine.unit,
-        unitPriceHT: this.editLine.unitPriceHT || 0,
+        unitPriceHT,
+        priceOverridden,
+        priceSource: priceOverridden ? null : (this.editLine.priceSource ?? serviceLine?.priceSource ?? null),
         discountType: this.editLine.discountType,
         discountValue: this.editLine.discountValue,
         vatRate: this.editLine.vatRate ?? TunisianVatRate.Standard,
@@ -1270,6 +1344,10 @@ export class StepLinesComponent implements OnInit, OnDestroy {
           ? (this.editLine.isFodecApplicable ?? false)
           : false
       });
+
+      if (this.editLine.productId && !priceOverridden) {
+        this.resolveLinePrice(lineId, this.editLine.productId, this.editLine.quantity || 1);
+      }
     }
     this.cancelLineEdit();
   }
@@ -1320,6 +1398,8 @@ export class StepLinesComponent implements OnInit, OnDestroy {
       productId: product.id,
       designation: product.name,
       unitPriceHT: product.unitPrice,
+      priceOverridden: false,
+      priceSource: 'Catalog' as PriceSource,
       vatRate: product.vatRate,
       isFodecApplicable: product.isFodecApplicable ?? false,
       productIsDiscountEnabled: product.isDiscountEnabled ?? false,
@@ -1331,11 +1411,7 @@ export class StepLinesComponent implements OnInit, OnDestroy {
       discountValue: this.editLine.discountValue
     });
 
-    // Recharger editLine depuis la ligne mise à jour dans le service pour rester synchronisé
-    const updatedLine = this.lines().find(l => l.id === this.editingLineId);
-    if (updatedLine) {
-      this.editLine = { ...updatedLine };
-    }
+    this.resolveLinePrice(this.editingLineId, product.id, this.editLine.quantity || 1, true);
   }
 
   openQuickCreateProduct(): void {
@@ -1357,6 +1433,8 @@ export class StepLinesComponent implements OnInit, OnDestroy {
       productId: product.id,
       designation: product.name,
       unitPriceHT: product.unitPrice,
+      priceOverridden: false,
+      priceSource: 'Catalog' as PriceSource,
       vatRate: vatRateEnum,
       isFodecApplicable: product.isFodecApplicable ?? false,
       productIsDiscountEnabled: product.isDiscountEnabled ?? false,
@@ -1367,6 +1445,8 @@ export class StepLinesComponent implements OnInit, OnDestroy {
       discountType: this.editLine.discountType,
       discountValue: this.editLine.discountValue
     });
+
+    this.resolveLinePrice(this.editingLineId, product.id, this.editLine.quantity || 1, true);
 
     const updatedLine = this.lines().find(l => l.id === this.editingLineId);
     if (updatedLine) {
@@ -1381,5 +1461,84 @@ export class StepLinesComponent implements OnInit, OnDestroy {
       summary: 'Produit créé',
       detail: 'Le produit a été créé et ajouté à la ligne.',
     });
+  }
+
+  onUnitPriceManualEdit(): void {
+    this.editLine.priceOverridden = true;
+    this.editLine.priceSource = null;
+  }
+
+  onQuantityEdit(): void {
+    if (this.editLine.priceOverridden || !this.editingLineId || !this.editLine.productId) {
+      return;
+    }
+    this.resolveLinePrice(
+      this.editingLineId,
+      this.editLine.productId,
+      this.editLine.quantity || 1,
+      true
+    );
+  }
+
+  private reresolveAllLines(): void {
+    for (const line of this.lines()) {
+      if (line.productId && !line.priceOverridden) {
+        this.resolveLinePrice(line.id, line.productId, line.quantity);
+      }
+    }
+  }
+
+  private resolveLinePrice(
+    lineId: string,
+    productId: string,
+    quantity: number,
+    syncEditLine = false
+  ): void {
+    const client = this.wizardService.client();
+    const clientId = client?.id ?? null;
+    const issueDate = this.wizardService.metadata().issueDate;
+
+    this.linePricing
+      .resolveLinePrice({
+        productId,
+        clientId,
+        quantity,
+        documentDate: issueDate,
+        priceOverridden: false,
+        isOverrideCheck: () => {
+          const line = this.lines().find(l => l.id === lineId);
+          return line?.priceOverridden === true
+            || (this.editingLineId === lineId && this.editLine.priceOverridden === true);
+        }
+      })
+      .subscribe({
+        next: resolved => {
+          if (!resolved) {
+            return;
+          }
+
+          const currentLine = this.lines().find(l => l.id === lineId);
+          if (!currentLine || currentLine.priceOverridden) {
+            return;
+          }
+
+          this.wizardService.updateLine(lineId, {
+            unitPriceHT: resolved.unitPriceHT,
+            priceSource: resolved.source,
+            ...mapResolvedPricePromotion(resolved)
+          });
+
+          if (syncEditLine && this.editingLineId === lineId) {
+            this.editLine = {
+              ...this.editLine,
+              unitPriceHT: resolved.unitPriceHT,
+              priceSource: resolved.source,
+              priceOverridden: false,
+              ...mapResolvedPricePromotion(resolved)
+            };
+          }
+        },
+        error: err => this.errorHandler.logError('Price resolution failed', err)
+      });
   }
 }

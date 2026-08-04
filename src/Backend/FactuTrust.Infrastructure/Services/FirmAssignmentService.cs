@@ -80,15 +80,26 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<FirmClientAssignmentDto?> GetCompanyCurrentAssignmentAsync(
+    public Task<FirmClientAssignmentDto?> GetCompanyCurrentAssignmentAsync(
         Guid companyTenantId, CancellationToken cancellationToken = default)
+        => GetCompanyCurrentAssignmentAsync(_masterContext, companyTenantId, cancellationToken);
+
+    /// <summary>
+    /// Surcharge interne : accepte un <see cref="MasterDbContext"/> explicite. Voir la doc
+    /// de <see cref="GetActiveClientsAsync(MasterDbContext, Guid, CancellationToken)"/> pour
+    /// le rationnel — utilisée par le bootstrap company qui doit rester sur un contexte isolé.
+    /// </summary>
+    internal async Task<FirmClientAssignmentDto?> GetCompanyCurrentAssignmentAsync(
+        MasterDbContext masterContext,
+        Guid companyTenantId,
+        CancellationToken cancellationToken = default)
     {
-        var assignment = await _masterContext.FirmClientAssignments.AsNoTracking()
+        var assignment = await masterContext.FirmClientAssignments.AsNoTracking()
             .Where(a => a.CompanyTenantId == companyTenantId && OpenStatuses.Contains(a.Status))
             .OrderByDescending(a => a.RequestedAt)
             .FirstOrDefaultAsync(cancellationToken);
 
-        return assignment is null ? null : await MapAssignmentAsync(assignment, cancellationToken);
+        return assignment is null ? null : await MapAssignmentAsync(masterContext, assignment, cancellationToken);
     }
 
     public async Task<IReadOnlyList<FirmClientAssignmentDto>> GetCompanyAssignmentHistoryAsync(
@@ -223,14 +234,31 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
         return await MapAssignmentsAsync(assignments, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<FirmClientDossierDto>> GetActiveClientsAsync(
+    public Task<IReadOnlyList<FirmClientDossierDto>> GetActiveClientsAsync(
         Guid firmTenantId, CancellationToken cancellationToken = default)
+        => GetActiveClientsAsync(_masterContext, firmTenantId, cancellationToken);
+
+    /// <summary>
+    /// Surcharge interne : accepte un <see cref="MasterDbContext"/> explicite.
+    /// Utilisée par <c>ExchangeService.BootstrapAsync</c> pour opérer sur un DbContext
+    /// dédié (produit par <c>IDbContextFactory&lt;MasterDbContext&gt;</c>) et éviter tout
+    /// partage d'instance avec le scope de requête (DataProtection, autres services scoped)
+    /// qui déclenche « A second operation was started on this context instance… ».
+    /// Aucun impact sur les appelants existants (ils passent par la surcharge publique).
+    /// </summary>
+    internal async Task<IReadOnlyList<FirmClientDossierDto>> GetActiveClientsAsync(
+        MasterDbContext masterContext,
+        Guid firmTenantId,
+        CancellationToken cancellationToken = default)
     {
         IReadOnlySet<Guid>? allowedCompanyIds = null;
         if (_currentUser.TryGetAccessScope(out var scope))
         {
-            allowedCompanyIds = await _dossierAccess.GetAccessibleCompanyTenantIdsAsync(
-                firmTenantId, scope, cancellationToken);
+            // On propage le contexte isolé au calcul de portée dossier pour rester sur la
+            // même instance EF Core de bout en bout — la version publique appelée resterait
+            // sur _dossierAccess._master (scoped), rouvrant le vecteur de concurrence.
+            allowedCompanyIds = await FirmDossierAccessService.GetAccessibleCompanyTenantIdsAsync(
+                masterContext, firmTenantId, scope, cancellationToken);
             if (allowedCompanyIds is { Count: 0 })
                 return [];
         }
@@ -242,15 +270,16 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
         }
 
         var clientsQuery =
-            from a in _masterContext.FirmClientAssignments.AsNoTracking()
-            join t in _masterContext.Tenants.AsNoTracking() on a.CompanyTenantId equals t.Id
+            from a in masterContext.FirmClientAssignments.AsNoTracking()
+            join t in masterContext.Tenants.AsNoTracking() on a.CompanyTenantId equals t.Id
             where a.FirmTenantId == firmTenantId && a.Status == FirmAssignmentStatus.Active
             select new
             {
                 a.Id,
                 a.CompanyTenantId,
                 t.CompanyName,
-                ActiveSince = a.RespondedAt ?? a.RequestedAt
+                ActiveSince = a.RespondedAt ?? a.RequestedAt,
+                IsFirmManaged = t.ManagedByFirmTenantId != null
             };
 
         if (allowedCompanyIds is not null)
@@ -258,7 +287,7 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
 
         var clients = await clientsQuery.OrderBy(c => c.CompanyName).ToListAsync(cancellationToken);
 
-        var permanentByAssignment = await _masterContext.PermanentFiles.AsNoTracking()
+        var permanentByAssignment = await masterContext.PermanentFiles.AsNoTracking()
             .Where(p => p.FirmTenantId == firmTenantId)
             .Select(p => new
             {
@@ -292,7 +321,8 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
                                 : "Brouillon",
                 AssignedAccountantUserId = pf?.AssignedAccountantUserId,
                 AssignedAccountantName = pf?.AssignedAccountantName,
-                IsAwaitingAccountantAssignment = awaiting
+                IsAwaitingAccountantAssignment = awaiting,
+                IsFirmManaged = c.IsFirmManaged
             };
         }).ToList();
     }
@@ -366,15 +396,27 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
         if (revokeResult.IsFailure)
             return revokeResult;
 
+        // Dossier créé et géré par le cabinet (sans compte plateforme) : la résiliation
+        // désactive aussi le tenant, sinon il resterait orphelin et inaccessible à tous.
+        var companyTenant = await _masterContext.Tenants
+            .FirstOrDefaultAsync(t => t.Id == assignment.CompanyTenantId, cancellationToken);
+        var isFirmManaged = companyTenant?.ManagedByFirmTenantId == firmTenantId;
+        if (isFirmManaged)
+            companyTenant!.Deactivate();
+
         await _masterContext.SaveChangesAsync(cancellationToken);
 
-        await TryNotifyAsync(
-            assignment.CompanyTenantId,
-            nameof(UserRole.Administrator),
-            NotificationType.FirmAssignmentRevoked,
-            "Liaison résiliée",
-            $"Le cabinet {await GetFirmDisplayNameAsync(assignment.FirmTenantId)} a résilié la liaison comptable.",
-            "/settings/accounting-firm");
+        // Pas de notification pour un dossier géré : la société n'a aucun utilisateur.
+        if (!isFirmManaged)
+        {
+            await TryNotifyAsync(
+                assignment.CompanyTenantId,
+                nameof(UserRole.Administrator),
+                NotificationType.FirmAssignmentRevoked,
+                "Liaison résiliée",
+                $"Le cabinet {await GetFirmDisplayNameAsync(assignment.FirmTenantId)} a résilié la liaison comptable.",
+                "/settings/accounting-firm");
+        }
 
         return Result.Success();
     }
@@ -422,16 +464,28 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
         return Result.Success();
     }
 
-    private async Task<FirmClientAssignmentDto> MapAssignmentAsync(
+    private Task<FirmClientAssignmentDto> MapAssignmentAsync(
         FirmClientAssignment assignment, CancellationToken cancellationToken)
+        => MapAssignmentAsync(_masterContext, assignment, cancellationToken);
+
+    private async Task<FirmClientAssignmentDto> MapAssignmentAsync(
+        MasterDbContext masterContext,
+        FirmClientAssignment assignment,
+        CancellationToken cancellationToken)
     {
-        var mapped = await MapAssignmentsAsync([assignment], cancellationToken);
+        var mapped = await MapAssignmentsAsync(masterContext, [assignment], cancellationToken);
         return mapped[0];
     }
 
     /// <summary>Mapping par lots : 2 requêtes au total (Tenants + AccountingFirmProfiles) quel que soit le nombre d'assignments.</summary>
-    private async Task<IReadOnlyList<FirmClientAssignmentDto>> MapAssignmentsAsync(
+    private Task<IReadOnlyList<FirmClientAssignmentDto>> MapAssignmentsAsync(
         IReadOnlyList<FirmClientAssignment> assignments, CancellationToken cancellationToken)
+        => MapAssignmentsAsync(_masterContext, assignments, cancellationToken);
+
+    private async Task<IReadOnlyList<FirmClientAssignmentDto>> MapAssignmentsAsync(
+        MasterDbContext masterContext,
+        IReadOnlyList<FirmClientAssignment> assignments,
+        CancellationToken cancellationToken)
     {
         if (assignments.Count == 0)
             return Array.Empty<FirmClientAssignmentDto>();
@@ -441,12 +495,15 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
             .Distinct()
             .ToList();
 
-        var tenantNames = await _masterContext.Tenants.AsNoTracking()
+        var tenantInfos = await masterContext.Tenants.AsNoTracking()
             .Where(t => tenantIds.Contains(t.Id))
-            .ToDictionaryAsync(t => t.Id, t => t.CompanyName, cancellationToken);
+            .Select(t => new { t.Id, t.CompanyName, IsFirmManaged = t.ManagedByFirmTenantId != null })
+            .ToDictionaryAsync(t => t.Id, cancellationToken);
+
+        var tenantNames = tenantInfos.ToDictionary(kv => kv.Key, kv => kv.Value.CompanyName);
 
         var firmIds = assignments.Select(a => a.FirmTenantId).Distinct().ToList();
-        var firmProfileNames = await _masterContext.AccountingFirmProfiles.AsNoTracking()
+        var firmProfileNames = await masterContext.AccountingFirmProfiles.AsNoTracking()
             .Where(p => firmIds.Contains(p.TenantId))
             .ToDictionaryAsync(p => p.TenantId, p => p.DisplayName, cancellationToken);
 
@@ -465,7 +522,8 @@ public sealed class FirmAssignmentService : IFirmAssignmentService
             RevokedAt = assignment.RevokedAt,
             Notes = assignment.Notes,
             RejectionReason = assignment.RejectionReason,
-            CompanyProfile = _companyProfileSnapshot.TryDeserialize(assignment.CompanyProfileSnapshotJson)
+            CompanyProfile = _companyProfileSnapshot.TryDeserialize(assignment.CompanyProfileSnapshotJson),
+            IsFirmManaged = tenantInfos.TryGetValue(assignment.CompanyTenantId, out var companyInfo) && companyInfo.IsFirmManaged
         }).ToList();
     }
 

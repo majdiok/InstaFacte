@@ -14,6 +14,8 @@ public sealed record GetSupplierInvoicesSummaryQuery(
     string? Search = null,
     SupplierInvoiceStatus? Status = null,
     Guid? SupplierId = null,
+    Guid? PurchaseOrderId = null,
+    Guid? PurchaseReceiptId = null,
     DateTime? FromDate = null,
     DateTime? ToDate = null,
     bool UnpaidOnly = false) : IRequest<SupplierInvoiceListSummaryDto>;
@@ -36,6 +38,8 @@ public sealed class GetSupplierInvoicesSummaryQueryHandler
             request.Search,
             request.Status,
             request.SupplierId,
+            request.PurchaseOrderId,
+            request.PurchaseReceiptId,
             request.FromDate,
             request.ToDate,
             request.UnpaidOnly,

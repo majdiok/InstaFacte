@@ -182,10 +182,16 @@ public sealed class CreateCashOperationOnSupplierPaymentHandlerTests
         if (receive.IsFailure)
             throw new InvalidOperationException(receive.Error.Description);
 
+        var lineSelections = po.Lines
+            .Where(l => l.ReceivedNotInvoicedQuantity > 0)
+            .Select(l => (l.Id, l.ReceivedNotInvoicedQuantity))
+            .ToList();
+
         var invoice = SupplierInvoice.CreateFromPurchaseOrder(
             po,
             "FS-2026-TEST-FF",
-            new DateTime(2026, 4, 5));
+            new DateTime(2026, 4, 5),
+            lineSelections);
 
         if (invoice.IsFailure)
             throw new InvalidOperationException(invoice.Error.Description);

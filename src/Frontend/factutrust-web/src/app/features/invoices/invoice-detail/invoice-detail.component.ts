@@ -7,7 +7,6 @@ import { TagModule } from 'primeng/tag';
 import { DividerModule } from 'primeng/divider';
 import { TableModule } from 'primeng/table';
 import { TooltipModule } from 'primeng/tooltip';
-import { MenuModule } from 'primeng/menu';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { ToastModule } from 'primeng/toast';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -19,6 +18,7 @@ import { MenuItem } from '@shared/models/menu-item.model';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
+import { DocumentActionsMenuComponent } from '@shared/components/document-actions-menu/document-actions-menu.component';
 import { StatusBadgeComponent, StatusBadgeStatus } from '@shared/components/status-badge/status-badge.component';
 import { RecordPaymentDialogComponent } from '@shared/components/record-payment-dialog/record-payment-dialog.component';
 import { InvoiceService, InvoiceDetail } from '@core/services/invoice.service';
@@ -43,7 +43,6 @@ interface TimelineEvent {
     DividerModule,
     TableModule,
     TooltipModule,
-    MenuModule,
     ConfirmDialogModule,
     ToastModule,
     SkeletonModule,
@@ -51,6 +50,7 @@ interface TimelineEvent {
     PageHeaderComponent,
     BreadcrumbComponent,
     ButtonComponent,
+    DocumentActionsMenuComponent,
     StatusBadgeComponent,
     RecordPaymentDialogComponent
   ],
@@ -67,15 +67,17 @@ interface TimelineEvent {
         [routerLink]="listBackRoute">
         Retour
       </app-button>
-      @if (invoice()) {
-        <app-button 
-          variant="secondary"
-          icon="pi-ellipsis-v"
+      @if (primaryAction(); as action) {
+        <app-button
+          [variant]="action.variant"
+          [icon]="action.icon"
           iconPos="left"
-          (click)="menu.toggle($event)">
-          Actions
+          (clicked)="action.command()">
+          {{ action.label }}
         </app-button>
-        <p-menu #menu [model]="menuItems" [popup]="true"></p-menu>
+      }
+      @if (invoice()) {
+        <app-document-actions-menu [items]="menuItems" />
       }
     </app-page-header>
 
@@ -249,30 +251,6 @@ interface TimelineEvent {
                 [status]="getStatusBadgeStatus(invoice()!.status)"
                 [label]="invoice()!.statusDisplay">
               </app-status-badge>
-              
-              <div class="status-actions">
-                @if (invoice()!.status === 'Draft') {
-                  <app-button 
-                    variant="primary"
-                    size="sm"
-                    icon="pi-check"
-                    iconPos="left"
-                    (click)="validateInvoice()">
-                    Valider
-                  </app-button>
-                }
-                @if (invoice()!.status === 'Validated') {
-                  <app-button 
-                    variant="primary"
-                    size="sm"
-                    icon="pi-pencil"
-                    iconPos="left"
-                    (click)="signInvoice()">
-                    Signer
-                  </app-button>
-                }
-               
-              </div>
             </div>
           </p-card>
 
@@ -372,40 +350,6 @@ interface TimelineEvent {
                   Enregistrer un paiement
                 </app-button>
               }
-          </p-card>
-
-          <!-- Actions Card -->
-          <p-card header="Actions rapides" styleClass="actions-card">
-            <div class="quick-actions">
-              <app-button 
-                variant="outline"
-                icon="pi-download"
-                iconPos="left"
-                (click)="downloadPdf()"
-                style="width: 100%; margin-bottom: var(--spacing-2);">
-                Télécharger PDF
-              </app-button>
-              <app-button 
-                variant="outline"
-                icon="pi-envelope"
-                iconPos="left"
-                (click)="sendByEmail()"
-                [disabled]="sending()"
-                style="width: 100%; margin-bottom: var(--spacing-2);">
-                {{ sending() ? 'Envoi...' : 'Envoyer par email' }}
-              </app-button>
-            
-              @if (canCreateCreditNote(invoice()!.status)) {
-                <app-button 
-                  variant="outline"
-                  icon="pi-replay"
-                  iconPos="left"
-                  [routerLink]="['/invoices', invoice()!.id, 'credit-note']"
-                  style="width: 100%;">
-                  Créer un avoir
-                </app-button>
-              }
-            </div>
           </p-card>
 
           <app-record-payment-dialog
@@ -1035,6 +979,19 @@ export class InvoiceDetailComponent implements OnInit {
     }
     base.push({ label: inv?.number || 'Facture' });
     return base;
+  });
+
+  /** Action workflow principale affichée dans l'en-tête (Valider / Signer). */
+  readonly primaryAction = computed(() => {
+    const inv = this.invoice();
+    if (!inv) return null;
+    if (inv.status === 'Draft') {
+      return { label: 'Valider', icon: 'pi-check', variant: 'primary' as const, command: () => this.validateInvoice() };
+    }
+    if (inv.status === 'Validated') {
+      return { label: 'Signer', icon: 'pi-pencil', variant: 'primary' as const, command: () => this.signInvoice() };
+    }
+    return null;
   });
 
   ngOnInit(): void {

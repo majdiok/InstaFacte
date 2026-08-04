@@ -116,14 +116,17 @@ public sealed class SalesOrder : AggregateRoot
         Money? customUnitPrice = null,
         decimal? discountPercent = null,
         decimal fodecRatePercent = SalesOrderLine.DefaultFodecRatePercent,
-        string? notes = null)
+        string? notes = null,
+        Guid? appliedPromotionId = null,
+        string? appliedPromotionName = null)
     {
         if (!Status.CanBeEdited())
             return Result.Failure(Error.Validation("Status", "Cette commande ne peut plus être modifiée"));
 
         var unitPrice = customUnitPrice ?? product.UnitPrice;
         var lineResult = SalesOrderLine.Create(
-            this, _lines.Count + 1, product, quantity, unitPrice, discountPercent, fodecRatePercent, notes);
+            this, _lines.Count + 1, product, quantity, unitPrice, discountPercent, fodecRatePercent, notes,
+            appliedPromotionId, appliedPromotionName);
 
         if (lineResult.IsFailure)
             return Result.Failure(lineResult.Error);

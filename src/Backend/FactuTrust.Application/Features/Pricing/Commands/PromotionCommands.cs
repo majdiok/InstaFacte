@@ -74,7 +74,10 @@ public sealed record UpdatePromotionCommand(
     decimal? DiscountAmount,
     decimal MinQuantity,
     int Priority,
-    bool IsActive) : IRequest<Result>;
+    bool IsActive,
+    Guid? ProductId,
+    Guid? ProductCategoryId,
+    Guid? ClientId) : IRequest<Result>;
 
 public sealed class UpdatePromotionCommandHandler : IRequestHandler<UpdatePromotionCommand, Result>
 {
@@ -104,6 +107,10 @@ public sealed class UpdatePromotionCommandHandler : IRequestHandler<UpdatePromot
 
         if (result.IsFailure)
             return result;
+
+        var scopeResult = promotion.UpdateScope(request.ProductId, request.ProductCategoryId, request.ClientId);
+        if (scopeResult.IsFailure)
+            return scopeResult;
 
         // Désactiver n'affecte aucun document émis : la remise y est figée.
         if (request.IsActive) promotion.Activate(); else promotion.Deactivate();

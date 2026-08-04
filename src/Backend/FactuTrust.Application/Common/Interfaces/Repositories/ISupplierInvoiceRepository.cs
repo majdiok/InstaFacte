@@ -40,13 +40,12 @@ public interface ISupplierInvoiceRepository : IRepository<SupplierInvoice>
     /// </summary>
     Task<bool> ExistsByInvoiceNumberAsync(string invoiceNumber, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Gets supplier invoices with pagination and filters.
-    /// </summary>
     Task<(IReadOnlyList<SupplierInvoice> Items, int TotalCount)> SearchAsync(
         string? searchTerm,
         SupplierInvoiceStatus? status,
         Guid? supplierId,
+        Guid? purchaseOrderId,
+        Guid? purchaseReceiptId,
         DateTime? fromDate,
         DateTime? toDate,
         int page,
@@ -54,17 +53,23 @@ public interface ISupplierInvoiceRepository : IRepository<SupplierInvoice>
         bool unpaidOnly = false,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Aggregated totals over the ENTIRE filtered set (same filters as <see cref="SearchAsync"/>,
-    /// without pagination). Powers the supplier invoice list "totals zone".
-    /// </summary>
     Task<SupplierInvoiceListSummaryDto> GetSummaryAsync(
         string? searchTerm,
         SupplierInvoiceStatus? status,
         Guid? supplierId,
+        Guid? purchaseOrderId,
+        Guid? purchaseReceiptId,
         DateTime? fromDate,
         DateTime? toDate,
         bool unpaidOnly = false,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<LinkedSupplierInvoiceSummaryDto>> GetLinkedSummariesByPurchaseOrderIdAsync(
+        Guid purchaseOrderId,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<LinkedSupplierInvoiceSummaryDto>> GetLinkedSummariesByPurchaseReceiptIdAsync(
+        Guid purchaseReceiptId,
         CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -1,6 +1,5 @@
 using System.Runtime.CompilerServices;
 using FactuTrust.Application.Common.Interfaces;
-using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
@@ -84,7 +83,6 @@ public sealed class InvoiceImportHandlerContractTests
         var handler = new ImportInvoiceFromFileHandler(
             ollama.Object,
             Mock.Of<IOpenAiChatCompletionsClient>(),
-            Mock.Of<ITenantAiProviderRepository>(),
             extractor.Object,
             readiness.Object,
             platform.Object,
@@ -99,8 +97,7 @@ public sealed class InvoiceImportHandlerContractTests
                 InvoiceImportVisionOnEmptyOcr = true,
                 ImportMaxOutputTokens = 1536,
                 ImportLlmTimeoutSeconds = 180
-            }),
-            Options.Create(new OpenRouterSettings()));
+            }));
 
         await using var stream = new MemoryStream([0x25, 0x50, 0x44, 0x46]); // minimal trigger
         var command = new ImportInvoiceFromFileCommand(stream, "test.pdf", "application/pdf");
@@ -117,7 +114,7 @@ public sealed class InvoiceImportHandlerContractTests
     {
         var handler = CreateHandlerWithReadiness(new OllamaModelReadinessResult(
             false,
-            "Le modèle « qwen2.5:7b-instruct » n'est pas installé dans Ollama. Exécutez « ollama pull qwen2.5:7b-instruct ».",
+            "Le modèle « qwen2.5:7b-instruct » n'est pas installé sur le moteur IA InstaFact. Contactez l'administrateur plateforme ou choisissez un autre modèle.",
             null,
             27.2));
 
@@ -126,7 +123,7 @@ public sealed class InvoiceImportHandlerContractTests
         Assert.True(result.Accepted);
         Assert.False(result.Ready);
         Assert.Equal("qwen2.5:7b-instruct", result.Model);
-        Assert.Contains("ollama pull", result.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("moteur IA InstaFact", result.Error, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -154,7 +151,6 @@ public sealed class InvoiceImportHandlerContractTests
         var handler = new ImportInvoiceFromFileHandler(
             ollama.Object,
             Mock.Of<IOpenAiChatCompletionsClient>(),
-            Mock.Of<ITenantAiProviderRepository>(),
             Mock.Of<IAiDocumentTextExtractor>(),
             readiness.Object,
             platform.Object,
@@ -165,8 +161,7 @@ public sealed class InvoiceImportHandlerContractTests
             {
                 InvoiceImportModel = "qwen2.5:7b-instruct",
                 KeepAliveMinutes = 30
-            }),
-            Options.Create(new OpenRouterSettings()));
+            }));
 
         var result = await handler.WarmUpAsync(CancellationToken.None);
 
@@ -202,15 +197,13 @@ public sealed class InvoiceImportHandlerContractTests
         var handler = new ImportInvoiceFromFileHandler(
             ollama.Object,
             Mock.Of<IOpenAiChatCompletionsClient>(),
-            Mock.Of<ITenantAiProviderRepository>(),
             Mock.Of<IAiDocumentTextExtractor>(),
             readiness.Object,
             platform.Object,
             CreateInferenceResolver(OllamaInferenceDevice.CpuOnly),
             Mock.Of<IMediator>(),
             NullLogger<ImportInvoiceFromFileHandler>.Instance,
-            Options.Create(new OllamaSettings { InvoiceImportModel = "qwen2.5:7b-instruct" }),
-            Options.Create(new OpenRouterSettings()));
+            Options.Create(new OllamaSettings { InvoiceImportModel = "qwen2.5:7b-instruct" }));
 
         var result = await handler.WarmUpAsync(CancellationToken.None);
 
@@ -277,7 +270,6 @@ public sealed class InvoiceImportHandlerContractTests
         var handler = new ImportInvoiceFromFileHandler(
             ollama.Object,
             Mock.Of<IOpenAiChatCompletionsClient>(),
-            Mock.Of<ITenantAiProviderRepository>(),
             extractor.Object,
             readiness.Object,
             platform.Object,
@@ -289,8 +281,7 @@ public sealed class InvoiceImportHandlerContractTests
                 InvoiceImportModel = "qwen2.5:7b-instruct",
                 InvoiceImportVisionModel = "llava",
                 InvoiceImportVisionOnEmptyOcr = true
-            }),
-            Options.Create(new OpenRouterSettings()));
+            }));
 
         await using var stream = new MemoryStream([0x89, 0x50, 0x4E, 0x47]);
         var command = new ImportInvoiceFromFileCommand(stream, "bl.png", "image/png");
@@ -314,15 +305,13 @@ public sealed class InvoiceImportHandlerContractTests
         return new ImportInvoiceFromFileHandler(
             ollama.Object,
             Mock.Of<IOpenAiChatCompletionsClient>(),
-            Mock.Of<ITenantAiProviderRepository>(),
             Mock.Of<IAiDocumentTextExtractor>(),
             readiness.Object,
             platform.Object,
             CreateInferenceResolver(),
             Mock.Of<IMediator>(),
             NullLogger<ImportInvoiceFromFileHandler>.Instance,
-            Options.Create(new OllamaSettings { InvoiceImportModel = "qwen2.5:7b-instruct" }),
-            Options.Create(new OpenRouterSettings()));
+            Options.Create(new OllamaSettings { InvoiceImportModel = "qwen2.5:7b-instruct" }));
     }
 
     private static IOllamaInferenceProfileResolver CreateInferenceResolver(

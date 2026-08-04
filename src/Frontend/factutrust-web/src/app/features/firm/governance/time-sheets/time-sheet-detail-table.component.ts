@@ -138,9 +138,9 @@ import { FirmClientDossier } from '@core/services/firm-assignment.service';
                 }
               }
               @if (isManager && !periodLocked) {
-                @if (!row.isValidated) {
+                @if ((row.status ?? 0) === 1) {
                   <button type="button" pButton icon="pi pi-check" class="p-button-text p-button-sm" (click)="validate.emit(row)"></button>
-                } @else {
+                } @else if (row.isValidated) {
                   <button type="button" pButton icon="pi pi-replay" class="p-button-text p-button-sm" (click)="unvalidate.emit(row)"></button>
                 }
               }

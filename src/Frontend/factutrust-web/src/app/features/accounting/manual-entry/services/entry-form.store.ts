@@ -1,0 +1,616 @@
+import { Injectable, computed, signal } from '@angular/core';
+import {
+  AccountingPeriodDto,
+  ChartOfAccountDto,
+  CreateManualJournalEntryRequest,
+  ManualJournalLineRequest
+} from '../../services/accounting.service';
+import { formatLocalDate } from '../../shared/accounting-date-utils';
+import { normalizeAccountingAmount } from '../../shared/accounting-amount.utils';
+import {
+  BuildRequestResult,
+  ColumnVisibility,
+  DEFAULT_COLUMN_VISIBILITY,
+  EntryLine,
+  EntryTabId,
+  EntryTotals,
+  EntryValidationResult,
+  LineStatus,
+  ThirdPartyRef,
+  createDefaultLines,
+  createEmptyLine
+} from '../models/entry-form.model';
+
+const DEFAULT_JOURNAL_OPTIONS: { code: string; label: string }[] = [
+  { code: 'JOD', label: 'Opérations diverses' },
+  { code: 'JV', label: 'Ventes' },
+  { code: 'JA', label: 'Achats' },
+  { code: 'JC', label: 'Caisse' },
+  { code: 'JB', label: 'Banque' },
+  { code: 'JIM', label: 'Immobilisations' },
+  { code: 'JAN', label: 'À-Nouveaux' }
+];
+
+@Injectable()
+export class EntryFormStore {
+  readonly journalCode = signal('JOD');
+  readonly entryDate = signal(formatLocalDate(new Date()));
+  readonly entryLabel = signal('');
+  readonly pieceRef = signal('');
+  readonly pieceDate = signal('');
+  readonly periodId = signal<string | null>(null);
+  readonly description = signal('');
+  readonly currency = signal('TND');
+  readonly headerDueDate = signal('');
+  readonly paymentMethod = signal<number | null>(null);
+  readonly bankAccountId = signal<string | null>(null);
+  readonly amountTtc = signal<number | null>(null);
+  readonly amountHt = signal<number | null>(null);
+  readonly amountVat = signal<number | null>(null);
+
+  readonly lines = signal<EntryLine[]>(createDefaultLines());
+  readonly periods = signal<AccountingPeriodDto[]>([]);
+  readonly periodsLoaded = signal(false);
+  readonly loading = signal(false);
+  readonly error = signal<string | null>(null);
+  readonly successMsg = signal<string | null>(null);
+  readonly activeTab = signal<EntryTabId>('standard');
+  readonly columnVisibility = signal<ColumnVisibility>({ ...DEFAULT_COLUMN_VISIBILITY });
+  readonly propagateLabelToLines = signal(true);
+  readonly autoSuggestAccounts = signal(true);
+  readonly rememberGuidedPrefs = signal(false);
+  readonly workNotes = signal('');
+  readonly selectedLineIndexes = signal<Set<number>>(new Set());
+  readonly journalOptions = signal<{ code: string; label: string }[]>([...DEFAULT_JOURNAL_OPTIONS]);
+
+  private allAccounts: ChartOfAccountDto[] = [];
+
+  readonly totals = computed<EntryTotals>(() => {
+    let debit = 0;
+    let credit = 0;
+    for (const l of this.lines()) {
+      debit += Number(l.debit) || 0;
+      credit += Number(l.credit) || 0;
+    }
+    return { debit, credit };
+  });
+
+  readonly balance = computed(() => {
+    const t = this.totals();
+    return Math.round((t.debit - t.credit) * 1000) / 1000;
+  });
+
+  readonly isBalanced = computed(() => {
+    const t = this.totals();
+    return Math.round(t.debit * 1000) === Math.round(t.credit * 1000) && t.debit > 0;
+  });
+
+  readonly periodClosed = computed(() => {
+    if (!this.periodsLoaded()) return false;
+    const d = this.entryDate();
+    if (!d) return false;
+    const found = this.periods().find(p => {
+      const start = (p.startDate ?? '').substring(0, 10);
+      const end = (p.endDate ?? '').substring(0, 10);
+      return d >= start && d <= end;
+    });
+    return found ? found.isClosed : false;
+  });
+
+  readonly selectedPeriod = computed(() => {
+    const id = this.periodId();
+    if (id) {
+      return this.periods().find(p => p.id === id) ?? null;
+    }
+    const d = this.entryDate();
+    if (!d) return null;
+    return this.periods().find(p => {
+      const start = (p.startDate ?? '').substring(0, 10);
+      const end = (p.endDate ?? '').substring(0, 10);
+      return d >= start && d <= end;
+    }) ?? null;
+  });
+
+  readonly canAutoBalance = computed(() => {
+    if (this.isBalanced()) return false;
+    const t = this.totals();
+    return t.debit > 0 || t.credit > 0;
+  });
+
+  readonly hasUserInput = computed(() => {
+    if (this.entryLabel().trim().length > 0) return true;
+    if (this.pieceRef().trim().length > 0) return true;
+    if (this.workNotes().trim().length > 0) return true;
+    return this.lines().some(l =>
+      l.accountNumber.trim().length > 0 ||
+      l.lineLabel.trim().length > 0 ||
+      (l.debit ?? 0) > 0 ||
+      (l.credit ?? 0) > 0
+    );
+  });
+
+  readonly canSubmit = computed(() =>
+    this.isBalanced() && !this.loading() && this.lines().length >= 2 && !this.periodClosed()
+  );
+
+  readonly canSaveAsTemplate = computed(() => {
+    const linesWithAccount = this.lines().filter(l => l.accountNumber.trim().length > 0);
+    return linesWithAccount.length >= 2;
+  });
+
+  readonly hasNonPersistedAssistFields = computed(() =>
+    this.lines().some(l =>
+      (l.pieceRef?.trim().length ?? 0) > 0 ||
+      (l.dueDate?.trim().length ?? 0) > 0
+    )
+  );
+
+  readonly dominantThirdParty = computed(() => {
+    for (const l of this.lines()) {
+      if (l.thirdParty) return l.thirdParty;
+    }
+    return null;
+  });
+
+  setAccounts(accounts: ChartOfAccountDto[]): void {
+    this.allAccounts = accounts;
+  }
+
+  getAccounts(): ChartOfAccountDto[] {
+    return this.allAccounts;
+  }
+
+  setPeriods(periods: AccountingPeriodDto[]): void {
+    this.periods.set(periods);
+    this.periodsLoaded.set(true);
+    this.syncPeriodFromDate();
+  }
+
+  setJournalOptions(options: { code: string; label: string }[]): void {
+    if (options.length > 0) {
+      this.journalOptions.set(options);
+    }
+  }
+
+  setEntryDate(date: string): void {
+    this.entryDate.set(date);
+    this.syncPeriodFromDate();
+  }
+
+  setPeriodId(id: string | null): void {
+    this.periodId.set(id);
+    if (!id) return;
+    const period = this.periods().find(p => p.id === id);
+    if (period) {
+      const mid = period.startDate?.substring(0, 10);
+      if (mid) this.entryDate.set(mid);
+    }
+  }
+
+  private syncPeriodFromDate(): void {
+    const d = this.entryDate();
+    if (!d || this.periods().length === 0) return;
+    const found = this.periods().find(p => {
+      const start = (p.startDate ?? '').substring(0, 10);
+      const end = (p.endDate ?? '').substring(0, 10);
+      return d >= start && d <= end;
+    });
+    this.periodId.set(found?.id ?? null);
+  }
+
+  getLineStatus(line: EntryLine): LineStatus {
+    const acc = line.accountNumber.trim();
+    if (!acc) return 'empty';
+    const account = this.allAccounts.find(a => a.accountNumber === acc);
+    if (!account) return 'unknown';
+    if (!account.isActive) return 'inactive';
+    return 'valid';
+  }
+
+  getLineStatusMessage(line: EntryLine): string {
+    switch (this.getLineStatus(line)) {
+      case 'unknown': return 'Compte inconnu dans le plan comptable';
+      case 'inactive': return 'Compte désactivé — l\'enregistrement sera refusé';
+      default: return '';
+    }
+  }
+
+  getAccountClass(line: EntryLine): number | null {
+    const acc = line.accountNumber.trim();
+    if (!acc) return null;
+    const account = this.allAccounts.find(a => a.accountNumber === acc);
+    return account ? account.accountClass : null;
+  }
+
+  addLine(): void {
+    this.lines.update(l => [...l, createEmptyLine()]);
+  }
+
+  removeLine(index: number): void {
+    this.lines.update(l => l.filter((_, i) => i !== index));
+    this.selectedLineIndexes.update(s => {
+      const next = new Set<number>();
+      for (const i of s) {
+        if (i < index) next.add(i);
+        else if (i > index) next.add(i - 1);
+      }
+      return next;
+    });
+  }
+
+  removeSelectedLines(): void {
+    const selected = [...this.selectedLineIndexes()].sort((a, b) => b - a);
+    if (selected.length === 0) return;
+    let lines = [...this.lines()];
+    for (const i of selected) {
+      if (lines.length <= 2) break;
+      lines = lines.filter((_, idx) => idx !== i);
+    }
+    this.lines.set(lines.length >= 2 ? lines : createDefaultLines());
+    this.selectedLineIndexes.set(new Set());
+  }
+
+  duplicateLine(index: number): void {
+    const lines = [...this.lines()];
+    const source = lines[index];
+    if (!source) return;
+    const dup: EntryLine = {
+      ...createEmptyLine(),
+      accountNumber: source.accountNumber,
+      lineLabel: source.lineLabel,
+      thirdParty: source.thirdParty
+    };
+    lines.splice(index + 1, 0, dup);
+    this.lines.set(lines);
+  }
+
+  duplicateSelectedLines(): void {
+    const indexes = [...this.selectedLineIndexes()].sort((a, b) => a - b);
+    if (indexes.length === 0) return;
+    let offset = 0;
+    let lines = [...this.lines()];
+    for (const i of indexes) {
+      const source = lines[i + offset];
+      if (!source) continue;
+      const dup: EntryLine = {
+        ...createEmptyLine(),
+        accountNumber: source.accountNumber,
+        lineLabel: source.lineLabel,
+        thirdParty: source.thirdParty
+      };
+      lines.splice(i + offset + 1, 0, dup);
+      offset++;
+    }
+    this.lines.set(lines);
+  }
+
+  toggleLineSelection(index: number): void {
+    this.selectedLineIndexes.update(s => {
+      const next = new Set(s);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  }
+
+  selectAllLines(selected: boolean): void {
+    if (!selected) {
+      this.selectedLineIndexes.set(new Set());
+      return;
+    }
+    this.selectedLineIndexes.set(new Set(this.lines().map((_, i) => i)));
+  }
+
+  autoBalance(): void {
+    const t = this.totals();
+    const gap = Math.round((t.debit - t.credit) * 1000) / 1000;
+    if (gap === 0) return;
+    const absGap = Math.abs(gap);
+    const lines = [...this.lines()];
+
+    let targetIndex = -1;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const l = lines[i];
+      if ((l.debit ?? 0) === 0 && (l.credit ?? 0) === 0 && !l.isVatGenerated) {
+        targetIndex = i;
+        break;
+      }
+    }
+
+    if (targetIndex >= 0) {
+      lines[targetIndex] = gap > 0
+        ? { ...lines[targetIndex], credit: absGap, debit: null }
+        : { ...lines[targetIndex], debit: absGap, credit: null };
+    } else {
+      lines.push(gap > 0
+        ? { ...createEmptyLine(), credit: absGap }
+        : { ...createEmptyLine(), debit: absGap });
+    }
+    this.lines.set(lines);
+  }
+
+  onDebitChange(index: number): void {
+    const l = [...this.lines()];
+    const line = l[index];
+    if (!line) return;
+
+    const normalizedDebit = normalizeAccountingAmount(line.debit);
+    const nextLine = normalizedDebit !== line.debit
+      ? { ...line, debit: normalizedDebit }
+      : line;
+
+    if ((nextLine.debit ?? 0) > 0) {
+      l[index] = { ...nextLine, credit: null };
+    } else {
+      l[index] = { ...nextLine, debit: null };
+    }
+    this.lines.set(l);
+  }
+
+  onCreditChange(index: number): void {
+    const l = [...this.lines()];
+    const line = l[index];
+    if (!line) return;
+
+    const normalizedCredit = normalizeAccountingAmount(line.credit);
+    const nextLine = normalizedCredit !== line.credit
+      ? { ...line, credit: normalizedCredit }
+      : line;
+
+    if ((nextLine.credit ?? 0) > 0) {
+      l[index] = { ...nextLine, debit: null };
+    } else {
+      l[index] = { ...nextLine, credit: null };
+    }
+    this.lines.set(l);
+  }
+
+  updateLine(index: number, patch: Partial<EntryLine>): void {
+    const lines = [...this.lines()];
+    if (!lines[index]) return;
+    lines[index] = { ...lines[index], ...patch };
+    this.lines.set(lines);
+  }
+
+  setLines(lines: EntryLine[]): void {
+    const normalized = lines.length >= 2 ? lines : createDefaultLines();
+    this.lines.set(normalized);
+    this.selectedLineIndexes.set(new Set());
+  }
+
+  validateSubmit(): EntryValidationResult {
+    const label = this.entryLabel().trim();
+    if (!label) {
+      return { valid: false, error: "Le libellé de l'écriture est obligatoire." };
+    }
+
+    const linesWithAmount = this.getSubmittableLines();
+    if (linesWithAmount.length < 2) {
+      return {
+        valid: false,
+        error: 'Au moins deux lignes avec un compte renseigné et un montant au débit ou au crédit sont requises.'
+      };
+    }
+
+    const invalidLine = linesWithAmount.find(l => {
+      const d = Number(l.debit) || 0;
+      const c = Number(l.credit) || 0;
+      return d > 0 && c > 0;
+    });
+    if (invalidLine) {
+      return {
+        valid: false,
+        error: "Chaque ligne ne doit avoir qu'un montant au débit ou au crédit, pas les deux."
+      };
+    }
+
+    if (!this.isBalanced()) {
+      return { valid: false, error: "L'écriture n'est pas équilibrée." };
+    }
+
+    if (this.periodClosed()) {
+      return { valid: false, error: 'La période comptable de cette date est clôturée.' };
+    }
+
+    return { valid: true };
+  }
+
+  getSubmittableLines(): EntryLine[] {
+    return this.lines().filter(l => {
+      const d = Number(l.debit) || 0;
+      const c = Number(l.credit) || 0;
+      return l.accountNumber.trim() && (d > 0 || c > 0);
+    });
+  }
+
+  buildCreateRequest(): BuildRequestResult {
+    const label = this.entryLabel().trim();
+    const journalCode = this.journalCode();
+    const entryDate = this.entryDate();
+    const linesWithAmount = this.getSubmittableLines();
+
+    const request: CreateManualJournalEntryRequest = {
+      journalCode,
+      entryDate,
+      label,
+      pieceRef: this.pieceRef().trim() || null,
+      pieceDate: this.pieceDate() || null,
+      lines: linesWithAmount.map(l => this.mapLineToRequest(l, label))
+    };
+
+    return { request, journalCode, entryDate };
+  }
+
+  mapLineToRequest(line: EntryLine, fallbackLabel: string): ManualJournalLineRequest {
+    const tp = line.thirdParty && typeof line.thirdParty === 'object' ? line.thirdParty : null;
+    return {
+      accountNumber: line.accountNumber.trim(),
+      lineLabel: line.lineLabel || fallbackLabel,
+      debit: Number(line.debit) || 0,
+      credit: Number(line.credit) || 0,
+      thirdPartyId: tp?.id ?? null,
+      thirdPartyKind: tp?.kind ?? null
+    };
+  }
+
+  resetForm(): void {
+    this.entryLabel.set('');
+    this.pieceRef.set('');
+    this.pieceDate.set('');
+    this.description.set('');
+    this.headerDueDate.set('');
+    this.paymentMethod.set(null);
+    this.bankAccountId.set(null);
+    this.amountTtc.set(null);
+    this.amountHt.set(null);
+    this.amountVat.set(null);
+    this.workNotes.set('');
+    this.lines.set(createDefaultLines());
+    this.error.set(null);
+    this.successMsg.set(null);
+    this.selectedLineIndexes.set(new Set());
+  }
+
+  applyHeaderFromTemplate(journalCode: string, labelTemplate: string | null): void {
+    this.journalCode.set(journalCode || 'JOD');
+    if (labelTemplate) {
+      this.entryLabel.set(labelTemplate);
+    }
+  }
+
+  applyLinesFromTemplate(
+    lines: { accountNumber: string; lineLabel: string; debit: number | null; credit: number | null }[]
+  ): void {
+    const mapped: EntryLine[] = lines.map(l => ({
+      accountNumber: l.accountNumber,
+      lineLabel: l.lineLabel,
+      debit: l.debit,
+      credit: l.credit,
+      thirdParty: null
+    }));
+    while (mapped.length < 2) {
+      mapped.push(createEmptyLine());
+    }
+    this.lines.set(mapped);
+    this.error.set(null);
+    this.successMsg.set(null);
+  }
+
+  restoreFromDraft(draft: {
+    journalCode: string;
+    entryDate: string;
+    entryLabel: string;
+    lines: { accountNumber: string; lineLabel: string; debit: number | null; credit: number | null }[];
+    workNotes?: string;
+    activeTab?: EntryTabId;
+    columnVisibility?: ColumnVisibility;
+  }): void {
+    this.journalCode.set(draft.journalCode || 'JOD');
+    this.entryDate.set(draft.entryDate || formatLocalDate(new Date()));
+    this.entryLabel.set(draft.entryLabel || '');
+    this.workNotes.set(draft.workNotes ?? '');
+    if (draft.activeTab) this.activeTab.set(draft.activeTab);
+    if (draft.columnVisibility) this.columnVisibility.set({ ...draft.columnVisibility });
+    const lines: EntryLine[] = draft.lines.map(l => ({
+      accountNumber: l.accountNumber,
+      lineLabel: l.lineLabel,
+      debit: l.debit,
+      credit: l.credit,
+      thirdParty: null
+    }));
+    while (lines.length < 2) {
+      lines.push(createEmptyLine());
+    }
+    this.lines.set(lines);
+    this.syncPeriodFromDate();
+  }
+
+  toDraftPayload(): {
+    journalCode: string;
+    entryDate: string;
+    entryLabel: string;
+    lines: { accountNumber: string; lineLabel: string; debit: number | null; credit: number | null }[];
+    workNotes: string;
+    activeTab: EntryTabId;
+    columnVisibility: ColumnVisibility;
+  } {
+    return {
+      journalCode: this.journalCode(),
+      entryDate: this.entryDate(),
+      entryLabel: this.entryLabel(),
+      lines: this.lines().map(l => ({
+        accountNumber: l.accountNumber,
+        lineLabel: l.lineLabel,
+        debit: l.debit,
+        credit: l.credit
+      })),
+      workNotes: this.workNotes(),
+      activeTab: this.activeTab(),
+      columnVisibility: { ...this.columnVisibility() }
+    };
+  }
+}
+
+/** Fonctions pures exportées pour les tests unitaires. */
+export function computeTotals(lines: EntryLine[]): EntryTotals {
+  let debit = 0;
+  let credit = 0;
+  for (const l of lines) {
+    debit += Number(l.debit) || 0;
+    credit += Number(l.credit) || 0;
+  }
+  return { debit, credit };
+}
+
+export function isBalancedTotals(totals: EntryTotals): boolean {
+  return Math.round(totals.debit * 1000) === Math.round(totals.credit * 1000) && totals.debit > 0;
+}
+
+export function computeAutoBalanceGap(totals: EntryTotals): number {
+  return Math.round((totals.debit - totals.credit) * 1000) / 1000;
+}
+
+export function applyAutoBalanceToLines(lines: EntryLine[]): EntryLine[] {
+  const totals = computeTotals(lines);
+  const gap = computeAutoBalanceGap(totals);
+  if (gap === 0) return lines;
+  const absGap = Math.abs(gap);
+  const result = [...lines];
+
+  let targetIndex = -1;
+  for (let i = result.length - 1; i >= 0; i--) {
+    const l = result[i];
+    if ((l.debit ?? 0) === 0 && (l.credit ?? 0) === 0 && !l.isVatGenerated) {
+      targetIndex = i;
+      break;
+    }
+  }
+
+  if (targetIndex >= 0) {
+    result[targetIndex] = gap > 0
+      ? { ...result[targetIndex], credit: absGap, debit: null }
+      : { ...result[targetIndex], debit: absGap, credit: null };
+  } else {
+    result.push(gap > 0
+      ? { ...createEmptyLine(), credit: absGap }
+      : { ...createEmptyLine(), debit: absGap });
+  }
+  return result;
+}
+
+export function hasMeaningfulInput(
+  entryLabel: string,
+  pieceRef: string,
+  workNotes: string,
+  lines: EntryLine[]
+): boolean {
+  if (entryLabel.trim().length > 0) return true;
+  if (pieceRef.trim().length > 0) return true;
+  if (workNotes.trim().length > 0) return true;
+  return lines.some(l =>
+    l.accountNumber.trim().length > 0 ||
+    l.lineLabel.trim().length > 0 ||
+    (l.debit ?? 0) > 0 ||
+    (l.credit ?? 0) > 0
+  );
+}

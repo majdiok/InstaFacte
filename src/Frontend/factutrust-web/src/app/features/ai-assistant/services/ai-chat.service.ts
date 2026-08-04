@@ -94,33 +94,5 @@ export class AiChatService {
       .get<ApiResponse<AiActiveModelDto>>(`${this.baseUrl}/active-model`)
       .pipe(map(res => res.data!));
   }
-
-  getOpenRouterSettings(): Observable<OpenRouterProviderSettingsDto> {
-    return this.http
-      .get<ApiResponse<OpenRouterProviderSettingsDto>>(`${this.baseUrl}/providers/openrouter`)
-      .pipe(map(res => res.data!));
-  }
-
-  updateOpenRouterSettings(body: UpdateOpenRouterProviderRequest): Observable<OpenRouterProviderSettingsDto> {
-    return this.http
-      .put<ApiResponse<OpenRouterProviderSettingsDto>>(`${this.baseUrl}/providers/openrouter`, body)
-      .pipe(map(res => res.data!));
-  }
 }
 
-export interface OpenRouterProviderSettingsDto {
-  providerKey: string;
-  displayName?: string | null;
-  baseUrl?: string | null;
-  defaultBaseUrl: string;
-  isEnabled: boolean;
-  isApiKeyConfigured: boolean;
-  apiKeyLast4?: string | null;
-}
-
-export interface UpdateOpenRouterProviderRequest {
-  displayName?: string | null;
-  baseUrl?: string | null;
-  apiKey?: string | null;
-  isEnabled: boolean;
-}

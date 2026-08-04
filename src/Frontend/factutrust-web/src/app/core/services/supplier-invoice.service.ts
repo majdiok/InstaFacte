@@ -229,6 +229,15 @@ export class SupplierInvoiceService {
     private http = inject(HttpClient);
     private readonly cashDesk = inject(CashDeskService);
 
+    previewNumber(invoiceDate: Date): Observable<ApiResponse<string>> {
+        const year = invoiceDate.getFullYear();
+        const month = String(invoiceDate.getMonth() + 1).padStart(2, '0');
+        const day = String(invoiceDate.getDate()).padStart(2, '0');
+        const dateParam = `${year}-${month}-${day}`;
+        const params = new HttpParams().set('invoiceDate', dateParam);
+        return this.http.get<ApiResponse<string>>(`${this.API_URL}/preview-number`, { params });
+    }
+
     getSupplierInvoices(params: SupplierInvoiceSearchParams = {}): Observable<ApiResponse<PagedResult<SupplierInvoiceListItem>>> {
         let httpParams = new HttpParams();
         if (params.search) httpParams = httpParams.set('search', params.search);

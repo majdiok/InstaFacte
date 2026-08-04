@@ -19,6 +19,8 @@ public sealed record QuoteListDto
     public bool IsExpired { get; init; }
     public bool IsConverted { get; init; }
     public Guid? ConvertedInvoiceId { get; init; }
+    /// <summary>La commande client créée depuis ce devis, s'il a été transformé en commande.</summary>
+    public Guid? ConvertedSalesOrderId { get; init; }
 }
 
 /// <summary>
@@ -78,6 +80,8 @@ public sealed record QuoteDetailDto
     public string? CancellationReason { get; init; }
     
     public Guid? ConvertedInvoiceId { get; init; }
+    /// <summary>La commande client créée depuis ce devis, s'il a été transformé en commande.</summary>
+    public Guid? ConvertedSalesOrderId { get; init; }
     public DateTime? ConvertedAt { get; init; }
     
     public DateTime CreatedAt { get; init; }
@@ -100,6 +104,8 @@ public sealed record QuoteLineDto
     public decimal UnitPrice { get; init; }
     public int VatRatePercent { get; init; }
     public decimal? DiscountPercent { get; init; }
+    public Guid? AppliedPromotionId { get; init; }
+    public string? AppliedPromotionName { get; init; }
     public decimal DiscountAmount { get; init; }
     public decimal SubTotal { get; init; }
     public bool IsFodecApplicable { get; init; }
@@ -162,5 +168,22 @@ public sealed record ConvertQuoteToInvoiceDto
     public string? Notes { get; init; }
     public string? PaymentTerms { get; init; }
     /// <summary>Optional warehouse for stock deduction when the invoice is validated.</summary>
+    public Guid? WarehouseId { get; init; }
+}
+
+/// <summary>
+/// Options de transformation d'un devis accepté en commande client — miroir de
+/// <see cref="ConvertQuoteToInvoiceDto"/>. Tous les champs sont optionnels : par défaut,
+/// la commande est datée du jour et sans date de livraison prévue.
+/// </summary>
+public sealed record ConvertQuoteToSalesOrderDto
+{
+    /// <summary>Date de la commande (défaut : aujourd'hui).</summary>
+    public DateTime? OrderDate { get; init; }
+
+    /// <summary>Date de livraison prévue annoncée au client, si connue.</summary>
+    public DateTime? ExpectedDeliveryDate { get; init; }
+
+    /// <summary>Entrepôt de livraison de la commande, pour le suivi des stocks.</summary>
     public Guid? WarehouseId { get; init; }
 }

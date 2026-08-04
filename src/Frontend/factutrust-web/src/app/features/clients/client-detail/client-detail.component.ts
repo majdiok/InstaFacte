@@ -24,6 +24,7 @@ import { StatusBadgeComponent } from '@shared/components/status-badge/status-bad
 import { ClientOutstanding, ClientService, Client, ClientType, ClientStats } from '@core/services/client.service';
 import { InvoiceService, InvoiceListItem, InvoiceSearchParams } from '@core/services/invoice.service';
 import { QuoteService, QuoteListItem } from '@core/services/quote.service';
+import { ClientOutstandingPanelComponent } from '../client-outstanding-panel/client-outstanding-panel.component';
 
 @Component({
   selector: 'app-client-detail',
@@ -47,7 +48,8 @@ import { QuoteService, QuoteListItem } from '@core/services/quote.service';
     SkeletonTableComponent,
     EmptyStateComponent,
     ButtonComponent,
-    StatusBadgeComponent
+    StatusBadgeComponent,
+    ClientOutstandingPanelComponent
   ],
   template: `
     <app-breadcrumb [items]="breadcrumbItems()"></app-breadcrumb>
@@ -81,64 +83,10 @@ import { QuoteService, QuoteListItem } from '@core/services/quote.service';
     </app-page-header>
 
     <!-- Encours : ce que le client doit avant qu'on lui vende a nouveau. -->
-    @if (outstanding(); as enc) {
-      <div class="ft-panel">
-        <h3 class="ft-panel__title">Encours</h3>
-
-        @if (enc.isOverLimit) {
-          <div class="ft-alert ft-alert--warning">
-            <i class="pi pi-exclamation-triangle"></i>
-            Encours de <strong>{{ enc.totalOutstanding | number: '1.3-3' }} {{ enc.currency }}</strong>
-            au-dela du plafond de {{ enc.creditLimit | number: '1.3-3' }}.
-            <span class="ft-muted">
-              Information seulement : aucune vente n'est bloquee.
-            </span>
-          </div>
-        }
-
-        @if (enc.overdueAmount > 0) {
-          <div class="ft-alert ft-alert--danger">
-            <i class="pi pi-clock"></i>
-            <strong>{{ enc.overdueAmount | number: '1.3-3' }} {{ enc.currency }}</strong>
-            echus depuis plus de 30 jours.
-          </div>
-        }
-
-        <div class="ft-info-grid">
-          <div>
-            <span class="ft-info__label">Factures non soldees</span>
-            {{ enc.unpaidInvoicesAmount | number: '1.3-3' }} {{ enc.currency }}
-            <small class="ft-muted">({{ enc.unpaidInvoiceCount }})</small>
-          </div>
-          <div>
-            <span class="ft-info__label">Commandes non facturees</span>
-            {{ enc.confirmedOrdersAmount | number: '1.3-3' }} {{ enc.currency }}
-          </div>
-          <div>
-            <span class="ft-info__label">Encours total</span>
-            <strong>{{ enc.totalOutstanding | number: '1.3-3' }} {{ enc.currency }}</strong>
-          </div>
-          <div>
-            <span class="ft-info__label">Plafond</span>
-            @if (enc.creditLimit === null) {
-              <span class="ft-muted">Aucun</span>
-            } @else {
-              {{ enc.creditLimit | number: '1.3-3' }} {{ enc.currency }}
-            }
-          </div>
-          <div>
-            <span class="ft-info__label">Marge restante</span>
-            @if (enc.availableCredit === null) {
-              <span class="ft-muted">—</span>
-            } @else {
-              <span [class.ft-delta--down]="enc.availableCredit < 0">
-                {{ enc.availableCredit | number: '1.3-3' }} {{ enc.currency }}
-              </span>
-            }
-          </div>
-        </div>
-      </div>
-    }
+    <app-client-outstanding-panel
+      [outstanding]="outstanding()"
+      [loading]="loadingOutstanding()">
+    </app-client-outstanding-panel>
 
     @if (loading()) {
       <div class="detail-grid">
@@ -215,6 +163,34 @@ import { QuoteService, QuoteListItem } from '@core/services/quote.service';
                   <div class="info-row">
                     <span class="label">Matricule fiscal</span>
                     <span class="value mono">{{ client()!.nif || 'Non renseigné' }}</span>
+                  </div>
+                </div>
+
+                <div class="info-section">
+                  <h3>Conditions financières</h3>
+                  <div class="info-row">
+                    <span class="label">Délai de règlement</span>
+                    <span class="value">
+                      @if (client()!.defaultPaymentTermDays != null) {
+                        {{ client()!.defaultPaymentTermDays }} jours
+                      } @else {
+                        —
+                      }
+                    </span>
+                  </div>
+                  <div class="info-row">
+                    <span class="label">Plafond d'encours</span>
+                    <span class="value">
+                      @if (outstanding()?.creditLimit != null) {
+                        {{ formatCurrency(outstanding()!.creditLimit!) }}
+                      } @else {
+                        Aucun
+                      }
+                    </span>
+                  </div>
+                  <div class="info-row">
+                    <span class="label"></span>
+                    <a class="value link" [routerLink]="['edit']">Modifier le plafond</a>
                   </div>
                 </div>
 
@@ -700,6 +676,7 @@ import { QuoteService, QuoteListItem } from '@core/services/quote.service';
 })
 export class ClientDetailComponent implements OnInit {
   readonly outstanding = signal<ClientOutstanding | null>(null);
+  readonly loadingOutstanding = signal(true);
 
   private clientService = inject(ClientService);
   private invoiceService = inject(InvoiceService);
@@ -775,9 +752,16 @@ export class ClientDetailComponent implements OnInit {
    * fiche client. On le laisse simplement vide.
    */
   private loadOutstanding(id: string): void {
+    this.loadingOutstanding.set(true);
     this.clientService.getClientOutstanding(id).subscribe({
-      next: response => this.outstanding.set(response.success ? response.data : null),
-      error: () => this.outstanding.set(null)
+      next: response => {
+        this.outstanding.set(response.success ? response.data : null);
+        this.loadingOutstanding.set(false);
+      },
+      error: () => {
+        this.outstanding.set(null);
+        this.loadingOutstanding.set(false);
+      }
     });
   }
 

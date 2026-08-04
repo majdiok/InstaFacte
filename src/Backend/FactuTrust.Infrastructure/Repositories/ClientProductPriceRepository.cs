@@ -45,6 +45,16 @@ public sealed class ClientProductPriceRepository : IClientProductPriceRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<ClientProductPrice>> GetByProductAsync(
+        Guid productId, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.ClientProductPrices
+            .AsNoTracking()
+            .Where(p => p.ProductId == productId)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<ClientProductPrice>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();

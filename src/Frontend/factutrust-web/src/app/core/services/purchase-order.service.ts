@@ -10,7 +10,8 @@ export enum PurchaseOrderStatus {
     PartiallyReceived = 2,
     Received = 3,
     Cancelled = 4,
-    Invoiced = 5
+    Invoiced = 5,
+    PartiallyInvoiced = 6
 }
 
 export interface PurchaseOrderListItem {
@@ -46,8 +47,12 @@ export interface PurchaseOrderDetail {
     totalTTC: number;
     confirmedAt: string | null;
     receivedAt: string | null;
+    invoicedAt: string | null;
     cancelledAt: string | null;
     cancellationReason: string | null;
+    totalReceivedNotInvoicedQuantity?: number;
+    hasReceivedNotInvoiced?: boolean;
+    linkedSupplierInvoices?: LinkedSupplierInvoiceSummary[];
     createdAt: string;
     /** Destination warehouse on the PO; reception falls back to default when null. */
     warehouseId: string | null;
@@ -79,6 +84,8 @@ export interface PurchaseOrderLine {
     productDescription: string | null;
     quantity: number;
     receivedQuantity: number;
+    invoicedQuantity?: number;
+    receivedNotInvoicedQuantity?: number;
     pendingQuantity: number;
     isFullyReceived: boolean;
     unit: string | null;
@@ -218,9 +225,61 @@ export class PurchaseOrderService {
         return this.http.post<ApiResponse<object>>(`${this.API_URL}/${id}/send-email`, {});
     }
 
-    createSupplierInvoice(id: string, request: CreateSupplierInvoiceFromPORequest): Observable<ApiResponse<string>> {
-        return this.http.post<ApiResponse<string>>(`${this.API_URL}/${id}/create-supplier-invoice`, request);
+    createSupplierInvoice(id: string, request: CreateSupplierInvoiceFromPORequest): Observable<ApiResponse<SupplierInvoiceCreationResponse>> {
+        return this.http.post<ApiResponse<SupplierInvoiceCreationResponse>>(
+            `${this.API_URL}/${id}/create-supplier-invoice`,
+            request
+        );
     }
+
+    getSupplierInvoicePrefill(id: string): Observable<ApiResponse<SupplierInvoicePrefill>> {
+        return this.http.get<ApiResponse<SupplierInvoicePrefill>>(`${this.API_URL}/${id}/supplier-invoice-prefill`);
+    }
+}
+
+export interface LinkedSupplierInvoiceSummary {
+    id: string;
+    invoiceNumber: string;
+    invoiceDate: string;
+    status: number;
+    statusDisplay: string;
+    totalTTC: number;
+}
+
+export interface SupplierInvoicePrefillLine {
+    sourceLineId: string;
+    lineNumber: number;
+    productCode: string;
+    productName: string;
+    unit: string | null;
+    receivedQuantity: number;
+    invoicedQuantity: number;
+    quantityToInvoice: number;
+    maxQuantityToInvoice: number;
+    unitPriceHT: number;
+    vatRateDisplay: string;
+    subTotalHT: number;
+}
+
+export interface SupplierInvoicePrefill {
+    purchaseOrderId?: string | null;
+    purchaseOrderNumber?: string | null;
+    purchaseReceiptId?: string | null;
+    purchaseReceiptNumber?: string | null;
+    supplierId: string;
+    supplierName: string;
+    paymentTermDays: number;
+    lines: SupplierInvoicePrefillLine[];
+    subTotalHT: number;
+    totalVat: number;
+    totalTTC: number;
+    currency: string;
+    suggestedInvoiceNumber?: string | null;
+}
+
+export interface CreateSupplierInvoiceLineRequest {
+    sourceLineId: string;
+    quantityToInvoice: number;
 }
 
 export interface SupplierInvoiceLineAssetClassification {
@@ -238,13 +297,31 @@ export interface CreateSupplierInvoiceFromPORequest {
     externalReference?: string;
     notes?: string;
     sendEmail?: boolean;
+    lines?: CreateSupplierInvoiceLineRequest[];
     lineAssetClassifications?: SupplierInvoiceLineAssetClassification[];
     /** Mode de paiement prévu (informatif), ex. « Effet de commerce ». */
     paymentMethod?: string;
+    useSuggestedNumber?: boolean;
 }
 
 /** @deprecated Use CreateSupplierInvoiceFromPORequest for createSupplierInvoice. */
 export interface CreateSupplierInvoiceRequest extends CreateSupplierInvoiceFromPORequest { }
+
+/**
+ * Response returned by POST /purchaseorders/{id}/create-supplier-invoice (and the PR sibling).
+ * `invoiceNumber` is the number actually persisted — may differ from the caller's input when
+ * the server auto-resolved (useSuggestedNumber) or retried after a concurrent duplicate.
+ */
+export interface SupplierInvoiceCreationResponse {
+    id: string;
+    invoiceNumber: string;
+}
+
+/** Metadata attached to a 409 Conflict on create-supplier-invoice; serialised as `error.data`. */
+export interface SupplierInvoiceConflictMetadata {
+    suggestedInvoiceNumber?: string | null;
+    conflictingInvoiceNumber?: string | null;
+}
 
 /**
  * Normalizes purchase-order status from API transport format to frontend enum.
@@ -261,7 +338,8 @@ export function normalizePurchaseOrderStatus(status: PurchaseOrderStatus | strin
         partiallyreceived: PurchaseOrderStatus.PartiallyReceived,
         received: PurchaseOrderStatus.Received,
         cancelled: PurchaseOrderStatus.Cancelled,
-        invoiced: PurchaseOrderStatus.Invoiced
+        invoiced: PurchaseOrderStatus.Invoiced,
+        partiallyinvoiced: PurchaseOrderStatus.PartiallyInvoiced
     };
 
     return statusMap[status.toLowerCase()] ?? null;

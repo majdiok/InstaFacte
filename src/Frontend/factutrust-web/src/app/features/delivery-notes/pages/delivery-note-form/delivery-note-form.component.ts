@@ -10,6 +10,8 @@ import { CalendarModule } from 'primeng/calendar';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextarea } from 'primeng/inputtextarea';
 import { CheckboxModule } from 'primeng/checkbox';
+import { TagModule } from 'primeng/tag';
+import { TooltipModule } from 'primeng/tooltip';
 import { AutoCompleteModule, AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { DialogModule } from 'primeng/dialog';
 import { ToastModule } from 'primeng/toast';
@@ -31,17 +33,20 @@ import { DeliveryNoteService } from '../../services/delivery-note.service';
 import { CreateDeliveryNoteDto, CreateDeliveryNoteLineDto } from '../../models/delivery-note.model';
 import { ClientService, ClientListItem } from '@core/services/client.service';
 import { ProductService, ProductListItem } from '@core/services/product.service';
+import { PriceSource } from '@core/services/pricing.service';
+import { DocumentLinePricingService, EMPTY_LINE_PROMOTION, LinePromotionPreview, effectiveLineDiscountPercent, lineTotalWithPromotion, mapResolvedPricePromotion } from '@shared/utils/document-line-pricing.helper';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
 
-interface LineRow {
-  product: ProductListItem | null; // Selected product
-  designation: string; // Read-only snapshot
-  description: string; // Read-only snapshot
+interface LineRow extends LinePromotionPreview {
+  product: ProductListItem | null;
+  designation: string;
+  description: string;
   orderedQuantity: number;
-  unit: string; // Read-only snapshot
-  unitPriceHT: number; // Read-only snapshot for display
-  vatRatePercent: number; // Read-only snapshot for display
-  discountPercent: number | null; // Remise de ligne, propagée à la facture générée
+  unit: string;
+  unitPriceHT: number;
+  priceSource?: PriceSource | null;
+  vatRatePercent: number;
+  discountPercent: number | null;
   notes: string;
 }
 
@@ -60,6 +65,8 @@ interface LineRow {
     InputNumberModule,
     InputTextarea,
     CheckboxModule,
+    TagModule,
+    TooltipModule,
     AutoCompleteModule,
     DialogModule,
     ToastModule,
@@ -93,6 +100,7 @@ interface LineRow {
                     id="client"
                     [options]="clientOptions()"
                     [(ngModel)]="selectedClientId"
+                    (onChange)="onClientChange()"
                     optionLabel="name"
                     optionValue="id"
                     placeholder="Choisir un client"
@@ -123,6 +131,7 @@ interface LineRow {
                 [readonlyInput]="true"
                 dateFormat="dd/mm/yy"
                 name="issueDate"
+                (onSelect)="onIssueDateChange()"
                 styleClass="w-full">
               </p-calendar>
             </div>
@@ -162,7 +171,8 @@ interface LineRow {
                   <th style="width: 17%">Désignation</th>
                   <th style="width: 10%">Qté *</th>
                   <th style="width: 8%">Unité</th>
-                  <th style="width: 10%">P.U. HT</th>
+                  <th style="width: 9%">P.U. HT</th>
+                  <th style="width: 8%">Origine</th>
                   <th style="width: 9%">Remise %</th>
                   <th style="width: 13%">Total HT</th>
                   <th style="width: 10%"></th>
@@ -215,6 +225,7 @@ interface LineRow {
                     <td>
                       <p-inputNumber
                         [(ngModel)]="line.orderedQuantity"
+                        (onBlur)="onQuantityChange(line)"
                         [ngModelOptions]="{ standalone: true }"
                         [min]="0.001"
                         [minFractionDigits]="0"
@@ -235,6 +246,22 @@ interface LineRow {
                       <div class="text-right px-2">
                         {{ line.unitPriceHT | number:'1.3-3' }}
                       </div>
+                    </td>
+                    <td>
+                      @if (linePricing.resolving()) {
+                        <i class="pi pi-spin pi-spinner" pTooltip="Résolution du prix…"></i>
+                      } @else if (line.priceSource === 'ClientPrice') {
+                        <p-tag severity="success" value="Prix négocié"></p-tag>
+                      } @else if (line.priceSource === 'PriceList') {
+                        <p-tag severity="info" value="Grille"></p-tag>
+                      } @else if (line.priceSource) {
+                        <span class="text-muted">Catalogue</span>
+                      }
+                      @if (line.promotionEligible && line.promotionName) {
+                        <p-tag severity="success" [value]="'Promo : ' + line.promotionName"></p-tag>
+                      } @else if (line.promotionMinQuantityRequired && line.promotionName) {
+                        <small class="promo-hint">{{ line.promotionName }} : qty min. {{ line.promotionMinQuantityRequired }}</small>
+                      }
                     </td>
                     <td>
                       <p-inputNumber
@@ -267,7 +294,7 @@ interface LineRow {
                     </td>
                   </tr>
                   <tr> <!-- Optional Second Row for Description/Notes -->
-                     <td colspan="8" class="pb-4 border-b">
+                     <td colspan="9" class="pb-4 border-b">
                         <input
                           pInputText
                           [(ngModel)]="line.notes"
@@ -280,7 +307,7 @@ interface LineRow {
               </tbody>
               <tfoot>
                  <tr>
-                    <td colspan="6" class="text-right font-bold py-3">Total HT Estimé :</td>
+                    <td colspan="7" class="text-right font-bold py-3">Total HT Estimé :</td>
                     <td class="text-right font-bold py-3">{{ totalHT() | number:'1.3-3' }} TND</td>
                     <td></td>
                  </tr>
@@ -337,7 +364,7 @@ interface LineRow {
             [icon]="submitting() ? 'pi-spin pi-spinner' : 'pi-check'"
             iconPos="left"
             type="submit"
-            [disabled]="!canSubmit() || submitting()">
+            [disabled]="!canSubmit() || submitting() || linePricing.resolving()">
             {{ submitting() ? 'Création...' : 'Créer le bon de livraison' }}
           </app-button>
         </div>
@@ -545,6 +572,7 @@ export class DeliveryNoteFormComponent implements OnInit {
   private toastService = inject(ToastService);
   private errorHandler = inject(ErrorHandlerService);
   private warehouseContext = inject(WarehouseContextService);
+  readonly linePricing = inject(DocumentLinePricingService);
 
   breadcrumbItems: BreadcrumbItem[] = [
     { label: 'Tableau de bord', route: '/dashboard', icon: 'pi-home' },
@@ -598,8 +626,15 @@ export class DeliveryNoteFormComponent implements OnInit {
       unitPriceHT: 0,
       vatRatePercent: 0,
       discountPercent: null,
-      notes: ''
+      notes: '',
+      ...EMPTY_LINE_PROMOTION
     };
+  }
+
+  onQuantityChange(line: LineRow): void {
+    if (line.product) {
+      this.resolveLinePrice(line);
+    }
   }
 
   searchProducts(event: AutoCompleteCompleteEvent): void {
@@ -623,7 +658,50 @@ export class DeliveryNoteFormComponent implements OnInit {
     line.description = product.description || '';
     line.unit = product.unit;
     line.unitPriceHT = product.unitPrice;
+    line.priceSource = 'Catalog';
     line.vatRatePercent = product.vatRate;
+    this.resolveLinePrice(line);
+  }
+
+  onClientChange(): void {
+    this.reresolveAllLines();
+  }
+
+  onIssueDateChange(): void {
+    this.reresolveAllLines();
+  }
+
+  private reresolveAllLines(): void {
+    for (const line of this.lines) {
+      if (line.product) {
+        this.resolveLinePrice(line);
+      }
+    }
+  }
+
+  private resolveLinePrice(line: LineRow): void {
+    if (!line.product) {
+      return;
+    }
+
+    this.linePricing
+      .resolveLinePrice({
+        productId: line.product.id,
+        clientId: this.selectedClientId,
+        quantity: line.orderedQuantity,
+        documentDate: this.issueDate,
+        priceOverridden: false
+      })
+      .subscribe({
+        next: resolved => {
+          if (resolved) {
+            line.unitPriceHT = resolved.unitPriceHT;
+            line.priceSource = resolved.source;
+            Object.assign(line, mapResolvedPricePromotion(resolved));
+          }
+        },
+        error: err => this.errorHandler.logError('Price resolution failed', err)
+      });
   }
 
   openQuickCreateProduct(lineIndex: number): void {
@@ -666,7 +744,9 @@ export class DeliveryNoteFormComponent implements OnInit {
       line.description = product.description || '';
       line.unit = product.unit;
       line.unitPriceHT = product.unitPrice;
+      line.priceSource = 'Catalog';
       line.vatRatePercent = product.vatRate;
+      this.resolveLinePrice(line);
     }
     this.productSuggestions.set([product, ...this.productSuggestions()]);
     this.quickCreateProductVisible = false;
@@ -691,9 +771,8 @@ export class DeliveryNoteFormComponent implements OnInit {
    */
   lineTotalHT(line: LineRow): number {
     const gross = this.roundMillimes(line.unitPriceHT * line.orderedQuantity);
-    const discount = line.discountPercent && line.discountPercent > 0
-      ? this.roundMillimes(gross * line.discountPercent / 100)
-      : 0;
+    const discountPct = effectiveLineDiscountPercent(line.discountPercent, line);
+    const discount = discountPct > 0 ? this.roundMillimes(gross * discountPct / 100) : 0;
     return this.roundMillimes(gross - discount);
   }
 
@@ -707,6 +786,7 @@ export class DeliveryNoteFormComponent implements OnInit {
 
   canSubmit(): boolean {
     if (!this.selectedClientId || !this.issueDate) return false;
+    if (this.linePricing.resolving()) return false;
     if (!this.deliveryAddress?.trim()) return false;
 
     // Validate lines: must have product and quantity > 0

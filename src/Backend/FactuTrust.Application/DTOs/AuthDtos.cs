@@ -91,6 +91,11 @@ public sealed record UserDto
     public string AccessMode { get; init; } = "native";
     public Guid? ContextTenantId { get; init; }
     public string? ContextCompanyName { get; init; }
+    /// <summary>
+    /// True when the active delegated dossier is firm-managed (no platform commercial account).
+    /// Always false in native mode.
+    /// </summary>
+    public bool IsFirmManaged { get; init; }
     public bool TwoFactorEnabled { get; init; }
 
     /// <summary>Enabled AppModule enum values (int) for UI.</summary>

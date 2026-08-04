@@ -8,17 +8,21 @@ import { InputTextModule } from 'primeng/inputtext';
 import { InputTextarea } from 'primeng/inputtextarea';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { AutoCompleteModule } from 'primeng/autocomplete';
+import { CalendarModule } from 'primeng/calendar';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
+import { FormSectionComponent } from '@shared/components/form-section/form-section.component';
 import { SalesOrderService, CreateSalesOrderLineRequest } from '@core/services/sales-order.service';
-import { PricingService, PriceSource } from '@core/services/pricing.service';
+import { PriceSource } from '@core/services/pricing.service';
+import { DocumentLinePricingService, EMPTY_LINE_PROMOTION, LinePromotionPreview, lineTotalWithPromotion, mapResolvedPricePromotion } from '@shared/utils/document-line-pricing.helper';
 import { ClientService } from '@core/services/client.service';
 import { ProductService } from '@core/services/product.service';
 import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
+import { formatLocalDate } from '@core/utils/date.util';
 
 interface ClientOption {
   id: string;
@@ -33,16 +37,13 @@ interface ProductOption {
   unitPrice: number;
 }
 
-/** Ligne en cours de saisie, avec la trace de la résolution de prix. */
-interface DraftLine {
+interface DraftLine extends LinePromotionPreview {
   product: ProductOption;
   quantity: number;
   unitPrice: number;
   discountPercent: number | null;
   notes: string | null;
-  /** Origine du prix proposé par le serveur — sert à signaler un prix négocié. */
   priceSource: PriceSource | null;
-  /** Vrai si l'utilisateur a écrasé le prix résolu : on n'y retouche plus. */
   priceOverridden: boolean;
 }
 
@@ -59,11 +60,13 @@ interface DraftLine {
     InputTextarea,
     InputNumberModule,
     AutoCompleteModule,
+    CalendarModule,
     TagModule,
     TooltipModule,
     PageHeaderComponent,
     BreadcrumbComponent,
-    ButtonComponent
+    ButtonComponent,
+    FormSectionComponent
   ],
   template: `
     <app-breadcrumb [items]="breadcrumbItems"></app-breadcrumb>
@@ -72,16 +75,57 @@ interface DraftLine {
       title="Nouvelle commande client"
       subtitle="Les prix sont ceux que le serveur appliquera : prix négocié, grille du client, ou catalogue.">
       <app-button variant="secondary" routerLink="/sales-orders">Annuler</app-button>
-      <app-button variant="primary" [disabled]="!canSubmit() || saving()" (clicked)="submit()">
-        Créer la commande
-      </app-button>
+      <span
+        class="create-btn-wrap"
+        [pTooltip]="submitBlockersTooltip()"
+        [tooltipDisabled]="canSubmit() || saving()"
+        tooltipPosition="bottom">
+        <app-button
+          variant="primary"
+          [disabled]="!canSubmit() || saving() || linePricing.resolving()"
+          [icon]="saving() ? 'pi-spin pi-spinner' : 'pi-check'"
+          iconPos="left"
+          (clicked)="submit()">
+          {{ saving() ? 'Création…' : 'Créer la commande' }}
+        </app-button>
+      </span>
     </app-page-header>
 
-    <!-- En-tête -->
-    <div class="ft-panel">
-      <h3 class="ft-panel__title">Informations</h3>
-      <div class="ft-form-grid">
-        <div class="ft-field">
+    <div class="submit-readiness" role="status" aria-live="polite">
+      <p class="submit-readiness__title">Étapes pour créer la commande</p>
+      <ul class="submit-readiness__list">
+        <li [class.submit-readiness__item--done]="hasClient()">
+          <i class="pi" [class.pi-check-circle]="hasClient()" [class.pi-circle]="!hasClient()"></i>
+          @if (hasClient()) {
+            <span>Client sélectionné</span>
+          } @else {
+            <span>Sélectionnez un client</span>
+          }
+        </li>
+        <li [class.submit-readiness__item--done]="hasOrderDate()">
+          <i class="pi" [class.pi-check-circle]="hasOrderDate()" [class.pi-circle]="!hasOrderDate()"></i>
+          @if (hasOrderDate()) {
+            <span>Date de commande renseignée</span>
+          } @else {
+            <span>Indiquez la date de commande</span>
+          }
+        </li>
+        <li [class.submit-readiness__item--done]="hasLines()">
+          <i class="pi" [class.pi-check-circle]="hasLines()" [class.pi-circle]="!hasLines()"></i>
+          @if (hasLines()) {
+            <span>{{ lines().length }} ligne(s) produit ajoutée(s)</span>
+          } @else {
+            <button type="button" class="submit-readiness__link" (click)="scrollToLines()">
+              Ajoutez au moins une ligne produit (section Lignes)
+            </button>
+          }
+        </li>
+      </ul>
+    </div>
+
+    <app-form-section title="Informations" icon="pi-user" [number]="1">
+      <div class="ft-form-grid ft-form-grid--compact">
+        <div class="ft-field ft-field--full">
           <label for="so-client">Client <span class="ft-required">*</span></label>
           <p-autoComplete
             inputId="so-client"
@@ -94,6 +138,7 @@ interface DraftLine {
             [forceSelection]="true"
             [dropdown]="true"
             placeholder="Rechercher un client"
+            styleClass="w-full"
             appendTo="body"></p-autoComplete>
           <small class="ft-hint">
             Le client détermine la grille tarifaire appliquée aux lignes.
@@ -102,167 +147,247 @@ interface DraftLine {
 
         <div class="ft-field">
           <label for="so-date">Date de commande <span class="ft-required">*</span></label>
-          <input id="so-date" type="date" pInputText [(ngModel)]="orderDate" (change)="onDateChange()" />
+          <p-calendar
+            inputId="so-date"
+            [(ngModel)]="orderDateModel"
+            (ngModelChange)="onDateChange()"
+            dateFormat="dd/mm/yy"
+            [showIcon]="true"
+            styleClass="w-full"
+            appendTo="body"></p-calendar>
         </div>
 
         <div class="ft-field">
           <label for="so-delivery">Livraison prévue</label>
-          <input id="so-delivery" type="date" pInputText [(ngModel)]="expectedDeliveryDate" />
+          <p-calendar
+            inputId="so-delivery"
+            [(ngModel)]="expectedDeliveryDateModel"
+            dateFormat="dd/mm/yy"
+            [showIcon]="true"
+            [minDate]="orderDateModel"
+            [showClear]="true"
+            styleClass="w-full"
+            appendTo="body"></p-calendar>
         </div>
 
         <div class="ft-field">
           <label for="so-ref">Référence</label>
-          <input id="so-ref" pInputText [(ngModel)]="reference" maxlength="100"
-                 placeholder="Bon de commande du client" />
+          <input
+            id="so-ref"
+            pInputText
+            [(ngModel)]="reference"
+            maxlength="100"
+            placeholder="Bon de commande du client" />
         </div>
 
-        <div class="ft-field">
+        <div class="ft-field ft-field--half">
           <label for="so-terms">Conditions de règlement</label>
           <input id="so-terms" pInputText [(ngModel)]="paymentTerms" maxlength="500" />
         </div>
 
-        <div class="ft-field ft-field--full">
+        <div class="ft-field ft-field--half">
           <label for="so-notes">Notes</label>
           <textarea id="so-notes" pInputTextarea [(ngModel)]="notes" rows="2" maxlength="2000"></textarea>
         </div>
       </div>
+    </app-form-section>
+
+    <div
+      id="section-lignes"
+      class="lines-section-wrap"
+      [class.lines-section-wrap--empty]="lines().length === 0">
+      <app-form-section title="Lignes" icon="pi-list" [number]="2">
+        <div class="ft-form-grid ft-form-grid--inline">
+          <div class="ft-field ft-field--grow">
+            <label for="so-product">Produit</label>
+            <p-autoComplete
+              inputId="so-product"
+              [(ngModel)]="newProduct"
+              [suggestions]="productSuggestions()"
+              (completeMethod)="searchProducts($event)"
+              field="label"
+              [forceSelection]="true"
+              [dropdown]="true"
+              placeholder="Rechercher par code ou nom"
+              styleClass="w-full"
+              appendTo="body"></p-autoComplete>
+          </div>
+
+          <div class="ft-field">
+            <label for="so-qty">Quantité</label>
+            <p-inputNumber
+              inputId="so-qty"
+              [(ngModel)]="newQuantity"
+              (onKeyDown)="onQuantityKeyDown($event)"
+              mode="decimal"
+              [minFractionDigits]="0"
+              [maxFractionDigits]="4"
+              [min]="0"></p-inputNumber>
+          </div>
+
+          <div class="ft-field ft-field--actions">
+            <app-button
+              variant="secondary"
+              icon="pi-plus"
+              iconPos="left"
+              [disabled]="!newProduct || !newQuantity || newQuantity <= 0 || linePricing.resolving()"
+              (clicked)="addLine()">
+              Ajouter
+            </app-button>
+          </div>
+        </div>
+
+        @if (lines().length === 0) {
+          <div class="ft-empty-inline">
+            <i class="pi pi-inbox"></i>
+            <p>Aucune ligne ajoutée.</p>
+            <p class="ft-hint">
+              Commencez par rechercher un produit ci-dessus, saisissez une quantité puis cliquez
+              sur « Ajouter » — au moins une ligne est requise pour créer la commande.
+            </p>
+          </div>
+        } @else {
+          <p-table [value]="lines()" styleClass="ft-table">
+            <ng-template pTemplate="header">
+              <tr>
+                <th class="ft-row-number-col">#</th>
+                <th>Produit</th>
+                <th class="ft-num">Quantité</th>
+                <th class="ft-num">PU HT</th>
+                <th>Origine du prix</th>
+                <th class="ft-num">Remise %</th>
+                <th class="ft-num">Total HT</th>
+                <th class="ft-actions-col"></th>
+              </tr>
+            </ng-template>
+
+            <ng-template pTemplate="body" let-line let-i="rowIndex">
+              <tr>
+                <td class="ft-row-number">{{ i + 1 }}</td>
+                <td>
+                  <div class="line-product">
+                    <span class="line-product-name">{{ line.product.name }}</span>
+                    <span class="line-product-code">{{ line.product.code }}</span>
+                  </div>
+                </td>
+                <td class="ft-num">
+                  <p-inputNumber
+                    [(ngModel)]="line.quantity"
+                    (onBlur)="onQuantityChange(i)"
+                    mode="decimal"
+                    [minFractionDigits]="0"
+                    [maxFractionDigits]="4"
+                    [min]="0"
+                    styleClass="ft-inline-input"></p-inputNumber>
+                </td>
+                <td class="ft-num">
+                  <p-inputNumber
+                    [(ngModel)]="line.unitPrice"
+                    (onInput)="markOverridden(i)"
+                    mode="decimal"
+                    [minFractionDigits]="3"
+                    [maxFractionDigits]="3"
+                    [min]="0"
+                    styleClass="ft-inline-input"></p-inputNumber>
+                </td>
+                <td>
+                  @if (linePricing.resolving()) {
+                    <i
+                      class="pi pi-spin pi-spinner ft-resolving"
+                      pTooltip="Résolution du prix en cours…"
+                      tooltipPosition="top"></i>
+                  }
+                  @if (line.priceOverridden) {
+                    <p-tag
+                      severity="warning"
+                      value="Saisi"
+                      pTooltip="Prix imposé à la main : il remplace le prix résolu."></p-tag>
+                  } @else if (line.priceSource === 'ClientPrice') {
+                    <p-tag severity="success" value="Prix négocié"></p-tag>
+                  } @else if (line.priceSource === 'PriceList') {
+                    <p-tag severity="info" value="Grille"></p-tag>
+                  } @else {
+                    <span class="ft-muted">Catalogue</span>
+                  }
+                  @if (line.promotionEligible && line.promotionName) {
+                    <p-tag
+                      severity="success"
+                      [value]="'Promo : ' + line.promotionName + ' (-' + line.promotionDiscountPercent + ' %)'"
+                      class="promo-tag"></p-tag>
+                  } @else if (line.promotionMinQuantityRequired && line.promotionName) {
+                    <small class="promo-hint">
+                      {{ line.promotionName }} : qty min. {{ line.promotionMinQuantityRequired }}
+                    </small>
+                  }
+                </td>
+                <td class="ft-num">
+                  <p-inputNumber
+                    [(ngModel)]="line.discountPercent"
+                    mode="decimal"
+                    [minFractionDigits]="0"
+                    [maxFractionDigits]="2"
+                    [min]="0"
+                    [max]="100"
+                    styleClass="ft-inline-input"></p-inputNumber>
+                </td>
+                <td class="ft-num">{{ lineTotal(line) | number: '1.3-3' }}</td>
+                <td class="ft-actions-col">
+                  <button
+                    pButton
+                    type="button"
+                    icon="pi pi-trash"
+                    class="p-button-text p-button-sm p-button-danger"
+                    pTooltip="Retirer"
+                    aria-label="Retirer la ligne"
+                    (click)="removeLine(i)"></button>
+                </td>
+              </tr>
+            </ng-template>
+          </p-table>
+
+          <div class="ft-totals">
+            <div class="ft-totals__row ft-totals__row--grand">
+              <span>Total HT</span><span>{{ totalHt() | number: '1.3-3' }} TND</span>
+            </div>
+            <small class="ft-hint">
+              TVA, FODEC et timbre fiscal sont calculés par le serveur à la création.
+            </small>
+          </div>
+        }
+      </app-form-section>
     </div>
 
-    <!-- Lignes -->
-    <div class="ft-panel">
-      <h3 class="ft-panel__title">Lignes</h3>
-
-      <div class="ft-form-grid ft-form-grid--inline">
-        <div class="ft-field ft-field--grow">
-          <label for="so-product">Produit</label>
-          <p-autoComplete
-            inputId="so-product"
-            [(ngModel)]="newProduct"
-            [suggestions]="productSuggestions()"
-            (completeMethod)="searchProducts($event)"
-            field="label"
-            [forceSelection]="true"
-            [dropdown]="true"
-            placeholder="Rechercher par code ou nom"
-            appendTo="body"></p-autoComplete>
+    @if (lines().length > 0) {
+      <div class="sticky-action-bar" role="region" aria-label="Actions de création">
+        <div class="sticky-action-bar__total">
+          <span class="sticky-action-bar__label">Total HT</span>
+          <span class="sticky-action-bar__amount">{{ totalHt() | number: '1.3-3' }} TND</span>
         </div>
-
-        <div class="ft-field">
-          <label for="so-qty">Quantité</label>
-          <p-inputNumber
-            inputId="so-qty"
-            [(ngModel)]="newQuantity"
-            mode="decimal"
-            [minFractionDigits]="0"
-            [maxFractionDigits]="4"
-            [min]="0"></p-inputNumber>
-        </div>
-
-        <div class="ft-field ft-field--actions">
-          <app-button
-            variant="secondary"
-            icon="pi-plus"
-            iconPos="left"
-            [disabled]="!newProduct || !newQuantity || newQuantity <= 0 || resolving()"
-            (clicked)="addLine()">
-            Ajouter
-          </app-button>
+        <div class="sticky-action-bar__actions">
+          <app-button variant="secondary" routerLink="/sales-orders">Annuler</app-button>
+          <span
+            [pTooltip]="submitBlockersTooltip()"
+            [tooltipDisabled]="canSubmit() || saving()"
+            tooltipPosition="top">
+            <app-button
+              variant="primary"
+              [disabled]="!canSubmit() || saving() || linePricing.resolving()"
+              [icon]="saving() ? 'pi-spin pi-spinner' : 'pi-check'"
+              iconPos="left"
+              (clicked)="submit()">
+              {{ saving() ? 'Création…' : 'Créer la commande' }}
+            </app-button>
+          </span>
         </div>
       </div>
-
-      @if (lines().length === 0) {
-        <p class="ft-muted ft-empty-inline">Aucune ligne. Ajoutez au moins un produit.</p>
-      } @else {
-        <p-table [value]="lines()" styleClass="ft-table">
-          <ng-template pTemplate="header">
-            <tr>
-              <th>Produit</th>
-              <th class="ft-num">Quantité</th>
-              <th class="ft-num">PU HT</th>
-              <th>Origine du prix</th>
-              <th class="ft-num">Remise %</th>
-              <th class="ft-num">Total HT</th>
-              <th class="ft-actions-col"></th>
-            </tr>
-          </ng-template>
-
-          <ng-template pTemplate="body" let-line let-i="rowIndex">
-            <tr>
-              <td>
-                <span class="ft-muted">{{ line.product.code }}</span> — {{ line.product.name }}
-              </td>
-              <td class="ft-num">
-                <p-inputNumber
-                  [(ngModel)]="line.quantity"
-                  (onBlur)="onQuantityChange(i)"
-                  mode="decimal"
-                  [minFractionDigits]="0"
-                  [maxFractionDigits]="4"
-                  [min]="0"
-                  styleClass="ft-inline-input"></p-inputNumber>
-              </td>
-              <td class="ft-num">
-                <p-inputNumber
-                  [(ngModel)]="line.unitPrice"
-                  (onInput)="markOverridden(i)"
-                  mode="decimal"
-                  [minFractionDigits]="3"
-                  [maxFractionDigits]="3"
-                  [min]="0"
-                  styleClass="ft-inline-input"></p-inputNumber>
-              </td>
-              <td>
-                @if (line.priceOverridden) {
-                  <p-tag severity="warning" value="Saisi"
-                         pTooltip="Prix imposé à la main : il remplace le prix résolu."></p-tag>
-                } @else if (line.priceSource === 'ClientPrice') {
-                  <p-tag severity="success" value="Prix négocié"></p-tag>
-                } @else if (line.priceSource === 'PriceList') {
-                  <p-tag severity="info" value="Grille"></p-tag>
-                } @else {
-                  <span class="ft-muted">Catalogue</span>
-                }
-              </td>
-              <td class="ft-num">
-                <p-inputNumber
-                  [(ngModel)]="line.discountPercent"
-                  mode="decimal"
-                  [minFractionDigits]="0"
-                  [maxFractionDigits]="2"
-                  [min]="0"
-                  [max]="100"
-                  styleClass="ft-inline-input"></p-inputNumber>
-              </td>
-              <td class="ft-num">{{ lineTotal(line) | number: '1.3-3' }}</td>
-              <td class="ft-actions-col">
-                <button
-                  pButton
-                  type="button"
-                  icon="pi pi-trash"
-                  class="p-button-text p-button-sm p-button-danger"
-                  pTooltip="Retirer"
-                  (click)="removeLine(i)"></button>
-              </td>
-            </tr>
-          </ng-template>
-        </p-table>
-
-        <div class="ft-totals">
-          <div class="ft-totals__row ft-totals__row--grand">
-            <span>Total HT</span><span>{{ totalHt() | number: '1.3-3' }} TND</span>
-          </div>
-          <small class="ft-hint">
-            TVA, FODEC et timbre fiscal sont calculés par le serveur à la création.
-          </small>
-        </div>
-      }
-    </div>
-  `
+    }
+  `,
+  styleUrls: ['./sales-order-create.component.scss']
 })
 export class SalesOrderCreateComponent {
   private readonly router = inject(Router);
   private readonly salesOrderService = inject(SalesOrderService);
-  private readonly pricingService = inject(PricingService);
+  readonly linePricing = inject(DocumentLinePricingService);
   private readonly clientService = inject(ClientService);
   private readonly productService = inject(ProductService);
   private readonly toastService = inject(ToastService);
@@ -272,11 +397,10 @@ export class SalesOrderCreateComponent {
   readonly clientSuggestions = signal<ClientOption[]>([]);
   readonly productSuggestions = signal<ProductOption[]>([]);
   readonly saving = signal(false);
-  readonly resolving = signal(false);
 
   selectedClient: ClientOption | null = null;
-  orderDate = new Date().toISOString().substring(0, 10);
-  expectedDeliveryDate = '';
+  orderDateModel: Date = new Date();
+  expectedDeliveryDateModel: Date | null = null;
   reference = '';
   notes = '';
   paymentTerms = '';
@@ -290,18 +414,59 @@ export class SalesOrderCreateComponent {
     { label: 'Nouvelle' }
   ];
 
-  readonly canSubmit = computed(
-    () => this.selectedClient !== null && this.lines().length > 0 && !!this.orderDate
-  );
-
   readonly totalHt = computed(() =>
     this.lines().reduce((sum, l) => sum + this.lineTotal(l), 0)
   );
 
+  canSubmit(): boolean {
+    return (
+      this.selectedClient !== null &&
+      this.lines().length > 0 &&
+      !!this.orderDateModel &&
+      !this.linePricing.resolving()
+    );
+  }
+
+  hasClient(): boolean {
+    return this.selectedClient !== null;
+  }
+
+  hasOrderDate(): boolean {
+    return !!this.orderDateModel;
+  }
+
+  hasLines(): boolean {
+    return this.lines().length > 0;
+  }
+
+  submitBlockers(): string[] {
+    const blockers: string[] = [];
+    if (!this.hasClient()) blockers.push('Sélectionnez un client');
+    if (!this.hasOrderDate()) blockers.push('Indiquez la date de commande');
+    if (!this.hasLines()) blockers.push('Ajoutez au moins une ligne produit');
+    if (this.linePricing.resolving()) blockers.push('Résolution des prix en cours');
+    return blockers;
+  }
+
+  submitBlockersTooltip(): string {
+    const blockers = this.submitBlockers();
+    return blockers.length > 0 ? blockers.join(' · ') : '';
+  }
+
+  scrollToLines(): void {
+    document.getElementById('section-lignes')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  getOrderDateString(): string {
+    return formatLocalDate(this.orderDateModel);
+  }
+
+  getExpectedDeliveryDateString(): string | null {
+    return this.expectedDeliveryDateModel ? formatLocalDate(this.expectedDeliveryDateModel) : null;
+  }
+
   lineTotal(line: DraftLine): number {
-    const gross = line.quantity * line.unitPrice;
-    const discount = line.discountPercent ? (gross * line.discountPercent) / 100 : 0;
-    return gross - discount;
+    return lineTotalWithPromotion(line.quantity, line.unitPrice, line.discountPercent, line);
   }
 
   searchClients(event: { query: string }): void {
@@ -345,6 +510,13 @@ export class SalesOrderCreateComponent {
     this.reresolveAll();
   }
 
+  onQuantityKeyDown(event: KeyboardEvent): void {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      this.addLine();
+    }
+  }
+
   private reresolveAll(): void {
     const current = this.lines();
     if (current.length === 0) return;
@@ -370,7 +542,8 @@ export class SalesOrderCreateComponent {
         discountPercent: null,
         notes: null,
         priceSource: null,
-        priceOverridden: false
+        priceOverridden: false,
+        ...EMPTY_LINE_PROMOTION
       }
     ]);
 
@@ -397,28 +570,33 @@ export class SalesOrderCreateComponent {
     const line = this.lines()[index];
     if (!line) return;
 
-    this.resolving.set(true);
-    this.pricingService
-      .resolve(line.product.id, this.selectedClient?.id ?? null, line.quantity, this.orderDate)
+    this.linePricing
+      .resolveLinePrice({
+        productId: line.product.id,
+        clientId: this.selectedClient?.id ?? null,
+        quantity: line.quantity,
+        documentDate: this.orderDateModel,
+        priceOverridden: line.priceOverridden,
+        isOverrideCheck: () => this.lines()[index]?.priceOverridden === true
+      })
       .subscribe({
-        next: res => {
-          const resolved = res.data;
-          if (resolved) {
-            this.lines.update(list =>
-              list.map((l, i) =>
-                i === index && !l.priceOverridden
-                  ? { ...l, unitPrice: resolved.unitPriceHT, priceSource: resolved.source }
-                  : l
-              )
-            );
-          }
-          this.resolving.set(false);
+        next: resolved => {
+          if (!resolved) return;
+          this.lines.update(list =>
+            list.map((l, i) =>
+              i === index && !l.priceOverridden
+                ? {
+                    ...l,
+                    unitPrice: resolved.unitPriceHT,
+                    priceSource: resolved.source,
+                    ...mapResolvedPricePromotion(resolved)
+                  }
+                : l
+            )
+          );
         },
         error: err => {
-          // Repli sur le prix catalogue déjà en place : la saisie continue. Le serveur
-          // recalculera de toute façon à la création.
           this.errorHandler.logError('Price resolution failed', err);
-          this.resolving.set(false);
         }
       });
   }
@@ -430,12 +608,22 @@ export class SalesOrderCreateComponent {
   submit(): void {
     if (!this.canSubmit() || !this.selectedClient) return;
 
+    const orderDate = this.getOrderDateString();
+    const expectedDeliveryDate = this.getExpectedDeliveryDateString();
+
+    if (expectedDeliveryDate && expectedDeliveryDate < orderDate) {
+      this.toastService.add({
+        severity: 'warn',
+        summary: 'Date invalide',
+        detail: 'La date de livraison prévue ne peut pas être antérieure à la date de commande.'
+      });
+      return;
+    }
+
     const lines: CreateSalesOrderLineRequest[] = this.lines().map(l => ({
       productId: l.product.id,
       quantity: l.quantity,
-      // Le prix résolu est renvoyé tel quel : il est ainsi figé sur la commande, et l'écran
-      // ne peut pas diverger de ce que le serveur enregistre.
-      unitPrice: l.unitPrice,
+      unitPrice: l.priceOverridden ? l.unitPrice : 0,
       discountPercent: l.discountPercent,
       notes: l.notes
     }));
@@ -444,8 +632,8 @@ export class SalesOrderCreateComponent {
     this.salesOrderService
       .createSalesOrder({
         clientId: this.selectedClient.id,
-        orderDate: this.orderDate,
-        expectedDeliveryDate: this.expectedDeliveryDate || null,
+        orderDate,
+        expectedDeliveryDate,
         reference: this.reference || null,
         notes: this.notes || null,
         paymentTerms: this.paymentTerms || null,

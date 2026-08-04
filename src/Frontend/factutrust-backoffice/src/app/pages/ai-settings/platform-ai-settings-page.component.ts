@@ -33,7 +33,7 @@ interface InferenceDeviceOption {
  * Configuration du modèle IA global de la plateforme.
  *
  * Le modèle sélectionné est utilisé par l'Assistant IA de toutes les entreprises
- * (Ollama tourne sur le serveur partagé de la plateforme). Les utilisateurs des
+ * (le moteur IA InstaFact tourne sur le serveur partagé de la plateforme). Les utilisateurs des
  * entreprises ne peuvent pas le modifier.
  */
 @Component({
@@ -44,6 +44,8 @@ interface InferenceDeviceOption {
     FormsModule,
     ButtonModule,
     DropdownModule,
+    InputSwitchModule,
+    InputTextModule,
     SelectButtonModule,
     FtPageHeaderComponent,
     FtSkeletonComponent
@@ -51,7 +53,7 @@ interface InferenceDeviceOption {
   template: `
     <ft-page-header
       title="Configuration IA"
-      subtitle="Modèle de langage utilisé par l'Assistant IA de toutes les entreprises." />
+      subtitle="Modèles et credentials cloud (OpenRouter) partagés par toutes les entreprises." />
 
     @if (loading()) {
       <ft-skeleton kind="line" count="5" />
@@ -60,7 +62,7 @@ interface InferenceDeviceOption {
       <section class="card">
         <h3>Moteur d'inférence</h3>
         <p class="hint">
-          Choisit si Ollama utilise le GPU (accélération matérielle) ou le CPU uniquement pour
+          Choisit si le moteur IA InstaFact utilise le GPU (accélération matérielle) ou le CPU uniquement pour
           l'assistant, l'Assistant Studio, l'import de factures et le modèle vision.
         </p>
         <div class="field">
@@ -78,7 +80,7 @@ interface InferenceDeviceOption {
         </p>
         @if (!d.isOllamaAssistantConfigured) {
           <p class="warn">
-            Le modèle assistant configuré est cloud (OpenRouter) : ce réglage s'applique aux modèles Ollama locaux uniquement.
+            Le modèle assistant configuré est cloud (OpenRouter) : ce réglage s'applique aux modèles InstaFact IA locaux uniquement.
           </p>
         }
         @if (selectedInferenceDevice === 'CpuOnly' && isLargeAssistantModel()) {
@@ -88,7 +90,7 @@ interface InferenceDeviceOption {
         }
         @if (selectedInferenceDevice === 'CpuOnly') {
           <p class="hint device-hint">
-            Réglages serveur CPU (appsettings Ollama) : CpuFixedChatNumCtx, CpuFixedChatNumCtxCeiling, CpuNumBatch,
+            Réglages serveur CPU (configuration serveur) : CpuFixedChatNumCtx, CpuFixedChatNumCtxCeiling, CpuNumBatch,
             UseCompactChatPromptOnCpu. Redémarrer l'API après modification.
           </p>
         }
@@ -119,7 +121,7 @@ interface InferenceDeviceOption {
           </div>
         } @else {
           <p class="empty">
-            Aucun modèle détecté. Vérifiez qu'Ollama est démarré sur le serveur de la plateforme.
+            Aucun modèle détecté. Vérifiez que le moteur IA InstaFact est démarré sur le serveur de la plateforme.
           </p>
         }
       </section>
@@ -170,7 +172,7 @@ interface InferenceDeviceOption {
         <h3>Modèle IA — Import photos (vision)</h3>
         <p class="hint">
           Utilisé en secours lorsque l'OCR ne suffit pas (bons de livraison photographiés, manuscrit).
-          Configuré dans appsettings (<code>Ollama:InvoiceImportVisionModel</code>), ex. llava.
+          Configuré dans la configuration serveur (<code>InvoiceImportVisionModel</code>), ex. llava.
         </p>
         <p class="reco-model">
           @if (d.serverInvoiceImportVisionModel) {
@@ -206,9 +208,56 @@ interface InferenceDeviceOption {
         </section>
       }
 
+      <section class="card">
+        <h3>OpenRouter (cloud)</h3>
+        <p class="hint">
+          Clé API partagée pour les modèles cloud de l'assistant, WhatsApp et les imports.
+          Laisser la clé vide conserve la valeur déjà enregistrée.
+        </p>
+        <div class="field field-row">
+          <label for="or-enabled">Activer OpenRouter</label>
+          <p-inputSwitch inputId="or-enabled" [(ngModel)]="openRouterEnabled" />
+        </div>
+        <div class="field">
+          <label for="or-display">Nom affiché</label>
+          <input id="or-display" type="text" pInputText class="w-full" [(ngModel)]="openRouterDisplayName" />
+        </div>
+        <div class="field">
+          <label for="or-base">URL de base (optionnel)</label>
+          <input
+            id="or-base"
+            type="url"
+            pInputText
+            class="w-full"
+            [(ngModel)]="openRouterBaseUrl"
+            [placeholder]="openRouterDefaultBaseUrl" />
+          <small class="hint">Par défaut : {{ openRouterDefaultBaseUrl }}</small>
+        </div>
+        <div class="field">
+          <label for="or-key">Clé API</label>
+          <input
+            id="or-key"
+            type="password"
+            pInputText
+            class="w-full"
+            autocomplete="off"
+            [(ngModel)]="openRouterApiKey"
+            [placeholder]="openRouterKeyPlaceholder()" />
+          @if (openRouterApiKeyConfigured) {
+            <small class="hint">Clé configurée (se termine par …{{ openRouterApiKeyLast4 }})</small>
+          }
+        </div>
+        @if (needsOpenRouterKeyWarning()) {
+          <p class="warn">
+            Un modèle OpenRouter est sélectionné mais aucune clé API n'est configurée.
+            Les appels cloud échoueront jusqu'à saisie de la clé.
+          </p>
+        }
+      </section>
+
       <div class="footer-actions">
         <p-button
-          label="Enregistrer le modèle"
+          label="Enregistrer"
           icon="pi pi-check"
           severity="primary"
           [disabled]="!hasChanges() || busy()"
@@ -324,7 +373,7 @@ export class PlatformAiSettingsPageComponent implements OnInit {
     {
       label: 'GPU',
       value: 'Gpu',
-      description: 'Ollama utilise le GPU si disponible (comportement par défaut).'
+      description: 'Le moteur IA InstaFact utilise le GPU si disponible (comportement par défaut).'
     },
     {
       label: 'CPU uniquement',
@@ -340,7 +389,7 @@ export class PlatformAiSettingsPageComponent implements OnInit {
       return options;
     }
     for (const m of d.availableModels) {
-      const src = m.providerKey === 'openrouter' ? 'OpenRouter' : 'Ollama';
+      const src = m.providerKey === 'openrouter' ? 'OpenRouter' : 'InstaFact IA';
       options.push({ label: `${src} · ${m.displayLabel}`, value: m.modelRef });
     }
     // Modèle configuré mais plus installé : on l'ajoute pour ne pas perdre la valeur.
@@ -368,15 +417,7 @@ export class PlatformAiSettingsPageComponent implements OnInit {
     this.api.get().subscribe({
       next: (res) => {
         if (res.success && res.data) {
-          this.data.set(res.data);
-          this.selectedModelRef = res.data.configuredModelRef ?? '';
-          this.savedModelRef.set(this.selectedModelRef);
-          this.selectedImportModelRef = res.data.invoiceImportModelRef ?? '';
-          this.savedImportModelRef.set(this.selectedImportModelRef);
-          this.selectedStudioModelRef = res.data.studioAiModelRef ?? '';
-          this.savedStudioModelRef.set(this.selectedStudioModelRef);
-          this.selectedInferenceDevice = res.data.inferenceDevice ?? 'Gpu';
-          this.savedInferenceDevice.set(this.selectedInferenceDevice);
+          this.applyLoadedData(res.data);
         }
         this.loading.set(false);
       },
@@ -391,11 +432,56 @@ export class PlatformAiSettingsPageComponent implements OnInit {
     });
   }
 
+  private applyLoadedData(d: PlatformAiSettingsDto): void {
+    this.data.set(d);
+    this.selectedModelRef = d.configuredModelRef ?? '';
+    this.savedModelRef.set(this.selectedModelRef);
+    this.selectedImportModelRef = d.invoiceImportModelRef ?? '';
+    this.savedImportModelRef.set(this.selectedImportModelRef);
+    this.selectedStudioModelRef = d.studioAiModelRef ?? '';
+    this.savedStudioModelRef.set(this.selectedStudioModelRef);
+    this.selectedInferenceDevice = d.inferenceDevice ?? 'Gpu';
+    this.savedInferenceDevice.set(this.selectedInferenceDevice);
+
+    const or = d.openRouter;
+    this.openRouterEnabled = or?.isEnabled ?? false;
+    this.openRouterDisplayName = or?.displayName ?? '';
+    this.openRouterBaseUrl = or?.baseUrl ?? '';
+    this.openRouterDefaultBaseUrl = or?.defaultBaseUrl || 'https://openrouter.ai/api/v1';
+    this.openRouterApiKeyConfigured = or?.isApiKeyConfigured ?? false;
+    this.openRouterApiKeyLast4 = or?.apiKeyLast4 ?? null;
+    this.openRouterApiKey = '';
+    this.savedOpenRouterEnabled.set(this.openRouterEnabled);
+    this.savedOpenRouterDisplayName.set(this.openRouterDisplayName);
+    this.savedOpenRouterBaseUrl.set(this.openRouterBaseUrl);
+  }
+
   protected hasChanges(): boolean {
     return this.selectedModelRef !== this.savedModelRef()
       || this.selectedImportModelRef !== this.savedImportModelRef()
       || this.selectedStudioModelRef !== this.savedStudioModelRef()
-      || this.selectedInferenceDevice !== this.savedInferenceDevice();
+      || this.selectedInferenceDevice !== this.savedInferenceDevice()
+      || this.openRouterEnabled !== this.savedOpenRouterEnabled()
+      || this.openRouterDisplayName !== this.savedOpenRouterDisplayName()
+      || this.openRouterBaseUrl !== this.savedOpenRouterBaseUrl()
+      || !!this.openRouterApiKey.trim();
+  }
+
+  protected openRouterKeyPlaceholder(): string {
+    return this.openRouterApiKeyConfigured
+      ? `••••••••${this.openRouterApiKeyLast4 ?? ''}`
+      : 'sk-or-…';
+  }
+
+  protected needsOpenRouterKeyWarning(): boolean {
+    const refs = [
+      this.selectedModelRef,
+      this.selectedImportModelRef,
+      this.selectedStudioModelRef
+    ];
+    const usesCloud = refs.some(r => r.toLowerCase().startsWith('openrouter:'));
+    const hasKey = this.openRouterApiKeyConfigured || !!this.openRouterApiKey.trim();
+    return usesCloud && (!this.openRouterEnabled || !hasKey);
   }
 
   protected inferenceDeviceHint(): string {
@@ -422,36 +508,38 @@ export class PlatformAiSettingsPageComponent implements OnInit {
     const modelRef = this.selectedModelRef ? this.selectedModelRef : null;
     const invoiceImportModelRef = this.selectedImportModelRef ? this.selectedImportModelRef : null;
     const studioAiModelRef = this.selectedStudioModelRef ? this.selectedStudioModelRef : null;
+    const apiKey = this.openRouterApiKey.trim();
     this.api.update({
       modelRef,
       invoiceImportModelRef,
       studioAiModelRef,
-      inferenceDevice: this.selectedInferenceDevice
+      inferenceDevice: this.selectedInferenceDevice,
+      openRouter: {
+        isEnabled: this.openRouterEnabled,
+        displayName: this.openRouterDisplayName.trim() || null,
+        baseUrl: this.openRouterBaseUrl.trim() || null,
+        apiKey: apiKey || null
+      }
     }).subscribe({
       next: (res) => {
         if (res.success && res.data) {
-          this.data.set(res.data);
-          this.selectedModelRef = res.data.configuredModelRef ?? '';
-          this.savedModelRef.set(this.selectedModelRef);
-          this.selectedImportModelRef = res.data.invoiceImportModelRef ?? '';
-          this.savedImportModelRef.set(this.selectedImportModelRef);
-          this.selectedStudioModelRef = res.data.studioAiModelRef ?? '';
-          this.savedStudioModelRef.set(this.selectedStudioModelRef);
-          this.selectedInferenceDevice = res.data.inferenceDevice ?? 'Gpu';
-          this.savedInferenceDevice.set(this.selectedInferenceDevice);
+          this.applyLoadedData(res.data);
           this.toast.add({
             severity: 'success',
             summary: 'Configuration IA enregistrée',
-            detail: 'Le modèle sera rechargé avec le nouveau moteur d\'inférence au prochain message.'
+            detail: 'Les modèles et credentials OpenRouter sont à jour.'
           });
         } else {
           this.toast.add({ severity: 'error', summary: 'Erreur', detail: res.message ?? '' });
         }
         this.busy.set(false);
       },
-      error: () => {
+      error: (err) => {
         this.busy.set(false);
-        this.toast.add({ severity: 'error', summary: 'Erreur', detail: 'Enregistrement impossible.' });
+        const detail = err?.error?.message
+          || err?.error?.errors?.[0]
+          || 'Enregistrement impossible.';
+        this.toast.add({ severity: 'error', summary: 'Erreur', detail });
       }
     });
   }

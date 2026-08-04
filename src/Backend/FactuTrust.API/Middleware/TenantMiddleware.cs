@@ -130,6 +130,16 @@ public sealed class TenantMiddleware
         
         if (string.IsNullOrEmpty(connectionString))
         {
+            var tenantKind = context.User.FindFirst(AuthClaimTypes.TenantKind)?.Value;
+            if (AccountingFirmMasterOnlyRoutes.IsMatch(path, tenantKind))
+            {
+                _logger.LogDebug(
+                    "Skipping tenant DB resolution for accounting firm master-only route {Path}",
+                    path);
+                await _next(context);
+                return;
+            }
+
             _logger.LogError("Connection string not found for tenant {TenantId}", tenantId);
             context.Response.StatusCode = StatusCodes.Status500InternalServerError;
             context.Response.ContentType = "application/json; charset=utf-8";

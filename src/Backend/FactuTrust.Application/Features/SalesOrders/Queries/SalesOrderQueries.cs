@@ -120,6 +120,8 @@ public sealed class GetSalesOrderByIdQueryHandler
         UnitPrice = l.UnitPrice.Amount,
         VatRatePercent = (int)l.VatRate,
         DiscountPercent = l.DiscountPercent,
+        AppliedPromotionId = l.AppliedPromotionId,
+        AppliedPromotionName = l.AppliedPromotionName,
         DiscountAmount = l.DiscountAmount.Amount,
         IsFodecApplicable = l.IsFodecApplicable,
         FodecRatePercent = l.FodecRatePercent,

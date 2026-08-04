@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, OnDestroy, computed, inject, signal, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterModule } from '@angular/router';
@@ -20,6 +20,7 @@ import { AuthService, RegisterAccountingFirmRequest } from '@core/services/auth.
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { ErrorMessageService } from '@core/services/error-message.service';
+import { timeout, TimeoutError, catchError, throwError } from 'rxjs';
 import { LogoComponent } from '@shared/components/logo/logo.component';
 import { TunisianValidators } from '@shared/validation/tunisian-validators';
 import { MAX_LENGTHS } from '@shared/validation/validation-rules';
@@ -90,8 +91,10 @@ import {
   templateUrl: './register-firm.component.html',
   styleUrl: './register-firm.component.scss'
 })
-export class RegisterFirmComponent implements OnInit {
+export class RegisterFirmComponent implements OnInit, OnDestroy {
   readonly environment = environment;
+
+  private static readonly REGISTRATION_TIMEOUT_MS = 120_000;
 
   private readonly fb = inject(FormBuilder);
   private readonly auth = inject(AuthService);
@@ -100,9 +103,13 @@ export class RegisterFirmComponent implements OnInit {
   readonly errorMessageService = inject(ErrorMessageService);
 
   readonly loading = signal(false);
+  readonly loadingMessage = signal('Création de votre espace cabinet...');
   readonly error = signal<string | null>(null);
   readonly currentStep = signal(0);
   readonly showOptionalProfile = signal(false);
+
+  private loadingMessageTimer: ReturnType<typeof setInterval> | null = null;
+  private loadingStartedAt = 0;
 
   readonly registrationFormAriaLabel = computed(() => {
     const stepNames = ['Compte', 'Cabinet', 'Adresse & visibilité'];
@@ -150,6 +157,18 @@ export class RegisterFirmComponent implements OnInit {
     this.form.get('password')?.valueChanges.subscribe(() => {
       this.form.get('confirmPassword')?.updateValueAndValidity();
     });
+  }
+
+  ngOnDestroy(): void {
+    this.clearLoadingMessageTimer();
+  }
+
+  @HostListener('window:beforeunload', ['$event'])
+  onBeforeUnload(event: BeforeUnloadEvent): void {
+    if (this.loading()) {
+      event.preventDefault();
+      event.returnValue = '';
+    }
   }
 
   passwordMismatch(): boolean {
@@ -266,6 +285,9 @@ export class RegisterFirmComponent implements OnInit {
 
     this.loading.set(true);
     this.error.set(null);
+    this.loadingMessage.set('Création de votre espace cabinet...');
+    this.loadingStartedAt = Date.now();
+    this.startLoadingMessageTimer();
 
     const nifControl = this.form.get('nif');
     const rawNif = nifControl?.value ?? '';
@@ -308,9 +330,20 @@ export class RegisterFirmComponent implements OnInit {
       isPublicInDirectory: formValue.isPublicInDirectory ?? true
     };
 
-    this.auth.registerFirm(payload).subscribe({
+    this.auth.registerFirm(payload).pipe(
+      timeout(RegisterFirmComponent.REGISTRATION_TIMEOUT_MS),
+      catchError(err => {
+        if (err instanceof TimeoutError) {
+          return throwError(() => ({
+            status: 0,
+            message: 'La création du cabinet prend plus de temps que prévu. Veuillez patienter ou réessayer dans quelques instants.'
+          }));
+        }
+        return throwError(() => err);
+      })
+    ).subscribe({
       next: response => {
-        this.loading.set(false);
+        this.stopLoading();
         if (response.success) {
           this.warehouseContext.navigateAfterSuccessfulAuth('/firm/dashboard');
         } else {
@@ -321,20 +354,49 @@ export class RegisterFirmComponent implements OnInit {
           this.errorHandler.logError('Firm registration failed (success: false)', { response });
         }
       },
-      error: (err: HttpErrorResponse) => {
-        let errorMessage = this.errorHandler.extractErrorMessage(err);
+      error: (err: HttpErrorResponse | { status?: number; message?: string }) => {
+        let errorMessage = 'message' in err && err.message
+          ? err.message
+          : this.errorHandler.extractErrorMessage(err as HttpErrorResponse);
         if (!errorMessage || errorMessage === 'undefined' || errorMessage.trim() === '') {
-          if (!err?.status) {
+          const status = 'status' in err ? err.status : (err as HttpErrorResponse)?.status;
+          if (!status) {
             errorMessage = 'Impossible de se connecter au serveur. Vérifiez que le backend est démarré.';
           } else {
-            errorMessage = `Une erreur est survenue lors de l'inscription (${err.status}). Veuillez réessayer.`;
+            errorMessage = `Une erreur est survenue lors de l'inscription (${status}). Veuillez réessayer.`;
           }
         }
         this.error.set(errorMessage);
         this.errorHandler.logError('Firm registration HTTP error', err);
-        this.loading.set(false);
+        this.stopLoading();
       }
     });
+  }
+
+  private startLoadingMessageTimer(): void {
+    this.clearLoadingMessageTimer();
+    this.loadingMessageTimer = setInterval(() => {
+      const elapsed = Date.now() - this.loadingStartedAt;
+      if (elapsed < 5_000) {
+        this.loadingMessage.set('Création de votre espace cabinet...');
+      } else if (elapsed < 30_000) {
+        this.loadingMessage.set('Configuration de la base de données, cela peut prendre une minute...');
+      } else {
+        this.loadingMessage.set('Finalisation en cours, merci de patienter...');
+      }
+    }, 1_000);
+  }
+
+  private clearLoadingMessageTimer(): void {
+    if (this.loadingMessageTimer !== null) {
+      clearInterval(this.loadingMessageTimer);
+      this.loadingMessageTimer = null;
+    }
+  }
+
+  private stopLoading(): void {
+    this.clearLoadingMessageTimer();
+    this.loading.set(false);
   }
 
   private markCurrentStepTouched(): void {

@@ -5,6 +5,7 @@
   Input,
   OnDestroy,
   OnInit,
+  Renderer2,
   ViewChild,
   effect,
   inject,
@@ -15,6 +16,45 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { GlobalSearchResult, GlobalSearchService } from '../../services/global-search.service';
+
+export interface GlobalSearchDropdownPosition {
+  top: number;
+  left: number;
+  width: number;
+  maxHeight: number;
+}
+
+/** Pure positioning helper — unit-testable without DOM portal. */
+export function computeGlobalSearchDropdownPosition(
+  inputRect: Pick<DOMRect, 'left' | 'bottom' | 'width'>,
+  options: {
+    secondaryNavRect?: Pick<DOMRect, 'bottom' | 'height'> | null;
+    viewportWidth?: number;
+    viewportHeight?: number;
+    gap?: number;
+    viewportPad?: number;
+    maxHeightCap?: number;
+    secondaryNavMinWidth?: number;
+  } = {}
+): GlobalSearchDropdownPosition {
+  const gap = options.gap ?? 8;
+  const viewportPad = options.viewportPad ?? 8;
+  const maxHeightCap = options.maxHeightCap ?? 420;
+  const secondaryNavMinWidth = options.secondaryNavMinWidth ?? 992;
+  const viewportWidth = options.viewportWidth ?? (typeof window !== 'undefined' ? window.innerWidth : 1280);
+  const viewportHeight = options.viewportHeight ?? (typeof window !== 'undefined' ? window.innerHeight : 800);
+
+  const navRect = options.secondaryNavRect;
+  const navVisible =
+    !!navRect && navRect.height > 0 && viewportWidth >= secondaryNavMinWidth;
+
+  const top = navVisible ? navRect!.bottom + gap : inputRect.bottom + gap;
+  const maxHeight = Math.max(120, Math.min(maxHeightCap, viewportHeight - top - viewportPad));
+  const left = Math.max(viewportPad, inputRect.left);
+  const width = Math.min(inputRect.width, viewportWidth - left - viewportPad);
+
+  return { top, left, width, maxHeight };
+}
 
 @Component({
   selector: 'app-global-search',
@@ -43,13 +83,21 @@ import { GlobalSearchResult, GlobalSearchService } from '../../services/global-s
             <kbd class="global-search__hint" aria-hidden="true">Ctrl+K</kbd>
           }
         </div>
-
-        @if (dropdownOpen() && mode === 'header' && !paletteOpen()) {
-          <div class="global-search__dropdown" role="listbox">
-            <ng-container *ngTemplateOutlet="resultsTemplate"></ng-container>
-          </div>
-        }
       </div>
+
+      @if (dropdownOpen() && mode === 'header' && !paletteOpen()) {
+        <div
+          #dropdownPanel
+          class="global-search__dropdown"
+          role="listbox"
+          [class.global-search__dropdown--ready]="dropdownReady()"
+          [style.top.px]="dropdownPos().top"
+          [style.left.px]="dropdownPos().left"
+          [style.width.px]="dropdownPos().width"
+          [style.max-height.px]="dropdownPos().maxHeight">
+          <ng-container *ngTemplateOutlet="resultsTemplate"></ng-container>
+        </div>
+      }
 
       @if (paletteOpen()) {
         <div class="global-search__backdrop" (click)="closeAll()" aria-hidden="true"></div>
@@ -155,11 +203,16 @@ import { GlobalSearchResult, GlobalSearchService } from '../../services/global-s
       color: var(--topbar-fg-muted, rgba(255, 255, 255, 0.75));
       background: transparent;
     }
+    /* Body-portaled: fixed under secondary-nav / input; styles stay encapsulated via _ngcontent attrs. */
     .global-search__dropdown {
-      position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 1200;
+      position: fixed;
+      z-index: var(--z-global-search-dropdown, 1050);
       background: #fff; border: 1px solid var(--color-border-subtle, #e2e8f0); border-radius: 12px;
-      box-shadow: 0 16px 40px rgba(15,23,42,0.12); max-height: 420px; overflow: auto; padding: 8px;
+      box-shadow: 0 16px 40px rgba(15,23,42,0.12); overflow: auto; padding: 8px;
+      box-sizing: border-box;
+      visibility: hidden;
     }
+    .global-search__dropdown--ready { visibility: visible; }
     .global-search__backdrop { position: fixed; inset: 0; background: rgba(15,23,42,0.45); z-index: 1300; }
     .global-search__palette {
       position: fixed; inset: 0; z-index: 1310; display: flex; align-items: flex-start; justify-content: center; padding: 10vh 16px;
@@ -198,22 +251,61 @@ export class GlobalSearchComponent implements OnInit, OnDestroy {
   @ViewChild('paletteInput') paletteInput?: ElementRef<HTMLInputElement>;
   @ViewChild('inputWrap') inputWrap?: ElementRef<HTMLElement>;
 
+  @ViewChild('dropdownPanel')
+  set dropdownPanel(ref: ElementRef<HTMLElement> | undefined) {
+    if (ref?.nativeElement) {
+      this.attachDropdownToBody(ref.nativeElement);
+      requestAnimationFrame(() => this.repositionDropdown());
+    } else {
+      this.dropdownEl = null;
+      this.teardownResizeObserver();
+    }
+  }
+
   readonly searchService = inject(GlobalSearchService);
   private readonly router = inject(Router);
+  private readonly renderer = inject(Renderer2);
   private sub?: Subscription;
+  private dropdownEl: HTMLElement | null = null;
+  private resizeObserver?: ResizeObserver;
+  private repositionRaf = 0;
+  private readonly onScrollCapture = (event: Event): void => {
+    const target = event.target;
+    if (target instanceof Node && this.dropdownEl?.contains(target)) {
+      return; // Ignore scrolling inside the results panel itself.
+    }
+    this.scheduleReposition();
+  };
 
   query = '';
   readonly dropdownOpen = signal(false);
   readonly loading = signal(false);
   readonly displayResults = signal<GlobalSearchResult[]>([]);
   readonly activeId = signal<string | null>(null);
+  readonly dropdownPos = signal<GlobalSearchDropdownPosition>({
+    top: 0,
+    left: 0,
+    width: 0,
+    maxHeight: 420
+  });
+  readonly dropdownReady = signal(false);
 
   paletteOpen = this.searchService.paletteOpen;
 
   constructor() {
     effect(() => {
       if (this.searchService.paletteOpen()) {
+        this.dropdownOpen.set(false);
+        this.dropdownReady.set(false);
         queueMicrotask(() => this.paletteInput?.nativeElement?.focus());
+      }
+    });
+
+    effect(() => {
+      if (this.dropdownOpen() && this.mode === 'header' && !this.paletteOpen()) {
+        queueMicrotask(() => this.ensureResizeObserver());
+      } else {
+        this.teardownResizeObserver();
       }
     });
   }
@@ -224,10 +316,18 @@ export class GlobalSearchComponent implements OnInit, OnDestroy {
       this.displayResults.set(this.searchService.searchAll(this.query, docs));
       this.ensureActiveSelection();
     });
+    // Capture phase: shell scrolls inside .midde_cont (does not bubble to window).
+    document.addEventListener('scroll', this.onScrollCapture, true);
   }
 
   ngOnDestroy(): void {
     this.sub?.unsubscribe();
+    document.removeEventListener('scroll', this.onScrollCapture, true);
+    this.teardownResizeObserver();
+    this.detachDropdownFromBody();
+    if (this.repositionRaf) {
+      cancelAnimationFrame(this.repositionRaf);
+    }
   }
 
   @HostListener('document:click', ['$event'])
@@ -235,7 +335,14 @@ export class GlobalSearchComponent implements OnInit, OnDestroy {
     if (!this.dropdownOpen() || this.paletteOpen()) return;
     const target = event.target as Node;
     if (this.inputWrap?.nativeElement.contains(target)) return;
+    if (this.dropdownEl?.contains(target)) return;
     this.dropdownOpen.set(false);
+    this.dropdownReady.set(false);
+  }
+
+  @HostListener('window:resize')
+  onWindowResize(): void {
+    this.scheduleReposition();
   }
 
   @HostListener('document:keydown', ['$event'])
@@ -246,6 +353,7 @@ export class GlobalSearchComponent implements OnInit, OnDestroy {
       event.preventDefault();
       this.searchService.openPalette();
       this.dropdownOpen.set(false);
+      this.dropdownReady.set(false);
       queueMicrotask(() => this.paletteInput?.nativeElement?.focus());
     }
     if (event.key === 'Escape') {
@@ -257,6 +365,7 @@ export class GlobalSearchComponent implements OnInit, OnDestroy {
     if (this.mode === 'header') {
       this.dropdownOpen.set(true);
       this.refreshResults();
+      requestAnimationFrame(() => this.repositionDropdown());
     }
   }
 
@@ -311,7 +420,70 @@ export class GlobalSearchComponent implements OnInit, OnDestroy {
 
   closeAll(): void {
     this.dropdownOpen.set(false);
+    this.dropdownReady.set(false);
     this.searchService.closePalette();
+  }
+
+  /** Exposed for unit tests. */
+  repositionDropdown(): void {
+    if (!this.dropdownOpen() || this.mode !== 'header' || this.paletteOpen()) {
+      this.dropdownReady.set(false);
+      return;
+    }
+    const wrap = this.inputWrap?.nativeElement;
+    if (!wrap) return;
+
+    const inputRect = wrap.getBoundingClientRect();
+    const secondaryNav = document.querySelector('app-secondary-nav .secondary-nav') as HTMLElement | null;
+    const secondaryNavRect = secondaryNav?.getBoundingClientRect() ?? null;
+
+    this.dropdownPos.set(
+      computeGlobalSearchDropdownPosition(inputRect, {
+        secondaryNavRect,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight
+      })
+    );
+    this.dropdownReady.set(true);
+  }
+
+  private attachDropdownToBody(el: HTMLElement): void {
+    this.dropdownEl = el;
+    if (el.parentElement !== document.body) {
+      this.renderer.appendChild(document.body, el);
+    }
+  }
+
+  private detachDropdownFromBody(): void {
+    if (this.dropdownEl?.parentElement === document.body) {
+      this.renderer.removeChild(document.body, this.dropdownEl);
+    }
+    this.dropdownEl = null;
+  }
+
+  private scheduleReposition(): void {
+    if (!this.dropdownOpen()) return;
+    if (this.repositionRaf) cancelAnimationFrame(this.repositionRaf);
+    this.repositionRaf = requestAnimationFrame(() => {
+      this.repositionRaf = 0;
+      this.repositionDropdown();
+    });
+  }
+
+  private ensureResizeObserver(): void {
+    if (typeof ResizeObserver === 'undefined') return;
+    const wrap = this.inputWrap?.nativeElement;
+    if (!wrap) return;
+    if (!this.resizeObserver) {
+      this.resizeObserver = new ResizeObserver(() => this.scheduleReposition());
+    }
+    this.resizeObserver.disconnect();
+    this.resizeObserver.observe(wrap);
+  }
+
+  private teardownResizeObserver(): void {
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = undefined;
   }
 
   private refreshResults(): void {

@@ -34,7 +34,7 @@ public sealed class GetPurchasesVatReportQueryHandler
         var from = request.FromDate.Date;
         var to = request.ToDate.Date;
         var (invoices, _) = await _invoiceRepository.SearchAsync(
-            null, null, null, from, to, 1, 10_000, false, cancellationToken);
+            null, null, null, null, null, from, to, 1, 10_000, false, cancellationToken);
 
         var byRate = new Dictionary<int, (decimal TotalVat, decimal TotalTaxable, string Currency)>();
 

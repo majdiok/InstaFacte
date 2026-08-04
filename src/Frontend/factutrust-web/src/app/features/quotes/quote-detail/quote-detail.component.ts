@@ -16,6 +16,8 @@ import { InputTextarea } from 'primeng/inputtextarea';
 import { ToastModule } from 'primeng/toast';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { ToastService } from '@core/services/toast.service';
+import { AuthService } from '@core/services/auth.service';
+import { PERMISSIONS } from '@core/config/permission-keys';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -84,6 +86,15 @@ interface TimelineEvent {
             iconPos="left"
             (click)="confirmConvertToInvoice()">
             Créer la facture finale
+          </app-button>
+        }
+        @if (canConvertToOrder()) {
+          <app-button
+            variant="primary"
+            icon="pi-shopping-cart"
+            iconPos="left"
+            (click)="confirmConvertToSalesOrder()">
+            Transformer en commande
           </app-button>
         }
       }
@@ -304,8 +315,18 @@ interface TimelineEvent {
                   icon="pi-file"
                   iconPos="left"
                   [routerLink]="['/invoices', convertedInvoiceId()!]"
-                  style="width: 100%;">
+                  style="width: 100%; margin-bottom: var(--spacing-2);">
                   Voir la facture
+                </app-button>
+              }
+              @if (convertedSalesOrderId()) {
+                <app-button
+                  variant="outline"
+                  icon="pi-shopping-cart"
+                  iconPos="left"
+                  [routerLink]="['/sales-orders', convertedSalesOrderId()!]"
+                  style="width: 100%;">
+                  Voir la commande
                 </app-button>
               }
               @if (canCancel()) {
@@ -674,6 +695,10 @@ export class QuoteDetailComponent implements OnInit {
     return this.quote()?.convertedInvoiceId ?? null;
   });
 
+  convertedSalesOrderId = computed<string | null>(() => {
+    return this.quote()?.convertedSalesOrderId ?? null;
+  });
+
   ngOnInit(): void {
     const id = this.route.snapshot.paramMap.get('id');
     if (id) this.loadQuote(id);
@@ -718,10 +743,10 @@ export class QuoteDetailComponent implements OnInit {
             : 'var(--color-neutral-300)',
       },
       {
-        status: 'Facture créée',
+        status: q.convertedSalesOrderId ? 'Commande créée' : 'Facture créée',
         date: q.convertedAt ?? null,
-        icon: 'pi pi-file-export',
-        color: q.convertedInvoiceId ? 'var(--color-primary-500)' : 'var(--color-neutral-300)',
+        icon: q.convertedSalesOrderId ? 'pi pi-shopping-cart' : 'pi pi-file-export',
+        color: q.convertedInvoiceId || q.convertedSalesOrderId ? 'var(--color-primary-500)' : 'var(--color-neutral-300)',
       },
     ];
   }
@@ -781,7 +806,11 @@ export class QuoteDetailComponent implements OnInit {
   }
 
   canConvert(): boolean {
-    return this.quote()?.status === 'Accepted' && !this.quote()?.convertedInvoiceId;
+    return this.quote()?.status === 'Accepted' && !this.quote()?.convertedInvoiceId && !this.quote()?.convertedSalesOrderId;
+  }
+
+  canConvertToOrder(): boolean {
+    return this.quote()?.status === 'Accepted' && !this.quote()?.convertedInvoiceId && !this.quote()?.convertedSalesOrderId;
   }
 
   confirmConvertToInvoice(): void {
@@ -794,6 +823,19 @@ export class QuoteDetailComponent implements OnInit {
       rejectLabel: 'Annuler',
       acceptButtonStyleClass: 'p-button-success',
       accept: () => this.convertToInvoice(),
+    });
+  }
+
+  confirmConvertToSalesOrder(): void {
+    this.confirmationService.confirm({
+      header: 'Transformer en commande',
+      message:
+        'Une commande client sera créée à partir de ce devis. Le devis sera ensuite verrouillé et ne pourra plus être converti. Souhaitez-vous continuer ?',
+      icon: 'pi pi-shopping-cart',
+      acceptLabel: 'Créer la commande',
+      rejectLabel: 'Annuler',
+      acceptButtonStyleClass: 'p-button-success',
+      accept: () => this.convertToSalesOrder(),
     });
   }
 
@@ -823,6 +865,37 @@ export class QuoteDetailComponent implements OnInit {
           severity: 'error',
           summary: 'Erreur',
           detail: 'Impossible de créer la facture à partir du devis.',
+        });
+      },
+    });
+  }
+
+  convertToSalesOrder(): void {
+    const q = this.quote();
+    if (!q) return;
+    this.quoteService.convertToSalesOrder(q.id).subscribe({
+      next: (res) => {
+        if (res.success && res.data) {
+          this.toastService.add({
+            severity: 'success',
+            summary: 'Commande créée',
+            detail: 'La commande a été générée. Redirection...',
+            life: 3000,
+          });
+          this.router.navigate(['/sales-orders', res.data]);
+        } else if (!res.success) {
+          this.toastService.add({
+            severity: 'error',
+            summary: 'Erreur',
+            detail: res.message || 'Impossible de créer la commande à partir du devis.',
+          });
+        }
+      },
+      error: () => {
+        this.toastService.add({
+          severity: 'error',
+          summary: 'Erreur',
+          detail: 'Impossible de créer la commande à partir du devis.',
         });
       },
     });

@@ -1,0 +1,1089 @@
+import {
+
+  Component,
+
+  EventEmitter,
+
+  Input,
+
+  OnChanges,
+
+  OnInit,
+
+  Output,
+
+  SimpleChanges,
+
+  inject,
+
+  signal
+
+} from '@angular/core';
+
+import { CommonModule } from '@angular/common';
+
+import { FormsModule } from '@angular/forms';
+
+import { DialogModule } from 'primeng/dialog';
+
+import { InputTextModule } from 'primeng/inputtext';
+
+import { InputNumberModule } from 'primeng/inputnumber';
+
+import { InputSwitchModule } from 'primeng/inputswitch';
+
+import { DropdownModule } from 'primeng/dropdown';
+
+import { AutoCompleteModule } from 'primeng/autocomplete';
+
+import { FormSectionComponent } from '@shared/components/form-section/form-section.component';
+
+import { ButtonComponent } from '@shared/components/button/button.component';
+
+import {
+
+  Promotion,
+
+  PromotionDiscountType,
+
+  CreatePromotionRequest,
+
+  UpdatePromotionRequest
+
+} from '@core/services/pricing.service';
+
+import { ProductService } from '@core/services/product.service';
+
+import { ClientService } from '@core/services/client.service';
+
+import { ProductCategoryService } from '@core/services/product-category.service';
+
+import { buildScopePreview } from './promotions.utils';
+
+
+
+interface DiscountTypeOption {
+
+  label: string;
+
+  value: PromotionDiscountType;
+
+}
+
+
+
+interface ProductOption {
+
+  id: string;
+
+  label: string;
+
+}
+
+
+
+interface ClientOption {
+
+  id: string;
+
+  label: string;
+
+}
+
+
+
+export interface PromotionFormValue {
+
+  name: string;
+
+  startsOn: string;
+
+  endsOn: string;
+
+  discountType: PromotionDiscountType;
+
+  discountPercent: number | null;
+
+  discountAmount: number | null;
+
+  minQuantity: number;
+
+  priority: number;
+
+  isActive: boolean;
+
+  productId: string | null;
+
+  productCategoryId: string | null;
+
+  clientId: string | null;
+
+}
+
+
+
+@Component({
+
+  selector: 'app-promotion-form-dialog',
+
+  standalone: true,
+
+  imports: [
+
+    CommonModule,
+
+    FormsModule,
+
+    DialogModule,
+
+    InputTextModule,
+
+    InputNumberModule,
+
+    InputSwitchModule,
+
+    DropdownModule,
+
+    AutoCompleteModule,
+
+    FormSectionComponent,
+
+    ButtonComponent
+
+  ],
+
+  template: `
+
+    <p-dialog
+
+      [header]="editing ? 'Modifier la promotion' : 'Nouvelle promotion'"
+
+      [(visible)]="visible"
+
+      (visibleChange)="visibleChange.emit($event)"
+
+      [modal]="true"
+
+      styleClass="promotion-form-dialog"
+
+      [style]="{ width: '48rem', maxWidth: '95vw' }"
+
+      [contentStyle]="{ 'max-height': '70vh', 'overflow-y': 'auto' }"
+
+      [breakpoints]="{ '960px': '95vw' }"
+
+      [draggable]="false">
+
+      <p class="ft-dialog-intro">
+
+        Remise temporaire appliquée après le prix catalogue ou la grille. Les documents déjà émis
+
+        conservent leur remise.
+
+      </p>
+
+
+
+      <app-form-section title="Général" icon="pi-file-edit" variant="compact">
+
+        <div class="ft-field ft-field--full">
+
+          <label for="pr-name">Nom <span class="ft-required">*</span></label>
+
+          <input id="pr-name" pInputText [(ngModel)]="form.name" maxlength="100" [disabled]="saving" />
+
+        </div>
+
+        <div class="ft-form-grid">
+
+          <div class="ft-field">
+
+            <label for="pr-start">Début <span class="ft-required">*</span></label>
+
+            <input id="pr-start" type="date" pInputText [(ngModel)]="form.startsOn" [disabled]="saving" />
+
+          </div>
+
+          <div class="ft-field">
+
+            <label for="pr-end">Fin <span class="ft-required">*</span></label>
+
+            <input id="pr-end" type="date" pInputText [(ngModel)]="form.endsOn" [disabled]="saving" />
+
+          </div>
+
+        </div>
+
+        @if (dateRangeInvalid()) {
+
+          <p class="ft-field-error">La fin ne peut pas précéder le début.</p>
+
+        }
+
+      </app-form-section>
+
+
+
+      <app-form-section title="Portée" icon="pi-filter" variant="compact">
+
+        <div class="ft-form-grid">
+
+          <div class="ft-field">
+
+            <label for="pr-product">Produit (optionnel)</label>
+
+            <p-autoComplete
+
+              inputId="pr-product"
+
+              [(ngModel)]="selectedProduct"
+
+              [suggestions]="productSuggestions()"
+
+              (completeMethod)="searchProducts($event)"
+
+              (ngModelChange)="onProductChange($event)"
+
+              field="label"
+
+              [forceSelection]="true"
+
+              [dropdown]="true"
+
+              [placeholder]="loadingProductLabel() ? 'Chargement…' : 'Tous les produits si vide'"
+
+              appendTo="body"
+
+              [disabled]="saving || !!selectedCategoryId || loadingProductLabel()"></p-autoComplete>
+
+            <small class="ft-hint">Laisser vide pour tous les produits</small>
+
+            @if (selectedCategoryId) {
+
+              <small class="ft-hint">Désactivé : une catégorie est sélectionnée</small>
+
+            }
+
+          </div>
+
+          <div class="ft-field">
+
+            <label for="pr-category">Catégorie (optionnel)</label>
+
+            <p-dropdown
+
+              inputId="pr-category"
+
+              [options]="categoryOptions()"
+
+              [(ngModel)]="selectedCategoryId"
+
+              (ngModelChange)="onCategoryChange($event)"
+
+              optionLabel="label"
+
+              optionValue="value"
+
+              [showClear]="true"
+
+              placeholder="Toutes les catégories si vide"
+
+              appendTo="body"
+
+              [disabled]="saving || !!selectedProduct"></p-dropdown>
+
+            <small class="ft-hint">Laisser vide pour toutes les catégories</small>
+
+            @if (selectedProduct) {
+
+              <small class="ft-hint">Désactivé : un produit est sélectionné</small>
+
+            }
+
+          </div>
+
+          <div class="ft-field ft-field--full">
+
+            <label for="pr-client">Client (optionnel)</label>
+
+            <p-autoComplete
+
+              inputId="pr-client"
+
+              [(ngModel)]="selectedClient"
+
+              [suggestions]="clientSuggestions()"
+
+              (completeMethod)="searchClients($event)"
+
+              (ngModelChange)="onClientChange($event)"
+
+              field="label"
+
+              [forceSelection]="true"
+
+              [dropdown]="true"
+
+              [placeholder]="loadingClientLabel() ? 'Chargement…' : 'Tous les clients si vide'"
+
+              appendTo="body"
+
+              [disabled]="saving || loadingClientLabel()"></p-autoComplete>
+
+            <small class="ft-hint">Laisser vide pour tous les clients</small>
+
+          </div>
+
+        </div>
+
+        <div class="scope-preview" role="status" aria-live="polite">
+
+          <i class="pi pi-info-circle scope-preview__icon" aria-hidden="true"></i>
+
+          <span>{{ scopePreview() }}</span>
+
+        </div>
+
+      </app-form-section>
+
+
+
+      <app-form-section title="Remise" icon="pi-percentage" variant="compact">
+
+        <div class="ft-form-grid">
+
+          <div class="ft-field">
+
+            <label for="pr-type">Forme de la remise</label>
+
+            <p-dropdown
+
+              inputId="pr-type"
+
+              [options]="discountTypes"
+
+              [(ngModel)]="form.discountType"
+
+              optionLabel="label"
+
+              optionValue="value"
+
+              appendTo="body"
+
+              [disabled]="saving"></p-dropdown>
+
+          </div>
+
+          <div class="ft-field">
+
+            @if (form.discountType === 'Percentage') {
+
+              <label for="pr-pct">Taux (%) <span class="ft-required">*</span></label>
+
+              <p-inputNumber
+
+                inputId="pr-pct"
+
+                [(ngModel)]="form.discountPercent"
+
+                mode="decimal"
+
+                [minFractionDigits]="0"
+
+                [maxFractionDigits]="2"
+
+                [min]="0"
+
+                [max]="100"
+
+                [disabled]="saving"></p-inputNumber>
+
+            } @else {
+
+              <label for="pr-amt">Montant par unité <span class="ft-required">*</span></label>
+
+              <p-inputNumber
+
+                inputId="pr-amt"
+
+                [(ngModel)]="form.discountAmount"
+
+                mode="decimal"
+
+                [minFractionDigits]="3"
+
+                [maxFractionDigits]="3"
+
+                [min]="0"
+
+                [disabled]="saving"></p-inputNumber>
+
+            }
+
+          </div>
+
+          <div class="ft-field">
+
+            <label for="pr-minqty">Quantité minimale</label>
+
+            <p-inputNumber
+
+              inputId="pr-minqty"
+
+              [(ngModel)]="form.minQuantity"
+
+              mode="decimal"
+
+              [minFractionDigits]="0"
+
+              [maxFractionDigits]="4"
+
+              [min]="1"
+
+              [disabled]="saving"></p-inputNumber>
+
+          </div>
+
+          <div class="ft-field">
+
+            <label for="pr-priority">Priorité</label>
+
+            <p-inputNumber
+
+              inputId="pr-priority"
+
+              [(ngModel)]="form.priority"
+
+              [min]="0"
+
+              [disabled]="saving"></p-inputNumber>
+
+          </div>
+
+        </div>
+
+        <div class="ft-field ft-field--full promotion-form-dialog__priority-hint">
+
+          <small class="ft-hint">
+
+            La plus élevée gagne ; à égalité, c'est la plus ciblée qui s'applique.
+
+          </small>
+
+        </div>
+
+      </app-form-section>
+
+
+
+      @if (editing) {
+
+        <div class="promotion-form-dialog__status ft-field ft-field--inline">
+
+          <p-inputSwitch [(ngModel)]="form.isActive" inputId="pr-active" [disabled]="saving"></p-inputSwitch>
+
+          <label for="pr-active">Promotion active</label>
+
+        </div>
+
+        <small class="ft-hint promotion-form-dialog__status-hint">
+
+          Désactiver n'affecte aucun document déjà émis.
+
+        </small>
+
+      }
+
+
+
+      <ng-template pTemplate="footer">
+
+        <app-button variant="secondary" (clicked)="close()">Annuler</app-button>
+
+        <app-button variant="primary" [disabled]="!canSave() || saving" (clicked)="submit()">
+
+          Enregistrer
+
+        </app-button>
+
+      </ng-template>
+
+    </p-dialog>
+
+  `,
+
+  styles: [
+
+    `
+
+      .scope-preview {
+
+        display: flex;
+
+        align-items: flex-start;
+
+        gap: var(--spacing-2);
+
+        margin-top: var(--spacing-4);
+
+        padding: var(--spacing-3);
+
+        border-radius: var(--radius-md);
+
+        border: 1px solid var(--color-primary-200);
+
+        background: var(--color-primary-50);
+
+        color: var(--color-primary-800);
+
+        font-size: var(--font-size-sm);
+
+        font-weight: var(--font-weight-medium);
+
+        line-height: 1.5;
+
+      }
+
+
+
+      .scope-preview__icon {
+
+        flex-shrink: 0;
+
+        margin-top: 0.125rem;
+
+        color: var(--color-primary-600);
+
+      }
+
+
+
+      .ft-field-error {
+
+        margin: var(--spacing-2) 0 0;
+
+        color: var(--color-danger-600);
+
+        font-size: var(--font-size-sm);
+
+      }
+
+
+
+      .promotion-form-dialog__priority-hint {
+
+        margin-top: var(--spacing-2);
+
+      }
+
+
+
+      .promotion-form-dialog__status {
+
+        margin-top: var(--spacing-2);
+
+      }
+
+
+
+      .promotion-form-dialog__status-hint {
+
+        display: block;
+
+        margin-top: var(--spacing-1);
+
+        margin-bottom: var(--spacing-2);
+
+      }
+
+
+
+      :host ::ng-deep .promotion-form-dialog {
+
+        .ft-field .p-inputnumber,
+
+        .ft-field .p-dropdown,
+
+        .ft-field .p-autocomplete {
+
+          width: 100%;
+
+        }
+
+
+
+        .p-inputnumber-input {
+
+          width: 100%;
+
+        }
+
+      }
+
+    `
+
+  ]
+
+})
+
+export class PromotionFormDialogComponent implements OnInit, OnChanges {
+
+  private readonly productService = inject(ProductService);
+
+  private readonly clientService = inject(ClientService);
+
+  private readonly categoryService = inject(ProductCategoryService);
+
+
+
+  @Input() visible = false;
+
+  @Input() editing: Promotion | null = null;
+
+  @Input() saving = false;
+
+
+
+  @Output() visibleChange = new EventEmitter<boolean>();
+
+  @Output() save = new EventEmitter<PromotionFormValue>();
+
+
+
+  readonly productSuggestions = signal<ProductOption[]>([]);
+
+  readonly clientSuggestions = signal<ClientOption[]>([]);
+
+  readonly categoryOptions = signal<{ label: string; value: string }[]>([]);
+
+  readonly loadingProductLabel = signal(false);
+
+  readonly loadingClientLabel = signal(false);
+
+
+
+  selectedProduct: ProductOption | null = null;
+
+  selectedClient: ClientOption | null = null;
+
+  selectedCategoryId: string | null = null;
+
+
+
+  form: PromotionFormValue = this.emptyForm();
+
+
+
+  readonly discountTypes: DiscountTypeOption[] = [
+
+    { label: 'Pourcentage', value: 'Percentage' },
+
+    { label: 'Montant par unité', value: 'Amount' }
+
+  ];
+
+
+
+  ngOnInit(): void {
+
+    this.categoryService.getCategoryOptionsForDropdown().subscribe({
+
+      next: options => this.categoryOptions.set(options),
+
+      error: () => this.categoryOptions.set([])
+
+    });
+
+  }
+
+
+
+  ngOnChanges(changes: SimpleChanges): void {
+
+    if (changes['visible']?.currentValue === true || changes['editing']) {
+
+      this.resetForm();
+
+    }
+
+  }
+
+
+
+  scopePreview(): string {
+
+    const categoryLabel =
+
+      this.selectedCategoryId != null
+
+        ? (this.categoryOptions().find(o => o.value === this.selectedCategoryId)?.label ?? null)
+
+        : null;
+
+
+
+    return buildScopePreview(
+
+      this.selectedProduct?.label ?? null,
+
+      categoryLabel,
+
+      this.selectedClient?.label ?? null
+
+    );
+
+  }
+
+
+
+  dateRangeInvalid(): boolean {
+
+    return !!this.form.startsOn && !!this.form.endsOn && this.form.endsOn < this.form.startsOn;
+
+  }
+
+
+
+  canSave(): boolean {
+
+    if (!this.form.name.trim() || !this.form.startsOn || !this.form.endsOn) return false;
+
+    if (this.dateRangeInvalid()) return false;
+
+    if (this.selectedProduct && this.selectedCategoryId) return false;
+
+
+
+    return this.form.discountType === 'Percentage'
+
+      ? (this.form.discountPercent ?? 0) > 0
+
+      : (this.form.discountAmount ?? 0) > 0;
+
+  }
+
+
+
+  searchProducts(event: { query: string }): void {
+
+    this.productService.getProducts({ search: event.query, pageSize: 20 }).subscribe({
+
+      next: res => {
+
+        const items = res.data?.items ?? [];
+
+        this.productSuggestions.set(
+
+          items.map(p => ({ id: p.id, label: `${p.code} — ${p.name}` }))
+
+        );
+
+      },
+
+      error: () => this.productSuggestions.set([])
+
+    });
+
+  }
+
+
+
+  searchClients(event: { query: string }): void {
+
+    this.clientService.getClients({ search: event.query, pageSize: 20, isActive: true }).subscribe({
+
+      next: res => {
+
+        const items = (res.data?.items ?? []).map(c => ({ id: c.id, label: c.name }));
+
+        this.clientSuggestions.set(items);
+
+      },
+
+      error: () => this.clientSuggestions.set([])
+
+    });
+
+  }
+
+
+
+  onProductChange(product: ProductOption | null): void {
+
+    if (product) {
+
+      this.selectedCategoryId = null;
+
+    }
+
+  }
+
+
+
+  onCategoryChange(categoryId: string | null): void {
+
+    if (categoryId) {
+
+      this.selectedProduct = null;
+
+    }
+
+  }
+
+
+
+  onClientChange(_client: ClientOption | null): void {
+
+    // scope preview updates via template binding
+
+  }
+
+
+
+  close(): void {
+
+    this.visibleChange.emit(false);
+
+  }
+
+
+
+  submit(): void {
+
+    if (!this.canSave()) return;
+
+    this.save.emit({
+
+      ...this.form,
+
+      name: this.form.name.trim(),
+
+      productId: this.selectedProduct?.id ?? null,
+
+      productCategoryId: this.selectedProduct ? null : this.selectedCategoryId,
+
+      clientId: this.selectedClient?.id ?? null
+
+    });
+
+  }
+
+
+
+  private resetForm(): void {
+
+    const today = new Date().toISOString().substring(0, 10);
+
+    this.loadingProductLabel.set(false);
+
+    this.loadingClientLabel.set(false);
+
+
+
+    if (this.editing) {
+
+      this.form = {
+
+        name: this.editing.name,
+
+        startsOn: this.editing.startsOn.substring(0, 10),
+
+        endsOn: this.editing.endsOn.substring(0, 10),
+
+        discountType: this.editing.discountType,
+
+        discountPercent: this.editing.discountPercent,
+
+        discountAmount: this.editing.discountAmount,
+
+        minQuantity: this.editing.minQuantity,
+
+        priority: this.editing.priority,
+
+        isActive: this.editing.isActive,
+
+        productId: this.editing.productId,
+
+        productCategoryId: this.editing.productCategoryId,
+
+        clientId: this.editing.clientId
+
+      };
+
+      this.selectedProduct = null;
+
+      this.selectedCategoryId = this.editing.productCategoryId;
+
+      this.selectedClient = null;
+
+
+
+      if (this.editing.productId) {
+
+        this.loadingProductLabel.set(true);
+
+        this.productService.getProduct(this.editing.productId).subscribe({
+
+          next: res => {
+
+            const p = res.data;
+
+            if (p) {
+
+              this.selectedProduct = { id: p.id, label: `${p.code} — ${p.name}` };
+
+            }
+
+          },
+
+          complete: () => this.loadingProductLabel.set(false),
+
+          error: () => this.loadingProductLabel.set(false)
+
+        });
+
+      }
+
+      if (this.editing.clientId) {
+
+        this.loadingClientLabel.set(true);
+
+        this.clientService.getClient(this.editing.clientId).subscribe({
+
+          next: res => {
+
+            const c = res.data;
+
+            if (c) {
+
+              this.selectedClient = { id: c.id, label: c.name };
+
+            }
+
+          },
+
+          complete: () => this.loadingClientLabel.set(false),
+
+          error: () => this.loadingClientLabel.set(false)
+
+        });
+
+      }
+
+    } else {
+
+      this.form = this.emptyForm(today);
+
+      this.selectedProduct = null;
+
+      this.selectedCategoryId = null;
+
+      this.selectedClient = null;
+
+    }
+
+  }
+
+
+
+  private emptyForm(today = new Date().toISOString().substring(0, 10)): PromotionFormValue {
+
+    return {
+
+      name: '',
+
+      startsOn: today,
+
+      endsOn: today,
+
+      discountType: 'Percentage',
+
+      discountPercent: null,
+
+      discountAmount: null,
+
+      minQuantity: 1,
+
+      priority: 0,
+
+      isActive: true,
+
+      productId: null,
+
+      productCategoryId: null,
+
+      clientId: null
+
+    };
+
+  }
+
+}
+
+
+
+export function toCreateRequest(value: PromotionFormValue): CreatePromotionRequest {
+
+  return {
+
+    name: value.name,
+
+    startsOn: value.startsOn,
+
+    endsOn: value.endsOn,
+
+    discountType: value.discountType,
+
+    discountPercent: value.discountType === 'Percentage' ? value.discountPercent : null,
+
+    discountAmount: value.discountType === 'Amount' ? value.discountAmount : null,
+
+    productId: value.productId,
+
+    productCategoryId: value.productCategoryId,
+
+    clientId: value.clientId,
+
+    minQuantity: value.minQuantity,
+
+    priority: value.priority
+
+  };
+
+}
+
+
+
+export function toUpdateRequest(value: PromotionFormValue): UpdatePromotionRequest {
+
+  return {
+
+    name: value.name,
+
+    startsOn: value.startsOn,
+
+    endsOn: value.endsOn,
+
+    discountType: value.discountType,
+
+    discountPercent: value.discountType === 'Percentage' ? value.discountPercent : null,
+
+    discountAmount: value.discountType === 'Amount' ? value.discountAmount : null,
+
+    minQuantity: value.minQuantity,
+
+    priority: value.priority,
+
+    isActive: value.isActive,
+
+    productId: value.productId,
+
+    productCategoryId: value.productCategoryId,
+
+    clientId: value.clientId
+
+  };
+
+}
+
+

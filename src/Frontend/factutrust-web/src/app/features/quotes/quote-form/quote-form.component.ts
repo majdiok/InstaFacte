@@ -14,6 +14,8 @@ import { InputTextarea } from 'primeng/inputtextarea';
 import { AutoCompleteModule, AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { DialogModule } from 'primeng/dialog';
 import { MessageModule } from 'primeng/message';
+import { TagModule } from 'primeng/tag';
+import { TooltipModule } from 'primeng/tooltip';
 import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { QuickCreateProductDialogComponent } from '@shared/components/quick-create-product-dialog/quick-create-product-dialog.component';
@@ -31,15 +33,19 @@ import { QuoteService, CreateQuoteRequest, CreateQuoteLine } from '@core/service
 import { ClientService, ClientListItem } from '@core/services/client.service';
 import { ProductService, ProductListItem } from '@core/services/product.service';
 import { getEffectiveMaxDiscountPercent } from '@shared/utils/product-pricing.utils';
+import { PriceSource } from '@core/services/pricing.service';
+import { DocumentLinePricingService, EMPTY_LINE_PROMOTION, LinePromotionPreview, effectiveLineDiscountPercent, lineTotalWithPromotion, mapResolvedPricePromotion } from '@shared/utils/document-line-pricing.helper';
 import { CrmService } from '@features/crm/services/crm.service';
 
-interface LineRow {
+interface LineRow extends LinePromotionPreview {
   product: ProductListItem | null;
   designation: string;
   description: string;
   quantity: number;
   unit: string;
   unitPrice: number;
+  priceOverridden?: boolean;
+  priceSource?: PriceSource | null;
   vatRatePercent: number;
   discountPercent?: number;
   productIsDiscountEnabled?: boolean;
@@ -63,6 +69,8 @@ interface LineRow {
     AutoCompleteModule,
     DialogModule,
     MessageModule,
+    TagModule,
+    TooltipModule,
     BreadcrumbComponent,
     QuickCreateProductDialogComponent,
     QuickCreateClientDialogComponent,
@@ -108,6 +116,7 @@ interface LineRow {
                     id="client"
                     [options]="clientOptions()"
                     [(ngModel)]="selectedClientId"
+                    (onChange)="onClientChange()"
                     optionLabel="name"
                     optionValue="id"
                     placeholder="Choisir un client"
@@ -172,10 +181,11 @@ interface LineRow {
                   <th style="width: 14%">Désignation</th>
                   <th style="width: 8%">Qté *</th>
                   <th style="width: 8%">Unité</th>
-                  <th style="width: 12%">Prix unit. HT *</th>
-                  <th style="width: 10%">TVA %</th>
-                  <th style="width: 10%">Remise %</th>
-                  <th style="width: 10%">Total HT</th>
+                  <th style="width: 10%">Prix unit. HT *</th>
+                  <th style="width: 9%">Origine</th>
+                  <th style="width: 8%">TVA %</th>
+                  <th style="width: 8%">Remise %</th>
+                  <th style="width: 9%">Total HT</th>
                   <th style="width: 6%"></th>
                 </tr>
               </thead>
@@ -231,7 +241,8 @@ interface LineRow {
                         [minFractionDigits]="0"
                         [maxFractionDigits]="3"
                         mode="decimal"
-                        class="w-full">
+                        class="w-full"
+                        (onInput)="onQuantityChange(line)">
                       </p-inputNumber>
                     </td>
                     <td>
@@ -249,8 +260,27 @@ interface LineRow {
                         [min]="0"
                         [minFractionDigits]="2"
                         [maxFractionDigits]="3"
-                        mode="decimal">
+                        mode="decimal"
+                        (onInput)="onUnitPriceManualEdit(line)">
                       </p-inputNumber>
+                    </td>
+                    <td>
+                      @if (linePricing.resolving()) {
+                        <i class="pi pi-spin pi-spinner" pTooltip="Résolution du prix…"></i>
+                      } @else if (line.priceOverridden) {
+                        <p-tag severity="warning" value="Saisi"></p-tag>
+                      } @else if (line.priceSource === 'ClientPrice') {
+                        <p-tag severity="success" value="Prix négocié"></p-tag>
+                      } @else if (line.priceSource === 'PriceList') {
+                        <p-tag severity="info" value="Grille"></p-tag>
+                      } @else if (line.priceSource) {
+                        <span class="text-muted">Catalogue</span>
+                      }
+                      @if (line.promotionEligible && line.promotionName) {
+                        <p-tag severity="success" [value]="'Promo : ' + line.promotionName"></p-tag>
+                      } @else if (line.promotionMinQuantityRequired && line.promotionName) {
+                        <small class="promo-hint">{{ line.promotionName }} : qty min. {{ line.promotionMinQuantityRequired }}</small>
+                      }
                     </td>
                     <td>
                       <p-dropdown
@@ -276,7 +306,7 @@ interface LineRow {
                     </td>
                     <td>
                       <div class="text-right px-2 font-bold">
-                        {{ (line.unitPrice * line.quantity * (1 - (line.discountPercent || 0) / 100)) | number:'1.3-3' }}
+                        {{ lineRowTotal(line) | number:'1.3-3' }}
                       </div>
                     </td>
                     <td>
@@ -292,7 +322,7 @@ interface LineRow {
                     </td>
                   </tr>
                   <tr>
-                    <td colspan="9" class="pb-4 border-b">
+                    <td colspan="10" class="pb-4 border-b">
                       <input
                         pInputText
                         [(ngModel)]="line.description"
@@ -305,7 +335,7 @@ interface LineRow {
               </tbody>
               <tfoot>
                 <tr>
-                  <td colspan="7" class="text-right font-bold py-3">Total HT Estimé :</td>
+                  <td colspan="8" class="text-right font-bold py-3">Total HT Estimé :</td>
                   <td class="text-right font-bold py-3">{{ totals.subTotal | number:'1.3-3' }} {{ currency }}</td>
                   <td></td>
                 </tr>
@@ -378,7 +408,7 @@ interface LineRow {
             [icon]="submitting() ? 'pi-spin pi-spinner' : 'pi-check'"
             iconPos="left"
             type="submit"
-            [disabled]="!canSubmit() || submitting()">
+            [disabled]="!canSubmit() || submitting() || linePricing.resolving()">
             {{ submitting() ? 'Création...' : 'Créer le devis' }}
           </app-button>
         </div>
@@ -645,6 +675,7 @@ export class QuoteFormComponent implements OnInit {
   private clientService = inject(ClientService);
   private auth = inject(AuthService);
   private productService = inject(ProductService);
+  readonly linePricing = inject(DocumentLinePricingService);
   private crm = inject(CrmService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
@@ -695,8 +726,8 @@ export class QuoteFormComponent implements OnInit {
     let totalVat = 0;
     for (const l of valid) {
       const gross = l.quantity * l.unitPrice;
-      const discount = ((l.discountPercent ?? 0) / 100) * gross;
-      const st = gross - discount;
+      const discountPct = effectiveLineDiscountPercent(l.discountPercent, l);
+      const st = gross - (gross * discountPct) / 100;
       const vat = st * (l.vatRatePercent / 100);
       subTotal += st;
       totalVat += vat;
@@ -770,19 +801,24 @@ export class QuoteFormComponent implements OnInit {
                 isActive: p.isActive,
                 isStockManaged: p.isStockManaged,
               };
+              const hasCustomPrice = tl.customUnitPrice != null && tl.customUnitPrice > 0;
               newLines.push({
                 product: pl,
                 designation: p.name,
                 description: p.description || '',
                 quantity: tl.quantity,
                 unit: p.unit,
-                unitPrice:
-                  tl.customUnitPrice != null && tl.customUnitPrice > 0 ? tl.customUnitPrice : p.unitPrice,
+                unitPrice: hasCustomPrice ? tl.customUnitPrice! : p.unitPrice,
+                priceOverridden: hasCustomPrice,
                 vatRatePercent: p.vatRate,
                 discountPercent: tl.discountPercent ?? undefined,
+                ...EMPTY_LINE_PROMOTION,
               });
             }
-            if (newLines.length) this.lines = newLines;
+            if (newLines.length) {
+              this.lines = newLines;
+              this.reresolveAllLines();
+            }
           },
         });
       },
@@ -797,8 +833,14 @@ export class QuoteFormComponent implements OnInit {
       quantity: 1,
       unit: 'unité',
       unitPrice: 0,
+      priceOverridden: false,
       vatRatePercent: 19,
+      ...EMPTY_LINE_PROMOTION
     };
+  }
+
+  lineRowTotal(line: LineRow): number {
+    return lineTotalWithPromotion(line.quantity, line.unitPrice, line.discountPercent, line);
   }
 
   addLine(): void {
@@ -830,9 +872,62 @@ export class QuoteFormComponent implements OnInit {
     line.description = product.description || '';
     line.unit = product.unit;
     line.unitPrice = product.unitPrice;
+    line.priceOverridden = false;
+    line.priceSource = 'Catalog';
     line.vatRatePercent = product.vatRate;
     line.productIsDiscountEnabled = product.isDiscountEnabled ?? false;
     line.productMaxDiscountPercent = product.maxDiscountPercent ?? null;
+    this.resolveLinePrice(line);
+  }
+
+  onClientChange(): void {
+    this.reresolveAllLines();
+  }
+
+  onUnitPriceManualEdit(line: LineRow): void {
+    line.priceOverridden = true;
+    line.priceSource = null;
+  }
+
+  onQuantityChange(line: LineRow): void {
+    if (!line.priceOverridden && line.product) {
+      this.resolveLinePrice(line);
+    }
+  }
+
+  private reresolveAllLines(): void {
+    for (const line of this.lines) {
+      if (line.product && !line.priceOverridden) {
+        this.resolveLinePrice(line);
+      }
+    }
+  }
+
+  private resolveLinePrice(line: LineRow): void {
+    if (!line.product) {
+      return;
+    }
+
+    this.linePricing
+      .resolveLinePrice({
+        productId: line.product.id,
+        clientId: this.selectedClientId,
+        quantity: line.quantity,
+        documentDate: this.issueDate,
+        priceOverridden: line.priceOverridden ?? false,
+        isOverrideCheck: () => line.priceOverridden === true
+      })
+      .subscribe({
+        next: resolved => {
+          if (line.priceOverridden || !resolved) {
+            return;
+          }
+          line.unitPrice = resolved.unitPriceHT;
+          line.priceSource = resolved.source;
+          Object.assign(line, mapResolvedPricePromotion(resolved));
+        },
+        error: err => this.errorHandler.logError('Price resolution failed', err)
+      });
   }
 
   openQuickCreateProduct(lineIndex: number): void {
@@ -864,9 +959,12 @@ export class QuoteFormComponent implements OnInit {
       line.description = product.description || '';
       line.unit = product.unit;
       line.unitPrice = product.unitPrice;
+      line.priceOverridden = false;
+      line.priceSource = 'Catalog';
       line.vatRatePercent = product.vatRate;
       line.productIsDiscountEnabled = product.isDiscountEnabled ?? false;
       line.productMaxDiscountPercent = product.maxDiscountPercent ?? null;
+      this.resolveLinePrice(line);
     }
     this.productSuggestions.set([product, ...this.productSuggestions()]);
     this.quickCreateProductVisible = false;
@@ -880,6 +978,7 @@ export class QuoteFormComponent implements OnInit {
   canSubmit(): boolean {
     if (!this.selectedClientId || !this.issueDate || !this.expiryDate) return false;
     if (this.expiryDate <= this.issueDate) return false;
+    if (this.linePricing.resolving()) return false;
     const valid = this.lines.every(
       (l) => l.product !== null && l.quantity > 0 && l.unitPrice >= 0
     );
@@ -897,7 +996,7 @@ export class QuoteFormComponent implements OnInit {
         description: l.description?.trim() || undefined,
         quantity: l.quantity,
         unit: l.unit?.trim() || 'unité',
-        unitPrice: l.unitPrice,
+        unitPrice: l.priceOverridden ? l.unitPrice : 0,
         vatRatePercent: l.vatRatePercent,
         discountPercent: l.discountPercent && l.discountPercent > 0 ? l.discountPercent : undefined,
       }));

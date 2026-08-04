@@ -147,4 +147,14 @@ describe('PricingService', () => {
       req.flush({ success: true, data: 'new-id' });
     });
   });
+
+  describe('tarification produit', () => {
+    it('charge les prix négociés par client pour un produit', () => {
+      service.getProductPricing('prod-1').subscribe();
+
+      const req = httpMock.expectOne(`${base}/products/prod-1`);
+      expect(req.request.method).toBe('GET');
+      req.flush({ success: true, data: { productId: 'prod-1', clientPrices: [] } });
+    });
+  });
 });

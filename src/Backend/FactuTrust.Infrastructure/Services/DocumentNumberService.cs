@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 using FactuTrust.Domain.Entities;
 
 using FactuTrust.Domain.Enums;
@@ -506,6 +508,18 @@ public sealed class DocumentNumberService : IDocumentNumberService
 
 
 
+            NumberingDocumentType.PurchaseReceipt =>
+
+                await context.PurchaseReceipts.AsNoTracking()
+
+                    .Where(p => p.Number.Year == fiscalYear)
+
+                    .Select(p => (int?)p.Number.Sequence)
+
+                    .MaxAsync(cancellationToken) ?? 0,
+
+
+
             NumberingDocumentType.StockTransfer =>
 
                 await context.StockTransfers.AsNoTracking()
@@ -566,9 +580,87 @@ public sealed class DocumentNumberService : IDocumentNumberService
 
 
 
+            NumberingDocumentType.SupplierInvoice =>
+
+                await GetMaxSupplierInvoiceSequenceAsync(context, fiscalYear, cancellationToken),
+
+
+
             _ => 0
 
         };
+
+    }
+
+
+
+    private static readonly Regex SupplierInvoiceSequenceRegex =
+
+        new(@"^FS-(\d{4})-(\d{6})$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+
+
+    private static async Task<int> GetMaxSupplierInvoiceSequenceAsync(
+
+        TenantDbContext context,
+
+        int fiscalYear,
+
+        CancellationToken cancellationToken)
+
+    {
+
+        var numbers = await context.SupplierInvoices.AsNoTracking()
+
+            .Where(si => si.InvoiceDate.Year == fiscalYear)
+
+            .Select(si => si.InvoiceNumber)
+
+            .ToListAsync(cancellationToken);
+
+
+
+        var maxSequence = 0;
+
+        foreach (var number in numbers)
+
+        {
+
+            if (TryParseSupplierInvoiceSequence(number, fiscalYear, out var sequence))
+
+                maxSequence = Math.Max(maxSequence, sequence);
+
+        }
+
+
+
+        return maxSequence;
+
+    }
+
+
+
+    private static bool TryParseSupplierInvoiceSequence(string invoiceNumber, int fiscalYear, out int sequence)
+
+    {
+
+        var match = SupplierInvoiceSequenceRegex.Match(invoiceNumber?.Trim() ?? "");
+
+        if (!match.Success || int.Parse(match.Groups[1].Value) != fiscalYear)
+
+        {
+
+            sequence = 0;
+
+            return false;
+
+        }
+
+
+
+        sequence = int.Parse(match.Groups[2].Value);
+
+        return true;
 
     }
 

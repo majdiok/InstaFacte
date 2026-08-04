@@ -1,4 +1,4 @@
-import { Component, Input } from '@angular/core';
+import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 
@@ -14,7 +14,8 @@ import { RouterModule } from '@angular/router';
         class="btn btn-{{ variant }} btn-{{ size }}"
         [class.btn-icon-only]="iconOnly"
         [class.btn-icon-always-visible]="iconOnly && iconAlwaysVisible"
-        [attr.aria-label]="ariaLabel || null">
+        [attr.aria-label]="ariaLabel || null"
+        (click)="onClick($event)">
         @if (icon && !iconOnly) {
           <i class="pi {{ icon }}" [class.icon-left]="iconPos === 'left'" [class.icon-right]="iconPos === 'right'"></i>
         }
@@ -32,7 +33,8 @@ import { RouterModule } from '@angular/router';
         [class.btn-icon-always-visible]="iconOnly && iconAlwaysVisible"
         [disabled]="disabled"
         [type]="type"
-        [attr.aria-label]="ariaLabel || null">
+        [attr.aria-label]="ariaLabel || null"
+        (click)="onClick($event)">
         @if (icon && !iconOnly) {
           <i class="pi {{ icon }}" [class.icon-left]="iconPos === 'left'" [class.icon-right]="iconPos === 'right'"></i>
         }
@@ -191,4 +193,11 @@ export class ButtonComponent {
   @Input() queryParams?: Record<string, string | number | boolean | null | undefined>;
   /** When true and iconOnly, uses a higher-contrast icon color for visibility (e.g. in table action columns). */
   @Input() iconAlwaysVisible = false;
+  @Output() clicked = new EventEmitter<MouseEvent>();
+
+  onClick(event: MouseEvent): void {
+    if (!this.disabled) {
+      this.clicked.emit(event);
+    }
+  }
 }

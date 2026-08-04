@@ -6,6 +6,7 @@ import { PageHeaderComponent } from '@shared/components/page-header/page-header.
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
 import { AccountingTableActionsComponent } from '../shared/accounting-table-actions.component';
+import { AccountingAmountInputComponent } from '../shared/accounting-amount-input.component';
 import { ToastService } from '@core/services/toast.service';
 import {
   AccountingService,
@@ -33,7 +34,7 @@ const JOURNAL_CODES = ['JV', 'JA', 'JC', 'JB', 'JOD', 'JIM', 'JAN'];
 @Component({
   selector: 'app-entry-templates',
   standalone: true,
-  imports: [CommonModule, FormsModule, TableModule, PageHeaderComponent, ButtonComponent, AccountingStatusBannerComponent, AccountingTableActionsComponent],
+  imports: [CommonModule, FormsModule, TableModule, PageHeaderComponent, ButtonComponent, AccountingStatusBannerComponent, AccountingTableActionsComponent, AccountingAmountInputComponent],
   template: `
     <app-page-header title="Modèles d'écriture" subtitle="Modèles réutilisables pour la saisie manuelle" />
 
@@ -116,8 +117,24 @@ const JOURNAL_CODES = ['JV', 'JA', 'JC', 'JB', 'JOD', 'JIM', 'JAN'];
               <tr>
                 <td><input class="tpl-input" [(ngModel)]="line.accountNumber" [disabled]="saving()" /></td>
                 <td><input class="tpl-input" [(ngModel)]="line.lineLabelTemplate" [disabled]="saving()" /></td>
-                <td><input type="number" class="tpl-input tpl-amount" [(ngModel)]="line.fixedDebit" [disabled]="saving()" /></td>
-                <td><input type="number" class="tpl-input tpl-amount" [(ngModel)]="line.fixedCredit" [disabled]="saving()" /></td>
+                <td>
+                  <app-accounting-amount-input
+                    [(ngModel)]="line.fixedDebit"
+                    [disabled]="saving()"
+                    [compact]="true"
+                    side="debit"
+                    [inputId]="'tpl-debit-' + $index"
+                    ariaLabel="Débit fixe" />
+                </td>
+                <td>
+                  <app-accounting-amount-input
+                    [(ngModel)]="line.fixedCredit"
+                    [disabled]="saving()"
+                    [compact]="true"
+                    side="credit"
+                    [inputId]="'tpl-credit-' + $index"
+                    ariaLabel="Crédit fixe" />
+                </td>
                 <td>
                   <app-button variant="ghost" size="sm" icon="pi-trash" [iconOnly]="true" [iconAlwaysVisible]="true"
                     type="button" (click)="removeLine($index)" [disabled]="saving()" ariaLabel="Supprimer la ligne" />

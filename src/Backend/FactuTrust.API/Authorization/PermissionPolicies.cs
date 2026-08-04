@@ -52,6 +52,11 @@ public static class PermissionPolicies
     public const string PurchaseOrdersUpdate = "perm:" + Permissions.PurchaseOrders.Update;
     public const string PurchaseOrdersDelete = "perm:" + Permissions.PurchaseOrders.Delete;
 
+    public const string PurchaseReceiptsCreate = "perm:" + Permissions.PurchaseReceipts.Create;
+    public const string PurchaseReceiptsRead = "perm:" + Permissions.PurchaseReceipts.Read;
+    public const string PurchaseReceiptsUpdate = "perm:" + Permissions.PurchaseReceipts.Update;
+    public const string PurchaseReceiptsDelete = "perm:" + Permissions.PurchaseReceipts.Delete;
+
     public const string SalesOrdersCreate = "perm:" + Permissions.SalesOrders.Create;
     public const string SalesOrdersRead = "perm:" + Permissions.SalesOrders.Read;
     public const string SalesOrdersUpdate = "perm:" + Permissions.SalesOrders.Update;
@@ -144,4 +149,20 @@ public static class PermissionPolicies
     public const string PayrollSettings = "perm:" + Permissions.Payroll.Settings;
 
     public const string FirmUsersManage = "perm:" + Permissions.Firm.UsersManage;
+
+    public const string HonorairesInvoicesCreate = "perm:" + Permissions.HonorairesInvoices.Create;
+    public const string HonorairesInvoicesRead = "perm:" + Permissions.HonorairesInvoices.Read;
+    public const string HonorairesInvoicesUpdate = "perm:" + Permissions.HonorairesInvoices.Update;
+    public const string HonorairesInvoicesDelete = "perm:" + Permissions.HonorairesInvoices.Delete;
+    public const string HonorairesInvoicesValidate = "perm:" + Permissions.HonorairesInvoices.Validate;
+    public const string HonorairesInvoicesSend = "perm:" + Permissions.HonorairesInvoices.Send;
+
+    public const string HonorairesQuotesCreate = "perm:" + Permissions.HonorairesQuotes.Create;
+    public const string HonorairesQuotesRead = "perm:" + Permissions.HonorairesQuotes.Read;
+    public const string HonorairesQuotesUpdate = "perm:" + Permissions.HonorairesQuotes.Update;
+    public const string HonorairesQuotesDelete = "perm:" + Permissions.HonorairesQuotes.Delete;
+    public const string HonorairesQuotesConvert = "perm:" + Permissions.HonorairesQuotes.Convert;
+
+    public const string HonorairesPaymentsCreate = "perm:" + Permissions.HonorairesPayments.Create;
+    public const string HonorairesPaymentsRead = "perm:" + Permissions.HonorairesPayments.Read;
 }

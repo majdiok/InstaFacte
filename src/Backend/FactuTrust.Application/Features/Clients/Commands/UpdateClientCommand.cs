@@ -1,10 +1,9 @@
+using FactuTrust.Application.Common;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
-using FactuTrust.Application.Features.Clients.Queries;
 using FactuTrust.Domain.Common;
-using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.ValueObjects;
 using AuditActions = FactuTrust.Domain.Entities.AuditActions;
 using FluentValidation;
@@ -30,6 +29,16 @@ public sealed class UpdateClientCommandValidator : AbstractValidator<UpdateClien
         RuleFor(x => x.Dto.Street).NotEmpty().WithMessage("L'adresse est obligatoire");
         RuleFor(x => x.Dto.City).NotEmpty().WithMessage("La ville est obligatoire");
         RuleFor(x => x.Dto.Governorate).NotEmpty().WithMessage("Le gouvernorat est obligatoire");
+
+        RuleFor(x => x.Dto.CreditLimit)
+            .GreaterThanOrEqualTo(0)
+            .When(x => x.Dto.CreditLimit.HasValue)
+            .WithMessage("Le plafond d'encours ne peut pas être négatif");
+
+        RuleFor(x => x.Dto.DefaultPaymentTermDays)
+            .InclusiveBetween(0, 365)
+            .When(x => x.Dto.DefaultPaymentTermDays.HasValue)
+            .WithMessage("Le délai doit être compris entre 0 et 365 jours");
     }
 }
 
@@ -92,6 +101,10 @@ public sealed class UpdateClientCommandHandler : IRequestHandler<UpdateClientCom
             dto.ContactPerson?.Trim(),
             dto.Notes?.Trim());
 
+        var creditResult = client.SetCreditTerms(dto.CreditLimit, dto.DefaultPaymentTermDays);
+        if (creditResult.IsFailure)
+            return Result.Failure<ClientDetailDto>(creditResult.Error);
+
         if (dto.IsActive != client.IsActive)
         {
             if (dto.IsActive) client.Reactivate();
@@ -107,36 +120,15 @@ public sealed class UpdateClientCommandHandler : IRequestHandler<UpdateClientCom
             AuditActions.Client.Updated,
             "Client",
             client.Id,
-            newValues: new { client.Name, client.Email.Value },
+            newValues: new
+            {
+                client.Name,
+                client.Email.Value,
+                client.CreditLimit,
+                client.DefaultPaymentTermDays
+            },
             cancellationToken: cancellationToken);
 
-        var detail = new ClientDetailDto
-        {
-            Id = client.Id,
-            Code = GetClientByIdQueryHandler.GetClientCode(client.Id),
-            Name = client.Name,
-            Type = client.Type,
-            TypeDisplay = client.Type.ToDisplayString(),
-            Nif = client.NIF?.Value,
-            Address = new AddressDto
-            {
-                Street = client.Address.Street,
-                StreetLine2 = client.Address.StreetLine2,
-                City = client.Address.City,
-                PostalCode = client.Address.PostalCode,
-                Governorate = client.Address.Governorate,
-                Country = client.Address.Country,
-                FullAddress = client.Address.ToSingleLine()
-            },
-            Email = client.Email.Value,
-            Phone = client.Phone?.Value,
-            ContactPerson = client.ContactPerson,
-            Notes = client.Notes,
-            IsActive = client.IsActive,
-            CreatedAt = client.CreatedAt,
-            UpdatedAt = client.UpdatedAt
-        };
-
-        return Result.Success(detail);
+        return Result.Success(ClientDtoMapper.ToDetailDto(client));
     }
 }

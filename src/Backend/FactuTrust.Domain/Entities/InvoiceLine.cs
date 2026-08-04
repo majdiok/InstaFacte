@@ -31,6 +31,9 @@ public sealed class InvoiceLine : Entity
     
     public decimal? DiscountPercent { get; private set; }
     public Money DiscountAmount { get; private set; } = null!;
+
+    public Guid? AppliedPromotionId { get; private set; }
+    public string? AppliedPromotionName { get; private set; }
     
     public Money SubTotal { get; private set; } = null!;
 
@@ -69,7 +72,9 @@ public sealed class InvoiceLine : Entity
         decimal quantity,
         Money unitPrice,
         decimal? discountPercent = null,
-        decimal fodecRatePercent = 1.0m)
+        decimal fodecRatePercent = 1.0m,
+        Guid? appliedPromotionId = null,
+        string? appliedPromotionName = null)
     {
         if (quantity <= 0)
             return Result.Failure<InvoiceLine>(Error.Validation("Quantity", "La quantité doit être supérieure à zéro"));
@@ -93,6 +98,8 @@ public sealed class InvoiceLine : Entity
             VatRate = product.VatRate,
             IsFodecApplicable = product.IsFodecApplicable,
             DiscountPercent = discountPercent,
+            AppliedPromotionId = appliedPromotionId,
+            AppliedPromotionName = appliedPromotionName?.Trim(),
             _fodecRatePercent = fodecRatePercent
         };
 

@@ -133,6 +133,45 @@ public sealed class FirmClientAssignmentTests
     }
 
     [Fact]
+    public void CreateByFirm_creates_active_assignment_with_firm_origin()
+    {
+        var result = FirmClientAssignment.CreateByFirm(CompanyId, FirmId, UserId, "Dossier créé par le cabinet");
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(FirmAssignmentStatus.Active, result.Value.Status);
+        Assert.Equal(FirmAssignmentOrigin.FirmCreated, result.Value.Origin);
+        Assert.Equal(UserId, result.Value.RequestedByUserId);
+        Assert.Equal(UserId, result.Value.RespondedByUserId);
+        Assert.NotNull(result.Value.RespondedAt);
+        Assert.Equal("Dossier créé par le cabinet", result.Value.Notes);
+    }
+
+    [Fact]
+    public void CreateByFirm_rejects_same_tenant()
+    {
+        var result = FirmClientAssignment.CreateByFirm(CompanyId, CompanyId, UserId);
+
+        Assert.True(result.IsFailure);
+    }
+
+    [Fact]
+    public void CreateByFirm_rejects_empty_user()
+    {
+        var result = FirmClientAssignment.CreateByFirm(CompanyId, FirmId, Guid.Empty);
+
+        Assert.True(result.IsFailure);
+    }
+
+    [Fact]
+    public void Request_creates_assignment_with_company_origin()
+    {
+        var result = FirmClientAssignment.Request(CompanyId, FirmId, UserId);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(FirmAssignmentOrigin.CompanyRequest, result.Value.Origin);
+    }
+
+    [Fact]
     public void CancelByCompany_fails_when_active()
     {
         var assignment = FirmClientAssignment.Request(CompanyId, FirmId, UserId).Value;

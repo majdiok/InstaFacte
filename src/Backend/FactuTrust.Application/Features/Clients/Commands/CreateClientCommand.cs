@@ -28,6 +28,16 @@ public sealed class CreateClientCommandValidator : AbstractValidator<CreateClien
         RuleFor(x => x.Dto.Street).NotEmpty().WithMessage("L'adresse est obligatoire");
         RuleFor(x => x.Dto.City).NotEmpty().WithMessage("La ville est obligatoire");
         RuleFor(x => x.Dto.Governorate).NotEmpty().WithMessage("Le gouvernorat est obligatoire");
+
+        RuleFor(x => x.Dto.CreditLimit)
+            .GreaterThanOrEqualTo(0)
+            .When(x => x.Dto.CreditLimit.HasValue)
+            .WithMessage("Le plafond d'encours ne peut pas être négatif");
+
+        RuleFor(x => x.Dto.DefaultPaymentTermDays)
+            .InclusiveBetween(0, 365)
+            .When(x => x.Dto.DefaultPaymentTermDays.HasValue)
+            .WithMessage("Le délai doit être compris entre 0 et 365 jours");
     }
 }
 
@@ -115,6 +125,11 @@ public sealed class CreateClientCommandHandler : IRequestHandler<CreateClientCom
             return Result.Failure<Guid>(clientResult.Error);
 
         var client = clientResult.Value;
+
+        var creditResult = client.SetCreditTerms(dto.CreditLimit, dto.DefaultPaymentTermDays);
+        if (creditResult.IsFailure)
+            return Result.Failure<Guid>(creditResult.Error);
+
         client.SetAuditInfo(_currentUser.UserId?.ToString() ?? "system");
 
         await _clientRepository.AddAsync(client, cancellationToken);
@@ -124,7 +139,13 @@ public sealed class CreateClientCommandHandler : IRequestHandler<CreateClientCom
             AuditActions.Client.Created,
             "Client",
             client.Id,
-            newValues: new { client.Name, client.Email.Value },
+            newValues: new
+            {
+                client.Name,
+                client.Email.Value,
+                client.CreditLimit,
+                client.DefaultPaymentTermDays
+            },
             cancellationToken: cancellationToken);
 
         return Result.Success(client.Id);

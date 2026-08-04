@@ -39,9 +39,10 @@
 #sidebar ul.rail-nav li a.rail-link,
 #sidebar ul.rail-nav li button.rail-link {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  gap: var(--sidebar-rail-icon-gap);
   width: 100%;
   min-height: var(--sidebar-rail-item-min-height);
   box-sizing: border-box;
@@ -50,7 +51,7 @@
   font-size: inherit;
   font-weight: inherit;
   line-height: inherit;
-  text-align: center;
+  text-align: left;
   color: var(--sidebar-rail-item-default);
   background: transparent;
   border: none;
@@ -65,9 +66,11 @@
 
   i {
     float: none;
+    flex-shrink: 0;
+    width: var(--sidebar-rail-icon-slot-width);
     margin-right: 0;
-    margin-bottom: var(--sidebar-rail-icon-gap);
-    width: auto;
+    margin-bottom: 0;
+    text-align: center;
     font-size: var(--sidebar-rail-icon-size);
     color: inherit;
     opacity: 0.85;
@@ -143,6 +146,7 @@
 
 #sidebar.sidebar-collapsed ul.rail-nav li a.rail-link,
 #sidebar.sidebar-collapsed ul.rail-nav li button.rail-link {
+  justify-content: center;
   min-height: var(--sidebar-rail-item-min-height-collapsed);
   padding: 0;
 }

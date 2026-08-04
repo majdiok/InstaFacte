@@ -66,8 +66,15 @@ public sealed record PurchaseOrderDetailDto
 
     public DateTime? ConfirmedAt { get; init; }
     public DateTime? ReceivedAt { get; init; }
+    public DateTime? InvoicedAt { get; init; }
     public DateTime? CancelledAt { get; init; }
     public string? CancellationReason { get; init; }
+
+    public decimal TotalReceivedNotInvoicedQuantity { get; init; }
+    public bool HasReceivedNotInvoiced { get; init; }
+
+    public IReadOnlyList<LinkedSupplierInvoiceSummaryDto> LinkedSupplierInvoices { get; init; }
+        = Array.Empty<LinkedSupplierInvoiceSummaryDto>();
 
     public Guid? WarehouseId { get; init; }
     public string? WarehouseName { get; init; }
@@ -88,6 +95,8 @@ public sealed record PurchaseOrderLineDto
     public string? ProductDescription { get; init; }
     public decimal Quantity { get; init; }
     public decimal ReceivedQuantity { get; init; }
+    public decimal InvoicedQuantity { get; init; }
+    public decimal ReceivedNotInvoicedQuantity { get; init; }
     public decimal PendingQuantity { get; init; }
     public bool IsFullyReceived { get; init; }
     public string? Unit { get; init; }

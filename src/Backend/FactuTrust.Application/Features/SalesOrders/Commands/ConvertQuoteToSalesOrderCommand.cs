@@ -56,6 +56,9 @@ public sealed class ConvertQuoteToSalesOrderCommandHandler
         if (quote is null)
             return Result.Failure<Guid>(Error.NotFound("Devis", request.QuoteId));
 
+        if (quote.ConvertedSalesOrderId.HasValue)
+            return Result.Failure<Guid>(Error.Conflict("Ce devis a déjà été transformé en commande client"));
+
         if (quote.Status != QuoteStatus.Accepted)
             return Result.Failure<Guid>(Error.Validation("Status",
                 "Seul un devis accepté peut être transformé en commande"));
@@ -124,6 +127,11 @@ public sealed class ConvertQuoteToSalesOrderCommandHandler
             return Result.Failure<Guid>(stampResult.Error);
 
         order.SetAuditInfo(_currentUser.UserId?.ToString() ?? "system");
+
+        // Verrouillage du devis AVANT la persistance de la commande : même unité de travail,
+        // donc atomicité garantie — impossible de créer la commande sans marquer le devis.
+        quote.MarkAsConvertedToSalesOrder(order.Id);
+        await _quoteRepository.UpdateAsync(quote, cancellationToken);
 
         await _salesOrderRepository.AddAsync(order, cancellationToken);
 

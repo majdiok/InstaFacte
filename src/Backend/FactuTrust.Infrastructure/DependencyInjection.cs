@@ -23,6 +23,7 @@ using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using System.Reflection;
 
 namespace FactuTrust.Infrastructure;
@@ -34,11 +35,28 @@ public static class DependencyInjection
         services.AddMemoryCache();
         services.AddSingleton(TimeProvider.System);
 
-        // Master Database
-        services.AddDbContext<MasterDbContext>(options =>
-            options.UseSqlServer(
-                configuration.GetConnectionString("MasterConnection"),
-                b => b.MigrationsAssembly(typeof(MasterDbContext).Assembly.FullName)));
+        // Interceptor de diagnostic (Dev uniquement) — trace toute commande sur
+        // MasterDbContext avec threadId/activityId et détecte les accès concurrents
+        // AVANT qu'EF Core ne throw. Silencieux si non résolu (Prod).
+        services.AddSingleton<MasterDbConcurrencyDiagnosticsInterceptor>();
+
+        // Master Database — DOUBLE enregistrement volontaire :
+        //   1) AddDbContext<T> (Scoped) → requis par ASP.NET Core Identity, DataProtection,
+        //      et tous les services scoped historiques qui prennent MasterDbContext en ctor.
+        //   2) AddDbContextFactory<T> (Scoped) → permet aux chemins de lecture (Bootstrap,
+        //      chemins concurrents identifiés) d'obtenir un DbContext dédié via CreateDbContext(),
+        //      sans partager l'instance scoped DataProtection. Lifetime Scoped (pas Singleton)
+        //      car ConfigureMasterDbContext résout des services via le SP (options scoped).
+        //
+        // La configuration est extraite dans ConfigureMasterDbContext pour être 100% identique
+        // entre les deux enregistrements — divergence = source de bugs subtils (interceptors,
+        // migrations, options manquantes).
+        services.AddDbContext<MasterDbContext>((sp, options) =>
+            ConfigureMasterDbContext(options, sp, configuration));
+
+        services.AddDbContextFactory<MasterDbContext>(
+            (sp, options) => ConfigureMasterDbContext(options, sp, configuration),
+            ServiceLifetime.Scoped);
 
         // Tenant Database Factory
         // Only register if not in design-time mode (EF Core tools)
@@ -91,14 +109,26 @@ public static class DependencyInjection
         if (!IsDesignTime())
         {
             services.AddScoped<ITenantContext, TenantContext>();
+            services.AddScoped<TenantDatabaseProvisioner>();
             services.AddScoped<ITenantService, TenantService>();
             services.AddScoped<ITenantAuthTokenService, TenantAuthTokenService>();
+            services.AddScoped<IAccountingFirmRegistrationService, AccountingFirmRegistrationService>();
             services.AddScoped<ICompanyProfileSnapshotProvider, CompanyProfileSnapshotProvider>();
-            services.AddScoped<IFirmAssignmentService, FirmAssignmentService>();
-            services.AddScoped<IFirmDossierAccessService, FirmDossierAccessService>();
+            // Enregistrement en 2 temps : la classe concrète est scopée (une instance par
+            // requête) ET l'interface pointe sur la MÊME instance via la lambda ci-dessous.
+            // Objectif : ExchangeService (dans la même assembly) peut prendre la classe
+            // concrète en dépendance pour accéder aux surcharges internes qui acceptent
+            // un MasterDbContext explicite (chemin bootstrap isolé), tout en préservant
+            // l'abstraction IFirmAssignmentService pour l'ensemble des autres appelants.
+            services.AddScoped<FirmAssignmentService>();
+            services.AddScoped<IFirmAssignmentService>(sp => sp.GetRequiredService<FirmAssignmentService>());
+            services.AddScoped<IHonorairesBillingService, FactuTrust.Infrastructure.Services.Honoraires.HonorairesBillingService>();
+            services.AddScoped<FirmDossierAccessService>();
+            services.AddScoped<IFirmDossierAccessService>(sp => sp.GetRequiredService<FirmDossierAccessService>());
             services.AddScoped<IFirmDashboardService, FirmDashboardService>();
             services.AddScoped<IFirmFiscalOpsAggregator, FirmFiscalOpsAggregator>();
             services.AddScoped<IFirmGovernanceService, FirmGovernanceService>();
+            services.AddScoped<IFirmLeaveService, FirmLeaveService>();
             services.AddScoped<IFirmTimeProfitabilityService, FirmTimeProfitabilityService>();
             services.AddScoped<IFirmCollaboratorRentabilityService, FirmCollaboratorRentabilityService>();
             services.AddScoped<IFirmPayrollCostProvider, FirmPayrollCostProvider>();
@@ -106,6 +136,7 @@ public static class DependencyInjection
             services.AddScoped<IFirmFiscalScheduleService, FirmFiscalScheduleService>();
             services.AddScoped<IFirmFiscalScheduleWriteService, FirmFiscalScheduleWriteService>();
             services.AddScoped<IFirmContextService, FirmContextService>();
+            services.AddScoped<IFirmManagedClientService, FirmManagedClientService>();
             services.AddScoped<IFirmCollaboratorService, FirmCollaboratorService>();
             services.Configure<FirmCollaboratorStorageOptions>(
                 configuration.GetSection(FirmCollaboratorStorageOptions.SectionName));
@@ -145,6 +176,8 @@ public static class DependencyInjection
         // Purchasing Repositories
         services.AddScoped<ISupplierRepository, SupplierRepository>();
         services.AddScoped<IPurchaseOrderRepository, PurchaseOrderRepository>();
+        services.AddScoped<IPurchaseReceiptRepository, PurchaseReceiptRepository>();
+        services.AddScoped<IPurchaseGoodsReceptionService, PurchaseGoodsReceptionService>();
         services.AddScoped<ISalesOrderRepository, SalesOrderRepository>();
         services.AddScoped<Application.Features.SalesOrders.Services.ISalesOrderStockReservationService,
             Application.Features.SalesOrders.Services.SalesOrderStockReservationService>();
@@ -161,6 +194,8 @@ public static class DependencyInjection
         services.AddScoped<IClientOutstandingService, ClientOutstandingService>();
         services.AddScoped<Application.Common.Interfaces.Pricing.IPromotionResolver,
             Services.Pricing.PromotionResolver>();
+        services.AddScoped<Application.Common.Interfaces.Pricing.ILinePricingOrchestrator,
+            Services.Pricing.LinePricingOrchestrator>();
         services.AddScoped<ISupplierInvoiceRepository, SupplierInvoiceRepository>();
         services.AddScoped<ISupplierPaymentRepository, SupplierPaymentRepository>();
         services.AddScoped<ICashOperationRepository, CashOperationRepository>();
@@ -387,6 +422,7 @@ public static class DependencyInjection
         services.Configure<FixedAssetsOptions>(configuration.GetSection(FixedAssetsOptions.SectionName));
         services.Configure<AccountingAttachmentsOptions>(configuration.GetSection(AccountingAttachmentsOptions.SectionName));
         services.Configure<AccountingFirmsOptions>(configuration.GetSection(AccountingFirmsOptions.SectionName));
+        services.Configure<TenantProvisioningOptions>(configuration.GetSection(TenantProvisioningOptions.SectionName));
         services.Configure<FirmGovernanceOptions>(configuration.GetSection(FirmGovernanceOptions.SectionName));
         services.Configure<FirmFiscalOpsOptions>(configuration.GetSection(FirmFiscalOpsOptions.SectionName));
         services.Configure<AccountingSettings>(configuration.GetSection(AccountingSettings.SectionName));
@@ -516,6 +552,27 @@ public static class DependencyInjection
         // In design-time, there's no entry assembly (e.g., when running EF Core tools)
         // This is the most reliable way to detect design-time mode
         return Assembly.GetEntryAssembly() == null;
+    }
+
+    /// <summary>
+    /// Configure MasterDbContext identiquement pour le scoped `AddDbContext` ET la factory
+    /// `AddDbContextFactory`. Toute divergence entre les deux appels créerait des instances de
+    /// contexte avec des comportements subtilement différents (interceptors, warnings, migrations).
+    /// </summary>
+    private static void ConfigureMasterDbContext(
+        DbContextOptionsBuilder options,
+        IServiceProvider sp,
+        IConfiguration configuration)
+    {
+        options.UseSqlServer(
+            configuration.GetConnectionString("MasterConnection"),
+            b => b.MigrationsAssembly(typeof(MasterDbContext).Assembly.FullName));
+
+        var env = sp.GetService<IHostEnvironment>();
+        if (env is not null && env.IsDevelopment())
+        {
+            options.AddInterceptors(sp.GetRequiredService<MasterDbConcurrencyDiagnosticsInterceptor>());
+        }
     }
 }
 

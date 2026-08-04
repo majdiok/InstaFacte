@@ -59,6 +59,9 @@ public sealed class DeliveryNoteLine : Entity
     /// </summary>
     public decimal? DiscountPercent { get; private set; }
 
+    public Guid? AppliedPromotionId { get; private set; }
+    public string? AppliedPromotionName { get; private set; }
+
     /// <summary>
     /// Snapshot of <see cref="Product.IsFodecApplicable"/> at creation time.
     /// </summary>
@@ -103,7 +106,10 @@ public sealed class DeliveryNoteLine : Entity
         decimal orderedQuantity,
         string? notes = null,
         decimal? discountPercent = null,
-        decimal fodecRatePercent = DefaultFodecRatePercent)
+        decimal fodecRatePercent = DefaultFodecRatePercent,
+        Money? unitPriceOverride = null,
+        Guid? appliedPromotionId = null,
+        string? appliedPromotionName = null)
     {
         if (product is null)
             return Result.Failure<DeliveryNoteLine>(
@@ -113,9 +119,10 @@ public sealed class DeliveryNoteLine : Entity
             return Result.Failure<DeliveryNoteLine>(
                 Error.Validation("OrderedQuantity", "La quantité doit être supérieure à zéro"));
 
-        if (product.UnitPrice.Amount <= 0)
+        var unitPriceAmount = unitPriceOverride?.Amount ?? product.UnitPrice.Amount;
+        if (unitPriceAmount <= 0)
             return Result.Failure<DeliveryNoteLine>(
-                Error.Validation("UnitPrice", "Le prix unitaire du produit doit être supérieur à zéro"));
+                Error.Validation("UnitPrice", "Le prix unitaire doit être supérieur à zéro"));
 
         // Même règle que InvoiceLine.Create : le plafond catalogue du produit
         // (Product.MaxDiscountPercent) reste contrôlé par la couche applicative.
@@ -134,13 +141,15 @@ public sealed class DeliveryNoteLine : Entity
             Designation = product.Name,
             Description = product.Description,
             Unit = product.Unit ?? "unité",
-            UnitPriceHT = product.UnitPrice.Amount,
+            UnitPriceHT = unitPriceAmount,
             VatRatePercent = (int)product.VatRate,
             OrderedQuantity = orderedQuantity,
             DeliveredQuantity = 0,
             RejectedQuantity = 0,
             Notes = notes?.Trim(),
             DiscountPercent = discountPercent,
+            AppliedPromotionId = appliedPromotionId,
+            AppliedPromotionName = appliedPromotionName?.Trim(),
             IsFodecApplicable = product.IsFodecApplicable,
             FodecRatePercent = fodecRatePercent
         };

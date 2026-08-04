@@ -64,6 +64,8 @@ public sealed class GetSupplierInvoiceByIdQueryHandler : IRequestHandler<GetSupp
             },
             PurchaseOrderId = si.PurchaseOrderId,
             PurchaseOrderNumber = si.PurchaseOrder?.Number.Value ?? "—",
+            SourcePurchaseReceiptId = si.SourcePurchaseReceiptId,
+            SourcePurchaseReceiptNumber = si.SourcePurchaseReceipt?.Number.Value,
             Lines = si.Lines.OrderBy(l => l.LineNumber).Select(l =>
             {
                 assetByLineId.TryGetValue(l.Id, out var linkedAsset);

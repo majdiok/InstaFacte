@@ -18,6 +18,8 @@ export interface QuoteListItem {
   isExpired: boolean;
   isConverted: boolean;
   convertedInvoiceId: string | null;
+  /** Renseigné quand le devis a été transformé en commande client (devis alors verrouillé). */
+  convertedSalesOrderId: string | null;
 }
 
 export interface QuoteLine {
@@ -86,6 +88,7 @@ export interface QuoteDetail {
   cancelledAt: string | null;
   cancellationReason: string | null;
   convertedInvoiceId: string | null;
+  convertedSalesOrderId: string | null;
   convertedAt: string | null;
   createdAt: string;
   updatedAt: string | null;
@@ -219,6 +222,14 @@ export class QuoteService {
 
   convertToInvoice(id: string, options?: { issueDate?: string; dueDate?: string; reference?: string; notes?: string; paymentTerms?: string }): Observable<ApiResponse<string>> {
     return this.http.post<ApiResponse<string>>(`${this.API_URL}/${id}/convert-to-invoice`, options ?? {});
+  }
+
+  /**
+   * Transforme le devis accepté en commande client et le verrouille (409 s'il a déjà été
+   * converti). Retourne l'identifiant de la commande créée.
+   */
+  convertToSalesOrder(id: string, options?: { orderDate?: string; expectedDeliveryDate?: string; warehouseId?: string }): Observable<ApiResponse<string>> {
+    return this.http.post<ApiResponse<string>>(`${this.API_URL}/${id}/convert-to-sales-order`, options ?? {});
   }
 
   duplicateQuote(id: string): Observable<ApiResponse<string>> {

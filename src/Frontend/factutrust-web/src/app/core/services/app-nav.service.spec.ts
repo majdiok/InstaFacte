@@ -64,7 +64,21 @@ const firmUser: User = {
   tenantKind: 'AccountingFirm',
   twoFactorEnabled: false,
   enabledModuleIds: ALL_MODULES,
-  effectivePermissions: ['firm:manage', 'accounting:read']
+  effectivePermissions: [
+    'firm:manage',
+    'accounting:read',
+    'honoraires.invoices:read',
+    'honoraires.quotes:read',
+    'honoraires.payments:read'
+  ]
+};
+
+const firmAccountantUser: User = {
+  ...firmUser,
+  id: 'u2',
+  role: 'FirmAccountant',
+  roleDisplay: 'Comptable cabinet',
+  effectivePermissions: ['accounting:read']
 };
 
 const delegatedUser: User = {
@@ -164,6 +178,51 @@ describe('AppNavService — secondary nav parity', () => {
     expect(nav.hasSecondaryNav()).toBeFalse();
   });
 
+  it('hides manager-only firm nav entries for FirmAccountant', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, firmAccountantUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const nav = TestBed.inject(AppNavService);
+    const labels = nav.navItems().map(item => item.label);
+    const routes = nav
+      .navItems()
+      .flatMap(item => [
+        ...(item.route ? [item.route] : []),
+        ...(item.children?.map(c => c.route).filter((r): r is string => !!r) ?? [])
+      ]);
+
+    expect(labels).not.toContain('Facturation');
+    expect(labels).not.toContain('Paiements');
+    expect(labels).not.toContain('Rentabilité de collaborateurs');
+    expect(routes).not.toContain('/firm/collaborateurs');
+    expect(routes).not.toContain('/firm/billing/invoices');
+    expect(routes).not.toContain('/firm/governance/dossier-time-profitability');
+    expect(routes).toContain('/firm/governance/time-sheets');
+    expect(routes).toContain('/firm/settings');
+  });
+
+  it('shows manager-only firm nav entries for FirmManager', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, firmUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const nav = TestBed.inject(AppNavService);
+    const labels = nav.navItems().map(item => item.label);
+    const routes = nav
+      .navItems()
+      .flatMap(item => [
+        ...(item.route ? [item.route] : []),
+        ...(item.children?.map(c => c.route).filter((r): r is string => !!r) ?? [])
+      ]);
+
+    expect(labels).toContain('Facturation');
+    expect(labels).toContain('Paiements');
+    expect(labels).toContain('Rentabilité de collaborateurs');
+    expect(routes).toContain('/firm/collaborateurs');
+    expect(routes).toContain('/firm/billing/invoices');
+  });
+
   it('shows accounting modules only in secondary nav for delegated accounting-firm mode', () => {
     const auth = TestBed.inject(AuthService);
     setUser(auth, {
@@ -195,6 +254,35 @@ describe('AppNavService — secondary nav parity', () => {
     expect(sidebarLabels).toContain('Ventes');
     expect(sidebarLabels).toContain('Achats');
     expect(sidebarLabels).toContain('Trésorerie');
+    expect(sidebarLabels).toContain('RH & Paie');
+  });
+
+  it('hides Ventes/Achats/Trésorerie in sidebar for firm-managed delegated dossiers', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, {
+      ...delegatedUser,
+      isFirmManaged: true,
+      enabledModuleIds: [
+        AppModule.Accounting,
+        AppModule.Fiscal,
+        AppModule.Reports,
+        AppModule.Payroll
+      ],
+      effectivePermissions: [
+        ...delegatedUser.effectivePermissions!,
+        'payroll:read',
+        'payroll:declare',
+        'payroll:settings'
+      ]
+    });
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const nav = TestBed.inject(AppNavService);
+    const sidebarLabels = nav.navItems().map(s => s.label);
+
+    expect(sidebarLabels).not.toContain('Ventes');
+    expect(sidebarLabels).not.toContain('Achats');
+    expect(sidebarLabels).not.toContain('Trésorerie');
     expect(sidebarLabels).toContain('RH & Paie');
   });
 

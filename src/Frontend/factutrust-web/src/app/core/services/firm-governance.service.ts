@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '@environments/environment';
 import { ApiResponse } from './auth.service';
+import { createHttpContextSkipGlobalErrorUi } from '@core/http-context';
 
 export interface PermanentFile {
   id: string;
@@ -52,6 +53,8 @@ export interface PermanentFile {
   nextActionLabel?: string;
   representatives: LegalRepresentative[];
   shareholders: Shareholder[];
+  /** True si le dossier a été créé et est géré par le cabinet (client sans compte plateforme). */
+  isFirmManaged?: boolean;
 }
 
 export interface LegalRepresentative {
@@ -142,6 +145,8 @@ export interface FirmActivityCode {
   category: number;
   categoryDisplay: string;
   isBillableByDefault: boolean;
+  /** Tarif unitaire HT suggéré à la facturation (TND). null = non configuré. */
+  defaultUnitPrice?: number | null;
   isActive: boolean;
   sortOrder: number;
 }
@@ -151,6 +156,7 @@ export interface SaveFirmActivityCodeBody {
   label: string;
   category: number;
   isBillableByDefault: boolean;
+  defaultUnitPrice?: number | null;
   sortOrder: number;
 }
 
@@ -501,7 +507,10 @@ export class FirmGovernanceService {
     tags?: string;
     targetUserId?: string;
   }): Observable<ApiResponse<FirmTimeSheetEntry>> {
-    return this.http.post<ApiResponse<FirmTimeSheetEntry>>(`${this.base}/time-sheets`, body);
+    // Toast géré par TimeSheetsFacade (anomalies + message métier).
+    return this.http.post<ApiResponse<FirmTimeSheetEntry>>(`${this.base}/time-sheets`, body, {
+      context: createHttpContextSkipGlobalErrorUi()
+    });
   }
 
   updateTimeSheet(id: string, body: {
@@ -516,7 +525,9 @@ export class FirmGovernanceService {
     workLocation?: string;
     tags?: string;
   }): Observable<ApiResponse<FirmTimeSheetEntry>> {
-    return this.http.put<ApiResponse<FirmTimeSheetEntry>>(`${this.base}/time-sheets/${id}`, body);
+    return this.http.put<ApiResponse<FirmTimeSheetEntry>>(`${this.base}/time-sheets/${id}`, body, {
+      context: createHttpContextSkipGlobalErrorUi()
+    });
   }
 
   deleteTimeSheet(id: string): Observable<ApiResponse<unknown>> {
@@ -601,10 +612,11 @@ export class FirmGovernanceService {
 
   // ---- Référentiel des codes activité ----
 
-  listActivityCodes(includeInactive = false): Observable<ApiResponse<FirmActivityCode[]>> {
-    return this.http.get<ApiResponse<FirmActivityCode[]>>(`${this.base}/activity-codes`, {
-      params: includeInactive ? { includeInactive: 'true' } : {}
-    });
+  listActivityCodes(includeInactive = false, billableOnly = false): Observable<ApiResponse<FirmActivityCode[]>> {
+    const params: Record<string, string> = {};
+    if (includeInactive) params['includeInactive'] = 'true';
+    if (billableOnly) params['billableOnly'] = 'true';
+    return this.http.get<ApiResponse<FirmActivityCode[]>>(`${this.base}/activity-codes`, { params });
   }
 
   seedDefaultActivityCodes(): Observable<ApiResponse<FirmActivityCode[]>> {

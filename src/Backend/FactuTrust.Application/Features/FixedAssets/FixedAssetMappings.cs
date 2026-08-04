@@ -37,6 +37,7 @@ internal static class FixedAssetMappings
             a.NetBookValue,
             a.Location,
             a.CreditAccountNumber,
+            a.SupplierId,
             a.SupplierInvoiceId,
             a.SupplierInvoiceLineId);
 

@@ -11,6 +11,7 @@ public interface IExchangeService
         Guid homeTenantId,
         TenantKind tenantKind,
         FirmDossierAccessScope? firmScope,
+        Guid? viewerUserId = null,
         CancellationToken cancellationToken = default);
 
     Task<Result<ExchangeThreadDetailDto>> GetThreadAsync(
@@ -52,7 +53,7 @@ public interface IExchangeService
         FirmDossierAccessScope? firmScope,
         CancellationToken cancellationToken = default);
 
-    Task<Result<IReadOnlyList<ExchangeMessageDto>>> GetMessagesAsync(
+    Task<Result<PagedExchangeMessagesDto>> GetMessagesAsync(
         Guid threadId,
         Guid homeTenantId,
         TenantKind tenantKind,
@@ -60,6 +61,8 @@ public interface IExchangeService
         string? userRole,
         FirmDossierAccessScope? firmScope,
         DateTime? after,
+        DateTime? before = null,
+        int? limit = null,
         CancellationToken cancellationToken = default);
 
     Task<Result<ExchangeMessageDto>> SendMessageAsync(
@@ -76,6 +79,16 @@ public interface IExchangeService
     Task<Result> MarkMessageReadAsync(
         Guid threadId,
         Guid messageId,
+        Guid homeTenantId,
+        TenantKind tenantKind,
+        Guid userId,
+        string? userRole,
+        FirmDossierAccessScope? firmScope,
+        CancellationToken cancellationToken = default);
+
+    Task<Result> MarkMessagesReadBatchAsync(
+        Guid threadId,
+        IReadOnlyList<Guid> messageIds,
         Guid homeTenantId,
         TenantKind tenantKind,
         Guid userId,
@@ -221,5 +234,16 @@ public interface IExchangeService
         Guid userId,
         string? userRole,
         FirmDossierAccessScope? firmScope,
+        CancellationToken cancellationToken = default);
+
+    Task<Result<ExchangeBootstrapDto>> BootstrapAsync(
+        Guid homeTenantId,
+        TenantKind tenantKind,
+        Guid userId,
+        string displayName,
+        string? userRole,
+        FirmDossierAccessScope? firmScope,
+        Guid? threadId,
+        string? tab,
         CancellationToken cancellationToken = default);
 }

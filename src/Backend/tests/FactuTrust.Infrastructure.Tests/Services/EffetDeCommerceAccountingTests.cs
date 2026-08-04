@@ -92,7 +92,13 @@ public sealed class EffetDeCommerceAccountingTests
         po.Confirm();
         po.ReceiveGoods(new[] { (po.Lines.First().Id, 2m) });
 
-        var inv = SupplierInvoice.CreateFromPurchaseOrder(po, "FS-2026-TEST-FF", new DateTime(2026, 4, 5)).Value;
+        var lineSelections = po.Lines
+            .Where(l => l.ReceivedNotInvoicedQuantity > 0)
+            .Select(l => (l.Id, l.ReceivedNotInvoicedQuantity))
+            .ToList();
+
+        var inv = SupplierInvoice.CreateFromPurchaseOrder(
+            po, "FS-2026-TEST-FF", new DateTime(2026, 4, 5), lineSelections).Value;
         return SupplierPayment.Create(inv, inv.TotalAmount, new DateTime(2026, 4, 10), method, reference: "REF-FF", effetDueDate: effetDueDate).Value;
     }
 

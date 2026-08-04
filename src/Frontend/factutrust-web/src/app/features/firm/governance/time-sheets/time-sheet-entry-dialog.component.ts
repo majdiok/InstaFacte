@@ -8,6 +8,7 @@ import { InputTextModule } from 'primeng/inputtext';
 import { CheckboxModule } from 'primeng/checkbox';
 import { FirmActivityCode } from '@core/services/firm-governance.service';
 import { FirmClientDossier } from '@core/services/firm-assignment.service';
+import { WORK_LOCATION_OPTIONS } from './time-sheet-work-location';
 
 @Component({
   selector: 'app-time-sheet-entry-dialog',
@@ -72,7 +73,15 @@ import { FirmClientDossier } from '@core/services/firm-assignment.service';
             <input pInputText type="time" formControlName="endTime" />
           </label>
           <label>Heures
-            <input pInputText type="number" step="0.25" min="0.25" max="24" formControlName="hours" />
+            <input
+              pInputText
+              type="number"
+              step="0.25"
+              min="0.25"
+              max="24"
+              formControlName="hours"
+              [readonly]="hasTimeSlot"
+              [attr.title]="hasTimeSlot ? 'Durée calculée depuis le créneau Début/Fin' : null" />
           </label>
         </div>
         <label>Notes
@@ -80,7 +89,14 @@ import { FirmClientDossier } from '@core/services/firm-assignment.service';
         </label>
         <div class="row">
           <label>Lieu
-            <input pInputText formControlName="workLocation" placeholder="Office / Client / Remote" />
+            <p-dropdown
+              formControlName="workLocation"
+              [options]="locationOptions"
+              optionLabel="label"
+              optionValue="value"
+              placeholder="Sélectionner (optionnel)"
+              [showClear]="true"
+              appendTo="body" />
           </label>
           <label>Tags
             <input pInputText formControlName="tags" placeholder="urgent,client" />
@@ -116,6 +132,10 @@ import { FirmClientDossier } from '@core/services/firm-assignment.service';
     .checkbox-row {
       flex-direction: row !important; align-items: center; gap: .5rem;
     }
+    input[readonly] {
+      background: var(--color-surface-muted, #f1f5f9);
+      cursor: default;
+    }
   `]
 })
 export class TimeSheetEntryDialogComponent {
@@ -129,4 +149,12 @@ export class TimeSheetEntryDialogComponent {
   @Output() submit = new EventEmitter<void>();
   @Output() cancel = new EventEmitter<void>();
   @Output() activityCodeChange = new EventEmitter<string | null>();
+
+  readonly locationOptions = WORK_LOCATION_OPTIONS;
+
+  get hasTimeSlot(): boolean {
+    const start = (this.form?.value?.startTime ?? '').toString().trim();
+    const end = (this.form?.value?.endTime ?? '').toString().trim();
+    return !!start && !!end;
+  }
 }

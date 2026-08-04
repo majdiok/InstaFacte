@@ -29,6 +29,9 @@ public sealed class QuoteLine : Entity
     public decimal? DiscountPercent { get; private set; }
     public Money DiscountAmount { get; private set; } = null!;
 
+    public Guid? AppliedPromotionId { get; private set; }
+    public string? AppliedPromotionName { get; private set; }
+
     /// <summary>
     /// Snapshot de <see cref="Product.IsFodecApplicable"/> à la création de la ligne.
     /// Le devis doit annoncer le FODEC que la facture appliquera, sans quoi le client
@@ -79,7 +82,9 @@ public sealed class QuoteLine : Entity
         decimal quantity,
         Money unitPrice,
         decimal? discountPercent = null,
-        decimal fodecRatePercent = DefaultFodecRatePercent)
+        decimal fodecRatePercent = DefaultFodecRatePercent,
+        Guid? appliedPromotionId = null,
+        string? appliedPromotionName = null)
     {
         if (quantity <= 0)
             return Result.Failure<QuoteLine>(Error.Validation("Quantity", "La quantité doit être supérieure à zéro"));
@@ -102,6 +107,8 @@ public sealed class QuoteLine : Entity
             UnitPrice = unitPrice,
             VatRate = product.VatRate,
             DiscountPercent = discountPercent,
+            AppliedPromotionId = appliedPromotionId,
+            AppliedPromotionName = appliedPromotionName?.Trim(),
             IsFodecApplicable = product.IsFodecApplicable,
             FodecRatePercent = fodecRatePercent
         };

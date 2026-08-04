@@ -11,36 +11,83 @@ import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http'
 describe('FixedAssetDetailComponent', () => {
   const base = `${environment.apiUrl}/accounting/fixed-assets`;
 
+  const draftAsset = {
+    id: 'asset-1',
+    inventoryNumber: 'IMMO-2026-0001',
+    label: 'Camion',
+    status: 'Draft',
+    assetAccountNumber: '218',
+    depreciationAccountNumber: '2818',
+    expenseAccountNumber: '6818',
+    acquisitionCost: 50000,
+    capitalizedFees: 0,
+    residualValue: 0,
+    totalCapitalizedCost: 50000,
+    vatAmount: 0,
+    acquisitionDate: '2026-01-10',
+    depreciationRateCategoryId: 'cat-1',
+    depreciationRateCategoryLabel: 'Transport',
+    depreciationRatePercent: 20,
+    usefulLifeYears: 5,
+    depreciationMethod: 'Linear',
+    accelerationCoefficient: 1,
+    accumulatedDepreciation: 0,
+    netBookValue: 50000,
+    supplierId: 'sup-1'
+  };
+
   function setup(routeSnapshot: Partial<{ data: Record<string, unknown>; id: string | null }>) {
     TestBed.configureTestingModule({
-    imports: [FixedAssetDetailComponent, RouterTestingModule, NoopAnimationsModule],
-    providers: [
+      imports: [FixedAssetDetailComponent, RouterTestingModule, NoopAnimationsModule],
+      providers: [
         {
-            provide: ActivatedRoute,
-            useValue: {
-                snapshot: {
-                    data: routeSnapshot.data ?? {},
-                    paramMap: convertToParamMap(routeSnapshot.id ? { id: routeSnapshot.id } : {}),
-                    queryParamMap: convertToParamMap({})
-                }
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: {
+              data: routeSnapshot.data ?? {},
+              paramMap: convertToParamMap(routeSnapshot.id ? { id: routeSnapshot.id } : {}),
+              queryParamMap: convertToParamMap({})
             }
+          }
         },
         provideHttpClient(withInterceptorsFromDi()),
         provideHttpClientTesting()
-    ]
-});
+      ]
+    });
 
     const fixture = TestBed.createComponent(FixedAssetDetailComponent);
     const httpMock = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
 
     httpMock.expectOne(`${base}/rate-categories`).flush({ success: true, data: [] });
-    httpMock.expectOne(r => r.url.includes('/suppliers')).flush({
-      success: true,
-      data: { items: [], page: 1, pageSize: 200, totalCount: 0 }
-    });
+
+    const isNew =
+      routeSnapshot.data?.['mode'] === 'new' || routeSnapshot.id === 'new' || !routeSnapshot.id;
+    if (isNew) {
+      httpMock.expectOne(r => r.url.includes('/suppliers')).flush({
+        success: true,
+        data: { items: [{ id: 'sup-1', name: 'Fournisseur A' }], page: 1, pageSize: 200, totalCount: 1 }
+      });
+    }
 
     return { fixture, httpMock };
+  }
+
+  function flushDraftAsset(httpMock: HttpTestingController, overrides: Record<string, unknown> = {}): void {
+    httpMock.expectOne(`${base}/asset-1`).flush({
+      success: true,
+      data: { ...draftAsset, ...overrides }
+    });
+    httpMock.expectOne(r => r.url.includes('/suppliers')).flush({
+      success: true,
+      data: {
+        items: [{ id: 'sup-1', name: 'Fournisseur A' }],
+        page: 1,
+        pageSize: 200,
+        totalCount: 1
+      }
+    });
+    httpMock.expectOne(`${base}/asset-1/schedule`).flush({ success: true, data: null });
   }
 
   it('should enter creation mode on the static /new route (route data)', () => {
@@ -55,74 +102,29 @@ describe('FixedAssetDetailComponent', () => {
     const { fixture, httpMock } = setup({ id: 'asset-1' });
 
     expect(fixture.componentInstance.isNew()).toBeFalse();
-    const req = httpMock.expectOne(`${base}/asset-1`);
-    expect(req.request.method).toBe('GET');
-    req.flush({
-      success: true,
-      data: {
-        id: 'asset-1',
-        inventoryNumber: 'IMMO-2026-0001',
-        label: 'Machine',
-        status: 'Draft',
-        assetAccountNumber: '218',
-        depreciationAccountNumber: '2818',
-        expenseAccountNumber: '6818',
-        acquisitionCost: 10000,
-        capitalizedFees: 0,
-        residualValue: 0,
-        totalCapitalizedCost: 10000,
-        vatAmount: 0,
-        acquisitionDate: '2026-01-10',
-        depreciationRateCategoryId: 'cat-1',
-        depreciationRateCategoryLabel: 'Autres',
-        depreciationRatePercent: 15,
-        usefulLifeYears: 6.67,
-        depreciationMethod: 'Linear',
-        accelerationCoefficient: 1,
-        accumulatedDepreciation: 0,
-        netBookValue: 10000
-      }
+    flushDraftAsset(httpMock, {
+      label: 'Machine',
+      acquisitionCost: 10000,
+      totalCapitalizedCost: 10000,
+      depreciationRateCategoryLabel: 'Autres',
+      depreciationRatePercent: 15,
+      usefulLifeYears: 6.67,
+      netBookValue: 10000
     });
-    httpMock.expectOne(`${base}/asset-1/schedule`).flush({ success: true, data: null });
 
     const component = fixture.componentInstance;
     expect(component.asset()?.label).toBe('Machine');
     expect(component.asset()?.status).toBe(FixedAssetStatus.Draft);
     expect(component.form.label).toBe('Machine');
     expect(component.form.depreciationMethod).toBe(DepreciationMethod.Linear);
+    expect(component.form.supplierId).toBe('sup-1');
     httpMock.verify();
   });
 
   it('should show put-in-service section for draft assets', () => {
     const { fixture, httpMock } = setup({ id: 'asset-1' });
 
-    httpMock.expectOne(`${base}/asset-1`).flush({
-      success: true,
-      data: {
-        id: 'asset-1',
-        inventoryNumber: 'IMMO-2026-0001',
-        label: 'Camion',
-        status: 'Draft',
-        assetAccountNumber: '218',
-        depreciationAccountNumber: '2818',
-        expenseAccountNumber: '6818',
-        acquisitionCost: 50000,
-        capitalizedFees: 0,
-        residualValue: 0,
-        totalCapitalizedCost: 50000,
-        vatAmount: 0,
-        acquisitionDate: '2026-01-10',
-        depreciationRateCategoryId: 'cat-1',
-        depreciationRateCategoryLabel: 'Transport',
-        depreciationRatePercent: 20,
-        usefulLifeYears: 5,
-        depreciationMethod: 'Linear',
-        accelerationCoefficient: 1,
-        accumulatedDepreciation: 0,
-        netBookValue: 50000
-      }
-    });
-    httpMock.expectOne(`${base}/asset-1/schedule`).flush({ success: true, data: null });
+    flushDraftAsset(httpMock);
     fixture.detectChanges();
 
     expect(fixture.componentInstance.isDraftAsset()).toBeTrue();
@@ -132,36 +134,25 @@ describe('FixedAssetDetailComponent', () => {
     httpMock.verify();
   });
 
-  it('should reload the asset after put-in-service concurrency error', () => {
+  it('should not preload suppliers for in-service assets', () => {
     const { fixture, httpMock } = setup({ id: 'asset-1' });
 
     httpMock.expectOne(`${base}/asset-1`).flush({
       success: true,
-      data: {
-        id: 'asset-1',
-        inventoryNumber: 'IMMO-2026-0001',
-        label: 'Camion',
-        status: 'Draft',
-        assetAccountNumber: '218',
-        depreciationAccountNumber: '2818',
-        expenseAccountNumber: '6818',
-        acquisitionCost: 50000,
-        capitalizedFees: 0,
-        residualValue: 0,
-        totalCapitalizedCost: 50000,
-        vatAmount: 0,
-        acquisitionDate: '2026-01-10',
-        depreciationRateCategoryId: 'cat-1',
-        depreciationRateCategoryLabel: 'Transport',
-        depreciationRatePercent: 20,
-        usefulLifeYears: 5,
-        depreciationMethod: 'Linear',
-        accelerationCoefficient: 1,
-        accumulatedDepreciation: 0,
-        netBookValue: 50000
-      }
+      data: { ...draftAsset, status: 'InService', supplierId: 'sup-1' }
     });
     httpMock.expectOne(`${base}/asset-1/schedule`).flush({ success: true, data: null });
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.form.supplierId).toBe('sup-1');
+    expect(fixture.componentInstance.suppliers().length).toBe(0);
+    httpMock.verify();
+  });
+
+  it('should reload the asset after put-in-service concurrency error', () => {
+    const { fixture, httpMock } = setup({ id: 'asset-1' });
+
+    flushDraftAsset(httpMock);
     fixture.detectChanges();
 
     fixture.componentInstance.putInService();
@@ -174,33 +165,7 @@ describe('FixedAssetDetailComponent', () => {
 
     expect(fixture.componentInstance.error()).toContain('modifiées entre-temps');
 
-    httpMock.expectOne(`${base}/asset-1`).flush({
-      success: true,
-      data: {
-        id: 'asset-1',
-        inventoryNumber: 'IMMO-2026-0001',
-        label: 'Camion',
-        status: 'Draft',
-        assetAccountNumber: '218',
-        depreciationAccountNumber: '2818',
-        expenseAccountNumber: '6818',
-        acquisitionCost: 50000,
-        capitalizedFees: 0,
-        residualValue: 0,
-        totalCapitalizedCost: 50000,
-        vatAmount: 0,
-        acquisitionDate: '2026-01-10',
-        depreciationRateCategoryId: 'cat-1',
-        depreciationRateCategoryLabel: 'Transport',
-        depreciationRatePercent: 20,
-        usefulLifeYears: 5,
-        depreciationMethod: 'Linear',
-        accelerationCoefficient: 1,
-        accumulatedDepreciation: 0,
-        netBookValue: 50000
-      }
-    });
-    httpMock.expectOne(`${base}/asset-1/schedule`).flush({ success: true, data: null });
+    flushDraftAsset(httpMock);
     httpMock.verify();
   });
 

@@ -99,6 +99,8 @@ public sealed record FirmClientAssignmentDto
     public string? Notes { get; init; }
     public string? RejectionReason { get; init; }
     public CompanyProfileSnapshotDto? CompanyProfile { get; init; }
+    /// <summary>True si la société est un dossier créé et géré par le cabinet (sans compte plateforme).</summary>
+    public bool IsFirmManaged { get; init; }
 }
 
 public sealed record RejectFirmAssignmentDto
@@ -119,6 +121,8 @@ public sealed record FirmClientDossierDto
     public string? AssignedAccountantName { get; init; }
     /// <summary>True si aucun gestionnaire comptable n'est encore affecté.</summary>
     public bool IsAwaitingAccountantAssignment { get; init; }
+    /// <summary>True si la société est un dossier créé et géré par le cabinet (sans compte plateforme).</summary>
+    public bool IsFirmManaged { get; init; }
 }
 
 public sealed record FirmAssignableAccountantDto
@@ -140,6 +144,10 @@ public sealed record FirmContextDto
     public Guid? ClientTenantId { get; init; }
     public string? ClientCompanyName { get; init; }
     public string AccessMode { get; init; } = "native";
+    /// <summary>
+    /// True when the active delegated dossier is firm-managed (no platform commercial account).
+    /// </summary>
+    public bool IsFirmManaged { get; init; }
 }
 
 public sealed record CreateFirmUserDto

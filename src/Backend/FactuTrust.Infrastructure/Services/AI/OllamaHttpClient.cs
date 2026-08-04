@@ -406,14 +406,14 @@ public sealed class OllamaHttpClient : IOllamaClient
         if (statusCode == System.Net.HttpStatusCode.NotFound)
         {
             if (!string.IsNullOrEmpty(ollamaError))
-                return $"Modèle introuvable ou non installé : {ollamaError} Utilisez « ollama pull <nom> » ou choisissez un modèle installé.";
-            return "Modèle introuvable ou non installé dans Ollama. Exécutez « ollama pull <nom> » ou sélectionnez un modèle disponible.";
+                return $"Modèle introuvable ou non installé : {ollamaError} Contactez l'administrateur plateforme ou choisissez un modèle installé.";
+            return "Modèle introuvable ou non installé sur le moteur IA InstaFact. Contactez l'administrateur plateforme ou sélectionnez un modèle disponible.";
         }
 
         if (!string.IsNullOrEmpty(ollamaError))
-            return $"Erreur Ollama : {ollamaError}";
+            return $"Erreur InstaFact IA : {ollamaError}";
 
-        return "Le moteur IA a renvoyé une erreur. Vérifiez qu’Ollama est à jour et que le modèle est disponible.";
+        return "Le moteur IA InstaFact a renvoyé une erreur. Vérifiez que le service est à jour et que le modèle est disponible.";
     }
 
     private static string? TryExtractOllamaErrorJson(string body)

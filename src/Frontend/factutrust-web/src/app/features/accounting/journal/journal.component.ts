@@ -1,6 +1,7 @@
 import { Component, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { Table, TableModule } from 'primeng/table';
 import { InputTextModule } from 'primeng/inputtext';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
@@ -678,6 +679,7 @@ export class JournalComponent implements OnInit {
   private readonly monitoring = inject(AccountingMonitoringService);
   private readonly auth = inject(AuthService);
   private readonly journalCatalog = inject(AccountingJournalCatalogService);
+  private readonly route = inject(ActivatedRoute);
 
   readonly canValidate = computed(() => canValidateAccountingEntries(this.auth));
 
@@ -729,8 +731,17 @@ export class JournalComponent implements OnInit {
   });
 
   ngOnInit(): void {
-    this.fromStr = firstDayOfMonthLocalYmd();
-    this.toStr = todayLocalYmd();
+    const qp = this.route.snapshot.queryParamMap;
+    const fromParam = qp.get('from');
+    const toParam = qp.get('to');
+    const journalParam = qp.get('journalCode');
+
+    this.fromStr = fromParam ?? firstDayOfMonthLocalYmd();
+    this.toStr = toParam ?? todayLocalYmd();
+    if (journalParam) {
+      this.journalCode = journalParam;
+    }
+
     this.journalCatalog.list().subscribe(list => this.journals.set(list));
     this.load();
   }

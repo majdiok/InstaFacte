@@ -9,6 +9,8 @@ export interface Confirmation {
   acceptLabel?: string;
   rejectLabel?: string;
   acceptButtonStyleClass?: string;
+  /** Modal width (default `sm`). Use `md` for long French button labels. */
+  size?: 'sm' | 'md' | 'lg';
   accept?: () => void;
   reject?: () => void;
 }
@@ -33,9 +35,9 @@ export class ConfirmationService {
 
   /**
    * Affiche une modale de confirmation avec un message et des actions.
-   * 
+   *
    * @param confirmation Configuration de la modale (message, labels, callbacks, etc.)
-   * 
+   *
    * @example
    * confirmationService.confirm({
    *   message: 'Êtes-vous sûr de vouloir supprimer cet élément ?',
@@ -47,6 +49,16 @@ export class ConfirmationService {
    *   accept: () => { this.deleteItem(); },
    *   reject: () => { console.log('Cancelled'); }
    * });
+   *
+   * @example Long labels (inventory cancel) — use size `md` so both actions fit side-by-side
+   * confirmationService.confirm({
+   *   header: 'Annuler l\'inventaire',
+   *   acceptLabel: 'Annuler l\'inventaire',
+   *   rejectLabel: 'Continuer le comptage',
+   *   size: 'md',
+   *   acceptButtonStyleClass: 'btn-danger',
+   *   accept: () => { this.cancelInventory(); }
+   * });
    */
   confirm(confirmation: Confirmation): void {
     const ref = this.modal.open(ConfirmModalComponent, {
@@ -54,7 +66,7 @@ export class ConfirmationService {
       centered: true,
       backdrop: 'static', // Empêche la fermeture en cliquant sur le backdrop
       keyboard: true, // Permet la fermeture avec ESC
-      size: 'sm',
+      size: confirmation.size ?? 'sm',
       windowClass: 'confirm-modal-window', // Classe personnalisée pour le z-index
       modalDialogClass: 'confirm-modal-dialog', // Classe pour le dialog
       scrollable: false

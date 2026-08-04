@@ -1,6 +1,6 @@
 import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule, ActivatedRoute } from '@angular/router';
+import { Router, RouterModule, ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
@@ -11,15 +11,23 @@ import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { DialogModule } from 'primeng/dialog';
 import { ProgressBarModule } from 'primeng/progressbar';
+import { CardModule } from 'primeng/card';
+import { DividerModule } from 'primeng/divider';
+import { TimelineModule } from 'primeng/timeline';
+import { SkeletonModule } from 'primeng/skeleton';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
 import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
+import { DocumentActionsMenuComponent } from '@shared/components/document-actions-menu/document-actions-menu.component';
+import { MenuItem } from '@shared/models/menu-item.model';
 import {
   SalesOrderService,
   SalesOrderDetail,
   SalesOrderLine,
-  SalesOrderStatus
+  SalesOrderStatus,
+  GenerateDeliveryNoteRequest,
+  GenerateInvoiceFromOrderRequest
 } from '@core/services/sales-order.service';
 import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
@@ -27,6 +35,13 @@ import { AuthService } from '@core/services/auth.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { ClientService, ClientOutstanding } from '@core/services/client.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
+
+interface TimelineEvent {
+  status: string;
+  icon: string;
+  color: string;
+  date?: string | null;
+}
 
 @Component({
   selector: 'app-sales-order-detail',
@@ -44,228 +59,370 @@ import { PERMISSIONS } from '@core/config/permission-keys';
     TooltipModule,
     DialogModule,
     ProgressBarModule,
+    CardModule,
+    DividerModule,
+    TimelineModule,
+    SkeletonModule,
     PageHeaderComponent,
     BreadcrumbComponent,
     EmptyStateComponent,
-    ButtonComponent
+    ButtonComponent,
+    DocumentActionsMenuComponent
   ],
   template: `
     <app-breadcrumb [items]="breadcrumbItems()"></app-breadcrumb>
 
-    @if (order(); as o) {
-      <app-page-header [title]="'Commande ' + o.number" [subtitle]="headerSubtitle()">
-        @if (canConfirm()) {
-          <app-button variant="primary" icon="pi-check" iconPos="left" (clicked)="confirmOrder()">
-            Confirmer
-          </app-button>
-        }
-        @if (canEditDiscount()) {
-          <app-button
-            variant="secondary"
-            icon="pi-percentage"
-            iconPos="left"
-            (clicked)="openDiscount()"
-            pTooltip="La remise réduit la base de TVA et le FODEC, répartie sur les lignes.">
-            Remise de pied
-          </app-button>
-        }
-        @if (canClose()) {
-          <app-button
-            variant="secondary"
-            icon="pi-flag"
-            iconPos="left"
-            (clicked)="openClose()"
-            pTooltip="Solder la commande en renonçant au reliquat.">
-            Solder
-          </app-button>
-        }
-        @if (canCancel()) {
-          <app-button variant="danger" icon="pi-times" iconPos="left" (clicked)="openCancel()">
-            Annuler
-          </app-button>
-        }
-      </app-page-header>
-
-      <!-- Statut et provenance -->
-      <div class="ft-detail-bar">
-        <p-tag [severity]="statusSeverity(o.status)" [value]="o.statusDisplay"></p-tag>
-
-        @if (o.isStockReserved) {
-          <span class="ft-chip" pTooltip="Le stock est réservé pour cette commande.">
-            <i class="pi pi-box"></i> Stock réservé
-          </span>
-        }
-
-        @if (o.sourceQuoteId) {
-          <a [routerLink]="['/quotes', o.sourceQuoteId]" class="ft-chip ft-chip--link">
-            <i class="pi pi-file-import"></i>
-            Issue du devis {{ o.sourceQuoteNumber ?? '' }}
-          </a>
-        }
-      </div>
-
-      @if (o.status === 'Cancelled' && o.cancellationReason) {
-        <div class="ft-alert ft-alert--danger">
-          <i class="pi pi-times-circle"></i>
-          <strong>Commande annulée</strong> — {{ o.cancellationReason }}
-        </div>
+    <app-page-header [title]="pageTitle()" [subtitle]="headerSubtitle()">
+      @if (primaryAction(); as action) {
+        <app-button [variant]="action.variant" [icon]="action.icon" iconPos="left" (clicked)="action.command()">
+          {{ action.label }}
+        </app-button>
       }
+      <app-document-actions-menu [items]="menuItems()" />
+    </app-page-header>
 
-      @if (o.status === 'Closed' && o.closureReason) {
-        <div class="ft-alert ft-alert--muted">
-          <i class="pi pi-flag"></i>
-          <strong>Commande soldée</strong> — {{ o.closureReason }}
-          <span class="ft-muted">Le reliquat non livré a été abandonné.</span>
+    @if (loading()) {
+      <div class="skeleton-grid">
+        <div class="main-content">
+          <p-card>
+            <p-skeleton height="2rem" styleClass="mb-4"></p-skeleton>
+            <p-skeleton height="1rem" styleClass="mb-2" width="60%"></p-skeleton>
+            <p-skeleton height="1rem" styleClass="mb-2" width="40%"></p-skeleton>
+            <p-skeleton height="8rem" styleClass="mb-4"></p-skeleton>
+            <p-skeleton height="10rem"></p-skeleton>
+          </p-card>
         </div>
-      }
-
-      <!-- Avancement : les trois quantités sont ce que ce module apporte -->
-      <div class="ft-cards-row">
-        <div class="ft-card">
-          <div class="ft-card__label">Livraison</div>
-          <p-progressBar [value]="deliveryProgress()" [showValue]="true"></p-progressBar>
-          <div class="ft-card__hint">
-            Reste à livrer : {{ o.totalPendingDeliveryQuantity | number: '1.0-4' }}
-          </div>
-        </div>
-
-        <div class="ft-card">
-          <div class="ft-card__label">Facturation</div>
-          <p-progressBar [value]="invoiceProgress()" [showValue]="true"></p-progressBar>
-          <div class="ft-card__hint">
-            Reste à facturer : {{ o.totalPendingInvoiceQuantity | number: '1.0-4' }}
-          </div>
-        </div>
-
-        <div class="ft-card">
-          <div class="ft-card__label">Carnet</div>
-          <div class="ft-card__value">{{ o.backlogAmountHt | number: '1.3-3' }} {{ o.currency }}</div>
-          <div class="ft-card__hint">Valeur HT restant à livrer</div>
+        <div class="sidebar">
+          <p-skeleton height="12rem" styleClass="mb-4"></p-skeleton>
+          <p-skeleton height="14rem" styleClass="mb-4"></p-skeleton>
         </div>
       </div>
+    } @else {
+      @if (order(); as o) {
+      <div class="detail-grid">
+        <div class="main-content">
+          <!-- Alertes -->
+          @if (o.status === 'Cancelled' && o.cancellationReason) {
+            <div class="alert-banner danger">
+              <i class="pi pi-times-circle"></i>
+              <div>
+                <strong>Commande annulée</strong> — {{ o.cancellationReason }}
+              </div>
+            </div>
+          }
+          @if (o.status === 'Closed' && o.closureReason) {
+            <div class="alert-banner muted">
+              <i class="pi pi-flag"></i>
+              <div>
+                <strong>Commande soldée</strong> — {{ o.closureReason }}
+                <div class="hint">Le reliquat non livré a été abandonné.</div>
+              </div>
+            </div>
+          }
 
-      <!-- En-tête -->
-      <div class="ft-panel">
-        <h3 class="ft-panel__title">Informations</h3>
-        <div class="ft-info-grid">
-          <div><span class="ft-info__label">Client</span>
-            <a [routerLink]="['/clients', o.clientId]" class="ft-link">{{ o.client.name }}</a>
+          <!-- En-tête document -->
+          <div class="document-card">
+            <div class="document-header">
+              <div class="document-meta">
+                <h1 class="document-title">{{ o.number }}</h1>
+                <div class="document-badges">
+                  <p-tag [severity]="statusSeverity(o.status)" [value]="o.statusDisplay"></p-tag>
+                  @if (o.isStockReserved) {
+                    <span class="ft-chip" pTooltip="Le stock est réservé pour cette commande.">
+                      <i class="pi pi-box"></i> Stock réservé
+                    </span>
+                  }
+                  @if (o.sourceQuoteId) {
+                    <a [routerLink]="['/quotes', o.sourceQuoteId]" class="ft-chip ft-chip--link">
+                      <i class="pi pi-file-import"></i>
+                      Issue du devis {{ o.sourceQuoteNumber ?? '' }}
+                    </a>
+                  }
+                </div>
+              </div>
+              <div class="document-dates">
+                <div class="date-item">
+                  <span class="label">Date de commande</span>
+                  <span class="value">{{ o.orderDate | date: 'dd/MM/yyyy' }}</span>
+                </div>
+                <div class="date-item">
+                  <span class="label">Livraison prévue</span>
+                  <span class="value" [class.empty]="!o.expectedDeliveryDate">
+                    {{ o.expectedDeliveryDate ? (o.expectedDeliveryDate | date: 'dd/MM/yyyy') : '—' }}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
-          <div><span class="ft-info__label">Date de commande</span>
-            {{ o.orderDate | date: 'dd/MM/yyyy' }}
+
+          <!-- KPIs -->
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <span class="ft-icon-badge ft-icon-badge--primary"><i class="pi pi-truck"></i></span>
+              <div class="kpi-content">
+                <div class="kpi-label">Livraison</div>
+                <div class="kpi-value">
+                  {{ deliveryProgress() }} %
+                  <small>· {{ o.totalPendingDeliveryQuantity | number: '1.0-4' }} reste à livrer</small>
+                </div>
+                <div class="kpi-progress">
+                  <p-progressBar [value]="deliveryProgress()" [showValue]="false"></p-progressBar>
+                </div>
+              </div>
+            </div>
+
+            <div class="kpi-card">
+              <span class="ft-icon-badge ft-icon-badge--violet"><i class="pi pi-file-export"></i></span>
+              <div class="kpi-content">
+                <div class="kpi-label">Facturation</div>
+                <div class="kpi-value">
+                  {{ invoiceProgress() }} %
+                  <small>· {{ o.totalPendingInvoiceQuantity | number: '1.0-4' }} reste à facturer</small>
+                </div>
+                <div class="kpi-progress">
+                  <p-progressBar [value]="invoiceProgress()" [showValue]="false"></p-progressBar>
+                </div>
+              </div>
+            </div>
+
+            <div class="kpi-card">
+              <span class="ft-icon-badge ft-icon-badge--emerald"><i class="pi pi-book"></i></span>
+              <div class="kpi-content">
+                <div class="kpi-label">Carnet</div>
+                <div class="kpi-value">{{ o.backlogAmountHt | number: '1.3-3' }} {{ o.currency }}</div>
+                <div class="kpi-hint">Valeur HT restant à livrer</div>
+              </div>
+            </div>
           </div>
-          <div><span class="ft-info__label">Livraison prévue</span>
-            {{ o.expectedDeliveryDate ? (o.expectedDeliveryDate | date: 'dd/MM/yyyy') : '—' }}
-          </div>
-          <div><span class="ft-info__label">Référence</span>{{ o.reference || '—' }}</div>
-          <div><span class="ft-info__label">Dépôt</span>{{ o.warehouseName || '—' }}</div>
-          <div><span class="ft-info__label">Conditions de règlement</span>{{ o.paymentTerms || '—' }}</div>
-        </div>
 
-        @if (o.notes) {
-          <div class="ft-notes"><span class="ft-info__label">Notes</span>{{ o.notes }}</div>
-        }
-      </div>
-
-      <!-- Lignes -->
-      <div class="ft-table-card">
-        <p-table [value]="o.lines" [rowHover]="true" styleClass="ft-table">
-          <ng-template pTemplate="header">
-            <tr>
-              <th>#</th>
-              <th>Produit</th>
-              <th class="ft-num">Cdé</th>
-              <th class="ft-num">Livré</th>
-              <th class="ft-num">Facturé</th>
-              <th class="ft-num">Reste à livrer</th>
-              <th class="ft-num">PU HT</th>
-              <th class="ft-num">Remise</th>
-              <th class="ft-num">Total HT</th>
-            </tr>
-          </ng-template>
-
-          <ng-template pTemplate="body" let-line>
-            <tr>
-              <td>{{ line.lineNumber }}</td>
-              <td>
-                <span class="ft-muted">{{ line.productCode }}</span> — {{ line.productName }}
-                @if (line.notes) {
-                  <i class="pi pi-comment ft-icon-hint" [pTooltip]="line.notes"></i>
-                }
-              </td>
-              <td class="ft-num">{{ line.quantity | number: '1.0-4' }}</td>
-              <td class="ft-num">
-                <span [class.ft-complete]="line.isFullyDelivered">
-                  {{ line.deliveredQuantity | number: '1.0-4' }}
-                </span>
-              </td>
-              <td class="ft-num">
-                <span [class.ft-complete]="line.isFullyInvoiced">
-                  {{ line.invoicedQuantity | number: '1.0-4' }}
-                </span>
-              </td>
-              <td class="ft-num">
-                @if (line.pendingDeliveryQuantity > 0) {
-                  <strong>{{ line.pendingDeliveryQuantity | number: '1.0-4' }}</strong>
-                } @else {
-                  <i class="pi pi-check ft-icon-ok" pTooltip="Ligne entièrement livrée"></i>
-                }
-              </td>
-              <td class="ft-num">{{ line.unitPrice | number: '1.3-3' }}</td>
-              <td class="ft-num">{{ line.discountPercent ? (line.discountPercent + ' %') : '—' }}</td>
-              <td class="ft-num">{{ line.subTotal | number: '1.3-3' }}</td>
-            </tr>
-          </ng-template>
-        </p-table>
-      </div>
-
-      <!-- Totaux -->
-      <div class="ft-totals">
-        @if (o.globalDiscountAmount > 0) {
-          <div class="ft-totals__row">
-            <span>Sous-total HT</span>
-            <span>{{ o.subTotalBeforeGlobalDiscount | number: '1.3-3' }}</span>
-          </div>
-          <div class="ft-totals__row ft-totals__row--discount">
-            <span>
-              Remise de pied
-              @if (o.globalDiscountPercent) {
-                ({{ o.globalDiscountPercent }} %)
+          <!-- Informations -->
+          <div class="info-section">
+            <h2 class="section-title"><i class="pi pi-info-circle"></i> Informations</h2>
+            <div class="info-grid">
+              <div class="info-item full-width">
+                <div class="info-label"><i class="pi pi-user"></i> Client</div>
+                <div class="info-value">
+                  <a [routerLink]="['/clients', o.clientId]" class="ft-link">{{ o.client.name }}</a>
+                </div>
+              </div>
+              <div class="info-item">
+                <div class="info-label"><i class="pi pi-calendar"></i> Date de commande</div>
+                <div class="info-value">{{ o.orderDate | date: 'dd/MM/yyyy' }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label"><i class="pi pi-clock"></i> Livraison prévue</div>
+                <div class="info-value" [class.empty]="!o.expectedDeliveryDate">
+                  {{ o.expectedDeliveryDate ? (o.expectedDeliveryDate | date: 'dd/MM/yyyy') : '—' }}
+                </div>
+              </div>
+              <div class="info-item">
+                <div class="info-label"><i class="pi pi-tag"></i> Référence</div>
+                <div class="info-value" [class.empty]="!o.reference">{{ o.reference || '—' }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label"><i class="pi pi-warehouse"></i> Dépôt</div>
+                <div class="info-value" [class.empty]="!o.warehouseName">{{ o.warehouseName || '—' }}</div>
+              </div>
+              <div class="info-item full-width">
+                <div class="info-label"><i class="pi pi-credit-card"></i> Conditions de règlement</div>
+                <div class="info-value" [class.empty]="!o.paymentTerms">{{ o.paymentTerms || '—' }}</div>
+              </div>
+              @if (o.notes) {
+                <div class="info-item full-width">
+                  <div class="info-label"><i class="pi pi-comment"></i> Notes</div>
+                  <div class="content">{{ o.notes }}</div>
+                </div>
               }
-            </span>
-            <span>- {{ o.globalDiscountAmount | number: '1.3-3' }}</span>
+            </div>
           </div>
-          <div class="ft-totals__row">
-            <span>HT après remise</span>
-            <span>{{ o.subTotal | number: '1.3-3' }}</span>
+
+          <!-- Lignes -->
+          <div class="table-card">
+            <div class="card-header">
+              <h3>Lignes de commande</h3>
+              <span class="ft-chip">{{ o.lines.length }} ligne(s)</span>
+            </div>
+            <table class="lines-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Produit</th>
+                  <th class="text-center">Cdé</th>
+                  <th class="text-center">Livré</th>
+                  <th class="text-center">Facturé</th>
+                  <th class="text-center">Reste à livrer</th>
+                  <th class="text-right">PU HT</th>
+                  <th class="text-center">Remise</th>
+                  <th class="text-right">Total HT</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (line of o.lines; track line.id) {
+                  <tr>
+                    <td>{{ line.lineNumber }}</td>
+                    <td>
+                      <div class="line-product">
+                        <span class="line-product-name">{{ line.productName }}</span>
+                        <span class="line-product-code">{{ line.productCode }}</span>
+                      </div>
+                      @if (line.notes) {
+                        <i class="pi pi-comment ft-icon-hint" [pTooltip]="line.notes"></i>
+                      }
+                    </td>
+                    <td class="text-center mono">{{ line.quantity | number: '1.0-4' }}</td>
+                    <td class="text-center">
+                      @if (line.isFullyDelivered) {
+                        <span class="line-status-badge complete"><i class="pi pi-check"></i> {{ line.deliveredQuantity | number: '1.0-4' }}</span>
+                      } @else {
+                        <span class="line-status-badge pending">{{ line.deliveredQuantity | number: '1.0-4' }}</span>
+                      }
+                    </td>
+                    <td class="text-center">
+                      @if (line.isFullyInvoiced) {
+                        <span class="line-status-badge complete"><i class="pi pi-check"></i> {{ line.invoicedQuantity | number: '1.0-4' }}</span>
+                      } @else {
+                        <span class="line-status-badge pending">{{ line.invoicedQuantity | number: '1.0-4' }}</span>
+                      }
+                    </td>
+                    <td class="text-center">
+                      @if (line.pendingDeliveryQuantity > 0) {
+                        <strong class="mono">{{ line.pendingDeliveryQuantity | number: '1.0-4' }}</strong>
+                      } @else {
+                        <span class="line-status-badge complete"><i class="pi pi-check"></i></span>
+                      }
+                    </td>
+                    <td class="text-right mono">{{ line.unitPrice | number: '1.3-3' }}</td>
+                    <td class="text-center">
+                      @if (line.discountPercent) {
+                        {{ line.discountPercent + ' %' }}
+                        @if (line.appliedPromotionName) {
+                          <small class="promo-hint">({{ line.appliedPromotionName }})</small>
+                        }
+                      } @else {
+                        —
+                      }
+                    </td>
+                    <td class="text-right mono">{{ line.subTotal | number: '1.3-3' }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
           </div>
-        } @else {
-          <div class="ft-totals__row"><span>Sous-total HT</span><span>{{ o.subTotal | number: '1.3-3' }}</span></div>
-        }
-        @if (o.fodecAmount > 0) {
-          <div class="ft-totals__row"><span>FODEC</span><span>{{ o.fodecAmount | number: '1.3-3' }}</span></div>
-        }
-        @for (vat of o.vatBreakdown; track vat.rate) {
-          <div class="ft-totals__row">
-            <span>TVA {{ vat.rateDisplay }}</span><span>{{ vat.vatAmount | number: '1.3-3' }}</span>
+
+          <!-- Totaux -->
+          <div class="totals-wrapper">
+            <div class="totals-box">
+              @if (o.globalDiscountAmount > 0) {
+                <div class="total-row">
+                  <span>Sous-total HT</span>
+                  <span class="mono">{{ o.subTotalBeforeGlobalDiscount | number: '1.3-3' }}</span>
+                </div>
+                <div class="total-row discount">
+                  <span>
+                    Remise de pied
+                    @if (o.globalDiscountPercent) {
+                      ({{ o.globalDiscountPercent }} %)
+                    }
+                  </span>
+                  <span class="mono">- {{ o.globalDiscountAmount | number: '1.3-3' }}</span>
+                </div>
+                <div class="total-row">
+                  <span>HT après remise</span>
+                  <span class="mono">{{ o.subTotal | number: '1.3-3' }}</span>
+                </div>
+              } @else {
+                <div class="total-row"><span>Sous-total HT</span><span class="mono">{{ o.subTotal | number: '1.3-3' }}</span></div>
+              }
+              @if (o.fodecAmount > 0) {
+                <div class="total-row"><span>FODEC</span><span class="mono">{{ o.fodecAmount | number: '1.3-3' }}</span></div>
+              }
+              @for (vat of o.vatBreakdown; track vat.rate) {
+                <div class="total-row">
+                  <span>TVA {{ vat.rateDisplay }}</span>
+                  <span class="mono">{{ vat.vatAmount | number: '1.3-3' }}</span>
+                </div>
+              }
+              @if (o.fiscalStampAmount > 0) {
+                <div class="total-row">
+                  <span>Timbre fiscal</span>
+                  <span class="mono">{{ o.fiscalStampAmount | number: '1.3-3' }}</span>
+                </div>
+              }
+              <div class="total-row grand">
+                <span>Total TTC</span>
+                <span class="mono">{{ o.totalAmount | number: '1.3-3' }} {{ o.currency }}</span>
+              </div>
+            </div>
           </div>
-        }
-        @if (o.fiscalStampAmount > 0) {
-          <div class="ft-totals__row">
-            <span>Timbre fiscal</span><span>{{ o.fiscalStampAmount | number: '1.3-3' }}</span>
-          </div>
-        }
-        <div class="ft-totals__row ft-totals__row--grand">
-          <span>Total TTC</span><span>{{ o.totalAmount | number: '1.3-3' }} {{ o.currency }}</span>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="sidebar">
+          <p-card header="Statut" styleClass="sidebar-card">
+            <div class="status-content">
+              <p-tag [severity]="statusSeverity(o.status)" [value]="o.statusDisplay" styleClass="w-full"></p-tag>
+              <div class="status-meta">
+                <div>Commande du {{ o.orderDate | date: 'dd/MM/yyyy' }}</div>
+                @if (o.sourceQuoteNumber) {
+                  <div class="source-quote">
+                    <i class="pi pi-file-import"></i>
+                    Issue du devis <a [routerLink]="['/quotes', o.sourceQuoteId]">{{ o.sourceQuoteNumber }}</a>
+                  </div>
+                }
+              </div>
+              @if (quickStatusAction(); as action) {
+                <div class="status-actions">
+                  <app-button [variant]="action.variant" [icon]="action.icon" iconPos="left" (clicked)="action.command()" style="width: 100%">
+                    {{ action.label }}
+                  </app-button>
+                </div>
+              }
+            </div>
+          </p-card>
+
+          <p-card header="Client" styleClass="sidebar-card">
+            <div class="client-card-content">
+              <h3 class="client-name">{{ o.client.name }}</h3>
+              @if (o.client.address) {
+                <p class="client-detail">{{ o.client.address }}</p>
+              }
+              @if (o.client.nif) {
+                <p class="client-detail">MF : {{ o.client.nif }}</p>
+              }
+              @if (o.client.email) {
+                <p class="client-detail">{{ o.client.email }}</p>
+              }
+              <a [routerLink]="['/clients', o.clientId]" class="client-link">
+                <i class="pi pi-external-link"></i> Voir la fiche client
+              </a>
+            </div>
+          </p-card>
+
+          <p-card header="Parcours de la commande" styleClass="sidebar-card">
+            <p-timeline [value]="timelineEvents()">
+              <ng-template pTemplate="content" let-event>
+                <div class="timeline-content">
+                  <div class="timeline-title">{{ event.status }}</div>
+                  @if (event.date) {
+                    <div class="timeline-date">{{ event.date | date: 'dd/MM/yyyy' }}</div>
+                  }
+                </div>
+              </ng-template>
+              <ng-template pTemplate="opposite" let-event>
+                <span></span>
+              </ng-template>
+            </p-timeline>
+          </p-card>
         </div>
       </div>
-    } @else if (!loading()) {
+    } @else {
       <app-empty-state
         icon="pi-exclamation-circle"
         title="Commande introuvable"
         message="Cette commande n'existe pas ou a été supprimée.">
       </app-empty-state>
     }
+  }
 
     <!-- Annulation -->
     <p-dialog
@@ -374,10 +531,143 @@ import { PERMISSIONS } from '@core/config/permission-keys';
         </app-button>
       </ng-template>
     </p-dialog>
-  `
+
+    <!-- Génération d'un bon de livraison depuis la commande -->
+    <p-dialog
+      header="Générer un bon de livraison"
+      [(visible)]="deliveryNoteDialogVisible"
+      [modal]="true"
+      [style]="{ width: '44rem' }"
+      [draggable]="false">
+      <p class="ft-dialog-intro">
+        Précisez les quantités à livrer. Par défaut, tout le reste à livrer de la commande est
+        repris.
+      </p>
+
+      <div class="ft-field">
+        <label for="dn-issue-date">Date d'émission</label>
+        <input id="dn-issue-date" type="date" [(ngModel)]="deliveryNoteIssueDate" class="ft-input" />
+      </div>
+
+      <div class="ft-field" style="margin-top: var(--spacing-3);">
+        <label for="dn-address">Adresse de livraison</label>
+        <textarea
+          id="dn-address"
+          pInputTextarea
+          [(ngModel)]="deliveryNoteAddress"
+          rows="2"
+          maxlength="500"></textarea>
+      </div>
+
+      <p-table [value]="deliveryNoteLines" [rowHover]="true" styleClass="ft-table p-datatable-sm" [style]="{ 'margin-top': 'var(--spacing-4)' }">
+        <ng-template pTemplate="header">
+          <tr>
+            <th>Produit</th>
+            <th class="ft-num">Reste à livrer</th>
+            <th class="ft-num">Quantité</th>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="body" let-line>
+          <tr>
+            <td><span class="ft-muted">{{ line.productCode }}</span> — {{ line.productName }}</td>
+            <td class="ft-num">{{ line.pendingQuantity | number: '1.0-4' }}</td>
+            <td class="ft-num">
+              <p-inputNumber
+                [(ngModel)]="line.quantity"
+                [min]="0"
+                [max]="line.pendingQuantity"
+                mode="decimal"
+                [minFractionDigits]="0"
+                [maxFractionDigits]="4"
+                inputStyleClass="ft-input ft-input--num"></p-inputNumber>
+            </td>
+          </tr>
+        </ng-template>
+      </p-table>
+
+      <ng-template pTemplate="footer">
+        <app-button variant="secondary" (clicked)="resetDeliveryNoteQuantities()">Tout livrer</app-button>
+        <app-button variant="secondary" (clicked)="deliveryNoteDialogVisible = false">Annuler</app-button>
+        <app-button variant="primary" [disabled]="acting()" (clicked)="submitGenerateDeliveryNote()">
+          Générer le BL
+        </app-button>
+      </ng-template>
+    </p-dialog>
+
+    <!-- Génération d'une facture depuis la commande -->
+    <p-dialog
+      header="Générer une facture"
+      [(visible)]="invoiceDialogVisible"
+      [modal]="true"
+      [style]="{ width: '48rem' }"
+      [draggable]="false">
+      <p class="ft-dialog-intro">
+        Par défaut, seul le <strong>livré-non-facturé</strong> est facturé. Activez la facturation
+        d'avance pour facturer le reste à facturer indépendamment des livraisons.
+      </p>
+
+      <div class="ft-form-grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="ft-field">
+          <label for="inv-issue-date">Date d'émission</label>
+          <input id="inv-issue-date" type="date" [(ngModel)]="invoiceIssueDate" class="ft-input" />
+        </div>
+        <div class="ft-field">
+          <label for="inv-due-date">Date d'échéance (optionnelle)</label>
+          <input id="inv-due-date" type="date" [(ngModel)]="invoiceDueDate" class="ft-input" />
+        </div>
+      </div>
+
+      <div class="ft-field" style="margin-top: var(--spacing-3);">
+        <label class="ft-checkbox-label">
+          <input type="checkbox" [(ngModel)]="advanceBilling" (change)="onAdvanceBillingChange()" />
+          Facturation d'avance
+        </label>
+      </div>
+
+      @if (advanceBilling) {
+        <p class="ft-hint">Plafond de chaque ligne : reste à facturer (indépendamment des livraisons).</p>
+      }
+
+      <p-table [value]="invoiceLines" [rowHover]="true" styleClass="ft-table p-datatable-sm" [style]="{ 'margin-top': 'var(--spacing-3)' }">
+        <ng-template pTemplate="header">
+          <tr>
+            <th>Produit</th>
+            <th class="ft-num">Assiette</th>
+            <th class="ft-num">Quantité</th>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="body" let-line>
+          <tr>
+            <td><span class="ft-muted">{{ line.productCode }}</span> — {{ line.productName }}</td>
+            <td class="ft-num">{{ line.availableQuantity | number: '1.0-4' }}</td>
+            <td class="ft-num">
+              <p-inputNumber
+                [(ngModel)]="line.quantity"
+                [min]="0"
+                [max]="line.availableQuantity"
+                mode="decimal"
+                [minFractionDigits]="0"
+                [maxFractionDigits]="4"
+                inputStyleClass="ft-input ft-input--num"></p-inputNumber>
+            </td>
+          </tr>
+        </ng-template>
+      </p-table>
+
+      <ng-template pTemplate="footer">
+        <app-button variant="secondary" (clicked)="resetInvoiceQuantities()">Tout facturer</app-button>
+        <app-button variant="secondary" (clicked)="invoiceDialogVisible = false">Annuler</app-button>
+        <app-button variant="primary" [disabled]="acting()" (clicked)="submitGenerateInvoice()">
+          Générer la facture
+        </app-button>
+      </ng-template>
+    </p-dialog>
+  `,
+  styleUrls: ['./sales-order-detail.component.scss']
 })
 export class SalesOrderDetailComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly salesOrderService = inject(SalesOrderService);
   private readonly toastService = inject(ToastService);
   private readonly errorHandler = inject(ErrorHandlerService);
@@ -397,6 +687,19 @@ export class SalesOrderDetailComponent implements OnInit {
   closeVisible = false;
   closeReason = '';
 
+  // Génération de BL
+  deliveryNoteDialogVisible = false;
+  deliveryNoteIssueDate = this.formatDateForInput(new Date());
+  deliveryNoteAddress = '';
+  deliveryNoteLines: { salesOrderLineId: string; lineNumber: number; productCode: string; productName: string; pendingQuantity: number; quantity: number }[] = [];
+
+  // Génération de facture
+  invoiceDialogVisible = false;
+  invoiceIssueDate = this.formatDateForInput(new Date());
+  invoiceDueDate: string | null = null;
+  advanceBilling = false;
+  invoiceLines: { salesOrderLineId: string; lineNumber: number; productCode: string; productName: string; availableQuantity: number; quantity: number }[] = [];
+
   private orderId = '';
 
   readonly breadcrumbItems = computed<BreadcrumbItem[]>(() => [
@@ -405,10 +708,119 @@ export class SalesOrderDetailComponent implements OnInit {
     { label: this.order()?.number ?? 'Détail' }
   ]);
 
+  readonly pageTitle = computed(() => {
+    const o = this.order();
+    return o ? `Commande ${o.number}` : 'Commande';
+  });
+
   readonly headerSubtitle = computed(() => {
     const o = this.order();
     if (!o) return '';
     return `${o.client.name} · ${o.lines.length} ligne(s)`;
+  });
+
+  /** Action principale affichée dans l'en-tête (max 1). */
+  readonly primaryAction = computed(() => {
+    if (this.canConfirm()) {
+      return { label: 'Confirmer', icon: 'pi-check', variant: 'primary' as const, command: () => this.confirmOrder() };
+    }
+    if (this.canGenerateDeliveryNote()) {
+      return { label: 'Générer un BL', icon: 'pi-truck', variant: 'primary' as const, command: () => this.openGenerateDeliveryNote() };
+    }
+    return null;
+  });
+
+  /** Action rapide de statut affichée dans la sidebar. */
+  readonly quickStatusAction = computed(() => {
+    if (this.canGenerateInvoice()) {
+      return { label: 'Générer une facture', icon: 'pi-file-export', variant: 'primary' as const, command: () => this.openGenerateInvoice() };
+    }
+    if (this.canClose()) {
+      return { label: 'Solder', icon: 'pi-flag', variant: 'secondary' as const, command: () => this.openClose() };
+    }
+    if (this.canCancel()) {
+      return { label: 'Annuler', icon: 'pi-times', variant: 'danger' as const, command: () => this.openCancel() };
+    }
+    return null;
+  });
+
+  /** Menu regroupant les actions secondaires (hors primaryAction et quickStatusAction). */
+  readonly menuItems = computed<MenuItem[]>(() => {
+    const items: MenuItem[] = [];
+    const primary = this.primaryAction();
+    const quick = this.quickStatusAction();
+
+    const add = (label: string, icon: string, command: () => void, visible: boolean) => {
+      if (visible) {
+        items.push({ label, icon, command, visible: true });
+      }
+    };
+
+    // Exclure les actions déjà exposées en primaire (header) ou en CTA statut (sidebar).
+    add(
+      'Confirmer',
+      'pi-check',
+      () => this.confirmOrder(),
+      this.canConfirm() && primary?.label !== 'Confirmer' && quick?.label !== 'Confirmer'
+    );
+    add(
+      'Générer un BL',
+      'pi-truck',
+      () => this.openGenerateDeliveryNote(),
+      this.canGenerateDeliveryNote() && primary?.label !== 'Générer un BL' && quick?.label !== 'Générer un BL'
+    );
+    add(
+      'Générer une facture',
+      'pi-file-export',
+      () => this.openGenerateInvoice(),
+      this.canGenerateInvoice() && primary?.label !== 'Générer une facture' && quick?.label !== 'Générer une facture'
+    );
+    add('Remise de pied', 'pi-percentage', () => this.openDiscount(), this.canEditDiscount());
+
+    const canCloseInMenu = this.canClose() && quick?.label !== 'Solder';
+    const canCancelInMenu = this.canCancel() && quick?.label !== 'Annuler';
+
+    if (canCloseInMenu || canCancelInMenu) {
+      items.push({ separator: true });
+    }
+
+    add('Solder', 'pi-flag', () => this.openClose(), canCloseInMenu);
+    add('Annuler', 'pi-times', () => this.openCancel(), canCancelInMenu);
+
+    return items;
+  });
+
+  /** Timeline du cycle de commande. */
+  readonly timelineEvents = computed<TimelineEvent[]>(() => {
+    const o = this.order();
+    if (!o) return [];
+
+    const stepColor = (stepStatus: SalesOrderStatus, currentStatus: SalesOrderStatus) => {
+      const order = ['Draft', 'Confirmed', 'PartiallyDelivered', 'Delivered', 'Completed'];
+      const stepIndex = order.indexOf(stepStatus);
+      const currentIndex = order.indexOf(currentStatus);
+
+      if (currentStatus === 'Cancelled') return '#94a3b8';
+      if (currentStatus === 'Closed') return '#f59e0b';
+      if (stepIndex <= currentIndex) return '#2563eb';
+      return '#94a3b8';
+    };
+
+    const events: TimelineEvent[] = [
+      { status: 'Brouillon', icon: 'pi-file-edit', color: stepColor('Draft', o.status), date: o.orderDate },
+      { status: 'Confirmée', icon: 'pi-check-circle', color: stepColor('Confirmed', o.status) },
+      { status: 'Livraison', icon: 'pi-truck', color: o.totalPendingDeliveryQuantity === 0 ? '#10b981' : stepColor('PartiallyDelivered', o.status) },
+      { status: 'Facturation', icon: 'pi-file-export', color: o.totalPendingInvoiceQuantity === 0 ? '#10b981' : stepColor('Delivered', o.status) },
+      { status: 'Terminée', icon: 'pi-check', color: stepColor('Completed', o.status) }
+    ];
+
+    if (o.status === 'Cancelled') {
+      events.push({ status: 'Annulée', icon: 'pi-times-circle', color: '#dc2626' });
+    } else if (o.status === 'Closed') {
+      events.push({ status: 'Soldée', icon: 'pi-flag', color: '#f59e0b' });
+    }
+
+    return events;
   });
 
   /** Confirmable seulement au brouillon : le domaine refuse toute autre transition. */
@@ -429,6 +841,25 @@ export class SalesOrderDetailComponent implements OnInit {
   readonly canEditDiscount = computed(
     () => this.order()?.status === 'Draft' && this.auth.hasPermission(PERMISSIONS.salesOrders.update)
   );
+
+  /** Générer un BL depuis la commande : possible dès qu'il reste à livrer. */
+  readonly canGenerateDeliveryNote = computed(() => {
+    const o = this.order();
+    if (!o) return false;
+    const open = o.status === 'Confirmed' || o.status === 'PartiallyDelivered';
+    return open && o.totalPendingDeliveryQuantity > 0 && this.auth.hasPermission(PERMISSIONS.deliveryNotes.create);
+  });
+
+  /** Générer une facture depuis la commande : soit sur le livré, soit en avance. */
+  readonly canGenerateInvoice = computed(() => {
+    const o = this.order();
+    if (!o) return false;
+    const open = o.status === 'Confirmed' || o.status === 'PartiallyDelivered' || o.status === 'Delivered';
+    if (!open) return false;
+    const delivered = o.lines.reduce((sum, l) => sum + l.deliveredNotInvoicedQuantity, 0);
+    const pending = o.lines.reduce((sum, l) => sum + l.pendingInvoiceQuantity, 0);
+    return (delivered > 0 || pending > 0) && this.auth.hasPermission(PERMISSIONS.invoices.create);
+  });
 
   readonly canCancel = computed(() => {
     const o = this.order();
@@ -489,6 +920,8 @@ export class SalesOrderDetailComponent implements OnInit {
         return 'success';
       case 'Cancelled':
         return 'danger';
+      case 'Closed':
+        return 'warning';
       default:
         return 'secondary';
     }
@@ -636,6 +1069,138 @@ export class SalesOrderDetailComponent implements OnInit {
         this.acting.set(false);
       }
     });
+  }
+
+  openGenerateDeliveryNote(): void {
+    const o = this.order();
+    if (!o) return;
+    this.deliveryNoteIssueDate = this.formatDateForInput(new Date());
+    this.deliveryNoteAddress = o.client.address ?? '';
+    this.deliveryNoteLines = o.lines.map(l => ({
+      salesOrderLineId: l.id,
+      lineNumber: l.lineNumber,
+      productCode: l.productCode,
+      productName: l.productName,
+      pendingQuantity: l.pendingDeliveryQuantity,
+      quantity: l.pendingDeliveryQuantity
+    }));
+    this.deliveryNoteDialogVisible = true;
+  }
+
+  resetDeliveryNoteQuantities(): void {
+    this.deliveryNoteLines.forEach(l => l.quantity = l.pendingQuantity);
+  }
+
+  submitGenerateDeliveryNote(): void {
+    const lines = this.deliveryNoteLines.filter(l => l.quantity > 0);
+    if (lines.length === 0) {
+      this.toastService.add({ severity: 'warn', summary: 'Avertissement', detail: 'Aucune quantité à livrer.' });
+      return;
+    }
+
+    const allMax = lines.every(l => l.quantity === l.pendingQuantity);
+    const request: GenerateDeliveryNoteRequest = {
+      issueDate: this.deliveryNoteIssueDate,
+      deliveryAddress: this.deliveryNoteAddress.trim() || undefined
+    };
+    if (!allMax) {
+      request.lines = lines.map(l => ({ salesOrderLineId: l.salesOrderLineId, quantity: l.quantity }));
+    }
+
+    this.acting.set(true);
+    this.salesOrderService.generateDeliveryNote(this.orderId, request).subscribe({
+      next: res => {
+        this.acting.set(false);
+        if (res.success && res.data) {
+          this.deliveryNoteDialogVisible = false;
+          this.toastService.add({ severity: 'success', summary: 'Succès', detail: 'Bon de livraison généré.' });
+          this.router.navigate(['/delivery-notes', res.data]);
+        } else {
+          this.toastService.add({ severity: 'error', summary: 'Erreur', detail: res.message || 'Génération impossible.' });
+        }
+      },
+      error: err => {
+        this.acting.set(false);
+        this.showError(err, 'Génération du bon de livraison impossible');
+      }
+    });
+  }
+
+  openGenerateInvoice(): void {
+    const o = this.order();
+    if (!o) return;
+    this.invoiceIssueDate = this.formatDateForInput(new Date());
+    this.invoiceDueDate = null;
+    this.advanceBilling = false;
+    this.resetInvoiceLinesFromOrder();
+    this.invoiceDialogVisible = true;
+  }
+
+  private resetInvoiceLinesFromOrder(): void {
+    const o = this.order();
+    if (!o) return;
+    this.invoiceLines = o.lines.map(l => {
+      const available = this.advanceBilling ? l.pendingInvoiceQuantity : l.deliveredNotInvoicedQuantity;
+      return {
+        salesOrderLineId: l.id,
+        lineNumber: l.lineNumber,
+        productCode: l.productCode,
+        productName: l.productName,
+        availableQuantity: available,
+        quantity: available
+      };
+    });
+  }
+
+  resetInvoiceQuantities(): void {
+    this.invoiceLines.forEach(l => l.quantity = l.availableQuantity);
+  }
+
+  onAdvanceBillingChange(): void {
+    this.resetInvoiceLinesFromOrder();
+  }
+
+  submitGenerateInvoice(): void {
+    const lines = this.invoiceLines.filter(l => l.quantity > 0);
+    if (lines.length === 0) {
+      this.toastService.add({ severity: 'warn', summary: 'Avertissement', detail: 'Aucune quantité à facturer.' });
+      return;
+    }
+
+    const allMax = lines.every(l => l.quantity === l.availableQuantity);
+    const request: GenerateInvoiceFromOrderRequest = {
+      issueDate: this.invoiceIssueDate,
+      dueDate: this.invoiceDueDate || undefined,
+      advanceBilling: this.advanceBilling
+    };
+    if (!allMax) {
+      request.lines = lines.map(l => ({ salesOrderLineId: l.salesOrderLineId, quantity: l.quantity }));
+    }
+
+    this.acting.set(true);
+    this.salesOrderService.generateInvoice(this.orderId, request).subscribe({
+      next: res => {
+        this.acting.set(false);
+        if (res.success && res.data) {
+          this.invoiceDialogVisible = false;
+          this.toastService.add({ severity: 'success', summary: 'Succès', detail: 'Facture générée.' });
+          this.router.navigate(['/invoices', res.data]);
+        } else {
+          this.toastService.add({ severity: 'error', summary: 'Erreur', detail: res.message || 'Génération impossible.' });
+        }
+      },
+      error: err => {
+        this.acting.set(false);
+        this.showError(err, 'Génération de la facture impossible');
+      }
+    });
+  }
+
+  private formatDateForInput(date: Date): string {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   }
 
   private showError(err: unknown, fallback: string): void {

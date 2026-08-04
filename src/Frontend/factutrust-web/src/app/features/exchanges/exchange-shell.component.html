@@ -11,21 +11,28 @@
         />
       </div>
       <ul>
-        @for (t of filteredThreads(); track t.id) {
+        @for (c of filteredFirmCompanies(); track c.assignmentId) {
           <li
-            [class.active]="activeThread()?.id === t.id"
-            (click)="selectThread(t.id)"
-            (keyup.enter)="selectThread(t.id)"
+            [class.active]="activeThread()?.firmClientAssignmentId === c.assignmentId"
+            (click)="openFirmCompany(c)"
+            (keyup.enter)="openFirmCompany(c)"
             tabindex="0"
             role="button"
           >
-            <div class="name">{{ t.counterpartName }}</div>
+            <div class="name-row">
+              <div class="name">{{ c.companyName }}</div>
+              @if (c.unreadCount > 0) {
+                <span class="unread-badge">{{ c.unreadCount }}</span>
+              }
+            </div>
             <div class="meta">
-              <span [class.open]="t.status === 0" [class.closed]="t.status === 1">
-                {{ t.status === 0 ? 'En cours' : 'Clos' }}
+              <span [class.open]="isOpen(c.status)" [class.closed]="isClosed(c.status)">
+                {{ statusLabel(c.status) }}
               </span>
-              @if (t.lastActivityAt) {
-                <span>{{ t.lastActivityAt | date: 'dd/MM/yyyy' }}</span>
+              @if (c.lastActivityAt) {
+                <span>{{ c.lastActivityAt | date: 'dd/MM/yyyy' }}</span>
+              } @else if (!c.threadId) {
+                <span>Nouvelle conversation</span>
               }
             </div>
           </li>
@@ -38,295 +45,608 @@
 
   <section class="exchange-main">
     @if (loading() && !activeThread()) {
-      <div class="state">Chargement…</div>
+      <div class="state state--loading" role="status" aria-live="polite">
+        <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+        <span>Chargement…</span>
+      </div>
     } @else if (emptyHint()) {
-      <div class="state empty-state">
-        <h2>Espace d'échange</h2>
-        <p>{{ emptyHint() }}</p>
-        @if (!isFirm()) {
-          <a routerLink="/settings/accounting-firm" class="btn-link">Configurer le cabinet</a>
-        }
+      <div class="state empty-state-wrap">
+        <app-empty-state
+          icon="pi-comments"
+          title="Espace d'échange"
+          [description]="emptyHint()!"
+          [showAction]="!isFirm()"
+          actionLabel="Configurer le cabinet"
+          actionRoute="/settings/accounting-firm"
+        />
       </div>
     } @else if (error() && !activeThread()) {
-      <div class="state error">{{ error() }}</div>
+      <div class="state error" role="alert">{{ error() }}</div>
     } @else {
       @if (activeThread(); as thread) {
-      <header class="exchange-header">
-        <div>
-          <h1>{{ isFirm() ? thread.companyName : thread.firmName }}</h1>
-          <div class="sub">
-            <span class="badge" [class.closed]="thread.status === 1">
-              {{ thread.status === 0 ? 'En cours' : 'Clos' }}
-            </span>
-            <span>Échange sécurisé</span>
+        @if (isFirm()) {
+          <div class="firm-mobile-select">
+            <label for="firm-company-select">Société</label>
+            <select
+              id="firm-company-select"
+              [ngModel]="thread.firmClientAssignmentId"
+              (ngModelChange)="onFirmCompanySelect($event)"
+            >
+              @for (c of firmCompanies(); track c.assignmentId) {
+                <option [ngValue]="c.assignmentId">{{ c.companyName }}</option>
+              }
+            </select>
           </div>
-        </div>
-        <div class="actions">
-          @if (canClose() && thread.status === 0) {
-            <button type="button" class="btn danger" (click)="closeExchange()">Clore l'échange</button>
-          }
-          @if (canClose() && thread.status === 1) {
-            <button type="button" class="btn" (click)="reopenExchange()">Rouvrir</button>
-          }
-        </div>
-      </header>
+        }
 
-      <nav class="tabs">
-        <button type="button" [class.active]="activeTab() === 'conversation'" (click)="setTab('conversation')">Conversation</button>
-        <button type="button" [class.active]="activeTab() === 'documents'" (click)="setTab('documents')">Documents</button>
-        <button type="button" [class.active]="activeTab() === 'demandes'" (click)="setTab('demandes')">Demandes</button>
-        <button type="button" [class.active]="activeTab() === 'taches'" (click)="setTab('taches')">Tâches</button>
-        <button type="button" [class.active]="activeTab() === 'historique'" (click)="setTab('historique')">Historique</button>
-      </nav>
+        <header class="exchange-header">
+          <div class="exchange-header__info">
+            <h1>{{ isFirm() ? thread.companyName : thread.firmName }}</h1>
+            <div class="sub">
+              <app-status-badge
+                [status]="threadBadge(thread.status)"
+                [label]="statusLabel(thread.status)"
+              />
+              <span class="secure-tag">
+                <i class="pi pi-lock" aria-hidden="true"></i>
+                Échange sécurisé
+              </span>
+            </div>
+          </div>
+          <div class="actions">
+            @if (canClose() && isOpen(thread.status)) {
+              <app-button variant="danger" size="sm" icon="pi-times" (clicked)="closeExchange()">
+                Clore l'échange
+              </app-button>
+            }
+            @if (canClose() && isClosed(thread.status)) {
+              <app-button variant="secondary" size="sm" icon="pi-refresh" (clicked)="reopenExchange()">
+                Rouvrir
+              </app-button>
+            }
+          </div>
+        </header>
 
-      <div class="exchange-body">
-        <div class="exchange-content">
-          @if (activeTab() === 'conversation') {
-            <div class="messages">
-              @for (m of messages(); track m.id) {
-                <article class="msg" [class.mine]="m.authorUserId === auth.user()?.id" [class.note]="m.visibility === 1">
-                  <div class="msg__meta">
-                    <strong>{{ m.authorDisplayName }}</strong>
-                    <span>{{ m.sentAt | date: 'dd/MM/yyyy HH:mm' }}</span>
-                    @if (m.visibility === 1) {
-                      <em>Note interne</em>
+        <nav class="tabs" role="tablist" aria-label="Sections de l'échange">
+          @for (t of tabs; track t.key) {
+            <button
+              type="button"
+              role="tab"
+              class="tab"
+              [class.active]="activeTab() === t.key"
+              [attr.aria-selected]="activeTab() === t.key"
+              [attr.id]="'exchange-tab-' + t.key"
+              [attr.aria-controls]="'exchange-panel-' + t.key"
+              (click)="setTab(t.key)"
+            >
+              {{ t.label }}
+            </button>
+          }
+        </nav>
+
+        <div class="exchange-body">
+          @if (contentLoading()) {
+            <div class="content-loading-overlay" role="status" aria-live="polite">
+              <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+              <span>Chargement…</span>
+            </div>
+          }
+          <div
+            class="exchange-content"
+            role="tabpanel"
+            [attr.id]="'exchange-panel-' + activeTab()"
+            [attr.aria-labelledby]="'exchange-tab-' + activeTab()"
+          >
+            @if (activeTab() === 'conversation') {
+              @if (error()) {
+                <div class="inline-error" role="alert">{{ error() }}</div>
+              }
+              <div class="messages">
+                @if (messagesHasMore()) {
+                  <div class="load-older">
+                    <button
+                      type="button"
+                      class="load-older__btn"
+                      [disabled]="loadingOlder()"
+                      (click)="loadOlderMessages()"
+                    >
+                      @if (loadingOlder()) {
+                        <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+                        Chargement…
+                      } @else {
+                        Charger les messages précédents
+                      }
+                    </button>
+                  </div>
+                }
+                @for (item of messageFeed(); track feedTrackKey(item, $index)) {
+                  @if (item.kind === 'day') {
+                    <div class="day-sep"><span>{{ item.dayLabel }}</span></div>
+                  } @else if (item.message) {
+                    <article
+                      class="msg"
+                      [class.mine]="item.message.authorUserId === auth.user()?.id"
+                      [class.note]="isNote(item.message.visibility)"
+                    >
+                      <div class="msg__avatar" aria-hidden="true">
+                        {{ initials(item.message.authorDisplayName) }}
+                      </div>
+                      <div class="msg__body">
+                        <div class="msg__meta">
+                          <strong>{{ item.message.authorDisplayName }}</strong>
+                          <span>{{ item.message.sentAt | date: 'dd/MM/yyyy HH:mm' }}</span>
+                          @if (isNote(item.message.visibility)) {
+                            <em>Note interne</em>
+                          }
+                        </div>
+                        <p>{{ item.message.body }}</p>
+                        @for (a of item.message.attachments; track a.id) {
+                          <button type="button" class="file" (click)="downloadDoc(a)">
+                            <i class="pi {{ docIcon(a.fileName) }}" aria-hidden="true"></i>
+                            {{ a.fileName }} ({{ formatBytes(a.sizeBytes) }})
+                          </button>
+                        }
+                        @if (item.message.readReceipts.length) {
+                          <div class="receipts">
+                            @for (r of item.message.readReceipts; track r.userId) {
+                              <span>Lu par {{ r.displayName || 'utilisateur' }} à {{ r.readAt | date: 'HH:mm' }}</span>
+                            }
+                          </div>
+                        }
+                      </div>
+                    </article>
+                  }
+                } @empty {
+                  <app-empty-state
+                    icon="pi-comments"
+                    title="Aucun message"
+                    description="Démarrez la conversation avec votre interlocuteur."
+                    [showAction]="false"
+                  />
+                }
+              </div>
+
+              @if (isOpen(thread.status)) {
+                <div class="composer">
+                  <div class="composer__tabs" role="group" aria-label="Type de message">
+                    <button
+                      type="button"
+                      [class.active]="composerMode() === 'message'"
+                      (click)="composerMode.set('message')"
+                    >
+                      Message
+                    </button>
+                    @if (canInternalNote()) {
+                      <button
+                        type="button"
+                        [class.active]="composerMode() === 'note'"
+                        (click)="composerMode.set('note')"
+                      >
+                        Note interne
+                      </button>
                     }
                   </div>
-                  <p>{{ m.body }}</p>
-                  @for (a of m.attachments; track a.id) {
-                    <button type="button" class="file" (click)="downloadDoc(a)">
-                      {{ a.fileName }} ({{ formatBytes(a.sizeBytes) }})
-                    </button>
-                  }
-                  @if (m.readReceipts.length) {
-                    <div class="receipts">
-                      @for (r of m.readReceipts; track r.userId) {
-                        <span>Lu par {{ r.displayName || 'utilisateur' }} à {{ r.readAt | date: 'HH:mm' }}</span>
+                  <label class="sr-only" for="composer-draft">Message</label>
+                  <textarea
+                    id="composer-draft"
+                    rows="3"
+                    placeholder="Écrire un message…"
+                    [ngModel]="draft()"
+                    (ngModelChange)="draft.set($event)"
+                  ></textarea>
+                  @if (pendingFiles().length) {
+                    <ul class="pending-files">
+                      @for (f of pendingFiles(); track $index) {
+                        <li>
+                          <span>{{ f.name }} ({{ formatBytes(f.size) }})</span>
+                          <button type="button" class="btn ghost" (click)="removePendingFile($index)">
+                            Retirer
+                          </button>
+                        </li>
                       }
-                    </div>
+                    </ul>
                   }
-                </article>
-              } @empty {
-                <p class="muted">Aucun message. Démarrez la conversation.</p>
+                  <div class="composer__actions">
+                    <label class="btn ghost file-btn" title="Joindre un fichier">
+                      <i class="pi pi-paperclip" aria-hidden="true"></i>
+                      <span class="sr-only">Joindre</span>
+                      <input type="file" hidden (change)="onComposerFileSelected($event)" />
+                    </label>
+                    <app-button
+                      variant="primary"
+                      size="sm"
+                      icon="pi-send"
+                      [disabled]="sending() || (!draft().trim() && pendingFiles().length === 0)"
+                      (clicked)="send()"
+                    >
+                      Envoyer
+                    </app-button>
+                  </div>
+                </div>
               }
-            </div>
+            }
 
-            @if (thread.status === 0) {
-              <div class="composer">
-                <div class="composer__tabs">
-                  <button type="button" [class.active]="composerMode() === 'message'" (click)="composerMode.set('message')">Message</button>
-                  @if (canInternalNote()) {
-                    <button type="button" [class.active]="composerMode() === 'note'" (click)="composerMode.set('note')">Note interne</button>
+            @if (activeTab() === 'documents') {
+              <div class="panel">
+                <div class="panel__toolbar">
+                  <h3>Documents partagés</h3>
+                  @if (isOpen(thread.status)) {
+                    <label class="btn primary file-btn">
+                      <i class="pi pi-upload" aria-hidden="true"></i>
+                      Partager un document
+                      <input type="file" hidden (change)="onShareDocumentSelected($event)" />
+                    </label>
                   }
                 </div>
-                <textarea
-                  rows="3"
-                  placeholder="Écrire un message…"
-                  [ngModel]="draft()"
-                  (ngModelChange)="draft.set($event)"
-                ></textarea>
-                <div class="composer__actions">
-                  <label class="btn ghost file-btn">
-                    Joindre
-                    <input type="file" hidden (change)="onFileSelected($event)" />
-                  </label>
-                  <button type="button" class="btn primary" (click)="send()" [disabled]="!draft().trim()">Envoyer</button>
-                </div>
+                @if (documents().length === 0) {
+                  <app-empty-state
+                    icon="pi-folder-open"
+                    title="Aucun document"
+                    description="Partagez un fichier pour le rendre disponible dans cet échange."
+                    [showAction]="isOpen(thread.status)"
+                    actionLabel="Partager un document"
+                    (actionClick)="shareDocTrigger.click()"
+                  />
+                  <input #shareDocTrigger type="file" hidden (change)="onShareDocumentSelected($event)" />
+                } @else {
+                  <ul class="doc-list">
+                    @for (d of documents(); track d.id) {
+                      <li class="doc-item">
+                        <div class="doc-item__main">
+                          <i class="pi {{ docIcon(d.fileName) }} doc-item__icon" aria-hidden="true"></i>
+                          <div class="doc-item__info">
+                            <button type="button" class="doc-item__name" (click)="downloadDoc(d)">
+                              {{ d.fileName }}
+                            </button>
+                            <span class="doc-item__meta">
+                              {{ formatBytes(d.sizeBytes) }} · {{ d.uploadedAt | date: 'dd/MM/yyyy' }}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          class="btn ghost"
+                          title="Télécharger"
+                          (click)="downloadDoc(d)"
+                        >
+                          <i class="pi pi-download" aria-hidden="true"></i>
+                          <span class="sr-only">Télécharger</span>
+                        </button>
+                      </li>
+                    }
+                  </ul>
+                }
               </div>
             }
-          }
 
-          @if (activeTab() === 'documents') {
-            <div class="panel">
-              <div class="panel__toolbar">
-                <h3>Documents partagés</h3>
-                @if (thread.status === 0) {
-                  <label class="btn primary file-btn">
-                    Partager un document
-                    <input type="file" hidden (change)="onFileSelected($event)" />
-                  </label>
-                }
-              </div>
-              <ul class="doc-list">
-                @for (d of documents(); track d.id) {
-                  <li>
-                    <button type="button" (click)="downloadDoc(d)">{{ d.fileName }}</button>
-                    <span>{{ formatBytes(d.sizeBytes) }} · {{ d.uploadedAt | date: 'dd/MM/yyyy' }}</span>
-                  </li>
-                } @empty {
-                  <li class="muted">Aucun document</li>
-                }
-              </ul>
-            </div>
-          }
-
-          @if (activeTab() === 'demandes') {
-            <div class="panel">
-              <div class="panel__toolbar">
-                <h3>Demandes & réclamations</h3>
-                @if (thread.status === 0) {
-                  <button type="button" class="btn primary" (click)="showNewRequest.set(true)">+ Nouvelle demande</button>
-                }
-              </div>
-              @if (showNewRequest()) {
-                <div class="form-card">
-                  <input placeholder="Titre" [ngModel]="newRequestTitle()" (ngModelChange)="newRequestTitle.set($event)" />
-                  <textarea placeholder="Description" [ngModel]="newRequestDescription()" (ngModelChange)="newRequestDescription.set($event)"></textarea>
-                  <select [ngModel]="newRequestCategory()" (ngModelChange)="setNewRequestCategory($event)">
-                    <option [ngValue]="0">Réclamation</option>
-                    <option [ngValue]="1">Information</option>
-                    <option [ngValue]="2">Document manquant</option>
-                    <option [ngValue]="3">Autre</option>
-                  </select>
-                  <div class="row">
-                    <button type="button" class="btn primary" (click)="createRequest()">Créer</button>
-                    <button type="button" class="btn ghost" (click)="showNewRequest.set(false)">Annuler</button>
-                  </div>
+            @if (activeTab() === 'demandes') {
+              <div class="panel">
+                <div class="panel__toolbar">
+                  <h3>Demandes & réclamations</h3>
+                  @if (isOpen(thread.status)) {
+                    <app-button
+                      variant="primary"
+                      size="sm"
+                      icon="pi-plus"
+                      (clicked)="showNewRequest.set(true)"
+                    >
+                      Nouvelle demande
+                    </app-button>
+                  }
                 </div>
-              }
-              <ul class="req-list">
-                @for (r of requests(); track r.id) {
-                  <li>
-                    <div>
-                      <strong>#{{ r.number }} — {{ r.title }}</strong>
-                      <div class="meta">{{ categoryLabel(r.category) }} · {{ requestStatusLabel(r.status) }}</div>
-                      <p>{{ r.description }}</p>
+                @if (showNewRequest()) {
+                  <div class="form-card">
+                    <div class="ft-field">
+                      <label for="req-title">Titre</label>
+                      <input
+                        id="req-title"
+                        [ngModel]="newRequestTitle()"
+                        (ngModelChange)="newRequestTitle.set($event)"
+                      />
                     </div>
-                    @if (thread.status === 0 && r.status < 5) {
-                      <div class="row">
-                        @if (r.status === 0) {
-                          <button type="button" class="btn ghost" (click)="changeRequestStatus(r, 1)">Prendre en charge</button>
-                        }
-                        @if (r.status < 4) {
-                          <button type="button" class="btn ghost" (click)="changeRequestStatus(r, 4)">Résoudre</button>
-                        }
-                        <button type="button" class="btn ghost" (click)="changeRequestStatus(r, 5)">Clore</button>
-                      </div>
-                    }
-                  </li>
-                } @empty {
-                  <li class="muted">Aucune demande</li>
+                    <div class="ft-field">
+                      <label for="req-desc">Description</label>
+                      <textarea
+                        id="req-desc"
+                        rows="3"
+                        [ngModel]="newRequestDescription()"
+                        (ngModelChange)="newRequestDescription.set($event)"
+                      ></textarea>
+                    </div>
+                    <div class="ft-field">
+                      <label for="req-cat">Catégorie</label>
+                      <select
+                        id="req-cat"
+                        [ngModel]="newRequestCategory()"
+                        (ngModelChange)="setNewRequestCategory($event)"
+                      >
+                        <option [ngValue]="0">Réclamation</option>
+                        <option [ngValue]="1">Information</option>
+                        <option [ngValue]="2">Document manquant</option>
+                        <option [ngValue]="3">Autre</option>
+                      </select>
+                    </div>
+                    <div class="row">
+                      <app-button variant="primary" size="sm" (clicked)="createRequest()">Créer</app-button>
+                      <app-button variant="ghost" size="sm" (clicked)="showNewRequest.set(false)">
+                        Annuler
+                      </app-button>
+                    </div>
+                  </div>
                 }
-              </ul>
-            </div>
-          }
-
-          @if (activeTab() === 'taches') {
-            <div class="panel">
-              <div class="panel__toolbar">
-                <h3>Tâches</h3>
-                @if (thread.status === 0) {
-                  <button type="button" class="btn primary" (click)="showNewTask.set(true)">Créer une tâche</button>
+                @if (requests().length === 0 && !showNewRequest()) {
+                  <app-empty-state
+                    icon="pi-clipboard"
+                    title="Aucune demande"
+                    description="Créez une demande ou une réclamation pour suivre un besoin."
+                    [showAction]="isOpen(thread.status)"
+                    actionLabel="Nouvelle demande"
+                    (actionClick)="showNewRequest.set(true)"
+                  />
+                } @else {
+                  <ul class="req-list">
+                    @for (r of requests(); track r.id) {
+                      <li class="req-item">
+                        <div class="req-item__header">
+                          <strong>#{{ r.number }} — {{ r.title }}</strong>
+                          <app-status-badge
+                            [status]="requestBadge(r.status)"
+                            [label]="requestStatusLabel(r.status)"
+                          />
+                        </div>
+                        <div class="meta">{{ categoryLabel(r.category) }}</div>
+                        @if (r.description) {
+                          <p class="req-item__desc">{{ r.description }}</p>
+                        }
+                        @if (isOpen(thread.status) && isReqActionable(r.status)) {
+                          <div class="row req-item__actions">
+                            @if (isReqOpen(r.status)) {
+                              <app-button
+                                variant="primary"
+                                size="sm"
+                                (clicked)="changeRequestStatus(r, 'InProgress')"
+                              >
+                                Prendre en charge
+                              </app-button>
+                            }
+                            @if (canResolveReq(r.status)) {
+                              <app-button
+                                variant="secondary"
+                                size="sm"
+                                (clicked)="changeRequestStatus(r, 'Resolved')"
+                              >
+                                Résoudre
+                              </app-button>
+                            }
+                            <app-button
+                              variant="ghost"
+                              size="sm"
+                              (clicked)="changeRequestStatus(r, 'Closed')"
+                            >
+                              Clore
+                            </app-button>
+                          </div>
+                        }
+                      </li>
+                    }
+                  </ul>
                 }
               </div>
-              @if (showNewTask()) {
-                <div class="form-card">
-                  <input placeholder="Titre" [ngModel]="newTaskTitle()" (ngModelChange)="newTaskTitle.set($event)" />
-                  <input type="date" [ngModel]="newTaskDue()" (ngModelChange)="newTaskDue.set($event)" />
-                  <div class="row">
-                    <button type="button" class="btn primary" (click)="createTask(false)">Créer</button>
-                    <button type="button" class="btn ghost" (click)="showNewTask.set(false)">Annuler</button>
-                  </div>
+            }
+
+            @if (activeTab() === 'taches') {
+              <div class="panel">
+                <div class="panel__toolbar">
+                  <h3>Tâches</h3>
+                  @if (isOpen(thread.status)) {
+                    <app-button
+                      variant="primary"
+                      size="sm"
+                      icon="pi-plus"
+                      (clicked)="showNewTask.set(true)"
+                    >
+                      Créer une tâche
+                    </app-button>
+                  }
                 </div>
-              }
-              <ul class="task-list">
-                @for (t of tasks(); track t.id) {
-                  <li>
-                    <div>
-                      <strong>{{ t.title }}</strong>
-                      <div class="meta">
-                        {{ taskStatusLabel(t.status) }}
-                        @if (t.dueDate) {
-                          · échéance {{ t.dueDate | date: 'dd/MM/yyyy' }}
-                        }
-                      </div>
+                @if (showNewTask()) {
+                  <div class="form-card">
+                    <div class="ft-field">
+                      <label for="task-title">Titre</label>
+                      <input
+                        id="task-title"
+                        [ngModel]="newTaskTitle()"
+                        (ngModelChange)="newTaskTitle.set($event)"
+                      />
                     </div>
-                    @if (t.status < 2) {
-                      <button type="button" class="btn ghost" (click)="changeTaskStatus(t, 2)">Terminer</button>
+                    <div class="ft-field">
+                      <label for="task-due">Échéance</label>
+                      <input
+                        id="task-due"
+                        type="date"
+                        [ngModel]="newTaskDue()"
+                        (ngModelChange)="newTaskDue.set($event)"
+                      />
+                    </div>
+                    <div class="row">
+                      <app-button variant="primary" size="sm" (clicked)="createTask(false)">Créer</app-button>
+                      <app-button variant="ghost" size="sm" (clicked)="showNewTask.set(false)">
+                        Annuler
+                      </app-button>
+                    </div>
+                  </div>
+                }
+                @if (tasks().length === 0 && !showNewTask()) {
+                  <app-empty-state
+                    icon="pi-check-square"
+                    title="Aucune tâche"
+                    description="Planifiez une tâche ou un rendez-vous lié à cet échange."
+                    [showAction]="isOpen(thread.status)"
+                    actionLabel="Créer une tâche"
+                    (actionClick)="showNewTask.set(true)"
+                  />
+                } @else {
+                  <ul class="task-list">
+                    @for (t of tasks(); track t.id) {
+                      <li class="task-item">
+                        <div class="task-item__main">
+                          <div class="task-item__header">
+                            <strong>{{ t.title }}</strong>
+                            <app-status-badge
+                              [status]="taskBadge(t.status)"
+                              [label]="taskStatusLabel(t.status)"
+                            />
+                          </div>
+                          @if (t.dueDate) {
+                            <div class="meta" [class.overdue]="isTaskOverdue(t)">
+                              <i class="pi pi-calendar" aria-hidden="true"></i>
+                              Échéance {{ t.dueDate | date: 'dd/MM/yyyy' }}
+                              @if (isTaskOverdue(t)) {
+                                <span class="overdue-label">En retard</span>
+                              }
+                            </div>
+                          }
+                        </div>
+                        @if (canFinishTask(t.status)) {
+                          <app-button
+                            variant="secondary"
+                            size="sm"
+                            icon="pi-check"
+                            (clicked)="changeTaskStatus(t, 'Done')"
+                          >
+                            Terminer
+                          </app-button>
+                        }
+                      </li>
                     }
+                  </ul>
+                }
+              </div>
+            }
+
+            @if (activeTab() === 'historique') {
+              <div class="panel">
+                <div class="panel__toolbar">
+                  <h3>Historique</h3>
+                </div>
+                @if (history().length === 0) {
+                  <app-empty-state
+                    icon="pi-history"
+                    title="Aucun événement"
+                    description="L'activité de cet échange apparaîtra ici."
+                    [showAction]="false"
+                  />
+                } @else {
+                  <ul class="history-list">
+                    @for (h of history(); track h.id) {
+                      <li class="history-item">
+                        <div class="history-item__dot" aria-hidden="true"></div>
+                        <div class="history-item__body">
+                          <strong class="history-item__label">{{ auditEventLabel(h.eventType) }}</strong>
+                          <span class="history-item__meta">
+                            {{ h.actorDisplayName }} · {{ h.occurredAt | date: 'dd/MM/yyyy HH:mm' }}
+                          </span>
+                        </div>
+                      </li>
+                    }
+                  </ul>
+                }
+              </div>
+            }
+          </div>
+
+          <aside class="exchange-side">
+            <section>
+              <h4>Participants</h4>
+              <ul class="participant-list">
+                @for (p of thread.participants; track p.userId) {
+                  <li class="participant">
+                    <div class="participant__avatar" aria-hidden="true">{{ initials(p.displayName) }}</div>
+                    <div class="participant__info">
+                      <strong>{{ p.displayName }}</strong>
+                      <span>
+                        {{ p.side === 'firm' ? 'Cabinet' : 'Société' }}
+                        @if (roleLabel(p.role)) {
+                          · {{ roleLabel(p.role) }}
+                        }
+                      </span>
+                    </div>
                   </li>
                 } @empty {
-                  <li class="muted">Aucune tâche</li>
+                  <li class="muted">—</li>
                 }
               </ul>
-            </div>
-          }
-
-          @if (activeTab() === 'historique') {
-            <div class="panel">
-              <h3>Historique</h3>
-              <ul class="history-list">
-                @for (h of history(); track h.id) {
-                  <li>
-                    <strong>{{ auditLabel(h.eventType) }}</strong>
-                    <span>{{ h.actorDisplayName }} · {{ h.occurredAt | date: 'dd/MM/yyyy HH:mm' }}</span>
-                  </li>
-                } @empty {
-                  <li class="muted">Aucun événement</li>
-                }
-              </ul>
-            </div>
-          }
-        </div>
-
-        <aside class="exchange-side">
-          <section>
-            <h4>Participants</h4>
-            <ul>
-              @for (p of thread.participants; track p.userId) {
-                <li>
-                  <strong>{{ p.displayName }}</strong>
-                  <span>{{ p.side === 'firm' ? 'Cabinet' : 'Société' }} · {{ p.role }}</span>
-                </li>
-              } @empty {
-                <li class="muted">—</li>
-              }
-            </ul>
-          </section>
-          <section>
-            <h4>Informations</h4>
-            <dl>
-              <dt>Ouverture</dt>
-              <dd>{{ thread.createdAt | date: 'dd/MM/yyyy' }}</dd>
-              <dt>Statut</dt>
-              <dd>{{ thread.status === 0 ? 'En cours' : 'Clos' }}</dd>
-              <dt>Sécurité</dt>
-              <dd>Échange sécurisé</dd>
-            </dl>
-          </section>
-          <section>
-            <h4>Documents récents</h4>
-            <ul>
-              @for (d of documents().slice(0, 5); track d.id) {
-                <li><button type="button" (click)="downloadDoc(d)">{{ d.fileName }}</button></li>
-              } @empty {
-                <li class="muted">Aucun</li>
-              }
-            </ul>
-          </section>
-          @if (thread.status === 0) {
-            <section class="quick">
-              <h4>Actions rapides</h4>
-              <button type="button" class="btn" (click)="showNewRequest.set(true); setTab('demandes')">+ Nouvelle demande</button>
-              <label class="btn file-btn">
-                Partager un document
-                <input type="file" hidden (change)="onFileSelected($event)" />
-              </label>
-              <button
-                type="button"
-                class="btn"
-                (click)="showNewTask.set(true); newTaskTitle.set('Rendez-vous'); setTab('taches')"
-              >
-                Planifier un rendez-vous
-              </button>
-              <button type="button" class="btn" (click)="showNewTask.set(true); setTab('taches')">Créer une tâche</button>
-              @if (canClose()) {
-                <button type="button" class="btn danger" (click)="closeExchange()">Clore l'échange</button>
-              }
             </section>
-          }
-        </aside>
-      </div>
+            <section>
+              <h4>Informations</h4>
+              <dl>
+                <dt>Ouverture</dt>
+                <dd>{{ thread.createdAt | date: 'dd/MM/yyyy' }}</dd>
+                <dt>Statut</dt>
+                <dd>
+                  <app-status-badge
+                    [status]="threadBadge(thread.status)"
+                    [label]="statusLabel(thread.status)"
+                  />
+                </dd>
+                <dt>Sécurité</dt>
+                <dd>Échange sécurisé</dd>
+              </dl>
+            </section>
+            <section>
+              <h4>Documents récents</h4>
+              <ul class="side-docs">
+                @for (d of recentDocuments(); track d.id) {
+                  <li>
+                    <button type="button" (click)="downloadDoc(d)">
+                      <i class="pi {{ docIcon(d.fileName) }}" aria-hidden="true"></i>
+                      <span class="side-docs__name">{{ d.fileName }}</span>
+                    </button>
+                    <span class="side-docs__meta">
+                      {{ formatBytes(d.sizeBytes) }} · {{ d.uploadedAt | date: 'dd/MM/yyyy' }}
+                    </span>
+                  </li>
+                } @empty {
+                  <li class="muted">Aucun</li>
+                }
+              </ul>
+            </section>
+            @if (isOpen(thread.status)) {
+              <section class="quick">
+                <h4>Actions rapides</h4>
+                <app-button
+                  variant="secondary"
+                  size="sm"
+                  icon="pi-plus"
+                  (clicked)="showNewRequest.set(true); setTab('demandes')"
+                >
+                  Nouvelle demande
+                </app-button>
+                <label class="btn file-btn quick-file">
+                  <i class="pi pi-upload" aria-hidden="true"></i>
+                  Partager un document
+                  <input type="file" hidden (change)="onShareDocumentSelected($event)" />
+                </label>
+                <app-button
+                  variant="ghost"
+                  size="sm"
+                  icon="pi-calendar"
+                  (clicked)="showNewTask.set(true); newTaskTitle.set('Rendez-vous'); setTab('taches')"
+                >
+                  Planifier un rendez-vous
+                </app-button>
+                <app-button
+                  variant="ghost"
+                  size="sm"
+                  icon="pi-check-square"
+                  (clicked)="showNewTask.set(true); setTab('taches')"
+                >
+                  Créer une tâche
+                </app-button>
+              </section>
+            }
+          </aside>
+        </div>
       }
     }
   </section>

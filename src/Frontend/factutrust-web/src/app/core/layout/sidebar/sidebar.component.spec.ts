@@ -378,6 +378,19 @@ describe('SidebarComponent — collapse', () => {
     });
   });
 
+  it('uses horizontal row layout on rail links when expanded', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, delegatedUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.componentRef.setInput('collapsed', false);
+    fixture.detectChanges();
+
+    const link = fixture.nativeElement.querySelector('.rail-link') as HTMLElement;
+    expect(getComputedStyle(link).flexDirection).toBe('row');
+  });
+
   it('applies sidebar-collapsed class when collapsed input is true', () => {
     const auth = TestBed.inject(AuthService);
     setUser(auth, delegatedUser);

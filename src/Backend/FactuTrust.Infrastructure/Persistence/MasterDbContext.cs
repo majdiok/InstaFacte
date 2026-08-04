@@ -58,6 +58,10 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
     public DbSet<Domain.Entities.FirmGovernance.FirmDossierYearBudget> FirmDossierYearBudgets => Set<Domain.Entities.FirmGovernance.FirmDossierYearBudget>();
     public DbSet<Domain.Entities.FirmGovernance.FirmCollaboratorRentability> FirmCollaboratorRentabilities => Set<Domain.Entities.FirmGovernance.FirmCollaboratorRentability>();
     public DbSet<Domain.Entities.FirmGovernance.FirmCollaboratorRentabilityLine> FirmCollaboratorRentabilityLines => Set<Domain.Entities.FirmGovernance.FirmCollaboratorRentabilityLine>();
+    public DbSet<Domain.Entities.FirmGovernance.FirmLeaveType> FirmLeaveTypes => Set<Domain.Entities.FirmGovernance.FirmLeaveType>();
+    public DbSet<Domain.Entities.FirmGovernance.FirmLeaveSettings> FirmLeaveSettings => Set<Domain.Entities.FirmGovernance.FirmLeaveSettings>();
+    public DbSet<Domain.Entities.FirmGovernance.FirmLeaveBalance> FirmLeaveBalances => Set<Domain.Entities.FirmGovernance.FirmLeaveBalance>();
+    public DbSet<Domain.Entities.FirmGovernance.FirmLeaveRequest> FirmLeaveRequests => Set<Domain.Entities.FirmGovernance.FirmLeaveRequest>();
 
     // Public Virtual Street (3D storefront projection)
     public DbSet<StorefrontProfile> StorefrontProfiles => Set<StorefrontProfile>();
@@ -200,6 +204,10 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
 
             entity.HasIndex(t => t.Kind);
 
+            entity.HasIndex(t => t.ManagedByFirmTenantId)
+                .HasFilter("[ManagedByFirmTenantId] IS NOT NULL");
+            entity.Ignore(t => t.IsFirmManaged);
+
             // Value object configurations
             entity.OwnsOne(t => t.NIF, nif =>
             {
@@ -301,6 +309,9 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.HasIndex(a => a.FirmTenantId);
             entity.Property(a => a.Notes).HasMaxLength(1000);
             entity.Property(a => a.RejectionReason).HasMaxLength(500);
+            entity.Property(a => a.Origin)
+                .HasDefaultValue(FirmAssignmentOrigin.CompanyRequest)
+                .IsRequired();
             entity.Property(a => a.CompanyProfileSnapshotJson).HasColumnType("nvarchar(max)");
             entity.Property(a => a.CompanyProfileCapturedAt).HasColumnType("datetime2");
 
@@ -527,6 +538,11 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Property(p => p.InvoiceImportModelRef).HasMaxLength(500);
             entity.Property(p => p.StudioAiModelRef).HasMaxLength(500);
             entity.Property(p => p.InferenceDevice).HasConversion<int>().HasDefaultValue(Domain.Enums.OllamaInferenceDevice.Gpu);
+            entity.Property(p => p.OpenRouterIsEnabled).HasDefaultValue(false);
+            entity.Property(p => p.OpenRouterDisplayName).HasMaxLength(200);
+            entity.Property(p => p.OpenRouterBaseUrl).HasMaxLength(500);
+            entity.Property(p => p.OpenRouterEncryptedApiKey).HasMaxLength(4000);
+            entity.Property(p => p.OpenRouterApiKeyLast4).HasMaxLength(4);
             entity.Property(p => p.CreatedBy).HasMaxLength(450);
             entity.Property(p => p.UpdatedBy).HasMaxLength(450);
         });
@@ -995,6 +1011,7 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Property(a => a.Code).HasMaxLength(50).IsRequired();
             entity.Property(a => a.Label).HasMaxLength(200).IsRequired();
             entity.Property(a => a.Category).HasConversion<int>();
+            entity.Property(a => a.DefaultUnitPrice).HasColumnType("decimal(18,3)");
         });
 
         builder.Entity<Domain.Entities.FirmGovernance.FirmTimeSheetPeriodLock>(entity =>
@@ -1107,6 +1124,50 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.HasIndex(l => new { l.CollaboratorRentabilityId, l.ReferenceCode, l.LineCollaboratorUserId });
             entity.Property(l => l.Value).HasPrecision(18, 3);
             entity.Property(l => l.ReferenceCode).HasConversion<int>();
+        });
+
+        builder.Entity<Domain.Entities.FirmGovernance.FirmLeaveType>(entity =>
+        {
+            entity.ToTable("FirmLeaveTypes");
+            entity.HasKey(t => t.Id);
+            entity.HasIndex(t => new { t.FirmTenantId, t.Code }).IsUnique();
+            entity.Property(t => t.Code).HasMaxLength(30).IsRequired();
+            entity.Property(t => t.Label).HasMaxLength(200).IsRequired();
+            entity.Property(t => t.ColorHex).HasMaxLength(9).IsRequired();
+        });
+
+        builder.Entity<Domain.Entities.FirmGovernance.FirmLeaveSettings>(entity =>
+        {
+            entity.ToTable("FirmLeaveSettings");
+            entity.HasKey(s => s.Id);
+            entity.HasIndex(s => new { s.FirmTenantId, s.Year }).IsUnique();
+            entity.Property(s => s.DefaultAnnualPaidDays).HasPrecision(9, 3);
+            entity.Property(s => s.MaxCarryOverDays).HasPrecision(9, 3);
+        });
+
+        builder.Entity<Domain.Entities.FirmGovernance.FirmLeaveBalance>(entity =>
+        {
+            entity.ToTable("FirmLeaveBalances");
+            entity.HasKey(b => b.Id);
+            entity.HasIndex(b => new { b.FirmTenantId, b.UserId, b.Year }).IsUnique();
+            entity.Property(b => b.OpeningBalanceDays).HasPrecision(9, 3);
+            entity.Property(b => b.AdjustmentDays).HasPrecision(9, 3);
+            entity.Property(b => b.Notes).HasMaxLength(500);
+        });
+
+        builder.Entity<Domain.Entities.FirmGovernance.FirmLeaveRequest>(entity =>
+        {
+            entity.ToTable("FirmLeaveRequests");
+            entity.HasKey(r => r.Id);
+            entity.HasIndex(r => new { r.FirmTenantId, r.UserId, r.StartDate });
+            entity.HasIndex(r => new { r.FirmTenantId, r.Status });
+            entity.Property(r => r.Days).HasPrecision(6, 2);
+            entity.Property(r => r.Reason).HasMaxLength(500);
+            entity.Property(r => r.ProcessedByName).HasMaxLength(200);
+            entity.Property(r => r.RejectionReason).HasMaxLength(500);
+            entity.Property(r => r.Status).HasConversion<int>();
+            entity.Property(r => r.StartUnit).HasConversion<int>();
+            entity.Property(r => r.EndUnit).HasConversion<int>();
         });
 
     }

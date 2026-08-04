@@ -1,7 +1,9 @@
 import { Routes } from '@angular/router';
 import { adminGuard } from '@core/guards/admin.guard';
+import { permissionGuard } from '@core/guards/permission.guard';
 import { platformSettingsGuard } from '@core/guards/platform-settings.guard';
 import { storefrontManageGuard } from '@core/guards/storefront-manage.guard';
+import { PERMISSIONS } from '@core/config/permission-keys';
 
 export const SETTINGS_ROUTES: Routes = [
   {
@@ -40,10 +42,25 @@ export const SETTINGS_ROUTES: Routes = [
     title: 'Modèles de documents - InstaFact'
   },
   {
+    path: 'payment-terms',
+    canActivate: [platformSettingsGuard],
+    loadComponent: () =>
+      import('./payment-terms/payment-terms.component').then(m => m.PaymentTermsComponent),
+    title: 'Conditions de règlement - InstaFact'
+  },
+  {
     path: 'taxes',
     canActivate: [platformSettingsGuard],
     loadComponent: () => import('./taxes/taxes.component').then(m => m.TaxesComponent),
     title: 'Taxes et TVA - InstaFact'
+  },
+  {
+    path: 'promotions',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.pricing.read] },
+    loadComponent: () =>
+      import('./promotions/promotions-page.component').then(m => m.PromotionsPageComponent),
+    title: 'Promotions - InstaFact'
   },
   {
     path: 'warehouses',
@@ -62,12 +79,6 @@ export const SETTINGS_ROUTES: Routes = [
     canActivate: [platformSettingsGuard, adminGuard],
     loadComponent: () => import('./users/tenant-users-bulk.component').then(m => m.TenantUsersBulkComponent),
     title: 'Ajouter des utilisateurs - InstaFact'
-  },
-  {
-    path: 'ai-providers',
-    canActivate: [platformSettingsGuard, adminGuard],
-    loadComponent: () => import('./ai-providers/ai-providers.component').then(m => m.AiProvidersComponent),
-    title: 'Fournisseurs IA - InstaFact'
   },
   {
     path: 'storefront',

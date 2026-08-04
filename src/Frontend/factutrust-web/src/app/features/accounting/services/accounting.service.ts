@@ -16,6 +16,10 @@ export interface ChartOfAccountDto {
   isSystem: boolean;
   isActive: boolean;
   level: number;
+  /** 0 = General, 1 = Client, 2 = Supplier, 3 = Other */
+  accountType?: number;
+  isAuxiliary?: boolean;
+  affectationAccountNumber?: string | null;
 }
 
 export interface JournalEntryDto {

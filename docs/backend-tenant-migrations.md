@@ -152,6 +152,25 @@ Un résultat vide signifie qu'aucun brouillon existant ne sera bloqué. Sinon, l
 
 ---
 
+## Erreur « Invalid column name 'CreatedBy' / 'UpdatedBy' / 'Version' » sur devis ou tarification
+
+Si **Nouveau devis** (`POST /api/quotes`) ou les écrans pricing (`/api/pricing/price-lists`,
+`promotions`, `payment-terms`) renvoient HTTP **500** avec :
+
+- **Message :** `Invalid column name 'CreatedBy'.` / `UpdatedBy` / `Version`
+- **Cause :** les tables `Promotions`, `PriceLists`, `PaymentTermTemplates`, etc. ont été créées
+  sans les colonnes d'audit de `Entity` / `AggregateRoot`, alors que EF les mappe. La création de
+  devis échoue dans `PromotionResolver` en lisant `Promotions`.
+
+### Solution
+
+Appliquer la migration tenant `20260731180000_AddPricingAuditColumns_Tenant` (redémarrage API en
+dev, ou backoffice plateforme), ou le script :
+
+[`docs/runbooks/sql/AddPricingAuditColumns_Tenant.idempotent.sql`](runbooks/sql/AddPricingAuditColumns_Tenant.idempotent.sql)
+
+---
+
 ## Vague 1 « Socle ERP commercial » — migrations tenant
 
 Migrations **strictement additives** de la vague 1 (commande client, conversions, tarification,
@@ -168,6 +187,7 @@ aucune ne modifie de document déjà émis.
 | `20260730180000_AddGlobalDiscount_Tenant` | Remise de pied (tranche 5B) : `GlobalDiscountPercent` / `GlobalDiscountAmount` sur `Invoices`, `Quotes`, `SalesOrders`, et `AllocatedGlobalDiscount` sur les trois tables de lignes. Montants à 0 par défaut ⇒ calcul inchangé sur l'existant. | [AddGlobalDiscount_Tenant.idempotent.sql](runbooks/sql/AddGlobalDiscount_Tenant.idempotent.sql) |
 | `20260730200000_AddPromotionsAndPaymentTerms_Tenant` | Tables `Promotions` et `PaymentTermTemplates` (tranche 5C). Creation de tables uniquement ; le champ texte `PaymentTerms` des documents n'est pas touche. | [AddPromotionsAndPaymentTerms_Tenant.idempotent.sql](runbooks/sql/AddPromotionsAndPaymentTerms_Tenant.idempotent.sql) |
 | `20260730220000_AddClientCreditTerms_Tenant` | `Clients.CreditLimit` et `Clients.DefaultPaymentTermDays` (lot 6). Deux colonnes nullables ; le plafond alimente une alerte et ne bloque rien. | [AddClientCreditTerms_Tenant.idempotent.sql](runbooks/sql/AddClientCreditTerms_Tenant.idempotent.sql) |
+| `20260731180000_AddPricingAuditColumns_Tenant` | Colonnes d'audit manquantes (`CreatedBy` / `UpdatedBy` / `Version`) sur les tables pricing. Correctif du schéma livré par les migrations 5A–5C. | [AddPricingAuditColumns_Tenant.idempotent.sql](runbooks/sql/AddPricingAuditColumns_Tenant.idempotent.sql) |
 
 Le régime de TVA du client est un attribut du **client**, non du taux de ligne (`VatRate`
 inchangé). La validation de facture (`ValidateInvoiceCommand`) refuse désormais toute TVA pour un
@@ -205,6 +225,36 @@ résidu d'arrondi étant donné à la ligne de plus forte base.
 ```
 
 Quand `ApplyOnlyToMissingMigrations` est `true`, seuls les tenants avec **au moins une migration en attente** sont traités au démarrage (pas les tenants déjà à jour).
+
+---
+
+## Module Honoraires cabinet (01/08/2026)
+
+Migration tenant **additive** `20260801120000_AddHonorairesModule_Tenant` : tables
+`HonorairesInvoices` / `HonorairesInvoiceLines` / `HonorairesQuotes` /
+`HonorairesQuoteLines` / `HonorairesPayments` / `HonorairesAttachments`.
+
+Aucun schéma Sales (`Invoices`, `Quotes`, `Payments`) n’est modifié.
+
+### Solution
+
+Appliquer les migrations tenant via l’une des options de la section [Erreur HTTP 503](#erreur-http-503--tenant_migration_failed), ou le script :
+
+[`docs/runbooks/sql/AddHonorairesModule_Tenant.idempotent.sql`](runbooks/sql/AddHonorairesModule_Tenant.idempotent.sql)
+
+**Après déploiement :** les utilisateurs firm doivent se **reconnecter** pour recevoir le module JWT `Honoraires` et les permissions `honoraires.*`.
+
+**Vérification SQL :**
+
+```sql
+SELECT MigrationId FROM __EFMigrationsHistory
+WHERE MigrationId LIKE '%AddHonorairesModule%';
+
+SELECT OBJECT_ID('HonorairesInvoices') AS Invoices,
+       OBJECT_ID('HonorairesQuotes') AS Quotes,
+       OBJECT_ID('HonorairesPayments') AS Payments,
+       OBJECT_ID('HonorairesAttachments') AS Attachments;
+```
 
 ---
 

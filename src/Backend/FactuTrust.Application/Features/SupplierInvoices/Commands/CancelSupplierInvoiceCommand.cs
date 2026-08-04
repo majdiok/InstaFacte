@@ -6,26 +6,26 @@ using MediatR;
 
 namespace FactuTrust.Application.Features.SupplierInvoices.Commands;
 
-/// <summary>
-/// Command to cancel a supplier invoice.
-/// </summary>
 public sealed record CancelSupplierInvoiceCommand(Guid Id, string Reason) : IRequest<Result>;
 
-/// <summary>
-/// Handler for CancelSupplierInvoiceCommand.
-/// </summary>
 public sealed class CancelSupplierInvoiceCommandHandler : IRequestHandler<CancelSupplierInvoiceCommand, Result>
 {
     private readonly ISupplierInvoiceRepository _repository;
+    private readonly IPurchaseOrderRepository _purchaseOrderRepository;
+    private readonly IPurchaseReceiptRepository _purchaseReceiptRepository;
     private readonly IAuditService _auditService;
     private readonly IAccountingService _accountingService;
 
     public CancelSupplierInvoiceCommandHandler(
         ISupplierInvoiceRepository repository,
+        IPurchaseOrderRepository purchaseOrderRepository,
+        IPurchaseReceiptRepository purchaseReceiptRepository,
         IAuditService auditService,
         IAccountingService accountingService)
     {
         _repository = repository;
+        _purchaseOrderRepository = purchaseOrderRepository;
+        _purchaseReceiptRepository = purchaseReceiptRepository;
         _auditService = auditService;
         _accountingService = accountingService;
     }
@@ -36,19 +36,43 @@ public sealed class CancelSupplierInvoiceCommandHandler : IRequestHandler<Cancel
         if (invoice is null)
             return Result.Failure(Error.NotFound("SupplierInvoice", request.Id));
 
+        var poImputations = invoice.GetPurchaseOrderImputations();
+        var prImputations = invoice.GetPurchaseReceiptImputations();
+
         var result = invoice.Cancel(request.Reason);
         if (result.IsFailure)
             return result;
 
         await _repository.UpdateAsync(invoice, cancellationToken);
 
-        // Reverse the accounting entry for the cancelled supplier invoice
-        var reversalResult = await _accountingService.ReverseSupplierInvoiceEntryAsync(
-            invoice.Id, invoice.InvoiceNumber, cancellationToken);
-        if (reversalResult.IsFailure)
+        if (poImputations.Count > 0)
         {
-            // Log but don't fail the cancellation — the reversal can be done manually
+            var po = await _purchaseOrderRepository.GetByIdWithLinesAsync(invoice.PurchaseOrderId, cancellationToken);
+            if (po is not null)
+            {
+                var reverseResult = po.ReverseInvoicing(poImputations);
+                if (reverseResult.IsFailure)
+                    return reverseResult;
+
+                await _purchaseOrderRepository.UpdateAsync(po, cancellationToken);
+            }
         }
+
+        if (prImputations.Count > 0 && invoice.SourcePurchaseReceiptId is { } receiptId)
+        {
+            var receipt = await _purchaseReceiptRepository.GetByIdWithLinesAsync(receiptId, cancellationToken);
+            if (receipt is not null)
+            {
+                var reverseResult = receipt.ReverseInvoicing(prImputations);
+                if (reverseResult.IsFailure)
+                    return reverseResult;
+
+                await _purchaseReceiptRepository.UpdateAsync(receipt, cancellationToken);
+            }
+        }
+
+        await _accountingService.ReverseSupplierInvoiceEntryAsync(
+            invoice.Id, invoice.InvoiceNumber, cancellationToken);
 
         await _auditService.LogAsync(
             AuditActions.SupplierInvoice.Cancelled,

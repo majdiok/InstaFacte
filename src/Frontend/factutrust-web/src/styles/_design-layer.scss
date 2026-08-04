@@ -508,3 +508,130 @@ $ft-icon-tones: (
   font-family: var(--font-family-mono, 'JetBrains Mono', 'SF Mono', monospace);
   font-variant-numeric: tabular-nums;
 }
+
+// -------- Écart prix (tarifs client, grilles) --------
+.ft-delta--up {
+  color: var(--color-warning-700, #b45309);
+  font-weight: var(--font-weight-medium, 500);
+}
+
+.ft-delta--down {
+  color: var(--color-success-700, #15803d);
+  font-weight: var(--font-weight-medium, 500);
+}
+
+// -------- Sous-titres de blocs pricing (produit, grille) --------
+.ft-pricing-block-title,
+.pricing-block-title {
+  margin: 0 0 var(--spacing-4, 1rem);
+  font-size: var(--font-size-sm, 0.875rem);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-text-secondary, #475569);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+// -------- Panneau info (encours client, sections secondaires) --------
+.ft-panel {
+  background: var(--color-background-elevated, #ffffff);
+  border: 1px solid var(--color-border-subtle, #e2e8f0);
+  border-left: 4px solid var(--color-primary-500, #3b82f6);
+  border-radius: var(--radius-xl, 0.75rem);
+  box-shadow: var(--shadow-soft-sm, var(--shadow-sm, 0 1px 3px 0 rgb(0 0 0 / 0.08)));
+  padding: var(--card-padding, var(--spacing-5, 1.25rem));
+  margin-bottom: var(--spacing-5, 1.25rem);
+}
+
+.ft-panel__title {
+  margin: 0 0 var(--spacing-4, 1rem);
+  padding-bottom: var(--spacing-3, 0.75rem);
+  border-bottom: 2px solid var(--color-primary-100, #dbeafe);
+  font-size: var(--font-size-lg, 1.125rem);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-text-primary, #0f172a);
+}
+
+.ft-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-3, 0.75rem);
+  margin-bottom: var(--spacing-4, 1rem);
+  padding-bottom: var(--spacing-3, 0.75rem);
+  border-bottom: 2px solid var(--color-primary-100, #dbeafe);
+
+  .ft-panel__title {
+    margin: 0;
+    padding: 0;
+    border: none;
+  }
+}
+
+// -------- Alertes informatives --------
+.ft-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-2, 0.5rem);
+  padding: var(--spacing-3, 0.75rem) var(--spacing-4, 1rem);
+  border-radius: var(--radius-lg, 0.5rem);
+  margin-bottom: var(--spacing-3, 0.75rem);
+  font-size: var(--font-size-sm, 0.875rem);
+  line-height: 1.45;
+
+  > i {
+    margin-top: 0.1rem;
+    flex-shrink: 0;
+  }
+}
+
+.ft-alert--warning {
+  background: var(--color-warning-50, #fffbeb);
+  color: var(--color-warning-800, #92400e);
+  border: 1px solid var(--color-warning-200, #fde68a);
+}
+
+.ft-alert--danger {
+  background: var(--color-error-50, #fef2f2);
+  color: var(--color-error-800, #991b1b);
+  border: 1px solid var(--color-error-200, #fecaca);
+}
+
+.ft-alert--info {
+  background: var(--color-primary-50, #eff6ff);
+  color: var(--color-primary-800, #1e40af);
+  border: 1px solid var(--color-primary-200, #bfdbfe);
+}
+
+.ft-alert--muted {
+  background: var(--color-neutral-50, #f8fafc);
+  color: var(--color-neutral-700, #334155);
+  border: 1px solid var(--color-neutral-200, #e2e8f0);
+}
+
+// -------- Grille info (fallback / listes label-valeur) --------
+.ft-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--spacing-4, 1rem) var(--spacing-5, 1.25rem);
+}
+
+.ft-info__label {
+  display: block;
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-text-secondary, #64748b);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: var(--spacing-1, 0.25rem);
+}
+
+// -------- Montant à risque / dépassement (≠ ft-delta prix) --------
+.ft-amount--danger {
+  color: var(--color-error-700, #b91c1c);
+  font-weight: var(--font-weight-semibold, 600);
+}
+
+.ft-amount--ok {
+  color: var(--color-success-700, #15803d);
+  font-weight: var(--font-weight-medium, 500);
+}

@@ -105,6 +105,8 @@ public record DeliveryNoteLineDto(
     bool IsFullyDelivered,
     string? Notes,
     decimal? DiscountPercent = null,
+    Guid? AppliedPromotionId = null,
+    string? AppliedPromotionName = null,
     decimal DiscountAmount = 0m,
     bool IsFodecApplicable = false,
     decimal FodecRatePercent = 0m,

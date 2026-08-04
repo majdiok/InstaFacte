@@ -29,6 +29,7 @@ function buildRawDto(status: PurchaseOrderStatus | string): PurchaseOrderDetailA
     totalTTC: 0,
     confirmedAt: null,
     receivedAt: null,
+    invoicedAt: null,
     cancelledAt: null,
     cancellationReason: null,
     createdAt: '2026-04-26T00:00:00Z',

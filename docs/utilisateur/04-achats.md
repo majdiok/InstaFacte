@@ -1,6 +1,6 @@
 # 04 - Achats
 
-Ce chapitre couvre la gestion des achats : fournisseurs, bons de commande et factures fournisseurs.
+Ce chapitre couvre la gestion des achats : fournisseurs, bons de commande, bons de réception et factures fournisseurs.
 
 ---
 
@@ -67,19 +67,76 @@ Un **bon de commande** (BC) est le document que vous envoyez à un fournisseur p
 
 Quand vous recevez les marchandises :
 
-1. Ouvrez le bon de commande (état Confirmé).
-2. Cliquez sur **Réceptionner**.
-3. Vérifiez les quantités reçues et validez.
+1. Ouvrez le bon de commande (état Confirmé ou Partiellement reçu).
+2. Cliquez sur **Réception marchandise**.
+3. Vous êtes redirigé vers un **bon de réception** prérempli avec les quantités restantes.
+4. Vérifiez l'entrepôt, les quantités reçues, puis enregistrez ou validez.
 
-### Créer une facture fournisseur depuis un bon de commande
+---
 
-Une fois le bon de commande réceptionné, vous pouvez créer la facture fournisseur associée :
+## Bons de réception
 
-1. Ouvrez le bon de commande réceptionné.
-2. Cliquez sur **Créer facture fournisseur**.
-3. Une fenêtre s'ouvre avec les informations pré-remplies (numéro de facture fournisseur, montant, etc.).
-4. Modifiez si besoin (date, conditions de paiement, référence).
-5. Cliquez sur **Créer la facture**.
+Un **bon de réception** (BR) enregistre la réception physique des marchandises d'un fournisseur. Il peut être lié à un bon de commande pour imputer les quantités et mettre à jour le stock à la validation.
+
+### Liste des bons de réception
+
+1. Dans le menu, cliquez sur **Achats** puis **Bons de réception**.
+2. La liste affiche les réceptions avec filtres (statut, fournisseur, période) et les totaux agrégés.
+
+### Créer un bon de réception
+
+1. Cliquez sur **Nouveau bon de réception**, ou partez d'un bon de commande via **Réception marchandise**.
+2. Renseignez le fournisseur, l'entrepôt et la date de réception.
+3. Sélectionnez éventuellement un bon de commande confirmé : les lignes et quantités en attente sont préremplies.
+4. Ajustez les **quantités reçues**, les prix et remises si besoin.
+5. Complétez les informations complémentaires (transporteur, n° BL, notes).
+6. Utilisez :
+   - **Enregistrer en brouillon** pour sauvegarder sans impact stock ;
+   - **Enregistrer** pour sauvegarder et ouvrir le détail ;
+   - **Valider la réception** pour confirmer (stock + imputation BC).
+
+Les pièces jointes (PDF, JPG, PNG) peuvent être ajoutées après le premier enregistrement.
+
+### États d'un bon de réception
+
+| État | Signification |
+|------|---------------|
+| **Brouillon** | Modifiable, sans impact stock. |
+| **Validé** | Stock mis à jour, quantités du BC imputées, document verrouillé. |
+| **Partiellement facturé** | Au moins une facture fournisseur a été créée ; il reste des quantités reçues non facturées. |
+| **Facturé** | Toutes les quantités reçues ont été facturées. |
+| **Annulé** | Annulé ; si le BR était validé, stock et BC sont contrepassés. |
+
+### Actions sur le détail
+
+Selon le statut et vos droits : **PDF**, **Modifier**, **Valider**, **Annuler** (motif obligatoire) ou **Supprimer** (brouillon uniquement).
+
+Astuces de saisie sur le formulaire :
+- **Scanner un code-barres** pour ajouter rapidement un article.
+- **Importer depuis BL** pour reporter le numéro de bon de livraison fournisseur.
+
+### Créer une facture fournisseur
+
+La facturation achats est **partielle et multiple** : vous pouvez créer plusieurs factures fournisseur tant qu'il reste des quantités **reçues et non encore facturées**. La réception des marchandises est **obligatoire** avant toute facturation.
+
+#### Depuis un bon de réception (recommandé)
+
+1. Validez le bon de réception.
+2. Sur la fiche du BR, cliquez sur **Créer facture fournisseur**.
+3. Dans la fenêtre, ajustez les **quantités à facturer** par ligne si besoin.
+4. Renseignez le numéro de facture fournisseur, la date et les conditions de paiement.
+5. Cliquez sur **Créer la facture** — vous êtes redirigé vers la fiche de la facture créée.
+
+#### Depuis un bon de commande
+
+Une fois le bon de commande réceptionné (totalement ou partiellement) :
+
+1. Ouvrez le bon de commande.
+2. Cliquez sur **Créer facture fournisseur** (visible uniquement s'il reste des quantités reçues non facturées).
+3. Sélectionnez les quantités à facturer dans la fenêtre.
+4. Validez la création.
+
+Les factures liées apparaissent sur les fiches BC et BR. L'annulation d'une facture fournisseur **libère** les quantités facturées pour une nouvelle imputation.
 
 ![Modal création facture fournisseur](../screenshots/04-achats/modal-facture-fournisseur.png)
 

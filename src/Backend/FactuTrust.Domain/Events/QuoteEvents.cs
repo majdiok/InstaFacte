@@ -118,3 +118,20 @@ public sealed class QuoteConvertedToInvoiceEvent : DomainEvent
         InvoiceId = invoiceId;
     }
 }
+
+/// <summary>
+/// Event raised when a quote is converted to a sales order (commande client).
+/// </summary>
+public sealed class QuoteConvertedToSalesOrderEvent : DomainEvent
+{
+    public Guid QuoteId { get; }
+    public string QuoteNumber { get; }
+    public Guid SalesOrderId { get; }
+
+    public QuoteConvertedToSalesOrderEvent(Guid quoteId, string quoteNumber, Guid salesOrderId)
+    {
+        QuoteId = quoteId;
+        QuoteNumber = quoteNumber;
+        SalesOrderId = salesOrderId;
+    }
+}

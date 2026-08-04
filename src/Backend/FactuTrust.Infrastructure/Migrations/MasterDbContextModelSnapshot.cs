@@ -1397,6 +1397,27 @@ namespace FactuTrust.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<string>("OpenRouterApiKeyLast4")
+                        .HasMaxLength(4)
+                        .HasColumnType("nvarchar(4)");
+
+                    b.Property<string>("OpenRouterBaseUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("OpenRouterDisplayName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("OpenRouterEncryptedApiKey")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<bool>("OpenRouterIsEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("StudioAiModelRef")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
@@ -1999,6 +2020,11 @@ namespace FactuTrust.Infrastructure.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
 
+                    b.Property<int>("Origin")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
                     b.Property<string>("RejectionReason")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
@@ -2066,6 +2092,9 @@ namespace FactuTrust.Infrastructure.Migrations
 
                     b.Property<string>("CreatedBy")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal?>("DefaultUnitPrice")
+                        .HasColumnType("decimal(18,3)");
 
                     b.Property<Guid>("FirmTenantId")
                         .HasColumnType("uniqueidentifier");
@@ -2499,6 +2528,243 @@ namespace FactuTrust.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("FirmExpenseNotes", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.FirmLeaveBalance", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("AdjustmentDays")
+                        .HasPrecision(9, 3)
+                        .HasColumnType("decimal(9,3)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("FirmTenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<decimal>("OpeningBalanceDays")
+                        .HasPrecision(9, 3)
+                        .HasColumnType("decimal(9,3)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FirmTenantId", "UserId", "Year")
+                        .IsUnique();
+
+                    b.ToTable("FirmLeaveBalances", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.FirmLeaveRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("Days")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<DateTime>("EndDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("EndUnit")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("FirmTenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("LeaveTypeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ProcessedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ProcessedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid?>("ProcessedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime>("StartDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("StartUnit")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("SubmittedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FirmTenantId", "Status");
+
+                    b.HasIndex("FirmTenantId", "UserId", "StartDate");
+
+                    b.ToTable("FirmLeaveRequests", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.FirmLeaveSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("AllowHalfDays")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("BlockOverlap")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("CarryOverEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("DefaultAnnualPaidDays")
+                        .HasPrecision(9, 3)
+                        .HasColumnType("decimal(9,3)");
+
+                    b.Property<Guid>("FirmTenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("MaxCarryOverDays")
+                        .HasPrecision(9, 3)
+                        .HasColumnType("decimal(9,3)");
+
+                    b.Property<int>("MinNoticeDays")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FirmTenantId", "Year")
+                        .IsUnique();
+
+                    b.ToTable("FirmLeaveSettings", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.FirmLeaveType", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("ColorHex")
+                        .IsRequired()
+                        .HasMaxLength(9)
+                        .HasColumnType("nvarchar(9)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("DeductsBalance")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("FirmTenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsSystem")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("RequiresApproval")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FirmTenantId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("FirmLeaveTypes", (string)null);
                 });
 
             modelBuilder.Entity("FactuTrust.Domain.Entities.FirmGovernance.FirmTimeSheetEntry", b =>
@@ -3621,6 +3887,9 @@ namespace FactuTrust.Infrastructure.Migrations
                     b.Property<string>("LogoUrl")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<Guid?>("ManagedByFirmTenantId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<int>("TaxRegime")
                         .HasColumnType("int");
 
@@ -3642,6 +3911,9 @@ namespace FactuTrust.Infrastructure.Migrations
                         .IsUnique();
 
                     b.HasIndex("Kind");
+
+                    b.HasIndex("ManagedByFirmTenantId")
+                        .HasFilter("[ManagedByFirmTenantId] IS NOT NULL");
 
                     b.ToTable("Tenants", (string)null);
                 });

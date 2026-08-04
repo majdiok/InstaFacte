@@ -41,28 +41,74 @@ public sealed class PurchaseOrder : AggregateRoot
     public string? CancellationReason { get; private set; }
     public DateTime? InvoicedAt { get; private set; }
 
+    /// <summary>Sum of received-but-not-invoiced quantities across all lines.</summary>
+    public decimal TotalReceivedNotInvoicedQuantity =>
+        _lines.Sum(l => l.ReceivedNotInvoicedQuantity);
+
+    public bool HasReceivedNotInvoiced => TotalReceivedNotInvoicedQuantity > 0;
+
+    /// <summary>
+    /// Records invoicing imputation and recalculates order status.
+    /// </summary>
+    public Result ApplyInvoicing(IEnumerable<(Guid LineId, decimal Quantity)> imputations, Guid supplierInvoiceId)
+    {
+        foreach (var (lineId, quantity) in imputations)
+        {
+            var line = _lines.FirstOrDefault(l => l.Id == lineId);
+            if (line is null)
+                return Result.Failure(Error.NotFound("PurchaseOrderLine", lineId));
+
+            var result = line.RecordInvoiced(quantity);
+            if (result.IsFailure)
+                return result;
+        }
+
+        RecalculateStatus();
+        AddDomainEvent(new PurchaseOrderInvoicedEvent(Id, Number.Value, supplierInvoiceId));
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Reverses invoicing imputation (e.g. cancelled supplier invoice).
+    /// </summary>
+    public Result ReverseInvoicing(IEnumerable<(Guid LineId, decimal Quantity)> reversals)
+    {
+        foreach (var (lineId, quantity) in reversals)
+        {
+            var line = _lines.FirstOrDefault(l => l.Id == lineId);
+            if (line is null)
+                return Result.Failure(Error.NotFound("PurchaseOrderLine", lineId));
+
+            var result = line.ReverseInvoiced(quantity);
+            if (result.IsFailure)
+                return result;
+        }
+
+        RecalculateStatus();
+        return Result.Success();
+    }
+
+    [Obsolete("Use ApplyInvoicing and RecalculateStatus for partial invoicing.")]
     public Result MarkAsInvoiced(Guid supplierInvoiceId)
     {
         if (Status == PurchaseOrderStatus.Invoiced)
             return Result.Success();
 
-        if (Status != PurchaseOrderStatus.Confirmed && 
-            Status != PurchaseOrderStatus.PartiallyReceived && 
-            Status != PurchaseOrderStatus.Received)
+        if (!Status.CanBeInvoiced() && Status != PurchaseOrderStatus.Confirmed)
+            return Result.Failure(Error.Validation("Status",
+                "La commande doit être reçue pour être facturée."));
+
+        foreach (var line in _lines.Where(l => l.ReceivedNotInvoicedQuantity > 0))
         {
-            return Result.Failure(Error.Validation("Status", 
-                "La commande doit être confirmée ou reçue pour être facturée."));
+            var result = line.RecordInvoiced(line.ReceivedNotInvoicedQuantity);
+            if (result.IsFailure)
+                return result;
         }
 
-        Status = PurchaseOrderStatus.Invoiced;
-        InvoicedAt = DateTime.UtcNow;
-
+        RecalculateStatus();
         AddDomainEvent(new PurchaseOrderInvoicedEvent(Id, Number.Value, supplierInvoiceId));
-        
         return Result.Success();
     }
-
-
 
     private PurchaseOrder() { }
 
@@ -190,22 +236,89 @@ public sealed class PurchaseOrder : AggregateRoot
                 return result;
         }
 
-        // Determine if fully or partially received
-        var receivedCount = receptions.Count();
+        // Determine reception status then recalculate combined status
         var allReceived = _lines.All(l => l.IsFullyReceived);
         if (allReceived)
-        {
-            Status = PurchaseOrderStatus.Received;
             ReceivedAt = DateTime.UtcNow;
-        }
-        else
-        {
-            Status = PurchaseOrderStatus.PartiallyReceived;
-        }
 
+        RecalculateStatus();
+
+        var receivedCount = receptions.Count();
         AddDomainEvent(new GoodsReceivedEvent(Id, Number.Value, receivedCount, allReceived));
 
         return Result.Success();
+    }
+
+    /// <summary>
+    /// Reverses previously recorded reception quantities (e.g. cancelling a validated BR).
+    /// Recalculates PartiallyReceived / Confirmed / Received status.
+    /// Not allowed when the order is already invoiced or cancelled.
+    /// </summary>
+    public Result ReverseGoodsReception(IEnumerable<(Guid LineId, decimal Quantity)> reversals)
+    {
+        if (Status is PurchaseOrderStatus.Invoiced or PurchaseOrderStatus.Cancelled or PurchaseOrderStatus.Draft)
+            return Result.Failure(Error.Validation("Status",
+                "Cette commande ne peut pas annuler de réception dans son état actuel"));
+
+        foreach (var (lineId, quantity) in reversals)
+        {
+            var line = _lines.FirstOrDefault(l => l.Id == lineId);
+            if (line is null)
+                return Result.Failure(Error.NotFound("PurchaseOrderLine", lineId));
+
+            var result = line.ReverseReception(quantity);
+            if (result.IsFailure)
+                return result;
+        }
+
+        var anyReceived = _lines.Any(l => l.ReceivedQuantity > 0);
+        if (!anyReceived)
+            ReceivedAt = null;
+
+        RecalculateStatus();
+
+        return Result.Success();
+    }
+
+    internal void RecalculateStatus()
+    {
+        if (Status is PurchaseOrderStatus.Cancelled or PurchaseOrderStatus.Draft)
+            return;
+
+        var anyReceived = _lines.Any(l => l.ReceivedQuantity > 0);
+        var allReceived = _lines.All(l => l.IsFullyReceived);
+        var anyInvoiced = _lines.Any(l => l.InvoicedQuantity > 0);
+        var anyReceivedNotInvoiced = _lines.Any(l => l.ReceivedNotInvoicedQuantity > 0);
+
+        if (anyInvoiced && !anyReceivedNotInvoiced)
+        {
+            Status = PurchaseOrderStatus.Invoiced;
+            InvoicedAt ??= DateTime.UtcNow;
+            return;
+        }
+
+        if (anyInvoiced)
+        {
+            Status = PurchaseOrderStatus.PartiallyInvoiced;
+            return;
+        }
+
+        InvoicedAt = null;
+
+        if (allReceived && anyReceived)
+        {
+            Status = PurchaseOrderStatus.Received;
+            ReceivedAt ??= DateTime.UtcNow;
+        }
+        else if (anyReceived)
+        {
+            Status = PurchaseOrderStatus.PartiallyReceived;
+        }
+        else
+        {
+            Status = PurchaseOrderStatus.Confirmed;
+            ReceivedAt = null;
+        }
     }
 
     public Result Cancel(string reason)

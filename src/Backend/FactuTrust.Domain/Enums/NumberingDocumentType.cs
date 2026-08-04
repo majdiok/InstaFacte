@@ -18,7 +18,28 @@ public enum NumberingDocumentType
     /// en entier dans <c>DocumentNumberingSchemes.DocumentType</c>, toute réindexation
     /// réaffecterait les schémas de numérotation existants.
     /// </summary>
-    SalesOrder = 10
+    SalesOrder = 10,
+
+    /// <summary>Facture honoraires cabinet (schéma séparé de <see cref="Invoice"/>).</summary>
+    FeeInvoice = 11,
+
+    /// <summary>Avoir honoraires cabinet (schéma séparé de <see cref="CreditNote"/>).</summary>
+    FeeCreditNote = 12,
+
+    /// <summary>Devis honoraires cabinet (schéma séparé de <see cref="Quote"/>).</summary>
+    FeeQuote = 13,
+
+    /// <summary>
+    /// Bon de réception d'achat. Ajouté EN FIN d'énumération : les valeurs sont persistées
+    /// en entier dans <c>DocumentNumberingSchemes.DocumentType</c>.
+    /// </summary>
+    PurchaseReceipt = 14,
+
+    /// <summary>
+    /// Facture fournisseur interne. Ajouté EN FIN d'énumération : les valeurs sont persistées
+    /// en entier dans <c>DocumentNumberingSchemes.DocumentType</c>.
+    /// </summary>
+    SupplierInvoice = 15
 }
 
 public static class NumberingDocumentTypeExtensions
@@ -36,6 +57,11 @@ public static class NumberingDocumentTypeExtensions
         NumberingDocumentType.CashExpense => "Decaissement caisse",
         NumberingDocumentType.BankDeposit => "Remise bancaire",
         NumberingDocumentType.SalesOrder => "Commande client",
+        NumberingDocumentType.FeeInvoice => "Facture honoraires",
+        NumberingDocumentType.FeeCreditNote => "Avoir honoraires",
+        NumberingDocumentType.FeeQuote => "Devis honoraires",
+        NumberingDocumentType.PurchaseReceipt => "Bon de réception",
+        NumberingDocumentType.SupplierInvoice => "Facture fournisseur",
         _ => type.ToString()
     };
 
@@ -52,6 +78,11 @@ public static class NumberingDocumentTypeExtensions
         NumberingDocumentType.CashExpense => "DEP",
         NumberingDocumentType.BankDeposit => "REM",
         NumberingDocumentType.SalesOrder => "CDE",
+        NumberingDocumentType.FeeInvoice => "FAC",
+        NumberingDocumentType.FeeCreditNote => "AVO",
+        NumberingDocumentType.FeeQuote => "DEV",
+        NumberingDocumentType.PurchaseReceipt => "BR",
+        NumberingDocumentType.SupplierInvoice => "FS",
         _ => "DOC"
     };
 

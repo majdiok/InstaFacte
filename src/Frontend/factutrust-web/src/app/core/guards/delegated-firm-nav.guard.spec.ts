@@ -83,4 +83,39 @@ describe('delegatedFirmNavGuard', () => {
     );
     expect(result).not.toBe(true);
   });
+
+  it('blocks firm-managed delegated user on /invoices', async () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, { ...delegatedUser, isFirmManaged: true });
+    const result = await TestBed.runInInjectionContext(() =>
+      delegatedFirmNavGuard({} as never, { url: '/invoices' } as never)
+    );
+    expect(result).not.toBe(true);
+    const router = TestBed.inject(Router);
+    expect(router.serializeUrl(result as never)).toContain('/access-denied');
+  });
+
+  it('blocks firm-managed delegated user on /reports/supplier-balances', async () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, { ...delegatedUser, isFirmManaged: true });
+    const result = await TestBed.runInInjectionContext(() =>
+      delegatedFirmNavGuard({} as never, { url: '/reports/supplier-balances' } as never)
+    );
+    expect(result).not.toBe(true);
+  });
+
+  it('allows classic delegated firm user on /invoices while firm-managed is denied', async () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, delegatedUser);
+    const classic = await TestBed.runInInjectionContext(() =>
+      delegatedFirmNavGuard({} as never, { url: '/invoices' } as never)
+    );
+    expect(classic).toBe(true);
+
+    setUser(auth, { ...delegatedUser, isFirmManaged: true });
+    const managed = await TestBed.runInInjectionContext(() =>
+      delegatedFirmNavGuard({} as never, { url: '/invoices' } as never)
+    );
+    expect(managed).not.toBe(true);
+  });
 });

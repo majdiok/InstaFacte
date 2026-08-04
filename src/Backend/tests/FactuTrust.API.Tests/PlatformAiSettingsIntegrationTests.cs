@@ -108,6 +108,72 @@ public sealed class PlatformAiSettingsIntegrationTests : IClassFixture<PlatformB
         }
     }
 
+    [Fact]
+    public async Task Platform_ai_settings_get_and_put_openrouter_roundtrip_keeps_secret_on_empty_key()
+    {
+        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var token = await LoginAsync(client);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var previous = await client.GetAsync("/api/platform/ai-settings");
+        Assert.Equal(HttpStatusCode.OK, previous.StatusCode);
+        var previousBody = await previous.Content.ReadFromJsonAsync<ApiResponse<PlatformAiSettingsDto>>(ApiJsonOptions);
+        Assert.NotNull(previousBody?.Data?.OpenRouter);
+        var previousOpenRouter = previousBody!.Data!.OpenRouter;
+
+        var putResponse = await client.PutAsJsonAsync(
+            "/api/platform/ai-settings",
+            new UpdatePlatformAiSettingsRequest
+            {
+                OpenRouter = new UpdatePlatformOpenRouterRequest
+                {
+                    IsEnabled = true,
+                    DisplayName = "OpenRouter Test",
+                    BaseUrl = null,
+                    ApiKey = "sk-or-test-key-abcd"
+                }
+            });
+        Assert.Equal(HttpStatusCode.OK, putResponse.StatusCode);
+
+        var putBody = await putResponse.Content.ReadFromJsonAsync<ApiResponse<PlatformAiSettingsDto>>(ApiJsonOptions);
+        Assert.NotNull(putBody?.Data?.OpenRouter);
+        Assert.True(putBody!.Data!.OpenRouter.IsEnabled);
+        Assert.True(putBody.Data.OpenRouter.IsApiKeyConfigured);
+        Assert.Equal("abcd", putBody.Data.OpenRouter.ApiKeyLast4);
+        var putJson = await putResponse.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("sk-or-test-key-abcd", putJson);
+
+        var keepResponse = await client.PutAsJsonAsync(
+            "/api/platform/ai-settings",
+            new UpdatePlatformAiSettingsRequest
+            {
+                OpenRouter = new UpdatePlatformOpenRouterRequest
+                {
+                    IsEnabled = true,
+                    DisplayName = "OpenRouter Kept",
+                    ApiKey = null
+                }
+            });
+        Assert.Equal(HttpStatusCode.OK, keepResponse.StatusCode);
+        var keepBody = await keepResponse.Content.ReadFromJsonAsync<ApiResponse<PlatformAiSettingsDto>>(ApiJsonOptions);
+        Assert.Equal("abcd", keepBody!.Data!.OpenRouter.ApiKeyLast4);
+        Assert.Equal("OpenRouter Kept", keepBody.Data.OpenRouter.DisplayName);
+
+        // Restaurer l'état précédent (désactivation si pas de clé précédente).
+        await client.PutAsJsonAsync(
+            "/api/platform/ai-settings",
+            new UpdatePlatformAiSettingsRequest
+            {
+                OpenRouter = new UpdatePlatformOpenRouterRequest
+                {
+                    IsEnabled = previousOpenRouter.IsEnabled,
+                    DisplayName = previousOpenRouter.DisplayName,
+                    BaseUrl = previousOpenRouter.BaseUrl,
+                    ApiKey = null
+                }
+            });
+    }
+
     private static async Task<string> LoginAsync(HttpClient client)
     {
         var loginResponse = await client.PostAsJsonAsync(

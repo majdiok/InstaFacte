@@ -72,6 +72,13 @@ internal sealed class HangfireRecurringJobsRegistrationService : BackgroundServi
                 job => job.ExecuteAsync(CancellationToken.None),
                 Cron.Daily(6),
                 UtcOptions)),
+        new(
+            "tenant-template-maintenance",
+            () => RecurringJob.AddOrUpdate<TenantTemplateMaintenanceJob>(
+                "tenant-template-maintenance",
+                job => job.ExecuteAsync(CancellationToken.None),
+                Cron.Weekly(DayOfWeek.Sunday, 2),
+                UtcOptions)),
     };
 
     private readonly ILogger<HangfireRecurringJobsRegistrationService> _logger;

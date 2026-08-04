@@ -36,7 +36,7 @@ public sealed class GetSupplierTransactionsReportQueryHandler
         var to = request.ToDate.Date;
 
         var (invoices, _) = await _invoiceRepository.SearchAsync(
-            null, null, null, from, to, 1, 10_000, false, cancellationToken);
+            null, null, null, null, null, from, to, 1, 10_000, false, cancellationToken);
         var payments = await _paymentRepository.GetByDateRangeAsync(from, to, cancellationToken);
 
         var rows = new List<SupplierTransactionReportRowDto>();

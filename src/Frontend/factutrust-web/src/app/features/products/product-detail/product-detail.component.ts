@@ -19,6 +19,7 @@ import {
   calculateSaleTtc,
   calculateVatAmount
 } from '@shared/utils/product-pricing.utils';
+import { ProductClientPricesComponent } from '../product-client-prices/product-client-prices.component';
 
 const VAT_OPTIONS: { label: string; value: number }[] = [
   { label: '19% - Taux normal', value: 19 },
@@ -39,7 +40,8 @@ const VAT_OPTIONS: { label: string; value: number }[] = [
     PageHeaderComponent,
     BreadcrumbComponent,
     FormSectionComponent,
-    ButtonComponent
+    ButtonComponent,
+    ProductClientPricesComponent
   ],
   template: `
     <app-breadcrumb [items]="breadcrumbItems()"></app-breadcrumb>
@@ -239,6 +241,16 @@ const VAT_OPTIONS: { label: string; value: number }[] = [
           </div>
         </app-form-section>
       </div>
+
+      <div class="form-grid-full">
+        <app-form-section title="Tarifs par client" icon="pi-users" [number]="3">
+          <app-product-client-prices
+            [productId]="p.id"
+            [catalogUnitPriceHT]="p.unitPrice"
+            [readOnly]="true">
+          </app-product-client-prices>
+        </app-form-section>
+      </div>
       }
     }
   `,
@@ -251,6 +263,10 @@ const VAT_OPTIONS: { label: string; value: number }[] = [
       @media (max-width: 1024px) {
         grid-template-columns: 1fr;
       }
+    }
+
+    .form-grid-full {
+      margin-top: var(--spacing-4);
     }
 
     .form-row {

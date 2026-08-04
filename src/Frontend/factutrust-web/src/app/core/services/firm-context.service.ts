@@ -19,6 +19,8 @@ export interface FirmContextState {
   clientTenantId?: string;
   clientCompanyName?: string;
   accessMode: 'native' | 'delegated';
+  /** True when the active delegated dossier is firm-managed. */
+  isFirmManaged?: boolean;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -50,7 +52,8 @@ export class FirmContextService {
     this.contextSignal.set({
       accessMode: (user.accessMode as 'native' | 'delegated') ?? 'native',
       clientTenantId: user.contextTenantId,
-      clientCompanyName: user.contextCompanyName
+      clientCompanyName: user.contextCompanyName,
+      isFirmManaged: !!user.isFirmManaged
     });
   }
 

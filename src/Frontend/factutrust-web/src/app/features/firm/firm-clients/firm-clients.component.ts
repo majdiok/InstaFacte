@@ -29,13 +29,20 @@ import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.
     <app-page-header
       title="Dossiers clients"
       subtitle="Sociétés dont vous gérez la comptabilité">
+      @if (auth.isFirmManager()) {
+        <button type="button" class="fc-btn fc-btn--primary" (click)="createManagedClient()">
+          <i class="pi pi-plus"></i> Créer un dossier client
+        </button>
+      }
     </app-page-header>
 
     @if (!loading() && clients().length === 0) {
       <app-empty-state
         icon="pi-briefcase"
         [title]="emptyTitle"
-        [description]="emptyDescription">
+        [description]="emptyDescription"
+        [actionLabel]="auth.isFirmManager() ? 'Créer un dossier client' : undefined"
+        actionRoute="/firm/clients/new">
       </app-empty-state>
     } @else {
       <div class="fc-card">
@@ -51,7 +58,12 @@ import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.
           </ng-template>
           <ng-template pTemplate="body" let-row>
             <tr>
-              <td>{{ row.companyName }}</td>
+              <td>
+                {{ row.companyName }}
+                @if (row.isFirmManaged) {
+                  <p-tag value="Géré par le cabinet" severity="info" styleClass="fc-managed-tag" />
+                }
+              </td>
               <td>
                 @if (row.assignedAccountantName) {
                   {{ row.assignedAccountantName }}
@@ -119,6 +131,7 @@ import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.
       padding: var(--spacing-2, 8px);
     }
     .fc-muted { color: var(--color-text-muted, #94a3b8); font-style: italic; }
+    :host ::ng-deep .fc-managed-tag { margin-left: 0.5rem; font-size: 0.7rem; }
     .fc-actions-col { width: 1%; }
     .fc-actions { display: flex; gap: 0.5rem; justify-content: flex-end; flex-wrap: wrap; }
     .fc-btn {
@@ -191,6 +204,10 @@ export class FirmClientsComponent implements OnInit {
       },
       error: () => this.loading.set(false)
     });
+  }
+
+  createManagedClient(): void {
+    void this.router.navigate(['/firm/clients/new']);
   }
 
   openAffect(row: FirmClientDossier): void {

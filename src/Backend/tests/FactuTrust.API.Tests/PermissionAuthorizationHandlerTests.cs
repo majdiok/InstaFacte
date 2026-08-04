@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using FactuTrust.API.Authorization;
 using FactuTrust.Domain.Auth;
+using FactuTrust.Domain.Authorization;
 using FactuTrust.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Xunit;
@@ -100,5 +101,37 @@ public sealed class PermissionAuthorizationHandlerTests
         await handler.HandleAsync(ctx);
 
         Assert.True(ctx.HasSucceeded);
+    }
+
+    [Fact]
+    public async Task Delegated_firm_accountant_succeeds_accounting_read_for_vat_rates()
+    {
+        var handler = new PermissionAuthorizationHandler();
+        var id = new ClaimsIdentity("Bearer");
+        foreach (var perm in DelegatedPermissionCatalog.FirmAccountantDelegated)
+            id.AddClaim(new Claim(AuthClaimTypes.Permission, perm));
+        var user = new ClaimsPrincipal(id);
+        var requirement = new PermissionRequirement(Permissions.Accounting.Read);
+        var ctx = new AuthorizationHandlerContext(new IAuthorizationRequirement[] { requirement }, user, resource: null);
+
+        await handler.HandleAsync(ctx);
+
+        Assert.True(ctx.HasSucceeded);
+    }
+
+    [Fact]
+    public async Task Delegated_firm_accountant_denied_settings_read_for_tax_crud()
+    {
+        var handler = new PermissionAuthorizationHandler();
+        var id = new ClaimsIdentity("Bearer");
+        foreach (var perm in DelegatedPermissionCatalog.FirmAccountantDelegated)
+            id.AddClaim(new Claim(AuthClaimTypes.Permission, perm));
+        var user = new ClaimsPrincipal(id);
+        var requirement = new PermissionRequirement(Permissions.Settings.Read);
+        var ctx = new AuthorizationHandlerContext(new IAuthorizationRequirement[] { requirement }, user, resource: null);
+
+        await handler.HandleAsync(ctx);
+
+        Assert.False(ctx.HasSucceeded);
     }
 }

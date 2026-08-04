@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Claims;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.DTOs;
@@ -9,6 +10,7 @@ using FactuTrust.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
@@ -22,17 +24,20 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
     private readonly IEffectivePermissionService _effectivePermissionService;
     private readonly MasterDbContext _masterContext;
     private readonly IConfiguration _configuration;
+    private readonly ILogger<TenantAuthTokenService> _logger;
 
     public TenantAuthTokenService(
         UserManager<ApplicationUser> userManager,
         IEffectivePermissionService effectivePermissionService,
         MasterDbContext masterContext,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        ILogger<TenantAuthTokenService> logger)
     {
         _userManager = userManager;
         _effectivePermissionService = effectivePermissionService;
         _masterContext = masterContext;
         _configuration = configuration;
+        _logger = logger;
     }
 
     public async Task<AuthResponseDto> GenerateTokensAsync(
@@ -42,6 +47,7 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
         string? contextCompanyName = null,
         CancellationToken cancellationToken = default)
     {
+        var totalSw = Stopwatch.StartNew();
         var user = await _userManager.FindByIdAsync(userId.ToString())
             ?? throw new InvalidOperationException("User not found.");
 
@@ -61,32 +67,51 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
 
         IReadOnlyList<string> effectivePermissions;
         IReadOnlyList<int> enabledModuleIds;
+        UserAccessSnapshot? nativeSnapshot = null;
 
+        var isFirmManaged = false;
         if (isDelegated)
         {
+            var contextTenant = await _masterContext.Tenants.AsNoTracking()
+                .FirstOrDefaultAsync(t => t.Id == contextTenantId!.Value, cancellationToken);
+            // Only dossiers managed by *this* firm (cabinet-created, no platform account).
+            isFirmManaged = contextTenant?.ManagedByFirmTenantId == homeTenantId;
+
             effectivePermissions = DelegatedPermissionCatalog.GetDelegatedPermissions(roleEnum).ToList();
-            enabledModuleIds = new[]
-            {
-                (int)AppModule.Accounting,
-                (int)AppModule.Fiscal,
-                (int)AppModule.Sales,
-                (int)AppModule.Treasury,
-                (int)AppModule.Reports,
-                (int)AppModule.Purchases,
-                (int)AppModule.Payroll
-            };
+            enabledModuleIds = isFirmManaged
+                ? new[]
+                {
+                    (int)AppModule.Accounting,
+                    (int)AppModule.Fiscal,
+                    (int)AppModule.Reports,
+                    (int)AppModule.Payroll
+                }
+                : new[]
+                {
+                    (int)AppModule.Accounting,
+                    (int)AppModule.Fiscal,
+                    (int)AppModule.Sales,
+                    (int)AppModule.Treasury,
+                    (int)AppModule.Reports,
+                    (int)AppModule.Purchases,
+                    (int)AppModule.Payroll
+                };
         }
         else if (homeTenant.Kind == TenantKind.AccountingFirm)
         {
-            var snapshot = await _effectivePermissionService.GetUserAccessSnapshotAsync(user.Id, cancellationToken);
-            effectivePermissions = snapshot.EffectivePermissions.ToList();
-            enabledModuleIds = new List<int> { (int)AppModule.Administration };
+            nativeSnapshot = await _effectivePermissionService.GetUserAccessSnapshotAsync(user.Id, cancellationToken);
+            effectivePermissions = nativeSnapshot.EffectivePermissions.ToList();
+            enabledModuleIds = new List<int>
+            {
+                (int)AppModule.Administration,
+                (int)AppModule.Honoraires
+            };
         }
         else
         {
-            var snapshot = await _effectivePermissionService.GetUserAccessSnapshotAsync(user.Id, cancellationToken);
-            effectivePermissions = snapshot.EffectivePermissions.ToList();
-            enabledModuleIds = snapshot.EnabledModules.Select(m => (int)m).ToList();
+            nativeSnapshot = await _effectivePermissionService.GetUserAccessSnapshotAsync(user.Id, cancellationToken);
+            effectivePermissions = nativeSnapshot.EffectivePermissions.ToList();
+            enabledModuleIds = nativeSnapshot.EnabledModules.Select(m => (int)m).ToList();
         }
 
         var claims = new List<Claim>
@@ -118,12 +143,13 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
             claims.Add(new Claim(AuthClaimTypes.ContextTenantId, contextTenantId!.Value.ToString()));
             if (!string.IsNullOrEmpty(contextCompanyName))
                 claims.Add(new Claim(AuthClaimTypes.ContextCompanyName, contextCompanyName));
+            claims.Add(new Claim(AuthClaimTypes.IsFirmManaged, isFirmManaged ? "true" : "false"));
         }
         else
         {
             claims.Add(new Claim(AuthClaimTypes.AccessMode, "native"));
-            var snapshot = await _effectivePermissionService.GetUserAccessSnapshotAsync(user.Id, cancellationToken);
-            if (snapshot.IsModulePermissionScoped)
+            nativeSnapshot ??= await _effectivePermissionService.GetUserAccessSnapshotAsync(user.Id, cancellationToken);
+            if (nativeSnapshot.IsModulePermissionScoped)
                 claims.Add(new Claim(AuthClaimTypes.PermissionSource, "modules"));
         }
 
@@ -146,12 +172,20 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
         user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
         await _userManager.UpdateAsync(user);
 
+        totalSw.Stop();
+        _logger.LogDebug(
+            "FirmRegistration.Step={Step} DurationMs={DurationMs} TenantId={TenantId} UserId={UserId}",
+            "TokenGeneration",
+            totalSw.ElapsedMilliseconds,
+            homeTenantId,
+            userId);
+
         return new AuthResponseDto
         {
             AccessToken = accessToken,
             RefreshToken = refreshToken,
             ExpiresAt = expiry,
-            User = CreateUserDto(user, homeTenant, roleEnum, enabledModuleIds, effectivePermissions, isDelegated, contextTenantId, contextCompanyName),
+            User = CreateUserDto(user, homeTenant, roleEnum, enabledModuleIds, effectivePermissions, isDelegated, contextTenantId, contextCompanyName, isFirmManaged),
             Requires2Fa = false
         };
     }
@@ -164,7 +198,8 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
         IReadOnlyList<string> effectivePermissions,
         bool isDelegated,
         Guid? contextTenantId,
-        string? contextCompanyName)
+        string? contextCompanyName,
+        bool isFirmManaged)
     {
         return new UserDto
         {
@@ -182,7 +217,8 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
             EffectivePermissions = effectivePermissions.ToList(),
             AccessMode = isDelegated ? "delegated" : "native",
             ContextTenantId = isDelegated ? contextTenantId : null,
-            ContextCompanyName = isDelegated ? contextCompanyName : null
+            ContextCompanyName = isDelegated ? contextCompanyName : null,
+            IsFirmManaged = isDelegated && isFirmManaged
         };
     }
 }

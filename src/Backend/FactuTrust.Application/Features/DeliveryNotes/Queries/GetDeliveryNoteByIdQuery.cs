@@ -51,6 +51,8 @@ public sealed class GetDeliveryNoteByIdQueryHandler : IRequestHandler<GetDeliver
             l.IsFullyDelivered,
             l.Notes,
             l.DiscountPercent,
+            l.AppliedPromotionId,
+            l.AppliedPromotionName,
             l.DiscountAmount,
             l.IsFodecApplicable,
             l.FodecRatePercent,

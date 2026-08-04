@@ -3,6 +3,7 @@ using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Entities.AI;
 using FactuTrust.Domain.Entities.Channels;
 using FactuTrust.Domain.Entities.Forecasting;
+using FactuTrust.Domain.Entities.Honoraires;
 using FactuTrust.Domain.Entities.Pricing;
 using FactuTrust.Domain.Entities.Storefront;
 using FactuTrust.Domain.Entities.Studio;
@@ -122,6 +123,9 @@ public partial class TenantDbContext : DbContext
     public DbSet<Supplier> Suppliers => Set<Supplier>();
     public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
     public DbSet<PurchaseOrderLine> PurchaseOrderLines => Set<PurchaseOrderLine>();
+    public DbSet<PurchaseReceipt> PurchaseReceipts => Set<PurchaseReceipt>();
+    public DbSet<PurchaseReceiptLine> PurchaseReceiptLines => Set<PurchaseReceiptLine>();
+    public DbSet<PurchaseReceiptAttachment> PurchaseReceiptAttachments => Set<PurchaseReceiptAttachment>();
     public DbSet<InventoryCountLine> InventoryCountLines => Set<InventoryCountLine>();
 
     // Supplier Invoices
@@ -210,6 +214,14 @@ public partial class TenantDbContext : DbContext
     public DbSet<ForecastRecomputeAudit> ForecastRecomputeAudits => Set<ForecastRecomputeAudit>();
     // Replenishment V2 audit trail (gated by Features:Forecasting:ReplenishmentV2:Enabled, table created by migration AddReplenishmentV2_Tenant).
     public DbSet<ReplenishmentDecisionAudit> ReplenishmentDecisionAudits => Set<ReplenishmentDecisionAudit>();
+
+    // Honoraires Module (cabinet billing) — gated by AppModule.Honoraires.
+    public DbSet<HonorairesInvoice> HonorairesInvoices => Set<HonorairesInvoice>();
+    public DbSet<HonorairesInvoiceLine> HonorairesInvoiceLines => Set<HonorairesInvoiceLine>();
+    public DbSet<HonorairesQuote> HonorairesQuotes => Set<HonorairesQuote>();
+    public DbSet<HonorairesQuoteLine> HonorairesQuoteLines => Set<HonorairesQuoteLine>();
+    public DbSet<HonorairesPayment> HonorairesPayments => Set<HonorairesPayment>();
+    public DbSet<HonorairesAttachment> HonorairesAttachments => Set<HonorairesAttachment>();
 
     // Payroll Module (RH & Paie) — gated by AppModule.Payroll, tables created by migration AddPayrollModule_Tenant.
     public DbSet<Domain.Entities.Payroll.Employee> Employees => Set<Domain.Entities.Payroll.Employee>();
@@ -317,6 +329,9 @@ public partial class TenantDbContext : DbContext
         ConfigureSupplier(builder);
         ConfigurePurchaseOrder(builder);
         ConfigurePurchaseOrderLine(builder);
+        ConfigurePurchaseReceipt(builder);
+        ConfigurePurchaseReceiptLine(builder);
+        ConfigurePurchaseReceiptAttachment(builder);
 
         // Supplier Invoices
         ConfigureSupplierInvoice(builder);
@@ -384,6 +399,9 @@ public partial class TenantDbContext : DbContext
 
         // AI Forecasting Module — defined in TenantDbContext.Forecasting.cs (partial class).
         ConfigureForecasting(builder);
+
+        // Honoraires Module — defined in TenantDbContext.Honoraires.cs (partial class).
+        ConfigureHonoraires(builder);
 
         // Payroll Module (RH & Paie) — defined in TenantDbContext.Payroll.cs (partial class).
         ConfigurePayroll(builder);
@@ -1117,6 +1135,9 @@ public partial class TenantDbContext : DbContext
             entity.Property(l => l.DiscountPercent)
                 .HasPrecision(5, 2);
 
+            entity.Property(l => l.AppliedPromotionName)
+                .HasMaxLength(100);
+
             entity.Property(l => l.IsFodecApplicable)
                 .HasDefaultValue(false);
 
@@ -1812,6 +1833,13 @@ public partial class TenantDbContext : DbContext
                 .IsUnique()
                 .HasFilter("[ConvertedInvoiceId] IS NOT NULL");
 
+            // Miroir de ConvertedInvoiceId : un devis ne peut être transformé qu'en UNE
+            // seule commande client. L'index unique filtré est le dernier rempart contre
+            // une double conversion concurrente.
+            entity.HasIndex(q => q.ConvertedSalesOrderId)
+                .IsUnique()
+                .HasFilter("[ConvertedSalesOrderId] IS NOT NULL");
+
             entity.Property(q => q.OriginStorefrontOrderId);
             entity.HasIndex(q => q.OriginStorefrontOrderId)
                 .HasFilter("[OriginStorefrontOrderId] IS NOT NULL");
@@ -1923,6 +1951,7 @@ public partial class TenantDbContext : DbContext
             entity.Property(l => l.InvoicedQuantity).HasPrecision(18, 4).IsRequired();
 
             entity.Property(l => l.DiscountPercent).HasPrecision(5, 2);
+            entity.Property(l => l.AppliedPromotionName).HasMaxLength(100);
             entity.Property(l => l.IsFodecApplicable).IsRequired();
             entity.Property(l => l.FodecRatePercent).HasPrecision(5, 2).IsRequired();
 
@@ -2000,6 +2029,9 @@ public partial class TenantDbContext : DbContext
 
             entity.Property(l => l.DiscountPercent)
                 .HasPrecision(5, 2);
+
+            entity.Property(l => l.AppliedPromotionName)
+                .HasMaxLength(100);
 
             entity.Property(l => l.IsFodecApplicable)
                 .IsRequired();
@@ -2434,6 +2466,9 @@ public partial class TenantDbContext : DbContext
             entity.Property(l => l.DiscountPercent)
                 .HasPrecision(5, 2);
 
+            entity.Property(l => l.AppliedPromotionName)
+                .HasMaxLength(100);
+
             entity.Property(l => l.IsFodecApplicable)
                 .IsRequired();
 
@@ -2663,6 +2698,9 @@ public partial class TenantDbContext : DbContext
             entity.Property(l => l.ReceivedQuantity)
                 .HasPrecision(18, 4);
 
+            entity.Property(l => l.InvoicedQuantity)
+                .HasPrecision(18, 4);
+
             entity.OwnsOne(l => l.UnitPrice, price =>
             {
                 price.Property(m => m.Amount)
@@ -2721,6 +2759,146 @@ public partial class TenantDbContext : DbContext
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(l => l.PurchaseOrderId);
+        });
+    }
+
+    private static void ConfigurePurchaseReceipt(ModelBuilder builder)
+    {
+        builder.Entity<PurchaseReceipt>(entity =>
+        {
+            entity.ToTable("PurchaseReceipts");
+            entity.HasKey(r => r.Id);
+
+            entity.Property(r => r.Version).IsConcurrencyToken();
+            entity.Property(r => r.SupplierReference).HasMaxLength(100);
+            entity.Property(r => r.TransporterName).HasMaxLength(200);
+            entity.Property(r => r.DeliveryNoteNumber).HasMaxLength(100);
+            entity.Property(r => r.Notes).HasMaxLength(2000);
+            entity.Property(r => r.CancellationReason).HasMaxLength(500);
+
+            entity.OwnsOne(r => r.Number, num =>
+            {
+                num.Property(n => n.Value).HasColumnName("Number").HasMaxLength(50).IsRequired();
+                num.Property(n => n.Prefix).HasColumnName("NumberPrefix").HasMaxLength(10).IsRequired();
+                num.Property(n => n.Year).HasColumnName("NumberYear").IsRequired();
+                num.Property(n => n.Sequence).HasColumnName("NumberSequence").IsRequired();
+                num.HasIndex(n => n.Value).IsUnique();
+            });
+
+            entity.OwnsOne(r => r.SubTotal, price =>
+            {
+                price.Property(m => m.Amount).HasColumnName("SubTotal").HasPrecision(18, 3).IsRequired();
+                price.Property(m => m.Currency).HasColumnName("SubTotalCurrency").HasMaxLength(3).IsRequired();
+            });
+
+            entity.OwnsOne(r => r.TotalVat, price =>
+            {
+                price.Property(m => m.Amount).HasColumnName("TotalVat").HasPrecision(18, 3).IsRequired();
+                price.Property(m => m.Currency).HasColumnName("TotalVatCurrency").HasMaxLength(3).IsRequired();
+            });
+
+            entity.OwnsOne(r => r.TotalAmount, price =>
+            {
+                price.Property(m => m.Amount).HasColumnName("TotalAmount").HasPrecision(18, 3).IsRequired();
+                price.Property(m => m.Currency).HasColumnName("TotalAmountCurrency").HasMaxLength(3).IsRequired();
+            });
+
+            entity.HasOne(r => r.Supplier)
+                .WithMany()
+                .HasForeignKey(r => r.SupplierId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.PurchaseOrder)
+                .WithMany()
+                .HasForeignKey(r => r.PurchaseOrderId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.Warehouse)
+                .WithMany()
+                .HasForeignKey(r => r.WarehouseId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(r => r.Lines)
+                .WithOne(l => l.PurchaseReceipt)
+                .HasForeignKey(l => l.PurchaseReceiptId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(r => r.Attachments)
+                .WithOne(a => a.PurchaseReceipt)
+                .HasForeignKey(a => a.PurchaseReceiptId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(r => r.Status);
+            entity.HasIndex(r => r.ReceiptDate);
+            entity.HasIndex(r => r.SupplierId);
+            entity.HasIndex(r => r.PurchaseOrderId);
+            entity.HasIndex(r => r.WarehouseId);
+        });
+    }
+
+    private static void ConfigurePurchaseReceiptLine(ModelBuilder builder)
+    {
+        builder.Entity<PurchaseReceiptLine>(entity =>
+        {
+            entity.ToTable("PurchaseReceiptLines");
+            entity.HasKey(l => l.Id);
+
+            entity.Property(l => l.ProductCode).HasMaxLength(50).IsRequired();
+            entity.Property(l => l.ProductName).HasMaxLength(200).IsRequired();
+            entity.Property(l => l.ProductDescription).HasMaxLength(1000);
+            entity.Property(l => l.Unit).HasMaxLength(50);
+            entity.Property(l => l.OrderedQuantity).HasPrecision(18, 4);
+            entity.Property(l => l.ReceivedQuantity).HasPrecision(18, 4);
+            entity.Property(l => l.InvoicedQuantity).HasPrecision(18, 4);
+            entity.Property(l => l.DiscountPercent).HasPrecision(5, 2);
+
+            entity.OwnsOne(l => l.UnitPrice, price =>
+            {
+                price.Property(m => m.Amount).HasColumnName("UnitPrice").HasPrecision(18, 3).IsRequired();
+                price.Property(m => m.Currency).HasColumnName("UnitPriceCurrency").HasMaxLength(3).IsRequired();
+            });
+
+            entity.OwnsOne(l => l.SubTotal, price =>
+            {
+                price.Property(m => m.Amount).HasColumnName("SubTotal").HasPrecision(18, 3).IsRequired();
+                price.Property(m => m.Currency).HasColumnName("SubTotalCurrency").HasMaxLength(3).IsRequired();
+            });
+
+            entity.OwnsOne(l => l.VatAmount, price =>
+            {
+                price.Property(m => m.Amount).HasColumnName("VatAmount").HasPrecision(18, 3).IsRequired();
+                price.Property(m => m.Currency).HasColumnName("VatAmountCurrency").HasMaxLength(3).IsRequired();
+            });
+
+            entity.OwnsOne(l => l.Total, price =>
+            {
+                price.Property(m => m.Amount).HasColumnName("Total").HasPrecision(18, 3).IsRequired();
+                price.Property(m => m.Currency).HasColumnName("TotalCurrency").HasMaxLength(3).IsRequired();
+            });
+
+            entity.HasOne(l => l.Product)
+                .WithMany()
+                .HasForeignKey(l => l.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(l => l.PurchaseReceiptId);
+            entity.HasIndex(l => l.PurchaseOrderLineId);
+        });
+    }
+
+    private static void ConfigurePurchaseReceiptAttachment(ModelBuilder builder)
+    {
+        builder.Entity<PurchaseReceiptAttachment>(entity =>
+        {
+            entity.ToTable("PurchaseReceiptAttachments");
+            entity.HasKey(a => a.Id);
+
+            entity.Property(a => a.FileName).HasMaxLength(260).IsRequired();
+            entity.Property(a => a.ContentType).HasMaxLength(100).IsRequired();
+            entity.Property(a => a.StorageRelativePath).HasMaxLength(500).IsRequired();
+            entity.Property(a => a.UploadedBy).HasMaxLength(200);
+
+            entity.HasIndex(a => a.PurchaseReceiptId);
         });
     }
 
@@ -2809,6 +2987,11 @@ public partial class TenantDbContext : DbContext
                 .HasForeignKey(si => si.PurchaseOrderId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            entity.HasOne(si => si.SourcePurchaseReceipt)
+                .WithMany()
+                .HasForeignKey(si => si.SourcePurchaseReceiptId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             entity.HasMany(si => si.Lines)
                 .WithOne(l => l.SupplierInvoice)
                 .HasForeignKey(l => l.SupplierInvoiceId)
@@ -2832,6 +3015,7 @@ public partial class TenantDbContext : DbContext
             entity.HasIndex(si => si.DueDate);
             entity.HasIndex(si => si.SupplierId);
             entity.HasIndex(si => si.PurchaseOrderId);
+            entity.HasIndex(si => si.SourcePurchaseReceiptId);
             entity.HasIndex(si => si.WarehouseId);
         });
     }
@@ -2859,6 +3043,9 @@ public partial class TenantDbContext : DbContext
 
             entity.Property(l => l.Quantity)
                 .HasPrecision(18, 4);
+
+            entity.HasIndex(l => l.PurchaseOrderLineId);
+            entity.HasIndex(l => l.PurchaseReceiptLineId);
 
             entity.OwnsOne(l => l.UnitPrice, price =>
             {

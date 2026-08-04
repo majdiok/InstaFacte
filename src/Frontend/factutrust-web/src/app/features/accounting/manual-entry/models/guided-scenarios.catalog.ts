@@ -1,0 +1,184 @@
+import { EntryLine, createEmptyLine } from './entry-form.model';
+
+export type GuidedScenarioId =
+  | 'achats'
+  | 'ventes'
+  | 'banque'
+  | 'caisse'
+  | 'od'
+  | 'immobilisations'
+  | 'paie'
+  | 'od-regularisation';
+
+export type AmountSource = 'ht' | 'tva' | 'ttc';
+export type LineSide = 'debit' | 'credit';
+export type VatSide = 'deductible' | 'collected' | null;
+
+export interface GuidedLineTemplate {
+  role: 'base' | 'vat' | 'counterpart';
+  accountCandidates: readonly string[];
+  side: LineSide;
+  amountSource: AmountSource;
+  labelTemplate?: string;
+}
+
+export interface GuidedScenario {
+  id: GuidedScenarioId;
+  label: string;
+  description: string;
+  icon: string;
+  defaultJournalCode: string;
+  thirdPartyKind: 1 | 2 | null;
+  vatSide: VatSide;
+  lineTemplates: readonly GuidedLineTemplate[];
+}
+
+export const GUIDED_SCENARIOS: readonly GuidedScenario[] = [
+  {
+    id: 'achats',
+    label: 'Achats',
+    description: 'Enregistrer une facture fournisseur, un avoir ou un règlement.',
+    icon: 'pi-shopping-cart',
+    defaultJournalCode: 'JA',
+    thirdPartyKind: 2,
+    vatSide: 'deductible',
+    lineTemplates: [
+      { role: 'base', accountCandidates: ['607', '606', '601', '604', '605'], side: 'debit', amountSource: 'ht', labelTemplate: 'Achat HT' },
+      { role: 'vat', accountCandidates: ['43666', '43662'], side: 'debit', amountSource: 'tva', labelTemplate: 'TVA déductible' },
+      { role: 'counterpart', accountCandidates: ['4011'], side: 'credit', amountSource: 'ttc', labelTemplate: 'Fournisseur' }
+    ]
+  },
+  {
+    id: 'ventes',
+    label: 'Ventes',
+    description: 'Enregistrer une facture client, un avoir ou un règlement.',
+    icon: 'pi-shopping-bag',
+    defaultJournalCode: 'JV',
+    thirdPartyKind: 1,
+    vatSide: 'collected',
+    lineTemplates: [
+      { role: 'counterpart', accountCandidates: ['4111'], side: 'debit', amountSource: 'ttc', labelTemplate: 'Client' },
+      { role: 'base', accountCandidates: ['707', '701', '705'], side: 'credit', amountSource: 'ht', labelTemplate: 'Vente HT' },
+      { role: 'vat', accountCandidates: ['436711'], side: 'credit', amountSource: 'tva', labelTemplate: 'TVA collectée' }
+    ]
+  },
+  {
+    id: 'banque',
+    label: 'Banque',
+    description: 'Enregistrer un paiement, un encaissement ou un virement bancaire.',
+    icon: 'pi-building',
+    defaultJournalCode: 'JB',
+    thirdPartyKind: null,
+    vatSide: null,
+    lineTemplates: [
+      { role: 'base', accountCandidates: ['5321'], side: 'debit', amountSource: 'ttc', labelTemplate: 'Banque' },
+      { role: 'counterpart', accountCandidates: ['4011', '4111', '607', '606'], side: 'credit', amountSource: 'ttc', labelTemplate: 'Contrepartie' }
+    ]
+  },
+  {
+    id: 'caisse',
+    label: 'Caisse',
+    description: 'Enregistrer une opération de caisse.',
+    icon: 'pi-money-bill',
+    defaultJournalCode: 'JC',
+    thirdPartyKind: null,
+    vatSide: null,
+    lineTemplates: [
+      { role: 'base', accountCandidates: ['5411'], side: 'debit', amountSource: 'ttc', labelTemplate: 'Caisse' },
+      { role: 'counterpart', accountCandidates: ['607', '606', '658'], side: 'credit', amountSource: 'ttc', labelTemplate: 'Contrepartie' }
+    ]
+  },
+  {
+    id: 'od',
+    label: 'Opérations diverses',
+    description: 'Saisir une écriture manuelle (OD diverse).',
+    icon: 'pi-pencil',
+    defaultJournalCode: 'JOD',
+    thirdPartyKind: null,
+    vatSide: null,
+    lineTemplates: [
+      { role: 'base', accountCandidates: ['658', '758'], side: 'debit', amountSource: 'ttc', labelTemplate: 'Charge / produit' },
+      { role: 'counterpart', accountCandidates: ['4011', '4111', '5321', '5411'], side: 'credit', amountSource: 'ttc', labelTemplate: 'Contrepartie' }
+    ]
+  },
+  {
+    id: 'immobilisations',
+    label: 'Immobilisations',
+    description: "Enregistrer l'acquisition, la mise en service ou la cession d'un bien.",
+    icon: 'pi-building-columns',
+    defaultJournalCode: 'JIM',
+    thirdPartyKind: 2,
+    vatSide: 'deductible',
+    lineTemplates: [
+      { role: 'base', accountCandidates: ['211', '213', '218'], side: 'debit', amountSource: 'ht', labelTemplate: 'Immobilisation' },
+      { role: 'vat', accountCandidates: ['43662', '43666'], side: 'debit', amountSource: 'tva', labelTemplate: 'TVA déductible immo' },
+      { role: 'counterpart', accountCandidates: ['4011', '5321'], side: 'credit', amountSource: 'ttc', labelTemplate: 'Fournisseur / Banque' }
+    ]
+  },
+  {
+    id: 'paie',
+    label: 'Paie',
+    description: 'Enregistrer les écritures de paie et charges sociales.',
+    icon: 'pi-users',
+    defaultJournalCode: 'JOD',
+    thirdPartyKind: null,
+    vatSide: null,
+    lineTemplates: [
+      { role: 'base', accountCandidates: ['640', '641', '645', '646'], side: 'debit', amountSource: 'ttc', labelTemplate: 'Charges de personnel' },
+      { role: 'counterpart', accountCandidates: ['421', '422', '423', '432'], side: 'credit', amountSource: 'ttc', labelTemplate: 'Dettes sociales / salariales' }
+    ]
+  },
+  {
+    id: 'od-regularisation',
+    label: 'OD de régularisation',
+    description: 'Enregistrer les écritures de régularisation (frais, produits, etc.).',
+    icon: 'pi-sync',
+    defaultJournalCode: 'JOD',
+    thirdPartyKind: null,
+    vatSide: null,
+    lineTemplates: [
+      { role: 'base', accountCandidates: ['486', '487'], side: 'debit', amountSource: 'ttc', labelTemplate: 'Charges constatées d\'avance / PCA' },
+      { role: 'counterpart', accountCandidates: ['481', '491'], side: 'credit', amountSource: 'ttc', labelTemplate: 'Produits constatés d\'avance / CCA' }
+    ]
+  }
+];
+
+export function getScenarioById(id: GuidedScenarioId): GuidedScenario | undefined {
+  return GUIDED_SCENARIOS.find(s => s.id === id);
+}
+
+export function resolveAmount(source: AmountSource, ht: number, tva: number, ttc: number): number {
+  switch (source) {
+    case 'ht': return ht;
+    case 'tva': return tva;
+    case 'ttc': return ttc;
+  }
+}
+
+export function buildScenarioLines(
+  scenario: GuidedScenario,
+  resolveAccount: (candidates: readonly string[]) => string | null,
+  amounts: { ht: number; tva: number; ttc: number },
+  generalLabel: string
+): EntryLine[] {
+  return scenario.lineTemplates.map(tpl => {
+    const account = resolveAccount(tpl.accountCandidates);
+    const amount = resolveAmount(tpl.amountSource, amounts.ht, amounts.tva, amounts.ttc);
+    const line: EntryLine = {
+      ...createEmptyLine(),
+      accountNumber: account ?? '',
+      lineLabel: tpl.labelTemplate ? `${tpl.labelTemplate} — ${generalLabel}` : generalLabel,
+      debit: tpl.side === 'debit' && amount > 0 ? amount : null,
+      credit: tpl.side === 'credit' && amount > 0 ? amount : null
+    };
+    return line;
+  });
+}
+
+export function formatPeriodLabel(fiscalYear: number, month: number): string {
+  const months = [
+    'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+    'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
+  ];
+  return `${months[month - 1] ?? month} ${fiscalYear}`;
+}

@@ -79,6 +79,12 @@ export const PERMISSIONS = {
     update: 'purchase_orders:update',
     delete: 'purchase_orders:delete'
   },
+  purchaseReceipts: {
+    create: 'purchase_receipts:create',
+    read: 'purchase_receipts:read',
+    update: 'purchase_receipts:update',
+    delete: 'purchase_receipts:delete'
+  },
   supplierInvoices: {
     create: 'supplier_invoices:create',
     read: 'supplier_invoices:read',
@@ -159,5 +165,24 @@ export const PERMISSIONS = {
     manage: 'firm:manage',
     usersManage: 'firm:users:manage',
     assignmentsManage: 'firm:assignments:manage'
+  },
+  honorairesInvoices: {
+    create: 'honoraires.invoices:create',
+    read: 'honoraires.invoices:read',
+    update: 'honoraires.invoices:update',
+    delete: 'honoraires.invoices:delete',
+    validate: 'honoraires.invoices:validate',
+    send: 'honoraires.invoices:send'
+  },
+  honorairesQuotes: {
+    create: 'honoraires.quotes:create',
+    read: 'honoraires.quotes:read',
+    update: 'honoraires.quotes:update',
+    delete: 'honoraires.quotes:delete',
+    convert: 'honoraires.quotes:convert'
+  },
+  honorairesPayments: {
+    create: 'honoraires.payments:create',
+    read: 'honoraires.payments:read'
   }
 } as const;

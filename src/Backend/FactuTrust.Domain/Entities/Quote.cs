@@ -59,6 +59,13 @@ public sealed class Quote : AggregateRoot
     public Guid? ConvertedInvoiceId { get; private set; }
 
     /// <summary>
+    /// La commande client créée depuis ce devis (s'il a été transformé en commande).
+    /// Miroir de <see cref="ConvertedInvoiceId"/> : un devis ne peut donner lieu qu'à un
+    /// seul document de destination, facture ou commande.
+    /// </summary>
+    public Guid? ConvertedSalesOrderId { get; private set; }
+
+    /// <summary>
     /// When the quote was converted to an invoice (traçabilité).
     /// </summary>
     public DateTime? ConvertedAt { get; private set; }
@@ -127,7 +134,9 @@ public sealed class Quote : AggregateRoot
         decimal quantity,
         Money? customUnitPrice = null,
         decimal? discountPercent = null,
-        decimal fodecRatePercent = QuoteLine.DefaultFodecRatePercent)
+        decimal fodecRatePercent = QuoteLine.DefaultFodecRatePercent,
+        Guid? appliedPromotionId = null,
+        string? appliedPromotionName = null)
     {
         if (!Status.CanBeEdited())
             return Result.Failure(Error.Validation("Status", "Ce devis ne peut plus être modifié"));
@@ -145,7 +154,9 @@ public sealed class Quote : AggregateRoot
             quantity,
             unitPrice,
             discountPercent,
-            fodecRatePercent);
+            fodecRatePercent,
+            appliedPromotionId,
+            appliedPromotionName);
 
         if (lineResult.IsFailure)
             return Result.Failure(lineResult.Error);
@@ -329,6 +340,22 @@ public sealed class Quote : AggregateRoot
         Status = QuoteStatus.Converted;
 
         AddDomainEvent(new QuoteConvertedToInvoiceEvent(Id, Number.Value, invoiceId));
+    }
+
+    /// <summary>
+    /// Marks this quote as converted to a sales order (commande client).
+    /// This method should only be called during the conversion process.
+    /// </summary>
+    public void MarkAsConvertedToSalesOrder(Guid salesOrderId)
+    {
+        if (Status != QuoteStatus.Accepted)
+            throw new InvalidOperationException("Seuls les devis acceptés peuvent être transformés en commande");
+
+        ConvertedSalesOrderId = salesOrderId;
+        ConvertedAt = DateTime.UtcNow;
+        Status = QuoteStatus.Converted;
+
+        AddDomainEvent(new QuoteConvertedToSalesOrderEvent(Id, Number.Value, salesOrderId));
     }
 
     public void UpdateNotes(string? notes, string? termsAndConditions)

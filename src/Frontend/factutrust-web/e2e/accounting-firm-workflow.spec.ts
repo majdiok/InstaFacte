@@ -23,6 +23,33 @@ test.describe('Cabinet comptable — workflow', () => {
     await expect(page.getByRole('heading', { name: /2\. votre cabinet/i })).toBeVisible();
   });
 
+  test('register firm full flow submits step 3', async ({ page }) => {
+    test.skip(process.env['E2E_FIRM_REGISTER'] !== '1', 'Set E2E_FIRM_REGISTER=1 with API + SQL to run full registration');
+
+    const unique = Date.now();
+    await page.goto('/auth/register-firm');
+
+    await page.getByPlaceholder('Prénom *').fill('Jean');
+    await page.getByPlaceholder('Nom *').fill('Dupont');
+    await page.getByPlaceholder('Email connexion *').fill(`firm-${unique}@example.com`);
+    await page.locator('#password input').fill('SecurePass123!');
+    await page.locator('#confirmPassword input').fill('SecurePass123!');
+    await page.getByLabel(/conditions d'utilisation/i).check();
+    await page.getByRole('button', { name: /étape suivante/i }).click();
+
+    await page.getByPlaceholder('Raison sociale *').fill(`Cabinet E2E ${unique}`);
+    await page.getByPlaceholder('Matricule fiscal *').fill('7654321/A/B/C/000');
+    await page.getByPlaceholder('Email cabinet *').fill(`contact-${unique}@example.com`);
+    await page.getByPlaceholder('Téléphone *').fill('71123456');
+    await page.getByRole('button', { name: /étape suivante/i }).click();
+
+    await page.getByPlaceholder('Adresse *').fill('123 Avenue de la République');
+    await page.getByPlaceholder('Ville *').fill('Tunis');
+    await page.getByRole('button', { name: /créer le cabinet/i }).click();
+
+    await expect(page).toHaveURL(/\/firm\/dashboard/, { timeout: 180_000 });
+  });
+
   test('login page loads for firm users', async ({ page }) => {
     await page.goto('/auth/login');
     await expect(page.getByLabel(/email/i)).toBeVisible();
@@ -58,6 +85,51 @@ test.describe('Cabinet comptable — authenticated (staging)', () => {
     // await expect(page.getByRole('dialog', { name: /accès refusé/i })).not.toBeVisible();
     // await expect(page.getByRole('heading', { name: /déclaration mensuelle/i })).toBeVisible();
     // await expect(page.getByText(/total à payer/i)).toBeVisible();
+  });
+
+  test('honoraires billing smoke — factures / devis / encaissements', async ({ page }) => {
+    // Requires E2E_FIRM_AUTH=1 + FirmManager credentials (see CI secrets / local .env).
+    // Flow under test after auth:
+    // 1. Sidemenu contains Facturation + Paiements
+    // await expect(page.getByRole('navigation')).toContainText(/Facturation/i);
+    // await expect(page.getByRole('navigation')).toContainText(/Paiements/i);
+    //
+    // 2. Create draft invoice with activity code, save
+    // await page.goto('/firm/billing/invoices/new');
+    // select dossier + service (TENUE) → Enregistrer
+    //
+    // 3. Finaliser → Encaisser via dialog (net + RS) → statut Payée / Partiellement payée
+    // await expect(page.getByText(/Validée|Payée|Partiellement payée/i)).toBeVisible();
+    // await page.getByRole('button', { name: /Encaisser/i }).click();
+    // await page.getByRole('button', { name: /Enregistrer l'encaissement/i }).click();
+    //
+    // 4. Payments list shows the encaissement
+    // await page.goto('/firm/billing/payments');
+    // await expect(page.getByText(/Aucun encaissement/i)).not.toBeVisible();
+    //
+    // 5. Paid invoice must NOT show Encaisser
+    // await expect(page.getByRole('button', { name: /^Encaisser$/i })).toHaveCount(0);
+    //
+    // 6. Créer un avoir depuis l'éditeur (Créer un avoir) → Finaliser l'avoir
+    // await page.getByRole('button', { name: /Créer un avoir/i }).click();
+    // await page.getByRole('button', { name: /Finaliser l'avoir/i }).click();
+  //
+    // 7. Avoir list: Nouvel avoir + dialog sélection facture
+    // await page.goto('/firm/billing/credit-notes');
+    // await page.getByRole('button', { name: /Nouvel avoir/i }).click();
+    //
+    // await expect(page).toHaveURL(/\/firm\/billing\//);
+  });
+
+  test('firm accountant cannot access manager-only cabinet routes', async ({ page }) => {
+    // 1. Login as FirmAccountant → sidemenu must not show Facturation, Paiements,
+    //    Rentabilité de collaborateurs, Collaborateurs
+    // 2. Direct /firm/collaborateurs → /access-denied (no 403 modal)
+    // 3. Direct /firm/billing/invoices → /access-denied
+    // 4. Direct /firm/governance/dossier-time-profitability → /access-denied
+    // 5. /firm/governance/time-sheets accessible ; no "Analyse rentabilité dossiers" link
+    // await expect(page.getByRole('dialog', { name: /accès refusé/i })).not.toBeVisible();
+    // await expect(page).toHaveURL(/\/access-denied/);
   });
 });
 

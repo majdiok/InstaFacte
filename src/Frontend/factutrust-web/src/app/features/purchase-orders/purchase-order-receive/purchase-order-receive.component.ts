@@ -368,7 +368,14 @@ export class PurchaseOrderReceiveComponent implements OnInit {
 
   ngOnInit(): void {
     const id = this.route.snapshot.paramMap.get('id');
-    if (id) this.loadOrder(id);
+    if (id) {
+      // Réceptions désormais gérées via les bons de réception d'achat.
+      this.router.navigate(['/purchase-receipts', 'new'], {
+        queryParams: { purchaseOrderId: id },
+        replaceUrl: true
+      });
+      return;
+    }
   }
 
   private loadOrder(id: string): void {

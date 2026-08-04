@@ -59,4 +59,14 @@ public interface ITenantService
     /// Applies migrations to a tenant's database.
     /// </summary>
     Task ApplyMigrationsAsync(Guid tenantId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Drops a tenant SQL database (orphan cleanup on failed registration).
+    /// </summary>
+    Task TryDropDatabaseAsync(string databaseName, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Ensures the pre-migrated template database and backup file are up to date.
+    /// </summary>
+    Task EnsureTenantTemplateAsync(CancellationToken cancellationToken = default);
 }

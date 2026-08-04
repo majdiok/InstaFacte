@@ -22,13 +22,16 @@ public sealed class DelegatedAccessMiddleware
     };
 
     /// <summary>
-    /// Session and firm-context management allowed in delegated mode (exit/switch dossier, token refresh).
+    /// Session / UX home-tenant writes allowed in delegated mode:
+    /// exit/switch dossier, token refresh, and in-app notifications
+    /// (Master DB UserNotifications keyed by home tenant_id — not client ERP data).
     /// </summary>
     private static readonly HashSet<string> AllowedDelegatedSessionPrefixes = new(StringComparer.OrdinalIgnoreCase)
     {
         "/api/firm/context",
         "/api/auth/refresh",
-        "/api/auth/logout"
+        "/api/auth/logout",
+        "/api/notifications"
     };
 
     private static readonly HashSet<string> BlockedPrefixes = new(StringComparer.OrdinalIgnoreCase)
@@ -38,17 +41,6 @@ public sealed class DelegatedAccessMiddleware
         "/api/studio",
         "/api/storefront",
         "/api/pos"
-    };
-
-    /// <summary>
-    /// GET/HEAD blocked for delegated firm users outside sales/purchases allowlist.
-    /// </summary>
-    private static readonly HashSet<string> DelegatedBlockedReadPrefixes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "/api/quotes",
-        "/api/deliverynotes",
-        "/api/suppliers",
-        "/api/purchaseorders"
     };
 
     private readonly RequestDelegate _next;
@@ -78,12 +70,6 @@ public sealed class DelegatedAccessMiddleware
 
         if (HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method))
         {
-            if (DelegatedBlockedReadPrefixes.Any(p => path.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
-            {
-                await WriteForbiddenAsync(context, "Consultation interdite en mode dossier client (hors périmètre autorisé).");
-                return;
-            }
-
             await _next(context);
             return;
         }

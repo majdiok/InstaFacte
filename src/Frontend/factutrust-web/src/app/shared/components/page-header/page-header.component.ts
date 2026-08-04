@@ -1,6 +1,11 @@
 import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
+/**
+ * En-tête de page avec slot d'actions (`.page-header-actions`).
+ * Les overlays (menus popup, dropdowns) projetés ici doivent être attachés au `body`
+ * (`appendTo="body"`) — préférer `app-document-actions-menu` pour les menus Actions.
+ */
 @Component({
   selector: 'app-page-header',
   standalone: true,

@@ -28,19 +28,22 @@ public sealed class TenantService : ITenantService
     private readonly IConfiguration _configuration;
     private readonly IMemoryCache _cache;
     private readonly ILogger<TenantService> _logger;
+    private readonly TenantDatabaseProvisioner _provisioner;
 
     public TenantService(
         MasterDbContext masterContext,
         IDataProtectionProvider dataProtectionProvider,
         IConfiguration configuration,
         IMemoryCache cache,
-        ILogger<TenantService> logger)
+        ILogger<TenantService> logger,
+        TenantDatabaseProvisioner provisioner)
     {
         _masterContext = masterContext;
         _protector = dataProtectionProvider.CreateProtector("TenantConnectionStrings");
         _configuration = configuration;
         _cache = cache;
         _logger = logger;
+        _provisioner = provisioner;
     }
 
     public async Task<string?> GetConnectionStringAsync(Guid tenantId, CancellationToken cancellationToken = default)
@@ -118,8 +121,7 @@ public sealed class TenantService : ITenantService
 
     public async Task<string> CreateAccountingFirmDatabaseAsync(Guid tenantId, string databaseName, CancellationToken cancellationToken = default)
     {
-        var masterConnectionString = _configuration.GetConnectionString("MasterConnection")
-            ?? throw new InvalidOperationException("Chaîne de connexion maître introuvable");
+        var masterConnectionString = GetMasterConnectionString();
 
         var builder = new SqlConnectionStringBuilder(masterConnectionString)
         {
@@ -128,8 +130,11 @@ public sealed class TenantService : ITenantService
 
         var tenantConnectionString = builder.ConnectionString;
 
-        await CreateDatabaseAsync(masterConnectionString, databaseName, cancellationToken);
-        await ApplyMigrationsToNewDatabaseAsync(tenantConnectionString, cancellationToken);
+        await _provisioner.ProvisionNewTenantDatabaseAsync(
+            masterConnectionString,
+            databaseName,
+            tenantId,
+            cancellationToken);
 
         var encryptedConnectionString = _protector.Protect(tenantConnectionString);
 
@@ -149,6 +154,22 @@ public sealed class TenantService : ITenantService
 
         return tenantConnectionString;
     }
+
+    public Task TryDropDatabaseAsync(string databaseName, CancellationToken cancellationToken = default)
+    {
+        var masterConnectionString = GetMasterConnectionString();
+        return _provisioner.TryDropDatabaseAsync(masterConnectionString, databaseName, cancellationToken);
+    }
+
+    public Task EnsureTenantTemplateAsync(CancellationToken cancellationToken = default)
+    {
+        var masterConnectionString = GetMasterConnectionString();
+        return _provisioner.EnsureTenantTemplateAsync(masterConnectionString, cancellationToken);
+    }
+
+    private string GetMasterConnectionString() =>
+        _configuration.GetConnectionString("MasterConnection")
+        ?? throw new InvalidOperationException("Chaîne de connexion maître introuvable");
 
     public async Task<bool> DatabaseExistsAsync(Guid tenantId, CancellationToken cancellationToken = default)
     {
@@ -177,6 +198,7 @@ public sealed class TenantService : ITenantService
             throw new InvalidOperationException($"Chaîne de connexion introuvable pour l'entreprise {tenantId}");
 
         await ApplyMigrationsToNewDatabaseAsync(connectionString, cancellationToken);
+        _cache.Remove($"{TenantMigrationGuard.CacheKeyPrefix}{tenantId}");
     }
 
     private async Task CreateDatabaseAsync(string masterConnectionString, string databaseName, CancellationToken cancellationToken)

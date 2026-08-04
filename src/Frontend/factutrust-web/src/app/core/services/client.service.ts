@@ -18,6 +18,10 @@ export interface Client {
   isActive: boolean;
   notes: string | null;
   contactPerson: string | null;
+  /** Plafond d'encours en TND. null = pas de plafond. */
+  creditLimit?: number | null;
+  /** Délai de règlement habituel en jours. null = non renseigné. */
+  defaultPaymentTermDays?: number | null;
   totalInvoices?: number;
   totalRevenue?: number;
   createdAt: string;
@@ -90,6 +94,10 @@ export interface CreateClientRequest {
   country?: string;
   contactPerson?: string;
   notes?: string;
+  /** Plafond d'encours en TND. null = pas de plafond. */
+  creditLimit?: number | null;
+  /** Délai de règlement habituel en jours. null = non renseigné. */
+  defaultPaymentTermDays?: number | null;
 }
 
 export interface UpdateClientRequest extends CreateClientRequest {
