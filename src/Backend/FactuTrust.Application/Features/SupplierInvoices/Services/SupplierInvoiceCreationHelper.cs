@@ -16,6 +16,7 @@ namespace FactuTrust.Application.Features.SupplierInvoices.Services;
 internal static class SupplierInvoiceCreationHelper
 {
     private const int MaxDuplicateRetryAttempts = 3;
+    private const string InvoiceNumberIndexName = "IX_SupplierInvoices_InvoiceNumber";
 
     public static async Task<Result<SupplierInvoiceCreationResult>> PersistAndFinalizeAsync(
         SupplierInvoice invoice,
@@ -114,8 +115,9 @@ internal static class SupplierInvoiceCreationHelper
             catch (Exception ex) when (IsDuplicateKeyException(ex))
             {
                 logger.LogWarning(ex,
-                    "Duplicate invoice number detected at DB level for {InvoiceNumber} (attempt {Attempt}/{Max}, autoResolved={AutoResolved})",
-                    invoice.InvoiceNumber, attempt, MaxDuplicateRetryAttempts, numberWasAutoResolved);
+                    "Duplicate invoice number detected at DB level for {InvoiceNumber} (attempt {Attempt}/{Max}, autoResolved={AutoResolved}, dbError={DbError})",
+                    invoice.InvoiceNumber, attempt, MaxDuplicateRetryAttempts, numberWasAutoResolved,
+                    (ex.InnerException ?? ex).Message);
 
                 if (!numberWasAutoResolved)
                 {
@@ -207,13 +209,20 @@ internal static class SupplierInvoiceCreationHelper
             .ToList();
     }
 
+    /// <summary>
+    /// Ne reconnaît QUE la violation de l'index unique du numéro de facture fournisseur.
+    /// Toute autre violation de clé (PK_Products, PK_PurchaseReceipts, ...) doit remonter
+    /// telle quelle : la déguiser en conflit de numéro masque le vrai défaut.
+    /// </summary>
     private static bool IsDuplicateKeyException(Exception ex)
     {
-        var message = ex.InnerException?.Message ?? ex.Message;
-        return message.Contains("IX_SupplierInvoices_InvoiceNumber")
-               || message.Contains("UNIQUE constraint")
-               || message.Contains("duplicate key")
-               || message.Contains("Cannot insert duplicate");
+        for (Exception? e = ex; e is not null; e = e.InnerException)
+        {
+            if (e.Message.Contains(InvoiceNumberIndexName, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 }
 

@@ -14,9 +14,9 @@ namespace FactuTrust.Infrastructure.Repositories;
 /// </summary>
 public sealed class SupplierInvoiceRepository : ISupplierInvoiceRepository
 {
-    private readonly TenantDbContextFactory _contextFactory;
+    private readonly ITenantDbContextFactory _contextFactory;
 
-    public SupplierInvoiceRepository(TenantDbContextFactory contextFactory)
+    public SupplierInvoiceRepository(ITenantDbContextFactory contextFactory)
     {
         _contextFactory = contextFactory;
     }
@@ -356,69 +356,21 @@ public sealed class SupplierInvoiceRepository : ISupplierInvoiceRepository
     public async Task<SupplierInvoice> AddAsync(SupplierInvoice entity, CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();
-        
-        // Ensure Supplier is tracked as Unchanged to prevent duplicate insertion
-        if (entity.Supplier != null)
+
+        // La facture porte des navigations vers d'AUTRES agrégats (Supplier, PurchaseOrder,
+        // SourcePurchaseReceipt, Warehouse et, en cascade, leurs lignes et leurs Product),
+        // chargés par d'AUTRES DbContext. Les laisser traverser par context.Add() ferait
+        // tenter à EF de les RÉINSÉRER (violation PK_Products / PK_PurchaseReceipts).
+        // Toutes les FK sont déjà portées par l'entité : on ne traque que l'agrégat.
+        context.ChangeTracker.AutoDetectChangesEnabled = false;
+
+        context.ChangeTracker.TrackGraph(entity, node =>
         {
-            var trackedSupplier = context.ChangeTracker.Entries<Supplier>()
-                .FirstOrDefault(e => e.Entity.Id == entity.Supplier.Id)?.Entity;
-                
-            if (trackedSupplier != null)
-            {
-                // Link to the already tracked instance
-                var prop = typeof(SupplierInvoice).GetProperty(nameof(SupplierInvoice.Supplier));
-                prop?.SetValue(entity, trackedSupplier);
-            }
-            else
-            {
-                context.Suppliers.Attach(entity.Supplier);
-                context.Entry(entity.Supplier).State = EntityState.Unchanged;
-            }
-        }
-        
-        // Ensure PurchaseOrder is tracked as Unchanged
-        if (entity.PurchaseOrder != null)
-        {
-            var trackedPO = context.ChangeTracker.Entries<PurchaseOrder>()
-                .FirstOrDefault(e => e.Entity.Id == entity.PurchaseOrder.Id)?.Entity;
-                
-            if (trackedPO != null)
-            {
-                var prop = typeof(SupplierInvoice).GetProperty(nameof(SupplierInvoice.PurchaseOrder));
-                prop?.SetValue(entity, trackedPO);
-            }
-            else
-            {
-                // Ensure Products in PO lines are tracked (to prevent unique constraint violations on recursive references)
-                if (entity.PurchaseOrder.Lines != null)
-                {
-                    foreach (var line in entity.PurchaseOrder.Lines)
-                    {
-                        if (line.Product != null)
-                        {
-                            var trackedProduct = context.ChangeTracker.Entries<Product>()
-                                .FirstOrDefault(e => e.Entity.Id == line.Product.Id)?.Entity;
-                                
-                            if (trackedProduct != null)
-                            {
-                                var prodProp = typeof(PurchaseOrderLine).GetProperty(nameof(PurchaseOrderLine.Product));
-                                prodProp?.SetValue(line, trackedProduct);
-                            }
-                            else
-                            {
-                                context.Products.Attach(line.Product);
-                                context.Entry(line.Product).State = EntityState.Unchanged;
-                            }
-                        }
-                    }
-                }
-                
-                context.PurchaseOrders.Attach(entity.PurchaseOrder);
-                context.Entry(entity.PurchaseOrder).State = EntityState.Unchanged;
-            }
-        }
-        
-        context.SupplierInvoices.Add(entity);
+            if (node.Entry.Metadata.IsOwned() || node.Entry.Entity is SupplierInvoice or SupplierInvoiceLine)
+                node.Entry.State = EntityState.Added;
+            // sinon : laissé Detached → TrackGraph n'explore pas plus loin
+        });
+
         await context.SaveChangesAsync(cancellationToken);
         return entity;
     }

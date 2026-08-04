@@ -68,6 +68,12 @@ public sealed class CreateSupplierInvoiceFromPOCommandHandler
             return Result.Failure<SupplierInvoiceCreationResult>(Error.Validation("Lines",
                 "Aucune quantité reçue non facturée sur ce bon de commande"));
 
+        var lineSelections = SupplierInvoiceCreationHelper.ResolvePurchaseOrderLineSelections(po, request.Lines);
+        if (lineSelections.Count == 0)
+            return Result.Failure<SupplierInvoiceCreationResult>(Error.Validation("Lines", "Sélectionnez au moins une ligne à facturer"));
+
+        // La réservation consomme définitivement un numéro : elle n'intervient qu'une fois
+        // toutes les validations préalables passées.
         var invoiceNumberResult = await SupplierInvoiceNumberResolver.ResolveAsync(
             request.InvoiceNumber,
             request.UseSuggestedNumber,
@@ -78,10 +84,6 @@ public sealed class CreateSupplierInvoiceFromPOCommandHandler
             return Result.Failure<SupplierInvoiceCreationResult>(invoiceNumberResult.Error);
 
         var invoiceNumber = invoiceNumberResult.Value;
-
-        var lineSelections = SupplierInvoiceCreationHelper.ResolvePurchaseOrderLineSelections(po, request.Lines);
-        if (lineSelections.Count == 0)
-            return Result.Failure<SupplierInvoiceCreationResult>(Error.Validation("Lines", "Sélectionnez au moins une ligne à facturer"));
 
         var result = SupplierInvoice.CreateFromPurchaseOrder(
             po,

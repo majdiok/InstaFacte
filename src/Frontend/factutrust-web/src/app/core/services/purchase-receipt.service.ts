@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '@environments/environment';
+import { createHttpContextSkipGlobalErrorUi } from '@core/http-context';
 import { ApiResponse, PagedResult } from './client.service';
 import {
   CreateSupplierInvoiceLineRequest,
@@ -276,9 +277,12 @@ export class PurchaseReceiptService {
     id: string,
     request: CreateSupplierInvoiceFromReceiptRequest
   ): Observable<ApiResponse<SupplierInvoiceCreationResponse>> {
+    // Le composant appelant gère lui-même l'affichage des erreurs (dont la reprise
+    // automatique sur 409) : on neutralise le toast global pour éviter un doublon.
     return this.http.post<ApiResponse<SupplierInvoiceCreationResponse>>(
       `${this.API_URL}/${id}/create-supplier-invoice`,
-      request
+      request,
+      { context: createHttpContextSkipGlobalErrorUi() }
     );
   }
 

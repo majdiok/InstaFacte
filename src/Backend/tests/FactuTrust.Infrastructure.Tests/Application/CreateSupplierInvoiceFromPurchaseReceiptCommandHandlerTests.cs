@@ -212,6 +212,69 @@ public sealed class CreateSupplierInvoiceFromPurchaseReceiptCommandHandlerTests
       Times.Once);
   }
 
+  [Fact]
+  public async Task Handle_UnrelatedDuplicateKeyError_PropagatesInsteadOfFakeConflict()
+  {
+      // Régression : une violation de clé sur une AUTRE table (PK_Products…) ne doit plus
+      // être déguisée en « numéro de facture déjà existant » — le vrai défaut doit remonter.
+      var (receipt, _, receiptRepo, poRepo) = BuildValidatedReceiptScenario();
+
+      var numberService = new Mock<ISupplierInvoiceNumberService>();
+      numberService
+          .Setup(s => s.ReserveNextAsync(It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+          .ReturnsAsync("FS-2026-000050");
+
+      var supplierInvoiceRepo = new Mock<ISupplierInvoiceRepository>();
+      supplierInvoiceRepo
+          .Setup(r => r.AddAsync(It.IsAny<SupplierInvoice>(), It.IsAny<CancellationToken>()))
+          .ThrowsAsync(new InvalidOperationException(
+              "Violation of PRIMARY KEY constraint 'PK_Products'. Cannot insert duplicate key in object 'dbo.Products'."));
+
+      var handler = BuildHandler(receiptRepo, poRepo, supplierInvoiceRepo, numberService);
+
+      await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(
+          new CreateSupplierInvoiceFromPurchaseReceiptCommand(
+              receipt.Id,
+              "",
+              new DateTime(2026, 4, 5),
+              UseSuggestedNumber: true),
+          CancellationToken.None));
+
+      // Aucun numéro supplémentaire n'a été brûlé par une boucle de retry inutile.
+      numberService.Verify(
+          s => s.ReserveNextAsync(It.IsAny<DateTime>(), It.IsAny<CancellationToken>()),
+          Times.Once);
+  }
+
+  [Fact]
+  public async Task Handle_NoInvoiceableLine_DoesNotReserveNumber()
+  {
+      // Le numéro est une ressource consommée définitivement : aucune réservation ne doit
+      // avoir lieu tant que les validations préalables ne sont pas passées.
+      var (receipt, _, receiptRepo, poRepo) = BuildValidatedReceiptScenario();
+
+      var numberService = new Mock<ISupplierInvoiceNumberService>();
+      var supplierInvoiceRepo = new Mock<ISupplierInvoiceRepository>();
+      var handler = BuildHandler(receiptRepo, poRepo, supplierInvoiceRepo, numberService);
+
+      var result = await handler.Handle(
+          new CreateSupplierInvoiceFromPurchaseReceiptCommand(
+              receipt.Id,
+              "",
+              new DateTime(2026, 4, 5),
+              UseSuggestedNumber: true,
+              Lines: [new CreateSupplierInvoiceLineSelection(receipt.Lines.First().Id, 0m)]),
+          CancellationToken.None);
+
+      Assert.True(result.IsFailure);
+      numberService.Verify(
+          s => s.ReserveNextAsync(It.IsAny<DateTime>(), It.IsAny<CancellationToken>()),
+          Times.Never);
+      supplierInvoiceRepo.Verify(
+          r => r.AddAsync(It.IsAny<SupplierInvoice>(), It.IsAny<CancellationToken>()),
+          Times.Never);
+  }
+
     private static CreateSupplierInvoiceFromPurchaseReceiptCommandHandler BuildHandler(
         Mock<IPurchaseReceiptRepository> receiptRepo,
         Mock<IPurchaseOrderRepository> poRepo,

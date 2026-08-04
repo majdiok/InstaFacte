@@ -80,6 +80,12 @@ public sealed class CreateSupplierInvoiceFromPurchaseReceiptCommandHandler
         if (po is null)
             return Result.Failure<SupplierInvoiceCreationResult>(Error.NotFound("PurchaseOrder", purchaseOrderId));
 
+        var lineSelections = SupplierInvoiceCreationHelper.ResolvePurchaseReceiptLineSelections(receipt, request.Lines);
+        if (lineSelections.Count == 0)
+            return Result.Failure<SupplierInvoiceCreationResult>(Error.Validation("Lines", "Sélectionnez au moins une ligne à facturer"));
+
+        // La réservation consomme définitivement un numéro : elle n'intervient qu'une fois
+        // toutes les validations préalables passées.
         var trimmedNumber = await SupplierInvoiceNumberResolver.ResolveAsync(
             request.InvoiceNumber,
             request.UseSuggestedNumber,
@@ -90,10 +96,6 @@ public sealed class CreateSupplierInvoiceFromPurchaseReceiptCommandHandler
             return Result.Failure<SupplierInvoiceCreationResult>(trimmedNumber.Error);
 
         var invoiceNumber = trimmedNumber.Value;
-
-        var lineSelections = SupplierInvoiceCreationHelper.ResolvePurchaseReceiptLineSelections(receipt, request.Lines);
-        if (lineSelections.Count == 0)
-            return Result.Failure<SupplierInvoiceCreationResult>(Error.Validation("Lines", "Sélectionnez au moins une ligne à facturer"));
 
         var result = SupplierInvoice.CreateFromPurchaseReceipt(
             receipt,
