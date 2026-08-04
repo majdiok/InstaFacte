@@ -1,3 +1,4 @@
+using System.Reflection;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Entities;
@@ -13,9 +14,9 @@ namespace FactuTrust.Infrastructure.Repositories;
 /// </summary>
 public sealed class SalesOrderRepository : ISalesOrderRepository
 {
-    private readonly TenantDbContextFactory _contextFactory;
+    private readonly ITenantDbContextFactory _contextFactory;
 
-    public SalesOrderRepository(TenantDbContextFactory contextFactory)
+    public SalesOrderRepository(ITenantDbContextFactory contextFactory)
     {
         _contextFactory = contextFactory;
     }
@@ -182,9 +183,50 @@ public sealed class SalesOrderRepository : ISalesOrderRepository
         await using var context = _contextFactory.CreateContext();
 
         // Client et produits proviennent d'autres contextes (chargés par leurs propres
-        // repositories). Sans rattachement explicite, EF tenterait de les réinsérer.
-        // Même précaution que PurchaseOrderRepository.AddAsync avec le fournisseur.
-        AttachExistingReferences(context, entity);
+        // repositories). Même précaution que QuoteRepository / PurchaseOrderRepository :
+        // unifier Client, Product et ProductCategory avant l'ajout pour éviter les conflits
+        // de suivi EF Core ("another instance with the same key value is already being tracked").
+        if (entity.Client != null)
+        {
+            var trackedClient = context.ChangeTracker.Entries<Client>()
+                .FirstOrDefault(e => e.Entity.Id == entity.Client.Id)?.Entity;
+
+            if (trackedClient != null)
+            {
+                var clientProperty = typeof(SalesOrder).GetProperty(
+                    nameof(SalesOrder.Client),
+                    BindingFlags.Public | BindingFlags.Instance);
+                clientProperty?.SetValue(entity, trackedClient);
+            }
+            else
+            {
+                context.Clients.Attach(entity.Client);
+                context.Entry(entity.Client).State = EntityState.Unchanged;
+            }
+        }
+
+        foreach (var line in entity.Lines)
+        {
+            if (line.Product == null) continue;
+
+            EnsureProductCategoryTrackedOnce(context, line.Product);
+
+            var trackedProduct = context.ChangeTracker.Entries<Product>()
+                .FirstOrDefault(e => e.Entity.Id == line.Product.Id)?.Entity;
+
+            if (trackedProduct != null)
+            {
+                var productProperty = typeof(SalesOrderLine).GetProperty(
+                    nameof(SalesOrderLine.Product),
+                    BindingFlags.Public | BindingFlags.Instance);
+                productProperty?.SetValue(line, trackedProduct);
+            }
+            else
+            {
+                context.Products.Attach(line.Product);
+                context.Entry(line.Product).State = EntityState.Unchanged;
+            }
+        }
 
         context.SalesOrders.Add(entity);
         await context.SaveChangesAsync(cancellationToken);
@@ -252,19 +294,23 @@ public sealed class SalesOrderRepository : ISalesOrderRepository
     }
 
     /// <summary>
-    /// Rattache client et produits déjà présents en base pour qu'EF ne tente pas de les
-    /// réinsérer. Sans cela, l'ajout d'une commande échoue en conflit de suivi ou duplique
-    /// des référentiels.
+    /// Ensures only one instance of a given ProductCategory is tracked when attaching products.
+    /// Products loaded from different contexts may each have their own Category instance for the same Id;
+    /// attaching them without this would cause InvalidOperationException (duplicate key tracking).
     /// </summary>
-    private static void AttachExistingReferences(Persistence.TenantDbContext context, SalesOrder entity)
+    private static void EnsureProductCategoryTrackedOnce(DbContext context, Product product)
     {
-        if (entity.Client != null && context.Entry(entity.Client).State == EntityState.Detached)
-            context.Attach(entity.Client);
+        if (product.Category == null) return;
 
-        foreach (var line in entity.Lines)
+        var trackedCategory = context.ChangeTracker.Entries<ProductCategory>()
+            .FirstOrDefault(e => e.Entity.Id == product.Category.Id)?.Entity;
+
+        if (trackedCategory != null)
         {
-            if (line.Product != null && context.Entry(line.Product).State == EntityState.Detached)
-                context.Attach(line.Product);
+            var categoryProp = typeof(Product).GetProperty(
+                nameof(Product.Category),
+                BindingFlags.Public | BindingFlags.Instance);
+            categoryProp?.SetValue(product, trackedCategory);
         }
     }
 }
