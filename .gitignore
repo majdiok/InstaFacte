@@ -14,7 +14,8 @@ obj/
 _api_build_check/
 _build_check/
 src/Backend/src/Backend/
-artifacts/qa-pdf-templates/
+artifacts/
+deploy/scripts/
 *.log
 
 # Visual Studio / Rider
