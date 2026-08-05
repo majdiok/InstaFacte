@@ -7,6 +7,7 @@ using FactuTrust.Application.Features.Products.Commands;
 using FactuTrust.Application.Features.Products.Queries;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
+using FactuTrust.Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -71,6 +72,43 @@ public class ProductsController : ControllerBase
         if (result.IsFailure)
             return BadRequest(ApiResponse<PagedResult<ProductListDto>>.Fail(result.Error.Description));
         return Ok(ApiResponse<PagedResult<ProductListDto>>.Ok(result.Value));
+    }
+
+    /// <summary>
+    /// Lightweight product list for autocomplete / select dropdowns (no stock, no category join).
+    /// </summary>
+    [HttpGet("select")]
+    [Authorize(Policy = PermissionPolicies.ProductsRead)]
+    [ProducesResponseType(typeof(ApiResponse<PagedResult<ProductSelectDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> SearchProductsForSelect(
+        [FromQuery] string? search,
+        [FromQuery] bool? isActive = true,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new SearchProductsForSelectQuery(search, isActive, page, pageSize);
+        var result = await _mediator.Send(query, cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<PagedResult<ProductSelectDto>>.Fail(result.Error.Description));
+        return Ok(ApiResponse<PagedResult<ProductSelectDto>>.Ok(result.Value));
+    }
+
+    /// <summary>
+    /// Bulk FODEC flag lookup for draft/import reload (avoids N× GET /products/{id}).
+    /// </summary>
+    [HttpPost("fodec-flags")]
+    [Authorize(Policy = PermissionPolicies.ProductsRead)]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<ProductFodecFlagDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetFodecFlags(
+        [FromBody] GetProductFodecFlagsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new GetProductFodecFlagsQuery(request.ProductIds ?? Array.Empty<Guid>());
+        var result = await _mediator.Send(query, cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<IReadOnlyList<ProductFodecFlagDto>>.Fail(result.Error.Description));
+        return Ok(ApiResponse<IReadOnlyList<ProductFodecFlagDto>>.Ok(result.Value));
     }
 
     /// <summary>
@@ -331,4 +369,10 @@ public class ProductsController : ControllerBase
 
         return Ok(ApiResponse<object>.Ok(null!, "Image supprimée."));
     }
+}
+
+/// <summary>Request body for bulk FODEC flag lookup.</summary>
+public sealed class GetProductFodecFlagsRequest
+{
+    public IReadOnlyList<Guid>? ProductIds { get; init; }
 }

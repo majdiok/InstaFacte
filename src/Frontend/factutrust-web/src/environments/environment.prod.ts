@@ -29,6 +29,7 @@ export const environment = {
   featureFlags: {
     wizardSimplifiedFlow: true,
     pdfPreview: false,
-    exchangeBootstrapV2: true
+    exchangeBootstrapV2: true,
+    invoiceProductSearchV2: true
   }
 };

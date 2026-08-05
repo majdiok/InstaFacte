@@ -14,7 +14,7 @@ public sealed record SupplierInvoiceListDto
     public string SupplierName { get; init; } = null!;
     public Guid SupplierId { get; init; }
     public string? PurchaseOrderNumber { get; init; }
-    public Guid PurchaseOrderId { get; init; }
+    public Guid? PurchaseOrderId { get; init; }
     public SupplierInvoiceStatus Status { get; init; }
     public string StatusDisplay { get; init; } = null!;
     public string StatusCss { get; init; } = null!;
@@ -64,8 +64,8 @@ public sealed record SupplierInvoiceDetailDto
     public string? Notes { get; init; }
 
     public SupplierSummaryDto Supplier { get; init; } = null!;
-    public Guid PurchaseOrderId { get; init; }
-    public string PurchaseOrderNumber { get; init; } = null!;
+    public Guid? PurchaseOrderId { get; init; }
+    public string? PurchaseOrderNumber { get; init; }
     public Guid? SourcePurchaseReceiptId { get; init; }
     public string? SourcePurchaseReceiptNumber { get; init; }
 

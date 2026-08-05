@@ -18,8 +18,8 @@ public sealed class SupplierInvoice : AggregateRoot
     public Guid SupplierId { get; private set; }
     public Supplier Supplier { get; private set; } = null!;
 
-    public Guid PurchaseOrderId { get; private set; }
-    public PurchaseOrder PurchaseOrder { get; private set; } = null!;
+    public Guid? PurchaseOrderId { get; private set; }
+    public PurchaseOrder? PurchaseOrder { get; private set; }
 
     public Guid? SourcePurchaseReceiptId { get; private set; }
     public PurchaseReceipt? SourcePurchaseReceipt { get; private set; }
@@ -121,7 +121,7 @@ public sealed class SupplierInvoice : AggregateRoot
 
     public static Result<SupplierInvoice> CreateFromPurchaseReceipt(
         PurchaseReceipt receipt,
-        PurchaseOrder purchaseOrder,
+        PurchaseOrder? purchaseOrder,
         string invoiceNumber,
         DateTime invoiceDate,
         IReadOnlyList<(Guid PurchaseReceiptLineId, decimal Quantity)> lineSelections,
@@ -134,9 +134,21 @@ public sealed class SupplierInvoice : AggregateRoot
             return Result.Failure<SupplierInvoice>(Error.Validation("Status",
                 "Ce bon de réception ne peut pas être facturé dans son état actuel"));
 
-        if (receipt.PurchaseOrderId is { } poId && poId != purchaseOrder.Id)
+        if (receipt.PurchaseOrderId is { } receiptPoId)
+        {
+            if (purchaseOrder is null)
+                return Result.Failure<SupplierInvoice>(Error.Validation("PurchaseOrder",
+                    "Ce bon de réception est lié à un bon de commande"));
+
+            if (receiptPoId != purchaseOrder.Id)
+                return Result.Failure<SupplierInvoice>(Error.Validation("PurchaseOrder",
+                    "Le bon de commande ne correspond pas au bon de réception"));
+        }
+        else if (purchaseOrder is not null)
+        {
             return Result.Failure<SupplierInvoice>(Error.Validation("PurchaseOrder",
-                "Le bon de commande ne correspond pas au bon de réception"));
+                "Ce bon de réception n'est pas lié à un bon de commande"));
+        }
 
         if (lineSelections.Count == 0)
             return Result.Failure<SupplierInvoice>(Error.Validation("Lines",
@@ -218,7 +230,7 @@ public sealed class SupplierInvoice : AggregateRoot
 
     private static SupplierInvoice CreateShell(
         Supplier supplier,
-        PurchaseOrder purchaseOrder,
+        PurchaseOrder? purchaseOrder,
         PurchaseReceipt? sourceReceipt,
         string invoiceNumber,
         DateTime invoiceDate,
@@ -236,7 +248,7 @@ public sealed class SupplierInvoice : AggregateRoot
             Status = SupplierInvoiceStatus.Pending,
             SupplierId = supplier.Id,
             Supplier = supplier,
-            PurchaseOrderId = purchaseOrder.Id,
+            PurchaseOrderId = purchaseOrder?.Id,
             PurchaseOrder = purchaseOrder,
             SourcePurchaseReceiptId = sourceReceipt?.Id,
             SourcePurchaseReceipt = sourceReceipt,

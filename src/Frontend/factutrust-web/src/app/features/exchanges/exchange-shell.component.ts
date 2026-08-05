@@ -9,8 +9,8 @@ import {
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { Subscription, combineLatest, forkJoin, of, timer } from 'rxjs';
-import { catchError, debounceTime, distinctUntilChanged, map, switchMap } from 'rxjs/operators';
+import { Subscription, combineLatest, forkJoin, of, timer, EMPTY, TimeoutError } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, map, switchMap, timeout } from 'rxjs/operators';
 import { AuthService } from '@core/services/auth.service';
 import { ExchangeBadgeService } from '@core/services/exchange-badge.service';
 import {
@@ -63,7 +63,8 @@ import {
 import { EXCHANGE_TABS, ExchangeTabKey, parseExchangeTab } from './exchange-tabs';
 
 const MESSAGE_PAGE_SIZE = 50;
-const BADGE_REFRESH_DEBOUNCE_MS = 2000;
+const BADGE_REFRESH_DEBOUNCE_MS = 5000;
+const BOOTSTRAP_TIMEOUT_MS = 30_000;
 
 export interface FirmCompanyRow {
   assignmentId: string;
@@ -590,6 +591,20 @@ export class ExchangeShellComponent implements OnInit, OnDestroy {
     this.inFlightBootstrapSub?.unsubscribe();
     this.inFlightBootstrapSub = this.exchange
       .getBootstrap(threadId, tab === 'conversation' ? null : tab)
+      .pipe(
+        timeout(BOOTSTRAP_TIMEOUT_MS),
+        catchError(err => {
+          const timedOut = err instanceof TimeoutError || err?.name === 'TimeoutError';
+          this.loading.set(false);
+          this.contentLoading.set(false);
+          this.error.set(
+            timedOut
+              ? 'Le chargement prend plus de temps que prévu. Réessayez.'
+              : 'Impossible de charger les échanges'
+          );
+          return EMPTY;
+        })
+      )
       .subscribe({
         next: res => {
           if (!res.success) {
@@ -599,13 +614,17 @@ export class ExchangeShellComponent implements OnInit, OnDestroy {
             return;
           }
           this.applyBootstrap(res.data, threadId);
-        },
-        error: () => {
-          this.loading.set(false);
-          this.contentLoading.set(false);
-          this.error.set('Impossible de charger les échanges');
         }
       });
+  }
+
+  /** Relance le bootstrap après timeout / erreur réseau. */
+  retryBootstrap(): void {
+    this.error.set(null);
+    this.emptyHint.set(null);
+    this.lastBootstrappedThreadId = undefined;
+    const threadId = this.route.snapshot.paramMap.get('threadId');
+    this.bootstrap(threadId);
   }
 
   private applyBootstrap(data: ExchangeBootstrap, requestedThreadId: string | null): void {

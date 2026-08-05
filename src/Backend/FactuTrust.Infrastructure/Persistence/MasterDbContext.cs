@@ -1181,6 +1181,9 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.HasIndex(t => t.FirmClientAssignmentId).IsUnique();
             entity.HasIndex(t => new { t.FirmTenantId, t.Status });
             entity.HasIndex(t => new { t.CompanyTenantId, t.Status });
+            entity.HasIndex(t => new { t.CompanyTenantId, t.LastActivityAt })
+                .IsDescending(false, true)
+                .HasDatabaseName("IX_ExchangeThreads_CompanyTenantId_LastActivityAt");
             entity.Property(t => t.Subject).HasMaxLength(Domain.Entities.Exchange.ExchangeThread.SubjectMaxLength);
             entity.Property(t => t.Status).HasConversion<int>();
         });
@@ -1190,6 +1193,8 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.ToTable("ExchangeMessages");
             entity.HasKey(m => m.Id);
             entity.HasIndex(m => new { m.ThreadId, m.SentAt });
+            entity.HasIndex(m => new { m.ThreadId, m.Visibility, m.SentAt })
+                .HasDatabaseName("IX_ExchangeMessages_ThreadId_Visibility_SentAt");
             entity.Property(m => m.AuthorDisplayName).HasMaxLength(Domain.Entities.Exchange.ExchangeMessage.AuthorDisplayNameMaxLength).IsRequired();
             entity.Property(m => m.Body).HasMaxLength(Domain.Entities.Exchange.ExchangeMessage.BodyMaxLength).IsRequired();
             entity.Property(m => m.Visibility).HasConversion<int>();
@@ -1200,6 +1205,8 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.ToTable("ExchangeMessageReads");
             entity.HasKey(r => r.Id);
             entity.HasIndex(r => new { r.MessageId, r.UserId }).IsUnique();
+            entity.HasIndex(r => new { r.UserId, r.MessageId })
+                .HasDatabaseName("IX_ExchangeMessageReads_UserId_MessageId");
         });
 
         builder.Entity<Domain.Entities.Exchange.ExchangeRequest>(entity =>

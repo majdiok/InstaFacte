@@ -23,6 +23,14 @@ public static class PayrollParameterDefaults
         (70000m, 40m)
     };
 
+    /// <summary>Tranches de saisie sur salaire (convention tunisienne simplifiée).</summary>
+    public static IReadOnlyList<(decimal LowerBoundMonthlyNet, decimal SeizableFraction)> Garnishment2026Brackets => new[]
+    {
+        (0m, 0m),
+        (528.320m, 0.333m),
+        (1056.640m, 0.666m)
+    };
+
     /// <summary>
     /// Construit les paramètres par défaut d'un exercice donné (valeurs 2026).
     /// </summary>
@@ -30,6 +38,10 @@ public static class PayrollParameterDefaults
     {
         var brackets = Irpp2026Brackets
             .Select(b => PayrollIrppBracket.Create(b.LowerBound, b.Rate))
+            .ToList();
+
+        var garnishmentBrackets = Garnishment2026Brackets
+            .Select(b => PayrollGarnishmentBracket.Create(b.LowerBoundMonthlyNet, b.SeizableFraction))
             .ToList();
 
         return PayrollYearParameters.Create(
@@ -52,6 +64,8 @@ public static class PayrollParameterDefaults
             disabledChildAnnualDeduction: 2000m,
             parentDeductionRatePercent: 5m,
             parentAnnualDeductionCap: 450m,
-            isIndustrialSector: false);
+            isIndustrialSector: false,
+            mealVoucherDailyExemptionCap: 3.000m,
+            garnishmentBrackets: garnishmentBrackets);
     }
 }

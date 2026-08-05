@@ -3,21 +3,24 @@ import { ClientBalanceReportRow, SupplierBalanceReportRow } from '@core/services
 import { TotalMetric } from '@shared/components/table-totals-bar/table-totals-bar.component';
 
 export function mapClientBalanceRows(rows: ClientBalanceReportRow[]): PartyBalanceRow[] {
-  return rows.map((r) => ({
-    partyId: r.clientId,
-    partyName: r.clientName,
-    totalInvoiced: r.totalInvoiced,
-    totalPaid: r.totalPaid,
-    balance: r.balance,
-    currency: r.currency,
-    // Tranches d'anciennete (lot 6). Toleree comme optionnelle : un backend ancien
-    // renverrait undefined et le tableau age ne montrerait alors rien.
-    notDue: r.notDue,
-    bucket0To30: r.bucket0To30,
-    bucket31To60: r.bucket31To60,
-    bucket61To90: r.bucket61To90,
-    bucketOver90: r.bucketOver90
-  }));
+  return rows.map((r) => {
+    const base: PartyBalanceRow = {
+      partyId: r.clientId,
+      partyName: r.clientName,
+      totalInvoiced: r.totalInvoiced,
+      totalPaid: r.totalPaid,
+      balance: r.balance,
+      currency: r.currency
+    };
+    // Tranches d'ancienneté (lot 6). Ajoutées uniquement quand le backend les fournit :
+    // un backend ancien renverrait tout à undefined et le tableau âge ne montrerait rien.
+    if (r.notDue !== undefined) base.notDue = r.notDue;
+    if (r.bucket0To30 !== undefined) base.bucket0To30 = r.bucket0To30;
+    if (r.bucket31To60 !== undefined) base.bucket31To60 = r.bucket31To60;
+    if (r.bucket61To90 !== undefined) base.bucket61To90 = r.bucket61To90;
+    if (r.bucketOver90 !== undefined) base.bucketOver90 = r.bucketOver90;
+    return base;
+  });
 }
 
 export function mapSupplierBalanceRows(rows: SupplierBalanceReportRow[]): PartyBalanceRow[] {

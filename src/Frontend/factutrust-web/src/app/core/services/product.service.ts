@@ -68,6 +68,25 @@ export interface ProductListItem {
   quantityAvailable?: number | null;
 }
 
+/** Lightweight product DTO for autocomplete / select dropdowns (GET /products/select). */
+export interface ProductSelectItem {
+  id: string;
+  code: string;
+  name: string;
+  unitPrice: number;
+  purchasePrice?: number | null;
+  vatRate: number;
+  unit: string;
+  isFodecApplicable: boolean;
+  isDiscountEnabled: boolean;
+  maxDiscountPercent: number | null;
+}
+
+export interface ProductFodecFlag {
+  id: string;
+  isFodecApplicable: boolean;
+}
+
 export interface ProductSearchParams {
   search?: string;
   /** Filter by product type: Produit, Service */
@@ -197,6 +216,61 @@ export class ProductService {
         } as ApiResponse<PagedResult<ProductListItem>>;
       })
     );
+  }
+
+  /**
+   * Lightweight autocomplete search (GET /products/select).
+   * No stock quantities, smaller payload than getProducts().
+   */
+  searchForSelect(params: {
+    search?: string;
+    isActive?: boolean;
+    page?: number;
+    pageSize?: number;
+  } = {}): Observable<ApiResponse<PagedResult<ProductSelectItem>>> {
+    let httpParams = new HttpParams();
+    if (params.search) httpParams = httpParams.set('search', params.search);
+    if (params.isActive !== undefined) httpParams = httpParams.set('isActive', params.isActive.toString());
+    if (params.page) httpParams = httpParams.set('page', params.page.toString());
+    if (params.pageSize) httpParams = httpParams.set('pageSize', params.pageSize.toString());
+
+    return this.http.get<ApiResponse<PagedResult<any>>>(`${this.API_URL}/select`, { params: httpParams }).pipe(
+      map(response => {
+        if (!response.success || !response.data) {
+          return response as ApiResponse<PagedResult<ProductSelectItem>>;
+        }
+
+        const mappedItems: ProductSelectItem[] = response.data.items.map((item: any) => ({
+          id: item.id,
+          code: item.code,
+          name: item.name,
+          unitPrice: item.unitPrice,
+          purchasePrice: item.purchasePrice ?? null,
+          vatRate: item.vatRatePercent ?? item.vatRate ?? 19,
+          unit: item.unit || 'Unité',
+          isFodecApplicable: item.isFodecApplicable ?? false,
+          isDiscountEnabled: item.isDiscountEnabled ?? false,
+          maxDiscountPercent: item.maxDiscountPercent ?? null
+        }));
+
+        return {
+          ...response,
+          data: {
+            ...response.data,
+            items: mappedItems
+          }
+        } as ApiResponse<PagedResult<ProductSelectItem>>;
+      })
+    );
+  }
+
+  /**
+   * Bulk FODEC flags for draft/import reload (POST /products/fodec-flags).
+   */
+  getFodecFlags(productIds: string[]): Observable<ApiResponse<ProductFodecFlag[]>> {
+    return this.http.post<ApiResponse<ProductFodecFlag[]>>(`${this.API_URL}/fodec-flags`, {
+      productIds
+    });
   }
 
   private mapTypeToCategory(type: string | number): string {

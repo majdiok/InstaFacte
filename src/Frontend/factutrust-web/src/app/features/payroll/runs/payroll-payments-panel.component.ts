@@ -1,0 +1,106 @@
+import { Component, OnInit, inject, input, output, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { PayrollService, type PayrollPayment } from '@core/services/payroll.service';
+import { ToastService } from '@core/services/toast.service';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { PayrollAmountPipe, PayrollSectionComponent } from '../shared';
+
+@Component({
+  selector: 'app-payroll-payments-panel',
+  standalone: true,
+  imports: [CommonModule, ButtonComponent, PayrollAmountPipe, PayrollSectionComponent],
+  template: `
+    <app-payroll-section title="Paiements enregistrés" icon="pi-wallet">
+      @if (loading()) {
+        <p>Chargement…</p>
+      } @else if (payments().length === 0) {
+        <p class="text-secondary">Aucun paiement enregistré pour ce cycle.</p>
+      } @else {
+        <div class="payments-list">
+          @for (p of payments(); track p.id) {
+            <div class="payment-card" [class.cancelled]="p.isCancelled">
+              <div class="payment-header">
+                <div>
+                  <strong>{{ p.paymentDate | date:'dd/MM/yyyy' }}</strong>
+                  <span class="ml-2">{{ p.methodDisplay }}</span>
+                  @if (p.isCancelled) {
+                    <span class="badge-cancelled">Annulé</span>
+                  }
+                </div>
+                <strong>{{ p.amount | payrollAmount }}</strong>
+              </div>
+              @if (p.reference) {
+                <div class="text-secondary">Réf. {{ p.reference }}</div>
+              }
+              <ul class="lines">
+                @for (l of p.lines; track l.id) {
+                  <li>{{ l.employeeName }} — {{ l.amount | payrollAmount }}</li>
+                }
+              </ul>
+              @if (!p.isCancelled && canCancel()) {
+                <app-button variant="ghost" size="sm" (click)="cancelOne(p)">Annuler ce paiement</app-button>
+              }
+            </div>
+          }
+        </div>
+      }
+    </app-payroll-section>
+  `,
+  styles: [`
+    .text-secondary { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+    .ml-2 { margin-left: var(--spacing-2); }
+    .payments-list { display: flex; flex-direction: column; gap: var(--spacing-3); }
+    .payment-card { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--spacing-3); }
+    .payment-card.cancelled { opacity: 0.7; }
+    .payment-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-2); }
+    .badge-cancelled { margin-left: var(--spacing-2); color: var(--color-danger); font-size: var(--font-size-sm); }
+    .lines { margin: var(--spacing-2) 0; padding-left: var(--spacing-4); font-size: var(--font-size-sm); }
+  `]
+})
+export class PayrollPaymentsPanelComponent implements OnInit {
+  private readonly payroll = inject(PayrollService);
+  private readonly toast = inject(ToastService);
+
+  runId = input.required<string>();
+  canCancel = input(true);
+  refreshed = output<void>();
+
+  loading = signal(false);
+  payments = signal<PayrollPayment[]>([]);
+
+  ngOnInit(): void {
+    this.load();
+  }
+
+  load(): void {
+    this.loading.set(true);
+    this.payroll.listRunPayments(this.runId(), true).subscribe({
+      next: res => {
+        this.payments.set(res.data ?? []);
+        this.loading.set(false);
+      },
+      error: () => {
+        this.loading.set(false);
+        this.toast.add({ severity: 'error', summary: 'Paie', detail: 'Impossible de charger les paiements.' });
+      }
+    });
+  }
+
+  cancelOne(p: PayrollPayment): void {
+    const reason = window.prompt('Motif d\'annulation du paiement :');
+    if (!reason?.trim()) return;
+    this.payroll.cancelPayment(p.id, reason.trim()).subscribe({
+      next: () => {
+        this.toast.add({ severity: 'success', summary: 'Paie', detail: 'Paiement annulé.' });
+        this.load();
+        this.refreshed.emit();
+      },
+      error: err =>
+        this.toast.add({
+          severity: 'error',
+          summary: 'Paie',
+          detail: err?.error?.message ?? 'Annulation impossible.'
+        })
+    });
+  }
+}

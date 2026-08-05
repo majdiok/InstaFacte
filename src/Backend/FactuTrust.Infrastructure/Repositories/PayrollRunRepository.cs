@@ -76,6 +76,23 @@ public sealed class PayrollRunRepository : IPayrollRunRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<Payslip>> ListSettledPayslipsForYearAsync(
+        int year,
+        int untilMonthExclusive,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.PayrollRuns
+            .AsNoTracking()
+            .Where(r => r.Year == year && r.Month < untilMonthExclusive)
+            // Comme la DTS : seuls les cycles arrêtés alimentent le cumul, sans quoi une
+            // régularisation proposée changerait au gré des recalculs des mois ouverts.
+            .Where(r => r.Status == PayrollRunStatus.Validated || r.Status == PayrollRunStatus.Closed)
+            .SelectMany(r => r.Payslips)
+            .OrderBy(p => p.Month)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<bool> ExistsForPeriodAsync(int year, int month, CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();

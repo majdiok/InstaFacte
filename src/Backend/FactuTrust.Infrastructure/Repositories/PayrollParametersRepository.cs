@@ -24,6 +24,7 @@ public sealed class PayrollParametersRepository : IPayrollParametersRepository
         await using var context = _contextFactory.CreateContext();
         return await context.PayrollYearParameters
             .Include(p => p.IrppBrackets)
+            .Include(p => p.GarnishmentBrackets)
             .FirstOrDefaultAsync(p => p.FiscalYear == fiscalYear, cancellationToken);
     }
 
@@ -33,6 +34,7 @@ public sealed class PayrollParametersRepository : IPayrollParametersRepository
 
         var existing = await context.PayrollYearParameters
             .Include(p => p.IrppBrackets)
+            .Include(p => p.GarnishmentBrackets)
             .FirstOrDefaultAsync(p => p.FiscalYear == fiscalYear, cancellationToken);
         if (existing is not null)
             return existing;
@@ -54,6 +56,7 @@ public sealed class PayrollParametersRepository : IPayrollParametersRepository
             await using var retryContext = _contextFactory.CreateContext();
             var concurrent = await retryContext.PayrollYearParameters
                 .Include(p => p.IrppBrackets)
+                .Include(p => p.GarnishmentBrackets)
                 .FirstOrDefaultAsync(p => p.FiscalYear == fiscalYear, cancellationToken);
             if (concurrent is not null)
                 return concurrent;
@@ -68,6 +71,7 @@ public sealed class PayrollParametersRepository : IPayrollParametersRepository
         await using var context = _contextFactory.CreateContext();
         return await context.PayrollYearParameters
             .Include(p => p.IrppBrackets)
+            .Include(p => p.GarnishmentBrackets)
             .OrderByDescending(p => p.FiscalYear)
             .ToListAsync(cancellationToken);
     }
@@ -82,6 +86,11 @@ public sealed class PayrollParametersRepository : IPayrollParametersRepository
             .ToListAsync(cancellationToken);
         context.PayrollIrppBrackets.RemoveRange(bracketsToDelete);
 
+        var garnishmentToDelete = await context.PayrollGarnishmentBrackets
+            .Where(b => b.PayrollYearParametersId == parameters.Id)
+            .ToListAsync(cancellationToken);
+        context.PayrollGarnishmentBrackets.RemoveRange(garnishmentToDelete);
+
         var tracked = await context.PayrollYearParameters
             .FirstOrDefaultAsync(p => p.Id == parameters.Id, cancellationToken);
 
@@ -89,21 +98,32 @@ public sealed class PayrollParametersRepository : IPayrollParametersRepository
         {
             context.PayrollYearParameters.Add(parameters);
             foreach (var bracket in parameters.IrppBrackets)
-                AddBracket(context, bracket, parameters.Id);
+                AddIrppBracket(context, bracket, parameters.Id);
+            foreach (var bracket in parameters.GarnishmentBrackets)
+                AddGarnishmentBracket(context, bracket, parameters.Id);
         }
         else
         {
             context.Entry(tracked).CurrentValues.SetValues(parameters);
             foreach (var bracket in parameters.IrppBrackets)
-                AddBracket(context, bracket, tracked.Id);
+                AddIrppBracket(context, bracket, tracked.Id);
+            foreach (var bracket in parameters.GarnishmentBrackets)
+                AddGarnishmentBracket(context, bracket, tracked.Id);
         }
 
         await context.SaveChangesAsync(cancellationToken);
     }
 
-    private static void AddBracket(TenantDbContext context, PayrollIrppBracket bracket, Guid parentId)
+    private static void AddIrppBracket(TenantDbContext context, PayrollIrppBracket bracket, Guid parentId)
     {
         var entry = context.PayrollIrppBrackets.Add(bracket);
+        if (bracket.PayrollYearParametersId == Guid.Empty)
+            entry.Property(b => b.PayrollYearParametersId).CurrentValue = parentId;
+    }
+
+    private static void AddGarnishmentBracket(TenantDbContext context, PayrollGarnishmentBracket bracket, Guid parentId)
+    {
+        var entry = context.PayrollGarnishmentBrackets.Add(bracket);
         if (bracket.PayrollYearParametersId == Guid.Empty)
             entry.Property(b => b.PayrollYearParametersId).CurrentValue = parentId;
     }

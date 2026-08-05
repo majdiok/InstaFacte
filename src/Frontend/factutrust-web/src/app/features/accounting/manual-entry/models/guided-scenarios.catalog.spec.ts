@@ -16,6 +16,17 @@ describe('guided-scenarios.catalog', () => {
     expect(GUIDED_SCENARIOS.length).toBe(8);
   });
 
+  it('every scenario has a valid PrimeIcon class', () => {
+    for (const scenario of GUIDED_SCENARIOS) {
+      expect(scenario.icon).toMatch(/^pi pi-[a-z0-9-]+$/);
+    }
+  });
+
+  it('scenario ids are unique', () => {
+    const ids = GUIDED_SCENARIOS.map(s => s.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
   it('resolveAmount picks ht/tva/ttc', () => {
     expect(resolveAmount('ht', 100, 19, 119)).toBe(100);
     expect(resolveAmount('tva', 100, 19, 119)).toBe(19);

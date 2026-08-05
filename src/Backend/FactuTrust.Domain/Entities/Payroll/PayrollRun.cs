@@ -34,9 +34,35 @@ public sealed class PayrollRun : AggregateRoot
     public decimal TotalWorkAccident { get; private set; }
     /// <summary>Somme des autres retenues (avances, oppositions) figées au calcul.</summary>
     public decimal TotalOtherDeductions { get; private set; }
+    /// <summary>
+    /// Somme des régularisations IRPP annuelles (signée : positive si les rappels l'emportent,
+    /// négative si les restitutions dominent). Tenue à part de <see cref="TotalIrpp"/>, qui
+    /// conserve le sens d'IRPP mensuel du cycle.
+    /// </summary>
+    public decimal TotalIrppRegularization { get; private set; }
+    /// <summary>Somme des régularisations CSS annuelles, même convention de signe.</summary>
+    public decimal TotalCssRegularization { get; private set; }
+    /// <summary>Somme des exonérations IRPP SMIG (art. 21) appliquées sur le cycle.</summary>
+    public decimal TotalIrppSmigExemption { get; private set; }
 
     private readonly List<Payslip> _payslips = new();
     public IReadOnlyCollection<Payslip> Payslips => _payslips.AsReadOnly();
+
+    public decimal TotalPaid => R(_payslips.Sum(p => p.PaidAmount));
+    public decimal RemainingToPay => R(TotalNet - TotalPaid);
+    public bool HasPayments => _payslips.Any(p => p.PaidAmount > 0);
+
+    public PayrollRunPaymentStatus PaymentStatus
+    {
+        get
+        {
+            if (!HasPayments)
+                return PayrollRunPaymentStatus.NotPaid;
+            if (RemainingToPay <= 0)
+                return PayrollRunPaymentStatus.FullyPaid;
+            return PayrollRunPaymentStatus.PartiallyPaid;
+        }
+    }
 
     private PayrollRun() { }
 
@@ -107,6 +133,13 @@ public sealed class PayrollRun : AggregateRoot
         if (Status != PayrollRunStatus.Validated)
             return Result.Failure(Error.Validation("Status", "Seul un cycle validé (non clôturé) peut être rouvert."));
 
+        if (HasPayments)
+        {
+            return Result.Failure(Error.Validation(
+                "Payments",
+                "Impossible de rouvrir : des paiements existent. Annulez d'abord tous les paiements."));
+        }
+
         Status = PayrollRunStatus.Calculated;
         ValidatedAt = null;
         ValidatedBy = null;
@@ -126,6 +159,9 @@ public sealed class PayrollRun : AggregateRoot
         TotalFoprolos = R(_payslips.Sum(p => p.Foprolos));
         TotalWorkAccident = R(_payslips.Sum(p => p.WorkAccidentContribution));
         TotalOtherDeductions = R(_payslips.Sum(p => p.OtherDeductions));
+        TotalIrppRegularization = R(_payslips.Sum(p => p.IrppRegularization));
+        TotalCssRegularization = R(_payslips.Sum(p => p.CssRegularization));
+        TotalIrppSmigExemption = R(_payslips.Sum(p => p.IrppSmigExemption));
     }
 
     private static decimal R(decimal value) => Math.Round(value, 3, MidpointRounding.AwayFromZero);

@@ -44,10 +44,31 @@
   }
 
   <section class="exchange-main">
-    @if (loading() && !activeThread()) {
-      <div class="state state--loading" role="status" aria-live="polite">
-        <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
-        <span>Chargement…</span>
+    @if (loading() && !activeThread() && !emptyHint() && !error()) {
+      <div class="exchange-skeleton" role="status" aria-live="polite" aria-label="Chargement des échanges">
+        <header class="exchange-header exchange-header--skeleton">
+          <div class="exchange-header__info">
+            <div class="skeleton-line skeleton-line--title"></div>
+            <div class="skeleton-line skeleton-line--sub"></div>
+          </div>
+        </header>
+        <nav class="tabs tabs--skeleton" aria-hidden="true">
+          <span class="skeleton-tab"></span>
+          <span class="skeleton-tab"></span>
+          <span class="skeleton-tab"></span>
+          <span class="skeleton-tab"></span>
+        </nav>
+        <div class="exchange-body">
+          <div class="content-loading-overlay" role="status" aria-live="polite">
+            <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+            <span>Chargement…</span>
+          </div>
+          <div class="messages messages--skeleton" aria-hidden="true">
+            <div class="skeleton-bubble skeleton-bubble--left"></div>
+            <div class="skeleton-bubble skeleton-bubble--right"></div>
+            <div class="skeleton-bubble skeleton-bubble--left"></div>
+          </div>
+        </div>
       </div>
     } @else if (emptyHint()) {
       <div class="state empty-state-wrap">
@@ -61,7 +82,12 @@
         />
       </div>
     } @else if (error() && !activeThread()) {
-      <div class="state error" role="alert">{{ error() }}</div>
+      <div class="state error" role="alert">
+        <p>{{ error() }}</p>
+        <app-button variant="secondary" size="sm" icon="pi-refresh" (clicked)="retryBootstrap()">
+          Réessayer
+        </app-button>
+      </div>
     } @else {
       @if (activeThread(); as thread) {
         @if (isFirm()) {

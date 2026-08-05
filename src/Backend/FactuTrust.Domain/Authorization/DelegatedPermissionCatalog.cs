@@ -41,6 +41,7 @@ public static class DelegatedPermissionCatalog
         Permissions.Payroll.Validate,
         Permissions.Payroll.Declare,
         Permissions.Payroll.Export,
+        Permissions.Payroll.Pay,
         Permissions.Payroll.Settings
     };
 
@@ -75,6 +76,7 @@ public static class DelegatedPermissionCatalog
         Permissions.Payroll.Validate,
         Permissions.Payroll.Declare,
         Permissions.Payroll.Export,
+        Permissions.Payroll.Pay,
         Permissions.Payroll.Settings
     };
 

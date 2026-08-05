@@ -3,7 +3,7 @@ import { createClientUuid } from '@core/utils/safe-random-uuid.util';
 import { Injectable, inject, computed, signal, effect, DestroyRef } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { HttpClient } from '@angular/common/http';
-import { Observable, of, BehaviorSubject, defer, throwError, forkJoin } from 'rxjs';
+import { Observable, of, BehaviorSubject, defer, throwError } from 'rxjs';
 import { map, tap, catchError, switchMap, take } from 'rxjs/operators';
 import { environment } from '@environments/environment';
 import { ApiResponse } from '@core/services/auth.service';
@@ -2478,18 +2478,16 @@ export class InvoiceWizardService {
       return;
     }
 
-    forkJoin(
-      productIds.map(id =>
-        this.productService.getProduct(id).pipe(
-          catchError(() => of({ success: false, data: null, message: null, errors: [] })),
-          map(res => ({
-            id,
-            isFodecApplicable: res.success && res.data ? (res.data.isFodecApplicable ?? false) : false
-          }))
-        )
-      )
-    ).pipe(take(1)).subscribe(results => {
-      const fodecByProductId = new Map(results.map(r => [r.id, r.isFodecApplicable]));
+    this.productService.getFodecFlags(productIds).pipe(
+      take(1),
+      catchError(() => of({ success: false, data: null as { id: string; isFodecApplicable: boolean }[] | null, message: null, errors: [] as string[] }))
+    ).subscribe(res => {
+      if (!res.success || !res.data) {
+        return;
+      }
+      const fodecByProductId = new Map(
+        res.data.map(r => [r.id, r.isFodecApplicable])
+      );
       for (const line of this.state().lines) {
         if (!line.productId || !fodecByProductId.has(line.productId)) {
           continue;

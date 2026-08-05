@@ -355,9 +355,13 @@ export class RegisterFirmComponent implements OnInit, OnDestroy {
         }
       },
       error: (err: HttpErrorResponse | { status?: number; message?: string }) => {
-        let errorMessage = 'message' in err && err.message
-          ? err.message
-          : this.errorHandler.extractErrorMessage(err as HttpErrorResponse);
+        // On délègue à ErrorHandlerService : lui sait extraire un message métier des
+        // enveloppes {code,message,fieldErrors} du backend. Le err.message natif d'un
+        // HttpErrorResponse ("Http failure response for...") n'est jamais destiné à
+        // l'utilisateur et masquerait un vrai message d'erreur applicative.
+        let errorMessage = err instanceof HttpErrorResponse
+          ? this.errorHandler.extractErrorMessage(err)
+          : ('message' in err && err.message ? err.message : this.errorHandler.extractErrorMessage(err as HttpErrorResponse));
         if (!errorMessage || errorMessage === 'undefined' || errorMessage.trim() === '') {
           const status = 'status' in err ? err.status : (err as HttpErrorResponse)?.status;
           if (!status) {

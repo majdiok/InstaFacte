@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute } from '@angular/router';
 import { of } from 'rxjs';
 import { PayrollRunDetailComponent } from './payroll-run-detail.component';
@@ -33,22 +34,29 @@ describe('PayrollRunDetailComponent', () => {
     overtimeLines: []
   };
 
-  function setup(perms: string[]) {
+  function setup(perms: string[], runOverrides: Partial<PayrollRunDetail> = {}) {
+    const run = { ...mockRun, ...runOverrides };
     TestBed.configureTestingModule({
       imports: [PayrollRunDetailComponent],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
+        provideNoopAnimations(),
         { provide: PayrollService, useValue: {
-          getRun: () => of({ success: true, data: mockRun }),
+          getRun: () => of({ success: true, data: run }),
           getParameters: () => of({ success: true, data: { enableExtendedOvertimeRates: false } }),
           listOvertime: () => of({ success: true, data: [] }),
+          listIrppRegularizations: () => of({ success: true, data: [] }),
+          // Requis par PayrollPaymentsPanelComponent, monté par le détail de cycle.
+          listRunPayments: () => of({ success: true, data: [] }),
           calculateRun: jasmine.createSpy('calculateRun'),
           validateRun: jasmine.createSpy('validateRun'),
           reopenRun: jasmine.createSpy('reopenRun'),
           closeRun: jasmine.createSpy('closeRun'),
           getPayslip: jasmine.createSpy('getPayslip'),
-          downloadPayslipPdf: jasmine.createSpy('downloadPayslipPdf')
+          downloadPayslipPdf: jasmine.createSpy('downloadPayslipPdf'),
+          getBankTransferPreview: jasmine.createSpy('getBankTransferPreview'),
+          exportBankTransfer: jasmine.createSpy('exportBankTransfer')
         } },
         { provide: ToastService, useValue: jasmine.createSpyObj('ToastService', ['add']) },
         { provide: AuthService, useValue: {
@@ -76,5 +84,20 @@ describe('PayrollRunDetailComponent', () => {
   it('shows Valider when user has payroll:validate and status Calculated', () => {
     setup([PERMISSIONS.payroll.validate]);
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('Valider');
+  });
+
+  it('shows Export virement when Validated and payroll:export', () => {
+    setup([PERMISSIONS.payroll.export], { status: 'Validated', statusDisplay: 'Validé' });
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Export virement');
+  });
+
+  it('hides Export virement when Calculated even with payroll:export', () => {
+    setup([PERMISSIONS.payroll.export], { status: 'Calculated' });
+    expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('Export virement');
+  });
+
+  it('hides Export virement when Validated without payroll:export', () => {
+    setup([PERMISSIONS.payroll.read], { status: 'Validated', statusDisplay: 'Validé' });
+    expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('Export virement');
   });
 });

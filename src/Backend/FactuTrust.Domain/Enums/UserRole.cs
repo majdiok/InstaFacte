@@ -190,7 +190,8 @@ public static class UserRoleExtensions
             Permissions.Studio.DesignEntities, Permissions.Studio.DesignForms, Permissions.Studio.DesignReports,
             Permissions.CustomData.RecordsRead, Permissions.CustomData.RecordsWrite, Permissions.CustomData.ReportsView,
             Permissions.Payroll.Read, Permissions.Payroll.ManageEmployees, Permissions.Payroll.RunPayroll,
-            Permissions.Payroll.Validate, Permissions.Payroll.Declare, Permissions.Payroll.Export, Permissions.Payroll.Settings
+            Permissions.Payroll.Validate, Permissions.Payroll.Declare, Permissions.Payroll.Export, Permissions.Payroll.Pay, Permissions.Payroll.Settings,
+            Permissions.Payroll.ManageGarnishments
         },
         UserRole.Accountant => new[]
         {
@@ -251,7 +252,8 @@ public static class UserRoleExtensions
             Permissions.WithholdingTax.Validate, Permissions.WithholdingTax.Delete, Permissions.WithholdingTax.Export,
             Permissions.CustomData.RecordsRead, Permissions.CustomData.RecordsWrite, Permissions.CustomData.ReportsView,
             Permissions.Payroll.Read, Permissions.Payroll.ManageEmployees, Permissions.Payroll.RunPayroll,
-            Permissions.Payroll.Validate, Permissions.Payroll.Declare, Permissions.Payroll.Export, Permissions.Payroll.Settings
+            Permissions.Payroll.Validate, Permissions.Payroll.Declare, Permissions.Payroll.Export, Permissions.Payroll.Pay, Permissions.Payroll.Settings,
+            Permissions.Payroll.ManageGarnishments
         },
         UserRole.Client => new[]
         {
@@ -381,7 +383,8 @@ public static class UserRoleExtensions
             Permissions.Studio.DesignEntities, Permissions.Studio.DesignForms, Permissions.Studio.DesignReports,
             Permissions.CustomData.RecordsRead, Permissions.CustomData.RecordsWrite, Permissions.CustomData.ReportsView,
             Permissions.Payroll.Read, Permissions.Payroll.ManageEmployees, Permissions.Payroll.RunPayroll,
-            Permissions.Payroll.Validate, Permissions.Payroll.Declare, Permissions.Payroll.Export, Permissions.Payroll.Settings
+            Permissions.Payroll.Validate, Permissions.Payroll.Declare, Permissions.Payroll.Export, Permissions.Payroll.Pay, Permissions.Payroll.Settings,
+            Permissions.Payroll.ManageGarnishments
         },
         UserRole.Developer => new[]
         {
@@ -712,7 +715,11 @@ public static class Permissions
         public const string Declare = "payroll:declare";
         /// <summary>Exporter bulletins et déclarations.</summary>
         public const string Export = "payroll:export";
+        /// <summary>Enregistrer les paiements de salaires (lien trésorerie).</summary>
+        public const string Pay = "payroll:pay";
         /// <summary>Gérer les paramètres de paie (barème, taux, comptes comptables).</summary>
         public const string Settings = "payroll:settings";
+        /// <summary>Gérer les saisies sur salaire et pensions alimentaires.</summary>
+        public const string ManageGarnishments = "payroll:manage_garnishments";
     }
 }

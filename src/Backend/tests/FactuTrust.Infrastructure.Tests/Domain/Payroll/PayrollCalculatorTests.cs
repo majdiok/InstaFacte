@@ -481,4 +481,124 @@ public sealed class PayrollCalculatorTests
 
         Assert.Contains(c.Lines, l => l.Label == "Heures supplémentaires" && l.Amount == 50m);
     }
+
+    [Fact]
+    public void Compute_AllowanceLines_ShowsIndividualLabelsWithoutChangingTotals()
+    {
+        var legacy = new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            TaxableCnssableAllowances = 250m,
+            Regime = SocialRegime.Rsna
+        };
+
+        var detailed = new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            TaxableCnssableAllowances = 250m,
+            AllowanceLines =
+            [
+                new AllowanceLineInput("Prime contrat", 100m, true, true),
+                new AllowanceLineInput("Prime rendement", 150m, true, true)
+            ],
+            Regime = SocialRegime.Rsna
+        };
+
+        var pars = Params();
+        var a = PayrollCalculator.Compute(legacy, pars);
+        var b = PayrollCalculator.Compute(detailed, pars);
+
+        Assert.Equal(a.GrossSalary, b.GrossSalary);
+        Assert.Equal(a.NetSalary, b.NetSalary);
+        Assert.Equal(a.CnssEmployee, b.CnssEmployee);
+        Assert.Contains(b.Lines, l => l.Label == "Prime contrat" && l.Amount == 100m);
+        Assert.Contains(b.Lines, l => l.Label == "Prime rendement" && l.Amount == 150m);
+        Assert.DoesNotContain(b.Lines, l => l.Label == "Primes et indemnités imposables");
+    }
+
+    private static PayrollYearParameters ParamsWithSmigMode(SmigIrppExemptionMode mode)
+    {
+        var p = Params();
+        var result = p.UpdateRates(
+            p.CnssEmployeeRate, p.CnssEmployerRate, p.CssRate, p.CssAnnualExemptionThreshold,
+            p.ProfessionalExpensesRate, p.ProfessionalExpensesAnnualCap,
+            p.HeadOfFamilyAnnualDeduction, p.ChildAnnualDeduction, p.MaxDeductibleChildren,
+            p.TfpRateIndustry, p.TfpRateOther, p.FoprolosRate, p.MonthlySmig,
+            p.CnssEmployeeRateRsa, p.CnssEmployerRateRsa,
+            p.EnforceSmigOnContracts, p.EnableExtendedOvertimeRates, p.EnableAllowanceQuadrantMatrix,
+            p.StudentChildAnnualDeduction, p.DisabledChildAnnualDeduction,
+            p.ParentDeductionRatePercent, p.ParentAnnualDeductionCap, p.IsIndustrialSector,
+            p.MealVoucherDailyExemptionCap, p.EnableIrppRegularization,
+            smigIrppExemptionMode: mode);
+        Assert.True(result.IsSuccess);
+        return p;
+    }
+
+    [Fact]
+    public void Compute_WithNoneMode_IsBackwardCompatible()
+    {
+        var input = new PayrollComputationInput { BaseSalary = 528.320m, Regime = SocialRegime.Rsna };
+        var c = PayrollCalculator.Compute(input, ParamsWithSmigMode(SmigIrppExemptionMode.None));
+
+        Assert.Equal(2.276m, c.Irpp);
+        Assert.Equal(2.159m, c.Css);
+        Assert.Equal(475.385m, c.NetSalary);
+        Assert.Equal(0m, c.IrppSmigExemption);
+    }
+
+    [Fact]
+    public void Compute_SmigWorker_WithSmigPortionExemption_YieldsZeroIrpp()
+    {
+        var input = new PayrollComputationInput { BaseSalary = 528.320m, Regime = SocialRegime.Rsna };
+        var c = PayrollCalculator.Compute(input, ParamsWithSmigMode(SmigIrppExemptionMode.SmigPortion));
+
+        Assert.Equal(0m, c.Irpp);
+        Assert.Equal(2.276m, c.IrppBeforeSmigExemption);
+        Assert.Equal(2.276m, c.IrppSmigExemption);
+        Assert.Equal(2.159m, c.Css);
+        Assert.Equal(477.661m, c.NetSalary);
+        Assert.Contains(c.Lines, l => l.Label == "Exonération IRPP SMIG (art. 21)");
+    }
+
+    [Fact]
+    public void Compute_AboveSmig_WithSmigPortionExemption_ReducesIrpp()
+    {
+        var without = PayrollCalculator.Compute(
+            new PayrollComputationInput { BaseSalary = 1000m, Regime = SocialRegime.Rsna },
+            ParamsWithSmigMode(SmigIrppExemptionMode.None));
+        var with = PayrollCalculator.Compute(
+            new PayrollComputationInput { BaseSalary = 1000m, Regime = SocialRegime.Rsna },
+            ParamsWithSmigMode(SmigIrppExemptionMode.SmigPortion));
+
+        Assert.True(with.IrppSmigExemption > 0m);
+        Assert.True(with.Irpp < without.Irpp);
+        Assert.Equal(without.Irpp - with.Irpp, with.IrppSmigExemption);
+        Assert.True(with.NetSalary > without.NetSalary);
+    }
+
+    [Fact]
+    public void Compute_SmigWorker_WithFullIfBelow_YieldsZeroIrpp()
+    {
+        var input = new PayrollComputationInput { BaseSalary = 528.320m, Regime = SocialRegime.Rsna };
+        var c = PayrollCalculator.Compute(input, ParamsWithSmigMode(SmigIrppExemptionMode.FullIfBelow));
+
+        Assert.Equal(0m, c.Irpp);
+        Assert.Equal(2.276m, c.IrppSmigExemption);
+        Assert.Equal(477.661m, c.NetSalary);
+    }
+
+    [Fact]
+    public void Compute_AboveSmig_WithFullIfBelow_NoExemption()
+    {
+        var without = PayrollCalculator.Compute(
+            new PayrollComputationInput { BaseSalary = 1000m, Regime = SocialRegime.Rsna },
+            ParamsWithSmigMode(SmigIrppExemptionMode.None));
+        var with = PayrollCalculator.Compute(
+            new PayrollComputationInput { BaseSalary = 1000m, Regime = SocialRegime.Rsna },
+            ParamsWithSmigMode(SmigIrppExemptionMode.FullIfBelow));
+
+        Assert.Equal(without.Irpp, with.Irpp);
+        Assert.Equal(0m, with.IrppSmigExemption);
+        Assert.Equal(without.NetSalary, with.NetSalary);
+    }
 }

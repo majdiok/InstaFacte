@@ -1,15 +1,17 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { TabViewModule } from 'primeng/tabview';
+import { DropdownModule } from 'primeng/dropdown';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
-import { PayrollService, PayrollParameters } from '@core/services/payroll.service';
+import { TabViewModule } from 'primeng/tabview';
+import { PayrollService, PayrollParameters, PayrollGarnishmentBracket } from '@core/services/payroll.service';
 import { ToastService } from '@core/services/toast.service';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
+import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-settings.component';
 
 @Component({
   selector: 'app-payroll-settings',
@@ -18,12 +20,14 @@ import { ButtonComponent } from '@shared/components/button/button.component';
     CommonModule,
     FormsModule,
     TabViewModule,
+    DropdownModule,
     InputNumberModule,
     InputSwitchModule,
     TableModule,
     ButtonModule,
     PageHeaderComponent,
-    ButtonComponent
+    ButtonComponent,
+    PayrollSocialFundsSettingsComponent
   ],
   template: `
     <app-page-header title="Paramètres de paie" subtitle="Barème IRPP, taux légaux et conformité par exercice." />
@@ -81,6 +85,10 @@ import { ButtonComponent } from '@shared/components/button/button.component';
               <div class="payroll-form-group">
                 <label>SMIG mensuel (TND)</label>
                 <p-inputNumber [(ngModel)]="params()!.monthlySmig" name="smig" [minFractionDigits]="3" [min]="0" [locale]="'fr-TN'" styleClass="w-full" />
+              </div>
+              <div class="payroll-form-group">
+                <label>Plafond exonération ticket restaurant / jour (TND)</label>
+                <p-inputNumber [(ngModel)]="params()!.mealVoucherDailyExemptionCap" name="mealVoucherCap" [minFractionDigits]="3" [min]="0" [locale]="'fr-TN'" styleClass="w-full" />
               </div>
               <div class="payroll-form-group">
                 <label>Frais pro. (%)</label>
@@ -184,8 +192,82 @@ import { ButtonComponent } from '@shared/components/button/button.component';
                 <label for="industrialSector">Secteur industriel (TFP 1 % au lieu de 2 %)</label>
                 <p-inputSwitch inputId="industrialSector" [(ngModel)]="params()!.isIndustrialSector" name="industrialSector" />
               </div>
+              <div class="payroll-form-group">
+                <label for="smigExemptionMode">Exonération IRPP SMIG (art. 21)</label>
+                <p-dropdown
+                  inputId="smigExemptionMode"
+                  [(ngModel)]="params()!.smigIrppExemptionMode"
+                  name="smigExemptionMode"
+                  [options]="smigExemptionModeOptions"
+                  optionLabel="label"
+                  optionValue="value"
+                  styleClass="w-full" />
+              </div>
+              @if (params()!.smigIrppExemptionMode === 'SmigPortion') {
+                <div class="payroll-form-group">
+                  <label>Taux applicable à la portion SMIG (%)</label>
+                  <p-inputNumber
+                    [(ngModel)]="params()!.smigIrppExemptionRateOverride"
+                    name="smigExemptionRate"
+                    [minFractionDigits]="2"
+                    [maxFractionDigits]="2"
+                    [min]="0"
+                    [max]="100"
+                    [locale]="'fr-TN'"
+                    placeholder="15 (barème)"
+                    styleClass="w-full" />
+                  <small class="text-muted">Laisser vide pour utiliser le premier taux non nul du barème IRPP.</small>
+                </div>
+              }
             </div>
+            <p class="payroll-info-text mt-2">
+              L'article 21 du code de l'IRPP (LF 2019) exonère l'IRPP sur la part du salaire ne dépassant pas le SMIG.
+              Le mode « Portion SMIG exonérée » s'applique à tous les salariés ; « Exonération totale » ne concerne que les salaires de base ≤ SMIG.
+              La CSS n'est pas impactée. Voir la documentation paie pour le détail des formules.
+            </p>
             <p class="payroll-info-text mt-2">Le taux TFP appliqué aux cycles de paie de cet exercice suit ce paramètre ; recalculez les cycles en brouillon pour l'appliquer.</p>
+          </p-tabPanel>
+
+          <p-tabPanel header="Saisies sur salaire">
+            <ng-template pTemplate="header">
+              <i class="pi pi-exclamation-triangle mr-2"></i>
+              <span>Saisies</span>
+            </ng-template>
+            <p class="payroll-info-text mb-3">Barème de quotité saisissable sur le net mensuel (fraction saisissable par tranche). Si vide, 33 % du net s'applique par défaut.</p>
+            <p-table [value]="garnishmentBrackets()" styleClass="p-datatable-sm mb-3">
+              <ng-template pTemplate="header">
+                <tr>
+                  <th>Seuil net mensuel (TND)</th>
+                  <th>Fraction saisissable (%)</th>
+                  <th></th>
+                </tr>
+              </ng-template>
+              <ng-template pTemplate="body" let-bracket let-i="rowIndex">
+                <tr>
+                  <td>
+                    <p-inputNumber [(ngModel)]="bracket.lowerBoundMonthlyNet" [name]="'gbLb' + i" [minFractionDigits]="3" [min]="0" [locale]="'fr-TN'" styleClass="w-full" />
+                  </td>
+                  <td>
+                    <p-inputNumber [(ngModel)]="bracket.seizableFractionPercent" [name]="'gbFrac' + i" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
+                  </td>
+                  <td>
+                    <button type="button" pButton icon="pi pi-trash" class="p-button-text p-button-danger p-button-sm" (click)="removeGarnishmentBracket(i)"></button>
+                  </td>
+                </tr>
+              </ng-template>
+            </p-table>
+            <app-button type="button" variant="outline" icon="pi-plus" iconPos="left" (click)="addGarnishmentBracket()">Ajouter une tranche</app-button>
+            <div class="form-actions mt-4">
+              <app-button type="button" variant="primary" icon="pi-check" iconPos="left" (click)="saveGarnishmentBrackets()">Enregistrer le barème saisies</app-button>
+            </div>
+          </p-tabPanel>
+
+          <p-tabPanel header="Caisses complémentaires">
+            <ng-template pTemplate="header">
+              <i class="pi pi-heart mr-2"></i>
+              <span>Mutuelles</span>
+            </ng-template>
+            <app-payroll-social-funds-settings [fiscalYear]="fiscalYear" />
           </p-tabPanel>
         </p-tabView>
 
@@ -196,6 +278,7 @@ import { ButtonComponent } from '@shared/components/button/button.component';
     }
   `,
   styles: [`
+    .mb-3 { margin-bottom: var(--spacing-4); }
     .mb-3 { margin-bottom: var(--spacing-4); }
     .mt-2 { margin-top: var(--spacing-2); }
     .mt-4 { margin-top: var(--spacing-6); }
@@ -211,6 +294,12 @@ export class PayrollSettingsComponent implements OnInit {
   private readonly toast = inject(ToastService);
   fiscalYear = new Date().getFullYear();
   params = signal<PayrollParameters | null>(null);
+  garnishmentBrackets = signal<GarnishmentBracketFormRow[]>([]);
+  readonly smigExemptionModeOptions = [
+    { label: 'Désactivée', value: 'None' },
+    { label: 'Portion SMIG exonérée (art. 21)', value: 'SmigPortion' },
+    { label: 'Exonération totale si salaire ≤ SMIG', value: 'FullIfBelow' }
+  ];
 
   ngOnInit(): void {
     this.load();
@@ -223,6 +312,10 @@ export class PayrollSettingsComponent implements OnInit {
         if (data) {
           this.params.set({
             ...data,
+            smigIrppExemptionMode: data.smigIrppExemptionMode ?? 'None',
+            smigIrppExemptionModeDisplay: data.smigIrppExemptionModeDisplay ?? 'Désactivée',
+            smigIrppExemptionRateOverride: data.smigIrppExemptionRateOverride ?? null,
+            mealVoucherDailyExemptionCap: data.mealVoucherDailyExemptionCap ?? 0,
             irppBrackets: data.irppBrackets.map(b => ({ ...b }))
           });
         } else {
@@ -230,6 +323,49 @@ export class PayrollSettingsComponent implements OnInit {
         }
       },
       error: () => this.toast.add({ severity: 'error', summary: 'Paramètres', detail: 'Paramètres introuvables.' })
+    });
+    this.loadGarnishmentBrackets();
+  }
+
+  private loadGarnishmentBrackets(): void {
+    this.payroll.getGarnishmentBrackets(this.fiscalYear).subscribe({
+      next: res => {
+        const rows = (res.data ?? []).map(b => ({
+          lowerBoundMonthlyNet: b.lowerBoundMonthlyNet,
+          seizableFractionPercent: b.seizableFraction * 100
+        }));
+        this.garnishmentBrackets.set(rows);
+      },
+      error: () => this.garnishmentBrackets.set([])
+    });
+  }
+
+  addGarnishmentBracket(): void {
+    this.garnishmentBrackets.update(rows => [...rows, { lowerBoundMonthlyNet: 0, seizableFractionPercent: 0 }]);
+  }
+
+  removeGarnishmentBracket(index: number): void {
+    this.garnishmentBrackets.update(rows => rows.filter((_, i) => i !== index));
+  }
+
+  saveGarnishmentBrackets(): void {
+    const rows = this.garnishmentBrackets();
+    const sorted = [...rows].sort((a, b) => a.lowerBoundMonthlyNet - b.lowerBoundMonthlyNet);
+    if (sorted.some(b => b.seizableFractionPercent < 0 || b.seizableFractionPercent > 100)) {
+      this.toast.add({ severity: 'error', summary: 'Barème saisies', detail: 'Les fractions doivent être entre 0 et 100 %.' });
+      return;
+    }
+    const payload: PayrollGarnishmentBracket[] = sorted.map(b => ({
+      lowerBoundMonthlyNet: b.lowerBoundMonthlyNet,
+      seizableFraction: b.seizableFractionPercent / 100
+    }));
+    this.payroll.updateGarnishmentBrackets(this.fiscalYear, payload).subscribe({
+      next: () => this.toast.add({ severity: 'success', summary: 'Barème saisies', detail: 'Barème enregistré.' }),
+      error: err => this.toast.add({
+        severity: 'error',
+        summary: 'Barème saisies',
+        detail: err?.error?.message ?? 'Enregistrement impossible.'
+      })
     });
   }
 
@@ -278,4 +414,9 @@ export class PayrollSettingsComponent implements OnInit {
       })
     });
   }
+}
+
+interface GarnishmentBracketFormRow {
+  lowerBoundMonthlyNet: number;
+  seizableFractionPercent: number;
 }

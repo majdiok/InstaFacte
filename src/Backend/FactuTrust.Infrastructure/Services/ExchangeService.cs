@@ -296,10 +296,22 @@ public sealed class ExchangeService : IExchangeService
         if (before.HasValue)
             q = q.Where(m => m.SentAt < before.Value);
 
-        // Incremental poll (`after`) or legacy full fetch (no limit): return chronological list.
+        // Incremental poll (`after`): chronological list capped to MaxMessagePageSize.
+        // Legacy full fetch (no limit, no after): unbounded chronological list.
         if (after.HasValue || limit is null)
         {
-            var all = await q.OrderBy(m => m.SentAt).ToListAsync(cancellationToken);
+            var ordered = q.OrderBy(m => m.SentAt);
+            if (after.HasValue)
+            {
+                var capped = await ordered.Take(MaxMessagePageSize).ToListAsync(cancellationToken);
+                var mappedCapped = await MapMessagesAsync(ctx, capped, cancellationToken);
+                return Result.Success(new PagedExchangeMessagesDto(
+                    mappedCapped,
+                    HasMore: capped.Count == MaxMessagePageSize,
+                    OldestSentAt: mappedCapped.Count > 0 ? mappedCapped[0].SentAt : null));
+            }
+
+            var all = await ordered.ToListAsync(cancellationToken);
             var mappedAll = await MapMessagesAsync(ctx, all, cancellationToken);
             return Result.Success(new PagedExchangeMessagesDto(
                 mappedAll,
@@ -848,12 +860,20 @@ public sealed class ExchangeService : IExchangeService
         // Les écritures (EnsureThreadAsync) restent sur _db scoped pour préserver la
         // transaction et le change tracker ; leur commit est visible par le contexte
         // isolé grâce à la sémantique READ COMMITTED par défaut de SQL Server.
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         await using var isolatedCtx = await _dbFactory.CreateDbContextAsync(cancellationToken);
 
+        Result<ExchangeBootstrapDto> result;
         if (tenantKind == TenantKind.Company)
-            return await BootstrapCompanyAsync(isolatedCtx, homeTenantId, userId, displayName, userRole, threadId, tab, cancellationToken);
+            result = await BootstrapCompanyAsync(isolatedCtx, homeTenantId, userId, displayName, userRole, threadId, tab, cancellationToken);
+        else
+            result = await BootstrapFirmAsync(isolatedCtx, homeTenantId, userId, displayName, userRole, firmScope, threadId, tab, cancellationToken);
 
-        return await BootstrapFirmAsync(isolatedCtx, homeTenantId, userId, displayName, userRole, firmScope, threadId, tab, cancellationToken);
+        sw.Stop();
+        _logger.LogInformation(
+            "Exchange bootstrap {Kind} completed in {ElapsedMs}ms success={Success}",
+            tenantKind, sw.ElapsedMilliseconds, result.IsSuccess);
+        return result;
     }
 
     // --- helpers ---
@@ -1022,11 +1042,16 @@ public sealed class ExchangeService : IExchangeService
         if (threadIds.Count == 0)
             return new Dictionary<Guid, int>();
 
+        // LEFT JOIN anti-join (r IS NULL) plutôt qu'une sous-requête corrélée NOT EXISTS
+        // par ligne message — meilleur plan d'exécution avec l'index (UserId, MessageId).
         var rows = await (
             from m in ctx.ExchangeMessages.AsNoTracking()
             where threadIds.Contains(m.ThreadId) && m.AuthorUserId != userId
             where isFirm || m.Visibility == ExchangeMessageVisibility.ClientVisible
-            where !ctx.ExchangeMessageReads.Any(r => r.MessageId == m.Id && r.UserId == userId)
+            join r in ctx.ExchangeMessageReads.AsNoTracking().Where(x => x.UserId == userId)
+                on m.Id equals r.MessageId into reads
+            from r in reads.DefaultIfEmpty()
+            where r == null
             group m by m.ThreadId into g
             select new { ThreadId = g.Key, Count = g.Count() }
         ).ToListAsync(cancellationToken);
@@ -1122,15 +1147,29 @@ public sealed class ExchangeService : IExchangeService
                 "Liez un cabinet comptable dans Paramètres → Cabinet comptable pour ouvrir les échanges."));
         }
 
-        // EnsureThreadAsync est une écriture : elle continue sur _db scoped, seule à
-        // participer à la transaction et au change tracker de la requête. SaveChangesAsync
-        // interne rend le thread visible pour le contexte isolé sur les lectures suivantes.
-        var ensure = await EnsureThreadAsync(
-            homeTenantId, TenantKind.Company, userId, displayName, userRole, null, null, cancellationToken);
-        if (ensure.IsFailure)
-            return Result.Failure<ExchangeBootstrapDto>(ensure.Error);
+        // Fast-path (99 % des cold loads société) : le thread existe déjà → lecture seule
+        // sur isolatedCtx, sans EnsureThreadAsync / SaveChangesAsync.
+        // Fallback écriture : premier accès uniquement (EnsureThread sur _db scoped).
+        ExchangeThreadDetailDto active;
+        var existingThread = await isolatedCtx.ExchangeThreads.AsNoTracking()
+            .FirstOrDefaultAsync(t => t.FirmClientAssignmentId == assignment.Id, cancellationToken);
 
-        var active = ensure.Value;
+        if (existingThread is not null)
+        {
+            active = await MapDetailAsync(isolatedCtx, existingThread, cancellationToken);
+        }
+        else
+        {
+            // EnsureThreadAsync est une écriture : elle continue sur _db scoped, seule à
+            // participer à la transaction et au change tracker de la requête. SaveChangesAsync
+            // interne rend le thread visible pour le contexte isolé sur les lectures suivantes.
+            var ensure = await EnsureThreadAsync(
+                homeTenantId, TenantKind.Company, userId, displayName, userRole, null, null, cancellationToken);
+            if (ensure.IsFailure)
+                return Result.Failure<ExchangeBootstrapDto>(ensure.Error);
+            active = ensure.Value;
+        }
+
         var resolvedThreadId = threadId is { } tid && tid != Guid.Empty && tid == active.Id ? tid : active.Id;
         return await BuildBootstrapPayloadAsync(
             isolatedCtx,

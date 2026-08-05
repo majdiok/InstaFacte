@@ -116,6 +116,8 @@ public sealed class FecExportService : IFecExportService
                         clientNames.TryGetValue(line.ThirdPartyId.Value, out compAuxLib);
                     else if (line.ThirdPartyKind == Domain.Enums.ThirdPartyKind.Supplier)
                         supplierNames.TryGetValue(line.ThirdPartyId.Value, out compAuxLib);
+                    else if (line.ThirdPartyKind == Domain.Enums.ThirdPartyKind.Employee)
+                        compAuxLib = line.Label;
                     compAuxLib ??= string.Empty;
                 }
 

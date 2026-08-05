@@ -47,6 +47,15 @@ export const PAYROLL_ROUTES: Routes = [
     data: { permissions: [PERMISSIONS.payroll.read] }
   },
   {
+    path: 'regularization',
+    loadComponent: () => import('./regularization/irpp-regularization.component').then(m => m.IrppRegularizationComponent),
+    title: 'Régularisation IRPP - InstaFact',
+    canActivate: [permissionGuard],
+    // Lecture pour consulter et calculer ; l'enregistrement est gaté dans le composant
+    // par canRunPayroll (même approche que le détail de cycle).
+    data: { permissions: [PERMISSIONS.payroll.read] }
+  },
+  {
     path: 'settings',
     loadComponent: () => import('./settings/payroll-settings.component').then(m => m.PayrollSettingsComponent),
     title: 'Paramètres paie - InstaFact',

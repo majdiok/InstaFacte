@@ -38,6 +38,7 @@ describe('PayrollSettingsComponent', () => {
     tfpRateOther: 2,
     foprolosRate: 1,
     monthlySmig: 528.32,
+    mealVoucherDailyExemptionCap: 9.2,
     irppBrackets: [
       { lowerBound: 0, rate: 0 },
       { lowerBound: 5000, rate: 15 }
@@ -45,9 +46,18 @@ describe('PayrollSettingsComponent', () => {
   };
 
   beforeEach(() => {
-    payrollSpy = jasmine.createSpyObj('PayrollService', ['getParameters', 'updateParameters']);
+    payrollSpy = jasmine.createSpyObj('PayrollService', [
+      'getParameters',
+      'updateParameters',
+      'getGarnishmentBrackets',
+      'updateGarnishmentBrackets',
+      'listSocialFunds'
+    ]);
     payrollSpy.getParameters.and.returnValue(of({ success: true, data: { ...params, irppBrackets: params.irppBrackets.map(b => ({ ...b })) } }));
     payrollSpy.updateParameters.and.returnValue(of({ success: true, data: null }));
+    payrollSpy.getGarnishmentBrackets.and.returnValue(of({ success: true, data: [] }));
+    payrollSpy.updateGarnishmentBrackets.and.returnValue(of({ success: true, data: null }));
+    payrollSpy.listSocialFunds.and.returnValue(of({ success: true, data: [] }));
     toastSpy = jasmine.createSpyObj('ToastService', ['add']);
 
     TestBed.configureTestingModule({

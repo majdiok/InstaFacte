@@ -63,7 +63,7 @@ public sealed class GetSupplierInvoiceByIdQueryHandler : IRequestHandler<GetSupp
                 Address = si.Supplier.Address.ToString()
             },
             PurchaseOrderId = si.PurchaseOrderId,
-            PurchaseOrderNumber = si.PurchaseOrder?.Number.Value ?? "—",
+            PurchaseOrderNumber = si.PurchaseOrder?.Number.Value,
             SourcePurchaseReceiptId = si.SourcePurchaseReceiptId,
             SourcePurchaseReceiptNumber = si.SourcePurchaseReceipt?.Number.Value,
             Lines = si.Lines.OrderBy(l => l.LineNumber).Select(l =>

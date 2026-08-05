@@ -146,7 +146,9 @@ public static class PermissionPolicies
     public const string PayrollValidate = "perm:" + Permissions.Payroll.Validate;
     public const string PayrollDeclare = "perm:" + Permissions.Payroll.Declare;
     public const string PayrollExport = "perm:" + Permissions.Payroll.Export;
+    public const string PayrollPay = "perm:" + Permissions.Payroll.Pay;
     public const string PayrollSettings = "perm:" + Permissions.Payroll.Settings;
+    public const string PayrollManageGarnishments = "perm:" + Permissions.Payroll.ManageGarnishments;
 
     public const string FirmUsersManage = "perm:" + Permissions.Firm.UsersManage;
 

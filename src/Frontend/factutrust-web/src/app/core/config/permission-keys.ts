@@ -155,10 +155,12 @@ export const PERMISSIONS = {
   payroll: {
     read: 'payroll:read',
     manageEmployees: 'payroll:manage_employees',
+    manageGarnishments: 'payroll:manage_garnishments',
     run: 'payroll:run',
     validate: 'payroll:validate',
     declare: 'payroll:declare',
     export: 'payroll:export',
+    pay: 'payroll:pay',
     settings: 'payroll:settings'
   },
   firm: {

@@ -122,6 +122,49 @@ public sealed class ProductRepository : IProductRepository
         return (items, totalCount);
     }
 
+    public async Task<IReadOnlyList<Product>> SearchForSelectAsync(
+        string? searchTerm,
+        bool? isActive,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+
+        var query = context.Products.AsNoTracking().AsQueryable();
+
+        if (isActive.HasValue)
+            query = query.Where(p => p.IsActive == isActive.Value);
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            var term = searchTerm.Trim();
+            // Prefix on Code uses the unique index; Contains on Name for free-text matching.
+            query = query.Where(p =>
+                p.Code.StartsWith(term) ||
+                p.Name.Contains(term));
+        }
+
+        return await query
+            .OrderBy(p => p.Name)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, bool>> GetFodecFlagsByIdsAsync(
+        IReadOnlyCollection<Guid> productIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (productIds.Count == 0)
+            return new Dictionary<Guid, bool>();
+
+        await using var context = _contextFactory.CreateContext();
+        var distinct = productIds.Distinct().ToList();
+        return await context.Products
+            .AsNoTracking()
+            .Where(p => distinct.Contains(p.Id))
+            .ToDictionaryAsync(p => p.Id, p => p.IsFodecApplicable, cancellationToken);
+    }
+
     public async Task<bool> IsUsedInInvoicesAsync(Guid productId, CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();

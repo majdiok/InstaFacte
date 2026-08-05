@@ -72,13 +72,13 @@ public sealed class CreateSupplierInvoiceFromPurchaseReceiptCommandHandler
             return Result.Failure<SupplierInvoiceCreationResult>(Error.Validation("Lines",
                 "Aucune quantité reçue non facturée sur ce bon de réception"));
 
-        if (receipt.PurchaseOrderId is not { } purchaseOrderId)
-            return Result.Failure<SupplierInvoiceCreationResult>(Error.Validation("PurchaseOrder",
-                "Ce bon de réception n'est pas lié à un bon de commande"));
-
-        var po = await _purchaseOrderRepository.GetByIdWithLinesAsync(purchaseOrderId, cancellationToken);
-        if (po is null)
-            return Result.Failure<SupplierInvoiceCreationResult>(Error.NotFound("PurchaseOrder", purchaseOrderId));
+        PurchaseOrder? po = null;
+        if (receipt.PurchaseOrderId is { } purchaseOrderId)
+        {
+            po = await _purchaseOrderRepository.GetByIdWithLinesAsync(purchaseOrderId, cancellationToken);
+            if (po is null)
+                return Result.Failure<SupplierInvoiceCreationResult>(Error.NotFound("PurchaseOrder", purchaseOrderId));
+        }
 
         var lineSelections = SupplierInvoiceCreationHelper.ResolvePurchaseReceiptLineSelections(receipt, request.Lines);
         if (lineSelections.Count == 0)

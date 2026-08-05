@@ -45,6 +45,7 @@ import { ThirdPartyRef } from '../models/entry-form.model';
       <div class="lines-grid__table-wrap" #gridContainer>
         <p-table
           [value]="store.lines()"
+          dataKey="clientLineId"
           [scrollable]="true"
           scrollHeight="55vh"
           styleClass="p-datatable-sm entry-lines-table">
@@ -140,7 +141,8 @@ import { ThirdPartyRef } from '../models/entry-form.model';
                   [inputId]="'debit-' + i"
                   [ariaLabel]="'Débit ligne ' + (i + 1)"
                   [disabled]="!!line.isVatGenerated"
-                  (amountChange)="onDebitChange(i)"
+                  (amountChange)="onDebitPreview(i)"
+                  (amountCommitted)="onDebitCommit(i)"
                   (enterPressed)="onAmountEnter(i, 'debit', line)"
                   (tabFromAmount)="onAmountTab(i, 'debit', line, $event.shiftKey)" />
               </td>
@@ -156,7 +158,8 @@ import { ThirdPartyRef } from '../models/entry-form.model';
                   [inputId]="'credit-' + i"
                   [ariaLabel]="'Crédit ligne ' + (i + 1)"
                   [disabled]="!!line.isVatGenerated"
-                  (amountChange)="onCreditChange(i)"
+                  (amountChange)="onCreditPreview(i)"
+                  (amountCommitted)="onCreditCommit(i)"
                   (enterPressed)="onAmountEnter(i, 'credit', line)"
                   (tabFromAmount)="onAmountTab(i, 'credit', line, $event.shiftKey)" />
               </td>
@@ -314,13 +317,21 @@ export class EntryLinesGridComponent {
     this.store.updateLine(index, { thirdParty: tp });
   }
 
-  onDebitChange(index: number): void {
+  onDebitPreview(index: number): void {
+    this.store.onDebitPreview(index);
+  }
+
+  onCreditPreview(index: number): void {
+    this.store.onCreditPreview(index);
+  }
+
+  onDebitCommit(index: number): void {
     this.store.onDebitChange(index);
     const line = this.store.lines()[index];
     if (line?.vatRatePercent) this.onVatChange(index, line.vatRatePercent);
   }
 
-  onCreditChange(index: number): void {
+  onCreditCommit(index: number): void {
     this.store.onCreditChange(index);
     const line = this.store.lines()[index];
     if (line?.vatRatePercent) this.onVatChange(index, line.vatRatePercent);

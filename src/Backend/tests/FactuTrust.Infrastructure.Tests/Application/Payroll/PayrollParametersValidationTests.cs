@@ -34,6 +34,7 @@ public sealed class PayrollParametersValidationTests
             TfpRateOther = 2m,
             FoprolosRate = 1m,
             MonthlySmig = 528.320m,
+            SmigIrppExemptionMode = "None",
             IrppBrackets = brackets ?? new[]
             {
                 new IrppBracketDto { LowerBound = 0m, Rate = 0m },
@@ -101,6 +102,23 @@ public sealed class PayrollParametersValidationTests
             new IrppBracketDto { LowerBound = 5000m, Rate = 150m }
         };
         var result = Validator.Validate(new UpdatePayrollParametersCommand(2026, ValidDto(brackets)));
+        Assert.False(result.IsValid);
+    }
+
+    [Fact]
+    public void Validator_rejects_smig_exemption_when_monthly_smig_is_zero()
+    {
+        var dto = ValidDto();
+        var invalid = dto with { SmigIrppExemptionMode = "SmigPortion", MonthlySmig = 0m };
+        var result = Validator.Validate(new UpdatePayrollParametersCommand(2026, invalid));
+        Assert.False(result.IsValid);
+    }
+
+    [Fact]
+    public void Validator_rejects_smig_exemption_rate_out_of_range()
+    {
+        var dto = ValidDto() with { SmigIrppExemptionRateOverride = 101m };
+        var result = Validator.Validate(new UpdatePayrollParametersCommand(2026, dto));
         Assert.False(result.IsValid);
     }
 

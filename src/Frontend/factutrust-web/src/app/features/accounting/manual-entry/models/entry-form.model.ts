@@ -9,6 +9,8 @@ export interface ThirdPartyRef {
 }
 
 export interface EntryLine {
+  /** Identité stable côté UI (table track / focus). Non envoyé à l'API. */
+  clientLineId: string;
   accountNumber: string;
   lineLabel: string;
   debit: number | null;
@@ -24,6 +26,18 @@ export interface EntryLine {
   isVatGenerated?: boolean;
   /** ID interne pour liaison TVA base ↔ ligne générée. */
   vatLinkId?: string | null;
+}
+
+export function newClientLineId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `line-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Garantit un clientLineId (brouillons / templates anciens). */
+export function ensureClientLineId(line: EntryLine): EntryLine {
+  if (line.clientLineId) {
+    return line;
+  }
+  return { ...line, clientLineId: newClientLineId() };
 }
 
 export type EntryTabId = 'standard' | 'guided' | 'template' | 'recurring';
@@ -79,6 +93,7 @@ export interface BuildRequestResult {
 
 export function createEmptyLine(): EntryLine {
   return {
+    clientLineId: newClientLineId(),
     accountNumber: '',
     lineLabel: '',
     debit: null,

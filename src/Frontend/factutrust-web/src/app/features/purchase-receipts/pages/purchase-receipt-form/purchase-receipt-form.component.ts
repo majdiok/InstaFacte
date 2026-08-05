@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { CommonModule, CurrencyPipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -36,7 +36,21 @@ import {
 } from '@core/services/purchase-order.service';
 import { SupplierService, SupplierListItem } from '@core/services/supplier.service';
 import { ProductService, ProductListItem } from '@core/services/product.service';
-import { switchMap, of, Observable } from 'rxjs';
+import {
+  ProductAutocompleteService,
+  ProductSuggestion,
+  suggestionToListItem
+} from '@shared/services/product-autocomplete.service';
+import {
+  Subject,
+  switchMap,
+  of,
+  Observable,
+  debounceTime,
+  distinctUntilChanged,
+  catchError,
+  takeUntil
+} from 'rxjs';
 
 interface ReceiptLineRow {
   product: ProductListItem | null;
@@ -229,6 +243,10 @@ interface ReceiptLineRow {
                           field="name"
                           [dropdown]="true"
                           [forceSelection]="true"
+                          [minLength]="0"
+                          appendTo="body"
+                          panelStyleClass="receipt-product-panel"
+                          [panelStyle]="{ minWidth: '280px' }"
                           [ngModelOptions]="{ standalone: true }"
                           [disabled]="!!line.purchaseOrderLineId"
                           placeholder="Rechercher…"
@@ -236,7 +254,21 @@ interface ReceiptLineRow {
                           inputStyleClass="w-full">
                           <ng-template let-product pTemplate="item">
                             <div class="product-item">
-                              <span class="font-bold">{{ product.code }}</span> — {{ product.name }}
+                              <span class="product-item__code">{{ product.code }}</span>
+                              <span class="product-item__name">{{ product.name }}</span>
+                              <span class="product-item__price">
+                                {{ (product.purchasePrice ?? product.unitPrice ?? 0) | number:'1.3-3' }} DT
+                              </span>
+                            </div>
+                          </ng-template>
+                          <ng-template pTemplate="empty">
+                            <div class="product-empty">
+                              @if (isLoadingProducts()) {
+                                <i class="pi pi-spin pi-spinner"></i>
+                                <span>Chargement des produits…</span>
+                              } @else {
+                                <span>Aucun produit trouvé</span>
+                              }
                             </div>
                           </ng-template>
                         </p-autoComplete>
@@ -582,13 +614,13 @@ interface ReceiptLineRow {
     }
 
     .lines-table col.col-idx { width: 40px; }
-    .lines-table col.col-article { width: 16%; }
-    .lines-table col.col-designation { width: 14%; }
-    .lines-table col.col-unit { width: 6%; }
+    .lines-table col.col-article { width: 19%; }
+    .lines-table col.col-designation { width: 13%; }
+    .lines-table col.col-unit { width: 8%; }
     .lines-table col.col-qty-ord { width: 8%; }
     .lines-table col.col-qty-rec { width: 9%; }
     .lines-table col.col-qty-pend { width: 8%; }
-    .lines-table col.col-price { width: 11%; }
+    .lines-table col.col-price { width: 10%; }
     .lines-table col.col-disc { width: 7%; }
     .lines-table col.col-total { width: 10%; }
     .lines-table col.col-actions { width: 44px; }
@@ -599,7 +631,18 @@ interface ReceiptLineRow {
       text-align: left;
       vertical-align: middle;
       border-bottom: 1px solid var(--color-border-subtle);
+    }
+
+    .lines-table th.col-designation,
+    .lines-table td.col-designation,
+    .lines-table th.col-total,
+    .lines-table td.col-total {
       overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .lines-table td.col-article {
+      overflow: visible;
     }
 
     .lines-table th {
@@ -639,7 +682,40 @@ interface ReceiptLineRow {
       color: var(--color-text-secondary);
     }
 
-    .product-item { display: flex; flex-direction: column; }
+    .product-item {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-2);
+      min-width: 0;
+    }
+
+    .product-item__code {
+      font-weight: var(--font-weight-bold);
+      flex-shrink: 0;
+    }
+
+    .product-item__name {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .product-item__price {
+      flex-shrink: 0;
+      font-size: var(--font-size-xs);
+      color: var(--color-text-secondary);
+    }
+
+    .product-empty {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-2);
+      padding: var(--spacing-2) var(--spacing-3);
+      color: var(--color-text-secondary);
+      font-size: var(--font-size-sm);
+    }
 
     .attachments-hint {
       font-size: var(--font-size-sm);
@@ -756,10 +832,6 @@ interface ReceiptLineRow {
         max-width: 100%;
       }
 
-      .lines-table .p-autocomplete-panel {
-        min-width: 280px !important;
-      }
-
       .lines-table p-inputnumber,
       .lines-table p-inputnumber .p-inputnumber,
       .lines-table p-inputnumber .p-inputtext {
@@ -775,15 +847,18 @@ interface ReceiptLineRow {
     }
   `]
 })
-export class PurchaseReceiptFormComponent implements OnInit {
+export class PurchaseReceiptFormComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private receiptService = inject(PurchaseReceiptService);
   private poService = inject(PurchaseOrderService);
   private supplierService = inject(SupplierService);
   private productService = inject(ProductService);
+  private readonly productAutocomplete = inject(ProductAutocompleteService);
   private toastService = inject(ToastService);
   private warehouseContext = inject(WarehouseContextService);
+  private readonly searchSubject$ = new Subject<string>();
+  private readonly destroy$ = new Subject<void>();
 
   loading = signal(true);
   submitting = signal(false);
@@ -797,6 +872,7 @@ export class PurchaseReceiptFormComponent implements OnInit {
   suppliers = signal<SupplierListItem[]>([]);
   purchaseOrderOptions = signal<{ id: string; label: string }[]>([]);
   productSuggestions = signal<ProductListItem[]>([]);
+  isLoadingProducts = signal(false);
   attachments = signal<PurchaseReceiptAttachment[]>([]);
 
   selectedSupplierId: string | null = null;
@@ -832,6 +908,8 @@ export class PurchaseReceiptFormComponent implements OnInit {
     const ctxWh = this.warehouseContext.selectedWarehouseId();
     if (ctxWh) this.selectedWarehouseId = ctxWh;
 
+    this.setupProductSearch();
+
     const id = this.route.snapshot.paramMap.get('id');
     const poId = this.route.snapshot.queryParamMap.get('purchaseOrderId');
 
@@ -853,6 +931,41 @@ export class PurchaseReceiptFormComponent implements OnInit {
     } else {
       this.loading.set(false);
     }
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
+  private setupProductSearch(): void {
+    if (this.productAutocomplete.isV2Enabled) {
+      this.productAutocomplete.prefetch().pipe(takeUntil(this.destroy$)).subscribe();
+    }
+
+    this.searchSubject$.pipe(
+      debounceTime(300),
+      distinctUntilChanged(),
+      switchMap((query: string) => {
+        this.isLoadingProducts.set(true);
+        return this.productAutocomplete.search(query).pipe(
+          catchError(() => {
+            this.isLoadingProducts.set(false);
+            return of([] as ProductSuggestion[]);
+          })
+        );
+      }),
+      takeUntil(this.destroy$)
+    ).subscribe({
+      next: (items) => {
+        this.isLoadingProducts.set(false);
+        this.productSuggestions.set(items.map(suggestionToListItem));
+      },
+      error: () => {
+        this.isLoadingProducts.set(false);
+        this.productSuggestions.set([]);
+      }
+    });
   }
 
   private loadSuppliers(): void {
@@ -1116,15 +1229,7 @@ export class PurchaseReceiptFormComponent implements OnInit {
   }
 
   searchProducts(event: AutoCompleteCompleteEvent): void {
-    this.productService.getProducts({
-      search: event.query,
-      isActive: true,
-      pageSize: 20
-    }).subscribe({
-      next: (res) => {
-        if (res.success) this.productSuggestions.set(res.data.items);
-      }
-    });
+    this.searchSubject$.next(event.query ?? '');
   }
 
   onProductSelect(line: ReceiptLineRow, event: AutoCompleteSelectEvent): void {

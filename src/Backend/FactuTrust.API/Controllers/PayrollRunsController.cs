@@ -1,5 +1,6 @@
 using FactuTrust.API.Authorization;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.Payroll.BankTransfer;
 using FactuTrust.Application.Features.Payroll.Commands;
 using FactuTrust.Application.Features.Payroll.Queries;
 using MediatR;
@@ -115,5 +116,56 @@ public class PayrollRunsController : ControllerBase
             return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
         }
         return Ok(ApiResponse<object>.Ok(null!, "Cycle clôturé."));
+    }
+
+    /// <summary>Prévisualisation du fichier de virement bancaire (cycle Validé/Clôturé).</summary>
+    [HttpGet("{id:guid}/bank-transfer/preview")]
+    [Authorize(Policy = PermissionPolicies.PayrollExport)]
+    [ProducesResponseType(typeof(ApiResponse<PayrollBankTransferPreviewDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> PreviewBankTransfer(
+        Guid id,
+        [FromQuery] Guid? bankAccountId,
+        [FromQuery] string? label,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new GeneratePayrollBankTransferQuery(id, bankAccountId, label),
+            cancellationToken);
+        if (result.IsFailure)
+        {
+            if (result.Error.Code.Contains("NotFound"))
+                return NotFound(ApiResponse<PayrollBankTransferPreviewDto>.Fail(result.Error.Description));
+            return BadRequest(ApiResponse<PayrollBankTransferPreviewDto>.Fail(result.Error.Description));
+        }
+        return Ok(ApiResponse<PayrollBankTransferPreviewDto>.Ok(result.Value));
+    }
+
+    /// <summary>Télécharge le fichier CSV de virement bancaire (cycle Validé/Clôturé).</summary>
+    [HttpGet("{id:guid}/bank-transfer/export")]
+    [Authorize(Policy = PermissionPolicies.PayrollExport)]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ExportBankTransfer(
+        Guid id,
+        [FromQuery] string format = "csv",
+        [FromQuery] Guid? bankAccountId = null,
+        [FromQuery] string? label = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(
+            new ExportPayrollBankTransferQuery(id, bankAccountId, label, format),
+            cancellationToken);
+        if (result.IsFailure)
+        {
+            if (result.Error.Code.Contains("NotFound"))
+                return NotFound(ApiResponse<object>.Fail(result.Error.Description));
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+        }
+
+        var file = result.Value;
+        return File(file.Content, file.ContentType, file.FileName);
     }
 }

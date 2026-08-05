@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { TableModule } from 'primeng/table';
@@ -7,10 +7,16 @@ import { TagModule } from 'primeng/tag';
 import { PayrollService, PayrollRunDetail, PayslipDetail } from '@core/services/payroll.service';
 import { ToastService } from '@core/services/toast.service';
 import { AuthService } from '@core/services/auth.service';
-import { canRunPayroll, canValidatePayroll, canManagePayrollEmployees } from '@core/utils/payroll-access';
+import { canRunPayroll, canValidatePayroll, canManagePayrollEmployees, canExportPayroll, canPayPayroll } from '@core/utils/payroll-access';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { PayrollOvertimeGridComponent } from './payroll-overtime-grid.component';
+import { PayrollVariableAllowanceGridComponent } from './payroll-variable-allowance-grid.component';
+import { PayrollRegularizationGridComponent } from './payroll-regularization-grid.component';
+import { PayrollMealVoucherGridComponent } from './payroll-meal-voucher-grid.component';
+import { PayrollBankTransferDialogComponent } from './payroll-bank-transfer-dialog.component';
+import { PayrollRecordPaymentDialogComponent } from './payroll-record-payment-dialog.component';
+import { PayrollPaymentsPanelComponent } from './payroll-payments-panel.component';
 import { PayrollStatGridComponent, PayrollSectionComponent, PayrollAmountPipe, formatPayrollAmount, type PayrollStatItem } from '../shared';
 
 @Component({
@@ -25,6 +31,12 @@ import { PayrollStatGridComponent, PayrollSectionComponent, PayrollAmountPipe, f
     PageHeaderComponent,
     ButtonComponent,
     PayrollOvertimeGridComponent,
+    PayrollVariableAllowanceGridComponent,
+    PayrollRegularizationGridComponent,
+    PayrollMealVoucherGridComponent,
+    PayrollBankTransferDialogComponent,
+    PayrollRecordPaymentDialogComponent,
+    PayrollPaymentsPanelComponent,
     PayrollStatGridComponent,
     PayrollSectionComponent,
     PayrollAmountPipe
@@ -42,7 +54,24 @@ import { PayrollStatGridComponent, PayrollSectionComponent, PayrollAmountPipe, f
           <app-button variant="outline" icon="pi-replay" iconPos="left" (click)="reopen()">Rouvrir</app-button>
           <app-button variant="primary" icon="pi-lock" iconPos="left" (click)="close()">Clôturer</app-button>
         }
+        @if (showBankTransferExport()) {
+          <app-button variant="outline" icon="pi-building-columns" iconPos="left" (click)="openBankTransfer()">Export virement</app-button>
+        }
+        @if (showRecordPayment()) {
+          <app-button variant="primary" icon="pi-wallet" iconPos="left" (click)="recordPaymentVisible.set(true)">Régler la paie</app-button>
+        }
+        @if (showCancelAllPayments()) {
+          <app-button variant="outline" icon="pi-times" iconPos="left" (click)="cancelAllPayments()">Annuler tous les paiements</app-button>
+        }
       </app-page-header>
+
+      @if (run()!.status === 'Validated' || run()!.status === 'Closed') {
+        <div class="treasury-banner mb-4">
+          <span>Trésorerie : <strong>{{ run()!.paymentStatusDisplay ?? 'Non payé' }}</strong></span>
+          <span>Payé : <strong>{{ (run()!.totalPaid ?? 0) | payrollAmount }}</strong></span>
+          <span>Reste : <strong>{{ (run()!.remainingToPay ?? run()!.totalNet) | payrollAmount }}</strong></span>
+        </div>
+      }
 
       <app-payroll-stat-grid [items]="totalsStats()" class="mb-4" />
 
@@ -52,6 +81,26 @@ import { PayrollStatGridComponent, PayrollSectionComponent, PayrollAmountPipe, f
           [month]="run()!.month"
           [readOnly]="!canManageEmployees()"
           [initialLines]="run()!.overtimeLines ?? []" />
+        <app-payroll-variable-allowance-grid
+          [year]="run()!.year"
+          [month]="run()!.month"
+          [readOnly]="!canManageEmployees()"
+          [initialLines]="run()!.variableAllowanceLines ?? []" />
+        <app-payroll-meal-voucher-grid
+          [year]="run()!.year"
+          [month]="run()!.month"
+          [readOnly]="!canManageEmployees()"
+          [initialLines]="run()!.mealVoucherLines ?? []" />
+      }
+
+      <!-- Régularisation annuelle : la génération lit le bulletin du mois, elle n'a donc de
+           sens qu'une fois le cycle calculé. -->
+      @if (run()!.status === 'Calculated') {
+        <app-payroll-regularization-grid
+          [runId]="run()!.id"
+          [year]="run()!.year"
+          [month]="run()!.month"
+          [readOnly]="!canRun()" />
       }
 
       <app-payroll-section title="Bulletins de paie" icon="pi-file">
@@ -62,6 +111,7 @@ import { PayrollStatGridComponent, PayrollSectionComponent, PayrollAmountPipe, f
               <th>Salarié</th>
               <th class="text-right">Brut</th>
               <th class="text-right">Net</th>
+              <th>Statut paiement</th>
               <th></th>
             </tr>
           </ng-template>
@@ -70,6 +120,11 @@ import { PayrollStatGridComponent, PayrollSectionComponent, PayrollAmountPipe, f
               <td>{{ p.employeeName }}</td>
               <td class="text-right">{{ p.grossSalary | payrollAmount }}</td>
               <td class="text-right">{{ p.netSalary | payrollAmount }}</td>
+              <td>
+                @if (p.paymentStatusDisplay) {
+                  <p-tag [value]="p.paymentStatusDisplay" [severity]="paymentTagSeverity(p.paymentStatus)" />
+                }
+              </td>
               <td class="actions">
                 <app-button variant="ghost" size="sm" (click)="showPayslip(p.id)">Détail</app-button>
                 <app-button variant="ghost" size="sm" (click)="downloadPdf(p.id)">PDF</app-button>
@@ -77,11 +132,18 @@ import { PayrollStatGridComponent, PayrollSectionComponent, PayrollAmountPipe, f
             </tr>
           </ng-template>
           <ng-template pTemplate="emptymessage">
-            <tr><td colspan="4">Aucun bulletin — lancez le calcul.</td></tr>
+            <tr><td colspan="5">Aucun bulletin — lancez le calcul.</td></tr>
           </ng-template>
         </p-table>
         </div>
       </app-payroll-section>
+
+      @if (run()!.status === 'Validated' || run()!.status === 'Closed') {
+        <app-payroll-payments-panel
+          [runId]="runId"
+          [canCancel]="canPay()"
+          (refreshed)="reload()" />
+      }
     }
 
     <p-dialog header="Détail du bulletin" [(visible)]="payslipDialogVisible" [modal]="true" [style]="{ width: '640px' }">
@@ -122,8 +184,32 @@ import { PayrollStatGridComponent, PayrollSectionComponent, PayrollAmountPipe, f
         <app-button variant="outline" (click)="payslipDialogVisible = false">Fermer</app-button>
       </ng-template>
     </p-dialog>
+
+    @if (bankTransferVisible()) {
+      <app-payroll-bank-transfer-dialog
+        [runId]="runId"
+        [periodLabel]="run()?.label ?? ''"
+        [visible]="bankTransferVisible()"
+        (closed)="bankTransferVisible.set(false)" />
+    }
+
+    @if (recordPaymentVisible()) {
+      <app-payroll-record-payment-dialog
+        [runId]="runId"
+        [payslips]="run()?.payslips ?? []"
+        [visible]="recordPaymentVisible()"
+        (closed)="recordPaymentVisible.set(false)"
+        (paymentRecorded)="onPaymentRecorded()" />
+    }
   `,
   styles: [`
+    .treasury-banner {
+      display: flex; flex-wrap: wrap; gap: var(--spacing-4);
+      padding: var(--spacing-3) var(--spacing-4);
+      background: var(--color-surface-secondary);
+      border-radius: var(--radius-md);
+      font-size: var(--font-size-sm);
+    }
     .mb-3 { margin-bottom: var(--spacing-4); }
     .mb-4 { margin-bottom: var(--spacing-6); display: block; }
     .mt-3 { margin-top: var(--spacing-4); }
@@ -141,11 +227,33 @@ export class PayrollRunDetailComponent implements OnInit {
   run = signal<PayrollRunDetail | null>(null);
   selectedPayslip = signal<PayslipDetail | null>(null);
   payslipDialogVisible = false;
-  private runId = '';
+  bankTransferVisible = signal(false);
+  recordPaymentVisible = signal(false);
+  runId = '';
 
   canRun = computed(() => canRunPayroll(this.auth));
   canValidate = computed(() => canValidatePayroll(this.auth));
   canManageEmployees = computed(() => canManagePayrollEmployees(this.auth));
+  canExport = computed(() => canExportPayroll(this.auth));
+  canPay = computed(() => canPayPayroll(this.auth));
+
+  showBankTransferExport = computed(() => {
+    const r = this.run();
+    if (!r || !this.canExport()) return false;
+    return r.status === 'Validated' || r.status === 'Closed';
+  });
+
+  showRecordPayment = computed(() => {
+    const r = this.run();
+    if (!r || !this.canPay()) return false;
+    if (r.status !== 'Validated' && r.status !== 'Closed') return false;
+    return (r.remainingToPay ?? r.totalNet) > 0;
+  });
+
+  showCancelAllPayments = computed(() => {
+    const r = this.run();
+    return !!r && this.canPay() && (r.hasPayments ?? false) && r.status === 'Validated';
+  });
 
   totalsStats = computed((): PayrollStatItem[] => {
     const r = this.run();
@@ -154,6 +262,9 @@ export class PayrollRunDetailComponent implements OnInit {
       { label: 'Brut', value: formatPayrollAmount(r.totalGross, false), icon: 'pi-money-bill', variant: 'primary' },
       { label: 'Net', value: formatPayrollAmount(r.totalNet, false), icon: 'pi-wallet', variant: 'success', featured: true },
       { label: 'IRPP', value: formatPayrollAmount(r.totalIrpp, false), icon: 'pi-percentage', variant: 'warning' },
+      ...(r.totalIrppSmigExemption && r.totalIrppSmigExemption > 0
+        ? [{ label: 'Exon. IRPP SMIG', value: formatPayrollAmount(r.totalIrppSmigExemption, false), icon: 'pi-shield', variant: 'success' as const }]
+        : []),
       { label: 'CNSS sal.', value: formatPayrollAmount(r.totalCnssEmployee, false), icon: 'pi-user', variant: 'primary' },
       { label: 'CNSS pat.', value: formatPayrollAmount(r.totalCnssEmployer, false), icon: 'pi-building', variant: 'primary' },
       { label: 'TFP', value: formatPayrollAmount(r.totalTfp, false), icon: 'pi-chart-line', variant: 'warning' },
@@ -171,6 +282,39 @@ export class PayrollRunDetailComponent implements OnInit {
       next: res => this.run.set(res.data ?? null),
       error: () => this.toast.add({ severity: 'error', summary: 'Paie', detail: 'Cycle introuvable.' })
     });
+  }
+
+  openBankTransfer(): void {
+    if (!this.showBankTransferExport()) return;
+    this.bankTransferVisible.set(true);
+  }
+
+  onPaymentRecorded(): void {
+    this.recordPaymentVisible.set(false);
+    this.reload();
+  }
+
+  cancelAllPayments(): void {
+    const reason = window.prompt('Motif d\'annulation de tous les paiements :');
+    if (!reason?.trim()) return;
+    this.payroll.cancelAllRunPayments(this.runId, reason.trim()).subscribe({
+      next: () => {
+        this.toast.add({ severity: 'success', summary: 'Paie', detail: 'Tous les paiements ont été annulés.' });
+        this.reload();
+      },
+      error: err =>
+        this.toast.add({
+          severity: 'error',
+          summary: 'Paie',
+          detail: err?.error?.message ?? 'Annulation impossible.'
+        })
+    });
+  }
+
+  paymentTagSeverity(status?: string): 'success' | 'warning' | 'secondary' {
+    if (status === 'Paid') return 'success';
+    if (status === 'PartiallyPaid') return 'warning';
+    return 'secondary';
   }
 
   calculate(): void {

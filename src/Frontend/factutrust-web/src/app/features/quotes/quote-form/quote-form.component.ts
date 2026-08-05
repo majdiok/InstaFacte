@@ -35,6 +35,10 @@ import { ProductService, ProductListItem } from '@core/services/product.service'
 import { getEffectiveMaxDiscountPercent } from '@shared/utils/product-pricing.utils';
 import { PriceSource } from '@core/services/pricing.service';
 import { DocumentLinePricingService, EMPTY_LINE_PROMOTION, LinePromotionPreview, effectiveLineDiscountPercent, lineTotalWithPromotion, mapResolvedPricePromotion } from '@shared/utils/document-line-pricing.helper';
+import {
+  ProductAutocompleteService,
+  suggestionToListItem
+} from '@shared/services/product-autocomplete.service';
 import { CrmService } from '@features/crm/services/crm.service';
 
 interface LineRow extends LinePromotionPreview {
@@ -675,6 +679,7 @@ export class QuoteFormComponent implements OnInit {
   private clientService = inject(ClientService);
   private auth = inject(AuthService);
   private productService = inject(ProductService);
+  private readonly productAutocomplete = inject(ProductAutocompleteService);
   readonly linePricing = inject(DocumentLinePricingService);
   private crm = inject(CrmService);
   private route = inject(ActivatedRoute);
@@ -736,6 +741,9 @@ export class QuoteFormComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    if (this.productAutocomplete.isV2Enabled) {
+      this.productAutocomplete.prefetch().subscribe();
+    }
     this.clientService.getClients({ pageSize: 500, isActive: true }).subscribe({
       next: (res) => {
         if (res.success) {
@@ -852,15 +860,9 @@ export class QuoteFormComponent implements OnInit {
   }
 
   searchProducts(event: AutoCompleteCompleteEvent): void {
-    this.productService.getProducts({
-      search: event.query,
-      isActive: true,
-      pageSize: 20
-    }).subscribe({
-      next: (res) => {
-        if (res.success) {
-          this.productSuggestions.set(res.data.items);
-        }
+    this.productAutocomplete.search(event.query ?? '').subscribe({
+      next: (items) => {
+        this.productSuggestions.set(items.map(suggestionToListItem));
       }
     });
   }

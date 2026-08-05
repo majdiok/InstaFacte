@@ -21,6 +21,17 @@ test.describe('Manual entry screen', () => {
     await expect(page.getByText(/Écart\s*:/i)).not.toBeVisible();
   });
 
+  test('guided entry shows scenario icons', async ({ page }) => {
+    await page.goto('/accounting/manual-entry');
+    if (page.url().includes('/auth/login')) {
+      test.skip(true, 'Authentication required');
+    }
+    await page.getByText('Saisie guidée').click();
+    await expect(page.locator('.scenario-card')).toHaveCount(8);
+    await expect(page.locator('.scenario-card__icon.pi-shopping-cart')).toBeVisible();
+    await expect(page.locator('.scenario-card__icon.pi')).toHaveCount(8);
+  });
+
   test('autocomplete panel attaches to body when typing account', async ({ page }) => {
     await page.goto('/accounting/manual-entry');
     if (page.url().includes('/auth/login')) {
@@ -92,5 +103,29 @@ test.describe('Manual entry screen', () => {
     await creditInput.blur();
 
     await expect(page.getByText(/Écart/i)).toBeVisible({ timeout: 10000 });
+  });
+
+  test('allows continuous digit entry in debit and credit fields', async ({ page }) => {
+    await page.goto('/accounting/manual-entry');
+    if (page.url().includes('/auth/login')) {
+      test.skip(true, 'Authentication required');
+    }
+
+    const debitInput = page.locator('#debit-0 input').first();
+    const creditInput = page.locator('#credit-1 input').first();
+    await debitInput.waitFor({ state: 'visible', timeout: 15000 });
+
+    await debitInput.click();
+    await debitInput.pressSequentially('4000', { delay: 40 });
+    await debitInput.blur();
+
+    await expect(debitInput).toHaveValue(/4000/);
+
+    await creditInput.click();
+    await creditInput.pressSequentially('4000', { delay: 40 });
+    await creditInput.blur();
+
+    await expect(creditInput).toHaveValue(/4000/);
+    await expect(page.getByText(/Écriture équilibrée/i)).toBeVisible({ timeout: 10000 });
   });
 });

@@ -78,4 +78,19 @@ public interface IAccountingService
     /// Écriture comptable de paie sur validation d'un cycle (640/647, 421, 432, 453).
     /// </summary>
     Task<Result> GeneratePayrollRunEntryAsync(PayrollRun payrollRun, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Écriture de décaissement paie (débit 421 / crédit trésorerie) sur enregistrement d'un paiement.
+    /// </summary>
+    Task<Result> GeneratePayrollPaymentEntryAsync(
+        PayrollPayment payment,
+        PayrollRun payrollRun,
+        BankAccount? bankAccount,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Extourne l'écriture de paiement paie lors de l'annulation d'un paiement.</summary>
+    Task<Result> ReversePayrollPaymentEntryAsync(
+        Guid payrollPaymentId,
+        string reason,
+        CancellationToken cancellationToken = default);
 }

@@ -152,4 +152,46 @@ public sealed class AccountingSettings
     /// Aucune action corrective (jamais de mutation). OFF = endpoint indisponible.
     /// </summary>
     public bool AccountingHealthEnabled { get; set; }
+
+    /// <summary>
+    /// Active le lien trésorerie paie : enregistrement des paiements de salaires, écritures JB/JC
+    /// et lettrage sur le compte 421. OFF = comportement historique (export virement CSV seul).
+    /// </summary>
+    public bool PayrollTreasuryLinkEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Ventile le crédit 421 par salarié (comptes auxiliaires) à la validation de la paie.
+    /// OFF = une seule ligne 421 agrégée (comportement historique).
+    /// </summary>
+    public bool PayrollEmployeeAuxiliaryEnabled { get; set; } = true;
+
+    /// <summary>Compte SCE pour les prêts salariés en cours (retenues mensuelles).</summary>
+    public string PayrollEmployeeLoansAccount { get; set; } = "425.1";
+
+    /// <summary>Compte SCE pour les saisies sur salaire et pensions alimentaires.</summary>
+    public string PayrollGarnishmentsAccount { get; set; } = "427";
+
+    /// <summary>Compte SCE pour les retenues salariales mutuelle / caisse complémentaire.</summary>
+    public string PayrollMutuelleEmployeeAccount { get; set; } = "428.1";
+
+    /// <summary>Compte SCE pour les charges patronales mutuelle / caisse complémentaire.</summary>
+    public string PayrollMutuelleEmployerAccount { get; set; } = "647";
+
+    /// <summary>Compte SCE pour la part employée des tickets restaurant.</summary>
+    public string PayrollMealVoucherEmployeeAccount { get; set; } = "428.2";
+
+    /// <summary>Active les caisses / mutuelles complémentaires dans le module paie.</summary>
+    public bool PayrollSocialFundsEnabled { get; set; }
+
+    /// <summary>Active les tickets restaurant dans le module paie.</summary>
+    public bool PayrollMealVouchersEnabled { get; set; }
+
+    /// <summary>Active les avantages en nature (véhicule, logement…) dans le module paie.</summary>
+    public bool PayrollInKindBenefitsEnabled { get; set; }
+
+    /// <summary>Active les prêts salariés avec échéancier dans le module paie.</summary>
+    public bool PayrollEmployeeLoansEnabled { get; set; }
+
+    /// <summary>Active les saisies sur salaire et pensions alimentaires dans le module paie.</summary>
+    public bool PayrollGarnishmentsEnabled { get; set; }
 }

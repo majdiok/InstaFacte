@@ -1,7 +1,7 @@
 import { Component, OnInit, OnDestroy, inject, signal, computed, effect } from '@angular/core';
 import { CommonModule, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subject, takeUntil, debounceTime, distinctUntilChanged, switchMap, catchError, of } from 'rxjs';
+import { Subject, takeUntil, debounceTime, distinctUntilChanged, switchMap, catchError, of, tap } from 'rxjs';
 
 // PrimeNG
 import { TableModule } from 'primeng/table';
@@ -23,10 +23,15 @@ import { ButtonComponent } from '@shared/components/button/button.component';
 
 // Services & Models
 import { InvoiceWizardService } from '../../services/invoice-wizard.service';
-import { ProductService, ProductListItem } from '@core/services/product.service';
-import { PriceSource } from '@core/services/pricing.service';
+import { ProductListItem } from '@core/services/product.service';
+import { PriceSource, PricingService } from '@core/services/pricing.service';
 import { DocumentLinePricingService, mapResolvedPricePromotion } from '@shared/utils/document-line-pricing.helper';
+import {
+  ProductAutocompleteService,
+  ProductSuggestion
+} from '@shared/services/product-autocomplete.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
+import { environment } from '@environments/environment';
 import {
   InvoiceLine,
   TunisianVatRate,
@@ -1155,7 +1160,8 @@ import {
 })
 export class StepLinesComponent implements OnInit, OnDestroy {
   readonly wizardService = inject(InvoiceWizardService);
-  private readonly productService = inject(ProductService);
+  private readonly productAutocomplete = inject(ProductAutocompleteService);
+  private readonly pricingService = inject(PricingService);
   readonly linePricing = inject(DocumentLinePricingService);
   private readonly errorHandler = inject(ErrorHandlerService);
   private readonly confirmationService = inject(ConfirmationService);
@@ -1200,7 +1206,11 @@ export class StepLinesComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.currency = this.wizardService.metadata().currency;
 
-    // Setup product search with debounce
+    // Prefetch active products so dropdown open is instant
+    if (this.productAutocomplete.isV2Enabled) {
+      this.productAutocomplete.prefetch().pipe(takeUntil(this.destroy$)).subscribe();
+    }
+
     this.setupProductSearch();
   }
 
@@ -1218,38 +1228,41 @@ export class StepLinesComponent implements OnInit, OnDestroy {
       debounceTime(300),
       distinctUntilChanged(),
       switchMap((query: string) => {
-        this.isLoadingProducts.set(true);
+        const startedAt = performance.now();
+        const warmEmpty =
+          !query &&
+          this.productAutocomplete.isV2Enabled &&
+          this.productAutocomplete.hasWarmCache;
 
-        // If query is empty, fetch all active products
-        const searchParams = {
-          search: query || undefined,
-          isActive: true,
-          page: 1,
-          pageSize: 50 // Limit to 50 results for autocomplete
-        };
+        if (!warmEmpty) {
+          this.isLoadingProducts.set(true);
+          if (!this.productAutocomplete.hasWarmCache || query.length >= 3) {
+            this.productSuggestions.set([]);
+          }
+        }
 
-        return this.productService.getProducts(searchParams).pipe(
+        return this.productAutocomplete.search(query).pipe(
+          tap(items => {
+            if (!environment.production) {
+              console.debug(
+                `[step-lines] product search "${query}" → ${items.length} in ${(performance.now() - startedAt).toFixed(0)}ms`
+              );
+            }
+          }),
           catchError((error) => {
             console.error('Error fetching products:', error);
             this.isLoadingProducts.set(false);
-            return of({ success: false, data: { items: [], totalCount: 0 } });
+            return of([] as ProductSuggestion[]);
           })
         );
       }),
       takeUntil(this.destroy$)
     ).subscribe({
-      next: (response) => {
+      next: (items) => {
         this.isLoadingProducts.set(false);
-
-        if (response.success && response.data) {
-          const mappedProducts = response.data.items.map((product: ProductListItem) =>
-            this.mapProductToSuggestion(product)
-          );
-
-          this.productSuggestions.set(mappedProducts);
-        } else {
-          this.productSuggestions.set([]);
-        }
+        this.productSuggestions.set(
+          items.map(item => this.mapSuggestionForWizard(item))
+        );
       },
       error: (error) => {
         console.error('Error in product search:', error);
@@ -1259,7 +1272,7 @@ export class StepLinesComponent implements OnInit, OnDestroy {
     });
   }
 
-  private mapProductToSuggestion(product: ProductListItem) {
+  private mapSuggestionForWizard(product: ProductSuggestion | ProductListItem) {
     return {
       id: product.id,
       code: product.code,
@@ -1267,8 +1280,14 @@ export class StepLinesComponent implements OnInit, OnDestroy {
       unitPrice: product.unitPrice,
       vatRate: this.mapVatRateToEnum(product.vatRate),
       unit: product.unit || 'Unité',
-      isFodecApplicable: product.isFodecApplicable ?? false
+      isFodecApplicable: product.isFodecApplicable ?? false,
+      isDiscountEnabled: product.isDiscountEnabled ?? false,
+      maxDiscountPercent: product.maxDiscountPercent ?? null
     };
+  }
+
+  private mapProductToSuggestion(product: ProductListItem) {
+    return this.mapSuggestionForWizard(product);
   }
 
   private mapVatRateToEnum(vatRate: number): TunisianVatRate {
@@ -1305,8 +1324,6 @@ export class StepLinesComponent implements OnInit, OnDestroy {
     const lines = this.lines();
     if (lines.length > 0) {
       this.startEditLine(lines[lines.length - 1]);
-      // Trigger initial product search
-      this.searchSubject$.next('');
     }
   }
 
@@ -1316,6 +1333,16 @@ export class StepLinesComponent implements OnInit, OnDestroy {
     // If the line has no product yet (typical after AI import), seed the autocomplete
     // with the existing designation so the user lands on relevant matches immediately.
     const seed = !line.productId && line.designation ? line.designation : '';
+
+    // Serve warm cache immediately for empty seed (dropdown open / add line)
+    if (!seed && this.productAutocomplete.hasWarmCache) {
+      this.productSuggestions.set(
+        this.productAutocomplete.getCachedActiveProducts().map(p => this.mapSuggestionForWizard(p))
+      );
+      this.isLoadingProducts.set(false);
+      return;
+    }
+
     this.searchSubject$.next(seed);
   }
 
@@ -1384,7 +1411,16 @@ export class StepLinesComponent implements OnInit, OnDestroy {
 
   searchProducts(event: any): void {
     const query = event.query?.trim() || '';
-    // Emit search query to subject (will be debounced)
+
+    // Instant warm-cache path for empty dropdown open (skip debounce)
+    if (!query && this.productAutocomplete.hasWarmCache) {
+      this.productSuggestions.set(
+        this.productAutocomplete.getCachedActiveProducts().map(p => this.mapSuggestionForWizard(p))
+      );
+      this.isLoadingProducts.set(false);
+      return;
+    }
+
     this.searchSubject$.next(query);
   }
 
@@ -1455,6 +1491,17 @@ export class StepLinesComponent implements OnInit, OnDestroy {
 
     const mappedProduct = this.mapProductToSuggestion(product);
     this.productSuggestions.set([mappedProduct, ...this.productSuggestions()]);
+    this.productAutocomplete.upsertSuggestion({
+      id: product.id,
+      code: product.code,
+      name: product.name,
+      unitPrice: product.unitPrice,
+      vatRate: product.vatRate,
+      unit: product.unit || 'Unité',
+      isFodecApplicable: product.isFodecApplicable ?? false,
+      isDiscountEnabled: product.isDiscountEnabled ?? false,
+      maxDiscountPercent: product.maxDiscountPercent ?? null
+    });
     this.quickCreateProductVisible = false;
     this.toastService.add({
       severity: 'success',
@@ -1481,11 +1528,57 @@ export class StepLinesComponent implements OnInit, OnDestroy {
   }
 
   private reresolveAllLines(): void {
-    for (const line of this.lines()) {
-      if (line.productId && !line.priceOverridden) {
-        this.resolveLinePrice(line.id, line.productId, line.quantity);
-      }
+    const eligible = this.lines().filter(l => l.productId && !l.priceOverridden);
+    if (eligible.length === 0) {
+      return;
     }
+
+    const client = this.wizardService.client();
+    const clientId = client?.id ?? null;
+    const issueDate = this.wizardService.metadata().issueDate;
+    const dateStr = this.linePricing.formatDocumentDate(issueDate);
+
+    this.pricingService
+      .resolveBatch(
+        eligible.map(l => ({ productId: l.productId!, quantity: l.quantity })),
+        clientId,
+        dateStr
+      )
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: res => {
+          if (!res.success || !res.data) {
+            return;
+          }
+          const remaining = [...res.data];
+          for (const line of eligible) {
+            const idx = remaining.findIndex(r => r.productId === line.productId);
+            if (idx < 0) {
+              continue;
+            }
+            const resolved = remaining.splice(idx, 1)[0];
+            const current = this.lines().find(l => l.id === line.id);
+            if (!current || current.priceOverridden) {
+              continue;
+            }
+            this.wizardService.updateLine(line.id, {
+              unitPriceHT: resolved.unitPriceHT,
+              priceSource: resolved.source,
+              ...mapResolvedPricePromotion(resolved)
+            });
+            if (this.editingLineId === line.id) {
+              this.editLine = {
+                ...this.editLine,
+                unitPriceHT: resolved.unitPriceHT,
+                priceSource: resolved.source,
+                priceOverridden: false,
+                ...mapResolvedPricePromotion(resolved)
+              };
+            }
+          }
+        },
+        error: err => this.errorHandler.logError('Batch price resolution failed', err)
+      });
   }
 
   private resolveLinePrice(

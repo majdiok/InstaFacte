@@ -1,4 +1,5 @@
 using FactuTrust.Domain.Common;
+using FactuTrust.Domain.Enums;
 
 namespace FactuTrust.Domain.Entities.Payroll;
 
@@ -28,6 +29,11 @@ public sealed class PayrollYearParameters : AggregateRoot
     public bool EnableExtendedOvertimeRates { get; private set; }
     /// <summary>Matrice à 4 quadrants pour les indemnités (imposable × CNSS).</summary>
     public bool EnableAllowanceQuadrantMatrix { get; private set; }
+    /// <summary>
+    /// Activer la régularisation IRPP/CSS annuelle (décembre et soldes de tout compte).
+    /// Désactivée par défaut : les exercices existants conservent exactement leur calcul.
+    /// </summary>
+    public bool EnableIrppRegularization { get; private set; }
 
     /// <summary>Taux de la Contribution Sociale de Solidarité (CSS), en %. Ex. 0.5.</summary>
     public decimal CssRate { get; private set; }
@@ -67,9 +73,25 @@ public sealed class PayrollYearParameters : AggregateRoot
     /// <summary>SMIG mensuel indicatif (TND), pour contrôle de cohérence. Optionnel.</summary>
     public decimal MonthlySmig { get; private set; }
 
+    /// <summary>Mode d'exonération IRPP SMIG (art. 21). Désactivé par défaut.</summary>
+    public SmigIrppExemptionMode SmigIrppExemptionMode { get; private set; }
+
+    /// <summary>
+    /// Taux d'IRPP applicable à la portion SMIG exonérée (mode SmigPortion).
+    /// Si null, utilise le premier taux non nul du barème IRPP.
+    /// </summary>
+    public decimal? SmigIrppExemptionRateOverride { get; private set; }
+
+    /// <summary>Plafond journalier d'exonération tickets restaurant (TND). Défaut : 3.000.</summary>
+    public decimal MealVoucherDailyExemptionCap { get; private set; }
+
     private readonly List<PayrollIrppBracket> _irppBrackets = new();
     /// <summary>Tranches du barème IRPP progressif, triées par borne inférieure croissante.</summary>
     public IReadOnlyCollection<PayrollIrppBracket> IrppBrackets => _irppBrackets.AsReadOnly();
+
+    private readonly List<PayrollGarnishmentBracket> _garnishmentBrackets = new();
+    /// <summary>Tranches de saisie sur salaire (net mensuel × fraction saisissable).</summary>
+    public IReadOnlyCollection<PayrollGarnishmentBracket> GarnishmentBrackets => _garnishmentBrackets.AsReadOnly();
 
     private PayrollYearParameters() { }
 
@@ -98,7 +120,12 @@ public sealed class PayrollYearParameters : AggregateRoot
         decimal disabledChildAnnualDeduction = 0m,
         decimal parentDeductionRatePercent = 0m,
         decimal parentAnnualDeductionCap = 0m,
-        bool isIndustrialSector = false)
+        bool isIndustrialSector = false,
+        decimal mealVoucherDailyExemptionCap = 3.000m,
+        IEnumerable<PayrollGarnishmentBracket>? garnishmentBrackets = null,
+        bool enableIrppRegularization = false,
+        SmigIrppExemptionMode smigIrppExemptionMode = SmigIrppExemptionMode.None,
+        decimal? smigIrppExemptionRateOverride = null)
     {
         if (fiscalYear is < 2000 or > 2100)
             return Result.Failure<PayrollYearParameters>(Error.Validation("FiscalYear", "L'exercice doit être compris entre 2000 et 2100."));
@@ -112,6 +139,19 @@ public sealed class PayrollYearParameters : AggregateRoot
 
         if (brackets[0].LowerBound != 0m)
             return Result.Failure<PayrollYearParameters>(Error.Validation("IrppBrackets", "La première tranche IRPP doit démarrer à 0."));
+
+        if (mealVoucherDailyExemptionCap < 0)
+            return Result.Failure<PayrollYearParameters>(Error.Validation("MealVoucherDailyExemptionCap", "Le plafond journalier tickets restaurant ne peut pas être négatif."));
+
+        if (smigIrppExemptionMode != SmigIrppExemptionMode.None && monthlySmig <= 0)
+            return Result.Failure<PayrollYearParameters>(Error.Validation("MonthlySmig", "Le SMIG mensuel doit être positif pour activer l'exonération IRPP SMIG."));
+
+        if (smigIrppExemptionRateOverride is < 0m or > 100m)
+            return Result.Failure<PayrollYearParameters>(Error.Validation("SmigIrppExemptionRateOverride", "Le taux d'exonération IRPP SMIG doit être compris entre 0 et 100 %."));
+
+        var garnishment = (garnishmentBrackets ?? Enumerable.Empty<PayrollGarnishmentBracket>())
+            .OrderBy(b => b.LowerBoundMonthlyNet)
+            .ToList();
 
         var rsaEmployeeRate = cnssEmployeeRateRsa ?? cnssEmployeeRate;
         var rsaEmployerRate = cnssEmployerRateRsa ?? cnssEmployerRate;
@@ -138,6 +178,7 @@ public sealed class PayrollYearParameters : AggregateRoot
             EnforceSmigOnContracts = enforceSmigOnContracts,
             EnableExtendedOvertimeRates = enableExtendedOvertimeRates,
             EnableAllowanceQuadrantMatrix = enableAllowanceQuadrantMatrix,
+            EnableIrppRegularization = enableIrppRegularization,
             CssRate = Round(cssRate),
             CssAnnualExemptionThreshold = Round(cssAnnualExemptionThreshold),
             ProfessionalExpensesRate = Round(professionalExpensesRate),
@@ -153,9 +194,17 @@ public sealed class PayrollYearParameters : AggregateRoot
             TfpRateIndustry = Round(tfpRateIndustry),
             TfpRateOther = Round(tfpRateOther),
             FoprolosRate = Round(foprolosRate),
-            MonthlySmig = Round(monthlySmig)
+            MonthlySmig = Round(monthlySmig),
+            SmigIrppExemptionMode = smigIrppExemptionMode,
+            SmigIrppExemptionRateOverride = smigIrppExemptionRateOverride.HasValue
+                ? Round(smigIrppExemptionRateOverride.Value)
+                : null,
+            MealVoucherDailyExemptionCap = Round(mealVoucherDailyExemptionCap)
         };
         entity._irppBrackets.AddRange(brackets);
+        foreach (var gBracket in garnishment)
+            gBracket.AssignParentId(entity.Id);
+        entity._garnishmentBrackets.AddRange(garnishment);
         return Result.Success(entity);
     }
 
@@ -183,7 +232,11 @@ public sealed class PayrollYearParameters : AggregateRoot
         decimal disabledChildAnnualDeduction = 0m,
         decimal parentDeductionRatePercent = 0m,
         decimal parentAnnualDeductionCap = 0m,
-        bool isIndustrialSector = false)
+        bool isIndustrialSector = false,
+        decimal mealVoucherDailyExemptionCap = 3.000m,
+        bool enableIrppRegularization = false,
+        SmigIrppExemptionMode smigIrppExemptionMode = SmigIrppExemptionMode.None,
+        decimal? smigIrppExemptionRateOverride = null)
     {
         var rates = new[]
         {
@@ -204,6 +257,7 @@ public sealed class PayrollYearParameters : AggregateRoot
         EnforceSmigOnContracts = enforceSmigOnContracts;
         EnableExtendedOvertimeRates = enableExtendedOvertimeRates;
         EnableAllowanceQuadrantMatrix = enableAllowanceQuadrantMatrix;
+        EnableIrppRegularization = enableIrppRegularization;
         CssRate = Round(cssRate);
         CssAnnualExemptionThreshold = Round(cssAnnualExemptionThreshold);
         ProfessionalExpensesRate = Round(professionalExpensesRate);
@@ -220,8 +274,38 @@ public sealed class PayrollYearParameters : AggregateRoot
         TfpRateOther = Round(tfpRateOther);
         FoprolosRate = Round(foprolosRate);
         MonthlySmig = Round(monthlySmig);
+        if (mealVoucherDailyExemptionCap < 0)
+            return Result.Failure(Error.Validation("MealVoucherDailyExemptionCap", "Le plafond journalier tickets restaurant ne peut pas être négatif."));
+
+        if (smigIrppExemptionMode != SmigIrppExemptionMode.None && monthlySmig <= 0)
+            return Result.Failure(Error.Validation("MonthlySmig", "Le SMIG mensuel doit être positif pour activer l'exonération IRPP SMIG."));
+
+        if (smigIrppExemptionRateOverride is < 0m or > 100m)
+            return Result.Failure(Error.Validation("SmigIrppExemptionRateOverride", "Le taux d'exonération IRPP SMIG doit être compris entre 0 et 100 %."));
+
+        MealVoucherDailyExemptionCap = Round(mealVoucherDailyExemptionCap);
+        SmigIrppExemptionMode = smigIrppExemptionMode;
+        SmigIrppExemptionRateOverride = smigIrppExemptionRateOverride.HasValue
+            ? Round(smigIrppExemptionRateOverride.Value)
+            : null;
         IncrementVersion();
         return Result.Success();
+    }
+
+    /// <summary>
+    /// Taux d'IRPP applicable à l'exonération SMIG : override paramétré ou premier taux non nul du barème.
+    /// </summary>
+    public decimal ResolveSmigExemptionRate()
+    {
+        if (SmigIrppExemptionRateOverride.HasValue)
+            return SmigIrppExemptionRateOverride.Value;
+
+        var firstNonZero = IrppBrackets
+            .Where(b => b.Rate > 0)
+            .OrderBy(b => b.LowerBound)
+            .FirstOrDefault();
+
+        return firstNonZero?.Rate ?? 15m;
     }
 
     /// <summary>Remplace intégralement le barème IRPP par un nouveau jeu de tranches.</summary>
@@ -245,6 +329,27 @@ public sealed class PayrollYearParameters : AggregateRoot
 
         _irppBrackets.Clear();
         _irppBrackets.AddRange(ordered);
+        IncrementVersion();
+        return Result.Success();
+    }
+
+    /// <summary>Remplace intégralement les tranches de saisie sur salaire.</summary>
+    public Result ReplaceGarnishmentBrackets(IEnumerable<PayrollGarnishmentBracket> brackets)
+    {
+        var ordered = (brackets ?? Enumerable.Empty<PayrollGarnishmentBracket>())
+            .OrderBy(b => b.LowerBoundMonthlyNet)
+            .ToList();
+
+        if (ordered.Select(b => b.LowerBoundMonthlyNet).Distinct().Count() != ordered.Count)
+            return Result.Failure(Error.Validation("GarnishmentBrackets", "Deux tranches de saisie ne peuvent pas avoir le même seuil inférieur."));
+        if (ordered.Any(b => b.SeizableFraction < 0m || b.SeizableFraction > 1m))
+            return Result.Failure(Error.Validation("GarnishmentBrackets", "La fraction saisissable doit être comprise entre 0 et 1."));
+
+        foreach (var bracket in ordered)
+            bracket.AssignParentId(Id);
+
+        _garnishmentBrackets.Clear();
+        _garnishmentBrackets.AddRange(ordered);
         IncrementVersion();
         return Result.Success();
     }
@@ -278,6 +383,43 @@ public sealed class PayrollIrppBracket : Entity
         {
             LowerBound = Math.Round(lowerBound, 3),
             Rate = Math.Round(rate, 3)
+        };
+    }
+
+    internal void AssignParentId(Guid payrollYearParametersId)
+    {
+        if (payrollYearParametersId == Guid.Empty)
+            throw new ArgumentException("L'identifiant des paramètres de paie est obligatoire.", nameof(payrollYearParametersId));
+
+        PayrollYearParametersId = payrollYearParametersId;
+    }
+}
+
+/// <summary>
+/// Tranche de saisie sur salaire : à partir de <see cref="LowerBoundMonthlyNet"/> (inclus),
+/// la fraction <see cref="SeizableFraction"/> du net mensuel dans la tranche est saisissable.
+/// </summary>
+public sealed class PayrollGarnishmentBracket : Entity
+{
+    public Guid PayrollYearParametersId { get; private set; }
+    /// <summary>Borne inférieure de la tranche (net mensuel, TND).</summary>
+    public decimal LowerBoundMonthlyNet { get; private set; }
+    /// <summary>Fraction saisissable (0 à 1). Ex. 0.333 pour un tiers.</summary>
+    public decimal SeizableFraction { get; private set; }
+
+    private PayrollGarnishmentBracket() { }
+
+    public static PayrollGarnishmentBracket Create(decimal lowerBoundMonthlyNet, decimal seizableFraction)
+    {
+        if (lowerBoundMonthlyNet < 0)
+            throw new ArgumentOutOfRangeException(nameof(lowerBoundMonthlyNet));
+        if (seizableFraction is < 0m or > 1m)
+            throw new ArgumentOutOfRangeException(nameof(seizableFraction));
+
+        return new PayrollGarnishmentBracket
+        {
+            LowerBoundMonthlyNet = Math.Round(lowerBoundMonthlyNet, 3),
+            SeizableFraction = Math.Round(seizableFraction, 4)
         };
     }
 

@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { of } from 'rxjs';
 import { EmployeeDetailComponent } from './employee-detail.component';
 import { EmployeeService } from '@core/services/employee.service';
@@ -57,9 +58,16 @@ describe('EmployeeDetailComponent', () => {
         provideRouter([]),
         provideHttpClient(),
         provideHttpClientTesting(),
+        provideNoopAnimations(),
         { provide: EmployeeService, useValue: employeeServiceSpy },
         { provide: PayrollService, useValue: {
-          getParameters: () => of({ success: true, data: { monthlySmig: 528.32 } })
+          getParameters: () => of({ success: true, data: { monthlySmig: 528.32 } }),
+          // Onglets salariés : chacun appelle une méthode de lecture au ngOnInit.
+          listSocialFunds: () => of({ success: true, data: [] }),
+          listSocialFundEnrollments: () => of({ success: true, data: [] }),
+          listInKindBenefits: () => of({ success: true, data: [] }),
+          listEmployeeLoans: () => of({ success: true, data: [] }),
+          listGarnishments: () => of({ success: true, data: [] })
         } },
         { provide: ToastService, useValue: toastSpy },
         { provide: ConfirmationService, useValue: confirmSpy },

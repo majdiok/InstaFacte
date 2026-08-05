@@ -201,6 +201,7 @@ public static class AppModuleExtensions
             Permissions.Payroll.Validate,
             Permissions.Payroll.Declare,
             Permissions.Payroll.Export,
+            Permissions.Payroll.Pay,
             Permissions.Payroll.Settings
         },
         AppModule.Honoraires => new[]

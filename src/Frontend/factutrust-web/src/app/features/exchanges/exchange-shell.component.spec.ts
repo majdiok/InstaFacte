@@ -429,6 +429,51 @@ describe('ExchangeShellComponent messaging', () => {
     // Preuve : les payloads périmés (t-alpha, t-beta) n'ont PAS remplacé activeThread.
     expect(cmp.activeThread()?.id).toBe('t-gamma-payload');
   }));
+
+  it('clears loading and shows timeout error after bootstrap exceeds 30s', fakeAsync(() => {
+    setup({ bootstrapV2: true, current: assignment({ status: 'Active' }) });
+    tick();
+
+    const hung = new Subject<ApiResponse<ExchangeBootstrap>>();
+    exchange.getBootstrap.and.returnValue(hung);
+
+    const cmp = fixture.componentInstance;
+    // Clear shell state so the timeout error UI (error && !activeThread) is visible.
+    cmp['activeThread'].set(null);
+    cmp['loading'].set(false);
+    cmp['contentLoading'].set(false);
+    cmp.error.set(null);
+    cmp['lastBootstrappedThreadId'] = undefined;
+    cmp['bootstrap'](null);
+
+    expect(cmp.loading()).toBe(true);
+
+    tick(30_000);
+    fixture.detectChanges();
+
+    expect(cmp.loading()).toBe(false);
+    expect(cmp.contentLoading()).toBe(false);
+    expect(cmp.error()).toContain('plus de temps que prévu');
+    expect(fixture.nativeElement.querySelector('.state.error')).toBeTruthy();
+  }));
+
+  it('retryBootstrap resets error and re-invokes getBootstrap', fakeAsync(() => {
+    setup({ bootstrapV2: true, current: assignment({ status: 'Active' }) });
+    tick();
+
+    const cmp = fixture.componentInstance;
+    cmp['loading'].set(false);
+    cmp['contentLoading'].set(false);
+    cmp['activeThread'].set(null);
+    cmp.error.set('Le chargement prend plus de temps que prévu. Réessayez.');
+    exchange.getBootstrap.calls.reset();
+
+    cmp.retryBootstrap();
+    tick();
+
+    expect(cmp.error()).toBeNull();
+    expect(exchange.getBootstrap).toHaveBeenCalled();
+  }));
 });
 
 describe('Échanges navigation registry', () => {

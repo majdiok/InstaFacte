@@ -13,16 +13,35 @@ public sealed class PayrollAccountingEntryTests
 
     private static PayrollYearParameters Params() => PayrollParameterDefaults.CreateDefaults(2026).Value;
 
-    private static PayrollRun BuildRun(PayrollComputationInput input)
+    private static PayrollRun BuildRun(PayrollComputationInput input, PayrollYearParameters? parameters = null)
     {
-        var computation = PayrollCalculator.Compute(input, Params());
+        var pars = parameters ?? Params();
+        var computation = PayrollCalculator.Compute(input, pars);
         var run = PayrollRun.Create(2026, 8, 2026).Value;
-        var (empRate, empoyerRate) = PayrollCalculator.ResolveCnssRates(input.Regime, Params());
+        var (empRate, empoyerRate) = PayrollCalculator.ResolveCnssRates(input.Regime, pars);
         var payslip = Payslip.FromComputation(
             run.Id, Guid.NewGuid(), "Test User", "EMP-001", null, 2026, 8, computation,
             empRate, empoyerRate);
         run.SetPayslips([payslip]);
         return run;
+    }
+
+    private static PayrollYearParameters ParamsWithSmigMode(SmigIrppExemptionMode mode)
+    {
+        var p = Params();
+        var result = p.UpdateRates(
+            p.CnssEmployeeRate, p.CnssEmployerRate, p.CssRate, p.CssAnnualExemptionThreshold,
+            p.ProfessionalExpensesRate, p.ProfessionalExpensesAnnualCap,
+            p.HeadOfFamilyAnnualDeduction, p.ChildAnnualDeduction, p.MaxDeductibleChildren,
+            p.TfpRateIndustry, p.TfpRateOther, p.FoprolosRate, p.MonthlySmig,
+            p.CnssEmployeeRateRsa, p.CnssEmployerRateRsa,
+            p.EnforceSmigOnContracts, p.EnableExtendedOvertimeRates, p.EnableAllowanceQuadrantMatrix,
+            p.StudentChildAnnualDeduction, p.DisabledChildAnnualDeduction,
+            p.ParentDeductionRatePercent, p.ParentAnnualDeductionCap, p.IsIndustrialSector,
+            p.MealVoucherDailyExemptionCap, p.EnableIrppRegularization,
+            smigIrppExemptionMode: mode);
+        Assert.True(result.IsSuccess);
+        return p;
     }
 
     private static void AssertCreateSucceeds(IReadOnlyList<JournalLineInput> lines, string label = "Paie 08/2026")
@@ -60,6 +79,64 @@ public sealed class PayrollAccountingEntryTests
         Assert.Equal(0m, run.TotalOtherDeductions);
 
         AssertCreateSucceeds(lines);
+    }
+
+    [Fact]
+    public void BuildLines_WithEmployeeAuxiliaryCredits_CreatesPerEmployee421Lines()
+    {
+        var run = BuildRun(new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            Regime = SocialRegime.Rsna,
+            WorkAccidentRate = 0.4m
+        });
+        var payslip = run.Payslips.First();
+        var credits = new List<PayrollJournalEntryBuilder.EmployeeAuxiliaryCredit>
+        {
+            new(payslip.EmployeeId, payslip.EmployeeName, "4210001", payslip.NetSalary)
+        };
+
+        var linesResult = PayrollJournalEntryBuilder.BuildLines(
+            run.TotalGross, run.TotalNet, run.TotalCnssEmployee, run.TotalCnssEmployer,
+            run.TotalIrpp, run.TotalCss, run.TotalTfp, run.TotalFoprolos,
+            run.TotalWorkAccident, run.TotalOtherDeductions, "Paie 08/2026", credits);
+
+        Assert.True(linesResult.IsSuccess);
+        Assert.Contains(linesResult.Value, l => l.AccountNumber == "4210001" && l.Credit > 0);
+        Assert.DoesNotContain(linesResult.Value, l => l.AccountNumber == "421" && l.ThirdPartyKind == ThirdPartyKind.None);
+    }
+
+    [Fact]
+    public void BuildLines_VariableAllowance_IncreasesSalaryDebit()
+    {
+        var baseRun = BuildRun(new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            Regime = SocialRegime.Rsna,
+            WorkAccidentRate = 0.4m
+        });
+
+        var withVariable = BuildRun(new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            TaxableCnssableAllowances = 150m,
+            AllowanceLines = [new AllowanceLineInput("Prime rendement", 150m, true, true)],
+            Regime = SocialRegime.Rsna,
+            WorkAccidentRate = 0.4m
+        });
+
+        Assert.True(withVariable.TotalGross > baseRun.TotalGross);
+        Assert.True(withVariable.TotalNet > baseRun.TotalNet);
+
+        var linesResult = PayrollJournalEntryBuilder.BuildLines(
+            withVariable.TotalGross, withVariable.TotalNet, withVariable.TotalCnssEmployee,
+            withVariable.TotalCnssEmployer, withVariable.TotalIrpp, withVariable.TotalCss,
+            withVariable.TotalTfp, withVariable.TotalFoprolos, withVariable.TotalWorkAccident,
+            withVariable.TotalOtherDeductions, "Paie 08/2026");
+
+        Assert.True(linesResult.IsSuccess);
+        var salaryLine = Assert.Single(linesResult.Value, l => l.AccountNumber == PayrollJournalEntryBuilder.SalaryAccount);
+        Assert.Equal(withVariable.TotalGross, salaryLine.Debit);
     }
 
     [Fact]
@@ -241,5 +318,37 @@ public sealed class PayrollAccountingEntryTests
 
         Assert.True(linesResult.IsFailure);
         Assert.Contains("deux lignes", linesResult.Error.Description, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BuildLines_SmigExemption_Reduces432AndIncreases421()
+    {
+        var input = new PayrollComputationInput { BaseSalary = 528.320m, Regime = SocialRegime.Rsna };
+        var baseRun = BuildRun(input);
+        var exemptRun = BuildRun(input, ParamsWithSmigMode(SmigIrppExemptionMode.SmigPortion));
+
+        Assert.True(exemptRun.TotalIrppSmigExemption > 0m);
+        Assert.True(exemptRun.TotalIrpp < baseRun.TotalIrpp);
+        Assert.True(exemptRun.TotalNet > baseRun.TotalNet);
+        Assert.Equal(baseRun.TotalIrpp - exemptRun.TotalIrpp, exemptRun.TotalIrppSmigExemption);
+        Assert.Equal(exemptRun.TotalNet - baseRun.TotalNet, exemptRun.TotalIrppSmigExemption);
+
+        var baseLines = PayrollJournalEntryBuilder.BuildLines(
+            baseRun.TotalGross, baseRun.TotalNet, baseRun.TotalCnssEmployee, baseRun.TotalCnssEmployer,
+            baseRun.TotalIrpp, baseRun.TotalCss, baseRun.TotalTfp, baseRun.TotalFoprolos,
+            baseRun.TotalWorkAccident, baseRun.TotalOtherDeductions, "Paie 08/2026").Value;
+        var exemptLines = PayrollJournalEntryBuilder.BuildLines(
+            exemptRun.TotalGross, exemptRun.TotalNet, exemptRun.TotalCnssEmployee, exemptRun.TotalCnssEmployer,
+            exemptRun.TotalIrpp, exemptRun.TotalCss, exemptRun.TotalTfp, exemptRun.TotalFoprolos,
+            exemptRun.TotalWorkAccident, exemptRun.TotalOtherDeductions, "Paie 08/2026").Value;
+
+        var base432 = baseLines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.StateWithholdingAccount).Credit;
+        var exempt432 = exemptLines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.StateWithholdingAccount).Credit;
+        var base421 = baseLines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.PersonnelPayableAccount).Credit;
+        var exempt421 = exemptLines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.PersonnelPayableAccount).Credit;
+
+        Assert.Equal(base432 - exempt432, exemptRun.TotalIrppSmigExemption);
+        Assert.Equal(exempt421 - base421, exemptRun.TotalIrppSmigExemption);
+        AssertCreateSucceeds(exemptLines);
     }
 }

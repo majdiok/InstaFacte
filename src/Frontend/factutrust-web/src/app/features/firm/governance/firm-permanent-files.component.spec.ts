@@ -3,6 +3,8 @@ import { RouterTestingModule } from '@angular/router/testing';
 import { ActivatedRoute } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { FirmPermanentFilesComponent } from './firm-permanent-files.component';
 import { FirmGovernanceService, PermanentFile } from '@core/services/firm-governance.service';
 import { FirmAssignmentService } from '@core/services/firm-assignment.service';
@@ -103,7 +105,9 @@ describe('FirmPermanentFilesComponent', () => {
           useValue: { initializePermanentFile: jasmine.createSpy('initializePermanentFile') }
         },
         { provide: ToastService, useValue: { add: jasmine.createSpy('add') } },
-        { provide: ConfirmationService, useValue: { confirm: jasmine.createSpy('confirm') } }
+        { provide: ConfirmationService, useValue: { confirm: jasmine.createSpy('confirm') } },
+        provideHttpClient(),
+        provideHttpClientTesting()
       ]
     }).compileComponents();
 
@@ -153,7 +157,9 @@ describe('FirmPermanentFilesComponent', () => {
         { provide: FirmAssignmentService, useValue: { getActiveClients: () => of({ success: true, data: [] }) } },
         { provide: FirmGovernanceActionsService, useValue: { initializePermanentFile: jasmine.createSpy('initializePermanentFile') } },
         { provide: ToastService, useValue: { add: jasmine.createSpy('add') } },
-        { provide: ConfirmationService, useValue: { confirm: jasmine.createSpy('confirm') } }
+        { provide: ConfirmationService, useValue: { confirm: jasmine.createSpy('confirm') } },
+        provideHttpClient(),
+        provideHttpClientTesting()
       ]
     }).compileComponents();
     const f = TestBed.createComponent(FirmPermanentFilesComponent);

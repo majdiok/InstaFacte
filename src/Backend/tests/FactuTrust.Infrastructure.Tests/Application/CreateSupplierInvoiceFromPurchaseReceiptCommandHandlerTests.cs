@@ -247,6 +247,81 @@ public sealed class CreateSupplierInvoiceFromPurchaseReceiptCommandHandlerTests
   }
 
   [Fact]
+  public async Task Handle_StandaloneReceipt_CreatesInvoiceWithoutPurchaseOrder()
+  {
+      var (receipt, receiptRepo, poRepo) = BuildStandaloneReceiptScenario();
+
+      var numberService = new Mock<ISupplierInvoiceNumberService>();
+      numberService
+          .Setup(s => s.ReserveNextAsync(It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+          .ReturnsAsync("FS-2026-000100");
+
+      var supplierInvoiceRepo = new Mock<ISupplierInvoiceRepository>();
+      supplierInvoiceRepo
+          .Setup(r => r.AddAsync(It.IsAny<SupplierInvoice>(), It.IsAny<CancellationToken>()))
+          .ReturnsAsync((SupplierInvoice invoice, CancellationToken _) => invoice);
+
+      var handler = BuildHandler(receiptRepo, poRepo, supplierInvoiceRepo, numberService);
+
+      var result = await handler.Handle(
+          new CreateSupplierInvoiceFromPurchaseReceiptCommand(
+              receipt.Id,
+              "",
+              new DateTime(2026, 4, 5),
+              UseSuggestedNumber: true),
+          CancellationToken.None);
+
+      Assert.True(result.IsSuccess);
+      Assert.Equal("FS-2026-000100", result.Value.InvoiceNumber);
+      supplierInvoiceRepo.Verify(
+          r => r.AddAsync(
+              It.Is<SupplierInvoice>(i =>
+                  !i.PurchaseOrderId.HasValue &&
+                  i.SourcePurchaseReceiptId == receipt.Id),
+              It.IsAny<CancellationToken>()),
+          Times.Once);
+      poRepo.Verify(
+          r => r.UpdateAsync(It.IsAny<PurchaseOrder>(), It.IsAny<CancellationToken>()),
+          Times.Never);
+      receiptRepo.Verify(
+          r => r.UpdateAsync(receipt, It.IsAny<CancellationToken>()),
+          Times.Once);
+  }
+
+  [Fact]
+  public async Task Handle_StandaloneReceipt_DoesNotTouchPurchaseOrderRepository()
+  {
+      var (receipt, receiptRepo, poRepo) = BuildStandaloneReceiptScenario();
+
+      var numberService = new Mock<ISupplierInvoiceNumberService>();
+      numberService
+          .Setup(s => s.ReserveNextAsync(It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+          .ReturnsAsync("FS-2026-000101");
+
+      var supplierInvoiceRepo = new Mock<ISupplierInvoiceRepository>();
+      supplierInvoiceRepo
+          .Setup(r => r.AddAsync(It.IsAny<SupplierInvoice>(), It.IsAny<CancellationToken>()))
+          .ReturnsAsync((SupplierInvoice invoice, CancellationToken _) => invoice);
+
+      var handler = BuildHandler(receiptRepo, poRepo, supplierInvoiceRepo, numberService);
+
+      await handler.Handle(
+          new CreateSupplierInvoiceFromPurchaseReceiptCommand(
+              receipt.Id,
+              "",
+              new DateTime(2026, 4, 5),
+              UseSuggestedNumber: true),
+          CancellationToken.None);
+
+      poRepo.Verify(
+          r => r.GetByIdWithLinesAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+          Times.Never);
+      poRepo.Verify(
+          r => r.UpdateAsync(It.IsAny<PurchaseOrder>(), It.IsAny<CancellationToken>()),
+          Times.Never);
+  }
+
+  [Fact]
   public async Task Handle_NoInvoiceableLine_DoesNotReserveNumber()
   {
       // Le numéro est une ressource consommée définitivement : aucune réservation ne doit
@@ -342,6 +417,38 @@ public sealed class CreateSupplierInvoiceFromPurchaseReceiptCommandHandlerTests
             .Returns(Task.CompletedTask);
 
         return (receipt, po, receiptRepo, poRepo);
+    }
+
+    private static (PurchaseReceipt receipt, Mock<IPurchaseReceiptRepository> receiptRepo, Mock<IPurchaseOrderRepository> poRepo)
+        BuildStandaloneReceiptScenario()
+    {
+        var supplier = BuildSupplier();
+        var warehouse = Warehouse.Create("WH1", "Principal").Value;
+        var category = ProductCategory.Create("C", "Cat").Value;
+        var price = Money.Create(100m);
+        var product = Product.Create(
+            "ART-STANDALONE", "Tv Samsung", ProductType.Product, price, VatRate.Standard,
+            category.Id, purchasePrice: price).Value;
+
+        var receipt = PurchaseReceipt.Create(
+            PurchaseReceiptNumber.Create("BR", 2026, 9),
+            supplier,
+            warehouse,
+            new DateTime(2026, 4, 2)).Value;
+        Assert.True(receipt.AddLine(product, 2m, price).IsSuccess);
+        Assert.True(receipt.MarkValidated().IsSuccess);
+
+        var receiptRepo = new Mock<IPurchaseReceiptRepository>();
+        receiptRepo
+            .Setup(r => r.GetByIdWithLinesAsync(receipt.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(receipt);
+        receiptRepo
+            .Setup(r => r.UpdateAsync(receipt, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var poRepo = new Mock<IPurchaseOrderRepository>();
+
+        return (receipt, receiptRepo, poRepo);
     }
 
     private static Supplier BuildSupplier()

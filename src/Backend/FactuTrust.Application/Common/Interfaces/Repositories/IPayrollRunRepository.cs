@@ -23,6 +23,17 @@ public interface IPayrollRunRepository
     /// <summary>Runs whose period falls within a civil quarter (used for the DTS declaration).</summary>
     Task<IReadOnlyList<PayrollRun>> ListByQuarterWithPayslipsAsync(int year, int quarter, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Bulletins de l'exercice issus des cycles <b>Validés ou Clôturés</b> uniquement, pour le
+    /// cumul annuel de la régularisation IRPP. Se limiter aux cycles arrêtés garantit que le
+    /// cumul est stable d'un calcul à l'autre : un cycle encore modifiable ne doit pas faire
+    /// varier une régularisation déjà proposée.
+    /// </summary>
+    Task<IReadOnlyList<Payslip>> ListSettledPayslipsForYearAsync(
+        int year,
+        int untilMonthExclusive,
+        CancellationToken cancellationToken = default);
+
     Task<bool> ExistsForPeriodAsync(int year, int month, CancellationToken cancellationToken = default);
 
     /// <summary>True if a run for the period is validated or closed (locks monthly variable edits).</summary>

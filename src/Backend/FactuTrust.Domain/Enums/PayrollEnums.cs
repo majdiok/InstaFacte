@@ -79,6 +79,44 @@ public enum PayrollRunStatus
     Closed = 3
 }
 
+/// <summary>Statut de paiement d'un bulletin de paie.</summary>
+public enum PayslipPaymentStatus
+{
+    Unpaid = 0,
+    PartiallyPaid = 1,
+    Paid = 2
+}
+
+/// <summary>Statut de paiement global d'un cycle de paie.</summary>
+public enum PayrollRunPaymentStatus
+{
+    NotPaid = 0,
+    PartiallyPaid = 1,
+    FullyPaid = 2
+}
+
+public static class PayslipPaymentStatusExtensions
+{
+    public static string ToDisplayString(this PayslipPaymentStatus status) => status switch
+    {
+        PayslipPaymentStatus.Unpaid => "Non payé",
+        PayslipPaymentStatus.PartiallyPaid => "Partiellement payé",
+        PayslipPaymentStatus.Paid => "Payé",
+        _ => throw new ArgumentOutOfRangeException(nameof(status))
+    };
+}
+
+public static class PayrollRunPaymentStatusExtensions
+{
+    public static string ToDisplayString(this PayrollRunPaymentStatus status) => status switch
+    {
+        PayrollRunPaymentStatus.NotPaid => "Non payé",
+        PayrollRunPaymentStatus.PartiallyPaid => "Partiellement payé",
+        PayrollRunPaymentStatus.FullyPaid => "Entièrement payé",
+        _ => throw new ArgumentOutOfRangeException(nameof(status))
+    };
+}
+
 public static class PayrollRunStatusExtensions
 {
     public static string ToDisplayString(this PayrollRunStatus status) => status switch
@@ -189,4 +227,162 @@ public static class LeaveTypeExtensions
     /// <summary>Vrai si ce type de congé/absence réduit le brut du mois.</summary>
     public static bool ReducesGross(this LeaveType type) =>
         type is LeaveType.Unpaid or LeaveType.Unjustified;
+}
+
+/// <summary>
+/// Nature d'une retenue sur salaire (pour ventilation comptable et affichage bulletin).
+/// </summary>
+/// <summary>
+/// Mode d'exonération IRPP SMIG (article 21 du code de l'IRPP, LF 2019).
+/// </summary>
+public enum SmigIrppExemptionMode
+{
+    /// <summary>Aucune exonération — comportement historique.</summary>
+    None = 0,
+    /// <summary>Portion du salaire imposable plafonnée au SMIG exonérée au taux applicable.</summary>
+    SmigPortion = 1,
+    /// <summary>IRPP nul si le salaire de base mensuel ne dépasse pas le SMIG.</summary>
+    FullIfBelow = 2
+}
+
+public static class SmigIrppExemptionModeExtensions
+{
+    public static string ToDisplayString(this SmigIrppExemptionMode mode) => mode switch
+    {
+        SmigIrppExemptionMode.None => "Désactivée",
+        SmigIrppExemptionMode.SmigPortion => "Portion SMIG exonérée (art. 21)",
+        SmigIrppExemptionMode.FullIfBelow => "Exonération totale si salaire ≤ SMIG",
+        _ => throw new ArgumentOutOfRangeException(nameof(mode))
+    };
+}
+
+/// <summary>
+/// Motif déclenchant une régularisation IRPP/CSS annuelle.
+/// </summary>
+public enum IrppRegularizationReason
+{
+    /// <summary>Régularisation de fin d'exercice, portée sur le cycle de décembre.</summary>
+    YearEnd = 0,
+    /// <summary>Solde de tout compte : le contrat s'achève dans le mois du cycle.</summary>
+    FinalSettlement = 1,
+    /// <summary>Saisie manuelle par le gestionnaire de paie.</summary>
+    Manual = 2
+}
+
+public static class IrppRegularizationReasonExtensions
+{
+    public static string ToDisplayString(this IrppRegularizationReason reason) => reason switch
+    {
+        IrppRegularizationReason.YearEnd => "Régularisation annuelle (décembre)",
+        IrppRegularizationReason.FinalSettlement => "Solde de tout compte",
+        IrppRegularizationReason.Manual => "Saisie manuelle",
+        _ => throw new ArgumentOutOfRangeException(nameof(reason))
+    };
+}
+
+public enum DeductionKind
+{
+    Advance = 0,
+    Loan = 1,
+    Garnishment = 2,
+    Alimony = 3,
+    MutuelleEmployee = 4,
+    MealVoucherEmployeeShare = 5,
+    InKindBenefitOffset = 6,
+    Other = 99
+}
+
+public static class DeductionKindExtensions
+{
+    public static string ToDisplayString(this DeductionKind kind) => kind switch
+    {
+        DeductionKind.Advance => "Avance sur salaire",
+        DeductionKind.Loan => "Remboursement prêt",
+        DeductionKind.Garnishment => "Saisie sur salaire",
+        DeductionKind.Alimony => "Pension alimentaire",
+        DeductionKind.MutuelleEmployee => "Mutuelle / caisse complémentaire",
+        DeductionKind.MealVoucherEmployeeShare => "Tickets restaurant (part employée)",
+        DeductionKind.InKindBenefitOffset => "Compensation avantage en nature",
+        DeductionKind.Other => "Autre retenue",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind))
+    };
+}
+
+/// <summary>Type d'avantage en nature.</summary>
+public enum BenefitInKindType
+{
+    CompanyVehicle = 0,
+    Housing = 1,
+    Other = 99
+}
+
+public static class BenefitInKindTypeExtensions
+{
+    public static string ToDisplayString(this BenefitInKindType type) => type switch
+    {
+        BenefitInKindType.CompanyVehicle => "Véhicule de fonction",
+        BenefitInKindType.Housing => "Logement de fonction",
+        BenefitInKindType.Other => "Autre avantage en nature",
+        _ => throw new ArgumentOutOfRangeException(nameof(type))
+    };
+}
+
+/// <summary>Base de calcul d'une caisse / mutuelle complémentaire.</summary>
+public enum SocialFundBase
+{
+    GrossCnssable = 0,
+    NetTaxable = 1,
+    FixedAmount = 2
+}
+
+/// <summary>Statut d'un prêt salarié.</summary>
+public enum EmployeeLoanStatus
+{
+    Active = 0,
+    FullyRepaid = 1,
+    Cancelled = 2
+}
+
+public static class EmployeeLoanStatusExtensions
+{
+    public static string ToDisplayString(this EmployeeLoanStatus status) => status switch
+    {
+        EmployeeLoanStatus.Active => "En cours",
+        EmployeeLoanStatus.FullyRepaid => "Soldé",
+        EmployeeLoanStatus.Cancelled => "Annulé",
+        _ => throw new ArgumentOutOfRangeException(nameof(status))
+    };
+}
+
+/// <summary>Type de saisie sur salaire.</summary>
+public enum GarnishmentType
+{
+    Garnishment = 0,
+    Alimony = 1
+}
+
+/// <summary>Mode de calcul d'une saisie.</summary>
+public enum GarnishmentAmountKind
+{
+    FixedAmount = 0,
+    PercentOfNet = 1
+}
+
+/// <summary>Statut d'une saisie sur salaire.</summary>
+public enum EmployeeGarnishmentStatus
+{
+    Active = 0,
+    Completed = 1,
+    Cancelled = 2
+}
+
+public static class EmployeeGarnishmentStatusExtensions
+{
+    public static string ToDisplayString(this EmployeeGarnishmentStatus status) => status switch
+    {
+        EmployeeGarnishmentStatus.Active => "Active",
+        EmployeeGarnishmentStatus.Completed => "Terminée",
+        EmployeeGarnishmentStatus.Cancelled => "Annulée",
+        _ => throw new ArgumentOutOfRangeException(nameof(status))
+    };
 }

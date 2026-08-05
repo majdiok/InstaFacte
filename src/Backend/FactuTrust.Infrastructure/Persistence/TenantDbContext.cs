@@ -235,7 +235,20 @@ public partial class TenantDbContext : DbContext
     public DbSet<Domain.Entities.Payroll.LeaveRequest> LeaveRequests => Set<Domain.Entities.Payroll.LeaveRequest>();
     public DbSet<Domain.Entities.Payroll.EmployeeAdvance> EmployeeAdvances => Set<Domain.Entities.Payroll.EmployeeAdvance>();
     public DbSet<Domain.Entities.Payroll.PayrollOvertimeLine> PayrollOvertimeLines => Set<Domain.Entities.Payroll.PayrollOvertimeLine>();
+    public DbSet<Domain.Entities.Payroll.PayrollVariableAllowanceLine> PayrollVariableAllowanceLines => Set<Domain.Entities.Payroll.PayrollVariableAllowanceLine>();
+    public DbSet<Domain.Entities.Payroll.PayrollIrppRegularization> PayrollIrppRegularizations => Set<Domain.Entities.Payroll.PayrollIrppRegularization>();
     public DbSet<Domain.Entities.Payroll.LeaveBalanceAccrual> LeaveBalanceAccruals => Set<Domain.Entities.Payroll.LeaveBalanceAccrual>();
+    public DbSet<Domain.Entities.Payroll.PayrollPayment> PayrollPayments => Set<Domain.Entities.Payroll.PayrollPayment>();
+    public DbSet<Domain.Entities.Payroll.PayrollPaymentLine> PayrollPaymentLines => Set<Domain.Entities.Payroll.PayrollPaymentLine>();
+    public DbSet<Domain.Entities.Payroll.SocialFundScheme> SocialFundSchemes => Set<Domain.Entities.Payroll.SocialFundScheme>();
+    public DbSet<Domain.Entities.Payroll.EmployeeSocialFundEnrollment> EmployeeSocialFundEnrollments => Set<Domain.Entities.Payroll.EmployeeSocialFundEnrollment>();
+    public DbSet<Domain.Entities.Payroll.PayrollMealVoucherLine> PayrollMealVoucherLines => Set<Domain.Entities.Payroll.PayrollMealVoucherLine>();
+    public DbSet<Domain.Entities.Payroll.EmployeeInKindBenefit> EmployeeInKindBenefits => Set<Domain.Entities.Payroll.EmployeeInKindBenefit>();
+    public DbSet<Domain.Entities.Payroll.EmployeeLoan> EmployeeLoans => Set<Domain.Entities.Payroll.EmployeeLoan>();
+    public DbSet<Domain.Entities.Payroll.EmployeeLoanInstallment> EmployeeLoanInstallments => Set<Domain.Entities.Payroll.EmployeeLoanInstallment>();
+    public DbSet<Domain.Entities.Payroll.EmployeeGarnishment> EmployeeGarnishments => Set<Domain.Entities.Payroll.EmployeeGarnishment>();
+    public DbSet<Domain.Entities.Payroll.EmployeeGarnishmentInstallment> EmployeeGarnishmentInstallments => Set<Domain.Entities.Payroll.EmployeeGarnishmentInstallment>();
+    public DbSet<Domain.Entities.Payroll.PayrollGarnishmentBracket> PayrollGarnishmentBrackets => Set<Domain.Entities.Payroll.PayrollGarnishmentBracket>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -2985,6 +2998,7 @@ public partial class TenantDbContext : DbContext
             entity.HasOne(si => si.PurchaseOrder)
                 .WithMany()
                 .HasForeignKey(si => si.PurchaseOrderId)
+                .IsRequired(false)
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(si => si.SourcePurchaseReceipt)

@@ -134,6 +134,7 @@ public static class PayrollMappings
             TotalCnssEmployee = r.TotalCnssEmployee,
             TotalIrpp = r.TotalIrpp,
             TotalCss = r.TotalCss,
+            TotalIrppSmigExemption = r.TotalIrppSmigExemption,
             TotalNet = r.TotalNet,
             TotalCnssEmployer = r.TotalCnssEmployer,
             TotalTfp = r.TotalTfp,
@@ -144,6 +145,11 @@ public static class PayrollMappings
             ValidatedAt = r.ValidatedAt,
             ValidatedBy = r.ValidatedBy,
             ClosedAt = r.ClosedAt,
+            TotalPaid = r.TotalPaid,
+            RemainingToPay = r.RemainingToPay,
+            PaymentStatus = r.PaymentStatus.ToString(),
+            PaymentStatusDisplay = r.PaymentStatus.ToDisplayString(),
+            HasPayments = r.HasPayments,
             Payslips = r.Payslips
                 .OrderBy(p => p.EmployeeName)
                 .Select(ToPayslipListDto)
@@ -163,7 +169,13 @@ public static class PayrollMappings
             CnssEmployee = p.CnssEmployee,
             Irpp = p.Irpp,
             Css = p.Css,
-            NetSalary = p.NetSalary
+            IrppSmigExemption = p.IrppSmigExemption,
+            NetSalary = p.NetSalary,
+            PaidAmount = p.PaidAmount,
+            RemainingToPay = p.RemainingToPay,
+            PaymentStatus = p.PaymentStatus.ToString(),
+            PaymentStatusDisplay = p.PaymentStatus.ToDisplayString(),
+            PaidAt = p.PaidAt
         };
     }
 
@@ -188,6 +200,8 @@ public static class PayrollMappings
             MonthlyNetTaxable = p.MonthlyNetTaxable,
             AnnualNetTaxable = p.AnnualNetTaxable,
             Irpp = p.Irpp,
+            IrppBeforeSmigExemption = p.IrppBeforeSmigExemption,
+            IrppSmigExemption = p.IrppSmigExemption,
             Css = p.Css,
             OtherDeductions = p.OtherDeductions,
             NonTaxableAllowances = p.NonTaxableAllowances,
@@ -196,6 +210,11 @@ public static class PayrollMappings
             WorkAccidentContribution = p.WorkAccidentContribution,
             Tfp = p.Tfp,
             Foprolos = p.Foprolos,
+            PaidAmount = p.PaidAmount,
+            RemainingToPay = p.RemainingToPay,
+            PaymentStatus = p.PaymentStatus.ToString(),
+            PaymentStatusDisplay = p.PaymentStatus.ToDisplayString(),
+            PaidAt = p.PaidAt,
             Lines = p.Lines
                 .OrderBy(l => l.Order)
                 .Select(l => new PayslipLineDto
@@ -240,6 +259,9 @@ public static class PayrollMappings
             TfpRateOther = p.TfpRateOther,
             FoprolosRate = p.FoprolosRate,
             MonthlySmig = p.MonthlySmig,
+            SmigIrppExemptionMode = p.SmigIrppExemptionMode.ToString(),
+            SmigIrppExemptionModeDisplay = p.SmigIrppExemptionMode.ToDisplayString(),
+            SmigIrppExemptionRateOverride = p.SmigIrppExemptionRateOverride,
             IrppBrackets = p.IrppBrackets
                 .OrderBy(b => b.LowerBound)
                 .Select(b => new IrppBracketDto { LowerBound = b.LowerBound, Rate = b.Rate })
@@ -297,4 +319,185 @@ public static class PayrollMappings
             EffectiveAmount = line.EffectiveAmount
         };
     }
+
+    /// <summary>Libellés courts des mois, pour le tableau « Détail du calcul ».</summary>
+    private static readonly string[] MonthLabels =
+    {
+        "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+        "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"
+    };
+
+    public static string ToMonthLabel(int month) =>
+        month is >= 1 and <= 12 ? MonthLabels[month - 1] : month.ToString();
+
+    public static IrppRegularizationDto ToIrppRegularizationDto(
+        PayrollIrppRegularization regularization,
+        string? employeeName = null,
+        string? employeeNumber = null,
+        IReadOnlyList<IrppRegularizationMonthDto>? months = null)
+    {
+        return new IrppRegularizationDto
+        {
+            Id = regularization.Id,
+            EmployeeId = regularization.EmployeeId,
+            EmployeeName = employeeName,
+            EmployeeNumber = employeeNumber,
+            Year = regularization.Year,
+            Month = regularization.Month,
+            Reason = (int)regularization.Reason,
+            ReasonLabel = regularization.Reason.ToDisplayString(),
+            MonthsCounted = regularization.MonthsCounted,
+            CumulNetTaxable = regularization.CumulNetTaxable,
+            CumulIrppWithheld = regularization.CumulIrppWithheld,
+            CumulCssWithheld = regularization.CumulCssWithheld,
+            IrppDue = regularization.IrppDue,
+            CssDue = regularization.CssDue,
+            ComputedIrppDelta = regularization.ComputedIrppDelta,
+            ComputedCssDelta = regularization.ComputedCssDelta,
+            OverrideIrppDelta = regularization.OverrideIrppDelta,
+            OverrideCssDelta = regularization.OverrideCssDelta,
+            IsOverridden = regularization.IsOverridden,
+            EffectiveIrppDelta = regularization.EffectiveIrppDelta,
+            EffectiveCssDelta = regularization.EffectiveCssDelta,
+            EffectiveTotalDelta = regularization.EffectiveTotalDelta,
+            IsAdditionalWithholding = regularization.EffectiveTotalDelta > 0,
+            Notes = regularization.Notes,
+            Months = months ?? Array.Empty<IrppRegularizationMonthDto>()
+        };
+    }
+
+    public static PayrollVariableAllowanceLineDto ToVariableAllowanceDto(PayrollVariableAllowanceLine line, string? employeeName = null)
+    {
+        return new PayrollVariableAllowanceLineDto
+        {
+            Id = line.Id,
+            EmployeeId = line.EmployeeId,
+            EmployeeName = employeeName,
+            Year = line.Year,
+            Month = line.Month,
+            Label = line.Label,
+            Amount = line.Amount,
+            Taxable = line.Taxable,
+            SubjectToCnss = line.SubjectToCnss
+        };
+    }
+
+    public static SocialFundSchemeDto ToSocialFundSchemeDto(SocialFundScheme scheme) => new()
+    {
+        Id = scheme.Id,
+        Code = scheme.Code,
+        Name = scheme.Name,
+        IsActive = scheme.IsActive,
+        EmployeeRatePercent = scheme.EmployeeRatePercent,
+        EmployerRatePercent = scheme.EmployerRatePercent,
+        Base = scheme.Base,
+        FixedEmployeeAmount = scheme.FixedEmployeeAmount,
+        FixedEmployerAmount = scheme.FixedEmployerAmount,
+        MonthlyEmployeeCap = scheme.MonthlyEmployeeCap,
+        EmployeeAccountSce = scheme.EmployeeAccountSce,
+        EmployerAccountSce = scheme.EmployerAccountSce,
+        EffectiveFrom = scheme.EffectiveFrom,
+        EffectiveTo = scheme.EffectiveTo
+    };
+
+    public static EmployeeSocialFundEnrollmentDto ToSocialFundEnrollmentDto(
+        EmployeeSocialFundEnrollment enrollment,
+        string? employeeName = null,
+        string? schemeName = null) => new()
+    {
+        Id = enrollment.Id,
+        EmployeeId = enrollment.EmployeeId,
+        EmployeeName = employeeName,
+        SocialFundSchemeId = enrollment.SocialFundSchemeId,
+        SchemeName = schemeName,
+        StartDate = enrollment.StartDate,
+        EndDate = enrollment.EndDate,
+        OverrideEmployeeAmount = enrollment.OverrideEmployeeAmount,
+        OverrideEmployerAmount = enrollment.OverrideEmployerAmount
+    };
+
+    public static PayrollMealVoucherLineDto ToMealVoucherDto(PayrollMealVoucherLine line, string? employeeName = null) => new()
+    {
+        Id = line.Id,
+        EmployeeId = line.EmployeeId,
+        EmployeeName = employeeName,
+        Year = line.Year,
+        Month = line.Month,
+        Days = line.Days,
+        FaceValue = line.FaceValue,
+        EmployerContributionRate = line.EmployerContributionRate,
+        TotalValue = line.TotalValue,
+        EmployerContribution = line.EmployerContribution,
+        EmployeeContribution = line.EmployeeContribution
+    };
+
+    public static EmployeeInKindBenefitDto ToInKindBenefitDto(EmployeeInKindBenefit benefit, string? employeeName = null) => new()
+    {
+        Id = benefit.Id,
+        EmployeeId = benefit.EmployeeId,
+        EmployeeName = employeeName,
+        Type = benefit.Type,
+        Label = benefit.Label,
+        MonthlyValue = benefit.MonthlyValue,
+        StartDate = benefit.StartDate,
+        EndDate = benefit.EndDate,
+        Description = benefit.Description
+    };
+
+    public static EmployeeLoanDto ToEmployeeLoanDto(EmployeeLoan loan, string? employeeName = null) => new()
+    {
+        Id = loan.Id,
+        EmployeeId = loan.EmployeeId,
+        EmployeeName = employeeName,
+        Reference = loan.Reference,
+        Principal = loan.Principal,
+        InstallmentCount = loan.InstallmentCount,
+        MonthlyInstallmentAmount = loan.MonthlyInstallmentAmount,
+        StartYear = loan.StartYear,
+        StartMonth = loan.StartMonth,
+        Notes = loan.Notes,
+        Status = loan.Status,
+        RemainingBalance = loan.RemainingBalance,
+        Installments = loan.Installments.Select(i => new EmployeeLoanInstallmentDto
+        {
+            Id = i.Id,
+            SequenceNumber = i.SequenceNumber,
+            Year = i.Year,
+            Month = i.Month,
+            Amount = i.Amount,
+            IsSettled = i.IsSettled,
+            SettledInPayrollRunId = i.SettledInPayrollRunId
+        }).ToList()
+    };
+
+    public static EmployeeGarnishmentDto ToEmployeeGarnishmentDto(EmployeeGarnishment garnishment, string? employeeName = null) => new()
+    {
+        Id = garnishment.Id,
+        EmployeeId = garnishment.EmployeeId,
+        EmployeeName = employeeName,
+        Type = garnishment.Type,
+        Reference = garnishment.Reference,
+        IssuedAt = garnishment.IssuedAt,
+        BeneficiaryName = garnishment.BeneficiaryName,
+        BeneficiaryRib = garnishment.BeneficiaryRib,
+        Priority = garnishment.Priority,
+        Kind = garnishment.Kind,
+        FixedAmount = garnishment.FixedAmount,
+        PercentOfNet = garnishment.PercentOfNet,
+        TotalAmountDue = garnishment.TotalAmountDue,
+        StartDate = garnishment.StartDate,
+        EndDate = garnishment.EndDate,
+        Status = garnishment.Status,
+        TotalApplied = garnishment.TotalApplied,
+        Installments = garnishment.Installments.Select(i => new EmployeeGarnishmentInstallmentDto
+        {
+            Id = i.Id,
+            Year = i.Year,
+            Month = i.Month,
+            PayrollRunId = i.PayrollRunId,
+            RequestedAmount = i.RequestedAmount,
+            AppliedAmount = i.AppliedAmount,
+            CarriedOverAmount = i.CarriedOverAmount
+        }).ToList()
+    };
 }

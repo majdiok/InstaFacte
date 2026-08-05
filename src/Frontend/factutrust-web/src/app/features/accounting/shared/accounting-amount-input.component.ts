@@ -34,13 +34,14 @@ export type AccountingAmountSide = 'debit' | 'credit';
       [inputId]="inputId"
       [ngModel]="value"
       (ngModelChange)="onModelChange($event)"
+      (onFocus)="onFocus()"
       (onBlur)="onBlur()"
       (onKeyDown)="onKeyDown($event)"
       mode="decimal"
       [locale]="locale"
       [min]="0"
-      [minFractionDigits]="fractionDigits"
-      [maxFractionDigits]="fractionDigits"
+      [minFractionDigits]="minFractionDigits"
+      [maxFractionDigits]="maxFractionDigits"
       [showButtons]="false"
       [useGrouping]="useGrouping"
       [disabled]="disabled"
@@ -85,7 +86,7 @@ export class AccountingAmountInputComponent implements ControlValueAccessor {
   private readonly host = inject(ElementRef<HTMLElement>);
 
   readonly locale = ACCOUNTING_AMOUNT_LOCALE;
-  readonly fractionDigits = ACCOUNTING_AMOUNT_FRACTION_DIGITS;
+  readonly maxFractionDigits = ACCOUNTING_AMOUNT_FRACTION_DIGITS;
 
   @Input() inputId = '';
   @Input() ariaLabel = 'Montant';
@@ -95,14 +96,23 @@ export class AccountingAmountInputComponent implements ControlValueAccessor {
   @Input() rowIndex: number | null = null;
   @Input() navigateOnTab = false;
 
+  /** Live value changes while typing (may be unnormalized). */
   @Output() amountChange = new EventEmitter<number | null>();
+  /** Normalized value committed on blur / Enter / Tab navigation. */
+  @Output() amountCommitted = new EventEmitter<number | null>();
   @Output() enterPressed = new EventEmitter<void>();
   @Output() tabFromAmount = new EventEmitter<{ shiftKey: boolean }>();
 
   value: number | null = null;
+  isFocused = false;
 
   private onChange: (value: number | null) => void = () => {};
   private onTouched: () => void = () => {};
+  private committed = true;
+
+  get minFractionDigits(): number {
+    return this.isFocused ? 0 : ACCOUNTING_AMOUNT_FRACTION_DIGITS;
+  }
 
   get useGrouping(): boolean {
     return !this.compact;
@@ -123,6 +133,7 @@ export class AccountingAmountInputComponent implements ControlValueAccessor {
 
   writeValue(value: number | null): void {
     this.value = value === null || value === undefined ? null : normalizeAccountingAmount(value);
+    this.committed = true;
   }
 
   registerOnChange(fn: (value: number | null) => void): void {
@@ -137,29 +148,35 @@ export class AccountingAmountInputComponent implements ControlValueAccessor {
     this.disabled = isDisabled;
   }
 
+  onFocus(): void {
+    this.isFocused = true;
+  }
+
   onModelChange(raw: number | null): void {
-    const normalized = raw === null || raw === undefined
-      ? null
-      : normalizeAccountingAmount(raw);
-    this.value = normalized;
-    this.onChange(normalized);
-    this.amountChange.emit(normalized);
+    if (this.isFocused) {
+      const next = raw === null || raw === undefined || !Number.isFinite(raw) ? null : raw;
+      this.value = next;
+      this.committed = false;
+      this.onChange(next);
+      this.amountChange.emit(next);
+      return;
+    }
+
+    this.applyNormalized(raw, false);
   }
 
   onBlur(): void {
+    this.isFocused = false;
     this.onTouched();
-    const normalized = normalizeAccountingAmount(this.value);
-    if (normalized !== this.value) {
-      this.value = normalized;
-      this.onChange(normalized);
-      this.amountChange.emit(normalized);
-    }
+    this.commitIfNeeded();
   }
 
   onKeyDown(event: KeyboardEvent): void {
     if (event.key === 'Enter') {
       event.preventDefault();
       this.onTouched();
+      this.isFocused = false;
+      this.commitIfNeeded();
       this.enterPressed.emit();
       return;
     }
@@ -168,6 +185,8 @@ export class AccountingAmountInputComponent implements ControlValueAccessor {
       if (this.navigateOnTab) {
         event.preventDefault();
       }
+      this.isFocused = false;
+      this.commitIfNeeded();
       this.tabFromAmount.emit({ shiftKey: event.shiftKey });
     }
   }
@@ -175,5 +194,26 @@ export class AccountingAmountInputComponent implements ControlValueAccessor {
   focus(): void {
     const input = this.host.nativeElement.querySelector('input');
     input?.focus();
+  }
+
+  private commitIfNeeded(): void {
+    if (this.committed) {
+      return;
+    }
+    this.applyNormalized(this.value, true);
+  }
+
+  private applyNormalized(raw: number | null, emitCommitted: boolean): void {
+    const normalized = normalizeAccountingAmount(raw);
+    const changed = normalized !== this.value;
+    this.value = normalized;
+    this.committed = true;
+    if (changed) {
+      this.onChange(normalized);
+      this.amountChange.emit(normalized);
+    }
+    if (emitCommitted) {
+      this.amountCommitted.emit(normalized);
+    }
   }
 }

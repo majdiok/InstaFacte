@@ -110,6 +110,32 @@ public sealed class SupplierInvoiceRepositoryTests : IDisposable
         Assert.Single(persisted.Lines);
     }
 
+    [Fact]
+    public async Task AddAsync_FromStandalonePurchaseReceipt_PersistsWithNullPurchaseOrderId()
+    {
+        var seeded = await SeedStandaloneAsync();
+
+        var receipt = await LoadReceiptAsync(seeded.ReceiptId);
+        var receiptLine = receipt.Lines.First();
+        var invoice = SupplierInvoice.CreateFromPurchaseReceipt(
+            receipt,
+            purchaseOrder: null,
+            "FS-2026-000003",
+            new DateTime(2026, 4, 5),
+            [(receiptLine.Id, receiptLine.ReceivedNotInvoicedQuantity)]).Value;
+
+        await _repository.AddAsync(invoice);
+
+        await using var assertContext = _contextFactory.CreateContext();
+        var persisted = await assertContext.SupplierInvoices
+            .Include(si => si.Lines)
+            .SingleAsync(si => si.InvoiceNumber == "FS-2026-000003");
+
+        Assert.Null(persisted.PurchaseOrderId);
+        Assert.Equal(seeded.ReceiptId, persisted.SourcePurchaseReceiptId);
+        Assert.Single(persisted.Lines);
+    }
+
     private async Task<SeededScenario> SeedAsync()
     {
         var supplier = BuildSupplier();
@@ -150,6 +176,34 @@ public sealed class SupplierInvoiceRepositoryTests : IDisposable
             supplier.Id, warehouse.Id, product.Id, po.Id, receipt.Id);
     }
 
+    private async Task<StandaloneSeededScenario> SeedStandaloneAsync()
+    {
+        var supplier = BuildSupplier();
+        var warehouse = Warehouse.Create("WH1", "Principal").Value;
+        var category = ProductCategory.Create("C", "Cat").Value;
+        var product = Product.Create(
+            "ART-SA", "Standalone", ProductType.Product, Money.Create(100m), VatRate.Standard,
+            category.Id, purchasePrice: Money.Create(100m)).Value;
+
+        var receipt = PurchaseReceipt.Create(
+            PurchaseReceiptNumber.Create("BR", 2026, 9),
+            supplier,
+            warehouse,
+            new DateTime(2026, 4, 2)).Value;
+        Assert.True(receipt.AddLine(product, 2m, Money.Create(100m)).IsSuccess);
+        Assert.True(receipt.MarkValidated().IsSuccess);
+
+        await using var context = _contextFactory.CreateContext();
+        context.ProductCategories.Add(category);
+        context.Products.Add(product);
+        context.Suppliers.Add(supplier);
+        context.Warehouses.Add(warehouse);
+        context.PurchaseReceipts.Add(receipt);
+        await context.SaveChangesAsync();
+
+        return new StandaloneSeededScenario(supplier.Id, warehouse.Id, product.Id, receipt.Id);
+    }
+
     private async Task<PurchaseReceipt> LoadReceiptAsync(Guid id)
     {
         await using var context = _contextFactory.CreateContext();
@@ -184,6 +238,12 @@ public sealed class SupplierInvoiceRepositoryTests : IDisposable
         Guid WarehouseId,
         Guid ProductId,
         Guid PurchaseOrderId,
+        Guid ReceiptId);
+
+    private sealed record StandaloneSeededScenario(
+        Guid SupplierId,
+        Guid WarehouseId,
+        Guid ProductId,
         Guid ReceiptId);
 
     private sealed class TestTenantDbContextFactory : ITenantDbContextFactory

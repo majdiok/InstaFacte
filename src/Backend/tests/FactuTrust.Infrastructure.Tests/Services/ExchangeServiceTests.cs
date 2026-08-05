@@ -286,6 +286,128 @@ public sealed class ExchangeServiceTests
     }
 
     [Fact]
+    public async Task Bootstrap_company_reuses_existing_thread_without_scoped_save()
+    {
+        // Fast-path: thread + assignment live only on the isolated factory DB.
+        // Scoped _db is empty — if EnsureThreadAsync were called it would fail
+        // (no assignment on scoped). Success proves read-only path was used.
+        var isolatedFactoryDbName = Guid.NewGuid().ToString();
+        Guid seededThreadId;
+        await using (var seedCtx = BuildDb(isolatedFactoryDbName))
+        {
+            (_, seededThreadId) = await SeedThreadAsync(seedCtx);
+            await AddMessageAsync(seedCtx, seededThreadId, FirmUserId, FirmId, "Existing thread message");
+        }
+
+        await using var scopedDb = BuildDb();
+        var factory = new InMemoryContextFactory(isolatedFactoryDbName);
+        var svc = BuildService(scopedDb, dbFactory: factory);
+
+        var boot = await svc.BootstrapAsync(
+            CompanyId, TenantKind.Company, CompanyUserId, "Admin", nameof(UserRole.Administrator),
+            null, threadId: null, tab: "conversation");
+
+        Assert.True(boot.IsSuccess);
+        Assert.NotNull(boot.Value.ActiveThread);
+        Assert.Equal(seededThreadId, boot.Value.ActiveThread!.Id);
+        Assert.NotNull(boot.Value.Messages);
+        Assert.Single(boot.Value.Messages!.Items);
+        Assert.Empty(await scopedDb.ExchangeThreads.AsNoTracking().ToListAsync());
+        Assert.Empty(await scopedDb.ExchangeAuditEvents.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task Bootstrap_company_creates_thread_when_missing()
+    {
+        await using var db = BuildDb();
+        var nif = NIF.Create("1234567/A/B/C/000").Value;
+        var address = Address.Create("1 rue Test", "Tunis", "Tunis").Value;
+        var email = Email.Create("co@example.com").Value;
+        var phone = PhoneNumber.Create("20123456").Value;
+
+        var firm = Tenant.CreateAccountingFirm("Cabinet Test", nif, address, email, phone).Value;
+        typeof(Tenant).GetProperty(nameof(Tenant.Id))!.SetValue(firm, FirmId);
+        var company = Tenant.Create("Société A", nif, address, email, phone, TaxRegime.RealRegime).Value;
+        typeof(Tenant).GetProperty(nameof(Tenant.Id))!.SetValue(company, CompanyId);
+        db.Tenants.AddRange(firm, company);
+
+        var assignment = FirmClientAssignment.Request(CompanyId, FirmId, CompanyUserId).Value;
+        typeof(FirmClientAssignment).GetProperty(nameof(FirmClientAssignment.Id))!.SetValue(assignment, AssignmentId);
+        assignment.Accept(FirmUserId);
+        db.FirmClientAssignments.Add(assignment);
+
+        db.Users.Add(new ApplicationUser
+        {
+            Id = FirmUserId,
+            UserName = "firm@test.com",
+            NormalizedUserName = "FIRM@TEST.COM",
+            Email = "firm@test.com",
+            NormalizedEmail = "FIRM@TEST.COM",
+            FirstName = "Firm",
+            LastName = "Manager",
+            TenantId = FirmId,
+            IsActive = true,
+            EmailConfirmed = true
+        });
+        db.Users.Add(new ApplicationUser
+        {
+            Id = CompanyUserId,
+            UserName = "admin@test.com",
+            NormalizedUserName = "ADMIN@TEST.COM",
+            Email = "admin@test.com",
+            NormalizedEmail = "ADMIN@TEST.COM",
+            FirstName = "Admin",
+            LastName = "Company",
+            TenantId = CompanyId,
+            IsActive = true,
+            EmailConfirmed = true
+        });
+        var roleAdmin = new ApplicationRole { Id = Guid.NewGuid(), Name = nameof(UserRole.Administrator), NormalizedName = "ADMINISTRATOR" };
+        var roleFirm = new ApplicationRole { Id = Guid.NewGuid(), Name = nameof(UserRole.FirmManager), NormalizedName = "FIRMMANAGER" };
+        db.Roles.AddRange(roleAdmin, roleFirm);
+        db.Set<IdentityUserRole<Guid>>().AddRange(
+            new IdentityUserRole<Guid> { UserId = CompanyUserId, RoleId = roleAdmin.Id },
+            new IdentityUserRole<Guid> { UserId = FirmUserId, RoleId = roleFirm.Id });
+        await db.SaveChangesAsync();
+
+        Assert.Empty(await db.ExchangeThreads.AsNoTracking().ToListAsync());
+
+        var svc = BuildService(db);
+        var boot = await svc.BootstrapAsync(
+            CompanyId, TenantKind.Company, CompanyUserId, "Admin", nameof(UserRole.Administrator),
+            null, threadId: null, tab: "conversation");
+
+        Assert.True(boot.IsSuccess);
+        Assert.NotNull(boot.Value.ActiveThread);
+        Assert.Single(await db.ExchangeThreads.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task GetMessages_with_after_caps_at_max_page_size()
+    {
+        await using var db = BuildDb();
+        var (_, threadId) = await SeedThreadAsync(db);
+        var svc = BuildService(db);
+
+        var cursor = DateTime.UtcNow.AddHours(-1);
+        for (var i = 0; i < 105; i++)
+        {
+            await AddMessageAsync(db, threadId, FirmUserId, FirmId, $"m{i}",
+                sentAt: cursor.AddMinutes(i + 1));
+        }
+
+        var page = await svc.GetMessagesAsync(
+            threadId, CompanyId, TenantKind.Company, CompanyUserId, nameof(UserRole.Administrator),
+            null, after: cursor, before: null, limit: null);
+
+        Assert.True(page.IsSuccess);
+        Assert.Equal(100, page.Value.Items.Count);
+        Assert.True(page.Value.HasMore);
+        Assert.Equal("m0", page.Value.Items[0].Body);
+        Assert.Equal("m99", page.Value.Items[^1].Body);
+    }
+
+    [Fact]
     public async Task Bootstrap_company_returns_messages_page()
     {
         await using var db = BuildDb();

@@ -45,9 +45,9 @@ public sealed class CancelSupplierInvoiceCommandHandler : IRequestHandler<Cancel
 
         await _repository.UpdateAsync(invoice, cancellationToken);
 
-        if (poImputations.Count > 0)
+        if (poImputations.Count > 0 && invoice.PurchaseOrderId is { } poId)
         {
-            var po = await _purchaseOrderRepository.GetByIdWithLinesAsync(invoice.PurchaseOrderId, cancellationToken);
+            var po = await _purchaseOrderRepository.GetByIdWithLinesAsync(poId, cancellationToken);
             if (po is not null)
             {
                 var reverseResult = po.ReverseInvoicing(poImputations);

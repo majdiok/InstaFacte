@@ -20,6 +20,13 @@ public interface IEmployeeRepository : IRepository<Employee>
         IReadOnlyList<Guid> ids,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Charge les salariés par identifiants (sans contrats) — utilisé pour export virement (RIB).
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, Employee>> GetByIdsAsync(
+        IEnumerable<Guid> ids,
+        CancellationToken cancellationToken = default);
+
     Task<(IReadOnlyList<Employee> Items, int TotalCount)> SearchAsync(
         string? searchTerm,
         bool? isActive,

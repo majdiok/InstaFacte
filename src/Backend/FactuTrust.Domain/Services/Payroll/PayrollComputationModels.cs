@@ -24,6 +24,15 @@ public sealed class PayrollComputationInput
     /// <summary>Autres retenues (avances, oppositions) déduites du net.</summary>
     public decimal OtherDeductions { get; init; }
 
+    /// <summary>
+    /// Régularisation IRPP annuelle (signée) : positive pour un rappel à prélever, négative
+    /// pour une restitution à reverser. Zéro hors mois de régularisation — le calcul mensuel
+    /// est alors strictement identique au comportement historique.
+    /// </summary>
+    public decimal IrppRegularization { get; init; }
+    /// <summary>Régularisation CSS annuelle (signée), même convention que <see cref="IrppRegularization"/>.</summary>
+    public decimal CssRegularization { get; init; }
+
     public SocialRegime Regime { get; init; } = SocialRegime.Rsna;
     /// <summary>Taux d'accident de travail (charge patronale), en %.</summary>
     public decimal WorkAccidentRate { get; init; }
@@ -39,6 +48,32 @@ public sealed class PayrollComputationInput
     public int DisabledChildren { get; init; }
     /// <summary>Parents à charge (0 à 2).</summary>
     public int DependentParents { get; init; }
+
+    /// <summary>
+    /// Détail des primes/indemnités pour l'affichage bulletin (libellés individuels).
+    /// N'affecte pas le calcul si les buckets agrégés sont déjà renseignés.
+    /// </summary>
+    public IReadOnlyList<AllowanceLineInput> AllowanceLines { get; init; } = Array.Empty<AllowanceLineInput>();
+
+    /// <summary>
+    /// Retenues typées déduites du net (avances, prêts, mutuelle, tickets restaurant…).
+    /// Si renseigné, <see cref="OtherDeductions"/> doit refléter la somme de ces lignes.
+    /// </summary>
+    public IReadOnlyCollection<DeductionLineInput> DeductionLines { get; init; } = Array.Empty<DeductionLineInput>();
+
+    /// <summary>
+    /// Retenues post-impôt (saisies, pensions alimentaires) déduites après IRPP/CSS.
+    /// </summary>
+    public IReadOnlyCollection<DeductionLineInput> PostTaxDeductionLines { get; init; } = Array.Empty<DeductionLineInput>();
+
+    /// <summary>
+    /// Avantages en nature imposables et soumis à CNSS (véhicule, logement…).
+    /// Ajoutés au brut imposable/CNSSable mais non versés en cash.
+    /// </summary>
+    public decimal InKindTaxableCnssableBenefits { get; init; }
+
+    /// <summary>Charges patronales complémentaires (ex. part employeur mutuelle).</summary>
+    public IReadOnlyCollection<EmployerChargeLineInput> EmployerChargeLines { get; init; } = Array.Empty<EmployerChargeLineInput>();
 }
 
 /// <summary>
@@ -58,8 +93,22 @@ public sealed class PayrollComputation
     public decimal AnnualNetTaxable { get; init; }
     public decimal Irpp { get; init; }
     public decimal Css { get; init; }
+    /// <summary>IRPP brut avant exonération SMIG (art. 21).</summary>
+    public decimal IrppBeforeSmigExemption { get; init; }
+    /// <summary>Montant de l'exonération IRPP SMIG appliquée.</summary>
+    public decimal IrppSmigExemption { get; init; }
     public decimal OtherDeductions { get; init; }
     public decimal NonTaxableAllowances { get; init; }
+
+    /// <summary>Régularisation IRPP effectivement appliquée au net (signée, après écrêtage).</summary>
+    public decimal IrppRegularization { get; init; }
+    /// <summary>Régularisation CSS effectivement appliquée au net (signée, après écrêtage).</summary>
+    public decimal CssRegularization { get; init; }
+    /// <summary>Part du rappel non prélevée faute de net suffisant (toujours positive ou nulle).</summary>
+    public decimal RegularizationDeferred { get; init; }
+    /// <summary>Vrai si le rappel a dû être écrêté au net disponible.</summary>
+    public bool IsRegularizationCapped { get; init; }
+
     public decimal NetSalary { get; init; }
 
     public decimal CnssEmployer { get; init; }
@@ -84,4 +133,18 @@ public sealed class PayrollComputationLine
     public decimal? Base { get; init; }
     public decimal? Rate { get; init; }
     public decimal Amount { get; init; }
+    public DeductionKind? DeductionKind { get; init; }
 }
+
+/// <summary>Ligne de retenue typée en entrée du calculateur.</summary>
+public sealed record DeductionLineInput(
+    string Label,
+    decimal Amount,
+    DeductionKind Kind,
+    Guid? SourceEntityId = null);
+
+/// <summary>Charge patronale complémentaire (mutuelle employeur…).</summary>
+public sealed record EmployerChargeLineInput(
+    string Label,
+    decimal Amount,
+    string AccountSce);

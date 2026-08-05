@@ -212,4 +212,118 @@ public sealed class LetteringService : ILetteringService
 
         return Result.Success();
     }
+
+    public async Task<Result> AutoLetterPayrollPaymentAsync(
+        Guid payrollPaymentId,
+        Guid payrollRunId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var ctx = _contextFactory.CreateContext();
+
+        var paymentEntry = await ctx.JournalEntries
+            .AsNoTracking()
+            .Include(j => j.Lines)
+            .FirstOrDefaultAsync(
+                j => j.SourceEntityType == AccountingService.SourcePayrollPayment
+                     && j.SourceEntityId == payrollPaymentId,
+                cancellationToken);
+
+        if (paymentEntry is null)
+            return Result.Success();
+
+        var payrollEntry = await ctx.JournalEntries
+            .AsNoTracking()
+            .Include(j => j.Lines)
+            .FirstOrDefaultAsync(
+                j => j.SourceEntityType == AccountingService.SourcePayrollRun
+                     && j.SourceEntityId == payrollRunId,
+                cancellationToken);
+
+        if (payrollEntry is null)
+            return Result.Success();
+
+        var payrollCredits = payrollEntry.Lines
+            .Where(l => l.ThirdPartyKind == Domain.Enums.ThirdPartyKind.Employee
+                        && l.CreditAmount.Amount > 0
+                        && string.IsNullOrEmpty(l.LetteringCode))
+            .ToList();
+
+        var paymentDebits = paymentEntry.Lines
+            .Where(l => l.ThirdPartyKind == Domain.Enums.ThirdPartyKind.Employee
+                        && l.DebitAmount.Amount > 0
+                        && string.IsNullOrEmpty(l.LetteringCode))
+            .ToList();
+
+        foreach (var creditLine in payrollCredits)
+        {
+            var debitLine = paymentDebits.FirstOrDefault(d =>
+                d.AccountNumber == creditLine.AccountNumber
+                && d.ThirdPartyId == creditLine.ThirdPartyId);
+
+            if (debitLine is null)
+                continue;
+
+            var totalDebit = creditLine.DebitAmount.Amount + debitLine.DebitAmount.Amount;
+            var totalCredit = creditLine.CreditAmount.Amount + debitLine.CreditAmount.Amount;
+            var balanced = Math.Round(totalDebit, 3) == Math.Round(totalCredit, 3);
+
+            var lineIds = new List<Guid> { creditLine.Id, debitLine.Id };
+            await ManualLetterAsync(lineIds, allowPartial: !balanced, cancellationToken);
+        }
+
+        // Legacy aggregated 421 line (no employee third party) — partial lettering when enabled.
+        var legacyCredit = payrollEntry.Lines
+            .FirstOrDefault(l => l.AccountNumber.StartsWith("421", StringComparison.Ordinal)
+                                 && l.CreditAmount.Amount > 0
+                                 && l.ThirdPartyKind == Domain.Enums.ThirdPartyKind.None
+                                 && string.IsNullOrEmpty(l.LetteringCode));
+
+        if (legacyCredit is not null)
+        {
+            var employeeDebits = paymentDebits
+                .Where(d => string.IsNullOrEmpty(d.LetteringCode))
+                .ToList();
+            if (employeeDebits.Count > 0)
+            {
+                var lineIds = new List<Guid> { legacyCredit.Id };
+                lineIds.AddRange(employeeDebits.Select(d => d.Id));
+                var totalDebit = legacyCredit.DebitAmount.Amount + employeeDebits.Sum(d => d.DebitAmount.Amount);
+                var totalCredit = legacyCredit.CreditAmount.Amount + employeeDebits.Sum(d => d.CreditAmount.Amount);
+                var balanced = Math.Round(totalDebit, 3) == Math.Round(totalCredit, 3);
+                await ManualLetterAsync(lineIds, allowPartial: !balanced, cancellationToken);
+            }
+        }
+
+        return Result.Success();
+    }
+
+    public async Task<Result> UnletterPayrollPaymentAsync(Guid payrollPaymentId, CancellationToken cancellationToken = default)
+    {
+        await using var ctx = _contextFactory.CreateContext();
+        var paymentEntry = await ctx.JournalEntries
+            .AsNoTracking()
+            .Include(j => j.Lines)
+            .FirstOrDefaultAsync(
+                j => j.SourceEntityType == AccountingService.SourcePayrollPayment
+                     && j.SourceEntityId == payrollPaymentId,
+                cancellationToken);
+
+        if (paymentEntry is null)
+            return Result.Success();
+
+        var codes = paymentEntry.Lines
+            .Select(l => l.LetteringCode)
+            .Where(c => !string.IsNullOrEmpty(c))
+            .Distinct()
+            .ToList();
+
+        foreach (var code in codes)
+        {
+            var result = await UnletterAsync(code!, cancellationToken);
+            if (result.IsFailure)
+                return result;
+        }
+
+        return Result.Success();
+    }
 }

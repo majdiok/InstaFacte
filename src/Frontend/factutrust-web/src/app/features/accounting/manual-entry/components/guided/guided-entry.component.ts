@@ -64,7 +64,7 @@ const PAYMENT_METHODS = [
                 <button type="button" class="scenario-card"
                         [class.scenario-card--selected]="selectedScenario()?.id === sc.id"
                         (click)="selectScenario(sc)">
-                  <span class="scenario-card__icon" [class]="sc.icon"></span>
+                  <i [class]="'scenario-card__icon ' + sc.icon" aria-hidden="true"></i>
                   <strong>{{ sc.label }}</strong>
                   <span class="scenario-card__desc">{{ sc.description }}</span>
                 </button>
@@ -242,7 +242,7 @@ const PAYMENT_METHODS = [
     .scenario-card { display:flex; flex-direction:column; align-items:flex-start; gap:var(--spacing-2); padding:var(--spacing-4); border:2px solid var(--color-border-default); border-radius:var(--radius-lg); background:var(--color-background-elevated); cursor:pointer; text-align:left; transition:border-color 150ms; }
     .scenario-card:hover, .scenario-card--selected { border-color:var(--color-primary-500); }
     .scenario-card__desc { font-size:var(--font-size-xs); color:var(--color-text-secondary); }
-    .scenario-card__icon { font-size:1.5rem; color:var(--color-primary-600); }
+    .scenario-card__icon { font-size:1.75rem; color:var(--color-success-600); line-height:1; flex-shrink:0; }
     .guided-info { padding:var(--spacing-3); background:var(--color-success-50); border-radius:var(--radius-md); font-size:var(--font-size-sm); margin-bottom:var(--spacing-4); }
     .guided-form-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:var(--spacing-4); margin-bottom:var(--spacing-4); }
     .form-field { display:flex; flex-direction:column; gap:var(--spacing-1); }

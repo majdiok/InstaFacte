@@ -1,6 +1,7 @@
 using System.Reflection;
 using FluentValidation;
 using FactuTrust.Application.Features.Accounting.FiscalSchedule;
+using FactuTrust.Application.Features.Payroll.Services;
 using FactuTrust.Application.Features.Search;
 using FactuTrust.Application.Features.Search.Providers;
 using FactuTrust.Application.Features.SupplierInvoices.Services;
@@ -31,6 +32,7 @@ public static class DependencyInjection
         services.AddScoped<DeclarationScheduleSynchronizer>();
 
         services.AddScoped<ISupplierInvoiceNumberService, SupplierInvoiceNumberService>();
+        services.AddScoped<PayrollInputBuilder>();
 
         // FluentValidation
         services.AddValidatorsFromAssembly(assembly);

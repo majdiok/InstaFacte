@@ -50,6 +50,11 @@ export const environment = {
     /** Enables the "Download PDF" preview button inside the invoice wizard review step. Requires backend endpoint. */
     pdfPreview: false,
     /** Single GET /exchanges/bootstrap for Échanges cold load. Set false to fall back to legacy multi-call bootstrap. */
-    exchangeBootstrapV2: true
+    exchangeBootstrapV2: true,
+    /**
+     * Invoice (and document) product autocomplete: prefetch + local cache + lightweight /products/select.
+     * Set false to restore legacy getProducts() per keystroke.
+     */
+    invoiceProductSearchV2: true
   }
 };

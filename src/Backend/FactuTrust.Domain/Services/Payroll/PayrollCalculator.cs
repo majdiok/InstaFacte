@@ -28,6 +28,7 @@ public static class PayrollCalculator
             input.BaseSalary
             + input.TaxableCnssableAllowances
             + input.CnssOnlyAllowances
+            + input.InKindTaxableCnssableBenefits
             + input.OvertimeAmount
             - input.UnpaidAbsenceAmount);
         if (cnssableGross < 0) cnssableGross = 0m;
@@ -36,6 +37,7 @@ public static class PayrollCalculator
             input.BaseSalary
             + input.TaxableCnssableAllowances
             + input.TaxableOnlyAllowances
+            + input.InKindTaxableCnssableBenefits
             + input.OvertimeAmount
             - input.UnpaidAbsenceAmount);
         if (taxableGross < 0) taxableGross = 0m;
@@ -68,7 +70,12 @@ public static class PayrollCalculator
         var annualNetTaxable = R(monthlyNetTaxable * 12m);
 
         var annualIrpp = ComputeProgressiveTax(annualNetTaxable, parameters);
-        var irpp = R(annualIrpp / 12m);
+        var irppBeforeExemption = R(annualIrpp / 12m);
+
+        var smigExemptionResult = SmigIrppExemptionCalculator.ApplyMonthly(
+            irppBeforeExemption, monthlyNetTaxable, input.BaseSalary, parameters);
+        var irpp = smigExemptionResult.IrppFinal;
+        var smigExemption = smigExemptionResult.ExemptionAmount;
 
         // 7. CSS : exonérée si le revenu annuel imposable reste dans la tranche exonérée.
         decimal css = 0m;
@@ -78,15 +85,30 @@ public static class PayrollCalculator
             css = R(annualCss / 12m);
         }
 
-        // 8. Net à payer.
-        var netSalary = R(
+        // 8. Net à payer (retenues pré-impôt, régularisation annuelle, puis retenues post-impôt).
+        var preTaxDeductions = ResolvePreTaxDeductions(input);
+        var postTaxDeductions = R(input.PostTaxDeductionLines.Sum(l => l.Amount));
+
+        var netBeforeRegularization = R(
             cnssableGross
             + input.TaxableOnlyAllowances
             + input.NonTaxableAllowances
             - cnssEmployee
             - irpp
             - css
-            - input.OtherDeductions);
+            - preTaxDeductions);
+        if (netBeforeRegularization < 0) netBeforeRegularization = 0m;
+
+        // Régularisation IRPP/CSS annuelle (décembre ou solde de tout compte) : le rappel est
+        // écrêté au net disponible, la restitution augmente le net et n'est jamais écrêtée.
+        // Hors mois de régularisation les deux montants valent zéro et le net reste identique.
+        var regularization = ApplyRegularizationCap(
+            input.IrppRegularization, input.CssRegularization, netBeforeRegularization);
+
+        var netBeforePostTax = R(netBeforeRegularization - regularization.Irpp - regularization.Css);
+        if (netBeforePostTax < 0) netBeforePostTax = 0m;
+
+        var netSalary = R(netBeforePostTax - postTaxDeductions);
         if (netSalary < 0) netSalary = 0m;
 
         // 9. Charges patronales (hors net à payer).
@@ -102,7 +124,9 @@ public static class PayrollCalculator
             input, parameters, cnssEmployeeRate, cnssEmployerRate, tfpRate,
             cnssableGross, cnssEmployee, baseAfterCnss,
             professionalExpenses, professionalExpensesCapped, familyDeductions,
-            monthlyNetTaxable, irpp, css, cnssEmployer, workAccident, tfp, foprolos);
+            monthlyNetTaxable, irpp, css, smigExemption, regularization.Irpp, regularization.Css,
+            preTaxDeductions, postTaxDeductions,
+            cnssEmployer, workAccident, tfp, foprolos);
 
         return new PayrollComputation
         {
@@ -116,8 +140,14 @@ public static class PayrollCalculator
             AnnualNetTaxable = annualNetTaxable,
             Irpp = irpp,
             Css = css,
-            OtherDeductions = R(input.OtherDeductions),
+            IrppBeforeSmigExemption = irppBeforeExemption,
+            IrppSmigExemption = smigExemption,
+            OtherDeductions = R(preTaxDeductions + postTaxDeductions),
             NonTaxableAllowances = R(input.NonTaxableAllowances),
+            IrppRegularization = regularization.Irpp,
+            CssRegularization = regularization.Css,
+            RegularizationDeferred = regularization.Deferred,
+            IsRegularizationCapped = regularization.IsCapped,
             NetSalary = netSalary,
             CnssEmployer = cnssEmployer,
             WorkAccidentContribution = workAccident,
@@ -199,6 +229,54 @@ public static class PayrollCalculator
         return R(annual / 12m);
     }
 
+    private static decimal ResolvePreTaxDeductions(PayrollComputationInput input)
+    {
+        if (input.DeductionLines.Count > 0)
+            return R(input.DeductionLines.Sum(l => l.Amount));
+        return R(input.OtherDeductions);
+    }
+
+    /// <summary>
+    /// Écrête un rappel de régularisation au net disponible : on ne peut pas prélever plus que
+    /// ce que le salarié perçoit. L'IRPP est servi en priorité, la CSS absorbe le solde, et
+    /// l'excédent est reporté (<see cref="RegularizationOutcome.Deferred"/>).
+    /// Les restitutions (montants négatifs) augmentent le net et ne sont jamais écrêtées ;
+    /// elles élargissent au passage le montant prélevable.
+    /// </summary>
+    private static RegularizationOutcome ApplyRegularizationCap(
+        decimal irppRegularization,
+        decimal cssRegularization,
+        decimal availableNet)
+    {
+        var irpp = R(irppRegularization);
+        var css = R(cssRegularization);
+
+        var restitutions = Math.Min(irpp, 0m) + Math.Min(css, 0m);
+        var irppClaim = Math.Max(irpp, 0m);
+        var cssClaim = Math.Max(css, 0m);
+        var totalClaim = R(irppClaim + cssClaim);
+        var budget = R(availableNet - restitutions);
+
+        if (totalClaim <= budget)
+            return new RegularizationOutcome(irpp, css, 0m, false);
+
+        var appliedIrpp = Math.Min(irppClaim, budget);
+        var appliedCss = R(Math.Min(cssClaim, budget - appliedIrpp));
+
+        return new RegularizationOutcome(
+            R(Math.Min(irpp, 0m) + appliedIrpp),
+            R(Math.Min(css, 0m) + appliedCss),
+            R(totalClaim - appliedIrpp - appliedCss),
+            true);
+    }
+
+    /// <summary>Régularisation effectivement appliquée au net, après écrêtage éventuel.</summary>
+    private readonly record struct RegularizationOutcome(
+        decimal Irpp,
+        decimal Css,
+        decimal Deferred,
+        bool IsCapped);
+
     private static List<PayrollComputationLine> BuildLines(
         PayrollComputationInput input,
         PayrollYearParameters parameters,
@@ -214,6 +292,11 @@ public static class PayrollCalculator
         decimal monthlyNetTaxable,
         decimal irpp,
         decimal css,
+        decimal smigExemption,
+        decimal irppRegularization,
+        decimal cssRegularization,
+        decimal preTaxDeductions,
+        decimal postTaxDeductions,
         decimal cnssEmployer,
         decimal workAccident,
         decimal tfp,
@@ -222,7 +305,7 @@ public static class PayrollCalculator
         var lines = new List<PayrollComputationLine>();
         var order = 0;
 
-        void Add(string label, PayslipLineKind kind, decimal amount, decimal? baseAmount = null, decimal? rate = null)
+        void Add(string label, PayslipLineKind kind, decimal amount, decimal? baseAmount = null, decimal? rate = null, DeductionKind? deductionKind = null)
             => lines.Add(new PayrollComputationLine
             {
                 Order = order++,
@@ -230,21 +313,34 @@ public static class PayrollCalculator
                 Kind = kind,
                 Base = baseAmount,
                 Rate = rate,
-                Amount = R(amount)
+                Amount = R(amount),
+                DeductionKind = deductionKind
             });
 
         // Gains
         Add("Salaire de base", PayslipLineKind.Earning, input.BaseSalary);
-        if (input.TaxableCnssableAllowances > 0)
-            Add("Primes et indemnités imposables", PayslipLineKind.Earning, input.TaxableCnssableAllowances);
-        if (input.TaxableOnlyAllowances > 0)
-            Add("Primes imposables (hors CNSS)", PayslipLineKind.Earning, input.TaxableOnlyAllowances);
-        if (input.CnssOnlyAllowances > 0)
-            Add("Indemnités soumises CNSS (non imposables)", PayslipLineKind.Earning, input.CnssOnlyAllowances);
+        if (input.AllowanceLines.Count > 0)
+        {
+            foreach (var allowance in input.AllowanceLines)
+                Add(allowance.Label, PayslipLineKind.Earning, allowance.Amount);
+        }
+        else
+        {
+            if (input.TaxableCnssableAllowances > 0)
+                Add("Primes et indemnités imposables", PayslipLineKind.Earning, input.TaxableCnssableAllowances);
+            if (input.TaxableOnlyAllowances > 0)
+                Add("Primes imposables (hors CNSS)", PayslipLineKind.Earning, input.TaxableOnlyAllowances);
+            if (input.CnssOnlyAllowances > 0)
+                Add("Indemnités soumises CNSS (non imposables)", PayslipLineKind.Earning, input.CnssOnlyAllowances);
+            if (input.NonTaxableAllowances > 0)
+                Add("Indemnités non imposables", PayslipLineKind.Earning, input.NonTaxableAllowances);
+        }
+
+        if (input.InKindTaxableCnssableBenefits > 0)
+            Add("Avantage en nature (imposable)", PayslipLineKind.Earning, input.InKindTaxableCnssableBenefits);
+
         if (input.OvertimeAmount > 0)
             Add("Heures supplémentaires", PayslipLineKind.Earning, input.OvertimeAmount);
-        if (input.NonTaxableAllowances > 0)
-            Add("Indemnités non imposables", PayslipLineKind.Earning, input.NonTaxableAllowances);
         if (input.UnpaidAbsenceAmount > 0)
             Add("Absences non rémunérées", PayslipLineKind.Deduction, input.UnpaidAbsenceAmount);
 
@@ -261,12 +357,39 @@ public static class PayrollCalculator
         }
         if (familyDeductions > 0)
             Add("Déductions familiales", PayslipLineKind.Info, familyDeductions);
+        if (smigExemption > 0)
+            Add("Exonération IRPP SMIG (art. 21)", PayslipLineKind.Info, smigExemption, monthlyNetTaxable, parameters.ResolveSmigExemptionRate());
         if (irpp > 0)
             Add("Retenue IRPP", PayslipLineKind.Deduction, irpp, monthlyNetTaxable);
         if (css > 0)
             Add("Contribution Sociale de Solidarité (CSS)", PayslipLineKind.Deduction, css, monthlyNetTaxable, parameters.CssRate);
-        if (input.OtherDeductions > 0)
-            Add("Autres retenues (avances, oppositions)", PayslipLineKind.Deduction, input.OtherDeductions);
+
+        // Régularisation annuelle : les montants restent positifs et c'est le sens de la ligne
+        // (retenue ou gain) qui porte le signe — le PDF et l'affichage n'ont ainsi rien à
+        // connaître des montants négatifs. Pas de DeductionKind : l'impôt va à l'État (432),
+        // pas à un tiers, et ne doit donc pas entrer dans la ventilation des retenues.
+        if (irppRegularization > 0)
+            Add("Régularisation IRPP (rappel)", PayslipLineKind.Deduction, irppRegularization);
+        else if (irppRegularization < 0)
+            Add("Régularisation IRPP (restitution)", PayslipLineKind.Earning, -irppRegularization);
+
+        if (cssRegularization > 0)
+            Add("Régularisation CSS (rappel)", PayslipLineKind.Deduction, cssRegularization);
+        else if (cssRegularization < 0)
+            Add("Régularisation CSS (restitution)", PayslipLineKind.Earning, -cssRegularization);
+
+        if (input.DeductionLines.Count > 0)
+        {
+            foreach (var deduction in input.DeductionLines.Where(d => d.Amount > 0))
+                Add(deduction.Label, PayslipLineKind.Deduction, deduction.Amount, deductionKind: deduction.Kind);
+        }
+        else if (preTaxDeductions > 0)
+        {
+            Add("Autres retenues (avances, oppositions)", PayslipLineKind.Deduction, preTaxDeductions, deductionKind: DeductionKind.Other);
+        }
+
+        foreach (var postTax in input.PostTaxDeductionLines.Where(d => d.Amount > 0))
+            Add(postTax.Label, PayslipLineKind.Deduction, postTax.Amount, deductionKind: postTax.Kind);
 
         // Charges patronales
         if (cnssEmployer > 0)
@@ -277,6 +400,9 @@ public static class PayrollCalculator
             Add("TFP", PayslipLineKind.EmployerContribution, tfp, cnssableGross, tfpRate);
         if (foprolos > 0)
             Add("FOPROLOS", PayslipLineKind.EmployerContribution, foprolos, cnssableGross, parameters.FoprolosRate);
+
+        foreach (var employerCharge in input.EmployerChargeLines.Where(c => c.Amount > 0))
+            Add(employerCharge.Label, PayslipLineKind.EmployerContribution, employerCharge.Amount);
 
         return lines;
     }

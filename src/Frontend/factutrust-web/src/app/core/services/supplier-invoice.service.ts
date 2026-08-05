@@ -110,7 +110,7 @@ export interface SupplierInvoiceListItem {
     supplierName: string;
     supplierId: string;
     purchaseOrderNumber: string | null;
-    purchaseOrderId: string;
+    purchaseOrderId: string | null;
     status: SupplierInvoiceStatus;
     statusDisplay: string;
     statusCss: string;
@@ -134,8 +134,10 @@ export interface SupplierInvoiceDetail {
     externalReference: string | null;
     notes: string | null;
     supplier: { id: string; name: string; nif: string | null; email: string; address: string };
-    purchaseOrderId: string;
-    purchaseOrderNumber: string;
+    purchaseOrderId: string | null;
+    purchaseOrderNumber: string | null;
+    sourcePurchaseReceiptId?: string | null;
+    sourcePurchaseReceiptNumber?: string | null;
     lines: SupplierInvoiceLineItem[];
     subTotal: number;
     totalVat: number;

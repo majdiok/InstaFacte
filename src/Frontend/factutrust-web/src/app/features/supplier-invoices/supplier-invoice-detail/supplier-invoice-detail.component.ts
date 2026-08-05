@@ -88,7 +88,12 @@ import { formatLocalDate } from '@core/utils/date.util';
             @if (inv()!.externalReference) {
               <div class="info-item"><span class="label">Référence externe</span><span class="value">{{ inv()!.externalReference }}</span></div>
             }
-            <div class="info-item"><span class="label">Bon de commande</span><a [routerLink]="['/purchase-orders', inv()!.purchaseOrderId]" class="value link">{{ inv()!.purchaseOrderNumber }}</a></div>
+            @if (inv()!.purchaseOrderId && inv()!.purchaseOrderNumber) {
+              <div class="info-item"><span class="label">Bon de commande</span><a [routerLink]="['/purchase-orders', inv()!.purchaseOrderId]" class="value link">{{ inv()!.purchaseOrderNumber }}</a></div>
+            }
+            @if (inv()!.sourcePurchaseReceiptId && inv()!.sourcePurchaseReceiptNumber) {
+              <div class="info-item"><span class="label">Bon de réception</span><a [routerLink]="['/purchase-receipts', inv()!.sourcePurchaseReceiptId]" class="value link">{{ inv()!.sourcePurchaseReceiptNumber }}</a></div>
+            }
           </div>
         </div>
 

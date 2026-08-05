@@ -2,6 +2,7 @@ using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities.Payroll;
+using FactuTrust.Domain.Enums;
 using FluentValidation;
 using MediatR;
 
@@ -38,6 +39,17 @@ public sealed class UpdatePayrollParametersCommandValidator : AbstractValidator<
         RuleFor(x => x.Dto.MonthlySmig).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Dto.MaxDeductibleChildren).InclusiveBetween(0, 10);
 
+        RuleFor(x => x.Dto.SmigIrppExemptionRateOverride)
+            .InclusiveBetween(0, 100)
+            .When(x => x.Dto.SmigIrppExemptionRateOverride.HasValue);
+
+        RuleFor(x => x.Dto)
+            .Must(d => !Enum.TryParse<SmigIrppExemptionMode>(d.SmigIrppExemptionMode, true, out var mode)
+                       || mode == SmigIrppExemptionMode.None
+                       || d.MonthlySmig > 0)
+            .WithMessage("Le SMIG mensuel doit être positif pour activer l'exonération IRPP SMIG.")
+            .WithName("MonthlySmig");
+
         // Barème IRPP : première tranche à 0, seuils strictement croissants, taux 0-100.
         RuleFor(x => x.Dto.IrppBrackets).NotEmpty().WithMessage("Le barème IRPP doit comporter au moins une tranche.");
         RuleFor(x => x.Dto.IrppBrackets)
@@ -67,6 +79,9 @@ public sealed class UpdatePayrollParametersCommandHandler : IRequestHandler<Upda
     {
         var dto = request.Dto;
 
+        if (!Enum.TryParse<SmigIrppExemptionMode>(dto.SmigIrppExemptionMode, true, out var smigExemptionMode))
+            return Result.Failure(Error.Validation("SmigIrppExemptionMode", "Mode d'exonération IRPP SMIG invalide."));
+
         var parameters = await _parameters.GetOrCreateForYearAsync(request.FiscalYear, cancellationToken);
 
         var ratesResult = parameters.UpdateRates(
@@ -92,7 +107,11 @@ public sealed class UpdatePayrollParametersCommandHandler : IRequestHandler<Upda
             dto.DisabledChildAnnualDeduction,
             dto.ParentDeductionRatePercent,
             dto.ParentAnnualDeductionCap,
-            dto.IsIndustrialSector);
+            dto.IsIndustrialSector,
+            mealVoucherDailyExemptionCap: parameters.MealVoucherDailyExemptionCap,
+            enableIrppRegularization: parameters.EnableIrppRegularization,
+            smigIrppExemptionMode: smigExemptionMode,
+            smigIrppExemptionRateOverride: dto.SmigIrppExemptionRateOverride);
         if (ratesResult.IsFailure)
             return ratesResult;
 

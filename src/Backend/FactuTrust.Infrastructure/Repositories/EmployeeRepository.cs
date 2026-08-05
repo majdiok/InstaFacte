@@ -109,6 +109,23 @@ public sealed class EmployeeRepository : IEmployeeRepository
             .ToDictionaryAsync(e => e.Id, e => e.FullName, cancellationToken);
     }
 
+    public async Task<IReadOnlyDictionary<Guid, Employee>> GetByIdsAsync(
+        IEnumerable<Guid> ids,
+        CancellationToken cancellationToken = default)
+    {
+        var idList = ids.Distinct().ToList();
+        if (idList.Count == 0)
+            return new Dictionary<Guid, Employee>();
+
+        await using var context = _contextFactory.CreateContext();
+        var employees = await context.Employees
+            .AsNoTracking()
+            .Where(e => idList.Contains(e.Id))
+            .ToListAsync(cancellationToken);
+
+        return employees.ToDictionary(e => e.Id);
+    }
+
     public async Task<Employee> AddAsync(Employee entity, CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();

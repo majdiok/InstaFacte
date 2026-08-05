@@ -20,7 +20,7 @@ internal static class SupplierInvoiceCreationHelper
 
     public static async Task<Result<SupplierInvoiceCreationResult>> PersistAndFinalizeAsync(
         SupplierInvoice invoice,
-        PurchaseOrder purchaseOrder,
+        PurchaseOrder? purchaseOrder,
         PurchaseReceipt? purchaseReceipt,
         bool sendEmail,
         IAuditService auditService,
@@ -37,7 +37,7 @@ internal static class SupplierInvoiceCreationHelper
         CancellationToken cancellationToken)
     {
         var poImputations = invoice.GetPurchaseOrderImputations();
-        if (poImputations.Count > 0)
+        if (purchaseOrder is not null && poImputations.Count > 0)
         {
             var poResult = purchaseOrder.ApplyInvoicing(poImputations, invoice.Id);
             if (poResult.IsFailure)
@@ -72,7 +72,8 @@ internal static class SupplierInvoiceCreationHelper
         if (persistResult.IsFailure)
             return Result.Failure<SupplierInvoiceCreationResult>(persistResult.Error);
 
-        await purchaseOrderRepository.UpdateAsync(purchaseOrder, cancellationToken);
+        if (purchaseOrder is not null)
+            await purchaseOrderRepository.UpdateAsync(purchaseOrder, cancellationToken);
 
         if (purchaseReceipt is not null && purchaseReceiptRepository is not null)
             await purchaseReceiptRepository.UpdateAsync(purchaseReceipt, cancellationToken);
@@ -87,7 +88,8 @@ internal static class SupplierInvoiceCreationHelper
             newValues: new
             {
                 invoice.InvoiceNumber,
-                PurchaseOrderNumber = purchaseOrder.Number.Value,
+                PurchaseOrderNumber = purchaseOrder?.Number.Value,
+                PurchaseReceiptNumber = purchaseReceipt?.Number.Value,
                 TotalAmount = invoice.TotalAmount.Amount
             },
             cancellationToken: cancellationToken);

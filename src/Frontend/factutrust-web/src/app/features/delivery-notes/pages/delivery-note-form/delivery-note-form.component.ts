@@ -32,9 +32,13 @@ import { ButtonComponent } from '@shared/components/button/button.component';
 import { DeliveryNoteService } from '../../services/delivery-note.service';
 import { CreateDeliveryNoteDto, CreateDeliveryNoteLineDto } from '../../models/delivery-note.model';
 import { ClientService, ClientListItem } from '@core/services/client.service';
-import { ProductService, ProductListItem } from '@core/services/product.service';
+import { ProductListItem } from '@core/services/product.service';
 import { PriceSource } from '@core/services/pricing.service';
 import { DocumentLinePricingService, EMPTY_LINE_PROMOTION, LinePromotionPreview, effectiveLineDiscountPercent, lineTotalWithPromotion, mapResolvedPricePromotion } from '@shared/utils/document-line-pricing.helper';
+import {
+  ProductAutocompleteService,
+  suggestionToListItem
+} from '@shared/services/product-autocomplete.service';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
 
 interface LineRow extends LinePromotionPreview {
@@ -567,7 +571,7 @@ export class DeliveryNoteFormComponent implements OnInit {
   private deliveryNoteService = inject(DeliveryNoteService);
   private clientService = inject(ClientService);
   private auth = inject(AuthService);
-  private productService = inject(ProductService);
+  private readonly productAutocomplete = inject(ProductAutocompleteService);
   private router = inject(Router);
   private toastService = inject(ToastService);
   private errorHandler = inject(ErrorHandlerService);
@@ -605,6 +609,9 @@ export class DeliveryNoteFormComponent implements OnInit {
   canCreateClient = computed(() => this.auth.hasPermission(PERMISSIONS.clients.create));
 
   ngOnInit(): void {
+    if (this.productAutocomplete.isV2Enabled) {
+      this.productAutocomplete.prefetch().subscribe();
+    }
     const ctxWh = this.warehouseContext.selectedWarehouseId();
     if (ctxWh && this.selectedWarehouseId == null) {
       this.selectedWarehouseId = ctxWh;
@@ -638,15 +645,9 @@ export class DeliveryNoteFormComponent implements OnInit {
   }
 
   searchProducts(event: AutoCompleteCompleteEvent): void {
-    this.productService.getProducts({
-      search: event.query,
-      isActive: true,
-      pageSize: 20
-    }).subscribe({
-      next: (res) => {
-        if (res.success) {
-          this.productSuggestions.set(res.data.items);
-        }
+    this.productAutocomplete.search(event.query ?? '').subscribe({
+      next: (items) => {
+        this.productSuggestions.set(items.map(suggestionToListItem));
       }
     });
   }

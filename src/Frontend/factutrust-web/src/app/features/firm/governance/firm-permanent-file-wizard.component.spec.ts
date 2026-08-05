@@ -148,7 +148,9 @@ describe('FirmPermanentFileWizardComponent', () => {
 
             deactivateRepresentative: () => of({ success: true }),
 
-            deactivateShareholder: () => of({ success: true })
+            deactivateShareholder: () => of({ success: true }),
+
+            listAssignableAccountants: () => of({ success: true, data: [] })
 
           }
 
@@ -373,7 +375,8 @@ describe('FirmPermanentFileWizardComponent', () => {
             addShareholder: () => of({ success: true, data: {} }),
             updateShareholder: () => of({ success: true, data: {} }),
             deactivateRepresentative: () => of({ success: true }),
-            deactivateShareholder: () => of({ success: true })
+            deactivateShareholder: () => of({ success: true }),
+            listAssignableAccountants: () => of({ success: true, data: [] })
           }
         },
         { provide: FirmAssignmentService, useValue: { getActiveClients: () => of({ success: true, data: [] }) } },

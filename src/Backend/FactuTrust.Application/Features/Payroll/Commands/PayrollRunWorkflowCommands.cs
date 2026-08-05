@@ -23,6 +23,9 @@ public sealed class ValidatePayrollRunCommandHandler : IRequestHandler<ValidateP
     private readonly IEmployeeAdvanceRepository _advances;
     private readonly ILeaveRequestRepository _leaves;
     private readonly ILeaveBalanceAccrualRepository _accruals;
+    private readonly IEmployeeLoanRepository _loans;
+    private readonly IEmployeeGarnishmentRepository _garnishments;
+    private readonly IPayrollParametersRepository _parameters;
     private readonly IAccountingService _accountingService;
     private readonly ITenantUnitOfWork _unitOfWork;
     private readonly ICurrentUser _currentUser;
@@ -32,6 +35,9 @@ public sealed class ValidatePayrollRunCommandHandler : IRequestHandler<ValidateP
         IEmployeeAdvanceRepository advances,
         ILeaveRequestRepository leaves,
         ILeaveBalanceAccrualRepository accruals,
+        IEmployeeLoanRepository loans,
+        IEmployeeGarnishmentRepository garnishments,
+        IPayrollParametersRepository parameters,
         IAccountingService accountingService,
         ITenantUnitOfWork unitOfWork,
         ICurrentUser currentUser)
@@ -40,6 +46,9 @@ public sealed class ValidatePayrollRunCommandHandler : IRequestHandler<ValidateP
         _advances = advances;
         _leaves = leaves;
         _accruals = accruals;
+        _loans = loans;
+        _garnishments = garnishments;
+        _parameters = parameters;
         _accountingService = accountingService;
         _unitOfWork = unitOfWork;
         _currentUser = currentUser;
@@ -93,6 +102,67 @@ public sealed class ValidatePayrollRunCommandHandler : IRequestHandler<ValidateP
 
             await _accruals.AddRangeAsync(newAccruals, ct);
 
+            var loansDue = await _loans.ListWithDueInstallmentsForMonthAsync(run.Year, run.Month, ct);
+            foreach (var loan in loansDue)
+            {
+                foreach (var installment in loan.Installments
+                    .Where(i => i.Year == run.Year && i.Month == run.Month && !i.IsSettled))
+                    loan.MarkInstallmentSettled(installment.Id, run.Id);
+            }
+            await _loans.UpdateRangeAsync(loansDue, ct);
+
+            var referenceDate = new DateTime(run.Year, run.Month, 1).AddMonths(1).AddDays(-1);
+            var parameters = await _parameters.GetOrCreateForYearAsync(run.ParametersFiscalYear, ct);
+            var activeGarnishments = await _garnishments.ListActiveForEmployeesAsync(employeeIds, referenceDate, ct);
+            var garnishmentsToUpdate = new List<EmployeeGarnishment>();
+
+            foreach (var payslip in run.Payslips)
+            {
+                var postTaxTotal = payslip.Lines
+                    .Where(l => l.Kind == PayslipLineKind.Deduction
+                        && l.DeductionKind is DeductionKind.Garnishment or DeductionKind.Alimony)
+                    .Sum(l => l.Amount);
+                if (postTaxTotal <= 0)
+                    continue;
+
+                var netBeforeGarnishments = payslip.NetSalary + postTaxTotal;
+                var employeeGarnishments = activeGarnishments.Where(g => g.EmployeeId == payslip.EmployeeId).ToList();
+                if (employeeGarnishments.Count == 0)
+                    continue;
+
+                var hasAlimony = employeeGarnishments.Any(g => g.Type == GarnishmentType.Alimony);
+                var available = GarnishmentCalculator.ComputeAvailableSeizable(
+                    netBeforeGarnishments,
+                    parameters.GarnishmentBrackets.ToList(),
+                    hasAlimony);
+
+                var requests = employeeGarnishments.Select(g => new GarnishmentCalculator.GarnishmentRequest(
+                    g.Id,
+                    g.Type,
+                    g.BeneficiaryName,
+                    g.Priority,
+                    g.IssuedAt,
+                    g.ComputeRequestedAmount(netBeforeGarnishments),
+                    g.BeneficiaryRib)).ToList();
+
+                var allocations = GarnishmentCalculator.Allocate(available, requests);
+                foreach (var allocation in allocations.Where(a => a.AppliedAmount > 0))
+                {
+                    var garnishment = employeeGarnishments.First(g => g.Id == allocation.GarnishmentId);
+                    garnishment.RecordInstallment(
+                        run.Year,
+                        run.Month,
+                        run.Id,
+                        allocation.RequestedAmount,
+                        allocation.AppliedAmount,
+                        allocation.CarriedOverAmount);
+                    if (!garnishmentsToUpdate.Contains(garnishment))
+                        garnishmentsToUpdate.Add(garnishment);
+                }
+            }
+
+            await _garnishments.UpdateRangeAsync(garnishmentsToUpdate, ct);
+
             // Transaction stricte : l'écriture comptable de paie fait partie de la validation.
             // (Skip-succès si le plan comptable n'est pas initialisé — comportement préservé.)
             var entryResult = await _accountingService.GeneratePayrollRunEntryAsync(run, ct);
@@ -116,17 +186,23 @@ public sealed class ReopenPayrollRunCommandHandler : IRequestHandler<ReopenPayro
     private readonly IPayrollRunRepository _runs;
     private readonly IEmployeeAdvanceRepository _advances;
     private readonly ILeaveBalanceAccrualRepository _accruals;
+    private readonly IEmployeeLoanRepository _loans;
+    private readonly IEmployeeGarnishmentRepository _garnishments;
     private readonly ITenantUnitOfWork _unitOfWork;
 
     public ReopenPayrollRunCommandHandler(
         IPayrollRunRepository runs,
         IEmployeeAdvanceRepository advances,
         ILeaveBalanceAccrualRepository accruals,
+        IEmployeeLoanRepository loans,
+        IEmployeeGarnishmentRepository garnishments,
         ITenantUnitOfWork unitOfWork)
     {
         _runs = runs;
         _advances = advances;
         _accruals = accruals;
+        _loans = loans;
+        _garnishments = garnishments;
         _unitOfWork = unitOfWork;
     }
 
@@ -151,6 +227,16 @@ public sealed class ReopenPayrollRunCommandHandler : IRequestHandler<ReopenPayro
             await _advances.UpdateRangeAsync(settled, ct);
 
             await _accruals.DeleteByPayrollRunIdAsync(run.Id, ct);
+
+            var settledLoans = await _loans.ListWithSettledInstallmentsForRunAsync(run.Id, ct);
+            foreach (var loan in settledLoans)
+                loan.UnsettleInstallmentsForRun(run.Id);
+            await _loans.UpdateRangeAsync(settledLoans, ct);
+
+            var garnishmentsWithInstallments = await _garnishments.ListWithInstallmentsForRunAsync(run.Id, ct);
+            foreach (var garnishment in garnishmentsWithInstallments)
+                garnishment.RemoveInstallmentsForRun(run.Id);
+            await _garnishments.UpdateRangeAsync(garnishmentsWithInstallments, ct);
 
             return Result.Success();
         }, cancellationToken);

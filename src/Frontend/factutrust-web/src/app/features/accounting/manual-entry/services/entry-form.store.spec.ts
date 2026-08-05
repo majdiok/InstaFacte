@@ -104,6 +104,34 @@ describe('EntryFormStore', () => {
     expect(store.lines()[0].credit).toBe(20.001);
   });
 
+  it('onDebitPreview clears opposite side in place and keeps clientLineId', () => {
+    const line = { ...createEmptyLine(), debit: 10, credit: 5 };
+    const id = line.clientLineId;
+    store.lines.set([line]);
+    store.onDebitPreview(0);
+    expect(store.lines()[0].credit).toBeNull();
+    expect(store.lines()[0].clientLineId).toBe(id);
+    expect(store.lines()[0]).toBe(line);
+  });
+
+  it('onDebitChange preserves clientLineId', () => {
+    const line = { ...createEmptyLine(), debit: 10.0004, credit: 2 };
+    const id = line.clientLineId;
+    store.lines.set([line]);
+    store.onDebitChange(0);
+    expect(store.lines()[0].clientLineId).toBe(id);
+    expect(store.lines()[0].debit).toBe(10);
+    expect(store.lines()[0].credit).toBeNull();
+  });
+
+  it('createEmptyLine assigns clientLineId', () => {
+    const a = createEmptyLine();
+    const b = createEmptyLine();
+    expect(a.clientLineId).toBeTruthy();
+    expect(b.clientLineId).toBeTruthy();
+    expect(a.clientLineId).not.toBe(b.clientLineId);
+  });
+
   it('periodClosed blocks when period is closed', () => {
     store.setPeriods([{
       id: 'p1',

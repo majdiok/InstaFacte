@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormsModule } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { AccountingAmountInputComponent } from './accounting-amount-input.component';
+import { ACCOUNTING_AMOUNT_FRACTION_DIGITS } from './accounting-amount.utils';
 
 describe('AccountingAmountInputComponent', () => {
   let fixture: ComponentFixture<AccountingAmountInputComponent>;
@@ -22,16 +23,45 @@ describe('AccountingAmountInputComponent', () => {
     expect(fixture.nativeElement.querySelector('p-inputnumber, p-inputNumber')).toBeTruthy();
   });
 
-  it('emits amountChange on model change', () => {
+  it('emits amountChange on model change while focused without forcing 3 decimals', () => {
     const spy = jasmine.createSpy('amountChange');
     component.amountChange.subscribe(spy);
-    component.onModelChange(100.5);
-    expect(spy).toHaveBeenCalledWith(100.5);
-    expect(component.value).toBe(100.5);
+    component.onFocus();
+    expect(component.minFractionDigits).toBe(0);
+    expect(component.maxFractionDigits).toBe(ACCOUNTING_AMOUNT_FRACTION_DIGITS);
+
+    component.onModelChange(4);
+    expect(spy).toHaveBeenCalledWith(4);
+    expect(component.value).toBe(4);
+
+    component.onModelChange(40);
+    expect(spy).toHaveBeenCalledWith(40);
+    expect(component.value).toBe(40);
+    expect(component.minFractionDigits).toBe(0);
   });
 
-  it('normalizes zero to null on model change', () => {
+  it('does not normalize zero to null while focused', () => {
+    component.onFocus();
     component.onModelChange(0);
+    expect(component.value).toBe(0);
+  });
+
+  it('normalizes and emits amountCommitted on blur', () => {
+    const committed = jasmine.createSpy('amountCommitted');
+    component.amountCommitted.subscribe(committed);
+    component.onFocus();
+    component.onModelChange(10.0004);
+    component.onBlur();
+    expect(component.isFocused).toBeFalse();
+    expect(component.minFractionDigits).toBe(ACCOUNTING_AMOUNT_FRACTION_DIGITS);
+    expect(component.value).toBe(10);
+    expect(committed).toHaveBeenCalledWith(10);
+  });
+
+  it('normalizes zero to null on blur', () => {
+    component.onFocus();
+    component.onModelChange(0);
+    component.onBlur();
     expect(component.value).toBeNull();
   });
 
@@ -40,18 +70,29 @@ describe('AccountingAmountInputComponent', () => {
     expect(component.value).toBe(70.002);
   });
 
-  it('emits enterPressed on Enter key', () => {
-    const spy = jasmine.createSpy('enterPressed');
-    component.enterPressed.subscribe(spy);
+  it('emits enterPressed and commits on Enter key', () => {
+    const enterSpy = jasmine.createSpy('enterPressed');
+    const committed = jasmine.createSpy('amountCommitted');
+    component.enterPressed.subscribe(enterSpy);
+    component.amountCommitted.subscribe(committed);
+    component.onFocus();
+    component.onModelChange(100.5);
     component.onKeyDown(new KeyboardEvent('keydown', { key: 'Enter' }));
-    expect(spy).toHaveBeenCalled();
+    expect(enterSpy).toHaveBeenCalled();
+    expect(committed).toHaveBeenCalledWith(100.5);
+    expect(component.isFocused).toBeFalse();
   });
 
-  it('emits tabFromAmount on Tab key', () => {
+  it('emits tabFromAmount and commits on Tab key', () => {
     const spy = jasmine.createSpy('tabFromAmount');
+    const committed = jasmine.createSpy('amountCommitted');
     component.tabFromAmount.subscribe(spy);
+    component.amountCommitted.subscribe(committed);
+    component.onFocus();
+    component.onModelChange(12.5);
     component.onKeyDown(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true }));
     expect(spy).toHaveBeenCalledWith({ shiftKey: true });
+    expect(committed).toHaveBeenCalledWith(12.5);
   });
 
   it('uses compact mode without grouping', () => {

@@ -466,12 +466,15 @@ describe('FirmTimeSheetsComponent', () => {
   });
 
   it('charge juillet et août pour une semaine chevauchante (selectedMonth=8)', () => {
-    listSpy.calls.reset();
     facade.selectedYear.set(2026);
     facade.selectedMonth.set(8);
     facade.mode.set('week');
     facade.periodScope.set('week');
     facade.setFocusDate('2026-07-28'); // mar. dans la semaine 27/07–02/08
+    // Reset après setFocusDate : selon la date d'aujourd'hui, setFocusDate peut avoir
+    // déclenché un load() implicite (weekMonthsKey change). On ne veut mesurer que le
+    // load() explicite qui suit.
+    listSpy.calls.reset();
     facade.load();
 
     const months = listSpy.calls.allArgs().map((args: unknown[]) => args[1]).sort();

@@ -26,6 +26,8 @@ export interface NotificationList {
 }
 
 const POLL_INTERVAL_MS = 60_000;
+/** Delay first exchange badge poll so it does not collide with /exchanges/bootstrap at t=0. */
+const EXCHANGE_BADGE_INITIAL_DELAY_MS = 15_000;
 
 /**
  * Notifications in-app (cloche du header) : compteur non-lues + dernières
@@ -44,6 +46,7 @@ export class NotificationService {
   readonly latest = signal<AppNotification[]>([]);
 
   private pollSub: Subscription | null = null;
+  private exchangeBadgePollSub: Subscription | null = null;
 
   constructor() {
     effect(() => {
@@ -100,6 +103,9 @@ export class NotificationService {
     this.pollSub = timer(0, POLL_INTERVAL_MS).subscribe(() => {
       this.refresh();
       this.firmBadge.refresh();
+    });
+    // Décalage volontaire : évite que unread-summary concurrence le bootstrap Échanges.
+    this.exchangeBadgePollSub = timer(EXCHANGE_BADGE_INITIAL_DELAY_MS, POLL_INTERVAL_MS).subscribe(() => {
       this.exchangeBadge.refresh();
     });
   }
@@ -107,5 +113,7 @@ export class NotificationService {
   private stopPolling(): void {
     this.pollSub?.unsubscribe();
     this.pollSub = null;
+    this.exchangeBadgePollSub?.unsubscribe();
+    this.exchangeBadgePollSub = null;
   }
 }

@@ -44,6 +44,24 @@ public interface IProductRepository : IRepository<Product>
         int page,
         int pageSize,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lightweight search for autocomplete/select dropdowns.
+    /// No category include, no tracking. Returns at most <paramref name="pageSize"/> items
+    /// ordered by name; does not compute a full total count.
+    /// </summary>
+    Task<IReadOnlyList<Product>> SearchForSelectAsync(
+        string? searchTerm,
+        bool? isActive,
+        int pageSize,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns FODEC flags for the given product ids (missing ids are omitted).
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, bool>> GetFodecFlagsByIdsAsync(
+        IReadOnlyCollection<Guid> productIds,
+        CancellationToken cancellationToken = default);
     
     /// <summary>
     /// Checks if a product is used in any invoice.

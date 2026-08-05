@@ -1,24 +1,25 @@
 import {
   Component,
   EventEmitter,
+  HostListener,
   Input,
-  OnChanges,
+  OnDestroy,
   Output,
-  SimpleChanges,
   inject,
   signal
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { CalendarModule } from 'primeng/calendar';
 import { DropdownModule } from 'primeng/dropdown';
 import { InputTextarea } from 'primeng/inputtextarea';
 import { ButtonModule } from 'primeng/button';
+import { OverlayOptions } from 'primeng/api';
 import { formatLocalDate } from '@core/utils/date.util';
 import { ToastService } from '@core/services/toast.service';
+import { DrawerOverlayService } from '@core/services/drawer-overlay.service';
 import {
   HonorairesService,
   RecordHonorairesPayment
@@ -44,7 +45,6 @@ const PAYMENT_METHOD_OPTIONS = [
   imports: [
     CommonModule,
     FormsModule,
-    DialogModule,
     InputTextModule,
     InputNumberModule,
     CalendarModule,
@@ -53,15 +53,7 @@ const PAYMENT_METHOD_OPTIONS = [
     ButtonModule
   ],
   template: `
-    <p-dialog
-      header="Encaissement honoraires"
-      [(visible)]="visible"
-      [modal]="true"
-      [style]="{ width: '480px' }"
-      [draggable]="false"
-      [closable]="true"
-      (onHide)="onHide()"
-      [contentStyle]="{ overflow: 'visible' }">
+    <ng-template #formContent>
       <div class="modal-content">
         @if (invoiceNumber) {
           <p class="dialog-intro">
@@ -82,6 +74,8 @@ const PAYMENT_METHOD_OPTIONS = [
               [showIcon]="true"
               dateFormat="dd/mm/yy"
               [maxDate]="maxDate"
+              appendTo="body"
+              [baseZIndex]="drawerPrimeBaseZIndex"
               styleClass="w-full">
             </p-calendar>
           </div>
@@ -123,7 +117,8 @@ const PAYMENT_METHOD_OPTIONS = [
               optionValue="value"
               placeholder="Sélectionnez un mode"
               styleClass="w-full"
-              appendTo="body">
+              appendTo="body"
+              [overlayOptions]="drawerOverlayOptions">
             </p-dropdown>
           </div>
 
@@ -150,52 +145,241 @@ const PAYMENT_METHOD_OPTIONS = [
           </div>
         }
       </div>
+    </ng-template>
 
-      <ng-template pTemplate="footer">
-        <button pButton type="button" label="Annuler" class="p-button-text" (click)="close()" [disabled]="submitting()"></button>
-        <button
-          pButton
-          type="button"
-          label="Enregistrer l'encaissement"
-          icon="pi pi-check"
-          [disabled]="submitting()"
-          (click)="submit()">
-        </button>
-      </ng-template>
-    </p-dialog>
+    <ng-template #footerActions>
+      <button
+        pButton
+        type="button"
+        label="Annuler"
+        class="p-button-text"
+        (click)="close()"
+        [disabled]="submitting()">
+      </button>
+      <button
+        pButton
+        type="button"
+        label="Enregistrer l'encaissement"
+        icon="pi pi-check"
+        [disabled]="submitting()"
+        (click)="submit()">
+      </button>
+    </ng-template>
+
+    @if (visible) {
+      <div class="panel-overlay" (click)="close()" role="presentation">
+        <div
+          class="panel-content"
+          (click)="$event.stopPropagation()"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="hon-pay-panel-title">
+          <div class="panel-header">
+            <h2 class="panel-title" id="hon-pay-panel-title">Encaissement honoraires</h2>
+            <button
+              type="button"
+              class="panel-close"
+              (click)="close()"
+              aria-label="Fermer le panneau">
+              <i class="pi pi-times"></i>
+            </button>
+          </div>
+          <div class="panel-body">
+            <ng-container *ngTemplateOutlet="formContent"></ng-container>
+          </div>
+          <div class="panel-footer">
+            <ng-container *ngTemplateOutlet="footerActions"></ng-container>
+          </div>
+        </div>
+      </div>
+    }
   `,
   styles: [`
-    .modal-content { padding: 0.25rem 0; }
-    .dialog-intro {
-      font-size: 0.875rem;
-      color: #64748b;
-      margin: 0 0 1rem;
-      padding: 0.75rem 1rem;
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-left: 4px solid #3b82f6;
-      border-radius: 0.5rem;
+    .modal-content {
+      padding: 0;
     }
-    .remaining-info { font-weight: 600; color: #2563eb; }
-    .form-fields { display: flex; flex-direction: column; gap: 0.875rem; }
-    .form-group { display: flex; flex-direction: column; gap: 0.35rem; }
-    .form-group label { font-size: 0.875rem; font-weight: 500; color: #0f172a; }
-    .required { color: #dc2626; }
-    .field-hint { font-size: 0.75rem; color: #94a3b8; }
-    .w-full { width: 100%; }
+
+    .dialog-intro {
+      font-size: var(--font-size-sm, 0.875rem);
+      color: var(--color-text-secondary, #64748b);
+      margin: 0 0 var(--spacing-4, 1rem);
+      padding: var(--spacing-3, 0.75rem) var(--spacing-4, 1rem);
+      background: var(--color-background-elevated, #f8fafc);
+      border: 1px solid var(--color-border-subtle, #e2e8f0);
+      border-left: 4px solid var(--color-primary-500, #3b82f6);
+      border-radius: var(--radius-xl, 0.5rem);
+    }
+
+    .remaining-info {
+      font-weight: var(--font-weight-semibold, 600);
+      color: var(--color-primary-600, #2563eb);
+    }
+
+    .form-fields {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-4, 0.875rem);
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-2, 0.35rem);
+    }
+
+    .form-group label {
+      font-size: var(--font-size-sm, 0.875rem);
+      font-weight: var(--font-weight-medium, 500);
+      color: var(--color-text-primary, #0f172a);
+    }
+
+    .required {
+      color: var(--color-error-600, #dc2626);
+    }
+
+    .field-hint {
+      font-size: var(--font-size-xs, 0.75rem);
+      color: var(--color-text-tertiary, #94a3b8);
+    }
+
+    .w-full {
+      width: 100%;
+    }
+
     .error-message {
-      display: flex; align-items: center; gap: 0.5rem;
-      margin-top: 1rem; padding: 0.75rem;
-      background: #fef2f2; border: 1px solid #fecaca; border-radius: 0.5rem;
-      color: #b91c1c; font-size: 0.875rem;
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-2, 0.5rem);
+      margin-top: var(--spacing-4, 1rem);
+      padding: var(--spacing-3, 0.75rem);
+      background: var(--color-error-50, #fef2f2);
+      border: 1px solid var(--color-error-200, #fecaca);
+      border-radius: var(--radius-md, 0.5rem);
+      color: var(--color-error-700, #b91c1c);
+      font-size: var(--font-size-sm, 0.875rem);
+    }
+
+    .panel-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: var(--z-drawer-overlay);
+      display: flex;
+      justify-content: flex-end;
+      align-items: stretch;
+      background: rgba(15, 23, 42, 0.25);
+      backdrop-filter: blur(4px);
+      animation: panelFadeIn 200ms ease-out;
+    }
+
+    .panel-content {
+      position: relative;
+      z-index: var(--z-drawer-panel);
+      width: min(520px, 100vw);
+      max-height: 100dvh;
+      height: 100%;
+      background: var(--color-white, #fff);
+      box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      animation: panelSlideInRight 250ms cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--spacing-5, 1.25rem);
+      border-bottom: 1px solid var(--color-border-subtle, #e2e8f0);
+      flex-shrink: 0;
+    }
+
+    .panel-title {
+      font-size: var(--font-size-lg, 1.125rem);
+      font-weight: var(--font-weight-bold, 700);
+      margin: 0;
+      color: var(--color-text-primary, #0f172a);
+    }
+
+    .panel-close {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border: none;
+      border-radius: var(--radius-lg, 0.5rem);
+      background: var(--color-neutral-100, #f1f5f9);
+      color: var(--color-text-tertiary, #94a3b8);
+      cursor: pointer;
+      transition: all 200ms ease;
+    }
+
+    .panel-close:hover {
+      background: var(--color-neutral-200, #e2e8f0);
+      color: var(--color-text-primary, #0f172a);
+    }
+
+    .panel-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: var(--spacing-5, 1.25rem);
+      min-height: 0;
+    }
+
+    .panel-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: var(--spacing-3, 0.75rem);
+      padding: var(--spacing-4, 1rem) var(--spacing-5, 1.25rem);
+      padding-bottom: calc(var(--spacing-4, 1rem) + env(safe-area-inset-bottom, 0px));
+      border-top: 1px solid var(--color-border-subtle, #e2e8f0);
+      background: var(--color-background-subtle, #f8fafc);
+      flex-shrink: 0;
+    }
+
+    @keyframes panelFadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes panelSlideInRight {
+      from { transform: translateX(100%); }
+      to { transform: translateX(0); }
+    }
+
+    :host ::ng-deep {
+      .p-calendar,
+      .p-dropdown,
+      .p-inputnumber {
+        width: 100%;
+      }
     }
   `]
 })
-export class HonorairesRecordPaymentDialogComponent implements OnChanges {
+export class HonorairesRecordPaymentDialogComponent implements OnDestroy {
   private readonly api = inject(HonorairesService);
   private readonly toast = inject(ToastService);
+  private readonly drawerOverlay = inject(DrawerOverlayService);
 
-  @Input() visible = false;
+  readonly drawerOverlayOptions: OverlayOptions = { baseZIndex: 1200 };
+  readonly drawerPrimeBaseZIndex = 1200;
+
+  @Input() set visible(value: boolean) {
+    const wasVisible = this._visible;
+    this._visible = value;
+    if (value && !wasVisible) {
+      this.drawerOverlay.registerOpen();
+      this.resetForm();
+    } else if (!value && wasVisible) {
+      this.drawerOverlay.registerClose();
+    }
+  }
+  get visible(): boolean {
+    return this._visible;
+  }
+  private _visible = false;
+
   @Input() invoiceId: string | null = null;
   @Input() invoiceNumber = '';
   @Input() currency = 'TND';
@@ -226,18 +410,22 @@ export class HonorairesRecordPaymentDialogComponent implements OnChanges {
   submitting = signal(false);
   errorMessage = signal<string | null>(null);
 
-  ngOnChanges(changes: SimpleChanges): void {
-    if (changes['visible'] && this.visible) {
-      this.resetForm();
+  @HostListener('document:keydown.escape')
+  onEscape(): void {
+    if (this.visible) {
+      this.close();
+    }
+  }
+
+  ngOnDestroy(): void {
+    if (this._visible) {
+      this.drawerOverlay.registerClose();
+      this._visible = false;
     }
   }
 
   close(): void {
     this.visible = false;
-    this.visibleChange.emit(false);
-  }
-
-  onHide(): void {
     this.visibleChange.emit(false);
   }
 

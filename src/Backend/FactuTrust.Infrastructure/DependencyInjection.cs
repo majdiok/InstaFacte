@@ -225,11 +225,20 @@ public static class DependencyInjection
         // Payroll (RH & Paie)
         services.AddScoped<IEmployeeRepository, EmployeeRepository>();
         services.AddScoped<IPayrollRunRepository, PayrollRunRepository>();
+        services.AddScoped<IPayrollPaymentRepository, PayrollPaymentRepository>();
         services.AddScoped<IPayrollParametersRepository, PayrollParametersRepository>();
         services.AddScoped<ILeaveRequestRepository, LeaveRequestRepository>();
         services.AddScoped<IEmployeeAdvanceRepository, EmployeeAdvanceRepository>();
         services.AddScoped<IPayrollOvertimeRepository, PayrollOvertimeRepository>();
+        services.AddScoped<IPayrollVariableAllowanceRepository, PayrollVariableAllowanceRepository>();
+        services.AddScoped<IPayrollIrppRegularizationRepository, PayrollIrppRegularizationRepository>();
         services.AddScoped<ILeaveBalanceAccrualRepository, LeaveBalanceAccrualRepository>();
+        services.AddScoped<ISocialFundSchemeRepository, SocialFundSchemeRepository>();
+        services.AddScoped<IEmployeeSocialFundEnrollmentRepository, EmployeeSocialFundEnrollmentRepository>();
+        services.AddScoped<IPayrollMealVoucherLineRepository, PayrollMealVoucherLineRepository>();
+        services.AddScoped<IEmployeeInKindBenefitRepository, EmployeeInKindBenefitRepository>();
+        services.AddScoped<IEmployeeLoanRepository, EmployeeLoanRepository>();
+        services.AddScoped<IEmployeeGarnishmentRepository, EmployeeGarnishmentRepository>();
 
         services.AddScoped<IOpportunityRepository, OpportunityRepository>();
         services.AddScoped<ISalesActivityRepository, SalesActivityRepository>();

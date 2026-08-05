@@ -1764,6 +1764,9 @@ namespace FactuTrust.Infrastructure.Migrations
 
                     b.HasIndex("ThreadId", "SentAt");
 
+                    b.HasIndex("ThreadId", "Visibility", "SentAt")
+                        .HasDatabaseName("IX_ExchangeMessages_ThreadId_Visibility_SentAt");
+
                     b.ToTable("ExchangeMessages", (string)null);
                 });
 
@@ -1798,6 +1801,9 @@ namespace FactuTrust.Infrastructure.Migrations
 
                     b.HasIndex("MessageId", "UserId")
                         .IsUnique();
+
+                    b.HasIndex("UserId", "MessageId")
+                        .HasDatabaseName("IX_ExchangeMessageReads_UserId_MessageId");
 
                     b.ToTable("ExchangeMessageReads", (string)null);
                 });
@@ -1988,6 +1994,10 @@ namespace FactuTrust.Infrastructure.Migrations
                     b.HasIndex("CompanyTenantId", "Status");
 
                     b.HasIndex("FirmTenantId", "Status");
+
+                    b.HasIndex("CompanyTenantId", "LastActivityAt")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("IX_ExchangeThreads_CompanyTenantId_LastActivityAt");
 
                     b.ToTable("ExchangeThreads", (string)null);
                 });

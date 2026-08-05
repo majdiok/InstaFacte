@@ -192,7 +192,7 @@ describe('SidebarComponent — firm navigation', () => {
     expect(dossierSection?.children?.find(c => c.label === 'Changer de dossier')?.action).toBe('changeDossier');
   });
 
-  it('shows only three ventes and achats submenus in delegated mode', () => {
+  it('shows the expected ventes and achats submenus in delegated mode', () => {
     const auth = TestBed.inject(AuthService);
     setUser(auth, {
       ...delegatedUser,
@@ -212,16 +212,21 @@ describe('SidebarComponent — firm navigation', () => {
     fixture.detectChanges();
 
     const ventes = fixture.componentInstance.navItems().find(i => i.label === 'Ventes');
+    // « États analytiques » (route /reports/analytics) est bloqué en mode délégué,
+    // cf. firm-navigation.registry.ts.
     expect(ventes?.children?.map(c => c.label)).toEqual([
       'Factures',
       'Factures impayées',
+      'Solde par client',
       'Rapports'
     ]);
 
     const achats = fixture.componentInstance.navItems().find(i => i.label === 'Achats');
+    // « États analytiques » (route /reports/purchases-analytics) est bloqué de la même façon.
     expect(achats?.children?.map(c => c.label)).toEqual([
       'Factures fournisseurs',
       'Factures impayées',
+      'Solde par fournisseur',
       'Rapports'
     ]);
   });

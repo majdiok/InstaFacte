@@ -4,6 +4,7 @@ using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities.Payroll;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Services.Payroll;
+using FactuTrust.Application.Features.Payroll.Services;
 using MediatR;
 
 namespace FactuTrust.Application.Features.Payroll.Commands;
@@ -12,15 +13,21 @@ public sealed record CalculatePayrollRunCommand(Guid RunId, CalculatePayrollRunD
 
 public sealed class CalculatePayrollRunCommandHandler : IRequestHandler<CalculatePayrollRunCommand, Result>
 {
-    /// <summary>Base de jours ouvrables mensuels pour le calcul du taux journalier (convention tunisienne).</summary>
-    private const decimal MonthlyWorkingDays = 26m;
-
     private readonly IPayrollRunRepository _runs;
     private readonly IEmployeeRepository _employees;
     private readonly IPayrollParametersRepository _parameters;
     private readonly ILeaveRequestRepository _leaves;
     private readonly IEmployeeAdvanceRepository _advances;
     private readonly IPayrollOvertimeRepository _overtime;
+    private readonly IPayrollVariableAllowanceRepository _variableAllowances;
+    private readonly IEmployeeSocialFundEnrollmentRepository _socialFundEnrollments;
+    private readonly ISocialFundSchemeRepository _socialFundSchemes;
+    private readonly IPayrollMealVoucherLineRepository _mealVouchers;
+    private readonly IEmployeeInKindBenefitRepository _inKindBenefits;
+    private readonly IEmployeeLoanRepository _loans;
+    private readonly IEmployeeGarnishmentRepository _garnishments;
+    private readonly IPayrollIrppRegularizationRepository _irppRegularizations;
+    private readonly PayrollInputBuilder _inputBuilder;
 
     public CalculatePayrollRunCommandHandler(
         IPayrollRunRepository runs,
@@ -28,7 +35,16 @@ public sealed class CalculatePayrollRunCommandHandler : IRequestHandler<Calculat
         IPayrollParametersRepository parameters,
         ILeaveRequestRepository leaves,
         IEmployeeAdvanceRepository advances,
-        IPayrollOvertimeRepository overtime)
+        IPayrollOvertimeRepository overtime,
+        IPayrollVariableAllowanceRepository variableAllowances,
+        IEmployeeSocialFundEnrollmentRepository socialFundEnrollments,
+        ISocialFundSchemeRepository socialFundSchemes,
+        IPayrollMealVoucherLineRepository mealVouchers,
+        IEmployeeInKindBenefitRepository inKindBenefits,
+        IEmployeeLoanRepository loans,
+        IEmployeeGarnishmentRepository garnishments,
+        IPayrollIrppRegularizationRepository irppRegularizations,
+        PayrollInputBuilder inputBuilder)
     {
         _runs = runs;
         _employees = employees;
@@ -36,6 +52,15 @@ public sealed class CalculatePayrollRunCommandHandler : IRequestHandler<Calculat
         _leaves = leaves;
         _advances = advances;
         _overtime = overtime;
+        _variableAllowances = variableAllowances;
+        _socialFundEnrollments = socialFundEnrollments;
+        _socialFundSchemes = socialFundSchemes;
+        _mealVouchers = mealVouchers;
+        _inKindBenefits = inKindBenefits;
+        _loans = loans;
+        _garnishments = garnishments;
+        _irppRegularizations = irppRegularizations;
+        _inputBuilder = inputBuilder;
     }
 
     public async Task<Result> Handle(CalculatePayrollRunCommand request, CancellationToken cancellationToken)
@@ -50,13 +75,38 @@ public sealed class CalculatePayrollRunCommandHandler : IRequestHandler<Calculat
         var parameters = await _parameters.GetOrCreateForYearAsync(run.ParametersFiscalYear, cancellationToken);
 
         var employees = await _employees.GetActiveWithContractsAsync(cancellationToken);
+        var employeeIds = employees.Select(e => e.Id).ToList();
+        var referenceDate = new DateTime(run.Year, run.Month, 1).AddMonths(1).AddDays(-1);
+
         var leaves = await _leaves.ListForMonthAsync(run.Year, run.Month, cancellationToken);
         var overtimeLines = await _overtime.ListForMonthAsync(run.Year, run.Month, cancellationToken);
-        var overtimeByEmployee = overtimeLines
-            .GroupBy(l => l.EmployeeId)
-            .ToDictionary(g => g.Key, g => g.ToList());
+        var variableAllowanceLines = await _variableAllowances.ListForMonthAsync(run.Year, run.Month, cancellationToken);
+        var enrollments = await _socialFundEnrollments.ListActiveForEmployeesAsync(employeeIds, referenceDate, cancellationToken);
+        var schemes = await _socialFundSchemes.ListAsync(cancellationToken: cancellationToken);
+        var mealVoucherLines = await _mealVouchers.ListForMonthAsync(run.Year, run.Month, cancellationToken);
+        var inKindBenefitLines = await _inKindBenefits.ListActiveForEmployeesAsync(employeeIds, referenceDate, cancellationToken);
+        var loansDue = await _loans.ListWithDueInstallmentsForMonthAsync(run.Year, run.Month, cancellationToken);
+        var activeGarnishments = await _garnishments.ListActiveForEmployeesAsync(employeeIds, referenceDate, cancellationToken);
 
-        var referenceDate = new DateTime(run.Year, run.Month, 1).AddMonths(1).AddDays(-1);
+        // Régularisations du mois : liste vide hors décembre / solde de tout compte, et tant
+        // que l'exercice n'active pas l'option — le calcul reste alors strictement inchangé.
+        var regularizations = parameters.EnableIrppRegularization
+            ? await _irppRegularizations.ListForMonthAsync(run.Year, run.Month, cancellationToken)
+            : Array.Empty<PayrollIrppRegularization>();
+
+        var batch = new PayrollInputBuilder.MonthBatchData
+        {
+            IrppRegularizations = regularizations,
+            Enrollments = enrollments,
+            Schemes = schemes.ToDictionary(s => s.Id),
+            MealVouchers = mealVoucherLines,
+            InKindBenefits = inKindBenefitLines,
+            LoansWithDueInstallments = loansDue,
+            ActiveGarnishments = activeGarnishments
+        };
+
+        var overtimeByEmployee = overtimeLines.GroupBy(l => l.EmployeeId).ToDictionary(g => g.Key, g => g.ToList());
+        var variableAllowancesByEmployee = variableAllowanceLines.GroupBy(l => l.EmployeeId).ToDictionary(g => g.Key, g => g.ToList());
 
         var payslips = new List<Payslip>();
         foreach (var employee in employees)
@@ -65,7 +115,6 @@ public sealed class CalculatePayrollRunCommandHandler : IRequestHandler<Calculat
             if (contract is null)
                 continue;
 
-            // Outstanding advances are previewed as a net deduction; they are settled on validation.
             decimal advanceTotal = 0m;
             if (request.Dto.SettleOutstandingAdvances)
             {
@@ -73,16 +122,19 @@ public sealed class CalculatePayrollRunCommandHandler : IRequestHandler<Calculat
                 advanceTotal = outstanding.Sum(a => a.Amount);
             }
 
-            var input = BuildInput(
+            var input = _inputBuilder.Build(
                 employee,
                 contract,
                 leaves,
                 advanceTotal,
                 overtimeByEmployee.GetValueOrDefault(employee.Id, []),
-                parameters);
+                variableAllowancesByEmployee.GetValueOrDefault(employee.Id, []),
+                parameters,
+                batch,
+                run.Year,
+                run.Month);
 
             var (appliedEmployeeRate, appliedEmployerRate) = PayrollCalculator.ResolveCnssRates(input.Regime, parameters);
-
             var computation = PayrollCalculator.Compute(input, parameters);
 
             var payslip = Payslip.FromComputation(
@@ -109,83 +161,5 @@ public sealed class CalculatePayrollRunCommandHandler : IRequestHandler<Calculat
 
         await _runs.PersistCalculationAsync(run, cancellationToken);
         return Result.Success();
-    }
-
-    private static PayrollComputationInput BuildInput(
-        Employee employee,
-        EmploymentContract contract,
-        IReadOnlyList<LeaveRequest> monthLeaves,
-        decimal otherDeductions,
-        IReadOnlyList<PayrollOvertimeLine> overtimeLines,
-        PayrollYearParameters parameters)
-    {
-        decimal taxableCnssable = 0m;
-        decimal taxableOnly = 0m;
-        decimal cnssOnly = 0m;
-        decimal nonTaxable = 0m;
-
-        if (parameters.EnableAllowanceQuadrantMatrix)
-        {
-            foreach (var allowance in contract.Allowances)
-            {
-                switch (allowance.Taxable, allowance.SubjectToCnss)
-                {
-                    case (true, true):
-                        taxableCnssable += allowance.Amount;
-                        break;
-                    case (true, false):
-                        taxableOnly += allowance.Amount;
-                        break;
-                    case (false, true):
-                        cnssOnly += allowance.Amount;
-                        break;
-                    default:
-                        nonTaxable += allowance.Amount;
-                        break;
-                }
-            }
-        }
-        else
-        {
-            // Two-bucket allowance model (v1): a recurring allowance is treated as taxable + CNSS-able
-            // only when it is both taxable and subject to CNSS; otherwise it is added to the net (non
-            // taxable, non CNSS-able). Mixed cases are rare in Tunisian recurring primes.
-            foreach (var allowance in contract.Allowances)
-            {
-                if (allowance.Taxable && allowance.SubjectToCnss)
-                    taxableCnssable += allowance.Amount;
-                else
-                    nonTaxable += allowance.Amount;
-            }
-        }
-
-        var unpaidDays = monthLeaves
-            .Where(l => l.EmployeeId == employee.Id && l.Type.ReducesGross())
-            .Sum(l => l.Days);
-        var dailyRate = contract.BaseSalary / MonthlyWorkingDays;
-        var unpaidAbsenceAmount = Math.Round(dailyRate * unpaidDays, 3, MidpointRounding.AwayFromZero);
-        var overtimeAmount = overtimeLines.Sum(l => l.EffectiveAmount);
-
-        return new PayrollComputationInput
-        {
-            BaseSalary = contract.BaseSalary,
-            TaxableCnssableAllowances = taxableCnssable,
-            TaxableOnlyAllowances = taxableOnly,
-            CnssOnlyAllowances = cnssOnly,
-            NonTaxableAllowances = nonTaxable,
-            OvertimeAmount = overtimeAmount,
-            UnpaidAbsenceAmount = unpaidAbsenceAmount,
-            OtherDeductions = otherDeductions,
-            Regime = contract.Regime,
-            WorkAccidentRate = contract.WorkAccidentRate,
-            // Le secteur (TFP 1 % industrie / 2 % autres) est un paramètre d'exercice persisté ;
-            // le flag du DTO de calcul est déprécié et ignoré.
-            IsIndustrialSector = parameters.IsIndustrialSector,
-            IsHeadOfFamily = employee.IsHeadOfFamily,
-            DependentChildren = employee.DependentChildren,
-            StudentChildren = employee.StudentChildren,
-            DisabledChildren = employee.DisabledChildren,
-            DependentParents = employee.DependentParents
-        };
     }
 }

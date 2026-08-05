@@ -1,0 +1,264 @@
+import { Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { DialogModule } from 'primeng/dialog';
+import { DropdownModule } from 'primeng/dropdown';
+import { InputTextModule } from 'primeng/inputtext';
+import { InputNumberModule } from 'primeng/inputnumber';
+import { CheckboxModule } from 'primeng/checkbox';
+import { TableModule } from 'primeng/table';
+import { finalize } from 'rxjs';
+import {
+  PayrollService,
+  type PayslipListItem,
+  type RecordPayrollRunPaymentRequest
+} from '@core/services/payroll.service';
+import { BankAccountService } from '@core/services/bank-account.service';
+import { ToastService } from '@core/services/toast.service';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { PayrollAmountPipe } from '../shared';
+
+interface PayslipPaymentRow {
+  payslipId: string;
+  employeeName: string;
+  employeeNumber: string;
+  remainingToPay: number;
+  selected: boolean;
+  amount: number;
+}
+
+@Component({
+  selector: 'app-payroll-record-payment-dialog',
+  standalone: true,
+  imports: [
+    CommonModule,
+    FormsModule,
+    DialogModule,
+    DropdownModule,
+    InputTextModule,
+    InputNumberModule,
+    CheckboxModule,
+    TableModule,
+    ButtonComponent,
+    PayrollAmountPipe
+  ],
+  template: `
+    <p-dialog
+      header="Régler la paie"
+      [(visible)]="visibleProxy"
+      [modal]="true"
+      [style]="{ width: '760px' }"
+      (onShow)="onOpen()"
+      (onHide)="closed.emit()">
+      <p class="hint mb-3">
+        Enregistrez le décaissement après confirmation bancaire. Une écriture JB et un lettrage 421 seront générés.
+      </p>
+
+      <div class="form-grid mb-3">
+        <div class="field">
+          <label for="pp-date">Date de paiement</label>
+          <input pInputText id="pp-date" type="date" class="w-full" [(ngModel)]="paymentDate" />
+        </div>
+        <div class="field">
+          <label for="pp-method">Mode</label>
+          <p-dropdown
+            inputId="pp-method"
+            [options]="methodOptions"
+            [(ngModel)]="method"
+            optionLabel="label"
+            optionValue="value"
+            styleClass="w-full" />
+        </div>
+        @if (method !== 0) {
+          <div class="field span-2">
+            <label for="pp-bank">Compte débiteur</label>
+            <p-dropdown
+              inputId="pp-bank"
+              [options]="accountOptions()"
+              [(ngModel)]="bankAccountId"
+              optionLabel="label"
+              optionValue="value"
+              placeholder="Sélectionner un compte"
+              styleClass="w-full" />
+          </div>
+        }
+        <div class="field">
+          <label for="pp-ref">Référence</label>
+          <input pInputText id="pp-ref" class="w-full" [(ngModel)]="reference" />
+        </div>
+        <div class="field">
+          <label for="pp-notes">Notes</label>
+          <input pInputText id="pp-notes" class="w-full" [(ngModel)]="notes" />
+        </div>
+      </div>
+
+      <div class="toolbar mb-2">
+        <app-button variant="ghost" size="sm" (click)="selectAll()">Tout sélectionner</app-button>
+        <strong>Total : {{ totalSelected() | payrollAmount }}</strong>
+      </div>
+
+      <div class="payroll-table-scroll">
+        <p-table [value]="rows()" styleClass="p-datatable-sm">
+          <ng-template pTemplate="header">
+            <tr>
+              <th style="width: 3rem"></th>
+              <th>Salarié</th>
+              <th class="text-right">Reste à payer</th>
+              <th class="text-right">Montant</th>
+            </tr>
+          </ng-template>
+          <ng-template pTemplate="body" let-r>
+            <tr>
+              <td>
+                <p-checkbox [(ngModel)]="r.selected" [binary]="true" (onChange)="onRowToggle(r)" />
+              </td>
+              <td>{{ r.employeeName }}</td>
+              <td class="text-right">{{ r.remainingToPay | payrollAmount }}</td>
+              <td class="text-right">
+                <p-inputNumber
+                  [(ngModel)]="r.amount"
+                  [minFractionDigits]="3"
+                  [maxFractionDigits]="3"
+                  [disabled]="!r.selected"
+                  mode="decimal"
+                  inputStyleClass="text-right" />
+              </td>
+            </tr>
+          </ng-template>
+        </p-table>
+      </div>
+
+      <ng-template pTemplate="footer">
+        <app-button variant="outline" (click)="visibleProxy = false">Annuler</app-button>
+        <app-button variant="primary" [disabled]="!isValid() || saving()" (click)="submit()">
+          {{ saving() ? 'Enregistrement…' : 'Enregistrer le paiement' }}
+        </app-button>
+      </ng-template>
+    </p-dialog>
+  `,
+  styles: [`
+    .hint { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+    .mb-2 { margin-bottom: var(--spacing-2); }
+    .mb-3 { margin-bottom: var(--spacing-4); }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-3); }
+    .field label { display: block; margin-bottom: var(--spacing-1); font-size: var(--font-size-sm); }
+    .span-2 { grid-column: span 2; }
+    .toolbar { display: flex; justify-content: space-between; align-items: center; }
+    .w-full { width: 100%; }
+    .text-right { text-align: right; }
+  `]
+})
+export class PayrollRecordPaymentDialogComponent implements OnInit {
+  private readonly payroll = inject(PayrollService);
+  private readonly banks = inject(BankAccountService);
+  private readonly toast = inject(ToastService);
+
+  runId = input.required<string>();
+  payslips = input.required<PayslipListItem[]>();
+  visible = input(false);
+  closed = output<void>();
+  paymentRecorded = output<void>();
+
+  visibleProxy = false;
+  paymentDate = new Date().toISOString().slice(0, 10);
+  method = 1;
+  bankAccountId: string | null = null;
+  reference = '';
+  notes = '';
+  saving = signal(false);
+  rows = signal<PayslipPaymentRow[]>([]);
+  accountOptions = signal<{ label: string; value: string }[]>([]);
+
+  readonly methodOptions = [
+    { label: 'Virement', value: 1 },
+    { label: 'Chèque', value: 2 },
+    { label: 'Espèces', value: 0 },
+    { label: 'Carte', value: 3 },
+    { label: 'Autre', value: 99 }
+  ];
+
+  totalSelected = computed(() =>
+    this.rows().filter(r => r.selected).reduce((s, r) => s + (r.amount || 0), 0)
+  );
+
+  ngOnInit(): void {
+    this.syncVisible();
+  }
+
+  private syncVisible(): void {
+    this.visibleProxy = this.visible();
+  }
+
+  onOpen(): void {
+    this.rows.set(
+      this.payslips()
+        .filter(p => (p.remainingToPay ?? p.netSalary) > 0)
+        .map(p => ({
+          payslipId: p.id,
+          employeeName: p.employeeName,
+          employeeNumber: p.employeeNumber,
+          remainingToPay: p.remainingToPay ?? p.netSalary,
+          selected: true,
+          amount: p.remainingToPay ?? p.netSalary
+        }))
+    );
+    this.banks.list().subscribe({
+      next: res => {
+        const items = (res.data ?? []).map(a => ({
+          label: `${a.designation || a.bankName} — ${a.iban}`,
+          value: a.id
+        }));
+        this.accountOptions.set(items);
+        const def = (res.data ?? []).find(a => a.isDefault);
+        if (def) this.bankAccountId = def.id;
+      }
+    });
+  }
+
+  selectAll(): void {
+    this.rows.update(list => list.map(r => ({ ...r, selected: true, amount: r.remainingToPay })));
+  }
+
+  onRowToggle(row: PayslipPaymentRow): void {
+    if (row.selected && row.amount <= 0) row.amount = row.remainingToPay;
+  }
+
+  isValid(): boolean {
+    if (!this.paymentDate) return false;
+    if (this.method !== 0 && !this.bankAccountId) return false;
+    const selected = this.rows().filter(r => r.selected);
+    if (selected.length === 0) return false;
+    return selected.every(r => r.amount > 0 && r.amount <= r.remainingToPay + 0.001);
+  }
+
+  submit(): void {
+    if (!this.isValid()) return;
+    const body: RecordPayrollRunPaymentRequest = {
+      paymentDate: this.paymentDate,
+      method: this.method,
+      bankAccountId: this.method === 0 ? undefined : this.bankAccountId ?? undefined,
+      reference: this.reference || undefined,
+      notes: this.notes || undefined,
+      payslipAmounts: this.rows()
+        .filter(r => r.selected)
+        .map(r => ({ payslipId: r.payslipId, amount: r.amount }))
+    };
+    this.saving.set(true);
+    this.payroll
+      .recordRunPayment(this.runId(), body)
+      .pipe(finalize(() => this.saving.set(false)))
+      .subscribe({
+        next: () => {
+          this.toast.add({ severity: 'success', summary: 'Paie', detail: 'Paiement enregistré.' });
+          this.visibleProxy = false;
+          this.paymentRecorded.emit();
+        },
+        error: err =>
+          this.toast.add({
+            severity: 'error',
+            summary: 'Paie',
+            detail: err?.error?.message ?? 'Enregistrement impossible.'
+          })
+      });
+  }
+}

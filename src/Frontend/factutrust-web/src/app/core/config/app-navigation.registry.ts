@@ -489,6 +489,13 @@ export const ALL_NAV_ITEMS: NavItem[] = [
         permissionsAll: [PERMISSIONS.payroll.read]
       },
       {
+        label: 'Régularisation IRPP',
+        route: '/payroll/regularization',
+        icon: 'fa-solid fa-scale-balanced',
+        modules: [M.Payroll],
+        permissionsAll: [PERMISSIONS.payroll.read]
+      },
+      {
         label: 'DTS CNSS',
         route: '/payroll/declarations',
         icon: 'fa-solid fa-file-export',

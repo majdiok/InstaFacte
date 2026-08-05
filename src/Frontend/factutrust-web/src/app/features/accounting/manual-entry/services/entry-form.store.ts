@@ -18,7 +18,8 @@ import {
   LineStatus,
   ThirdPartyRef,
   createDefaultLines,
-  createEmptyLine
+  createEmptyLine,
+  ensureClientLineId
 } from '../models/entry-form.model';
 
 const DEFAULT_JOURNAL_OPTIONS: { code: string; label: string }[] = [
@@ -329,20 +330,36 @@ export class EntryFormStore {
     this.lines.set(lines);
   }
 
+  onDebitPreview(index: number): void {
+    const lines = this.lines();
+    const line = lines[index];
+    if (!line) return;
+    if ((line.debit ?? 0) > 0 && line.credit != null) {
+      line.credit = null;
+    }
+    this.lines.set([...lines]);
+  }
+
+  onCreditPreview(index: number): void {
+    const lines = this.lines();
+    const line = lines[index];
+    if (!line) return;
+    if ((line.credit ?? 0) > 0 && line.debit != null) {
+      line.debit = null;
+    }
+    this.lines.set([...lines]);
+  }
+
   onDebitChange(index: number): void {
     const l = [...this.lines()];
     const line = l[index];
     if (!line) return;
 
     const normalizedDebit = normalizeAccountingAmount(line.debit);
-    const nextLine = normalizedDebit !== line.debit
-      ? { ...line, debit: normalizedDebit }
-      : line;
-
-    if ((nextLine.debit ?? 0) > 0) {
-      l[index] = { ...nextLine, credit: null };
+    if ((normalizedDebit ?? 0) > 0) {
+      l[index] = { ...line, debit: normalizedDebit, credit: null };
     } else {
-      l[index] = { ...nextLine, debit: null };
+      l[index] = { ...line, debit: null };
     }
     this.lines.set(l);
   }
@@ -353,14 +370,10 @@ export class EntryFormStore {
     if (!line) return;
 
     const normalizedCredit = normalizeAccountingAmount(line.credit);
-    const nextLine = normalizedCredit !== line.credit
-      ? { ...line, credit: normalizedCredit }
-      : line;
-
-    if ((nextLine.credit ?? 0) > 0) {
-      l[index] = { ...nextLine, debit: null };
+    if ((normalizedCredit ?? 0) > 0) {
+      l[index] = { ...line, debit: null, credit: normalizedCredit };
     } else {
-      l[index] = { ...nextLine, credit: null };
+      l[index] = { ...line, credit: null };
     }
     this.lines.set(l);
   }
@@ -373,7 +386,8 @@ export class EntryFormStore {
   }
 
   setLines(lines: EntryLine[]): void {
-    const normalized = lines.length >= 2 ? lines : createDefaultLines();
+    const withIds = lines.map(ensureClientLineId);
+    const normalized = withIds.length >= 2 ? withIds : createDefaultLines();
     this.lines.set(normalized);
     this.selectedLineIndexes.set(new Set());
   }
@@ -482,6 +496,7 @@ export class EntryFormStore {
     lines: { accountNumber: string; lineLabel: string; debit: number | null; credit: number | null }[]
   ): void {
     const mapped: EntryLine[] = lines.map(l => ({
+      ...createEmptyLine(),
       accountNumber: l.accountNumber,
       lineLabel: l.lineLabel,
       debit: l.debit,
@@ -512,6 +527,7 @@ export class EntryFormStore {
     if (draft.activeTab) this.activeTab.set(draft.activeTab);
     if (draft.columnVisibility) this.columnVisibility.set({ ...draft.columnVisibility });
     const lines: EntryLine[] = draft.lines.map(l => ({
+      ...createEmptyLine(),
       accountNumber: l.accountNumber,
       lineLabel: l.lineLabel,
       debit: l.debit,
