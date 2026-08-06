@@ -10,6 +10,9 @@ public interface IPayrollRunRepository
     /// <summary>Loads a run without its payslips (suited for status transitions that emit domain events).</summary>
     Task<PayrollRun?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
+    /// <summary>Loads a run with payslips only (no lines) — suited for treasury payment flows.</summary>
+    Task<PayrollRun?> GetByIdWithPayslipsForPaymentAsync(Guid id, CancellationToken cancellationToken = default);
+
     /// <summary>Loads a run with all its payslips and lines.</summary>
     Task<PayrollRun?> GetByIdWithPayslipsAsync(Guid id, CancellationToken cancellationToken = default);
 

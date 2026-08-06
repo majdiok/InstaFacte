@@ -21,6 +21,12 @@ public sealed class PayrollComputationInput
     public decimal OvertimeAmount { get; init; }
     /// <summary>Retenue pour absences non rémunérées (réduit le brut).</summary>
     public decimal UnpaidAbsenceAmount { get; init; }
+    /// <summary>Retenue prorata embauche / départ / suspension (réduit le brut, base seule).</summary>
+    public decimal ProrataDeductionAmount { get; init; }
+    /// <summary>Jours travaillés retenus pour le prorata (convention 26 jours).</summary>
+    public decimal ProrataWorkedDays { get; init; }
+    /// <summary>Jours non rémunérés retenus pour le prorata.</summary>
+    public decimal ProrataNonWorkedDays { get; init; }
     /// <summary>Autres retenues (avances, oppositions) déduites du net.</summary>
     public decimal OtherDeductions { get; init; }
 

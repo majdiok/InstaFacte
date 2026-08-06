@@ -50,13 +50,16 @@ public sealed class GetEmployeeLeaveBalanceQueryHandler : IRequestHandler<GetEmp
         var accruedInYear = LeaveBalanceService.SumAccruedDays(accrualRows.Select(a => a.AccruedDays));
 
         var allLeaves = await leaves.ListByEmployeeAsync(employee.Id, cancellationToken);
+        var leaveTuples = allLeaves.Select(l => (l.Id, l.Type, l.IsApproved, l.Days, l.StartDate.Year)).ToList();
         var consumed = LeaveBalanceService.SumConsumedPaidLeaveDays(
-            allLeaves.Select(l => (l.Type, l.IsApproved, l.Days, l.StartDate.Year)),
+            leaveTuples.Select(l => (l.Type, l.IsApproved, l.Days, l.Year)),
             year);
+        var pending = LeaveBalanceService.SumPendingPaidLeaveDays(leaveTuples, year);
 
         var opening = employee.LeaveOpeningBalanceDays;
         var totalAcquired = LeaveBalanceService.ComputeTotalAcquired(opening, accruedInYear);
         var remaining = LeaveBalanceService.ComputeRemaining(opening, accruedInYear, consumed);
+        var available = LeaveBalanceService.ComputeAvailable(remaining, pending);
 
         return new LeaveBalanceDto
         {
@@ -66,7 +69,9 @@ public sealed class GetEmployeeLeaveBalanceQueryHandler : IRequestHandler<GetEmp
             AccruedInYear = accruedInYear,
             TotalAcquired = totalAcquired,
             Consumed = consumed,
-            Remaining = remaining
+            Remaining = remaining,
+            Pending = pending,
+            Available = available
         };
     }
 }
@@ -130,23 +135,77 @@ public static class LeaveBalanceQueryHelper
         if (leave.Type != LeaveType.Paid)
             return Result.Success();
 
-        var employee = await employees.GetByIdAsync(leave.EmployeeId, cancellationToken);
-        if (employee is null)
-            return Result.Failure(Error.NotFound("Employee", leave.EmployeeId));
-
-        var year = leave.StartDate.Year;
-        var balance = await BuildBalanceDtoAsync(employee, year, accruals, leaveRepo, cancellationToken);
-
-        // Exclude this leave if already approved (re-approve edge case).
-        var requiredDays = leave.Days;
         if (leave.IsApproved)
             return Result.Success();
 
-        if (balance.Remaining < requiredDays)
+        return await EnsurePaidLeaveDaysWithinBalanceAsync(
+            leave.EmployeeId,
+            leave.StartDate.Year,
+            leave.Days,
+            excludeLeaveId: leave.Id,
+            employees,
+            accruals,
+            leaveRepo,
+            cancellationToken);
+    }
+
+    public static async Task<Result> EnsurePaidLeaveCanBeCreatedAsync(
+        Guid employeeId,
+        LeaveType type,
+        DateTime startDate,
+        decimal days,
+        IEmployeeRepository employees,
+        ILeaveBalanceAccrualRepository accruals,
+        ILeaveRequestRepository leaveRepo,
+        CancellationToken cancellationToken)
+    {
+        if (type != LeaveType.Paid)
+            return Result.Success();
+
+        return await EnsurePaidLeaveDaysWithinBalanceAsync(
+            employeeId,
+            startDate.Year,
+            days,
+            excludeLeaveId: null,
+            employees,
+            accruals,
+            leaveRepo,
+            cancellationToken);
+    }
+
+    private static async Task<Result> EnsurePaidLeaveDaysWithinBalanceAsync(
+        Guid employeeId,
+        int year,
+        decimal requiredDays,
+        Guid? excludeLeaveId,
+        IEmployeeRepository employees,
+        ILeaveBalanceAccrualRepository accruals,
+        ILeaveRequestRepository leaveRepo,
+        CancellationToken cancellationToken)
+    {
+        var employee = await employees.GetByIdAsync(employeeId, cancellationToken);
+        if (employee is null)
+            return Result.Failure(Error.NotFound("Employee", employeeId));
+
+        var accrualRows = await accruals.ListByEmployeeAndYearAsync(employee.Id, year, cancellationToken);
+        var accruedInYear = LeaveBalanceService.SumAccruedDays(accrualRows.Select(a => a.AccruedDays));
+
+        var allLeaves = await leaveRepo.ListByEmployeeAsync(employee.Id, cancellationToken);
+        var leaveTuples = allLeaves.Select(l => (l.Id, l.Type, l.IsApproved, l.Days, l.StartDate.Year)).ToList();
+        var consumed = LeaveBalanceService.SumConsumedPaidLeaveDays(
+            leaveTuples.Select(l => (l.Type, l.IsApproved, l.Days, l.Year)),
+            year);
+        var pending = LeaveBalanceService.SumPendingPaidLeaveDays(leaveTuples, year, excludeLeaveId);
+
+        var remaining = LeaveBalanceService.ComputeRemaining(
+            employee.LeaveOpeningBalanceDays, accruedInYear, consumed);
+        var available = LeaveBalanceService.ComputeAvailable(remaining, pending);
+
+        if (available < requiredDays)
         {
             return Result.Failure(Error.Validation(
                 "LeaveBalance",
-                $"Solde congés insuffisant (reste : {balance.Remaining:0.###} j)."));
+                $"Solde congés insuffisant : {requiredDays:0.###} j demandés, {available:0.###} j disponibles ({pending:0.###} j en attente)."));
         }
 
         return Result.Success();

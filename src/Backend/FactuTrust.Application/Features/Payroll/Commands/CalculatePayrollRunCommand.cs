@@ -29,6 +29,7 @@ public sealed class CalculatePayrollRunCommandHandler
     private readonly IEmployeeLoanRepository _loans;
     private readonly IEmployeeGarnishmentRepository _garnishments;
     private readonly IPayrollIrppRegularizationRepository _irppRegularizations;
+    private readonly IEmployeePayrollSuspensionRepository _suspensions;
     private readonly IEmployeeDependentParentRepository _dependentParents;
     private readonly PayrollInputBuilder _inputBuilder;
 
@@ -47,6 +48,7 @@ public sealed class CalculatePayrollRunCommandHandler
         IEmployeeLoanRepository loans,
         IEmployeeGarnishmentRepository garnishments,
         IPayrollIrppRegularizationRepository irppRegularizations,
+        IEmployeePayrollSuspensionRepository suspensions,
         IEmployeeDependentParentRepository dependentParents,
         PayrollInputBuilder inputBuilder)
     {
@@ -64,6 +66,7 @@ public sealed class CalculatePayrollRunCommandHandler
         _loans = loans;
         _garnishments = garnishments;
         _irppRegularizations = irppRegularizations;
+        _suspensions = suspensions;
         _dependentParents = dependentParents;
         _inputBuilder = inputBuilder;
     }
@@ -82,7 +85,9 @@ public sealed class CalculatePayrollRunCommandHandler
 
         var parameters = await _parameters.GetOrCreateForYearAsync(run.ParametersFiscalYear, cancellationToken);
 
-        var employees = await _employees.GetActiveWithContractsAsync(cancellationToken);
+        var employees = parameters.EnableAutomaticProrata
+            ? await _employees.GetEligibleForPayrollMonthAsync(run.Year, run.Month, cancellationToken)
+            : await _employees.GetActiveWithContractsAsync(cancellationToken);
         var employeeIds = employees.Select(e => e.Id).ToList();
         var referenceDate = new DateTime(run.Year, run.Month, 1).AddMonths(1).AddDays(-1);
 
@@ -116,9 +121,14 @@ public sealed class CalculatePayrollRunCommandHandler
             ? await _irppRegularizations.ListForMonthAsync(run.Year, run.Month, cancellationToken)
             : Array.Empty<PayrollIrppRegularization>();
 
+        var monthSuspensions = parameters.EnableAutomaticProrata
+            ? await _suspensions.ListForMonthAsync(run.Year, run.Month, cancellationToken)
+            : Array.Empty<EmployeePayrollSuspension>();
+
         var batch = new PayrollInputBuilder.MonthBatchData
         {
             IrppRegularizations = regularizations,
+            Suspensions = monthSuspensions,
             Enrollments = enrollments,
             Schemes = schemes.ToDictionary(s => s.Id),
             MealVouchers = mealVoucherLines,
@@ -133,7 +143,9 @@ public sealed class CalculatePayrollRunCommandHandler
         var payslips = new List<Payslip>();
         foreach (var employee in employees)
         {
-            var contract = employee.GetActiveContract(referenceDate);
+            var contract = parameters.EnableAutomaticProrata
+                ? employee.GetContractForPayrollMonth(run.Year, run.Month)
+                : employee.GetActiveContract(referenceDate);
             if (contract is null)
                 continue;
 
@@ -189,7 +201,10 @@ public sealed class CalculatePayrollRunCommandHandler
                 run.Month,
                 computation,
                 appliedEmployeeRate,
-                appliedEmployerRate);
+                appliedEmployerRate,
+                input.ProrataWorkedDays,
+                input.ProrataNonWorkedDays,
+                input.ProrataDeductionAmount);
 
             payslips.Add(payslip);
         }

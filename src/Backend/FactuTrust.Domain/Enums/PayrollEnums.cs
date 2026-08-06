@@ -95,6 +95,25 @@ public enum PayrollRunPaymentStatus
     FullyPaid = 2
 }
 
+/// <summary>Statut du versement CNSS mensuel.</summary>
+public enum CnssRemittancePaymentStatus
+{
+    Pending = 0,
+    Paid = 1,
+    Cancelled = 2
+}
+
+public static class CnssRemittancePaymentStatusExtensions
+{
+    public static string ToDisplayString(this CnssRemittancePaymentStatus status) => status switch
+    {
+        CnssRemittancePaymentStatus.Pending => "À payer",
+        CnssRemittancePaymentStatus.Paid => "Payé",
+        CnssRemittancePaymentStatus.Cancelled => "Annulé",
+        _ => throw new ArgumentOutOfRangeException(nameof(status))
+    };
+}
+
 public static class PayslipPaymentStatusExtensions
 {
     public static string ToDisplayString(this PayslipPaymentStatus status) => status switch
@@ -227,6 +246,28 @@ public static class LeaveTypeExtensions
     /// <summary>Vrai si ce type de congé/absence réduit le brut du mois.</summary>
     public static bool ReducesGross(this LeaveType type) =>
         type is LeaveType.Unpaid or LeaveType.Unjustified;
+}
+
+/// <summary>Type de suspension de contrat (paie).</summary>
+public enum PayrollSuspensionType
+{
+    /// <summary>Mise à pied disciplinaire.</summary>
+    Disciplinary = 0,
+    /// <summary>Suspension administrative.</summary>
+    Administrative = 1,
+    /// <summary>Autre motif.</summary>
+    Other = 99
+}
+
+public static class PayrollSuspensionTypeExtensions
+{
+    public static string ToDisplayString(this PayrollSuspensionType type) => type switch
+    {
+        PayrollSuspensionType.Disciplinary => "Disciplinaire",
+        PayrollSuspensionType.Administrative => "Administrative",
+        PayrollSuspensionType.Other => "Autre",
+        _ => throw new ArgumentOutOfRangeException(nameof(type))
+    };
 }
 
 /// <summary>

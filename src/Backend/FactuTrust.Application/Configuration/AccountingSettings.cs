@@ -194,4 +194,10 @@ public sealed class AccountingSettings
 
     /// <summary>Active les saisies sur salaire et pensions alimentaires dans le module paie.</summary>
     public bool PayrollGarnishmentsEnabled { get; set; }
+
+    /// <summary>
+    /// Active le bordereau CNSS mensuel et le suivi des versements (compte 453).
+    /// Désactivé par défaut.
+    /// </summary>
+    public bool PayrollCnssRemittanceEnabled { get; set; }
 }

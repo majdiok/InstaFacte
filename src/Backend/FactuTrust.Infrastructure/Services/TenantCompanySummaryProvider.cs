@@ -34,10 +34,12 @@ public sealed class TenantCompanySummaryProvider : ITenantCompanySummaryProvider
             return null;
 
         string? tradeName = null;
+        string? cnssEmployerNumber = null;
         try
         {
             var company = await _companyRepository.GetDefaultAsync(cancellationToken);
             tradeName = company?.TradeName;
+            cnssEmployerNumber = company?.CnssEmployerNumber;
         }
         catch
         {
@@ -50,7 +52,8 @@ public sealed class TenantCompanySummaryProvider : ITenantCompanySummaryProvider
             Nif = tenant.NIF.Value,
             TaxRegimeDisplay = tenant.TaxRegime.ToDisplayString(),
             TradeName = tradeName,
-            AddressLine = tenant.Address.ToSingleLine()
+            AddressLine = tenant.Address.ToSingleLine(),
+            CnssEmployerNumber = cnssEmployerNumber
         };
     }
 }

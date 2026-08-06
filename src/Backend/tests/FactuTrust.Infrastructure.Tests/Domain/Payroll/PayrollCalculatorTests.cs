@@ -114,6 +114,22 @@ public sealed class PayrollCalculatorTests
     }
 
     [Fact]
+    public void Compute_ProrataDeduction_ReducesGross()
+    {
+        var input = new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            ProrataDeductionAmount = 300m,
+            Regime = SocialRegime.Rsna,
+            WorkAccidentRate = 0.4m
+        };
+
+        var c = PayrollCalculator.Compute(input, Params());
+
+        Assert.Equal(1700m, c.GrossSalary);
+    }
+
+    [Fact]
     public void Compute_UnpaidAbsence_ReducesGross()
     {
         var input = new PayrollComputationInput

@@ -196,6 +196,14 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
                 <label for="industrialSector">Secteur industriel (TFP 1 % au lieu de 2 %)</label>
                 <p-inputSwitch inputId="industrialSector" [(ngModel)]="params()!.isIndustrialSector" name="industrialSector" />
               </div>
+              <div class="payroll-form-group switch-row">
+                <label for="irppRegularization">Régularisation IRPP annuelle (solde de tout compte)</label>
+                <p-inputSwitch inputId="irppRegularization" [(ngModel)]="params()!.enableIrppRegularization" name="irppRegularization" />
+              </div>
+              <div class="payroll-form-group switch-row">
+                <label for="automaticProrata">Prorata automatique (absences, suspensions, départs)</label>
+                <p-inputSwitch inputId="automaticProrata" [(ngModel)]="params()!.enableAutomaticProrata" name="automaticProrata" />
+              </div>
               <div class="payroll-form-group">
                 <label for="smigExemptionMode">Exonération IRPP SMIG (art. 21)</label>
                 <p-dropdown
@@ -230,6 +238,11 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
               La CSS n'est pas impactée. Voir la documentation paie pour le détail des formules.
             </p>
             <p class="payroll-info-text mt-2">Le taux TFP appliqué aux cycles de paie de cet exercice suit ce paramètre ; recalculez les cycles en brouillon pour l'appliquer.</p>
+            <p class="payroll-info-text mt-2">
+              La régularisation IRPP calcule l'écart annuel IRPP/CSS lors d'un départ ou en fin d'exercice.
+              Le prorata automatique réduit le brut des jours non travaillés (congés sans solde, suspensions non rémunérées, sortie en cours de mois).
+              Les deux options s'appliquent aux cycles recalculés après modification.
+            </p>
           </p-tabPanel>
 
           <p-tabPanel header="Saisies sur salaire">
@@ -316,6 +329,8 @@ export class PayrollSettingsComponent implements OnInit {
         if (data) {
           this.params.set({
             ...data,
+            enableIrppRegularization: data.enableIrppRegularization ?? false,
+            enableAutomaticProrata: data.enableAutomaticProrata ?? false,
             smigIrppExemptionMode: data.smigIrppExemptionMode ?? 'None',
             smigIrppExemptionModeDisplay: data.smigIrppExemptionModeDisplay ?? 'Désactivée',
             smigIrppExemptionRateOverride: data.smigIrppExemptionRateOverride ?? null,

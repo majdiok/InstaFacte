@@ -28,11 +28,16 @@ public sealed class CreateLeaveCommandHandler : IRequestHandler<CreateLeaveComma
 {
     private readonly ILeaveRequestRepository _leaves;
     private readonly IEmployeeRepository _employees;
+    private readonly ILeaveBalanceAccrualRepository _accruals;
 
-    public CreateLeaveCommandHandler(ILeaveRequestRepository leaves, IEmployeeRepository employees)
+    public CreateLeaveCommandHandler(
+        ILeaveRequestRepository leaves,
+        IEmployeeRepository employees,
+        ILeaveBalanceAccrualRepository accruals)
     {
         _leaves = leaves;
         _employees = employees;
+        _accruals = accruals;
     }
 
     public async Task<Result<Guid>> Handle(CreateLeaveCommand request, CancellationToken cancellationToken)
@@ -44,6 +49,11 @@ public sealed class CreateLeaveCommandHandler : IRequestHandler<CreateLeaveComma
 
         if (!Enum.TryParse<LeaveType>(dto.Type, out var type))
             return Result.Failure<Guid>(Error.Validation("Type", "Type de congé invalide."));
+
+        var balanceCheck = await LeaveBalanceQueryHelper.EnsurePaidLeaveCanBeCreatedAsync(
+            dto.EmployeeId, type, dto.StartDate, dto.Days, _employees, _accruals, _leaves, cancellationToken);
+        if (balanceCheck.IsFailure)
+            return Result.Failure<Guid>(balanceCheck.Error);
 
         var leaveResult = LeaveRequest.Create(dto.EmployeeId, type, dto.StartDate, dto.EndDate, dto.Days, dto.Reason);
         if (leaveResult.IsFailure)

@@ -110,7 +110,8 @@ public sealed class UpdatePayrollParametersCommandHandler : IRequestHandler<Upda
             dto.ParentAnnualDeductionCap,
             dto.IsIndustrialSector,
             mealVoucherDailyExemptionCap: parameters.MealVoucherDailyExemptionCap,
-            enableIrppRegularization: parameters.EnableIrppRegularization,
+            enableIrppRegularization: dto.EnableIrppRegularization,
+            enableAutomaticProrata: dto.EnableAutomaticProrata,
             smigIrppExemptionMode: smigExemptionMode,
             smigIrppExemptionRateOverride: dto.SmigIrppExemptionRateOverride,
             cssEmployerRate: dto.CssEmployerRate);

@@ -344,6 +344,9 @@ public sealed record PayslipDetailDto
     public decimal OtherDeductions { get; init; }
     public decimal NonTaxableAllowances { get; init; }
     public decimal NetSalary { get; init; }
+    public decimal ProrataWorkedDays { get; init; }
+    public decimal ProrataNonWorkedDays { get; init; }
+    public decimal ProrataDeductionAmount { get; init; }
     public decimal CnssEmployer { get; init; }
     public decimal WorkAccidentContribution { get; init; }
     public decimal Tfp { get; init; }
@@ -355,6 +358,63 @@ public sealed record PayslipDetailDto
     public string PaymentStatusDisplay { get; init; } = null!;
     public DateTime? PaidAt { get; init; }
     public IReadOnlyList<PayslipLineDto> Lines { get; init; } = Array.Empty<PayslipLineDto>();
+}
+
+// ─────────────────────────────── Prorata & suspensions ───────────────────────────────
+
+public sealed record PayrollProrataPreviewLineDto
+{
+    public Guid EmployeeId { get; init; }
+    public string EmployeeName { get; init; } = null!;
+    public string EmployeeNumber { get; init; } = null!;
+    public decimal WorkedDays { get; init; }
+    public decimal NonWorkedDays { get; init; }
+    public decimal DeductionAmount { get; init; }
+    public string Reason { get; init; } = null!;
+    public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
+}
+
+public sealed record PayrollProrataPreviewDto
+{
+    public int Year { get; init; }
+    public int Month { get; init; }
+    public bool IsEnabled { get; init; }
+    public int EmployeeCount { get; init; }
+    public decimal TotalDeduction { get; init; }
+    public IReadOnlyList<PayrollProrataPreviewLineDto> Lines { get; init; } = Array.Empty<PayrollProrataPreviewLineDto>();
+}
+
+public sealed record EmployeePayrollSuspensionDto
+{
+    public Guid Id { get; init; }
+    public Guid EmployeeId { get; init; }
+    public string Type { get; init; } = null!;
+    public string TypeDisplay { get; init; } = null!;
+    public DateTime StartDate { get; init; }
+    public DateTime? EndDate { get; init; }
+    public bool IsPaid { get; init; }
+    public string? Reason { get; init; }
+    public bool IsApproved { get; init; }
+    public DateTime? ApprovedAt { get; init; }
+}
+
+public sealed record CreateEmployeePayrollSuspensionDto
+{
+    public Guid EmployeeId { get; init; }
+    public string Type { get; init; } = null!;
+    public DateTime StartDate { get; init; }
+    public DateTime? EndDate { get; init; }
+    public bool IsPaid { get; init; }
+    public string? Reason { get; init; }
+}
+
+public sealed record UpdateEmployeePayrollSuspensionDto
+{
+    public string Type { get; init; } = null!;
+    public DateTime StartDate { get; init; }
+    public DateTime? EndDate { get; init; }
+    public bool IsPaid { get; init; }
+    public string? Reason { get; init; }
 }
 
 // ─────────────────────────────── Parameters (settings) ───────────────────────────────
@@ -376,6 +436,8 @@ public sealed record PayrollParametersDto
     public bool EnforceSmigOnContracts { get; init; }
     public bool EnableExtendedOvertimeRates { get; init; }
     public bool EnableAllowanceQuadrantMatrix { get; init; }
+    public bool EnableIrppRegularization { get; init; }
+    public bool EnableAutomaticProrata { get; init; }
     public decimal CssRate { get; init; }
     public decimal CssAnnualExemptionThreshold { get; init; }
     public decimal CssEmployerRate { get; init; }
@@ -408,6 +470,8 @@ public sealed record UpdatePayrollParametersDto
     public bool EnforceSmigOnContracts { get; init; }
     public bool EnableExtendedOvertimeRates { get; init; }
     public bool EnableAllowanceQuadrantMatrix { get; init; }
+    public bool EnableIrppRegularization { get; init; }
+    public bool EnableAutomaticProrata { get; init; }
     public decimal CssRate { get; init; }
     public decimal CssAnnualExemptionThreshold { get; init; }
     public decimal CssEmployerRate { get; init; }
@@ -865,6 +929,8 @@ public sealed record LeaveBalanceDto
     public decimal TotalAcquired { get; init; }
     public decimal Consumed { get; init; }
     public decimal Remaining { get; init; }
+    public decimal Pending { get; init; }
+    public decimal Available { get; init; }
 }
 
 public sealed record SetLeaveOpeningBalanceDto
@@ -903,6 +969,87 @@ public sealed record DtsDeclarationDto
     /// <summary>True si les trois mois du trimestre ont un cycle Validé/Clôturé.</summary>
     public bool IsComplete { get; init; }
     public IReadOnlyList<DtsLineDto> Lines { get; init; } = Array.Empty<DtsLineDto>();
+}
+
+// ─────────────────────────────── Bordereau CNSS mensuel ───────────────────────────────
+
+public sealed record CnssContributionRemittanceLineDto
+{
+    public Guid EmployeeId { get; init; }
+    public string EmployeeName { get; init; } = null!;
+    public string? CnssNumber { get; init; }
+    public decimal CnssableGross { get; init; }
+    public decimal CnssEmployee { get; init; }
+    public decimal CnssEmployer { get; init; }
+    public decimal WorkAccident { get; init; }
+    public decimal LineTotal { get; init; }
+    public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
+}
+
+public sealed record CnssContributionRemittanceDto
+{
+    public int Year { get; init; }
+    public int Month { get; init; }
+    public string EmployerCompanyName { get; init; } = null!;
+    public string EmployerNif { get; init; } = null!;
+    public string? EmployerCnssNumber { get; init; }
+    public string? EmployerAddressLine { get; init; }
+    public Guid? PayrollRunId { get; init; }
+    public int? SourceRunStatus { get; init; }
+    public bool IsEligible { get; init; }
+    public bool HasExistingPayment { get; init; }
+    public int? PaymentStatus { get; init; }
+    public string? PaymentStatusDisplay { get; init; }
+    public decimal TotalCnssEmployee { get; init; }
+    public decimal TotalCnssEmployer { get; init; }
+    public decimal TotalWorkAccident { get; init; }
+    public decimal TotalDue { get; init; }
+    public int EmployeeCount { get; init; }
+    public string DocumentReference { get; init; } = null!;
+    public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<CnssContributionRemittanceLineDto> Lines { get; init; } = Array.Empty<CnssContributionRemittanceLineDto>();
+    public CnssContributionPaymentDto? Payment { get; init; }
+}
+
+public sealed record CnssContributionPaymentDto
+{
+    public Guid Id { get; init; }
+    public int Year { get; init; }
+    public int Month { get; init; }
+    public Guid PayrollRunId { get; init; }
+    public decimal TotalCnssEmployee { get; init; }
+    public decimal TotalCnssEmployer { get; init; }
+    public decimal TotalWorkAccident { get; init; }
+    public decimal TotalDue { get; init; }
+    public decimal Amount { get; init; }
+    public DateTime PaymentDate { get; init; }
+    public string Method { get; init; } = null!;
+    public string MethodDisplay { get; init; } = null!;
+    public Guid? BankAccountId { get; init; }
+    public string? Reference { get; init; }
+    public string? Notes { get; init; }
+    public bool IsCancelled { get; init; }
+    public DateTime? CancelledAt { get; init; }
+    public string? CancelledBy { get; init; }
+    public string? CancellationReason { get; init; }
+    public DateTime CreatedAt { get; init; }
+    public string? CreatedBy { get; init; }
+}
+
+public sealed record RecordCnssContributionPaymentRequest
+{
+    public int Year { get; init; }
+    public int Month { get; init; }
+    public DateTime PaymentDate { get; init; }
+    public PaymentMethod Method { get; init; } = PaymentMethod.BankTransfer;
+    public Guid? BankAccountId { get; init; }
+    public string? Reference { get; init; }
+    public string? Notes { get; init; }
+}
+
+public sealed record CancelCnssContributionPaymentRequest
+{
+    public string Reason { get; init; } = null!;
 }
 
 // ─────────────────────────────── Certificats de retenue à la source (IRPP/CSS) ───────────────────────────────

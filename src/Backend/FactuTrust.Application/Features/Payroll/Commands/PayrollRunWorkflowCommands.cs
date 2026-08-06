@@ -188,6 +188,7 @@ public sealed class ReopenPayrollRunCommandHandler : IRequestHandler<ReopenPayro
     private readonly ILeaveBalanceAccrualRepository _accruals;
     private readonly IEmployeeLoanRepository _loans;
     private readonly IEmployeeGarnishmentRepository _garnishments;
+    private readonly ICnssContributionPaymentRepository _cnssPayments;
     private readonly ITenantUnitOfWork _unitOfWork;
 
     public ReopenPayrollRunCommandHandler(
@@ -196,6 +197,7 @@ public sealed class ReopenPayrollRunCommandHandler : IRequestHandler<ReopenPayro
         ILeaveBalanceAccrualRepository accruals,
         IEmployeeLoanRepository loans,
         IEmployeeGarnishmentRepository garnishments,
+        ICnssContributionPaymentRepository cnssPayments,
         ITenantUnitOfWork unitOfWork)
     {
         _runs = runs;
@@ -203,6 +205,7 @@ public sealed class ReopenPayrollRunCommandHandler : IRequestHandler<ReopenPayro
         _accruals = accruals;
         _loans = loans;
         _garnishments = garnishments;
+        _cnssPayments = cnssPayments;
         _unitOfWork = unitOfWork;
     }
 
@@ -213,6 +216,13 @@ public sealed class ReopenPayrollRunCommandHandler : IRequestHandler<ReopenPayro
             var run = await _runs.GetByIdAsync(request.RunId, ct);
             if (run is null)
                 return Result.Failure(Error.NotFound("PayrollRun", request.RunId));
+
+            if (await _cnssPayments.HasActivePaymentForRunAsync(run.Id, ct))
+            {
+                return Result.Failure(Error.Validation(
+                    "CnssPayment",
+                    "Impossible de rouvrir : un versement CNSS actif existe pour ce cycle. Annulez-le d'abord."));
+            }
 
             var reopenResult = run.Reopen();
             if (reopenResult.IsFailure)

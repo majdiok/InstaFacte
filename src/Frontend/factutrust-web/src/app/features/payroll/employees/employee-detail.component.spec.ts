@@ -49,7 +49,7 @@ describe('EmployeeDetailComponent', () => {
     employeeServiceSpy.listAdvances.and.returnValue(of({ success: true, data: [] }));
     employeeServiceSpy.getLeaveBalance.and.returnValue(of({
       success: true,
-      data: { employeeId: 'e1', year: 2026, openingBalance: 0, accruedInYear: 0, totalAcquired: 0, consumed: 0, remaining: 0 }
+      data: { employeeId: 'e1', year: 2026, openingBalance: 0, accruedInYear: 0, totalAcquired: 0, consumed: 0, remaining: 0, pending: 0, available: 0 }
     }));
 
     await TestBed.configureTestingModule({
@@ -67,7 +67,8 @@ describe('EmployeeDetailComponent', () => {
           listSocialFundEnrollments: () => of({ success: true, data: [] }),
           listInKindBenefits: () => of({ success: true, data: [] }),
           listEmployeeLoans: () => of({ success: true, data: [] }),
-          listGarnishments: () => of({ success: true, data: [] })
+          listGarnishments: () => of({ success: true, data: [] }),
+          listSuspensions: () => of({ success: true, data: [] })
         } },
         { provide: ToastService, useValue: toastSpy },
         { provide: ConfirmationService, useValue: confirmSpy },

@@ -20,6 +20,8 @@ import { EmployeeSocialFundsTabComponent } from './employee-social-funds-tab.com
 import { EmployeeInKindBenefitsTabComponent } from './employee-in-kind-benefits-tab.component';
 import { EmployeeLoansTabComponent } from './employee-loans-tab.component';
 import { EmployeeGarnishmentsTabComponent } from './employee-garnishments-tab.component';
+import { EmployeeSuspensionsTabComponent } from './employee-suspensions-tab.component';
+import { EmployeeDepartureDialogComponent } from './employee-departure-dialog.component';
 import { PayrollConsultBannerComponent, PayrollAmountPipe, formatPayrollAmount } from '../shared';
 
 @Component({
@@ -41,6 +43,8 @@ import { PayrollConsultBannerComponent, PayrollAmountPipe, formatPayrollAmount }
     EmployeeInKindBenefitsTabComponent,
     EmployeeLoansTabComponent,
     EmployeeGarnishmentsTabComponent,
+    EmployeeSuspensionsTabComponent,
+    EmployeeDepartureDialogComponent,
     PayrollConsultBannerComponent,
     PayrollAmountPipe
   ],
@@ -51,6 +55,9 @@ import { PayrollConsultBannerComponent, PayrollAmountPipe, formatPayrollAmount }
       <app-page-header [title]="employee()!.fullName" [subtitle]="'Matricule ' + employee()!.employeeNumber">
         @if (canManage()) {
           <app-button variant="outline" icon="pi-pencil" iconPos="left" [routerLink]="['/payroll/employees', employee()!.id, 'edit']">Modifier</app-button>
+          @if (!employee()!.terminationDate) {
+            <app-button variant="outline" icon="pi-sign-out" iconPos="left" (click)="departureDialogVisible = true">Déclarer un départ</app-button>
+          }
           <app-button variant="outline" [icon]="employee()!.isActive ? 'pi-ban' : 'pi-check'" iconPos="left" (click)="toggleActive()">
             {{ employee()!.isActive ? 'Désactiver' : 'Réactiver' }}
           </app-button>
@@ -240,6 +247,14 @@ import { PayrollConsultBannerComponent, PayrollAmountPipe, formatPayrollAmount }
 
         <p-tabPanel>
           <ng-template pTemplate="header">
+            <i class="pi pi-ban mr-2"></i>
+            <span>Suspensions</span>
+          </ng-template>
+          <app-employee-suspensions-tab [employeeId]="employee()!.id" [readOnly]="!canManage()" />
+        </p-tabPanel>
+
+        <p-tabPanel>
+          <ng-template pTemplate="header">
             <i class="pi pi-wallet mr-2"></i>
             <span>Avances</span>
           </ng-template>
@@ -284,6 +299,11 @@ import { PayrollConsultBannerComponent, PayrollAmountPipe, formatPayrollAmount }
         [employeeId]="employee()!.id"
         [editContract]="editingContract"
         (saved)="reload()" />
+
+      <app-employee-departure-dialog
+        [employeeId]="employee()!.id"
+        [(visible)]="departureDialogVisible"
+        (completed)="reload()" />
     }
   `,
   styles: [`
@@ -308,6 +328,7 @@ export class EmployeeDetailComponent implements OnInit {
   employee = signal<EmployeeDetail | null>(null);
   monthlySmig = signal<number | null>(null);
   contractDialogVisible = false;
+  departureDialogVisible = false;
   editingContract: EmploymentContract | null = null;
 
   canManage = computed(() => canManagePayrollEmployees(this.auth));

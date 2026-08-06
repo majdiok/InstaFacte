@@ -93,4 +93,16 @@ public interface IAccountingService
         Guid payrollPaymentId,
         string reason,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Écriture de décaissement CNSS (débit 453 / crédit trésorerie).</summary>
+    Task<Result> GenerateCnssContributionPaymentEntryAsync(
+        CnssContributionPayment payment,
+        BankAccount? bankAccount,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Extourne l'écriture de versement CNSS lors de l'annulation.</summary>
+    Task<Result> ReverseCnssContributionPaymentEntryAsync(
+        Guid cnssContributionPaymentId,
+        string reason,
+        CancellationToken cancellationToken = default);
 }

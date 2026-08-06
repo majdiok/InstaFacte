@@ -14,5 +14,7 @@ public enum FiscalObligationType
     CnssDtsQuarterly = 8,
     /// <summary>Versement mensuel des retenues IRPP salariés.</summary>
     PayrollIrppWithholding = 9,
+    /// <summary>Versement mensuel des cotisations CNSS.</summary>
+    CnssMonthlyRemittance = 10,
     Other = 99
 }

@@ -61,7 +61,8 @@ public sealed class LetteringServiceTests
         return entry.Lines.Single(l => l.AccountNumber == "4111").Id;
     }
 
-    private LetteringService BuildService() => new(_factory);
+    private LetteringService BuildService(TenantAmbientTransaction? ambient = null)
+        => new(_factory, ambient ?? new TenantAmbientTransaction());
 
     private (string? Code, LetteringGroup? Group) LoadState(Guid lineId)
     {

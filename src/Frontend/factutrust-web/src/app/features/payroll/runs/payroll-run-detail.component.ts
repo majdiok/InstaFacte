@@ -17,6 +17,7 @@ import { PayrollMealVoucherGridComponent } from './payroll-meal-voucher-grid.com
 import { PayrollBankTransferDialogComponent } from './payroll-bank-transfer-dialog.component';
 import { PayrollRecordPaymentDialogComponent } from './payroll-record-payment-dialog.component';
 import { PayrollPaymentsPanelComponent } from './payroll-payments-panel.component';
+import { PayrollProrataPreviewPanelComponent } from './payroll-prorata-preview-panel.component';
 import { PayrollStatGridComponent, PayrollSectionComponent, PayrollAmountPipe, formatPayrollAmount, type PayrollStatItem } from '../shared';
 
 @Component({
@@ -37,6 +38,7 @@ import { PayrollStatGridComponent, PayrollSectionComponent, PayrollAmountPipe, f
     PayrollBankTransferDialogComponent,
     PayrollRecordPaymentDialogComponent,
     PayrollPaymentsPanelComponent,
+    PayrollProrataPreviewPanelComponent,
     PayrollStatGridComponent,
     PayrollSectionComponent,
     PayrollAmountPipe
@@ -76,6 +78,7 @@ import { PayrollStatGridComponent, PayrollSectionComponent, PayrollAmountPipe, f
       <app-payroll-stat-grid [items]="totalsStats()" class="mb-4" />
 
       @if (run()!.status === 'Draft' || run()!.status === 'Calculated') {
+        <app-payroll-prorata-preview-panel [runId]="runId" class="mb-4" />
         <app-payroll-overtime-grid
           [year]="run()!.year"
           [month]="run()!.month"
@@ -158,6 +161,16 @@ import { PayrollStatGridComponent, PayrollSectionComponent, PayrollAmountPipe, f
             <span class="ml-2 text-secondary">Solde congés : {{ selectedPayslip()!.leaveBalanceRemaining }} j</span>
           }
         </div>
+        @if ((selectedPayslip()!.prorataDeductionAmount ?? 0) > 0) {
+          <div class="prorata-summary mb-3">
+            <strong>Prorata du mois</strong>
+            <div class="prorata-grid">
+              <span>Jours travaillés : {{ selectedPayslip()!.prorataWorkedDays }}</span>
+              <span>Jours non travaillés : {{ selectedPayslip()!.prorataNonWorkedDays }}</span>
+              <span>Retenue : {{ selectedPayslip()!.prorataDeductionAmount | payrollAmount }}</span>
+            </div>
+          </div>
+        }
         <p-table [value]="selectedPayslip()!.lines" styleClass="p-datatable-sm">
           <ng-template pTemplate="header">
             <tr>
@@ -216,6 +229,13 @@ import { PayrollStatGridComponent, PayrollSectionComponent, PayrollAmountPipe, f
     .ml-2 { margin-left: var(--spacing-2); }
     .text-secondary { color: var(--color-text-secondary); }
     .actions { display: flex; gap: var(--spacing-2); white-space: nowrap; }
+    .prorata-summary {
+      padding: var(--spacing-3);
+      background: var(--color-surface-secondary);
+      border-radius: var(--radius-md);
+      font-size: var(--font-size-sm);
+    }
+    .prorata-grid { display: flex; flex-wrap: wrap; gap: var(--spacing-4); margin-top: var(--spacing-2); }
   `]
 })
 export class PayrollRunDetailComponent implements OnInit {

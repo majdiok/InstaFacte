@@ -24,6 +24,14 @@ public sealed class PayrollRunRepository : IPayrollRunRepository
         return await context.PayrollRuns.FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
     }
 
+    public async Task<PayrollRun?> GetByIdWithPayslipsForPaymentAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.PayrollRuns
+            .Include(r => r.Payslips)
+            .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
+    }
+
     public async Task<PayrollRun?> GetByIdWithPayslipsAsync(Guid id, CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();

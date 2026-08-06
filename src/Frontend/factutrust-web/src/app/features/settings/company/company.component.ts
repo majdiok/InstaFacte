@@ -254,6 +254,17 @@ import { TUNISIAN_GOVERNORATE_OPTIONS } from '@shared/validation/validation-rule
         <!-- Bank Information -->
         <p-card header="Informations bancaires" styleClass="form-card bank-card">
           <div class="form-group">
+            <label for="cnssEmployerNumber">Matricule employeur CNSS</label>
+            <input
+              pInputText
+              id="cnssEmployerNumber"
+              formControlName="cnssEmployerNumber"
+              placeholder="Numéro d'affiliation CNSS de l'entreprise"
+              class="w-full">
+            <small class="form-hint">Requis pour le bordereau mensuel de versement des cotisations.</small>
+          </div>
+
+          <div class="form-group">
             <label for="bankName">Nom de la banque</label>
             <input 
               pInputText 
@@ -640,6 +651,7 @@ export class CompanyComponent implements OnInit, OnDestroy {
     bankName: [''],
     rib: [''],
     iban: [''],
+    cnssEmployerNumber: [''],
     defaultPaymentTerms: ['Paiement à 30 jours'],
     invoiceFooter: [''],
     warehouseName: ['']
@@ -750,6 +762,7 @@ export class CompanyComponent implements OnInit, OnDestroy {
             bankName: company.bankName || '',
             rib: company.rib || '',
             iban: company.iban || '',
+            cnssEmployerNumber: company.cnssEmployerNumber || '',
             defaultPaymentTerms: company.defaultPaymentTerms || 'Paiement à 30 jours',
             invoiceFooter: company.invoiceFooter || ''
           });
@@ -868,6 +881,7 @@ export class CompanyComponent implements OnInit, OnDestroy {
       bankName: formValue.bankName?.trim() || null,
       rib: formValue.rib?.trim() || null,
       iban: formValue.iban?.trim() || null,
+      cnssEmployerNumber: formValue.cnssEmployerNumber?.trim() || null,
       defaultPaymentTerms: formValue.defaultPaymentTerms?.trim() || null,
       invoiceFooter: formValue.invoiceFooter?.trim() || null
     };

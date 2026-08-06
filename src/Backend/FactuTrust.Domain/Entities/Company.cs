@@ -31,6 +31,9 @@ public sealed class Company : AggregateRoot
     public DateTime? TejAdherentSince { get; private set; }
     public TejCategory? TejCategory { get; private set; }
 
+    /// <summary>Matricule employeur CNSS (affiliation sociale de l'entreprise).</summary>
+    public string? CnssEmployerNumber { get; private set; }
+
     private Company() { }
 
     public static Result<Company> Create(
@@ -121,6 +124,13 @@ public sealed class Company : AggregateRoot
         EstablishmentCode = establishmentCode?.Trim();
         TejAdherentSince = tejAdherentSince;
         TejCategory = tejCategory;
+    }
+
+    public void SetCnssEmployerNumber(string? cnssEmployerNumber)
+    {
+        CnssEmployerNumber = string.IsNullOrWhiteSpace(cnssEmployerNumber)
+            ? null
+            : cnssEmployerNumber.Trim();
     }
 
     /// <summary>

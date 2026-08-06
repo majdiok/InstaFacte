@@ -4,6 +4,7 @@ using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.ValueObjects;
 using FactuTrust.Infrastructure.MultiTenancy;
+using FactuTrust.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace FactuTrust.Infrastructure.Services;
@@ -11,10 +12,12 @@ namespace FactuTrust.Infrastructure.Services;
 public sealed class LetteringService : ILetteringService
 {
     private readonly ITenantDbContextFactory _contextFactory;
+    private readonly TenantAmbientTransaction _ambient;
 
-    public LetteringService(ITenantDbContextFactory contextFactory)
+    public LetteringService(ITenantDbContextFactory contextFactory, TenantAmbientTransaction ambient)
     {
         _contextFactory = contextFactory;
+        _ambient = ambient;
     }
 
     public async Task<Result> ManualLetterAsync(IReadOnlyList<Guid> journalEntryLineIds, bool allowPartial = false, CancellationToken cancellationToken = default)
@@ -22,71 +25,41 @@ public sealed class LetteringService : ILetteringService
         if (journalEntryLineIds.Count < 2)
             return Result.Failure(Error.Validation("Lines", "Au moins deux lignes d'écriture sont requises pour le lettrage."));
 
+        if (_ambient.IsActive)
+        {
+            await using var ctx = _contextFactory.CreateContext();
+            return await LetterInContextAsync(ctx, journalEntryLineIds, allowPartial, saveChanges: true, cancellationToken);
+        }
+
         await using var strategyContext = _contextFactory.CreateIsolatedContext();
         var strategy = strategyContext.Database.CreateExecutionStrategy();
 
         return await strategy.ExecuteAsync(async () =>
         {
             await using var ctx = _contextFactory.CreateIsolatedContext();
-            var lines = await ctx.JournalEntryLines
-                .AsTracking()
-                .Where(l => journalEntryLineIds.Contains(l.Id))
-                .ToListAsync(cancellationToken);
-
-            if (lines.Count != journalEntryLineIds.Count)
-                return Result.Failure(Error.Validation("JournalEntryLine", "Une ou plusieurs lignes sont introuvables."));
-
-            if (lines.Any(l => !string.IsNullOrEmpty(l.LetteringCode)))
-                return Result.Failure(Error.Validation("Lettering", "Une ou plusieurs lignes sont déjà lettrées."));
-
-            var account = lines[0].AccountNumber;
-            if (lines.Any(l => l.AccountNumber != account))
-                return Result.Failure(Error.Validation("AccountNumber", "Toutes les lignes doivent être sur le même compte."));
-
-            var debit = lines.Sum(l => l.DebitAmount.Amount);
-            var credit = lines.Sum(l => l.CreditAmount.Amount);
-            var balanced = Math.Round(debit, 3) == Math.Round(credit, 3);
-            if (!balanced && !allowPartial)
-                return Result.Failure(Error.Validation("Balance",
-                    "Le lettrage nécessite une égalité débit / crédit (ou cochez « lettrage partiel »)."));
-
-            // Un « partiel » équilibré est un lettrage définitif ordinaire.
-            var isPartial = !balanced;
-
-            var currency = lines[0].DebitAmount.Currency;
-            if (lines.Any(l => l.DebitAmount.Currency != currency || l.CreditAmount.Currency != currency))
-                return Result.Failure(Error.Validation("Currency", "Les lignes doivent partager la même devise."));
+            var validation = await ValidateLinesAsync(ctx, journalEntryLineIds, allowPartial, cancellationToken);
+            if (validation.IsFailure)
+                return Result.Failure(validation.Error);
 
             await using var transaction = ctx.Database.IsRelational()
                 ? await ctx.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
                 : null;
             try
             {
-                var code = await NextCodeAsync(ctx, isPartial, cancellationToken);
+                var result = await LetterInContextAsync(
+                    ctx,
+                    journalEntryLineIds,
+                    allowPartial,
+                    saveChanges: true,
+                    cancellationToken,
+                    validation.Value);
 
-                // Montant lettré : total équilibré, ou partie couverte (min) pour un partiel.
-                var amount = isPartial ? Math.Min(debit, credit) : debit;
-                var create = LetteringGroup.Create(
-                    code,
-                    account,
-                    Money.Create(amount, currency),
-                    journalEntryLineIds.ToList(),
-                    isPartial);
-
-                if (create.IsFailure)
+                if (result.IsFailure)
                 {
                     if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
-                    return Result.Failure(create.Error);
+                    return result;
                 }
 
-                var group = create.Value;
-                group.SetAuditInfo("system", false);
-                ctx.LetteringGroups.Add(group);
-
-                foreach (var line in lines)
-                    line.SetLetteringCode(code);
-
-                await ctx.SaveChangesAsync(cancellationToken);
                 if (transaction is not null) await transaction.CommitAsync(cancellationToken);
                 return Result.Success();
             }
@@ -97,6 +70,100 @@ public sealed class LetteringService : ILetteringService
             }
         });
     }
+
+    private async Task<Result> LetterInContextAsync(
+        TenantDbContext ctx,
+        IReadOnlyList<Guid> journalEntryLineIds,
+        bool allowPartial,
+        bool saveChanges,
+        CancellationToken cancellationToken,
+        LetteringValidation? prevalidated = null)
+    {
+        LetteringValidation validation;
+        if (prevalidated is not null)
+        {
+            validation = prevalidated;
+        }
+        else
+        {
+            var validationResult = await ValidateLinesAsync(ctx, journalEntryLineIds, allowPartial, cancellationToken);
+            if (validationResult.IsFailure)
+                return validationResult;
+            validation = validationResult.Value;
+        }
+
+        var (lines, account, isPartial, currency, debit, credit) = validation;
+
+        var code = await NextCodeAsync(ctx, isPartial, cancellationToken);
+        var amount = isPartial ? Math.Min(debit, credit) : debit;
+        var create = LetteringGroup.Create(
+            code,
+            account,
+            Money.Create(amount, currency),
+            journalEntryLineIds.ToList(),
+            isPartial);
+
+        if (create.IsFailure)
+            return Result.Failure(create.Error);
+
+        var group = create.Value;
+        group.SetAuditInfo("system", false);
+        ctx.LetteringGroups.Add(group);
+
+        foreach (var line in lines)
+            line.SetLetteringCode(code);
+
+        if (saveChanges)
+            await ctx.SaveChangesAsync(cancellationToken);
+
+        return Result.Success();
+    }
+
+    private static async Task<Result<LetteringValidation>> ValidateLinesAsync(
+        TenantDbContext ctx,
+        IReadOnlyList<Guid> journalEntryLineIds,
+        bool allowPartial,
+        CancellationToken cancellationToken)
+    {
+        var lines = await ctx.JournalEntryLines
+            .AsTracking()
+            .Where(l => journalEntryLineIds.Contains(l.Id))
+            .ToListAsync(cancellationToken);
+
+        if (lines.Count != journalEntryLineIds.Count)
+            return Result.Failure<LetteringValidation>(Error.Validation("JournalEntryLine", "Une ou plusieurs lignes sont introuvables."));
+
+        if (lines.Any(l => !string.IsNullOrEmpty(l.LetteringCode)))
+            return Result.Failure<LetteringValidation>(Error.Validation("Lettering", "Une ou plusieurs lignes sont déjà lettrées."));
+
+        var account = lines[0].AccountNumber;
+        if (lines.Any(l => l.AccountNumber != account))
+            return Result.Failure<LetteringValidation>(Error.Validation("AccountNumber", "Toutes les lignes doivent être sur le même compte."));
+
+        var debit = lines.Sum(l => l.DebitAmount.Amount);
+        var credit = lines.Sum(l => l.CreditAmount.Amount);
+        var balanced = Math.Round(debit, 3) == Math.Round(credit, 3);
+        if (!balanced && !allowPartial)
+        {
+            return Result.Failure<LetteringValidation>(Error.Validation("Balance",
+                "Le lettrage nécessite une égalité débit / crédit (ou cochez « lettrage partiel »)."));
+        }
+
+        var isPartial = !balanced;
+        var currency = lines[0].DebitAmount.Currency;
+        if (lines.Any(l => l.DebitAmount.Currency != currency || l.CreditAmount.Currency != currency))
+            return Result.Failure<LetteringValidation>(Error.Validation("Currency", "Les lignes doivent partager la même devise."));
+
+        return Result.Success(new LetteringValidation(lines, account, isPartial, currency, debit, credit));
+    }
+
+    private sealed record LetteringValidation(
+        List<JournalEntryLine> Lines,
+        string Account,
+        bool IsPartial,
+        string Currency,
+        decimal Debit,
+        decimal Credit);
 
     public async Task<Result> UnletterAsync(string code, CancellationToken cancellationToken = default)
     {
@@ -120,7 +187,6 @@ public sealed class LetteringService : ILetteringService
         foreach (var line in lines)
             line.SetLetteringCode(null);
 
-        // Membres supprimés en cascade avec le groupe ; un seul SaveChanges = atomique.
         ctx.LetteringGroups.Remove(group);
         await ctx.SaveChangesAsync(cancellationToken);
 
@@ -129,17 +195,21 @@ public sealed class LetteringService : ILetteringService
 
     /// <summary>
     /// Prochain code de lettrage : max de la partie numérique des codes existants + 1 (préfixe
-    /// « L » définitif, « P » partiel). L'ancien schéma « Count + 1 » collisionnait dès qu'un
-    /// groupe était supprimé par délettrage.
+    /// « L » définitif, « P » partiel). Inclut les groupes ajoutés dans le contexte courant
+    /// mais pas encore persistés (lettrage batch dans une transaction ambiante).
     /// </summary>
-    private static async Task<string> NextCodeAsync(Persistence.TenantDbContext ctx, bool isPartial, CancellationToken cancellationToken)
+    private static async Task<string> NextCodeAsync(TenantDbContext ctx, bool isPartial, CancellationToken cancellationToken)
     {
         var codes = await ctx.LetteringGroups
             .AsNoTracking()
             .Select(g => g.Code)
             .ToListAsync(cancellationToken);
 
-        var next = codes
+        var pendingCodes = ctx.ChangeTracker.Entries<LetteringGroup>()
+            .Where(e => e.State == EntityState.Added)
+            .Select(e => e.Entity.Code);
+
+        var next = codes.Concat(pendingCodes)
             .Select(c => c.Length > 1 && int.TryParse(c.AsSpan(1), out var n) ? n : 0)
             .DefaultIfEmpty(0)
             .Max() + 1;
@@ -156,16 +226,14 @@ public sealed class LetteringService : ILetteringService
     {
         await using var ctx = _contextFactory.CreateContext();
 
-        // Find the payment journal entry
         var paymentEntry = await ctx.JournalEntries
             .AsNoTracking()
             .Include(j => j.Lines)
             .FirstOrDefaultAsync(j => j.SourceEntityType == sourceEntityType && j.SourceEntityId == sourceEntityId, cancellationToken);
 
         if (paymentEntry is null)
-            return Result.Success(); // No entry yet, skip silently
+            return Result.Success();
 
-        // Find the invoice journal entry
         var invoiceEntry = await ctx.JournalEntries
             .AsNoTracking()
             .Include(j => j.Lines)
@@ -174,8 +242,6 @@ public sealed class LetteringService : ILetteringService
         if (invoiceEntry is null)
             return Result.Success();
 
-        // Find matching third-party account lines (e.g. 4111 for client, 4011 for supplier)
-        // The invoice line will be a debit on 4111, the payment line will be a credit on 4111
         var invoiceThirdPartyLines = invoiceEntry.Lines
             .Where(l => l.ThirdPartyId.HasValue && string.IsNullOrEmpty(l.LetteringCode))
             .ToList();
@@ -184,7 +250,6 @@ public sealed class LetteringService : ILetteringService
             .Where(l => l.ThirdPartyId.HasValue && string.IsNullOrEmpty(l.LetteringCode))
             .ToList();
 
-        // Try to match lines on the same account
         foreach (var invoiceLine in invoiceThirdPartyLines)
         {
             var matchingPaymentLine = paymentThirdPartyLines
@@ -193,21 +258,16 @@ public sealed class LetteringService : ILetteringService
             if (matchingPaymentLine is null)
                 continue;
 
-            // Check if debits and credits balance
             var totalDebit = invoiceLine.DebitAmount.Amount + matchingPaymentLine.DebitAmount.Amount;
             var totalCredit = invoiceLine.CreditAmount.Amount + matchingPaymentLine.CreditAmount.Amount;
 
             if (Math.Round(totalDebit, 3) != Math.Round(totalCredit, 3))
-                continue; // Not balanced — partial payment, skip
+                continue;
 
-            // Letter these two lines
             var lineIds = new List<Guid> { invoiceLine.Id, matchingPaymentLine.Id };
             var result = await ManualLetterAsync(lineIds, allowPartial: false, cancellationToken);
             if (result.IsFailure)
-            {
-                // Silently skip — auto-lettering is best-effort
                 continue;
-            }
         }
 
         return Result.Success();
@@ -254,6 +314,8 @@ public sealed class LetteringService : ILetteringService
                         && string.IsNullOrEmpty(l.LetteringCode))
             .ToList();
 
+        var letterRequests = new List<(IReadOnlyList<Guid> LineIds, bool AllowPartial)>();
+
         foreach (var creditLine in payrollCredits)
         {
             var debitLine = paymentDebits.FirstOrDefault(d =>
@@ -267,11 +329,9 @@ public sealed class LetteringService : ILetteringService
             var totalCredit = creditLine.CreditAmount.Amount + debitLine.CreditAmount.Amount;
             var balanced = Math.Round(totalDebit, 3) == Math.Round(totalCredit, 3);
 
-            var lineIds = new List<Guid> { creditLine.Id, debitLine.Id };
-            await ManualLetterAsync(lineIds, allowPartial: !balanced, cancellationToken);
+            letterRequests.Add((new List<Guid> { creditLine.Id, debitLine.Id }, !balanced));
         }
 
-        // Legacy aggregated 421 line (no employee third party) — partial lettering when enabled.
         var legacyCredit = payrollEntry.Lines
             .FirstOrDefault(l => l.AccountNumber.StartsWith("421", StringComparison.Ordinal)
                                  && l.CreditAmount.Amount > 0
@@ -290,8 +350,33 @@ public sealed class LetteringService : ILetteringService
                 var totalDebit = legacyCredit.DebitAmount.Amount + employeeDebits.Sum(d => d.DebitAmount.Amount);
                 var totalCredit = legacyCredit.CreditAmount.Amount + employeeDebits.Sum(d => d.CreditAmount.Amount);
                 var balanced = Math.Round(totalDebit, 3) == Math.Round(totalCredit, 3);
-                await ManualLetterAsync(lineIds, allowPartial: !balanced, cancellationToken);
+                letterRequests.Add((lineIds, !balanced));
             }
+        }
+
+        if (letterRequests.Count == 0)
+            return Result.Success();
+
+        if (_ambient.IsActive)
+        {
+            await using var letterCtx = _contextFactory.CreateContext();
+            foreach (var (lineIds, allowPartial) in letterRequests)
+            {
+                var result = await LetterInContextAsync(
+                    letterCtx, lineIds, allowPartial, saveChanges: false, cancellationToken);
+                if (result.IsFailure)
+                    return result;
+            }
+
+            await letterCtx.SaveChangesAsync(cancellationToken);
+            return Result.Success();
+        }
+
+        foreach (var (lineIds, allowPartial) in letterRequests)
+        {
+            var result = await ManualLetterAsync(lineIds, allowPartial, cancellationToken);
+            if (result.IsFailure)
+                return result;
         }
 
         return Result.Success();

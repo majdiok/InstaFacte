@@ -9,6 +9,7 @@ import { CalendarModule } from 'primeng/calendar';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputTextarea } from 'primeng/inputtextarea';
+import { TooltipModule } from 'primeng/tooltip';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { EmployeeService } from '@core/services/employee.service';
 import { PayrollService, LeaveRequest, LeaveBalance } from '@core/services/payroll.service';
@@ -40,7 +41,8 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
     InputTextModule,
     InputTextarea,
     ButtonComponent,
-    PayrollStatGridComponent
+    PayrollStatGridComponent,
+    TooltipModule
   ],
   template: `
     <div class="payroll-toolbar mb-3">
@@ -93,7 +95,16 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
           @if (!readOnly) {
             <td class="actions">
               @if (!l.isApproved) {
-                <button type="button" class="p-button p-button-text p-button-sm" (click)="approve(l)">Approuver</button>
+                <button
+                  type="button"
+                  class="p-button p-button-text p-button-sm"
+                  [disabled]="!canApproveLeave(l)"
+                  [pTooltip]="approveBlockReason(l)"
+                  [tooltipDisabled]="canApproveLeave(l)"
+                  tooltipPosition="top"
+                  (click)="approve(l)">
+                  Approuver
+                </button>
               }
               <button type="button" class="p-button p-button-text p-button-danger p-button-sm" (click)="confirmDelete(l)">Supprimer</button>
             </td>
@@ -126,6 +137,14 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
         @if (computingDays()) {
           <span class="field-hint">Calcul en cours…</span>
         }
+        @if (createExceedsBalance()) {
+          <span class="field-hint field-hint--warning">
+            Solde insuffisant : {{ formDays }} j demandés, {{ balance()?.available ?? 0 }} j disponibles
+            @if ((balance()?.pending ?? 0) > 0) {
+              ({{ balance()?.pending }} j en attente)
+            }.
+          </span>
+        }
       </div>
       <div class="payroll-form-group mb-2">
         <label>Motif</label>
@@ -133,7 +152,7 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
       </div>
       <ng-template pTemplate="footer">
         <app-button variant="outline" (click)="dialogVisible = false">Annuler</app-button>
-        <app-button variant="primary" (click)="create()">Enregistrer</app-button>
+        <app-button variant="primary" [disabled]="createExceedsBalance()" (click)="create()">Enregistrer</app-button>
       </ng-template>
     </p-dialog>
 
@@ -155,6 +174,7 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
     .actions { white-space: nowrap; }
     .w-full { width: 100%; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
+    .field-hint--warning { color: var(--red-600, #dc2626); }
   `]
 })
 export class EmployeeLeavesTabComponent implements OnInit {
@@ -186,12 +206,59 @@ export class EmployeeLeavesTabComponent implements OnInit {
 
   balanceStats = computed((): PayrollStatItem[] => {
     const b = this.balance();
+    const pending = b?.pending ?? 0;
+    const available = b?.available ?? 0;
     return [
       { label: 'Acquis', value: b ? `${b.totalAcquired} j` : '—', icon: 'pi-calendar-plus', variant: 'primary' },
       { label: 'Consommés', value: b ? `${b.consumed} j` : '—', icon: 'pi-calendar-minus', variant: 'warning' },
-      { label: 'Restants', value: b ? `${b.remaining} j` : '—', icon: 'pi-calendar', variant: 'success', featured: true }
+      {
+        label: 'En attente',
+        value: b ? `${pending} j` : '—',
+        icon: 'pi-clock',
+        variant: pending > 0 ? 'warning' : 'primary'
+      },
+      {
+        label: 'Disponibles',
+        value: b ? `${available} j` : '—',
+        icon: 'pi-calendar',
+        variant: available <= 0 ? 'error' : 'success',
+        featured: true
+      }
     ];
   });
+
+  createExceedsBalance(): boolean {
+    if (this.formType !== 'Paid') return false;
+    const available = this.balance()?.available;
+    if (available == null) return false;
+    return this.formDays > available;
+  }
+
+  canApproveLeave(leave: LeaveRequest): boolean {
+    if (leave.isApproved || leave.type !== 'Paid') return true;
+    const balance = this.balance();
+    if (!balance) return false;
+
+    const leaveYear = new Date(leave.startDate).getFullYear();
+    if (leaveYear !== this.balanceYear) return false;
+
+    return leave.days <= balance.available + leave.days;
+  }
+
+  approveBlockReason(leave: LeaveRequest): string {
+    if (this.canApproveLeave(leave)) return '';
+
+    const leaveYear = new Date(leave.startDate).getFullYear();
+    if (leaveYear !== this.balanceYear) {
+      return `Solde affiché pour l'exercice ${this.balanceYear}.`;
+    }
+
+    const balance = this.balance();
+    if (!balance) return 'Solde indisponible.';
+
+    const availableForLeave = balance.available + leave.days;
+    return `Solde insuffisant : ${leave.days} j demandés, ${availableForLeave} j disponibles (${balance.pending} j en attente).`;
+  }
 
   ngOnInit(): void {
     this.reload();
@@ -262,6 +329,14 @@ export class EmployeeLeavesTabComponent implements OnInit {
 
   create(): void {
     if (this.readOnly || !this.formStart || !this.formEnd) return;
+    if (this.createExceedsBalance()) {
+      this.toast.add({
+        severity: 'error',
+        summary: 'Congés',
+        detail: `Solde insuffisant : ${this.formDays} j demandés, ${this.balance()?.available ?? 0} j disponibles.`
+      });
+      return;
+    }
     this.payroll.createLeave({
       employeeId: this.employeeId,
       type: this.formType,
@@ -274,13 +349,14 @@ export class EmployeeLeavesTabComponent implements OnInit {
         this.toast.add({ severity: 'success', summary: 'Congés', detail: 'Congé enregistré.' });
         this.dialogVisible = false;
         this.reload();
+        this.reloadBalance();
       },
       error: err => this.toast.add({ severity: 'error', summary: 'Congés', detail: err.error?.message ?? 'Création impossible.' })
     });
   }
 
   approve(leave: LeaveRequest): void {
-    if (this.readOnly) return;
+    if (this.readOnly || !this.canApproveLeave(leave)) return;
     this.payroll.approveLeave(leave.id).subscribe({
       next: () => {
         this.toast.add({ severity: 'success', summary: 'Congés', detail: 'Congé approuvé.' });

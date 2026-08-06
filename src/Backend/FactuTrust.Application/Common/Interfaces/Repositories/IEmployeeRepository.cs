@@ -14,6 +14,14 @@ public interface IEmployeeRepository : IRepository<Employee>
     /// <summary>All active employees with their contracts (used when computing a payroll run).</summary>
     Task<IReadOnlyList<Employee>> GetActiveWithContractsAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Salariés éligibles pour un mois de paie (actifs + départs du mois si prorata activé).
+    /// </summary>
+    Task<IReadOnlyList<Employee>> GetEligibleForPayrollMonthAsync(
+        int year,
+        int month,
+        CancellationToken cancellationToken = default);
+
     Task<bool> ExistsByEmployeeNumberAsync(string employeeNumber, Guid? excludeId = null, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyDictionary<Guid, string>> GetFullNamesByIdsAsync(

@@ -169,4 +169,9 @@ public interface IPdfService
         PayrollJournalView view,
         AccountingReportHeader header,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Génère le PDF du bordereau mensuel de versement des cotisations CNSS.</summary>
+    Task<byte[]> GenerateCnssContributionRemittancePdfAsync(
+        CnssContributionRemittanceDto remittance,
+        CancellationToken cancellationToken = default);
 }

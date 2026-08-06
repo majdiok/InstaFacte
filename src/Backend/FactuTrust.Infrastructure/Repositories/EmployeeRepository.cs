@@ -43,6 +43,30 @@ public sealed class EmployeeRepository : IEmployeeRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<Employee>> GetEligibleForPayrollMonthAsync(
+        int year,
+        int month,
+        CancellationToken cancellationToken = default)
+    {
+        var monthStart = new DateTime(year, month, 1);
+        var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+
+        await using var context = _contextFactory.CreateContext();
+        return await context.Employees
+            .Include(e => e.Contracts)
+            .ThenInclude(c => c.Allowances)
+            .Where(e => e.Contracts.Any(c =>
+                c.StartDate <= monthEnd &&
+                (c.EndDate == null || c.EndDate >= monthStart) &&
+                (
+                    e.IsActive ||
+                    (e.TerminationDate.HasValue && e.TerminationDate >= monthStart && e.TerminationDate <= monthEnd) ||
+                    (c.EndDate.HasValue && c.EndDate >= monthStart && c.EndDate <= monthEnd)
+                )))
+            .OrderBy(e => e.LastName)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<Employee>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();

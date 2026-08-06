@@ -152,11 +152,21 @@ public partial class PdfService
                     });
                 });
 
-                page.Footer().AlignCenter().Text(t =>
+                page.Footer().AlignCenter().Column(col =>
                 {
-                    t.Span("Document généré le ").FontSize(8).FontColor(Colors.Grey.Darken1);
-                    t.Span(DateTime.Now.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture))
-                        .FontSize(8).FontColor(Colors.Grey.Darken1);
+                    if (payslip.ProrataDeductionAmount > 0)
+                    {
+                        col.Item().Text(
+                            $"Prorata : {payslip.ProrataWorkedDays:N2} j travaillés / 26 — {payslip.ProrataNonWorkedDays:N2} j non rémunérés — retenue {FormatAmount(payslip.ProrataDeductionAmount)}")
+                            .FontSize(8).FontColor(Colors.Grey.Darken1);
+                    }
+
+                    col.Item().Text(t =>
+                    {
+                        t.Span("Document généré le ").FontSize(8).FontColor(Colors.Grey.Darken1);
+                        t.Span(DateTime.Now.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture))
+                            .FontSize(8).FontColor(Colors.Grey.Darken1);
+                    });
                 });
             });
         }).GeneratePdf();

@@ -426,6 +426,7 @@ public sealed record TenantCompanySummaryDto
     public string TaxRegimeDisplay { get; init; } = null!;
     public string? TradeName { get; init; }
     public string? AddressLine { get; init; }
+    public string? CnssEmployerNumber { get; init; }
 }
 
 public sealed record VatDeclarationDto

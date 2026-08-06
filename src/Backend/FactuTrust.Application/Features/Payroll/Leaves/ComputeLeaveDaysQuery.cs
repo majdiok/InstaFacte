@@ -1,3 +1,4 @@
+using FactuTrust.Domain.Services.Payroll;
 using MediatR;
 
 namespace FactuTrust.Application.Features.Payroll.Leaves;
@@ -7,18 +8,6 @@ public sealed record ComputeLeaveDaysQuery(DateTime StartDate, DateTime EndDate)
 
 public sealed class ComputeLeaveDaysQueryHandler : IRequestHandler<ComputeLeaveDaysQuery, int>
 {
-    public Task<int> Handle(ComputeLeaveDaysQuery request, CancellationToken cancellationToken)
-    {
-        if (request.EndDate < request.StartDate)
-            return Task.FromResult(0);
-
-        var days = 0;
-        for (var d = request.StartDate.Date; d <= request.EndDate.Date; d = d.AddDays(1))
-        {
-            if (d.DayOfWeek is not DayOfWeek.Saturday and not DayOfWeek.Sunday)
-                days++;
-        }
-
-        return Task.FromResult(days);
-    }
+    public Task<int> Handle(ComputeLeaveDaysQuery request, CancellationToken cancellationToken) =>
+        Task.FromResult(PayrollWorkingDaysCounter.CountWeekdays(request.StartDate, request.EndDate));
 }

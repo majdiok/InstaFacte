@@ -49,6 +49,13 @@ public sealed class Payslip : Entity
 
     public decimal NetSalary { get; private set; }
 
+    /// <summary>Jours travaillés (prorata, convention 26 jours). 0 si prorata inactif.</summary>
+    public decimal ProrataWorkedDays { get; private set; }
+    /// <summary>Jours non rémunérés (prorata). 0 si prorata inactif.</summary>
+    public decimal ProrataNonWorkedDays { get; private set; }
+    /// <summary>Montant de la retenue prorata sur le salaire de base.</summary>
+    public decimal ProrataDeductionAmount { get; private set; }
+
     public decimal CnssEmployer { get; private set; }
     public decimal WorkAccidentContribution { get; private set; }
     public decimal Tfp { get; private set; }
@@ -98,7 +105,10 @@ public sealed class Payslip : Entity
         int month,
         PayrollComputation computation,
         decimal appliedCnssEmployeeRate,
-        decimal appliedCnssEmployerRate)
+        decimal appliedCnssEmployerRate,
+        decimal prorataWorkedDays = 0m,
+        decimal prorataNonWorkedDays = 0m,
+        decimal prorataDeductionAmount = 0m)
     {
         var payslip = new Payslip
         {
@@ -127,6 +137,9 @@ public sealed class Payslip : Entity
             CssRegularization = computation.CssRegularization,
             RegularizationDeferred = computation.RegularizationDeferred,
             NetSalary = computation.NetSalary,
+            ProrataWorkedDays = prorataWorkedDays,
+            ProrataNonWorkedDays = prorataNonWorkedDays,
+            ProrataDeductionAmount = prorataDeductionAmount,
             CnssEmployer = computation.CnssEmployer,
             WorkAccidentContribution = computation.WorkAccidentContribution,
             Tfp = computation.Tfp,

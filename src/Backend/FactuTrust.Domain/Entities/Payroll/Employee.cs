@@ -207,6 +207,17 @@ public sealed class Employee : AggregateRoot
             .FirstOrDefault();
     }
 
+    /// <summary>Contrat couvrant au moins un jour du mois de paie (pour prorata embauche/départ).</summary>
+    public EmploymentContract? GetContractForPayrollMonth(int year, int month)
+    {
+        var monthStart = new DateTime(year, month, 1);
+        var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+        return _contracts
+            .Where(c => c.StartDate.Date <= monthEnd && (c.EndDate == null || c.EndDate.Value.Date >= monthStart))
+            .OrderByDescending(c => c.StartDate)
+            .FirstOrDefault();
+    }
+
     public void Terminate(DateTime terminationDate)
     {
         TerminationDate = terminationDate.Date;

@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '@environments/environment';
-import type { EmployeeAdvance, LeaveRequest, LeaveBalance } from './payroll.service';
+import type { EmployeeAdvance, LeaveRequest, LeaveBalance, TerminateEmployeeRequest, TerminateEmployeeResult } from './payroll.service';
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -205,5 +205,9 @@ export class EmployeeService {
 
   setLeaveOpeningBalance(employeeId: string, openingBalanceDays: number): Observable<ApiResponse<unknown>> {
     return this.http.put<ApiResponse<unknown>>(`${this.baseUrl}/${employeeId}/leave-balance/opening`, { openingBalanceDays });
+  }
+
+  terminate(id: string, body: TerminateEmployeeRequest): Observable<ApiResponse<TerminateEmployeeResult>> {
+    return this.http.post<ApiResponse<TerminateEmployeeResult>>(`${this.baseUrl}/${id}/terminate`, body);
   }
 }

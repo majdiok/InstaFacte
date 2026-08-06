@@ -65,7 +65,7 @@ internal sealed class PayrollWithholdingCertificateDataLoader
                 e.Address?.ToSingleLine(),
                 e.IsHeadOfFamily));
 
-        var employer = new EmployerSnapshot(company.CompanyName, company.Nif, company.AddressLine);
+        var employer = new EmployerSnapshot(company.CompanyName, company.Nif, company.AddressLine, company.CnssEmployerNumber);
         var batch = PayrollWithholdingCertificateBuilder.Build(
             year,
             payslips,

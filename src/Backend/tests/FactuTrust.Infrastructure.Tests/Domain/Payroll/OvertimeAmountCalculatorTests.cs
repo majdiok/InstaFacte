@@ -161,4 +161,39 @@ public sealed class LeaveBalanceServiceTests
         var remaining = LeaveBalanceService.ComputeRemaining(2m, 3m, 1.5m);
         Assert.Equal(3.5m, remaining);
     }
+
+    [Fact]
+    public void SumPendingPaidLeaveDays_CountsUnapprovedPaidOnly()
+    {
+        var id1 = Guid.NewGuid();
+        var id2 = Guid.NewGuid();
+        var leaves = new[]
+        {
+            (id1, LeaveType.Paid, false, 4m, 2026),
+            (id2, LeaveType.Paid, true, 3m, 2026),
+            (Guid.NewGuid(), LeaveType.Unpaid, false, 2m, 2026),
+            (Guid.NewGuid(), LeaveType.Paid, false, 1m, 2025)
+        };
+
+        Assert.Equal(4m, LeaveBalanceService.SumPendingPaidLeaveDays(leaves, 2026));
+    }
+
+    [Fact]
+    public void SumPendingPaidLeaveDays_ExcludesSpecifiedLeave()
+    {
+        var excluded = Guid.NewGuid();
+        var leaves = new[]
+        {
+            (excluded, LeaveType.Paid, false, 4m, 2026),
+            (Guid.NewGuid(), LeaveType.Paid, false, 1m, 2026)
+        };
+
+        Assert.Equal(1m, LeaveBalanceService.SumPendingPaidLeaveDays(leaves, 2026, excluded));
+    }
+
+    [Fact]
+    public void ComputeAvailable_SubtractsPendingFromRemaining()
+    {
+        Assert.Equal(2m, LeaveBalanceService.ComputeAvailable(6m, 4m));
+    }
 }

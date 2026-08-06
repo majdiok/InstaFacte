@@ -1,0 +1,183 @@
+import { Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { DialogModule } from 'primeng/dialog';
+import { DropdownModule } from 'primeng/dropdown';
+import { InputTextModule } from 'primeng/inputtext';
+import { CalendarModule } from 'primeng/calendar';
+import { finalize } from 'rxjs';
+import { PayrollService } from '@core/services/payroll.service';
+import { BankAccountService, type BankAccountDto } from '@core/services/bank-account.service';
+import { ToastService } from '@core/services/toast.service';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { PayrollAmountPipe } from '../shared';
+
+@Component({
+  selector: 'app-cnss-remittance-payment-dialog',
+  standalone: true,
+  imports: [
+    CommonModule,
+    FormsModule,
+    DialogModule,
+    DropdownModule,
+    InputTextModule,
+    CalendarModule,
+    ButtonComponent,
+    PayrollAmountPipe
+  ],
+  template: `
+    <p-dialog
+      header="Enregistrer le versement CNSS"
+      [visible]="visible()"
+      (visibleChange)="visibleChange.emit($event)"
+      [modal]="true"
+      [style]="{ width: '480px' }"
+      (onShow)="onOpen()">
+      <p class="hint mb-3">
+        Montant à verser (compte 453) : <strong>{{ totalDue() | payrollAmount }}</strong>
+      </p>
+
+      <div class="field mb-3">
+        <label for="cnss-pay-date">Date de paiement</label>
+        <p-calendar
+          inputId="cnss-pay-date"
+          [(ngModel)]="paymentDate"
+          dateFormat="dd/mm/yy"
+          [showIcon]="true"
+          styleClass="w-full" />
+      </div>
+
+      <div class="field mb-3">
+        <label for="cnss-pay-method">Mode</label>
+        <p-dropdown
+          inputId="cnss-pay-method"
+          [options]="methodOptions"
+          [(ngModel)]="method"
+          optionLabel="label"
+          optionValue="value"
+          styleClass="w-full" />
+      </div>
+
+      @if (method !== 0) {
+        <div class="field mb-3">
+          <label for="cnss-pay-account">Compte bancaire débiteur</label>
+          <p-dropdown
+            inputId="cnss-pay-account"
+            [options]="accountOptions()"
+            [(ngModel)]="bankAccountId"
+            optionLabel="label"
+            optionValue="value"
+            placeholder="Sélectionner un compte"
+            styleClass="w-full" />
+        </div>
+      }
+
+      <div class="field mb-3">
+        <label for="cnss-pay-ref">Référence</label>
+        <input pInputText id="cnss-pay-ref" class="w-full" [(ngModel)]="reference" />
+      </div>
+
+      <div class="field mb-3">
+        <label for="cnss-pay-notes">Notes</label>
+        <input pInputText id="cnss-pay-notes" class="w-full" [(ngModel)]="notes" />
+      </div>
+
+      <ng-template pTemplate="footer">
+        <app-button variant="ghost" (click)="visibleChange.emit(false)">Annuler</app-button>
+        <app-button variant="primary" [disabled]="saving()" (click)="submit()">
+          {{ saving() ? 'Enregistrement…' : 'Confirmer' }}
+        </app-button>
+      </ng-template>
+    </p-dialog>
+  `,
+  styles: [`
+    .hint { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+    .mb-3 { margin-bottom: var(--spacing-4); }
+    .field label { display: block; margin-bottom: var(--spacing-1); font-size: var(--font-size-sm); }
+  `]
+})
+export class CnssRemittancePaymentDialogComponent implements OnInit {
+  private readonly payroll = inject(PayrollService);
+  private readonly bankAccounts = inject(BankAccountService);
+  private readonly toast = inject(ToastService);
+
+  visible = input(false);
+  year = input.required<number>();
+  month = input.required<number>();
+  totalDue = input(0);
+
+  visibleChange = output<boolean>();
+  recorded = output<void>();
+
+  paymentDate: Date = new Date();
+  method = 1;
+  bankAccountId: string | null = null;
+  reference = '';
+  notes = '';
+
+  saving = signal(false);
+  accounts = signal<BankAccountDto[]>([]);
+
+  methodOptions = [
+    { value: 1, label: 'Virement bancaire' },
+    { value: 2, label: 'Chèque' },
+    { value: 0, label: 'Espèces' }
+  ];
+
+  accountOptions = computed(() =>
+    this.accounts()
+      .filter(a => a.isActive)
+      .map(a => ({
+        value: a.id,
+        label: `${a.designation || a.bankName} — ${a.iban}`
+      }))
+  );
+
+  ngOnInit(): void {
+    this.bankAccounts.list().subscribe({
+      next: res => {
+        this.accounts.set(res.data ?? []);
+        const def = (res.data ?? []).find(a => a.isDefault);
+        if (def) this.bankAccountId = def.id;
+      },
+      error: () => this.accounts.set([])
+    });
+  }
+
+  onOpen(): void {
+    this.paymentDate = new Date();
+    this.method = 1;
+    this.reference = '';
+    this.notes = '';
+  }
+
+  submit(): void {
+    if (this.method !== 0 && !this.bankAccountId) {
+      this.toast.add({ severity: 'warn', summary: 'Versement CNSS', detail: 'Sélectionnez un compte bancaire.' });
+      return;
+    }
+
+    this.saving.set(true);
+    const date = this.paymentDate.toISOString().slice(0, 10);
+    this.payroll.recordCnssRemittancePayment({
+      year: this.year(),
+      month: this.month(),
+      paymentDate: date,
+      method: this.method,
+      bankAccountId: this.bankAccountId ?? undefined,
+      reference: this.reference || undefined,
+      notes: this.notes || undefined
+    }).pipe(finalize(() => this.saving.set(false))).subscribe({
+      next: () => {
+        this.toast.add({ severity: 'success', summary: 'Versement CNSS', detail: 'Versement enregistré.' });
+        this.recorded.emit();
+      },
+      error: err =>
+        this.toast.add({
+          severity: 'error',
+          summary: 'Versement CNSS',
+          detail: err?.error?.message ?? 'Enregistrement impossible.'
+        })
+    });
+  }
+}

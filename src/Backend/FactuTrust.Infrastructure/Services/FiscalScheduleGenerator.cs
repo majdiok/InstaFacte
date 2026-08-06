@@ -124,6 +124,20 @@ public sealed class FiscalScheduleGenerator : IFiscalScheduleGenerator
                 start,
                 end,
                 FiscalScheduleSourceType.Payroll));
+
+            // Versement CNSS : le 15 du mois suivant la période de paie.
+            var cnssDueMonth = month == 12 ? 1 : month + 1;
+            var cnssDueYear = month == 12 ? fiscalYear + 1 : fiscalYear;
+            var cnssDue = new DateTime(cnssDueYear, cnssDueMonth, 15);
+            seeds.Add(new FiscalScheduleSeed(
+                FiscalObligationType.CnssMonthlyRemittance,
+                fiscalYear,
+                cnssDue,
+                month,
+                null,
+                start,
+                end,
+                FiscalScheduleSourceType.Payroll));
         }
 
         for (var quarter = 1; quarter <= 4; quarter++)

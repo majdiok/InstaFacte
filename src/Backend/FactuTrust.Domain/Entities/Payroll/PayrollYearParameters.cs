@@ -34,6 +34,11 @@ public sealed class PayrollYearParameters : AggregateRoot
     /// Désactivée par défaut : les exercices existants conservent exactement leur calcul.
     /// </summary>
     public bool EnableIrppRegularization { get; private set; }
+    /// <summary>
+    /// Prorata automatique embauche / départ / suspension sur le salaire de base.
+    /// Désactivé par défaut : les exercices existants conservent exactement leur calcul.
+    /// </summary>
+    public bool EnableAutomaticProrata { get; private set; }
 
     /// <summary>Taux de la Contribution Sociale de Solidarité (CSS), en %. Ex. 0.5.</summary>
     public decimal CssRate { get; private set; }
@@ -126,6 +131,7 @@ public sealed class PayrollYearParameters : AggregateRoot
         decimal mealVoucherDailyExemptionCap = 3.000m,
         IEnumerable<PayrollGarnishmentBracket>? garnishmentBrackets = null,
         bool enableIrppRegularization = false,
+        bool enableAutomaticProrata = false,
         SmigIrppExemptionMode smigIrppExemptionMode = SmigIrppExemptionMode.None,
         decimal? smigIrppExemptionRateOverride = null,
         decimal cssEmployerRate = 0m)
@@ -182,6 +188,7 @@ public sealed class PayrollYearParameters : AggregateRoot
             EnableExtendedOvertimeRates = enableExtendedOvertimeRates,
             EnableAllowanceQuadrantMatrix = enableAllowanceQuadrantMatrix,
             EnableIrppRegularization = enableIrppRegularization,
+            EnableAutomaticProrata = enableAutomaticProrata,
             CssRate = Round(cssRate),
             CssAnnualExemptionThreshold = Round(cssAnnualExemptionThreshold),
             CssEmployerRate = Round(cssEmployerRate),
@@ -239,6 +246,7 @@ public sealed class PayrollYearParameters : AggregateRoot
         bool isIndustrialSector = false,
         decimal mealVoucherDailyExemptionCap = 3.000m,
         bool enableIrppRegularization = false,
+        bool enableAutomaticProrata = false,
         SmigIrppExemptionMode smigIrppExemptionMode = SmigIrppExemptionMode.None,
         decimal? smigIrppExemptionRateOverride = null,
         decimal cssEmployerRate = 0m)
@@ -263,6 +271,7 @@ public sealed class PayrollYearParameters : AggregateRoot
         EnableExtendedOvertimeRates = enableExtendedOvertimeRates;
         EnableAllowanceQuadrantMatrix = enableAllowanceQuadrantMatrix;
         EnableIrppRegularization = enableIrppRegularization;
+        EnableAutomaticProrata = enableAutomaticProrata;
         CssRate = Round(cssRate);
         CssAnnualExemptionThreshold = Round(cssAnnualExemptionThreshold);
         CssEmployerRate = Round(cssEmployerRate);

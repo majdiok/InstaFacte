@@ -67,6 +67,31 @@ qu'elles ne sont pas rééditées.
   les dé-solde.
 - Congés : acquisition de 1 jour / 26 jours travaillés, créée à la validation du cycle.
 
+## Prorata automatique embauche / départ / suspension
+
+Option d'exercice **`EnableAutomaticProrata`**, désactivée par défaut dans **RH & Paie →
+Paramètres paie → Conformité**. Tant qu'elle est inactive, le calcul reste strictement
+identique à l'historique.
+
+### Formule (salaire de base uniquement)
+
+- Convention : **26 jours ouvrables** par mois (lun–ven).
+- Fenêtre de présence : intersection mois civil × contrat actif × date d'embauche × date de sortie.
+- `Jours travaillés = 26 × (jours ouvrables présents / jours ouvrables du mois)` − suspensions non payées approuvées.
+- `Retenue prorata = (salaire de base ÷ 26) × jours non rémunérés`.
+
+Les **indemnités contractuelles récurrentes** restent au montant mensuel plein en v1. Les
+**absences manuelles** (congé sans solde / injustifié) restent une ligne distincte sur le bulletin.
+
+### Parcours utilisateur
+
+- **Départ** : fiche salarié → « Déclarer un départ » (date, clôture contrat).
+- **Suspension** : onglet Suspensions (période, type, payé/non payé, approbation).
+- **Prévisualisation** : détail cycle → « Prévisualiser le prorata » avant calcul.
+
+Les salariés partis en cours de mois restent inclus dans le cycle du mois de départ lorsque
+l'option est active.
+
 ## Régularisation IRPP annuelle
 
 Le calcul mensuel annualise l'impôt **par projection** (net imposable du mois × 12). Dès que la
@@ -302,6 +327,20 @@ nullable porte un défaut qui préserve le comportement antérieur.
 - Désactivation salarié : clôture des déclarations actives (libération du CIN).
 - Périmètre : **même tenant / même employeur** uniquement.
 
+## Bordereau CNSS mensuel (versement des cotisations)
+
+Fonctionnalité activable via `Accounting.PayrollCnssRemittanceEnabled` (désactivée par défaut).
+
+- **Périmètre** : CNSS salariale + CNSS patronale + accident du travail (compte **453**), aligné sur
+  l'écriture d'engagement à la validation du cycle.
+- **Source** : bulletins des cycles **Validés ou Clôturés** du mois.
+- **Matricule employeur CNSS** : paramétré dans **Mon entreprise** (`Company.CnssEmployerNumber`).
+- **Exports** : PDF et CSV de travail (non substitut au bordereau officiel CNSS).
+- **Versement** : enregistrement du paiement (permission `payroll:pay`) avec écriture **débit 453 /
+  crédit 5321** (ou 5411 espèces).
+- **Échéance calendrier fiscal** : 15 du mois suivant (`CnssMonthlyRemittance`).
+- **Réouverture cycle** : bloquée tant qu'un versement CNSS actif existe pour le mois.
+
 ## Limites connues / évolutions envisagées
 
 - Format officiel de télédéclaration DTS (fichier CNSS) : l'export actuel est un CSV de
@@ -316,6 +355,7 @@ nullable porte un défaut qui préserve le comportement antérieur.
   (MyBIATCorporate, Multivir, STB…) en phase 2 (nécessitent les modèles officiels).
 - **RIB sur bulletin** : non figé à la validation — l'export lit le RIB courant du salarié.
 - **Certificats RS** : identité salarié (CIN, adresse) lue à la génération, pas figée sur le bulletin.
+- **Prorata auto** : activé par exercice ; identité et dates lues à la génération du calcul.
 - **Livre de paie** : le libellé de poste (porté par le contrat, non figé sur le bulletin) n'est
   pas restitué ; catégorie et échelon de la fiche salarié en tiennent lieu.
 

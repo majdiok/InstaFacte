@@ -21,6 +21,12 @@ export const SOCIAL_REGIME_OPTIONS = [
   { value: 'None', label: 'Non assujetti' }
 ];
 
+export const SUSPENSION_TYPE_OPTIONS = [
+  { value: 'Disciplinary', label: 'Disciplinaire' },
+  { value: 'Administrative', label: 'Administrative' },
+  { value: 'Other', label: 'Autre' }
+];
+
 export const LEAVE_TYPE_OPTIONS = [
   { value: 'Paid', label: 'Congé payé' },
   { value: 'Unpaid', label: 'Congé sans solde' },

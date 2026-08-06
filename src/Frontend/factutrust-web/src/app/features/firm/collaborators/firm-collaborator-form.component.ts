@@ -12,6 +12,7 @@ import { MultiSelectModule } from 'primeng/multiselect';
 import { TabViewModule } from 'primeng/tabview';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ToastService } from '@core/services/toast.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 import {
   CollaboratorCivility,
   CreateFirmUserPayload,
@@ -89,6 +90,9 @@ type FormMode = 'create' | 'edit' | 'view';
             </label>
             <label>Email
               <input pInputText formControlName="email" placeholder="Email" [readonly]="mode !== 'create'" />
+              <small class="field-error" *ngIf="form.controls.email.hasError('server')">
+                {{ form.controls.email.getError('server') }}
+              </small>
             </label>
             <label>Téléphone mobile professionnel
               <input pInputText formControlName="phoneNumber" placeholder="+216…" />
@@ -128,7 +132,7 @@ type FormMode = 'create' | 'edit' | 'view';
               <p-checkbox formControlName="sendInvite" [binary]="true" inputId="sendInvite"></p-checkbox>
               <span>Envoyer une invitation par email</span>
             </label>
-            <div class="full cni-block" *ngIf="mode !== 'create' || true">
+            <div class="full cni-block">
               <div class="cni-row">
                 <strong>Copie de carte d'identité (PDF)</strong>
                 <span *ngIf="collaborator()?.hasCni" class="cni-ok">Fichier présent</span>
@@ -200,6 +204,7 @@ type FormMode = 'create' | 'edit' | 'view';
     .hint { margin: 0; color: var(--color-text-secondary, #64748b); font-size: .875rem; }
     .mt { margin-top: .5rem; align-self: flex-start; }
     .loading { padding: 2rem; color: var(--color-text-secondary, #64748b); }
+    .field-error { color: var(--color-danger-600, #dc2626); font-size: .8rem; }
     :host ::ng-deep .full-ms { width: 100%; }
     @media (max-width: 700px) {
       .form-grid { grid-template-columns: 1fr; }
@@ -213,6 +218,7 @@ export class FirmCollaboratorFormComponent implements OnInit {
   private readonly router = inject(Router);
   private readonly location = inject(Location);
   private readonly toast = inject(ToastService);
+  private readonly errorHandler = inject(ErrorHandlerService);
 
   mode: FormMode = 'create';
   readOnly = false;
@@ -259,19 +265,17 @@ export class FirmCollaboratorFormComponent implements OnInit {
   });
 
   ngOnInit(): void {
-    const path = this.route.snapshot.routeConfig?.path ?? '';
-    if (path === 'new') {
-      this.mode = 'create';
+    this.mode = this.resolveFormMode();
+
+    if (this.mode === 'create') {
       this.title = "Création d'un nouveau collaborateur";
       this.subtitle = 'Informations générales';
       this.loadFirmAddress();
-    } else if (path?.endsWith('edit')) {
-      this.mode = 'edit';
+    } else if (this.mode === 'edit') {
       this.title = 'Modification du collaborateur';
       this.collaboratorId = this.route.snapshot.paramMap.get('id');
       this.loadCollaborator();
     } else {
-      this.mode = 'view';
       this.readOnly = true;
       this.title = 'Consultation du collaborateur';
       this.collaboratorId = this.route.snapshot.paramMap.get('id');
@@ -282,6 +286,28 @@ export class FirmCollaboratorFormComponent implements OnInit {
     this.form.controls.useFirmAddress.valueChanges.subscribe(checked => {
       this.onUseFirmAddressChanged(!!checked);
     });
+
+    this.form.controls.email.valueChanges.subscribe(() => {
+      if (this.form.controls.email.hasError('server')) {
+        const { server: _server, ...rest } = this.form.controls.email.errors ?? {};
+        this.form.controls.email.setErrors(Object.keys(rest).length ? rest : null);
+      }
+    });
+  }
+
+  /** Resolve create/edit/view from route data, id param, and URL suffix. */
+  private resolveFormMode(): FormMode {
+    const id = this.route.snapshot.paramMap.get('id');
+    const routeMode = this.route.snapshot.data['mode'];
+    const url = this.router.url;
+
+    if (routeMode === 'create' || !id) {
+      return 'create';
+    }
+    if (url.endsWith('/edit')) {
+      return 'edit';
+    }
+    return 'view';
   }
 
   private loadFirmAddress(): void {
@@ -328,7 +354,7 @@ export class FirmCollaboratorFormComponent implements OnInit {
       },
       error: err => {
         this.loading.set(false);
-        this.toast.add({ severity: 'error', summary: 'Erreur', detail: err?.message || 'Chargement impossible' });
+        this.showError(this.errorHandler.extractErrorMessage(err) || 'Chargement impossible');
         void this.router.navigate(['/firm/collaborateurs']);
       }
     });
@@ -380,7 +406,7 @@ export class FirmCollaboratorFormComponent implements OnInit {
           this.pendingCni = null;
           this.loadCollaborator();
         },
-        error: err => this.toast.add({ severity: 'error', summary: 'Erreur', detail: err?.message || 'Upload impossible' })
+        error: err => this.showError(this.errorHandler.extractErrorMessage(err) || 'Upload impossible')
       });
     }
   }
@@ -389,7 +415,7 @@ export class FirmCollaboratorFormComponent implements OnInit {
     if (!this.collaboratorId) return;
     this.api.downloadCni(this.collaboratorId).subscribe({
       next: blob => downloadBlob(blob, 'cni.pdf'),
-      error: () => this.toast.add({ severity: 'error', summary: 'Erreur', detail: 'Téléchargement impossible' })
+      error: () => this.showError('Téléchargement impossible')
     });
   }
 
@@ -400,7 +426,7 @@ export class FirmCollaboratorFormComponent implements OnInit {
         this.toast.add({ severity: 'success', summary: 'Collaborateurs', detail: 'CNI supprimée' });
         this.loadCollaborator();
       },
-      error: err => this.toast.add({ severity: 'error', summary: 'Erreur', detail: err?.message || 'Suppression impossible' })
+      error: err => this.showError(this.errorHandler.extractErrorMessage(err) || 'Suppression impossible')
     });
   }
 
@@ -438,7 +464,9 @@ export class FirmCollaboratorFormComponent implements OnInit {
         },
         error: err => {
           this.saving.set(false);
-          this.toast.add({ severity: 'error', summary: 'Erreur', detail: err?.message || 'Création impossible' });
+          const detail = this.errorHandler.extractErrorMessage(err) || 'Création impossible';
+          this.showError(detail);
+          this.applyEmailServerErrorIfDuplicate(detail);
         }
       });
       return;
@@ -467,7 +495,7 @@ export class FirmCollaboratorFormComponent implements OnInit {
       },
       error: err => {
         this.saving.set(false);
-        this.toast.add({ severity: 'error', summary: 'Erreur', detail: err?.message || 'Mise à jour impossible' });
+        this.showError(this.errorHandler.extractErrorMessage(err) || 'Mise à jour impossible');
       }
     });
   }
@@ -483,7 +511,7 @@ export class FirmCollaboratorFormComponent implements OnInit {
       },
       error: err => {
         this.savingBinomes.set(false);
-        this.toast.add({ severity: 'error', summary: 'Erreur', detail: err?.message || 'Erreur binômes' });
+        this.showError(this.errorHandler.extractErrorMessage(err) || 'Erreur binômes');
       }
     });
   }
@@ -498,7 +526,7 @@ export class FirmCollaboratorFormComponent implements OnInit {
       },
       error: err => {
         this.resending.set(false);
-        this.toast.add({ severity: 'error', summary: 'Erreur', detail: err?.message || 'Renvoi impossible' });
+        this.showError(this.errorHandler.extractErrorMessage(err) || 'Renvoi impossible');
       }
     });
   }
@@ -510,5 +538,21 @@ export class FirmCollaboratorFormComponent implements OnInit {
 
   back(): void {
     this.location.back();
+  }
+
+  private showError(detail: string): void {
+    this.toast.add({ severity: 'error', summary: 'Erreur', detail });
+  }
+
+  /** Surfaces duplicate email/username Identity errors on the email control. */
+  private applyEmailServerErrorIfDuplicate(detail: string): void {
+    if (!detail.toLowerCase().includes('déjà utilis')) {
+      return;
+    }
+    this.form.controls.email.setErrors({
+      ...this.form.controls.email.errors,
+      server: detail
+    });
+    this.form.controls.email.markAsTouched();
   }
 }

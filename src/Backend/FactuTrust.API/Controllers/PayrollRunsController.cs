@@ -78,6 +78,17 @@ public class PayrollRunsController : ControllerBase
         return Ok(ApiResponse<CalculatePayrollRunResultDto>.Ok(result.Value, message));
     }
 
+    [HttpGet("{id:guid}/prorata-preview")]
+    [Authorize(Policy = PermissionPolicies.PayrollRead)]
+    [ProducesResponseType(typeof(ApiResponse<PayrollProrataPreviewDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetProrataPreview(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new PreviewPayrollProrataQuery(id), cancellationToken);
+        if (result.IsFailure)
+            return NotFound(ApiResponse<PayrollProrataPreviewDto>.Fail(result.Error.Description));
+        return Ok(ApiResponse<PayrollProrataPreviewDto>.Ok(result.Value));
+    }
+
     [HttpPost("{id:guid}/validate")]
     [Authorize(Policy = PermissionPolicies.PayrollValidate)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]

@@ -2,6 +2,7 @@ using FactuTrust.API.Authorization;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Payroll.Advances;
 using FactuTrust.Application.Features.Payroll.Declarations;
+using FactuTrust.Application.Features.Payroll.Declarations.CnssRemittance;
 using FactuTrust.Application.Features.Payroll.Leaves;
 using FactuTrust.Application.Features.Payroll.Overtime;
 using FactuTrust.Application.Features.Payroll.VariableAllowances;
@@ -47,6 +48,78 @@ public class PayrollDeclarationsController : ControllerBase
         if (result.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
         return File(result.Value, "text/csv; charset=utf-8", $"dts_{year}_T{quarter}.csv");
+    }
+
+    // ── Bordereau CNSS mensuel ──
+    [HttpGet("declarations/cnss-remittance")]
+    [Authorize(Policy = PermissionPolicies.PayrollDeclare)]
+    [ProducesResponseType(typeof(ApiResponse<CnssContributionRemittanceDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetCnssRemittance([FromQuery] int year, [FromQuery] int month, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GenerateCnssRemittanceQuery(year, month), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<CnssContributionRemittanceDto>.Fail(result.Error.Description));
+        return Ok(ApiResponse<CnssContributionRemittanceDto>.Ok(result.Value));
+    }
+
+    [HttpGet("declarations/cnss-remittance/export/csv")]
+    [Authorize(Policy = PermissionPolicies.PayrollDeclare)]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ExportCnssRemittanceCsv([FromQuery] int year, [FromQuery] int month, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new ExportCnssRemittanceCsvQuery(year, month), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+        return File(result.Value, "text/csv; charset=utf-8", $"bordereau_cnss_{year}_{month:D2}.csv");
+    }
+
+    [HttpGet("declarations/cnss-remittance/export/pdf")]
+    [Authorize(Policy = PermissionPolicies.PayrollDeclare)]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ExportCnssRemittancePdf([FromQuery] int year, [FromQuery] int month, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new ExportCnssRemittancePdfQuery(year, month), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+        return File(result.Value, "application/pdf", $"bordereau_cnss_{year}_{month:D2}.pdf");
+    }
+
+    [HttpGet("declarations/cnss-remittance/payment")]
+    [Authorize(Policy = PermissionPolicies.PayrollDeclare)]
+    [ProducesResponseType(typeof(ApiResponse<CnssContributionRemittanceDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetCnssRemittancePayment([FromQuery] int year, [FromQuery] int month, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetCnssRemittancePaymentQuery(year, month), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<CnssContributionRemittanceDto>.Fail(result.Error.Description));
+        return Ok(ApiResponse<CnssContributionRemittanceDto>.Ok(result.Value));
+    }
+
+    [HttpPost("declarations/cnss-remittance/payment")]
+    [Authorize(Policy = PermissionPolicies.PayrollPay)]
+    [ProducesResponseType(typeof(ApiResponse<Guid>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RecordCnssRemittancePayment(
+        [FromBody] RecordCnssContributionPaymentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new RecordCnssContributionPaymentCommand(request), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<Guid>.Fail(result.Error.Description));
+        return Ok(ApiResponse<Guid>.Ok(result.Value));
+    }
+
+    [HttpPost("declarations/cnss-remittance/payment/{id:guid}/cancel")]
+    [Authorize(Policy = PermissionPolicies.PayrollPay)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> CancelCnssRemittancePayment(
+        Guid id,
+        [FromBody] CancelCnssContributionPaymentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new CancelCnssContributionPaymentCommand(id, request.Reason), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+        return Ok(ApiResponse<object>.Ok(null!, "Versement CNSS annulé."));
     }
 
     // ── Certificats de retenue à la source (IRPP/CSS) ──

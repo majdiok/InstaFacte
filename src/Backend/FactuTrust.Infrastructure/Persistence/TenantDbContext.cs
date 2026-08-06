@@ -233,6 +233,7 @@ public partial class TenantDbContext : DbContext
     public DbSet<Domain.Entities.Payroll.PayrollYearParameters> PayrollYearParameters => Set<Domain.Entities.Payroll.PayrollYearParameters>();
     public DbSet<Domain.Entities.Payroll.PayrollIrppBracket> PayrollIrppBrackets => Set<Domain.Entities.Payroll.PayrollIrppBracket>();
     public DbSet<Domain.Entities.Payroll.LeaveRequest> LeaveRequests => Set<Domain.Entities.Payroll.LeaveRequest>();
+    public DbSet<Domain.Entities.Payroll.EmployeePayrollSuspension> EmployeePayrollSuspensions => Set<Domain.Entities.Payroll.EmployeePayrollSuspension>();
     public DbSet<Domain.Entities.Payroll.EmployeeAdvance> EmployeeAdvances => Set<Domain.Entities.Payroll.EmployeeAdvance>();
     public DbSet<Domain.Entities.Payroll.PayrollOvertimeLine> PayrollOvertimeLines => Set<Domain.Entities.Payroll.PayrollOvertimeLine>();
     public DbSet<Domain.Entities.Payroll.PayrollVariableAllowanceLine> PayrollVariableAllowanceLines => Set<Domain.Entities.Payroll.PayrollVariableAllowanceLine>();
@@ -240,6 +241,7 @@ public partial class TenantDbContext : DbContext
     public DbSet<Domain.Entities.Payroll.LeaveBalanceAccrual> LeaveBalanceAccruals => Set<Domain.Entities.Payroll.LeaveBalanceAccrual>();
     public DbSet<Domain.Entities.Payroll.PayrollPayment> PayrollPayments => Set<Domain.Entities.Payroll.PayrollPayment>();
     public DbSet<Domain.Entities.Payroll.PayrollPaymentLine> PayrollPaymentLines => Set<Domain.Entities.Payroll.PayrollPaymentLine>();
+    public DbSet<Domain.Entities.Payroll.CnssContributionPayment> CnssContributionPayments => Set<Domain.Entities.Payroll.CnssContributionPayment>();
     public DbSet<Domain.Entities.Payroll.SocialFundScheme> SocialFundSchemes => Set<Domain.Entities.Payroll.SocialFundScheme>();
     public DbSet<Domain.Entities.Payroll.EmployeeSocialFundEnrollment> EmployeeSocialFundEnrollments => Set<Domain.Entities.Payroll.EmployeeSocialFundEnrollment>();
     public DbSet<Domain.Entities.Payroll.PayrollMealVoucherLine> PayrollMealVoucherLines => Set<Domain.Entities.Payroll.PayrollMealVoucherLine>();
@@ -741,6 +743,7 @@ public partial class TenantDbContext : DbContext
             entity.Property(c => c.EstablishmentCode).HasMaxLength(20).IsRequired(false);
             entity.Property(c => c.TejAdherentSince).IsRequired(false);
             entity.Property(c => c.TejCategory).HasConversion<int?>().IsRequired(false);
+            entity.Property(c => c.CnssEmployerNumber).HasMaxLength(20).IsRequired(false);
 
             entity.OwnsOne(c => c.Nif, nif =>
             {

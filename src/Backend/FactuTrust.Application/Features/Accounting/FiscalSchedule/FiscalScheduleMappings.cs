@@ -150,6 +150,7 @@ public static class FiscalScheduleMappings
         FiscalObligationType.PersonalIncomeTaxInstallment => "IRPP - Acompte",
         FiscalObligationType.CnssDtsQuarterly => "DTS CNSS (salaires trimestriels)",
         FiscalObligationType.PayrollIrppWithholding => "Retenue IRPP salariés",
+        FiscalObligationType.CnssMonthlyRemittance => "Versement cotisations CNSS",
         _ => "Autre obligation"
     };
 

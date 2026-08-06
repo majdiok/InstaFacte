@@ -83,6 +83,7 @@ export const FIRM_ROUTES: Routes = [
       {
         path: 'collaborateurs/new',
         canActivate: [firmManagerGuard],
+        data: { mode: 'create' },
         loadComponent: () =>
           import('./collaborators/firm-collaborator-form.component').then(m => m.FirmCollaboratorFormComponent),
         title: 'Cabinet — Nouveau collaborateur'

@@ -3,6 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, map } from 'rxjs';
 import { environment } from '@environments/environment';
 import { ApiResponse } from '@core/services/auth.service';
+import { createHttpContextSkipGlobalErrorUi } from '@core/http-context';
 
 export type CollaboratorCivility = 1 | 2; // Mrs=1, Mr=2
 export type FirmUserRole = 11 | 12; // FirmManager=11, FirmAccountant=12
@@ -121,18 +122,19 @@ export class FirmCollaboratorsService {
   }
 
   create(payload: CreateFirmUserPayload, cniFile?: File | null): Observable<FirmUser> {
+    const context = createHttpContextSkipGlobalErrorUi();
     if (cniFile) {
       const form = new FormData();
       form.append('user', JSON.stringify(payload));
       form.append('file', cniFile, cniFile.name);
-      return this.http.post<ApiResponse<FirmUser>>(this.base, form).pipe(
+      return this.http.post<ApiResponse<FirmUser>>(this.base, form, { context }).pipe(
         map(r => {
           if (!r.success) throw new Error(r.message || 'Création impossible');
           return r.data;
         })
       );
     }
-    return this.http.post<ApiResponse<FirmUser>>(this.base, payload).pipe(
+    return this.http.post<ApiResponse<FirmUser>>(this.base, payload, { context }).pipe(
       map(r => {
         if (!r.success) throw new Error(r.message || 'Création impossible');
         return r.data;
@@ -141,7 +143,9 @@ export class FirmCollaboratorsService {
   }
 
   update(id: string, payload: UpdateFirmUserPayload): Observable<FirmUser> {
-    return this.http.patch<ApiResponse<FirmUser>>(`${this.base}/${id}`, payload).pipe(
+    return this.http.patch<ApiResponse<FirmUser>>(`${this.base}/${id}`, payload, {
+      context: createHttpContextSkipGlobalErrorUi()
+    }).pipe(
       map(r => {
         if (!r.success) throw new Error(r.message || 'Mise à jour impossible');
         return r.data;
@@ -150,7 +154,9 @@ export class FirmCollaboratorsService {
   }
 
   setActive(id: string, isActive: boolean): Observable<void> {
-    return this.http.patch<ApiResponse<object>>(`${this.base}/${id}/status`, { isActive }).pipe(
+    return this.http.patch<ApiResponse<object>>(`${this.base}/${id}/status`, { isActive }, {
+      context: createHttpContextSkipGlobalErrorUi()
+    }).pipe(
       map(r => {
         if (!r.success) throw new Error(r.message || 'Changement de statut impossible');
       })
@@ -158,7 +164,9 @@ export class FirmCollaboratorsService {
   }
 
   resendInvite(id: string): Observable<void> {
-    return this.http.post<ApiResponse<object>>(`${this.base}/${id}/resend-invite`, {}).pipe(
+    return this.http.post<ApiResponse<object>>(`${this.base}/${id}/resend-invite`, {}, {
+      context: createHttpContextSkipGlobalErrorUi()
+    }).pipe(
       map(r => {
         if (!r.success) throw new Error(r.message || 'Renvoi invitation impossible');
       })
@@ -166,7 +174,9 @@ export class FirmCollaboratorsService {
   }
 
   setBinomes(id: string, binomeUserIds: string[]): Observable<void> {
-    return this.http.put<ApiResponse<object>>(`${this.base}/${id}/binomes`, { binomeUserIds }).pipe(
+    return this.http.put<ApiResponse<object>>(`${this.base}/${id}/binomes`, { binomeUserIds }, {
+      context: createHttpContextSkipGlobalErrorUi()
+    }).pipe(
       map(r => {
         if (!r.success) throw new Error(r.message || 'Mise à jour binômes impossible');
       })
@@ -176,7 +186,9 @@ export class FirmCollaboratorsService {
   uploadCni(id: string, file: File): Observable<void> {
     const form = new FormData();
     form.append('file', file, file.name);
-    return this.http.post<ApiResponse<object>>(`${this.base}/${id}/cni`, form).pipe(
+    return this.http.post<ApiResponse<object>>(`${this.base}/${id}/cni`, form, {
+      context: createHttpContextSkipGlobalErrorUi()
+    }).pipe(
       map(r => {
         if (!r.success) throw new Error(r.message || 'Upload CNI impossible');
       })
@@ -188,7 +200,9 @@ export class FirmCollaboratorsService {
   }
 
   deleteCni(id: string): Observable<void> {
-    return this.http.delete<ApiResponse<object>>(`${this.base}/${id}/cni`).pipe(
+    return this.http.delete<ApiResponse<object>>(`${this.base}/${id}/cni`, {
+      context: createHttpContextSkipGlobalErrorUi()
+    }).pipe(
       map(r => {
         if (!r.success) throw new Error(r.message || 'Suppression CNI impossible');
       })

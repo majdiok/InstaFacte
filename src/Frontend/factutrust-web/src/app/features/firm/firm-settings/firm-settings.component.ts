@@ -15,18 +15,18 @@ import { AuthService } from '@core/services/auth.service';
     </app-page-header>
 
     <div class="fs-cards">
-      <a routerLink="/firm/collaborateurs" class="fs-card-link">
-        <div class="fs-card">
-          <div class="fs-card__icon"><i class="pi pi-users"></i></div>
-          <div class="fs-card__body">
-            <h2 class="fs-card__title">Collaborateurs</h2>
-            <p class="fs-card__desc">Gérer les comptables et responsables du cabinet.</p>
+      @if (isFirmManager()) {
+        <a routerLink="/firm/collaborateurs" class="fs-card-link">
+          <div class="fs-card">
+            <div class="fs-card__icon"><i class="pi pi-users"></i></div>
+            <div class="fs-card__body">
+              <h2 class="fs-card__title">Collaborateurs</h2>
+              <p class="fs-card__desc">Gérer les comptables et responsables du cabinet.</p>
+            </div>
+            <i class="pi pi-chevron-right fs-card__chevron"></i>
           </div>
-          <i class="pi pi-chevron-right fs-card__chevron"></i>
-        </div>
-      </a>
+        </a>
 
-      @if (canManageActivityTypes()) {
         <a routerLink="/firm/settings/activity-codes" class="fs-card-link">
           <div class="fs-card">
             <div class="fs-card__icon"><i class="pi pi-tags"></i></div>
@@ -76,5 +76,5 @@ import { AuthService } from '@core/services/auth.service';
 })
 export class FirmSettingsComponent {
   private readonly auth = inject(AuthService);
-  readonly canManageActivityTypes = computed(() => this.auth.isFirmManager());
+  readonly isFirmManager = computed(() => this.auth.isFirmManager());
 }

@@ -34,6 +34,8 @@ public sealed class AccountingService : IAccountingService
     public const string SourcePayrollRun = "PayrollRun";
     public const string SourcePayrollPayment = "PayrollPayment";
     public const string SourcePayrollPaymentCancelled = "PayrollPaymentCancelled";
+    public const string SourceCnssContributionPayment = "CnssContributionPayment";
+    public const string SourceCnssContributionPaymentCancelled = "CnssContributionPaymentCancelled";
 
     /// <summary>Clé d'idempotence du 2ᵉ volet d'un effet (encaissement/paiement à échéance), sur l'id du paiement.</summary>
     public const string SourceEffetSettlement = "EffetSettlement";
@@ -1921,6 +1923,142 @@ public sealed class AccountingService : IAccountingService
             true,
             SourcePayrollPaymentCancelled,
             payrollPaymentId,
+            revLines,
+            currency);
+
+        if (create.IsFailure)
+            return Result.Failure(create.Error);
+
+        var reversal = create.Value;
+        reversal.MarkInitialStatus(NewEntryStatus);
+        reversal.SetAuditInfo("system", false);
+        await _journalEntries.AddAsync(reversal, cancellationToken);
+        original.MarkReversedBy(reversal.Id);
+        await _journalEntries.UpdateAsync(original, cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<Result> GenerateCnssContributionPaymentEntryAsync(
+        CnssContributionPayment payment,
+        BankAccount? bankAccount,
+        CancellationToken cancellationToken = default)
+    {
+        if (await _chartOfAccounts.CountAsync(cancellationToken) == 0)
+            return Result.Success();
+
+        var existing = await _journalEntries.GetBySourceAsync(
+            SourceCnssContributionPayment, payment.Id, cancellationToken);
+        if (existing is not null)
+            return Result.Success();
+
+        var date = payment.PaymentDate;
+        var periodResult = await _periodService.EnsureOpenPeriodAsync(date, cancellationToken);
+        if (periodResult.IsFailure)
+            return Result.Failure(periodResult.Error);
+
+        var period = periodResult.Value;
+        var currency = payment.Amount.Currency;
+        var creditAccount = payment.Method == PaymentMethod.Cash
+            ? TreasuryAccount(PaymentMethod.Cash)
+            : (bankAccount?.ChartOfAccountNumber ?? TreasuryAccount(payment.Method));
+        var label = $"Versement CNSS {payment.Month:D2}/{payment.Year}";
+
+        var linesResult = CnssContributionPaymentJournalBuilder.BuildPaymentLines(
+            payment.Amount.Amount, label, creditAccount);
+        if (linesResult.IsFailure)
+            return Result.Failure(linesResult.Error);
+
+        var accountValidation = await ValidateAccountsExistAsync(linesResult.Value, cancellationToken);
+        if (accountValidation.IsFailure)
+            return accountValidation;
+
+        var journal = payment.Method == PaymentMethod.Cash ? "JC" : BankJournalCode;
+        var n = await _journalEntries.ReserveNextEntryNumberAsync(journal, date.Year, cancellationToken);
+        var create = JournalEntry.Create(
+            n,
+            journal,
+            date,
+            label,
+            period.Id,
+            true,
+            SourceCnssContributionPayment,
+            payment.Id,
+            linesResult.Value,
+            currency);
+
+        if (create.IsFailure)
+            return Result.Failure(create.Error);
+
+        var entry = create.Value;
+        entry.MarkInitialStatus(NewEntryStatus);
+        entry.SetAuditInfo("system", false);
+        await _journalEntries.AddAsync(entry, cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<Result> ReverseCnssContributionPaymentEntryAsync(
+        Guid cnssContributionPaymentId,
+        string reason,
+        CancellationToken cancellationToken = default)
+    {
+        if (await _chartOfAccounts.CountAsync(cancellationToken) == 0)
+            return Result.Success();
+
+        var existingReversal = await _journalEntries.GetBySourceAsync(
+            SourceCnssContributionPaymentCancelled, cnssContributionPaymentId, cancellationToken);
+        if (existingReversal is not null)
+            return Result.Success();
+
+        var original = await _journalEntries.GetBySourceAsync(
+            SourceCnssContributionPayment, cnssContributionPaymentId, cancellationToken);
+        if (original is null)
+            return Result.Success();
+
+        if (original.IsDraft)
+        {
+            await _journalEntries.RemoveAsync(original, cancellationToken);
+            return Result.Success();
+        }
+
+        var reversalDate = original.EntryDate;
+        var periodResult = await _periodService.EnsureOpenPeriodAsync(reversalDate, cancellationToken);
+        if (periodResult.IsFailure)
+        {
+            reversalDate = DateTime.UtcNow.Date;
+            periodResult = await _periodService.EnsureOpenPeriodAsync(reversalDate, cancellationToken);
+        }
+
+        if (periodResult.IsFailure)
+            return Result.Failure(periodResult.Error);
+
+        var period = periodResult.Value;
+        var firstLine = original.Lines.First();
+        var currency = firstLine.DebitAmount.Amount > 0
+            ? firstLine.DebitAmount.Currency
+            : firstLine.CreditAmount.Currency;
+
+        var revLines = original.Lines
+            .OrderBy(l => l.LineNumber)
+            .Select(l => new JournalLineInput(
+                l.AccountNumber,
+                l.Label,
+                l.CreditAmount.Amount,
+                l.DebitAmount.Amount,
+                l.ThirdPartyId,
+                l.ThirdPartyKind))
+            .ToList();
+
+        var journal = original.JournalCode;
+        var n = await _journalEntries.ReserveNextEntryNumberAsync(journal, reversalDate.Year, cancellationToken);
+        var create = JournalEntry.Create(
+            n,
+            journal,
+            reversalDate,
+            $"Annulation versement CNSS — {reason.Trim()}",
+            period.Id,
+            true,
+            SourceCnssContributionPaymentCancelled,
+            cnssContributionPaymentId,
             revLines,
             currency);
 

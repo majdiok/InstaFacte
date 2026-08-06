@@ -33,6 +33,8 @@ public sealed class PayrollInputBuilder
         /// Vide hors mois de régularisation : le calcul est alors strictement inchangé.
         /// </summary>
         public IReadOnlyList<PayrollIrppRegularization> IrppRegularizations { get; init; } = Array.Empty<PayrollIrppRegularization>();
+        /// <summary>Suspensions approuvées chevauchant le mois (prorata automatique).</summary>
+        public IReadOnlyList<EmployeePayrollSuspension> Suspensions { get; init; } = Array.Empty<EmployeePayrollSuspension>();
     }
 
     public PayrollComputationInput Build(
@@ -73,6 +75,38 @@ public sealed class PayrollInputBuilder
         var dailyRate = contract.BaseSalary / MonthlyWorkingDays;
         var unpaidAbsenceAmount = Math.Round(dailyRate * unpaidDays, 3, MidpointRounding.AwayFromZero);
         var overtimeAmount = overtimeLines.Sum(l => l.EffectiveAmount);
+
+        decimal prorataDeduction = 0m;
+        decimal prorataWorkedDays = 0m;
+        decimal prorataNonWorkedDays = 0m;
+
+        if (parameters.EnableAutomaticProrata)
+        {
+            var monthStart = new DateTime(year, month, 1);
+            var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+            var effectiveStart = MaxDate(monthStart, contract.StartDate, employee.HireDate);
+            var effectiveEnd = MinDate(monthEnd, contract.EndDate ?? monthEnd, employee.TerminationDate ?? monthEnd);
+
+            var suspensionPeriods = batch.Suspensions
+                .Where(s => s.EmployeeId == employee.Id)
+                .Select(s => new PayrollProrataSuspensionPeriod(s.StartDate, s.EndDate, s.IsPaid, s.IsApproved))
+                .ToList();
+
+            var prorata = PayrollProrataCalculator.Compute(new PayrollProrataMonthInput
+            {
+                Year = year,
+                Month = month,
+                BaseSalary = contract.BaseSalary,
+                EffectiveStart = effectiveStart,
+                EffectiveEnd = effectiveEnd,
+                IsEnabled = true,
+                Suspensions = suspensionPeriods
+            });
+
+            prorataDeduction = prorata.DeductionAmount;
+            prorataWorkedDays = prorata.WorkedDays;
+            prorataNonWorkedDays = prorata.NonWorkedDays;
+        }
 
         var deductionLines = new List<DeductionLineInput>();
         var employerChargeLines = new List<EmployerChargeLineInput>();
@@ -125,6 +159,9 @@ public sealed class PayrollInputBuilder
             AllowanceLines = buckets.Lines,
             OvertimeAmount = overtimeAmount,
             UnpaidAbsenceAmount = unpaidAbsenceAmount,
+            ProrataDeductionAmount = prorataDeduction,
+            ProrataWorkedDays = prorataWorkedDays,
+            ProrataNonWorkedDays = prorataNonWorkedDays,
             InKindTaxableCnssableBenefits = inKindTotal,
             Regime = contract.Regime,
             WorkAccidentRate = contract.WorkAccidentRate,
@@ -280,6 +317,9 @@ public sealed class PayrollInputBuilder
             AllowanceLines = input.AllowanceLines,
             OvertimeAmount = input.OvertimeAmount,
             UnpaidAbsenceAmount = input.UnpaidAbsenceAmount,
+            ProrataDeductionAmount = input.ProrataDeductionAmount,
+            ProrataWorkedDays = input.ProrataWorkedDays,
+            ProrataNonWorkedDays = input.ProrataNonWorkedDays,
             InKindTaxableCnssableBenefits = input.InKindTaxableCnssableBenefits,
             IrppRegularization = input.IrppRegularization,
             CssRegularization = input.CssRegularization,
@@ -309,6 +349,9 @@ public sealed class PayrollInputBuilder
             AllowanceLines = input.AllowanceLines,
             OvertimeAmount = input.OvertimeAmount,
             UnpaidAbsenceAmount = input.UnpaidAbsenceAmount,
+            ProrataDeductionAmount = input.ProrataDeductionAmount,
+            ProrataWorkedDays = input.ProrataWorkedDays,
+            ProrataNonWorkedDays = input.ProrataNonWorkedDays,
             InKindTaxableCnssableBenefits = input.InKindTaxableCnssableBenefits,
             IrppRegularization = input.IrppRegularization,
             CssRegularization = input.CssRegularization,
@@ -327,4 +370,10 @@ public sealed class PayrollInputBuilder
         };
 
     private static decimal R(decimal value) => Math.Round(value, 3, MidpointRounding.AwayFromZero);
+
+    private static DateTime MaxDate(DateTime a, DateTime b, DateTime c) =>
+        new[] { a.Date, b.Date, c.Date }.Max();
+
+    private static DateTime MinDate(DateTime a, DateTime b, DateTime c) =>
+        new[] { a.Date, b.Date, c.Date }.Min();
 }

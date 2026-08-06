@@ -23,6 +23,7 @@ public partial class TenantDbContext
         ConfigurePayrollYearParameters(builder);
         ConfigurePayrollIrppBracket(builder);
         ConfigureLeaveRequest(builder);
+        ConfigureEmployeePayrollSuspension(builder);
         ConfigureEmployeeAdvance(builder);
         ConfigurePayrollOvertimeLine(builder);
         ConfigurePayrollVariableAllowanceLine(builder);
@@ -30,6 +31,7 @@ public partial class TenantDbContext
         ConfigureLeaveBalanceAccrual(builder);
         ConfigurePayrollPayment(builder);
         ConfigurePayrollPaymentLine(builder);
+        ConfigureCnssContributionPayment(builder);
         ConfigureSocialFundScheme(builder);
         ConfigureEmployeeSocialFundEnrollment(builder);
         ConfigurePayrollMealVoucherLine(builder);
@@ -217,6 +219,9 @@ public partial class TenantDbContext
             entity.Property(p => p.CssRegularization).HasPrecision(18, 3).HasDefaultValue(0m);
             entity.Property(p => p.RegularizationDeferred).HasPrecision(18, 3).HasDefaultValue(0m);
             entity.Property(p => p.NetSalary).HasPrecision(18, 3);
+            entity.Property(p => p.ProrataWorkedDays).HasPrecision(6, 2).HasDefaultValue(0m);
+            entity.Property(p => p.ProrataNonWorkedDays).HasPrecision(6, 2).HasDefaultValue(0m);
+            entity.Property(p => p.ProrataDeductionAmount).HasPrecision(18, 3).HasDefaultValue(0m);
             entity.Property(p => p.CnssEmployer).HasPrecision(18, 3);
             entity.Property(p => p.WorkAccidentContribution).HasPrecision(18, 3);
             entity.Property(p => p.Tfp).HasPrecision(18, 3);
@@ -276,6 +281,7 @@ public partial class TenantDbContext
             // Régularisation IRPP annuelle : désactivée par défaut, les exercices existants
             // conservent strictement leur calcul.
             entity.Property(p => p.EnableIrppRegularization).IsRequired().HasDefaultValue(false);
+            entity.Property(p => p.EnableAutomaticProrata).IsRequired().HasDefaultValue(false);
             entity.Property(p => p.CssRate).HasPrecision(8, 4);
             entity.Property(p => p.CssAnnualExemptionThreshold).HasPrecision(18, 3);
             entity.Property(p => p.CssEmployerRate).HasPrecision(8, 4);
@@ -345,6 +351,26 @@ public partial class TenantDbContext
 
             entity.HasIndex(l => l.EmployeeId);
             entity.HasIndex(l => new { l.StartDate, l.EndDate });
+        });
+    }
+
+    private static void ConfigureEmployeePayrollSuspension(ModelBuilder builder)
+    {
+        builder.Entity<EmployeePayrollSuspension>(entity =>
+        {
+            entity.ToTable("EmployeePayrollSuspensions");
+            entity.HasKey(s => s.Id);
+
+            entity.Property(s => s.EmployeeId).IsRequired();
+            entity.Property(s => s.Type).IsRequired();
+            entity.Property(s => s.StartDate).IsRequired();
+            entity.Property(s => s.IsPaid).IsRequired();
+            entity.Property(s => s.Reason).HasMaxLength(500);
+            entity.Property(s => s.IsApproved).IsRequired();
+            entity.Property(s => s.ApprovedBy).HasMaxLength(450);
+
+            entity.HasIndex(s => s.EmployeeId);
+            entity.HasIndex(s => new { s.StartDate, s.EndDate });
         });
     }
 
@@ -522,6 +548,47 @@ public partial class TenantDbContext
 
             entity.HasIndex(l => l.PayslipId);
             entity.HasIndex(l => l.EmployeeId);
+        });
+    }
+
+    private static void ConfigureCnssContributionPayment(ModelBuilder builder)
+    {
+        builder.Entity<CnssContributionPayment>(entity =>
+        {
+            entity.ToTable("CnssContributionPayments");
+            entity.HasKey(p => p.Id);
+
+            entity.Property(p => p.Year).IsRequired();
+            entity.Property(p => p.Month).IsRequired();
+            entity.Property(p => p.PayrollRunId).IsRequired();
+            entity.Property(p => p.TotalCnssEmployee).HasPrecision(18, 3).IsRequired();
+            entity.Property(p => p.TotalCnssEmployer).HasPrecision(18, 3).IsRequired();
+            entity.Property(p => p.TotalWorkAccident).HasPrecision(18, 3).IsRequired();
+            entity.Property(p => p.TotalDue).HasPrecision(18, 3).IsRequired();
+            entity.Property(p => p.PaymentDate).IsRequired();
+            entity.Property(p => p.Method).IsRequired();
+            entity.Property(p => p.Reference).HasMaxLength(100);
+            entity.Property(p => p.Notes).HasMaxLength(500);
+            entity.Property(p => p.IsCancelled).IsRequired();
+            entity.Property(p => p.CancelledBy).HasMaxLength(450);
+            entity.Property(p => p.CancellationReason).HasMaxLength(500);
+
+            entity.OwnsOne(p => p.Amount, money =>
+            {
+                money.Property(m => m.Amount).HasColumnName("Amount").HasPrecision(18, 3).IsRequired();
+                money.Property(m => m.Currency).HasColumnName("AmountCurrency").HasMaxLength(3).IsRequired();
+            });
+
+            entity.HasOne(p => p.PayrollRun)
+                .WithMany()
+                .HasForeignKey(p => p.PayrollRunId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(p => new { p.Year, p.Month, p.IsCancelled });
+            entity.HasIndex(p => p.PayrollRunId);
+            entity.HasIndex(p => new { p.Year, p.Month })
+                .IsUnique()
+                .HasFilter("[IsCancelled] = 0");
         });
     }
 

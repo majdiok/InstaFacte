@@ -4,7 +4,8 @@ namespace FactuTrust.Domain.Services.Payroll;
 public sealed record EmployerSnapshot(
     string CompanyName,
     string Nif,
-    string? AddressLine);
+    string? AddressLine,
+    string? CnssEmployerNumber = null);
 
 /// <summary>Identité salarié lue au moment de la génération (non figée sur le bulletin).</summary>
 public sealed record EmployeeIdentitySnapshot(

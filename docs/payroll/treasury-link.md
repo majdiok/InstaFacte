@@ -14,6 +14,7 @@ Activés par défaut (`true` dans le code et dans `appsettings.json` / `appsetti
 |------|--------|
 | `PayrollTreasuryLinkEnabled` | Active les endpoints et l'UI de paiement |
 | `PayrollEmployeeAuxiliaryEnabled` | Ventile le crédit 421 par salarié à la validation |
+| `PayrollCnssRemittanceEnabled` | Active le bordereau CNSS mensuel et le versement compte 453 |
 
 ## API
 
@@ -21,11 +22,13 @@ Activés par défaut (`true` dans le code et dans `appsettings.json` / `appsetti
 - `GET /api/payroll/runs/{id}/payments` — historique
 - `POST /api/payroll/payments/{id}/cancel` — annuler un paiement
 - `POST /api/payroll/runs/{id}/payments/cancel-all` — annuler tous (prérequis pour rouvrir)
+- `POST /api/payroll/declarations/cnss-remittance/payment` — versement CNSS mensuel (débit 453)
 
 ## Comptes SCE
 
 - Engagement : `640`, `647` / `421xxxx` (auxiliaire salarié), `432`, `453`, `425`
-- Décaissement : débit `421xxxx` / crédit `5321` ou `5411`
+- Décaissement salaires : débit `421xxxx` / crédit `5321` ou `5411`
+- Décaissement CNSS : débit `453` / crédit `5321` ou `5411`
 
 ## Réouverture
 

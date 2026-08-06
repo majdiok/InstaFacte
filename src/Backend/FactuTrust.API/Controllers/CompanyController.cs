@@ -243,6 +243,8 @@ public class CompanyController : ControllerBase
                     company.SetLogo(dto.LogoUrl);
                 }
 
+                company.SetCnssEmployerNumber(dto.CnssEmployerNumber);
+
                 await _companyRepository.UpdateAsync(company, cancellationToken);
             }
             catch (Exception ex)
@@ -328,7 +330,8 @@ public class CompanyController : ControllerBase
             InvoicePrefix = null,
             DefaultPaymentTerms = null,
             InvoiceFooter = null,
-            WarehouseName = warehouseName
+            WarehouseName = warehouseName,
+            CnssEmployerNumber = company?.CnssEmployerNumber
         };
     }
 }

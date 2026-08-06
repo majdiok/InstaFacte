@@ -27,6 +27,7 @@ public sealed record CompanyDto
     public string? DefaultPaymentTerms { get; init; }
     public string? InvoiceFooter { get; init; }
     public string? WarehouseName { get; init; }
+    public string? CnssEmployerNumber { get; init; }
 }
 
 /// <summary>
@@ -59,4 +60,5 @@ public sealed record UpdateCompanyDto
     public string? DefaultPaymentTerms { get; init; }
     public string? InvoiceFooter { get; init; }
     public string? WarehouseName { get; init; }
+    public string? CnssEmployerNumber { get; init; }
 }

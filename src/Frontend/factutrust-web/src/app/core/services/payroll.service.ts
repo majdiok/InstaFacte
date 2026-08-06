@@ -220,6 +220,8 @@ export interface LeaveBalance {
   totalAcquired: number;
   consumed: number;
   remaining: number;
+  pending: number;
+  available: number;
 }
 
 export interface PayslipDetail extends PayslipListItem {
@@ -235,6 +237,9 @@ export interface PayslipDetail extends PayslipListItem {
   professionalExpenses: number;
   familyDeductions: number;
   netSalary: number;
+  prorataWorkedDays?: number;
+  prorataNonWorkedDays?: number;
+  prorataDeductionAmount?: number;
   lines: { order: number; label: string; kind: string; amount: number; base?: number; rate?: number }[];
 }
 
@@ -248,6 +253,8 @@ export interface PayrollParameters {
   enforceSmigOnContracts: boolean;
   enableExtendedOvertimeRates: boolean;
   enableAllowanceQuadrantMatrix: boolean;
+  enableIrppRegularization?: boolean;
+  enableAutomaticProrata?: boolean;
   cssRate: number;
   cssAnnualExemptionThreshold: number;
   cssEmployerRate: number;
@@ -470,6 +477,71 @@ export interface DtsDeclaration {
   }[];
 }
 
+export interface CnssContributionRemittance {
+  year: number;
+  month: number;
+  employerCompanyName: string;
+  employerNif: string;
+  employerCnssNumber?: string;
+  employerAddressLine?: string;
+  payrollRunId?: string;
+  sourceRunStatus?: number;
+  isEligible: boolean;
+  hasExistingPayment: boolean;
+  paymentStatus?: number;
+  paymentStatusDisplay?: string;
+  totalCnssEmployee: number;
+  totalCnssEmployer: number;
+  totalWorkAccident: number;
+  totalDue: number;
+  employeeCount: number;
+  documentReference: string;
+  warnings: string[];
+  lines: CnssContributionRemittanceLine[];
+  payment?: CnssContributionPayment;
+}
+
+export interface CnssContributionRemittanceLine {
+  employeeId: string;
+  employeeName: string;
+  cnssNumber?: string;
+  cnssableGross: number;
+  cnssEmployee: number;
+  cnssEmployer: number;
+  workAccident: number;
+  lineTotal: number;
+  warnings: string[];
+}
+
+export interface CnssContributionPayment {
+  id: string;
+  year: number;
+  month: number;
+  payrollRunId: string;
+  totalCnssEmployee: number;
+  totalCnssEmployer: number;
+  totalWorkAccident: number;
+  totalDue: number;
+  amount: number;
+  paymentDate: string;
+  method: string;
+  methodDisplay: string;
+  bankAccountId?: string;
+  reference?: string;
+  notes?: string;
+  isCancelled: boolean;
+}
+
+export interface RecordCnssContributionPaymentRequest {
+  year: number;
+  month: number;
+  paymentDate: string;
+  method: number;
+  bankAccountId?: string;
+  reference?: string;
+  notes?: string;
+}
+
 export interface PayrollWithholdingCertificateBatch {
   year: number;
   employerCompanyName: string;
@@ -509,6 +581,52 @@ export interface PayrollWithholdingCertificateLine {
   totalIrppSmigExemption: number;
   documentReference: string;
   warnings: string[];
+}
+
+export interface PayrollProrataPreviewLine {
+  employeeId: string;
+  employeeName: string;
+  employeeNumber: string;
+  workedDays: number;
+  nonWorkedDays: number;
+  deductionAmount: number;
+  reason: string;
+  warnings: string[];
+}
+
+export interface PayrollProrataPreview {
+  year: number;
+  month: number;
+  isEnabled: boolean;
+  employeeCount: number;
+  totalDeduction: number;
+  lines: PayrollProrataPreviewLine[];
+}
+
+export interface EmployeePayrollSuspension {
+  id: string;
+  employeeId: string;
+  type: string;
+  typeDisplay: string;
+  startDate: string;
+  endDate?: string;
+  isPaid: boolean;
+  reason?: string;
+  isApproved: boolean;
+  approvedAt?: string;
+}
+
+export interface TerminateEmployeeRequest {
+  terminationDate: string;
+  reason?: string;
+  closeActiveContract: boolean;
+  deactivateNow: boolean;
+}
+
+export interface TerminateEmployeeResult {
+  isActive: boolean;
+  terminationDate: string;
+  warning?: string;
 }
 
 export interface LeaveRequest {
@@ -792,6 +910,10 @@ export class PayrollService {
     return this.http.get<ApiResponse<PayrollRunDetail>>(`${this.runsUrl}/${id}`);
   }
 
+  getProrataPreview(runId: string): Observable<ApiResponse<PayrollProrataPreview>> {
+    return this.http.get<ApiResponse<PayrollProrataPreview>>(`${this.runsUrl}/${runId}/prorata-preview`);
+  }
+
   createRun(year: number, month: number): Observable<ApiResponse<string>> {
     return this.http.post<ApiResponse<string>>(this.runsUrl, { year, month });
   }
@@ -847,6 +969,37 @@ export class PayrollService {
 
   deleteLeave(id: string): Observable<ApiResponse<unknown>> {
     return this.http.delete<ApiResponse<unknown>>(`${this.payrollUrl}/leaves/${id}`);
+  }
+
+  listSuspensions(employeeId: string): Observable<ApiResponse<EmployeePayrollSuspension[]>> {
+    return this.http.get<ApiResponse<EmployeePayrollSuspension[]>>(
+      `${this.payrollUrl}/employees/${employeeId}/suspensions`
+    );
+  }
+
+  createSuspension(
+    employeeId: string,
+    body: { type: string; startDate: string; endDate?: string; isPaid: boolean; reason?: string }
+  ): Observable<ApiResponse<string>> {
+    return this.http.post<ApiResponse<string>>(
+      `${this.payrollUrl}/employees/${employeeId}/suspensions`,
+      body
+    );
+  }
+
+  updateSuspension(
+    id: string,
+    body: { type: string; startDate: string; endDate?: string; isPaid: boolean; reason?: string }
+  ): Observable<ApiResponse<unknown>> {
+    return this.http.put<ApiResponse<unknown>>(`${this.payrollUrl}/employees/suspensions/${id}`, body);
+  }
+
+  deleteSuspension(id: string): Observable<ApiResponse<unknown>> {
+    return this.http.delete<ApiResponse<unknown>>(`${this.payrollUrl}/employees/suspensions/${id}`);
+  }
+
+  approveSuspension(id: string): Observable<ApiResponse<unknown>> {
+    return this.http.post<ApiResponse<unknown>>(`${this.payrollUrl}/employees/suspensions/${id}/approve`, {});
   }
 
   createAdvance(body: CreateAdvanceRequest): Observable<ApiResponse<string>> {
@@ -928,6 +1081,32 @@ export class PayrollService {
   exportDtsCsv(year: number, quarter: number): Observable<Blob> {
     const params = new HttpParams().set('year', year).set('quarter', quarter);
     return this.http.get(`${this.payrollUrl}/declarations/dts/export`, { params, responseType: 'blob' });
+  }
+
+  getCnssRemittance(year: number, month: number): Observable<ApiResponse<CnssContributionRemittance>> {
+    const params = new HttpParams().set('year', year).set('month', month);
+    return this.http.get<ApiResponse<CnssContributionRemittance>>(
+      `${this.payrollUrl}/declarations/cnss-remittance`, { params });
+  }
+
+  exportCnssRemittanceCsv(year: number, month: number): Observable<Blob> {
+    const params = new HttpParams().set('year', year).set('month', month);
+    return this.http.get(`${this.payrollUrl}/declarations/cnss-remittance/export/csv`, { params, responseType: 'blob' });
+  }
+
+  exportCnssRemittancePdf(year: number, month: number): Observable<Blob> {
+    const params = new HttpParams().set('year', year).set('month', month);
+    return this.http.get(`${this.payrollUrl}/declarations/cnss-remittance/export/pdf`, { params, responseType: 'blob' });
+  }
+
+  recordCnssRemittancePayment(body: RecordCnssContributionPaymentRequest): Observable<ApiResponse<string>> {
+    return this.http.post<ApiResponse<string>>(`${this.payrollUrl}/declarations/cnss-remittance/payment`, body);
+  }
+
+  cancelCnssRemittancePayment(paymentId: string, reason: string): Observable<ApiResponse<unknown>> {
+    return this.http.post<ApiResponse<unknown>>(
+      `${this.payrollUrl}/declarations/cnss-remittance/payment/${paymentId}/cancel`,
+      { reason });
   }
 
   getWithholdingCertificates(year: number): Observable<ApiResponse<PayrollWithholdingCertificateBatch>> {

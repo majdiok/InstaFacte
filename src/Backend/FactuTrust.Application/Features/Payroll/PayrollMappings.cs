@@ -219,6 +219,9 @@ public static class PayrollMappings
             OtherDeductions = p.OtherDeductions,
             NonTaxableAllowances = p.NonTaxableAllowances,
             NetSalary = p.NetSalary,
+            ProrataWorkedDays = p.ProrataWorkedDays,
+            ProrataNonWorkedDays = p.ProrataNonWorkedDays,
+            ProrataDeductionAmount = p.ProrataDeductionAmount,
             CnssEmployer = p.CnssEmployer,
             WorkAccidentContribution = p.WorkAccidentContribution,
             Tfp = p.Tfp,
@@ -257,6 +260,8 @@ public static class PayrollMappings
             EnforceSmigOnContracts = p.EnforceSmigOnContracts,
             EnableExtendedOvertimeRates = p.EnableExtendedOvertimeRates,
             EnableAllowanceQuadrantMatrix = p.EnableAllowanceQuadrantMatrix,
+            EnableIrppRegularization = p.EnableIrppRegularization,
+            EnableAutomaticProrata = p.EnableAutomaticProrata,
             CssRate = p.CssRate,
             CssAnnualExemptionThreshold = p.CssAnnualExemptionThreshold,
             CssEmployerRate = p.CssEmployerRate,
@@ -301,6 +306,21 @@ public static class PayrollMappings
             ApprovedAt = l.ApprovedAt
         };
     }
+
+    public static EmployeePayrollSuspensionDto ToDto(EmployeePayrollSuspension s) =>
+        new()
+        {
+            Id = s.Id,
+            EmployeeId = s.EmployeeId,
+            Type = s.Type.ToString(),
+            TypeDisplay = s.Type.ToDisplayString(),
+            StartDate = s.StartDate,
+            EndDate = s.EndDate,
+            IsPaid = s.IsPaid,
+            Reason = s.Reason,
+            IsApproved = s.IsApproved,
+            ApprovedAt = s.ApprovedAt
+        };
 
     public static EmployeeAdvanceDto ToDto(EmployeeAdvance a, string? employeeName = null)
     {

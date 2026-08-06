@@ -24,13 +24,14 @@ public static class PayrollCalculator
         ArgumentNullException.ThrowIfNull(parameters);
 
         // 1. Brut soumis à cotisation / imposition.
+        var grossDeductions = input.UnpaidAbsenceAmount + input.ProrataDeductionAmount;
         var cnssableGross = R(
             input.BaseSalary
             + input.TaxableCnssableAllowances
             + input.CnssOnlyAllowances
             + input.InKindTaxableCnssableBenefits
             + input.OvertimeAmount
-            - input.UnpaidAbsenceAmount);
+            - grossDeductions);
         if (cnssableGross < 0) cnssableGross = 0m;
 
         var taxableGross = R(
@@ -39,7 +40,7 @@ public static class PayrollCalculator
             + input.TaxableOnlyAllowances
             + input.InKindTaxableCnssableBenefits
             + input.OvertimeAmount
-            - input.UnpaidAbsenceAmount);
+            - grossDeductions);
         if (taxableGross < 0) taxableGross = 0m;
 
         // Brut total affiché (inclut les éléments non soumis, ex. transport dans les limites légales).
@@ -346,6 +347,8 @@ public static class PayrollCalculator
             Add("Heures supplémentaires", PayslipLineKind.Earning, input.OvertimeAmount);
         if (input.UnpaidAbsenceAmount > 0)
             Add("Absences non rémunérées", PayslipLineKind.Deduction, input.UnpaidAbsenceAmount);
+        if (input.ProrataDeductionAmount > 0)
+            Add("Prorata embauche / départ / suspension", PayslipLineKind.Deduction, input.ProrataDeductionAmount);
 
         // Retenues salariales
         if (cnssEmployee > 0)

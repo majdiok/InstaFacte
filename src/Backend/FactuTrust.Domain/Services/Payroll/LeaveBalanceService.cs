@@ -35,6 +35,22 @@ public static class LeaveBalanceService
         return Math.Round(consumed, 2, MidpointRounding.AwayFromZero);
     }
 
+    public static decimal SumPendingPaidLeaveDays(
+        IEnumerable<(Guid Id, LeaveType Type, bool IsApproved, decimal Days, int StartYear)> leaves,
+        int fiscalYear,
+        Guid? excludeLeaveId = null)
+    {
+        var pending = leaves
+            .Where(l => l.Type == LeaveType.Paid && !l.IsApproved && l.StartYear == fiscalYear)
+            .Where(l => excludeLeaveId is null || l.Id != excludeLeaveId.Value)
+            .Sum(l => l.Days);
+
+        return Math.Round(pending, 2, MidpointRounding.AwayFromZero);
+    }
+
+    public static decimal ComputeAvailable(decimal remaining, decimal pending) =>
+        Math.Round(remaining - pending, 3, MidpointRounding.AwayFromZero);
+
     public static decimal ComputeRemaining(
         decimal openingBalance,
         decimal accruedInYear,

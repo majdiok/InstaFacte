@@ -2,6 +2,7 @@ using FactuTrust.API.Authorization;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Payroll.Commands;
 using FactuTrust.Application.Features.Payroll.Queries;
+using FactuTrust.Application.Features.Payroll.Suspensions;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -90,6 +91,77 @@ public class EmployeesController : ControllerBase
         if (result.IsFailure)
             return NotFound(ApiResponse<bool>.Fail(result.Error.Description));
         return Ok(ApiResponse<bool>.Ok(result.Value, result.Value ? "Salarié activé." : "Salarié désactivé."));
+    }
+
+    [HttpPost("{id:guid}/terminate")]
+    [Authorize(Policy = PermissionPolicies.PayrollManageEmployees)]
+    [ProducesResponseType(typeof(ApiResponse<TerminateEmployeeResultDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> Terminate(Guid id, [FromBody] TerminateEmployeeDto dto, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new TerminateEmployeeCommand(id, dto), cancellationToken);
+        if (result.IsFailure)
+        {
+            if (result.Error.Code.Contains("NotFound"))
+                return NotFound(ApiResponse<TerminateEmployeeResultDto>.Fail(result.Error.Description));
+            return BadRequest(ApiResponse<TerminateEmployeeResultDto>.Fail(result.Error.Description));
+        }
+        return Ok(ApiResponse<TerminateEmployeeResultDto>.Ok(result.Value, "Départ enregistré."));
+    }
+
+    // ── Suspensions ──
+
+    [HttpGet("{id:guid}/suspensions")]
+    [Authorize(Policy = PermissionPolicies.PayrollRead)]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<EmployeePayrollSuspensionDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetSuspensions(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetEmployeePayrollSuspensionsQuery(id), cancellationToken);
+        return Ok(ApiResponse<IReadOnlyList<EmployeePayrollSuspensionDto>>.Ok(result));
+    }
+
+    [HttpPost("{id:guid}/suspensions")]
+    [Authorize(Policy = PermissionPolicies.PayrollManageEmployees)]
+    [ProducesResponseType(typeof(ApiResponse<Guid>), StatusCodes.Status201Created)]
+    public async Task<IActionResult> CreateSuspension(Guid id, [FromBody] CreateEmployeePayrollSuspensionDto dto, CancellationToken cancellationToken)
+    {
+        var payload = dto with { EmployeeId = id };
+        var result = await _mediator.Send(new CreateEmployeePayrollSuspensionCommand(payload), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<Guid>.Fail(result.Error.Description));
+        return Ok(ApiResponse<Guid>.Ok(result.Value, "Suspension créée."));
+    }
+
+    [HttpPut("suspensions/{suspensionId:guid}")]
+    [Authorize(Policy = PermissionPolicies.PayrollManageEmployees)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateSuspension(Guid suspensionId, [FromBody] UpdateEmployeePayrollSuspensionDto dto, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new UpdateEmployeePayrollSuspensionCommand(suspensionId, dto), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+        return Ok(ApiResponse<object>.Ok(null!, "Suspension mise à jour."));
+    }
+
+    [HttpDelete("suspensions/{suspensionId:guid}")]
+    [Authorize(Policy = PermissionPolicies.PayrollManageEmployees)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> DeleteSuspension(Guid suspensionId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new DeleteEmployeePayrollSuspensionCommand(suspensionId), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+        return Ok(ApiResponse<object>.Ok(null!, "Suspension supprimée."));
+    }
+
+    [HttpPost("suspensions/{suspensionId:guid}/approve")]
+    [Authorize(Policy = PermissionPolicies.PayrollRun)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ApproveSuspension(Guid suspensionId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new ApproveEmployeePayrollSuspensionCommand(suspensionId), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+        return Ok(ApiResponse<object>.Ok(null!, "Suspension approuvée."));
     }
 
     [HttpDelete("{id:guid}")]

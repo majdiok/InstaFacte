@@ -85,7 +85,7 @@ public sealed class RecordPayrollRunPaymentCommandHandler
 
         return _unitOfWork.ExecuteAsync(async ct =>
         {
-            var run = await _runs.GetByIdWithPayslipsAsync(request.RunId, ct);
+            var run = await _runs.GetByIdWithPayslipsForPaymentAsync(request.RunId, ct);
             if (run is null)
                 return Result.Failure<Guid>(Error.NotFound("PayrollRun", request.RunId));
 
@@ -318,7 +318,7 @@ public sealed class CancelPayrollPaymentCommandHandler : IRequestHandler<CancelP
             if (payment.IsCancelled)
                 return Result.Failure(Error.Validation("Payment", "Ce paiement est déjà annulé."));
 
-            var run = await _runs.GetByIdWithPayslipsAsync(payment.PayrollRunId, ct);
+            var run = await _runs.GetByIdWithPayslipsForPaymentAsync(payment.PayrollRunId, ct);
             if (run is null)
                 return Result.Failure(Error.NotFound("PayrollRun", payment.PayrollRunId));
 

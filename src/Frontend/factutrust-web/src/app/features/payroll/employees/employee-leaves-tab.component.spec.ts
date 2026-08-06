@@ -19,7 +19,7 @@ describe('EmployeeLeavesTabComponent', () => {
         provideHttpClientTesting(),
         { provide: EmployeeService, useValue: {
           listLeaves: () => of({ success: true, data: [] }),
-          getLeaveBalance: () => of({ success: true, data: { employeeId: 'e1', year: 2026, openingBalance: 0, accruedInYear: 0, totalAcquired: 0, consumed: 0, remaining: 0 } })
+          getLeaveBalance: () => of({ success: true, data: { employeeId: 'e1', year: 2026, openingBalance: 0, accruedInYear: 0, totalAcquired: 0, consumed: 0, remaining: 0, pending: 0, available: 0 } })
         } },
         { provide: PayrollService, useValue: jasmine.createSpyObj('PayrollService', [
           'createLeave', 'approveLeave', 'deleteLeave', 'computeLeaveDays', 'setLeaveOpeningBalance'
