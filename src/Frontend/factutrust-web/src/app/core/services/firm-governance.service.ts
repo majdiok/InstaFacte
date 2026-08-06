@@ -176,6 +176,7 @@ export interface FirmTimeSheetYearSettings {
   tfpRate: number;
   foprolosRate: number;
   workAccidentRate: number;
+  cssEmployerRate: number;
   annualBaseHours: number;
   dailyHours: number;
   annualProductiveHours: number;

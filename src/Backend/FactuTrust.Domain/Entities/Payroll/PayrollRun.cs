@@ -31,6 +31,7 @@ public sealed class PayrollRun : AggregateRoot
     public decimal TotalCnssEmployer { get; private set; }
     public decimal TotalTfp { get; private set; }
     public decimal TotalFoprolos { get; private set; }
+    public decimal TotalCssEmployer { get; private set; }
     public decimal TotalWorkAccident { get; private set; }
     /// <summary>Somme des autres retenues (avances, oppositions) figées au calcul.</summary>
     public decimal TotalOtherDeductions { get; private set; }
@@ -157,6 +158,7 @@ public sealed class PayrollRun : AggregateRoot
         TotalCnssEmployer = R(_payslips.Sum(p => p.CnssEmployer));
         TotalTfp = R(_payslips.Sum(p => p.Tfp));
         TotalFoprolos = R(_payslips.Sum(p => p.Foprolos));
+        TotalCssEmployer = R(_payslips.Sum(p => p.CssEmployer));
         TotalWorkAccident = R(_payslips.Sum(p => p.WorkAccidentContribution));
         TotalOtherDeductions = R(_payslips.Sum(p => p.OtherDeductions));
         TotalIrppRegularization = R(_payslips.Sum(p => p.IrppRegularization));

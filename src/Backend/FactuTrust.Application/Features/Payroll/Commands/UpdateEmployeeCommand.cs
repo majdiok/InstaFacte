@@ -2,6 +2,7 @@ using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Payroll.Validation;
 using FactuTrust.Domain.Common;
+using FactuTrust.Domain.Entities.Payroll;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.ValueObjects;
 using FluentValidation;
@@ -22,6 +23,13 @@ public sealed class UpdateEmployeeCommandValidator : AbstractValidator<UpdateEmp
         RuleFor(x => x.Dto.DisabledChildren).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Dto.DependentParents).InclusiveBetween(0, 2)
             .WithMessage("Le nombre de parents à charge doit être compris entre 0 et 2.");
+        RuleFor(x => x.Dto.DependentParentClaims).Must(c => c is null || c.Count <= 2)
+            .WithMessage("Un salarié ne peut déclarer que 2 parents à charge au maximum.");
+        RuleForEach(x => x.Dto.DependentParentClaims).ChildRules(claim =>
+        {
+            claim.RuleFor(c => c.ParentCin).NotEmpty().WithMessage("Le CIN du parent est obligatoire.").ValidCin();
+            claim.RuleFor(c => c.Kinship).NotEmpty();
+        });
         RuleFor(x => x.Dto)
             .Must(d => d.StudentChildren + d.DisabledChildren <= d.DependentChildren)
             .WithMessage("Le total des enfants étudiants et infirmes ne peut pas dépasser le nombre d'enfants à charge.");
@@ -35,10 +43,14 @@ public sealed class UpdateEmployeeCommandValidator : AbstractValidator<UpdateEmp
 public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmployeeCommand, Result>
 {
     private readonly IEmployeeRepository _employees;
+    private readonly IEmployeeDependentParentRepository _dependentParents;
 
-    public UpdateEmployeeCommandHandler(IEmployeeRepository employees)
+    public UpdateEmployeeCommandHandler(
+        IEmployeeRepository employees,
+        IEmployeeDependentParentRepository dependentParents)
     {
         _employees = employees;
+        _dependentParents = dependentParents;
     }
 
     public async Task<Result> Handle(UpdateEmployeeCommand request, CancellationToken cancellationToken)
@@ -79,6 +91,26 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
             phone = phoneResult.Value;
         }
 
+        // Les claims fournis (y compris liste vide) font autorité ; sinon on conserve le compteur legacy.
+        var claimsProvided = dto.DependentParentClaims is not null;
+        var claims = dto.DependentParentClaims ?? Array.Empty<DependentParentClaimDto>();
+        var dependentParentsCount = claimsProvided ? claims.Count : dto.DependentParents;
+
+        IReadOnlyList<EmployeeDependentParent> claimEntities = Array.Empty<EmployeeDependentParent>();
+        if (claimsProvided)
+        {
+            var built = DependentParentClaimsHelper.BuildClaims(
+                employee.Id, dto.Cin ?? employee.Cin, claims, DateTime.UtcNow.Date);
+            if (built.IsFailure)
+                return Result.Failure(built.Error);
+
+            claimEntities = built.Value.Entities;
+            var conflictCheck = await DependentParentClaimsHelper.EnsureNoConflictsAsync(
+                _dependentParents, _employees, claimEntities, employee.Id, cancellationToken);
+            if (conflictCheck.IsFailure)
+                return conflictCheck;
+        }
+
         var updateResult = employee.Update(
             dto.FirstName,
             dto.LastName,
@@ -94,12 +126,21 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
             dto.Rib,
             dto.StudentChildren,
             dto.DisabledChildren,
-            dto.DependentParents,
+            dependentParentsCount,
             dto.Category,
             dto.Echelon);
 
         if (updateResult.IsFailure)
             return updateResult;
+
+        if (claimsProvided)
+        {
+            var sync = employee.SyncDependentParentsCount(claimEntities.Count);
+            if (sync.IsFailure)
+                return sync;
+
+            await _dependentParents.ReplaceActiveClaimsAsync(employee.Id, claimEntities, cancellationToken);
+        }
 
         await _employees.UpdateAsync(employee, cancellationToken);
         return Result.Success();

@@ -71,6 +71,10 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
                 <p-inputNumber [(ngModel)]="params()!.cssAnnualExemptionThreshold" name="cssExemption" [minFractionDigits]="3" [min]="0" [locale]="'fr-TN'" styleClass="w-full" />
               </div>
               <div class="payroll-form-group">
+                <label>CSS patronale (%)</label>
+                <p-inputNumber [(ngModel)]="params()!.cssEmployerRate" name="cssEmployerRate" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
+              </div>
+              <div class="payroll-form-group">
                 <label>TFP industrie (%)</label>
                 <p-inputNumber [(ngModel)]="params()!.tfpRateIndustry" name="tfpIndustry" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
               </div>

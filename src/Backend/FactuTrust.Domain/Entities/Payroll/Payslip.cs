@@ -53,6 +53,7 @@ public sealed class Payslip : Entity
     public decimal WorkAccidentContribution { get; private set; }
     public decimal Tfp { get; private set; }
     public decimal Foprolos { get; private set; }
+    public decimal CssEmployer { get; private set; }
 
     // Instantané des principaux taux utilisés (pour traçabilité).
     public decimal AppliedCnssEmployeeRate { get; private set; }
@@ -130,6 +131,7 @@ public sealed class Payslip : Entity
             WorkAccidentContribution = computation.WorkAccidentContribution,
             Tfp = computation.Tfp,
             Foprolos = computation.Foprolos,
+            CssEmployer = computation.CssEmployer,
             AppliedCnssEmployeeRate = appliedCnssEmployeeRate,
             AppliedCnssEmployerRate = appliedCnssEmployerRate
         };

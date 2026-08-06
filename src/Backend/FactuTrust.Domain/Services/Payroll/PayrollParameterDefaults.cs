@@ -66,6 +66,7 @@ public static class PayrollParameterDefaults
             parentAnnualDeductionCap: 450m,
             isIndustrialSector: false,
             mealVoucherDailyExemptionCap: 3.000m,
-            garnishmentBrackets: garnishmentBrackets);
+            garnishmentBrackets: garnishmentBrackets,
+            cssEmployerRate: 0m);
     }
 }

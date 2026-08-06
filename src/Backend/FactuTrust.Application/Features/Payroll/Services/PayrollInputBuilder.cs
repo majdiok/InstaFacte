@@ -45,7 +45,8 @@ public sealed class PayrollInputBuilder
         PayrollYearParameters parameters,
         MonthBatchData batch,
         int year,
-        int month)
+        int month,
+        int? effectiveDependentParents = null)
     {
         var referenceDate = new DateTime(year, month, 1).AddMonths(1).AddDays(-1);
         var allowanceInputs = new List<AllowanceLineInput>();
@@ -132,7 +133,7 @@ public sealed class PayrollInputBuilder
             DependentChildren = employee.DependentChildren,
             StudentChildren = employee.StudentChildren,
             DisabledChildren = employee.DisabledChildren,
-            DependentParents = employee.DependentParents,
+            DependentParents = effectiveDependentParents ?? employee.DependentParents,
             DeductionLines = deductionLines
         };
 

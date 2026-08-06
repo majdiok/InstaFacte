@@ -93,6 +93,37 @@ public sealed class PayrollRunRepository : IPayrollRunRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<PayrollRun>> ListByMonthRangeWithPayslipsAsync(
+        int year,
+        int fromMonth,
+        int toMonth,
+        bool includeCalculated,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.PayrollRuns
+            .AsNoTracking()
+            // Les états de contrôle agrègent par salarié : les lignes de bulletin ne sont pas
+            // chargées (évite une jointure cartésienne sur toute la plage).
+            .Include(r => r.Payslips)
+            .Where(r => r.Year == year && r.Month >= fromMonth && r.Month <= toMonth)
+            // Un cycle Brouillon n'a aucun bulletin persisté : il est toujours hors périmètre.
+            .Where(r => r.Status == PayrollRunStatus.Validated
+                        || r.Status == PayrollRunStatus.Closed
+                        || (includeCalculated && r.Status == PayrollRunStatus.Calculated))
+            .OrderBy(r => r.Month)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<PayrollRun?> GetByPeriodWithPayslipsAsync(int year, int month, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.PayrollRuns
+            .AsNoTracking()
+            .Include(r => r.Payslips)
+            .FirstOrDefaultAsync(r => r.Year == year && r.Month == month, cancellationToken);
+    }
+
     public async Task<bool> ExistsForPeriodAsync(int year, int month, CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();

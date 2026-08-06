@@ -6,8 +6,8 @@ namespace FactuTrust.Domain.Services.Payroll;
 /// <summary>
 /// Moteur de calcul de paie tunisien — fonction pure et déterministe (sans dépendance base
 /// de données ni infrastructure). Applique, dans l'ordre : brut, CNSS salariale, frais
-/// professionnels, déductions familiales, IRPP (barème progressif annualisé), CSS, puis le
-/// net à payer et les charges patronales.
+/// professionnels, déductions familiales, IRPP (barème progressif annualisé), CSS salariale, puis le
+/// net à payer et les charges patronales (CNSS, accident de travail, TFP, FOPROLOS, CSS patronale).
 ///
 /// Tous les taux et déductions proviennent de <see cref="PayrollYearParameters"/> : aucune
 /// valeur légale n'est codée en dur ici.
@@ -119,6 +119,7 @@ public static class PayrollCalculator
         var tfpRate = input.IsIndustrialSector ? parameters.TfpRateIndustry : parameters.TfpRateOther;
         var tfp = R(cnssableGross * tfpRate / 100m);
         var foprolos = R(cnssableGross * parameters.FoprolosRate / 100m);
+        var cssEmployer = R(cnssableGross * parameters.CssEmployerRate / 100m);
 
         var lines = BuildLines(
             input, parameters, cnssEmployeeRate, cnssEmployerRate, tfpRate,
@@ -126,7 +127,7 @@ public static class PayrollCalculator
             professionalExpenses, professionalExpensesCapped, familyDeductions,
             monthlyNetTaxable, irpp, css, smigExemption, regularization.Irpp, regularization.Css,
             preTaxDeductions, postTaxDeductions,
-            cnssEmployer, workAccident, tfp, foprolos);
+            cnssEmployer, workAccident, tfp, foprolos, cssEmployer);
 
         return new PayrollComputation
         {
@@ -153,6 +154,7 @@ public static class PayrollCalculator
             WorkAccidentContribution = workAccident,
             Tfp = tfp,
             Foprolos = foprolos,
+            CssEmployer = cssEmployer,
             Lines = lines
         };
     }
@@ -300,7 +302,8 @@ public static class PayrollCalculator
         decimal cnssEmployer,
         decimal workAccident,
         decimal tfp,
-        decimal foprolos)
+        decimal foprolos,
+        decimal cssEmployer)
     {
         var lines = new List<PayrollComputationLine>();
         var order = 0;
@@ -400,6 +403,8 @@ public static class PayrollCalculator
             Add("TFP", PayslipLineKind.EmployerContribution, tfp, cnssableGross, tfpRate);
         if (foprolos > 0)
             Add("FOPROLOS", PayslipLineKind.EmployerContribution, foprolos, cnssableGross, parameters.FoprolosRate);
+        if (cssEmployer > 0)
+            Add("CSS patronale", PayslipLineKind.EmployerContribution, cssEmployer, cnssableGross, parameters.CssEmployerRate);
 
         foreach (var employerCharge in input.EmployerChargeLines.Where(c => c.Amount > 0))
             Add(employerCharge.Label, PayslipLineKind.EmployerContribution, employerCharge.Amount);

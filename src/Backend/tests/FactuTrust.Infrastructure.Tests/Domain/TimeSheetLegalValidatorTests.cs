@@ -225,4 +225,27 @@ public sealed class TimeSheetLegalValidatorTests
         // CNSS patronale 16,57 % + TFP 2 % + FOPROLOS 1 % + accident du travail 0 % par défaut.
         Assert.Equal(19.57m, Settings().TotalEmployerChargeRate);
     }
+
+    [Fact]
+    public void Total_employer_charge_rate_includes_css_employer_when_configured()
+    {
+        var settings = Settings();
+        var update = settings.Update(
+            settings.WeeklyRegime,
+            settings.MaxDailyHours,
+            settings.MaxWeeklyHours,
+            settings.AllowFutureEntryDays,
+            settings.MaxBackdatingDays,
+            settings.EnforceHardLimits,
+            settings.PaidLeaveDaysPerYear,
+            settings.PublicHolidayDaysPerYear,
+            settings.ProductivityRatePercent,
+            settings.CnssEmployerRate,
+            settings.TfpRate,
+            settings.FoprolosRate,
+            settings.WorkAccidentRate,
+            cssEmployerRate: 0.5m);
+        Assert.True(update.IsSuccess);
+        Assert.Equal(20.07m, settings.TotalEmployerChargeRate);
+    }
 }

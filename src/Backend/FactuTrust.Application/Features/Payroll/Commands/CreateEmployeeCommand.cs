@@ -27,6 +27,13 @@ public sealed class CreateEmployeeCommandValidator : AbstractValidator<CreateEmp
         RuleFor(x => x.Dto.DisabledChildren).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Dto.DependentParents).InclusiveBetween(0, 2)
             .WithMessage("Le nombre de parents à charge doit être compris entre 0 et 2.");
+        RuleFor(x => x.Dto.DependentParentClaims).Must(c => c is null || c.Count <= 2)
+            .WithMessage("Un salarié ne peut déclarer que 2 parents à charge au maximum.");
+        RuleForEach(x => x.Dto.DependentParentClaims).ChildRules(claim =>
+        {
+            claim.RuleFor(c => c.ParentCin).NotEmpty().WithMessage("Le CIN du parent est obligatoire.").ValidCin();
+            claim.RuleFor(c => c.Kinship).NotEmpty();
+        });
         RuleFor(x => x.Dto)
             .Must(d => d.StudentChildren + d.DisabledChildren <= d.DependentChildren)
             .WithMessage("Le total des enfants étudiants et infirmes ne peut pas dépasser le nombre d'enfants à charge.");
@@ -40,11 +47,16 @@ public sealed class CreateEmployeeCommandValidator : AbstractValidator<CreateEmp
 public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmployeeCommand, Result<Guid>>
 {
     private readonly IEmployeeRepository _employees;
+    private readonly IEmployeeDependentParentRepository _dependentParents;
     private readonly ITenantContext _tenantContext;
 
-    public CreateEmployeeCommandHandler(IEmployeeRepository employees, ITenantContext tenantContext)
+    public CreateEmployeeCommandHandler(
+        IEmployeeRepository employees,
+        IEmployeeDependentParentRepository dependentParents,
+        ITenantContext tenantContext)
     {
         _employees = employees;
+        _dependentParents = dependentParents;
         _tenantContext = tenantContext;
     }
 
@@ -88,6 +100,13 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
             phone = phoneResult.Value;
         }
 
+        var claims = dto.DependentParentClaims ?? Array.Empty<DependentParentClaimDto>();
+        var useClaims = claims.Count > 0 || dto.DependentParents == 0;
+        var dependentParentsCount = useClaims && claims.Count > 0
+            ? claims.Count
+            : (useClaims ? 0 : dto.DependentParents);
+
+        // Création provisoire pour obtenir un Id, puis construction des claims.
         var employeeResult = Employee.Create(
             dto.EmployeeNumber,
             dto.FirstName,
@@ -105,7 +124,7 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
             dto.Rib,
             dto.StudentChildren,
             dto.DisabledChildren,
-            dto.DependentParents,
+            dependentParentsCount,
             dto.Category,
             dto.Echelon);
 
@@ -113,7 +132,28 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
             return Result.Failure<Guid>(employeeResult.Error);
 
         var employee = employeeResult.Value;
+
+        IReadOnlyList<EmployeeDependentParent> claimEntities = Array.Empty<EmployeeDependentParent>();
+        if (claims.Count > 0)
+        {
+            var built = DependentParentClaimsHelper.BuildClaims(
+                employee.Id, dto.Cin, claims, DateTime.UtcNow.Date);
+            if (built.IsFailure)
+                return Result.Failure<Guid>(built.Error);
+
+            claimEntities = built.Value.Entities;
+            var conflictCheck = await DependentParentClaimsHelper.EnsureNoConflictsAsync(
+                _dependentParents, _employees, claimEntities, employee.Id, cancellationToken);
+            if (conflictCheck.IsFailure)
+                return Result.Failure<Guid>(conflictCheck.Error);
+
+            employee.SyncDependentParentsCount(claimEntities.Count);
+        }
+
         await _employees.AddAsync(employee, cancellationToken);
+
+        if (claimEntities.Count > 0)
+            await _dependentParents.ReplaceActiveClaimsAsync(employee.Id, claimEntities, cancellationToken);
 
         return Result.Success(employee.Id);
     }

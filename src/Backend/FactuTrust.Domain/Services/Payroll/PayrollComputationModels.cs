@@ -115,9 +115,10 @@ public sealed class PayrollComputation
     public decimal WorkAccidentContribution { get; init; }
     public decimal Tfp { get; init; }
     public decimal Foprolos { get; init; }
+    public decimal CssEmployer { get; init; }
 
     /// <summary>Total des charges patronales.</summary>
-    public decimal TotalEmployerCharges => CnssEmployer + WorkAccidentContribution + Tfp + Foprolos;
+    public decimal TotalEmployerCharges => CnssEmployer + WorkAccidentContribution + Tfp + Foprolos + CssEmployer;
 
     public IReadOnlyList<PayrollComputationLine> Lines { get; init; } = Array.Empty<PayrollComputationLine>();
 }

@@ -24,6 +24,7 @@ describe('PayrollSettingsComponent', () => {
     enableAllowanceQuadrantMatrix: false,
     cssRate: 0.5,
     cssAnnualExemptionThreshold: 5000,
+    cssEmployerRate: 0,
     professionalExpensesRate: 10,
     professionalExpensesAnnualCap: 2000,
     headOfFamilyAnnualDeduction: 300,

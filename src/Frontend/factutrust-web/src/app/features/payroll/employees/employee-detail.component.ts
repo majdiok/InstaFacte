@@ -131,8 +131,34 @@ import { PayrollConsultBannerComponent, PayrollAmountPipe, formatPayrollAmount }
             </div>
             <div>
               <dt>Parents à charge</dt>
-              <dd>{{ employee()!.dependentParents }}</dd>
+              <dd>
+                {{ employee()!.dependentParents }}
+                @if (employee()!.parentClaimsStatus === 'Incomplete') {
+                  <p-tag value="À compléter" severity="warn" class="ml-2" />
+                }
+                @if (employee()!.parentClaimsStatus === 'Conflict') {
+                  <p-tag value="Conflit non-cumul" severity="danger" class="ml-2" />
+                }
+              </dd>
             </div>
+            @if (employee()!.dependentParentClaims?.length) {
+              <div class="parents-claims-detail">
+                <dt>Déclarations nominatives</dt>
+                <dd>
+                  <ul>
+                    @for (claim of employee()!.dependentParentClaims!; track claim.parentCin) {
+                      <li>
+                        {{ claim.kinship === 'Father' ? 'Père' : 'Mère' }}
+                        — CIN {{ claim.parentCin }}
+                        @if (claim.firstName || claim.lastName) {
+                          ({{ claim.firstName }} {{ claim.lastName }})
+                        }
+                      </li>
+                    }
+                  </ul>
+                </dd>
+              </div>
+            }
             <div>
               <dt>Email</dt>
               <dd>{{ employee()!.email || '—' }}</dd>

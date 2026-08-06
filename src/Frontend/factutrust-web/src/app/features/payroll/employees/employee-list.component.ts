@@ -100,6 +100,12 @@ type StatusFilter = 'all' | 'active' | 'inactive';
             <td class="text-right">{{ e.currentBaseSalary | payrollAmount }}</td>
             <td>
               <p-tag [value]="e.isActive ? 'Actif' : 'Inactif'" [severity]="e.isActive ? 'success' : 'secondary'" />
+              @if (e.parentClaimsStatus === 'Incomplete') {
+                <p-tag value="Parents à compléter" severity="warn" class="ml-1" />
+              }
+              @if (e.parentClaimsStatus === 'Conflict') {
+                <p-tag value="Conflit parents" severity="danger" class="ml-1" />
+              }
             </td>
             <td>
               <app-button variant="outline" size="sm" icon="pi-eye" iconPos="left" [routerLink]="['/payroll/employees', e.id]">Voir</app-button>

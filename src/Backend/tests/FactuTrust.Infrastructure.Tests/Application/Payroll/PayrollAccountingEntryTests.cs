@@ -351,4 +351,84 @@ public sealed class PayrollAccountingEntryTests
         Assert.Equal(exempt421 - base421, exemptRun.TotalIrppSmigExemption);
         AssertCreateSucceeds(exemptLines);
     }
+
+    private static PayrollYearParameters ParamsWithCssEmployerRate(decimal cssEmployerRate)
+    {
+        var p = Params();
+        var result = p.UpdateRates(
+            p.CnssEmployeeRate, p.CnssEmployerRate, p.CssRate, p.CssAnnualExemptionThreshold,
+            p.ProfessionalExpensesRate, p.ProfessionalExpensesAnnualCap,
+            p.HeadOfFamilyAnnualDeduction, p.ChildAnnualDeduction, p.MaxDeductibleChildren,
+            p.TfpRateIndustry, p.TfpRateOther, p.FoprolosRate, p.MonthlySmig,
+            p.CnssEmployeeRateRsa, p.CnssEmployerRateRsa,
+            p.EnforceSmigOnContracts, p.EnableExtendedOvertimeRates, p.EnableAllowanceQuadrantMatrix,
+            p.StudentChildAnnualDeduction, p.DisabledChildAnnualDeduction,
+            p.ParentDeductionRatePercent, p.ParentAnnualDeductionCap, p.IsIndustrialSector,
+            cssEmployerRate: cssEmployerRate);
+        Assert.True(result.IsSuccess);
+        return p;
+    }
+
+    [Fact]
+    public void BuildLines_WithCssEmployer_DebitsAccount647AndCreditsAccount432()
+    {
+        var run = BuildRun(new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            Regime = SocialRegime.Rsna,
+            WorkAccidentRate = 0.4m
+        }, ParamsWithCssEmployerRate(0.5m));
+
+        Assert.Equal(10.000m, run.TotalCssEmployer);
+
+        var baseline = BuildRun(new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            Regime = SocialRegime.Rsna,
+            WorkAccidentRate = 0.4m
+        });
+
+        var linesResult = PayrollJournalEntryBuilder.BuildLines(
+            run.TotalGross, run.TotalNet, run.TotalCnssEmployee, run.TotalCnssEmployer,
+            run.TotalIrpp, run.TotalCss, run.TotalTfp, run.TotalFoprolos,
+            run.TotalWorkAccident, run.TotalOtherDeductions, "Paie 08/2026",
+            totalCssEmployer: run.TotalCssEmployer);
+        Assert.True(linesResult.IsSuccess);
+
+        var baselineLines = PayrollJournalEntryBuilder.BuildLines(
+            baseline.TotalGross, baseline.TotalNet, baseline.TotalCnssEmployee, baseline.TotalCnssEmployer,
+            baseline.TotalIrpp, baseline.TotalCss, baseline.TotalTfp, baseline.TotalFoprolos,
+            baseline.TotalWorkAccident, baseline.TotalOtherDeductions, "Paie 08/2026").Value;
+
+        var lines = linesResult.Value;
+        var employerDebit = lines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.EmployerChargesAccount).Debit;
+        var baselineEmployerDebit = baselineLines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.EmployerChargesAccount).Debit;
+        var stateCredit = lines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.StateWithholdingAccount).Credit;
+        var baselineStateCredit = baselineLines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.StateWithholdingAccount).Credit;
+
+        Assert.Equal(10.000m, employerDebit - baselineEmployerDebit);
+        Assert.Equal(10.000m, stateCredit - baselineStateCredit);
+        AssertCreateSucceeds(lines);
+    }
+
+    [Fact]
+    public void BuildLinesFromRun_WithCssEmployer_DoesNotDoubleCountStandardLine()
+    {
+        var run = BuildRun(new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            Regime = SocialRegime.Rsna,
+            WorkAccidentRate = 0.4m
+        }, ParamsWithCssEmployerRate(0.5m));
+
+        var accountMap = new PayrollJournalEntryAccountMap();
+        var linesResult = PayrollJournalEntryBuilder.BuildLinesFromRun(run, "Paie 08/2026", accountMap);
+        Assert.True(linesResult.IsSuccess);
+
+        var employerDebit = linesResult.Value
+            .Single(l => l.AccountNumber == PayrollJournalEntryBuilder.EmployerChargesAccount).Debit;
+        Assert.Equal(
+            run.TotalCnssEmployer + run.TotalTfp + run.TotalFoprolos + run.TotalWorkAccident + run.TotalCssEmployer,
+            employerDebit);
+    }
 }

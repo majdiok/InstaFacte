@@ -601,4 +601,58 @@ public sealed class PayrollCalculatorTests
         Assert.Equal(0m, with.IrppSmigExemption);
         Assert.Equal(without.NetSalary, with.NetSalary);
     }
+
+    private static PayrollYearParameters ParamsWithCssEmployerRate(decimal cssEmployerRate)
+    {
+        var p = Params();
+        var result = p.UpdateRates(
+            p.CnssEmployeeRate, p.CnssEmployerRate, p.CssRate, p.CssAnnualExemptionThreshold,
+            p.ProfessionalExpensesRate, p.ProfessionalExpensesAnnualCap,
+            p.HeadOfFamilyAnnualDeduction, p.ChildAnnualDeduction, p.MaxDeductibleChildren,
+            p.TfpRateIndustry, p.TfpRateOther, p.FoprolosRate, p.MonthlySmig,
+            p.CnssEmployeeRateRsa, p.CnssEmployerRateRsa,
+            p.EnforceSmigOnContracts, p.EnableExtendedOvertimeRates, p.EnableAllowanceQuadrantMatrix,
+            p.StudentChildAnnualDeduction, p.DisabledChildAnnualDeduction,
+            p.ParentDeductionRatePercent, p.ParentAnnualDeductionCap, p.IsIndustrialSector,
+            cssEmployerRate: cssEmployerRate);
+        Assert.True(result.IsSuccess);
+        return p;
+    }
+
+    [Fact]
+    public void Compute_WithCssEmployerRate_AddsPatronalCharge()
+    {
+        var baseline = PayrollCalculator.Compute(new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            Regime = SocialRegime.Rsna,
+            WorkAccidentRate = 0.4m
+        }, Params());
+
+        var withCssEmployer = PayrollCalculator.Compute(new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            Regime = SocialRegime.Rsna,
+            WorkAccidentRate = 0.4m
+        }, ParamsWithCssEmployerRate(0.5m));
+
+        Assert.Equal(10.000m, withCssEmployer.CssEmployer);
+        Assert.Equal(baseline.NetSalary, withCssEmployer.NetSalary);
+        Assert.Equal(baseline.TotalEmployerCharges + 10.000m, withCssEmployer.TotalEmployerCharges);
+        Assert.Contains(withCssEmployer.Lines, l =>
+            l.Kind == PayslipLineKind.EmployerContribution && l.Label == "CSS patronale" && l.Amount == 10.000m);
+    }
+
+    [Fact]
+    public void Compute_WithZeroCssEmployerRate_OmitsPatronalLine()
+    {
+        var c = PayrollCalculator.Compute(new PayrollComputationInput
+        {
+            BaseSalary = 2000m,
+            Regime = SocialRegime.Rsna
+        }, Params());
+
+        Assert.Equal(0m, c.CssEmployer);
+        Assert.DoesNotContain(c.Lines, l => l.Label == "CSS patronale");
+    }
 }

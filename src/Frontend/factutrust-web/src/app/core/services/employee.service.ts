@@ -31,6 +31,15 @@ export interface EmployeeListItem {
   currentWeeklyRegime?: string;
   hireDate: string;
   isActive: boolean;
+  parentClaimsStatus?: string;
+}
+
+export interface DependentParentClaim {
+  id?: string;
+  parentCin: string;
+  kinship: string;
+  firstName?: string;
+  lastName?: string;
 }
 
 export interface ContractAllowance {
@@ -78,6 +87,8 @@ export interface EmployeeDetail {
   studentChildren: number;
   disabledChildren: number;
   dependentParents: number;
+  dependentParentClaims?: DependentParentClaim[];
+  parentClaimsStatus?: string;
   address?: {
     street?: string;
     streetLine2?: string;
@@ -110,6 +121,7 @@ export interface CreateEmployeeRequest {
   studentChildren?: number;
   disabledChildren?: number;
   dependentParents?: number;
+  dependentParentClaims?: DependentParentClaim[];
   street?: string;
   streetLine2?: string;
   city?: string;

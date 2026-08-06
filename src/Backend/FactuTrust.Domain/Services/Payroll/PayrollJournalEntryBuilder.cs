@@ -35,7 +35,8 @@ public static class PayrollJournalEntryBuilder
         decimal totalOtherDeductions,
         string label,
         decimal totalIrppRegularization = 0m,
-        decimal totalCssRegularization = 0m)
+        decimal totalCssRegularization = 0m,
+        decimal totalCssEmployer = 0m)
     {
         return BuildLines(
             totalGross,
@@ -51,7 +52,8 @@ public static class PayrollJournalEntryBuilder
             label,
             employeeAuxiliaryCredits: null,
             totalIrppRegularization,
-            totalCssRegularization);
+            totalCssRegularization,
+            totalCssEmployer);
     }
 
     /// <summary>
@@ -71,13 +73,14 @@ public static class PayrollJournalEntryBuilder
         string label,
         IReadOnlyList<EmployeeAuxiliaryCredit>? employeeAuxiliaryCredits,
         decimal totalIrppRegularization = 0m,
-        decimal totalCssRegularization = 0m)
+        decimal totalCssRegularization = 0m,
+        decimal totalCssEmployer = 0m)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
 
-        var employerCharges = R(totalCnssEmployer + totalTfp + totalFoprolos + totalWorkAccident);
+        var employerCharges = R(totalCnssEmployer + totalTfp + totalFoprolos + totalWorkAccident + totalCssEmployer);
         var stateWithholding = R(
-            totalIrpp + totalCss + totalTfp + totalFoprolos
+            totalIrpp + totalCss + totalTfp + totalFoprolos + totalCssEmployer
             + totalIrppRegularization + totalCssRegularization);
         var socialOrg = R(totalCnssEmployee + totalCnssEmployer + totalWorkAccident);
         var otherDeductions = R(totalOtherDeductions);
@@ -153,12 +156,14 @@ public static class PayrollJournalEntryBuilder
             + payrollRun.TotalTfp
             + payrollRun.TotalFoprolos
             + payrollRun.TotalWorkAccident
+            + payrollRun.TotalCssEmployer
             + extraEmployerCharges);
 
         // La régularisation annuelle transite par le même compte que la retenue mensuelle : le
         // bucket peut donc devenir négatif si les restitutions l'emportent (cf. AddSigned).
         var stateWithholding = R(
             payrollRun.TotalIrpp + payrollRun.TotalCss + payrollRun.TotalTfp + payrollRun.TotalFoprolos
+            + payrollRun.TotalCssEmployer
             + payrollRun.TotalIrppRegularization + payrollRun.TotalCssRegularization);
         var socialOrg = R(payrollRun.TotalCnssEmployee + payrollRun.TotalCnssEmployer + payrollRun.TotalWorkAccident);
         var gross = R(payrollRun.TotalGross);
@@ -247,7 +252,8 @@ public static class PayrollJournalEntryBuilder
         label.StartsWith("CNSS patronale", StringComparison.Ordinal)
         || label.StartsWith("Accident de travail", StringComparison.Ordinal)
         || label.StartsWith("TFP", StringComparison.Ordinal)
-        || label.StartsWith("FOPROLOS", StringComparison.Ordinal);
+        || label.StartsWith("FOPROLOS", StringComparison.Ordinal)
+        || label.StartsWith("CSS patronale", StringComparison.Ordinal);
 
     private readonly record struct TypedDeductionBucket(string Account, string Label, decimal Amount);
 

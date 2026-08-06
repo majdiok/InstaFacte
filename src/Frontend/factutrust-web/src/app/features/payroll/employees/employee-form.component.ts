@@ -1,15 +1,22 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormArray, FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { DropdownModule } from 'primeng/dropdown';
 import { CalendarModule } from 'primeng/calendar';
 import { InputSwitchModule } from 'primeng/inputswitch';
+import { TagModule } from 'primeng/tag';
 import { ToastService } from '@core/services/toast.service';
 import { ErrorMessageService } from '@core/services/error-message.service';
-import { EmployeeService, CreateEmployeeRequest, EmployeeDetail, UpdateEmployeeRequest } from '@core/services/employee.service';
+import {
+  EmployeeService,
+  CreateEmployeeRequest,
+  DependentParentClaim,
+  EmployeeDetail,
+  UpdateEmployeeRequest
+} from '@core/services/employee.service';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
 import { FormSectionComponent } from '@shared/components/form-section/form-section.component';
@@ -43,6 +50,7 @@ function parseIsoDate(value?: string): Date | null {
     DropdownModule,
     CalendarModule,
     InputSwitchModule,
+    TagModule,
     PageHeaderComponent,
     BreadcrumbComponent,
     FormSectionComponent,
@@ -154,15 +162,74 @@ function parseIsoDate(value?: string): Date | null {
               <p-inputNumber id="disabledChildren" formControlName="disabledChildren" [min]="0" styleClass="w-full" />
               <span class="field-hint">Déduction majorée, sans limite de rang</span>
             </div>
-            <div class="payroll-form-group">
-              <label for="dependentParents">Parents à charge</label>
-              <p-inputNumber id="dependentParents" formControlName="dependentParents" [min]="0" [max]="2" styleClass="w-full" />
-              <span class="field-hint">0 à 2 — déduction de 5 % du revenu net, plafonnée</span>
-            </div>
           </div>
           @if (form.errors?.['familyCounts'] && form.touched) {
             <div class="field-error">{{ form.errors?.['familyCounts'] }}</div>
           }
+
+          <div class="parent-claims" formArrayName="dependentParentClaims">
+            <div class="parent-claims-header">
+              <div>
+                <strong>Parents à charge</strong>
+                <span class="field-hint">Un parent (CIN) ne peut être déclaré que par un seul salarié de l'entreprise.</span>
+              </div>
+              <app-button
+                type="button"
+                variant="outline"
+                icon="pi-plus"
+                iconPos="left"
+                [disabled]="dependentParentClaims.length >= 2"
+                (click)="addParentClaim()">
+                Ajouter un parent
+              </app-button>
+            </div>
+            @if (legacyIncomplete()) {
+              <p-tag value="Parents à compléter — saisissez les CIN pour activer la déduction" severity="warn" />
+            }
+            @for (ctrl of dependentParentClaims.controls; track $index; let i = $index) {
+              <div class="parent-claim-row" [formGroupName]="i">
+                <div class="payroll-form-group">
+                  <label [for]="'kinship' + i">Lien</label>
+                  <p-dropdown
+                    [inputId]="'kinship' + i"
+                    [options]="kinshipOptions"
+                    formControlName="kinship"
+                    optionLabel="label"
+                    optionValue="value"
+                    styleClass="w-full" />
+                </div>
+                <div class="payroll-form-group">
+                  <label [for]="'parentCin' + i">CIN parent <span class="required">*</span></label>
+                  <input
+                    pInputText
+                    [id]="'parentCin' + i"
+                    formControlName="parentCin"
+                    class="w-full"
+                    [class.ng-invalid]="isClaimInvalid(i, 'parentCin')" />
+                  @if (isClaimInvalid(i, 'parentCin')) {
+                    <div class="field-error">{{ claimFieldError(i, 'parentCin') }}</div>
+                  }
+                </div>
+                <div class="payroll-form-group">
+                  <label [for]="'parentFirstName' + i">Prénom</label>
+                  <input pInputText [id]="'parentFirstName' + i" formControlName="firstName" class="w-full" />
+                </div>
+                <div class="payroll-form-group">
+                  <label [for]="'parentLastName' + i">Nom</label>
+                  <input pInputText [id]="'parentLastName' + i" formControlName="lastName" class="w-full" />
+                </div>
+                <div class="parent-claim-actions">
+                  <app-button type="button" variant="danger" icon="pi-trash" iconPos="left" (click)="removeParentClaim(i)">
+                    Retirer
+                  </app-button>
+                </div>
+              </div>
+            }
+            @if (dependentParentClaims.length === 0) {
+              <p class="field-hint">Aucun parent déclaré — la déduction parents à charge ne sera pas appliquée.</p>
+            }
+          </div>
+
           <div class="payroll-form-row">
             <div class="payroll-form-group">
               <label for="email">Email</label>
@@ -230,6 +297,10 @@ function parseIsoDate(value?: string): Date | null {
     .form-actions { margin-top: var(--spacing-6); display: flex; gap: var(--spacing-3); }
     .switch-group { justify-content: flex-end; }
     .w-full { width: 100%; }
+    .parent-claims { margin: var(--spacing-4) 0; display: flex; flex-direction: column; gap: var(--spacing-3); }
+    .parent-claims-header { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--spacing-3); flex-wrap: wrap; }
+    .parent-claim-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--spacing-3); padding: var(--spacing-3); border: 1px solid var(--surface-border, #e5e7eb); border-radius: 8px; }
+    .parent-claim-actions { display: flex; align-items: flex-end; }
   `]
 })
 export class EmployeeFormComponent implements OnInit {
@@ -242,10 +313,19 @@ export class EmployeeFormComponent implements OnInit {
 
   readonly maritalStatusOptions = MARITAL_STATUS_OPTIONS;
   readonly governorateOptions = TUNISIAN_GOVERNORATE_OPTIONS;
+  readonly kinshipOptions = [
+    { label: 'Père', value: 'Father' },
+    { label: 'Mère', value: 'Mother' }
+  ];
   loading = signal(false);
   saving = signal(false);
   employeeId = signal<string | null>(null);
+  parentClaimsStatus = signal<string>('None');
+  legacyDependentParents = signal(0);
   isEditMode = computed(() => !!this.employeeId());
+  legacyIncomplete = computed(() =>
+    this.parentClaimsStatus() === 'Incomplete'
+    || (this.legacyDependentParents() > 0 && this.dependentParentClaims.length === 0));
 
   form: FormGroup = this.fb.group({
     employeeNumber: ['', Validators.required],
@@ -262,7 +342,7 @@ export class EmployeeFormComponent implements OnInit {
     dependentChildren: [0, Validators.min(0)],
     studentChildren: [0, Validators.min(0)],
     disabledChildren: [0, Validators.min(0)],
-    dependentParents: [0, [Validators.min(0), Validators.max(2)]],
+    dependentParentClaims: this.fb.array([]),
     email: ['', Validators.email],
     phone: ['', tunisianPayrollValidators.phone],
     rib: ['', tunisianPayrollValidators.rib],
@@ -272,6 +352,10 @@ export class EmployeeFormComponent implements OnInit {
     postalCode: [''],
     governorate: ['', tunisianPayrollValidators.governorate]
   }, { validators: tunisianPayrollValidators.familyCounts });
+
+  get dependentParentClaims(): FormArray {
+    return this.form.get('dependentParentClaims') as FormArray;
+  }
 
   breadcrumbItems = computed((): BreadcrumbItem[] => [
     { label: 'Salariés', route: '/payroll/employees' },
@@ -290,6 +374,15 @@ export class EmployeeFormComponent implements OnInit {
     }
   }
 
+  addParentClaim(claim?: DependentParentClaim): void {
+    if (this.dependentParentClaims.length >= 2) return;
+    this.dependentParentClaims.push(this.createParentClaimGroup(claim));
+  }
+
+  removeParentClaim(index: number): void {
+    this.dependentParentClaims.removeAt(index);
+  }
+
   isInvalid(field: string): boolean {
     const c = this.form.get(field);
     return !!(c?.invalid && c?.touched);
@@ -299,6 +392,26 @@ export class EmployeeFormComponent implements OnInit {
     const c = this.form.get(field);
     return formatValidationError(c?.errors ?? null)
       ?? this.errorMessageService.getErrorMessage(c);
+  }
+
+  isClaimInvalid(index: number, field: string): boolean {
+    const c = this.dependentParentClaims.at(index)?.get(field);
+    return !!(c?.invalid && c?.touched);
+  }
+
+  claimFieldError(index: number, field: string): string {
+    const c = this.dependentParentClaims.at(index)?.get(field);
+    return formatValidationError(c?.errors ?? null)
+      ?? this.errorMessageService.getErrorMessage(c);
+  }
+
+  private createParentClaimGroup(claim?: DependentParentClaim): FormGroup {
+    return this.fb.group({
+      parentCin: [claim?.parentCin ?? '', [Validators.required, tunisianPayrollValidators.cin]],
+      kinship: [claim?.kinship ?? 'Father', Validators.required],
+      firstName: [claim?.firstName ?? ''],
+      lastName: [claim?.lastName ?? '']
+    });
   }
 
   private loadEmployee(id: string): void {
@@ -317,6 +430,13 @@ export class EmployeeFormComponent implements OnInit {
   }
 
   private populateForm(e: EmployeeDetail): void {
+    this.parentClaimsStatus.set(e.parentClaimsStatus ?? 'None');
+    this.legacyDependentParents.set(e.dependentParents ?? 0);
+    this.dependentParentClaims.clear();
+    for (const claim of e.dependentParentClaims ?? []) {
+      this.addParentClaim(claim);
+    }
+
     this.form.patchValue({
       employeeNumber: e.employeeNumber,
       firstName: e.firstName,
@@ -332,7 +452,6 @@ export class EmployeeFormComponent implements OnInit {
       dependentChildren: e.dependentChildren,
       studentChildren: e.studentChildren ?? 0,
       disabledChildren: e.disabledChildren ?? 0,
-      dependentParents: e.dependentParents ?? 0,
       email: e.email ?? '',
       phone: e.phone ?? '',
       rib: e.rib ?? '',
@@ -344,6 +463,18 @@ export class EmployeeFormComponent implements OnInit {
     });
   }
 
+  private buildClaimsPayload(): DependentParentClaim[] {
+    return this.dependentParentClaims.controls.map(ctrl => {
+      const v = ctrl.getRawValue();
+      return {
+        parentCin: (v.parentCin as string).trim(),
+        kinship: v.kinship as string,
+        firstName: (v.firstName as string)?.trim() || undefined,
+        lastName: (v.lastName as string)?.trim() || undefined
+      };
+    });
+  }
+
   onSubmit(): void {
     if (this.form.invalid) {
       this.form.markAllAsTouched();
@@ -351,6 +482,7 @@ export class EmployeeFormComponent implements OnInit {
     }
     this.saving.set(true);
     const raw = this.form.getRawValue();
+    const claims = this.buildClaimsPayload();
 
     if (this.isEditMode()) {
       const body: UpdateEmployeeRequest = {
@@ -366,7 +498,8 @@ export class EmployeeFormComponent implements OnInit {
         dependentChildren: raw.dependentChildren ?? 0,
         studentChildren: raw.studentChildren ?? 0,
         disabledChildren: raw.disabledChildren ?? 0,
-        dependentParents: raw.dependentParents ?? 0,
+        dependentParents: claims.length,
+        dependentParentClaims: claims,
         street: raw.street || undefined,
         streetLine2: raw.streetLine2 || undefined,
         city: raw.city || undefined,
@@ -383,7 +516,11 @@ export class EmployeeFormComponent implements OnInit {
           this.saving.set(false);
         },
         error: err => {
-          this.toast.add({ severity: 'error', summary: 'Salarié', detail: err.error?.message ?? 'Enregistrement impossible.' });
+          this.toast.add({
+            severity: 'error',
+            summary: 'Salarié',
+            detail: err.error?.message ?? err.error?.errors?.[0] ?? 'Enregistrement impossible.'
+          });
           this.saving.set(false);
         }
       });
@@ -403,7 +540,8 @@ export class EmployeeFormComponent implements OnInit {
         dependentChildren: raw.dependentChildren ?? 0,
         studentChildren: raw.studentChildren ?? 0,
         disabledChildren: raw.disabledChildren ?? 0,
-        dependentParents: raw.dependentParents ?? 0,
+        dependentParents: claims.length,
+        dependentParentClaims: claims,
         street: raw.street || undefined,
         streetLine2: raw.streetLine2 || undefined,
         city: raw.city || undefined,
@@ -422,7 +560,11 @@ export class EmployeeFormComponent implements OnInit {
           this.saving.set(false);
         },
         error: err => {
-          this.toast.add({ severity: 'error', summary: 'Salarié', detail: err.error?.message ?? 'Création impossible.' });
+          this.toast.add({
+            severity: 'error',
+            summary: 'Salarié',
+            detail: err.error?.message ?? err.error?.errors?.[0] ?? 'Création impossible.'
+          });
           this.saving.set(false);
         }
       });

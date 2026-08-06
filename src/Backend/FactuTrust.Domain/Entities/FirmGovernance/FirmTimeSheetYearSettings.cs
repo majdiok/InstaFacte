@@ -72,6 +72,9 @@ public sealed class FirmTimeSheetYearSettings : Entity
     /// <summary>Cotisation accident du travail, en % du brut. Dépend de l'activité : aucun défaut imposé.</summary>
     public decimal WorkAccidentRate { get; private set; }
 
+    /// <summary>Contribution Sociale de Solidarité patronale, en % du brut soumis à CNSS.</summary>
+    public decimal CssEmployerRate { get; private set; }
+
     private FirmTimeSheetYearSettings() { }
 
     /// <summary>Nombre de jours ouvrables annuels retenu par convention (26 j/mois × 12).</summary>
@@ -104,7 +107,7 @@ public sealed class FirmTimeSheetYearSettings : Entity
 
     /// <summary>Somme des taux patronaux applicables au brut, en %.</summary>
     public decimal TotalEmployerChargeRate =>
-        MillimeRounding.Round(CnssEmployerRate + TfpRate + FoprolosRate + WorkAccidentRate);
+        MillimeRounding.Round(CnssEmployerRate + TfpRate + FoprolosRate + WorkAccidentRate + CssEmployerRate);
 
     /// <summary>
     /// Crée les paramètres d'un exercice avec les valeurs par défaut tunisiennes.
@@ -140,7 +143,8 @@ public sealed class FirmTimeSheetYearSettings : Entity
             CnssEmployerRate = DefaultCnssEmployerRate,
             TfpRate = DefaultTfpRate,
             FoprolosRate = DefaultFoprolosRate,
-            WorkAccidentRate = DefaultWorkAccidentRate
+            WorkAccidentRate = DefaultWorkAccidentRate,
+            CssEmployerRate = DefaultCssEmployerRate
         });
     }
 
@@ -157,7 +161,8 @@ public sealed class FirmTimeSheetYearSettings : Entity
         decimal cnssEmployerRate,
         decimal tfpRate,
         decimal foprolosRate,
-        decimal workAccidentRate)
+        decimal workAccidentRate,
+        decimal cssEmployerRate = 0m)
     {
         if (maxDailyHours is <= 0 or > 24)
             return Result.Failure(Error.Validation("MaxDailyHours", "Le plafond journalier doit être compris entre 0 et 24 heures."));
@@ -174,7 +179,7 @@ public sealed class FirmTimeSheetYearSettings : Entity
         if (productivityRatePercent is <= 0 or > 100)
             return Result.Failure(Error.Validation("ProductivityRatePercent", "Le taux de productivité doit être compris entre 0 et 100 %."));
 
-        var rates = new[] { cnssEmployerRate, tfpRate, foprolosRate, workAccidentRate };
+        var rates = new[] { cnssEmployerRate, tfpRate, foprolosRate, workAccidentRate, cssEmployerRate };
         if (rates.Any(r => r < 0 || r > 100))
             return Result.Failure(Error.Validation("Rates", "Les taux patronaux doivent être compris entre 0 et 100 %."));
 
@@ -191,6 +196,7 @@ public sealed class FirmTimeSheetYearSettings : Entity
         TfpRate = MillimeRounding.Round(tfpRate);
         FoprolosRate = MillimeRounding.Round(foprolosRate);
         WorkAccidentRate = MillimeRounding.Round(workAccidentRate);
+        CssEmployerRate = MillimeRounding.Round(cssEmployerRate);
         return Result.Success();
     }
 
@@ -227,6 +233,9 @@ public sealed class FirmTimeSheetYearSettings : Entity
 
     /// <summary>0 % : le taux accident du travail dépend de l'activité, le cabinet doit le renseigner.</summary>
     public const decimal DefaultWorkAccidentRate = 0m;
+
+    /// <summary>0 % : CSS patronale optionnelle, alignée sur PayrollYearParameters (opt-in).</summary>
+    public const decimal DefaultCssEmployerRate = 0m;
 
     /// <summary>Plafond hebdomadaire par défaut : la durée légale du régime.</summary>
     public static decimal DefaultMaxWeeklyHours(WeeklyWorkRegime regime) =>

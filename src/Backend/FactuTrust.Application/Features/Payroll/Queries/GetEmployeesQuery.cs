@@ -1,5 +1,6 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Domain.Services.Payroll;
 using MediatR;
 
 namespace FactuTrust.Application.Features.Payroll.Queries;
@@ -13,10 +14,14 @@ public sealed record GetEmployeesQuery(
 public sealed class GetEmployeesQueryHandler : IRequestHandler<GetEmployeesQuery, PagedResult<EmployeeListDto>>
 {
     private readonly IEmployeeRepository _employees;
+    private readonly IEmployeeDependentParentRepository _dependentParents;
 
-    public GetEmployeesQueryHandler(IEmployeeRepository employees)
+    public GetEmployeesQueryHandler(
+        IEmployeeRepository employees,
+        IEmployeeDependentParentRepository dependentParents)
     {
         _employees = employees;
+        _dependentParents = dependentParents;
     }
 
     public async Task<PagedResult<EmployeeListDto>> Handle(GetEmployeesQuery request, CancellationToken cancellationToken)
@@ -25,13 +30,24 @@ public sealed class GetEmployeesQueryHandler : IRequestHandler<GetEmployeesQuery
         var pageSize = request.PageSize is < 1 or > 200 ? 20 : request.PageSize;
 
         var (items, total) = await _employees.SearchAsync(request.Search, request.IsActive, page, pageSize, cancellationToken);
+        var ids = items.Select(e => e.Id).ToList();
+        var claims = await _dependentParents.GetActiveByEmployeeIdsAsync(ids, cancellationToken);
+        var claimsByEmployee = claims.GroupBy(c => c.EmployeeId).ToDictionary(g => g.Key, g => (IReadOnlyList<Domain.Entities.Payroll.EmployeeDependentParent>)g.ToList());
+        var cinIndex = await _dependentParents.GetActiveCinIndexAsync(cancellationToken);
 
-        // Load contracts for the current page to expose the current base salary / job title.
         var dtos = new List<EmployeeListDto>(items.Count);
         foreach (var e in items)
         {
             var withContracts = await _employees.GetByIdWithContractsAsync(e.Id, cancellationToken) ?? e;
-            dtos.Add(PayrollMappings.ToListDto(withContracts));
+            var employeeClaims = claimsByEmployee.GetValueOrDefault(e.Id) ?? Array.Empty<Domain.Entities.Payroll.EmployeeDependentParent>();
+            var eligibility = ParentDeductionEligibilityResolver.ResolveForEmployee(
+                withContracts.DependentParents,
+                employeeClaims,
+                cinIndex,
+                e.Id);
+            dtos.Add(PayrollMappings.ToListDto(
+                withContracts,
+                ParentDeductionEligibilityResolver.ResolveStatusLabel(eligibility.Status)));
         }
 
         return PagedResult<EmployeeListDto>.Create(dtos, page, pageSize, total);

@@ -239,6 +239,7 @@ public static class DependencyInjection
         services.AddScoped<IEmployeeInKindBenefitRepository, EmployeeInKindBenefitRepository>();
         services.AddScoped<IEmployeeLoanRepository, EmployeeLoanRepository>();
         services.AddScoped<IEmployeeGarnishmentRepository, EmployeeGarnishmentRepository>();
+        services.AddScoped<IEmployeeDependentParentRepository, EmployeeDependentParentRepository>();
 
         services.AddScoped<IOpportunityRepository, OpportunityRepository>();
         services.AddScoped<ISalesActivityRepository, SalesActivityRepository>();
@@ -264,6 +265,7 @@ public static class DependencyInjection
         services.AddScoped<IThirdPartyDirectoryService, ThirdPartyDirectoryService>();
         services.AddScoped<ITenantCompanySummaryProvider, TenantCompanySummaryProvider>();
         services.AddScoped<IAccountingExportService, AccountingExportService>();
+        services.AddScoped<IPayrollReportExportService, PayrollReportExportService>();
         services.AddScoped<IDepreciationEngine, DepreciationEngine>();
         services.AddScoped<IFixedAssetExportService, FixedAssetExportService>();
         services.AddScoped<ILetteringService, LetteringService>();

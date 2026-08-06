@@ -982,6 +982,7 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Property(s => s.TfpRate).HasPrecision(9, 3);
             entity.Property(s => s.FoprolosRate).HasPrecision(9, 3);
             entity.Property(s => s.WorkAccidentRate).HasPrecision(9, 3);
+            entity.Property(s => s.CssEmployerRate).HasPrecision(9, 3);
             entity.Ignore(s => s.AnnualWorkingDays);
             entity.Ignore(s => s.AnnualBaseHours);
             entity.Ignore(s => s.DailyHours);

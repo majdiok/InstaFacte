@@ -10,7 +10,7 @@ namespace FactuTrust.Application.Features.Payroll;
 /// </summary>
 public static class PayrollMappings
 {
-    public static EmployeeListDto ToListDto(Employee e)
+    public static EmployeeListDto ToListDto(Employee e, string parentClaimsStatus = "None")
     {
         var contract = e.GetActiveContract(DateTime.UtcNow) ?? e.Contracts.OrderByDescending(c => c.StartDate).FirstOrDefault();
         return new EmployeeListDto
@@ -25,12 +25,22 @@ public static class PayrollMappings
             CurrentBaseSalary = contract?.BaseSalary,
             CurrentWeeklyRegime = contract?.WeeklyRegime.ToString(),
             HireDate = e.HireDate,
-            IsActive = e.IsActive
+            IsActive = e.IsActive,
+            ParentClaimsStatus = parentClaimsStatus
         };
     }
 
-    public static EmployeeDetailDto ToDetailDto(Employee e)
+    public static EmployeeDetailDto ToDetailDto(
+        Employee e,
+        IReadOnlyList<EmployeeDependentParent>? dependentParentClaims = null)
     {
+        var claims = dependentParentClaims ?? Array.Empty<EmployeeDependentParent>();
+        var eligibility = ParentDeductionEligibilityResolver.ResolveForEmployee(
+            e.DependentParents,
+            claims,
+            claims.ToDictionary(c => c.ParentCin, c => e.Id, StringComparer.Ordinal),
+            e.Id);
+
         return new EmployeeDetailDto
         {
             Id = e.Id,
@@ -52,6 +62,8 @@ public static class PayrollMappings
             StudentChildren = e.StudentChildren,
             DisabledChildren = e.DisabledChildren,
             DependentParents = e.DependentParents,
+            DependentParentClaims = claims.Select(DependentParentClaimsHelper.ToDto).ToList(),
+            ParentClaimsStatus = ParentDeductionEligibilityResolver.ResolveStatusLabel(eligibility.Status),
             Address = e.Address is null ? null : new AddressDto
             {
                 Street = e.Address.Street,
@@ -139,6 +151,7 @@ public static class PayrollMappings
             TotalCnssEmployer = r.TotalCnssEmployer,
             TotalTfp = r.TotalTfp,
             TotalFoprolos = r.TotalFoprolos,
+            TotalCssEmployer = r.TotalCssEmployer,
             TotalWorkAccident = r.TotalWorkAccident,
             TotalOtherDeductions = r.TotalOtherDeductions,
             CalculatedAt = r.CalculatedAt,
@@ -210,6 +223,7 @@ public static class PayrollMappings
             WorkAccidentContribution = p.WorkAccidentContribution,
             Tfp = p.Tfp,
             Foprolos = p.Foprolos,
+            CssEmployer = p.CssEmployer,
             PaidAmount = p.PaidAmount,
             RemainingToPay = p.RemainingToPay,
             PaymentStatus = p.PaymentStatus.ToString(),
@@ -245,6 +259,7 @@ public static class PayrollMappings
             EnableAllowanceQuadrantMatrix = p.EnableAllowanceQuadrantMatrix,
             CssRate = p.CssRate,
             CssAnnualExemptionThreshold = p.CssAnnualExemptionThreshold,
+            CssEmployerRate = p.CssEmployerRate,
             ProfessionalExpensesRate = p.ProfessionalExpensesRate,
             ProfessionalExpensesAnnualCap = p.ProfessionalExpensesAnnualCap,
             HeadOfFamilyAnnualDeduction = p.HeadOfFamilyAnnualDeduction,

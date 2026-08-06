@@ -227,6 +227,20 @@ public sealed class Employee : AggregateRoot
         IncrementVersion();
     }
 
+    /// <summary>
+    /// Synchronise le compteur dérivé <see cref="DependentParents"/> avec le nombre
+    /// de déclarations nominatives actives (0–2).
+    /// </summary>
+    public Result SyncDependentParentsCount(int activeClaimCount)
+    {
+        if (activeClaimCount is < 0 or > 2)
+            return Result.Failure(Error.Validation("DependentParents", "Le nombre de parents à charge doit être compris entre 0 et 2."));
+
+        DependentParents = activeClaimCount;
+        IncrementVersion();
+        return Result.Success();
+    }
+
     private static Result ValidateFamilyCounts(int dependentChildren, int studentChildren, int disabledChildren, int dependentParents)
     {
         if (studentChildren < 0 || disabledChildren < 0)

@@ -22,6 +22,7 @@ public sealed class UpdatePayrollParametersCommandValidator : AbstractValidator<
         RuleFor(x => x.Dto.CnssEmployeeRateRsa).InclusiveBetween(0, 100);
         RuleFor(x => x.Dto.CnssEmployerRateRsa).InclusiveBetween(0, 100);
         RuleFor(x => x.Dto.CssRate).InclusiveBetween(0, 100);
+        RuleFor(x => x.Dto.CssEmployerRate).InclusiveBetween(0, 100);
         RuleFor(x => x.Dto.ProfessionalExpensesRate).InclusiveBetween(0, 100);
         RuleFor(x => x.Dto.TfpRateIndustry).InclusiveBetween(0, 100);
         RuleFor(x => x.Dto.TfpRateOther).InclusiveBetween(0, 100);
@@ -111,7 +112,8 @@ public sealed class UpdatePayrollParametersCommandHandler : IRequestHandler<Upda
             mealVoucherDailyExemptionCap: parameters.MealVoucherDailyExemptionCap,
             enableIrppRegularization: parameters.EnableIrppRegularization,
             smigIrppExemptionMode: smigExemptionMode,
-            smigIrppExemptionRateOverride: dto.SmigIrppExemptionRateOverride);
+            smigIrppExemptionRateOverride: dto.SmigIrppExemptionRateOverride,
+            cssEmployerRate: dto.CssEmployerRate);
         if (ratesResult.IsFailure)
             return ratesResult;
 

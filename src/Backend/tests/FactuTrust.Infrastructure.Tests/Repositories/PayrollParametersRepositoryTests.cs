@@ -83,7 +83,8 @@ public sealed class PayrollParametersRepositoryTests : IDisposable
             disabledChildAnnualDeduction: parameters.DisabledChildAnnualDeduction,
             parentDeductionRatePercent: parameters.ParentDeductionRatePercent,
             parentAnnualDeductionCap: parameters.ParentAnnualDeductionCap,
-            isIndustrialSector: parameters.IsIndustrialSector);
+            isIndustrialSector: parameters.IsIndustrialSector,
+            cssEmployerRate: 0.5m);
         Assert.True(ratesResult.IsSuccess);
 
         await _repository.UpdateAsync(parameters);
@@ -91,6 +92,7 @@ public sealed class PayrollParametersRepositoryTests : IDisposable
         var reloaded = await _repository.GetByFiscalYearAsync(2027);
         Assert.NotNull(reloaded);
         Assert.Equal(9.50m, reloaded.CnssEmployeeRate);
+        Assert.Equal(0.5m, reloaded.CssEmployerRate);
         Assert.Equal(originalBracketCount, reloaded.IrppBrackets.Count);
         Assert.Equal(originalFirstRate, reloaded.IrppBrackets.OrderBy(b => b.LowerBound).First().Rate);
     }

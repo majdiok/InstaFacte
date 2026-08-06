@@ -24,6 +24,20 @@ public interface IPayrollRunRepository
     Task<IReadOnlyList<PayrollRun>> ListByQuarterWithPayslipsAsync(int year, int quarter, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Runs of a month range with their payslips (payroll control reports — livre de paie).
+    /// Draft runs are always excluded; calculated runs only when <paramref name="includeCalculated"/> is set.
+    /// </summary>
+    Task<IReadOnlyList<PayrollRun>> ListByMonthRangeWithPayslipsAsync(
+        int year,
+        int fromMonth,
+        int toMonth,
+        bool includeCalculated,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Run of a single month with its payslips but without their lines (journal de paie).</summary>
+    Task<PayrollRun?> GetByPeriodWithPayslipsAsync(int year, int month, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Bulletins de l'exercice issus des cycles <b>Validés ou Clôturés</b> uniquement, pour le
     /// cumul annuel de la régularisation IRPP. Se limiter aux cycles arrêtés garantit que le
     /// cumul est stable d'un calcul à l'autre : un cycle encore modifiable ne doit pas faire

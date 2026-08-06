@@ -22,7 +22,9 @@
      plafond de rang **en priorité** (déduction la plus favorable) ;
    - enfants **infirmes** : 2 000 TND/enfant, **hors plafond** de rang ;
    - **parents à charge** (0 à 2) : 5 % du revenu net annuel (base après CNSS − frais pro,
-     annualisée), plafonné à 450 TND par parent.
+     annualisée), plafonné à 450 TND par parent. La déduction n'est appliquée que si des
+     **déclarations nominatives** (CIN parent) sont renseignées et sans conflit de non-cumul
+     intra-entreprise (voir ci-dessous).
 6. **IRPP** : net imposable mensuel × 12 → barème progressif de l'exercice → ÷ 12.
    Barème LF 2025 par défaut : 0 % ≤ 5 000 ; 15 % ; 25 % ; 30 % ; 33 % ; 36 % ; 38 % ;
    40 % > 70 000 TND/an.
@@ -157,6 +159,85 @@ ajustables et notes. La grille batch est disponible sur le détail d'un cycle **
 Agrège les bulletins des 3 mois du trimestre, **uniquement pour les cycles Validés ou
 Clôturés**. Export CSV (`;`, UTF-8 BOM) avec ligne TOTAL.
 
+## Certificats de retenue à la source (IRPP/CSS)
+
+Disponible dans **RH & Paie → Déclarations paie → Certificats RS** (permission `payroll:declare`).
+
+Agrège, par salarié et par exercice civil, les montants figés sur les bulletins des cycles
+**Validés ou Clôturés** :
+
+| Champ | Formule |
+|---|---|
+| Net imposable annuel | Σ `Payslip.MonthlyNetTaxable` |
+| IRPP retenu | Σ (`Payslip.Irpp` + `Payslip.IrppRegularization`) |
+| CSS retenue | Σ (`Payslip.Css` + `Payslip.CssRegularization`) |
+
+### Exports
+
+- **CSV récapitulatif** : tous les salariés sur une ligne (`certificats_rs_{year}.csv`).
+- **ZIP** : un PDF par salarié + copie du CSV (`_recap.csv`).
+- **PDF unitaire** : téléchargement depuis la grille.
+
+### Règles
+
+- Le **NIF employeur** est obligatoire (bloquant si absent).
+- CIN/CNSS manquants : avertissement non bloquant.
+- Identité salarié (CIN, adresse) lue sur la **fiche courante** au moment de la génération.
+- Hors périmètre v1 : télédéclaration TEJ, persistance des certificats validés.
+
+Endpoints : `GET api/payroll/declarations/withholding-certificates`, `…/export/csv`,
+`…/export/zip`, `…/{employeeId}/pdf`.
+
+## États de contrôle
+
+Deux éditions en lecture seule sur les bulletins gelés (aucun recalcul), permission
+`payroll:read` pour consulter, `payroll:export` pour télécharger. Formats PDF, Excel et CSV.
+
+### Périmètre commun
+
+- Par défaut, seuls les cycles **Validés ou Clôturés** sont retenus (même règle que la DTS).
+- L'option « inclure les cycles calculés » ajoute les cycles **Calculés** ; l'état est alors
+  marqué **PROVISOIRE** (bandeau à l'écran, mention sur le PDF/Excel, suffixe `_provisoire`
+  sur le nom de fichier). Les cycles **Brouillon** sont toujours exclus (aucun bulletin persisté).
+- Montants arrondis au millime (`MidpointRounding.AwayFromZero`) à chaque agrégation.
+
+### Livre de paie simplifié
+
+`RH & Paie → Livre de paie` — registre des salaires par salarié sur une **plage de mois** d'un
+exercice (Année + Mois de → Mois à). Une ligne par salarié avec le cumul de ses bulletins :
+brut, brut CNSSable, CNSS salariale, frais professionnels, déductions familiales, net imposable,
+IRPP (+ régularisation), CSS (+ régularisation), autres retenues, net à payer. Les charges
+patronales (CNSS patronale, accident de travail, TFP, FOPROLOS, CSS patronale) et le coût
+employeur sont restitués en cumul de période, pas au détail salarié.
+
+L'identité (CIN, catégorie, échelon, date d'embauche) est relue sur la fiche salarié ; le nom,
+le matricule et le n° CNSS proviennent du bulletin figé. Un salarié supprimé conserve donc sa
+ligne, sans les champs enrichis.
+
+Endpoints : `GET api/payroll/reports/payroll-book` et `…/payroll-book/export?format=`.
+
+### Journal de paie
+
+`RH & Paie → Journal de paie` — état **mensuel** à deux vues :
+
+- **Par salarié** : une ligne par bulletin avec toutes les rubriques, plus les charges
+  patronales et le coût employeur (brut + charges) — information absente ailleurs.
+- **Ventilation comptable** : l'écriture OD du cycle avec contrôle d'équilibre débit = crédit.
+  Quand le cycle est comptabilisé, l'état **reprend l'écriture réellement enregistrée**
+  (n° de pièce et journal rappelés) ; sinon il affiche une **simulation** construite depuis les
+  totaux figés via `PayrollJournalEntryBuilder`, explicitement signalée comme telle.
+
+Comptes de la ventilation : `640` charges de personnel (D), `647` charges sociales employeur (D),
+`421` personnel — rémunérations dues (C, ventilé par compte auxiliaire si l'option est active),
+`432` État — retenues et taxes sur salaires (C), `453` organismes sociaux (C), `425` personnel —
+avances et acomptes (C). Les buckets nuls sont omis.
+
+Un mois sans cycle renvoie 404 ; un cycle Brouillon ou Calculé non demandé renvoie 409 avec un
+message explicite.
+
+Endpoints : `GET api/payroll/reports/payroll-journal` et
+`…/payroll-journal/export?format=&view=ByEmployee|Accounting`.
+
 ## Export virement bancaire (salaires)
 
 Disponible depuis un cycle **Validé** ou **Clôturé** (`RH & Paie → Cycles → Export virement`),
@@ -205,20 +286,38 @@ dans `docs/runbooks/sql/` :
 | `20260716030504_AddPayrollRegimeSectorFamily_Tenant` | `AddPayrollRegimeSectorFamily_Tenant.idempotent.sql` |
 | `20260805150000_AddPayrollIrppRegularization_Tenant` | `AddPayrollIrppRegularization_Tenant.idempotent.sql` |
 | `20260806300000_AddPayrollSmigIrppExemption_Tenant` | `AddPayrollSmigIrppExemption.idempotent.sql` |
+| `20260807010000_AddEmployeeDependentParents_Tenant` | `AddEmployeeDependentParents_Tenant.idempotent.sql` |
 
 Conventions : montants `decimal(18,3)`, taux `decimal(8,4)` ; toute nouvelle colonne non
 nullable porte un défaut qui préserve le comportement antérieur.
+
+## Parents à charge — non-cumul (art. 40 IRPP)
+
+- Saisie sur la fiche salarié : liste de 0 à 2 parents (lien Père/Mère + **CIN obligatoire**).
+- Contrainte SQL : index unique filtré `IX_EmployeeDependentParents_ParentCin_Active`
+  (`ParentCin` WHERE `EndDate IS NULL`).
+- Enregistrement fiche : **409 Conflict** si le CIN est déjà déclaré par un autre salarié.
+- Calcul de cycle : **blocage** si conflit détecté ; **avertissement**
+  `ParentClaimsIncomplete` + déduction parent = 0 si compteur legacy sans CIN.
+- Désactivation salarié : clôture des déclarations actives (libération du CIN).
+- Périmètre : **même tenant / même employeur** uniquement.
 
 ## Limites connues / évolutions envisagées
 
 - Format officiel de télédéclaration DTS (fichier CNSS) : l'export actuel est un CSV de
   travail, pas le format de dépôt officiel.
-- Déductions « parents à charge » : le plafond légal s'apprécie par parent et par foyer ;
-  la règle du non-cumul entre déclarants (un seul enfant peut déclarer un parent) n'est
-  pas contrôlable par l'application.
+- **Parents à charge (non-cumul)** : contrôlé **intra-entreprise** via CIN parent unique
+  (table `EmployeeDependentParents`, index filtré actif). Un même parent ne peut être
+  déclaré que par un seul salarié du tenant ; le calcul de paie est **bloqué** en cas de
+  conflit. Les fiches legacy avec compteur > 0 sans CIN reçoivent une déduction parent
+  à **0** et un avertissement jusqu'à saisie nominative. Le non-cumul avec un déclarant
+  **hors** de l'entreprise n'est pas contrôlable.
 - **Export virement** : CSV standard uniquement ; formats TXT/XLS propriétaires par banque
   (MyBIATCorporate, Multivir, STB…) en phase 2 (nécessitent les modèles officiels).
 - **RIB sur bulletin** : non figé à la validation — l'export lit le RIB courant du salarié.
+- **Certificats RS** : identité salarié (CIN, adresse) lue à la génération, pas figée sur le bulletin.
+- **Livre de paie** : le libellé de poste (porté par le contrat, non figé sur le bulletin) n'est
+  pas restitué ; catégorie et échelon de la fiche salarié en tiennent lieu.
 
 ## Retenues et avantages avancés
 

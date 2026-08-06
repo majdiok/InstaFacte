@@ -19,6 +19,8 @@ public sealed record EmployeeListDto
     public string? CurrentWeeklyRegime { get; init; }
     public DateTime HireDate { get; init; }
     public bool IsActive { get; init; }
+    /// <summary>None | Complete | Incomplete | Conflict</summary>
+    public string ParentClaimsStatus { get; init; } = "None";
 }
 
 public sealed record ContractAllowanceDto
@@ -69,6 +71,10 @@ public sealed record EmployeeDetailDto
     public int StudentChildren { get; init; }
     public int DisabledChildren { get; init; }
     public int DependentParents { get; init; }
+    /// <summary>Déclarations nominatives (CIN) des parents à charge.</summary>
+    public IReadOnlyList<DependentParentClaimDto> DependentParentClaims { get; init; } = Array.Empty<DependentParentClaimDto>();
+    /// <summary>None | Complete | Incomplete | Conflict</summary>
+    public string ParentClaimsStatus { get; init; } = "None";
     public AddressDto? Address { get; init; }
     public string? Email { get; init; }
     public string? Phone { get; init; }
@@ -93,7 +99,9 @@ public sealed record CreateEmployeeDto
     public int DependentChildren { get; init; }
     public int StudentChildren { get; init; }
     public int DisabledChildren { get; init; }
+    /// <summary>Conservé pour compatibilité ; dérivé du nombre de <see cref="DependentParentClaims"/> si fourni.</summary>
     public int DependentParents { get; init; }
+    public IReadOnlyList<DependentParentClaimDto> DependentParentClaims { get; init; } = Array.Empty<DependentParentClaimDto>();
     public string? Street { get; init; }
     public string? StreetLine2 { get; init; }
     public string? City { get; init; }
@@ -118,7 +126,9 @@ public sealed record UpdateEmployeeDto
     public int DependentChildren { get; init; }
     public int StudentChildren { get; init; }
     public int DisabledChildren { get; init; }
+    /// <summary>Conservé pour compatibilité ; dérivé du nombre de <see cref="DependentParentClaims"/> si fourni.</summary>
     public int DependentParents { get; init; }
+    public IReadOnlyList<DependentParentClaimDto> DependentParentClaims { get; init; } = Array.Empty<DependentParentClaimDto>();
     public string? Street { get; init; }
     public string? StreetLine2 { get; init; }
     public string? City { get; init; }
@@ -127,6 +137,41 @@ public sealed record UpdateEmployeeDto
     public string? Email { get; init; }
     public string? Phone { get; init; }
     public string? Rib { get; init; }
+}
+
+/// <summary>Déclaration nominative d'un parent à charge (CIN obligatoire).</summary>
+public sealed record DependentParentClaimDto
+{
+    public Guid? Id { get; init; }
+    public string ParentCin { get; init; } = null!;
+    /// <summary>Father | Mother</summary>
+    public string Kinship { get; init; } = null!;
+    public string? FirstName { get; init; }
+    public string? LastName { get; init; }
+}
+
+/// <summary>Résultat du calcul d'un cycle (warnings non bloquants).</summary>
+public sealed record CalculatePayrollRunResultDto
+{
+    public int PayslipCount { get; init; }
+    public IReadOnlyList<PayrollCalculationWarningDto> Warnings { get; init; } = Array.Empty<PayrollCalculationWarningDto>();
+}
+
+public sealed record PayrollCalculationWarningDto
+{
+    public string Code { get; init; } = null!;
+    public string Message { get; init; } = null!;
+    public Guid? EmployeeId { get; init; }
+    public string? EmployeeName { get; init; }
+}
+
+public sealed record ParentClaimConflictDto
+{
+    public string ParentCin { get; init; } = null!;
+    public Guid EmployeeIdA { get; init; }
+    public string? EmployeeNameA { get; init; }
+    public Guid EmployeeIdB { get; init; }
+    public string? EmployeeNameB { get; init; }
 }
 
 public sealed record ContractAllowanceInputDto
@@ -199,6 +244,7 @@ public sealed record PayrollRunDetailDto
     public decimal TotalCnssEmployer { get; init; }
     public decimal TotalTfp { get; init; }
     public decimal TotalFoprolos { get; init; }
+    public decimal TotalCssEmployer { get; init; }
     public decimal TotalWorkAccident { get; init; }
     public decimal TotalOtherDeductions { get; init; }
     public DateTime? CalculatedAt { get; init; }
@@ -302,6 +348,7 @@ public sealed record PayslipDetailDto
     public decimal WorkAccidentContribution { get; init; }
     public decimal Tfp { get; init; }
     public decimal Foprolos { get; init; }
+    public decimal CssEmployer { get; init; }
     public decimal PaidAmount { get; init; }
     public decimal RemainingToPay { get; init; }
     public string PaymentStatus { get; init; } = null!;
@@ -331,6 +378,7 @@ public sealed record PayrollParametersDto
     public bool EnableAllowanceQuadrantMatrix { get; init; }
     public decimal CssRate { get; init; }
     public decimal CssAnnualExemptionThreshold { get; init; }
+    public decimal CssEmployerRate { get; init; }
     public decimal ProfessionalExpensesRate { get; init; }
     public decimal ProfessionalExpensesAnnualCap { get; init; }
     public decimal HeadOfFamilyAnnualDeduction { get; init; }
@@ -362,6 +410,7 @@ public sealed record UpdatePayrollParametersDto
     public bool EnableAllowanceQuadrantMatrix { get; init; }
     public decimal CssRate { get; init; }
     public decimal CssAnnualExemptionThreshold { get; init; }
+    public decimal CssEmployerRate { get; init; }
     public decimal ProfessionalExpensesRate { get; init; }
     public decimal ProfessionalExpensesAnnualCap { get; init; }
     public decimal HeadOfFamilyAnnualDeduction { get; init; }
@@ -856,6 +905,64 @@ public sealed record DtsDeclarationDto
     public IReadOnlyList<DtsLineDto> Lines { get; init; } = Array.Empty<DtsLineDto>();
 }
 
+// ─────────────────────────────── Certificats de retenue à la source (IRPP/CSS) ───────────────────────────────
+
+public sealed record PayrollWithholdingCertificateMonthDto
+{
+    public int Month { get; init; }
+    public string MonthLabel { get; init; } = null!;
+    public decimal MonthlyNetTaxable { get; init; }
+    public decimal Irpp { get; init; }
+    public decimal IrppRegularization { get; init; }
+    public decimal Css { get; init; }
+    public decimal CssRegularization { get; init; }
+    public bool HasPayslip { get; init; }
+}
+
+public sealed record PayrollWithholdingCertificateLineDto
+{
+    public Guid EmployeeId { get; init; }
+    public string EmployeeNumber { get; init; } = null!;
+    public string EmployeeName { get; init; } = null!;
+    public string? Cin { get; init; }
+    public string? CnssNumber { get; init; }
+    public string? AddressLine { get; init; }
+    public bool IsHeadOfFamily { get; init; }
+    public int MonthsCount { get; init; }
+    public bool IsPartialYear { get; init; }
+    public decimal TotalGross { get; init; }
+    public decimal TotalCnssableGross { get; init; }
+    public decimal TotalCnssEmployee { get; init; }
+    public decimal TotalProfessionalExpenses { get; init; }
+    public decimal TotalFamilyDeductions { get; init; }
+    public decimal AnnualNetTaxable { get; init; }
+    public decimal TotalIrppWithheld { get; init; }
+    public decimal TotalCssWithheld { get; init; }
+    public decimal TotalWithholding { get; init; }
+    public decimal TotalIrppSmigExemption { get; init; }
+    public string DocumentReference { get; init; } = null!;
+    public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<PayrollWithholdingCertificateMonthDto> Months { get; init; } = Array.Empty<PayrollWithholdingCertificateMonthDto>();
+}
+
+public sealed record PayrollWithholdingCertificateBatchDto
+{
+    public int Year { get; init; }
+    public string EmployerCompanyName { get; init; } = null!;
+    public string EmployerNif { get; init; } = null!;
+    public string? EmployerAddressLine { get; init; }
+    public int EmployeeCount { get; init; }
+    public IReadOnlyList<int> IncludedMonths { get; init; } = Array.Empty<int>();
+    public IReadOnlyList<int> MissingMonths { get; init; } = Array.Empty<int>();
+    public bool IsComplete { get; init; }
+    public decimal TotalGross { get; init; }
+    public decimal TotalAnnualNetTaxable { get; init; }
+    public decimal TotalIrppWithheld { get; init; }
+    public decimal TotalCssWithheld { get; init; }
+    public decimal TotalWithholding { get; init; }
+    public IReadOnlyList<PayrollWithholdingCertificateLineDto> Lines { get; init; } = Array.Empty<PayrollWithholdingCertificateLineDto>();
+}
+
 // ─────────────────────────────── Export virement bancaire ───────────────────────────────
 
 public sealed record PayrollBankTransferLineDto
@@ -916,3 +1023,185 @@ public sealed record PayrollBankTransferPreviewDto
     public IReadOnlyList<PayrollBankTransferExcludedLineDto> ExcludedLines { get; init; } = Array.Empty<PayrollBankTransferExcludedLineDto>();
     public IReadOnlyList<PayrollBankTransferWarningDto> Warnings { get; init; } = Array.Empty<PayrollBankTransferWarningDto>();
 }
+
+// ─────────────────────────────── États de contrôle (livre de paie, journal de paie) ───────────────────────────────
+
+/// <summary>
+/// Ligne du livre de paie : cumuls d'un salarié sur la plage de mois demandée.
+/// Les montants proviennent des bulletins gelés — aucun recalcul.
+/// </summary>
+public sealed record PayrollBookLineDto
+{
+    public Guid EmployeeId { get; init; }
+    public string EmployeeNumber { get; init; } = null!;
+    public string EmployeeName { get; init; } = null!;
+    public string? Cin { get; init; }
+    public string? CnssNumber { get; init; }
+    public string? Category { get; init; }
+    public string? Echelon { get; init; }
+    /// <summary>Null si la fiche salarié a été supprimée depuis (le bulletin, lui, reste).</summary>
+    public DateTime? HireDate { get; init; }
+    /// <summary>Nombre de mois de la plage pour lesquels le salarié a un bulletin.</summary>
+    public int MonthsCount { get; init; }
+    public decimal GrossSalary { get; init; }
+    public decimal CnssableGross { get; init; }
+    public decimal CnssEmployee { get; init; }
+    public decimal ProfessionalExpenses { get; init; }
+    public decimal FamilyDeductions { get; init; }
+    public decimal NetTaxable { get; init; }
+    public decimal Irpp { get; init; }
+    /// <summary>Régularisation IRPP annuelle cumulée (signée : + rappel, − restitution).</summary>
+    public decimal IrppRegularization { get; init; }
+    public decimal Css { get; init; }
+    /// <summary>Régularisation CSS annuelle cumulée (même convention de signe).</summary>
+    public decimal CssRegularization { get; init; }
+    public decimal OtherDeductions { get; init; }
+    public decimal NonTaxableAllowances { get; init; }
+    public decimal NetSalary { get; init; }
+}
+
+/// <summary>
+/// Livre de paie simplifié : registre des salaires par salarié sur une plage de mois d'un exercice.
+/// </summary>
+public sealed record PayrollBookDto
+{
+    public int Year { get; init; }
+    public int FromMonth { get; init; }
+    public int ToMonth { get; init; }
+    /// <summary>Libellé lisible de la période, ex. « Janvier à Mars 2026 ».</summary>
+    public string PeriodLabel { get; init; } = null!;
+    /// <summary>True si les cycles seulement calculés ont été demandés.</summary>
+    public bool IncludeCalculated { get; init; }
+    /// <summary>Mois de la plage effectivement pris en compte.</summary>
+    public IReadOnlyList<int> IncludedMonths { get; init; } = Array.Empty<int>();
+    /// <summary>Mois de la plage sans cycle éligible.</summary>
+    public IReadOnlyList<int> MissingMonths { get; init; } = Array.Empty<int>();
+    /// <summary>Mois inclus alors que leur cycle n'est que calculé (non validé).</summary>
+    public IReadOnlyList<int> ProvisionalMonths { get; init; } = Array.Empty<int>();
+    /// <summary>True dès qu'un mois provisoire entre dans l'état : l'édition n'est pas définitive.</summary>
+    public bool IsProvisional { get; init; }
+    public int EmployeeCount { get; init; }
+    public decimal TotalGross { get; init; }
+    public decimal TotalCnssableGross { get; init; }
+    public decimal TotalCnssEmployee { get; init; }
+    public decimal TotalProfessionalExpenses { get; init; }
+    public decimal TotalFamilyDeductions { get; init; }
+    public decimal TotalNetTaxable { get; init; }
+    public decimal TotalIrpp { get; init; }
+    public decimal TotalIrppRegularization { get; init; }
+    public decimal TotalCss { get; init; }
+    public decimal TotalCssRegularization { get; init; }
+    public decimal TotalOtherDeductions { get; init; }
+    public decimal TotalNonTaxableAllowances { get; init; }
+    public decimal TotalNetSalary { get; init; }
+    public decimal TotalCnssEmployer { get; init; }
+    public decimal TotalWorkAccident { get; init; }
+    public decimal TotalTfp { get; init; }
+    public decimal TotalFoprolos { get; init; }
+    public decimal TotalCssEmployer { get; init; }
+    /// <summary>CNSS patronale + accident de travail + TFP + FOPROLOS + CSS patronale.</summary>
+    public decimal TotalEmployerCharges { get; init; }
+    /// <summary>Brut + charges patronales (coût employeur de la période).</summary>
+    public decimal TotalEmployerCost { get; init; }
+    public IReadOnlyList<PayrollBookLineDto> Lines { get; init; } = Array.Empty<PayrollBookLineDto>();
+}
+
+/// <summary>Ligne « par salarié » du journal de paie mensuel (toutes rubriques du bulletin gelé).</summary>
+public sealed record PayrollJournalEmployeeLineDto
+{
+    public Guid PayslipId { get; init; }
+    public Guid EmployeeId { get; init; }
+    public string EmployeeNumber { get; init; } = null!;
+    public string EmployeeName { get; init; } = null!;
+    public string? CnssNumber { get; init; }
+    public decimal GrossSalary { get; init; }
+    public decimal CnssableGross { get; init; }
+    public decimal CnssEmployee { get; init; }
+    public decimal ProfessionalExpenses { get; init; }
+    public decimal FamilyDeductions { get; init; }
+    public decimal MonthlyNetTaxable { get; init; }
+    public decimal Irpp { get; init; }
+    /// <summary>Régularisation IRPP annuelle du bulletin (signée : + rappel, − restitution).</summary>
+    public decimal IrppRegularization { get; init; }
+    public decimal Css { get; init; }
+    /// <summary>Régularisation CSS annuelle du bulletin (même convention de signe).</summary>
+    public decimal CssRegularization { get; init; }
+    public decimal OtherDeductions { get; init; }
+    public decimal NonTaxableAllowances { get; init; }
+    public decimal NetSalary { get; init; }
+    public decimal CnssEmployer { get; init; }
+    public decimal WorkAccidentContribution { get; init; }
+    public decimal Tfp { get; init; }
+    public decimal Foprolos { get; init; }
+    public decimal CssEmployer { get; init; }
+    /// <summary>CNSS patronale + accident de travail + TFP + FOPROLOS + CSS patronale.</summary>
+    public decimal TotalEmployerCharges { get; init; }
+    /// <summary>Brut + charges patronales (coût employeur du salarié sur le mois).</summary>
+    public decimal TotalCost { get; init; }
+}
+
+/// <summary>Ligne de la ventilation comptable du journal de paie (écriture OD agrégée).</summary>
+public sealed record PayrollJournalAccountingLineDto
+{
+    public string AccountNumber { get; init; } = null!;
+    public string AccountLabel { get; init; } = null!;
+    public string Label { get; init; } = null!;
+    public decimal Debit { get; init; }
+    public decimal Credit { get; init; }
+}
+
+/// <summary>
+/// Journal de paie d'un mois : vue par salarié (rubriques) et ventilation comptable OD,
+/// avec contrôle d'équilibre débit / crédit.
+/// </summary>
+public sealed record PayrollJournalDto
+{
+    public Guid PayrollRunId { get; init; }
+    public int Year { get; init; }
+    public int Month { get; init; }
+    /// <summary>Libellé lisible de la période, ex. « Mars 2026 ».</summary>
+    public string PeriodLabel { get; init; } = null!;
+    public string Status { get; init; } = null!;
+    public string StatusDisplay { get; init; } = null!;
+    /// <summary>True si le cycle n'est que calculé : l'édition n'est pas définitive.</summary>
+    public bool IsProvisional { get; init; }
+    public int EmployeeCount { get; init; }
+    public decimal TotalGross { get; init; }
+    public decimal TotalCnssableGross { get; init; }
+    public decimal TotalCnssEmployee { get; init; }
+    public decimal TotalProfessionalExpenses { get; init; }
+    public decimal TotalFamilyDeductions { get; init; }
+    public decimal TotalNetTaxable { get; init; }
+    public decimal TotalIrpp { get; init; }
+    public decimal TotalIrppRegularization { get; init; }
+    public decimal TotalCss { get; init; }
+    public decimal TotalCssRegularization { get; init; }
+    public decimal TotalOtherDeductions { get; init; }
+    public decimal TotalNonTaxableAllowances { get; init; }
+    public decimal TotalNetSalary { get; init; }
+    public decimal TotalCnssEmployer { get; init; }
+    public decimal TotalWorkAccident { get; init; }
+    public decimal TotalTfp { get; init; }
+    public decimal TotalFoprolos { get; init; }
+    public decimal TotalCssEmployer { get; init; }
+    public decimal TotalEmployerCharges { get; init; }
+    public decimal TotalEmployerCost { get; init; }
+    public decimal TotalDebit { get; init; }
+    public decimal TotalCredit { get; init; }
+    /// <summary>False signale une incohérence des totaux figés du cycle — anomalie à investiguer.</summary>
+    public bool IsBalanced { get; init; }
+    /// <summary>
+    /// True quand la ventilation reprend l'écriture réellement comptabilisée ; false quand elle
+    /// est simulée (cycle pas encore comptabilisé, ou plan comptable absent).
+    /// </summary>
+    public bool AccountingLinesArePosted { get; init; }
+    /// <summary>Numéro de l'écriture comptable de paie si le cycle a déjà été comptabilisé.</summary>
+    public int? AccountingEntryNumber { get; init; }
+    public DateTime? AccountingEntryDate { get; init; }
+    public string? AccountingJournalCode { get; init; }
+    public IReadOnlyList<PayrollJournalEmployeeLineDto> Lines { get; init; } = Array.Empty<PayrollJournalEmployeeLineDto>();
+    public IReadOnlyList<PayrollJournalAccountingLineDto> AccountingLines { get; init; } = Array.Empty<PayrollJournalAccountingLineDto>();
+}
+
+/// <summary>Fichier produit par l'export d'un état de contrôle paie.</summary>
+public sealed record PayrollReportFileDto(byte[] Content, string FileName, string ContentType);

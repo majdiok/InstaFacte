@@ -1406,7 +1406,8 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
             dto.CnssEmployerRate,
             dto.TfpRate,
             dto.FoprolosRate,
-            dto.WorkAccidentRate);
+            dto.WorkAccidentRate,
+            dto.CssEmployerRate);
         if (update.IsFailure)
             return Result.Failure<FirmTimeSheetYearSettingsDto>(update.Error);
 
@@ -2288,6 +2289,7 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
         TfpRate = s.TfpRate,
         FoprolosRate = s.FoprolosRate,
         WorkAccidentRate = s.WorkAccidentRate,
+        CssEmployerRate = s.CssEmployerRate,
         AnnualBaseHours = s.AnnualBaseHours,
         DailyHours = s.DailyHours,
         AnnualProductiveHours = s.AnnualProductiveHours,

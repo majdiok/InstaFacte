@@ -1,0 +1,320 @@
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
+import { TableModule } from 'primeng/table';
+import { DropdownModule } from 'primeng/dropdown';
+import { CheckboxModule } from 'primeng/checkbox';
+import { MessageModule } from 'primeng/message';
+import { TabViewModule } from 'primeng/tabview';
+import { finalize } from 'rxjs';
+import {
+  PayrollService,
+  type PayrollJournal,
+  type PayrollJournalView,
+  type PayrollReportExportFormat
+} from '@core/services/payroll.service';
+import { AuthService } from '@core/services/auth.service';
+import { ToastService } from '@core/services/toast.service';
+import { canExportPayroll } from '@core/utils/payroll-access';
+import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { AccountingExportMenuComponent } from '../../accounting/shared/accounting-export-menu.component';
+import { downloadBlob, exportExtension } from '../../accounting/shared/accounting-download.util';
+import {
+  PayrollStatGridComponent,
+  PayrollEmptyStateComponent,
+  PayrollAmountPipe,
+  formatPayrollAmount,
+  type PayrollStatItem
+} from '../shared';
+import { MONTH_OPTIONS, yearOptions } from './payroll-report-options';
+
+/** Vue exportée selon l'onglet actif. */
+const VIEW_BY_TAB: PayrollJournalView[] = ['ByEmployee', 'Accounting'];
+
+@Component({
+  selector: 'app-payroll-journal',
+  standalone: true,
+  imports: [
+    CommonModule,
+    FormsModule,
+    TableModule,
+    DropdownModule,
+    CheckboxModule,
+    MessageModule,
+    TabViewModule,
+    PageHeaderComponent,
+    ButtonComponent,
+    AccountingExportMenuComponent,
+    PayrollStatGridComponent,
+    PayrollEmptyStateComponent,
+    PayrollAmountPipe
+  ],
+  template: `
+    <app-page-header
+      title="Journal de paie"
+      subtitle="Détail mensuel par salarié et ventilation comptable de l'écriture de paie.">
+      @if (canExport()) {
+        <app-accounting-export-menu
+          [disabled]="loading() || exporting() || !journal()"
+          (exportFormat)="onExport($event)" />
+      }
+    </app-page-header>
+
+    <div class="payroll-toolbar">
+      <p-dropdown
+        [options]="years"
+        [(ngModel)]="year"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="Année"
+        styleClass="w-10rem"
+        ariaLabel="Année" />
+      <p-dropdown
+        [options]="months"
+        [(ngModel)]="month"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="Mois"
+        styleClass="w-10rem"
+        ariaLabel="Mois" />
+      <label class="payroll-report-check">
+        <p-checkbox [(ngModel)]="includeCalculated" [binary]="true" inputId="includeCalculatedJournal" />
+        <span>Inclure les cycles calculés (provisoire)</span>
+      </label>
+      <app-button variant="primary" icon="pi-refresh" iconPos="left" (click)="load()">Afficher</app-button>
+    </div>
+
+    @if (error()) {
+      <p-message severity="warn" [text]="error()!" styleClass="mb-3 w-full" />
+    }
+
+    @if (journal(); as j) {
+      @if (j.isProvisional) {
+        <p-message
+          severity="error"
+          text="État provisoire : le cycle est calculé mais pas encore validé."
+          styleClass="mb-3 w-full" />
+      }
+      @if (!j.isBalanced) {
+        <p-message
+          severity="error"
+          text="Contrôle : total débit ≠ total crédit sur la ventilation comptable. Vérifiez les totaux du cycle."
+          styleClass="mb-3 w-full" />
+      }
+    }
+
+    @if (loading()) {
+      <app-payroll-empty-state [loading]="true" [skeletonColumns]="8" />
+    } @else if (!journal()) {
+      <app-payroll-empty-state
+        icon="pi-file"
+        title="Aucun journal disponible"
+        [description]="error() ?? 'Sélectionnez une période disposant d\\'un cycle de paie.'"
+        [showAction]="true"
+        actionLabel="Voir les cycles de paie"
+        actionRoute="/payroll/runs" />
+    } @else {
+      <app-payroll-stat-grid [items]="summaryStats()" class="mb-4" />
+
+      <p-tabView [(activeIndex)]="activeTabIndex">
+        <p-tabPanel header="Par salarié">
+          <div class="payroll-table-scroll">
+            <p-table [value]="journal()!.lines" styleClass="p-datatable-sm" [rowHover]="true">
+              <ng-template pTemplate="header">
+                <tr>
+                  <th scope="col">Matricule</th>
+                  <th scope="col">Salarié</th>
+                  <th scope="col" class="text-right">Brut</th>
+                  <th scope="col" class="text-right">CNSS sal.</th>
+                  <th scope="col" class="text-right">Net imposable</th>
+                  <th scope="col" class="text-right">IRPP</th>
+                  <th scope="col" class="text-right">CSS</th>
+                  <th scope="col" class="text-right">Autres ret.</th>
+                  <th scope="col" class="text-right">Net à payer</th>
+                  <th scope="col" class="text-right">Charges pat.</th>
+                  <th scope="col" class="text-right">Coût employeur</th>
+                </tr>
+              </ng-template>
+              <ng-template pTemplate="body" let-l>
+                <tr>
+                  <td data-label="Matricule">{{ l.employeeNumber }}</td>
+                  <td data-label="Salarié">{{ l.employeeName }}</td>
+                  <td data-label="Brut" class="text-right">{{ l.grossSalary | payrollAmount }}</td>
+                  <td data-label="CNSS sal." class="text-right">{{ l.cnssEmployee | payrollAmount }}</td>
+                  <td data-label="Net imposable" class="text-right">{{ l.monthlyNetTaxable | payrollAmount }}</td>
+                  <td data-label="IRPP" class="text-right">{{ l.irpp + l.irppRegularization | payrollAmount }}</td>
+                  <td data-label="CSS" class="text-right">{{ l.css + l.cssRegularization | payrollAmount }}</td>
+                  <td data-label="Autres ret." class="text-right">{{ l.otherDeductions | payrollAmount }}</td>
+                  <td data-label="Net à payer" class="text-right">{{ l.netSalary | payrollAmount }}</td>
+                  <td data-label="Charges pat." class="text-right">{{ l.totalEmployerCharges | payrollAmount }}</td>
+                  <td data-label="Coût employeur" class="text-right">{{ l.totalCost | payrollAmount }}</td>
+                </tr>
+              </ng-template>
+              <ng-template pTemplate="footer">
+                <tr class="acc-totals-row">
+                  <td colspan="2">Totaux — {{ journal()!.employeeCount }} salarié(s)</td>
+                  <td class="text-right">{{ journal()!.totalGross | payrollAmount }}</td>
+                  <td class="text-right">{{ journal()!.totalCnssEmployee | payrollAmount }}</td>
+                  <td class="text-right">{{ journal()!.totalNetTaxable | payrollAmount }}</td>
+                  <td class="text-right">{{ journal()!.totalIrpp + journal()!.totalIrppRegularization | payrollAmount }}</td>
+                  <td class="text-right">{{ journal()!.totalCss + journal()!.totalCssRegularization | payrollAmount }}</td>
+                  <td class="text-right">{{ journal()!.totalOtherDeductions | payrollAmount }}</td>
+                  <td class="text-right">{{ journal()!.totalNetSalary | payrollAmount }}</td>
+                  <td class="text-right">{{ journal()!.totalEmployerCharges | payrollAmount }}</td>
+                  <td class="text-right">{{ journal()!.totalEmployerCost | payrollAmount }}</td>
+                </tr>
+              </ng-template>
+            </p-table>
+          </div>
+        </p-tabPanel>
+
+        <p-tabPanel header="Ventilation comptable">
+          <p-message
+            [severity]="journal()!.accountingLinesArePosted ? 'info' : 'warn'"
+            [text]="accountingOrigin()"
+            styleClass="mb-3 w-full" />
+
+          @if (journal()!.accountingLines.length === 0) {
+            <app-payroll-empty-state
+              icon="pi-book"
+              title="Aucune ventilation comptable"
+              description="Le cycle ne produit pas d'écriture exploitable." />
+          } @else {
+            <div class="payroll-table-scroll">
+              <p-table [value]="journal()!.accountingLines" styleClass="p-datatable-sm" [rowHover]="true">
+                <ng-template pTemplate="header">
+                  <tr>
+                    <th scope="col">Compte</th>
+                    <th scope="col">Libellé</th>
+                    <th scope="col" class="text-right">Débit</th>
+                    <th scope="col" class="text-right">Crédit</th>
+                  </tr>
+                </ng-template>
+                <ng-template pTemplate="body" let-l>
+                  <tr>
+                    <td data-label="Compte">{{ l.accountNumber }}</td>
+                    <td data-label="Libellé">{{ l.accountLabel || l.label }}</td>
+                    <td data-label="Débit" class="text-right">{{ l.debit ? (l.debit | payrollAmount) : '—' }}</td>
+                    <td data-label="Crédit" class="text-right">{{ l.credit ? (l.credit | payrollAmount) : '—' }}</td>
+                  </tr>
+                </ng-template>
+                <ng-template pTemplate="footer">
+                  <tr class="acc-totals-row">
+                    <td colspan="2">Totaux</td>
+                    <td class="text-right">{{ journal()!.totalDebit | payrollAmount }}</td>
+                    <td class="text-right">{{ journal()!.totalCredit | payrollAmount }}</td>
+                  </tr>
+                </ng-template>
+              </p-table>
+            </div>
+          }
+        </p-tabPanel>
+      </p-tabView>
+    }
+  `,
+  styles: [`
+    .mb-4 { margin-bottom: var(--spacing-6); display: block; }
+    .mb-3 { margin-bottom: var(--spacing-4); }
+    .payroll-report-check {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--spacing-2);
+      font-size: var(--font-size-sm);
+      cursor: pointer;
+    }
+  `]
+})
+export class PayrollJournalComponent implements OnInit {
+  private readonly payroll = inject(PayrollService);
+  private readonly toast = inject(ToastService);
+  private readonly auth = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
+
+  readonly months = MONTH_OPTIONS;
+  readonly years = yearOptions();
+
+  year = new Date().getFullYear();
+  month = new Date().getMonth() + 1;
+  includeCalculated = false;
+  activeTabIndex = 0;
+
+  journal = signal<PayrollJournal | null>(null);
+  loading = signal(false);
+  exporting = signal(false);
+  error = signal<string | null>(null);
+
+  readonly canExport = computed(() => canExportPayroll(this.auth));
+
+  accountingOrigin = computed(() => {
+    const j = this.journal();
+    if (!j) return '';
+    return j.accountingLinesArePosted
+      ? `Écriture comptabilisée n° ${j.accountingEntryNumber} — journal ${j.accountingJournalCode}.`
+      : "Ventilation simulée : le cycle n'est pas encore comptabilisé.";
+  });
+
+  summaryStats = computed((): PayrollStatItem[] => {
+    const j = this.journal();
+    if (!j) return [];
+    return [
+      { label: 'Salariés', value: j.employeeCount, icon: 'pi-users', variant: 'primary' },
+      { label: 'Masse brute', value: formatPayrollAmount(j.totalGross, false), icon: 'pi-chart-bar', variant: 'primary' },
+      { label: 'Net à payer', value: formatPayrollAmount(j.totalNetSalary, false), icon: 'pi-wallet', variant: 'success', featured: true },
+      { label: 'Charges patronales', value: formatPayrollAmount(j.totalEmployerCharges, false), icon: 'pi-building', variant: 'warning' },
+      { label: 'Coût employeur', value: formatPayrollAmount(j.totalEmployerCost, false), icon: 'pi-briefcase', variant: 'warning' }
+    ];
+  });
+
+  ngOnInit(): void {
+    // Deep-link depuis le détail d'un cycle : ?year=2026&month=3.
+    const params = this.route.snapshot.queryParamMap;
+    const year = Number(params.get('year'));
+    const month = Number(params.get('month'));
+    if (Number.isInteger(year) && year >= 2000 && year <= 2100) this.year = year;
+    if (Number.isInteger(month) && month >= 1 && month <= 12) this.month = month;
+    this.load();
+  }
+
+  load(): void {
+    this.loading.set(true);
+    this.error.set(null);
+
+    this.payroll
+      .getPayrollJournal(this.year, this.month, this.includeCalculated)
+      .pipe(finalize(() => this.loading.set(false)))
+      .subscribe({
+        next: res => this.journal.set(res.data ?? null),
+        error: err => {
+          this.journal.set(null);
+          // 404 / 409 portent un message métier explicite (cycle absent, brouillon, non validé).
+          this.error.set(err?.error?.message ?? 'Impossible de générer le journal de paie.');
+        }
+      });
+  }
+
+  onExport(format: PayrollReportExportFormat): void {
+    const j = this.journal();
+    if (!j) return;
+    const view = VIEW_BY_TAB[this.activeTabIndex] ?? 'ByEmployee';
+    this.exporting.set(true);
+
+    this.payroll
+      .exportPayrollJournal(this.year, this.month, this.includeCalculated, format, view)
+      .pipe(finalize(() => this.exporting.set(false)))
+      .subscribe({
+        next: blob => {
+          const viewSuffix = view === 'Accounting' ? '_comptable' : '';
+          const provisional = j.isProvisional ? '_provisoire' : '';
+          const month = String(this.month).padStart(2, '0');
+          downloadBlob(
+            blob,
+            `journal_paie_${this.year}_${month}${viewSuffix}${provisional}.${exportExtension(format)}`
+          );
+        },
+        error: () =>
+          this.toast.add({ severity: 'error', summary: 'Journal de paie', detail: 'Export impossible.' })
+      });
+  }
+}

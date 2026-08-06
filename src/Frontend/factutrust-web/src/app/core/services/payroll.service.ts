@@ -36,6 +36,18 @@ export interface PayslipListItem {
   paidAt?: string;
 }
 
+export interface PayrollCalculationWarning {
+  code: string;
+  message: string;
+  employeeId?: string;
+  employeeName?: string;
+}
+
+export interface CalculatePayrollRunResult {
+  payslipCount: number;
+  warnings: PayrollCalculationWarning[];
+}
+
 export interface PayrollRunDetail {
   id: string;
   year: number;
@@ -53,6 +65,7 @@ export interface PayrollRunDetail {
   totalCnssEmployer: number;
   totalTfp: number;
   totalFoprolos: number;
+  totalCssEmployer: number;
   totalWorkAccident: number;
   totalOtherDeductions?: number;
   calculatedAt?: string;
@@ -237,6 +250,7 @@ export interface PayrollParameters {
   enableAllowanceQuadrantMatrix: boolean;
   cssRate: number;
   cssAnnualExemptionThreshold: number;
+  cssEmployerRate: number;
   professionalExpensesRate: number;
   professionalExpensesAnnualCap: number;
   headOfFamilyAnnualDeduction: number;
@@ -456,6 +470,47 @@ export interface DtsDeclaration {
   }[];
 }
 
+export interface PayrollWithholdingCertificateBatch {
+  year: number;
+  employerCompanyName: string;
+  employerNif: string;
+  employerAddressLine?: string;
+  employeeCount: number;
+  includedMonths: number[];
+  missingMonths: number[];
+  isComplete: boolean;
+  totalGross: number;
+  totalAnnualNetTaxable: number;
+  totalIrppWithheld: number;
+  totalCssWithheld: number;
+  totalWithholding: number;
+  lines: PayrollWithholdingCertificateLine[];
+}
+
+export interface PayrollWithholdingCertificateLine {
+  employeeId: string;
+  employeeNumber: string;
+  employeeName: string;
+  cin?: string;
+  cnssNumber?: string;
+  addressLine?: string;
+  isHeadOfFamily: boolean;
+  monthsCount: number;
+  isPartialYear: boolean;
+  totalGross: number;
+  totalCnssableGross: number;
+  totalCnssEmployee: number;
+  totalProfessionalExpenses: number;
+  totalFamilyDeductions: number;
+  annualNetTaxable: number;
+  totalIrppWithheld: number;
+  totalCssWithheld: number;
+  totalWithholding: number;
+  totalIrppSmigExemption: number;
+  documentReference: string;
+  warnings: string[];
+}
+
 export interface LeaveRequest {
   id: string;
   employeeId: string;
@@ -576,12 +631,156 @@ export interface RecordPayrollRunPaymentRequest {
   payslipAmounts?: { payslipId: string; amount: number }[];
 }
 
+// ── États de contrôle (livre de paie, journal de paie) ──
+
+/** Aligné sur l'enum backend AccountingExportFormat. */
+export type PayrollReportExportFormat = 'csv' | 'excel' | 'pdf';
+
+/** Aligné sur l'enum backend PayrollJournalView. */
+export type PayrollJournalView = 'ByEmployee' | 'Accounting';
+
+export interface PayrollBookLine {
+  employeeId: string;
+  employeeNumber: string;
+  employeeName: string;
+  cin?: string;
+  cnssNumber?: string;
+  category?: string;
+  echelon?: string;
+  hireDate?: string;
+  monthsCount: number;
+  grossSalary: number;
+  cnssableGross: number;
+  cnssEmployee: number;
+  professionalExpenses: number;
+  familyDeductions: number;
+  netTaxable: number;
+  irpp: number;
+  irppRegularization: number;
+  css: number;
+  cssRegularization: number;
+  otherDeductions: number;
+  nonTaxableAllowances: number;
+  netSalary: number;
+}
+
+export interface PayrollBook {
+  year: number;
+  fromMonth: number;
+  toMonth: number;
+  periodLabel: string;
+  includeCalculated: boolean;
+  includedMonths: number[];
+  missingMonths: number[];
+  provisionalMonths: number[];
+  isProvisional: boolean;
+  employeeCount: number;
+  totalGross: number;
+  totalCnssableGross: number;
+  totalCnssEmployee: number;
+  totalProfessionalExpenses: number;
+  totalFamilyDeductions: number;
+  totalNetTaxable: number;
+  totalIrpp: number;
+  totalIrppRegularization: number;
+  totalCss: number;
+  totalCssRegularization: number;
+  totalOtherDeductions: number;
+  totalNonTaxableAllowances: number;
+  totalNetSalary: number;
+  totalCnssEmployer: number;
+  totalWorkAccident: number;
+  totalTfp: number;
+  totalFoprolos: number;
+  totalCssEmployer: number;
+  totalEmployerCharges: number;
+  totalEmployerCost: number;
+  lines: PayrollBookLine[];
+}
+
+export interface PayrollJournalEmployeeLine {
+  payslipId: string;
+  employeeId: string;
+  employeeNumber: string;
+  employeeName: string;
+  cnssNumber?: string;
+  grossSalary: number;
+  cnssableGross: number;
+  cnssEmployee: number;
+  professionalExpenses: number;
+  familyDeductions: number;
+  monthlyNetTaxable: number;
+  irpp: number;
+  irppRegularization: number;
+  css: number;
+  cssRegularization: number;
+  otherDeductions: number;
+  nonTaxableAllowances: number;
+  netSalary: number;
+  cnssEmployer: number;
+  workAccidentContribution: number;
+  tfp: number;
+  foprolos: number;
+  cssEmployer: number;
+  totalEmployerCharges: number;
+  totalCost: number;
+}
+
+export interface PayrollJournalAccountingLine {
+  accountNumber: string;
+  accountLabel: string;
+  label: string;
+  debit: number;
+  credit: number;
+}
+
+export interface PayrollJournal {
+  payrollRunId: string;
+  year: number;
+  month: number;
+  periodLabel: string;
+  status: string;
+  statusDisplay: string;
+  isProvisional: boolean;
+  employeeCount: number;
+  totalGross: number;
+  totalCnssableGross: number;
+  totalCnssEmployee: number;
+  totalProfessionalExpenses: number;
+  totalFamilyDeductions: number;
+  totalNetTaxable: number;
+  totalIrpp: number;
+  totalIrppRegularization: number;
+  totalCss: number;
+  totalCssRegularization: number;
+  totalOtherDeductions: number;
+  totalNonTaxableAllowances: number;
+  totalNetSalary: number;
+  totalCnssEmployer: number;
+  totalWorkAccident: number;
+  totalTfp: number;
+  totalFoprolos: number;
+  totalCssEmployer: number;
+  totalEmployerCharges: number;
+  totalEmployerCost: number;
+  totalDebit: number;
+  totalCredit: number;
+  isBalanced: boolean;
+  accountingLinesArePosted: boolean;
+  accountingEntryNumber?: number;
+  accountingEntryDate?: string;
+  accountingJournalCode?: string;
+  lines: PayrollJournalEmployeeLine[];
+  accountingLines: PayrollJournalAccountingLine[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class PayrollService {
   private readonly http = inject(HttpClient);
   private readonly runsUrl = `${environment.apiUrl}/payroll/runs`;
   private readonly settingsUrl = `${environment.apiUrl}/payroll/settings`;
   private readonly payrollUrl = `${environment.apiUrl}/payroll`;
+  private readonly reportsUrl = `${environment.apiUrl}/payroll/reports`;
 
   listRuns(year?: number): Observable<ApiResponse<PayrollRunListItem[]>> {
     let params = new HttpParams();
@@ -599,8 +798,8 @@ export class PayrollService {
 
   // Le secteur TFP (industrie 1 % / autres 2 %) est lu côté serveur depuis les
   // paramètres de l'exercice — il n'est plus transmis à chaque calcul.
-  calculateRun(id: string): Observable<ApiResponse<unknown>> {
-    return this.http.post<ApiResponse<unknown>>(`${this.runsUrl}/${id}/calculate`, {
+  calculateRun(id: string): Observable<ApiResponse<CalculatePayrollRunResult>> {
+    return this.http.post<ApiResponse<CalculatePayrollRunResult>>(`${this.runsUrl}/${id}/calculate`, {
       settleOutstandingAdvances: true
     });
   }
@@ -729,6 +928,35 @@ export class PayrollService {
   exportDtsCsv(year: number, quarter: number): Observable<Blob> {
     const params = new HttpParams().set('year', year).set('quarter', quarter);
     return this.http.get(`${this.payrollUrl}/declarations/dts/export`, { params, responseType: 'blob' });
+  }
+
+  getWithholdingCertificates(year: number): Observable<ApiResponse<PayrollWithholdingCertificateBatch>> {
+    const params = new HttpParams().set('year', year);
+    return this.http.get<ApiResponse<PayrollWithholdingCertificateBatch>>(
+      `${this.payrollUrl}/declarations/withholding-certificates`, { params });
+  }
+
+  exportWithholdingCertificatesCsv(year: number): Observable<Blob> {
+    const params = new HttpParams().set('year', year);
+    return this.http.get(`${this.payrollUrl}/declarations/withholding-certificates/export/csv`, {
+      params,
+      responseType: 'blob'
+    });
+  }
+
+  exportWithholdingCertificatesZip(year: number): Observable<Blob> {
+    const params = new HttpParams().set('year', year);
+    return this.http.get(`${this.payrollUrl}/declarations/withholding-certificates/export/zip`, {
+      params,
+      responseType: 'blob'
+    });
+  }
+
+  downloadWithholdingCertificatePdf(year: number, employeeId: string): Observable<Blob> {
+    const params = new HttpParams().set('year', year);
+    return this.http.get(
+      `${this.payrollUrl}/declarations/withholding-certificates/${employeeId}/pdf`,
+      { params, responseType: 'blob' });
   }
 
   getBankTransferPreview(runId: string, bankAccountId?: string, label?: string): Observable<ApiResponse<PayrollBankTransferPreview>> {
@@ -925,5 +1153,65 @@ export class PayrollService {
       `${this.settingsUrl}/parameters/${fiscalYear}/garnishment-brackets`,
       { brackets }
     );
+  }
+
+  // ── États de contrôle (livre de paie, journal de paie) ──
+
+  getPayrollBook(
+    year: number,
+    fromMonth: number,
+    toMonth: number,
+    includeCalculated = false
+  ): Observable<ApiResponse<PayrollBook>> {
+    const params = new HttpParams()
+      .set('year', year)
+      .set('fromMonth', fromMonth)
+      .set('toMonth', toMonth)
+      .set('includeCalculated', includeCalculated);
+    return this.http.get<ApiResponse<PayrollBook>>(`${this.reportsUrl}/payroll-book`, { params });
+  }
+
+  exportPayrollBook(
+    year: number,
+    fromMonth: number,
+    toMonth: number,
+    includeCalculated: boolean,
+    format: PayrollReportExportFormat
+  ): Observable<Blob> {
+    const params = new HttpParams()
+      .set('year', year)
+      .set('fromMonth', fromMonth)
+      .set('toMonth', toMonth)
+      .set('includeCalculated', includeCalculated)
+      .set('format', format);
+    return this.http.get(`${this.reportsUrl}/payroll-book/export`, { params, responseType: 'blob' });
+  }
+
+  getPayrollJournal(
+    year: number,
+    month: number,
+    includeCalculated = false
+  ): Observable<ApiResponse<PayrollJournal>> {
+    const params = new HttpParams()
+      .set('year', year)
+      .set('month', month)
+      .set('includeCalculated', includeCalculated);
+    return this.http.get<ApiResponse<PayrollJournal>>(`${this.reportsUrl}/payroll-journal`, { params });
+  }
+
+  exportPayrollJournal(
+    year: number,
+    month: number,
+    includeCalculated: boolean,
+    format: PayrollReportExportFormat,
+    view: PayrollJournalView
+  ): Observable<Blob> {
+    const params = new HttpParams()
+      .set('year', year)
+      .set('month', month)
+      .set('includeCalculated', includeCalculated)
+      .set('format', format)
+      .set('view', view);
+    return this.http.get(`${this.reportsUrl}/payroll-journal/export`, { params, responseType: 'blob' });
   }
 }

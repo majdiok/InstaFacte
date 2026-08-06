@@ -29,6 +29,7 @@ describe('PayrollRunDetailComponent', () => {
     totalCnssEmployer: 243.082,
     totalTfp: 0,
     totalFoprolos: 0,
+    totalCssEmployer: 0,
     totalWorkAccident: 0,
     payslips: [],
     overtimeLines: []

@@ -11,7 +11,7 @@ namespace FactuTrust.Infrastructure.Services;
 /// Agrège le coût employeur des salariés du cabinet depuis les bulletins de son propre tenant.
 /// </summary>
 /// <remarks>
-/// Coût employeur = brut + CNSS patronale + accident du travail + TFP + FOPROLOS, tel que déjà
+/// Coût employeur = brut + CNSS patronale + accident du travail + TFP + FOPROLOS + CSS patronale, tel que déjà
 /// calculé et figé sur chaque bulletin par le module Paie. On ne recalcule rien ici : reprendre
 /// les taux à notre compte ferait diverger la rentabilité de la paie réellement déclarée.
 /// </remarks>
@@ -62,7 +62,8 @@ public sealed class FirmPayrollCostProvider : IFirmPayrollCostProvider
                     p.CnssEmployer,
                     p.WorkAccidentContribution,
                     p.Tfp,
-                    p.Foprolos
+                    p.Foprolos,
+                    p.CssEmployer
                 })
                 .ToListAsync(cancellationToken);
 
@@ -77,7 +78,7 @@ public sealed class FirmPayrollCostProvider : IFirmPayrollCostProvider
                     g.First().EmployeeName,
                     MillimeRounding.Round(g.Sum(p => p.GrossSalary)),
                     MillimeRounding.Round(g.Sum(p =>
-                        p.CnssEmployer + p.WorkAccidentContribution + p.Tfp + p.Foprolos)),
+                        p.CnssEmployer + p.WorkAccidentContribution + p.Tfp + p.Foprolos + p.CssEmployer)),
                     g.Count()))
                 .OrderBy(e => e.EmployeeName)
                 .ToList();

@@ -169,4 +169,28 @@ public sealed class PayrollParametersValidationTests
         Assert.True(result.IsSuccess);
         Assert.All(parameters.IrppBrackets, b => Assert.Equal(parameters.Id, b.PayrollYearParametersId));
     }
+
+    [Fact]
+    public void Validator_rejects_negative_css_employer_rate()
+    {
+        var dto = ValidDto() with { CssEmployerRate = -0.1m };
+        var result = Validator.Validate(new UpdatePayrollParametersCommand(2026, dto));
+        Assert.False(result.IsValid);
+    }
+
+    [Fact]
+    public void Validator_rejects_css_employer_rate_above_100()
+    {
+        var dto = ValidDto() with { CssEmployerRate = 100.1m };
+        var result = Validator.Validate(new UpdatePayrollParametersCommand(2026, dto));
+        Assert.False(result.IsValid);
+    }
+
+    [Fact]
+    public void Validator_accepts_zero_css_employer_rate()
+    {
+        var dto = ValidDto() with { CssEmployerRate = 0m };
+        var result = Validator.Validate(new UpdatePayrollParametersCommand(2026, dto));
+        Assert.True(result.IsValid);
+    }
 }

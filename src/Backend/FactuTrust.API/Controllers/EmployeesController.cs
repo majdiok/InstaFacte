@@ -73,6 +73,8 @@ public class EmployeesController : ControllerBase
         {
             if (result.Error.Code.Contains("NotFound"))
                 return NotFound(ApiResponse<object>.Fail(result.Error.Description));
+            if (result.Error.Code == "Conflict")
+                return Conflict(ApiResponse<object>.Fail(result.Error.Description));
             return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
         }
         return Ok(ApiResponse<object>.Ok(null!, "Salarié mis à jour."));

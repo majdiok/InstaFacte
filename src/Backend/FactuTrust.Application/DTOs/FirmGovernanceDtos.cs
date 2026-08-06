@@ -291,6 +291,7 @@ public sealed record FirmTimeSheetYearSettingsDto
     public decimal TfpRate { get; init; }
     public decimal FoprolosRate { get; init; }
     public decimal WorkAccidentRate { get; init; }
+    public decimal CssEmployerRate { get; init; }
 
     // Grandeurs dérivées, exposées pour rendre le taux horaire lisible côté écran.
     public decimal AnnualBaseHours { get; init; }
@@ -314,6 +315,7 @@ public sealed record SaveFirmTimeSheetYearSettingsDto
     public decimal TfpRate { get; init; }
     public decimal FoprolosRate { get; init; }
     public decimal WorkAccidentRate { get; init; }
+    public decimal CssEmployerRate { get; init; }
 }
 
 public sealed record FirmExpenseNoteDto

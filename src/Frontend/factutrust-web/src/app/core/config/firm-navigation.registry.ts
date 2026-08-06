@@ -597,6 +597,34 @@ export const FIRM_DELEGATED_QUICK_ACCESS = [
 
   {
 
+    label: 'Livre de paie',
+
+    icon: 'fa-solid fa-book',
+
+    route: '/payroll/reports/payroll-book',
+
+    permission: 'payroll:read',
+
+    section: 'navigation' as const
+
+  },
+
+  {
+
+    label: 'Journal de paie',
+
+    icon: 'fa-solid fa-list-check',
+
+    route: '/payroll/reports/payroll-journal',
+
+    permission: 'payroll:read',
+
+    section: 'navigation' as const
+
+  },
+
+  {
+
     label: 'Retour au cabinet',
 
     icon: 'fa-solid fa-arrow-left',

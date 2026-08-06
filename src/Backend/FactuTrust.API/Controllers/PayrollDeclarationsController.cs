@@ -49,6 +49,54 @@ public class PayrollDeclarationsController : ControllerBase
         return File(result.Value, "text/csv; charset=utf-8", $"dts_{year}_T{quarter}.csv");
     }
 
+    // ── Certificats de retenue à la source (IRPP/CSS) ──
+    [HttpGet("declarations/withholding-certificates")]
+    [Authorize(Policy = PermissionPolicies.PayrollDeclare)]
+    [ProducesResponseType(typeof(ApiResponse<PayrollWithholdingCertificateBatchDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetWithholdingCertificates([FromQuery] int year, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GeneratePayrollWithholdingCertificatesQuery(year), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<PayrollWithholdingCertificateBatchDto>.Fail(result.Error.Description));
+        return Ok(ApiResponse<PayrollWithholdingCertificateBatchDto>.Ok(result.Value));
+    }
+
+    [HttpGet("declarations/withholding-certificates/export/csv")]
+    [Authorize(Policy = PermissionPolicies.PayrollDeclare)]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ExportWithholdingCertificatesCsv([FromQuery] int year, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new ExportPayrollWithholdingCertificatesCsvQuery(year), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+        return File(result.Value, "text/csv; charset=utf-8", $"certificats_rs_{year}.csv");
+    }
+
+    [HttpGet("declarations/withholding-certificates/export/zip")]
+    [Authorize(Policy = PermissionPolicies.PayrollDeclare)]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ExportWithholdingCertificatesZip([FromQuery] int year, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new ExportPayrollWithholdingCertificatesZipQuery(year), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+        return File(result.Value, "application/zip", $"certificats_rs_{year}.zip");
+    }
+
+    [HttpGet("declarations/withholding-certificates/{employeeId:guid}/pdf")]
+    [Authorize(Policy = PermissionPolicies.PayrollDeclare)]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ExportWithholdingCertificatePdf(
+        Guid employeeId,
+        [FromQuery] int year,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new ExportPayrollWithholdingCertificatePdfQuery(year, employeeId), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+        return File(result.Value, "application/pdf", $"certificat_rs_{year}_{employeeId:N}.pdf");
+    }
+
     // ── Leaves ──
     [HttpGet("leaves/compute-days")]
     [Authorize(Policy = PermissionPolicies.PayrollRead)]

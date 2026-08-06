@@ -37,7 +37,9 @@ public partial class TenantDbContext
         ConfigureEmployeeLoan(builder);
         ConfigureEmployeeGarnishment(builder);
         ConfigurePayrollGarnishmentBracket(builder);
+        ConfigureEmployeeDependentParent(builder);
     }
+
 
     private static void ConfigureEmployee(ModelBuilder builder)
     {
@@ -163,6 +165,7 @@ public partial class TenantDbContext
             entity.Property(r => r.TotalCnssEmployer).HasPrecision(18, 3);
             entity.Property(r => r.TotalTfp).HasPrecision(18, 3);
             entity.Property(r => r.TotalFoprolos).HasPrecision(18, 3);
+            entity.Property(r => r.TotalCssEmployer).HasPrecision(18, 3);
             entity.Property(r => r.TotalWorkAccident).HasPrecision(18, 3);
             entity.Property(r => r.TotalOtherDeductions).HasPrecision(18, 3);
             entity.Property(r => r.TotalIrppRegularization).HasPrecision(18, 3).HasDefaultValue(0m);
@@ -218,6 +221,7 @@ public partial class TenantDbContext
             entity.Property(p => p.WorkAccidentContribution).HasPrecision(18, 3);
             entity.Property(p => p.Tfp).HasPrecision(18, 3);
             entity.Property(p => p.Foprolos).HasPrecision(18, 3);
+            entity.Property(p => p.CssEmployer).HasPrecision(18, 3);
             entity.Property(p => p.AppliedCnssEmployeeRate).HasPrecision(8, 4);
             entity.Property(p => p.AppliedCnssEmployerRate).HasPrecision(8, 4);
             entity.Property(p => p.PaidAmount).HasPrecision(18, 3).HasDefaultValue(0m);
@@ -274,6 +278,7 @@ public partial class TenantDbContext
             entity.Property(p => p.EnableIrppRegularization).IsRequired().HasDefaultValue(false);
             entity.Property(p => p.CssRate).HasPrecision(8, 4);
             entity.Property(p => p.CssAnnualExemptionThreshold).HasPrecision(18, 3);
+            entity.Property(p => p.CssEmployerRate).HasPrecision(8, 4);
             entity.Property(p => p.ProfessionalExpensesRate).HasPrecision(8, 4);
             entity.Property(p => p.ProfessionalExpensesAnnualCap).HasPrecision(18, 3);
             entity.Property(p => p.HeadOfFamilyAnnualDeduction).HasPrecision(18, 3);
@@ -704,6 +709,28 @@ public partial class TenantDbContext
             entity.Property(b => b.SeizableFraction).HasPrecision(8, 4);
 
             entity.HasIndex(b => b.PayrollYearParametersId);
+        });
+    }
+
+    private static void ConfigureEmployeeDependentParent(ModelBuilder builder)
+    {
+        builder.Entity<EmployeeDependentParent>(entity =>
+        {
+            entity.ToTable("EmployeeDependentParents");
+            entity.HasKey(p => p.Id);
+
+            entity.Property(p => p.EmployeeId).IsRequired();
+            entity.Property(p => p.ParentCin).HasMaxLength(20).IsRequired();
+            entity.Property(p => p.Kinship).IsRequired();
+            entity.Property(p => p.FirstName).HasMaxLength(100);
+            entity.Property(p => p.LastName).HasMaxLength(100);
+            entity.Property(p => p.StartDate).IsRequired();
+
+            entity.HasIndex(p => p.EmployeeId);
+            entity.HasIndex(p => p.ParentCin)
+                .IsUnique()
+                .HasFilter("[EndDate] IS NULL")
+                .HasDatabaseName("IX_EmployeeDependentParents_ParentCin_Active");
         });
     }
 }

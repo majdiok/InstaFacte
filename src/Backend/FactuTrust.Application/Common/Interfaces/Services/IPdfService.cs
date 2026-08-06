@@ -1,3 +1,4 @@
+using FactuTrust.Application.Common.Enums;
 using FactuTrust.Application.Common.Models;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Entities;
@@ -149,4 +150,23 @@ public interface IPdfService
 
     /// <summary>Génère le PDF d'un bulletin de paie.</summary>
     Task<byte[]> GeneratePayslipPdfAsync(PayslipDetailDto payslip, string companyName, CancellationToken cancellationToken = default);
+
+    /// <summary>Génère le PDF d'un certificat de retenue à la source salariale.</summary>
+    Task<byte[]> GeneratePayrollWithholdingCertificatePdfAsync(
+        PayrollWithholdingCertificateLineDto line,
+        PayrollWithholdingCertificateBatchDto batch,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Génère le PDF du livre de paie simplifié (état de contrôle).</summary>
+    Task<byte[]> GeneratePayrollBookPdfAsync(
+        PayrollBookDto book,
+        AccountingReportHeader header,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Génère le PDF du journal de paie (vue par salarié ou ventilation comptable).</summary>
+    Task<byte[]> GeneratePayrollJournalPdfAsync(
+        PayrollJournalDto journal,
+        PayrollJournalView view,
+        AccountingReportHeader header,
+        CancellationToken cancellationToken = default);
 }

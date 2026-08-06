@@ -4852,6 +4852,10 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<decimal>("TotalCssEmployer")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
                     b.Property<decimal>("TotalGross")
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
@@ -4958,6 +4962,10 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.Property<decimal>("CssAnnualExemptionThreshold")
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal>("CssEmployerRate")
+                        .HasPrecision(8, 4)
+                        .HasColumnType("decimal(8,4)");
 
                     b.Property<decimal>("CssRate")
                         .HasPrecision(8, 4)
@@ -5138,6 +5146,10 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .HasColumnType("decimal(18,3)");
 
                     b.Property<decimal>("Foprolos")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal>("CssEmployer")
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 

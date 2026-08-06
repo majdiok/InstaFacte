@@ -60,17 +60,22 @@ public class PayrollRunsController : ControllerBase
 
     [HttpPost("{id:guid}/calculate")]
     [Authorize(Policy = PermissionPolicies.PayrollRun)]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<CalculatePayrollRunResultDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Calculate(Guid id, [FromBody] CalculatePayrollRunDto dto, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(new CalculatePayrollRunCommand(id, dto), cancellationToken);
         if (result.IsFailure)
         {
             if (result.Error.Code.Contains("NotFound"))
-                return NotFound(ApiResponse<object>.Fail(result.Error.Description));
-            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+                return NotFound(ApiResponse<CalculatePayrollRunResultDto>.Fail(result.Error.Description));
+            if (result.Error.Code == "Conflict")
+                return Conflict(ApiResponse<CalculatePayrollRunResultDto>.Fail(result.Error.Description));
+            return BadRequest(ApiResponse<CalculatePayrollRunResultDto>.Fail(result.Error.Description));
         }
-        return Ok(ApiResponse<object>.Ok(null!, "Cycle calculé."));
+        var message = result.Value.Warnings.Count > 0
+            ? $"Cycle calculé avec {result.Value.Warnings.Count} avertissement(s)."
+            : "Cycle calculé.";
+        return Ok(ApiResponse<CalculatePayrollRunResultDto>.Ok(result.Value, message));
     }
 
     [HttpPost("{id:guid}/validate")]

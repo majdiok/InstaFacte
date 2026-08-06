@@ -9,9 +9,11 @@ using MediatR;
 
 namespace FactuTrust.Application.Features.Payroll.Commands;
 
-public sealed record CalculatePayrollRunCommand(Guid RunId, CalculatePayrollRunDto Dto) : IRequest<Result>;
+public sealed record CalculatePayrollRunCommand(Guid RunId, CalculatePayrollRunDto Dto)
+    : IRequest<Result<CalculatePayrollRunResultDto>>;
 
-public sealed class CalculatePayrollRunCommandHandler : IRequestHandler<CalculatePayrollRunCommand, Result>
+public sealed class CalculatePayrollRunCommandHandler
+    : IRequestHandler<CalculatePayrollRunCommand, Result<CalculatePayrollRunResultDto>>
 {
     private readonly IPayrollRunRepository _runs;
     private readonly IEmployeeRepository _employees;
@@ -27,6 +29,7 @@ public sealed class CalculatePayrollRunCommandHandler : IRequestHandler<Calculat
     private readonly IEmployeeLoanRepository _loans;
     private readonly IEmployeeGarnishmentRepository _garnishments;
     private readonly IPayrollIrppRegularizationRepository _irppRegularizations;
+    private readonly IEmployeeDependentParentRepository _dependentParents;
     private readonly PayrollInputBuilder _inputBuilder;
 
     public CalculatePayrollRunCommandHandler(
@@ -44,6 +47,7 @@ public sealed class CalculatePayrollRunCommandHandler : IRequestHandler<Calculat
         IEmployeeLoanRepository loans,
         IEmployeeGarnishmentRepository garnishments,
         IPayrollIrppRegularizationRepository irppRegularizations,
+        IEmployeeDependentParentRepository dependentParents,
         PayrollInputBuilder inputBuilder)
     {
         _runs = runs;
@@ -60,23 +64,43 @@ public sealed class CalculatePayrollRunCommandHandler : IRequestHandler<Calculat
         _loans = loans;
         _garnishments = garnishments;
         _irppRegularizations = irppRegularizations;
+        _dependentParents = dependentParents;
         _inputBuilder = inputBuilder;
     }
 
-    public async Task<Result> Handle(CalculatePayrollRunCommand request, CancellationToken cancellationToken)
+    public async Task<Result<CalculatePayrollRunResultDto>> Handle(
+        CalculatePayrollRunCommand request,
+        CancellationToken cancellationToken)
     {
         var run = await _runs.GetByIdAsync(request.RunId, cancellationToken);
         if (run is null)
-            return Result.Failure(Error.NotFound("PayrollRun", request.RunId));
+            return Result.Failure<CalculatePayrollRunResultDto>(Error.NotFound("PayrollRun", request.RunId));
 
         if (!run.Status.CanBeEdited())
-            return Result.Failure(Error.Validation("Status", "Un cycle validé ou clôturé ne peut plus être recalculé."));
+            return Result.Failure<CalculatePayrollRunResultDto>(
+                Error.Validation("Status", "Un cycle validé ou clôturé ne peut plus être recalculé."));
 
         var parameters = await _parameters.GetOrCreateForYearAsync(run.ParametersFiscalYear, cancellationToken);
 
         var employees = await _employees.GetActiveWithContractsAsync(cancellationToken);
         var employeeIds = employees.Select(e => e.Id).ToList();
         var referenceDate = new DateTime(run.Year, run.Month, 1).AddMonths(1).AddDays(-1);
+
+        // Preflight non-cumul parents à charge (blocage strict si conflit CIN).
+        var allActiveParentClaims = await _dependentParents.ListAllActiveAsync(cancellationToken);
+        var employeeNames = employees.ToDictionary(e => e.Id, e => e.FullName);
+        var conflictCheck = ParentDeductionEligibilityResolver.ValidateNoConflicts(allActiveParentClaims, employeeNames);
+        if (conflictCheck.IsFailure)
+            return Result.Failure<CalculatePayrollRunResultDto>(conflictCheck.Error);
+
+        var claimsByEmployee = allActiveParentClaims
+            .GroupBy(c => c.EmployeeId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<EmployeeDependentParent>)g.ToList());
+        var cinIndex = allActiveParentClaims
+            .GroupBy(c => c.ParentCin, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().EmployeeId, StringComparer.Ordinal);
+
+        var warnings = new List<PayrollCalculationWarningDto>();
 
         var leaves = await _leaves.ListForMonthAsync(run.Year, run.Month, cancellationToken);
         var overtimeLines = await _overtime.ListForMonthAsync(run.Year, run.Month, cancellationToken);
@@ -88,8 +112,6 @@ public sealed class CalculatePayrollRunCommandHandler : IRequestHandler<Calculat
         var loansDue = await _loans.ListWithDueInstallmentsForMonthAsync(run.Year, run.Month, cancellationToken);
         var activeGarnishments = await _garnishments.ListActiveForEmployeesAsync(employeeIds, referenceDate, cancellationToken);
 
-        // Régularisations du mois : liste vide hors décembre / solde de tout compte, et tant
-        // que l'exercice n'active pas l'option — le calcul reste alors strictement inchangé.
         var regularizations = parameters.EnableIrppRegularization
             ? await _irppRegularizations.ListForMonthAsync(run.Year, run.Month, cancellationToken)
             : Array.Empty<PayrollIrppRegularization>();
@@ -115,6 +137,25 @@ public sealed class CalculatePayrollRunCommandHandler : IRequestHandler<Calculat
             if (contract is null)
                 continue;
 
+            var employeeClaims = claimsByEmployee.GetValueOrDefault(employee.Id)
+                ?? Array.Empty<EmployeeDependentParent>();
+            var eligibility = ParentDeductionEligibilityResolver.ResolveForEmployee(
+                employee.DependentParents,
+                employeeClaims,
+                cinIndex,
+                employee.Id);
+
+            if (eligibility.Status == ParentClaimsStatus.Incomplete && eligibility.WarningMessage is not null)
+            {
+                warnings.Add(new PayrollCalculationWarningDto
+                {
+                    Code = eligibility.WarningCode ?? ParentDeductionEligibilityResolver.IncompleteWarningCode,
+                    Message = $"{employee.FullName} : {eligibility.WarningMessage}",
+                    EmployeeId = employee.Id,
+                    EmployeeName = employee.FullName
+                });
+            }
+
             decimal advanceTotal = 0m;
             if (request.Dto.SettleOutstandingAdvances)
             {
@@ -132,7 +173,8 @@ public sealed class CalculatePayrollRunCommandHandler : IRequestHandler<Calculat
                 parameters,
                 batch,
                 run.Year,
-                run.Month);
+                run.Month,
+                eligibility.EffectiveDependentParents);
 
             var (appliedEmployeeRate, appliedEmployerRate) = PayrollCalculator.ResolveCnssRates(input.Regime, parameters);
             var computation = PayrollCalculator.Compute(input, parameters);
@@ -153,13 +195,19 @@ public sealed class CalculatePayrollRunCommandHandler : IRequestHandler<Calculat
         }
 
         if (payslips.Count == 0)
-            return Result.Failure(Error.Validation("Payslips", "Aucun salarié actif avec un contrat en cours pour ce mois."));
+            return Result.Failure<CalculatePayrollRunResultDto>(
+                Error.Validation("Payslips", "Aucun salarié actif avec un contrat en cours pour ce mois."));
 
         var setResult = run.SetPayslips(payslips);
         if (setResult.IsFailure)
-            return setResult;
+            return Result.Failure<CalculatePayrollRunResultDto>(setResult.Error);
 
         await _runs.PersistCalculationAsync(run, cancellationToken);
-        return Result.Success();
+
+        return Result.Success(new CalculatePayrollRunResultDto
+        {
+            PayslipCount = payslips.Count,
+            Warnings = warnings
+        });
     }
 }

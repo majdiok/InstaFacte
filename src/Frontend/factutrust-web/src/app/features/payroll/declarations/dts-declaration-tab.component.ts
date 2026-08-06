@@ -1,7 +1,6 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
 import { TableModule } from 'primeng/table';
 import { DropdownModule } from 'primeng/dropdown';
 import { TagModule } from 'primeng/tag';
@@ -10,7 +9,6 @@ import { MessageModule } from 'primeng/message';
 import { finalize } from 'rxjs';
 import { PayrollService, DtsDeclaration } from '@core/services/payroll.service';
 import { ToastService } from '@core/services/toast.service';
-import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import {
   PayrollStatGridComponent,
@@ -27,7 +25,7 @@ const MONTH_LABELS = [
 ];
 
 @Component({
-  selector: 'app-dts-declaration',
+  selector: 'app-dts-declaration-tab',
   standalone: true,
   imports: [
     CommonModule,
@@ -37,23 +35,13 @@ const MONTH_LABELS = [
     TagModule,
     TooltipModule,
     MessageModule,
-    PageHeaderComponent,
     ButtonComponent,
     PayrollStatGridComponent,
     PayrollEmptyStateComponent,
     PayrollAmountPipe
   ],
   template: `
-    <app-page-header title="DTS CNSS" subtitle="Déclaration trimestrielle des salaires. Seuls les cycles de paie validés ou clôturés sont inclus.">
-      <app-button
-        variant="outline"
-        icon="pi-download"
-        iconPos="left"
-        (click)="exportCsv()"
-        [disabled]="!canExport()">Exporter CSV</app-button>
-    </app-page-header>
-
-    <div class="payroll-toolbar">
+    <div class="payroll-toolbar mb-3">
       <p-dropdown
         [options]="yearOptions"
         [(ngModel)]="year"
@@ -71,6 +59,12 @@ const MONTH_LABELS = [
         placeholder="Trimestre"
         styleClass="w-10rem" />
       <app-button variant="primary" icon="pi-refresh" iconPos="left" (click)="load()">Générer</app-button>
+      <app-button
+        variant="outline"
+        icon="pi-download"
+        iconPos="left"
+        (click)="exportCsv()"
+        [disabled]="!canExport()">Exporter CSV</app-button>
     </div>
 
     @if (dts() && !dts()!.isComplete) {
@@ -133,15 +127,18 @@ const MONTH_LABELS = [
     }
   `,
   styles: [`
+    .mb-3 { margin-bottom: var(--spacing-4); }
     .mb-4 { margin-bottom: var(--spacing-6); display: block; }
     .ml-2 { margin-left: var(--spacing-2); }
     .text-warning { color: var(--color-warning-600); }
   `]
 })
-export class DtsDeclarationComponent implements OnInit {
+export class DtsDeclarationTabComponent implements OnInit {
   private readonly payroll = inject(PayrollService);
   private readonly toast = inject(ToastService);
-  private readonly route = inject(ActivatedRoute);
+
+  readonly initialYear = input<number | null>(null);
+  readonly initialQuarter = input<number | null>(null);
 
   year = new Date().getFullYear();
   quarter = Math.ceil((new Date().getMonth() + 1) / 3);
@@ -187,12 +184,10 @@ export class DtsDeclarationComponent implements OnInit {
   });
 
   ngOnInit(): void {
-    // Deep-link depuis l'échéancier fiscal : ?year=2026&quarter=2 ouvre la bonne période.
-    const params = this.route.snapshot.queryParamMap;
-    const year = Number(params.get('year'));
-    const quarter = Number(params.get('quarter'));
-    if (Number.isInteger(year) && year >= 2000 && year <= 2100) this.year = year;
-    if (Number.isInteger(quarter) && quarter >= 1 && quarter <= 4) this.quarter = quarter;
+    const y = this.initialYear();
+    const q = this.initialQuarter();
+    if (y != null && y >= 2000 && y <= 2100) this.year = y;
+    if (q != null && q >= 1 && q <= 4) this.quarter = q;
     this.load();
   }
 
@@ -212,14 +207,7 @@ export class DtsDeclarationComponent implements OnInit {
   exportCsv(): void {
     if (!this.canExport()) return;
     this.payroll.exportDtsCsv(this.year, this.quarter).subscribe({
-      next: blob => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `dts_${this.year}_T${this.quarter}.csv`;
-        a.click();
-        URL.revokeObjectURL(url);
-      },
+      next: blob => downloadBlob(blob, `dts_${this.year}_T${this.quarter}.csv`),
       error: () => this.toast.add({ severity: 'error', summary: 'DTS', detail: 'Export CSV impossible.' })
     });
   }
@@ -227,4 +215,13 @@ export class DtsDeclarationComponent implements OnInit {
 
 function formatMonthList(months: number[]): string {
   return months.map(m => MONTH_LABELS[m] ?? `M${m}`).join(', ');
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }

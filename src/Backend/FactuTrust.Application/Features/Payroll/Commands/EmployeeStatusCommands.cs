@@ -9,10 +9,14 @@ public sealed record ToggleEmployeeActiveCommand(Guid Id) : IRequest<Result<bool
 public sealed class ToggleEmployeeActiveCommandHandler : IRequestHandler<ToggleEmployeeActiveCommand, Result<bool>>
 {
     private readonly IEmployeeRepository _employees;
+    private readonly IEmployeeDependentParentRepository _dependentParents;
 
-    public ToggleEmployeeActiveCommandHandler(IEmployeeRepository employees)
+    public ToggleEmployeeActiveCommandHandler(
+        IEmployeeRepository employees,
+        IEmployeeDependentParentRepository dependentParents)
     {
         _employees = employees;
+        _dependentParents = dependentParents;
     }
 
     public async Task<Result<bool>> Handle(ToggleEmployeeActiveCommand request, CancellationToken cancellationToken)
@@ -22,9 +26,16 @@ public sealed class ToggleEmployeeActiveCommandHandler : IRequestHandler<ToggleE
             return Result.Failure<bool>(Error.NotFound("Employee", request.Id));
 
         if (employee.IsActive)
+        {
             employee.Deactivate();
+            // Libère les CIN parents pour les autres salariés du tenant.
+            await _dependentParents.EndAllActiveForEmployeeAsync(employee.Id, DateTime.UtcNow.Date, cancellationToken);
+            employee.SyncDependentParentsCount(0);
+        }
         else
+        {
             employee.Reactivate();
+        }
 
         await _employees.UpdateAsync(employee, cancellationToken);
         return Result.Success(employee.IsActive);

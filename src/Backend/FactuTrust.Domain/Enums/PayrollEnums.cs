@@ -386,3 +386,33 @@ public static class EmployeeGarnishmentStatusExtensions
         _ => throw new ArgumentOutOfRangeException(nameof(status))
     };
 }
+
+/// <summary>Lien de parenté pour une déclaration de parent à charge (art. 40 IRPP).</summary>
+public enum DependentParentKinship
+{
+    Father = 0,
+    Mother = 1
+}
+
+public static class DependentParentKinshipExtensions
+{
+    public static string ToDisplayString(this DependentParentKinship kinship) => kinship switch
+    {
+        DependentParentKinship.Father => "Père",
+        DependentParentKinship.Mother => "Mère",
+        _ => throw new ArgumentOutOfRangeException(nameof(kinship))
+    };
+}
+
+/// <summary>État des déclarations de parents à charge d'un salarié.</summary>
+public enum ParentClaimsStatus
+{
+    /// <summary>Aucun parent déclaré et aucun compteur legacy.</summary>
+    None = 0,
+    /// <summary>Déclarations nominatives (CIN) complètes et sans conflit.</summary>
+    Complete = 1,
+    /// <summary>Compteur legacy &gt; 0 sans CIN — déduction non applicable jusqu'à saisie.</summary>
+    Incomplete = 2,
+    /// <summary>Le même CIN parent est déclaré par un autre salarié de l'entreprise.</summary>
+    Conflict = 3
+}

@@ -63,9 +63,23 @@ export const PAYROLL_ROUTES: Routes = [
     data: { permissions: [PERMISSIONS.payroll.settings] }
   },
   {
+    path: 'reports/payroll-book',
+    loadComponent: () => import('./reports/payroll-book.component').then(m => m.PayrollBookComponent),
+    title: 'Livre de paie - InstaFact',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.payroll.read] }
+  },
+  {
+    path: 'reports/payroll-journal',
+    loadComponent: () => import('./reports/payroll-journal.component').then(m => m.PayrollJournalComponent),
+    title: 'Journal de paie - InstaFact',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.payroll.read] }
+  },
+  {
     path: 'declarations',
-    loadComponent: () => import('./declarations/dts-declaration.component').then(m => m.DtsDeclarationComponent),
-    title: 'DTS CNSS - InstaFact',
+    loadComponent: () => import('./declarations/payroll-declarations.component').then(m => m.PayrollDeclarationsComponent),
+    title: 'Déclarations paie - InstaFact',
     canActivate: [permissionGuard],
     data: { permissions: [PERMISSIONS.payroll.declare] }
   }

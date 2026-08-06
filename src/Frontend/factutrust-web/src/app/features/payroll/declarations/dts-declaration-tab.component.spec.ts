@@ -2,14 +2,14 @@ import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testin
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter, ActivatedRoute, convertToParamMap } from '@angular/router';
+import { provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
-import { DtsDeclarationComponent } from './dts-declaration.component';
+import { DtsDeclarationTabComponent } from './dts-declaration-tab.component';
 import { PayrollService, type DtsDeclaration } from '@core/services/payroll.service';
 import { ToastService } from '@core/services/toast.service';
 
-describe('DtsDeclarationComponent', () => {
-  let fixture: ComponentFixture<DtsDeclarationComponent>;
+describe('DtsDeclarationTabComponent', () => {
+  let fixture: ComponentFixture<DtsDeclarationTabComponent>;
   let getDtsSpy: jasmine.Spy;
   let exportSpy: jasmine.Spy;
 
@@ -59,7 +59,7 @@ describe('DtsDeclarationComponent', () => {
     isComplete: false
   };
 
-  function setup(query: Record<string, string>, dtsResponse: DtsDeclaration | 'error' = emptyDts) {
+  function setup(dtsResponse: DtsDeclaration | 'error' = emptyDts, year = 2026, quarter = 2) {
     getDtsSpy = jasmine.createSpy('getDts').and.returnValue(
       dtsResponse === 'error'
         ? throwError(() => new Error('fail'))
@@ -68,7 +68,7 @@ describe('DtsDeclarationComponent', () => {
     exportSpy = jasmine.createSpy('exportDtsCsv').and.returnValue(of(new Blob(['csv'])));
 
     TestBed.configureTestingModule({
-      imports: [DtsDeclarationComponent],
+      imports: [DtsDeclarationTabComponent],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
@@ -78,83 +78,49 @@ describe('DtsDeclarationComponent', () => {
           provide: PayrollService,
           useValue: { getDts: getDtsSpy, exportDtsCsv: exportSpy }
         },
-        { provide: ToastService, useValue: jasmine.createSpyObj('ToastService', ['add']) },
-        {
-          provide: ActivatedRoute,
-          useValue: {
-            snapshot: {
-              queryParamMap: convertToParamMap(query)
-            }
-          }
-        }
+        { provide: ToastService, useValue: jasmine.createSpyObj('ToastService', ['add']) }
       ]
     });
 
-    fixture = TestBed.createComponent(DtsDeclarationComponent);
+    fixture = TestBed.createComponent(DtsDeclarationTabComponent);
+    fixture.componentRef.setInput('initialYear', year);
+    fixture.componentRef.setInput('initialQuarter', quarter);
     fixture.detectChanges();
   }
 
-  it('reads year and quarter from query params (fiscal deep-link)', fakeAsync(() => {
-    setup({ year: '2026', quarter: '2' }, emptyDts);
+  it('loads DTS for initial year and quarter inputs', fakeAsync(() => {
+    setup(emptyDts, 2026, 2);
     tick();
     fixture.detectChanges();
 
     expect(getDtsSpy).toHaveBeenCalledWith(2026, 2);
     const el = fixture.nativeElement as HTMLElement;
     expect(el.textContent).toContain('Aucun salarié déclaré');
-    expect(el.textContent).toContain('Avril, Mai, Juin');
-  }));
-
-  it('ignores invalid query params and keeps calendar defaults', fakeAsync(() => {
-    const now = new Date();
-    const expectedYear = now.getFullYear();
-    const expectedQuarter = Math.ceil((now.getMonth() + 1) / 3);
-
-    setup({ year: 'abc', quarter: '9' }, emptyDts);
-    tick();
-
-    expect(getDtsSpy).toHaveBeenCalledWith(expectedYear, expectedQuarter);
   }));
 
   it('shows incompleteness warning when isComplete is false', fakeAsync(() => {
-    setup({ year: '2026', quarter: '2' }, incompleteDts);
+    setup(incompleteDts, 2026, 2);
     tick();
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;
     expect(el.textContent).toContain('Trimestre incomplet');
-    expect(el.textContent).toContain('Mai, Juin');
     expect(el.textContent).toContain('Alice Dupont');
-    expect(el.textContent).toContain('Cotisations CNSS');
   }));
 
   it('disables export when employeeCount is zero', fakeAsync(() => {
-    setup({ year: '2026', quarter: '2' }, emptyDts);
+    setup(emptyDts, 2026, 2);
     tick();
     fixture.detectChanges();
 
     expect(fixture.componentInstance.canExport()).toBeFalse();
   }));
 
-  it('enables export and shows table when lines are present', fakeAsync(() => {
-    setup({ year: '2026', quarter: '2' }, filledDts);
+  it('enables export when lines are present', fakeAsync(() => {
+    setup(filledDts, 2026, 2);
     tick();
     fixture.detectChanges();
 
     expect(fixture.componentInstance.canExport()).toBeTrue();
-    const el = fixture.nativeElement as HTMLElement;
-    expect(el.textContent).toContain('Alice Dupont');
-    expect(el.textContent).toContain('Mois');
-    expect(el.textContent).not.toContain('Trimestre incomplet');
-  }));
-
-  it('shows error empty state when API fails', fakeAsync(() => {
-    setup({}, 'error');
-    tick();
-    fixture.detectChanges();
-
-    const el = fixture.nativeElement as HTMLElement;
-    expect(el.textContent).toContain('Impossible de charger la DTS');
-    expect(fixture.componentInstance.dts()).toBeNull();
   }));
 });

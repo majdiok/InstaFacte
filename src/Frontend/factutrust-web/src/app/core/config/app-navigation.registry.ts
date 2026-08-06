@@ -496,7 +496,21 @@ export const ALL_NAV_ITEMS: NavItem[] = [
         permissionsAll: [PERMISSIONS.payroll.read]
       },
       {
-        label: 'DTS CNSS',
+        label: 'Livre de paie',
+        route: '/payroll/reports/payroll-book',
+        icon: 'fa-solid fa-book',
+        modules: [M.Payroll],
+        permissionsAll: [PERMISSIONS.payroll.read]
+      },
+      {
+        label: 'Journal de paie',
+        route: '/payroll/reports/payroll-journal',
+        icon: 'fa-solid fa-list-check',
+        modules: [M.Payroll],
+        permissionsAll: [PERMISSIONS.payroll.read]
+      },
+      {
+        label: 'Déclarations paie',
         route: '/payroll/declarations',
         icon: 'fa-solid fa-file-export',
         modules: [M.Payroll],

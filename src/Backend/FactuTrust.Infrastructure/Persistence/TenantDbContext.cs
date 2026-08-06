@@ -248,6 +248,7 @@ public partial class TenantDbContext : DbContext
     public DbSet<Domain.Entities.Payroll.EmployeeLoanInstallment> EmployeeLoanInstallments => Set<Domain.Entities.Payroll.EmployeeLoanInstallment>();
     public DbSet<Domain.Entities.Payroll.EmployeeGarnishment> EmployeeGarnishments => Set<Domain.Entities.Payroll.EmployeeGarnishment>();
     public DbSet<Domain.Entities.Payroll.EmployeeGarnishmentInstallment> EmployeeGarnishmentInstallments => Set<Domain.Entities.Payroll.EmployeeGarnishmentInstallment>();
+    public DbSet<Domain.Entities.Payroll.EmployeeDependentParent> EmployeeDependentParents => Set<Domain.Entities.Payroll.EmployeeDependentParent>();
     public DbSet<Domain.Entities.Payroll.PayrollGarnishmentBracket> PayrollGarnishmentBrackets => Set<Domain.Entities.Payroll.PayrollGarnishmentBracket>();
 
     protected override void OnModelCreating(ModelBuilder builder)

@@ -3011,6 +3011,10 @@ namespace FactuTrust.Infrastructure.Migrations
                         .HasPrecision(9, 3)
                         .HasColumnType("decimal(9,3)");
 
+                    b.Property<decimal>("CssEmployerRate")
+                        .HasPrecision(9, 3)
+                        .HasColumnType("decimal(9,3)");
+
                     b.Property<int>("Year")
                         .HasColumnType("int");
 

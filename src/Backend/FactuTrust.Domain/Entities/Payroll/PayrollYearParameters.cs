@@ -39,6 +39,8 @@ public sealed class PayrollYearParameters : AggregateRoot
     public decimal CssRate { get; private set; }
     /// <summary>Seuil annuel (TND) en dessous duquel la CSS ne s'applique pas (tranche exonérée IRPP). Ex. 5000.</summary>
     public decimal CssAnnualExemptionThreshold { get; private set; }
+    /// <summary>Taux de la Contribution Sociale de Solidarité patronale, en % du brut soumis à CNSS. Ex. 0.5. Aucun seuil d'exonération côté employeur.</summary>
+    public decimal CssEmployerRate { get; private set; }
 
     /// <summary>Taux des frais professionnels, en % de la base après CNSS. Ex. 10.</summary>
     public decimal ProfessionalExpensesRate { get; private set; }
@@ -125,7 +127,8 @@ public sealed class PayrollYearParameters : AggregateRoot
         IEnumerable<PayrollGarnishmentBracket>? garnishmentBrackets = null,
         bool enableIrppRegularization = false,
         SmigIrppExemptionMode smigIrppExemptionMode = SmigIrppExemptionMode.None,
-        decimal? smigIrppExemptionRateOverride = null)
+        decimal? smigIrppExemptionRateOverride = null,
+        decimal cssEmployerRate = 0m)
     {
         if (fiscalYear is < 2000 or > 2100)
             return Result.Failure<PayrollYearParameters>(Error.Validation("FiscalYear", "L'exercice doit être compris entre 2000 et 2100."));
@@ -159,7 +162,7 @@ public sealed class PayrollYearParameters : AggregateRoot
         var negativeRates = new[]
         {
             cnssEmployeeRate, cnssEmployerRate, rsaEmployeeRate, rsaEmployerRate,
-            cssRate, professionalExpensesRate, tfpRateIndustry, tfpRateOther, foprolosRate,
+            cssRate, cssEmployerRate, professionalExpensesRate, tfpRateIndustry, tfpRateOther, foprolosRate,
             parentDeductionRatePercent
         };
         if (negativeRates.Any(r => r < 0))
@@ -181,6 +184,7 @@ public sealed class PayrollYearParameters : AggregateRoot
             EnableIrppRegularization = enableIrppRegularization,
             CssRate = Round(cssRate),
             CssAnnualExemptionThreshold = Round(cssAnnualExemptionThreshold),
+            CssEmployerRate = Round(cssEmployerRate),
             ProfessionalExpensesRate = Round(professionalExpensesRate),
             ProfessionalExpensesAnnualCap = Round(professionalExpensesAnnualCap),
             HeadOfFamilyAnnualDeduction = Round(headOfFamilyAnnualDeduction),
@@ -236,12 +240,13 @@ public sealed class PayrollYearParameters : AggregateRoot
         decimal mealVoucherDailyExemptionCap = 3.000m,
         bool enableIrppRegularization = false,
         SmigIrppExemptionMode smigIrppExemptionMode = SmigIrppExemptionMode.None,
-        decimal? smigIrppExemptionRateOverride = null)
+        decimal? smigIrppExemptionRateOverride = null,
+        decimal cssEmployerRate = 0m)
     {
         var rates = new[]
         {
             cnssEmployeeRate, cnssEmployerRate, cnssEmployeeRateRsa, cnssEmployerRateRsa,
-            cssRate, professionalExpensesRate, tfpRateIndustry, tfpRateOther, foprolosRate,
+            cssRate, cssEmployerRate, professionalExpensesRate, tfpRateIndustry, tfpRateOther, foprolosRate,
             parentDeductionRatePercent
         };
         if (rates.Any(r => r < 0))
@@ -260,6 +265,7 @@ public sealed class PayrollYearParameters : AggregateRoot
         EnableIrppRegularization = enableIrppRegularization;
         CssRate = Round(cssRate);
         CssAnnualExemptionThreshold = Round(cssAnnualExemptionThreshold);
+        CssEmployerRate = Round(cssEmployerRate);
         ProfessionalExpensesRate = Round(professionalExpensesRate);
         ProfessionalExpensesAnnualCap = Round(professionalExpensesAnnualCap);
         HeadOfFamilyAnnualDeduction = Round(headOfFamilyAnnualDeduction);

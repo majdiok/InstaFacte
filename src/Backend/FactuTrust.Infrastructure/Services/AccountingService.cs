@@ -1736,7 +1736,8 @@ public sealed class AccountingService : IAccountingService
                     label,
                     auxiliaryCredits,
                     payrollRun.TotalIrppRegularization,
-                    payrollRun.TotalCssRegularization)
+                    payrollRun.TotalCssRegularization,
+                    payrollRun.TotalCssEmployer)
                 : PayrollJournalEntryBuilder.BuildLines(
                     payrollRun.TotalGross,
                     payrollRun.TotalNet,
@@ -1750,7 +1751,8 @@ public sealed class AccountingService : IAccountingService
                     otherDeductions,
                     label,
                     payrollRun.TotalIrppRegularization,
-                    payrollRun.TotalCssRegularization);
+                    payrollRun.TotalCssRegularization,
+                    payrollRun.TotalCssEmployer);
         if (linesResult.IsFailure)
             return Result.Failure(linesResult.Error);
 

@@ -268,7 +268,8 @@ export class PayrollRunDetailComponent implements OnInit {
       { label: 'CNSS sal.', value: formatPayrollAmount(r.totalCnssEmployee, false), icon: 'pi-user', variant: 'primary' },
       { label: 'CNSS pat.', value: formatPayrollAmount(r.totalCnssEmployer, false), icon: 'pi-building', variant: 'primary' },
       { label: 'TFP', value: formatPayrollAmount(r.totalTfp, false), icon: 'pi-chart-line', variant: 'warning' },
-      { label: 'FOPROLOS', value: formatPayrollAmount(r.totalFoprolos, false), icon: 'pi-briefcase', variant: 'warning' }
+      { label: 'FOPROLOS', value: formatPayrollAmount(r.totalFoprolos, false), icon: 'pi-briefcase', variant: 'warning' },
+      { label: 'CSS patronale', value: formatPayrollAmount(r.totalCssEmployer, false), icon: 'pi-shield', variant: 'warning' }
     ];
   });
 
@@ -320,8 +321,25 @@ export class PayrollRunDetailComponent implements OnInit {
   calculate(): void {
     if (!this.canRun()) return;
     this.payroll.calculateRun(this.runId).subscribe({
-      next: () => { this.toast.add({ severity: 'success', summary: 'Paie', detail: 'Cycle calculé.' }); this.reload(); },
-      error: err => this.toast.add({ severity: 'error', summary: 'Paie', detail: err?.error?.message ?? 'Calcul impossible.' })
+      next: res => {
+        const warnings = res.data?.warnings ?? [];
+        if (warnings.length > 0) {
+          this.toast.add({
+            severity: 'warn',
+            summary: 'Paie calculée',
+            detail: warnings.map(w => w.message).join(' | '),
+            life: 12000
+          });
+        } else {
+          this.toast.add({ severity: 'success', summary: 'Paie', detail: 'Cycle calculé.' });
+        }
+        this.reload();
+      },
+      error: err => this.toast.add({
+        severity: 'error',
+        summary: 'Paie',
+        detail: err?.error?.message ?? 'Calcul impossible.'
+      })
     });
   }
 

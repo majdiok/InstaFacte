@@ -42,6 +42,15 @@ describe('EmployeeFormComponent', () => {
     expect(component.form.get('cin')?.valid).toBe(true);
   });
 
+  it('allows adding up to two parent claims with CIN validation', () => {
+    component.addParentClaim({ parentCin: '11111111', kinship: 'Father' });
+    component.addParentClaim({ parentCin: '22222222', kinship: 'Mother' });
+    expect(component.dependentParentClaims.length).toBe(2);
+    component.addParentClaim({ parentCin: '33333333', kinship: 'Father' });
+    expect(component.dependentParentClaims.length).toBe(2);
+    expect(component.dependentParentClaims.at(0).get('parentCin')?.valid).toBe(true);
+  });
+
   it('marks matricule and hireDate disabled in edit mode', () => {
     component.employeeId.set('abc');
     component.form.get('employeeNumber')?.disable();
