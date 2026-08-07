@@ -30,6 +30,8 @@ import { EntryBottomTabsComponent } from './components/entry-bottom-tabs.compone
 import { GuidedEntryComponent } from './components/guided/guided-entry.component';
 import { EntryTemplateTabComponent } from './components/entry-template-tab.component';
 import { EntryRecurringTabComponent } from './components/entry-recurring-tab.component';
+import { AccountingDocumentImportDialogComponent } from './components/import/accounting-document-import-dialog.component';
+import { JournalEntryProposal } from './models/accounting-document-import.models';
 import { EntryTabId } from './models/entry-form.model';
 
 @Component({
@@ -52,7 +54,8 @@ import { EntryTabId } from './models/entry-form.model';
     EntryBottomTabsComponent,
     GuidedEntryComponent,
     EntryTemplateTabComponent,
-    EntryRecurringTabComponent
+    EntryRecurringTabComponent,
+    AccountingDocumentImportDialogComponent
   ],
   providers: [EntryFormStore, EntryReferenceStore, EntrySubmitService, VatAssistService],
   template: `
@@ -80,7 +83,12 @@ import { EntryTabId } from './models/entry-form.model';
       (save)="submit($event)"
       (loadTemplate)="openTemplatePicker()"
       (saveTemplate)="openSaveTemplate()"
-      (reset)="resetWithConfirm()" />
+      (reset)="resetWithConfirm()"
+      (importDocument)="openDocumentImport()" />
+
+    <app-accounting-document-import-dialog
+      [(visible)]="documentImportVisible"
+      (applied)="onDocumentProposalApplied($event)" />
 
     <p-tabView styleClass="ft-tabs entry-main-tabs"
                [activeIndex]="tabIndex()"
@@ -202,6 +210,7 @@ export class ManualEntryComponent implements OnInit {
   readonly savingTemplate = signal(false);
   readonly pendingFiles = signal<File[]>([]);
   readonly tabIndex = signal(0);
+  readonly documentImportVisible = signal(false);
 
   private draftInitialized = signal(false);
 
@@ -292,6 +301,26 @@ export class ManualEntryComponent implements OnInit {
           );
         }
       });
+  }
+
+  openDocumentImport(): void {
+    this.documentImportVisible.set(true);
+  }
+
+  /**
+   * Applique une proposition d'écriture importée : lignes + en-tête dans le formulaire, et le
+   * fichier source part comme pièce jointe (même mécanique que les pièces ajoutées à la main).
+   */
+  onDocumentProposalApplied(event: { proposal: JournalEntryProposal; file: File }): void {
+    this.store.applyDocumentProposal(event.proposal);
+    this.pendingFiles.update(files => [...files, event.file]);
+    this.tabIndex.set(0);
+    this.store.activeTab.set('standard');
+    this.toast.add({
+      severity: 'success',
+      summary: 'Proposition appliquée',
+      detail: `${event.proposal.lines.length} ligne(s) posée(s). Vérifiez avant d'enregistrer.`
+    });
   }
 
   private navigateToJournal(journalCode: string, date: string): void {

@@ -489,11 +489,23 @@ public static class DependencyInjection
         services.AddScoped<IConversationRepository, ConversationRepository>();
         services.AddScoped<ITenantAiProviderRepository, TenantAiProviderRepository>();
         services.AddScoped<SendChatMessageHandler>();
+        // Mécanique d'extraction documentaire pilotée par LLM, partagée entre l'import de facture
+        // du wizard de facturation et l'import de pièce comptable (saisie manuelle d'écritures).
+        services.AddScoped<FactuTrust.Application.Features.AI.IAiStructuredExtractionPipeline,
+            FactuTrust.Application.Features.AI.AiStructuredExtractionPipeline>();
         services.AddScoped<ImportInvoiceFromFileHandler>();
         services.AddScoped<IOllamaModelReadinessChecker, OllamaModelReadinessChecker>();
         services.AddScoped<IAiModelRecommender, OllamaModelRecommender>();
         services.AddScoped<IPlatformAiSettingsService, FactuTrust.Infrastructure.Services.AI.PlatformAiSettingsService>();
         services.AddScoped<IOllamaInferenceProfileResolver, OllamaInferenceProfileResolver>();
+
+        // Import de pièce comptable depuis la saisie manuelle d'écritures : parseur déterministe
+        // du gabarit InstaFact, puis repli IA, puis proposition d'écriture. Chemin en lecture seule.
+        services.AddSingleton<FactuTrust.Infrastructure.Services.DocumentImport.InstaFactInvoicePdfParser>();
+        services.AddScoped<FactuTrust.Application.Features.Accounting.DocumentImport.IAccountingDocumentExtractor,
+            FactuTrust.Infrastructure.Services.DocumentImport.AccountingDocumentExtractor>();
+        services.AddScoped<FactuTrust.Application.Features.Accounting.DocumentImport.IAccountingEntryProposalService,
+            FactuTrust.Infrastructure.Services.DocumentImport.AccountingEntryProposalService>();
 
         // AI Export — PowerPoint generation (Clean Architecture: contracts in Application, implementations here).
         services.Configure<FactuTrust.Infrastructure.Services.AI.Export.Storage.ExportStorageOptions>(

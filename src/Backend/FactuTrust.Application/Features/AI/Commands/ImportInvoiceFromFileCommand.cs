@@ -1,5 +1,4 @@
-using System.Diagnostics;
-using System.Text;
+﻿using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FactuTrust.Application.Common.Interfaces;
@@ -12,6 +11,7 @@ using FactuTrust.Application.Features.Products.Queries;
 using FactuTrust.Domain.Common;
 using MediatR;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace FactuTrust.Application.Features.AI.Commands;
@@ -33,12 +33,10 @@ public sealed record ImportInvoiceFromFileCommand(
 /// </summary>
 public sealed class ImportInvoiceFromFileHandler
 {
-    private readonly IOllamaClient _ollamaClient;
-    private readonly IOpenAiChatCompletionsClient _openAiClient;
-    private readonly IAiDocumentTextExtractor _documentTextExtractor;
-    private readonly IOllamaModelReadinessChecker _readinessChecker;
-    private readonly IPlatformAiSettingsService _platformAiSettings;
-    private readonly IOllamaInferenceProfileResolver _inferenceProfileResolver;
+    /// <summary>Code d'erreur et préfixe de log historiques de l'import de facture.</summary>
+    private const string ErrorCode = "InvoiceImport";
+
+    private readonly IAiStructuredExtractionPipeline _pipeline;
     private readonly IMediator _mediator;
     private readonly ILogger<ImportInvoiceFromFileHandler> _logger;
     private readonly OllamaSettings _ollamaSettings;
@@ -46,7 +44,6 @@ public sealed class ImportInvoiceFromFileHandler
     private const int MaxTextChars = 60_000;
     private const int MaxImages = 10;
     private const int MaxLinesToMatch = 50;
-    private const int DefaultImportMaxOutputTokens = 1536;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -117,17 +114,24 @@ Schéma: documentType, invoiceNumber, issueDate, dueDate, currency, seller{name,
         IOllamaInferenceProfileResolver inferenceProfileResolver,
         IMediator mediator,
         ILogger<ImportInvoiceFromFileHandler> logger,
-        IOptions<OllamaSettings> ollamaSettings)
+        IOptions<OllamaSettings> ollamaSettings,
+        IAiStructuredExtractionPipeline? pipeline = null)
     {
-        _ollamaClient = ollamaClient;
-        _openAiClient = openAiClient;
-        _documentTextExtractor = documentTextExtractor;
-        _readinessChecker = readinessChecker;
-        _platformAiSettings = platformAiSettings;
-        _inferenceProfileResolver = inferenceProfileResolver;
         _mediator = mediator;
         _logger = logger;
         _ollamaSettings = ollamaSettings.Value;
+
+        // Le pipeline est injecté en production. Le repli construit la même implémentation à partir
+        // des dépendances déjà reçues : les appelants historiques (dont les tests) restent valides.
+        _pipeline = pipeline ?? new AiStructuredExtractionPipeline(
+            ollamaClient,
+            openAiClient,
+            documentTextExtractor,
+            readinessChecker,
+            platformAiSettings,
+            inferenceProfileResolver,
+            NullLogger<AiStructuredExtractionPipeline>.Instance,
+            ollamaSettings);
     }
 
     public async Task<Result<InvoiceImportResultDto>> HandleAsync(
@@ -136,118 +140,29 @@ Schéma: documentType, invoiceNumber, issueDate, dueDate, currency, seller{name,
     {
         var totalSw = Stopwatch.StartNew();
 
-        // 1. Résolution du modèle texte (JSON structuré).
-        var modelRef = await ResolveModelRefAsync(command.Model, cancellationToken);
-        var visionModelId = ResolveVisionModelId();
-        var wantPrimaryVision = AiModelCapabilityDetector.DetectVisionSupport(modelRef.ProviderModelId);
-
-        // 2. Extraction du texte (+ image base64 pour fallback vision sur photos).
-        var extractionSw = Stopwatch.StartNew();
-        var extraction = await _documentTextExtractor.ExtractAsync(
-            command.FileStream,
-            command.FileName,
-            command.ContentType,
-            new AiDocumentExtractOptions { RenderPagesAsImages = wantPrimaryVision },
+        // 1-5. Extraction documentaire (texte/OCR), repli vision, disponibilité du fournisseur
+        //      puis appel LLM one-shot — mutualisés dans le pipeline d'extraction structurée.
+        var pipelineResult = await _pipeline.RunAsync(
+            new AiStructuredExtractionRequest
+            {
+                FileStream = command.FileStream,
+                FileName = command.FileName,
+                ContentType = command.ContentType,
+                SystemPrompt = ResolveSystemPrompt(),
+                ModelOverride = command.Model,
+                ErrorCode = ErrorCode,
+                MaxTextChars = MaxTextChars,
+                MaxImages = MaxImages
+            },
             cancellationToken);
 
-        if (!extraction.Success)
-            return Result.Failure<InvoiceImportResultDto>(Error.Validation(
-                "InvoiceImport", extraction.ErrorMessage ?? "Le fichier n'a pas pu être lu."));
+        if (pipelineResult.IsFailure)
+            return Result.Failure<InvoiceImportResultDto>(pipelineResult.Error);
 
-        var sourceImages = extraction.Pages
-            .Select(p => p.ImageBase64)
-            .Where(b => !string.IsNullOrWhiteSpace(b))
-            .Select(b => b!)
-            .Take(MaxImages)
-            .ToList();
-
-        var extractedText = (extraction.Text ?? string.Empty).Trim();
-        var ocrQuality = InvoiceImportOcrQuality.Score(extractedText);
-        var useVisionFallback = ShouldUseVisionFallback(extraction, extractedText, sourceImages.Count, visionModelId);
-
-        if (extractedText.Length == 0 && sourceImages.Count == 0)
-            return Result.Failure<InvoiceImportResultDto>(Error.Validation(
-                "InvoiceImport", "Aucun contenu exploitable n'a été trouvé dans le fichier."));
-
-        if (extractedText.Length == 0 && !useVisionFallback)
-        {
-            return Result.Failure<InvoiceImportResultDto>(Error.Validation("InvoiceImport",
-                "Photo illisible : OCR vide et aucun modèle vision d'import configuré (clé InvoiceImportVisionModel, ex. llava). "
-                + "Exécutez scripts/install-tessdata.ps1 ou contactez l'administrateur plateforme."));
-        }
-
-        var textTruncated = extraction.Truncated;
-        if (extractedText.Length > MaxTextChars)
-        {
-            extractedText = extractedText[..MaxTextChars];
-            textTruncated = true;
-        }
-
-        extractionSw.Stop();
-        _logger.LogInformation(
-            "[InvoiceImport] Extraction terminée en {ElapsedMs} ms : format={Format} ocr={Ocr} caractères={Chars} "
-            + "ocrQuality={OcrQuality:F2} sourceImages={ImageCount} visionFallback={VisionFallback}",
-            extractionSw.ElapsedMilliseconds, extraction.Format, extraction.OcrApplied, extractedText.Length,
-            ocrQuality, sourceImages.Count, useVisionFallback);
-
-        // 3. Disponibilité du fournisseur IA (modèle texte ou vision selon le chemin).
-        var activeModelRef = modelRef;
-        var llmImages = wantPrimaryVision ? sourceImages : new List<string>();
-
-        if (useVisionFallback)
-        {
-            activeModelRef = NormalizeModelRef(visionModelId!);
-            llmImages = sourceImages;
-            if (activeModelRef.Kind == LlmProviderKind.Ollama)
-            {
-                if (!await _ollamaClient.IsAvailableAsync(cancellationToken))
-                    return Result.Failure<InvoiceImportResultDto>(Error.Validation("InvoiceImport",
-                        "Le moteur IA InstaFact est indisponible. Vérifiez que le service est démarré sur le serveur."));
-
-                var visionReadiness = await _readinessChecker.CheckAsync(activeModelRef.ProviderModelId!, cancellationToken);
-                if (!visionReadiness.IsReady)
-                    return Result.Failure<InvoiceImportResultDto>(Error.Validation("InvoiceImport",
-                        visionReadiness.UserMessage ?? "Le modèle vision d'import IA n'est pas prêt."));
-            }
-        }
-        else if (modelRef.Kind == LlmProviderKind.Ollama)
-        {
-            if (!await _ollamaClient.IsAvailableAsync(cancellationToken))
-                return Result.Failure<InvoiceImportResultDto>(Error.Validation("InvoiceImport",
-                    "Le moteur IA InstaFact est indisponible. Vérifiez que le service est démarré sur le serveur."));
-
-            var readiness = await _readinessChecker.CheckAsync(modelRef.ProviderModelId!, cancellationToken);
-            if (!readiness.IsReady)
-                return Result.Failure<InvoiceImportResultDto>(Error.Validation("InvoiceImport",
-                    readiness.UserMessage ?? "Le modèle d'import IA n'est pas prêt."));
-        }
-        else
-        {
-            var credentials = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
-            if (string.IsNullOrEmpty(credentials.ApiKey))
-                return Result.Failure<InvoiceImportResultDto>(Error.Validation("InvoiceImport",
-                    "Aucune clé API OpenRouter configurée. Configurez-la dans le back-office plateforme > Configuration IA (OpenRouter)."));
-        }
-
-        // 4-5. Appel LLM one-shot (texte seul ou vision hybride).
-        var llmSw = Stopwatch.StartNew();
-        var (raw, llmMetrics) = await CallLlmAsync(activeModelRef, extractedText, llmImages, cancellationToken);
-        llmSw.Stop();
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            _logger.LogWarning(
-                "[InvoiceImport] Appel LLM sans contenu en {ElapsedMs} ms : modèle={Model} chunks={Chunks} firstTokenMs={FirstTokenMs}",
-                llmSw.ElapsedMilliseconds, modelRef.ProviderModelId, llmMetrics.StreamChunkCount, llmMetrics.FirstTokenMs);
-            return Result.Failure<InvoiceImportResultDto>(Error.Validation("InvoiceImport",
-                "L'IA n'a renvoyé aucune donnée (modèle surchargé ou mémoire insuffisante). "
-                + "Réessayez ou configurez un modèle d'import plus léger dans les paramètres plateforme."));
-        }
-
-        _logger.LogInformation(
-            "[InvoiceImport] Appel LLM terminé en {ElapsedMs} ms : modèle={Model} usedVision={UsedVision} caractères={Chars} "
-            + "chunks={Chunks} firstTokenMs={FirstTokenMs} documentTypeDetected=pending",
-            llmSw.ElapsedMilliseconds, activeModelRef.ProviderModelId, useVisionFallback, raw.Length,
-            llmMetrics.StreamChunkCount, llmMetrics.FirstTokenMs);
+        var outcome = pipelineResult.Value;
+        var extraction = outcome.Extraction;
+        var textTruncated = outcome.TextTruncated;
+        var raw = outcome.RawContent;
 
         // 6. Parsing JSON robuste.
         var json = InvoiceImportParsing.ExtractFirstJsonObject(raw);
@@ -280,335 +195,27 @@ Schéma: documentType, invoiceNumber, issueDate, dueDate, currency, seller{name,
 
         totalSw.Stop();
         _logger.LogInformation(
-            "[InvoiceImport] Import terminé en {TotalMs} ms (extraction={ExtractionMs} ms, LLM={LlmMs} ms, "
-            + "rapprochement={MatchMs} ms) : lignes={LineCount}",
-            totalSw.ElapsedMilliseconds, extractionSw.ElapsedMilliseconds, llmSw.ElapsedMilliseconds,
-            matchSw.ElapsedMilliseconds, dto.Lines.Count);
+            "[InvoiceImport] Import terminé en {TotalMs} ms (rapprochement={MatchMs} ms) : "
+            + "modèle={Model} vision={UsedVision} lignes={LineCount}",
+            totalSw.ElapsedMilliseconds, matchSw.ElapsedMilliseconds,
+            outcome.ModelUsed, outcome.VisionUsed, dto.Lines.Count);
 
         return Result.Success(dto);
     }
 
     // ========================================================================
-    // Préchauffage & résolution du modèle
+    // Préchauffage
     // ========================================================================
 
     /// <summary>
     /// Préchauffe le modèle d'import : charge Ollama en mémoire et signale les problèmes RAM.
+    /// Délégué au pipeline d'extraction structurée, partagé avec l'import de pièce comptable.
     /// </summary>
-    public async Task<InvoiceImportWarmUpResult> WarmUpAsync(CancellationToken cancellationToken)
-    {
-        var modelRef = await ResolveModelRefAsync(null, cancellationToken);
-        if (modelRef.Kind != LlmProviderKind.Ollama || string.IsNullOrWhiteSpace(modelRef.ProviderModelId))
-        {
-            return new InvoiceImportWarmUpResult(true, true, modelRef.ProviderModelId, null, null, null);
-        }
-
-        var modelName = modelRef.ProviderModelId;
-        var readiness = await _readinessChecker.CheckAsync(modelName, cancellationToken);
-        if (!readiness.IsReady)
-        {
-            return new InvoiceImportWarmUpResult(
-                true,
-                false,
-                modelName,
-                readiness.UserMessage,
-                readiness.RequiredGiB,
-                readiness.AvailableGiB);
-        }
-
-        try
-        {
-            var keepAlive = $"{Math.Clamp(_ollamaSettings.KeepAliveMinutes, 1, 1440)}m";
-            var inferenceProfile = await _inferenceProfileResolver.ResolveForPlatformAsync(cancellationToken);
-            var ok = await _ollamaClient.WarmUpModelAsync(
-                modelName,
-                keepAlive,
-                cancellationToken,
-                inferenceProfile: inferenceProfile);
-            if (!ok)
-            {
-                return new InvoiceImportWarmUpResult(
-                    true,
-                    false,
-                    modelName,
-                    "Le préchauffage du modèle IA a échoué. L'import peut être plus long.",
-                    readiness.RequiredGiB,
-                    readiness.AvailableGiB);
-            }
-
-            await WarmUpVisionModelBestEffortAsync(keepAlive, inferenceProfile, cancellationToken);
-            return new InvoiceImportWarmUpResult(true, true, modelName, null, readiness.RequiredGiB, readiness.AvailableGiB);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Import facture : préchauffage du modèle échoué pour {Model}", modelName);
-            return new InvoiceImportWarmUpResult(
-                true,
-                false,
-                modelName,
-                "Le préchauffage du modèle IA a échoué. L'import peut être plus long.",
-                readiness.RequiredGiB,
-                readiness.AvailableGiB);
-        }
-    }
-
-    private async Task WarmUpVisionModelBestEffortAsync(
-        string keepAlive,
-        OllamaInferenceProfile inferenceProfile,
-        CancellationToken cancellationToken)
-    {
-        var visionId = ResolveVisionModelId();
-        if (string.IsNullOrWhiteSpace(visionId))
-            return;
-
-        try
-        {
-            var readiness = await _readinessChecker.CheckAsync(visionId, cancellationToken);
-            if (readiness.IsReady)
-            {
-                await _ollamaClient.WarmUpModelAsync(
-                    visionId,
-                    keepAlive,
-                    cancellationToken,
-                    inferenceProfile: inferenceProfile);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Import facture : préchauffage modèle vision {Model} ignoré", visionId);
-        }
-    }
-
-    /// <summary>
-    /// Résout le modèle à utiliser pour l'import : modèle explicite de la commande, sinon
-    /// <see cref="OllamaSettings.InvoiceImportModel"/>, sinon <see cref="OllamaSettings.DefaultModel"/>.
-    /// </summary>
-    private async Task<ParsedModelRef> ResolveModelRefAsync(string? explicitModel, CancellationToken cancellationToken)
-    {
-        if (!string.IsNullOrWhiteSpace(explicitModel))
-            return NormalizeModelRef(explicitModel.Trim());
-
-        try
-        {
-            var platformImport = await _platformAiSettings.GetInvoiceImportModelRefAsync(cancellationToken);
-            if (!string.IsNullOrWhiteSpace(platformImport))
-                return NormalizeModelRef(platformImport);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex,
-                "Import facture : lecture du modèle d'import plateforme impossible ; utilisation de la configuration serveur.");
-        }
-
-        var model =
-            !string.IsNullOrWhiteSpace(_ollamaSettings.InvoiceImportModel) ? _ollamaSettings.InvoiceImportModel.Trim()
-            : !string.IsNullOrWhiteSpace(_ollamaSettings.DefaultModel) ? _ollamaSettings.DefaultModel.Trim()
-            : "mistral";
-
-        return NormalizeModelRef(model);
-    }
-
-    private string? ResolveVisionModelId()
-    {
-        var model = _ollamaSettings.InvoiceImportVisionModel?.Trim();
-        return string.IsNullOrWhiteSpace(model) ? null : model;
-    }
-
-    private bool ShouldUseVisionFallback(
-        AiDocumentExtractionResult extraction,
-        string extractedText,
-        int sourceImageCount,
-        string? visionModelId)
-    {
-        if (string.IsNullOrWhiteSpace(visionModelId) || sourceImageCount == 0)
-            return false;
-
-        var isImage = string.Equals(extraction.Format, "image", StringComparison.OrdinalIgnoreCase);
-        var isOcrPdf = extraction.OcrApplied
-            && string.Equals(extraction.Format, "pdf", StringComparison.OrdinalIgnoreCase);
-        if (!isImage && !isOcrPdf)
-            return false;
-
-        var minChars = Math.Max(0, _ollamaSettings.InvoiceImportVisionMinOcrChars);
-        if (_ollamaSettings.InvoiceImportVisionOnEmptyOcr && extractedText.Length == 0)
-            return true;
-
-        return !InvoiceImportOcrQuality.IsSufficient(extractedText, minChars, 0.35);
-    }
-
-    private static ParsedModelRef NormalizeModelRef(string model)
-    {
-        var modelRef = ModelRef.Parse(model);
-        if (string.IsNullOrEmpty(modelRef.CanonicalModelRef))
-            modelRef = ModelRef.Parse($"{ModelRef.OllamaPrefix}{model}");
-        return modelRef;
-    }
-
-    private int ResolveImportMaxOutputTokens() =>
-        Math.Clamp(
-            _ollamaSettings.ImportMaxOutputTokens > 0
-                ? _ollamaSettings.ImportMaxOutputTokens
-                : DefaultImportMaxOutputTokens,
-            256,
-            3072);
-
-    private TimeSpan ResolveImportLlmTimeout() =>
-        TimeSpan.FromSeconds(Math.Clamp(_ollamaSettings.ImportLlmTimeoutSeconds, 30, 600));
+    public Task<InvoiceImportWarmUpResult> WarmUpAsync(CancellationToken cancellationToken) =>
+        _pipeline.WarmUpAsync(cancellationToken);
 
     private string ResolveSystemPrompt() =>
         _ollamaSettings.UseCompactImportPrompt ? CompactSystemPrompt : SystemPrompt;
-
-    // ========================================================================
-    // Appel LLM
-    // ========================================================================
-
-    private sealed record InvoiceImportLlmMetrics(int StreamChunkCount, long? FirstTokenMs);
-
-    private async Task<(string Raw, InvoiceImportLlmMetrics Metrics)> CallLlmAsync(
-        ParsedModelRef modelRef,
-        string text,
-        List<string> images,
-        CancellationToken cancellationToken)
-    {
-        var sb = new StringBuilder();
-        var userPrompt = BuildUserPrompt(text, images.Count > 0);
-        var systemPrompt = ResolveSystemPrompt();
-        var outputCap = Math.Min(Math.Max(1, _ollamaSettings.MaxTokens), ResolveImportMaxOutputTokens());
-        var streamTimeout = ResolveImportLlmTimeout();
-        var chunkCount = 0;
-        long? firstTokenMs = null;
-        var llmSw = Stopwatch.StartNew();
-
-        if (modelRef.Kind == LlmProviderKind.Ollama)
-        {
-            var messages = new List<OllamaChatMessage>
-            {
-                new() { Role = "system", Content = systemPrompt },
-                new()
-                {
-                    Role = "user",
-                    Content = userPrompt,
-                    Images = images.Count > 0 ? images : null
-                }
-            };
-
-            var numCtx = InvoiceImportParsing.ResolveImportNumCtx(
-                _ollamaSettings.NumCtx,
-                systemPrompt.Length + userPrompt.Length,
-                outputCap,
-                images.Count > 0);
-            var inferenceProfile = await _inferenceProfileResolver.ResolveForPlatformAsync(cancellationToken);
-            var options = inferenceProfile.ApplyTo(new OllamaOptions
-            {
-                Temperature = 0,
-                NumPredict = outputCap,
-                NumCtx = numCtx
-            });
-
-            var request = new OllamaChatRequest
-            {
-                Model = modelRef.ProviderModelId,
-                Messages = messages,
-                Stream = true,
-                Format = "json",
-                KeepAlive = $"{Math.Clamp(_ollamaSettings.KeepAliveMinutes, 1, 1440)}m",
-                Options = options
-            };
-
-            _logger.LogInformation(
-                "[InvoiceImport] Appel LLM Ollama : modèle={Model} numCtx={NumCtx} numPredict={NumPredict} images={ImageCount} timeoutSec={TimeoutSec} inference_device={InferenceDevice} num_gpu_effective={NumGpuEffective}",
-                modelRef.ProviderModelId,
-                numCtx,
-                outputCap,
-                images.Count,
-                (int)streamTimeout.TotalSeconds,
-                inferenceProfile.Device,
-                inferenceProfile.NumGpu);
-
-            await foreach (var chunk in _ollamaClient.StreamChatAsync(request, cancellationToken, streamTimeout))
-            {
-                chunkCount++;
-                if (!string.IsNullOrEmpty(chunk.Message?.Content))
-                {
-                    firstTokenMs ??= llmSw.ElapsedMilliseconds;
-                    sb.Append(chunk.Message.Content);
-                }
-            }
-        }
-        else
-        {
-            var openRouter = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
-            var baseUrl = openRouter.BaseUrl;
-            var apiKey = openRouter.ApiKey!;
-            var messages = new List<OpenAiChatMessagePayload>
-            {
-                new() { Role = "system", Content = systemPrompt },
-                BuildOpenAiUserMessage(text, images)
-            };
-
-            _logger.LogInformation(
-                "[InvoiceImport] Appel LLM OpenRouter : modèle={Model} maxTokens={MaxTokens} images={ImageCount}",
-                modelRef.ProviderModelId, outputCap, images.Count);
-
-            await foreach (var chunk in _openAiClient.StreamChatAsOllamaCompatibleAsync(
-                               baseUrl,
-                               apiKey,
-                               modelRef.ProviderModelId,
-                               messages,
-                               Array.Empty<OllamaToolDefinition>(),
-                               0d,
-                               outputCap,
-                               cancellationToken))
-            {
-                chunkCount++;
-                if (!string.IsNullOrEmpty(chunk.Message?.Content))
-                {
-                    firstTokenMs ??= llmSw.ElapsedMilliseconds;
-                    sb.Append(chunk.Message.Content);
-                }
-            }
-        }
-
-        return (sb.ToString(), new InvoiceImportLlmMetrics(chunkCount, firstTokenMs));
-    }
-
-    private static string BuildUserPrompt(string text, bool hasImages)
-    {
-        var intro = hasImages
-            ? "Analyse le document (image jointe"
-            : "Analyse le document suivant";
-        if (hasImages && !string.IsNullOrWhiteSpace(text))
-            intro += " et texte OCR ci-dessous";
-        else if (hasImages)
-            intro += " uniquement";
-        intro += ") et extrais les données commerciales au format JSON demandé.\n\n";
-
-        if (string.IsNullOrWhiteSpace(text))
-            return intro;
-
-        return intro
-            + "--- DÉBUT DU CONTENU OCR ---\n"
-            + text
-            + "\n--- FIN DU CONTENU OCR ---";
-    }
-
-    private static OpenAiChatMessagePayload BuildOpenAiUserMessage(string text, List<string> images)
-    {
-        var prompt = BuildUserPrompt(text, images.Count > 0);
-        if (images.Count == 0)
-            return new OpenAiChatMessagePayload { Role = "user", Content = prompt };
-
-        var parts = new List<OpenAiContentPart> { new() { Type = "text", Text = prompt } };
-        foreach (var b64 in images)
-        {
-            parts.Add(new OpenAiContentPart
-            {
-                Type = "image_url",
-                ImageUrl = new OpenAiImageUrl { Url = "data:image/png;base64," + b64 }
-            });
-        }
-        return new OpenAiChatMessagePayload { Role = "user", Content = parts };
-    }
 
     // ========================================================================
     // Validation / normalisation / rapprochement

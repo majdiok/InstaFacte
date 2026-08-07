@@ -1,0 +1,291 @@
+import { Component, EventEmitter, Input, Output, computed, inject, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { Observable, forkJoin, of } from 'rxjs';
+import { catchError, map } from 'rxjs/operators';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { AuthService } from '@core/services/auth.service';
+import { PERMISSIONS } from '@core/config/permission-keys';
+import { ClientService, ClientType } from '@core/services/client.service';
+import { SupplierService, SupplierType } from '@core/services/supplier.service';
+import { ProposedThirdParty } from '../../models/accounting-document-import.models';
+
+/**
+ * Création rapide du client ou du fournisseur d'une pièce importée, pré-remplie avec les
+ * données extraites.
+ *
+ * Trois garde-fous :
+ * - la création n'a lieu que sur clic explicite (jamais dans le flux de proposition) ;
+ * - les champs obligatoires que l'extraction ne peut pas deviner (adresse, e-mail) doivent être
+ *   saisis : le bouton reste désactivé tant qu'ils manquent ;
+ * - un tiers proche existant est proposé au rattachement plutôt qu'à la création.
+ */
+@Component({
+  selector: 'app-accounting-third-party-quick-create',
+  standalone: true,
+  imports: [CommonModule, FormsModule, ButtonComponent],
+  template: `
+    @if (canCreate()) {
+      @if (!expanded()) {
+        <app-button variant="secondary" icon="pi-user-plus" iconPos="left"
+                    (click)="expand()"
+                    [ariaLabel]="isSupplier() ? 'Créer le fournisseur' : 'Créer le client'">
+          {{ isSupplier() ? 'Créer le fournisseur' : 'Créer le client' }}
+        </app-button>
+      } @else {
+        <form class="tpq" (ngSubmit)="submit()">
+          @if (duplicates().length > 0) {
+            <div class="tpq-duplicates" role="alert">
+              <p class="tpq-duplicates__title">
+                <i class="pi pi-exclamation-triangle" aria-hidden="true"></i>
+                Un tiers proche existe déjà :
+              </p>
+              <ul>
+                @for (d of duplicates(); track d.id) {
+                  <li>{{ d.name }} @if (d.nif) { <code>{{ d.nif }}</code> }</li>
+                }
+              </ul>
+              <p class="tpq-duplicates__hint">
+                Rattachez-le depuis la colonne « Auxiliaire » de la grille plutôt que d'en créer un doublon.
+              </p>
+            </div>
+          }
+
+          <div class="tpq-grid">
+            <label class="tpq-field">
+              <span>Nom <abbr title="obligatoire">*</abbr></span>
+              <input type="text" [(ngModel)]="form.name" name="name" required />
+            </label>
+            <label class="tpq-field">
+              <span>Matricule fiscal</span>
+              <input type="text" [(ngModel)]="form.nif" name="nif"
+                     placeholder="1234567/A/B/C/000" />
+            </label>
+            <label class="tpq-field">
+              <span>E-mail <abbr title="obligatoire">*</abbr></span>
+              <input type="email" [(ngModel)]="form.email" name="email" required />
+            </label>
+            <label class="tpq-field">
+              <span>Téléphone</span>
+              <input type="tel" [(ngModel)]="form.phone" name="phone" />
+            </label>
+            <label class="tpq-field tpq-field--wide">
+              <span>Adresse <abbr title="obligatoire">*</abbr></span>
+              <input type="text" [(ngModel)]="form.street" name="street" required />
+            </label>
+            <label class="tpq-field">
+              <span>Code postal</span>
+              <input type="text" [(ngModel)]="form.postalCode" name="postalCode" />
+            </label>
+            <label class="tpq-field">
+              <span>Ville <abbr title="obligatoire">*</abbr></span>
+              <input type="text" [(ngModel)]="form.city" name="city" required />
+            </label>
+            <label class="tpq-field">
+              <span>Gouvernorat <abbr title="obligatoire">*</abbr></span>
+              <input type="text" [(ngModel)]="form.governorate" name="governorate" required />
+            </label>
+          </div>
+
+          @if (error()) {
+            <p class="tpq-error" role="alert">{{ error() }}</p>
+          }
+
+          <div class="tpq-actions">
+            <app-button variant="secondary" (click)="expanded.set(false)" ariaLabel="Annuler la création">
+              Annuler
+            </app-button>
+            <app-button variant="primary" type="submit" icon="pi-check" iconPos="left"
+                        [disabled]="!isValid() || saving()"
+                        ariaLabel="Enregistrer le tiers">
+              {{ saving() ? 'Création…' : 'Créer et rattacher' }}
+            </app-button>
+          </div>
+          <p class="tpq-note">
+            Le tiers sera créé dans le dossier. L'écriture, elle, n'est enregistrée qu'après
+            votre validation dans la saisie.
+          </p>
+        </form>
+      }
+    } @else {
+      <p class="tpq-forbidden">
+        Vous n'avez pas l'autorisation de créer un tiers. L'écriture utilisera le compte
+        collectif sans auxiliaire.
+      </p>
+    }
+  `,
+  styles: `
+    .tpq { margin-top:var(--spacing-3); display:flex; flex-direction:column; gap:var(--spacing-2); }
+    .tpq-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:var(--spacing-2); }
+    .tpq-field { display:flex; flex-direction:column; gap:2px; font-size:var(--font-size-xs); }
+    .tpq-field--wide { grid-column:1 / -1; }
+    .tpq-field span { color:var(--color-text-secondary); }
+    .tpq-field abbr { color:var(--color-danger); text-decoration:none; }
+    .tpq-field input { padding:var(--spacing-1) var(--spacing-2); border:1px solid var(--color-border-default); border-radius:var(--radius-sm); background:var(--color-background-default); color:var(--color-text-primary); font-size:var(--font-size-sm); }
+    .tpq-actions { display:flex; justify-content:flex-end; gap:var(--spacing-2); }
+    .tpq-error { margin:0; color:var(--color-danger); font-size:var(--font-size-xs); }
+    .tpq-note { margin:0; color:var(--color-text-tertiary); font-size:var(--font-size-xs); }
+    .tpq-forbidden { margin:var(--spacing-2) 0 0; color:var(--color-text-tertiary); font-size:var(--font-size-xs); }
+    .tpq-duplicates { border:1px solid var(--color-warning); border-radius:var(--radius-sm); padding:var(--spacing-2); font-size:var(--font-size-xs); }
+    .tpq-duplicates__title { margin:0 0 var(--spacing-1); color:var(--color-warning); display:flex; align-items:center; gap:var(--spacing-1); }
+    .tpq-duplicates ul { margin:0; padding-left:var(--spacing-4); }
+    .tpq-duplicates__hint { margin:var(--spacing-1) 0 0; color:var(--color-text-secondary); }
+  `
+})
+export class ThirdPartyQuickCreateComponent {
+  private readonly auth = inject(AuthService);
+  private readonly clientService = inject(ClientService);
+  private readonly supplierService = inject(SupplierService);
+
+  @Input({ required: true }) set thirdParty(value: ProposedThirdParty) {
+    this._thirdParty.set(value);
+    this.form = {
+      name: value.name ?? '',
+      nif: value.nif ?? '',
+      email: value.email ?? '',
+      phone: value.phone ?? '',
+      street: value.street ?? '',
+      postalCode: value.postalCode ?? '',
+      city: value.city ?? '',
+      governorate: value.governorate ?? value.city ?? ''
+    };
+  }
+
+  /** Émet l'identifiant du tiers créé. */
+  @Output() created = new EventEmitter<string>();
+
+  private readonly _thirdParty = signal<ProposedThirdParty | null>(null);
+
+  readonly expanded = signal(false);
+  readonly saving = signal(false);
+  readonly error = signal<string | null>(null);
+  readonly duplicates = signal<{ id: string; name: string; nif?: string | null }[]>([]);
+
+  form = {
+    name: '',
+    nif: '',
+    email: '',
+    phone: '',
+    street: '',
+    postalCode: '',
+    city: '',
+    governorate: ''
+  };
+
+  readonly isSupplier = computed(() => this._thirdParty()?.kind === 2);
+
+  readonly canCreate = computed(() =>
+    this.isSupplier()
+      ? this.auth.hasPermission(PERMISSIONS.suppliers.create)
+      : this.auth.hasPermission(PERMISSIONS.clients.create)
+  );
+
+  isValid(): boolean {
+    return (
+      this.form.name.trim().length > 0 &&
+      this.form.email.trim().length > 0 &&
+      this.form.street.trim().length > 0 &&
+      this.form.city.trim().length > 0 &&
+      this.form.governorate.trim().length > 0
+    );
+  }
+
+  expand(): void {
+    this.expanded.set(true);
+    this.error.set(null);
+    this.searchDuplicates();
+  }
+
+  submit(): void {
+    if (!this.isValid() || this.saving()) {
+      return;
+    }
+    this.saving.set(true);
+    this.error.set(null);
+
+    const request = {
+      name: this.form.name.trim(),
+      email: this.form.email.trim(),
+      phone: this.form.phone.trim() || undefined,
+      nif: this.form.nif.trim() || undefined,
+      street: this.form.street.trim(),
+      city: this.form.city.trim(),
+      postalCode: this.form.postalCode.trim() || undefined,
+      governorate: this.form.governorate.trim()
+    };
+
+    const onResult = (res: { success: boolean; data: string; message: string | null } | null | undefined): void => {
+      this.saving.set(false);
+      if (res?.success && res.data) {
+        this.expanded.set(false);
+        this.created.emit(res.data);
+      } else {
+        this.error.set(res?.message || "La création du tiers a échoué.");
+      }
+    };
+    const onError = (err: { error?: { message?: string }; message?: string }): void => {
+      this.saving.set(false);
+      this.error.set(err?.error?.message || err?.message || "La création du tiers a échoué.");
+    };
+
+    if (this.isSupplier()) {
+      this.supplierService
+        .createSupplier({
+          ...request,
+          type: this.form.nif.trim() ? SupplierType.Business : SupplierType.Individual,
+          paymentTermDays: 30
+        })
+        .subscribe({ next: onResult, error: onError });
+    } else {
+      this.clientService
+        .createClient({
+          ...request,
+          type: this.form.nif.trim() ? ClientType.Business : ClientType.Individual
+        })
+        .subscribe({ next: onResult, error: onError });
+    }
+  }
+
+  /** Garde anti-doublon : recherche par matricule fiscal puis par nom avant de créer. */
+  private searchDuplicates(): void {
+    const name = this.form.name.trim();
+    const nif = this.form.nif.trim();
+    if (name.length < 2 && nif.length === 0) {
+      this.duplicates.set([]);
+      return;
+    }
+
+    const terms = [nif, name].filter((t) => t.length >= 2);
+    if (terms.length === 0) {
+      this.duplicates.set([]);
+      return;
+    }
+
+    const searches = terms.map((term) => this.searchThirdParty(term));
+
+    forkJoin(searches).subscribe((results) => {
+      const flat = results.flat();
+      const unique = new Map(flat.map((item) => [item.id, item]));
+      this.duplicates.set([...unique.values()].slice(0, 5));
+    });
+  }
+
+  /** Recherche normalisée client/fournisseur, isolée pour éviter l'union de types des deux services. */
+  private searchThirdParty(
+    term: string
+  ): Observable<{ id: string; name: string; nif: string | null }[]> {
+    const empty: { id: string; name: string; nif: string | null }[] = [];
+
+    if (this.isSupplier()) {
+      return this.supplierService.getSuppliers({ search: term, page: 1, pageSize: 5 }).pipe(
+        map((res) => (res.data?.items ?? []).map((i) => ({ id: i.id, name: i.name, nif: i.nif }))),
+        catchError(() => of(empty))
+      );
+    }
+
+    return this.clientService.getClients({ search: term, page: 1, pageSize: 5 }).pipe(
+      map((res) => (res.data?.items ?? []).map((i) => ({ id: i.id, name: i.name, nif: i.nif }))),
+      catchError(() => of(empty))
+    );
+  }
+}

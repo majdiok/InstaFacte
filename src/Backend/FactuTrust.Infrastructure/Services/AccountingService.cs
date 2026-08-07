@@ -1,6 +1,7 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
+using FactuTrust.Application.Features.Accounting;
 using FactuTrust.Application.Features.Accounting.Services;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
@@ -48,7 +49,7 @@ public sealed class AccountingService : IAccountingService
     public const string SupplierEffetAccountNumber = "403";  // Fournisseurs - effets à payer
 
     /// <summary>Compte FODEC collecté (dette envers l'État). Crédité à la vente, débité en avoir.</summary>
-    public const string FodecAccountNumber = "4477";
+    public const string FodecAccountNumber = TunisianPostingAccounts.Fodec;
 
     /// <summary>Journal des Opérations Diverses : réception/acceptation d'effet et impayé (aucun mouvement de trésorerie).</summary>
     public const string MiscJournalCode = "JOD";
@@ -211,7 +212,7 @@ public sealed class AccountingService : IAccountingService
         var lines = new List<JournalLineInput>();
 
         lines.Add(new JournalLineInput(
-            "4111",
+            TunisianPostingAccounts.Client,
             $"Client — {invoice.Number.Value}",
             invoice.TotalAmount.Amount,
             0,
@@ -257,7 +258,7 @@ public sealed class AccountingService : IAccountingService
             if (kv.Value <= 0)
                 continue;
             lines.Add(new JournalLineInput(
-                "436711",
+                TunisianPostingAccounts.VatCollected,
                 $"TVA collectée {kv.Key}% — {invoice.Number.Value}",
                 0,
                 kv.Value,
@@ -280,7 +281,7 @@ public sealed class AccountingService : IAccountingService
         var stamp = invoice.FiscalStampAmount.Amount;
         if (Math.Abs(stamp) > 0.0005m)
         {
-            const string stampAccount = "4478";
+            const string stampAccount = TunisianPostingAccounts.FiscalStampOnSale;
             if (stamp > 0)
             {
                 lines.Add(new JournalLineInput(
@@ -307,10 +308,11 @@ public sealed class AccountingService : IAccountingService
         if (accountValidation.IsFailure)
             return accountValidation;
 
-        var n = await _journalEntries.ReserveNextEntryNumberAsync("JV", invoice.IssueDate.Year, cancellationToken);
+        var n = await _journalEntries.ReserveNextEntryNumberAsync(
+            TunisianPostingAccounts.SalesJournalCode, invoice.IssueDate.Year, cancellationToken);
         var create = JournalEntry.Create(
             n,
-            "JV",
+            TunisianPostingAccounts.SalesJournalCode,
             invoice.IssueDate,
             $"Facture vente {invoice.Number.Value}",
             period.Id,
@@ -357,7 +359,7 @@ public sealed class AccountingService : IAccountingService
 
         // CREDIT 4111 (Client) for the absolute total — we owe the client this amount.
         lines.Add(new JournalLineInput(
-            "4111",
+            TunisianPostingAccounts.Client,
             $"Avoir client — {invoice.Number.Value}",
             0,
             Math.Abs(invoice.TotalAmount.Amount),
@@ -405,7 +407,7 @@ public sealed class AccountingService : IAccountingService
             if (kv.Value <= 0)
                 continue;
             lines.Add(new JournalLineInput(
-                "436711",
+                TunisianPostingAccounts.VatCollected,
                 $"TVA collectée {kv.Key}% — Avoir {invoice.Number.Value}",
                 kv.Value,
                 0,
@@ -429,7 +431,7 @@ public sealed class AccountingService : IAccountingService
         var stamp = invoice.FiscalStampAmount.Amount;
         if (Math.Abs(stamp) > 0.0005m)
         {
-            const string stampAccount = "4478";
+            const string stampAccount = TunisianPostingAccounts.FiscalStampOnSale;
             if (stamp < 0)
             {
                 // Negative stamp (typical for AVO) = we owe back the stamp = DEBIT 4478.
@@ -457,10 +459,11 @@ public sealed class AccountingService : IAccountingService
         if (accountValidation.IsFailure)
             return accountValidation;
 
-        var n = await _journalEntries.ReserveNextEntryNumberAsync("JV", invoice.IssueDate.Year, cancellationToken);
+        var n = await _journalEntries.ReserveNextEntryNumberAsync(
+            TunisianPostingAccounts.SalesJournalCode, invoice.IssueDate.Year, cancellationToken);
         var create = JournalEntry.Create(
             n,
-            "JV",
+            TunisianPostingAccounts.SalesJournalCode,
             invoice.IssueDate,
             $"Avoir vente {invoice.Number.Value}",
             period.Id,
@@ -516,7 +519,7 @@ public sealed class AccountingService : IAccountingService
             lines.Add(new JournalLineInput("4341", $"Retenue à la source subie — {invoice.Number.Value}", withholding, 0, null, ThirdPartyKind.None));
         }
 
-        lines.Add(new JournalLineInput("4111", $"Client — {invoice.Number.Value}", 0, totalApplied, invoice.ClientId, ThirdPartyKind.Client));
+        lines.Add(new JournalLineInput(TunisianPostingAccounts.Client, $"Client — {invoice.Number.Value}", 0, totalApplied, invoice.ClientId, ThirdPartyKind.Client));
 
         var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
         if (accountValidation.IsFailure)
@@ -731,10 +734,11 @@ public sealed class AccountingService : IAccountingService
         if (accountValidation.IsFailure)
             return accountValidation;
 
-        var n = await _journalEntries.ReserveNextEntryNumberAsync("JA", invoice.InvoiceDate.Year, cancellationToken);
+        var n = await _journalEntries.ReserveNextEntryNumberAsync(
+            TunisianPostingAccounts.PurchaseJournalCode, invoice.InvoiceDate.Year, cancellationToken);
         var create = JournalEntry.Create(
             n,
-            "JA",
+            TunisianPostingAccounts.PurchaseJournalCode,
             invoice.InvoiceDate,
             $"Facture fournisseur {invoice.InvoiceNumber}",
             period.Id,
@@ -780,7 +784,7 @@ public sealed class AccountingService : IAccountingService
 
         var lines = new List<JournalLineInput>
         {
-            new("4011", $"Fournisseur — {inv.InvoiceNumber}", amount, 0, inv.SupplierId, ThirdPartyKind.Supplier),
+            new(TunisianPostingAccounts.Supplier, $"Fournisseur — {inv.InvoiceNumber}", amount, 0, inv.SupplierId, ThirdPartyKind.Supplier),
             new(creditAccount, creditLabel, 0, amount, null, ThirdPartyKind.None)
         };
 
@@ -860,7 +864,7 @@ public sealed class AccountingService : IAccountingService
             // Impayé : l'effet revient impayé, la créance client est réouverte.
             lines = new List<JournalLineInput>
             {
-                new("4111", $"Effet impayé — {invoice.Number.Value}", net, 0, invoice.ClientId, ThirdPartyKind.Client),
+                new(TunisianPostingAccounts.Client, $"Effet impayé — {invoice.Number.Value}", net, 0, invoice.ClientId, ThirdPartyKind.Client),
                 new(ClientEffetAccountNumber, $"Effet à recevoir impayé — {invoice.Number.Value}", 0, net, null, ThirdPartyKind.None)
             };
             journal = MiscJournalCode;
@@ -1399,8 +1403,10 @@ public sealed class AccountingService : IAccountingService
     private static string RevenueAccountForLine(InvoiceLine line)
     {
         if (line.ProductId == Guid.Empty || line.Product is null)
-            return "707";
-        return line.Product.Type == ProductType.Service ? "705" : "707";
+            return TunisianPostingAccounts.SalesOfGoods;
+        return line.Product.Type == ProductType.Service
+            ? TunisianPostingAccounts.SalesOfServices
+            : TunisianPostingAccounts.SalesOfGoods;
     }
 
     private static string ExpenseAccount(CashExpenseCategory category) => category switch

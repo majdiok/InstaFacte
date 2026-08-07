@@ -68,10 +68,28 @@ import { PERMISSIONS } from '@core/config/permission-keys';
           }
         </div>
 
-        <a routerLink="/accounting/draft-batch" class="btn btn-outline-secondary btn-sm"
-           title="Import d'écritures">
-          Import
-        </a>
+        <div class="dropdown">
+          <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle"
+                  (click)="toggleImport()" [attr.aria-expanded]="importOpen"
+                  title="Importer une pièce ou des écritures">
+            Import
+          </button>
+          @if (importOpen) {
+            <div class="dropdown-menu show">
+              <button type="button" class="dropdown-item"
+                      (click)="importDocument.emit(); importOpen = false">
+                Importer une facture (PDF / image)
+              </button>
+              <div class="dropdown-divider"></div>
+              <a routerLink="/accounting/import" class="dropdown-item">
+                Import de fichier (CSV / Excel)
+              </a>
+              <a routerLink="/accounting/draft-batch" class="dropdown-item">
+                Écritures en brouillard
+              </a>
+            </div>
+          }
+        </div>
       </div>
 
       <div class="entry-toolbar__right">
@@ -126,23 +144,28 @@ export class EntryToolbarComponent {
   @Output() loadTemplate = new EventEmitter<void>();
   @Output() saveTemplate = new EventEmitter<void>();
   @Output() reset = new EventEmitter<void>();
+  /** Ouvre la modale d'import d'une facture à comptabiliser. */
+  @Output() importDocument = new EventEmitter<void>();
 
   optionsOpen = false;
   templateOpen = false;
   saveMenuOpen = false;
+  importOpen = false;
 
   readonly canSave = computed(() =>
     this.store.canSubmit() && this.auth.hasPermission(PERMISSIONS.accounting.create)
   );
 
-  toggleOptions(): void { this.optionsOpen = !this.optionsOpen; this.templateOpen = false; this.saveMenuOpen = false; }
-  toggleTemplate(): void { this.templateOpen = !this.templateOpen; this.optionsOpen = false; this.saveMenuOpen = false; }
-  toggleSaveMenu(): void { this.saveMenuOpen = !this.saveMenuOpen; this.optionsOpen = false; this.templateOpen = false; }
+  toggleOptions(): void { this.optionsOpen = !this.optionsOpen; this.templateOpen = false; this.saveMenuOpen = false; this.importOpen = false; }
+  toggleTemplate(): void { this.templateOpen = !this.templateOpen; this.optionsOpen = false; this.saveMenuOpen = false; this.importOpen = false; }
+  toggleSaveMenu(): void { this.saveMenuOpen = !this.saveMenuOpen; this.optionsOpen = false; this.templateOpen = false; this.importOpen = false; }
+  toggleImport(): void { this.importOpen = !this.importOpen; this.optionsOpen = false; this.templateOpen = false; this.saveMenuOpen = false; }
 
   closeMenus(): void {
     this.optionsOpen = false;
     this.templateOpen = false;
     this.saveMenuOpen = false;
+    this.importOpen = false;
   }
 
   toggleColumn(key: 'piece' | 'dueDate' | 'lettering' | 'vat', event: Event): void {

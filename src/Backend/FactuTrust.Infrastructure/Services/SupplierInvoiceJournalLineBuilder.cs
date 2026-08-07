@@ -1,3 +1,4 @@
+using FactuTrust.Application.Features.Accounting;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 
@@ -21,7 +22,9 @@ internal static class SupplierInvoiceJournalLineBuilder
             {
                 assetHt += line.SubTotal.Amount;
                 assetVat += line.VatAmount.Amount;
-                var acc = string.IsNullOrWhiteSpace(line.AssetAccountNumber) ? "218" : line.AssetAccountNumber.Trim();
+                var acc = string.IsNullOrWhiteSpace(line.AssetAccountNumber)
+                    ? TunisianPostingAccounts.DefaultFixedAsset
+                    : line.AssetAccountNumber.Trim();
                 assetDebits.TryGetValue(acc, out var sum);
                 assetDebits[acc] = sum + line.SubTotal.Amount;
             }
@@ -36,9 +39,9 @@ internal static class SupplierInvoiceJournalLineBuilder
         var label = invoice.InvoiceNumber;
 
         if (goodsHt > 0)
-            lines.Add(new JournalLineInput("607", $"Achats — {label}", goodsHt, 0, null, ThirdPartyKind.None));
+            lines.Add(new JournalLineInput(TunisianPostingAccounts.PurchasesOfGoods, $"Achats — {label}", goodsHt, 0, null, ThirdPartyKind.None));
         if (goodsVat > 0)
-            lines.Add(new JournalLineInput("43666", $"TVA déductible — {label}", goodsVat, 0, null, ThirdPartyKind.None));
+            lines.Add(new JournalLineInput(TunisianPostingAccounts.VatDeductibleGoods, $"TVA déductible — {label}", goodsVat, 0, null, ThirdPartyKind.None));
 
         foreach (var kv in assetDebits.OrderBy(k => k.Key))
         {
@@ -46,18 +49,18 @@ internal static class SupplierInvoiceJournalLineBuilder
         }
 
         if (assetVat > 0)
-            lines.Add(new JournalLineInput("43662", $"TVA déductible immo — {label}", assetVat, 0, null, ThirdPartyKind.None));
+            lines.Add(new JournalLineInput(TunisianPostingAccounts.VatDeductibleFixedAssets, $"TVA déductible immo — {label}", assetVat, 0, null, ThirdPartyKind.None));
 
         var ttc = invoice.TotalAmount.Amount;
         var stamp = invoice.FiscalStampAmount?.Amount ?? 0;
         if (Math.Abs(stamp) > 0.0005m && stamp > 0)
         {
-            lines.Add(new JournalLineInput("6371", $"Timbre fiscal — {label}", stamp, 0, null, ThirdPartyKind.None));
+            lines.Add(new JournalLineInput(TunisianPostingAccounts.FiscalStampOnPurchase, $"Timbre fiscal — {label}", stamp, 0, null, ThirdPartyKind.None));
             ttc += stamp;
         }
 
         lines.Add(new JournalLineInput(
-            "4011",
+            TunisianPostingAccounts.Supplier,
             $"Fournisseur — {label}",
             0,
             ttc,

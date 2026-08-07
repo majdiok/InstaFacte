@@ -1,0 +1,545 @@
+import {
+  Component,
+  ElementRef,
+  EventEmitter,
+  Input,
+  OnDestroy,
+  Output,
+  ViewChild,
+  computed,
+  inject,
+  signal
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { DialogModule } from 'primeng/dialog';
+import { Subscription } from 'rxjs';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { AccountingDocumentImportService } from '../../services/accounting-document-import.service';
+import {
+  DocumentDirection,
+  JournalEntryProposal,
+  ProposalDiagnostic,
+  extractionMethodLabel
+} from '../../models/accounting-document-import.models';
+import { ThirdPartyQuickCreateComponent } from './third-party-quick-create.component';
+
+type ImportPhase = 'idle' | 'extracting' | 'review' | 'error';
+
+/**
+ * Import d'une facture (vente ou achat) depuis la saisie manuelle d'écritures.
+ *
+ * Parcours : choix du fichier → détection des zones → écran de RELECTURE (sens, tiers, totaux
+ * détectés, lignes proposées, diagnostics) → application au formulaire de saisie.
+ * Rien n'est enregistré ici : l'écriture part par le chemin habituel « Enregistrer ».
+ */
+@Component({
+  selector: 'app-accounting-document-import-dialog',
+  standalone: true,
+  imports: [CommonModule, DialogModule, ButtonComponent, ThirdPartyQuickCreateComponent],
+  providers: [AccountingDocumentImportService],
+  template: `
+    <p-dialog
+      header="Importer une facture"
+      [(visible)]="visible"
+      [modal]="true"
+      [style]="{ width: phase() === 'review' ? '960px' : '560px', maxWidth: '95vw' }"
+      [draggable]="false"
+      [resizable]="false"
+      [closable]="true"
+      (onHide)="onHide()"
+      ariaLabel="Importer une facture de vente ou d'achat">
+
+      <input
+        #fileInput
+        type="file"
+        class="adi-file-input"
+        tabindex="-1"
+        accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.docx,.xlsx,.xlsm,application/pdf,image/png,image/jpeg,image/webp,image/bmp,image/tiff"
+        (change)="onFileSelected($event)"
+        aria-hidden="true" />
+
+      @switch (phase()) {
+        @case ('extracting') {
+          <div class="adi-state" role="status" aria-live="polite">
+            <i class="pi pi-spin pi-spinner adi-spinner" aria-hidden="true"></i>
+            <p class="adi-title">Analyse de la pièce… ({{ elapsedSeconds() }} s)</p>
+            <p class="adi-text">
+              @if (selectedFileName()) {
+                <span class="adi-filename">{{ selectedFileName() }}</span>
+              }
+              @if (elapsedSeconds() < 20) {
+                Lecture du document et détection des zones…
+              } @else {
+                Le document n'est pas au format InstaFact : l'analyse IA peut prendre
+                jusqu'à 3 minutes la première fois.
+              }
+            </p>
+            <app-button variant="secondary" icon="pi-times" iconPos="left"
+                        (click)="cancelImport()" ariaLabel="Annuler l'analyse">
+              Annuler
+            </app-button>
+          </div>
+        }
+
+        @case ('error') {
+          <div class="adi-state" role="alert">
+            <i class="pi pi-exclamation-triangle adi-icon adi-icon-error" aria-hidden="true"></i>
+            <p class="adi-title">L'analyse a échoué</p>
+            <p class="adi-text">{{ errorMessage() }}</p>
+            <app-button variant="primary" icon="pi-refresh" iconPos="left"
+                        (click)="chooseFile()" ariaLabel="Choisir un autre fichier">
+              Réessayer
+            </app-button>
+          </div>
+        }
+
+        @case ('review') {
+          @if (proposal(); as p) {
+            <div class="adi-review">
+              <!-- Sens de la pièce -->
+              <section class="adi-card">
+                <header class="adi-card__header">
+                  <h3 class="adi-card__title">Sens de la pièce</h3>
+                  @if (p.directionReason) {
+                    <span class="adi-card__hint">{{ p.directionReason }}</span>
+                  }
+                </header>
+                <div class="adi-direction" role="radiogroup" aria-label="Sens de la pièce">
+                  <label class="adi-direction__option" [class.is-active]="p.direction === 'SALE'">
+                    <input type="radio" name="adi-direction" value="SALE"
+                           [checked]="p.direction === 'SALE'"
+                           [disabled]="reanalyzing()"
+                           (change)="changeDirection('SALE')" />
+                    <span>
+                      <strong>Vente</strong>
+                      <small>Journal JV — client au débit</small>
+                    </span>
+                  </label>
+                  <label class="adi-direction__option" [class.is-active]="p.direction === 'PURCHASE'">
+                    <input type="radio" name="adi-direction" value="PURCHASE"
+                           [checked]="p.direction === 'PURCHASE'"
+                           [disabled]="reanalyzing()"
+                           (change)="changeDirection('PURCHASE')" />
+                    <span>
+                      <strong>Achat</strong>
+                      <small>Journal JA — fournisseur au crédit</small>
+                    </span>
+                  </label>
+                  @if (reanalyzing()) {
+                    <span class="adi-reanalyzing" role="status">
+                      <i class="pi pi-spin pi-spinner" aria-hidden="true"></i> Recalcul…
+                    </span>
+                  }
+                </div>
+                <p class="adi-method">
+                  <i class="pi pi-info-circle" aria-hidden="true"></i>
+                  {{ methodLabel() }}
+                </p>
+              </section>
+
+              <div class="adi-columns">
+                <!-- Tiers -->
+                <section class="adi-card">
+                  <h3 class="adi-card__title">
+                    {{ p.direction === 'SALE' ? 'Client' : 'Fournisseur' }}
+                  </h3>
+                  @if (p.thirdParty; as tp) {
+                    <dl class="adi-facts">
+                      <div><dt>Nom</dt><dd>{{ tp.matchedName || tp.name || '—' }}</dd></div>
+                      <div><dt>Matricule fiscal</dt><dd>{{ tp.nif || '—' }}</dd></div>
+                      <div><dt>Compte collectif</dt><dd><code>{{ tp.collectiveAccountNumber }}</code></dd></div>
+                    </dl>
+                    @if (tp.matchedId) {
+                      <p class="adi-badge adi-badge--ok">
+                        <i class="pi pi-check-circle" aria-hidden="true"></i>
+                        Tiers rapproché{{ tp.matchedBy === 'nif' ? ' par matricule fiscal' : ' par nom' }}
+                      </p>
+                    } @else {
+                      <p class="adi-badge adi-badge--warn">
+                        <i class="pi pi-exclamation-circle" aria-hidden="true"></i>
+                        Tiers non rapproché — l'écriture restera sans auxiliaire
+                      </p>
+                      <app-accounting-third-party-quick-create
+                        [thirdParty]="tp"
+                        (created)="onThirdPartyCreated($event)" />
+                    }
+                  }
+                </section>
+
+                <!-- Zones détectées -->
+                <section class="adi-card">
+                  <h3 class="adi-card__title">Zones détectées</h3>
+                  <dl class="adi-facts">
+                    <div><dt>N° de pièce</dt><dd>{{ p.extraction.documentNumber || '—' }}</dd></div>
+                    <div><dt>Date</dt><dd>{{ p.entryDate || '—' }}</dd></div>
+                    <div><dt>Total HT</dt><dd>{{ amount(p.extraction.totalHt) }}</dd></div>
+                    @for (b of p.extraction.vatBreakdown; track b.ratePercent) {
+                      <div>
+                        <dt>TVA {{ b.ratePercent }}%</dt>
+                        <dd>{{ amount(b.vatAmount) }} <small>(base {{ amount(b.baseAmount) }})</small></dd>
+                      </div>
+                    }
+                    @if (p.extraction.fodecAmount) {
+                      <div><dt>FODEC</dt><dd>{{ amount(p.extraction.fodecAmount) }}</dd></div>
+                    }
+                    @if (p.extraction.fiscalStampAmount) {
+                      <div><dt>Timbre fiscal</dt><dd>{{ amount(p.extraction.fiscalStampAmount) }}</dd></div>
+                    }
+                    <div class="adi-facts__total">
+                      <dt>Total TTC</dt><dd>{{ amount(p.extraction.totalTtc) }}</dd>
+                    </div>
+                  </dl>
+                </section>
+              </div>
+
+              <!-- Lignes proposées -->
+              <section class="adi-card">
+                <h3 class="adi-card__title">Écriture proposée — journal {{ p.journalCode }}</h3>
+                <div class="adi-table-wrap">
+                  <table class="adi-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Compte</th>
+                        <th scope="col">Libellé</th>
+                        <th scope="col" class="adi-num">Débit</th>
+                        <th scope="col" class="adi-num">Crédit</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (l of p.lines; track $index) {
+                        <tr>
+                          <td>
+                            <code>{{ l.accountNumber }}</code>
+                            @if (l.accountStatus === 'missing') {
+                              <span class="adi-chip adi-chip--danger" title="Absent du plan comptable">absent</span>
+                            } @else if (l.accountStatus === 'inactive') {
+                              <span class="adi-chip adi-chip--warn" title="Compte désactivé">désactivé</span>
+                            }
+                            @if (l.accountLabel) {
+                              <small class="adi-account-label">{{ l.accountLabel }}</small>
+                            }
+                          </td>
+                          <td>{{ l.label }}</td>
+                          <td class="adi-num">{{ l.debit ? amount(l.debit) : '' }}</td>
+                          <td class="adi-num">{{ l.credit ? amount(l.credit) : '' }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <th scope="row" colspan="2">Totaux</th>
+                        <td class="adi-num">{{ amount(p.totalDebit) }}</td>
+                        <td class="adi-num">{{ amount(p.totalCredit) }}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+                <p class="adi-balanced">
+                  <i class="pi pi-check-circle" aria-hidden="true"></i>
+                  Écriture équilibrée — la contrepartie est calculée à partir des autres lignes.
+                </p>
+              </section>
+
+              <!-- Diagnostics -->
+              @if (p.diagnostics.length > 0) {
+                <section class="adi-card">
+                  <h3 class="adi-card__title">Contrôles</h3>
+                  <ul class="adi-diagnostics">
+                    @for (d of p.diagnostics; track $index) {
+                      <li class="adi-diagnostic" [class]="'adi-diagnostic--' + d.severity">
+                        <i class="pi" [class.pi-times-circle]="d.severity === 'blocking'"
+                           [class.pi-exclamation-triangle]="d.severity === 'warning'"
+                           [class.pi-info-circle]="d.severity === 'info'" aria-hidden="true"></i>
+                        <span>{{ d.message }}</span>
+                      </li>
+                    }
+                  </ul>
+                </section>
+              }
+            </div>
+          }
+        }
+
+        @default {
+          <div class="adi-state">
+            <i class="pi pi-file-import adi-icon adi-icon-idle" aria-hidden="true"></i>
+            <p class="adi-title">Importez une facture à comptabiliser</p>
+            <p class="adi-text">
+              Facture de vente ou d'achat (PDF recommandé ; photos et scans acceptés).
+              Le système détecte les zones de la pièce et propose l'écriture selon le plan
+              comptable tunisien. Vous relisez avant d'appliquer.
+            </p>
+            <app-button variant="primary" icon="pi-upload" iconPos="left"
+                        (click)="chooseFile()" ariaLabel="Choisir un fichier à importer">
+              Choisir un fichier
+            </app-button>
+            <p class="adi-hint">Taille maximale : 10 Mo</p>
+            @if (capabilityHint(); as hint) {
+              <p class="adi-hint adi-hint-warn" role="status">{{ hint }}</p>
+            }
+          </div>
+        }
+      }
+
+      <ng-template pTemplate="footer">
+        @if (phase() === 'review') {
+          <div class="adi-footer">
+            <app-button variant="secondary" (click)="chooseFile()" ariaLabel="Analyser une autre pièce">
+              Autre pièce
+            </app-button>
+            <app-button variant="primary" icon="pi-check" iconPos="left"
+                        [disabled]="!canApply()"
+                        (click)="apply()"
+                        ariaLabel="Appliquer la proposition à la saisie">
+              Appliquer à la saisie
+            </app-button>
+          </div>
+        }
+      </ng-template>
+    </p-dialog>
+  `,
+  styles: `
+    .adi-file-input { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
+    .adi-state { display:flex; flex-direction:column; align-items:center; text-align:center; gap:var(--spacing-3); padding:var(--spacing-5) var(--spacing-3); }
+    .adi-icon, .adi-spinner { font-size:2.5rem; }
+    .adi-icon-idle { color:var(--color-primary); }
+    .adi-icon-error { color:var(--color-danger); }
+    .adi-spinner { color:var(--color-primary); }
+    .adi-title { margin:0; font-weight:600; }
+    .adi-text { margin:0; color:var(--color-text-secondary); font-size:var(--font-size-sm); max-width:44ch; }
+    .adi-filename { display:block; font-weight:600; color:var(--color-text-primary); margin-bottom:var(--spacing-1); }
+    .adi-hint { margin:0; font-size:var(--font-size-xs); color:var(--color-text-tertiary); }
+    .adi-hint-warn { color:var(--color-warning); }
+
+    .adi-review { display:flex; flex-direction:column; gap:var(--spacing-3); }
+    .adi-columns { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:var(--spacing-3); }
+    .adi-card { border:1px solid var(--color-border-default); border-radius:var(--radius-md); padding:var(--spacing-3); background:var(--color-background-elevated); }
+    .adi-card__header { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:var(--spacing-2); }
+    .adi-card__title { margin:0 0 var(--spacing-2); font-size:var(--font-size-sm); font-weight:600; text-transform:uppercase; letter-spacing:.02em; color:var(--color-text-secondary); }
+    .adi-card__hint { font-size:var(--font-size-xs); color:var(--color-text-tertiary); }
+
+    .adi-direction { display:flex; flex-wrap:wrap; gap:var(--spacing-2); align-items:center; }
+    .adi-direction__option { display:flex; align-items:center; gap:var(--spacing-2); border:1px solid var(--color-border-default); border-radius:var(--radius-md); padding:var(--spacing-2) var(--spacing-3); cursor:pointer; }
+    .adi-direction__option.is-active { border-color:var(--color-primary); background:var(--color-primary-subtle, transparent); }
+    .adi-direction__option small { display:block; font-size:var(--font-size-xs); color:var(--color-text-tertiary); }
+    .adi-reanalyzing { font-size:var(--font-size-xs); color:var(--color-text-secondary); }
+    .adi-method { margin:var(--spacing-2) 0 0; font-size:var(--font-size-xs); color:var(--color-text-tertiary); }
+
+    .adi-facts { margin:0; display:flex; flex-direction:column; gap:var(--spacing-1); }
+    .adi-facts > div { display:flex; justify-content:space-between; gap:var(--spacing-3); font-size:var(--font-size-sm); }
+    .adi-facts dt { color:var(--color-text-secondary); margin:0; }
+    .adi-facts dd { margin:0; font-variant-numeric:tabular-nums; text-align:right; }
+    .adi-facts__total { border-top:1px solid var(--color-border-subtle); margin-top:var(--spacing-1); padding-top:var(--spacing-1); font-weight:600; }
+
+    .adi-badge { display:flex; align-items:center; gap:var(--spacing-2); margin:var(--spacing-2) 0 0; font-size:var(--font-size-xs); }
+    .adi-badge--ok { color:var(--color-success); }
+    .adi-badge--warn { color:var(--color-warning); }
+
+    .adi-table-wrap { overflow-x:auto; }
+    .adi-table { width:100%; border-collapse:collapse; font-size:var(--font-size-sm); }
+    .adi-table th, .adi-table td { padding:var(--spacing-2); border-bottom:1px solid var(--color-border-subtle); text-align:left; vertical-align:top; }
+    .adi-table tfoot th, .adi-table tfoot td { border-bottom:none; border-top:2px solid var(--color-border-default); font-weight:600; }
+    .adi-num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .adi-account-label { display:block; color:var(--color-text-tertiary); font-size:var(--font-size-xs); }
+    .adi-chip { display:inline-block; margin-left:var(--spacing-1); padding:0 var(--spacing-1); border-radius:var(--radius-sm); font-size:var(--font-size-xs); }
+    .adi-chip--danger { background:var(--color-danger); color:#fff; }
+    .adi-chip--warn { background:var(--color-warning); color:#000; }
+    .adi-balanced { margin:var(--spacing-2) 0 0; font-size:var(--font-size-xs); color:var(--color-success); display:flex; align-items:center; gap:var(--spacing-2); }
+
+    .adi-diagnostics { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:var(--spacing-2); }
+    .adi-diagnostic { display:flex; gap:var(--spacing-2); font-size:var(--font-size-sm); }
+    .adi-diagnostic--blocking { color:var(--color-danger); }
+    .adi-diagnostic--warning { color:var(--color-warning); }
+    .adi-diagnostic--info { color:var(--color-text-secondary); }
+
+    .adi-footer { display:flex; justify-content:flex-end; gap:var(--spacing-2); }
+  `
+})
+export class AccountingDocumentImportDialogComponent implements OnDestroy {
+  private readonly importService = inject(AccountingDocumentImportService);
+
+  @Input() visible = false;
+  @Output() visibleChange = new EventEmitter<boolean>();
+
+  /** Émis quand l'utilisateur applique la proposition : le parent la pousse dans le formulaire. */
+  @Output() applied = new EventEmitter<{ proposal: JournalEntryProposal; file: File }>();
+
+  @ViewChild('fileInput') fileInput?: ElementRef<HTMLInputElement>;
+
+  readonly phase = signal<ImportPhase>('idle');
+  readonly errorMessage = signal('');
+  readonly selectedFileName = signal('');
+  readonly elapsedSeconds = signal(0);
+  readonly proposal = signal<JournalEntryProposal | null>(null);
+  readonly reanalyzing = signal(false);
+  readonly capabilityHint = signal<string | null>(null);
+
+  readonly canApply = computed(() => {
+    const p = this.proposal();
+    return !!p && !p.hasBlockingDiagnostic && !this.reanalyzing();
+  });
+
+  readonly methodLabel = computed(() => {
+    const p = this.proposal();
+    return p ? extractionMethodLabel(p.extraction.extractionMethod) : '';
+  });
+
+  private currentFile: File | null = null;
+  private subscription?: Subscription;
+  private timer?: ReturnType<typeof setInterval>;
+
+  ngOnDestroy(): void {
+    this.stopTimer();
+    this.subscription?.unsubscribe();
+  }
+
+  /** Appelé par le parent à l'ouverture : signale une éventuelle indisponibilité de l'IA. */
+  loadCapabilities(): void {
+    this.importService.capabilities().subscribe({
+      next: (caps) => {
+        this.capabilityHint.set(
+          caps.aiFallbackAvailable
+            ? null
+            : "Analyse IA indisponible pour votre compte : seules les factures émises par "
+              + 'InstaFact pourront être lues.'
+        );
+      },
+      error: () => this.capabilityHint.set(null)
+    });
+  }
+
+  chooseFile(): void {
+    this.phase.set('idle');
+    this.fileInput?.nativeElement.click();
+  }
+
+  onFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) {
+      return;
+    }
+    this.currentFile = file;
+    this.selectedFileName.set(file.name);
+    this.runAnalysis();
+  }
+
+  changeDirection(direction: DocumentDirection): void {
+    const current = this.proposal();
+    if (!current || current.direction === direction || !this.currentFile) {
+      return;
+    }
+    this.reanalyzing.set(true);
+    this.subscription?.unsubscribe();
+    this.subscription = this.importService.propose(this.currentFile, direction).subscribe({
+      next: (p) => {
+        this.proposal.set(p);
+        this.reanalyzing.set(false);
+      },
+      error: (err: Error) => {
+        this.reanalyzing.set(false);
+        this.errorMessage.set(err.message);
+        this.phase.set('error');
+      }
+    });
+  }
+
+  /** Le tiers vient d'être créé : on relance la proposition pour rattacher l'auxiliaire. */
+  onThirdPartyCreated(_: string): void {
+    const current = this.proposal();
+    if (!current || !this.currentFile) {
+      return;
+    }
+    this.reanalyzing.set(true);
+    this.subscription?.unsubscribe();
+    this.subscription = this.importService.propose(this.currentFile, current.direction).subscribe({
+      next: (p) => {
+        this.proposal.set(p);
+        this.reanalyzing.set(false);
+      },
+      error: () => this.reanalyzing.set(false)
+    });
+  }
+
+  apply(): void {
+    const p = this.proposal();
+    if (!p || !this.canApply() || !this.currentFile) {
+      return;
+    }
+    this.applied.emit({ proposal: p, file: this.currentFile });
+    this.close();
+  }
+
+  cancelImport(): void {
+    this.subscription?.unsubscribe();
+    this.stopTimer();
+    this.phase.set('idle');
+  }
+
+  onHide(): void {
+    this.subscription?.unsubscribe();
+    this.stopTimer();
+    this.reset();
+    this.visibleChange.emit(false);
+  }
+
+  amount(value: number | null | undefined): string {
+    if (value === null || value === undefined) {
+      return '—';
+    }
+    return value.toLocaleString('fr-TN', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  }
+
+  private runAnalysis(): void {
+    if (!this.currentFile) {
+      return;
+    }
+    this.phase.set('extracting');
+    this.errorMessage.set('');
+    this.proposal.set(null);
+    this.startTimer();
+
+    this.subscription?.unsubscribe();
+    this.subscription = this.importService.propose(this.currentFile).subscribe({
+      next: (p) => {
+        this.stopTimer();
+        this.proposal.set(p);
+        this.phase.set('review');
+      },
+      error: (err: Error) => {
+        this.stopTimer();
+        this.errorMessage.set(err.message || "L'analyse de la pièce a échoué.");
+        this.phase.set('error');
+      }
+    });
+  }
+
+  private startTimer(): void {
+    this.elapsedSeconds.set(0);
+    this.stopTimer();
+    this.timer = setInterval(() => this.elapsedSeconds.update((s) => s + 1), 1000);
+  }
+
+  private stopTimer(): void {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = undefined;
+    }
+  }
+
+  private close(): void {
+    this.visible = false;
+    this.visibleChange.emit(false);
+    this.reset();
+  }
+
+  private reset(): void {
+    this.phase.set('idle');
+    this.proposal.set(null);
+    this.errorMessage.set('');
+    this.selectedFileName.set('');
+    this.reanalyzing.set(false);
+    this.currentFile = null;
+  }
+}

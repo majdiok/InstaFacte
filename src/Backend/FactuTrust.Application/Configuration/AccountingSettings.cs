@@ -76,6 +76,13 @@ public sealed class AccountingSettings
     public bool BankStatementPdfImportEnabled { get; set; } = true;
 
     /// <summary>
+    /// Active l'import d'une facture (vente ou achat) depuis la saisie manuelle d'écritures :
+    /// détection des zones de la pièce puis proposition de l'écriture selon le plan comptable
+    /// tunisien. L'endpoint est en lecture seule — il ne fait que proposer.
+    /// </summary>
+    public bool DocumentImportEnabled { get; set; } = true;
+
+    /// <summary>
     /// Fenêtre de dates (± jours) utilisée par l'association automatique du rapprochement bancaire
     /// pour apparier une ligne de relevé à une écriture de même montant. Défaut : 10 jours.
     /// </summary>

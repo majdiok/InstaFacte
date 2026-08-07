@@ -511,6 +511,81 @@ export class EntryFormStore {
     this.successMsg.set(null);
   }
 
+  /**
+   * Applique une proposition d'écriture issue d'une pièce importée (facture de vente ou d'achat).
+   *
+   * Points de vigilance :
+   * - les lignes de TVA proposées ne sont PAS des lignes assistées : `isVatGenerated` reste faux
+   *   et `vatLinkId` nul, sinon `VatAssistService` et `autoBalance()` les traiteraient à tort ;
+   * - `vatRatePercent` n'est qu'une indication d'affichage (non transmis à l'API) ;
+   * - l'auxiliaire n'est posé que si le tiers a été rapproché : un `thirdPartyId` sans
+   *   `thirdPartyKind` valide est rejeté par le serveur.
+   */
+  applyDocumentProposal(proposal: {
+    journalCode: string;
+    entryDate: string | null;
+    label: string;
+    pieceRef: string | null;
+    pieceDate: string | null;
+    totalDebit: number;
+    thirdParty: { kind: number; matchedId: string | null; matchedName: string | null } | null;
+    extraction: { totalHt: number | null; totalVat: number | null; totalTtc: number | null };
+    lines: {
+      accountNumber: string;
+      label: string;
+      debit: number;
+      credit: number;
+      vatRatePercent: number | null;
+      thirdPartyId: string | null;
+      thirdPartyKind: number | null;
+    }[];
+  }): void {
+    if (proposal.journalCode) {
+      this.journalCode.set(proposal.journalCode);
+    }
+    if (proposal.entryDate) {
+      this.entryDate.set(proposal.entryDate);
+    }
+    this.entryLabel.set(proposal.label ?? '');
+    this.pieceRef.set(proposal.pieceRef ?? '');
+    this.pieceDate.set(proposal.pieceDate ?? '');
+
+    this.amountHt.set(proposal.extraction?.totalHt ?? null);
+    this.amountVat.set(proposal.extraction?.totalVat ?? null);
+    this.amountTtc.set(proposal.extraction?.totalTtc ?? null);
+
+    const matchedName = proposal.thirdParty?.matchedName ?? proposal.thirdParty?.kind ?? '';
+
+    const mapped: EntryLine[] = proposal.lines.map(l => ({
+      ...createEmptyLine(),
+      accountNumber: l.accountNumber,
+      lineLabel: l.label,
+      debit: l.debit > 0 ? l.debit : null,
+      credit: l.credit > 0 ? l.credit : null,
+      vatRatePercent: l.vatRatePercent ?? null,
+      isVatGenerated: false,
+      vatLinkId: null,
+      thirdParty:
+        l.thirdPartyId && l.thirdPartyKind
+          ? {
+              id: l.thirdPartyId,
+              kind: l.thirdPartyKind,
+              name: String(matchedName),
+              display: String(matchedName)
+            }
+          : null
+    }));
+
+    while (mapped.length < 2) {
+      mapped.push(createEmptyLine());
+    }
+
+    this.lines.set(mapped);
+    this.selectedLineIndexes.set(new Set());
+    this.error.set(null);
+    this.successMsg.set(null);
+  }
+
   restoreFromDraft(draft: {
     journalCode: string;
     entryDate: string;
