@@ -5,7 +5,7 @@ import { Router, RouterModule } from '@angular/router';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { TagModule } from 'primeng/tag';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { ConfirmationService } from 'primeng/api';
@@ -28,7 +28,7 @@ import { AuthService } from '@core/services/auth.service';
     TableModule,
     ButtonModule,
     InputTextModule,
-    DropdownModule,
+    SelectModule,
     TagModule,
     ConfirmDialogModule,
     PageHeaderComponent,
@@ -72,14 +72,14 @@ import { AuthService } from '@core/services/auth.service';
     <div class="filters">
       <input pInputText [(ngModel)]="filterName" placeholder="Rechercher par nom..." (keyup.enter)="reload()" />
       <input pInputText [(ngModel)]="filterQualification" placeholder="Rechercher par qualification..." (keyup.enter)="reload()" />
-      <p-dropdown
+      <p-select
         [options]="statusOptions"
         [(ngModel)]="filterStatus"
         optionLabel="label"
         optionValue="value"
         placeholder="Statut"
         [showClear]="true"
-        (onChange)="reload()"></p-dropdown>
+        (onChange)="reload()"></p-select>
       <button pButton type="button" class="p-button-link" label="Réinitialiser la recherche" (click)="resetFilters()"></button>
       <button pButton type="button" icon="pi pi-search" label="Rechercher" (click)="reload()"></button>
     </div>

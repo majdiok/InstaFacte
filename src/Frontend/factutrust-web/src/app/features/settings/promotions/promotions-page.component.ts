@@ -7,7 +7,7 @@ import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { IconFieldModule } from 'primeng/iconfield';
 import { InputIconModule } from 'primeng/inputicon';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
@@ -55,7 +55,7 @@ interface FilterOption<T extends string> {
     InputTextModule,
     TagModule,
     TooltipModule,
-    DropdownModule,
+    SelectModule,
     IconFieldModule,
     InputIconModule,
     PageHeaderComponent,
@@ -94,22 +94,22 @@ interface FilterOption<T extends string> {
             (ngModelChange)="searchQuery.set($event)"
             aria-label="Rechercher une promotion" />
         </p-iconfield>
-        <p-dropdown
+        <p-select
           [options]="statusOptions"
           [(ngModel)]="statusFilterModel"
           (ngModelChange)="statusFilter.set($event)"
           optionLabel="label"
           optionValue="value"
           placeholder="État"
-          appendTo="body"></p-dropdown>
-        <p-dropdown
+          appendTo="body"></p-select>
+        <p-select
           [options]="scopeOptions"
           [(ngModel)]="scopeFilterModel"
           (ngModelChange)="scopeFilter.set($event)"
           optionLabel="label"
           optionValue="value"
           placeholder="Portée"
-          appendTo="body"></p-dropdown>
+          appendTo="body"></p-select>
         @if (hasActiveFilters()) {
           <button type="button" class="ft-filters__reset" (click)="resetFilters()">
             <i class="pi pi-times" aria-hidden="true"></i>

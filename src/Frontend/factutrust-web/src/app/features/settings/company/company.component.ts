@@ -4,12 +4,13 @@ import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { RouterModule } from '@angular/router';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputMaskModule } from 'primeng/inputmask';
-import { InputTextarea } from 'primeng/inputtextarea';
-import { DropdownModule } from 'primeng/dropdown';
+import { Textarea } from 'primeng/textarea';
+import { SelectModule } from 'primeng/select';
 import { ButtonModule } from 'primeng/button';
 import { CardModule } from 'primeng/card';
 import { DividerModule } from 'primeng/divider';
 import { FileUploadModule } from 'primeng/fileupload';
+import { TagModule } from 'primeng/tag';
 import { ToastService } from '@core/services/toast.service';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Subject } from 'rxjs';
@@ -31,12 +32,13 @@ import { TUNISIAN_GOVERNORATE_OPTIONS } from '@shared/validation/validation-rule
     RouterModule,
     InputTextModule,
     InputMaskModule,
-    InputTextarea,
-    DropdownModule,
+    Textarea,
+    SelectModule,
     ButtonModule,
     CardModule,
     DividerModule,
     FileUploadModule,
+    TagModule,
     PageHeaderComponent,
     BreadcrumbComponent
   ],
@@ -151,14 +153,30 @@ import { TUNISIAN_GOVERNORATE_OPTIONS } from '@shared/validation/validation-rule
           </div>
 
           <div class="form-group">
+            <label for="cnssEmployerNumber" class="label-with-tag">
+              <span>Matricule employeur CNSS</span>
+              @if (!form.get('cnssEmployerNumber')?.value) {
+                <p-tag value="Recommandé" severity="warn" />
+              }
+            </label>
+            <input
+              pInputText
+              id="cnssEmployerNumber"
+              formControlName="cnssEmployerNumber"
+              placeholder="Numéro d'affiliation CNSS de l'entreprise"
+              class="w-full">
+            <small class="form-hint">Requis pour générer le bordereau mensuel CNSS et enregistrer les versements de cotisations.</small>
+          </div>
+
+          <div class="form-group">
             <label for="taxRegime">Régime fiscal <span class="required">*</span></label>
-            <p-dropdown 
+            <p-select 
               id="taxRegime"
               [options]="taxRegimes" 
               formControlName="taxRegime"
               placeholder="Sélectionner"
               styleClass="w-full">
-            </p-dropdown>
+            </p-select>
           </div>
         </p-card>
 
@@ -206,14 +224,14 @@ import { TUNISIAN_GOVERNORATE_OPTIONS } from '@shared/validation/validation-rule
 
           <div class="form-group">
             <label for="governorate">Gouvernorat <span class="required">*</span></label>
-            <p-dropdown 
+            <p-select 
               id="governorate"
               [options]="governorates" 
               formControlName="governorate"
               placeholder="Sélectionner"
               [filter]="true"
               styleClass="w-full">
-            </p-dropdown>
+            </p-select>
           </div>
 
           <p-divider></p-divider>
@@ -253,17 +271,6 @@ import { TUNISIAN_GOVERNORATE_OPTIONS } from '@shared/validation/validation-rule
 
         <!-- Bank Information -->
         <p-card header="Informations bancaires" styleClass="form-card bank-card">
-          <div class="form-group">
-            <label for="cnssEmployerNumber">Matricule employeur CNSS</label>
-            <input
-              pInputText
-              id="cnssEmployerNumber"
-              formControlName="cnssEmployerNumber"
-              placeholder="Numéro d'affiliation CNSS de l'entreprise"
-              class="w-full">
-            <small class="form-hint">Requis pour le bordereau mensuel de versement des cotisations.</small>
-          </div>
-
           <div class="form-group">
             <label for="bankName">Nom de la banque</label>
             <input 
@@ -313,7 +320,7 @@ import { TUNISIAN_GOVERNORATE_OPTIONS } from '@shared/validation/validation-rule
           <div class="form-group">
             <label for="defaultPaymentTerms">Conditions de paiement par défaut</label>
             <textarea 
-              pInputTextarea 
+              pTextarea 
               id="defaultPaymentTerms" 
               formControlName="defaultPaymentTerms"
               placeholder="Ex: Paiement à 30 jours"
@@ -325,7 +332,7 @@ import { TUNISIAN_GOVERNORATE_OPTIONS } from '@shared/validation/validation-rule
           <div class="form-group">
             <label for="invoiceFooter">Pied de page des factures</label>
             <textarea 
-              pInputTextarea 
+              pTextarea 
               id="invoiceFooter" 
               formControlName="invoiceFooter"
               placeholder="Texte qui apparaîtra en bas de chaque facture"
@@ -413,6 +420,12 @@ import { TUNISIAN_GOVERNORATE_OPTIONS } from '@shared/validation/validation-rule
       &:hover {
         text-decoration: underline;
       }
+    }
+
+    .label-with-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--spacing-2);
     }
 
     .stock-card {
@@ -591,7 +604,7 @@ import { TUNISIAN_GOVERNORATE_OPTIONS } from '@shared/validation/validation-rule
       }
 
       .p-inputmask,
-      .p-dropdown {
+      .p-select {
         width: 100%;
       }
     }

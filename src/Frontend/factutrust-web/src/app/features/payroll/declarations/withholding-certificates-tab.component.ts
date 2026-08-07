@@ -2,7 +2,7 @@ import { Component, OnInit, computed, inject, input, signal } from '@angular/cor
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { MessageModule } from 'primeng/message';
@@ -31,7 +31,7 @@ const MONTH_LABELS = [
     CommonModule,
     FormsModule,
     TableModule,
-    DropdownModule,
+    SelectModule,
     TagModule,
     TooltipModule,
     MessageModule,
@@ -42,7 +42,7 @@ const MONTH_LABELS = [
   ],
   template: `
     <div class="payroll-toolbar mb-3">
-      <p-dropdown
+      <p-select
         [options]="yearOptions"
         [(ngModel)]="year"
         (ngModelChange)="load()"

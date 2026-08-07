@@ -3,11 +3,11 @@ import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputSwitchModule } from 'primeng/inputswitch';
-import { CalendarModule } from 'primeng/calendar';
-import { DropdownModule } from 'primeng/dropdown';
+import { DatePickerModule } from 'primeng/datepicker';
+import { SelectModule } from 'primeng/select';
 import { MultiSelectModule } from 'primeng/multiselect';
 import { RatingModule } from 'primeng/rating';
 import { CustomField, CustomFieldType, FormLayout } from './studio-runtime.models';
@@ -34,8 +34,8 @@ interface RenderSection {
   standalone: true,
   imports: [
     CommonModule, ReactiveFormsModule,
-    ButtonModule, InputTextModule, InputTextarea, InputNumberModule,
-    InputSwitchModule, CalendarModule, DropdownModule, MultiSelectModule, RatingModule,
+    ButtonModule, InputTextModule, Textarea, InputNumberModule,
+    InputSwitchModule, DatePickerModule, SelectModule, MultiSelectModule, RatingModule,
     StudioCodeImageComponent, StudioFileFieldComponent
   ],
   template: `
@@ -48,7 +48,7 @@ interface RenderSection {
 
             <ng-container [ngSwitch]="cell.field.fieldType">
               <input *ngSwitchCase="FT.Text" pInputText [formControlName]="cell.field.key" />
-              <textarea *ngSwitchCase="FT.MultilineText" pInputTextarea [formControlName]="cell.field.key" rows="3"></textarea>
+              <textarea *ngSwitchCase="FT.MultilineText" pTextarea [formControlName]="cell.field.key" rows="3"></textarea>
               <p-inputNumber *ngSwitchCase="FT.Number" [formControlName]="cell.field.key" [useGrouping]="false"></p-inputNumber>
               <p-inputNumber *ngSwitchCase="FT.Decimal" [formControlName]="cell.field.key" mode="decimal" [minFractionDigits]="0" [maxFractionDigits]="6"></p-inputNumber>
               <p-inputNumber *ngSwitchCase="FT.Money" [formControlName]="cell.field.key" mode="currency" [currency]="moneyCurrency(cell.field)" [minFractionDigits]="0" [maxFractionDigits]="3"></p-inputNumber>
@@ -71,16 +71,16 @@ interface RenderSection {
               <app-studio-file-field *ngSwitchCase="FT.Signature" mode="signature" [entityKey]="entityKey"
                 [value]="form.get(cell.field.key)?.value" (valueChange)="setFileValue(cell.field.key, $event)"></app-studio-file-field>
               <p-inputSwitch *ngSwitchCase="FT.Boolean" [formControlName]="cell.field.key"></p-inputSwitch>
-              <p-calendar *ngSwitchCase="FT.Date" [formControlName]="cell.field.key" dateFormat="yy-mm-dd" appendTo="body"></p-calendar>
-              <p-calendar *ngSwitchCase="FT.DateTime" [formControlName]="cell.field.key" [showTime]="true" dateFormat="yy-mm-dd" appendTo="body"></p-calendar>
-              <p-dropdown *ngSwitchCase="FT.Select" [formControlName]="cell.field.key" [options]="cell.field.options || []"
-                optionLabel="label" optionValue="value" [showClear]="true" appendTo="body" styleClass="ft-w-full"></p-dropdown>
+              <p-datepicker *ngSwitchCase="FT.Date" [formControlName]="cell.field.key" dateFormat="yy-mm-dd" appendTo="body"></p-datepicker>
+              <p-datepicker *ngSwitchCase="FT.DateTime" [formControlName]="cell.field.key" [showTime]="true" dateFormat="yy-mm-dd" appendTo="body"></p-datepicker>
+              <p-select *ngSwitchCase="FT.Select" [formControlName]="cell.field.key" [options]="cell.field.options || []"
+                optionLabel="label" optionValue="value" [showClear]="true" appendTo="body" styleClass="ft-w-full"></p-select>
               <p-multiSelect *ngSwitchCase="FT.MultiSelect" [formControlName]="cell.field.key" [options]="cell.field.options || []"
                 optionLabel="label" optionValue="value" appendTo="body" styleClass="ft-w-full"></p-multiSelect>
-              <p-dropdown *ngSwitchCase="FT.RelationCustom" [formControlName]="cell.field.key" [options]="cell.field.options || []"
-                optionLabel="label" optionValue="value" [showClear]="true" [filter]="true" appendTo="body" styleClass="ft-w-full"></p-dropdown>
-              <p-dropdown *ngSwitchCase="FT.RelationExisting" [formControlName]="cell.field.key" [options]="cell.field.options || []"
-                optionLabel="label" optionValue="value" [showClear]="true" [filter]="true" appendTo="body" styleClass="ft-w-full"></p-dropdown>
+              <p-select *ngSwitchCase="FT.RelationCustom" [formControlName]="cell.field.key" [options]="cell.field.options || []"
+                optionLabel="label" optionValue="value" [showClear]="true" [filter]="true" appendTo="body" styleClass="ft-w-full"></p-select>
+              <p-select *ngSwitchCase="FT.RelationExisting" [formControlName]="cell.field.key" [options]="cell.field.options || []"
+                optionLabel="label" optionValue="value" [showClear]="true" [filter]="true" appendTo="body" styleClass="ft-w-full"></p-select>
               <input *ngSwitchDefault pInputText [formControlName]="cell.field.key" />
             </ng-container>
 
@@ -110,7 +110,7 @@ interface RenderSection {
     .ft-form-actions { display: flex; justify-content: flex-end; gap: .5rem; }
     @media (max-width: 640px) { .ft-cell.ft-half { grid-column: span 2; } }
     :host ::ng-deep .ft-w-full { width: 100%; }
-    :host ::ng-deep .p-inputnumber, :host ::ng-deep .p-calendar { width: 100%; }
+    :host ::ng-deep .p-inputnumber, :host ::ng-deep .p-datepicker { width: 100%; }
     .ft-code-preview { margin-top: .5rem; }
   `]
 })

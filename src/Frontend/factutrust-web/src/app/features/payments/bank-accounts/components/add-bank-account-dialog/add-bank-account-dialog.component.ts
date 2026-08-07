@@ -3,7 +3,7 @@ import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges, injec
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
 import { DialogModule } from 'primeng/dialog';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputMaskModule } from 'primeng/inputmask';
 import { CheckboxModule } from 'primeng/checkbox';
@@ -25,7 +25,7 @@ import { ToastService } from '@core/services/toast.service';
     CommonModule,
     ReactiveFormsModule,
     DialogModule,
-    DropdownModule,
+    SelectModule,
     InputTextModule,
     InputMaskModule,
     CheckboxModule,
@@ -72,7 +72,7 @@ import { ToastService } from '@core/services/toast.service';
               <div class="form-section-body">
                 <div class="form-group">
                   <label for="bankCode">Banque <span class="req" aria-hidden="true">*</span></label>
-                  <p-dropdown
+                  <p-select
                     inputId="bankCode"
                     formControlName="bankCode"
                     [options]="bankOptions"
@@ -85,7 +85,7 @@ import { ToastService } from '@core/services/toast.service';
                     styleClass="w-full"
                     [class.ng-invalid]="form.controls.bankCode.touched && form.controls.bankCode.invalid"
                     (onChange)="onBankSelected($event.value)">
-                  </p-dropdown>
+                  </p-select>
                   @if (form.controls.bankCode.touched && form.controls.bankCode.hasError('required')) {
                     <small class="error-text">Banque est obligatoire</small>
                   }
@@ -171,7 +171,7 @@ import { ToastService } from '@core/services/toast.service';
                 @if (!form.controls.autoCreateChartAccount.value) {
                   <div class="form-group">
                     <label for="chartOfAccountNumber">Compte comptable existant</label>
-                    <p-dropdown
+                    <p-select
                       inputId="chartOfAccountNumber"
                       formControlName="chartOfAccountNumber"
                       [options]="chartAccountOptions"
@@ -182,7 +182,7 @@ import { ToastService } from '@core/services/toast.service';
                       filterBy="label"
                       [showClear]="true"
                       styleClass="w-full">
-                    </p-dropdown>
+                    </p-select>
                   </div>
                 }
               </div>
@@ -531,7 +531,7 @@ import { ToastService } from '@core/services/toast.service';
         background: var(--color-background-subtle);
       }
 
-      .p-dropdown,
+      .p-select,
       .p-inputmask {
         width: 100%;
       }

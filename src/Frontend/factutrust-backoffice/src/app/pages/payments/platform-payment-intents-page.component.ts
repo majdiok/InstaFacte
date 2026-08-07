@@ -10,7 +10,7 @@ import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { TooltipModule } from 'primeng/tooltip';
 import { MessageService } from 'primeng/api';
 
@@ -43,7 +43,7 @@ import { PAYMENTS_FR } from './payments.i18n.fr';
     RouterLink,
     TableModule,
     ButtonModule,
-    DropdownModule,
+    SelectModule,
     TooltipModule,
     FtPageHeaderComponent,
     FtKpiCardComponent,
@@ -69,7 +69,7 @@ import { PAYMENTS_FR } from './payments.i18n.fr';
     </section>
 
     <ft-filter-toolbar>
-      <p-dropdown
+      <p-select
         [options]="providerOptions"
         [(ngModel)]="providerFilter"
         optionLabel="label"
@@ -78,7 +78,7 @@ import { PAYMENTS_FR } from './payments.i18n.fr';
         [placeholder]="t('intents.filter.providerAll')"
         (onChange)="load()"
         styleClass="filter-dropdown" />
-      <p-dropdown
+      <p-select
         [options]="statusOptions"
         [(ngModel)]="statusFilter"
         optionLabel="label"

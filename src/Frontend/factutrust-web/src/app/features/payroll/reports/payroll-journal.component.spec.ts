@@ -227,4 +227,48 @@ describe('PayrollJournalComponent', () => {
     expect(fixture.componentInstance.error()).toContain('Aucun cycle de paie');
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('Aucun cycle de paie');
   });
+
+  it('remonte le message métier quand le cycle calculé n’est pas validé (champ error)', async () => {
+    const conflictMessage =
+      'Le cycle Août 2026 n\'est pas validé. Cochez « inclure les cycles calculés » pour obtenir un état provisoire.';
+    payrollStub = jasmine.createSpyObj<PayrollService>('PayrollService', ['getPayrollJournal', 'exportPayrollJournal']);
+    payrollStub.getPayrollJournal.and.returnValue(
+      throwError(() => ({
+        status: 409,
+        error: { success: false, data: null, message: null, error: conflictMessage }
+      }))
+    );
+
+    await TestBed.configureTestingModule({
+      imports: [PayrollJournalComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideNoopAnimations(),
+        provideRouter([]),
+        { provide: PayrollService, useValue: payrollStub },
+        { provide: ToastService, useValue: jasmine.createSpyObj<ToastService>('ToastService', ['add']) },
+        {
+          provide: AuthService,
+          useValue: {
+            hasPermission: () => true,
+            hasAnyPermission: () => true,
+            hasModule: () => true,
+            isAccountingFirm: () => false,
+            isDelegatedMode: () => false
+          }
+        },
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { queryParamMap: convertToParamMap({}) } }
+        }
+      ]
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(PayrollJournalComponent);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.error()).toContain('n\'est pas validé');
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('inclure les cycles calculés');
+  });
 });

@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -38,7 +38,7 @@ const MONTH_NAMES_FR = [
     FormsModule,
     ReactiveFormsModule,
     TableModule,
-    DropdownModule,
+    SelectModule,
     InputNumberModule,
     PageHeaderComponent,
     ButtonComponent
@@ -48,7 +48,7 @@ const MONTH_NAMES_FR = [
 
     <div class="card p-3 mb-3 targets-toolbar">
       <div class="toolbar-row">
-        <p-dropdown
+        <p-select
           [options]="yearOptions"
           [(ngModel)]="filterYear"
           optionLabel="label"
@@ -56,8 +56,8 @@ const MONTH_NAMES_FR = [
           inputId="tgtYear"
           styleClass="toolbar-dropdown"
           (onChange)="load()"
-          [attr.aria-label]="'Filtrer par année'"></p-dropdown>
-        <p-dropdown
+          [attr.aria-label]="'Filtrer par année'"></p-select>
+        <p-select
           [options]="monthFilterOptions"
           [(ngModel)]="filterMonth"
           optionLabel="label"
@@ -67,8 +67,8 @@ const MONTH_NAMES_FR = [
           inputId="tgtMonth"
           styleClass="toolbar-dropdown"
           (onChange)="load()"
-          [attr.aria-label]="'Filtrer par mois'"></p-dropdown>
-        <p-dropdown
+          [attr.aria-label]="'Filtrer par mois'"></p-select>
+        <p-select
           [options]="assignableUsers()"
           [(ngModel)]="filterUserId"
           optionLabel="displayName"
@@ -80,7 +80,7 @@ const MONTH_NAMES_FR = [
           inputId="tgtUser"
           styleClass="toolbar-dropdown"
           (onChange)="load()"
-          [attr.aria-label]="'Filtrer par commercial'"></p-dropdown>
+          [attr.aria-label]="'Filtrer par commercial'"></p-select>
         <app-button variant="secondary" icon="pi pi-refresh" iconPos="left" (click)="load()" ariaLabel="Actualiser">
           Actualiser
         </app-button>
@@ -259,7 +259,7 @@ const MONTH_NAMES_FR = [
                   <h3 id="tgt-section-create" class="form-block-title targets-panel-section-title">Définir l’objectif</h3>
                   <div class="form-field">
                     <label class="field-label" for="tgtUserCreate">Commercial <span class="required" aria-hidden="true">*</span></label>
-                    <p-dropdown
+                    <p-select
                       inputId="tgtUserCreate"
                       formControlName="userId"
                       [options]="assignableUsers()"
@@ -270,12 +270,12 @@ const MONTH_NAMES_FR = [
                       filterBy="displayName"
                       styleClass="w-full"
                       appendTo="body"
-                      [overlayOptions]="targetsPanelPrimeOverlayOptions"></p-dropdown>
+                      [overlayOptions]="targetsPanelPrimeOverlayOptions"></p-select>
                   </div>
                   <div class="form-grid-2">
                     <div class="form-field">
                       <label class="field-label" for="tgtYearCreate">Année</label>
-                      <p-dropdown
+                      <p-select
                         inputId="tgtYearCreate"
                         formControlName="year"
                         [options]="yearOptions"
@@ -283,11 +283,11 @@ const MONTH_NAMES_FR = [
                         optionValue="value"
                         styleClass="w-full"
                         appendTo="body"
-                        [overlayOptions]="targetsPanelPrimeOverlayOptions"></p-dropdown>
+                        [overlayOptions]="targetsPanelPrimeOverlayOptions"></p-select>
                     </div>
                     <div class="form-field">
                       <label class="field-label" for="tgtMonthCreate">Mois</label>
-                      <p-dropdown
+                      <p-select
                         inputId="tgtMonthCreate"
                         formControlName="month"
                         [options]="monthCreateOptions"
@@ -295,7 +295,7 @@ const MONTH_NAMES_FR = [
                         optionValue="value"
                         styleClass="w-full"
                         appendTo="body"
-                        [overlayOptions]="targetsPanelPrimeOverlayOptions"></p-dropdown>
+                        [overlayOptions]="targetsPanelPrimeOverlayOptions"></p-select>
                     </div>
                   </div>
                   <div class="form-field">
@@ -560,7 +560,7 @@ const MONTH_NAMES_FR = [
         grid-template-columns: 1fr;
       }
     }
-    :host ::ng-deep .targets-panel .p-dropdown,
+    :host ::ng-deep .targets-panel .p-select,
     :host ::ng-deep .targets-panel .p-inputnumber {
       width: 100%;
     }

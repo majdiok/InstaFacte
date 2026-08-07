@@ -4,7 +4,7 @@ import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { ToastModule } from 'primeng/toast';
@@ -18,7 +18,7 @@ import { TableTotalsBarComponent, TotalMetric } from '@shared/components/table-t
 @Component({
   selector: 'app-transfer-list',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, TableModule, DropdownModule, ButtonModule, TagModule, ToastModule, TableTotalsBarComponent],
+  imports: [CommonModule, RouterModule, FormsModule, TableModule, SelectModule, ButtonModule, TagModule, ToastModule, TableTotalsBarComponent],
   providers: [MessageService],
   template: `
     <p-toast></p-toast>
@@ -39,7 +39,7 @@ import { TableTotalsBarComponent, TotalMetric } from '@shared/components/table-t
         <div class="filters-grid" role="search" aria-label="Filtres des transferts">
           <div class="filter-field">
             <label class="filter-label" id="filter-status-label" for="filter-status">Statut</label>
-            <p-dropdown inputId="filter-status"
+            <p-select inputId="filter-status"
               [options]="statusOptions"
               [(ngModel)]="statusFilter"
               optionLabel="label"
@@ -49,11 +49,11 @@ import { TableTotalsBarComponent, TotalMetric } from '@shared/components/table-t
               [style]="{ width: '100%' }"
               appendTo="body"
               ariaLabelledBy="filter-status-label">
-            </p-dropdown>
+            </p-select>
           </div>
           <div class="filter-field">
             <label class="filter-label" id="filter-wh-label" for="filter-warehouse">Entrepôt (source ou destination)</label>
-            <p-dropdown inputId="filter-warehouse"
+            <p-select inputId="filter-warehouse"
               [options]="warehouseOptions"
               [(ngModel)]="warehouseFilter"
               optionLabel="label"
@@ -67,7 +67,7 @@ import { TableTotalsBarComponent, TotalMetric } from '@shared/components/table-t
               [style]="{ width: '100%' }"
               appendTo="body"
               ariaLabelledBy="filter-wh-label">
-            </p-dropdown>
+            </p-select>
           </div>
           <div class="filter-field">
             <label class="filter-label" for="filter-from">Du</label>

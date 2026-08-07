@@ -4,9 +4,9 @@ import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { CalendarModule } from 'primeng/calendar';
-import { DropdownModule } from 'primeng/dropdown';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { DatePickerModule } from 'primeng/datepicker';
+import { SelectModule } from 'primeng/select';
+import { Textarea } from 'primeng/textarea';
 import { OverlayOptions } from 'primeng/api';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { InvoiceService, RecordPaymentRequest } from '@core/services/invoice.service';
@@ -45,9 +45,9 @@ const ALLOWED_PAYMENT_METHOD_VALUES = new Set<number>(
     DialogModule,
     InputTextModule,
     InputNumberModule,
-    CalendarModule,
-    DropdownModule,
-    InputTextarea,
+    DatePickerModule,
+    SelectModule,
+    Textarea,
     ButtonComponent
   ],
   template: `
@@ -64,7 +64,7 @@ const ALLOWED_PAYMENT_METHOD_VALUES = new Set<number>(
         <div class="form-fields">
           <div class="form-group">
             <label for="paymentDate">Date de paiement <span class="required">*</span></label>
-            <p-calendar
+            <p-datepicker
               id="paymentDate"
               [(ngModel)]="paymentDate"
               [showIcon]="true"
@@ -75,7 +75,7 @@ const ALLOWED_PAYMENT_METHOD_VALUES = new Set<number>(
               [appendTo]="panelMode ? 'body' : undefined"
               [baseZIndex]="panelMode ? drawerPrimeBaseZIndex : undefined"
               styleClass="w-full">
-            </p-calendar>
+            </p-datepicker>
             <small class="field-hint">Date à laquelle le paiement a été reçu</small>
           </div>
 
@@ -121,7 +121,7 @@ const ALLOWED_PAYMENT_METHOD_VALUES = new Set<number>(
                 <span class="required" aria-hidden="true">*</span>
               }
             </label>
-            <p-dropdown
+            <p-select
               id="method"
               [options]="paymentMethodOptions"
               [(ngModel)]="selectedMethod"
@@ -134,7 +134,7 @@ const ALLOWED_PAYMENT_METHOD_VALUES = new Set<number>(
               [attr.aria-invalid]="invoiceType === 'client' && selectedMethod === null"
               [attr.aria-describedby]="invoiceType === 'client' && selectedMethod === null ? 'method-required-hint' : null"
               styleClass="w-full">
-            </p-dropdown>
+            </p-select>
             @if (invoiceType === 'client' && selectedMethod === null) {
               <small id="method-required-hint" class="field-hint field-error" role="alert">
                 Veuillez sélectionner un mode de paiement.
@@ -145,7 +145,7 @@ const ALLOWED_PAYMENT_METHOD_VALUES = new Set<number>(
           @if (isTraite) {
             <div class="form-group">
               <label for="effetDueDate">Échéance de la traite <span class="required">*</span></label>
-              <p-calendar
+              <p-datepicker
                 id="effetDueDate"
                 [(ngModel)]="effetDueDate"
                 [showIcon]="true"
@@ -155,7 +155,7 @@ const ALLOWED_PAYMENT_METHOD_VALUES = new Set<number>(
                 [appendTo]="panelMode ? 'body' : undefined"
                 [baseZIndex]="panelMode ? drawerPrimeBaseZIndex : undefined"
                 styleClass="w-full">
-              </p-calendar>
+              </p-datepicker>
               <small class="field-hint">Date à laquelle l'effet arrivera à échéance (encaissement/paiement)</small>
               @if (effetDueDate === null) {
                 <small class="field-hint field-error" role="alert">L'échéance de la traite est obligatoire.</small>
@@ -177,7 +177,7 @@ const ALLOWED_PAYMENT_METHOD_VALUES = new Set<number>(
           <div class="form-group">
             <label for="notes">Notes</label>
             <textarea
-              pInputTextarea
+              pTextarea
               id="notes"
               [(ngModel)]="notes"
               placeholder="Notes internes (optionnel)"
@@ -459,8 +459,8 @@ const ALLOWED_PAYMENT_METHOD_VALUES = new Set<number>(
         background: var(--color-background-subtle);
       }
 
-      .p-calendar,
-      .p-dropdown,
+      .p-datepicker,
+      .p-select,
       .p-inputnumber {
         width: 100%;
       }

@@ -11,7 +11,7 @@ import { FormsModule } from '@angular/forms';
 import { TableModule, TableLazyLoadEvent } from 'primeng/table';
 import { InputTextModule } from 'primeng/inputtext';
 import { ButtonModule } from 'primeng/button';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { DialogModule } from 'primeng/dialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { MessageService } from 'primeng/api';
@@ -45,7 +45,7 @@ import { EMAILS_FR } from './emails.i18n.fr';
     TableModule,
     InputTextModule,
     ButtonModule,
-    DropdownModule,
+    SelectModule,
     DialogModule,
     TooltipModule,
     FtPageHeaderComponent,
@@ -114,7 +114,7 @@ import { EMAILS_FR } from './emails.i18n.fr';
         [(ngModel)]="search"
         (ngModelChange)="onSearchChange()"
         [placeholder]="t('filter.search')" />
-      <p-dropdown
+      <p-select
         [options]="statusOptions"
         [ngModel]="filterStatus()"
         (ngModelChange)="onStatusChange($event)"

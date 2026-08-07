@@ -11,8 +11,8 @@ import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
-import { DropdownModule } from 'primeng/dropdown';
-import { CalendarModule } from 'primeng/calendar';
+import { SelectModule } from 'primeng/select';
+import { DatePickerModule } from 'primeng/datepicker';
 import { TooltipModule } from 'primeng/tooltip';
 import { MessageService } from 'primeng/api';
 
@@ -61,8 +61,8 @@ interface StatusOption {
     RouterLink,
     TableModule,
     ButtonModule,
-    DropdownModule,
-    CalendarModule,
+    SelectModule,
+    DatePickerModule,
     TooltipModule,
     FtPageHeaderComponent,
     FtKpiCardComponent,
@@ -122,7 +122,7 @@ interface StatusOption {
     </section>
 
     <ft-filter-toolbar>
-      <p-dropdown
+      <p-select
         [options]="tenantOptions()"
         [(ngModel)]="tenantFilter"
         optionLabel="label"
@@ -133,7 +133,7 @@ interface StatusOption {
         (onChange)="load()"
         styleClass="filter-dropdown" />
 
-      <p-dropdown
+      <p-select
         [options]="statusOptions"
         [(ngModel)]="statusFilter"
         optionLabel="label"
@@ -143,7 +143,7 @@ interface StatusOption {
         (onChange)="load()"
         styleClass="filter-dropdown" />
 
-      <p-calendar
+      <p-datepicker
         [(ngModel)]="fromDate"
         dateFormat="dd/mm/yy"
         [showIcon]="true"
@@ -153,7 +153,7 @@ interface StatusOption {
         [showClear]="true"
         styleClass="filter-calendar" />
 
-      <p-calendar
+      <p-datepicker
         [(ngModel)]="toDate"
         dateFormat="dd/mm/yy"
         [showIcon]="true"

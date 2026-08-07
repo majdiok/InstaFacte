@@ -3,9 +3,9 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
 // PrimeNG
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { TooltipModule } from 'primeng/tooltip';
 import { DividerModule } from 'primeng/divider';
@@ -46,9 +46,9 @@ import {
   imports: [
     CommonModule,
     FormsModule,
-    DropdownModule,
+    SelectModule,
     InputTextModule,
-    InputTextarea,
+    Textarea,
     InputNumberModule,
     TooltipModule,
     DividerModule,
@@ -97,7 +97,7 @@ import {
         <div class="form-grid">
           <div class="form-group">
             <label for="paymentTerms">Conditions</label>
-            <p-dropdown
+            <p-select
               inputId="paymentTerms"
               [options]="paymentTermsOptions"
               [(ngModel)]="selectedPaymentTerms"
@@ -106,7 +106,7 @@ import {
               optionValue="value"
               placeholder="Sélectionner..."
               appendTo="body">
-            </p-dropdown>
+            </p-select>
           </div>
 
           <div class="form-group">
@@ -127,7 +127,7 @@ import {
           <div class="form-group full-width">
             <label for="customTerms">Conditions personnalisées</label>
             <textarea
-              pInputTextarea
+              pTextarea
               id="customTerms"
               [(ngModel)]="payment.terms"
               (ngModelChange)="updatePayment({ terms: $event })"
@@ -254,7 +254,7 @@ import {
               <div class="mention-content">
                 <strong>Mention d'exonération</strong>
                 <textarea
-                  pInputTextarea
+                  pTextarea
                   [(ngModel)]="legalMentions.exemptionMention"
                   (ngModelChange)="updateLegalMentions({ exemptionMention: $event })"
                   rows="2"
@@ -276,7 +276,7 @@ import {
             <div class="mention-content">
               <strong>Mention personnalisée</strong>
               <textarea
-                pInputTextarea
+                pTextarea
                 [(ngModel)]="legalMentions.customMention"
                 (ngModelChange)="updateLegalMentions({ customMention: $event })"
                 rows="3"
@@ -439,7 +439,7 @@ import {
 
       ::ng-deep {
         .p-inputtext,
-        .p-dropdown,
+        .p-select,
         .p-inputnumber,
         .p-inputmask,
         textarea {

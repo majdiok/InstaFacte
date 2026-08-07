@@ -2,8 +2,8 @@ import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges, injec
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
-import { DropdownModule } from 'primeng/dropdown';
-import { CalendarModule } from 'primeng/calendar';
+import { SelectModule } from 'primeng/select';
+import { DatePickerModule } from 'primeng/datepicker';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputSwitchModule } from 'primeng/inputswitch';
@@ -41,8 +41,8 @@ function parseIsoDate(value?: string): Date | null {
     CommonModule,
     FormsModule,
     DialogModule,
-    DropdownModule,
-    CalendarModule,
+    SelectModule,
+    DatePickerModule,
     InputNumberModule,
     InputTextModule,
     InputSwitchModule,
@@ -60,23 +60,23 @@ function parseIsoDate(value?: string): Date | null {
       <div class="form-grid">
         <div class="form-group">
           <label>Type</label>
-          <p-dropdown [options]="contractTypeOptions" [(ngModel)]="type" optionLabel="label" optionValue="value" appendTo="body" styleClass="w-full" />
+          <p-select [options]="contractTypeOptions" [(ngModel)]="type" optionLabel="label" optionValue="value" appendTo="body" styleClass="w-full" />
         </div>
         <div class="form-group">
           <label>Régime social</label>
-          <p-dropdown [options]="regimeOptions" [(ngModel)]="regime" optionLabel="label" optionValue="value" appendTo="body" styleClass="w-full" />
+          <p-select [options]="regimeOptions" [(ngModel)]="regime" optionLabel="label" optionValue="value" appendTo="body" styleClass="w-full" />
         </div>
         <div class="form-group">
           <label>Durée hebdomadaire</label>
-          <p-dropdown [options]="weeklyRegimeOptions" [(ngModel)]="weeklyRegime" optionLabel="label" optionValue="value" appendTo="body" styleClass="w-full" />
+          <p-select [options]="weeklyRegimeOptions" [(ngModel)]="weeklyRegime" optionLabel="label" optionValue="value" appendTo="body" styleClass="w-full" />
         </div>
         <div class="form-group">
           <label>Date début</label>
-          <p-calendar [(ngModel)]="startDate" dateFormat="dd/mm/yy" [showIcon]="true" appendTo="body" styleClass="w-full" />
+          <p-datepicker [(ngModel)]="startDate" dateFormat="dd/mm/yy" [showIcon]="true" appendTo="body" styleClass="w-full" />
         </div>
         <div class="form-group">
           <label>Date fin</label>
-          <p-calendar [(ngModel)]="endDate" dateFormat="dd/mm/yy" [showIcon]="true" appendTo="body" styleClass="w-full" />
+          <p-datepicker [(ngModel)]="endDate" dateFormat="dd/mm/yy" [showIcon]="true" appendTo="body" styleClass="w-full" />
         </div>
         <div class="form-group">
           <label>Salaire de base (TND)</label>

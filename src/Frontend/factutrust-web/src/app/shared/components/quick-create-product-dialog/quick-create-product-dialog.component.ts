@@ -13,8 +13,8 @@ import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { DropdownModule } from 'primeng/dropdown';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { SelectModule } from 'primeng/select';
+import { Textarea } from 'primeng/textarea';
 import { CheckboxModule } from 'primeng/checkbox';
 import { OverlayOptions } from 'primeng/api';
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -83,8 +83,8 @@ const VAT_OPTIONS: VatOption[] = [
     DialogModule,
     InputTextModule,
     InputNumberModule,
-    DropdownModule,
-    InputTextarea,
+    SelectModule,
+    Textarea,
     CheckboxModule,
     ButtonComponent,
   ],
@@ -141,7 +141,7 @@ const VAT_OPTIONS: VatOption[] = [
             <div class="form-row">
               <div class="form-group">
                 <label for="quick-type">Type <span class="required">*</span></label>
-                <p-dropdown
+                <p-select
                   id="quick-type"
                   [options]="typeOptions"
                   [ngModel]="category()"
@@ -155,7 +155,7 @@ const VAT_OPTIONS: VatOption[] = [
               </div>
               <div class="form-group">
                 <label for="quick-unit">Unité <span class="required">*</span></label>
-                <p-dropdown
+                <p-select
                   id="quick-unit"
                   [options]="unitOptions"
                   [ngModel]="unit()"
@@ -188,7 +188,7 @@ const VAT_OPTIONS: VatOption[] = [
               </div>
               <div class="form-group">
                 <label for="quick-vat">TVA <span class="required">*</span></label>
-                <p-dropdown
+                <p-select
                   id="quick-vat"
                   [options]="vatOptions"
                   [ngModel]="vatRate()"
@@ -237,7 +237,7 @@ const VAT_OPTIONS: VatOption[] = [
             <div class="form-group">
               <label for="quick-desc">Description</label>
               <textarea
-                pInputTextarea
+                pTextarea
                 id="quick-desc"
                 [ngModel]="description()"
                 (ngModelChange)="description.set($event)"
@@ -505,7 +505,7 @@ const VAT_OPTIONS: VatOption[] = [
         background: var(--color-background-subtle);
       }
 
-      .p-dropdown,
+      .p-select,
       .p-inputnumber {
         width: 100%;
       }

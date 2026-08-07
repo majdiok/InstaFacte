@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { CheckboxModule } from 'primeng/checkbox';
-import { CalendarModule } from 'primeng/calendar';
+import { DatePickerModule } from 'primeng/datepicker';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import {
   AccountingService,
@@ -23,7 +23,7 @@ const FAMILY_FLUX: NctAnnexFamily = 'CashFlow';
 @Component({
   selector: 'app-financial-statements-export-dialog',
   standalone: true,
-  imports: [CommonModule, FormsModule, DialogModule, CheckboxModule, CalendarModule, ButtonComponent],
+  imports: [CommonModule, FormsModule, DialogModule, CheckboxModule, DatePickerModule, ButtonComponent],
   template: `
     <p-dialog
       header="États financiers"
@@ -37,7 +37,7 @@ const FAMILY_FLUX: NctAnnexFamily = 'CashFlow';
       <div class="fs-params">
         <div class="fs-field">
           <label for="fs-asof">Arrêtée au</label>
-          <p-calendar
+          <p-datepicker
             inputId="fs-asof"
             [(ngModel)]="asOfDate"
             dateFormat="dd/mm/yy"

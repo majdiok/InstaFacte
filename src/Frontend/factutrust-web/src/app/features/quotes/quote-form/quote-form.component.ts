@@ -7,10 +7,10 @@ import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { CardModule } from 'primeng/card';
 import { InputTextModule } from 'primeng/inputtext';
-import { DropdownModule } from 'primeng/dropdown';
-import { CalendarModule } from 'primeng/calendar';
+import { SelectModule } from 'primeng/select';
+import { DatePickerModule } from 'primeng/datepicker';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { AutoCompleteModule, AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { DialogModule } from 'primeng/dialog';
 import { MessageModule } from 'primeng/message';
@@ -66,10 +66,10 @@ interface LineRow extends LinePromotionPreview {
     ButtonModule,
     CardModule,
     InputTextModule,
-    DropdownModule,
-    CalendarModule,
+    SelectModule,
+    DatePickerModule,
     InputNumberModule,
-    InputTextarea,
+    Textarea,
     AutoCompleteModule,
     DialogModule,
     MessageModule,
@@ -98,7 +98,7 @@ interface LineRow extends LinePromotionPreview {
           <div class="form-grid">
             <div class="field span-full">
               <label for="quoteTemplate">Modèle de devis (optionnel)</label>
-              <p-dropdown
+              <p-select
                 id="quoteTemplate"
                 [options]="quoteTemplateOptions()"
                 [(ngModel)]="selectedQuoteTemplateId"
@@ -109,14 +109,14 @@ interface LineRow extends LinePromotionPreview {
                 name="quoteTemplate"
                 styleClass="w-full"
                 (onChange)="onQuoteTemplateChange()">
-              </p-dropdown>
+              </p-select>
               <small class="field-hint">Préremplit les lignes, les notes, les conditions et la date de validité.</small>
             </div>
             <div class="field">
               <label for="client">Client <span class="required">*</span></label>
               <div class="client-cell">
                 <div class="client-cell-input">
-                  <p-dropdown
+                  <p-select
                     id="client"
                     [options]="clientOptions()"
                     [(ngModel)]="selectedClientId"
@@ -129,7 +129,7 @@ interface LineRow extends LinePromotionPreview {
                     [showClear]="true"
                     name="client"
                     styleClass="w-full">
-                  </p-dropdown>
+                  </p-select>
                 </div>
                 @if (canCreateClient()) {
                   <app-button
@@ -145,25 +145,25 @@ interface LineRow extends LinePromotionPreview {
             </div>
             <div class="field">
               <label for="issueDate">Date d'émission <span class="required">*</span></label>
-              <p-calendar
+              <p-datepicker
                 id="issueDate"
                 [(ngModel)]="issueDate"
                 [readonlyInput]="true"
                 dateFormat="dd/mm/yy"
                 name="issueDate"
                 styleClass="w-full">
-              </p-calendar>
+              </p-datepicker>
             </div>
             <div class="field">
               <label for="expiryDate">Valide jusqu'au <span class="required">*</span></label>
-              <p-calendar
+              <p-datepicker
                 id="expiryDate"
                 [(ngModel)]="expiryDate"
                 [readonlyInput]="true"
                 dateFormat="dd/mm/yy"
                 name="expiryDate"
                 styleClass="w-full">
-              </p-calendar>
+              </p-datepicker>
               <small class="field-hint">Date limite de validité de l'offre. Passée cette date, le devis ne pourra plus être accepté.</small>
             </div>
           </div>
@@ -287,14 +287,14 @@ interface LineRow extends LinePromotionPreview {
                       }
                     </td>
                     <td>
-                      <p-dropdown
+                      <p-select
                         [options]="vatOptions"
                         [(ngModel)]="line.vatRatePercent"
                         [ngModelOptions]="{ standalone: true }"
                         optionLabel="label"
                         optionValue="value"
                         styleClass="w-full">
-                      </p-dropdown>
+                      </p-select>
                     </td>
                     <td>
                       <p-inputNumber
@@ -368,7 +368,7 @@ interface LineRow extends LinePromotionPreview {
           <div class="field">
             <label for="notes">Notes</label>
             <textarea
-              pInputTextarea
+              pTextarea
               id="notes"
               [(ngModel)]="notes"
               name="notes"
@@ -379,7 +379,7 @@ interface LineRow extends LinePromotionPreview {
           <div class="field mt-3">
             <label for="terms">Conditions générales</label>
             <textarea
-              pInputTextarea
+              pTextarea
               id="terms"
               [(ngModel)]="termsAndConditions"
               name="terms"
@@ -612,8 +612,8 @@ interface LineRow extends LinePromotionPreview {
       :host ::ng-deep .lines-table p-inputnumber .p-inputtext {
         width: 100%;
       }
-      :host ::ng-deep .lines-table p-dropdown,
-      :host ::ng-deep .lines-table p-dropdown .p-dropdown {
+      :host ::ng-deep .lines-table p-select,
+      :host ::ng-deep .lines-table p-select .p-select {
         width: 100%;
       }
       .submit-error-banner {
@@ -661,7 +661,7 @@ interface LineRow extends LinePromotionPreview {
         flex: 1;
         min-width: 0;
       }
-      :host ::ng-deep .client-cell-input .p-dropdown {
+      :host ::ng-deep .client-cell-input .p-select {
         width: 100%;
       }
       .btn-add-client-circle {

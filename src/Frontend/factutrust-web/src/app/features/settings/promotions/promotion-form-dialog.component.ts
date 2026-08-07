@@ -32,7 +32,7 @@ import { InputNumberModule } from 'primeng/inputnumber';
 
 import { InputSwitchModule } from 'primeng/inputswitch';
 
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 
 import { AutoCompleteModule } from 'primeng/autocomplete';
 
@@ -142,7 +142,7 @@ export interface PromotionFormValue {
 
     InputSwitchModule,
 
-    DropdownModule,
+    SelectModule,
 
     AutoCompleteModule,
 
@@ -270,7 +270,7 @@ export interface PromotionFormValue {
 
             <label for="pr-category">Catégorie (optionnel)</label>
 
-            <p-dropdown
+            <p-select
 
               inputId="pr-category"
 
@@ -290,7 +290,7 @@ export interface PromotionFormValue {
 
               appendTo="body"
 
-              [disabled]="saving || !!selectedProduct"></p-dropdown>
+              [disabled]="saving || !!selectedProduct"></p-select>
 
             <small class="ft-hint">Laisser vide pour toutes les catégories</small>
 
@@ -356,7 +356,7 @@ export interface PromotionFormValue {
 
             <label for="pr-type">Forme de la remise</label>
 
-            <p-dropdown
+            <p-select
 
               inputId="pr-type"
 
@@ -370,7 +370,7 @@ export interface PromotionFormValue {
 
               appendTo="body"
 
-              [disabled]="saving"></p-dropdown>
+              [disabled]="saving"></p-select>
 
           </div>
 
@@ -602,7 +602,7 @@ export interface PromotionFormValue {
 
         .ft-field .p-inputnumber,
 
-        .ft-field .p-dropdown,
+        .ft-field .p-select,
 
         .ft-field .p-autocomplete {
 

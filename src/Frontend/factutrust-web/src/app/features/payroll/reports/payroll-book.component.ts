@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { TableModule } from 'primeng/table';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { CheckboxModule } from 'primeng/checkbox';
 import { MessageModule } from 'primeng/message';
 import { finalize } from 'rxjs';
@@ -35,7 +35,7 @@ import { MONTH_OPTIONS, formatMonthList, yearOptions } from './payroll-report-op
     CommonModule,
     FormsModule,
     TableModule,
-    DropdownModule,
+    SelectModule,
     CheckboxModule,
     MessageModule,
     PageHeaderComponent,
@@ -57,7 +57,7 @@ import { MONTH_OPTIONS, formatMonthList, yearOptions } from './payroll-report-op
     </app-page-header>
 
     <div class="payroll-toolbar">
-      <p-dropdown
+      <p-select
         [options]="years"
         [(ngModel)]="year"
         optionLabel="label"
@@ -65,7 +65,7 @@ import { MONTH_OPTIONS, formatMonthList, yearOptions } from './payroll-report-op
         placeholder="Année"
         styleClass="w-10rem"
         ariaLabel="Année" />
-      <p-dropdown
+      <p-select
         [options]="months"
         [(ngModel)]="fromMonth"
         optionLabel="label"
@@ -73,7 +73,7 @@ import { MONTH_OPTIONS, formatMonthList, yearOptions } from './payroll-report-op
         placeholder="Mois de"
         styleClass="w-10rem"
         ariaLabel="Mois de début" />
-      <p-dropdown
+      <p-select
         [options]="months"
         [(ngModel)]="toMonth"
         optionLabel="label"

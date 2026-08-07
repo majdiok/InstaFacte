@@ -7,7 +7,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { InputTextModule } from 'primeng/inputtext';
 import { PasswordModule } from 'primeng/password';
 import { ButtonModule } from 'primeng/button';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputMaskModule } from 'primeng/inputmask';
 import { StepsModule } from 'primeng/steps';
 import { MessageModule } from 'primeng/message';
@@ -59,7 +59,7 @@ interface TaxRegime {
     InputTextModule,
     PasswordModule,
     ButtonModule,
-    DropdownModule,
+    SelectModule,
     InputMaskModule,
     StepsModule,
     MessageModule,

@@ -20,10 +20,10 @@ import {
 } from './managed-client-provisioning-progress';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { CalendarModule } from 'primeng/calendar';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { DatePickerModule } from 'primeng/datepicker';
+import { Textarea } from 'primeng/textarea';
 import { TagModule } from 'primeng/tag';
 import { ProgressBarModule } from 'primeng/progressbar';
 
@@ -47,8 +47,8 @@ const MONTH_OPTIONS: Option<number>[] = [
   standalone: true,
   imports: [
     CommonModule, RouterModule, ReactiveFormsModule, PageHeaderComponent,
-    ButtonModule, InputTextModule, DropdownModule, InputNumberModule,
-    CalendarModule, InputTextarea, TagModule, ProgressBarModule
+    ButtonModule, InputTextModule, SelectModule, InputNumberModule,
+    DatePickerModule, Textarea, TagModule, ProgressBarModule
   ],
   template: `
     <app-page-header
@@ -157,7 +157,7 @@ const MONTH_OPTIONS: Option<number>[] = [
               </div>
               <div class="mc-field">
                 <label>Forme juridique</label>
-                <p-dropdown formControlName="legalForm" [options]="legalFormOptions" optionLabel="label" optionValue="value"
+                <p-select formControlName="legalForm" [options]="legalFormOptions" optionLabel="label" optionValue="value"
                   placeholder="Sélectionner" [showClear]="true" styleClass="w-full" appendTo="body" />
               </div>
               <div class="mc-field">
@@ -166,7 +166,7 @@ const MONTH_OPTIONS: Option<number>[] = [
               </div>
               <div class="mc-field">
                 <label>Date de constitution</label>
-                <p-calendar formControlName="incorporationDate" dateFormat="dd/mm/yy" [showIcon]="true" appendTo="body" styleClass="w-full" />
+                <p-datepicker formControlName="incorporationDate" dateFormat="dd/mm/yy" [showIcon]="true" appendTo="body" styleClass="w-full" />
               </div>
               <div class="mc-field">
                 <label>Capital social (TND)</label>
@@ -190,7 +190,7 @@ const MONTH_OPTIONS: Option<number>[] = [
               </div>
               <div class="mc-field">
                 <label>Gouvernorat <span class="req">*</span></label>
-                <p-dropdown formControlName="governorate" [options]="governorateOptions" optionLabel="label" optionValue="value"
+                <p-select formControlName="governorate" [options]="governorateOptions" optionLabel="label" optionValue="value"
                   placeholder="Sélectionner" [filter]="true" styleClass="w-full" appendTo="body" />
               </div>
               <div class="mc-field">
@@ -222,12 +222,12 @@ const MONTH_OPTIONS: Option<number>[] = [
             <form [formGroup]="accountingForm" class="mc-grid">
               <div class="mc-field">
                 <label>Début d'exercice <span class="req">*</span></label>
-                <p-dropdown formControlName="fiscalYearStartMonth" [options]="monthOptions" optionLabel="label" optionValue="value"
+                <p-select formControlName="fiscalYearStartMonth" [options]="monthOptions" optionLabel="label" optionValue="value"
                   styleClass="w-full" appendTo="body" />
               </div>
               <div class="mc-field">
                 <label>Fin d'exercice <span class="req">*</span></label>
-                <p-dropdown formControlName="fiscalYearEndMonth" [options]="monthOptions" optionLabel="label" optionValue="value"
+                <p-select formControlName="fiscalYearEndMonth" [options]="monthOptions" optionLabel="label" optionValue="value"
                   styleClass="w-full" appendTo="body" />
               </div>
               <div class="mc-field">
@@ -247,7 +247,7 @@ const MONTH_OPTIONS: Option<number>[] = [
             <form [formGroup]="fiscalForm" class="mc-grid">
               <div class="mc-field">
                 <label>Régime fiscal <span class="req">*</span></label>
-                <p-dropdown formControlName="taxRegime" [options]="taxRegimeOptions" optionLabel="label" optionValue="value"
+                <p-select formControlName="taxRegime" [options]="taxRegimeOptions" optionLabel="label" optionValue="value"
                   styleClass="w-full" appendTo="body" />
               </div>
               <div class="mc-field">
@@ -277,12 +277,12 @@ const MONTH_OPTIONS: Option<number>[] = [
               </div>
               <div class="mc-field">
                 <label>Périodicité des honoraires</label>
-                <p-dropdown formControlName="billingFrequency" [options]="billingFrequencyOptions" optionLabel="label" optionValue="value"
+                <p-select formControlName="billingFrequency" [options]="billingFrequencyOptions" optionLabel="label" optionValue="value"
                   placeholder="Sélectionner" [showClear]="true" styleClass="w-full" appendTo="body" />
               </div>
               <div class="mc-field mc-col-2">
                 <label>Notes de facturation</label>
-                <textarea pInputTextarea formControlName="billingNotes" rows="2" maxlength="500"></textarea>
+                <textarea pTextarea formControlName="billingNotes" rows="2" maxlength="500"></textarea>
               </div>
             </form>
             <div class="mc-info mc-info--muted">
@@ -300,12 +300,12 @@ const MONTH_OPTIONS: Option<number>[] = [
             <form [formGroup]="settingsForm" class="mc-grid">
               <div class="mc-field">
                 <label>Gestionnaire du dossier</label>
-                <p-dropdown formControlName="assignedAccountantUserId" [options]="accountantOptions()" optionLabel="label" optionValue="value"
+                <p-select formControlName="assignedAccountantUserId" [options]="accountantOptions()" optionLabel="label" optionValue="value"
                   placeholder="Affecter plus tard" [showClear]="true" styleClass="w-full" appendTo="body" />
               </div>
               <div class="mc-field mc-col-2">
                 <label>Notes internes</label>
-                <textarea pInputTextarea formControlName="notes" rows="2" maxlength="1000"></textarea>
+                <textarea pTextarea formControlName="notes" rows="2" maxlength="1000"></textarea>
               </div>
             </form>
 

@@ -9,7 +9,7 @@ import { TableTotalsBarComponent, TotalMetric } from '@shared/components/table-t
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
 import { ToastModule } from 'primeng/toast';
@@ -44,7 +44,7 @@ interface StatusOption {
     TableModule,
     ButtonModule,
     DialogModule,
-    DropdownModule,
+    SelectModule,
     InputNumberModule,
     InputTextModule,
     ToastModule,

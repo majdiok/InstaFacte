@@ -12,9 +12,9 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { CalendarModule } from 'primeng/calendar';
-import { DropdownModule } from 'primeng/dropdown';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { DatePickerModule } from 'primeng/datepicker';
+import { SelectModule } from 'primeng/select';
+import { Textarea } from 'primeng/textarea';
 import { ButtonModule } from 'primeng/button';
 import { OverlayOptions } from 'primeng/api';
 import { formatLocalDate } from '@core/utils/date.util';
@@ -47,9 +47,9 @@ const PAYMENT_METHOD_OPTIONS = [
     FormsModule,
     InputTextModule,
     InputNumberModule,
-    CalendarModule,
-    DropdownModule,
-    InputTextarea,
+    DatePickerModule,
+    SelectModule,
+    Textarea,
     ButtonModule
   ],
   template: `
@@ -68,7 +68,7 @@ const PAYMENT_METHOD_OPTIONS = [
         <div class="form-fields">
           <div class="form-group">
             <label for="hon-pay-date">Date de paiement <span class="required">*</span></label>
-            <p-calendar
+            <p-datepicker
               inputId="hon-pay-date"
               [(ngModel)]="paymentDate"
               [showIcon]="true"
@@ -77,7 +77,7 @@ const PAYMENT_METHOD_OPTIONS = [
               appendTo="body"
               [baseZIndex]="drawerPrimeBaseZIndex"
               styleClass="w-full">
-            </p-calendar>
+            </p-datepicker>
           </div>
 
           <div class="form-group">
@@ -109,7 +109,7 @@ const PAYMENT_METHOD_OPTIONS = [
 
           <div class="form-group">
             <label for="hon-pay-method">Mode de paiement <span class="required">*</span></label>
-            <p-dropdown
+            <p-select
               inputId="hon-pay-method"
               [options]="paymentMethodOptions"
               [(ngModel)]="method"
@@ -119,7 +119,7 @@ const PAYMENT_METHOD_OPTIONS = [
               styleClass="w-full"
               appendTo="body"
               [overlayOptions]="drawerOverlayOptions">
-            </p-dropdown>
+            </p-select>
           </div>
 
           <div class="form-group">
@@ -134,7 +134,7 @@ const PAYMENT_METHOD_OPTIONS = [
 
           <div class="form-group">
             <label for="hon-pay-notes">Notes</label>
-            <textarea pInputTextarea id="hon-pay-notes" [(ngModel)]="notes" rows="2" class="w-full" placeholder="Notes internes"></textarea>
+            <textarea pTextarea id="hon-pay-notes" [(ngModel)]="notes" rows="2" class="w-full" placeholder="Notes internes"></textarea>
           </div>
         </div>
 
@@ -349,8 +349,8 @@ const PAYMENT_METHOD_OPTIONS = [
     }
 
     :host ::ng-deep {
-      .p-calendar,
-      .p-dropdown,
+      .p-datepicker,
+      .p-select,
       .p-inputnumber {
         width: 100%;
       }

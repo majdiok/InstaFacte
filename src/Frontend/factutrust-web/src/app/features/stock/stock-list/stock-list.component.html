@@ -78,13 +78,13 @@
         (input)="applyFilters()" class="w-full">
     </span>
 
-    <p-dropdown [options]="warehouses" [(ngModel)]="selectedWarehouse" optionLabel="name"
+    <p-select [options]="warehouses" [(ngModel)]="selectedWarehouse" optionLabel="name"
       placeholder="Tous les entrepôts" [showClear]="true" (onChange)="applyFilters()">
-    </p-dropdown>
+    </p-select>
 
-    <p-dropdown [options]="statusOptions" [(ngModel)]="selectedStatus" optionLabel="label" optionValue="value"
+    <p-select [options]="statusOptions" [(ngModel)]="selectedStatus" optionLabel="label" optionValue="value"
       placeholder="Tous les statuts" [showClear]="true" (onChange)="applyFilters()">
-    </p-dropdown>
+    </p-select>
   </div>
 </div>
 

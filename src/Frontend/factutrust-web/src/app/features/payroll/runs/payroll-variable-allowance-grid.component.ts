@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { DialogModule } from 'primeng/dialog';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
 import { CheckboxModule } from 'primeng/checkbox';
@@ -26,7 +26,7 @@ import { PayrollSectionComponent, PayrollAmountPipe } from '../shared';
     FormsModule,
     TableModule,
     DialogModule,
-    DropdownModule,
+    SelectModule,
     InputNumberModule,
     InputTextModule,
     CheckboxModule,
@@ -82,7 +82,7 @@ import { PayrollSectionComponent, PayrollAmountPipe } from '../shared';
     <p-dialog [header]="editingId ? 'Modifier la prime' : 'Nouvelle prime variable'" [(visible)]="dialogVisible" [modal]="true" [style]="{ width: '520px' }">
       <div class="payroll-form-group mb-2">
         <label>Salarié</label>
-        <p-dropdown [options]="employees()" optionLabel="fullName" optionValue="id" [(ngModel)]="formEmployeeId" appendTo="body" styleClass="w-full" [disabled]="!!editingId" />
+        <p-select [options]="employees()" optionLabel="fullName" optionValue="id" [(ngModel)]="formEmployeeId" appendTo="body" styleClass="w-full" [disabled]="!!editingId" />
       </div>
       <div class="payroll-form-group mb-2">
         <label>Libellé</label>

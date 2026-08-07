@@ -12,7 +12,7 @@ import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { CheckboxModule } from 'primeng/checkbox';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { TableModule } from 'primeng/table';
 import { MessageService } from 'primeng/api';
 
@@ -49,7 +49,7 @@ import { INVOICES_FR } from './invoices.i18n.fr';
     InputTextModule,
     InputNumberModule,
     CheckboxModule,
-    InputTextarea,
+    Textarea,
     TableModule,
     FtPageHeaderComponent,
     FtSkeletonComponent
@@ -147,7 +147,7 @@ import { INVOICES_FR } from './invoices.i18n.fr';
         <h3>{{ t('fiscal.section.legal') }}</h3>
         <div class="field">
           <label>{{ t('fiscal.field.legalMentions') }}</label>
-          <textarea pInputTextarea rows="4" [(ngModel)]="form.legalMentions" maxlength="2000" class="w-full"></textarea>
+          <textarea pTextarea rows="4" [(ngModel)]="form.legalMentions" maxlength="2000" class="w-full"></textarea>
         </div>
       </section>
 

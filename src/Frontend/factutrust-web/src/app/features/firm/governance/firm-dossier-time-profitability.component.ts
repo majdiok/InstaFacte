@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
 import { ChartModule } from 'primeng/chart';
 import { TagModule } from 'primeng/tag';
@@ -28,7 +28,7 @@ import { downloadBlob } from '@features/accounting/shared/accounting-download.ut
     RouterLink,
     TableModule,
     ButtonModule,
-    DropdownModule,
+    SelectModule,
     InputTextModule,
     ChartModule,
     TagModule,
@@ -59,7 +59,7 @@ import { downloadBlob } from '@features/accounting/shared/accounting-download.ut
           (keyup.enter)="load()" />
       </label>
       <label>Année
-        <p-dropdown
+        <p-select
           [options]="yearOptions"
           [(ngModel)]="selectedYear"
           [showClear]="true"
@@ -67,7 +67,7 @@ import { downloadBlob } from '@features/accounting/shared/accounting-download.ut
           (onChange)="load()" />
       </label>
       <label>Collaborateur
-        <p-dropdown
+        <p-select
           [options]="collaboratorOptions()"
           [(ngModel)]="selectedCollaboratorId"
           optionLabel="label"
@@ -80,7 +80,7 @@ import { downloadBlob } from '@features/accounting/shared/accounting-download.ut
           (onChange)="load()" />
       </label>
       <label>Marge
-        <p-dropdown
+        <p-select
           [options]="marginOptions"
           [(ngModel)]="selectedMargin"
           optionLabel="label"

@@ -13,7 +13,7 @@ import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputMaskModule } from 'primeng/inputmask';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { OverlayOptions } from 'primeng/api';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import {
@@ -75,7 +75,7 @@ const FIELD_IDS = {
     DialogModule,
     InputTextModule,
     InputMaskModule,
-    DropdownModule,
+    SelectModule,
     ButtonComponent,
   ],
   template: `
@@ -105,7 +105,7 @@ const FIELD_IDS = {
             <div class="form-row">
               <div class="form-group">
                 <label for="quick-client-type">Type <span class="required">*</span></label>
-                <p-dropdown
+                <p-select
                   id="quick-client-type"
                   [options]="typeOptions"
                   [ngModel]="type()"
@@ -213,7 +213,7 @@ const FIELD_IDS = {
               </div>
               <div class="form-group">
                 <label for="quick-client-governorate">Gouvernorat <span class="required">*</span></label>
-                <p-dropdown
+                <p-select
                   id="quick-client-governorate"
                   [options]="governorateOptions"
                   [ngModel]="governorate()"
@@ -364,7 +364,7 @@ const FIELD_IDS = {
     }
     .dialog-footer { display: flex; justify-content: flex-end; gap: var(--spacing-4); }
     @media (max-width: 520px) { .form-row { grid-template-columns: 1fr; } }
-    :host ::ng-deep .p-dropdown { width: 100%; }
+    :host ::ng-deep .p-select { width: 100%; }
     .panel-overlay {
       position: fixed; inset: 0; z-index: var(--z-drawer-overlay);
       display: flex; justify-content: flex-end; align-items: stretch;

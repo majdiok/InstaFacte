@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { MultiSelectModule } from 'primeng/multiselect';
 import { MessageService } from 'primeng/api';
 import { DynamicReportComponent } from '@shared/studio-runtime/dynamic-report.component';
@@ -21,7 +21,7 @@ import { ToastModule } from 'primeng/toast';
 @Component({
   selector: 'app-studio-report-designer',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, ButtonModule, InputTextModule, DropdownModule, MultiSelectModule, DynamicReportComponent, ToastModule, StudioPageShellComponent, StudioDesignerShellComponent],
+  imports: [CommonModule, FormsModule, RouterModule, ButtonModule, InputTextModule, SelectModule, MultiSelectModule, DynamicReportComponent, ToastModule, StudioPageShellComponent, StudioDesignerShellComponent],
   template: `
     <p-toast></p-toast>
     <app-studio-page-shell
@@ -39,9 +39,9 @@ import { ToastModule } from 'primeng/toast';
           <input pInputText [(ngModel)]="displayName" class="ft-w-full" placeholder="Ex. Ventes par région" />
 
           <label class="ft-lbl">Source de données *</label>
-          <p-dropdown [options]="sources()" [(ngModel)]="sourceId" (ngModelChange)="onSourceChange()"
+          <p-select [options]="sources()" [(ngModel)]="sourceId" (ngModelChange)="onSourceChange()"
             optionLabel="displayName" optionValue="id" [group]="true" appendTo="body" styleClass="ft-w-full"
-            placeholder="Choisir une table ou source"></p-dropdown>
+            placeholder="Choisir une table ou source"></p-select>
 
           <ng-container *ngIf="selectedSource() as src">
             <label class="ft-lbl">Regrouper par</label>
@@ -60,9 +60,9 @@ import { ToastModule } from 'primeng/toast';
                 <button pButton type="button" icon="fa-solid fa-plus" class="p-button-text p-button-sm" label="Ajouter" (click)="addAgg()"></button>
               </div>
               <div class="ft-line" *ngFor="let a of aggregations; let i = index">
-                <p-dropdown [options]="fnOptions" [(ngModel)]="a.fn" optionLabel="label" optionValue="value" appendTo="body"></p-dropdown>
-                <p-dropdown *ngIf="a.fn !== 'count'" [options]="numericFieldOptions()" [(ngModel)]="a.field" optionLabel="label" optionValue="value"
-                  appendTo="body" styleClass="ft-grow" placeholder="Champ"></p-dropdown>
+                <p-select [options]="fnOptions" [(ngModel)]="a.fn" optionLabel="label" optionValue="value" appendTo="body"></p-select>
+                <p-select *ngIf="a.fn !== 'count'" [options]="numericFieldOptions()" [(ngModel)]="a.field" optionLabel="label" optionValue="value"
+                  appendTo="body" styleClass="ft-grow" placeholder="Champ"></p-select>
                 <span *ngIf="a.fn === 'count'" class="ft-grow ft-muted">tous les enregistrements</span>
                 <button pButton type="button" icon="fa-solid fa-xmark" class="p-button-text p-button-sm p-button-danger" (click)="removeAgg(i)"></button>
               </div>
@@ -73,8 +73,8 @@ import { ToastModule } from 'primeng/toast';
               <button pButton type="button" icon="fa-solid fa-plus" class="p-button-text p-button-sm" label="Ajouter" (click)="addFilter()"></button>
             </div>
             <div class="ft-line" *ngFor="let f of filters; let i = index">
-              <p-dropdown [options]="fieldOptions()" [(ngModel)]="f.field" optionLabel="label" optionValue="value" appendTo="body" styleClass="ft-grow"></p-dropdown>
-              <p-dropdown [options]="opOptions" [(ngModel)]="f.op" optionLabel="label" optionValue="value" appendTo="body"></p-dropdown>
+              <p-select [options]="fieldOptions()" [(ngModel)]="f.field" optionLabel="label" optionValue="value" appendTo="body" styleClass="ft-grow"></p-select>
+              <p-select [options]="opOptions" [(ngModel)]="f.op" optionLabel="label" optionValue="value" appendTo="body"></p-select>
               <input pInputText [ngModel]="$any(f).value" (ngModelChange)="f.value = $event" placeholder="Valeur" class="ft-grow" />
               <button pButton type="button" icon="fa-solid fa-xmark" class="p-button-text p-button-sm p-button-danger" (click)="removeFilter(i)"></button>
             </div>
@@ -84,8 +84,8 @@ import { ToastModule } from 'primeng/toast';
               <button pButton type="button" icon="fa-solid fa-plus" class="p-button-text p-button-sm" label="Ajouter" (click)="addSort()"></button>
             </div>
             <div class="ft-line" *ngFor="let s of sort; let i = index">
-              <p-dropdown [options]="sortFieldOptions()" [(ngModel)]="s.field" optionLabel="label" optionValue="value" appendTo="body" styleClass="ft-grow"></p-dropdown>
-              <p-dropdown [options]="dirOptions" [(ngModel)]="s.dir" optionLabel="label" optionValue="value" appendTo="body"></p-dropdown>
+              <p-select [options]="sortFieldOptions()" [(ngModel)]="s.field" optionLabel="label" optionValue="value" appendTo="body" styleClass="ft-grow"></p-select>
+              <p-select [options]="dirOptions" [(ngModel)]="s.dir" optionLabel="label" optionValue="value" appendTo="body"></p-select>
               <button pButton type="button" icon="fa-solid fa-xmark" class="p-button-text p-button-sm p-button-danger" (click)="removeSort(i)"></button>
             </div>
           </ng-container>

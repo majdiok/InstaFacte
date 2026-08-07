@@ -4,8 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { DialogModule } from 'primeng/dialog';
-import { DropdownModule } from 'primeng/dropdown';
-import { CalendarModule } from 'primeng/calendar';
+import { SelectModule } from 'primeng/select';
+import { DatePickerModule } from 'primeng/datepicker';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -45,8 +45,8 @@ const GARNISHMENT_KIND_OPTIONS = [
     TableModule,
     TagModule,
     DialogModule,
-    DropdownModule,
-    CalendarModule,
+    SelectModule,
+    DatePickerModule,
     InputNumberModule,
     InputTextModule,
     ButtonComponent,
@@ -108,7 +108,7 @@ const GARNISHMENT_KIND_OPTIONS = [
       <div class="payroll-form-row">
         <div class="payroll-form-group">
           <label>Type</label>
-          <p-dropdown [options]="typeOptions" optionLabel="label" optionValue="value" [(ngModel)]="formType" appendTo="body" styleClass="w-full" />
+          <p-select [options]="typeOptions" optionLabel="label" optionValue="value" [(ngModel)]="formType" appendTo="body" styleClass="w-full" />
         </div>
         <div class="payroll-form-group">
           <label>Priorité</label>
@@ -122,7 +122,7 @@ const GARNISHMENT_KIND_OPTIONS = [
         </div>
         <div class="payroll-form-group">
           <label>Date du titre</label>
-          <p-calendar [(ngModel)]="formIssuedAt" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
+          <p-datepicker [(ngModel)]="formIssuedAt" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
         </div>
       </div>
       <div class="payroll-form-group mb-2">
@@ -136,7 +136,7 @@ const GARNISHMENT_KIND_OPTIONS = [
       <div class="payroll-form-row">
         <div class="payroll-form-group">
           <label>Mode de calcul</label>
-          <p-dropdown [options]="kindOptions" optionLabel="label" optionValue="value" [(ngModel)]="formKind" appendTo="body" styleClass="w-full" />
+          <p-select [options]="kindOptions" optionLabel="label" optionValue="value" [(ngModel)]="formKind" appendTo="body" styleClass="w-full" />
         </div>
         <div class="payroll-form-group">
           @if (formKind === 'FixedAmount') {
@@ -155,11 +155,11 @@ const GARNISHMENT_KIND_OPTIONS = [
       <div class="payroll-form-row">
         <div class="payroll-form-group">
           <label>Date de début</label>
-          <p-calendar [(ngModel)]="formStartDate" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
+          <p-datepicker [(ngModel)]="formStartDate" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
         </div>
         <div class="payroll-form-group">
           <label>Date de fin</label>
-          <p-calendar [(ngModel)]="formEndDate" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
+          <p-datepicker [(ngModel)]="formEndDate" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
         </div>
       </div>
       <ng-template pTemplate="footer">

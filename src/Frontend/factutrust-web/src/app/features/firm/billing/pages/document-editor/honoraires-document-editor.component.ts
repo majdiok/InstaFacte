@@ -5,11 +5,11 @@ import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { ButtonModule } from 'primeng/button';
-import { CalendarModule } from 'primeng/calendar';
-import { DropdownModule } from 'primeng/dropdown';
+import { DatePickerModule } from 'primeng/datepicker';
+import { SelectModule } from 'primeng/select';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { TabViewModule } from 'primeng/tabview';
 import { DialogModule } from 'primeng/dialog';
@@ -68,11 +68,11 @@ interface LineRow {
     FormsModule,
     RouterModule,
     ButtonModule,
-    CalendarModule,
-    DropdownModule,
+    DatePickerModule,
+    SelectModule,
     InputNumberModule,
     InputTextModule,
-    InputTextarea,
+    Textarea,
     InputSwitchModule,
     TabViewModule,
     DialogModule,
@@ -113,7 +113,7 @@ export class HonorairesDocumentEditorComponent implements OnInit {
 
   dossiers = signal<BillableDossier[]>([]);
   activityCodes = signal<FirmActivityCode[]>([]);
-  /** Bound to p-dropdown via optionValue="assignmentId". */
+  /** Bound to p-select via optionValue="assignmentId". */
   selectedAssignmentId: string | null = null;
   /** Fallback when dossier is absent from active catalogue. */
   documentClientSnapshot: BillableDossier | null = null;

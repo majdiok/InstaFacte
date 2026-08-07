@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { CheckboxModule } from 'primeng/checkbox';
 import { SelectButtonModule } from 'primeng/selectbutton';
 import { MultiSelectModule } from 'primeng/multiselect';
@@ -35,7 +35,7 @@ type FormMode = 'create' | 'edit' | 'view';
     RouterModule,
     ButtonModule,
     InputTextModule,
-    DropdownModule,
+    SelectModule,
     CheckboxModule,
     SelectButtonModule,
     MultiSelectModule,
@@ -117,13 +117,13 @@ type FormMode = 'create' | 'edit' | 'view';
               <input pInputText formControlName="country" placeholder="Pays" />
             </label>
             <label>Rôle
-              <p-dropdown
+              <p-select
                 formControlName="role"
                 [options]="roleOptions"
                 optionLabel="label"
                 optionValue="value"
                 [disabled]="readOnly"
-                appendTo="body"></p-dropdown>
+                appendTo="body"></p-select>
             </label>
             <label *ngIf="mode === 'create'">Mot de passe (optionnel — laissez vide pour invitation)
               <input pInputText type="password" formControlName="password" placeholder="Mot de passe" autocomplete="new-password" />

@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpContext, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '@environments/environment';
 import { ApiResponse } from './auth.service';
@@ -182,8 +182,10 @@ export class ExchangeService {
     return this.http.get<ApiResponse<ExchangeBootstrap>>(`${this.baseUrl}/bootstrap`, { params });
   }
 
-  getUnreadSummary(): Observable<ApiResponse<ExchangeUnreadSummary>> {
-    return this.http.get<ApiResponse<ExchangeUnreadSummary>>(`${this.baseUrl}/unread-summary`);
+  getUnreadSummary(context?: HttpContext): Observable<ApiResponse<ExchangeUnreadSummary>> {
+    return this.http.get<ApiResponse<ExchangeUnreadSummary>>(`${this.baseUrl}/unread-summary`, {
+      context
+    });
   }
 
   getThread(threadId: string): Observable<ApiResponse<ExchangeThreadDetail>> {

@@ -80,7 +80,7 @@
               <h3><i class="pi pi-building"></i> Client</h3>
 
               @if (canEdit) {
-                <p-dropdown
+                <p-select
                   [options]="dossiers()"
                   [(ngModel)]="selectedAssignmentId"
                   optionLabel="companyName"
@@ -92,7 +92,7 @@
                   styleClass="w-full"
                   appendTo="body"
                   (onChange)="onDossierChange()">
-                </p-dropdown>
+                </p-select>
               }
 
               @if (selectedDossier) {
@@ -126,13 +126,13 @@
             <article class="card">
               <h3><i class="pi pi-calendar"></i> {{ mode === 'quote' ? 'Devis' : (isCreditNote ? 'Avoir' : 'Facture') }}</h3>
               <label>Date</label>
-              <p-calendar [(ngModel)]="issueDate" dateFormat="dd/mm/yy" [disabled]="!canEdit" styleClass="w-full"></p-calendar>
+              <p-datepicker [(ngModel)]="issueDate" dateFormat="dd/mm/yy" [disabled]="!canEdit" styleClass="w-full"></p-datepicker>
               <label>{{ mode === 'quote' ? 'Validité' : 'Échéance' }}</label>
-              <p-calendar [(ngModel)]="dueDate" dateFormat="dd/mm/yy" [showClear]="true" [disabled]="!canEdit" styleClass="w-full"></p-calendar>
+              <p-datepicker [(ngModel)]="dueDate" dateFormat="dd/mm/yy" [showClear]="true" [disabled]="!canEdit" styleClass="w-full"></p-datepicker>
             </article>
             <article class="card">
               <h3><i class="pi pi-money-bill"></i> Devise</h3>
-              <p-dropdown [options]="currencies" [(ngModel)]="currency" optionLabel="label" optionValue="value" [disabled]="!canEdit" styleClass="w-full"></p-dropdown>
+              <p-select [options]="currencies" [(ngModel)]="currency" optionLabel="label" optionValue="value" [disabled]="!canEdit" styleClass="w-full"></p-select>
               <label>Référence</label>
               <input pInputText [(ngModel)]="reference" [disabled]="!canEdit" class="w-full" placeholder="Devis n° …" />
             </article>
@@ -181,7 +181,7 @@
                           (codeChange)="onActivityCodeChange(i, $event)">
                         </app-activity-code-picker>
                         <textarea
-                          pInputTextarea
+                          pTextarea
                           [(ngModel)]="line.description"
                           [disabled]="!canEdit"
                           (ngModelChange)="touchLines()"
@@ -212,7 +212,7 @@
                       <p-inputNumber [(ngModel)]="line.unitPrice" mode="decimal" [minFractionDigits]="3" [maxFractionDigits]="3" [disabled]="!canEdit" (onInput)="touchLines()" styleClass="w-full"></p-inputNumber>
                     </td>
                     <td class="col-vat">
-                      <p-dropdown [options]="vatOptions" [(ngModel)]="line.vatRate" optionLabel="label" optionValue="value" [disabled]="!canEdit" (onChange)="touchLines()" styleClass="w-full" appendTo="body"></p-dropdown>
+                      <p-select [options]="vatOptions" [(ngModel)]="line.vatRate" optionLabel="label" optionValue="value" [disabled]="!canEdit" (onChange)="touchLines()" styleClass="w-full" appendTo="body"></p-select>
                     </td>
                     <td class="col-disc">
                       <p-inputNumber [(ngModel)]="line.discountPercent" [min]="0" [max]="100" [disabled]="!canEdit" (onInput)="touchLines()" styleClass="w-full"></p-inputNumber>
@@ -233,18 +233,18 @@
             <div class="notes-panel">
               <p-tabView>
                 <p-tabPanel header="Notes">
-                  <textarea pInputTextarea [(ngModel)]="notes" rows="4" [disabled]="!canEdit" class="w-full" placeholder="Notes pour le client"></textarea>
+                  <textarea pTextarea [(ngModel)]="notes" rows="4" [disabled]="!canEdit" class="w-full" placeholder="Notes pour le client"></textarea>
                 </p-tabPanel>
                 <p-tabPanel header="Conditions de paiement">
-                  <textarea pInputTextarea [(ngModel)]="paymentTerms" rows="4" [disabled]="!canEdit" class="w-full"></textarea>
+                  <textarea pTextarea [(ngModel)]="paymentTerms" rows="4" [disabled]="!canEdit" class="w-full"></textarea>
                   <div class="pay-row" *ngIf="mode === 'invoice' && !isCreditNote">
-                    <p-dropdown [options]="paymentMethods" [(ngModel)]="paymentMethod" [disabled]="!canEdit" placeholder="Mode de paiement"></p-dropdown>
+                    <p-select [options]="paymentMethods" [(ngModel)]="paymentMethod" [disabled]="!canEdit" placeholder="Mode de paiement"></p-select>
                     <input pInputText [(ngModel)]="bankAccountLabel" [disabled]="!canEdit" placeholder="Banque" />
                   </div>
                   <div class="recurring" *ngIf="mode === 'invoice' && !isCreditNote">
                     <label>Facture récurrente</label>
                     <p-inputSwitch [(ngModel)]="isRecurring" [disabled]="!canEdit"></p-inputSwitch>
-                    <p-dropdown *ngIf="isRecurring" [options]="recurrenceOptions" [(ngModel)]="recurrenceFrequency" optionLabel="label" optionValue="value" [disabled]="!canEdit"></p-dropdown>
+                    <p-select *ngIf="isRecurring" [options]="recurrenceOptions" [(ngModel)]="recurrenceFrequency" optionLabel="label" optionValue="value" [disabled]="!canEdit"></p-select>
                   </div>
                 </p-tabPanel>
               </p-tabView>

@@ -5,8 +5,8 @@ import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { DropdownModule } from 'primeng/dropdown';
-import { CalendarModule } from 'primeng/calendar';
+import { SelectModule } from 'primeng/select';
+import { DatePickerModule } from 'primeng/datepicker';
 import { PaginatorModule } from 'primeng/paginator';
 import { TooltipModule } from 'primeng/tooltip';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
@@ -46,8 +46,8 @@ interface StatusOption {
     TableModule,
     ButtonModule,
     InputTextModule,
-    DropdownModule,
-    CalendarModule,
+    SelectModule,
+    DatePickerModule,
     PaginatorModule,
     TooltipModule,
     PageHeaderComponent,
@@ -98,14 +98,14 @@ interface StatusOption {
             [(ngModel)]="searchTerm"
             (input)="onSearch()" />
         </span>
-        <p-dropdown
+        <p-select
           [options]="statusOptions"
           [(ngModel)]="selectedStatus"
           placeholder="Tous les statuts"
           [showClear]="true"
           (onChange)="onSearch()">
-        </p-dropdown>
-        <p-calendar
+        </p-select>
+        <p-datepicker
           [(ngModel)]="dateRange"
           selectionMode="range"
           [readonlyInput]="true"
@@ -113,7 +113,7 @@ interface StatusOption {
           dateFormat="dd/mm/yy"
           [showClear]="true"
           (onSelect)="onSearch()">
-        </p-calendar>
+        </p-datepicker>
       </div>
     </div>
 

@@ -12,8 +12,8 @@ import { Router, RouterLink } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { CalendarModule } from 'primeng/calendar';
-import { DropdownModule } from 'primeng/dropdown';
+import { DatePickerModule } from 'primeng/datepicker';
+import { SelectModule } from 'primeng/select';
 import { TableModule } from 'primeng/table';
 import { MessageService } from 'primeng/api';
 
@@ -60,8 +60,8 @@ interface TenantOption {
     ButtonModule,
     InputTextModule,
     InputNumberModule,
-    CalendarModule,
-    DropdownModule,
+    DatePickerModule,
+    SelectModule,
     TableModule,
     FtPageHeaderComponent
   ],
@@ -76,7 +76,7 @@ interface TenantOption {
       <div class="grid">
         <div class="field field--full">
           <label for="ci-tenant">{{ t('create.field.tenant') }}</label>
-          <p-dropdown
+          <p-select
             inputId="ci-tenant"
             [options]="tenantOptions()"
             [(ngModel)]="tenantId"
@@ -89,7 +89,7 @@ interface TenantOption {
 
         <div class="field">
           <label for="ci-type">{{ t('create.field.billingType') }}</label>
-          <p-dropdown
+          <p-select
             inputId="ci-type"
             [options]="billingTypeOptions"
             [(ngModel)]="billingType"
@@ -100,7 +100,7 @@ interface TenantOption {
 
         <div class="field">
           <label for="ci-date">{{ t('create.field.invoiceDate') }}</label>
-          <p-calendar
+          <p-datepicker
             inputId="ci-date"
             [(ngModel)]="invoiceDate"
             dateFormat="dd/mm/yy"
@@ -110,7 +110,7 @@ interface TenantOption {
 
         <div class="field">
           <label for="ci-due">{{ t('create.field.dueDate') }}</label>
-          <p-calendar
+          <p-datepicker
             inputId="ci-due"
             [(ngModel)]="dueDate"
             dateFormat="dd/mm/yy"
@@ -121,7 +121,7 @@ interface TenantOption {
 
         <div class="field">
           <label for="ci-pf">{{ t('create.field.periodFrom') }}</label>
-          <p-calendar
+          <p-datepicker
             inputId="ci-pf"
             [(ngModel)]="periodFrom"
             dateFormat="dd/mm/yy"
@@ -132,7 +132,7 @@ interface TenantOption {
 
         <div class="field">
           <label for="ci-pt">{{ t('create.field.periodTo') }}</label>
-          <p-calendar
+          <p-datepicker
             inputId="ci-pt"
             [(ngModel)]="periodTo"
             dateFormat="dd/mm/yy"

@@ -13,9 +13,9 @@ import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { CheckboxModule } from 'primeng/checkbox';
 import { TableModule } from 'primeng/table';
 import { TooltipModule } from 'primeng/tooltip';
@@ -53,9 +53,9 @@ interface StepRow {
     DialogModule,
     ButtonModule,
     InputTextModule,
-    InputTextarea,
+    Textarea,
     InputNumberModule,
-    DropdownModule,
+    SelectModule,
     CheckboxModule,
     TableModule,
     TooltipModule
@@ -87,7 +87,7 @@ interface StepRow {
           <label for="dcf-desc">{{ t('form.field.description') }}</label>
           <textarea
             id="dcf-desc"
-            pInputTextarea
+            pTextarea
             rows="2"
             [(ngModel)]="description"
             [disabled]="busy"
@@ -138,7 +138,7 @@ interface StepRow {
                 styleClass="day-input" />
             </td>
             <td>
-              <p-dropdown
+              <p-select
                 [options]="actionOptions"
                 [(ngModel)]="row.action"
                 optionLabel="label"

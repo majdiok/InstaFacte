@@ -17,13 +17,13 @@
 // CHAMPS DE FORMULAIRE — rayon, bordure, focus homogènes
 // --------------------------------------------
 .p-inputtext,
-.p-dropdown,
+.p-select,
 .p-multiselect,
 .p-inputnumber-input,
-.p-calendar .p-inputtext,
+.p-datepicker .p-inputtext,
 .p-password input,
 .p-textarea,
-textarea.p-inputtextarea {
+textarea.p-textarea {
   border-radius: var(--radius-lg);
   border-color: var(--color-border-default);
   transition: border-color var(--transition-fast),
@@ -31,26 +31,27 @@ textarea.p-inputtextarea {
 }
 
 .p-inputtext:enabled:hover,
-.p-dropdown:not(.p-disabled):hover,
+.p-select:not(.p-disabled):hover,
 .p-multiselect:not(.p-disabled):hover,
 .p-inputnumber-input:enabled:hover,
-textarea.p-inputtextarea:enabled:hover {
+textarea.p-textarea:enabled:hover {
   border-color: var(--color-border-strong);
 }
 
 .p-inputtext:enabled:focus,
-.p-dropdown:not(.p-disabled).p-focus,
+.p-select:not(.p-disabled).p-focus,
 .p-multiselect:not(.p-disabled).p-focus,
 .p-inputnumber-input:enabled:focus,
 .p-password input:enabled:focus,
-textarea.p-inputtextarea:enabled:focus {
+textarea.p-textarea:enabled:focus {
   border-color: var(--color-primary-500);
   box-shadow: var(--focus-ring);
   outline: 0 none;
 }
 
-// Panneaux flottants (dropdown / multiselect / calendar) — surface feutrée
-.p-dropdown-panel,
+// Panneaux flottants (select / multiselect / datepicker) — surface feutrée
+.p-select-overlay,
+.p-select-panel,
 .p-multiselect-panel,
 .p-datepicker:not(.p-datepicker-inline) {
   border-radius: var(--radius-lg);
@@ -74,7 +75,8 @@ textarea.p-inputtextarea:enabled:focus {
   }
 }
 
-.p-dropdown-panel .p-dropdown-items .p-dropdown-item.p-highlight,
+.p-select-overlay .p-select-option.p-highlight,
+.p-select-panel .p-select-option.p-highlight,
 .p-multiselect-panel .p-multiselect-items .p-multiselect-item.p-highlight {
   background: var(--color-primary-50);
   color: var(--color-primary-700);

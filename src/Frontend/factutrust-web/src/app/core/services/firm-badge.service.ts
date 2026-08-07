@@ -1,6 +1,7 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { AuthService } from './auth.service';
 import { FirmAssignmentService } from './firm-assignment.service';
+import { createHttpContextSkipGlobalErrorUi } from '@core/http-context';
 
 /**
  * Compteur partagé des invitations en attente côté cabinet (badge sidebar).
@@ -19,7 +20,7 @@ export class FirmBadgeService {
       this.pendingInvitationsCount.set(0);
       return;
     }
-    this.assignments.getIncomingInvitations().subscribe({
+    this.assignments.getIncomingInvitations(createHttpContextSkipGlobalErrorUi()).subscribe({
       next: r => {
         if (r.success) this.pendingInvitationsCount.set(r.data.length);
       },

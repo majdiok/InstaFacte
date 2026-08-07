@@ -6,7 +6,7 @@ import { TagModule } from 'primeng/tag';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
@@ -17,7 +17,7 @@ import { ErrorHandlerService } from '@core/services/error-handler.service';
 @Component({
   selector: 'app-transfer-detail',
   standalone: true,
-  imports: [CommonModule, ButtonModule, TagModule, ConfirmDialogModule, ToastModule, InputTextarea, FormsModule, DialogModule, ProgressSpinnerModule],
+  imports: [CommonModule, ButtonModule, TagModule, ConfirmDialogModule, ToastModule, Textarea, FormsModule, DialogModule, ProgressSpinnerModule],
   providers: [ConfirmationService, MessageService],
   template: `
     <p-toast></p-toast>
@@ -101,7 +101,7 @@ import { ErrorHandlerService } from '@core/services/error-handler.service';
       <p-dialog header="Annuler le transfert" [(visible)]="showCancelDialog" [modal]="true" [style]="{width:'450px'}">
         <div class="field">
           <label class="field-label">Motif d'annulation</label>
-          <textarea pInputTextarea [(ngModel)]="cancelReason" rows="3" style="width:100%"></textarea>
+          <textarea pTextarea [(ngModel)]="cancelReason" rows="3" style="width:100%"></textarea>
         </div>
         <ng-template pTemplate="footer">
           <button pButton label="Annuler" class="p-button-text" (click)="showCancelDialog = false"></button>

@@ -13,10 +13,10 @@ import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputSwitchModule } from 'primeng/inputswitch';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { TableModule } from 'primeng/table';
 import { CheckboxModule } from 'primeng/checkbox';
 import { TabViewModule } from 'primeng/tabview';
@@ -103,10 +103,10 @@ const DEFAULT_LIMIT_KEYS = [
     DialogModule,
     ButtonModule,
     InputTextModule,
-    InputTextarea,
+    Textarea,
     InputNumberModule,
     InputSwitchModule,
-    DropdownModule,
+    SelectModule,
     TableModule,
     CheckboxModule,
     TabViewModule,
@@ -156,7 +156,7 @@ const DEFAULT_LIMIT_KEYS = [
               <label for="pf-desc">{{ t('form.field.description') }}</label>
               <textarea
                 id="pf-desc"
-                pInputTextarea
+                pTextarea
                 rows="2"
                 [(ngModel)]="description"
                 [disabled]="busy"
@@ -165,7 +165,7 @@ const DEFAULT_LIMIT_KEYS = [
             </div>
             <div class="field">
               <label for="pf-period">{{ t('form.field.billingPeriod') }}</label>
-              <p-dropdown
+              <p-select
                 inputId="pf-period"
                 [options]="periodOptions"
                 [(ngModel)]="billingPeriod"

@@ -4,9 +4,9 @@ import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { DialogModule } from 'primeng/dialog';
-import { CalendarModule } from 'primeng/calendar';
+import { DatePickerModule } from 'primeng/datepicker';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { EmployeeService } from '@core/services/employee.service';
 import { PayrollService, EmployeeAdvance } from '@core/services/payroll.service';
@@ -31,9 +31,9 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
     TableModule,
     TagModule,
     DialogModule,
-    CalendarModule,
+    DatePickerModule,
     InputNumberModule,
-    InputTextarea,
+    Textarea,
     ButtonComponent,
     PayrollSectionComponent,
     PayrollAmountPipe
@@ -85,7 +85,7 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
     <p-dialog header="Nouvelle avance" [(visible)]="dialogVisible" [modal]="true" [style]="{ width: '420px' }">
       <div class="payroll-form-group mb-2">
         <label>Date</label>
-        <p-calendar [(ngModel)]="formDate" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
+        <p-datepicker [(ngModel)]="formDate" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
       </div>
       <div class="payroll-form-group mb-2">
         <label>Montant (TND)</label>
@@ -93,7 +93,7 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
       </div>
       <div class="payroll-form-group mb-2">
         <label>Motif</label>
-        <textarea pInputTextarea [(ngModel)]="formReason" rows="2" class="w-full"></textarea>
+        <textarea pTextarea [(ngModel)]="formReason" rows="2" class="w-full"></textarea>
       </div>
       <ng-template pTemplate="footer">
         <app-button variant="outline" (click)="dialogVisible = false">Annuler</app-button>

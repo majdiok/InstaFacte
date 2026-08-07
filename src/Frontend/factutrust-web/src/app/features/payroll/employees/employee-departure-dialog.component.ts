@@ -2,9 +2,9 @@ import { Component, EventEmitter, Input, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
-import { CalendarModule } from 'primeng/calendar';
+import { DatePickerModule } from 'primeng/datepicker';
 import { CheckboxModule } from 'primeng/checkbox';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { MessageModule } from 'primeng/message';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { EmployeeService } from '@core/services/employee.service';
@@ -25,9 +25,9 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
     CommonModule,
     FormsModule,
     DialogModule,
-    CalendarModule,
+    DatePickerModule,
     CheckboxModule,
-    InputTextarea,
+    Textarea,
     MessageModule,
     ButtonComponent
   ],
@@ -46,11 +46,11 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
 
       <div class="payroll-form-group mb-2">
         <label>Date de sortie</label>
-        <p-calendar [(ngModel)]="terminationDate" dateFormat="dd/mm/yy" [showIcon]="true" appendTo="body" styleClass="w-full" [maxDate]="today" />
+        <p-datepicker [(ngModel)]="terminationDate" dateFormat="dd/mm/yy" [showIcon]="true" appendTo="body" styleClass="w-full" [maxDate]="today" />
       </div>
       <div class="payroll-form-group mb-2">
         <label>Motif</label>
-        <textarea pInputTextarea [(ngModel)]="reason" rows="2" class="w-full" placeholder="Optionnel"></textarea>
+        <textarea pTextarea [(ngModel)]="reason" rows="2" class="w-full" placeholder="Optionnel"></textarea>
       </div>
       <div class="payroll-form-group checkbox-row mb-2">
         <p-checkbox inputId="closeContract" [(ngModel)]="closeActiveContract" [binary]="true" />

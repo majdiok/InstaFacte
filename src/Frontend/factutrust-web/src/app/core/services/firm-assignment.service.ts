@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpContext } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '@environments/environment';
 import { ApiResponse } from './auth.service';
@@ -95,8 +95,10 @@ export class FirmAssignmentService {
     return this.http.delete<ApiResponse<unknown>>(`${this.assignmentsUrl}/company/pending`);
   }
 
-  getIncomingInvitations(): Observable<ApiResponse<FirmClientAssignment[]>> {
-    return this.http.get<ApiResponse<FirmClientAssignment[]>>(`${this.assignmentsUrl}/firm/incoming`);
+  getIncomingInvitations(context?: HttpContext): Observable<ApiResponse<FirmClientAssignment[]>> {
+    return this.http.get<ApiResponse<FirmClientAssignment[]>>(`${this.assignmentsUrl}/firm/incoming`, {
+      context
+    });
   }
 
   getActiveClients(): Observable<ApiResponse<FirmClientDossier[]>> {

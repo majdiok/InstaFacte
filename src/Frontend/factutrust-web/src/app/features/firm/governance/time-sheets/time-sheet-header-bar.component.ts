@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { SelectModule } from 'primeng/select';
 import { TagModule } from 'primeng/tag';
-import { CalendarModule } from 'primeng/calendar';
+import { DatePickerModule } from 'primeng/datepicker';
 import { FirmTimeSheetEntry } from '@core/services/firm-governance.service';
 import { PeriodScope } from './time-sheets.facade';
 
@@ -16,7 +16,7 @@ export interface CollaboratorOption {
 @Component({
   selector: 'app-time-sheet-header-bar',
   standalone: true,
-  imports: [CommonModule, FormsModule, ButtonModule, SelectModule, TagModule, CalendarModule],
+  imports: [CommonModule, FormsModule, ButtonModule, SelectModule, TagModule, DatePickerModule],
   template: `
     <div class="header-bar">
       <div class="left">
@@ -40,7 +40,7 @@ export interface CollaboratorOption {
             </button>
             @if (miniOpen) {
               <div class="mini-month" (click)="$event.stopPropagation()">
-                <p-calendar
+                <p-datepicker
                   [inline]="true"
                   [ngModel]="focusDateValue"
                   (ngModelChange)="onMiniDate($event)"

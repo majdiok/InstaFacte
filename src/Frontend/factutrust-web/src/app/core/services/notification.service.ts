@@ -62,7 +62,10 @@ export class NotificationService {
 
   refresh(): void {
     this.http
-      .get<ApiResponse<NotificationList>>(this.baseUrl, { params: { page: 1, pageSize: 10 } })
+      .get<ApiResponse<NotificationList>>(this.baseUrl, {
+        params: { page: 1, pageSize: 10 },
+        context: createHttpContextSkipGlobalErrorUi()
+      })
       .subscribe({
         next: r => {
           if (r.success) {

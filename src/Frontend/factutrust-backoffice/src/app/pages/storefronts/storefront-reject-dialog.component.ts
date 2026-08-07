@@ -13,7 +13,7 @@ import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { ButtonModule } from 'primeng/button';
 import { RadioButtonModule } from 'primeng/radiobutton';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import type { PlatformStorefrontProfileDto } from '@core/services/platform-storefront.service';
 import { STOREFRONTS_FR } from './storefronts.i18n.fr';
 
@@ -30,7 +30,7 @@ type RejectReasonCode = 'logo' | 'name' | 'contact' | 'category' | 'other';
   selector: 'app-storefront-reject-dialog',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, DialogModule, ButtonModule, RadioButtonModule, InputTextarea],
+  imports: [FormsModule, DialogModule, ButtonModule, RadioButtonModule, Textarea],
   template: `
     <p-dialog
       [visible]="visible"
@@ -71,7 +71,7 @@ type RejectReasonCode = 'logo' | 'name' | 'contact' | 'category' | 'other';
           <label for="rejectDetails">{{ t('reject.details.label') }}</label>
           <textarea
             id="rejectDetails"
-            pInputTextarea
+            pTextarea
             [(ngModel)]="detailsModel"
             (ngModelChange)="detailsSig.set($event)"
             [placeholder]="t('reject.details.placeholder')"

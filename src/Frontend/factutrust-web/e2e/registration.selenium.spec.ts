@@ -102,7 +102,7 @@ describe('Tests Selenium - Inscription FactuTrust', () => {
   }
 
   /**
-   * Helper : Sélectionner une option dans un p-dropdown (PrimeNG)
+   * Helper : Sélectionner une option dans un p-select (PrimeNG)
    */
   async function selectDropdownOption(dropdownSelector: string, optionText: string) {
     // Cliquer sur le dropdown pour l'ouvrir
@@ -206,8 +206,8 @@ describe('Tests Selenium - Inscription FactuTrust', () => {
     // NIF (p-inputmask)
     await fillMaskedField('p-inputmask[formcontrolname="nif"]', testData.nif);
     
-    // Sélectionner régime fiscal (p-dropdown)
-    await selectDropdownOption('p-dropdown[formcontrolname="taxRegime"]', 'Régime réel');
+    // Sélectionner régime fiscal (p-select)
+    await selectDropdownOption('p-select[formcontrolname="taxRegime"]', 'Régime réel');
     
     await fillField('input[formcontrolname="companyEmail"]', testData.companyEmail);
     
@@ -227,8 +227,8 @@ describe('Tests Selenium - Inscription FactuTrust', () => {
     // Code postal (p-inputmask)
     await fillMaskedField('p-inputmask[formcontrolname="postalCode"]', testData.postalCode);
     
-    // Sélectionner gouvernorat (p-dropdown)
-    await selectDropdownOption('p-dropdown[formcontrolname="governorate"]', testData.governorate);
+    // Sélectionner gouvernorat (p-select)
+    await selectDropdownOption('p-select[formcontrolname="governorate"]', testData.governorate);
 
     // Soumettre le formulaire
     await clickButton('Créer mon compte');
@@ -277,8 +277,8 @@ describe('Tests Selenium - Inscription FactuTrust', () => {
     // NIF incomplet (p-inputmask)
     await fillMaskedField('p-inputmask[formcontrolname="nif"]', '1234567A/B/C'); // Incomplet
 
-    // Sélectionner régime fiscal (p-dropdown)
-    await selectDropdownOption('p-dropdown[formcontrolname="taxRegime"]', 'Régime réel');
+    // Sélectionner régime fiscal (p-select)
+    await selectDropdownOption('p-select[formcontrolname="taxRegime"]', 'Régime réel');
     
     await fillField('input[formcontrolname="companyEmail"]', testData.companyEmail);
     

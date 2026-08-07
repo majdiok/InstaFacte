@@ -3,8 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { DialogModule } from 'primeng/dialog';
-import { DropdownModule } from 'primeng/dropdown';
-import { CalendarModule } from 'primeng/calendar';
+import { SelectModule } from 'primeng/select';
+import { DatePickerModule } from 'primeng/datepicker';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import {
@@ -33,8 +33,8 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
     FormsModule,
     TableModule,
     DialogModule,
-    DropdownModule,
-    CalendarModule,
+    SelectModule,
+    DatePickerModule,
     InputNumberModule,
     ButtonComponent,
     PayrollSectionComponent,
@@ -86,16 +86,16 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
     <p-dialog [header]="dialogHeader" [(visible)]="dialogVisible" [modal]="true" [style]="{ width: '480px' }">
       <div class="payroll-form-group mb-2">
         <label>Caisse / mutuelle</label>
-        <p-dropdown [options]="schemes()" optionLabel="name" optionValue="id" [(ngModel)]="formSchemeId" appendTo="body" styleClass="w-full" [disabled]="!!editingId" />
+        <p-select [options]="schemes()" optionLabel="name" optionValue="id" [(ngModel)]="formSchemeId" appendTo="body" styleClass="w-full" [disabled]="!!editingId" />
       </div>
       <div class="payroll-form-row">
         <div class="payroll-form-group">
           <label>Date de début</label>
-          <p-calendar [(ngModel)]="formStartDate" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" [disabled]="!!editingId" />
+          <p-datepicker [(ngModel)]="formStartDate" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" [disabled]="!!editingId" />
         </div>
         <div class="payroll-form-group">
           <label>Date de fin</label>
-          <p-calendar [(ngModel)]="formEndDate" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
+          <p-datepicker [(ngModel)]="formEndDate" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
         </div>
       </div>
       <div class="payroll-form-row">

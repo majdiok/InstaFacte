@@ -12,18 +12,18 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { StockService, Warehouse } from '@core/services/stock.service';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 @Component({
   selector: 'app-warehouse-selector',
   standalone: true,
-  imports: [CommonModule, FormsModule, DropdownModule],
+  imports: [CommonModule, FormsModule, SelectModule],
   template: `
     <div class="warehouse-selector">
       <label *ngIf="showLabel" class="field-label" [id]="labelId" [attr.for]="inputId">{{ label }}</label>
-      <p-dropdown
+      <p-select
         [inputId]="inputId"
         [attr.aria-labelledby]="showLabel ? labelId : null"
         [options]="warehouses()"
@@ -39,7 +39,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
         [disabled]="loading() && warehouses().length === 0"
         [style]="{ width: '100%' }"
         appendTo="body">
-      </p-dropdown>
+      </p-select>
       <p *ngIf="loadError()" class="error-text" role="alert">{{ loadError() }}</p>
     </div>
   `,

@@ -11,7 +11,7 @@ import { RouterLink } from '@angular/router';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { TabViewModule } from 'primeng/tabview';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
@@ -51,7 +51,7 @@ import { DunningCampaignFormDialogComponent } from './dunning-campaign-form-dial
     TableModule,
     ButtonModule,
     TabViewModule,
-    DropdownModule,
+    SelectModule,
     DialogModule,
     InputTextModule,
     InputNumberModule,
@@ -87,7 +87,7 @@ import { DunningCampaignFormDialogComponent } from './dunning-campaign-form-dial
         </section>
 
         <ft-filter-toolbar>
-          <p-dropdown
+          <p-select
             [options]="outcomeOptions"
             [(ngModel)]="outcomeFilter"
             optionLabel="label"

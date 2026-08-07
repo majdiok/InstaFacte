@@ -1,8 +1,9 @@
 import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterModule } from '@angular/router';
 import { TableModule } from 'primeng/table';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { MessageModule } from 'primeng/message';
@@ -33,8 +34,9 @@ const MONTH_LABELS = [
   imports: [
     CommonModule,
     FormsModule,
+    RouterModule,
     TableModule,
-    DropdownModule,
+    SelectModule,
     TagModule,
     TooltipModule,
     MessageModule,
@@ -46,7 +48,7 @@ const MONTH_LABELS = [
   ],
   template: `
     <div class="payroll-toolbar mb-3">
-      <p-dropdown
+      <p-select
         [options]="yearOptions"
         [(ngModel)]="year"
         (ngModelChange)="load()"
@@ -54,7 +56,7 @@ const MONTH_LABELS = [
         optionValue="value"
         placeholder="Année"
         styleClass="w-10rem" />
-      <p-dropdown
+      <p-select
         [options]="monthOptions"
         [(ngModel)]="month"
         (ngModelChange)="load()"
@@ -85,7 +87,19 @@ const MONTH_LABELS = [
       }
     </div>
 
-    @for (w of remittance()?.warnings ?? []; track w) {
+    @if (missingEmployerMatricule()) {
+      <div class="cnss-matricule-banner mb-3">
+        <p-message
+          severity="warn"
+          text="Le matricule employeur CNSS est manquant. Configurez-le pour exporter le bordereau ou enregistrer un versement."
+          styleClass="w-full" />
+        <app-button variant="ghost" routerLink="/settings/company" icon="pi-cog" iconPos="left">
+          Configurer le matricule
+        </app-button>
+      </div>
+    }
+
+    @for (w of otherWarnings(); track w) {
       <p-message severity="warn" [text]="w" styleClass="mb-3 w-full" />
     }
 
@@ -135,6 +149,7 @@ const MONTH_LABELS = [
             <th class="text-right">CNSS pat.</th>
             <th class="text-right">AT</th>
             <th class="text-right">Total</th>
+            <th class="col-warnings"></th>
           </tr>
         </ng-template>
         <ng-template pTemplate="body" let-l>
@@ -152,6 +167,14 @@ const MONTH_LABELS = [
             <td class="text-right">{{ l.cnssEmployer | payrollAmount }}</td>
             <td class="text-right">{{ l.workAccident | payrollAmount }}</td>
             <td class="text-right">{{ l.lineTotal | payrollAmount }}</td>
+            <td class="col-warnings">
+              @if (l.warnings?.length) {
+                <i
+                  class="pi pi-exclamation-triangle text-warning"
+                  [pTooltip]="l.warnings.join(' · ')"
+                  tooltipPosition="left"></i>
+              }
+            </td>
           </tr>
         </ng-template>
       </p-table>
@@ -168,6 +191,19 @@ const MONTH_LABELS = [
   styles: [`
     .mb-3 { margin-bottom: var(--spacing-4); }
     .mb-4 { margin-bottom: var(--spacing-6); display: block; }
+    .cnss-matricule-banner {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: var(--spacing-2);
+    }
+    .col-warnings {
+      width: 2rem;
+      text-align: center;
+    }
+    .text-warning {
+      color: var(--orange-500, #f97316);
+    }
   `]
 })
 export class CnssRemittanceTabComponent implements OnInit {
@@ -192,13 +228,21 @@ export class CnssRemittanceTabComponent implements OnInit {
 
   canExport = computed(() => {
     const r = this.remittance();
-    return !!r && r.isEligible && r.employeeCount > 0;
+    return !!r && r.isEligible && r.employeeCount > 0 && !this.missingEmployerMatricule();
   });
 
   canRecordPayment = computed(() => {
     const r = this.remittance();
-    return !!r && r.isEligible && !r.hasExistingPayment && r.totalDue > 0;
+    return !!r && r.isEligible && !r.hasExistingPayment && r.totalDue > 0 && !this.missingEmployerMatricule();
   });
+
+  missingEmployerMatricule = computed(() =>
+    !!this.remittance()?.warnings?.some(w => w.includes('Matricule employeur CNSS manquant'))
+  );
+
+  otherWarnings = computed(() =>
+    (this.remittance()?.warnings ?? []).filter(w => !w.includes('Matricule employeur CNSS manquant'))
+  );
 
   canPay = computed(() => canPayPayroll(this.auth));
 
@@ -241,10 +285,16 @@ export class CnssRemittanceTabComponent implements OnInit {
       next: res => this.remittance.set(res.data ?? null),
       error: err => {
         this.remittance.set(null);
+        const message = err?.error?.message ?? err?.error?.error ?? 'Impossible de générer le bordereau.';
+        const isMissingMatricule =
+          err?.error?.error?.code === 'CnssEmployerNumber' ||
+          (typeof message === 'string' && message.toLowerCase().includes('matricule employeur cnss'));
         this.toast.add({
           severity: 'error',
           summary: 'Bordereau CNSS',
-          detail: err?.error?.message ?? 'Impossible de générer le bordereau.'
+          detail: isMissingMatricule
+            ? 'Le matricule employeur CNSS est obligatoire. Configurez-le dans Mon entreprise.'
+            : message
         });
       }
     });

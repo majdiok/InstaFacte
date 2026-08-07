@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { DialogModule } from 'primeng/dialog';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { EmployeeService, EmployeeListItem } from '@core/services/employee.service';
@@ -23,7 +23,7 @@ import { PayrollSectionComponent, PayrollAmountPipe } from '../shared';
     TableModule,
     TagModule,
     DialogModule,
-    DropdownModule,
+    SelectModule,
     InputNumberModule,
     ButtonComponent,
     PayrollSectionComponent,
@@ -82,7 +82,7 @@ import { PayrollSectionComponent, PayrollAmountPipe } from '../shared';
     <p-dialog [header]="editingId ? 'Modifier heures sup.' : 'Nouvelles heures sup.'" [(visible)]="dialogVisible" [modal]="true" [style]="{ width: '480px' }">
       <div class="payroll-form-group mb-2">
         <label>Salarié</label>
-        <p-dropdown [options]="employees()" optionLabel="fullName" optionValue="id" [(ngModel)]="formEmployeeId" (ngModelChange)="onEmployeeChange()" appendTo="body" styleClass="w-full" [disabled]="!!editingId" />
+        <p-select [options]="employees()" optionLabel="fullName" optionValue="id" [(ngModel)]="formEmployeeId" (ngModelChange)="onEmployeeChange()" appendTo="body" styleClass="w-full" [disabled]="!!editingId" />
       </div>
       <div class="payroll-form-row">
         <div class="payroll-form-group">
@@ -91,7 +91,7 @@ import { PayrollSectionComponent, PayrollAmountPipe } from '../shared';
         </div>
         <div class="payroll-form-group">
           <label>Taux majoré</label>
-          <p-dropdown [options]="rateOptions" optionLabel="label" optionValue="value" [(ngModel)]="formRatePercent" (ngModelChange)="refreshPreview()" appendTo="body" styleClass="w-full" />
+          <p-select [options]="rateOptions" optionLabel="label" optionValue="value" [(ngModel)]="formRatePercent" (ngModelChange)="refreshPreview()" appendTo="body" styleClass="w-full" />
         </div>
       </div>
       <div class="payroll-form-group mb-2">

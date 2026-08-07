@@ -12,11 +12,11 @@ import { ToastService } from '@core/services/toast.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { CheckboxModule } from 'primeng/checkbox';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { CalendarModule } from 'primeng/calendar';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { DatePickerModule } from 'primeng/datepicker';
+import { Textarea } from 'primeng/textarea';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
@@ -38,8 +38,8 @@ interface FirmUserOption {
   standalone: true,
   imports: [
     CommonModule, RouterModule, ReactiveFormsModule, FormsModule, PageHeaderComponent,
-    ButtonModule, InputTextModule, DropdownModule, CheckboxModule, InputNumberModule,
-    CalendarModule, TableModule, TagModule, InputTextarea, TooltipModule, DialogModule, EmptyStateComponent
+    ButtonModule, InputTextModule, SelectModule, CheckboxModule, InputNumberModule,
+    DatePickerModule, TableModule, TagModule, Textarea, TooltipModule, DialogModule, EmptyStateComponent
   ],
   template: `
     <app-page-header
@@ -214,17 +214,17 @@ interface FirmUserOption {
                 <input pInputText formControlName="rneIdentifier" />
               </label>
               <label>Forme juridique *
-                <p-dropdown formControlName="legalForm" [options]="legalForms" optionLabel="label" optionValue="value"
+                <p-select formControlName="legalForm" [options]="legalForms" optionLabel="label" optionValue="value"
                   placeholder="—" [showClear]="true" appendTo="body" />
               </label>
               <label>Date de création
-                <p-calendar formControlName="incorporationDate" dateFormat="dd/mm/yy" [showIcon]="true" appendTo="body" />
+                <p-datepicker formControlName="incorporationDate" dateFormat="dd/mm/yy" [showIcon]="true" appendTo="body" />
               </label>
               <label>Capital social (TND)
                 <p-inputNumber formControlName="shareCapital" mode="decimal" [minFractionDigits]="0" [maxFractionDigits]="3" />
               </label>
               <label>Régime fiscal
-                <p-dropdown formControlName="taxRegime" [options]="taxRegimes" optionLabel="label" optionValue="value" appendTo="body" />
+                <p-select formControlName="taxRegime" [options]="taxRegimes" optionLabel="label" optionValue="value" appendTo="body" />
               </label>
               <label>Recette des Finances
                 <input pInputText formControlName="taxOffice" />
@@ -337,15 +337,15 @@ interface FirmUserOption {
               <label>Adresse <input pInputText formControlName="street" /></label>
               <label>Ville <input pInputText formControlName="city" /></label>
               <label>Gouvernorat
-                <p-dropdown formControlName="governorate" [options]="governorates" optionLabel="label" optionValue="value"
+                <p-select formControlName="governorate" [options]="governorates" optionLabel="label" optionValue="value"
                   placeholder="—" [showClear]="true" appendTo="body" />
               </label>
               <label>Code postal <input pInputText formControlName="postalCode" maxlength="4" /></label>
               <label>Mois début exercice
-                <p-dropdown formControlName="fiscalYearStartMonth" [options]="months" optionLabel="label" optionValue="value" appendTo="body" />
+                <p-select formControlName="fiscalYearStartMonth" [options]="months" optionLabel="label" optionValue="value" appendTo="body" />
               </label>
               <label>Mois fin exercice
-                <p-dropdown formControlName="fiscalYearEndMonth" [options]="months" optionLabel="label" optionValue="value" appendTo="body" />
+                <p-select formControlName="fiscalYearEndMonth" [options]="months" optionLabel="label" optionValue="value" appendTo="body" />
               </label>
             </div>
           </fieldset>
@@ -366,7 +366,7 @@ interface FirmUserOption {
             </label>
             <div class="grid-2" style="margin-top: 1rem;">
               <label>Statut de mission
-                <p-dropdown formControlName="missionStatus" [options]="missionStatuses" optionLabel="label" optionValue="value"
+                <p-select formControlName="missionStatus" [options]="missionStatuses" optionLabel="label" optionValue="value"
                   placeholder="—" [showClear]="true" appendTo="body" />
               </label>
               <label>Acte juridique courant
@@ -383,7 +383,7 @@ interface FirmUserOption {
                   <p-inputNumber formControlName="resignationFiscalYear" [useGrouping]="false" [min]="2000" [max]="2100" />
                 </label>
                 <label class="full-span">Notes démission
-                  <textarea pInputTextarea formControlName="resignationNotes" rows="3" [autoResize]="true"></textarea>
+                  <textarea pTextarea formControlName="resignationNotes" rows="3" [autoResize]="true"></textarea>
                 </label>
               </div>
             }
@@ -399,14 +399,14 @@ interface FirmUserOption {
                   [min]="0" suffix=" TND" />
               </label>
               <label>Périodicité
-                <p-dropdown formControlName="billingFrequency" [options]="billingFrequencies" optionLabel="label" optionValue="value"
+                <p-select formControlName="billingFrequency" [options]="billingFrequencies" optionLabel="label" optionValue="value"
                   placeholder="—" [showClear]="true" appendTo="body" />
               </label>
               <label>Devise
-                <p-dropdown formControlName="currency" [options]="currencies" optionLabel="label" optionValue="value" appendTo="body" />
+                <p-select formControlName="currency" [options]="currencies" optionLabel="label" optionValue="value" appendTo="body" />
               </label>
               <label class="full-span">Notes
-                <textarea pInputTextarea formControlName="billingNotes" rows="4" [autoResize]="true"></textarea>
+                <textarea pTextarea formControlName="billingNotes" rows="4" [autoResize]="true"></textarea>
               </label>
             </div>
           </fieldset>
@@ -442,7 +442,7 @@ interface FirmUserOption {
               </dl>
             </div>
             <label>Gestionnaire comptable
-              <p-dropdown formControlName="assignedAccountantUserId" [options]="firmUsers()" optionLabel="label" optionValue="id"
+              <p-select formControlName="assignedAccountantUserId" [options]="firmUsers()" optionLabel="label" optionValue="id"
                 placeholder="—" [showClear]="true" appendTo="body" (onChange)="onAccountantChange($event.value)" />
             </label>
           </fieldset>

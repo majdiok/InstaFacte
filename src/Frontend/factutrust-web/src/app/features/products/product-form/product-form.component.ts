@@ -3,9 +3,9 @@ import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators, FormsModule } from '@angular/forms';
 import { Router, RouterModule, ActivatedRoute } from '@angular/router';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { ButtonModule } from 'primeng/button';
 import { CardModule } from 'primeng/card';
 import { InputSwitchModule } from 'primeng/inputswitch';
@@ -58,9 +58,9 @@ interface VatOption {
     FormsModule,
     RouterModule,
     InputTextModule,
-    InputTextarea,
+    Textarea,
     InputNumberModule,
-    DropdownModule,
+    SelectModule,
     ButtonModule,
     CardModule,
     InputSwitchModule,
@@ -112,13 +112,13 @@ interface VatOption {
 
             <div class="form-group">
               <label for="category">Type <span class="required">*</span></label>
-              <p-dropdown 
+              <p-select 
                 id="category"
                 [options]="categoryOptions" 
                 formControlName="category"
                 placeholder="Sélectionner"
                 styleClass="w-full">
-              </p-dropdown>
+              </p-select>
               @if (isInvalid('category')) {
                 <div class="form-error">
                   <i class="pi pi-exclamation-circle"></i>
@@ -129,7 +129,7 @@ interface VatOption {
 
             <div class="form-group">
               <label for="productCategoryId">Catégorie</label>
-              <p-dropdown 
+              <p-select 
                 id="productCategoryId"
                 [options]="productCategoryOptions()"
                 formControlName="productCategoryId"
@@ -137,7 +137,7 @@ interface VatOption {
                 optionLabel="label"
                 optionValue="value"
                 styleClass="w-full">
-              </p-dropdown>
+              </p-select>
               <small class="form-hint">Classification du produit. Par défaut: General</small>
             </div>
           </div>
@@ -162,7 +162,7 @@ interface VatOption {
           <div class="form-group">
             <label for="description">Description</label>
             <textarea 
-              pInputTextarea 
+              pTextarea 
               id="description" 
               formControlName="description"
               placeholder="Description détaillée du produit ou service..."
@@ -192,7 +192,7 @@ interface VatOption {
             @if (isProductCategory()) {
               <div class="form-group">
                 <label for="preferredSupplierId">Fournisseur préféré</label>
-                <p-dropdown
+                <p-select
                   id="preferredSupplierId"
                   [options]="supplierOptions()"
                   formControlName="preferredSupplierId"
@@ -202,7 +202,7 @@ interface VatOption {
                   [filter]="true"
                   [showClear]="true"
                   styleClass="w-full">
-                </p-dropdown>
+                </p-select>
                 <small class="form-hint">
                   Utilisé par Prévisions IA — Réapprovisionnement : les recommandations de ce produit
                   seront pré-rattachées à ce fournisseur, ce qui permet de créer les bons de commande sans
@@ -372,26 +372,26 @@ interface VatOption {
             <div class="form-row">
               <div class="form-group">
                 <label for="unit">Unité de mesure <span class="required">*</span></label>
-                <p-dropdown
+                <p-select
                   id="unit"
                   [options]="unitOptions"
                   formControlName="unit"
                   placeholder="Sélectionner"
                   [editable]="true"
                   styleClass="w-full">
-                </p-dropdown>
+                </p-select>
               </div>
 
               <div class="form-group">
                 <label for="vatRate">Taux de TVA <span class="required">*</span></label>
-                <p-dropdown
+                <p-select
                   id="vatRate"
                   [options]="vatOptions"
                   formControlName="vatRate"
                   placeholder="Sélectionner"
                   styleClass="w-full"
                   (onChange)="onPricingChange('vatRate')">
-                </p-dropdown>
+                </p-select>
               </div>
             </div>
 
@@ -740,7 +740,7 @@ interface VatOption {
 
     :host ::ng-deep {
       .p-inputnumber,
-      .p-dropdown {
+      .p-select {
         width: 100%;
       }
     }

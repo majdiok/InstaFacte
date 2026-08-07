@@ -31,7 +31,7 @@
                 </div>
                 <div class="detail-row">
                     <label for="inventory-warehouse" class="detail-label">Entrepôt <span class="required">*</span></label>
-                    <p-dropdown
+                    <p-select
                         id="inventory-warehouse"
                         [options]="warehouses"
                         [ngModel]="selectedWarehouse()"
@@ -42,14 +42,14 @@
                         [disabled]="hasActiveInventory()"
                         ariaLabel="Choisir l'entrepôt"
                     >
-                    </p-dropdown>
+                    </p-select>
                 </div>
                 @if (!hasActiveInventory()) {
                     <div class="detail-row">
                         <label for="inventory-notes" class="detail-label">Note</label>
                         <textarea
                             id="inventory-notes"
-                            pInputTextarea
+                            pTextarea
                             [ngModel]="notes()"
                             (ngModelChange)="notes.set($event)"
                             placeholder="Optionnel : précisions sur cet inventaire"

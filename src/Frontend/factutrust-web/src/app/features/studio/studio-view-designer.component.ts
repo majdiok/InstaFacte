@@ -6,7 +6,7 @@ import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputSwitchModule } from 'primeng/inputswitch';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { ToastModule } from 'primeng/toast';
 import { MessageService } from 'primeng/api';
 import { Subject, debounceTime, takeUntil } from 'rxjs';
@@ -38,7 +38,7 @@ interface DesignColumn {
   standalone: true,
   imports: [
     CommonModule, FormsModule, RouterModule, DragDropModule,
-    ButtonModule, InputTextModule, InputSwitchModule, DropdownModule, ToastModule,
+    ButtonModule, InputTextModule, InputSwitchModule, SelectModule, ToastModule,
     DynamicReportComponent, StudioPageShellComponent, StudioDesignerShellComponent
   ],
   template: `
@@ -58,9 +58,9 @@ interface DesignColumn {
           <input pInputText [(ngModel)]="displayName" class="studio-w-full" placeholder="Ex. Liste clients" (ngModelChange)="schedulePreview()" />
 
           <label class="studio-lbl">Table SQL existante *</label>
-          <p-dropdown [options]="tables()" [(ngModel)]="sourceTable" (ngModelChange)="onTableChange()"
+          <p-select [options]="tables()" [(ngModel)]="sourceTable" (ngModelChange)="onTableChange()"
             optionLabel="name" optionValue="name" [filter]="true" appendTo="body" styleClass="studio-w-full"
-            placeholder="Choisir une table"></p-dropdown>
+            placeholder="Choisir une table"></p-select>
           <small class="studio-hint">Lecture seule : aucune donnée n'est modifiée par une vue.</small>
 
           <div class="studio-block-head" style="margin-top: 1rem">
@@ -78,8 +78,8 @@ interface DesignColumn {
                   <code class="studio-cname">{{ c.name }}</code>
                   <input pInputText [(ngModel)]="c.label" [placeholder]="c.name" class="studio-grow"
                     [disabled]="!c.included" (ngModelChange)="schedulePreview()" />
-                  <p-dropdown [options]="formatOptions" [(ngModel)]="c.format" optionLabel="label" optionValue="value"
-                    appendTo="body" [disabled]="!c.included" (ngModelChange)="schedulePreview()"></p-dropdown>
+                  <p-select [options]="formatOptions" [(ngModel)]="c.format" optionLabel="label" optionValue="value"
+                    appendTo="body" [disabled]="!c.included" (ngModelChange)="schedulePreview()"></p-select>
                   @if (c.included && c.format === 'status') {
                     <input pInputText [(ngModel)]="c.statusMapText" placeholder="1=Brouillon,3=Validé"
                       class="studio-grow" (ngModelChange)="schedulePreview()" />

@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
 // PrimeNG
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { CardModule } from 'primeng/card';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
@@ -37,7 +37,7 @@ import { SellerInfo } from '../../models/invoice-wizard.models';
   imports: [
     CommonModule,
     FormsModule,
-    DropdownModule,
+    SelectModule,
     CardModule,
     SkeletonModule,
     TooltipModule,

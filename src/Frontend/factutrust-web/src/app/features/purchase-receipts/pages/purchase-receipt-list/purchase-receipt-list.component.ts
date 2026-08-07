@@ -5,9 +5,9 @@ import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { TagModule } from 'primeng/tag';
-import { CalendarModule } from 'primeng/calendar';
+import { DatePickerModule } from 'primeng/datepicker';
 import { ToastModule } from 'primeng/toast';
 import { ToastService } from '@core/services/toast.service';
 import { Subject, debounceTime, distinctUntilChanged, takeUntil } from 'rxjs';
@@ -39,8 +39,8 @@ interface StatusOption {
   standalone: true,
   imports: [
     CommonModule, RouterModule, FormsModule, CurrencyPipe, DatePipe,
-    TableModule, ButtonModule, InputTextModule, DropdownModule,
-    TagModule, CalendarModule, ToastModule,
+    TableModule, ButtonModule, InputTextModule, SelectModule,
+    TagModule, DatePickerModule, ToastModule,
     PageHeaderComponent, BreadcrumbComponent, SkeletonTableComponent,
     EmptyStateComponent, ButtonComponent, TableTotalsBarComponent
   ],
@@ -86,7 +86,7 @@ interface StatusOption {
             class="w-full">
         </span>
 
-        <p-dropdown
+        <p-select
           [options]="statusOptions"
           [(ngModel)]="selectedStatus"
           optionLabel="label"
@@ -94,9 +94,9 @@ interface StatusOption {
           placeholder="Tous les statuts"
           [showClear]="true"
           (onChange)="onFilterChange()">
-        </p-dropdown>
+        </p-select>
 
-        <p-dropdown
+        <p-select
           [options]="suppliers()"
           [(ngModel)]="selectedSupplierId"
           optionLabel="name"
@@ -107,10 +107,10 @@ interface StatusOption {
           filterBy="name"
           (onChange)="onFilterChange()"
           styleClass="supplier-filter">
-        </p-dropdown>
+        </p-select>
 
         <span class="filter-label">Date début</span>
-        <p-calendar
+        <p-datepicker
           [(ngModel)]="fromDate"
           dateFormat="dd/mm/yy"
           [showIcon]="true"
@@ -119,10 +119,10 @@ interface StatusOption {
           (onSelect)="onFilterChange()"
           (onClearClick)="onFilterChange()"
           styleClass="date-filter">
-        </p-calendar>
+        </p-datepicker>
 
         <span class="filter-label">Date fin</span>
-        <p-calendar
+        <p-datepicker
           [(ngModel)]="toDate"
           dateFormat="dd/mm/yy"
           [showIcon]="true"
@@ -131,7 +131,7 @@ interface StatusOption {
           (onSelect)="onFilterChange()"
           (onClearClick)="onFilterChange()"
           styleClass="date-filter">
-        </p-calendar>
+        </p-datepicker>
       </div>
     </div>
 
@@ -254,7 +254,7 @@ interface StatusOption {
       min-width: 160px;
 
       ::ng-deep {
-        .p-calendar {
+        .p-datepicker {
           display: flex;
           width: 100%;
         }

@@ -12,7 +12,7 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { TimelineModule } from 'primeng/timeline';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogModule } from 'primeng/dialog';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { ToastModule } from 'primeng/toast';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { ToastService } from '@core/services/toast.service';
@@ -51,7 +51,7 @@ interface TimelineEvent {
     TimelineModule,
     ConfirmDialogModule,
     DialogModule,
-    InputTextarea,
+    Textarea,
     ToastModule,
     PageHeaderComponent,
     BreadcrumbComponent,
@@ -364,7 +364,7 @@ interface TimelineEvent {
       <div class="dialog-field">
         <label for="reject-reason">Motif de refus (optionnel)</label>
         <textarea
-          pInputTextarea
+          pTextarea
           id="reject-reason"
           [(ngModel)]="rejectReason"
           [rows]="3"
@@ -390,7 +390,7 @@ interface TimelineEvent {
       <div class="dialog-field">
         <label for="cancel-reason">Motif d'annulation <span class="required">*</span></label>
         <textarea
-          pInputTextarea
+          pTextarea
           id="cancel-reason"
           [(ngModel)]="cancelReason"
           [rows]="3"

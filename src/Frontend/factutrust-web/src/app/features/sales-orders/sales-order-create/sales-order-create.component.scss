@@ -246,7 +246,7 @@
 
 // Inputs pleine largeur dans les champs (natifs + PrimeNG, scopé au composant).
 .ft-field input[pInputText],
-.ft-field textarea[pInputTextarea] {
+.ft-field textarea[pTextarea] {
   width: 100%;
 }
 
@@ -259,11 +259,11 @@
 }
 
 :host ::ng-deep .ft-field .p-inputnumber,
-:host ::ng-deep .ft-field .p-calendar {
+:host ::ng-deep .ft-field .p-datepicker {
   width: 100%;
 }
 
-:host ::ng-deep .ft-field .p-calendar .p-inputtext {
+:host ::ng-deep .ft-field .p-datepicker .p-inputtext {
   width: 100%;
 }
 

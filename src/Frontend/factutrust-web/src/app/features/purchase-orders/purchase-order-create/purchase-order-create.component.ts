@@ -3,11 +3,11 @@ import { CommonModule, CurrencyPipe } from '@angular/common';
 import { Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { CalendarModule } from 'primeng/calendar';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { DatePickerModule } from 'primeng/datepicker';
+import { Textarea } from 'primeng/textarea';
 import { ToastModule } from 'primeng/toast';
 import { ToastService } from '@core/services/toast.service';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
@@ -36,8 +36,8 @@ interface OrderLine {
   standalone: true,
   imports: [
     CommonModule, RouterModule, FormsModule, CurrencyPipe,
-    TableModule, DropdownModule, InputTextModule, InputNumberModule,
-    CalendarModule, InputTextarea, ToastModule,
+    TableModule, SelectModule, InputTextModule, InputNumberModule,
+    DatePickerModule, Textarea, ToastModule,
     PageHeaderComponent, BreadcrumbComponent, FormSectionComponent, ButtonComponent, WarehouseSelectorComponent
   ],
   template: `
@@ -60,7 +60,7 @@ interface OrderLine {
       <app-form-section title="Informations générales" icon="pi-building" [number]="1">
         <div class="form-group">
           <label for="supplier">Fournisseur <span class="required">*</span></label>
-          <p-dropdown
+          <p-select
             id="supplier"
             [options]="suppliers()"
             [(ngModel)]="selectedSupplier"
@@ -70,31 +70,31 @@ interface OrderLine {
             filterBy="name"
             [showClear]="true"
             styleClass="w-full">
-          </p-dropdown>
+          </p-select>
         </div>
 
         <div class="form-row">
           <div class="form-group">
             <label for="orderDate">Date de commande <span class="required">*</span></label>
-            <p-calendar
+            <p-datepicker
               id="orderDate"
               [(ngModel)]="orderDate"
               dateFormat="dd/mm/yy"
               [showIcon]="true"
               styleClass="w-full">
-            </p-calendar>
+            </p-datepicker>
           </div>
 
           <div class="form-group">
             <label for="deliveryDate">Date de livraison prévue</label>
-            <p-calendar
+            <p-datepicker
               id="deliveryDate"
               [(ngModel)]="expectedDeliveryDate"
               dateFormat="dd/mm/yy"
               [showIcon]="true"
               [minDate]="orderDate"
               styleClass="w-full">
-            </p-calendar>
+            </p-datepicker>
           </div>
         </div>
 
@@ -114,7 +114,7 @@ interface OrderLine {
         <div class="form-group">
           <label for="notes">Notes internes</label>
           <textarea
-            pInputTextarea
+            pTextarea
             id="notes"
             [(ngModel)]="notes"
             placeholder="Notes internes pour cette commande..."
@@ -168,7 +168,7 @@ interface OrderLine {
                 <tr>
                   <td class="text-center line-number">{{ $index + 1 }}</td>
                   <td>
-                    <p-dropdown
+                    <p-select
                       [options]="products()"
                       [(ngModel)]="line.product"
                       optionLabel="name"
@@ -185,7 +185,7 @@ interface OrderLine {
                           <span class="product-option-code">{{ item.code }}</span>
                         </div>
                       </ng-template>
-                    </p-dropdown>
+                    </p-select>
                   </td>
                   <td>
                     <p-inputNumber
@@ -468,15 +468,15 @@ interface OrderLine {
 
     :host ::ng-deep {
       .p-inputmask,
-      .p-dropdown {
+      .p-select {
         width: 100%;
       }
 
-      .product-dropdown .p-dropdown-label {
+      .product-dropdown .p-select-label {
         padding: var(--spacing-2) var(--spacing-3);
       }
 
-      .p-calendar {
+      .p-datepicker {
         display: flex;
         width: 100%;
 

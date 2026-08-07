@@ -4,8 +4,8 @@ import { FormArray, FormBuilder, FormGroup, ReactiveFormsModule, Validators } fr
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { DropdownModule } from 'primeng/dropdown';
-import { CalendarModule } from 'primeng/calendar';
+import { SelectModule } from 'primeng/select';
+import { DatePickerModule } from 'primeng/datepicker';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { TagModule } from 'primeng/tag';
 import { ToastService } from '@core/services/toast.service';
@@ -47,8 +47,8 @@ function parseIsoDate(value?: string): Date | null {
     RouterModule,
     InputTextModule,
     InputNumberModule,
-    DropdownModule,
-    CalendarModule,
+    SelectModule,
+    DatePickerModule,
     InputSwitchModule,
     TagModule,
     PageHeaderComponent,
@@ -124,11 +124,11 @@ function parseIsoDate(value?: string): Date | null {
           <div class="payroll-form-row">
             <div class="payroll-form-group">
               <label for="dateOfBirth">Date de naissance</label>
-              <p-calendar id="dateOfBirth" formControlName="dateOfBirth" dateFormat="dd/mm/yy" [showIcon]="true" styleClass="w-full" />
+              <p-datepicker id="dateOfBirth" formControlName="dateOfBirth" dateFormat="dd/mm/yy" [showIcon]="true" styleClass="w-full" />
             </div>
             <div class="payroll-form-group">
               <label for="hireDate">Date d'embauche <span class="required">*</span></label>
-              <p-calendar id="hireDate" formControlName="hireDate" dateFormat="dd/mm/yy" [showIcon]="true" styleClass="w-full" />
+              <p-datepicker id="hireDate" formControlName="hireDate" dateFormat="dd/mm/yy" [showIcon]="true" styleClass="w-full" />
               @if (isInvalid('hireDate')) {
                 <div class="field-error">{{ fieldError('hireDate') }}</div>
               }
@@ -140,7 +140,7 @@ function parseIsoDate(value?: string): Date | null {
           <div class="payroll-form-row">
             <div class="payroll-form-group">
               <label for="maritalStatus">Situation familiale</label>
-              <p-dropdown id="maritalStatus" [options]="maritalStatusOptions" formControlName="maritalStatus" optionLabel="label" optionValue="value" styleClass="w-full" />
+              <p-select id="maritalStatus" [options]="maritalStatusOptions" formControlName="maritalStatus" optionLabel="label" optionValue="value" styleClass="w-full" />
             </div>
             <div class="payroll-form-group">
               <label for="dependentChildren">Enfants à charge</label>
@@ -190,7 +190,7 @@ function parseIsoDate(value?: string): Date | null {
               <div class="parent-claim-row" [formGroupName]="i">
                 <div class="payroll-form-group">
                   <label [for]="'kinship' + i">Lien</label>
-                  <p-dropdown
+                  <p-select
                     [inputId]="'kinship' + i"
                     [options]="kinshipOptions"
                     formControlName="kinship"
@@ -276,7 +276,7 @@ function parseIsoDate(value?: string): Date | null {
             </div>
             <div class="payroll-form-group">
               <label for="governorate">Gouvernorat</label>
-              <p-dropdown id="governorate" [options]="governorateOptions" formControlName="governorate" optionLabel="label" optionValue="value" [showClear]="true" styleClass="w-full" />
+              <p-select id="governorate" [options]="governorateOptions" formControlName="governorate" optionLabel="label" optionValue="value" [showClear]="true" styleClass="w-full" />
               @if (isInvalid('governorate')) {
                 <div class="field-error">{{ fieldError('governorate') }}</div>
               }

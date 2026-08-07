@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 
 // PrimeNG
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
 import { AutoCompleteModule } from 'primeng/autocomplete';
 import { RadioButtonModule } from 'primeng/radiobutton';
@@ -45,7 +45,7 @@ import { NIF_PATTERN, isValidNif } from '@shared/validation';
     CommonModule,
     FormsModule,
     ReactiveFormsModule,
-    DropdownModule,
+    SelectModule,
     InputTextModule,
     AutoCompleteModule,
     RadioButtonModule,
@@ -297,7 +297,7 @@ import { NIF_PATTERN, isValidNif } from '@shared/validation';
 
               <div class="form-group">
                 <label for="governorate" class="required">Gouvernorat</label>
-                <p-dropdown
+                <p-select
                   inputId="governorate"
                   formControlName="governorate"
                   [options]="governorateOptions"
@@ -308,7 +308,7 @@ import { NIF_PATTERN, isValidNif } from '@shared/validation';
                   filterPlaceholder="Rechercher..."
                   appendTo="body"
                   [class.ng-invalid]="isFieldInvalid('governorate')">
-                </p-dropdown>
+                </p-select>
               </div>
             </div>
 
@@ -518,13 +518,13 @@ import { NIF_PATTERN, isValidNif } from '@shared/validation';
 
       ::ng-deep {
         .p-inputtext,
-        .p-dropdown,
+        .p-select,
         .p-autocomplete {
           width: 100%;
         }
 
         .p-inputtext.ng-invalid.ng-touched,
-        .p-dropdown.ng-invalid.ng-touched {
+        .p-select.ng-invalid.ng-touched {
           border-color: var(--color-error-500);
         }
       }

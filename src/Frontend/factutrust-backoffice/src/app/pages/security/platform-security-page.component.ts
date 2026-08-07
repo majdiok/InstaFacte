@@ -11,8 +11,8 @@ import { FormsModule } from '@angular/forms';
 import { TableModule, TableLazyLoadEvent } from 'primeng/table';
 import { InputTextModule } from 'primeng/inputtext';
 import { ButtonModule } from 'primeng/button';
-import { DropdownModule } from 'primeng/dropdown';
-import { CalendarModule } from 'primeng/calendar';
+import { SelectModule } from 'primeng/select';
+import { DatePickerModule } from 'primeng/datepicker';
 import { TabViewModule } from 'primeng/tabview';
 import { TooltipModule } from 'primeng/tooltip';
 import { MessageService } from 'primeng/api';
@@ -51,8 +51,8 @@ import { SECURITY_FR } from './security.i18n.fr';
     TableModule,
     InputTextModule,
     ButtonModule,
-    DropdownModule,
-    CalendarModule,
+    SelectModule,
+    DatePickerModule,
     TabViewModule,
     TooltipModule,
     FtPageHeaderComponent,
@@ -109,7 +109,7 @@ import { SECURITY_FR } from './security.i18n.fr';
         </section>
 
         <ft-filter-toolbar>
-          <p-dropdown
+          <p-select
             [options]="activeOnlyOptions"
             [ngModel]="filterActiveOnly()"
             (ngModelChange)="onFilterActiveChange($event)"
@@ -267,7 +267,7 @@ import { SECURITY_FR } from './security.i18n.fr';
             [(ngModel)]="filterIp"
             (ngModelChange)="onFailedFilterDebounced()"
             [placeholder]="t('failed.filters.ip')" />
-          <p-calendar
+          <p-datepicker
             [(ngModel)]="filterFrom"
             (ngModelChange)="onFailedFilterChange()"
             [placeholder]="t('failed.filters.from')"
@@ -275,7 +275,7 @@ import { SECURITY_FR } from './security.i18n.fr';
             [showIcon]="true"
             [showClear]="true"
             styleClass="ft-cal" />
-          <p-calendar
+          <p-datepicker
             [(ngModel)]="filterTo"
             (ngModelChange)="onFailedFilterChange()"
             [placeholder]="t('failed.filters.to')"

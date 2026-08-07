@@ -244,7 +244,7 @@
     overflow: visible;
   }
 
-  .col-vat .p-dropdown,
+  .col-vat .p-select,
   .col-disc .p-inputnumber-input {
     min-width: 0;
   }
@@ -258,7 +258,7 @@
   }
 
   .p-inputnumber,
-  .p-dropdown {
+  .p-select {
     width: 100%;
   }
 
@@ -267,7 +267,7 @@
     font-size: 0.85rem;
   }
 
-  .p-dropdown {
+  .p-select {
     font-size: 0.85rem;
   }
 }

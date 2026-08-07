@@ -5,7 +5,7 @@ import { Router, RouterModule } from '@angular/router';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { TagModule } from 'primeng/tag';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
@@ -27,7 +27,7 @@ import { FirmAffectAccountantDialogComponent } from './firm-affect-accountant-di
     TableModule,
     ButtonModule,
     InputTextModule,
-    DropdownModule,
+    SelectModule,
     TagModule,
     PageHeaderComponent,
     EmptyStateComponent,
@@ -58,12 +58,12 @@ import { FirmAffectAccountantDialogComponent } from './firm-affect-accountant-di
     </app-page-header>
 
     <div class="filters">
-      <p-dropdown
+      <p-select
         [options]="filterOptions"
         [(ngModel)]="assignmentFilter"
         optionLabel="label"
         optionValue="value"
-        (onChange)="reload()"></p-dropdown>
+        (onChange)="reload()"></p-select>
       <input
         pInputText
         [(ngModel)]="nameFilter"

@@ -3,10 +3,10 @@ import { Component, EventEmitter, HostListener, Input, Output, OnChanges, OnInit
 import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { CalendarModule } from 'primeng/calendar';
-import { DropdownModule } from 'primeng/dropdown';
+import { DatePickerModule } from 'primeng/datepicker';
+import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { ToastService } from '@core/services/toast.service';
 import { formatLocalDate } from '@core/utils/date.util';
@@ -36,10 +36,10 @@ const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] 
     FormsModule,
     DialogModule,
     InputNumberModule,
-    CalendarModule,
-    DropdownModule,
+    DatePickerModule,
+    SelectModule,
     InputTextModule,
-    InputTextarea,
+    Textarea,
     ButtonComponent
   ],
   template: `
@@ -99,7 +99,7 @@ const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] 
             <span class="required">*</span>
           </label>
           @if (operationType === CashOperationType.Debit) {
-            <p-dropdown
+            <p-select
               inputId="expenseCategory"
               [options]="expenseCategoryGroups"
               [(ngModel)]="selectedExpenseCategory"
@@ -125,9 +125,9 @@ const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] 
                 <span [class]="item.icon + ' category-option-icon'" aria-hidden="true"></span>
                 <span class="category-option-label">{{ item.label }}</span>
               </ng-template>
-            </p-dropdown>
+            </p-select>
           } @else {
-            <p-dropdown
+            <p-select
               inputId="revenueCategory"
               [options]="revenueCategoryGroups"
               [(ngModel)]="selectedRevenueCategory"
@@ -151,7 +151,7 @@ const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] 
                 <span [class]="item.icon + ' category-option-icon'" aria-hidden="true"></span>
                 <span class="category-option-label">{{ item.label }}</span>
               </ng-template>
-            </p-dropdown>
+            </p-select>
           }
         </div>
 
@@ -198,7 +198,7 @@ const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] 
 
           <div class="form-group">
             <label for="operationDate">Date de règlement <span class="required">*</span></label>
-            <p-calendar
+            <p-datepicker
               id="operationDate"
               [(ngModel)]="operationDate"
               [showIcon]="true"
@@ -207,7 +207,7 @@ const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] 
               placeholder="Sélectionnez la date"
               appendTo="body"
               styleClass="w-full">
-            </p-calendar>
+            </p-datepicker>
           </div>
         </div>
 
@@ -242,7 +242,7 @@ const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] 
           <label for="notes">Note <span class="optional-tag">(optionnel)</span></label>
           <textarea
             id="notes"
-            pInputTextarea
+            pTextarea
             [(ngModel)]="notes"
             placeholder="Notes internes"
             [rows]="3"
@@ -446,7 +446,7 @@ const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] 
       margin-top: 0.1rem;
     }
 
-    :host ::ng-deep .category-dropdown .p-dropdown-label {
+    :host ::ng-deep .category-dropdown .p-select-label {
       display: flex;
       align-items: flex-start;
       gap: var(--spacing-2);
@@ -508,8 +508,8 @@ const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] 
         border-top: 1px solid var(--color-border-subtle);
         background: var(--color-background-subtle);
       }
-      .p-calendar,
-      .p-dropdown,
+      .p-datepicker,
+      .p-select,
       .p-inputnumber {
         width: 100%;
       }

@@ -3,11 +3,11 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { DialogModule } from 'primeng/dialog';
-import { DropdownModule } from 'primeng/dropdown';
-import { CalendarModule } from 'primeng/calendar';
+import { SelectModule } from 'primeng/select';
+import { DatePickerModule } from 'primeng/datepicker';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import {
   PayrollService,
@@ -40,11 +40,11 @@ const BENEFIT_TYPE_OPTIONS = [
     FormsModule,
     TableModule,
     DialogModule,
-    DropdownModule,
-    CalendarModule,
+    SelectModule,
+    DatePickerModule,
     InputNumberModule,
     InputTextModule,
-    InputTextarea,
+    Textarea,
     ButtonComponent,
     PayrollSectionComponent,
     PayrollAmountPipe
@@ -95,7 +95,7 @@ const BENEFIT_TYPE_OPTIONS = [
     <p-dialog [header]="dialogHeader" [(visible)]="dialogVisible" [modal]="true" [style]="{ width: '520px' }">
       <div class="payroll-form-group mb-2">
         <label>Type</label>
-        <p-dropdown [options]="typeOptions" optionLabel="label" optionValue="value" [(ngModel)]="formType" appendTo="body" styleClass="w-full" />
+        <p-select [options]="typeOptions" optionLabel="label" optionValue="value" [(ngModel)]="formType" appendTo="body" styleClass="w-full" />
       </div>
       <div class="payroll-form-group mb-2">
         <label>Libellé</label>
@@ -108,16 +108,16 @@ const BENEFIT_TYPE_OPTIONS = [
       <div class="payroll-form-row">
         <div class="payroll-form-group">
           <label>Date de début</label>
-          <p-calendar [(ngModel)]="formStartDate" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" [disabled]="!!editingId" />
+          <p-datepicker [(ngModel)]="formStartDate" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" [disabled]="!!editingId" />
         </div>
         <div class="payroll-form-group">
           <label>Date de fin</label>
-          <p-calendar [(ngModel)]="formEndDate" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
+          <p-datepicker [(ngModel)]="formEndDate" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
         </div>
       </div>
       <div class="payroll-form-group mb-2">
         <label>Description</label>
-        <textarea pInputTextarea [(ngModel)]="formDescription" rows="2" class="w-full"></textarea>
+        <textarea pTextarea [(ngModel)]="formDescription" rows="2" class="w-full"></textarea>
       </div>
       <ng-template pTemplate="footer">
         <app-button variant="outline" (click)="dialogVisible = false">Annuler</app-button>

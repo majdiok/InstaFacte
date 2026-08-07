@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { InputTextModule } from 'primeng/inputtext';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { EmployeeService, EmployeeListItem } from '@core/services/employee.service';
 import { ToastService } from '@core/services/toast.service';
 import { AuthService } from '@core/services/auth.service';
@@ -30,7 +30,7 @@ type StatusFilter = 'all' | 'active' | 'inactive';
     InputTextModule,
     TableModule,
     TagModule,
-    DropdownModule,
+    SelectModule,
     PageHeaderComponent,
     ButtonComponent,
     PayrollConsultBannerComponent,
@@ -50,7 +50,7 @@ type StatusFilter = 'all' | 'active' | 'inactive';
 
     <div class="payroll-toolbar">
       <input pInputText type="text" placeholder="Rechercher…" [(ngModel)]="search" (ngModelChange)="load()" class="w-full md:w-20rem" />
-      <p-dropdown
+      <p-select
         [options]="statusOptions"
         [(ngModel)]="statusFilter"
         (ngModelChange)="load()"

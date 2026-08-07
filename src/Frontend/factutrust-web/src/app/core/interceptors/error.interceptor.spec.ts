@@ -215,4 +215,21 @@ describe('errorInterceptor', () => {
     req.flush({ success: false, message: 'Forbidden' }, { status: 403, statusText: 'Forbidden' });
     httpMock.verify();
   });
+
+  it('does not log when 401 and SKIP_ERROR_TOAST is set (background poll)', (done) => {
+    const errorHandler = TestBed.inject(ErrorHandlerService);
+    const logSpy = spyOn(errorHandler, 'logError');
+    const ctx = new HttpContext().set(SKIP_ERROR_TOAST, true);
+
+    http.get('/api/notifications', { context: ctx }).subscribe({
+      error: () => {
+        expect(logSpy).not.toHaveBeenCalled();
+        done();
+      }
+    });
+
+    const req = httpMock.expectOne('/api/notifications');
+    req.flush({ success: false }, { status: 401, statusText: 'Unauthorized' });
+    httpMock.verify();
+  });
 });

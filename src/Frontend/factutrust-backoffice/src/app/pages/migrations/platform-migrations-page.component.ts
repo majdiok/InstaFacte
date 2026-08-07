@@ -10,7 +10,7 @@ import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { InputTextModule } from 'primeng/inputtext';
 import { ButtonModule } from 'primeng/button';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { TooltipModule } from 'primeng/tooltip';
 import { MessageService } from 'primeng/api';
 
@@ -44,7 +44,7 @@ type MigrationFilter = 'all' | 'applied' | 'missing';
     TableModule,
     InputTextModule,
     ButtonModule,
-    DropdownModule,
+    SelectModule,
     TooltipModule,
     FtPageHeaderComponent,
     FtKpiCardComponent,
@@ -152,7 +152,7 @@ type MigrationFilter = 'all' | 'applied' | 'missing';
           aria-label="Recherche entreprise"
         />
       </span>
-      <p-dropdown
+      <p-select
         [options]="statusOptions"
         [ngModel]="filterStatus()"
         (ngModelChange)="setStatusFilter($event)"

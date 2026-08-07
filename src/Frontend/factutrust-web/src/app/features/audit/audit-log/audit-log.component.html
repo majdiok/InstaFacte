@@ -46,29 +46,29 @@
   <div class="audit-filters-grid">
     <label class="form-field" for="audit-from">
       <span class="field-label">Du</span>
-      <p-calendar
+      <p-datepicker
         inputId="audit-from"
         [(ngModel)]="fromDate"
         [showIcon]="true"
         dateFormat="dd/mm/yy"
         appendTo="body"
         styleClass="w-full"
-      ></p-calendar>
+      ></p-datepicker>
     </label>
     <label class="form-field" for="audit-to">
       <span class="field-label">Au</span>
-      <p-calendar
+      <p-datepicker
         inputId="audit-to"
         [(ngModel)]="toDate"
         [showIcon]="true"
         dateFormat="dd/mm/yy"
         appendTo="body"
         styleClass="w-full"
-      ></p-calendar>
+      ></p-datepicker>
     </label>
     <label class="form-field" for="audit-entity">
       <span class="field-label">Type d'entité</span>
-      <p-dropdown
+      <p-select
         inputId="audit-entity"
         [(ngModel)]="selectedEntityType"
         [options]="entityOptions"
@@ -78,11 +78,11 @@
         [showClear]="true"
         appendTo="body"
         styleClass="w-full"
-      ></p-dropdown>
+      ></p-select>
     </label>
     <label class="form-field" for="audit-action">
       <span class="field-label">Action</span>
-      <p-dropdown
+      <p-select
         inputId="audit-action"
         [(ngModel)]="selectedAction"
         [options]="actionOptions"
@@ -94,7 +94,7 @@
         [showClear]="true"
         appendTo="body"
         styleClass="w-full"
-      ></p-dropdown>
+      ></p-select>
     </label>
     <label class="form-field audit-field-user" for="audit-user">
       <span class="field-label">Utilisateur (UUID)</span>

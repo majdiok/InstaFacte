@@ -126,5 +126,19 @@ public sealed class CnssContributionRemittanceBuilderTests
         Assert.Single(batch.Lines);
         Assert.Equal(0m, batch.Lines[0].LineTotal);
         Assert.Equal(0m, batch.TotalDue);
+        Assert.Contains(batch.Lines[0].Warnings, w => w.Contains("Régime exonéré CNSS"));
+        Assert.Contains(batch.Warnings, w => w.Contains("régime exonéré CNSS"));
+    }
+
+    [Fact]
+    public void Build_Rsna_WithContributions_HasNoExoneratedRegimeWarning()
+    {
+        var payslip = BuildPayslip(EmployeeA, "Alice Dupont", "1111111111", 2000m);
+        var run = BuildValidatedRun(2026, 3, payslip);
+
+        var batch = CnssContributionRemittanceBuilder.Build(2026, 3, run, Employer, false, null);
+
+        Assert.DoesNotContain(batch.Lines[0].Warnings, w => w.Contains("Régime exonéré CNSS"));
+        Assert.DoesNotContain(batch.Warnings, w => w.Contains("régime exonéré CNSS"));
     }
 }

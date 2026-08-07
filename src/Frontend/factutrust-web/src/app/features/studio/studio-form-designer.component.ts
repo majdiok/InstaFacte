@@ -5,7 +5,7 @@ import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { ToastModule } from 'primeng/toast';
 import { MessageService } from 'primeng/api';
 import { DynamicFormComponent } from '@shared/studio-runtime/dynamic-form.component';
@@ -25,7 +25,7 @@ type DesignerRow =
   standalone: true,
   imports: [
     CommonModule, FormsModule, RouterModule, DragDropModule,
-    ButtonModule, InputTextModule, DropdownModule, ToastModule,
+    ButtonModule, InputTextModule, SelectModule, ToastModule,
     DynamicFormComponent, StudioPageShellComponent, StudioDesignerShellComponent
   ],
   template: `
@@ -41,8 +41,8 @@ type DesignerRow =
         <app-studio-designer-shell previewTitle="Aperçu">
           <div studioEditor>
             <div class="studio-add-bar">
-              <p-dropdown [options]="availableFields()" [(ngModel)]="fieldToAdd" optionLabel="label" optionValue="id"
-                placeholder="Ajouter un champ" [showClear]="true" appendTo="body" styleClass="studio-add-dd"></p-dropdown>
+              <p-select [options]="availableFields()" [(ngModel)]="fieldToAdd" optionLabel="label" optionValue="id"
+                placeholder="Ajouter un champ" [showClear]="true" appendTo="body" styleClass="studio-add-dd"></p-select>
               <button pButton type="button" icon="fa-solid fa-plus" label="Champ" [disabled]="!fieldToAdd" (click)="addField()"></button>
               <button pButton type="button" icon="fa-solid fa-heading" label="Section" class="p-button-outlined" (click)="addSection()"></button>
             </div>
@@ -58,7 +58,7 @@ type DesignerRow =
                   @if (r.kind === 'field') {
                     <code class="studio-cname">{{ r.field.key }}</code>
                     <input pInputText [(ngModel)]="r.labelOverride" [placeholder]="r.field.label" class="studio-grow" />
-                    <p-dropdown [options]="widthOptions" [(ngModel)]="r.width" optionLabel="label" optionValue="value" appendTo="body"></p-dropdown>
+                    <p-select [options]="widthOptions" [(ngModel)]="r.width" optionLabel="label" optionValue="value" appendTo="body"></p-select>
                   }
                   <button pButton type="button" icon="fa-solid fa-xmark" class="p-button-text p-button-sm p-button-danger" (click)="removeRow(i)"></button>
                 </div>

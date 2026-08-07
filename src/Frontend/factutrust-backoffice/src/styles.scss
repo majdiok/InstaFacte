@@ -191,20 +191,29 @@ a:focus-visible {
   color: var(--ft-text-muted);
 }
 
-.p-dropdown-panel,
-.p-select-panel {
+.p-select-panel,
+.p-select-overlay {
   background: var(--ft-surface);
   border: 1px solid var(--ft-border);
 }
 
 .p-inputtext,
-.p-inputtextarea {
+.p-textarea,
+textarea.p-textarea {
   background: var(--ft-surface-2);
   border-color: var(--ft-border);
   color: var(--ft-text);
 }
 
-.p-inputtext:enabled:focus {
+.p-inputtext:enabled:focus,
+.p-textarea:enabled:focus,
+textarea.p-textarea:enabled:focus {
+  border-color: var(--ft-accent);
+  box-shadow: 0 0 0 1px var(--ft-accent-muted);
+}
+
+.p-select:not(.p-disabled).p-focus,
+.p-datepicker .p-inputtext:enabled:focus {
   border-color: var(--ft-accent);
   box-shadow: 0 0 0 1px var(--ft-accent-muted);
 }

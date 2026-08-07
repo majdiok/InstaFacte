@@ -1,7 +1,7 @@
 import { Component, EventEmitter, inject, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { ButtonModule } from 'primeng/button';
 import { RouterLink } from '@angular/router';
 import { AuthService } from '@core/services/auth.service';
@@ -9,14 +9,14 @@ import { AuthService } from '@core/services/auth.service';
 @Component({
   selector: 'app-time-sheets-toolbar',
   standalone: true,
-  imports: [CommonModule, FormsModule, DropdownModule, ButtonModule, RouterLink],
+  imports: [CommonModule, FormsModule, SelectModule, ButtonModule, RouterLink],
   template: `
     <div class="toolbar fc-card">
       <label>Année
-        <p-dropdown [options]="yearOptions" [(ngModel)]="selectedYear" (onChange)="yearChange.emit(selectedYear)" [ngModelOptions]="{standalone: true}" />
+        <p-select [options]="yearOptions" [(ngModel)]="selectedYear" (onChange)="yearChange.emit(selectedYear)" [ngModelOptions]="{standalone: true}" />
       </label>
       <label>Mois
-        <p-dropdown [options]="monthOptions" [(ngModel)]="selectedMonth" (onChange)="monthChange.emit(selectedMonth)" [ngModelOptions]="{standalone: true}" />
+        <p-select [options]="monthOptions" [(ngModel)]="selectedMonth" (onChange)="monthChange.emit(selectedMonth)" [ngModelOptions]="{standalone: true}" />
       </label>
       @if (!hideModes) {
         <div class="view-switch">

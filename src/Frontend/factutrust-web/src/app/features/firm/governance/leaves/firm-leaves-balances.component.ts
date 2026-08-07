@@ -7,7 +7,7 @@ import { DialogModule } from 'primeng/dialog';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
 import { ProgressBarModule } from 'primeng/progressbar';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { AuthService } from '@core/services/auth.service';
 import { ToastService } from '@core/services/toast.service';
 import { FirmLeavesService } from './data-access/firm-leaves.service';
@@ -18,11 +18,11 @@ import { FirmLeaveBalance } from './data-access/firm-leaves.models';
   standalone: true,
   imports: [
     CommonModule, FormsModule, TableModule, ButtonModule, DialogModule,
-    InputNumberModule, InputTextModule, ProgressBarModule, DropdownModule
+    InputNumberModule, InputTextModule, ProgressBarModule, SelectModule
   ],
   template: `
     <div class="filters">
-      <p-dropdown [(ngModel)]="year" [options]="yearOptions" (onChange)="reload()" />
+      <p-select [(ngModel)]="year" [options]="yearOptions" (onChange)="reload()" />
     </div>
     <div class="fc-card">
       <p-table [value]="rows()" [loading]="loading()">

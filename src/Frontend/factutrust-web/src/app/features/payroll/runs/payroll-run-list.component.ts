@@ -4,10 +4,11 @@ import { RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { PayrollService, PayrollRunListItem } from '@core/services/payroll.service';
 import { ToastService } from '@core/services/toast.service';
 import { AuthService } from '@core/services/auth.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { canRunPayroll, isPayrollConsultMode } from '@core/utils/payroll-access';
@@ -22,7 +23,7 @@ import { PayrollConsultBannerComponent, PayrollEmptyStateComponent, PayrollAmoun
     FormsModule,
     TableModule,
     TagModule,
-    DropdownModule,
+    SelectModule,
     PageHeaderComponent,
     ButtonComponent,
     PayrollConsultBannerComponent,
@@ -31,7 +32,7 @@ import { PayrollConsultBannerComponent, PayrollEmptyStateComponent, PayrollAmoun
   ],
   template: `
     <app-page-header title="Cycles de paie" subtitle="Paie mensuelle : brouillon → calcul → validation → clôture.">
-      @if (canRun()) {
+      @if (canRun() && !currentMonthExists()) {
         <app-button variant="primary" icon="pi-plus" iconPos="left" (click)="createCurrentMonth()">Nouveau cycle (mois courant)</app-button>
       }
     </app-page-header>
@@ -41,7 +42,7 @@ import { PayrollConsultBannerComponent, PayrollEmptyStateComponent, PayrollAmoun
       message="Mode consultation — la création et le calcul des cycles sont réservés à la société cliente." />
 
     <div class="payroll-toolbar">
-      <p-dropdown
+      <p-select
         [options]="yearOptions"
         [(ngModel)]="selectedYear"
         (ngModelChange)="reload()"
@@ -58,7 +59,7 @@ import { PayrollConsultBannerComponent, PayrollEmptyStateComponent, PayrollAmoun
         icon="pi-calendar"
         title="Aucun cycle de paie"
         [description]="emptyDescription()"
-        [showAction]="canRun() && !loading()"
+        [showAction]="canRun() && !loading() && !currentMonthExists()"
         actionLabel="Créer le cycle du mois courant"
         (actionClick)="createCurrentMonth()" />
     }
@@ -95,6 +96,7 @@ export class PayrollRunListComponent implements OnInit {
   private readonly payroll = inject(PayrollService);
   private readonly toast = inject(ToastService);
   private readonly auth = inject(AuthService);
+  private readonly errorHandler = inject(ErrorHandlerService);
 
   selectedYear = new Date().getFullYear();
   yearOptions = Array.from({ length: 5 }, (_, i) => {
@@ -103,9 +105,11 @@ export class PayrollRunListComponent implements OnInit {
   });
   loading = signal(false);
   runs = signal<PayrollRunListItem[]>([]);
+  currentMonthRun = signal<PayrollRunListItem | null>(null);
 
   canRun = computed(() => canRunPayroll(this.auth));
   showConsultBanner = computed(() => isPayrollConsultMode(this.auth));
+  currentMonthExists = computed(() => this.currentMonthRun() !== null);
 
   emptyDescription = computed(() => this.loading() ? undefined : 'Aucun cycle pour cet exercice.');
 
@@ -115,20 +119,38 @@ export class PayrollRunListComponent implements OnInit {
 
   reload(): void {
     this.loading.set(true);
+    const now = new Date();
+    const currentYear = now.getFullYear();
     this.payroll.listRuns(this.selectedYear).subscribe({
       next: res => {
-        this.runs.set(res.data ?? []);
+        const items = res.data ?? [];
+        this.runs.set(items);
         this.loading.set(false);
+        if (this.selectedYear === currentYear) {
+          this.applyCurrentMonthFrom(items, now);
+        } else {
+          this.refreshCurrentMonthRun();
+        }
       },
       error: () => {
         this.toast.add({ severity: 'error', summary: 'Paie', detail: 'Impossible de charger les cycles.' });
         this.loading.set(false);
+        this.refreshCurrentMonthRun();
       }
     });
   }
 
+  /** Loads runs for the calendar year to know if the current month already has a cycle. */
+  refreshCurrentMonthRun(): void {
+    const now = new Date();
+    this.payroll.listRuns(now.getFullYear()).subscribe({
+      next: res => this.applyCurrentMonthFrom(res.data ?? [], now),
+      error: () => this.currentMonthRun.set(null)
+    });
+  }
+
   createCurrentMonth(): void {
-    if (!this.canRun()) return;
+    if (!this.canRun() || this.currentMonthExists()) return;
     const now = new Date();
     this.payroll.createRun(now.getFullYear(), now.getMonth() + 1).subscribe({
       next: () => {
@@ -139,8 +161,16 @@ export class PayrollRunListComponent implements OnInit {
       error: err => this.toast.add({
         severity: 'error',
         summary: 'Paie',
-        detail: err?.error?.message ?? 'Création impossible.'
+        detail: this.errorHandler.extractErrorMessage(err) || 'Création impossible.'
       })
     });
+  }
+
+  private applyCurrentMonthFrom(items: PayrollRunListItem[], now: Date): void {
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear();
+    this.currentMonthRun.set(
+      items.find(r => r.year === year && r.month === month) ?? null
+    );
   }
 }

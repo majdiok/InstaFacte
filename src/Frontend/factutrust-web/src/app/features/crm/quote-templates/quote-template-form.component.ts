@@ -6,7 +6,7 @@ import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { AutoCompleteModule, AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { MessageModule } from 'primeng/message';
@@ -40,7 +40,7 @@ interface TemplateLineRow {
     ButtonModule,
     InputTextModule,
     InputNumberModule,
-    InputTextarea,
+    Textarea,
     InputSwitchModule,
     AutoCompleteModule,
     MessageModule,
@@ -190,7 +190,7 @@ interface TemplateLineRow {
           <div class="field">
             <label for="notes">Notes</label>
             <textarea
-              pInputTextarea
+              pTextarea
               id="notes"
               [(ngModel)]="defaultNotes"
               name="notes"
@@ -201,7 +201,7 @@ interface TemplateLineRow {
           <div class="field mt-3">
             <label for="terms">Conditions générales</label>
             <textarea
-              pInputTextarea
+              pTextarea
               id="terms"
               [(ngModel)]="defaultTermsAndConditions"
               name="terms"

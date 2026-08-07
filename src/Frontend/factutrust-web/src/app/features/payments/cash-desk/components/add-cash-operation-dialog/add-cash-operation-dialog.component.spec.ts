@@ -85,7 +85,7 @@ describe('AddCashOperationDialogComponent', () => {
     expect(text).toContain('Valider');
 
     expect(el.querySelector('[role="radiogroup"][aria-label="Type d\'opération"]')).toBeTruthy();
-    expect(el.querySelector('#revenueCategory') || el.querySelector('p-dropdown')).toBeTruthy();
+    expect(el.querySelector('#revenueCategory') || el.querySelector('p-select')).toBeTruthy();
     expect(el.querySelector('#label')).toBeTruthy();
     expect(el.querySelector('#reference')).toBeTruthy();
     expect(el.querySelector('#notes')).toBeTruthy();
@@ -102,7 +102,7 @@ describe('AddCashOperationDialogComponent', () => {
     const el = fixture.nativeElement as HTMLElement;
     expect(el.textContent).toContain('Catégorie de dépense');
     expect(el.textContent).not.toContain('Catégorie de revenu');
-    expect(el.querySelector('#expenseCategory') || el.querySelector('p-dropdown')).toBeTruthy();
+    expect(el.querySelector('#expenseCategory') || el.querySelector('p-select')).toBeTruthy();
   });
 
   it('does not call API when category is missing', () => {

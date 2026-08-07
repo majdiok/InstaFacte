@@ -8,7 +8,7 @@ import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { CalendarModule } from 'primeng/calendar';
+import { DatePickerModule } from 'primeng/datepicker';
 import { DialogModule } from 'primeng/dialog';
 import { BreadcrumbComponent } from '@shared/components/breadcrumb/breadcrumb.component';
 import { AuthService } from '@core/services/auth.service';
@@ -36,7 +36,7 @@ import { HonorairesRecordPaymentDialogComponent } from '../../components/honorai
     TagModule,
     ButtonModule,
     InputTextModule,
-    CalendarModule,
+    DatePickerModule,
     DialogModule,
     BreadcrumbComponent,
     HonorairesRecordPaymentDialogComponent
@@ -89,20 +89,20 @@ import { HonorairesRecordPaymentDialogComponent } from '../../components/honorai
           [(ngModel)]="search"
           placeholder="Rechercher client ou N° facture…"
           (keyup.enter)="applyFilters()" />
-        <p-calendar
+        <p-datepicker
           [(ngModel)]="dateFrom"
           dateFormat="dd/mm/yy"
           placeholder="Du"
           [showIcon]="true"
           [showClear]="true">
-        </p-calendar>
-        <p-calendar
+        </p-datepicker>
+        <p-datepicker
           [(ngModel)]="dateTo"
           dateFormat="dd/mm/yy"
           placeholder="Au"
           [showIcon]="true"
           [showClear]="true">
-        </p-calendar>
+        </p-datepicker>
         <button pButton type="button" label="Filtrer" class="p-button-outlined" (click)="applyFilters()"></button>
       </div>
 

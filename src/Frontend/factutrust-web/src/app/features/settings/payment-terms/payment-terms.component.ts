@@ -7,7 +7,7 @@ import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputSwitchModule } from 'primeng/inputswitch';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { DialogModule } from 'primeng/dialog';
@@ -44,7 +44,7 @@ interface DueModeOption {
     InputTextModule,
     InputNumberModule,
     InputSwitchModule,
-    DropdownModule,
+    SelectModule,
     TagModule,
     TooltipModule,
     DialogModule,
@@ -160,13 +160,13 @@ interface DueModeOption {
 
         <div class="ft-field">
           <label for="pt-mode">Mode d'échéance</label>
-          <p-dropdown
+          <p-select
             inputId="pt-mode"
             [options]="dueModes"
             [(ngModel)]="form.dueMode"
             optionLabel="label"
             optionValue="value"
-            appendTo="body"></p-dropdown>
+            appendTo="body"></p-select>
         </div>
 
         @if (form.dueMode === 'EndOfMonthOnDay') {

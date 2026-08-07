@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { ToastModule } from 'primeng/toast';
@@ -36,7 +36,7 @@ interface StatusOption {
     TableModule,
     ButtonModule,
     InputTextModule,
-    DropdownModule,
+    SelectModule,
     TagModule,
     TooltipModule,
     ToastModule,
@@ -89,7 +89,7 @@ interface StatusOption {
             (input)="onFilterChange()"
             class="w-full">
         </span>
-        <p-dropdown
+        <p-select
           [options]="statusOptions"
           [(ngModel)]="selectedStatus"
           optionLabel="label"
@@ -97,7 +97,7 @@ interface StatusOption {
           placeholder="Tous les statuts"
           [showClear]="true"
           (onChange)="onFilterChange()">
-        </p-dropdown>
+        </p-select>
       </div>
     </div>
 

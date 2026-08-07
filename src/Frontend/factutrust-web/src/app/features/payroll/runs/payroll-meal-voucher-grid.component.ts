@@ -8,7 +8,7 @@ import { TableModule } from 'primeng/table';
 
 import { DialogModule } from 'primeng/dialog';
 
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 
 import { InputNumberModule } from 'primeng/inputnumber';
 
@@ -50,7 +50,7 @@ import { PayrollSectionComponent, PayrollAmountPipe } from '../shared';
 
     DialogModule,
 
-    DropdownModule,
+    SelectModule,
 
     InputNumberModule,
 
@@ -162,7 +162,7 @@ import { PayrollSectionComponent, PayrollAmountPipe } from '../shared';
 
         <label>Salarié</label>
 
-        <p-dropdown [options]="employees()" optionLabel="fullName" optionValue="id" [(ngModel)]="formEmployeeId" appendTo="body" styleClass="w-full" [disabled]="!!editingId" />
+        <p-select [options]="employees()" optionLabel="fullName" optionValue="id" [(ngModel)]="formEmployeeId" appendTo="body" styleClass="w-full" [disabled]="!!editingId" />
 
       </div>
 

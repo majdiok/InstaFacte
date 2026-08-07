@@ -139,7 +139,7 @@ test.describe('Tests Playwright - Inscription FactuTrust', () => {
   }
 
   /**
-   * Helper : Sélectionner une option dans un p-dropdown (PrimeNG)
+   * Helper : Sélectionner une option dans un p-select (PrimeNG)
    */
   async function selectDropdownOption(page: Page, dropdownSelector: string, optionText: string) {
     // Cliquer sur le dropdown pour l'ouvrir
@@ -149,10 +149,10 @@ test.describe('Tests Playwright - Inscription FactuTrust', () => {
     
     // Attendre que les options soient visibles (plusieurs sélecteurs possibles)
     try {
-      await page.waitForSelector('.p-dropdown-items', { timeout: 5000 });
+      await page.waitForSelector('.p-select-list', { timeout: 5000 });
     } catch {
       // Alternative: attendre le panel
-      await page.waitForSelector('.p-dropdown-panel', { timeout: 5000 });
+      await page.waitForSelector('.p-select-overlay', { timeout: 5000 });
     }
     
     // Cliquer sur l'option - utiliser plusieurs stratégies
@@ -352,8 +352,8 @@ test.describe('Tests Playwright - Inscription FactuTrust', () => {
     await fillField(page, 'input[formcontrolname="companyEmail"]', testData.companyEmail);
     await page.waitForTimeout(500); // Laisser onNifBlur + validation se stabiliser
 
-    // Régime fiscal (p-dropdown)
-    await selectDropdownOption(page, 'p-dropdown[formcontrolname="taxRegime"]', 'Régime réel');
+    // Régime fiscal (p-select)
+    await selectDropdownOption(page, 'p-select[formcontrolname="taxRegime"]', 'Régime réel');
 
     // Téléphone (p-inputmask)
     await fillMaskedField(page, 'p-inputmask[formcontrolname="phone"]', testData.phone);
@@ -371,8 +371,8 @@ test.describe('Tests Playwright - Inscription FactuTrust', () => {
     // Code postal (p-inputmask)
     await fillMaskedField(page, 'p-inputmask[formcontrolname="postalCode"]', testData.postalCode);
 
-    // Gouvernorat (p-dropdown)
-    await selectDropdownOption(page, 'p-dropdown[formcontrolname="governorate"]', testData.governorate);
+    // Gouvernorat (p-select)
+    await selectDropdownOption(page, 'p-select[formcontrolname="governorate"]', testData.governorate);
 
     // Capturer toutes les requêtes réseau pour diagnostic
     const networkRequests: any[] = [];
@@ -856,8 +856,8 @@ test.describe('Tests Playwright - Inscription FactuTrust', () => {
     // NIF incomplet (p-inputmask)
     await fillMaskedField(page, 'p-inputmask[formcontrolname="nif"]', '1234567/A/B'); // Incomplet
 
-    // Sélectionner régime fiscal (p-dropdown)
-    await selectDropdownOption(page, 'p-dropdown[formcontrolname="taxRegime"]', 'Régime réel');
+    // Sélectionner régime fiscal (p-select)
+    await selectDropdownOption(page, 'p-select[formcontrolname="taxRegime"]', 'Régime réel');
 
     await fillField(page, 'input[formcontrolname="companyEmail"]', testData.companyEmail);
 
@@ -969,8 +969,8 @@ test.describe('Tests Playwright - Inscription FactuTrust', () => {
     // NIF avec underscore pour tester le nettoyage (p-inputmask)
     await fillMaskedField(page, 'p-inputmask[formcontrolname="nif"]', '1234567/A/B/C/000_');
 
-    // Régime fiscal (p-dropdown)
-    await selectDropdownOption(page, 'p-dropdown[formcontrolname="taxRegime"]', 'Régime réel');
+    // Régime fiscal (p-select)
+    await selectDropdownOption(page, 'p-select[formcontrolname="taxRegime"]', 'Régime réel');
 
     await fillField(page, 'input[formcontrolname="companyEmail"]', testData.companyEmail);
 
@@ -984,8 +984,8 @@ test.describe('Tests Playwright - Inscription FactuTrust', () => {
     await fillField(page, 'input[formcontrolname="street"]', testData.street);
     await fillField(page, 'input[formcontrolname="city"]', testData.city);
 
-    // Gouvernorat (p-dropdown)
-    await selectDropdownOption(page, 'p-dropdown[formcontrolname="governorate"]', testData.governorate);
+    // Gouvernorat (p-select)
+    await selectDropdownOption(page, 'p-select[formcontrolname="governorate"]', testData.governorate);
 
     // Soumettre pour déclencher le log du payload
     await clickButton(page, 'Créer mon compte');

@@ -12,7 +12,7 @@ import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { CheckboxModule } from 'primeng/checkbox';
 import { TooltipModule } from 'primeng/tooltip';
 import { MessageService } from 'primeng/api';
@@ -51,7 +51,7 @@ import { PAYMENTS_FR } from './payments.i18n.fr';
     ButtonModule,
     DialogModule,
     InputTextModule,
-    InputTextarea,
+    Textarea,
     CheckboxModule,
     TooltipModule,
     FtPageHeaderComponent,
@@ -187,7 +187,7 @@ import { PAYMENTS_FR } from './payments.i18n.fr';
           @if (e.providerCode !== 'wire') {
             <div class="field field--full">
               <label>{{ t('edit.field.secretsJson') }}</label>
-              <textarea pInputTextarea rows="4" [(ngModel)]="form.secretsJson" placeholder='{ "apiKey": "..." }' class="w-full mono"></textarea>
+              <textarea pTextarea rows="4" [(ngModel)]="form.secretsJson" placeholder='{ "apiKey": "..." }' class="w-full mono"></textarea>
               <small class="hint">{{ t('edit.field.secretsJson.hint') }}</small>
             </div>
             <div class="field field--full">

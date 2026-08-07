@@ -5,10 +5,10 @@ import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { AutoCompleteModule } from 'primeng/autocomplete';
-import { CalendarModule } from 'primeng/calendar';
+import { DatePickerModule } from 'primeng/datepicker';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
@@ -57,10 +57,10 @@ interface DraftLine extends LinePromotionPreview {
     TableModule,
     ButtonModule,
     InputTextModule,
-    InputTextarea,
+    Textarea,
     InputNumberModule,
     AutoCompleteModule,
-    CalendarModule,
+    DatePickerModule,
     TagModule,
     TooltipModule,
     PageHeaderComponent,
@@ -147,19 +147,19 @@ interface DraftLine extends LinePromotionPreview {
 
         <div class="ft-field">
           <label for="so-date">Date de commande <span class="ft-required">*</span></label>
-          <p-calendar
+          <p-datepicker
             inputId="so-date"
             [(ngModel)]="orderDateModel"
             (ngModelChange)="onDateChange()"
             dateFormat="dd/mm/yy"
             [showIcon]="true"
             styleClass="w-full"
-            appendTo="body"></p-calendar>
+            appendTo="body"></p-datepicker>
         </div>
 
         <div class="ft-field">
           <label for="so-delivery">Livraison prévue</label>
-          <p-calendar
+          <p-datepicker
             inputId="so-delivery"
             [(ngModel)]="expectedDeliveryDateModel"
             dateFormat="dd/mm/yy"
@@ -167,7 +167,7 @@ interface DraftLine extends LinePromotionPreview {
             [minDate]="orderDateModel"
             [showClear]="true"
             styleClass="w-full"
-            appendTo="body"></p-calendar>
+            appendTo="body"></p-datepicker>
         </div>
 
         <div class="ft-field">
@@ -187,7 +187,7 @@ interface DraftLine extends LinePromotionPreview {
 
         <div class="ft-field ft-field--half">
           <label for="so-notes">Notes</label>
-          <textarea id="so-notes" pInputTextarea [(ngModel)]="notes" rows="2" maxlength="2000"></textarea>
+          <textarea id="so-notes" pTextarea [(ngModel)]="notes" rows="2" maxlength="2000"></textarea>
         </div>
       </div>
     </app-form-section>

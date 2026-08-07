@@ -11,7 +11,7 @@ import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { InputTextModule } from 'primeng/inputtext';
 import { ButtonModule } from 'primeng/button';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { TooltipModule } from 'primeng/tooltip';
 import { MessageService } from 'primeng/api';
 
@@ -46,7 +46,7 @@ import { CouponFormDialogComponent } from './coupon-form-dialog.component';
     TableModule,
     InputTextModule,
     ButtonModule,
-    DropdownModule,
+    SelectModule,
     TooltipModule,
     FtPageHeaderComponent,
     FtKpiCardComponent,
@@ -87,7 +87,7 @@ import { CouponFormDialogComponent } from './coupon-form-dialog.component';
         [(ngModel)]="search"
         (ngModelChange)="onSearchChange()"
         [placeholder]="t('filter.search')" />
-      <p-dropdown
+      <p-select
         [options]="activeOptions"
         [ngModel]="filterActive()"
         (ngModelChange)="onFilterActiveChange($event)"

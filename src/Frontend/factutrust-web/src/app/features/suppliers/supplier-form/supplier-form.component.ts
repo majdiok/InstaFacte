@@ -5,9 +5,9 @@ import { Router, ActivatedRoute, RouterModule } from '@angular/router';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputMaskModule } from 'primeng/inputmask';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { MessageModule } from 'primeng/message';
 import { ButtonModule } from 'primeng/button';
 import { ToastModule } from 'primeng/toast';
@@ -48,9 +48,9 @@ interface GovernorateOption {
     ReactiveFormsModule,
     InputTextModule,
     InputMaskModule,
-    InputTextarea,
+    Textarea,
     InputNumberModule,
-    DropdownModule,
+    SelectModule,
     MessageModule,
     ButtonModule,
     ToastModule,
@@ -103,7 +103,7 @@ interface GovernorateOption {
             <div class="form-row">
               <div class="form-group">
                 <label for="type">Type <span class="required">*</span></label>
-                <p-dropdown
+                <p-select
                   id="type"
                   [options]="typeOptions"
                   formControlName="type"
@@ -111,7 +111,7 @@ interface GovernorateOption {
                   optionValue="value"
                   placeholder="Sélectionner"
                   styleClass="w-full">
-                </p-dropdown>
+                </p-select>
                 @if (isInvalid('type')) {
                   <div class="form-error">
                     <i class="pi pi-exclamation-circle"></i>
@@ -265,7 +265,7 @@ interface GovernorateOption {
 
             <div class="form-group">
               <label for="governorate">Gouvernorat <span class="required">*</span></label>
-              <p-dropdown
+              <p-select
                 id="governorate"
                 [options]="governorates"
                 formControlName="governorate"
@@ -273,7 +273,7 @@ interface GovernorateOption {
                 [filter]="true"
                 filterBy="label"
                 styleClass="w-full">
-              </p-dropdown>
+              </p-select>
               @if (isInvalid('governorate')) {
                 <div class="form-error">
                   <i class="pi pi-exclamation-circle"></i>
@@ -300,7 +300,7 @@ interface GovernorateOption {
             <div class="form-row">
               <div class="form-group">
                 <label for="rs7">Tranche IS (achats RS7)</label>
-                <p-dropdown
+                <p-select
                   id="rs7"
                   formControlName="rs7IsBracket"
                   [options]="rs7BracketOptions"
@@ -309,12 +309,12 @@ interface GovernorateOption {
                   placeholder="Sélectionner"
                   [disabled]="isExplicitRsTypeSelected()"
                   styleClass="w-full">
-                </p-dropdown>
+                </p-select>
                 <small class="form-hint">Renseigne le code TEJ RS7 (1,5 % / 1 % / 0,5 %) selon le taux d’IS du fournisseur. Laisser « non défini » si vous choisissez un type RS précis ci-contre.</small>
               </div>
               <div class="form-group">
                 <label for="whType">Type RS explicite (optionnel)</label>
-                <p-dropdown
+                <p-select
                   id="whType"
                   formControlName="defaultWithholdingTaxTypeId"
                   [options]="withholdingTypes"
@@ -326,7 +326,7 @@ interface GovernorateOption {
                   filterBy="label,code"
                   [disabled]="isRs7BracketSelected()"
                   styleClass="w-full">
-                </p-dropdown>
+                </p-select>
               </div>
             </div>
             <div class="form-row">
@@ -361,7 +361,7 @@ interface GovernorateOption {
               </div>
               <div class="form-group">
                 <label for="tejId">Identifiant TEJ (type)</label>
-                <p-dropdown
+                <p-select
                   id="tejId"
                   formControlName="tejIdentificationType"
                   [options]="tejIdTypeOptions"
@@ -369,7 +369,7 @@ interface GovernorateOption {
                   optionValue="value"
                   placeholder="—"
                   styleClass="w-full">
-                </p-dropdown>
+                </p-select>
               </div>
             </div>
             <div class="form-row">
@@ -388,7 +388,7 @@ interface GovernorateOption {
             <div class="form-group">
               <label for="notes">Notes internes</label>
               <textarea
-                pInputTextarea
+                pTextarea
                 id="notes"
                 formControlName="notes"
                 placeholder="Préférences, instructions particulières…"
@@ -542,7 +542,7 @@ interface GovernorateOption {
 
     :host ::ng-deep {
       .p-inputmask,
-      .p-dropdown,
+      .p-select,
       .p-inputnumber {
         width: 100%;
       }

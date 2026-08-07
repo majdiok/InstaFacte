@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { TableModule } from 'primeng/table';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { CheckboxModule } from 'primeng/checkbox';
 import { MessageModule } from 'primeng/message';
 import { TabViewModule } from 'primeng/tabview';
@@ -15,6 +15,7 @@ import {
   type PayrollReportExportFormat
 } from '@core/services/payroll.service';
 import { AuthService } from '@core/services/auth.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { ToastService } from '@core/services/toast.service';
 import { canExportPayroll } from '@core/utils/payroll-access';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
@@ -40,7 +41,7 @@ const VIEW_BY_TAB: PayrollJournalView[] = ['ByEmployee', 'Accounting'];
     CommonModule,
     FormsModule,
     TableModule,
-    DropdownModule,
+    SelectModule,
     CheckboxModule,
     MessageModule,
     TabViewModule,
@@ -63,7 +64,7 @@ const VIEW_BY_TAB: PayrollJournalView[] = ['ByEmployee', 'Accounting'];
     </app-page-header>
 
     <div class="payroll-toolbar">
-      <p-dropdown
+      <p-select
         [options]="years"
         [(ngModel)]="year"
         optionLabel="label"
@@ -71,7 +72,7 @@ const VIEW_BY_TAB: PayrollJournalView[] = ['ByEmployee', 'Accounting'];
         placeholder="Année"
         styleClass="w-10rem"
         ariaLabel="Année" />
-      <p-dropdown
+      <p-select
         [options]="months"
         [(ngModel)]="month"
         optionLabel="label"
@@ -229,6 +230,7 @@ const VIEW_BY_TAB: PayrollJournalView[] = ['ByEmployee', 'Accounting'];
 export class PayrollJournalComponent implements OnInit {
   private readonly payroll = inject(PayrollService);
   private readonly toast = inject(ToastService);
+  private readonly errorHandler = inject(ErrorHandlerService);
   private readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
 
@@ -288,8 +290,9 @@ export class PayrollJournalComponent implements OnInit {
         next: res => this.journal.set(res.data ?? null),
         error: err => {
           this.journal.set(null);
-          // 404 / 409 portent un message métier explicite (cycle absent, brouillon, non validé).
-          this.error.set(err?.error?.message ?? 'Impossible de générer le journal de paie.');
+          this.error.set(
+            this.errorHandler.extractErrorMessage(err) || 'Impossible de générer le journal de paie.'
+          );
         }
       });
   }
@@ -313,8 +316,12 @@ export class PayrollJournalComponent implements OnInit {
             `journal_paie_${this.year}_${month}${viewSuffix}${provisional}.${exportExtension(format)}`
           );
         },
-        error: () =>
-          this.toast.add({ severity: 'error', summary: 'Journal de paie', detail: 'Export impossible.' })
+        error: err =>
+          this.toast.add({
+            severity: 'error',
+            summary: 'Journal de paie',
+            detail: this.errorHandler.extractErrorMessage(err) || 'Export impossible.'
+          })
       });
   }
 }

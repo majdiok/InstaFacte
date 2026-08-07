@@ -3,8 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { DialogModule } from 'primeng/dialog';
-import { DropdownModule } from 'primeng/dropdown';
-import { CalendarModule } from 'primeng/calendar';
+import { SelectModule } from 'primeng/select';
+import { DatePickerModule } from 'primeng/datepicker';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputSwitchModule } from 'primeng/inputswitch';
@@ -40,8 +40,8 @@ const BASE_OPTIONS = [
     FormsModule,
     TableModule,
     DialogModule,
-    DropdownModule,
-    CalendarModule,
+    SelectModule,
+    DatePickerModule,
     InputNumberModule,
     InputTextModule,
     InputSwitchModule,
@@ -100,7 +100,7 @@ const BASE_OPTIONS = [
       <div class="payroll-form-row">
         <div class="payroll-form-group">
           <label>Base de calcul</label>
-          <p-dropdown [options]="baseOptions" optionLabel="label" optionValue="value" [(ngModel)]="formBase" appendTo="body" styleClass="w-full" />
+          <p-select [options]="baseOptions" optionLabel="label" optionValue="value" [(ngModel)]="formBase" appendTo="body" styleClass="w-full" />
         </div>
         <div class="payroll-form-group switch-row">
           <label for="schemeActive">Active</label>
@@ -146,11 +146,11 @@ const BASE_OPTIONS = [
       <div class="payroll-form-row">
         <div class="payroll-form-group">
           <label>Effet à partir du</label>
-          <p-calendar [(ngModel)]="formEffectiveFrom" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
+          <p-datepicker [(ngModel)]="formEffectiveFrom" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
         </div>
         <div class="payroll-form-group">
           <label>Effet jusqu'au</label>
-          <p-calendar [(ngModel)]="formEffectiveTo" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
+          <p-datepicker [(ngModel)]="formEffectiveTo" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
         </div>
       </div>
       <ng-template pTemplate="footer">
@@ -284,12 +284,12 @@ export class PayrollSocialFundsSettingsComponent implements OnInit {
       acceptLabel: 'Supprimer',
       rejectLabel: 'Annuler',
       acceptButtonStyleClass: 'p-button-danger',
-      accept: () => this.delete(s.id)
+      accept: () => this.delete(s)
     });
   }
 
-  private delete(id: string): void {
-    this.payroll.deleteSocialFund(id).subscribe({
+  private delete(scheme: SocialFundScheme): void {
+    this.payroll.deleteSocialFund(scheme).subscribe({
       next: () => {
         this.toast.add({ severity: 'success', summary: 'Caisses complémentaires', detail: 'Supprimé.' });
         this.reload();

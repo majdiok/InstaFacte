@@ -4,9 +4,9 @@ import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { DialogModule } from 'primeng/dialog';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { TooltipModule } from 'primeng/tooltip';
 import { SkeletonTableComponent, SkeletonColumn } from '@shared/components/skeleton/skeleton-table.component';
 import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
@@ -55,9 +55,9 @@ const MONTH_OPTIONS: { label: string; value: number }[] = [
     FormsModule,
     TableModule,
     ButtonModule,
-    DropdownModule,
+    SelectModule,
     DialogModule,
-    InputTextarea,
+    Textarea,
     TooltipModule,
     PageHeaderComponent,
     SkeletonTableComponent,
@@ -86,7 +86,7 @@ const MONTH_OPTIONS: { label: string; value: number }[] = [
         <div class="filters-row">
           <div class="filter-field">
             <label for="month">Mois</label>
-            <p-dropdown
+            <p-select
               id="month"
               [options]="monthOptions"
               [(ngModel)]="selectedMonth"
@@ -95,11 +95,11 @@ const MONTH_OPTIONS: { label: string; value: number }[] = [
               (onChange)="onPeriodChange()"
               [showClear]="false"
               styleClass="w-full">
-            </p-dropdown>
+            </p-select>
           </div>
           <div class="filter-field">
             <label for="year">Année</label>
-            <p-dropdown
+            <p-select
               id="year"
               [options]="yearOptions"
               [(ngModel)]="selectedYear"
@@ -108,7 +108,7 @@ const MONTH_OPTIONS: { label: string; value: number }[] = [
               (onChange)="onPeriodChange()"
               [showClear]="false"
               styleClass="w-full">
-            </p-dropdown>
+            </p-select>
           </div>
           @if (!auth.isFirmDelegatedReadonly()) {
             <div class="filter-action filter-actions">
@@ -353,7 +353,7 @@ const MONTH_OPTIONS: { label: string; value: number }[] = [
           Indiquez le motif d'annulation (obligatoire).
         </p>
         <textarea
-          pInputTextarea
+          pTextarea
           [(ngModel)]="cancelReason"
           rows="4"
           class="w-full"

@@ -6,9 +6,9 @@ import { RouterLink } from '@angular/router';
 import { CardModule } from 'primeng/card';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { InputSwitchModule } from 'primeng/inputswitch';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { MessageModule } from 'primeng/message';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
@@ -225,9 +225,9 @@ function editFormFromView(v: StorefrontProfileView): StorefrontEditForm {
     CardModule,
     ButtonModule,
     InputTextModule,
-    InputTextarea,
+    Textarea,
     InputSwitchModule,
-    DropdownModule,
+    SelectModule,
     MessageModule,
     PageHeaderComponent,
     BreadcrumbComponent
@@ -333,7 +333,7 @@ function editFormFromView(v: StorefrontProfileView): StorefrontEditForm {
               <label for="sf-desc">Description (Markdown, obligatoire pour soumission)</label>
               <textarea
                 id="sf-desc"
-                pInputTextarea
+                pTextarea
                 [(ngModel)]="editForm.descriptionMarkdown"
                 [rows]="8"
                 [maxlength]="descriptionMax"
@@ -375,7 +375,7 @@ function editFormFromView(v: StorefrontProfileView): StorefrontEditForm {
             </div>
             <div class="field">
               <label for="sf-cat">Catégorie</label>
-              <p-dropdown
+              <p-select
                 inputId="sf-cat"
                 [options]="categories"
                 [(ngModel)]="editForm.category"
@@ -384,7 +384,7 @@ function editFormFromView(v: StorefrontProfileView): StorefrontEditForm {
             </div>
             <div class="field">
               <label for="sf-theme">Thème façade</label>
-              <p-dropdown
+              <p-select
                 inputId="sf-theme"
                 [options]="themes"
                 [(ngModel)]="editForm.facadeTheme"
@@ -418,11 +418,11 @@ function editFormFromView(v: StorefrontProfileView): StorefrontEditForm {
           </div>
           <div class="field">
             <label>Catégorie</label>
-            <p-dropdown [options]="categories" [(ngModel)]="draft.category" optionLabel="label" optionValue="value" />
+            <p-select [options]="categories" [(ngModel)]="draft.category" optionLabel="label" optionValue="value" />
           </div>
           <div class="field">
             <label>Thème façade</label>
-            <p-dropdown [options]="themes" [(ngModel)]="draft.facadeTheme" optionLabel="label" optionValue="value" />
+            <p-select [options]="themes" [(ngModel)]="draft.facadeTheme" optionLabel="label" optionValue="value" />
           </div>
           <p-button label="Créer la vitrine (brouillon)" (onClick)="optIn()" [loading]="saving()" />
         </p-card>

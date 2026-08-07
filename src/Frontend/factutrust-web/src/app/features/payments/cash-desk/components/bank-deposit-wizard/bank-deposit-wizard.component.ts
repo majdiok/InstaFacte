@@ -4,10 +4,10 @@ import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { StepsModule } from 'primeng/steps';
 import { MenuItem } from 'primeng/api';
-import { CalendarModule } from 'primeng/calendar';
+import { DatePickerModule } from 'primeng/datepicker';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { ToastService } from '@core/services/toast.service';
 import { AuthService } from '@core/services/auth.service';
@@ -38,10 +38,10 @@ const DEPOSIT_TO_METHOD: Record<BankDepositType, number> = {
     FormsModule,
     DialogModule,
     StepsModule,
-    CalendarModule,
+    DatePickerModule,
     InputNumberModule,
     InputTextModule,
-    InputTextarea,
+    Textarea,
     ButtonComponent,
     AddBankAccountDialogComponent
   ],

@@ -19,9 +19,9 @@ import { StockService, Warehouse } from '@core/services/stock.service';
 import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { ButtonModule } from 'primeng/button';
 import { RippleModule } from 'primeng/ripple';
 
@@ -45,9 +45,9 @@ export interface InventoryFormLine extends InventoryProductItem {
         CommonModule,
         FormsModule,
         RouterModule,
-        DropdownModule,
+        SelectModule,
         InputNumberModule,
-        InputTextarea,
+        Textarea,
         ButtonModule,
         RippleModule,
         PageHeaderComponent,

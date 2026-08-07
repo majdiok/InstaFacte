@@ -5,8 +5,8 @@ import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { DropdownModule } from 'primeng/dropdown';
-import { CalendarModule } from 'primeng/calendar';
+import { SelectModule } from 'primeng/select';
+import { DatePickerModule } from 'primeng/datepicker';
 import { PaginatorModule } from 'primeng/paginator';
 import { TooltipModule } from 'primeng/tooltip';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
@@ -72,8 +72,8 @@ const SUPPLIER_STATUS_OPTIONS: { label: string; value: string | null }[] = [
     TableModule,
     ButtonModule,
     InputTextModule,
-    DropdownModule,
-    CalendarModule,
+    SelectModule,
+    DatePickerModule,
     PaginatorModule,
     TooltipModule,
     PageHeaderComponent,
@@ -153,15 +153,15 @@ const SUPPLIER_STATUS_OPTIONS: { label: string; value: string | null }[] = [
             (ngModelChange)="searchTerm.set($event)">
         </span>
 
-        <p-dropdown 
+        <p-select 
           [options]="statusOptions()" 
           [(ngModel)]="selectedStatus"
           placeholder="Tous les statuts"
           [showClear]="true"
           (onChange)="onFilterChange()">
-        </p-dropdown>
+        </p-select>
 
-        <p-calendar 
+        <p-datepicker 
           [(ngModel)]="dateRange" 
           selectionMode="range"
           [readonlyInput]="true"
@@ -169,7 +169,7 @@ const SUPPLIER_STATUS_OPTIONS: { label: string; value: string | null }[] = [
           dateFormat="dd/mm/yy"
           (onSelect)="onFilterChange()"
           [showClear]="true">
-        </p-calendar>
+        </p-datepicker>
       </div>
     </div>
 

@@ -6,8 +6,8 @@ import { CardModule } from 'primeng/card';
 import { TagModule } from 'primeng/tag';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
-import { DropdownModule } from 'primeng/dropdown';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { SelectModule } from 'primeng/select';
+import { Textarea } from 'primeng/textarea';
 import { TabViewModule } from 'primeng/tabview';
 import { MessageService } from 'primeng/api';
 import { PlatformTenantService } from '@core/services/platform-tenant.service';
@@ -33,8 +33,8 @@ import { TenantModulesTabComponent } from './tenant-modules-tab.component';
     TagModule,
     ButtonModule,
     DialogModule,
-    DropdownModule,
-    InputTextarea,
+    SelectModule,
+    Textarea,
     TabViewModule,
     TenantInvoicesTabComponent,
     TenantModulesTabComponent
@@ -171,7 +171,7 @@ import { TenantModulesTabComponent } from './tenant-modules-tab.component';
       (onHide)="changePlan = 'Free'">
       <div class="dialog-field">
         <label class="field-label" for="planSelect">Nouveau plan</label>
-        <p-dropdown
+        <p-select
           inputId="planSelect"
           [options]="planOptions"
           [(ngModel)]="changePlan"
@@ -196,7 +196,7 @@ import { TenantModulesTabComponent } from './tenant-modules-tab.component';
         <label class="field-label" for="cancelReason">Raison (min. 10 caractères)</label>
         <textarea
           id="cancelReason"
-          pInputTextarea
+          pTextarea
           [(ngModel)]="cancelReason"
           rows="4"
           class="w-full"
@@ -338,7 +338,7 @@ import { TenantModulesTabComponent } from './tenant-modules-tab.component';
       .w-full {
         width: 100%;
       }
-      :host ::ng-deep .p-dialog .p-dropdown {
+      :host ::ng-deep .p-dialog .p-select {
         width: 100%;
       }
 

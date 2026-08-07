@@ -5,8 +5,8 @@ import { TableModule } from 'primeng/table';
 import { MessageModule } from 'primeng/message';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
-import { CalendarModule } from 'primeng/calendar';
-import { DropdownModule } from 'primeng/dropdown';
+import { DatePickerModule } from 'primeng/datepicker';
+import { SelectModule } from 'primeng/select';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { TableLazyLoadEvent } from 'primeng/table';
@@ -44,8 +44,8 @@ export interface VerifyIntegrityResult {
     MessageModule,
     TagModule,
     TooltipModule,
-    CalendarModule,
-    DropdownModule,
+    DatePickerModule,
+    SelectModule,
     DialogModule,
     InputTextModule,
     PageHeaderComponent

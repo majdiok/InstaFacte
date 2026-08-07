@@ -4,7 +4,7 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import {
@@ -27,7 +27,7 @@ type FormMode = 'create' | 'edit' | 'view';
     ReactiveFormsModule,
     TableModule,
     ButtonModule,
-    DropdownModule,
+    SelectModule,
     InputNumberModule,
     PageHeaderComponent
   ],
@@ -56,7 +56,7 @@ type FormMode = 'create' | 'edit' | 'view';
       <div class="fc-card">
         <form [formGroup]="form" class="meta-form">
           <label>Collaborateur
-            <p-dropdown
+            <p-select
               formControlName="collaboratorUserId"
               [options]="collaboratorOptions"
               optionLabel="label"
@@ -67,7 +67,7 @@ type FormMode = 'create' | 'edit' | 'view';
               appendTo="body" />
           </label>
           <label>Année
-            <p-dropdown formControlName="year" [options]="yearOptions" />
+            <p-select formControlName="year" [options]="yearOptions" />
           </label>
           @if (mode() === 'create') {
             <button type="button" pButton label="Charger le préremplissage" icon="pi pi-refresh" class="p-button-sm p-button-outlined" (click)="loadPrefill()"></button>

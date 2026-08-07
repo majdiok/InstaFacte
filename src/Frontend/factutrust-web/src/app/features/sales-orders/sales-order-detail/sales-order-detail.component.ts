@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
@@ -53,7 +53,7 @@ interface TimelineEvent {
     TableModule,
     ButtonModule,
     InputTextModule,
-    InputTextarea,
+    Textarea,
     InputNumberModule,
     TagModule,
     TooltipModule,
@@ -439,7 +439,7 @@ interface TimelineEvent {
         <label for="so-cancel-reason">Motif <span class="ft-required">*</span></label>
         <textarea
           id="so-cancel-reason"
-          pInputTextarea
+          pTextarea
           [(ngModel)]="cancelReason"
           rows="3"
           maxlength="500"></textarea>
@@ -518,7 +518,7 @@ interface TimelineEvent {
         <label for="so-close-reason">Motif <span class="ft-required">*</span></label>
         <textarea
           id="so-close-reason"
-          pInputTextarea
+          pTextarea
           [(ngModel)]="closeReason"
           rows="3"
           maxlength="500"></textarea>
@@ -553,7 +553,7 @@ interface TimelineEvent {
         <label for="dn-address">Adresse de livraison</label>
         <textarea
           id="dn-address"
-          pInputTextarea
+          pTextarea
           [(ngModel)]="deliveryNoteAddress"
           rows="2"
           maxlength="500"></textarea>

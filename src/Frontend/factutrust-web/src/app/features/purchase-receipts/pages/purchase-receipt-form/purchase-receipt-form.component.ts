@@ -2,11 +2,11 @@ import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { CommonModule, CurrencyPipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { CalendarModule } from 'primeng/calendar';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { DatePickerModule } from 'primeng/datepicker';
+import { Textarea } from 'primeng/textarea';
 import { AutoCompleteModule, AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { TagModule } from 'primeng/tag';
 import { FileUploadModule } from 'primeng/fileupload';
@@ -73,8 +73,8 @@ interface ReceiptLineRow {
   standalone: true,
   imports: [
     CommonModule, RouterModule, FormsModule, CurrencyPipe,
-    DropdownModule, InputTextModule, InputNumberModule, CalendarModule,
-    InputTextarea, AutoCompleteModule, TagModule, FileUploadModule,
+    SelectModule, InputTextModule, InputNumberModule, DatePickerModule,
+    Textarea, AutoCompleteModule, TagModule, FileUploadModule,
     DialogModule, ToastModule,
     PageHeaderComponent, BreadcrumbComponent, FormSectionComponent,
     WarehouseSelectorComponent, ButtonComponent
@@ -102,7 +102,7 @@ interface ReceiptLineRow {
             <div class="form-grid-3">
               <div class="form-group">
                 <label for="supplier">Fournisseur <span class="required">*</span></label>
-                <p-dropdown
+                <p-select
                   id="supplier"
                   [options]="suppliers()"
                   [(ngModel)]="selectedSupplierId"
@@ -115,12 +115,12 @@ interface ReceiptLineRow {
                   [disabled]="isEdit() || !!lockedPurchaseOrderId"
                   (onChange)="onSupplierChange()"
                   styleClass="w-full">
-                </p-dropdown>
+                </p-select>
               </div>
 
               <div class="form-group">
                 <label for="purchaseOrder">Bon de commande</label>
-                <p-dropdown
+                <p-select
                   id="purchaseOrder"
                   [options]="purchaseOrderOptions()"
                   [(ngModel)]="selectedPurchaseOrderId"
@@ -133,7 +133,7 @@ interface ReceiptLineRow {
                   [disabled]="isEdit() || !!lockedPurchaseOrderId"
                   (onChange)="onPurchaseOrderChange()"
                   styleClass="w-full">
-                </p-dropdown>
+                </p-select>
               </div>
 
               <div class="form-group">
@@ -158,13 +158,13 @@ interface ReceiptLineRow {
 
               <div class="form-group">
                 <label for="receiptDate">Date de réception <span class="required">*</span></label>
-                <p-calendar
+                <p-datepicker
                   id="receiptDate"
                   [(ngModel)]="receiptDate"
                   dateFormat="dd/mm/yy"
                   [showIcon]="true"
                   styleClass="w-full">
-                </p-calendar>
+                </p-datepicker>
               </div>
 
               <div class="form-group">
@@ -365,7 +365,7 @@ interface ReceiptLineRow {
               <div class="form-group span-full">
                 <label for="notes">Notes</label>
                 <textarea
-                  pInputTextarea
+                  pTextarea
                   id="notes"
                   [(ngModel)]="notes"
                   [rows]="3"
@@ -817,11 +817,11 @@ interface ReceiptLineRow {
         margin-bottom: 0;
       }
 
-      .p-dropdown, .p-calendar, .p-autocomplete { width: 100%; }
-      .p-calendar { display: flex; }
+      .p-select, .p-datepicker, .p-autocomplete { width: 100%; }
+      .p-datepicker { display: flex; }
 
-      .form-grid-3 .p-dropdown,
-      .form-grid-3 .p-calendar {
+      .form-grid-3 .p-select,
+      .form-grid-3 .p-datepicker {
         width: 100%;
       }
 

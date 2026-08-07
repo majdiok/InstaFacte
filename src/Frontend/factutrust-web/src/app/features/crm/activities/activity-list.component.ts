@@ -6,10 +6,10 @@ import { ActivatedRoute } from '@angular/router';
 import { Subject, Subscription } from 'rxjs';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { TableModule, TableLazyLoadEvent } from 'primeng/table';
-import { DropdownModule } from 'primeng/dropdown';
-import { CalendarModule } from 'primeng/calendar';
+import { SelectModule } from 'primeng/select';
+import { DatePickerModule } from 'primeng/datepicker';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { CheckboxModule } from 'primeng/checkbox';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -44,10 +44,10 @@ interface StatusFilterOption {
     FormsModule,
     ReactiveFormsModule,
     TableModule,
-    DropdownModule,
-    CalendarModule,
+    SelectModule,
+    DatePickerModule,
     InputTextModule,
-    InputTextarea,
+    Textarea,
     CheckboxModule,
     PageHeaderComponent,
     ButtonComponent,
@@ -69,7 +69,7 @@ interface StatusFilterOption {
             class="w-full"
             aria-label="Rechercher par sujet" />
         </span>
-        <p-dropdown
+        <p-select
           [options]="statusFilterOptions"
           [(ngModel)]="statusFilter"
           optionLabel="label"
@@ -78,8 +78,8 @@ interface StatusFilterOption {
           inputId="actStatusFilter"
           styleClass="toolbar-dropdown"
           (onChange)="onFiltersChanged()"
-          [attr.aria-label]="'Filtrer par statut'"></p-dropdown>
-        <p-dropdown
+          [attr.aria-label]="'Filtrer par statut'"></p-select>
+        <p-select
           [options]="typeFilterOptions"
           [(ngModel)]="typeFilter"
           optionLabel="label"
@@ -89,8 +89,8 @@ interface StatusFilterOption {
           inputId="actTypeFilter"
           styleClass="toolbar-dropdown"
           (onChange)="onFiltersChanged()"
-          [attr.aria-label]="'Filtrer par type'"></p-dropdown>
-        <p-dropdown
+          [attr.aria-label]="'Filtrer par type'"></p-select>
+        <p-select
           [options]="clients()"
           [(ngModel)]="selectedClient"
           optionLabel="name"
@@ -101,8 +101,8 @@ interface StatusFilterOption {
           inputId="actClientFilter"
           styleClass="toolbar-dropdown"
           (onChange)="onFiltersChanged()"
-          [attr.aria-label]="'Filtrer par client'"></p-dropdown>
-        <p-dropdown
+          [attr.aria-label]="'Filtrer par client'"></p-select>
+        <p-select
           [options]="filteredOpportunities()"
           [(ngModel)]="selectedOpportunity"
           optionLabel="title"
@@ -113,10 +113,10 @@ interface StatusFilterOption {
           inputId="actOppFilter"
           styleClass="toolbar-dropdown"
           (onChange)="onFiltersChanged()"
-          [attr.aria-label]="'Filtrer par opportunité'"></p-dropdown>
+          [attr.aria-label]="'Filtrer par opportunité'"></p-select>
         <div class="toolbar-dates">
           <label class="sr-only" for="actDueFrom">Échéance du</label>
-          <p-calendar
+          <p-datepicker
             inputId="actDueFrom"
             [(ngModel)]="dueFrom"
             dateFormat="dd/mm/yy"
@@ -125,9 +125,9 @@ interface StatusFilterOption {
             placeholder="Échéance du"
             appendTo="body"
             (onSelect)="onFiltersChanged()"
-            (onClearClick)="onDueClear()"></p-calendar>
+            (onClearClick)="onDueClear()"></p-datepicker>
           <label class="sr-only" for="actDueTo">Échéance au</label>
-          <p-calendar
+          <p-datepicker
             inputId="actDueTo"
             [(ngModel)]="dueTo"
             dateFormat="dd/mm/yy"
@@ -136,7 +136,7 @@ interface StatusFilterOption {
             placeholder="Échéance au"
             appendTo="body"
             (onSelect)="onFiltersChanged()"
-            (onClearClick)="onDueClear()"></p-calendar>
+            (onClearClick)="onDueClear()"></p-datepicker>
         </div>
         <div class="toolbar-mine">
           <p-checkbox
@@ -293,7 +293,7 @@ interface StatusFilterOption {
             <h3 id="act-section-details" class="form-block-title activity-panel-section-title">Détails de l’activité</h3>
             <div class="form-field">
               <label class="field-label" for="actType">Type <span class="required" aria-hidden="true">*</span></label>
-              <p-dropdown
+              <p-select
                 inputId="actType"
                 formControlName="type"
                 [options]="typeOptions"
@@ -302,12 +302,12 @@ interface StatusFilterOption {
                 placeholder="Type"
                 styleClass="w-full"
                 appendTo="body"
-                [overlayOptions]="activityPanelPrimeOverlayOptions"></p-dropdown>
+                [overlayOptions]="activityPanelPrimeOverlayOptions"></p-select>
             </div>
             @if (!editingId()) {
               <div class="form-field">
                 <label class="field-label" for="actClient">Client <span class="required" aria-hidden="true">*</span></label>
-                <p-dropdown
+                <p-select
                   inputId="actClient"
                   formControlName="clientId"
                   [options]="clients()"
@@ -319,7 +319,7 @@ interface StatusFilterOption {
                   styleClass="w-full"
                   appendTo="body"
                   [overlayOptions]="activityPanelPrimeOverlayOptions"
-                  (onChange)="onFormClientChange()"></p-dropdown>
+                  (onChange)="onFormClientChange()"></p-select>
               </div>
             }
             <div class="form-field">
@@ -330,7 +330,7 @@ interface StatusFilterOption {
               <label class="field-label" for="actDesc">Description</label>
               <p id="act-desc-hint" class="act-field-hint">Compte rendu, prochaine action ou précisions — optionnel, max. 2000 caractères.</p>
               <textarea
-                pInputTextarea
+                pTextarea
                 id="actDesc"
                 class="w-full activity-desc-textarea"
                 rows="5"
@@ -344,7 +344,7 @@ interface StatusFilterOption {
             <h3 id="act-section-context" class="form-block-title activity-panel-section-title">Contexte</h3>
             <div class="form-field">
               <label class="field-label" for="actOpp">Opportunité (optionnel)</label>
-              <p-dropdown
+              <p-select
                 inputId="actOpp"
                 formControlName="opportunityId"
                 [options]="formOpportunityOptions()"
@@ -356,11 +356,11 @@ interface StatusFilterOption {
                 filterBy="title"
                 styleClass="w-full"
                 appendTo="body"
-                [overlayOptions]="activityPanelPrimeOverlayOptions"></p-dropdown>
+                [overlayOptions]="activityPanelPrimeOverlayOptions"></p-select>
             </div>
             <div class="form-field">
               <label class="field-label" for="actAssignee">Assigné à</label>
-              <p-dropdown
+              <p-select
                 inputId="actAssignee"
                 formControlName="assignedUserId"
                 [options]="assigneeDropdownOptions()"
@@ -370,11 +370,11 @@ interface StatusFilterOption {
                 [showClear]="true"
                 styleClass="w-full"
                 appendTo="body"
-                [overlayOptions]="activityPanelPrimeOverlayOptions"></p-dropdown>
+                [overlayOptions]="activityPanelPrimeOverlayOptions"></p-select>
             </div>
             <div class="form-field">
               <label class="field-label" for="actPriority">Priorité <span class="required" aria-hidden="true">*</span></label>
-              <p-dropdown
+              <p-select
                 inputId="actPriority"
                 formControlName="priority"
                 [options]="priorityOptions"
@@ -382,7 +382,7 @@ interface StatusFilterOption {
                 optionValue="value"
                 styleClass="w-full"
                 appendTo="body"
-                [overlayOptions]="activityPanelPrimeOverlayOptions"></p-dropdown>
+                [overlayOptions]="activityPanelPrimeOverlayOptions"></p-select>
             </div>
           </section>
 
@@ -391,7 +391,7 @@ interface StatusFilterOption {
             <div class="form-grid-2">
               <div class="form-field">
                 <label class="field-label" for="actDue">Échéance</label>
-                <p-calendar
+                <p-datepicker
                   inputId="actDue"
                   formControlName="dueDate"
                   dateFormat="dd/mm/yy"
@@ -399,11 +399,11 @@ interface StatusFilterOption {
                   [readonlyInput]="true"
                   appendTo="body"
                   [baseZIndex]="activityPanelPrimeBaseZIndex"
-                  styleClass="w-full"></p-calendar>
+                  styleClass="w-full"></p-datepicker>
               </div>
               <div class="form-field">
                 <label class="field-label" for="actRem">Rappel</label>
-                <p-calendar
+                <p-datepicker
                   inputId="actRem"
                   formControlName="reminderDate"
                   dateFormat="dd/mm/yy"
@@ -411,7 +411,7 @@ interface StatusFilterOption {
                   [readonlyInput]="true"
                   appendTo="body"
                   [baseZIndex]="activityPanelPrimeBaseZIndex"
-                  styleClass="w-full"></p-calendar>
+                  styleClass="w-full"></p-datepicker>
               </div>
             </div>
           </section>
@@ -689,11 +689,11 @@ interface StatusFilterOption {
       border: 0;
     }
 
-    :host ::ng-deep .activity-panel .p-dropdown,
-    :host ::ng-deep .activity-panel .p-calendar {
+    :host ::ng-deep .activity-panel .p-select,
+    :host ::ng-deep .activity-panel .p-datepicker {
       width: 100%;
     }
-    :host ::ng-deep .activity-panel .p-calendar.p-calendar-w-btn .p-datepicker-trigger {
+    :host ::ng-deep .activity-panel .p-datepicker.p-datepicker-w-btn .p-datepicker-trigger {
       background: var(--color-background-elevated);
       border-color: var(--color-border-default);
       color: var(--color-text-secondary);
@@ -701,12 +701,12 @@ interface StatusFilterOption {
       width: 2.75rem;
       padding: 0;
     }
-    :host ::ng-deep .activity-panel .p-calendar.p-calendar-w-btn .p-datepicker-trigger:hover {
+    :host ::ng-deep .activity-panel .p-datepicker.p-datepicker-w-btn .p-datepicker-trigger:hover {
       background: var(--color-background-subtle);
       border-color: var(--color-border-strong);
       color: var(--color-text-primary);
     }
-    :host ::ng-deep .activity-panel .p-calendar.p-calendar-w-btn .p-datepicker-trigger:focus {
+    :host ::ng-deep .activity-panel .p-datepicker.p-datepicker-w-btn .p-datepicker-trigger:focus {
       box-shadow: 0 0 0 3px var(--color-primary-200);
       outline: none;
     }

@@ -392,7 +392,7 @@
     }
   }
 
-  textarea.p-inputtextarea {
+  textarea.p-textarea {
     width: 100%;
     min-height: 5rem;
     padding: 0.875rem 1.25rem;
@@ -420,7 +420,7 @@
     background: var(--color-neutral-50);
     box-shadow: none;
 
-    .p-dropdown-label {
+    .p-select-label {
       padding: 0.875rem 1.25rem;
       font-size: 0.95rem;
       line-height: 1.25;

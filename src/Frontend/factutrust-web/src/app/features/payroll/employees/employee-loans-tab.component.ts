@@ -6,8 +6,8 @@ import { TagModule } from 'primeng/tag';
 import { DialogModule } from 'primeng/dialog';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextarea } from 'primeng/inputtextarea';
-import { DropdownModule } from 'primeng/dropdown';
+import { Textarea } from 'primeng/textarea';
+import { SelectModule } from 'primeng/select';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import {
   PayrollService,
@@ -37,8 +37,8 @@ const MONTH_OPTIONS = [
     DialogModule,
     InputNumberModule,
     InputTextModule,
-    InputTextarea,
-    DropdownModule,
+    Textarea,
+    SelectModule,
     ButtonComponent,
     PayrollSectionComponent,
     PayrollAmountPipe
@@ -106,7 +106,7 @@ const MONTH_OPTIONS = [
       <div class="payroll-form-row">
         <div class="payroll-form-group">
           <label>Mois de début</label>
-          <p-dropdown [options]="monthOptions" optionLabel="label" optionValue="value" [(ngModel)]="formStartMonth" appendTo="body" styleClass="w-full" />
+          <p-select [options]="monthOptions" optionLabel="label" optionValue="value" [(ngModel)]="formStartMonth" appendTo="body" styleClass="w-full" />
         </div>
         <div class="payroll-form-group">
           <label>Année de début</label>
@@ -115,7 +115,7 @@ const MONTH_OPTIONS = [
       </div>
       <div class="payroll-form-group mb-2">
         <label>Notes</label>
-        <textarea pInputTextarea [(ngModel)]="formNotes" rows="2" class="w-full"></textarea>
+        <textarea pTextarea [(ngModel)]="formNotes" rows="2" class="w-full"></textarea>
       </div>
       <ng-template pTemplate="footer">
         <app-button variant="outline" (click)="createDialogVisible = false">Annuler</app-button>

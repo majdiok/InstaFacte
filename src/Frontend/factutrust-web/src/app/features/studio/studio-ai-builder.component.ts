@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { AiStreamService } from '@features/ai-assistant/services/ai-stream.service';
 import { AssistantMode, ChatRequest, ChatStreamEvent } from '@features/ai-assistant/models/ai-chat.models';
 import { StudioNavService } from './studio-nav.service';
@@ -25,7 +25,7 @@ type BuilderState = 'idle' | 'planning' | 'awaiting_confirmation' | 'executing';
 @Component({
   selector: 'app-studio-ai-builder',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, ButtonModule, InputTextarea, StudioPageShellComponent],
+  imports: [CommonModule, FormsModule, RouterModule, ButtonModule, Textarea, StudioPageShellComponent],
   template: `
     <app-studio-page-shell
       title="Assistant Studio (IA)"
@@ -102,7 +102,7 @@ type BuilderState = 'idle' | 'planning' | 'awaiting_confirmation' | 'executing';
         </div>
 
         <div class="sab-compose">
-          <textarea pInputTextarea [(ngModel)]="prompt" rows="2" class="sab-input" [disabled]="busy()"
+          <textarea pTextarea [(ngModel)]="prompt" rows="2" class="sab-input" [disabled]="busy()"
             placeholder="Ex. : Créer un système de gestion de congés avec plusieurs tables..."
             (keydown.enter)="$event.preventDefault(); send()"></textarea>
           <div class="sab-compose__actions">

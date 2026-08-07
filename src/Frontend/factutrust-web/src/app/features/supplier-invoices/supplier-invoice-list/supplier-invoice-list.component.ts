@@ -4,7 +4,7 @@ import { RouterModule, ActivatedRoute, ParamMap } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { InputTextModule } from 'primeng/inputtext';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { TagModule } from 'primeng/tag';
 import { ToastModule } from 'primeng/toast';
 import { Subject, debounceTime, distinctUntilChanged, takeUntil } from 'rxjs';
@@ -35,7 +35,7 @@ interface StatusOption {
     standalone: true,
     imports: [
         CommonModule, RouterModule, FormsModule, CurrencyPipe, DatePipe,
-        TableModule, InputTextModule, DropdownModule, TagModule, ToastModule,
+        TableModule, InputTextModule, SelectModule, TagModule, ToastModule,
         PageHeaderComponent, BreadcrumbComponent, SkeletonTableComponent,
         EmptyStateComponent, ButtonComponent, TableTotalsBarComponent
     ],
@@ -66,7 +66,7 @@ interface StatusOption {
             (input)="onSearchInput($event)"
             class="w-full">
         </span>
-        <p-dropdown
+        <p-select
           [options]="statusOptions"
           [(ngModel)]="selectedStatus"
           optionLabel="label"
@@ -74,8 +74,8 @@ interface StatusOption {
           placeholder="Tous les statuts"
           [showClear]="true"
           (onChange)="onFilterChange()">
-        </p-dropdown>
-        <p-dropdown
+        </p-select>
+        <p-select
           [options]="supplierOptions"
           [(ngModel)]="selectedSupplierId"
           optionLabel="name"
@@ -86,7 +86,7 @@ interface StatusOption {
           filterBy="name"
           (onChange)="onFilterChange()"
           styleClass="supplier-filter">
-        </p-dropdown>
+        </p-select>
       </div>
     </div>
 

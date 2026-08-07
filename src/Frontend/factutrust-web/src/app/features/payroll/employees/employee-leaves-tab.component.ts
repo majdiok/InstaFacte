@@ -4,11 +4,11 @@ import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { DialogModule } from 'primeng/dialog';
-import { DropdownModule } from 'primeng/dropdown';
-import { CalendarModule } from 'primeng/calendar';
+import { SelectModule } from 'primeng/select';
+import { DatePickerModule } from 'primeng/datepicker';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { TooltipModule } from 'primeng/tooltip';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { EmployeeService } from '@core/services/employee.service';
@@ -35,11 +35,11 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
     TableModule,
     TagModule,
     DialogModule,
-    DropdownModule,
-    CalendarModule,
+    SelectModule,
+    DatePickerModule,
     InputNumberModule,
     InputTextModule,
-    InputTextarea,
+    Textarea,
     ButtonComponent,
     PayrollStatGridComponent,
     TooltipModule
@@ -47,7 +47,7 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
   template: `
     <div class="payroll-toolbar mb-3">
       <label for="balanceYear" class="sr-only">Exercice</label>
-      <p-dropdown
+      <p-select
         id="balanceYear"
         [options]="yearOptions"
         [(ngModel)]="balanceYear"
@@ -119,16 +119,16 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
     <p-dialog header="Nouveau congé" [(visible)]="dialogVisible" [modal]="true" [style]="{ width: '480px' }">
       <div class="payroll-form-group mb-2">
         <label>Type</label>
-        <p-dropdown [options]="leaveTypeOptions" [(ngModel)]="formType" optionLabel="label" optionValue="value" appendTo="body" styleClass="w-full" />
+        <p-select [options]="leaveTypeOptions" [(ngModel)]="formType" optionLabel="label" optionValue="value" appendTo="body" styleClass="w-full" />
       </div>
       <div class="payroll-form-row">
         <div class="payroll-form-group">
           <label>Début</label>
-          <p-calendar [(ngModel)]="formStart" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" (ngModelChange)="computeDays()" />
+          <p-datepicker [(ngModel)]="formStart" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" (ngModelChange)="computeDays()" />
         </div>
         <div class="payroll-form-group">
           <label>Fin</label>
-          <p-calendar [(ngModel)]="formEnd" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" (ngModelChange)="computeDays()" />
+          <p-datepicker [(ngModel)]="formEnd" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" (ngModelChange)="computeDays()" />
         </div>
       </div>
       <div class="payroll-form-group mb-2">
@@ -148,7 +148,7 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
       </div>
       <div class="payroll-form-group mb-2">
         <label>Motif</label>
-        <textarea pInputTextarea [(ngModel)]="formReason" rows="2" class="w-full"></textarea>
+        <textarea pTextarea [(ngModel)]="formReason" rows="2" class="w-full"></textarea>
       </div>
       <ng-template pTemplate="footer">
         <app-button variant="outline" (click)="dialogVisible = false">Annuler</app-button>

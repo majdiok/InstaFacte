@@ -15,8 +15,8 @@ import { DialogModule } from 'primeng/dialog';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { CalendarModule } from 'primeng/calendar';
-import { DropdownModule } from 'primeng/dropdown';
+import { DatePickerModule } from 'primeng/datepicker';
+import { SelectModule } from 'primeng/select';
 import { PlatformPlansService } from '@core/services/platform-plans.service';
 import {
   CouponType,
@@ -38,8 +38,8 @@ import { COUPONS_FR } from './coupons.i18n.fr';
     ButtonModule,
     InputTextModule,
     InputNumberModule,
-    CalendarModule,
-    DropdownModule
+    DatePickerModule,
+    SelectModule
   ],
   template: `
     <p-dialog
@@ -72,7 +72,7 @@ import { COUPONS_FR } from './coupons.i18n.fr';
 
         <div class="field">
           <label for="cp-type">{{ t('form.field.type') }}</label>
-          <p-dropdown
+          <p-select
             inputId="cp-type"
             [options]="typeOptions"
             [(ngModel)]="type"
@@ -100,7 +100,7 @@ import { COUPONS_FR } from './coupons.i18n.fr';
 
         <div class="field">
           <label for="cp-from">{{ t('form.field.validFrom') }}</label>
-          <p-calendar
+          <p-datepicker
             inputId="cp-from"
             [(ngModel)]="validFrom"
             (ngModelChange)="validFromSig.set($event)"
@@ -112,7 +112,7 @@ import { COUPONS_FR } from './coupons.i18n.fr';
 
         <div class="field">
           <label for="cp-to">{{ t('form.field.validTo') }}</label>
-          <p-calendar
+          <p-datepicker
             inputId="cp-to"
             [(ngModel)]="validTo"
             (ngModelChange)="validToSig.set($event)"
@@ -147,7 +147,7 @@ import { COUPONS_FR } from './coupons.i18n.fr';
 
         <div class="field field--full">
           <label for="cp-plan">{{ t('form.field.appliesToPlan') }}</label>
-          <p-dropdown
+          <p-select
             inputId="cp-plan"
             [options]="planOptions()"
             [(ngModel)]="appliesToPlanId"

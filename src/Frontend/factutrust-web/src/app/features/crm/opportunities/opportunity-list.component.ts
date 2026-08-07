@@ -5,10 +5,10 @@ import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { TableTotalsBarComponent, TotalMetric } from '@shared/components/table-totals-bar/table-totals-bar.component';
 import { DialogModule } from 'primeng/dialog';
-import { DropdownModule } from 'primeng/dropdown';
-import { CalendarModule } from 'primeng/calendar';
+import { SelectModule } from 'primeng/select';
+import { DatePickerModule } from 'primeng/datepicker';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { CheckboxModule } from 'primeng/checkbox';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
@@ -31,10 +31,10 @@ interface StageOption {
     ReactiveFormsModule,
     TableModule,
     DialogModule,
-    DropdownModule,
-    CalendarModule,
+    SelectModule,
+    DatePickerModule,
     InputTextModule,
-    InputTextarea,
+    Textarea,
     InputNumberModule,
     CheckboxModule,
     PageHeaderComponent,
@@ -45,7 +45,7 @@ interface StageOption {
     <app-page-header title="Opportunités" subtitle="Pipeline commercial" />
     <div class="card p-3 mb-3 opportunity-toolbar">
       <div class="toolbar-row">
-        <p-dropdown
+        <p-select
           [options]="stageOptions"
           [(ngModel)]="selectedStageOption"
           optionLabel="label"
@@ -54,7 +54,7 @@ interface StageOption {
           styleClass="toolbar-dropdown"
           inputId="oppStageFilter"
           (onChange)="load()"
-          [attr.aria-label]="'Filtrer par stage'"></p-dropdown>
+          [attr.aria-label]="'Filtrer par stage'"></p-select>
         <div class="toolbar-mine">
           <p-checkbox
             inputId="oppMineOnly"
@@ -176,7 +176,7 @@ interface StageOption {
             @if (!editingId) {
               <div class="form-field">
                 <label class="field-label" for="oppClient">Client <span class="required" aria-hidden="true">*</span></label>
-                <p-dropdown
+                <p-select
                   inputId="oppClient"
                   formControlName="clientId"
                   [options]="clients"
@@ -189,7 +189,7 @@ interface StageOption {
                   [showClear]="true"
                   [class.ng-invalid]="oppForm.get('clientId')?.invalid && oppForm.get('clientId')?.touched"
                   [attr.aria-invalid]="oppForm.get('clientId')?.invalid && oppForm.get('clientId')?.touched ? true : null"
-                  [attr.aria-describedby]="oppForm.get('clientId')?.invalid && oppForm.get('clientId')?.touched ? 'opp-client-error' : null"></p-dropdown>
+                  [attr.aria-describedby]="oppForm.get('clientId')?.invalid && oppForm.get('clientId')?.touched ? 'opp-client-error' : null"></p-select>
                 @if (oppForm.get('clientId')?.invalid && oppForm.get('clientId')?.touched) {
                   <small id="opp-client-error" class="field-error" role="alert">Sélectionnez un client.</small>
                 }
@@ -232,7 +232,7 @@ interface StageOption {
             </div>
             <div class="form-field">
               <label class="field-label" for="oppClose">Date de clôture attendue <span class="required" aria-hidden="true">*</span></label>
-              <p-calendar
+              <p-datepicker
                 inputId="oppClose"
                 formControlName="expectedCloseDate"
                 dateFormat="dd/mm/yy"
@@ -241,7 +241,7 @@ interface StageOption {
                 appendTo="body"
                 styleClass="w-full"
                 [attr.aria-invalid]="oppForm.get('expectedCloseDate')?.invalid && oppForm.get('expectedCloseDate')?.touched ? true : null"
-                [attr.aria-describedby]="oppForm.get('expectedCloseDate')?.invalid && oppForm.get('expectedCloseDate')?.touched ? 'opp-close-error' : null"></p-calendar>
+                [attr.aria-describedby]="oppForm.get('expectedCloseDate')?.invalid && oppForm.get('expectedCloseDate')?.touched ? 'opp-close-error' : null"></p-datepicker>
               @if (oppForm.get('expectedCloseDate')?.invalid && oppForm.get('expectedCloseDate')?.touched) {
                 <small id="opp-close-error" class="field-error" role="alert">La date de clôture est obligatoire.</small>
               }
@@ -257,7 +257,7 @@ interface StageOption {
             <div class="form-field">
               <label class="field-label" for="oppNotes">Notes (optionnel)</label>
               <textarea
-                pInputTextarea
+                pTextarea
                 id="oppNotes"
                 class="w-full opp-notes-textarea"
                 rows="5"
@@ -308,7 +308,7 @@ interface StageOption {
           <div class="form-field">
             <label class="field-label" for="loseReason">Motif <span class="required" aria-hidden="true">*</span></label>
             <textarea
-              pInputTextarea
+              pTextarea
               id="loseReason"
               class="w-full lose-reason-textarea"
               rows="5"
@@ -535,12 +535,12 @@ interface StageOption {
       border-top: 1px solid var(--color-border-subtle, #e2e8f0);
       background: var(--color-background-subtle, #f8fafc);
     }
-    :host ::ng-deep .opp-form-dialog .p-dropdown,
+    :host ::ng-deep .opp-form-dialog .p-select,
     :host ::ng-deep .opp-form-dialog .p-inputnumber,
-    :host ::ng-deep .opp-form-dialog .p-calendar {
+    :host ::ng-deep .opp-form-dialog .p-datepicker {
       width: 100%;
     }
-    :host ::ng-deep .opp-form-dialog .p-calendar.p-calendar-w-btn .p-datepicker-trigger {
+    :host ::ng-deep .opp-form-dialog .p-datepicker.p-datepicker-w-btn .p-datepicker-trigger {
       background: var(--color-background-elevated);
       border-color: var(--color-border-default);
       color: var(--color-text-secondary);
@@ -548,12 +548,12 @@ interface StageOption {
       width: 2.75rem;
       padding: 0;
     }
-    :host ::ng-deep .opp-form-dialog .p-calendar.p-calendar-w-btn .p-datepicker-trigger:hover {
+    :host ::ng-deep .opp-form-dialog .p-datepicker.p-datepicker-w-btn .p-datepicker-trigger:hover {
       background: var(--color-background-subtle);
       border-color: var(--color-border-strong);
       color: var(--color-text-primary);
     }
-    :host ::ng-deep .opp-form-dialog .p-calendar.p-calendar-w-btn .p-datepicker-trigger:focus {
+    :host ::ng-deep .opp-form-dialog .p-datepicker.p-datepicker-w-btn .p-datepicker-trigger:focus {
       box-shadow: 0 0 0 3px var(--color-primary-200);
       outline: none;
     }

@@ -64,6 +64,11 @@ public static class CnssContributionRemittanceBuilder
         if (missingCnss > 0)
             batchWarnings.Add($"{missingCnss} salarié(s) sans numéro CNSS.");
 
+        var exoneratedRegime = lines.Count(l =>
+            l.Warnings.Any(w => w.Contains("Régime exonéré CNSS", StringComparison.Ordinal)));
+        if (exoneratedRegime > 0)
+            batchWarnings.Add($"{exoneratedRegime} salarié(s) sur régime exonéré CNSS (contributions à 0).");
+
         return new CnssContributionRemittanceBatch
         {
             Year = year,
@@ -92,6 +97,8 @@ public static class CnssContributionRemittanceBuilder
         var warnings = new List<string>();
         if (string.IsNullOrWhiteSpace(payslip.CnssNumber))
             warnings.Add("CNSS manquant");
+        if (payslip.AppliedCnssEmployeeRate == 0m && payslip.CnssableGross > 0m)
+            warnings.Add("Régime exonéré CNSS");
 
         var lineTotal = R(payslip.CnssEmployee + payslip.CnssEmployer + payslip.WorkAccidentContribution);
 

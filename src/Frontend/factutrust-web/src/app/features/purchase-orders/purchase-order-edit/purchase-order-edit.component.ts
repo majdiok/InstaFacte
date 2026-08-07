@@ -3,11 +3,11 @@ import { CommonModule, CurrencyPipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { CalendarModule } from 'primeng/calendar';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { DatePickerModule } from 'primeng/datepicker';
+import { Textarea } from 'primeng/textarea';
 import { ToastModule } from 'primeng/toast';
 import { ToastService } from '@core/services/toast.service';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
@@ -42,8 +42,8 @@ interface EditOrderLine {
     standalone: true,
     imports: [
         CommonModule, RouterModule, FormsModule, CurrencyPipe,
-        TableModule, DropdownModule, InputTextModule, InputNumberModule,
-        CalendarModule, InputTextarea, ToastModule,
+        TableModule, SelectModule, InputTextModule, InputNumberModule,
+        DatePickerModule, Textarea, ToastModule,
         PageHeaderComponent, BreadcrumbComponent, ButtonComponent
     ],
     template: `
@@ -77,13 +77,13 @@ interface EditOrderLine {
 
             <div class="form-group">
               <label for="deliveryDate">Date de livraison prévue</label>
-              <p-calendar
+              <p-datepicker
                 id="deliveryDate"
                 [(ngModel)]="expectedDeliveryDate"
                 dateFormat="dd/mm/yy"
                 [showIcon]="true"
                 styleClass="w-full">
-              </p-calendar>
+              </p-datepicker>
             </div>
 
             <div class="form-group">
@@ -137,7 +137,7 @@ interface EditOrderLine {
                           <span class="existing-product">{{ line.product?.name || 'Produit inconnu' }}</span>
                         } @else {
                           <!-- New line: product dropdown -->
-                          <p-dropdown
+                          <p-select
                             [options]="products()"
                             [(ngModel)]="line.product"
                             optionLabel="name"
@@ -154,7 +154,7 @@ interface EditOrderLine {
                                 <span class="product-option-code">{{ item.code }}</span>
                               </div>
                             </ng-template>
-                          </p-dropdown>
+                          </p-select>
                         }
                       </td>
                       <td>
@@ -209,7 +209,7 @@ interface EditOrderLine {
             <div class="notes-section">
               <label for="notes">Notes</label>
               <textarea
-                pInputTextarea
+                pTextarea
                 id="notes"
                 [(ngModel)]="notes"
                 placeholder="Notes internes pour cette commande..."
@@ -466,12 +466,12 @@ interface EditOrderLine {
     }
 
     :host ::ng-deep {
-      .product-dropdown .p-dropdown-label {
+      .product-dropdown .p-select-label {
         padding: var(--spacing-2) var(--spacing-3);
       }
 
       // Calendar input fix - ensure input is visible alongside icon
-      .p-calendar {
+      .p-datepicker {
         display: flex;
         width: 100%;
 

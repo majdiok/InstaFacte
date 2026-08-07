@@ -2,9 +2,9 @@ import { Component, OnInit, computed, inject, input, output, signal } from '@ang
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
-import { CalendarModule } from 'primeng/calendar';
+import { DatePickerModule } from 'primeng/datepicker';
 import { finalize } from 'rxjs';
 import { PayrollService } from '@core/services/payroll.service';
 import { BankAccountService, type BankAccountDto } from '@core/services/bank-account.service';
@@ -19,9 +19,9 @@ import { PayrollAmountPipe } from '../shared';
     CommonModule,
     FormsModule,
     DialogModule,
-    DropdownModule,
+    SelectModule,
     InputTextModule,
-    CalendarModule,
+    DatePickerModule,
     ButtonComponent,
     PayrollAmountPipe
   ],
@@ -39,7 +39,7 @@ import { PayrollAmountPipe } from '../shared';
 
       <div class="field mb-3">
         <label for="cnss-pay-date">Date de paiement</label>
-        <p-calendar
+        <p-datepicker
           inputId="cnss-pay-date"
           [(ngModel)]="paymentDate"
           dateFormat="dd/mm/yy"
@@ -49,7 +49,7 @@ import { PayrollAmountPipe } from '../shared';
 
       <div class="field mb-3">
         <label for="cnss-pay-method">Mode</label>
-        <p-dropdown
+        <p-select
           inputId="cnss-pay-method"
           [options]="methodOptions"
           [(ngModel)]="method"
@@ -61,7 +61,7 @@ import { PayrollAmountPipe } from '../shared';
       @if (method !== 0) {
         <div class="field mb-3">
           <label for="cnss-pay-account">Compte bancaire débiteur</label>
-          <p-dropdown
+          <p-select
             inputId="cnss-pay-account"
             [options]="accountOptions()"
             [(ngModel)]="bankAccountId"

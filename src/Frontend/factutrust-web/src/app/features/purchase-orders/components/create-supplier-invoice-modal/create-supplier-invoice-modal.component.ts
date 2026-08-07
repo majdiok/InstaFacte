@@ -5,9 +5,9 @@ import { FormsModule, NgForm } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
-import { CalendarModule } from 'primeng/calendar';
-import { DropdownModule } from 'primeng/dropdown';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { DatePickerModule } from 'primeng/datepicker';
+import { SelectModule } from 'primeng/select';
+import { Textarea } from 'primeng/textarea';
 import { CheckboxModule } from 'primeng/checkbox';
 import { TableModule } from 'primeng/table';
 import { InputNumberModule } from 'primeng/inputnumber';
@@ -70,7 +70,7 @@ interface LineClassificationRow {
   standalone: true,
   imports: [
     CommonModule, FormsModule, DialogModule, InputTextModule,
-    CalendarModule, DropdownModule, InputTextarea, CheckboxModule,
+    DatePickerModule, SelectModule, Textarea, CheckboxModule,
     TableModule, InputNumberModule, ButtonComponent
   ],
   template: `
@@ -182,7 +182,7 @@ interface LineClassificationRow {
           <!-- Invoice Date -->
           <div class="form-group">
             <label for="invoiceDate">Date de facture <span class="required">*</span></label>
-            <p-calendar
+            <p-datepicker
               id="invoiceDate"
               [(ngModel)]="request.invoiceDate"
               name="invoiceDate"
@@ -190,13 +190,13 @@ interface LineClassificationRow {
               dateFormat="dd/mm/yy"
               [showIcon]="true"
               class="w-full">
-            </p-calendar>
+            </p-datepicker>
           </div>
 
           <!-- Payment Terms -->
           <div class="form-group">
             <label for="paymentTermDays">Conditions de paiement</label>
-            <p-dropdown
+            <p-select
               id="paymentTermDays"
               [(ngModel)]="request.paymentTermDays"
               name="paymentTermDays"
@@ -204,13 +204,13 @@ interface LineClassificationRow {
               optionLabel="label"
               optionValue="value"
               class="w-full">
-            </p-dropdown>
+            </p-select>
           </div>
 
           <!-- Payment Method (intended) -->
           <div class="form-group">
             <label for="paymentMethod">Mode de paiement prévu</label>
-            <p-dropdown
+            <p-select
               id="paymentMethod"
               [(ngModel)]="request.paymentMethod"
               name="paymentMethod"
@@ -220,7 +220,7 @@ interface LineClassificationRow {
               [showClear]="true"
               placeholder="Optionnel"
               class="w-full">
-            </p-dropdown>
+            </p-select>
           </div>
 
           <!-- External Reference -->
@@ -239,7 +239,7 @@ interface LineClassificationRow {
           <div class="form-group">
             <label for="notes">Notes</label>
             <textarea
-              pInputTextarea
+              pTextarea
               id="notes"
               [(ngModel)]="request.notes"
               name="notes"
@@ -287,7 +287,7 @@ interface LineClassificationRow {
                       (onChange)="onAssetToggle(row)"></p-checkbox>
                   </td>
                   <td>
-                    <p-dropdown
+                    <p-select
                       *ngIf="row.isFixedAsset"
                       [(ngModel)]="row.depreciationRateCategoryId"
                       [name]="'cat-' + row.lineNumber"
@@ -303,7 +303,7 @@ interface LineClassificationRow {
                       <ng-template pTemplate="selectedItem" let-cat>
                         <span *ngIf="cat">{{ cat.label }}</span>
                       </ng-template>
-                    </p-dropdown>
+                    </p-select>
                   </td>
                 </tr>
               </ng-template>
@@ -539,7 +539,7 @@ interface LineClassificationRow {
       text-align: right;
     }
 
-    :host ::ng-deep .asset-lines-table .p-dropdown {
+    :host ::ng-deep .asset-lines-table .p-select {
       min-width: 220px;
     }
 

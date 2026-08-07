@@ -45,7 +45,7 @@
         [(ngModel)]="searchTerm"
         (input)="onSearch()">
     </span>
-    <p-dropdown
+    <p-select
       [options]="statusOptions"
       [(ngModel)]="selectedStatus"
       optionLabel="label"
@@ -53,8 +53,8 @@
       placeholder="Tous les statuts"
       [showClear]="true"
       (onChange)="onFilterChange()">
-    </p-dropdown>
-    <p-calendar
+    </p-select>
+    <p-datepicker
       [(ngModel)]="dateRange"
       selectionMode="range"
       [readonlyInput]="true"
@@ -62,7 +62,7 @@
       dateFormat="dd/mm/yy"
       [showClear]="true"
       (onSelect)="onFilterChange()">
-    </p-calendar>
+    </p-datepicker>
   </div>
 </div>
 

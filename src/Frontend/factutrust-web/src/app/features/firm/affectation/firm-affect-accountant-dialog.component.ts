@@ -2,7 +2,7 @@ import { Component, EventEmitter, Input, OnChanges, Output, inject, signal } fro
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { ButtonModule } from 'primeng/button';
 import {
   FirmAssignableAccountant,
@@ -13,7 +13,7 @@ import { ToastService } from '@core/services/toast.service';
 @Component({
   selector: 'app-firm-affect-accountant-dialog',
   standalone: true,
-  imports: [CommonModule, FormsModule, DialogModule, DropdownModule, ButtonModule],
+  imports: [CommonModule, FormsModule, DialogModule, SelectModule, ButtonModule],
   template: `
     <p-dialog
       header="Affecter à un gestionnaire comptable"
@@ -30,7 +30,7 @@ import { ToastService } from '@core/services/toast.service';
 
       <label class="field">
         Gestionnaire comptable
-        <p-dropdown
+        <p-select
           [options]="accountants()"
           [(ngModel)]="selectedId"
           optionLabel="fullName"

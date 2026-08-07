@@ -8,7 +8,7 @@ import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { AutoCompleteModule } from 'primeng/autocomplete';
 import { TooltipModule } from 'primeng/tooltip';
 import { DividerModule } from 'primeng/divider';
@@ -64,7 +64,7 @@ import {
     ButtonModule,
     InputTextModule,
     InputNumberModule,
-    DropdownModule,
+    SelectModule,
     AutoCompleteModule,
     TooltipModule,
     DividerModule,
@@ -222,7 +222,7 @@ import {
                           class="btn-add-product-circle" />
                       </div>
                       <textarea
-                        pInputTextarea
+                        pTextarea
                         [(ngModel)]="editLine.description"
                         placeholder="Description (optionnel)"
                         rows="2"
@@ -341,7 +341,7 @@ import {
                         mode="decimal"
                         [style]="{ width: '60px' }">
                       </p-inputNumber>
-                      <p-dropdown
+                      <p-select
                         [(ngModel)]="editLine.discountType"
                         [options]="discountTypeOptions"
                         optionLabel="label"
@@ -350,7 +350,7 @@ import {
                         styleClass="discount-type-dropdown"
                         [style]="{ width: '56px' }"
                         [panelStyle]="{ minWidth: '72px' }">
-                      </p-dropdown>
+                      </p-select>
                     </div>
                   } @else {
                     @if (line.discountAmount > 0) {
@@ -368,7 +368,7 @@ import {
                 @if (!simpleMode()) {
                 <td class="col-vat">
                   @if (editingLineId === line.id) {
-                    <p-dropdown
+                    <p-select
                       [(ngModel)]="editLine.vatRate"
                       [options]="vatRateOptions"
                       optionLabel="label"
@@ -377,7 +377,7 @@ import {
                       styleClass="vat-rate-dropdown"
                       [style]="{ width: '80px' }"
                       [panelStyle]="{ minWidth: '12rem' }">
-                    </p-dropdown>
+                    </p-select>
                   } @else {
                     <span class="vat-badge" [class]="'vat-' + line.vatRate">
                       {{ line.vatRate }}%
@@ -738,34 +738,34 @@ import {
 
       .p-datatable-tbody > tr > td input,
       .p-datatable-tbody > tr > td .p-inputnumber,
-      .p-datatable-tbody > tr > td .p-dropdown,
+      .p-datatable-tbody > tr > td .p-select,
       .p-datatable-tbody > tr > td .p-autocomplete {
         max-width: 100%;
       }
 
-      .p-datatable-tbody > tr > td .p-dropdown {
+      .p-datatable-tbody > tr > td .p-select {
         min-width: 90px;
       }
 
       /* Exception: dropdown type remise (%/TND) plus compact */
-      .col-discount .p-dropdown.discount-type-dropdown {
+      .col-discount .p-select.discount-type-dropdown {
         min-width: unset;
       }
 
       /* Dropdown TVA (taux) : largeur adaptée pour afficher le % */
-      .col-vat .p-dropdown.vat-rate-dropdown {
+      .col-vat .p-select.vat-rate-dropdown {
         width: 80px;
         min-width: 80px;
       }
 
-      .col-vat .p-dropdown.vat-rate-dropdown .p-dropdown-label {
+      .col-vat .p-select.vat-rate-dropdown .p-select-label {
         min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
 
-      .p-dropdown .p-dropdown-label {
+      .p-select .p-select-label {
         min-width: 2.5rem;
       }
     }

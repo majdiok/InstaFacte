@@ -35,7 +35,7 @@ public sealed class CnssRemittanceExportTests
         return run;
     }
 
-    private static CnssRemittanceDataLoader CreateLoader(PayrollRun? run)
+    private static CnssRemittanceDataLoader CreateLoader(PayrollRun? run, string? cnssEmployerNumber = "9988776655")
     {
         var runs = new Mock<FactuTrust.Application.Common.Interfaces.Repositories.IPayrollRunRepository>();
         runs.Setup(r => r.GetByPeriodWithPayslipsAsync(2026, 3, It.IsAny<CancellationToken>()))
@@ -52,10 +52,98 @@ public sealed class CnssRemittanceExportTests
                 CompanyName = "Société Test",
                 Nif = "1234567A",
                 TaxRegimeDisplay = "Réel",
-                CnssEmployerNumber = "9988776655"
+                CnssEmployerNumber = cnssEmployerNumber
             });
 
         return new CnssRemittanceDataLoader(runs.Object, payments.Object, company.Object);
+    }
+
+    [Fact]
+    public async Task GenerateCnssRemittance_MissingEmployerMatricule_ReturnsPartialDataWithWarning()
+    {
+        var run = BuildValidatedRun(2026, 3, 2000m);
+        var handler = new GenerateCnssRemittanceQueryHandler(
+            CreateLoader(run, cnssEmployerNumber: null),
+            Options.Create(new AccountingSettings { PayrollCnssRemittanceEnabled = true }));
+
+        var result = await handler.Handle(new GenerateCnssRemittanceQuery(2026, 3), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Value.IsEligible);
+        Assert.Null(result.Value.EmployerCnssNumber);
+        Assert.Contains("Matricule employeur CNSS manquant.", result.Value.Warnings);
+        Assert.NotEmpty(result.Value.Lines);
+    }
+
+    [Fact]
+    public async Task ExportCsv_MissingEmployerMatricule_Fails()
+    {
+        var run = BuildValidatedRun(2026, 3, 2000m);
+        var handler = new ExportCnssRemittanceCsvQueryHandler(
+            CreateLoader(run, cnssEmployerNumber: null),
+            Options.Create(new AccountingSettings { PayrollCnssRemittanceEnabled = true }));
+
+        var result = await handler.Handle(new ExportCnssRemittanceCsvQuery(2026, 3), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains("CnssEmployerNumber", result.Error.Code);
+        Assert.Contains("matricule employeur CNSS", result.Error.Description, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExportPdf_MissingEmployerMatricule_Fails()
+    {
+        var run = BuildValidatedRun(2026, 3, 2000m);
+        var pdf = new Mock<FactuTrust.Application.Common.Interfaces.Services.IPdfService>();
+        var handler = new ExportCnssRemittancePdfQueryHandler(
+            CreateLoader(run, cnssEmployerNumber: null),
+            pdf.Object,
+            Options.Create(new AccountingSettings { PayrollCnssRemittanceEnabled = true }));
+
+        var result = await handler.Handle(new ExportCnssRemittancePdfQuery(2026, 3), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains("CnssEmployerNumber", result.Error.Code);
+        Assert.Contains("matricule employeur CNSS", result.Error.Description, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RecordPayment_MissingEmployerMatricule_Fails()
+    {
+        var run = BuildValidatedRun(2026, 3, 2000m);
+        var loader = CreateLoader(run, cnssEmployerNumber: null);
+        var runs = new Mock<FactuTrust.Application.Common.Interfaces.Repositories.IPayrollRunRepository>();
+        var payments = new Mock<FactuTrust.Application.Common.Interfaces.Repositories.ICnssContributionPaymentRepository>();
+        var bankAccounts = new Mock<FactuTrust.Application.Common.Interfaces.Repositories.IBankAccountRepository>();
+        var accounting = new Mock<FactuTrust.Application.Common.Interfaces.Services.IAccountingService>();
+        var uow = new Mock<FactuTrust.Application.Common.Interfaces.ITenantUnitOfWork>();
+        uow.Setup(u => u.ExecuteAsync(It.IsAny<Func<CancellationToken, Task<Result<Guid>>>>(), It.IsAny<CancellationToken>()))
+            .Returns<Func<CancellationToken, Task<Result<Guid>>>, CancellationToken>((action, ct) => action(ct));
+        var currentUser = new Mock<FactuTrust.Application.Common.Interfaces.ICurrentUser>();
+
+        var handler = new RecordCnssContributionPaymentCommandHandler(
+            loader,
+            runs.Object,
+            payments.Object,
+            bankAccounts.Object,
+            accounting.Object,
+            uow.Object,
+            currentUser.Object,
+            Options.Create(new AccountingSettings { PayrollCnssRemittanceEnabled = true }));
+
+        var result = await handler.Handle(
+            new RecordCnssContributionPaymentCommand(new FactuTrust.Application.DTOs.RecordCnssContributionPaymentRequest
+            {
+                Year = 2026,
+                Month = 3,
+                PaymentDate = new DateTime(2026, 4, 15),
+                Method = PaymentMethod.Cash
+            }),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains("CnssEmployerNumber", result.Error.Code);
+        Assert.Contains("matricule employeur CNSS", result.Error.Description, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

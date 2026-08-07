@@ -3,9 +3,9 @@ import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { ButtonModule } from 'primeng/button';
 import { ToastModule } from 'primeng/toast';
 import { ToastService } from '@core/services/toast.service';
@@ -26,9 +26,9 @@ import { ErrorMessageService } from '@core/services/error-message.service';
         ReactiveFormsModule,
         RouterModule,
         InputTextModule,
-        InputTextarea,
+        Textarea,
         InputNumberModule,
-        DropdownModule,
+        SelectModule,
         ButtonModule,
         ToastModule,
         PageHeaderComponent,
@@ -57,7 +57,7 @@ import { ErrorMessageService } from '@core/services/error-message.service';
         <app-form-section title="Détails du Stock" icon="pi-box" [number]="1">
           <div class="form-group">
             <label for="warehouse">Entrepôt <span class="required">*</span></label>
-            <p-dropdown 
+            <p-select 
               id="warehouse"
               [options]="warehouses" 
               formControlName="warehouse"
@@ -65,7 +65,7 @@ import { ErrorMessageService } from '@core/services/error-message.service';
               placeholder="Sélectionner un entrepôt"
               styleClass="w-full"
               [class.ng-invalid]="isInvalid('warehouse')">
-            </p-dropdown>
+            </p-select>
             @if (isInvalid('warehouse')) {
               <div class="form-error">
                 <i class="pi pi-exclamation-circle"></i>
@@ -76,7 +76,7 @@ import { ErrorMessageService } from '@core/services/error-message.service';
 
           <div class="form-group">
             <label for="product">Produit <span class="required">*</span></label>
-            <p-dropdown 
+            <p-select 
               id="product"
               [options]="products" 
               formControlName="product"
@@ -86,7 +86,7 @@ import { ErrorMessageService } from '@core/services/error-message.service';
               placeholder="Chercher un produit"
               styleClass="w-full"
               [class.ng-invalid]="isInvalid('product')">
-            </p-dropdown>
+            </p-select>
              @if (isInvalid('product')) {
               <div class="form-error">
                 <i class="pi pi-exclamation-circle"></i>
@@ -160,7 +160,7 @@ import { ErrorMessageService } from '@core/services/error-message.service';
         <app-form-section title="Informations Complémentaires" icon="pi-file-edit" [number]="3">
            <div class="form-group">
               <label for="reason">Motif <span class="required">*</span></label>
-              <p-dropdown 
+              <p-select 
                 id="reason"
                 [options]="entryReasons" 
                 formControlName="reason"
@@ -169,7 +169,7 @@ import { ErrorMessageService } from '@core/services/error-message.service';
                 placeholder="Raison de l'entrée"
                 styleClass="w-full"
                 [class.ng-invalid]="isInvalid('reason')">
-              </p-dropdown>
+              </p-select>
                @if (isInvalid('reason')) {
                 <div class="form-error">
                   <i class="pi pi-exclamation-circle"></i>
@@ -181,7 +181,7 @@ import { ErrorMessageService } from '@core/services/error-message.service';
             <div class="form-group">
               <label for="notes">Notes / Référence</label>
               <textarea 
-                pInputTextarea 
+                pTextarea 
                 id="notes" 
                 formControlName="notes"
                 placeholder="Ex: BL-2024-001"
@@ -294,7 +294,7 @@ import { ErrorMessageService } from '@core/services/error-message.service';
     }
 
     :host ::ng-deep {
-      .p-inputnumber, .p-dropdown { width: 100%; }
+      .p-inputnumber, .p-select { width: 100%; }
     }
   `]
 })

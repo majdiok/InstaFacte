@@ -30,19 +30,7 @@ public sealed class GenerateCnssRemittanceQueryHandler
         if (guard.IsFailure)
             return Result.Failure<CnssContributionRemittanceDto>(guard.Error);
 
-        var dtoResult = await _loader.LoadDtoAsync(request.Year, request.Month, cancellationToken);
-        if (dtoResult.IsFailure)
-            return dtoResult;
-
-        var dto = dtoResult.Value;
-        if (dto.IsEligible && string.IsNullOrWhiteSpace(dto.EmployerCnssNumber))
-        {
-            return Result.Failure<CnssContributionRemittanceDto>(Error.Validation(
-                "CnssEmployerNumber",
-                "Le matricule employeur CNSS est obligatoire pour générer le bordereau."));
-        }
-
-        return dtoResult;
+        return await _loader.LoadDtoAsync(request.Year, request.Month, cancellationToken);
     }
 }
 

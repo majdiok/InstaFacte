@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { ConfirmationService } from 'primeng/api';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
@@ -25,7 +25,7 @@ import { ToastService } from '@core/services/toast.service';
     FormsModule,
     TableModule,
     ButtonModule,
-    DropdownModule,
+    SelectModule,
     ConfirmDialogModule,
     PageHeaderComponent,
     EmptyStateComponent
@@ -50,7 +50,7 @@ import { ToastService } from '@core/services/toast.service';
 
     <div class="toolbar fc-card">
       <label>Année
-        <p-dropdown
+        <p-select
           [options]="yearOptions"
           [(ngModel)]="selectedYear"
           [showClear]="true"
@@ -58,7 +58,7 @@ import { ToastService } from '@core/services/toast.service';
           (onChange)="load()" />
       </label>
       <label>Collaborateur
-        <p-dropdown
+        <p-select
           [options]="collaboratorOptions"
           [(ngModel)]="selectedCollaboratorId"
           optionLabel="label"

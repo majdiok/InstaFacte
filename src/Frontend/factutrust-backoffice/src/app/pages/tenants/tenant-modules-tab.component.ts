@@ -12,10 +12,10 @@ import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { InputTextModule } from 'primeng/inputtext';
-import { CalendarModule } from 'primeng/calendar';
+import { DatePickerModule } from 'primeng/datepicker';
 import { TooltipModule } from 'primeng/tooltip';
 import { MessageService } from 'primeng/api';
 
@@ -68,10 +68,10 @@ const MODULE_CATALOG: ModuleOption[] = [
     TableModule,
     ButtonModule,
     DialogModule,
-    DropdownModule,
+    SelectModule,
     InputSwitchModule,
     InputTextModule,
-    CalendarModule,
+    DatePickerModule,
     TooltipModule,
     FtBadgeComponent,
     FtSkeletonComponent,
@@ -173,7 +173,7 @@ const MODULE_CATALOG: ModuleOption[] = [
       <div class="form-grid">
         <div class="field">
           <label for="tm-module">Module</label>
-          <p-dropdown
+          <p-select
             inputId="tm-module"
             [options]="moduleOptions"
             [(ngModel)]="formModule"
@@ -190,7 +190,7 @@ const MODULE_CATALOG: ModuleOption[] = [
         </div>
         <div class="field">
           <label for="tm-expires">Date d'expiration (optionnel)</label>
-          <p-calendar
+          <p-datepicker
             inputId="tm-expires"
             [(ngModel)]="formExpiresAt"
             dateFormat="dd/mm/yy"
@@ -274,7 +274,7 @@ const MODULE_CATALOG: ModuleOption[] = [
       }
       .checkbox { flex-direction: row; align-items: center; gap: 0.6rem; }
       :host ::ng-deep .w-full { width: 100%; }
-      :host ::ng-deep .p-calendar { width: 100%; }
+      :host ::ng-deep .p-datepicker { width: 100%; }
     `
   ]
 })

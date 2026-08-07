@@ -6,7 +6,7 @@ import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { TooltipModule } from 'primeng/tooltip';
 import { ToastModule } from 'primeng/toast';
 import { MessageService } from 'primeng/api';
@@ -23,7 +23,7 @@ import { SkeletonTableComponent } from '@shared/components/skeleton/skeleton-tab
   standalone: true,
   imports: [
     CommonModule, FormsModule, RouterModule, TableModule, ButtonModule, DialogModule,
-    InputTextModule, InputTextarea, TooltipModule, ToastModule,
+    InputTextModule, Textarea, TooltipModule, ToastModule,
     StudioPageShellComponent, EmptyStateComponent, StatusBadgeComponent, SkeletonTableComponent
   ],
   template: `
@@ -97,7 +97,7 @@ import { SkeletonTableComponent } from '@shared/components/skeleton/skeleton-tab
         <label>Icône (FontAwesome)</label>
         <input pInputText [(ngModel)]="draftIcon" placeholder="fa-solid fa-file-contract" />
         <label>Description</label>
-        <textarea pInputTextarea [(ngModel)]="draftDescription" rows="2"></textarea>
+        <textarea pTextarea [(ngModel)]="draftDescription" rows="2"></textarea>
       </div>
       <ng-template pTemplate="footer">
         <button pButton type="button" label="Annuler" class="p-button-text" (click)="createVisible = false"></button>

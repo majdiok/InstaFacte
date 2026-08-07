@@ -3,9 +3,9 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { TagModule } from 'primeng/tag';
-import { CalendarModule } from 'primeng/calendar';
+import { DatePickerModule } from 'primeng/datepicker';
 import { DialogModule } from 'primeng/dialog';
 import { AuthService } from '@core/services/auth.service';
 import { ToastService } from '@core/services/toast.service';
@@ -20,8 +20,8 @@ import { FirmLeaveRequestDialogComponent } from './firm-leave-request-dialog.com
   selector: 'app-firm-leaves-requests',
   standalone: true,
   imports: [
-    CommonModule, FormsModule, TableModule, ButtonModule, DropdownModule,
-    TagModule, CalendarModule, DialogModule, FirmLeaveRequestDialogComponent
+    CommonModule, FormsModule, TableModule, ButtonModule, SelectModule,
+    TagModule, DatePickerModule, DialogModule, FirmLeaveRequestDialogComponent
   ],
   template: `
     <div class="toolbar">
@@ -44,14 +44,14 @@ import { FirmLeaveRequestDialogComponent } from './firm-leave-request-dialog.com
 
     <div class="filters">
       @if (isManager()) {
-        <p-dropdown [(ngModel)]="filterUserId" [options]="collaborators()" optionLabel="label" optionValue="value"
+        <p-select [(ngModel)]="filterUserId" [options]="collaborators()" optionLabel="label" optionValue="value"
           placeholder="Collaborateur" [showClear]="true" [filter]="true" (onChange)="reload()" />
       }
-      <p-dropdown [(ngModel)]="filterStatus" [options]="statusOptions" optionLabel="label" optionValue="value"
+      <p-select [(ngModel)]="filterStatus" [options]="statusOptions" optionLabel="label" optionValue="value"
         placeholder="Statut" [showClear]="true" (onChange)="reload()" />
-      <p-dropdown [(ngModel)]="filterTypeId" [options]="types()" optionLabel="label" optionValue="id"
+      <p-select [(ngModel)]="filterTypeId" [options]="types()" optionLabel="label" optionValue="id"
         placeholder="Type" [showClear]="true" (onChange)="reload()" />
-      <p-dropdown [(ngModel)]="filterYear" [options]="yearOptions" placeholder="Année" (onChange)="reload()" />
+      <p-select [(ngModel)]="filterYear" [options]="yearOptions" placeholder="Année" (onChange)="reload()" />
       <button type="button" pButton label="Réinitialiser" class="p-button-text p-button-sm" (click)="resetFilters()"></button>
     </div>
 

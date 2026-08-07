@@ -5,9 +5,9 @@ import { ActivatedRoute } from '@angular/router';
 import { Title } from '@angular/platform-browser';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { MessageModule } from 'primeng/message';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -39,9 +39,9 @@ import {
     FormsModule,
     TableModule,
     TagModule,
-    DropdownModule,
+    SelectModule,
     InputNumberModule,
-    InputTextarea,
+    Textarea,
     MessageModule,
     PageHeaderComponent,
     ButtonComponent,
@@ -71,7 +71,7 @@ import {
           <div class="payroll-form-row">
             <div class="payroll-form-group">
               <label for="regEmployee">Salarié</label>
-              <p-dropdown inputId="regEmployee" [options]="employees()" optionLabel="fullName" optionValue="id"
+              <p-select inputId="regEmployee" [options]="employees()" optionLabel="fullName" optionValue="id"
                 [(ngModel)]="employeeId" (ngModelChange)="onEmployeeChange()" [filter]="true" filterBy="fullName"
                 placeholder="Sélectionner un salarié" appendTo="body" styleClass="w-full" />
             </div>
@@ -82,7 +82,7 @@ import {
             </div>
             <div class="payroll-form-group">
               <label for="regMonth">Mois de régularisation</label>
-              <p-dropdown inputId="regMonth" [options]="monthOptions" optionLabel="label" optionValue="value"
+              <p-select inputId="regMonth" [options]="monthOptions" optionLabel="label" optionValue="value"
                 [(ngModel)]="month" (ngModelChange)="onPeriodChange()" appendTo="body" styleClass="w-full" />
             </div>
           </div>
@@ -141,7 +141,7 @@ import {
           </app-form-section>
 
           <app-form-section title="Notes" icon="pi-comment" [number]="3">
-            <textarea pInputTextarea [(ngModel)]="notes" rows="3" class="w-full" maxlength="1000"
+            <textarea pTextarea [(ngModel)]="notes" rows="3" class="w-full" maxlength="1000"
               placeholder="Saisir une note éventuelle…"></textarea>
           </app-form-section>
         }

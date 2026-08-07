@@ -11,8 +11,8 @@ import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { InputTextModule } from 'primeng/inputtext';
 import { ButtonModule } from 'primeng/button';
-import { DropdownModule } from 'primeng/dropdown';
-import { CalendarModule } from 'primeng/calendar';
+import { SelectModule } from 'primeng/select';
+import { DatePickerModule } from 'primeng/datepicker';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { DialogModule } from 'primeng/dialog';
 import { TooltipModule } from 'primeng/tooltip';
@@ -50,8 +50,8 @@ import { CREDITS_FR } from './credits.i18n.fr';
     TableModule,
     InputTextModule,
     ButtonModule,
-    DropdownModule,
-    CalendarModule,
+    SelectModule,
+    DatePickerModule,
     InputNumberModule,
     DialogModule,
     TooltipModule,
@@ -89,7 +89,7 @@ import { CREDITS_FR } from './credits.i18n.fr';
     </section>
 
     <ft-filter-toolbar>
-      <p-dropdown
+      <p-select
         [options]="tenantOptions()"
         [(ngModel)]="filterTenantId"
         (ngModelChange)="onTenantFilterChange()"
@@ -99,7 +99,7 @@ import { CREDITS_FR } from './credits.i18n.fr';
         [showClear]="true"
         [filter]="true"
         styleClass="ft-dd-large" />
-      <p-dropdown
+      <p-select
         [options]="activeOptions"
         [(ngModel)]="filterActiveOnly"
         (ngModelChange)="onActiveFilterChange()"
@@ -211,7 +211,7 @@ import { CREDITS_FR } from './credits.i18n.fr';
 
       <div class="field">
         <label for="gr-tenant">{{ t('grant.field.tenant') }}</label>
-        <p-dropdown
+        <p-select
           inputId="gr-tenant"
           [options]="tenantOptionsNonNull()"
           [(ngModel)]="grantTenantId"
@@ -248,7 +248,7 @@ import { CREDITS_FR } from './credits.i18n.fr';
 
       <div class="field">
         <label for="gr-expires">{{ t('grant.field.expiresAt') }}</label>
-        <p-calendar
+        <p-datepicker
           inputId="gr-expires"
           [(ngModel)]="grantExpiresAt"
           dateFormat="dd/mm/yy"

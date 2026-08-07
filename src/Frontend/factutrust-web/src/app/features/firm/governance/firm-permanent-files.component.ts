@@ -6,7 +6,7 @@ import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { InputTextModule } from 'primeng/inputtext';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { CheckboxModule } from 'primeng/checkbox';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
@@ -22,7 +22,7 @@ import { ConfirmationService } from '@core/services/confirmation.service';
   standalone: true,
   imports: [
     CommonModule, FormsModule, RouterModule, TableModule, ButtonModule, TagModule,
-    InputTextModule, DropdownModule, CheckboxModule, PageHeaderComponent, EmptyStateComponent
+    InputTextModule, SelectModule, CheckboxModule, PageHeaderComponent, EmptyStateComponent
   ],
   template: `
     <app-page-header title="Dossiers permanents" subtitle="Identité juridique et statut administratif (normes TN)">
@@ -53,7 +53,7 @@ import { ConfirmationService } from '@core/services/confirmation.service';
       <div class="fc-card filters">
         <input pInputText [ngModel]="search()" (ngModelChange)="search.set($event)"
           placeholder="Rechercher société ou NIF…" class="search" />
-        <p-dropdown [options]="statusFilters" [ngModel]="statusFilter()" (ngModelChange)="statusFilter.set($event)"
+        <p-select [options]="statusFilters" [ngModel]="statusFilter()" (ngModelChange)="statusFilter.set($event)"
           optionLabel="label" optionValue="value" appendTo="body" placeholder="Statut" />
         <label class="archived-toggle">
           <p-checkbox [ngModel]="includeArchived()" (ngModelChange)="includeArchived.set($event)" [binary]="true" inputId="incArch" />

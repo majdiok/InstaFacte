@@ -29,25 +29,31 @@ import { CnssRemittanceTabComponent } from './cnss-remittance-tab.component';
           <i class="pi pi-building-columns mr-2"></i>
           <span>DTS CNSS</span>
         </ng-template>
-        <app-dts-declaration-tab
-          [initialYear]="initialYear()"
-          [initialQuarter]="initialQuarter()" />
+        <ng-template pTemplate="content">
+          <app-dts-declaration-tab
+            [initialYear]="initialYear()"
+            [initialQuarter]="initialQuarter()" />
+        </ng-template>
       </p-tabPanel>
       <p-tabPanel>
         <ng-template pTemplate="header">
           <i class="pi pi-wallet mr-2"></i>
           <span>Bordereau CNSS</span>
         </ng-template>
-        <app-cnss-remittance-tab
-          [initialYear]="initialYear()"
-          [initialMonth]="initialMonth()" />
+        <ng-template pTemplate="content">
+          <app-cnss-remittance-tab
+            [initialYear]="initialYear()"
+            [initialMonth]="initialMonth()" />
+        </ng-template>
       </p-tabPanel>
       <p-tabPanel>
         <ng-template pTemplate="header">
           <i class="pi pi-file-export mr-2"></i>
           <span>Certificats RS</span>
         </ng-template>
-        <app-withholding-certificates-tab [initialYear]="initialYear()" />
+        <ng-template pTemplate="content">
+          <app-withholding-certificates-tab [initialYear]="initialYear()" />
+        </ng-template>
       </p-tabPanel>
     </p-tabView>
   `

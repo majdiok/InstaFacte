@@ -13,8 +13,8 @@ import { TableModule } from 'primeng/table';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { CalendarModule } from 'primeng/calendar';
-import { DropdownModule } from 'primeng/dropdown';
+import { DatePickerModule } from 'primeng/datepicker';
+import { SelectModule } from 'primeng/select';
 import { TooltipModule } from 'primeng/tooltip';
 import { CheckboxModule } from 'primeng/checkbox';
 import { MessageService } from 'primeng/api';
@@ -60,8 +60,8 @@ import { INVOICES_FR } from './invoices.i18n.fr';
     DialogModule,
     InputTextModule,
     InputNumberModule,
-    CalendarModule,
-    DropdownModule,
+    DatePickerModule,
+    SelectModule,
     TooltipModule,
     CheckboxModule,
     FtPageHeaderComponent,
@@ -361,7 +361,7 @@ import { INVOICES_FR } from './invoices.i18n.fr';
         </div>
         <div class="field">
           <label for="rc-method">{{ t('receipt.field.method') }}</label>
-          <p-dropdown
+          <p-select
             inputId="rc-method"
             [options]="methodOptions"
             [(ngModel)]="receiptMethod"
@@ -372,7 +372,7 @@ import { INVOICES_FR } from './invoices.i18n.fr';
         </div>
         <div class="field">
           <label for="rc-date">{{ t('receipt.field.paymentDate') }}</label>
-          <p-calendar
+          <p-datepicker
             inputId="rc-date"
             [(ngModel)]="receiptDate"
             dateFormat="dd/mm/yy"

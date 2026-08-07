@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -41,7 +41,7 @@ interface CategoryOption {
     TableModule,
     ButtonModule,
     InputTextModule,
-    DropdownModule,
+    SelectModule,
     TagModule,
     TooltipModule,
     ConfirmDialogModule,
@@ -96,21 +96,21 @@ interface CategoryOption {
             class="w-full">
         </span>
 
-        <p-dropdown 
+        <p-select 
           [options]="categoryOptions" 
           [(ngModel)]="selectedCategory"
           placeholder="Toutes les types"
           [showClear]="true"
           (onChange)="onSearch()">
-        </p-dropdown>
+        </p-select>
 
-        <p-dropdown 
+        <p-select 
           [options]="statusOptions" 
           [(ngModel)]="selectedStatus"
           placeholder="Tous les statuts"
           [showClear]="true"
           (onChange)="onSearch()">
-        </p-dropdown>
+        </p-select>
       </div>
     </div>
 

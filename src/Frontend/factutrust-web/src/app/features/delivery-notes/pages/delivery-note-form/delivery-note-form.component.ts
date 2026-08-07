@@ -5,10 +5,10 @@ import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { CardModule } from 'primeng/card';
 import { InputTextModule } from 'primeng/inputtext';
-import { DropdownModule } from 'primeng/dropdown';
-import { CalendarModule } from 'primeng/calendar';
+import { SelectModule } from 'primeng/select';
+import { DatePickerModule } from 'primeng/datepicker';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { CheckboxModule } from 'primeng/checkbox';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
@@ -64,10 +64,10 @@ interface LineRow extends LinePromotionPreview {
     ButtonModule,
     CardModule,
     InputTextModule,
-    DropdownModule,
-    CalendarModule,
+    SelectModule,
+    DatePickerModule,
     InputNumberModule,
-    InputTextarea,
+    Textarea,
     CheckboxModule,
     TagModule,
     TooltipModule,
@@ -100,7 +100,7 @@ interface LineRow extends LinePromotionPreview {
               <label for="client">Client <span class="required">*</span></label>
               <div class="client-cell">
                 <div class="client-cell-input">
-                  <p-dropdown
+                  <p-select
                     id="client"
                     [options]="clientOptions()"
                     [(ngModel)]="selectedClientId"
@@ -113,7 +113,7 @@ interface LineRow extends LinePromotionPreview {
                     [showClear]="true"
                     name="client"
                     styleClass="w-full">
-                  </p-dropdown>
+                  </p-select>
                 </div>
                 @if (canCreateClient()) {
                   <app-button
@@ -129,7 +129,7 @@ interface LineRow extends LinePromotionPreview {
             </div>
             <div class="field">
               <label for="issueDate">Date d'émission <span class="required">*</span></label>
-              <p-calendar
+              <p-datepicker
                 id="issueDate"
                 [(ngModel)]="issueDate"
                 [readonlyInput]="true"
@@ -137,7 +137,7 @@ interface LineRow extends LinePromotionPreview {
                 name="issueDate"
                 (onSelect)="onIssueDateChange()"
                 styleClass="w-full">
-              </p-calendar>
+              </p-datepicker>
             </div>
             <div class="field">
               <label for="reference">Référence</label>
@@ -325,7 +325,7 @@ interface LineRow extends LinePromotionPreview {
           <div class="field">
             <label for="notes">Notes générales</label>
             <textarea
-              pInputTextarea
+              pTextarea
               id="notes"
               [(ngModel)]="notes"
               name="notes"
@@ -555,7 +555,7 @@ interface LineRow extends LinePromotionPreview {
       flex: 1;
       min-width: 0;
     }
-    :host ::ng-deep .client-cell-input .p-dropdown {
+    :host ::ng-deep .client-cell-input .p-select {
       width: 100%;
     }
     .btn-add-client-circle {

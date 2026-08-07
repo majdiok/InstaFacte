@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { TableModule, TableLazyLoadEvent } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { CheckboxModule } from 'primeng/checkbox';
@@ -42,7 +42,7 @@ interface StatusOption {
     TableModule,
     ButtonModule,
     InputTextModule,
-    DropdownModule,
+    SelectModule,
     TagModule,
     TooltipModule,
     CheckboxModule,
@@ -88,14 +88,14 @@ interface StatusOption {
 
         <div class="ft-field">
           <label for="so-status">Statut</label>
-          <p-dropdown
+          <p-select
             inputId="so-status"
             [options]="statusOptions"
             [(ngModel)]="selectedStatus"
             optionLabel="label"
             optionValue="value"
             (onChange)="applyFilters()"
-            appendTo="body"></p-dropdown>
+            appendTo="body"></p-select>
         </div>
 
         <div class="ft-field">

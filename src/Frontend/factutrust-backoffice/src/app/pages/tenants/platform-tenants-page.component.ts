@@ -13,7 +13,7 @@ import { Subject, debounceTime, distinctUntilChanged, takeUntil } from 'rxjs';
 import { TableLazyLoadEvent, TableModule } from 'primeng/table';
 import { InputTextModule } from 'primeng/inputtext';
 import { ButtonModule } from 'primeng/button';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { CheckboxModule } from 'primeng/checkbox';
 import { SplitButtonModule } from 'primeng/splitbutton';
 import { TooltipModule } from 'primeng/tooltip';
@@ -61,7 +61,7 @@ interface ActiveChip {
     TableModule,
     InputTextModule,
     ButtonModule,
-    DropdownModule,
+    SelectModule,
     CheckboxModule,
     SplitButtonModule,
     TooltipModule,
@@ -162,7 +162,7 @@ interface ActiveChip {
           aria-label="Recherche entreprises"
         />
       </span>
-      <p-dropdown
+      <p-select
         [options]="segmentOptions"
         [ngModel]="filterSegment()"
         (ngModelChange)="setFilter('segment', $event)"
@@ -172,7 +172,7 @@ interface ActiveChip {
         [showClear]="true"
         styleClass="ft-dd"
       />
-      <p-dropdown
+      <p-select
         [options]="planOptions"
         [ngModel]="filterPlan()"
         (ngModelChange)="setFilter('plan', $event)"
@@ -182,7 +182,7 @@ interface ActiveChip {
         [showClear]="true"
         styleClass="ft-dd"
       />
-      <p-dropdown
+      <p-select
         [options]="subStatusOptions"
         [ngModel]="filterSubStatus()"
         (ngModelChange)="setFilter('subscriptionStatus', $event)"
@@ -192,7 +192,7 @@ interface ActiveChip {
         [showClear]="true"
         styleClass="ft-dd"
       />
-      <p-dropdown
+      <p-select
         [options]="activeOptions"
         [ngModel]="filterActive()"
         (ngModelChange)="setFilter('isActive', $event)"
@@ -202,7 +202,7 @@ interface ActiveChip {
         [showClear]="true"
         styleClass="ft-dd"
       />
-      <p-dropdown
+      <p-select
         [options]="taxOptions"
         [ngModel]="filterTax()"
         (ngModelChange)="setFilter('taxRegime', $event)"

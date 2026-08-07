@@ -1,7 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { TableModule } from 'primeng/table';
@@ -20,7 +20,7 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
     CommonModule,
     FormsModule,
     TabViewModule,
-    DropdownModule,
+    SelectModule,
     InputNumberModule,
     InputSwitchModule,
     TableModule,
@@ -206,7 +206,7 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
               </div>
               <div class="payroll-form-group">
                 <label for="smigExemptionMode">Exonération IRPP SMIG (art. 21)</label>
-                <p-dropdown
+                <p-select
                   inputId="smigExemptionMode"
                   [(ngModel)]="params()!.smigIrppExemptionMode"
                   name="smigExemptionMode"

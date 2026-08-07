@@ -6,7 +6,7 @@ import { TagModule } from 'primeng/tag';
 import { TableModule } from 'primeng/table';
 import { ToastModule } from 'primeng/toast';
 import { DialogModule } from 'primeng/dialog';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { ToastService } from '@core/services/toast.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
@@ -28,7 +28,7 @@ import { CreateSupplierInvoiceModalComponent } from '@features/purchase-orders/c
   standalone: true,
   imports: [
     CommonModule, RouterModule, FormsModule, CurrencyPipe, DatePipe,
-    TagModule, TableModule, ToastModule, DialogModule, InputTextarea,
+    TagModule, TableModule, ToastModule, DialogModule, Textarea,
     PageHeaderComponent, BreadcrumbComponent, ButtonComponent, StatusBadgeComponent,
     CreateSupplierInvoiceModalComponent
   ],
@@ -287,7 +287,7 @@ import { CreateSupplierInvoiceModalComponent } from '@features/purchase-orders/c
         Indiquez le motif d'annulation. Si le bon était validé, le stock et les quantités du BC seront contrepassés.
       </p>
       <textarea
-        pInputTextarea
+        pTextarea
         [(ngModel)]="cancellationReason"
         placeholder="Motif d'annulation…"
         [rows]="4"

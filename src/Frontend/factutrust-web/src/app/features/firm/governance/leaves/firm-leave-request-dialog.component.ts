@@ -3,9 +3,9 @@ import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { ButtonModule } from 'primeng/button';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
-import { CalendarModule } from 'primeng/calendar';
+import { DatePickerModule } from 'primeng/datepicker';
 import { CheckboxModule } from 'primeng/checkbox';
 import { AuthService } from '@core/services/auth.service';
 import { ToastService } from '@core/services/toast.service';
@@ -18,7 +18,7 @@ import { FIRM_LEAVE_DAY_UNITS, FirmLeaveRequest, FirmLeaveType } from './data-ac
   standalone: true,
   imports: [
     CommonModule, ReactiveFormsModule, DialogModule, ButtonModule,
-    DropdownModule, InputTextModule, CalendarModule, CheckboxModule
+    SelectModule, InputTextModule, DatePickerModule, CheckboxModule
   ],
   template: `
     <p-dialog
@@ -31,28 +31,28 @@ import { FIRM_LEAVE_DAY_UNITS, FirmLeaveRequest, FirmLeaveType } from './data-ac
       <form [formGroup]="form" class="dlg-form">
         @if (isManager()) {
           <label>Collaborateur
-            <p-dropdown formControlName="userId" [options]="collaborators()" optionLabel="label" optionValue="value"
+            <p-select formControlName="userId" [options]="collaborators()" optionLabel="label" optionValue="value"
               placeholder="Moi-même par défaut" [showClear]="true" [filter]="true" appendTo="body" />
           </label>
         }
         <label>Type d'absence *
-          <p-dropdown formControlName="leaveTypeId" [options]="types" optionLabel="label" optionValue="id"
+          <p-select formControlName="leaveTypeId" [options]="types" optionLabel="label" optionValue="id"
             placeholder="Sélectionner" appendTo="body" />
         </label>
         <div class="row2">
           <label>Date début *
-            <p-calendar formControlName="startDate" dateFormat="dd/mm/yy" [showIcon]="true" appendTo="body" (onSelect)="recomputeDays()" />
+            <p-datepicker formControlName="startDate" dateFormat="dd/mm/yy" [showIcon]="true" appendTo="body" (onSelect)="recomputeDays()" />
           </label>
           <label>Fin de journée
-            <p-dropdown formControlName="startUnit" [options]="units" optionLabel="label" optionValue="value" appendTo="body" (onChange)="recomputeDays()" />
+            <p-select formControlName="startUnit" [options]="units" optionLabel="label" optionValue="value" appendTo="body" (onChange)="recomputeDays()" />
           </label>
         </div>
         <div class="row2">
           <label>Date fin *
-            <p-calendar formControlName="endDate" dateFormat="dd/mm/yy" [showIcon]="true" appendTo="body" (onSelect)="recomputeDays()" />
+            <p-datepicker formControlName="endDate" dateFormat="dd/mm/yy" [showIcon]="true" appendTo="body" (onSelect)="recomputeDays()" />
           </label>
           <label>Fin de journée
-            <p-dropdown formControlName="endUnit" [options]="units" optionLabel="label" optionValue="value" appendTo="body" (onChange)="recomputeDays()" />
+            <p-select formControlName="endUnit" [options]="units" optionLabel="label" optionValue="value" appendTo="body" (onChange)="recomputeDays()" />
           </label>
         </div>
         <label>Jours ouvrés

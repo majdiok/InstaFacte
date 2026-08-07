@@ -8,8 +8,10 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { SelectButtonModule } from 'primeng/selectbutton';
+import { InputSwitchModule } from 'primeng/inputswitch';
+import { InputTextModule } from 'primeng/inputtext';
 import { MessageService } from 'primeng/api';
 
 import { PlatformAiSettingsService } from '@core/services/platform-ai-settings.service';
@@ -43,7 +45,7 @@ interface InferenceDeviceOption {
   imports: [
     FormsModule,
     ButtonModule,
-    DropdownModule,
+    SelectModule,
     InputSwitchModule,
     InputTextModule,
     SelectButtonModule,
@@ -110,7 +112,7 @@ interface InferenceDeviceOption {
         @if (d.availableModels.length) {
           <div class="field">
             <label for="ai-model">Modèle utilisé</label>
-            <p-dropdown
+            <p-select
               inputId="ai-model"
               [options]="modelOptions()"
               [(ngModel)]="selectedModelRef"
@@ -135,7 +137,7 @@ interface InferenceDeviceOption {
         @if (d.availableModels.length) {
           <div class="field">
             <label for="ai-import-model">Modèle d'import</label>
-            <p-dropdown
+            <p-select
               inputId="ai-import-model"
               [options]="modelOptions()"
               [(ngModel)]="selectedImportModelRef"
@@ -156,7 +158,7 @@ interface InferenceDeviceOption {
         @if (d.availableModels.length) {
           <div class="field">
             <label for="ai-studio-model">Modèle Studio</label>
-            <p-dropdown
+            <p-select
               inputId="ai-studio-model"
               [options]="modelOptions()"
               [(ngModel)]="selectedStudioModelRef"
@@ -362,12 +364,24 @@ export class PlatformAiSettingsPageComponent implements OnInit {
   protected readonly savedImportModelRef = signal<string>('');
   protected readonly savedStudioModelRef = signal<string>('');
   protected readonly savedInferenceDevice = signal<OllamaInferenceDevice>('Gpu');
+  protected readonly savedOpenRouterEnabled = signal<boolean>(false);
+  protected readonly savedOpenRouterDisplayName = signal<string>('');
+  protected readonly savedOpenRouterBaseUrl = signal<string>('');
 
   /** Liée par [(ngModel)] au sélecteur. */
   protected selectedModelRef = '';
   protected selectedImportModelRef = '';
   protected selectedStudioModelRef = '';
   protected selectedInferenceDevice: OllamaInferenceDevice = 'Gpu';
+
+  /** OpenRouter (cloud) : clé partagée assistant/WhatsApp/imports. */
+  protected openRouterEnabled = false;
+  protected openRouterDisplayName = '';
+  protected openRouterBaseUrl = '';
+  protected openRouterDefaultBaseUrl = 'https://openrouter.ai/api/v1';
+  protected openRouterApiKey = '';
+  protected openRouterApiKeyConfigured = false;
+  protected openRouterApiKeyLast4: string | null = null;
 
   protected readonly inferenceDeviceOptions: InferenceDeviceOption[] = [
     {

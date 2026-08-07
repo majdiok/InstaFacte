@@ -5,7 +5,7 @@ import { HttpClient } from '@angular/common/http';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { PasswordModule } from 'primeng/password';
 import { environment } from '@environments/environment';
 import { ApiResponse } from '@core/services/auth.service';
@@ -23,7 +23,7 @@ interface FirmUser {
 @Component({
   selector: 'app-firm-users',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, TableModule, ButtonModule, InputTextModule, DropdownModule, PasswordModule],
+  imports: [CommonModule, ReactiveFormsModule, TableModule, ButtonModule, InputTextModule, SelectModule, PasswordModule],
   template: `
     <div class="page">
       <h1>Utilisateurs du cabinet</h1>
@@ -40,7 +40,7 @@ interface FirmUser {
         <input pInputText formControlName="firstName" placeholder="Prénom" />
         <input pInputText formControlName="lastName" placeholder="Nom" />
         <input pInputText formControlName="email" placeholder="Email" class="full" />
-        <p-dropdown formControlName="role" [options]="roles" optionLabel="label" optionValue="value" class="full" />
+        <p-select formControlName="role" [options]="roles" optionLabel="label" optionValue="value" class="full" />
         <p-password formControlName="password" placeholder="Mot de passe" [toggleMask]="true" class="full" />
         <button pButton type="submit" label="Créer" [disabled]="form.invalid"></button>
       </form>

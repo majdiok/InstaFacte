@@ -11,8 +11,8 @@ import { FormsModule } from '@angular/forms';
 import { TableModule, TableLazyLoadEvent } from 'primeng/table';
 import { InputTextModule } from 'primeng/inputtext';
 import { ButtonModule } from 'primeng/button';
-import { DropdownModule } from 'primeng/dropdown';
-import { CalendarModule } from 'primeng/calendar';
+import { SelectModule } from 'primeng/select';
+import { DatePickerModule } from 'primeng/datepicker';
 import { TooltipModule } from 'primeng/tooltip';
 import { MessageService } from 'primeng/api';
 
@@ -46,8 +46,8 @@ import { AuditDetailDialogComponent } from './audit-detail-dialog.component';
     TableModule,
     InputTextModule,
     ButtonModule,
-    DropdownModule,
-    CalendarModule,
+    SelectModule,
+    DatePickerModule,
     TooltipModule,
     FtPageHeaderComponent,
     FtKpiCardComponent,
@@ -84,7 +84,7 @@ import { AuditDetailDialogComponent } from './audit-detail-dialog.component';
     <!-- Tenant picker -->
     <div class="picker-card">
       <label class="picker-label" for="tenant-picker">{{ t('picker.label') }}</label>
-      <p-dropdown
+      <p-select
         inputId="tenant-picker"
         [options]="tenantOptions()"
         [ngModel]="selectedTenantId()"
@@ -157,7 +157,7 @@ import { AuditDetailDialogComponent } from './audit-detail-dialog.component';
 
       <!-- Filtres -->
       <ft-filter-toolbar>
-        <p-calendar
+        <p-datepicker
           [(ngModel)]="filterFrom"
           (ngModelChange)="onFilterChange()"
           [placeholder]="t('filters.from')"
@@ -165,7 +165,7 @@ import { AuditDetailDialogComponent } from './audit-detail-dialog.component';
           [showIcon]="true"
           [showClear]="true"
           styleClass="ft-cal" />
-        <p-calendar
+        <p-datepicker
           [(ngModel)]="filterTo"
           (ngModelChange)="onFilterChange()"
           [placeholder]="t('filters.to')"

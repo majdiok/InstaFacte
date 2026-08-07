@@ -2,7 +2,7 @@ import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormGroup, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
 import { CheckboxModule } from 'primeng/checkbox';
 import { FirmActivityCode } from '@core/services/firm-governance.service';
@@ -17,7 +17,7 @@ import { WORK_LOCATION_OPTIONS } from './time-sheet-work-location';
     FormsModule,
     ReactiveFormsModule,
     ButtonModule,
-    DropdownModule,
+    SelectModule,
     InputTextModule,
     CheckboxModule
   ],
@@ -48,7 +48,7 @@ import { WORK_LOCATION_OPTIONS } from './time-sheet-work-location';
             (keydown.enter)="handleEnter($event)" />
         </label>
         <label>Client
-          <p-dropdown
+          <p-select
             formControlName="firmClientAssignmentId"
             [options]="clients"
             optionLabel="companyName"
@@ -61,7 +61,7 @@ import { WORK_LOCATION_OPTIONS } from './time-sheet-work-location';
         </label>
         <label>Code activité
           @if (activityCodes.length > 0) {
-            <p-dropdown
+            <p-select
               formControlName="activityCode"
               [options]="activityCodes"
               optionLabel="label"
@@ -81,7 +81,7 @@ import { WORK_LOCATION_OPTIONS } from './time-sheet-work-location';
         </label>
         @if (rich) {
           <label>Lieu
-            <p-dropdown
+            <p-select
               formControlName="workLocation"
               [options]="locationOptions"
               optionLabel="label"

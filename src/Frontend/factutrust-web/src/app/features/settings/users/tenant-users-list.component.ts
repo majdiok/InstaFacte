@@ -6,7 +6,7 @@ import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { DialogModule } from 'primeng/dialog';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { CheckboxModule } from 'primeng/checkbox';
 import { PasswordModule } from 'primeng/password';
@@ -43,7 +43,7 @@ import { AuthService } from '@core/services/auth.service';
     ButtonModule,
     TagModule,
     DialogModule,
-    DropdownModule,
+    SelectModule,
     InputSwitchModule,
     CheckboxModule,
     PasswordModule,
@@ -142,13 +142,13 @@ import { AuthService } from '@core/services/auth.service';
           </div>
           <div class="form-field">
             <label class="field-label" for="createRole">Rôle</label>
-            <p-dropdown
+            <p-select
               inputId="createRole"
               [options]="roleOptions"
               [(ngModel)]="createRole"
               optionLabel="label"
               optionValue="value"
-              styleClass="w-full"></p-dropdown>
+              styleClass="w-full"></p-select>
           </div>
         </div>
 
@@ -219,13 +219,13 @@ import { AuthService } from '@core/services/auth.service';
           <div class="user-form-grid edit-role-grid">
             <div class="form-field">
               <label class="field-label" for="editRole">Rôle</label>
-              <p-dropdown
+              <p-select
                 inputId="editRole"
                 [options]="roleOptions"
                 [(ngModel)]="editRole"
                 optionLabel="label"
                 optionValue="value"
-                styleClass="w-full"></p-dropdown>
+                styleClass="w-full"></p-select>
             </div>
             <div class="form-field switch-field">
               <label class="field-label" for="activeSw">Compte actif</label>
@@ -497,7 +497,7 @@ import { AuthService } from '@core/services/auth.service';
       background: var(--color-background-subtle, #f8fafc);
     }
 
-    :host ::ng-deep .user-form-dialog .p-dropdown,
+    :host ::ng-deep .user-form-dialog .p-select,
     :host ::ng-deep .user-form-dialog .p-password,
     :host ::ng-deep .user-form-dialog .p-password .p-inputtext {
       width: 100%;

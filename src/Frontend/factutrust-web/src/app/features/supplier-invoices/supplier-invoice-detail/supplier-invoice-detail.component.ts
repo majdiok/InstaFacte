@@ -6,7 +6,7 @@ import { TagModule } from 'primeng/tag';
 import { TableModule } from 'primeng/table';
 import { ToastModule } from 'primeng/toast';
 import { DialogModule } from 'primeng/dialog';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { InputTextModule } from 'primeng/inputtext';
 import { ToastService } from '@core/services/toast.service';
 import { AuthService } from '@core/services/auth.service';
@@ -29,7 +29,7 @@ import { formatLocalDate } from '@core/utils/date.util';
     standalone: true,
     imports: [
         CommonModule, RouterModule, FormsModule, CurrencyPipe, DatePipe,
-        TagModule, TableModule, ToastModule, DialogModule, InputTextarea, InputTextModule,
+        TagModule, TableModule, ToastModule, DialogModule, Textarea, InputTextModule,
         PageHeaderComponent, BreadcrumbComponent, ButtonComponent, RecordPaymentDialogComponent
     ],
     template: `
@@ -270,7 +270,7 @@ import { formatLocalDate } from '@core/utils/date.util';
     <!-- Cancel dialog -->
     <p-dialog header="Annuler la facture" [(visible)]="cancelDialogVisible" [modal]="true" [style]="{ width: '450px' }" [draggable]="false" (onHide)="closeCancelDialog()">
       <p class="dialog-message">Indiquez le motif d'annulation (obligatoire).</p>
-      <textarea pInputTextarea [(ngModel)]="cancelReason" placeholder="Motif..." [rows]="4" class="w-full"></textarea>
+      <textarea pTextarea [(ngModel)]="cancelReason" placeholder="Motif..." [rows]="4" class="w-full"></textarea>
       <ng-template pTemplate="footer">
         <app-button variant="outline" (click)="closeCancelDialog()">Retour</app-button>
         <app-button variant="danger" icon="pi-times" iconPos="left" [disabled]="!cancelReason.trim()" (click)="submitCancel()">Annuler la facture</app-button>

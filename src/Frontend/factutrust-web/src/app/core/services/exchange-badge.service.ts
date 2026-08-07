@@ -1,6 +1,7 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { AuthService } from './auth.service';
 import { ExchangeService } from './exchange.service';
+import { createHttpContextSkipGlobalErrorUi } from '@core/http-context';
 import { environment } from '@environments/environment';
 
 @Injectable({ providedIn: 'root' })
@@ -28,7 +29,7 @@ export class ExchangeBadgeService {
       return;
     }
 
-    this.exchange.getUnreadSummary().subscribe({
+    this.exchange.getUnreadSummary(createHttpContextSkipGlobalErrorUi()).subscribe({
       next: r => {
         if (r.success) {
           this.unreadCount.set(r.data.totalUnreadMessages);

@@ -10,7 +10,7 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
  *  ```html
  *  <ft-filter-toolbar>
  *    <input pInputText placeholder="Rechercher…" />
- *    <p-dropdown [options]="plans" placeholder="Plan" />
+ *    <p-select [options]="plans" placeholder="Plan" />
  *
  *    <ng-container ftActions>
  *      <p-button label="Réinitialiser" [text]="true" />

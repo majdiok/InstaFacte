@@ -2,7 +2,7 @@ import { Component, OnInit, computed, inject, input, output, signal } from '@ang
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
 import { TableModule } from 'primeng/table';
 import { MessageModule } from 'primeng/message';
@@ -25,7 +25,7 @@ import { downloadBlob } from '../../accounting/shared/accounting-download.util';
     CommonModule,
     FormsModule,
     DialogModule,
-    DropdownModule,
+    SelectModule,
     InputTextModule,
     TableModule,
     MessageModule,
@@ -49,7 +49,7 @@ import { downloadBlob } from '../../accounting/shared/accounting-download.util';
       <div class="toolbar mb-3">
         <div class="field">
           <label for="bt-account">Compte débiteur</label>
-          <p-dropdown
+          <p-select
             inputId="bt-account"
             [options]="accountOptions()"
             [(ngModel)]="selectedAccountId"

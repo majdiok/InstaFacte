@@ -94,9 +94,9 @@ test.describe('Capture screenshots pour documentation', () => {
     await page.locator('p-inputmask[formcontrolname="nif"] input').fill('1234567/A/B/C/000');
     await page.fill('input[formcontrolname="companyEmail"]', 'contact@entreprise.tn');
     await page.locator('p-inputmask[formcontrolname="phone"] input').fill('98123456');
-    await page.click('p-dropdown[formcontrolname="taxRegime"]');
-    await page.waitForSelector('.p-dropdown-panel', { timeout: 3000 });
-    await page.locator('.p-dropdown-item').first().click();
+    await page.click('p-select[formcontrolname="taxRegime"]');
+    await page.waitForSelector('.p-select-overlay', { timeout: 3000 });
+    await page.locator('.p-select-option').first().click();
     await page.waitForTimeout(500);
     await page.click('button:has-text("Suivant")');
     await page.waitForSelector('input[formcontrolname="street"]', { timeout: 5000 });

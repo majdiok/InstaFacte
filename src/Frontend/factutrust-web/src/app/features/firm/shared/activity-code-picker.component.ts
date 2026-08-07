@@ -2,7 +2,7 @@ import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { FirmActivityCode } from '@core/services/firm-governance.service';
 import { activityPastelBorder, activityPastelColor } from '../governance/time-sheets/time-sheet-activity-color';
 
@@ -20,7 +20,7 @@ export interface ActivityCodeChangeEvent {
 @Component({
   selector: 'app-activity-code-picker',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, DropdownModule],
+  imports: [CommonModule, FormsModule, RouterModule, SelectModule],
   template: `
     @if (codes.length === 0) {
       <div class="empty-hint">
@@ -28,7 +28,7 @@ export interface ActivityCodeChangeEvent {
         <a routerLink="/firm/settings/activity-codes">Configurer</a>
       </div>
     } @else {
-      <p-dropdown
+      <p-select
         [options]="groups"
         [ngModel]="value"
         (ngModelChange)="onSelect($event)"
@@ -62,7 +62,7 @@ export interface ActivityCodeChangeEvent {
             </div>
           }
         </ng-template>
-      </p-dropdown>
+      </p-select>
     }
   `,
   styles: [`

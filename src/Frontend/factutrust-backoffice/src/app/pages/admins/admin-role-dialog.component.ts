@@ -11,7 +11,7 @@ import {
 import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { ButtonModule } from 'primeng/button';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { PlatformRole, type PlatformAdminListItemDto } from '@core/models/platform.models';
 import { ADMINS_FR, roleDescription, roleLabel } from './admins.i18n.fr';
 
@@ -19,7 +19,7 @@ import { ADMINS_FR, roleDescription, roleLabel } from './admins.i18n.fr';
   selector: 'app-admin-role-dialog',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, DialogModule, ButtonModule, DropdownModule],
+  imports: [FormsModule, DialogModule, ButtonModule, SelectModule],
   template: `
     <p-dialog
       [visible]="visible"
@@ -41,7 +41,7 @@ import { ADMINS_FR, roleDescription, roleLabel } from './admins.i18n.fr';
 
         <div class="field">
           <label for="adm-rrole">{{ t('create.field.role') }}</label>
-          <p-dropdown
+          <p-select
             inputId="adm-rrole"
             [options]="roleOptions"
             [(ngModel)]="role"

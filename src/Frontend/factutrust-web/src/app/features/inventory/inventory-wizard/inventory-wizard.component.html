@@ -41,7 +41,7 @@
             @if (showWarehousePicker()) {
             <div class="warehouse-picker">
                 <label for="wizard-warehouse" class="field-label">Entrepôt <span class="required">*</span></label>
-                <p-dropdown
+                <p-select
                     id="wizard-warehouse"
                     [options]="warehouses"
                     [ngModel]="selectedWarehouse()"
@@ -50,7 +50,7 @@
                     placeholder="Sélectionner un entrepôt"
                     styleClass="w-full"
                     ariaLabel="Choisir l'entrepôt">
-                </p-dropdown>
+                </p-select>
             </div>
             }
 

@@ -7,7 +7,7 @@ import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { TabViewModule } from 'primeng/tabview';
 import { DialogModule } from 'primeng/dialog';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputSwitchModule } from 'primeng/inputswitch';
@@ -39,7 +39,7 @@ import {
     ButtonModule,
     TabViewModule,
     DialogModule,
-    DropdownModule,
+    SelectModule,
     InputTextModule,
     InputNumberModule,
     InputSwitchModule,
@@ -233,14 +233,14 @@ import {
             @if (!isEditingSystemTax()) {
               <label class="form-field" for="tax-type">
                 <span class="label-text">Type</span>
-                <p-dropdown
+                <p-select
                   inputId="tax-type"
                   formControlName="type"
                   [options]="typeOptions()"
                   optionLabel="label"
                   optionValue="value"
                   styleClass="w-full">
-                </p-dropdown>
+                </p-select>
               </label>
             }
           </div>
@@ -256,25 +256,25 @@ import {
               </div>
               <label class="form-field" for="tax-type">
                 <span class="label-text">Type</span>
-                <p-dropdown
+                <p-select
                   inputId="tax-type"
                   formControlName="type"
                   [options]="typeOptions()"
                   optionLabel="label"
                   optionValue="value"
                   styleClass="w-full">
-                </p-dropdown>
+                </p-select>
               </label>
               <label class="form-field" for="tax-value-type">
                 <span class="label-text">Mode de calcul</span>
-                <p-dropdown
+                <p-select
                   inputId="tax-value-type"
                   formControlName="valueType"
                   [options]="valueTypeOptions"
                   optionLabel="label"
                   optionValue="value"
                   styleClass="w-full">
-                </p-dropdown>
+                </p-select>
               </label>
               <label class="form-field" for="tax-value">
                 <span class="label-text">Valeur</span>
@@ -292,14 +292,14 @@ import {
               </label>
               <label class="form-field" for="tax-context">
                 <span class="label-text">Contexte</span>
-                <p-dropdown
+                <p-select
                   inputId="tax-context"
                   formControlName="context"
                   [options]="contextOptions"
                   optionLabel="label"
                   optionValue="value"
                   styleClass="w-full">
-                </p-dropdown>
+                </p-select>
               </label>
             </div>
           } @else {
@@ -307,14 +307,14 @@ import {
               <span class="section-title" id="section-calcul">Calcul</span>
               <label class="form-field" for="tax-value-type">
                 <span class="label-text">Mode de calcul</span>
-                <p-dropdown
+                <p-select
                   inputId="tax-value-type"
                   formControlName="valueType"
                   [options]="valueTypeOptions"
                   optionLabel="label"
                   optionValue="value"
                   styleClass="w-full">
-                </p-dropdown>
+                </p-select>
               </label>
               <label class="form-field" for="tax-value">
                 <span class="label-text">Valeur</span>
@@ -335,14 +335,14 @@ import {
               <span class="section-title" id="section-perimetre">Périmètre</span>
               <label class="form-field" for="tax-context">
                 <span class="label-text">Contexte</span>
-                <p-dropdown
+                <p-select
                   inputId="tax-context"
                   formControlName="context"
                   [options]="contextOptions"
                   optionLabel="label"
                   optionValue="value"
                   styleClass="w-full">
-                </p-dropdown>
+                </p-select>
               </label>
             </div>
           }
@@ -510,12 +510,12 @@ import {
     }
     :host ::ng-deep .tax-form .p-inputnumber,
     :host ::ng-deep .tax-form .p-inputnumber .p-inputtext,
-    :host ::ng-deep .tax-form .p-dropdown {
+    :host ::ng-deep .tax-form .p-select {
       width: 100%;
       min-width: 0;
     }
-    :host ::ng-deep .tax-form__locked p-dropdown.p-disabled .p-dropdown-label,
-    :host ::ng-deep .tax-form__locked p-dropdown.p-disabled .p-dropdown-trigger {
+    :host ::ng-deep .tax-form__locked p-select.p-disabled .p-select-label,
+    :host ::ng-deep .tax-form__locked p-select.p-disabled .p-select-trigger {
       opacity: 1;
       background: var(--color-neutral-100);
       color: var(--color-neutral-700);

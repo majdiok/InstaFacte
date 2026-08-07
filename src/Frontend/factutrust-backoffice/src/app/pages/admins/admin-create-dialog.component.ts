@@ -13,7 +13,7 @@ import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { PasswordModule } from 'primeng/password';
 import { PlatformRole, type CreatePlatformAdminRequest } from '@core/models/platform.models';
 import { ADMINS_FR, roleDescription, roleLabel } from './admins.i18n.fr';
@@ -27,7 +27,7 @@ import { ADMINS_FR, roleDescription, roleLabel } from './admins.i18n.fr';
     DialogModule,
     ButtonModule,
     InputTextModule,
-    DropdownModule,
+    SelectModule,
     PasswordModule
   ],
   template: `
@@ -84,7 +84,7 @@ import { ADMINS_FR, roleDescription, roleLabel } from './admins.i18n.fr';
 
         <div class="field field--full">
           <label for="adm-role">{{ t('create.field.role') }}</label>
-          <p-dropdown
+          <p-select
             inputId="adm-role"
             [options]="roleOptions"
             [(ngModel)]="role"
@@ -165,7 +165,7 @@ import { ADMINS_FR, roleDescription, roleLabel } from './admins.i18n.fr';
       }
 
       .field input,
-      .field :host ::ng-deep .p-dropdown,
+      .field :host ::ng-deep .p-select,
       .field :host ::ng-deep .p-password input {
         width: 100%;
       }

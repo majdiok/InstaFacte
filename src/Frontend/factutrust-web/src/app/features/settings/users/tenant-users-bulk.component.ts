@@ -6,7 +6,7 @@ import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { PasswordModule } from 'primeng/password';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { DialogModule } from 'primeng/dialog';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { CheckboxModule } from 'primeng/checkbox';
@@ -49,7 +49,7 @@ interface BulkRow {
     ButtonModule,
     InputTextModule,
     PasswordModule,
-    DropdownModule,
+    SelectModule,
     DialogModule,
     InputSwitchModule,
     CheckboxModule,
@@ -132,14 +132,14 @@ interface BulkRow {
                 inputStyleClass="w-full bulk-password-input"></p-password>
             </td>
             <td data-label="Rôle">
-              <p-dropdown
+              <p-select
                 [options]="roleOptions"
                 [(ngModel)]="row.role"
                 [name]="'bulk-role-' + ri"
                 optionLabel="label"
                 optionValue="value"
                 placeholder="Rôle"
-                styleClass="w-full"></p-dropdown>
+                styleClass="w-full"></p-select>
             </td>
             <td data-label="Modules">
               <div class="module-cell">
@@ -286,11 +286,11 @@ interface BulkRow {
     }
     :host ::ng-deep .bulk-table .p-password,
     :host ::ng-deep .bulk-table .p-password .p-password-input,
-    :host ::ng-deep .bulk-table .p-dropdown {
+    :host ::ng-deep .bulk-table .p-select {
       width: 100%;
       min-width: 8rem;
     }
-    :host ::ng-deep .bulk-table .p-dropdown .p-dropdown-label {
+    :host ::ng-deep .bulk-table .p-select .p-select-label {
       display: flex;
       align-items: center;
       min-height: 2.75rem;

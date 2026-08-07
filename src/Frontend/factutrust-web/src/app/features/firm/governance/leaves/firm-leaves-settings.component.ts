@@ -4,19 +4,19 @@ import { FormBuilder, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { CheckboxModule } from 'primeng/checkbox';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { ToastService } from '@core/services/toast.service';
 import { FirmLeavesService } from './data-access/firm-leaves.service';
 
 @Component({
   selector: 'app-firm-leaves-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, ButtonModule, InputNumberModule, CheckboxModule, DropdownModule],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, ButtonModule, InputNumberModule, CheckboxModule, SelectModule],
   template: `
     <div class="fc-card">
       <div class="year-row">
         <label>Année
-          <p-dropdown [options]="yearOptions" [ngModel]="year" (ngModelChange)="onYear($event)" [ngModelOptions]="{standalone:true}" />
+          <p-select [options]="yearOptions" [ngModel]="year" (ngModelChange)="onYear($event)" [ngModelOptions]="{standalone:true}" />
         </label>
       </div>
       <form [formGroup]="form" class="form">

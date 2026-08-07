@@ -346,7 +346,7 @@
 
                       <div class="form-group">
                         <label for="description" class="sr-only">Description</label>
-                        <textarea pInputTextarea id="description" formControlName="description" rows="3"
+                        <textarea pTextarea id="description" formControlName="description" rows="3"
                                   placeholder="Description du cabinet (optionnel)" class="w-full"></textarea>
                       </div>
                     </div>
@@ -411,12 +411,12 @@
 
                 <div class="form-group">
                   <label for="governorate" class="sr-only">Gouvernorat</label>
-                  <p-dropdown id="governorate" [options]="governorates" formControlName="governorate"
+                  <p-select id="governorate" [options]="governorates" formControlName="governorate"
                               optionLabel="label" optionValue="value" placeholder="Gouvernorat *"
                               [filter]="true" filterBy="label" appendTo="body"
                               styleClass="w-full custom-dropdown"
                               [class.ng-invalid]="isInvalid('governorate')" [attr.aria-required]="true">
-                  </p-dropdown>
+                  </p-select>
                   @if (isInvalid('governorate')) {
                     <div class="field-error" role="alert" @fadeInOut>
                       <i class="pi pi-info-circle"></i> Le gouvernorat est requis

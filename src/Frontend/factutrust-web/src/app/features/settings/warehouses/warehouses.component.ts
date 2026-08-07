@@ -8,7 +8,7 @@ import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { CardModule } from 'primeng/card';
 import { TagModule } from 'primeng/tag';
@@ -34,7 +34,7 @@ import {
     ButtonModule,
     DialogModule,
     InputTextModule,
-    InputTextarea,
+    Textarea,
     InputSwitchModule,
     CardModule,
     TagModule,
@@ -236,7 +236,7 @@ import {
         <label class="form-field" for="wh-address">
           <span class="label-text">Adresse</span>
           <textarea
-            pInputTextarea
+            pTextarea
             id="wh-address"
             formControlName="address"
             class="w-full"

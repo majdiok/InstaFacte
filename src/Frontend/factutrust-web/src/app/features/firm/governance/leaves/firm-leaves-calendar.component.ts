@@ -2,21 +2,21 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { FirmLeavesService } from './data-access/firm-leaves.service';
 import { FirmLeaveCalendarEntry } from './data-access/firm-leaves.models';
 
 @Component({
   selector: 'app-firm-leaves-calendar',
   standalone: true,
-  imports: [CommonModule, FormsModule, ButtonModule, DropdownModule],
+  imports: [CommonModule, FormsModule, ButtonModule, SelectModule],
   template: `
     <div class="controls">
       <button type="button" pButton icon="pi pi-chevron-left" class="p-button-text" (click)="shift(-1)"></button>
       <button type="button" pButton label="Aujourd'hui" class="p-button-outlined p-button-sm" (click)="goToday()"></button>
       <button type="button" pButton icon="pi pi-chevron-right" class="p-button-text" (click)="shift(1)"></button>
       <strong>{{ rangeLabel() }}</strong>
-      <p-dropdown [(ngModel)]="mode" [options]="modes" (onChange)="reload()" />
+      <p-select [(ngModel)]="mode" [options]="modes" (onChange)="reload()" />
     </div>
 
     <div class="fc-card cal" [style.--cols]="days().length">

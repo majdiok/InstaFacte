@@ -12,7 +12,7 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { ToastModule } from 'primeng/toast';
 import { SkeletonModule } from 'primeng/skeleton';
 import { DialogModule } from 'primeng/dialog';
-import { CalendarModule } from 'primeng/calendar';
+import { DatePickerModule } from 'primeng/datepicker';
 import { formatLocalDate } from '@core/utils/date.util';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
@@ -44,7 +44,7 @@ import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDel
     ToastModule,
     SkeletonModule,
     DialogModule,
-    CalendarModule,
+    DatePickerModule,
     InputTextModule,
     InputNumberModule,
     PageHeaderComponent,
@@ -301,7 +301,7 @@ import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDel
             </div>
             <div class="delivery-form-group">
               <label for="deliveryDate">Date de livraison <span class="required">*</span></label>
-              <p-calendar
+              <p-datepicker
                 id="deliveryDate"
                 [(ngModel)]="deliveryForm.deliveryDate"
                 name="deliveryDate"
@@ -309,7 +309,7 @@ import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDel
                 [showIcon]="true"
                 placeholder="Sélectionnez la date"
                 styleClass="w-full">
-              </p-calendar>
+              </p-datepicker>
               <small class="field-hint">Date effective de la réception des marchandises</small>
             </div>
           </div>
@@ -757,7 +757,7 @@ import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDel
       width: 100%;
     }
 
-    :host ::ng-deep .delivery-dialog-content .p-calendar {
+    :host ::ng-deep .delivery-dialog-content .p-datepicker {
       width: 100%;
     }
 

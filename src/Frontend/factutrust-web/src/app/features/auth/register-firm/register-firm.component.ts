@@ -7,14 +7,14 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { InputTextModule } from 'primeng/inputtext';
 import { PasswordModule } from 'primeng/password';
 import { ButtonModule } from 'primeng/button';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputMaskModule } from 'primeng/inputmask';
 import { StepsModule } from 'primeng/steps';
 import { MessageModule } from 'primeng/message';
 import { DividerModule } from 'primeng/divider';
 import { CheckboxModule } from 'primeng/checkbox';
 import { InputSwitchModule } from 'primeng/inputswitch';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { MenuItem } from '@shared/models/menu-item.model';
 import { AuthService, RegisterAccountingFirmRequest } from '@core/services/auth.service';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
@@ -58,14 +58,14 @@ import {
     InputTextModule,
     PasswordModule,
     ButtonModule,
-    DropdownModule,
+    SelectModule,
     InputMaskModule,
     StepsModule,
     MessageModule,
     DividerModule,
     CheckboxModule,
     InputSwitchModule,
-    InputTextarea,
+    Textarea,
     LogoComponent
   ],
   animations: [

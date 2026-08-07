@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { TooltipModule } from 'primeng/tooltip';
 import { ToastModule } from 'primeng/toast';
@@ -39,7 +39,7 @@ interface ActiveFilterOption {
     TableModule,
     ButtonModule,
     InputTextModule,
-    DropdownModule,
+    SelectModule,
     InputSwitchModule,
     TooltipModule,
     ToastModule,
@@ -90,7 +90,7 @@ interface ActiveFilterOption {
             (input)="onSearchInput()"
             class="w-full" />
         </span>
-        <p-dropdown
+        <p-select
           [options]="activeFilterOptions"
           [(ngModel)]="selectedActiveFilter"
           optionLabel="label"
@@ -98,7 +98,7 @@ interface ActiveFilterOption {
           placeholder="Tous les statuts"
           [showClear]="true"
           (onChange)="load()">
-        </p-dropdown>
+        </p-select>
       </div>
     </div>
 

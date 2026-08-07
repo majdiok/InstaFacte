@@ -2,7 +2,7 @@ import { Component, OnInit, computed, inject, input, output, signal } from '@ang
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { CheckboxModule } from 'primeng/checkbox';
@@ -34,7 +34,7 @@ interface PayslipPaymentRow {
     CommonModule,
     FormsModule,
     DialogModule,
-    DropdownModule,
+    SelectModule,
     InputTextModule,
     InputNumberModule,
     CheckboxModule,
@@ -61,7 +61,7 @@ interface PayslipPaymentRow {
         </div>
         <div class="field">
           <label for="pp-method">Mode</label>
-          <p-dropdown
+          <p-select
             inputId="pp-method"
             [options]="methodOptions"
             [(ngModel)]="method"
@@ -72,7 +72,7 @@ interface PayslipPaymentRow {
         @if (method !== 0) {
           <div class="field span-2">
             <label for="pp-bank">Compte débiteur</label>
-            <p-dropdown
+            <p-select
               inputId="pp-bank"
               [options]="accountOptions()"
               [(ngModel)]="bankAccountId"

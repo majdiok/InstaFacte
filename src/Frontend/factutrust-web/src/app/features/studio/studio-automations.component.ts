@@ -5,7 +5,7 @@ import { ActivatedRoute, RouterModule } from '@angular/router';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { MessageService } from 'primeng/api';
@@ -30,7 +30,7 @@ interface MapState { source: 'field' | 'const'; value: string; }
   standalone: true,
   imports: [
     CommonModule, FormsModule, RouterModule, TableModule, ButtonModule, DialogModule,
-    DropdownModule, InputTextModule, InputSwitchModule, StudioPageShellComponent
+    SelectModule, InputTextModule, InputSwitchModule, StudioPageShellComponent
   ],
   template: `
     <app-studio-page-shell
@@ -72,14 +72,14 @@ interface MapState { source: 'field' | 'const'; value: string; }
         <div class="ft-row">
           <div>
             <label>Déclencheur *</label>
-            <p-dropdown [options]="triggerOptions" [(ngModel)]="fTrigger" optionLabel="label" optionValue="value"
-              appendTo="body" styleClass="ft-w-full"></p-dropdown>
+            <p-select [options]="triggerOptions" [(ngModel)]="fTrigger" optionLabel="label" optionValue="value"
+              appendTo="body" styleClass="ft-w-full"></p-select>
           </div>
           <div>
             <label>Action ERP *</label>
-            <p-dropdown [options]="actions()" [(ngModel)]="fAction" optionLabel="name" optionValue="name"
+            <p-select [options]="actions()" [(ngModel)]="fAction" optionLabel="name" optionValue="name"
               (onChange)="onActionChange()" [filter]="true" appendTo="body" styleClass="ft-w-full"
-              placeholder="Choisir une action"></p-dropdown>
+              placeholder="Choisir une action"></p-select>
           </div>
         </div>
 
@@ -89,11 +89,11 @@ interface MapState { source: 'field' | 'const'; value: string; }
           <label class="ft-section-lbl">Correspondance des paramètres</label>
           <div class="ft-map" *ngFor="let p of act.parameters">
             <div class="ft-map-name">{{ p.name }} <span *ngIf="p.required" class="ft-req">*</span></div>
-            <p-dropdown [options]="sourceOptions" [(ngModel)]="mapState[p.name].source" optionLabel="label" optionValue="value"
-              appendTo="body" styleClass="ft-map-src"></p-dropdown>
-            <p-dropdown *ngIf="mapState[p.name].source === 'field'" [options]="fieldOptions()" [(ngModel)]="mapState[p.name].value"
+            <p-select [options]="sourceOptions" [(ngModel)]="mapState[p.name].source" optionLabel="label" optionValue="value"
+              appendTo="body" styleClass="ft-map-src"></p-select>
+            <p-select *ngIf="mapState[p.name].source === 'field'" [options]="fieldOptions()" [(ngModel)]="mapState[p.name].value"
               optionLabel="label" optionValue="value" [showClear]="true" [filter]="true" appendTo="body" styleClass="ft-map-val"
-              placeholder="Champ…"></p-dropdown>
+              placeholder="Champ…"></p-select>
             <input *ngIf="mapState[p.name].source === 'const'" pInputText [(ngModel)]="mapState[p.name].value"
               class="ft-map-val" [placeholder]="p.allowedValues?.length ? p.allowedValues!.join(' | ') : 'Valeur fixe'" />
             <small class="ft-map-desc">{{ p.description }}</small>

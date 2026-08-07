@@ -4,7 +4,7 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
 import { TagModule } from 'primeng/tag';
@@ -24,7 +24,7 @@ import { ToastService } from '@core/services/toast.service';
     TableModule,
     ButtonModule,
     DialogModule,
-    DropdownModule,
+    SelectModule,
     InputNumberModule,
     InputTextModule,
     TagModule,
@@ -93,7 +93,7 @@ import { ToastService } from '@core/services/toast.service';
       appendTo="body">
       <form [formGroup]="form" class="dialog-form">
         <label>Société
-          <p-dropdown
+          <p-select
             formControlName="firmClientAssignmentId"
             [options]="clients()"
             optionLabel="companyName"
@@ -105,7 +105,7 @@ import { ToastService } from '@core/services/toast.service';
         </label>
         <div class="period-row">
           <label>Mois
-            <p-dropdown formControlName="periodMonth" [options]="months" optionLabel="label" optionValue="value" appendTo="body" />
+            <p-select formControlName="periodMonth" [options]="months" optionLabel="label" optionValue="value" appendTo="body" />
           </label>
           <label>Année
             <input pInputText type="number" formControlName="periodYear" min="2020" max="2100" />

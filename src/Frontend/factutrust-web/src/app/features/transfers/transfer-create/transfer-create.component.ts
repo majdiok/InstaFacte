@@ -5,9 +5,9 @@ import { FormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { Subject, forkJoin, of } from 'rxjs';
 import { catchError, debounceTime, distinctUntilChanged, finalize, map, switchMap } from 'rxjs/operators';
-import { CalendarModule } from 'primeng/calendar';
+import { DatePickerModule } from 'primeng/datepicker';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { AutoCompleteModule, AutoCompleteCompleteEvent } from 'primeng/autocomplete';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
@@ -37,9 +37,9 @@ interface TransferLine {
     CommonModule,
     FormsModule,
     RouterModule,
-    CalendarModule,
+    DatePickerModule,
     InputTextModule,
-    InputTextarea,
+    Textarea,
     InputNumberModule,
     AutoCompleteModule,
     PageHeaderComponent,
@@ -107,13 +107,13 @@ interface TransferLine {
         <div class="form-row">
           <div class="form-group">
             <label for="transfer-date">Date de transfert <span class="required">*</span></label>
-            <p-calendar
+            <p-datepicker
               inputId="transfer-date"
               [(ngModel)]="transferDate"
               dateFormat="dd/mm/yy"
               [showIcon]="true"
               styleClass="w-full">
-            </p-calendar>
+            </p-datepicker>
           </div>
           <div class="form-group">
             <label for="transfer-reference">Référence</label>
@@ -130,7 +130,7 @@ interface TransferLine {
           <label for="transfer-notes">Notes</label>
           <textarea
             id="transfer-notes"
-            pInputTextarea
+            pTextarea
             [(ngModel)]="notes"
             [rows]="3"
             placeholder="Notes internes (optionnel)"
@@ -612,12 +612,12 @@ interface TransferLine {
       text-align: right;
     }
 
-    :host ::ng-deep .p-calendar {
+    :host ::ng-deep .p-datepicker {
       display: flex;
       width: 100%;
     }
 
-    :host ::ng-deep .p-calendar .p-inputtext {
+    :host ::ng-deep .p-datepicker .p-inputtext {
       flex: 1;
       min-width: 0;
     }

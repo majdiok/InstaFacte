@@ -65,7 +65,7 @@
         </div>
         <div class="field">
           <label for="depDate">Date de remise</label>
-          <p-calendar
+          <p-datepicker
             inputId="depDate"
             [(ngModel)]="depositDate"
             (ngModelChange)="onDepositDateChange()"
@@ -74,7 +74,7 @@
             [maxDate]="maxDate"
             appendTo="body"
             styleClass="w-full">
-          </p-calendar>
+          </p-datepicker>
         </div>
         <div class="field">
           <span class="field-label">Compte destinataire <span class="req">*</span></span>
@@ -189,7 +189,7 @@
           <label for="notes">Note</label>
           <textarea
             id="notes"
-            pInputTextarea
+            pTextarea
             [(ngModel)]="notes"
             rows="3"
             class="w-full"

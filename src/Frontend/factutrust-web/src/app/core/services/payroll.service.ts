@@ -1,7 +1,8 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpContext, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '@environments/environment';
+import { SKIP_ERROR_TOAST } from '@core/http-context';
 import type { ApiResponse } from './employee.service';
 
 export interface PayrollRunListItem {
@@ -915,7 +916,9 @@ export class PayrollService {
   }
 
   createRun(year: number, month: number): Observable<ApiResponse<string>> {
-    return this.http.post<ApiResponse<string>>(this.runsUrl, { year, month });
+    return this.http.post<ApiResponse<string>>(this.runsUrl, { year, month }, {
+      context: new HttpContext().set(SKIP_ERROR_TOAST, true)
+    });
   }
 
   // Le secteur TFP (industrie 1 % / autres 2 %) est lu côté serveur depuis les
@@ -1175,32 +1178,49 @@ export class PayrollService {
   // ── Social fund schemes ──
 
   listSocialFunds(): Observable<ApiResponse<SocialFundScheme[]>> {
-    return this.http.get<ApiResponse<SocialFundScheme[]>>(`${this.payrollUrl}/social-funds`);
+    return this.http.get<ApiResponse<SocialFundScheme[]>>(`${this.payrollUrl}/social-funds/schemes`);
   }
 
   createSocialFund(body: UpsertSocialFundSchemeRequest): Observable<ApiResponse<string>> {
-    return this.http.post<ApiResponse<string>>(`${this.payrollUrl}/social-funds`, body);
+    return this.http.post<ApiResponse<string>>(`${this.payrollUrl}/social-funds/schemes`, body);
   }
 
   updateSocialFund(id: string, body: UpsertSocialFundSchemeRequest): Observable<ApiResponse<unknown>> {
-    return this.http.put<ApiResponse<unknown>>(`${this.payrollUrl}/social-funds/${id}`, body);
+    return this.http.put<ApiResponse<unknown>>(`${this.payrollUrl}/social-funds/schemes/${id}`, body);
   }
 
-  deleteSocialFund(id: string): Observable<ApiResponse<unknown>> {
-    return this.http.delete<ApiResponse<unknown>>(`${this.payrollUrl}/social-funds/${id}`);
+  deleteSocialFund(scheme: SocialFundScheme): Observable<ApiResponse<unknown>> {
+    const body: UpsertSocialFundSchemeRequest = {
+      code: scheme.code,
+      name: scheme.name,
+      isActive: false,
+      employeeRatePercent: scheme.employeeRatePercent,
+      employerRatePercent: scheme.employerRatePercent,
+      base: scheme.base,
+      fixedEmployeeAmount: scheme.fixedEmployeeAmount,
+      fixedEmployerAmount: scheme.fixedEmployerAmount,
+      monthlyEmployeeCap: scheme.monthlyEmployeeCap,
+      employeeAccountSce: scheme.employeeAccountSce,
+      employerAccountSce: scheme.employerAccountSce,
+      effectiveFrom: scheme.effectiveFrom,
+      effectiveTo: scheme.effectiveTo
+    };
+    return this.updateSocialFund(scheme.id, body);
   }
 
   listSocialFundEnrollments(employeeId: string): Observable<ApiResponse<EmployeeSocialFundEnrollment[]>> {
+    const params = new HttpParams().set('employeeId', employeeId);
     return this.http.get<ApiResponse<EmployeeSocialFundEnrollment[]>>(
-      `${this.payrollUrl}/employees/${employeeId}/social-fund-enrollments`
+      `${this.payrollUrl}/social-funds/enrollments`,
+      { params }
     );
   }
 
   createSocialFundEnrollment(employeeId: string, body: UpsertSocialFundEnrollmentRequest): Observable<ApiResponse<string>> {
-    return this.http.post<ApiResponse<string>>(
-      `${this.payrollUrl}/employees/${employeeId}/social-fund-enrollments`,
-      body
-    );
+    return this.http.post<ApiResponse<string>>(`${this.payrollUrl}/social-funds/enrollments`, {
+      ...body,
+      employeeId
+    });
   }
 
   updateSocialFundEnrollment(
@@ -1208,15 +1228,16 @@ export class PayrollService {
     enrollmentId: string,
     body: UpsertSocialFundEnrollmentRequest
   ): Observable<ApiResponse<unknown>> {
-    return this.http.put<ApiResponse<unknown>>(
-      `${this.payrollUrl}/employees/${employeeId}/social-fund-enrollments/${enrollmentId}`,
-      body
-    );
+    return this.http.put<ApiResponse<unknown>>(`${this.payrollUrl}/social-funds/enrollments/${enrollmentId}`, {
+      endDate: body.endDate,
+      overrideEmployeeAmount: body.overrideEmployeeAmount,
+      overrideEmployerAmount: body.overrideEmployerAmount
+    });
   }
 
   deleteSocialFundEnrollment(employeeId: string, enrollmentId: string): Observable<ApiResponse<unknown>> {
     return this.http.delete<ApiResponse<unknown>>(
-      `${this.payrollUrl}/employees/${employeeId}/social-fund-enrollments/${enrollmentId}`
+      `${this.payrollUrl}/social-funds/enrollments/${enrollmentId}`
     );
   }
 
@@ -1242,16 +1263,12 @@ export class PayrollService {
   // ── In-kind benefits ──
 
   listInKindBenefits(employeeId: string): Observable<ApiResponse<EmployeeInKindBenefit[]>> {
-    return this.http.get<ApiResponse<EmployeeInKindBenefit[]>>(
-      `${this.payrollUrl}/employees/${employeeId}/in-kind-benefits`
-    );
+    const params = new HttpParams().set('employeeId', employeeId);
+    return this.http.get<ApiResponse<EmployeeInKindBenefit[]>>(`${this.payrollUrl}/in-kind-benefits`, { params });
   }
 
   createInKindBenefit(employeeId: string, body: UpsertInKindBenefitRequest): Observable<ApiResponse<string>> {
-    return this.http.post<ApiResponse<string>>(
-      `${this.payrollUrl}/employees/${employeeId}/in-kind-benefits`,
-      body
-    );
+    return this.http.post<ApiResponse<string>>(`${this.payrollUrl}/in-kind-benefits`, { ...body, employeeId });
   }
 
   updateInKindBenefit(
@@ -1259,22 +1276,21 @@ export class PayrollService {
     benefitId: string,
     body: UpsertInKindBenefitRequest
   ): Observable<ApiResponse<unknown>> {
-    return this.http.put<ApiResponse<unknown>>(
-      `${this.payrollUrl}/employees/${employeeId}/in-kind-benefits/${benefitId}`,
-      body
-    );
+    return this.http.put<ApiResponse<unknown>>(`${this.payrollUrl}/in-kind-benefits/${benefitId}`, {
+      ...body,
+      employeeId
+    });
   }
 
   deleteInKindBenefit(employeeId: string, benefitId: string): Observable<ApiResponse<unknown>> {
-    return this.http.delete<ApiResponse<unknown>>(
-      `${this.payrollUrl}/employees/${employeeId}/in-kind-benefits/${benefitId}`
-    );
+    return this.http.delete<ApiResponse<unknown>>(`${this.payrollUrl}/in-kind-benefits/${benefitId}`);
   }
 
   // ── Employee loans ──
 
   listEmployeeLoans(employeeId: string): Observable<ApiResponse<EmployeeLoan[]>> {
-    return this.http.get<ApiResponse<EmployeeLoan[]>>(`${this.payrollUrl}/employees/${employeeId}/loans`);
+    const params = new HttpParams().set('employeeId', employeeId);
+    return this.http.get<ApiResponse<EmployeeLoan[]>>(`${this.payrollUrl}/loans`, { params });
   }
 
   getLoan(loanId: string): Observable<ApiResponse<EmployeeLoan>> {
@@ -1282,7 +1298,7 @@ export class PayrollService {
   }
 
   createEmployeeLoan(employeeId: string, body: CreateEmployeeLoanRequest): Observable<ApiResponse<string>> {
-    return this.http.post<ApiResponse<string>>(`${this.payrollUrl}/employees/${employeeId}/loans`, body);
+    return this.http.post<ApiResponse<string>>(`${this.payrollUrl}/loans`, { ...body, employeeId });
   }
 
   cancelLoan(loanId: string): Observable<ApiResponse<unknown>> {
@@ -1292,13 +1308,12 @@ export class PayrollService {
   // ── Garnishments ──
 
   listGarnishments(employeeId: string): Observable<ApiResponse<EmployeeGarnishment[]>> {
-    return this.http.get<ApiResponse<EmployeeGarnishment[]>>(
-      `${this.payrollUrl}/employees/${employeeId}/garnishments`
-    );
+    const params = new HttpParams().set('employeeId', employeeId);
+    return this.http.get<ApiResponse<EmployeeGarnishment[]>>(`${this.payrollUrl}/garnishments`, { params });
   }
 
   createGarnishment(employeeId: string, body: UpsertEmployeeGarnishmentRequest): Observable<ApiResponse<string>> {
-    return this.http.post<ApiResponse<string>>(`${this.payrollUrl}/employees/${employeeId}/garnishments`, body);
+    return this.http.post<ApiResponse<string>>(`${this.payrollUrl}/garnishments`, { ...body, employeeId });
   }
 
   updateGarnishment(
@@ -1375,7 +1390,10 @@ export class PayrollService {
       .set('year', year)
       .set('month', month)
       .set('includeCalculated', includeCalculated);
-    return this.http.get<ApiResponse<PayrollJournal>>(`${this.reportsUrl}/payroll-journal`, { params });
+    return this.http.get<ApiResponse<PayrollJournal>>(`${this.reportsUrl}/payroll-journal`, {
+      params,
+      context: new HttpContext().set(SKIP_ERROR_TOAST, true)
+    });
   }
 
   exportPayrollJournal(

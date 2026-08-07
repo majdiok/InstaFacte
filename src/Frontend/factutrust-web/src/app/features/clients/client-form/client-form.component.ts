@@ -5,8 +5,8 @@ import { Router, RouterModule, ActivatedRoute } from '@angular/router';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputMaskModule } from 'primeng/inputmask';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { InputTextarea } from 'primeng/inputtextarea';
-import { DropdownModule } from 'primeng/dropdown';
+import { Textarea } from 'primeng/textarea';
+import { SelectModule } from 'primeng/select';
 import { ButtonModule } from 'primeng/button';
 import { CardModule } from 'primeng/card';
 import { DividerModule } from 'primeng/divider';
@@ -41,8 +41,8 @@ interface GovernorateOption {
     InputTextModule,
     InputMaskModule,
     InputNumberModule,
-    InputTextarea,
-    DropdownModule,
+    Textarea,
+    SelectModule,
     ButtonModule,
     CardModule,
     DividerModule,
@@ -98,7 +98,7 @@ interface GovernorateOption {
             <div class="form-row">
               <div class="form-group">
                 <label for="type">Type de client <span class="required">*</span></label>
-                <p-dropdown 
+                <p-select 
                   id="type"
                   [options]="typeOptions" 
                   formControlName="type"
@@ -106,7 +106,7 @@ interface GovernorateOption {
                   optionValue="value"
                   placeholder="Sélectionner"
                   styleClass="w-full">
-                </p-dropdown>
+                </p-select>
                 @if (isInvalid('type')) {
                   <div class="form-error">
                     <i class="pi pi-exclamation-circle"></i>
@@ -259,7 +259,7 @@ interface GovernorateOption {
 
             <div class="form-group">
               <label for="governorate">Gouvernorat <span class="required">*</span></label>
-              <p-dropdown 
+              <p-select 
                 id="governorate"
                 [options]="governorates" 
                 formControlName="governorate"
@@ -267,7 +267,7 @@ interface GovernorateOption {
                 [filter]="true"
                 filterBy="label"
                 styleClass="w-full">
-              </p-dropdown>
+              </p-select>
               @if (isInvalid('governorate')) {
                 <div class="form-error">
                   <i class="pi pi-exclamation-circle"></i>
@@ -282,7 +282,7 @@ interface GovernorateOption {
             <div class="form-group">
               <label for="notes">Notes internes</label>
               <textarea 
-                pInputTextarea 
+                pTextarea 
                 id="notes" 
                 formControlName="notes"
                 placeholder="Préférences, instructions particulières…"
@@ -485,7 +485,7 @@ interface GovernorateOption {
 
     :host ::ng-deep {
       .p-inputmask,
-      .p-dropdown,
+      .p-select,
       .p-inputnumber,
       .p-inputnumber-input {
         width: 100%;

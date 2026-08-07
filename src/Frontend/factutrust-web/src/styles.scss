@@ -811,13 +811,14 @@ a {
 
 // Inputs and dropdowns: consistent radius and focus ring
 .p-inputtext,
-.p-dropdown,
-.p-calendar .p-inputtext {
+.p-select,
+.p-datepicker .p-inputtext {
   border-radius: var(--radius-lg);
   border-color: var(--color-border-default);
 }
 
-.p-dropdown-panel,
+.p-select-panel,
+.p-select-overlay,
 .p-datepicker {
   border-radius: var(--radius-lg);
   border: 1px solid var(--color-border-subtle);
@@ -828,7 +829,7 @@ a {
 // PRIMENG CALENDAR FIX
 // Ensures the date input field displays correctly with icon
 // --------------------------------------------
-.p-calendar {
+.p-datepicker {
   display: flex;
   width: 100%;
 
@@ -840,7 +841,7 @@ a {
   }
 
   // When showIcon is true, ensure proper layout
-  &.p-calendar-w-btn {
+  &.p-datepicker-w-btn {
     .p-inputtext {
       border-top-right-radius: 0;
       border-bottom-right-radius: 0;
@@ -870,10 +871,10 @@ a {
   }
 }
 
-// Width utility class for p-calendar
-.w-full .p-calendar,
-p-calendar.w-full,
-.p-calendar.w-full {
+// Width utility class for p-datepicker
+.w-full .p-datepicker,
+p-datepicker.w-full,
+.p-datepicker.w-full {
   width: 100%;
 }
 
@@ -1141,7 +1142,7 @@ p-calendar.w-full,
   }
 
   &.form-error .p-inputtext,
-  &.form-error .p-dropdown {
+  &.form-error .p-select {
     border-color: var(--color-error-500) !important;
 
     &:focus {
@@ -1396,8 +1397,8 @@ p-calendar.w-full,
 
 .wizard-field-error {
   .p-inputtext,
-  .p-dropdown,
-  .p-dropdown .p-inputtext {
+  .p-select,
+  .p-select .p-inputtext {
     border-color: var(--color-error-500) !important;
 
     &:focus {

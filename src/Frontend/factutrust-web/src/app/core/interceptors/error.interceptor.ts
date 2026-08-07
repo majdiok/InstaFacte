@@ -77,10 +77,11 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
             !isRegistrationEndpoint &&
             !skipGlobalErrorUi;
 
-          const skipConsoleSpamOnRefresh401 =
-            processedError.status === 401 && req.url.includes('/auth/refresh');
+          const skipConsoleSpamOn401 =
+            processedError.status === 401 &&
+            (req.url.includes('/auth/refresh') || skipGlobalErrorUi);
 
-          if (!skipConsoleSpamOnRefresh401) {
+          if (!skipConsoleSpamOn401) {
             errorHandler.logError(
               `HTTP ${processedError.status} - ${req.method} ${req.url}`,
               processedError,

@@ -4,9 +4,9 @@ import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { DialogModule } from 'primeng/dialog';
-import { DropdownModule } from 'primeng/dropdown';
-import { CalendarModule } from 'primeng/calendar';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { SelectModule } from 'primeng/select';
+import { DatePickerModule } from 'primeng/datepicker';
+import { Textarea } from 'primeng/textarea';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { PayrollService, EmployeePayrollSuspension } from '@core/services/payroll.service';
@@ -37,9 +37,9 @@ function parseIsoDate(value?: string): Date | null {
     TableModule,
     TagModule,
     DialogModule,
-    DropdownModule,
-    CalendarModule,
-    InputTextarea,
+    SelectModule,
+    DatePickerModule,
+    Textarea,
     InputSwitchModule,
     ButtonComponent
   ],
@@ -98,16 +98,16 @@ function parseIsoDate(value?: string): Date | null {
       [style]="{ width: '480px' }">
       <div class="payroll-form-group mb-2">
         <label>Type</label>
-        <p-dropdown [options]="suspensionTypeOptions" [(ngModel)]="formType" optionLabel="label" optionValue="value" appendTo="body" styleClass="w-full" />
+        <p-select [options]="suspensionTypeOptions" [(ngModel)]="formType" optionLabel="label" optionValue="value" appendTo="body" styleClass="w-full" />
       </div>
       <div class="payroll-form-row">
         <div class="payroll-form-group">
           <label>Début</label>
-          <p-calendar [(ngModel)]="formStart" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
+          <p-datepicker [(ngModel)]="formStart" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
         </div>
         <div class="payroll-form-group">
           <label>Fin</label>
-          <p-calendar [(ngModel)]="formEnd" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
+          <p-datepicker [(ngModel)]="formEnd" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
         </div>
       </div>
       <div class="payroll-form-group switch-row mb-2">
@@ -116,7 +116,7 @@ function parseIsoDate(value?: string): Date | null {
       </div>
       <div class="payroll-form-group mb-2">
         <label>Motif</label>
-        <textarea pInputTextarea [(ngModel)]="formReason" rows="2" class="w-full"></textarea>
+        <textarea pTextarea [(ngModel)]="formReason" rows="2" class="w-full"></textarea>
       </div>
       <ng-template pTemplate="footer">
         <app-button variant="outline" (click)="dialogVisible = false">Annuler</app-button>

@@ -23,7 +23,7 @@ import { RippleModule } from 'primeng/ripple';
 import { ProgressBarModule } from 'primeng/progressbar';
 import { CheckboxModule } from 'primeng/checkbox';
 import { InputTextModule } from 'primeng/inputtext';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
@@ -47,7 +47,7 @@ type WizardStep = 'start' | 'count' | 'summary' | 'success';
         ProgressBarModule,
         CheckboxModule,
         InputTextModule,
-        DropdownModule,
+        SelectModule,
         PageHeaderComponent,
         BreadcrumbComponent,
         FormSectionComponent,

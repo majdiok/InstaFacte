@@ -4,8 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 
 // PrimeNG
-import { DropdownModule } from 'primeng/dropdown';
-import { CalendarModule } from 'primeng/calendar';
+import { SelectModule } from 'primeng/select';
+import { DatePickerModule } from 'primeng/datepicker';
 import { InputTextModule } from 'primeng/inputtext';
 import { RadioButtonModule } from 'primeng/radiobutton';
 import { TooltipModule } from 'primeng/tooltip';
@@ -46,8 +46,8 @@ import {
     CommonModule,
     FormsModule,
     RouterModule,
-    DropdownModule,
-    CalendarModule,
+    SelectModule,
+    DatePickerModule,
     InputTextModule,
     RadioButtonModule,
     TooltipModule,
@@ -227,7 +227,7 @@ import {
             <label for="issueDate" class="required">
               Date d'émission
             </label>
-            <p-calendar
+            <p-datepicker
               inputId="issueDate"
               [(ngModel)]="issueDate"
               (ngModelChange)="onIssueDateChange($event)"
@@ -239,7 +239,7 @@ import {
               placeholder="Sélectionner une date"
               appendTo="body"
               aria-describedby="issueDateHint">
-            </p-calendar>
+            </p-datepicker>
             <small id="issueDateHint" class="form-hint">
               Date figurant sur la facture (obligatoire)
             </small>
@@ -249,7 +249,7 @@ import {
             <label for="dueDate">
               Date d'échéance
             </label>
-            <p-calendar
+            <p-datepicker
               inputId="dueDate"
               [(ngModel)]="dueDate"
               (ngModelChange)="onDueDateChange($event)"
@@ -261,7 +261,7 @@ import {
               placeholder="Sélectionner une date"
               appendTo="body"
               aria-describedby="dueDateHint">
-            </p-calendar>
+            </p-datepicker>
             <small id="dueDateHint" class="form-hint">
               Date limite de paiement
             </small>
@@ -312,7 +312,7 @@ import {
             <label for="currency" class="required">
               Devise
             </label>
-            <p-dropdown
+            <p-select
               inputId="currency"
               [options]="currencyOptions"
               [(ngModel)]="currency"
@@ -322,7 +322,7 @@ import {
               [showClear]="false"
               appendTo="body"
               aria-describedby="currencyHint">
-            </p-dropdown>
+            </p-select>
             <small id="currencyHint" class="form-hint">
               TND obligatoire pour le marché local
             </small>
@@ -693,8 +693,8 @@ import {
 
       ::ng-deep {
         .p-inputtext,
-        .p-dropdown,
-        .p-calendar {
+        .p-select,
+        .p-datepicker {
           width: 100%;
         }
       }

@@ -6,7 +6,7 @@ import { TagModule } from 'primeng/tag';
 import { TableModule } from 'primeng/table';
 import { ToastModule } from 'primeng/toast';
 import { DialogModule } from 'primeng/dialog';
-import { InputTextarea } from 'primeng/inputtextarea';
+import { Textarea } from 'primeng/textarea';
 import { TooltipModule } from 'primeng/tooltip';
 import { ToastService } from '@core/services/toast.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
@@ -32,7 +32,7 @@ import {
   standalone: true,
   imports: [
     CommonModule, RouterModule, FormsModule, CurrencyPipe, DatePipe,
-    TagModule, TableModule, ToastModule, DialogModule, InputTextarea, TooltipModule,
+    TagModule, TableModule, ToastModule, DialogModule, Textarea, TooltipModule,
     PageHeaderComponent, BreadcrumbComponent, ButtonComponent, CreateSupplierInvoiceModalComponent
   ],
   template: `
@@ -325,7 +325,7 @@ import {
       (onHide)="closeCancelDialog()">
       <p class="dialog-message">Êtes-vous sûr de vouloir annuler cette commande ? Indiquez le motif d'annulation (obligatoire).</p>
       <textarea
-        pInputTextarea
+        pTextarea
         [(ngModel)]="cancellationReason"
         placeholder="Motif d'annulation..."
         [rows]="4"
