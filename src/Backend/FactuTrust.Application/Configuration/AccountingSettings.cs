@@ -200,4 +200,37 @@ public sealed class AccountingSettings
     /// Désactivé par défaut.
     /// </summary>
     public bool PayrollCnssRemittanceEnabled { get; set; }
+
+    /// <summary>Active le calcul automatique des congés maladie (IJ CNSS, carence, subrogation).</summary>
+    public bool PayrollStatutorySickLeaveEnabled { get; set; }
+
+    /// <summary>Active le calcul automatique des congés maternité.</summary>
+    public bool PayrollStatutoryMaternityLeaveEnabled { get; set; }
+
+    /// <summary>Active le calcul automatique des congés paternité.</summary>
+    public bool PayrollStatutoryPaternityLeaveEnabled { get; set; }
+
+    /// <summary>Active le calcul des indemnités de rupture et soldes de tout compte.</summary>
+    public bool PayrollTerminationIndemnityEnabled { get; set; }
+
+    /// <summary>Active la génération des documents RH (STC, certificat de travail, attestation de salaire).</summary>
+    public bool PayrollHrDocumentsEnabled { get; set; }
+
+    /// <summary>Active les primes annuelles paramétrées (13e mois, ancienneté, vacances…).</summary>
+    public bool PayrollAnnualBonusesEnabled { get; set; }
+
+    /// <summary>Active les jours fériés tunisiens dans les calculs de jours ouvrables.</summary>
+    public bool PayrollPublicHolidaysEnabled { get; set; }
+
+    /// <summary>Active les fonctionnalités CIVP/SIVP étendues (attestation, alertes, validation).</summary>
+    public bool PayrollCivpEnhancementsEnabled { get; set; }
+
+    /// <summary>Active les plafonds CNSS et assiettes spécifiques dans le moteur de calcul.</summary>
+    public bool PayrollCnssCeilingsEnabled { get; set; }
+
+    /// <summary>
+    /// Active l'historique des presets légaux multi-LF (lecture et comparaison).
+    /// Safe par défaut : lecture seule, pas d'impact sur le calcul.
+    /// </summary>
+    public bool PayrollLegalPresetsHistoryEnabled { get; set; } = true;
 }

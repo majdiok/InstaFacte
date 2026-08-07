@@ -24,7 +24,9 @@ public static class PayrollCalculator
         ArgumentNullException.ThrowIfNull(parameters);
 
         // 1. Brut soumis à cotisation / imposition.
-        var grossDeductions = input.UnpaidAbsenceAmount + input.ProrataDeductionAmount;
+        var grossDeductions = input.UnpaidAbsenceAmount + input.ProrataDeductionAmount + input.SickLeaveDeductionAmount;
+        var statutoryNonTaxable = input.SickLeaveTopUpAmount + input.SickLeaveSubrogationAmount
+            + input.MaternityTopUpAmount + input.PaternityMaintenanceAmount;
         var cnssableGross = R(
             input.BaseSalary
             + input.TaxableCnssableAllowances
@@ -44,11 +46,12 @@ public static class PayrollCalculator
         if (taxableGross < 0) taxableGross = 0m;
 
         // Brut total affiché (inclut les éléments non soumis, ex. transport dans les limites légales).
-        var totalGross = R(cnssableGross + input.TaxableOnlyAllowances + input.NonTaxableAllowances);
+        var totalGross = R(cnssableGross + input.TaxableOnlyAllowances + input.NonTaxableAllowances + statutoryNonTaxable);
 
-        // 2. CNSS salariale.
+        // 2. CNSS salariale (assiette plafonnée si paramétrée).
         var (cnssEmployeeRate, cnssEmployerRate) = ResolveCnssRates(input.Regime, parameters);
-        var cnssEmployee = R(cnssableGross * cnssEmployeeRate / 100m);
+        var cnssContributionBase = ApplyCnssCeiling(cnssableGross, parameters);
+        var cnssEmployee = R(cnssContributionBase * cnssEmployeeRate / 100m);
 
         // 3. Base imposable après CNSS.
         var baseAfterCnss = R(taxableGross - cnssEmployee);
@@ -94,6 +97,7 @@ public static class PayrollCalculator
             cnssableGross
             + input.TaxableOnlyAllowances
             + input.NonTaxableAllowances
+            + statutoryNonTaxable
             - cnssEmployee
             - irpp
             - css
@@ -113,18 +117,19 @@ public static class PayrollCalculator
         if (netSalary < 0) netSalary = 0m;
 
         // 9. Charges patronales (hors net à payer).
-        var cnssEmployer = R(cnssableGross * cnssEmployerRate / 100m);
+        var cnssEmployer = R(cnssContributionBase * cnssEmployerRate / 100m);
         // L'assurance accident de travail est une branche CNSS : exonérée si le régime l'est.
         var workAccidentRate = input.Regime.IsSubjectToCnss() ? input.WorkAccidentRate : 0m;
-        var workAccident = R(cnssableGross * workAccidentRate / 100m);
+        var accidentBase = ApplyAccidentCeiling(cnssContributionBase, parameters);
+        var workAccident = R(accidentBase * workAccidentRate / 100m);
         var tfpRate = input.IsIndustrialSector ? parameters.TfpRateIndustry : parameters.TfpRateOther;
-        var tfp = R(cnssableGross * tfpRate / 100m);
-        var foprolos = R(cnssableGross * parameters.FoprolosRate / 100m);
-        var cssEmployer = R(cnssableGross * parameters.CssEmployerRate / 100m);
+        var tfp = R(cnssContributionBase * tfpRate / 100m);
+        var foprolos = R(cnssContributionBase * parameters.FoprolosRate / 100m);
+        var cssEmployer = R(cnssContributionBase * parameters.CssEmployerRate / 100m);
 
         var lines = BuildLines(
             input, parameters, cnssEmployeeRate, cnssEmployerRate, tfpRate,
-            cnssableGross, cnssEmployee, baseAfterCnss,
+            cnssableGross, cnssContributionBase, accidentBase, cnssEmployee, baseAfterCnss,
             professionalExpenses, professionalExpensesCapped, familyDeductions,
             monthlyNetTaxable, irpp, css, smigExemption, regularization.Irpp, regularization.Css,
             preTaxDeductions, postTaxDeductions,
@@ -145,7 +150,7 @@ public static class PayrollCalculator
             IrppBeforeSmigExemption = irppBeforeExemption,
             IrppSmigExemption = smigExemption,
             OtherDeductions = R(preTaxDeductions + postTaxDeductions),
-            NonTaxableAllowances = R(input.NonTaxableAllowances),
+            NonTaxableAllowances = R(input.NonTaxableAllowances + statutoryNonTaxable),
             IrppRegularization = regularization.Irpp,
             CssRegularization = regularization.Css,
             RegularizationDeferred = regularization.Deferred,
@@ -287,6 +292,8 @@ public static class PayrollCalculator
         decimal cnssEmployerRate,
         decimal tfpRate,
         decimal cnssableGross,
+        decimal cnssContributionBase,
+        decimal accidentBase,
         decimal cnssEmployee,
         decimal baseAfterCnss,
         decimal professionalExpenses,
@@ -352,7 +359,7 @@ public static class PayrollCalculator
 
         // Retenues salariales
         if (cnssEmployee > 0)
-            Add("Retenue CNSS", PayslipLineKind.Deduction, cnssEmployee, cnssableGross, cnssEmployeeRate);
+            Add("Retenue CNSS", PayslipLineKind.Deduction, cnssEmployee, cnssContributionBase, cnssEmployeeRate);
         if (professionalExpenses > 0)
         {
             // Plafonnés : le montant ne résulte plus de base × taux, on n'affiche donc pas ce couple.
@@ -399,15 +406,15 @@ public static class PayrollCalculator
 
         // Charges patronales
         if (cnssEmployer > 0)
-            Add("CNSS patronale", PayslipLineKind.EmployerContribution, cnssEmployer, cnssableGross, cnssEmployerRate);
+            Add("CNSS patronale", PayslipLineKind.EmployerContribution, cnssEmployer, cnssContributionBase, cnssEmployerRate);
         if (workAccident > 0)
-            Add("Accident de travail", PayslipLineKind.EmployerContribution, workAccident, cnssableGross, input.WorkAccidentRate);
+            Add("Accident de travail", PayslipLineKind.EmployerContribution, workAccident, accidentBase, input.WorkAccidentRate);
         if (tfp > 0)
-            Add("TFP", PayslipLineKind.EmployerContribution, tfp, cnssableGross, tfpRate);
+            Add("TFP", PayslipLineKind.EmployerContribution, tfp, cnssContributionBase, tfpRate);
         if (foprolos > 0)
-            Add("FOPROLOS", PayslipLineKind.EmployerContribution, foprolos, cnssableGross, parameters.FoprolosRate);
+            Add("FOPROLOS", PayslipLineKind.EmployerContribution, foprolos, cnssContributionBase, parameters.FoprolosRate);
         if (cssEmployer > 0)
-            Add("CSS patronale", PayslipLineKind.EmployerContribution, cssEmployer, cnssableGross, parameters.CssEmployerRate);
+            Add("CSS patronale", PayslipLineKind.EmployerContribution, cssEmployer, cnssContributionBase, parameters.CssEmployerRate);
 
         foreach (var employerCharge in input.EmployerChargeLines.Where(c => c.Amount > 0))
             Add(employerCharge.Label, PayslipLineKind.EmployerContribution, employerCharge.Amount);
@@ -428,6 +435,22 @@ public static class PayrollCalculator
             SocialRegime.Rsa => (parameters.CnssEmployeeRateRsa, parameters.CnssEmployerRateRsa),
             _ => (parameters.CnssEmployeeRate, parameters.CnssEmployerRate)
         };
+    }
+
+    /// <summary>Applique le plafond mensuel CNSS si paramétré (null = comportement historique).</summary>
+    public static decimal ApplyCnssCeiling(decimal cnssableGross, PayrollYearParameters parameters)
+    {
+        if (!parameters.CnssMonthlyCeiling.HasValue)
+            return cnssableGross;
+        return Math.Min(cnssableGross, parameters.CnssMonthlyCeiling.Value);
+    }
+
+    /// <summary>Applique le plafond mensuel accident du travail si paramétré.</summary>
+    public static decimal ApplyAccidentCeiling(decimal cnssContributionBase, PayrollYearParameters parameters)
+    {
+        if (!parameters.AccidentWorkMonthlyCeiling.HasValue)
+            return cnssContributionBase;
+        return Math.Min(cnssContributionBase, parameters.AccidentWorkMonthlyCeiling.Value);
     }
 
     private static decimal R(decimal value) => Math.Round(value, 3, MidpointRounding.AwayFromZero);

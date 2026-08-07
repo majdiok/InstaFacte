@@ -246,6 +246,36 @@ public static class LeaveTypeExtensions
     /// <summary>Vrai si ce type de congé/absence réduit le brut du mois.</summary>
     public static bool ReducesGross(this LeaveType type) =>
         type is LeaveType.Unpaid or LeaveType.Unjustified;
+
+    /// <summary>Vrai si ce type déclenche un calcul statutaire (maladie, maternité, paternité).</summary>
+    public static bool AffectsPayrollComputation(this LeaveType type) =>
+        type is LeaveType.Sick or LeaveType.Maternity or LeaveType.Paternity;
+
+    /// <summary>Vrai si un certificat médical est requis pour ce type de congé.</summary>
+    public static bool RequiresMedicalCertificate(this LeaveType type) =>
+        type is LeaveType.Sick or LeaveType.Maternity;
+}
+
+/// <summary>Statut d'une créance IJ CNSS à récupérer.</summary>
+public enum CnssIjClaimStatus
+{
+    /// <summary>Émise, en attente de règlement CNSS.</summary>
+    Pending = 0,
+    /// <summary>Réglée par la CNSS.</summary>
+    Paid = 1,
+    /// <summary>Rejetée par la CNSS.</summary>
+    Rejected = 2
+}
+
+public static class CnssIjClaimStatusExtensions
+{
+    public static string ToDisplayString(this CnssIjClaimStatus status) => status switch
+    {
+        CnssIjClaimStatus.Pending => "En attente",
+        CnssIjClaimStatus.Paid => "Réglée",
+        CnssIjClaimStatus.Rejected => "Rejetée",
+        _ => throw new ArgumentOutOfRangeException(nameof(status))
+    };
 }
 
 /// <summary>Type de suspension de contrat (paie).</summary>
@@ -445,6 +475,25 @@ public static class DependentParentKinshipExtensions
     };
 }
 
+/// <summary>Type de jour férié tunisien (calendrier civil ou islamique).</summary>
+public enum PublicHolidayKind
+{
+    /// <summary>Fête à date fixe (calendrier grégorien).</summary>
+    Fixed = 0,
+    /// <summary>Fête islamique (date lunaire, souvent estimée).</summary>
+    Islamic = 1
+}
+
+public static class PublicHolidayKindExtensions
+{
+    public static string ToDisplayString(this PublicHolidayKind kind) => kind switch
+    {
+        PublicHolidayKind.Fixed => "Fixe",
+        PublicHolidayKind.Islamic => "Islamique",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind))
+    };
+}
+
 /// <summary>État des déclarations de parents à charge d'un salarié.</summary>
 public enum ParentClaimsStatus
 {
@@ -456,4 +505,110 @@ public enum ParentClaimsStatus
     Incomplete = 2,
     /// <summary>Le même CIN parent est déclaré par un autre salarié de l'entreprise.</summary>
     Conflict = 3
+}
+
+/// <summary>Motif de rupture du contrat de travail.</summary>
+public enum TerminationReason
+{
+    Dismissal = 0,
+    Resignation = 1,
+    Retirement = 2,
+    MutualAgreement = 3,
+    GrossMisconduct = 4,
+    EndOfCdd = 5,
+    EndOfSivp = 6,
+    Death = 7
+}
+
+public static class TerminationReasonExtensions
+{
+    public static string ToDisplayString(this TerminationReason reason) => reason switch
+    {
+        TerminationReason.Dismissal => "Licenciement",
+        TerminationReason.Resignation => "Démission",
+        TerminationReason.Retirement => "Retraite",
+        TerminationReason.MutualAgreement => "Rupture conventionnelle",
+        TerminationReason.GrossMisconduct => "Faute grave",
+        TerminationReason.EndOfCdd => "Fin de CDD",
+        TerminationReason.EndOfSivp => "Fin de SIVP",
+        TerminationReason.Death => "Décès",
+        _ => throw new ArgumentOutOfRangeException(nameof(reason))
+    };
+
+    /// <summary>Vrai si l'indemnité légale art. 22bis CDT peut s'appliquer.</summary>
+    public static bool IsEligibleForLegalIndemnity(this TerminationReason reason) =>
+        reason is TerminationReason.Dismissal or TerminationReason.MutualAgreement or TerminationReason.EndOfCdd;
+}
+
+/// <summary>Statut du workflow d'un solde de tout compte / rupture.</summary>
+public enum TerminationSettlementStatus
+{
+    Draft = 0,
+    Calculated = 1,
+    Approved = 2,
+    Paid = 3,
+    Cancelled = 4
+}
+
+public static class TerminationSettlementStatusExtensions
+{
+    public static string ToDisplayString(this TerminationSettlementStatus status) => status switch
+    {
+        TerminationSettlementStatus.Draft => "Brouillon",
+        TerminationSettlementStatus.Calculated => "Calculé",
+        TerminationSettlementStatus.Approved => "Approuvé",
+        TerminationSettlementStatus.Paid => "Payé",
+        TerminationSettlementStatus.Cancelled => "Annulé",
+        _ => throw new ArgumentOutOfRangeException(nameof(status))
+    };
+
+    public static bool CanBeEdited(this TerminationSettlementStatus status) =>
+        status is TerminationSettlementStatus.Draft or TerminationSettlementStatus.Calculated;
+}
+
+/// <summary>Nature d'une prime annuelle paramétrable.</summary>
+public enum AnnualBonusKind
+{
+    ThirteenthMonth = 0,
+    Seniority = 1,
+    Vacation = 2,
+    Other = 99
+}
+
+public static class AnnualBonusKindExtensions
+{
+    public static string ToDisplayString(this AnnualBonusKind kind) => kind switch
+    {
+        AnnualBonusKind.ThirteenthMonth => "13e mois",
+        AnnualBonusKind.Seniority => "Prime d'ancienneté",
+        AnnualBonusKind.Vacation => "Prime de vacances",
+        AnnualBonusKind.Other => "Autre prime annuelle",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind))
+    };
+}
+
+/// <summary>Formule de calcul d'une prime annuelle.</summary>
+public enum AnnualBonusFormula
+{
+    FixedAmount = 0,
+    PercentOfBase = 1,
+    MonthsOfBase = 2
+}
+
+public static class AnnualBonusFormulaExtensions
+{
+    public static string ToDisplayString(this AnnualBonusFormula formula) => formula switch
+    {
+        AnnualBonusFormula.FixedAmount => "Montant fixe",
+        AnnualBonusFormula.PercentOfBase => "% du salaire de base",
+        AnnualBonusFormula.MonthsOfBase => "Mois de salaire de base",
+        _ => throw new ArgumentOutOfRangeException(nameof(formula))
+    };
+}
+
+/// <summary>Origine d'une ligne de prime variable mensuelle.</summary>
+public enum VariableAllowanceSource
+{
+    Manual = 0,
+    AutoAnnualBonus = 1
 }

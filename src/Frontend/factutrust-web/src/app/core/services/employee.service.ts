@@ -65,6 +65,11 @@ export interface EmploymentContract {
   jobTitle?: string;
   isActive: boolean;
   allowances: ContractAllowance[];
+  civpStartDate?: string;
+  civpEndDate?: string;
+  civpStateGrant?: number;
+  civpEmployerAllowance?: number;
+  anetiReference?: string;
 }
 
 export interface EmployeeDetail {
@@ -144,6 +149,11 @@ export interface CreateContractRequest {
   workAccidentRate: number;
   jobTitle?: string;
   allowances?: ContractAllowance[];
+  civpStartDate?: string;
+  civpEndDate?: string;
+  civpStateGrant?: number;
+  civpEmployerAllowance?: number;
+  anetiReference?: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -184,6 +194,10 @@ export class EmployeeService {
 
   updateContract(contractId: string, body: CreateContractRequest & { isActive: boolean }): Observable<ApiResponse<unknown>> {
     return this.http.put<ApiResponse<unknown>>(`${this.baseUrl}/contracts/${contractId}`, body);
+  }
+
+  exportCivpAttestationPdf(contractId: string): Observable<Blob> {
+    return this.http.get(`${this.baseUrl}/contracts/${contractId}/civp-attestation/pdf`, { responseType: 'blob' });
   }
 
   deleteContract(contractId: string): Observable<ApiResponse<unknown>> {

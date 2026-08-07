@@ -1,10 +1,13 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities.Payroll;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.Services.Payroll;
 using FluentValidation;
 using MediatR;
+using Microsoft.Extensions.Options;
 
 namespace FactuTrust.Application.Features.Payroll.Commands;
 
@@ -27,11 +30,16 @@ public sealed class AddContractCommandHandler : IRequestHandler<AddContractComma
 {
     private readonly IEmployeeRepository _employees;
     private readonly IPayrollParametersRepository _parameters;
+    private readonly AccountingSettings _settings;
 
-    public AddContractCommandHandler(IEmployeeRepository employees, IPayrollParametersRepository parameters)
+    public AddContractCommandHandler(
+        IEmployeeRepository employees,
+        IPayrollParametersRepository parameters,
+        IOptions<AccountingSettings> settings)
     {
         _employees = employees;
         _parameters = parameters;
+        _settings = settings.Value;
     }
 
     public async Task<Result<Guid>> Handle(AddContractCommand request, CancellationToken cancellationToken)
@@ -54,9 +62,18 @@ public sealed class AddContractCommandHandler : IRequestHandler<AddContractComma
             return Result.Failure<Guid>(Error.Validation("BaseSalary", $"Le salaire de base ne peut pas être inférieur au SMIG ({parameters.MonthlySmig:N3} TND)."));
 
         var contractResult = EmploymentContract.CreatePublic(
-            request.EmployeeId, type, regime, dto.StartDate, dto.BaseSalary, dto.WorkAccidentRate, dto.EndDate, dto.JobTitle, weeklyRegime);
+            request.EmployeeId, type, regime, dto.StartDate, dto.BaseSalary, dto.WorkAccidentRate,
+            dto.EndDate, dto.JobTitle, weeklyRegime,
+            dto.CivpStartDate, dto.CivpEndDate, dto.CivpStateGrant, dto.CivpEmployerAllowance, dto.AnetiReference);
         if (contractResult.IsFailure)
             return Result.Failure<Guid>(contractResult.Error);
+
+        if (_settings.PayrollCivpEnhancementsEnabled)
+        {
+            var civpValidation = CivpContractValidator.Validate(contractResult.Value);
+            if (civpValidation.IsFailure)
+                return Result.Failure<Guid>(civpValidation.Error);
+        }
 
         var contract = contractResult.Value;
         foreach (var allowance in dto.Allowances)
@@ -87,11 +104,16 @@ public sealed class UpdateContractCommandHandler : IRequestHandler<UpdateContrac
 {
     private readonly IEmployeeRepository _employees;
     private readonly IPayrollParametersRepository _parameters;
+    private readonly AccountingSettings _settings;
 
-    public UpdateContractCommandHandler(IEmployeeRepository employees, IPayrollParametersRepository parameters)
+    public UpdateContractCommandHandler(
+        IEmployeeRepository employees,
+        IPayrollParametersRepository parameters,
+        IOptions<AccountingSettings> settings)
     {
         _employees = employees;
         _parameters = parameters;
+        _settings = settings.Value;
     }
 
     public async Task<Result> Handle(UpdateContractCommand request, CancellationToken cancellationToken)
@@ -114,9 +136,18 @@ public sealed class UpdateContractCommandHandler : IRequestHandler<UpdateContrac
         if (parameters.EnforceSmigOnContracts && dto.BaseSalary < parameters.MonthlySmig)
             return Result.Failure(Error.Validation("BaseSalary", $"Le salaire de base ne peut pas être inférieur au SMIG ({parameters.MonthlySmig:N3} TND)."));
 
-        var updateResult = contract.Update(type, regime, dto.StartDate, dto.BaseSalary, dto.WorkAccidentRate, dto.EndDate, dto.JobTitle, dto.IsActive, weeklyRegime);
+        var updateResult = contract.Update(
+            type, regime, dto.StartDate, dto.BaseSalary, dto.WorkAccidentRate, dto.EndDate, dto.JobTitle, dto.IsActive, weeklyRegime,
+            dto.CivpStartDate, dto.CivpEndDate, dto.CivpStateGrant, dto.CivpEmployerAllowance, dto.AnetiReference);
         if (updateResult.IsFailure)
             return updateResult;
+
+        if (_settings.PayrollCivpEnhancementsEnabled)
+        {
+            var civpValidation = CivpContractValidator.Validate(contract);
+            if (civpValidation.IsFailure)
+                return civpValidation;
+        }
 
         contract.ClearAllowances();
         foreach (var allowance in dto.Allowances)

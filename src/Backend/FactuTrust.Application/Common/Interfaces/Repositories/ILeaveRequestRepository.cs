@@ -12,4 +12,7 @@ public interface ILeaveRequestRepository : IRepository<LeaveRequest>
 
     /// <summary>Approved leaves overlapping a given month (used to derive unpaid-absence days).</summary>
     Task<IReadOnlyList<LeaveRequest>> ListForMonthAsync(int year, int month, CancellationToken cancellationToken = default);
+
+    /// <summary>Approved sick leaves for a calendar year (IJ annual cap).</summary>
+    Task<IReadOnlyList<LeaveRequest>> ListSickLeavesForYearAsync(int year, CancellationToken cancellationToken = default);
 }

@@ -40,6 +40,11 @@ public partial class TenantDbContext
         ConfigureEmployeeGarnishment(builder);
         ConfigurePayrollGarnishmentBracket(builder);
         ConfigureEmployeeDependentParent(builder);
+        ConfigurePayrollPublicHoliday(builder);
+        ConfigureCnssIjClaim(builder);
+        ConfigureTerminationSettlement(builder);
+        ConfigureAnnualBonusRule(builder);
+        ConfigureEmployeeAnnualBonusRule(builder);
     }
 
 
@@ -118,6 +123,9 @@ public partial class TenantDbContext
             entity.Property(c => c.WorkAccidentRate).HasPrecision(8, 4);
             entity.Property(c => c.JobTitle).HasMaxLength(150);
             entity.Property(c => c.IsActive).IsRequired();
+            entity.Property(c => c.CivpStateGrant).HasPrecision(18, 3).HasDefaultValue(0m);
+            entity.Property(c => c.CivpEmployerAllowance).HasPrecision(18, 3).HasDefaultValue(0m);
+            entity.Property(c => c.AnetiReference).HasMaxLength(100);
 
             entity.HasMany(c => c.Allowances)
                   .WithOne()
@@ -303,6 +311,15 @@ public partial class TenantDbContext
             entity.Property(p => p.SmigIrppExemptionMode).IsRequired().HasDefaultValue(SmigIrppExemptionMode.None);
             entity.Property(p => p.SmigIrppExemptionRateOverride).HasPrecision(5, 2);
             entity.Property(p => p.MealVoucherDailyExemptionCap).HasPrecision(18, 3).HasDefaultValue(3.000m);
+            entity.Property(p => p.CnssMonthlyCeiling).HasPrecision(18, 3);
+            entity.Property(p => p.CnssDailyCeiling).HasPrecision(18, 3);
+            entity.Property(p => p.CssMonthlyCeiling).HasPrecision(18, 3);
+            entity.Property(p => p.AccidentWorkMonthlyCeiling).HasPrecision(18, 3);
+            entity.Property(p => p.SickLeaveWaitingDays).IsRequired().HasDefaultValue(5);
+            entity.Property(p => p.SickLeaveIjRatePercent).HasPrecision(8, 4).HasDefaultValue(66.67m);
+            entity.Property(p => p.MaternityLeaveDurationDays).IsRequired().HasDefaultValue(60);
+            entity.Property(p => p.PaternityLeaveDurationDays).IsRequired().HasDefaultValue(2);
+            entity.Property(p => p.MaternityEmployerTopUpDefault).HasPrecision(8, 4).HasDefaultValue(100m);
 
             entity.HasMany(p => p.IrppBrackets)
                   .WithOne()
@@ -348,6 +365,9 @@ public partial class TenantDbContext
             entity.Property(l => l.Reason).HasMaxLength(500);
             entity.Property(l => l.IsApproved).IsRequired();
             entity.Property(l => l.ApprovedBy).HasMaxLength(450);
+            entity.Property(l => l.MedicalCertificateNumber).HasMaxLength(100);
+            entity.Property(l => l.EmployerTopUpPercent).HasPrecision(8, 4);
+            entity.Property(l => l.ChildBirthCertificateNumber).HasMaxLength(100);
 
             entity.HasIndex(l => l.EmployeeId);
             entity.HasIndex(l => new { l.StartDate, l.EndDate });
@@ -427,9 +447,12 @@ public partial class TenantDbContext
             entity.Property(l => l.Amount).HasPrecision(18, 3);
             entity.Property(l => l.Taxable).IsRequired();
             entity.Property(l => l.SubjectToCnss).IsRequired();
+            entity.Property(l => l.Source).IsRequired().HasDefaultValue(VariableAllowanceSource.Manual);
+            entity.Property(l => l.AnnualBonusRuleId);
 
             entity.HasIndex(l => new { l.EmployeeId, l.Year, l.Month });
             entity.HasIndex(l => new { l.Year, l.Month });
+            entity.HasIndex(l => new { l.EmployeeId, l.Year, l.Month, l.AnnualBonusRuleId, l.Source });
         });
     }
 
@@ -798,6 +821,114 @@ public partial class TenantDbContext
                 .IsUnique()
                 .HasFilter("[EndDate] IS NULL")
                 .HasDatabaseName("IX_EmployeeDependentParents_ParentCin_Active");
+        });
+    }
+
+    private static void ConfigurePayrollPublicHoliday(ModelBuilder builder)
+    {
+        builder.Entity<PayrollPublicHoliday>(entity =>
+        {
+            entity.ToTable("PayrollPublicHolidays");
+            entity.HasKey(h => h.Id);
+
+            entity.Property(h => h.Year).IsRequired();
+            entity.Property(h => h.Date).IsRequired();
+            entity.Property(h => h.Label).HasMaxLength(200).IsRequired();
+            entity.Property(h => h.Kind).IsRequired();
+            entity.Property(h => h.IsPaid).IsRequired();
+            entity.Property(h => h.IsEstimated).IsRequired();
+            entity.Property(h => h.DecreeReference).HasMaxLength(500);
+
+            entity.HasIndex(h => new { h.Year, h.Date }).IsUnique();
+            entity.HasIndex(h => h.Date);
+        });
+    }
+
+    private static void ConfigureCnssIjClaim(ModelBuilder builder)
+    {
+        builder.Entity<CnssIjClaim>(entity =>
+        {
+            entity.ToTable("CnssIjClaims");
+            entity.HasKey(c => c.Id);
+
+            entity.Property(c => c.EmployeeId).IsRequired();
+            entity.Property(c => c.LeaveRequestId).IsRequired();
+            entity.Property(c => c.Year).IsRequired();
+            entity.Property(c => c.Month).IsRequired();
+            entity.Property(c => c.Amount).HasPrecision(18, 3);
+            entity.Property(c => c.Status).IsRequired();
+
+            entity.HasIndex(c => c.EmployeeId);
+            entity.HasIndex(c => new { c.Year, c.Month });
+            entity.HasIndex(c => new { c.LeaveRequestId, c.Year, c.Month }).IsUnique();
+        });
+    }
+
+    private static void ConfigureTerminationSettlement(ModelBuilder builder)
+    {
+        builder.Entity<TerminationSettlement>(entity =>
+        {
+            entity.ToTable("TerminationSettlements");
+            entity.HasKey(s => s.Id);
+
+            entity.Property(s => s.EmployeeId).IsRequired();
+            entity.Property(s => s.Year).IsRequired();
+            entity.Property(s => s.Month).IsRequired();
+            entity.Property(s => s.TerminationDate).IsRequired();
+            entity.Property(s => s.Reason).IsRequired();
+            entity.Property(s => s.Status).IsRequired();
+            entity.Property(s => s.SeniorityMonths).IsRequired();
+            entity.Property(s => s.GrossMonthlyReference).HasPrecision(18, 3);
+            entity.Property(s => s.LegalIndemnityAmount).HasPrecision(18, 3);
+            entity.Property(s => s.NoticeIndemnityAmount).HasPrecision(18, 3);
+            entity.Property(s => s.UnusedLeaveAmount).HasPrecision(18, 3);
+            entity.Property(s => s.OtherIndemnityAmount).HasPrecision(18, 3);
+            entity.Property(s => s.Notes).HasMaxLength(1000);
+
+            entity.HasIndex(s => new { s.EmployeeId, s.Year, s.Month }).IsUnique();
+            entity.HasIndex(s => new { s.Year, s.Month });
+        });
+    }
+
+    private static void ConfigureAnnualBonusRule(ModelBuilder builder)
+    {
+        builder.Entity<AnnualBonusRule>(entity =>
+        {
+            entity.ToTable("AnnualBonusRules");
+            entity.HasKey(r => r.Id);
+
+            entity.Property(r => r.Code).HasMaxLength(50).IsRequired();
+            entity.Property(r => r.Label).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.Kind).IsRequired();
+            entity.Property(r => r.Formula).IsRequired();
+            entity.Property(r => r.PaymentMonth).IsRequired();
+            entity.Property(r => r.FixedAmount).HasPrecision(18, 3);
+            entity.Property(r => r.RatePercent).HasPrecision(8, 4);
+            entity.Property(r => r.MonthsOfBase).HasPrecision(8, 4);
+            entity.Property(r => r.Taxable).IsRequired();
+            entity.Property(r => r.SubjectToCnss).IsRequired();
+            entity.Property(r => r.IsActive).IsRequired();
+
+            entity.HasIndex(r => r.Code).IsUnique();
+        });
+    }
+
+    private static void ConfigureEmployeeAnnualBonusRule(ModelBuilder builder)
+    {
+        builder.Entity<EmployeeAnnualBonusRule>(entity =>
+        {
+            entity.ToTable("EmployeeAnnualBonusRules");
+            entity.HasKey(a => a.Id);
+
+            entity.Property(a => a.EmployeeId).IsRequired();
+            entity.Property(a => a.AnnualBonusRuleId).IsRequired();
+            entity.Property(a => a.IsActive).IsRequired();
+            entity.Property(a => a.OverrideFixedAmount).HasPrecision(18, 3);
+            entity.Property(a => a.OverrideRatePercent).HasPrecision(8, 4);
+            entity.Property(a => a.OverrideMonthsOfBase).HasPrecision(8, 4);
+
+            entity.HasIndex(a => new { a.EmployeeId, a.AnnualBonusRuleId }).IsUnique();
+            entity.HasIndex(a => a.EmployeeId);
         });
     }
 }

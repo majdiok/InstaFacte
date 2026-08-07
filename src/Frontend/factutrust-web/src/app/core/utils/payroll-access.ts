@@ -35,6 +35,14 @@ export function canManageGarnishments(auth: AuthService): boolean {
   return auth.hasPermission(PERMISSIONS.payroll.manageGarnishments);
 }
 
+export function canGenerateHrDocuments(auth: AuthService): boolean {
+  return auth.hasPermission(PERMISSIONS.payroll.hrDocuments);
+}
+
+export function canManageTermination(auth: AuthService): boolean {
+  return auth.hasPermission(PERMISSIONS.payroll.manageTermination);
+}
+
 /** Accounting firm in delegated mode without employee management rights. */
 export function isPayrollConsultMode(auth: AuthService): boolean {
   return auth.isAccountingFirm() && auth.isDelegatedMode() && !canManagePayrollEmployees(auth);

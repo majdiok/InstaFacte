@@ -66,4 +66,41 @@ public sealed class PayrollVariableAllowanceRepository : IPayrollVariableAllowan
         context.PayrollVariableAllowanceLines.Remove(entity);
         await context.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task<PayrollVariableAllowanceLine?> GetAutoAnnualBonusLineAsync(
+        Guid employeeId, int year, int month, Guid annualBonusRuleId, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.PayrollVariableAllowanceLines.FirstOrDefaultAsync(
+            l => l.EmployeeId == employeeId && l.Year == year && l.Month == month
+                 && l.AnnualBonusRuleId == annualBonusRuleId
+                 && l.Source == Domain.Enums.VariableAllowanceSource.AutoAnnualBonus,
+            cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<PayrollVariableAllowanceLine>> ListAutoAnnualBonusForMonthAsync(
+        int year, int month, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.PayrollVariableAllowanceLines
+            .Where(l => l.Year == year && l.Month == month
+                        && l.Source == Domain.Enums.VariableAllowanceSource.AutoAnnualBonus)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task SaveBatchAsync(
+        IReadOnlyList<PayrollVariableAllowanceLine> added,
+        IReadOnlyList<PayrollVariableAllowanceLine> updated,
+        CancellationToken cancellationToken = default)
+    {
+        if (added.Count == 0 && updated.Count == 0)
+            return;
+
+        await using var context = _contextFactory.CreateContext();
+        if (added.Count > 0)
+            context.PayrollVariableAllowanceLines.AddRange(added);
+        foreach (var entity in updated)
+            context.PayrollVariableAllowanceLines.Update(entity);
+        await context.SaveChangesAsync(cancellationToken);
+    }
 }

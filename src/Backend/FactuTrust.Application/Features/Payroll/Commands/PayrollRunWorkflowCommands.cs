@@ -189,6 +189,8 @@ public sealed class ReopenPayrollRunCommandHandler : IRequestHandler<ReopenPayro
     private readonly IEmployeeLoanRepository _loans;
     private readonly IEmployeeGarnishmentRepository _garnishments;
     private readonly ICnssContributionPaymentRepository _cnssPayments;
+    private readonly IPayrollPaymentRepository _payments;
+    private readonly IAccountingService _accountingService;
     private readonly ITenantUnitOfWork _unitOfWork;
 
     public ReopenPayrollRunCommandHandler(
@@ -198,6 +200,8 @@ public sealed class ReopenPayrollRunCommandHandler : IRequestHandler<ReopenPayro
         IEmployeeLoanRepository loans,
         IEmployeeGarnishmentRepository garnishments,
         ICnssContributionPaymentRepository cnssPayments,
+        IPayrollPaymentRepository payments,
+        IAccountingService accountingService,
         ITenantUnitOfWork unitOfWork)
     {
         _runs = runs;
@@ -206,6 +210,8 @@ public sealed class ReopenPayrollRunCommandHandler : IRequestHandler<ReopenPayro
         _loans = loans;
         _garnishments = garnishments;
         _cnssPayments = cnssPayments;
+        _payments = payments;
+        _accountingService = accountingService;
         _unitOfWork = unitOfWork;
     }
 
@@ -224,11 +230,26 @@ public sealed class ReopenPayrollRunCommandHandler : IRequestHandler<ReopenPayro
                     "Impossible de rouvrir : un versement CNSS actif existe pour ce cycle. Annulez-le d'abord."));
             }
 
+            var activePayments = await _payments.ListByPayrollRunAsync(run.Id, includeCancelled: false, ct);
+            if (activePayments.Count > 0)
+            {
+                return Result.Failure(Error.Validation(
+                    "PayrollPayment",
+                    "Impossible de rouvrir : des paiements de salaires actifs existent pour ce cycle. Annulez-les d'abord."));
+            }
+
             var reopenResult = run.Reopen();
             if (reopenResult.IsFailure)
                 return reopenResult;
 
             await _runs.UpdateScalarAsync(run, ct);
+
+            // L'écriture OD doit être invalidée ici : sa génération est idempotente par source, donc
+            // sans extourne la revalidation la laisserait figée sur les anciens montants.
+            var reverseResult = await _accountingService.ReversePayrollRunEntryAsync(
+                run.Id, $"Réouverture du cycle {run.Month:D2}/{run.Year}", ct);
+            if (reverseResult.IsFailure)
+                return reverseResult;
 
             // Requête ciblée (avant : chargement de TOUTE la table des avances + filtre en mémoire).
             var settled = await _advances.ListSettledByPayrollRunIdAsync(run.Id, ct);

@@ -174,4 +174,24 @@ public interface IPdfService
     Task<byte[]> GenerateCnssContributionRemittancePdfAsync(
         CnssContributionRemittanceDto remittance,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Génère le PDF d'un certificat de travail.</summary>
+    Task<byte[]> GenerateEmploymentCertificatePdfAsync(
+        EmploymentCertificateDto certificate,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Génère le PDF d'une attestation de salaire.</summary>
+    Task<byte[]> GenerateSalaryCertificatePdfAsync(
+        SalaryCertificateDto certificate,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Génère le PDF d'un solde de tout compte.</summary>
+    Task<byte[]> GenerateSoldeToutComptePdfAsync(
+        SoldeToutCompteDto settlement,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Génère le PDF d'une attestation CIVP/SIVP.</summary>
+    Task<byte[]> GenerateCivpAttestationPdfAsync(
+        CivpAttestationDto attestation,
+        CancellationToken cancellationToken = default);
 }

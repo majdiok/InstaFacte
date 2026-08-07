@@ -62,6 +62,7 @@ describe('EmployeeDetailComponent', () => {
         { provide: EmployeeService, useValue: employeeServiceSpy },
         { provide: PayrollService, useValue: {
           getParameters: () => of({ success: true, data: { monthlySmig: 528.32 } }),
+          getFeatureFlags: () => of({ success: true, data: { hrDocumentsEnabled: false } }),
           // Onglets salariés : chacun appelle une méthode de lecture au ngOnInit.
           listSocialFunds: () => of({ success: true, data: [] }),
           listSocialFundEnrollments: () => of({ success: true, data: [] }),

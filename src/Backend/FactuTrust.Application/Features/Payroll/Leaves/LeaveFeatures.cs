@@ -55,7 +55,11 @@ public sealed class CreateLeaveCommandHandler : IRequestHandler<CreateLeaveComma
         if (balanceCheck.IsFailure)
             return Result.Failure<Guid>(balanceCheck.Error);
 
-        var leaveResult = LeaveRequest.Create(dto.EmployeeId, type, dto.StartDate, dto.EndDate, dto.Days, dto.Reason);
+        var leaveResult = LeaveRequest.Create(
+            dto.EmployeeId, type, dto.StartDate, dto.EndDate, dto.Days, dto.Reason,
+            dto.MedicalCertificateNumber, dto.MedicalCertificateDate, dto.SubrogationEnabled,
+            dto.EmployerTopUpPercent, dto.EmployerTopUpDays, dto.ExpectedBirthDate,
+            dto.ActualBirthDate, dto.ChildBirthCertificateNumber);
         if (leaveResult.IsFailure)
             return Result.Failure<Guid>(leaveResult.Error);
 
@@ -145,5 +149,76 @@ public sealed class GetEmployeeLeavesQueryHandler : IRequestHandler<GetEmployeeL
     {
         var leaves = await _leaves.ListByEmployeeAsync(request.EmployeeId, cancellationToken);
         return leaves.Select(l => PayrollMappings.ToDto(l)).ToList();
+    }
+}
+
+// ── Declare birth (maternity / paternity pre-fill) ──
+public sealed record DeclareBirthCommand(DeclareBirthDto Dto) : IRequest<Result<Guid>>;
+
+public sealed class DeclareBirthCommandValidator : AbstractValidator<DeclareBirthCommand>
+{
+    public DeclareBirthCommandValidator()
+    {
+        RuleFor(x => x.Dto.EmployeeId).NotEmpty();
+        RuleFor(x => x.Dto.ActualBirthDate).NotEmpty();
+    }
+}
+
+public sealed class DeclareBirthCommandHandler : IRequestHandler<DeclareBirthCommand, Result<Guid>>
+{
+    private readonly ILeaveRequestRepository _leaves;
+    private readonly IEmployeeRepository _employees;
+
+    public DeclareBirthCommandHandler(ILeaveRequestRepository leaves, IEmployeeRepository employees)
+    {
+        _leaves = leaves;
+        _employees = employees;
+    }
+
+    public async Task<Result<Guid>> Handle(DeclareBirthCommand request, CancellationToken cancellationToken)
+    {
+        var dto = request.Dto;
+        if (!await _employees.ExistsAsync(dto.EmployeeId, cancellationToken))
+            return Result.Failure<Guid>(Error.NotFound("Employee", dto.EmployeeId));
+
+        Guid? lastId = null;
+
+        if (dto.CreateMaternityLeave)
+        {
+            var start = dto.ActualBirthDate.Date.AddDays(-30);
+            var end = dto.ActualBirthDate.Date.AddDays(30);
+            var create = LeaveRequest.Create(
+                dto.EmployeeId, LeaveType.Maternity, start, end, 60m,
+                "Congé maternité (déclaration naissance)",
+                expectedBirthDate: dto.ActualBirthDate,
+                actualBirthDate: dto.ActualBirthDate,
+                childBirthCertificateNumber: dto.ChildBirthCertificateNumber);
+            if (create.IsFailure) return Result.Failure<Guid>(create.Error);
+            await _leaves.AddAsync(create.Value, cancellationToken);
+            lastId = create.Value.Id;
+        }
+
+        if (dto.CreatePaternityLeave)
+        {
+            var start = dto.ActualBirthDate.Date;
+            var end = dto.ActualBirthDate.Date.AddDays(1);
+            var create = LeaveRequest.Create(
+                dto.EmployeeId, LeaveType.Paternity, start, end, 2m,
+                "Congé paternité (déclaration naissance)",
+                actualBirthDate: dto.ActualBirthDate,
+                childBirthCertificateNumber: dto.ChildBirthCertificateNumber);
+            if (create.IsFailure) return Result.Failure<Guid>(create.Error);
+            await _leaves.AddAsync(create.Value, cancellationToken);
+            lastId = create.Value.Id;
+        }
+
+        if (!lastId.HasValue)
+        {
+            return Result.Failure<Guid>(Error.Validation(
+                "Leave",
+                "Sélectionnez au moins un congé à créer."));
+        }
+
+        return Result.Success(lastId.Value);
     }
 }

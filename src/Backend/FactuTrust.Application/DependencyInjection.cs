@@ -1,7 +1,9 @@
 using System.Reflection;
 using FluentValidation;
 using FactuTrust.Application.Features.Accounting.FiscalSchedule;
+using FactuTrust.Application.Features.Payroll.AnnualBonuses;
 using FactuTrust.Application.Features.Payroll.Declarations.CnssRemittance;
+using FactuTrust.Application.Features.Payroll.HrDocuments;
 using FactuTrust.Application.Features.Payroll.Services;
 using FactuTrust.Application.Features.Search;
 using FactuTrust.Application.Features.Search.Providers;
@@ -34,7 +36,10 @@ public static class DependencyInjection
 
         services.AddScoped<ISupplierInvoiceNumberService, SupplierInvoiceNumberService>();
         services.AddScoped<PayrollInputBuilder>();
+        services.AddScoped<StatutoryIjClaimSyncService>();
+        services.AddScoped<AnnualBonusSyncService>();
         services.AddScoped<CnssRemittanceDataLoader>();
+        services.AddScoped<PayrollHrDocumentDataLoader>();
 
         // FluentValidation
         services.AddValidatorsFromAssembly(assembly);

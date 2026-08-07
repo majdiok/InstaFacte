@@ -229,11 +229,17 @@ public static class DependencyInjection
         services.AddScoped<ICnssContributionPaymentRepository, CnssContributionPaymentRepository>();
         services.AddScoped<IPayrollParametersRepository, PayrollParametersRepository>();
         services.AddScoped<ILeaveRequestRepository, LeaveRequestRepository>();
+        services.AddScoped<ICnssIjClaimRepository, CnssIjClaimRepository>();
+        services.AddScoped<ICnssIjClaimRepository, CnssIjClaimRepository>();
         services.AddScoped<IEmployeePayrollSuspensionRepository, EmployeePayrollSuspensionRepository>();
+        services.AddScoped<IPayrollPublicHolidayRepository, PayrollPublicHolidayRepository>();
         services.AddScoped<IEmployeeAdvanceRepository, EmployeeAdvanceRepository>();
         services.AddScoped<IPayrollOvertimeRepository, PayrollOvertimeRepository>();
         services.AddScoped<IPayrollVariableAllowanceRepository, PayrollVariableAllowanceRepository>();
         services.AddScoped<IPayrollIrppRegularizationRepository, PayrollIrppRegularizationRepository>();
+        services.AddScoped<ITerminationSettlementRepository, TerminationSettlementRepository>();
+        services.AddScoped<IAnnualBonusRuleRepository, AnnualBonusRuleRepository>();
+        services.AddScoped<IEmployeeAnnualBonusRuleRepository, EmployeeAnnualBonusRuleRepository>();
         services.AddScoped<ILeaveBalanceAccrualRepository, LeaveBalanceAccrualRepository>();
         services.AddScoped<ISocialFundSchemeRepository, SocialFundSchemeRepository>();
         services.AddScoped<IEmployeeSocialFundEnrollmentRepository, EmployeeSocialFundEnrollmentRepository>();

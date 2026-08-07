@@ -19,4 +19,15 @@ public interface IPayrollVariableAllowanceRepository
     Task UpdateAsync(PayrollVariableAllowanceLine entity, CancellationToken cancellationToken = default);
 
     Task DeleteAsync(PayrollVariableAllowanceLine entity, CancellationToken cancellationToken = default);
+
+    Task<PayrollVariableAllowanceLine?> GetAutoAnnualBonusLineAsync(
+        Guid employeeId, int year, int month, Guid annualBonusRuleId, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<PayrollVariableAllowanceLine>> ListAutoAnnualBonusForMonthAsync(
+        int year, int month, CancellationToken cancellationToken = default);
+
+    Task SaveBatchAsync(
+        IReadOnlyList<PayrollVariableAllowanceLine> added,
+        IReadOnlyList<PayrollVariableAllowanceLine> updated,
+        CancellationToken cancellationToken = default);
 }

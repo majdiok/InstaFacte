@@ -101,6 +101,23 @@ public sealed class PayrollRunRepository : IPayrollRunRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<Payslip>> ListSettledPayslipsForEmployeeAsync(
+        Guid employeeId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.Payslips
+            .AsNoTracking()
+            .Include(p => p.Lines)
+            .Where(p => p.EmployeeId == employeeId)
+            .Where(p => context.PayrollRuns.Any(r =>
+                r.Id == p.PayrollRunId
+                && (r.Status == PayrollRunStatus.Validated || r.Status == PayrollRunStatus.Closed)))
+            .OrderBy(p => p.Year)
+            .ThenBy(p => p.Month)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<PayrollRun>> ListByMonthRangeWithPayslipsAsync(
         int year,
         int fromMonth,

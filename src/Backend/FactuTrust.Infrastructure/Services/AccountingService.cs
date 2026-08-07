@@ -32,6 +32,7 @@ public sealed class AccountingService : IAccountingService
     public const string SourceFixedAssetDisposal = "FixedAssetDisposal";
     public const string SourceManualReversal = "ManualReversal";
     public const string SourcePayrollRun = "PayrollRun";
+    public const string SourcePayrollRunCancelled = "PayrollRunCancelled";
     public const string SourcePayrollPayment = "PayrollPayment";
     public const string SourcePayrollPaymentCancelled = "PayrollPaymentCancelled";
     public const string SourceCnssContributionPayment = "CnssContributionPayment";
@@ -1680,7 +1681,9 @@ public sealed class AccountingService : IAccountingService
         if (await _chartOfAccounts.CountAsync(cancellationToken) == 0)
             return Result.Success();
 
-        var existing = await _journalEntries.GetBySourceAsync(SourcePayrollRun, payrollRun.Id, cancellationToken);
+        // Idempotence : une écriture active suffit. Une écriture extournée (cycle rouvert) ne doit
+        // pas bloquer la régénération, sinon la comptabilité resterait figée sur les anciens montants.
+        var existing = await _journalEntries.GetActiveBySourceAsync(SourcePayrollRun, payrollRun.Id, cancellationToken);
         if (existing is not null)
             return Result.Success();
 
@@ -1787,6 +1790,79 @@ public sealed class AccountingService : IAccountingService
         return Result.Success();
     }
 
+    public async Task<Result> ReversePayrollRunEntryAsync(
+        Guid payrollRunId,
+        string reason,
+        CancellationToken cancellationToken = default)
+    {
+        if (await _chartOfAccounts.CountAsync(cancellationToken) == 0)
+            return Result.Success();
+
+        var original = await _journalEntries.GetActiveBySourceAsync(SourcePayrollRun, payrollRunId, cancellationToken);
+        if (original is null)
+            return Result.Success();
+
+        // Brouillon : suppression pure, la revalidation régénérera une écriture propre.
+        if (original.IsDraft)
+        {
+            await _journalEntries.RemoveAsync(original, cancellationToken);
+            return Result.Success();
+        }
+
+        var reversalDate = original.EntryDate;
+        var periodResult = await _periodService.EnsureOpenPeriodAsync(reversalDate, cancellationToken);
+        if (periodResult.IsFailure)
+        {
+            reversalDate = DateTime.UtcNow.Date;
+            periodResult = await _periodService.EnsureOpenPeriodAsync(reversalDate, cancellationToken);
+        }
+
+        if (periodResult.IsFailure)
+            return Result.Failure(periodResult.Error);
+
+        var period = periodResult.Value;
+        var firstLine = original.Lines.First();
+        var currency = firstLine.DebitAmount.Amount > 0
+            ? firstLine.DebitAmount.Currency
+            : firstLine.CreditAmount.Currency;
+
+        var revLines = original.Lines
+            .OrderBy(l => l.LineNumber)
+            .Select(l => new JournalLineInput(
+                l.AccountNumber,
+                l.Label,
+                l.CreditAmount.Amount,
+                l.DebitAmount.Amount,
+                l.ThirdPartyId,
+                l.ThirdPartyKind))
+            .ToList();
+
+        var journal = original.JournalCode;
+        var n = await _journalEntries.ReserveNextEntryNumberAsync(journal, reversalDate.Year, cancellationToken);
+        var create = JournalEntry.Create(
+            n,
+            journal,
+            reversalDate,
+            $"Annulation écriture de paie — {reason.Trim()}",
+            period.Id,
+            true,
+            SourcePayrollRunCancelled,
+            payrollRunId,
+            revLines,
+            currency);
+
+        if (create.IsFailure)
+            return Result.Failure(create.Error);
+
+        var reversal = create.Value;
+        reversal.MarkInitialStatus(NewEntryStatus);
+        reversal.SetAuditInfo("system", false);
+        await _journalEntries.AddAsync(reversal, cancellationToken);
+        original.MarkReversedBy(reversal.Id);
+        await _journalEntries.UpdateAsync(original, cancellationToken);
+        return Result.Success();
+    }
+
     public async Task<Result> GeneratePayrollPaymentEntryAsync(
         PayrollPayment payment,
         PayrollRun payrollRun,
@@ -1813,16 +1889,46 @@ public sealed class AccountingService : IAccountingService
         var label = $"Paiement paie {payrollRun.Month:D2}/{payrollRun.Year}";
         var total = payment.Amount.Amount;
 
+        // Le règlement doit débiter le compte sur lequel la dette a été constatée. Les cycles
+        // validés avant les comptes auxiliaires portent un crédit 421 agrégé (sans tiers) : y
+        // opposer des débits 421xxxx rendrait le lettrage impossible (groupe multi-comptes).
+        var runEntry = await _journalEntries.GetActiveBySourceAsync(SourcePayrollRun, payrollRun.Id, cancellationToken);
+
+        var hasAuxiliaryCredits = runEntry?.Lines.Any(l =>
+            l.CreditAmount.Amount > 0 && l.ThirdPartyKind == ThirdPartyKind.Employee) == true;
+
+        var aggregatedCredit = hasAuxiliaryCredits
+            ? null
+            : runEntry?.Lines.FirstOrDefault(l =>
+                l.AccountNumber.StartsWith(PayrollJournalEntryBuilder.PersonnelPayableAccount, StringComparison.Ordinal)
+                && l.CreditAmount.Amount > 0
+                && l.ThirdPartyKind == ThirdPartyKind.None);
+
         var lines = new List<JournalLineInput>();
-        foreach (var line in payment.Lines)
+
+        if (aggregatedCredit is not null)
         {
+            // Miroir du format historique : une seule ligne de débit, sur le compte exact de l'OD.
             lines.Add(new JournalLineInput(
-                line.EmployeeAuxiliaryAccount,
-                $"{label} — {line.EmployeeAuxiliaryAccount}",
-                line.Amount.Amount,
+                aggregatedCredit.AccountNumber,
+                label,
+                total,
                 0,
-                line.EmployeeId,
-                ThirdPartyKind.Employee));
+                null,
+                ThirdPartyKind.None));
+        }
+        else
+        {
+            foreach (var line in payment.Lines)
+            {
+                lines.Add(new JournalLineInput(
+                    line.EmployeeAuxiliaryAccount,
+                    $"{label} — {line.EmployeeAuxiliaryAccount}",
+                    line.Amount.Amount,
+                    0,
+                    line.EmployeeId,
+                    ThirdPartyKind.Employee));
+            }
         }
 
         lines.Add(new JournalLineInput(

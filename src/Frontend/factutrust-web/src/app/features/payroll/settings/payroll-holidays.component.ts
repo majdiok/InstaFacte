@@ -1,0 +1,278 @@
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { TableModule } from 'primeng/table';
+import { DialogModule } from 'primeng/dialog';
+import { SelectModule } from 'primeng/select';
+import { DatePickerModule } from 'primeng/datepicker';
+import { InputTextModule } from 'primeng/inputtext';
+import { InputSwitchModule } from 'primeng/inputswitch';
+import { TagModule } from 'primeng/tag';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
+import {
+  PayrollService,
+  PayrollPublicHoliday,
+  UpsertPayrollPublicHolidayRequest
+} from '@core/services/payroll.service';
+import { ToastService } from '@core/services/toast.service';
+import { ConfirmationService } from '@core/services/confirmation.service';
+
+const KIND_OPTIONS = [
+  { label: 'Fixe', value: 'Fixed' },
+  { label: 'Islamique', value: 'Islamic' }
+];
+
+function toIsoDate(value: Date | null | undefined): string {
+  if (!value) return '';
+  const y = value.getFullYear();
+  const m = String(value.getMonth() + 1).padStart(2, '0');
+  const d = String(value.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function parseDate(value: string): Date | null {
+  if (!value) return null;
+  const [y, m, d] = value.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+@Component({
+  selector: 'app-payroll-holidays',
+  standalone: true,
+  imports: [
+    CommonModule,
+    FormsModule,
+    TableModule,
+    DialogModule,
+    SelectModule,
+    DatePickerModule,
+    InputTextModule,
+    InputSwitchModule,
+    TagModule,
+    ButtonComponent,
+    PageHeaderComponent
+  ],
+  template: `
+    <app-page-header
+      title="Jours fériés"
+      subtitle="Calendrier des fêtes légales tunisiennes pour le décompte des jours ouvrables." />
+
+    <div class="payroll-toolbar mb-3">
+      <label for="holidayYear">Exercice</label>
+      <input id="holidayYear" type="number" class="p-inputtext w-8rem" [(ngModel)]="year" (ngModelChange)="load()" min="2000" max="2100" />
+      <app-button variant="outline" icon="pi-refresh" iconPos="left" (click)="load()">Actualiser</app-button>
+      <app-button variant="outline" icon="pi-database" iconPos="left" (click)="seedDefaults()">Amorcer 2024–2028</app-button>
+      <app-button variant="primary" icon="pi-plus" iconPos="left" (click)="openDialog()">Nouveau jour férié</app-button>
+    </div>
+
+    <p-table [value]="holidays()" styleClass="p-datatable-sm">
+      <ng-template pTemplate="header">
+        <tr>
+          <th>Date</th>
+          <th>Libellé</th>
+          <th>Type</th>
+          <th>Rémunéré</th>
+          <th>Estimé</th>
+          <th>Référence</th>
+          <th></th>
+        </tr>
+      </ng-template>
+      <ng-template pTemplate="body" let-h>
+        <tr>
+          <td>{{ h.date | date:'dd/MM/yyyy' }}</td>
+          <td>{{ h.label }}</td>
+          <td>
+            <p-tag [value]="h.kindDisplay || h.kind" [severity]="h.kind === 'Islamic' ? 'warn' : 'info'" />
+          </td>
+          <td>
+            <p-tag [value]="h.isPaid ? 'Oui' : 'Non'" [severity]="h.isPaid ? 'success' : 'secondary'" />
+          </td>
+          <td>
+            @if (h.isEstimated) {
+              <p-tag value="Estimé" severity="warn" />
+            }
+          </td>
+          <td class="text-muted">{{ h.decreeReference || '—' }}</td>
+          <td class="actions">
+            <button type="button" class="p-button p-button-text p-button-sm" (click)="editHoliday(h)">Modifier</button>
+            <button type="button" class="p-button p-button-text p-button-danger p-button-sm" (click)="confirmDelete(h)">Supprimer</button>
+          </td>
+        </tr>
+      </ng-template>
+      <ng-template pTemplate="emptymessage">
+        <tr><td colspan="7">Aucun jour férié pour cet exercice. Utilisez « Amorcer 2024–2028 » pour charger le calendrier tunisien.</td></tr>
+      </ng-template>
+    </p-table>
+
+    <p-dialog [header]="editingId ? 'Modifier le jour férié' : 'Nouveau jour férié'" [(visible)]="dialogVisible" [modal]="true" [style]="{ width: '560px' }">
+      <div class="payroll-form-row">
+        <div class="payroll-form-group">
+          <label>Date</label>
+          <p-datepicker [(ngModel)]="formDate" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
+        </div>
+        <div class="payroll-form-group">
+          <label>Type</label>
+          <p-select [options]="kindOptions" optionLabel="label" optionValue="value" [(ngModel)]="formKind" appendTo="body" styleClass="w-full" />
+        </div>
+      </div>
+      <div class="payroll-form-group">
+        <label>Libellé</label>
+        <input pInputText [(ngModel)]="formLabel" class="w-full" maxlength="200" />
+      </div>
+      <div class="payroll-form-row">
+        <div class="payroll-form-group switch-row">
+          <label for="holidayPaid">Rémunéré</label>
+          <p-inputSwitch inputId="holidayPaid" [(ngModel)]="formIsPaid" />
+        </div>
+        <div class="payroll-form-group switch-row">
+          <label for="holidayEstimated">Date estimée</label>
+          <p-inputSwitch inputId="holidayEstimated" [(ngModel)]="formIsEstimated" />
+        </div>
+      </div>
+      <div class="payroll-form-group">
+        <label>Référence décret / note</label>
+        <input pInputText [(ngModel)]="formDecreeReference" class="w-full" maxlength="500" />
+      </div>
+      <div class="form-actions mt-3">
+        <app-button type="button" variant="outline" (click)="dialogVisible = false">Annuler</app-button>
+        <app-button type="button" variant="primary" icon="pi-check" iconPos="left" (click)="save()">Enregistrer</app-button>
+      </div>
+    </p-dialog>
+  `
+})
+export class PayrollHolidaysComponent implements OnInit {
+  private readonly payroll = inject(PayrollService);
+  private readonly toast = inject(ToastService);
+  private readonly confirmation = inject(ConfirmationService);
+
+  readonly holidays = signal<PayrollPublicHoliday[]>([]);
+  readonly kindOptions = KIND_OPTIONS;
+
+  year = new Date().getFullYear();
+  dialogVisible = false;
+  editingId: string | null = null;
+  formDate: Date | null = null;
+  formLabel = '';
+  formKind: 'Fixed' | 'Islamic' = 'Fixed';
+  formIsPaid = true;
+  formIsEstimated = false;
+  formDecreeReference = '';
+
+  ngOnInit(): void {
+    this.load();
+  }
+
+  load(): void {
+    this.payroll.listPublicHolidays(this.year).subscribe({
+      next: res => this.holidays.set(res.data ?? []),
+      error: err => this.toast.add({
+        severity: 'error',
+        summary: 'Jours fériés',
+        detail: err?.error?.message ?? 'Chargement impossible.'
+      })
+    });
+  }
+
+  seedDefaults(): void {
+    this.confirmation.confirm({
+      message: 'Charger les jours fériés tunisiens (fixes + islamiques estimés) pour 2024 à 2028 ? Les dates déjà présentes seront conservées.',
+      header: 'Amorçage calendrier',
+      accept: () => {
+        this.payroll.seedPublicHolidays([2024, 2025, 2026, 2027, 2028], false).subscribe({
+          next: res => {
+            this.toast.add({
+              severity: 'success',
+              summary: 'Amorçage',
+              detail: res.message ?? `${res.data?.insertedCount ?? 0} jour(s) ajouté(s).`
+            });
+            this.load();
+          },
+          error: err => this.toast.add({
+            severity: 'error',
+            summary: 'Amorçage',
+            detail: err?.error?.message ?? 'Amorçage impossible.'
+          })
+        });
+      }
+    });
+  }
+
+  openDialog(): void {
+    this.editingId = null;
+    this.formDate = new Date(this.year, 0, 1);
+    this.formLabel = '';
+    this.formKind = 'Fixed';
+    this.formIsPaid = true;
+    this.formIsEstimated = false;
+    this.formDecreeReference = '';
+    this.dialogVisible = true;
+  }
+
+  editHoliday(h: PayrollPublicHoliday): void {
+    this.editingId = h.id;
+    this.formDate = parseDate(h.date.split('T')[0]);
+    this.formLabel = h.label;
+    this.formKind = h.kind;
+    this.formIsPaid = h.isPaid;
+    this.formIsEstimated = h.isEstimated;
+    this.formDecreeReference = h.decreeReference ?? '';
+    this.dialogVisible = true;
+  }
+
+  save(): void {
+    if (!this.formDate || !this.formLabel.trim()) {
+      this.toast.add({ severity: 'warn', summary: 'Jour férié', detail: 'Date et libellé sont obligatoires.' });
+      return;
+    }
+
+    const body: UpsertPayrollPublicHolidayRequest = {
+      year: this.formDate.getFullYear(),
+      date: toIsoDate(this.formDate),
+      label: this.formLabel.trim(),
+      kind: this.formKind,
+      isPaid: this.formIsPaid,
+      isEstimated: this.formIsEstimated,
+      decreeReference: this.formDecreeReference.trim() || undefined
+    };
+
+    const req = this.editingId
+      ? this.payroll.updatePublicHoliday(this.editingId, body)
+      : this.payroll.createPublicHoliday(body);
+
+    req.subscribe({
+      next: () => {
+        this.toast.add({ severity: 'success', summary: 'Jour férié', detail: 'Enregistré.' });
+        this.dialogVisible = false;
+        this.year = body.year;
+        this.load();
+      },
+      error: err => this.toast.add({
+        severity: 'error',
+        summary: 'Jour férié',
+        detail: err?.error?.message ?? 'Enregistrement impossible.'
+      })
+    });
+  }
+
+  confirmDelete(h: PayrollPublicHoliday): void {
+    const dateLabel = h.date ? h.date.split('T')[0] : '';
+    this.confirmation.confirm({
+      message: `Supprimer « ${h.label} » (${dateLabel}) ?`,
+      header: 'Suppression',
+      accept: () => {
+        this.payroll.deletePublicHoliday(h.id).subscribe({
+          next: () => {
+            this.toast.add({ severity: 'success', summary: 'Jour férié', detail: 'Supprimé.' });
+            this.load();
+          },
+          error: err => this.toast.add({
+            severity: 'error',
+            summary: 'Jour férié',
+            detail: err?.error?.message ?? 'Suppression impossible.'
+          })
+        });
+      }
+    });
+  }
+}

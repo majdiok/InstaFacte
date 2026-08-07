@@ -370,6 +370,25 @@ Fonctionnalités activables via `AccountingSettings` (désactivées par défaut)
 | `PayrollInKindBenefitsEnabled` | Avantages en nature (véhicule, logement…) — imposables/CNSSables, non versés |
 | `PayrollEmployeeLoansEnabled` | Prêts salariés sans intérêt avec échéancier mensuel |
 | `PayrollGarnishmentsEnabled` | Saisies sur salaire et pensions alimentaires (barème saisissable paramétrable) |
+| `PayrollStatutorySickLeaveEnabled` | Congés maladie (carence, IJ CNSS, subrogation, complément employeur) |
+| `PayrollStatutoryMaternityLeaveEnabled` | Congés maternité (IJ CNSS + maintien employeur paramétrable) |
+| `PayrollStatutoryPaternityLeaveEnabled` | Congés paternité (maintien intégral des jours légaux) |
+
+### Congés statutaires (maladie, maternité, paternité)
+
+Activables via `PayrollStatutorySickLeaveEnabled`, `PayrollStatutoryMaternityLeaveEnabled`,
+`PayrollStatutoryPaternityLeaveEnabled` (désactivés par défaut).
+
+- **Maladie** : carence paramétrable (`SickLeaveWaitingDays`, défaut 5 j), IJ CNSS à
+  `SickLeaveIjRatePercent` (défaut 66,67 %), plafond annuel 180 j. La carence réduit le brut ;
+  le complément employeur et la subrogation sont versés en indemnités non imposables.
+- **Maternité** : durée légale `MaternityLeaveDurationDays` (défaut 60 j), maintien employeur
+  `MaternityEmployerTopUpDefault` (défaut 100 %). IJ CNSS suivie via créances `CnssIjClaims`.
+- **Paternité** : `PaternityLeaveDurationDays` (défaut 2 j) rémunérés intégralement.
+- **Créances IJ** : table `CnssIjClaims`, API `GET/POST api/payroll/cnss-ij-claims`.
+- **Migration** : `20260809120000_AddPayrollPublicHolidaysAndStatutoryFields_Tenant` (colonnes
+  `LeaveRequests` + table `CnssIjClaims` + paramètres statutaires `PayrollYearParameters`).
+- **Tests** : `SickLeaveCalculatorTests`, `MaternityLeaveCalculatorTests`.
 
 ### Ordre de calcul (après activation)
 

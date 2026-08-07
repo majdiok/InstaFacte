@@ -161,7 +161,9 @@ export const PERMISSIONS = {
     declare: 'payroll:declare',
     export: 'payroll:export',
     pay: 'payroll:pay',
-    settings: 'payroll:settings'
+    settings: 'payroll:settings',
+    hrDocuments: 'payroll:hr_documents',
+    manageTermination: 'payroll:manage_termination'
   },
   firm: {
     manage: 'firm:manage',

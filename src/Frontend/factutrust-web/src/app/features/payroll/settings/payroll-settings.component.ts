@@ -35,6 +35,7 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
     <div class="payroll-toolbar mb-3">
       <label for="fiscalYear">Exercice</label>
       <p-inputNumber id="fiscalYear" [(ngModel)]="fiscalYear" (ngModelChange)="load()" [useGrouping]="false" [min]="2000" [max]="2100" styleClass="w-8rem" />
+      <app-button type="button" variant="secondary" label="Recharger défauts LF" icon="pi pi-refresh" (clicked)="reloadLegalPreset()" class="ml-3" />
     </div>
 
     @if (params()) {
@@ -413,6 +414,30 @@ export class PayrollSettingsComponent implements OnInit {
     }
     if (sorted.some(b => b.rate < 0 || b.rate > 100)) return 'Les taux IRPP doivent être compris entre 0 et 100 %.';
     return null;
+  }
+
+  reloadLegalPreset(): void {
+    this.payroll.getLegalPreset(this.fiscalYear).subscribe({
+      next: res => {
+        const preset = res.data;
+        const current = this.params();
+        if (!preset || !current) return;
+        this.params.set({
+          ...current,
+          cnssEmployeeRate: preset.cnssEmployeeRate,
+          cnssEmployerRate: preset.cnssEmployerRate,
+          cssRate: preset.cssRate,
+          monthlySmig: preset.monthlySmig,
+          irppBrackets: preset.irppBrackets.map(b => ({ ...b }))
+        });
+        this.toast.add({
+          severity: 'info',
+          summary: 'Preset LF',
+          detail: `${preset.label} chargé — enregistrez pour appliquer.`
+        });
+      },
+      error: () => this.toast.add({ severity: 'error', summary: 'Preset LF', detail: 'Chargement impossible.' })
+    });
   }
 
   save(): void {

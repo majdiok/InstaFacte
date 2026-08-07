@@ -252,6 +252,11 @@ public partial class TenantDbContext : DbContext
     public DbSet<Domain.Entities.Payroll.EmployeeGarnishmentInstallment> EmployeeGarnishmentInstallments => Set<Domain.Entities.Payroll.EmployeeGarnishmentInstallment>();
     public DbSet<Domain.Entities.Payroll.EmployeeDependentParent> EmployeeDependentParents => Set<Domain.Entities.Payroll.EmployeeDependentParent>();
     public DbSet<Domain.Entities.Payroll.PayrollGarnishmentBracket> PayrollGarnishmentBrackets => Set<Domain.Entities.Payroll.PayrollGarnishmentBracket>();
+    public DbSet<Domain.Entities.Payroll.PayrollPublicHoliday> PayrollPublicHolidays => Set<Domain.Entities.Payroll.PayrollPublicHoliday>();
+    public DbSet<Domain.Entities.Payroll.TerminationSettlement> TerminationSettlements => Set<Domain.Entities.Payroll.TerminationSettlement>();
+    public DbSet<Domain.Entities.Payroll.AnnualBonusRule> AnnualBonusRules => Set<Domain.Entities.Payroll.AnnualBonusRule>();
+    public DbSet<Domain.Entities.Payroll.EmployeeAnnualBonusRule> EmployeeAnnualBonusRules => Set<Domain.Entities.Payroll.EmployeeAnnualBonusRule>();
+    public DbSet<Domain.Entities.Payroll.CnssIjClaim> CnssIjClaims => Set<Domain.Entities.Payroll.CnssIjClaim>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

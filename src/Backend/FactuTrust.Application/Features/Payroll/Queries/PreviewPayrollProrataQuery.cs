@@ -1,10 +1,12 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Payroll.Services;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities.Payroll;
 using FactuTrust.Domain.Services.Payroll;
 using MediatR;
+using Microsoft.Extensions.Options;
 
 namespace FactuTrust.Application.Features.Payroll.Queries;
 
@@ -17,17 +19,23 @@ public sealed class PreviewPayrollProrataQueryHandler
     private readonly IEmployeeRepository _employees;
     private readonly IPayrollParametersRepository _parameters;
     private readonly IEmployeePayrollSuspensionRepository _suspensions;
+    private readonly IPayrollPublicHolidayRepository _publicHolidays;
+    private readonly AccountingSettings _settings;
 
     public PreviewPayrollProrataQueryHandler(
         IPayrollRunRepository runs,
         IEmployeeRepository employees,
         IPayrollParametersRepository parameters,
-        IEmployeePayrollSuspensionRepository suspensions)
+        IEmployeePayrollSuspensionRepository suspensions,
+        IPayrollPublicHolidayRepository publicHolidays,
+        IOptions<AccountingSettings> settings)
     {
         _runs = runs;
         _employees = employees;
         _parameters = parameters;
         _suspensions = suspensions;
+        _publicHolidays = publicHolidays;
+        _settings = settings.Value;
     }
 
     public async Task<Result<PayrollProrataPreviewDto>> Handle(
@@ -51,6 +59,11 @@ public sealed class PreviewPayrollProrataQueryHandler
 
         var employees = await _employees.GetEligibleForPayrollMonthAsync(run.Year, run.Month, cancellationToken);
         var monthSuspensions = await _suspensions.ListForMonthAsync(run.Year, run.Month, cancellationToken);
+        var publicHolidays = _settings.PayrollPublicHolidaysEnabled
+            ? await _publicHolidays.ListForMonthAsync(run.Year, run.Month, cancellationToken)
+            : Array.Empty<PayrollPublicHoliday>();
+        var nonPaidHolidayDates = publicHolidays.Where(h => !h.IsPaid).Select(h => h.Date.Date).ToHashSet();
+        var holidayDates = nonPaidHolidayDates.Count > 0 ? nonPaidHolidayDates : null;
         var monthStart = new DateTime(run.Year, run.Month, 1);
         var monthEnd = monthStart.AddMonths(1).AddDays(-1);
 
@@ -78,7 +91,8 @@ public sealed class PreviewPayrollProrataQueryHandler
                 EffectiveStart = effectiveStart,
                 EffectiveEnd = effectiveEnd,
                 IsEnabled = true,
-                Suspensions = suspensionPeriods
+                Suspensions = suspensionPeriods,
+                NonPaidHolidayDates = holidayDates
             });
 
             if (prorata.DeductionAmount <= 0 && !employee.IsActive && !employee.TerminationDate.HasValue)

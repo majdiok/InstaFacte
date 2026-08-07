@@ -92,6 +92,26 @@ public sealed class PayrollYearParameters : AggregateRoot
     /// <summary>Plafond journalier d'exonération tickets restaurant (TND). Défaut : 3.000.</summary>
     public decimal MealVoucherDailyExemptionCap { get; private set; }
 
+    /// <summary>Plafond mensuel CNSS (null = pas de plafond, comportement historique).</summary>
+    public decimal? CnssMonthlyCeiling { get; private set; }
+    /// <summary>Plafond journalier CNSS (null = pas de plafond).</summary>
+    public decimal? CnssDailyCeiling { get; private set; }
+    /// <summary>Plafond mensuel CSS salariale (null = pas de plafond).</summary>
+    public decimal? CssMonthlyCeiling { get; private set; }
+    /// <summary>Plafond mensuel accident du travail (null = pas de plafond).</summary>
+    public decimal? AccidentWorkMonthlyCeiling { get; private set; }
+
+    /// <summary>Jours de carence maladie avant indemnisation (défaut 5).</summary>
+    public int SickLeaveWaitingDays { get; private set; } = 5;
+    /// <summary>Taux IJ CNSS maladie en % du salaire journalier (défaut 66,67).</summary>
+    public decimal SickLeaveIjRatePercent { get; private set; } = 66.67m;
+    /// <summary>Durée légale congé maternité en jours (défaut 60).</summary>
+    public int MaternityLeaveDurationDays { get; private set; } = 60;
+    /// <summary>Durée légale congé paternité en jours ouvrables (défaut 2).</summary>
+    public int PaternityLeaveDurationDays { get; private set; } = 2;
+    /// <summary>Maintien employeur maternité par défaut en % (défaut 100).</summary>
+    public decimal MaternityEmployerTopUpDefault { get; private set; } = 100m;
+
     private readonly List<PayrollIrppBracket> _irppBrackets = new();
     /// <summary>Tranches du barème IRPP progressif, triées par borne inférieure croissante.</summary>
     public IReadOnlyCollection<PayrollIrppBracket> IrppBrackets => _irppBrackets.AsReadOnly();
@@ -367,6 +387,40 @@ public sealed class PayrollYearParameters : AggregateRoot
         _garnishmentBrackets.AddRange(ordered);
         IncrementVersion();
         return Result.Success();
+    }
+
+    public void SetCnssMonthlyCeiling(decimal? ceiling)
+    {
+        CnssMonthlyCeiling = ceiling.HasValue ? Round(ceiling.Value) : null;
+        IncrementVersion();
+    }
+
+    public Result UpdateCnssCeilings(decimal? monthlyCeiling, decimal? dailyCeiling, decimal? cssCeiling, decimal? accidentCeiling)
+    {
+        if (monthlyCeiling is < 0 || dailyCeiling is < 0 || cssCeiling is < 0 || accidentCeiling is < 0)
+            return Result.Failure(Error.Validation("Ceilings", "Les plafonds ne peuvent pas être négatifs."));
+
+        CnssMonthlyCeiling = monthlyCeiling.HasValue ? Round(monthlyCeiling.Value) : null;
+        CnssDailyCeiling = dailyCeiling.HasValue ? Round(dailyCeiling.Value) : null;
+        CssMonthlyCeiling = cssCeiling.HasValue ? Round(cssCeiling.Value) : null;
+        AccidentWorkMonthlyCeiling = accidentCeiling.HasValue ? Round(accidentCeiling.Value) : null;
+        IncrementVersion();
+        return Result.Success();
+    }
+
+    public void SetStatutoryLeaveDefaults(
+        int sickLeaveWaitingDays,
+        decimal sickLeaveIjRatePercent,
+        int maternityLeaveDurationDays,
+        int paternityLeaveDurationDays,
+        decimal maternityEmployerTopUpDefault)
+    {
+        SickLeaveWaitingDays = Math.Max(0, sickLeaveWaitingDays);
+        SickLeaveIjRatePercent = Math.Round(sickLeaveIjRatePercent, 3);
+        MaternityLeaveDurationDays = Math.Max(0, maternityLeaveDurationDays);
+        PaternityLeaveDurationDays = Math.Max(0, paternityLeaveDurationDays);
+        MaternityEmployerTopUpDefault = Math.Round(maternityEmployerTopUpDefault, 3);
+        IncrementVersion();
     }
 
     private static decimal Round(decimal value) => Math.Round(value, 3);

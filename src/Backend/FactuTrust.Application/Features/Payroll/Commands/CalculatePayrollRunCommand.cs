@@ -1,11 +1,14 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities.Payroll;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Services.Payroll;
+using FactuTrust.Application.Features.Payroll.AnnualBonuses;
 using FactuTrust.Application.Features.Payroll.Services;
 using MediatR;
+using Microsoft.Extensions.Options;
 
 namespace FactuTrust.Application.Features.Payroll.Commands;
 
@@ -31,7 +34,12 @@ public sealed class CalculatePayrollRunCommandHandler
     private readonly IPayrollIrppRegularizationRepository _irppRegularizations;
     private readonly IEmployeePayrollSuspensionRepository _suspensions;
     private readonly IEmployeeDependentParentRepository _dependentParents;
+    private readonly IPayrollPublicHolidayRepository _publicHolidays;
     private readonly PayrollInputBuilder _inputBuilder;
+    private readonly StatutoryIjClaimSyncService _ijClaimSync;
+    private readonly AnnualBonusSyncService _annualBonusSync;
+    private readonly ITerminationSettlementRepository _terminationSettlements;
+    private readonly AccountingSettings _settings;
 
     public CalculatePayrollRunCommandHandler(
         IPayrollRunRepository runs,
@@ -50,7 +58,12 @@ public sealed class CalculatePayrollRunCommandHandler
         IPayrollIrppRegularizationRepository irppRegularizations,
         IEmployeePayrollSuspensionRepository suspensions,
         IEmployeeDependentParentRepository dependentParents,
-        PayrollInputBuilder inputBuilder)
+        IPayrollPublicHolidayRepository publicHolidays,
+        PayrollInputBuilder inputBuilder,
+        StatutoryIjClaimSyncService ijClaimSync,
+        AnnualBonusSyncService annualBonusSync,
+        ITerminationSettlementRepository terminationSettlements,
+        IOptions<AccountingSettings> settings)
     {
         _runs = runs;
         _employees = employees;
@@ -68,7 +81,12 @@ public sealed class CalculatePayrollRunCommandHandler
         _irppRegularizations = irppRegularizations;
         _suspensions = suspensions;
         _dependentParents = dependentParents;
+        _publicHolidays = publicHolidays;
         _inputBuilder = inputBuilder;
+        _ijClaimSync = ijClaimSync;
+        _annualBonusSync = annualBonusSync;
+        _terminationSettlements = terminationSettlements;
+        _settings = settings.Value;
     }
 
     public async Task<Result<CalculatePayrollRunResultDto>> Handle(
@@ -84,6 +102,8 @@ public sealed class CalculatePayrollRunCommandHandler
                 Error.Validation("Status", "Un cycle validé ou clôturé ne peut plus être recalculé."));
 
         var parameters = await _parameters.GetOrCreateForYearAsync(run.ParametersFiscalYear, cancellationToken);
+
+        await _annualBonusSync.SyncForMonthAsync(run.Year, run.Month, cancellationToken);
 
         var employees = parameters.EnableAutomaticProrata
             ? await _employees.GetEligibleForPayrollMonthAsync(run.Year, run.Month, cancellationToken)
@@ -108,8 +128,14 @@ public sealed class CalculatePayrollRunCommandHandler
         var warnings = new List<PayrollCalculationWarningDto>();
 
         var leaves = await _leaves.ListForMonthAsync(run.Year, run.Month, cancellationToken);
+        var yearSickLeaves = _settings.PayrollStatutorySickLeaveEnabled
+            ? await _leaves.ListSickLeavesForYearAsync(run.Year, cancellationToken)
+            : Array.Empty<LeaveRequest>();
         var overtimeLines = await _overtime.ListForMonthAsync(run.Year, run.Month, cancellationToken);
         var variableAllowanceLines = await _variableAllowances.ListForMonthAsync(run.Year, run.Month, cancellationToken);
+        var terminationSettlements = _settings.PayrollTerminationIndemnityEnabled
+            ? await _terminationSettlements.ListForMonthAsync(run.Year, run.Month, cancellationToken)
+            : Array.Empty<TerminationSettlement>();
         var enrollments = await _socialFundEnrollments.ListActiveForEmployeesAsync(employeeIds, referenceDate, cancellationToken);
         var schemes = await _socialFundSchemes.ListAsync(cancellationToken: cancellationToken);
         var mealVoucherLines = await _mealVouchers.ListForMonthAsync(run.Year, run.Month, cancellationToken);
@@ -125,16 +151,23 @@ public sealed class CalculatePayrollRunCommandHandler
             ? await _suspensions.ListForMonthAsync(run.Year, run.Month, cancellationToken)
             : Array.Empty<EmployeePayrollSuspension>();
 
+        var publicHolidays = _settings.PayrollPublicHolidaysEnabled
+            ? await _publicHolidays.ListForMonthAsync(run.Year, run.Month, cancellationToken)
+            : Array.Empty<PayrollPublicHoliday>();
+
         var batch = new PayrollInputBuilder.MonthBatchData
         {
             IrppRegularizations = regularizations,
             Suspensions = monthSuspensions,
+            PublicHolidays = publicHolidays,
+            YearSickLeaves = yearSickLeaves,
             Enrollments = enrollments,
             Schemes = schemes.ToDictionary(s => s.Id),
             MealVouchers = mealVoucherLines,
             InKindBenefits = inKindBenefitLines,
             LoansWithDueInstallments = loansDue,
-            ActiveGarnishments = activeGarnishments
+            ActiveGarnishments = activeGarnishments,
+            TerminationSettlements = terminationSettlements
         };
 
         var overtimeByEmployee = overtimeLines.GroupBy(l => l.EmployeeId).ToDictionary(g => g.Key, g => g.ToList());
@@ -187,6 +220,13 @@ public sealed class CalculatePayrollRunCommandHandler
                 run.Year,
                 run.Month,
                 eligibility.EffectiveDependentParents);
+
+            if (_settings.PayrollStatutorySickLeaveEnabled || _settings.PayrollStatutoryMaternityLeaveEnabled)
+            {
+                var statutory = _inputBuilder.ComputeStatutoryAmounts(
+                    employee.Id, contract.BaseSalary, leaves, parameters, batch, run.Year, run.Month);
+                await _ijClaimSync.SyncAsync(employee.Id, run.Year, run.Month, statutory, cancellationToken);
+            }
 
             var (appliedEmployeeRate, appliedEmployerRate) = PayrollCalculator.ResolveCnssRates(input.Regime, parameters);
             var computation = PayrollCalculator.Compute(input, parameters);

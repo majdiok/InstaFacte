@@ -9,7 +9,7 @@ import { DatePickerModule } from 'primeng/datepicker';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
 import { Textarea } from 'primeng/textarea';
-import { TooltipModule } from 'primeng/tooltip';
+import { CheckboxModule } from 'primeng/checkbox';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { EmployeeService } from '@core/services/employee.service';
 import { PayrollService, LeaveRequest, LeaveBalance } from '@core/services/payroll.service';
@@ -42,7 +42,8 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
     Textarea,
     ButtonComponent,
     PayrollStatGridComponent,
-    TooltipModule
+    TooltipModule,
+    CheckboxModule
   ],
   template: `
     <div class="payroll-toolbar mb-3">
@@ -62,8 +63,15 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
 
     <p class="payroll-info-text">
       Acquisition : 1 jour par 26 jours travaillés, créditée à la validation du cycle de paie.
-      Seuls les congés approuvés impactent le calcul de paie ; les absences sans solde et injustifiées réduisent le brut.
+      Seuls les congés approuvés impactent le calcul de paie. Les absences sans solde et injustifiées réduisent le brut.
+      Avec les flags statutaires activés, maladie / maternité / paternité sont calculés automatiquement.
     </p>
+
+    @if (!readOnly) {
+      <div class="payroll-toolbar mb-3">
+        <app-button variant="outline" icon="pi-heart" (click)="openBirthDialog()">Déclarer une naissance</app-button>
+      </div>
+    }
 
     @if (!readOnly) {
       <div class="payroll-toolbar">
@@ -150,6 +158,64 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
         <label>Motif</label>
         <textarea pTextarea [(ngModel)]="formReason" rows="2" class="w-full"></textarea>
       </div>
+
+      @if (formType === 'Sick') {
+        <div class="payroll-form-group mb-2">
+          <label>N° certificat médical</label>
+          <input pInputText [(ngModel)]="formMedicalCertificateNumber" class="w-full" />
+        </div>
+        <div class="payroll-form-group mb-2">
+          <label>Date certificat</label>
+          <p-datepicker [(ngModel)]="formMedicalCertificateDate" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
+        </div>
+        <div class="payroll-form-group mb-2 flex align-items-center gap-2">
+          <p-checkbox [(ngModel)]="formSubrogationEnabled" [binary]="true" inputId="subrogation" />
+          <label for="subrogation">Subrogation (avance IJ CNSS)</label>
+        </div>
+        <div class="payroll-form-row">
+          <div class="payroll-form-group">
+            <label>Maintien employeur (%)</label>
+            <p-inputNumber [(ngModel)]="formEmployerTopUpPercent" [min]="0" [max]="100" styleClass="w-full" />
+          </div>
+          <div class="payroll-form-group">
+            <label>Jours de maintien</label>
+            <p-inputNumber [(ngModel)]="formEmployerTopUpDays" [min]="0" styleClass="w-full" />
+          </div>
+        </div>
+      }
+
+      @if (formType === 'Maternity') {
+        <div class="payroll-form-row">
+          <div class="payroll-form-group">
+            <label>Date prévue accouchement</label>
+            <p-datepicker [(ngModel)]="formExpectedBirthDate" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
+          </div>
+          <div class="payroll-form-group">
+            <label>Date réelle naissance</label>
+            <p-datepicker [(ngModel)]="formActualBirthDate" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
+          </div>
+        </div>
+        <div class="payroll-form-group mb-2">
+          <label>N° acte de naissance</label>
+          <input pInputText [(ngModel)]="formChildBirthCertificateNumber" class="w-full" />
+        </div>
+        <div class="payroll-form-group mb-2">
+          <label>Maintien employeur (%)</label>
+          <p-inputNumber [(ngModel)]="formEmployerTopUpPercent" [min]="0" [max]="100" styleClass="w-full" />
+        </div>
+      }
+
+      @if (formType === 'Paternity') {
+        <div class="payroll-form-group mb-2">
+          <label>Date de naissance</label>
+          <p-datepicker [(ngModel)]="formActualBirthDate" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
+        </div>
+        <div class="payroll-form-group mb-2">
+          <label>N° acte de naissance</label>
+          <input pInputText [(ngModel)]="formChildBirthCertificateNumber" class="w-full" />
+        </div>
+      }
+
       <ng-template pTemplate="footer">
         <app-button variant="outline" (click)="dialogVisible = false">Annuler</app-button>
         <app-button variant="primary" [disabled]="createExceedsBalance()" (click)="create()">Enregistrer</app-button>
@@ -165,6 +231,29 @@ function toIsoDate(value: Date | null | undefined): string | undefined {
       <ng-template pTemplate="footer">
         <app-button variant="outline" (click)="openingDialogVisible = false">Annuler</app-button>
         <app-button variant="primary" (click)="saveOpeningBalance()">Enregistrer</app-button>
+      </ng-template>
+    </p-dialog>
+
+    <p-dialog header="Déclarer une naissance" [(visible)]="birthDialogVisible" [modal]="true" [style]="{ width: '420px' }">
+      <div class="payroll-form-group mb-2">
+        <label>Date de naissance</label>
+        <p-datepicker [(ngModel)]="birthDate" dateFormat="dd/mm/yy" appendTo="body" styleClass="w-full" />
+      </div>
+      <div class="payroll-form-group mb-2">
+        <label>N° acte de naissance</label>
+        <input pInputText [(ngModel)]="birthCertificateNumber" class="w-full" />
+      </div>
+      <div class="payroll-form-group mb-2 flex align-items-center gap-2">
+        <p-checkbox [(ngModel)]="createMaternityLeave" [binary]="true" inputId="matLeave" />
+        <label for="matLeave">Créer congé maternité (60 j)</label>
+      </div>
+      <div class="payroll-form-group mb-2 flex align-items-center gap-2">
+        <p-checkbox [(ngModel)]="createPaternityLeave" [binary]="true" inputId="patLeave" />
+        <label for="patLeave">Créer congé paternité (2 j)</label>
+      </div>
+      <ng-template pTemplate="footer">
+        <app-button variant="outline" (click)="birthDialogVisible = false">Annuler</app-button>
+        <app-button variant="primary" (click)="declareBirth()">Enregistrer</app-button>
       </ng-template>
     </p-dialog>
   `,
@@ -202,6 +291,19 @@ export class EmployeeLeavesTabComponent implements OnInit {
   formEnd: Date | null = null;
   formDays = 1;
   formReason = '';
+  formMedicalCertificateNumber = '';
+  formMedicalCertificateDate: Date | null = null;
+  formSubrogationEnabled = false;
+  formEmployerTopUpPercent: number | null = null;
+  formEmployerTopUpDays: number | null = null;
+  formExpectedBirthDate: Date | null = null;
+  formActualBirthDate: Date | null = null;
+  formChildBirthCertificateNumber = '';
+  birthDialogVisible = false;
+  birthDate: Date | null = new Date();
+  birthCertificateNumber = '';
+  createMaternityLeave = true;
+  createPaternityLeave = true;
   computingDays = signal(false);
 
   balanceStats = computed((): PayrollStatItem[] => {
@@ -285,7 +387,7 @@ export class EmployeeLeavesTabComponent implements OnInit {
     this.formStart = new Date();
     this.formEnd = new Date();
     this.formDays = 1;
-    this.formReason = '';
+    this.resetStatutoryFields();
     this.dialogVisible = true;
     this.computeDays();
   }
@@ -343,7 +445,15 @@ export class EmployeeLeavesTabComponent implements OnInit {
       startDate: toIsoDate(this.formStart)!,
       endDate: toIsoDate(this.formEnd)!,
       days: this.formDays,
-      reason: this.formReason || undefined
+      reason: this.formReason || undefined,
+      medicalCertificateNumber: this.formMedicalCertificateNumber || undefined,
+      medicalCertificateDate: toIsoDate(this.formMedicalCertificateDate),
+      subrogationEnabled: this.formSubrogationEnabled,
+      employerTopUpPercent: this.formEmployerTopUpPercent ?? undefined,
+      employerTopUpDays: this.formEmployerTopUpDays ?? undefined,
+      expectedBirthDate: toIsoDate(this.formExpectedBirthDate),
+      actualBirthDate: toIsoDate(this.formActualBirthDate),
+      childBirthCertificateNumber: this.formChildBirthCertificateNumber || undefined
     }).subscribe({
       next: () => {
         this.toast.add({ severity: 'success', summary: 'Congés', detail: 'Congé enregistré.' });
@@ -388,5 +498,51 @@ export class EmployeeLeavesTabComponent implements OnInit {
       },
       error: err => this.toast.add({ severity: 'error', summary: 'Congés', detail: err.error?.message ?? 'Suppression impossible.' })
     });
+  }
+
+  openBirthDialog(): void {
+    if (this.readOnly) return;
+    this.birthDate = new Date();
+    this.birthCertificateNumber = '';
+    this.createMaternityLeave = true;
+    this.createPaternityLeave = true;
+    this.birthDialogVisible = true;
+  }
+
+  declareBirth(): void {
+    if (this.readOnly || !this.birthDate) return;
+    const actualBirthDate = toIsoDate(this.birthDate);
+    if (!actualBirthDate) return;
+
+    this.payroll.declareBirth({
+      employeeId: this.employeeId,
+      actualBirthDate,
+      childBirthCertificateNumber: this.birthCertificateNumber || undefined,
+      createMaternityLeave: this.createMaternityLeave,
+      createPaternityLeave: this.createPaternityLeave
+    }).subscribe({
+      next: () => {
+        this.toast.add({ severity: 'success', summary: 'Congés', detail: 'Naissance déclarée.' });
+        this.birthDialogVisible = false;
+        this.reload();
+      },
+      error: err => this.toast.add({
+        severity: 'error',
+        summary: 'Congés',
+        detail: err?.error?.message ?? 'Déclaration impossible.'
+      })
+    });
+  }
+
+  private resetStatutoryFields(): void {
+    this.formReason = '';
+    this.formMedicalCertificateNumber = '';
+    this.formMedicalCertificateDate = null;
+    this.formSubrogationEnabled = false;
+    this.formEmployerTopUpPercent = null;
+    this.formEmployerTopUpDays = null;
+    this.formExpectedBirthDate = null;
+    this.formActualBirthDate = null;
+    this.formChildBirthCertificateNumber = '';
   }
 }

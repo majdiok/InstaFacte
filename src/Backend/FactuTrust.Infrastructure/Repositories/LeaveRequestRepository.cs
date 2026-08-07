@@ -52,6 +52,21 @@ public sealed class LeaveRequestRepository : ILeaveRequestRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<LeaveRequest>> ListSickLeavesForYearAsync(int year, CancellationToken cancellationToken = default)
+    {
+        var yearStart = new DateTime(year, 1, 1);
+        var yearEnd = new DateTime(year, 12, 31);
+
+        await using var context = _contextFactory.CreateContext();
+        return await context.LeaveRequests
+            .AsNoTracking()
+            .Where(l => l.IsApproved
+                && l.Type == Domain.Enums.LeaveType.Sick
+                && l.StartDate <= yearEnd
+                && l.EndDate >= yearStart)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<LeaveRequest> AddAsync(LeaveRequest entity, CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();

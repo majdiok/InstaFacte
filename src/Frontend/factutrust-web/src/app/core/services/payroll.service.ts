@@ -37,7 +37,19 @@ export interface PayslipListItem {
   paidAt?: string;
 }
 
-export interface PayrollCalculationWarning {
+export interface PayrollFeatureFlags {
+  statutorySickLeaveEnabled: boolean;
+  statutoryMaternityLeaveEnabled: boolean;
+  statutoryPaternityLeaveEnabled: boolean;
+  terminationIndemnityEnabled: boolean;
+  hrDocumentsEnabled: boolean;
+  annualBonusesEnabled: boolean;
+  publicHolidaysEnabled: boolean;
+  civpEnhancementsEnabled: boolean;
+  cnssCeilingsEnabled: boolean;
+  legalPresetsHistoryEnabled: boolean;
+}
+
   code: string;
   message: string;
   employeeId?: string;
@@ -278,6 +290,25 @@ export interface PayrollParameters {
   smigIrppExemptionRateOverride?: number | null;
   mealVoucherDailyExemptionCap: number;
   irppBrackets: { lowerBound: number; rate: number }[];
+  cnssMonthlyCeiling?: number | null;
+  cnssDailyCeiling?: number | null;
+  cssMonthlyCeiling?: number | null;
+  accidentWorkMonthlyCeiling?: number | null;
+  sickLeaveWaitingDays?: number;
+  sickLeaveIjRatePercent?: number;
+  maternityLeaveDurationDays?: number;
+  paternityLeaveDurationDays?: number;
+  maternityEmployerTopUpDefault?: number;
+}
+
+export interface PayrollLegalPreset {
+  fiscalYear: number;
+  label: string;
+  cnssEmployeeRate: number;
+  cnssEmployerRate: number;
+  cssRate: number;
+  monthlySmig: number;
+  irppBrackets: { lowerBound: number; rate: number }[];
 }
 
 export interface PayrollGarnishmentBracket {
@@ -301,6 +332,33 @@ export interface SocialFundScheme {
   employerAccountSce: string;
   effectiveFrom?: string;
   effectiveTo?: string;
+}
+
+export interface PayrollPublicHoliday {
+  id: string;
+  year: number;
+  date: string;
+  label: string;
+  kind: 'Fixed' | 'Islamic';
+  kindDisplay?: string;
+  isPaid: boolean;
+  isEstimated: boolean;
+  decreeReference?: string;
+}
+
+export interface UpsertPayrollPublicHolidayRequest {
+  year: number;
+  date: string;
+  label: string;
+  kind: 'Fixed' | 'Islamic';
+  isPaid?: boolean;
+  isEstimated?: boolean;
+  decreeReference?: string;
+}
+
+export interface SeedPayrollPublicHolidaysResult {
+  insertedCount: number;
+  skippedCount: number;
 }
 
 export interface UpsertSocialFundSchemeRequest {
@@ -622,12 +680,100 @@ export interface TerminateEmployeeRequest {
   reason?: string;
   closeActiveContract: boolean;
   deactivateNow: boolean;
+  createSettlement?: boolean;
+  terminationReason?: string;
 }
 
 export interface TerminateEmployeeResult {
   isActive: boolean;
   terminationDate: string;
   warning?: string;
+  settlementId?: string;
+}
+
+export interface TerminationSettlement {
+  id: string;
+  employeeId: string;
+  employeeName?: string;
+  year: number;
+  month: number;
+  terminationDate: string;
+  reason: string;
+  reasonDisplay: string;
+  status: string;
+  statusDisplay: string;
+  seniorityMonths: number;
+  grossMonthlyReference: number;
+  legalIndemnityAmount: number;
+  noticeIndemnityAmount: number;
+  unusedLeaveAmount: number;
+  otherIndemnityAmount: number;
+  totalIndemnityAmount: number;
+  notes?: string;
+}
+
+export interface TerminationSettlementPreview {
+  employeeId: string;
+  employeeName?: string;
+  terminationDate: string;
+  reason: string;
+  reasonDisplay: string;
+  seniorityMonths: number;
+  indemnityDays: number;
+  dailyRate: number;
+  grossMonthlyReference: number;
+  legalIndemnityAmount: number;
+  noticeIndemnityAmount: number;
+  unusedLeaveAmount: number;
+  otherIndemnityAmount: number;
+  totalIndemnityAmount: number;
+}
+
+export interface UpsertTerminationSettlementRequest {
+  employeeId: string;
+  year: number;
+  month: number;
+  terminationDate: string;
+  reason: string;
+  legalIndemnityAmount?: number;
+  noticeIndemnityAmount: number;
+  unusedLeaveAmount: number;
+  otherIndemnityAmount: number;
+  notes?: string;
+  approve: boolean;
+}
+
+export interface AnnualBonusRule {
+  id: string;
+  code: string;
+  label: string;
+  kind: string;
+  kindDisplay: string;
+  formula: string;
+  formulaDisplay: string;
+  paymentMonth: number;
+  fixedAmount: number;
+  ratePercent: number;
+  monthsOfBase: number;
+  taxable: boolean;
+  subjectToCnss: boolean;
+  isActive: boolean;
+  fiscalYear?: number;
+}
+
+export interface UpsertAnnualBonusRuleRequest {
+  code: string;
+  label: string;
+  kind: string;
+  formula: string;
+  paymentMonth: number;
+  fixedAmount: number;
+  ratePercent: number;
+  monthsOfBase: number;
+  taxable: boolean;
+  subjectToCnss: boolean;
+  isActive: boolean;
+  fiscalYear?: number;
 }
 
 export interface LeaveRequest {
@@ -641,6 +787,52 @@ export interface LeaveRequest {
   reason?: string;
   isApproved: boolean;
   approvedAt?: string;
+  medicalCertificateNumber?: string;
+  medicalCertificateDate?: string;
+  subrogationEnabled?: boolean;
+  employerTopUpPercent?: number;
+  employerTopUpDays?: number;
+  expectedBirthDate?: string;
+  actualBirthDate?: string;
+  childBirthCertificateNumber?: string;
+}
+
+export interface CnssIjClaim {
+  id: string;
+  employeeId: string;
+  employeeName?: string;
+  leaveRequestId: string;
+  year: number;
+  month: number;
+  amount: number;
+  status: string;
+  statusDisplay: string;
+  paidAt?: string;
+}
+
+export interface CreateLeaveRequest {
+  employeeId: string;
+  type: string;
+  startDate: string;
+  endDate: string;
+  days: number;
+  reason?: string;
+  medicalCertificateNumber?: string;
+  medicalCertificateDate?: string;
+  subrogationEnabled?: boolean;
+  employerTopUpPercent?: number;
+  employerTopUpDays?: number;
+  expectedBirthDate?: string;
+  actualBirthDate?: string;
+  childBirthCertificateNumber?: string;
+}
+
+export interface DeclareBirthRequest {
+  employeeId: string;
+  actualBirthDate: string;
+  childBirthCertificateNumber?: string;
+  createMaternityLeave: boolean;
+  createPaternityLeave: boolean;
 }
 
 export interface EmployeeAdvance {
@@ -953,6 +1145,34 @@ export class PayrollService {
     return this.http.get<ApiResponse<PayrollParameters>>(`${this.settingsUrl}/parameters/${fiscalYear}`);
   }
 
+  getLegalPreset(fiscalYear: number): Observable<ApiResponse<PayrollLegalPreset>> {
+    return this.http.get<ApiResponse<PayrollLegalPreset>>(`${this.settingsUrl}/parameters/${fiscalYear}/preset`);
+  }
+
+  getFeatureFlags(): Observable<ApiResponse<PayrollFeatureFlags>> {
+    return this.http.get<ApiResponse<PayrollFeatureFlags>>(`${this.settingsUrl}/feature-flags`);
+  }
+
+  downloadEmploymentCertificatePdf(employeeId: string): Observable<Blob> {
+    return this.http.get(`${this.payrollUrl}/hr-documents/employment-certificate/${employeeId}/pdf`, {
+      responseType: 'blob'
+    });
+  }
+
+  downloadSalaryCertificatePdf(employeeId: string, months: 3 | 6 | 12): Observable<Blob> {
+    const params = new HttpParams().set('months', months);
+    return this.http.get(`${this.payrollUrl}/hr-documents/salary-certificate/${employeeId}/pdf`, {
+      params,
+      responseType: 'blob'
+    });
+  }
+
+  downloadSoldeToutComptePdf(employeeId: string): Observable<Blob> {
+    return this.http.get(`${this.payrollUrl}/hr-documents/solde-tout-compte/${employeeId}/pdf`, {
+      responseType: 'blob'
+    });
+  }
+
   updateParameters(fiscalYear: number, body: Omit<PayrollParameters, 'id' | 'fiscalYear'>): Observable<ApiResponse<unknown>> {
     return this.http.put<ApiResponse<unknown>>(`${this.settingsUrl}/parameters/${fiscalYear}`, body);
   }
@@ -962,8 +1182,24 @@ export class PayrollService {
     return this.http.get<ApiResponse<DtsDeclaration>>(`${this.payrollUrl}/declarations/dts`, { params });
   }
 
-  createLeave(body: { employeeId: string; type: string; startDate: string; endDate: string; days: number; reason?: string }): Observable<ApiResponse<string>> {
+  createLeave(body: CreateLeaveRequest): Observable<ApiResponse<string>> {
     return this.http.post<ApiResponse<string>>(`${this.payrollUrl}/leaves`, body);
+  }
+
+  declareBirth(body: DeclareBirthRequest): Observable<ApiResponse<string>> {
+    return this.http.post<ApiResponse<string>>(`${this.payrollUrl}/leaves/declare-birth`, body);
+  }
+
+  listCnssIjClaims(employeeId?: string, year?: number, month?: number): Observable<ApiResponse<CnssIjClaim[]>> {
+    let params = new HttpParams();
+    if (employeeId) params = params.set('employeeId', employeeId);
+    if (year) params = params.set('year', year);
+    if (month) params = params.set('month', month);
+    return this.http.get<ApiResponse<CnssIjClaim[]>>(`${this.payrollUrl}/cnss-ij-claims`, { params });
+  }
+
+  markCnssIjClaimPaid(id: string, paidAt: string): Observable<ApiResponse<unknown>> {
+    return this.http.post<ApiResponse<unknown>>(`${this.payrollUrl}/cnss-ij-claims/${id}/mark-paid`, { paidAt });
   }
 
   approveLeave(id: string): Observable<ApiResponse<unknown>> {
@@ -1173,6 +1409,32 @@ export class PayrollService {
 
   cancelAllRunPayments(runId: string, reason: string): Observable<ApiResponse<unknown>> {
     return this.http.post<ApiResponse<unknown>>(`${this.payrollUrl}/runs/${runId}/payments/cancel-all`, { reason });
+  }
+
+  // ── Public holidays ──
+
+  listPublicHolidays(year: number): Observable<ApiResponse<PayrollPublicHoliday[]>> {
+    const params = new HttpParams().set('year', year);
+    return this.http.get<ApiResponse<PayrollPublicHoliday[]>>(`${this.payrollUrl}/public-holidays`, { params });
+  }
+
+  createPublicHoliday(body: UpsertPayrollPublicHolidayRequest): Observable<ApiResponse<string>> {
+    return this.http.post<ApiResponse<string>>(`${this.payrollUrl}/public-holidays`, body);
+  }
+
+  updatePublicHoliday(id: string, body: UpsertPayrollPublicHolidayRequest): Observable<ApiResponse<unknown>> {
+    return this.http.put<ApiResponse<unknown>>(`${this.payrollUrl}/public-holidays/${id}`, body);
+  }
+
+  deletePublicHoliday(id: string): Observable<ApiResponse<unknown>> {
+    return this.http.delete<ApiResponse<unknown>>(`${this.payrollUrl}/public-holidays/${id}`);
+  }
+
+  seedPublicHolidays(years: number[], overwriteExisting = false): Observable<ApiResponse<SeedPayrollPublicHolidaysResult>> {
+    return this.http.post<ApiResponse<SeedPayrollPublicHolidaysResult>>(`${this.payrollUrl}/public-holidays/seed`, {
+      years,
+      overwriteExisting
+    });
   }
 
   // ── Social fund schemes ──
@@ -1410,5 +1672,50 @@ export class PayrollService {
       .set('format', format)
       .set('view', view);
     return this.http.get(`${this.reportsUrl}/payroll-journal/export`, { params, responseType: 'blob' });
+  }
+
+  listTerminationSettlements(year?: number, month?: number): Observable<ApiResponse<TerminationSettlement[]>> {
+    let params = new HttpParams();
+    if (year) params = params.set('year', year);
+    if (month) params = params.set('month', month);
+    return this.http.get<ApiResponse<TerminationSettlement[]>>(`${this.payrollUrl}/settlements`, { params });
+  }
+
+  previewTerminationSettlement(employeeId: string, terminationDate: string, reason: string): Observable<ApiResponse<TerminationSettlementPreview>> {
+    const params = new HttpParams()
+      .set('employeeId', employeeId)
+      .set('terminationDate', terminationDate)
+      .set('reason', reason);
+    return this.http.get<ApiResponse<TerminationSettlementPreview>>(`${this.payrollUrl}/settlements/preview`, { params });
+  }
+
+  upsertTerminationSettlement(body: UpsertTerminationSettlementRequest): Observable<ApiResponse<string>> {
+    return this.http.post<ApiResponse<string>>(`${this.payrollUrl}/settlements`, body);
+  }
+
+  approveTerminationSettlement(id: string): Observable<ApiResponse<unknown>> {
+    return this.http.post<ApiResponse<unknown>>(`${this.payrollUrl}/settlements/${id}/approve`, {});
+  }
+
+  deleteTerminationSettlement(id: string): Observable<ApiResponse<unknown>> {
+    return this.http.delete<ApiResponse<unknown>>(`${this.payrollUrl}/settlements/${id}`);
+  }
+
+  listAnnualBonusRules(fiscalYear?: number): Observable<ApiResponse<AnnualBonusRule[]>> {
+    let params = new HttpParams();
+    if (fiscalYear) params = params.set('fiscalYear', fiscalYear);
+    return this.http.get<ApiResponse<AnnualBonusRule[]>>(`${this.payrollUrl}/annual-bonuses/rules`, { params });
+  }
+
+  createAnnualBonusRule(body: UpsertAnnualBonusRuleRequest): Observable<ApiResponse<string>> {
+    return this.http.post<ApiResponse<string>>(`${this.payrollUrl}/annual-bonuses/rules`, body);
+  }
+
+  updateAnnualBonusRule(id: string, body: UpsertAnnualBonusRuleRequest): Observable<ApiResponse<unknown>> {
+    return this.http.put<ApiResponse<unknown>>(`${this.payrollUrl}/annual-bonuses/rules/${id}`, body);
+  }
+
+  deleteAnnualBonusRule(id: string): Observable<ApiResponse<unknown>> {
+    return this.http.delete<ApiResponse<unknown>>(`${this.payrollUrl}/annual-bonuses/rules/${id}`);
   }
 }

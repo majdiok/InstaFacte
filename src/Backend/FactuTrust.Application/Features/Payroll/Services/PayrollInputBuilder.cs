@@ -35,6 +35,12 @@ public sealed class PayrollInputBuilder
         public IReadOnlyList<PayrollIrppRegularization> IrppRegularizations { get; init; } = Array.Empty<PayrollIrppRegularization>();
         /// <summary>Suspensions approuvées chevauchant le mois (prorata automatique).</summary>
         public IReadOnlyList<EmployeePayrollSuspension> Suspensions { get; init; } = Array.Empty<EmployeePayrollSuspension>();
+        /// <summary>Jours fériés du mois (prorata / congés).</summary>
+        public IReadOnlyList<PayrollPublicHoliday> PublicHolidays { get; init; } = Array.Empty<PayrollPublicHoliday>();
+        /// <summary>Congés maladie approuvés de l'année (plafond IJ annuel).</summary>
+        public IReadOnlyList<LeaveRequest> YearSickLeaves { get; init; } = Array.Empty<LeaveRequest>();
+        /// <summary>Soldes de tout compte approuvés du mois.</summary>
+        public IReadOnlyList<TerminationSettlement> TerminationSettlements { get; init; } = Array.Empty<TerminationSettlement>();
     }
 
     public PayrollComputationInput Build(
@@ -59,6 +65,30 @@ public sealed class PayrollInputBuilder
         foreach (var allowance in variableAllowanceLines)
             allowanceInputs.Add(new AllowanceLineInput(allowance.Label, allowance.Amount, allowance.Taxable, allowance.SubjectToCnss));
 
+        if (_settings.PayrollTerminationIndemnityEnabled)
+        {
+            var settlement = batch.TerminationSettlements.FirstOrDefault(s => s.EmployeeId == employee.Id);
+            if (settlement is not null && settlement.Status == TerminationSettlementStatus.Approved)
+            {
+                if (settlement.LegalIndemnityAmount > 0m)
+                    allowanceInputs.Add(new AllowanceLineInput(
+                        "Indemnité légale (art. 22bis CDT)",
+                        settlement.LegalIndemnityAmount, true, true));
+                if (settlement.NoticeIndemnityAmount > 0m)
+                    allowanceInputs.Add(new AllowanceLineInput(
+                        "Indemnité de préavis",
+                        settlement.NoticeIndemnityAmount, true, true));
+                if (settlement.UnusedLeaveAmount > 0m)
+                    allowanceInputs.Add(new AllowanceLineInput(
+                        "Indemnité congés non consommés",
+                        settlement.UnusedLeaveAmount, true, true));
+                if (settlement.OtherIndemnityAmount > 0m)
+                    allowanceInputs.Add(new AllowanceLineInput(
+                        "Indemnité de rupture",
+                        settlement.OtherIndemnityAmount, true, true));
+            }
+        }
+
         if (_settings.PayrollMealVouchersEnabled)
         {
             foreach (var mealLine in batch.MealVouchers.Where(m => m.EmployeeId == employee.Id))
@@ -76,6 +106,24 @@ public sealed class PayrollInputBuilder
         var unpaidAbsenceAmount = Math.Round(dailyRate * unpaidDays, 3, MidpointRounding.AwayFromZero);
         var overtimeAmount = overtimeLines.Sum(l => l.EffectiveAmount);
 
+        var statutoryEnabled = _settings.PayrollStatutorySickLeaveEnabled
+            || _settings.PayrollStatutoryMaternityLeaveEnabled
+            || _settings.PayrollStatutoryPaternityLeaveEnabled;
+
+        var statutory = statutoryEnabled
+            ? StatutoryLeavePayrollAggregator.Compute(
+                employee.Id,
+                contract.BaseSalary,
+                monthLeaves,
+                batch.YearSickLeaves,
+                parameters,
+                year,
+                month,
+                _settings.PayrollStatutorySickLeaveEnabled,
+                _settings.PayrollStatutoryMaternityLeaveEnabled,
+                _settings.PayrollStatutoryPaternityLeaveEnabled)
+            : StatutoryLeavePayrollAggregator.StatutoryLeaveAmounts.Empty;
+
         decimal prorataDeduction = 0m;
         decimal prorataWorkedDays = 0m;
         decimal prorataNonWorkedDays = 0m;
@@ -92,6 +140,10 @@ public sealed class PayrollInputBuilder
                 .Select(s => new PayrollProrataSuspensionPeriod(s.StartDate, s.EndDate, s.IsPaid, s.IsApproved))
                 .ToList();
 
+            var nonPaidHolidayDates = _settings.PayrollPublicHolidaysEnabled
+                ? batch.PublicHolidays.Where(h => !h.IsPaid).Select(h => h.Date.Date).ToHashSet()
+                : null;
+
             var prorata = PayrollProrataCalculator.Compute(new PayrollProrataMonthInput
             {
                 Year = year,
@@ -100,7 +152,8 @@ public sealed class PayrollInputBuilder
                 EffectiveStart = effectiveStart,
                 EffectiveEnd = effectiveEnd,
                 IsEnabled = true,
-                Suspensions = suspensionPeriods
+                Suspensions = suspensionPeriods,
+                NonPaidHolidayDates = nonPaidHolidayDates is { Count: > 0 } ? nonPaidHolidayDates : null
             });
 
             prorataDeduction = prorata.DeductionAmount;
@@ -159,6 +212,11 @@ public sealed class PayrollInputBuilder
             AllowanceLines = buckets.Lines,
             OvertimeAmount = overtimeAmount,
             UnpaidAbsenceAmount = unpaidAbsenceAmount,
+            SickLeaveDeductionAmount = statutory.SickLeaveDeduction,
+            SickLeaveTopUpAmount = statutory.SickLeaveTopUp,
+            SickLeaveSubrogationAmount = statutory.SickLeaveSubrogation,
+            MaternityTopUpAmount = statutory.MaternityTopUp,
+            PaternityMaintenanceAmount = statutory.PaternityMaintenance,
             ProrataDeductionAmount = prorataDeduction,
             ProrataWorkedDays = prorataWorkedDays,
             ProrataNonWorkedDays = prorataNonWorkedDays,
@@ -206,6 +264,35 @@ public sealed class PayrollInputBuilder
             month);
 
         return CopyWithPostTaxDeductions(baseInput, postTaxLines);
+    }
+
+    public StatutoryLeavePayrollAggregator.StatutoryLeaveAmounts ComputeStatutoryAmounts(
+        Guid employeeId,
+        decimal baseSalary,
+        IReadOnlyList<LeaveRequest> monthLeaves,
+        PayrollYearParameters parameters,
+        MonthBatchData batch,
+        int year,
+        int month)
+    {
+        if (!_settings.PayrollStatutorySickLeaveEnabled
+            && !_settings.PayrollStatutoryMaternityLeaveEnabled
+            && !_settings.PayrollStatutoryPaternityLeaveEnabled)
+        {
+            return StatutoryLeavePayrollAggregator.StatutoryLeaveAmounts.Empty;
+        }
+
+        return StatutoryLeavePayrollAggregator.Compute(
+            employeeId,
+            baseSalary,
+            monthLeaves,
+            batch.YearSickLeaves,
+            parameters,
+            year,
+            month,
+            _settings.PayrollStatutorySickLeaveEnabled,
+            _settings.PayrollStatutoryMaternityLeaveEnabled,
+            _settings.PayrollStatutoryPaternityLeaveEnabled);
     }
 
     private static void ApplyMealVoucher(
@@ -317,6 +404,11 @@ public sealed class PayrollInputBuilder
             AllowanceLines = input.AllowanceLines,
             OvertimeAmount = input.OvertimeAmount,
             UnpaidAbsenceAmount = input.UnpaidAbsenceAmount,
+            SickLeaveDeductionAmount = input.SickLeaveDeductionAmount,
+            SickLeaveTopUpAmount = input.SickLeaveTopUpAmount,
+            SickLeaveSubrogationAmount = input.SickLeaveSubrogationAmount,
+            MaternityTopUpAmount = input.MaternityTopUpAmount,
+            PaternityMaintenanceAmount = input.PaternityMaintenanceAmount,
             ProrataDeductionAmount = input.ProrataDeductionAmount,
             ProrataWorkedDays = input.ProrataWorkedDays,
             ProrataNonWorkedDays = input.ProrataNonWorkedDays,
@@ -349,6 +441,11 @@ public sealed class PayrollInputBuilder
             AllowanceLines = input.AllowanceLines,
             OvertimeAmount = input.OvertimeAmount,
             UnpaidAbsenceAmount = input.UnpaidAbsenceAmount,
+            SickLeaveDeductionAmount = input.SickLeaveDeductionAmount,
+            SickLeaveTopUpAmount = input.SickLeaveTopUpAmount,
+            SickLeaveSubrogationAmount = input.SickLeaveSubrogationAmount,
+            MaternityTopUpAmount = input.MaternityTopUpAmount,
+            PaternityMaintenanceAmount = input.PaternityMaintenanceAmount,
             ProrataDeductionAmount = input.ProrataDeductionAmount,
             ProrataWorkedDays = input.ProrataWorkedDays,
             ProrataNonWorkedDays = input.ProrataNonWorkedDays,

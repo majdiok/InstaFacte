@@ -56,9 +56,44 @@ export const PAYROLL_ROUTES: Routes = [
     data: { permissions: [PERMISSIONS.payroll.read] }
   },
   {
+    path: 'terminations',
+    loadComponent: () => import('./terminations/termination-settlement-list.component').then(m => m.TerminationSettlementListComponent),
+    title: 'Soldes de tout compte - InstaFact',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.payroll.read] }
+  },
+  {
+    path: 'terminations/new',
+    loadComponent: () => import('./terminations/termination-settlement-form.component').then(m => m.TerminationSettlementFormComponent),
+    title: 'Nouveau solde - InstaFact',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.payroll.manageTermination] }
+  },
+  {
+    path: 'terminations/:id',
+    loadComponent: () => import('./terminations/termination-settlement-form.component').then(m => m.TerminationSettlementFormComponent),
+    title: 'Solde de tout compte - InstaFact',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.payroll.read] }
+  },
+  {
+    path: 'settings/annual-bonuses',
+    loadComponent: () => import('./settings/annual-bonuses.component').then(m => m.AnnualBonusesSettingsComponent),
+    title: 'Primes annuelles - InstaFact',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.payroll.settings] }
+  },
+  {
     path: 'settings',
     loadComponent: () => import('./settings/payroll-settings.component').then(m => m.PayrollSettingsComponent),
     title: 'Paramètres paie - InstaFact',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.payroll.settings] }
+  },
+  {
+    path: 'settings/holidays',
+    loadComponent: () => import('./settings/payroll-holidays.component').then(m => m.PayrollHolidaysComponent),
+    title: 'Jours fériés - InstaFact',
     canActivate: [permissionGuard],
     data: { permissions: [PERMISSIONS.payroll.settings] }
   },

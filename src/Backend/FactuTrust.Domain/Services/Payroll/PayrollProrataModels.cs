@@ -26,6 +26,8 @@ public sealed class PayrollProrataMonthInput
     public bool IsEnabled { get; init; }
     public IReadOnlyList<PayrollProrataSuspensionPeriod> Suspensions { get; init; } =
         Array.Empty<PayrollProrataSuspensionPeriod>();
+    /// <summary>Jours fériés non rémunérés à exclure du décompte ouvrable (optionnel).</summary>
+    public IReadOnlySet<DateTime>? NonPaidHolidayDates { get; init; }
 }
 
 public sealed class PayrollProrataMonthResult

@@ -15,11 +15,13 @@ import { ButtonComponent } from '@shared/components/button/button.component';
 import { canManagePayrollEmployees, canManageGarnishments as userCanManageGarnishments, isPayrollConsultMode } from '@core/utils/payroll-access';
 import { ContractFormDialogComponent } from './contract-form-dialog.component';
 import { EmployeeLeavesTabComponent } from './employee-leaves-tab.component';
+import { EmployeeCnssIjClaimsTabComponent } from './employee-cnss-ij-claims-tab.component';
 import { EmployeeAdvancesTabComponent } from './employee-advances-tab.component';
 import { EmployeeSocialFundsTabComponent } from './employee-social-funds-tab.component';
 import { EmployeeInKindBenefitsTabComponent } from './employee-in-kind-benefits-tab.component';
 import { EmployeeLoansTabComponent } from './employee-loans-tab.component';
 import { EmployeeGarnishmentsTabComponent } from './employee-garnishments-tab.component';
+import { EmployeeHrDocumentsComponent } from './employee-hr-documents.component';
 import { EmployeeSuspensionsTabComponent } from './employee-suspensions-tab.component';
 import { EmployeeDepartureDialogComponent } from './employee-departure-dialog.component';
 import { PayrollConsultBannerComponent, PayrollAmountPipe, formatPayrollAmount } from '../shared';
@@ -38,11 +40,13 @@ import { PayrollConsultBannerComponent, PayrollAmountPipe, formatPayrollAmount }
     ButtonComponent,
     ContractFormDialogComponent,
     EmployeeLeavesTabComponent,
+    EmployeeCnssIjClaimsTabComponent,
     EmployeeAdvancesTabComponent,
     EmployeeSocialFundsTabComponent,
     EmployeeInKindBenefitsTabComponent,
     EmployeeLoansTabComponent,
     EmployeeGarnishmentsTabComponent,
+    EmployeeHrDocumentsComponent,
     EmployeeSuspensionsTabComponent,
     EmployeeDepartureDialogComponent,
     PayrollConsultBannerComponent,
@@ -247,6 +251,14 @@ import { PayrollConsultBannerComponent, PayrollAmountPipe, formatPayrollAmount }
 
         <p-tabPanel>
           <ng-template pTemplate="header">
+            <i class="pi pi-building mr-2"></i>
+            <span>IJ CNSS</span>
+          </ng-template>
+          <app-employee-cnss-ij-claims-tab [employeeId]="employee()!.id" [readOnly]="!canManage()" />
+        </p-tabPanel>
+
+        <p-tabPanel>
+          <ng-template pTemplate="header">
             <i class="pi pi-ban mr-2"></i>
             <span>Suspensions</span>
           </ng-template>
@@ -291,6 +303,16 @@ import { PayrollConsultBannerComponent, PayrollAmountPipe, formatPayrollAmount }
             <span>Saisies</span>
           </ng-template>
           <app-employee-garnishments-tab [employeeId]="employee()!.id" [readOnly]="!canManageGarnishments()" />
+        </p-tabPanel>
+
+        <p-tabPanel>
+          <ng-template pTemplate="header">
+            <i class="pi pi-file-pdf mr-2"></i>
+            <span>Documents RH</span>
+          </ng-template>
+          <app-employee-hr-documents
+            [employeeId]="employee()!.id"
+            [terminationDate]="employee()!.terminationDate" />
         </p-tabPanel>
       </p-tabView>
 

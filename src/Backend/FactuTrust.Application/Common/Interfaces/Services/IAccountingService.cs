@@ -80,6 +80,16 @@ public interface IAccountingService
     Task<Result> GeneratePayrollRunEntryAsync(PayrollRun payrollRun, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Invalide l'écriture OD d'un cycle lors de sa réouverture : suppression si elle est encore
+    /// au brouillon, extourne sinon. Sans cela, un cycle rouvert puis recalculé conserverait
+    /// silencieusement l'écriture aux anciens montants (la génération est idempotente par source).
+    /// </summary>
+    Task<Result> ReversePayrollRunEntryAsync(
+        Guid payrollRunId,
+        string reason,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Écriture de décaissement paie (débit 421 / crédit trésorerie) sur enregistrement d'un paiement.
     /// </summary>
     Task<Result> GeneratePayrollPaymentEntryAsync(

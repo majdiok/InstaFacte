@@ -102,6 +102,11 @@ public static class PayrollMappings
             WorkAccidentRate = c.WorkAccidentRate,
             JobTitle = c.JobTitle,
             IsActive = c.IsActive,
+            CivpStartDate = c.CivpStartDate,
+            CivpEndDate = c.CivpEndDate,
+            CivpStateGrant = c.CivpStateGrant,
+            CivpEmployerAllowance = c.CivpEmployerAllowance,
+            AnetiReference = c.AnetiReference,
             Allowances = c.Allowances.Select(a => new ContractAllowanceDto
             {
                 Id = a.Id,
@@ -285,7 +290,16 @@ public static class PayrollMappings
             IrppBrackets = p.IrppBrackets
                 .OrderBy(b => b.LowerBound)
                 .Select(b => new IrppBracketDto { LowerBound = b.LowerBound, Rate = b.Rate })
-                .ToList()
+                .ToList(),
+            CnssMonthlyCeiling = p.CnssMonthlyCeiling,
+            CnssDailyCeiling = p.CnssDailyCeiling,
+            CssMonthlyCeiling = p.CssMonthlyCeiling,
+            AccidentWorkMonthlyCeiling = p.AccidentWorkMonthlyCeiling,
+            SickLeaveWaitingDays = p.SickLeaveWaitingDays,
+            SickLeaveIjRatePercent = p.SickLeaveIjRatePercent,
+            MaternityLeaveDurationDays = p.MaternityLeaveDurationDays,
+            PaternityLeaveDurationDays = p.PaternityLeaveDurationDays,
+            MaternityEmployerTopUpDefault = p.MaternityEmployerTopUpDefault
         };
     }
 
@@ -303,9 +317,32 @@ public static class PayrollMappings
             Days = l.Days,
             Reason = l.Reason,
             IsApproved = l.IsApproved,
-            ApprovedAt = l.ApprovedAt
+            ApprovedAt = l.ApprovedAt,
+            MedicalCertificateNumber = l.MedicalCertificateNumber,
+            MedicalCertificateDate = l.MedicalCertificateDate,
+            SubrogationEnabled = l.SubrogationEnabled,
+            EmployerTopUpPercent = l.EmployerTopUpPercent,
+            EmployerTopUpDays = l.EmployerTopUpDays,
+            ExpectedBirthDate = l.ExpectedBirthDate,
+            ActualBirthDate = l.ActualBirthDate,
+            ChildBirthCertificateNumber = l.ChildBirthCertificateNumber
         };
     }
+
+    public static CnssIjClaimDto ToDto(CnssIjClaim claim, string? employeeName = null) =>
+        new()
+        {
+            Id = claim.Id,
+            EmployeeId = claim.EmployeeId,
+            EmployeeName = employeeName,
+            LeaveRequestId = claim.LeaveRequestId,
+            Year = claim.Year,
+            Month = claim.Month,
+            Amount = claim.Amount,
+            Status = claim.Status.ToString(),
+            StatusDisplay = claim.Status.ToDisplayString(),
+            PaidAt = claim.PaidAt
+        };
 
     public static EmployeePayrollSuspensionDto ToDto(EmployeePayrollSuspension s) =>
         new()
@@ -413,7 +450,9 @@ public static class PayrollMappings
             Label = line.Label,
             Amount = line.Amount,
             Taxable = line.Taxable,
-            SubjectToCnss = line.SubjectToCnss
+            SubjectToCnss = line.SubjectToCnss,
+            Source = line.Source.ToString(),
+            AnnualBonusRuleId = line.AnnualBonusRuleId
         };
     }
 
@@ -534,5 +573,18 @@ public static class PayrollMappings
             AppliedAmount = i.AppliedAmount,
             CarriedOverAmount = i.CarriedOverAmount
         }).ToList()
+    };
+
+    public static PayrollPublicHolidayDto ToPublicHolidayDto(PayrollPublicHoliday holiday) => new()
+    {
+        Id = holiday.Id,
+        Year = holiday.Year,
+        Date = holiday.Date,
+        Label = holiday.Label,
+        Kind = holiday.Kind,
+        KindDisplay = holiday.Kind.ToDisplayString(),
+        IsPaid = holiday.IsPaid,
+        IsEstimated = holiday.IsEstimated,
+        DecreeReference = holiday.DecreeReference
     };
 }

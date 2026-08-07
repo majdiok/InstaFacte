@@ -224,6 +224,21 @@ public class PayrollDeclarationsController : ControllerBase
         return Ok(ApiResponse<object>.Ok(null!, "Congé supprimé."));
     }
 
+    [HttpPost("leaves/declare-birth")]
+    [Authorize(Policy = PermissionPolicies.PayrollManageEmployees)]
+    [ProducesResponseType(typeof(ApiResponse<Guid>), StatusCodes.Status201Created)]
+    public async Task<IActionResult> DeclareBirth([FromBody] DeclareBirthDto dto, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new DeclareBirthCommand(dto), cancellationToken);
+        if (result.IsFailure)
+        {
+            if (result.Error.Code.Contains("NotFound"))
+                return NotFound(ApiResponse<Guid>.Fail(result.Error.Description));
+            return BadRequest(ApiResponse<Guid>.Fail(result.Error.Description));
+        }
+        return Ok(ApiResponse<Guid>.Ok(result.Value, "Naissance déclarée et congés créés."));
+    }
+
     // ── Advances ──
     [HttpPost("advances")]
     [Authorize(Policy = PermissionPolicies.PayrollManageEmployees)]

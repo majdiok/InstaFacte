@@ -219,6 +219,17 @@ public class EmployeesController : ControllerBase
         return Ok(ApiResponse<object>.Ok(null!, "Contrat supprimé."));
     }
 
+    [HttpGet("contracts/{contractId:guid}/civp-attestation/pdf")]
+    [Authorize(Policy = PermissionPolicies.PayrollRead)]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ExportCivpAttestationPdf(Guid contractId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new Application.Features.Payroll.Civp.GenerateCivpAttestationQuery(contractId), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+        return File(result.Value, "application/pdf", $"attestation-civp-{contractId:N}.pdf");
+    }
+
     // ── Leaves & advances (per employee) ──
 
     [HttpGet("{id:guid}/leaves")]

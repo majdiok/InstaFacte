@@ -15,12 +15,12 @@ public static class PayrollProrataCalculator
         var monthStart = new DateTime(year, month, 1);
         var monthEnd = monthStart.AddMonths(1).AddDays(-1);
 
-        var fullMonthWorkdays = PayrollWorkingDaysCounter.CountWeekdaysInMonth(year, month);
+        var fullMonthWorkdays = PayrollWorkingDaysCounter.CountWeekdaysInMonth(year, month, input.NonPaidHolidayDates);
         if (fullMonthWorkdays <= 0)
             return PayrollProrataMonthResult.Empty;
 
         var calendarWorkedDays = PayrollWorkingDaysCounter.CountInMonth(
-            year, month, input.EffectiveStart, input.EffectiveEnd);
+            year, month, input.EffectiveStart, input.EffectiveEnd, input.NonPaidHolidayDates);
 
         var payrollWorkedDays = Math.Round(
             MonthlyWorkingDays * calendarWorkedDays / fullMonthWorkdays,

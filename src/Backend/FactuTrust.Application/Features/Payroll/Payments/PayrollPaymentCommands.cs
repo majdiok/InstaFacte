@@ -10,6 +10,7 @@ using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Services.Payroll;
 using FluentValidation;
 using MediatR;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace FactuTrust.Application.Features.Payroll.Payments;
@@ -53,6 +54,7 @@ public sealed class RecordPayrollRunPaymentCommandHandler
     private readonly ITenantUnitOfWork _unitOfWork;
     private readonly ICurrentUser _currentUser;
     private readonly AccountingSettings _settings;
+    private readonly ILogger<RecordPayrollRunPaymentCommandHandler> _logger;
 
     public RecordPayrollRunPaymentCommandHandler(
         IPayrollRunRepository runs,
@@ -62,7 +64,8 @@ public sealed class RecordPayrollRunPaymentCommandHandler
         ILetteringService letteringService,
         ITenantUnitOfWork unitOfWork,
         ICurrentUser currentUser,
-        IOptions<AccountingSettings> settings)
+        IOptions<AccountingSettings> settings,
+        ILogger<RecordPayrollRunPaymentCommandHandler> logger)
     {
         _runs = runs;
         _payments = payments;
@@ -72,6 +75,7 @@ public sealed class RecordPayrollRunPaymentCommandHandler
         _unitOfWork = unitOfWork;
         _currentUser = currentUser;
         _settings = settings.Value;
+        _logger = logger;
     }
 
     public Task<Result<Guid>> Handle(RecordPayrollRunPaymentCommand request, CancellationToken cancellationToken)
@@ -144,10 +148,18 @@ public sealed class RecordPayrollRunPaymentCommandHandler
             if (entryResult.IsFailure)
                 return Result.Failure<Guid>(entryResult.Error);
 
+            // Le lettrage est un confort de rapprochement : il ne doit jamais annuler un règlement
+            // déjà comptabilisé. En cas d'échec on trace et on poursuit — le lettrage manuel reste
+            // disponible depuis la comptabilité.
             var letterResult = await _letteringService.AutoLetterPayrollPaymentAsync(
                 payment.Id, run.Id, ct);
             if (letterResult.IsFailure)
-                return Result.Failure<Guid>(letterResult.Error);
+            {
+                _logger.LogWarning(
+                    "Lettrage automatique non posé pour le paiement {PayrollPaymentId} du cycle "
+                    + "{PayrollRunId} : {Reason}. Le paiement est enregistré.",
+                    payment.Id, run.Id, letterResult.Error.Description);
+            }
 
             return Result.Success(payment.Id);
         }, cancellationToken);

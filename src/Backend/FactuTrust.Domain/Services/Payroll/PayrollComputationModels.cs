@@ -21,6 +21,16 @@ public sealed class PayrollComputationInput
     public decimal OvertimeAmount { get; init; }
     /// <summary>Retenue pour absences non rémunérées (réduit le brut).</summary>
     public decimal UnpaidAbsenceAmount { get; init; }
+    /// <summary>Retenue carence congé maladie (réduit le brut).</summary>
+    public decimal SickLeaveDeductionAmount { get; init; }
+    /// <summary>Complément employeur congé maladie (indemnité non imposable).</summary>
+    public decimal SickLeaveTopUpAmount { get; init; }
+    /// <summary>Avance subrogation IJ CNSS versée au salarié (non imposable).</summary>
+    public decimal SickLeaveSubrogationAmount { get; init; }
+    /// <summary>Complément employeur congé maternité (indemnité non imposable).</summary>
+    public decimal MaternityTopUpAmount { get; init; }
+    /// <summary>Maintien intégral congé paternité (indemnité non imposable).</summary>
+    public decimal PaternityMaintenanceAmount { get; init; }
     /// <summary>Retenue prorata embauche / départ / suspension (réduit le brut, base seule).</summary>
     public decimal ProrataDeductionAmount { get; init; }
     /// <summary>Jours travaillés retenus pour le prorata (convention 26 jours).</summary>

@@ -13,6 +13,7 @@ namespace FactuTrust.Domain.Services.Payroll;
 public static class PayrollJournalEntryBuilder
 {
     public const string SalaryAccount = "640";
+    public const string IndemnityAccount = "641";
     public const string EmployerChargesAccount = "647";
     public const string PersonnelPayableAccount = "421";
     public const string StateWithholdingAccount = "432";
@@ -36,7 +37,8 @@ public static class PayrollJournalEntryBuilder
         string label,
         decimal totalIrppRegularization = 0m,
         decimal totalCssRegularization = 0m,
-        decimal totalCssEmployer = 0m)
+        decimal totalCssEmployer = 0m,
+        decimal totalTerminationIndemnities = 0m)
     {
         return BuildLines(
             totalGross,
@@ -53,7 +55,8 @@ public static class PayrollJournalEntryBuilder
             employeeAuxiliaryCredits: null,
             totalIrppRegularization,
             totalCssRegularization,
-            totalCssEmployer);
+            totalCssEmployer,
+            totalTerminationIndemnities);
     }
 
     /// <summary>
@@ -74,7 +77,8 @@ public static class PayrollJournalEntryBuilder
         IReadOnlyList<EmployeeAuxiliaryCredit>? employeeAuxiliaryCredits,
         decimal totalIrppRegularization = 0m,
         decimal totalCssRegularization = 0m,
-        decimal totalCssEmployer = 0m)
+        decimal totalCssEmployer = 0m,
+        decimal totalTerminationIndemnities = 0m)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
 
@@ -85,12 +89,15 @@ public static class PayrollJournalEntryBuilder
         var socialOrg = R(totalCnssEmployee + totalCnssEmployer + totalWorkAccident);
         var otherDeductions = R(totalOtherDeductions);
         var gross = R(totalGross);
+        var indemnities = R(Math.Min(totalTerminationIndemnities, gross));
+        var salaries = R(gross - indemnities);
         var net = R(totalNet);
         var entryLabel = label.Trim();
         var advancesLabel = $"Avances et autres retenues — {entryLabel}";
 
         var lines = new List<JournalLineInput>();
-        AddDebit(lines, SalaryAccount, entryLabel, gross);
+        AddDebit(lines, SalaryAccount, entryLabel, salaries);
+        AddDebit(lines, IndemnityAccount, entryLabel, indemnities);
         AddDebit(lines, EmployerChargesAccount, entryLabel, employerCharges);
 
         if (employeeAuxiliaryCredits is { Count: > 0 })
@@ -169,11 +176,14 @@ public static class PayrollJournalEntryBuilder
         var gross = R(payrollRun.TotalGross);
         var net = R(payrollRun.TotalNet);
         var entryLabel = label.Trim();
+        var indemnities = R(ResolveTerminationIndemnities(payrollRun));
+        var salaries = R(gross - Math.Min(indemnities, gross));
 
         var typedDeductions = AggregateTypedDeductions(payrollRun, accountMap);
 
         var lines = new List<JournalLineInput>();
-        AddDebit(lines, SalaryAccount, entryLabel, gross);
+        AddDebit(lines, SalaryAccount, entryLabel, salaries);
+        AddDebit(lines, IndemnityAccount, entryLabel, indemnities);
         AddDebit(lines, EmployerChargesAccount, entryLabel, employerCharges);
 
         if (employeeAuxiliaryCredits is { Count: > 0 })
@@ -254,6 +264,12 @@ public static class PayrollJournalEntryBuilder
         || label.StartsWith("TFP", StringComparison.Ordinal)
         || label.StartsWith("FOPROLOS", StringComparison.Ordinal)
         || label.StartsWith("CSS patronale", StringComparison.Ordinal);
+
+    private static decimal ResolveTerminationIndemnities(PayrollRun payrollRun) =>
+        payrollRun.Payslips
+            .SelectMany(p => p.Lines)
+            .Where(l => l.Kind == PayslipLineKind.Earning && l.Label.StartsWith("Indemnité", StringComparison.Ordinal))
+            .Sum(l => l.Amount);
 
     private readonly record struct TypedDeductionBucket(string Account, string Label, decimal Amount);
 

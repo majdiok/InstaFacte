@@ -51,6 +51,14 @@ public interface IPayrollRunRepository
         int untilMonthExclusive,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Bulletins figés d'un salarié issus des cycles Validés ou Clôturés uniquement,
+    /// triés par période croissante.
+    /// </summary>
+    Task<IReadOnlyList<Payslip>> ListSettledPayslipsForEmployeeAsync(
+        Guid employeeId,
+        CancellationToken cancellationToken = default);
+
     Task<bool> ExistsForPeriodAsync(int year, int month, CancellationToken cancellationToken = default);
 
     /// <summary>True if a run for the period is validated or closed (locks monthly variable edits).</summary>

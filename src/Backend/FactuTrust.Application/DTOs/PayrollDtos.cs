@@ -48,6 +48,11 @@ public sealed record EmploymentContractDto
     public string? JobTitle { get; init; }
     public bool IsActive { get; init; }
     public IReadOnlyList<ContractAllowanceDto> Allowances { get; init; } = Array.Empty<ContractAllowanceDto>();
+    public DateTime? CivpStartDate { get; init; }
+    public DateTime? CivpEndDate { get; init; }
+    public decimal CivpStateGrant { get; init; }
+    public decimal CivpEmployerAllowance { get; init; }
+    public string? AnetiReference { get; init; }
 }
 
 public sealed record EmployeeDetailDto
@@ -193,6 +198,11 @@ public sealed record CreateContractDto
     public decimal WorkAccidentRate { get; init; }
     public string? JobTitle { get; init; }
     public IReadOnlyList<ContractAllowanceInputDto> Allowances { get; init; } = Array.Empty<ContractAllowanceInputDto>();
+    public DateTime? CivpStartDate { get; init; }
+    public DateTime? CivpEndDate { get; init; }
+    public decimal CivpStateGrant { get; init; }
+    public decimal CivpEmployerAllowance { get; init; }
+    public string? AnetiReference { get; init; }
 }
 
 public sealed record UpdateContractDto
@@ -207,6 +217,11 @@ public sealed record UpdateContractDto
     public string? JobTitle { get; init; }
     public bool IsActive { get; init; } = true;
     public IReadOnlyList<ContractAllowanceInputDto> Allowances { get; init; } = Array.Empty<ContractAllowanceInputDto>();
+    public DateTime? CivpStartDate { get; init; }
+    public DateTime? CivpEndDate { get; init; }
+    public decimal CivpStateGrant { get; init; }
+    public decimal CivpEmployerAllowance { get; init; }
+    public string? AnetiReference { get; init; }
 }
 
 // ─────────────────────────────── Payroll runs ───────────────────────────────
@@ -459,6 +474,15 @@ public sealed record PayrollParametersDto
     public string SmigIrppExemptionModeDisplay { get; init; } = null!;
     public decimal? SmigIrppExemptionRateOverride { get; init; }
     public IReadOnlyList<IrppBracketDto> IrppBrackets { get; init; } = Array.Empty<IrppBracketDto>();
+    public decimal? CnssMonthlyCeiling { get; init; }
+    public decimal? CnssDailyCeiling { get; init; }
+    public decimal? CssMonthlyCeiling { get; init; }
+    public decimal? AccidentWorkMonthlyCeiling { get; init; }
+    public int SickLeaveWaitingDays { get; init; }
+    public decimal SickLeaveIjRatePercent { get; init; }
+    public int MaternityLeaveDurationDays { get; init; }
+    public int PaternityLeaveDurationDays { get; init; }
+    public decimal MaternityEmployerTopUpDefault { get; init; }
 }
 
 public sealed record UpdatePayrollParametersDto
@@ -492,6 +516,15 @@ public sealed record UpdatePayrollParametersDto
     public string SmigIrppExemptionMode { get; init; } = "None";
     public decimal? SmigIrppExemptionRateOverride { get; init; }
     public IReadOnlyList<IrppBracketDto> IrppBrackets { get; init; } = Array.Empty<IrppBracketDto>();
+    public decimal? CnssMonthlyCeiling { get; init; }
+    public decimal? CnssDailyCeiling { get; init; }
+    public decimal? CssMonthlyCeiling { get; init; }
+    public decimal? AccidentWorkMonthlyCeiling { get; init; }
+    public int SickLeaveWaitingDays { get; init; }
+    public decimal SickLeaveIjRatePercent { get; init; }
+    public int MaternityLeaveDurationDays { get; init; }
+    public int PaternityLeaveDurationDays { get; init; }
+    public decimal MaternityEmployerTopUpDefault { get; init; }
 }
 
 // ─────────────────────────────── Leaves & advances ───────────────────────────────
@@ -509,6 +542,14 @@ public sealed record LeaveRequestDto
     public string? Reason { get; init; }
     public bool IsApproved { get; init; }
     public DateTime? ApprovedAt { get; init; }
+    public string? MedicalCertificateNumber { get; init; }
+    public DateTime? MedicalCertificateDate { get; init; }
+    public bool SubrogationEnabled { get; init; }
+    public decimal? EmployerTopUpPercent { get; init; }
+    public int? EmployerTopUpDays { get; init; }
+    public DateTime? ExpectedBirthDate { get; init; }
+    public DateTime? ActualBirthDate { get; init; }
+    public string? ChildBirthCertificateNumber { get; init; }
 }
 
 public sealed record CreateLeaveDto
@@ -519,6 +560,42 @@ public sealed record CreateLeaveDto
     public DateTime EndDate { get; init; }
     public decimal Days { get; init; }
     public string? Reason { get; init; }
+    public string? MedicalCertificateNumber { get; init; }
+    public DateTime? MedicalCertificateDate { get; init; }
+    public bool SubrogationEnabled { get; init; }
+    public decimal? EmployerTopUpPercent { get; init; }
+    public int? EmployerTopUpDays { get; init; }
+    public DateTime? ExpectedBirthDate { get; init; }
+    public DateTime? ActualBirthDate { get; init; }
+    public string? ChildBirthCertificateNumber { get; init; }
+}
+
+public sealed record DeclareBirthDto
+{
+    public Guid EmployeeId { get; init; }
+    public DateTime ActualBirthDate { get; init; }
+    public string? ChildBirthCertificateNumber { get; init; }
+    public bool CreateMaternityLeave { get; init; }
+    public bool CreatePaternityLeave { get; init; }
+}
+
+public sealed record CnssIjClaimDto
+{
+    public Guid Id { get; init; }
+    public Guid EmployeeId { get; init; }
+    public string? EmployeeName { get; init; }
+    public Guid LeaveRequestId { get; init; }
+    public int Year { get; init; }
+    public int Month { get; init; }
+    public decimal Amount { get; init; }
+    public string Status { get; init; } = null!;
+    public string StatusDisplay { get; init; } = null!;
+    public DateTime? PaidAt { get; init; }
+}
+
+public sealed record MarkCnssIjClaimPaidRequest
+{
+    public DateTime PaidAt { get; init; }
 }
 
 public sealed record EmployeeAdvanceDto
@@ -699,6 +776,8 @@ public sealed record PayrollVariableAllowanceLineDto
     public decimal Amount { get; init; }
     public bool Taxable { get; init; }
     public bool SubjectToCnss { get; init; }
+    public string Source { get; init; } = "Manual";
+    public Guid? AnnualBonusRuleId { get; init; }
 }
 
 public sealed record UpsertVariableAllowanceLineDto
@@ -770,6 +849,44 @@ public sealed record UpsertEmployeeSocialFundEnrollmentDto
     public DateTime? EndDate { get; init; }
     public decimal? OverrideEmployeeAmount { get; init; }
     public decimal? OverrideEmployerAmount { get; init; }
+}
+
+// ─────────────────────────────── Public holidays ───────────────────────────────
+
+public sealed record PayrollPublicHolidayDto
+{
+    public Guid Id { get; init; }
+    public int Year { get; init; }
+    public DateTime Date { get; init; }
+    public string Label { get; init; } = null!;
+    public PublicHolidayKind Kind { get; init; }
+    public string KindDisplay { get; init; } = null!;
+    public bool IsPaid { get; init; }
+    public bool IsEstimated { get; init; }
+    public string? DecreeReference { get; init; }
+}
+
+public sealed record UpsertPayrollPublicHolidayDto
+{
+    public int Year { get; init; }
+    public DateTime Date { get; init; }
+    public string Label { get; init; } = null!;
+    public PublicHolidayKind Kind { get; init; }
+    public bool IsPaid { get; init; } = true;
+    public bool IsEstimated { get; init; }
+    public string? DecreeReference { get; init; }
+}
+
+public sealed record SeedPayrollPublicHolidaysDto
+{
+    public IReadOnlyList<int> Years { get; init; } = Array.Empty<int>();
+    public bool OverwriteExisting { get; init; }
+}
+
+public sealed record SeedPayrollPublicHolidaysResultDto
+{
+    public int InsertedCount { get; init; }
+    public int SkippedCount { get; init; }
 }
 
 // ─────────────────────────────── Meal vouchers ───────────────────────────────
@@ -1352,3 +1469,141 @@ public sealed record PayrollJournalDto
 
 /// <summary>Fichier produit par l'export d'un état de contrôle paie.</summary>
 public sealed record PayrollReportFileDto(byte[] Content, string FileName, string ContentType);
+
+// ─────────────────────────────── Termination settlements ───────────────────────────────
+
+public sealed record TerminationSettlementDto
+{
+    public Guid Id { get; init; }
+    public Guid EmployeeId { get; init; }
+    public string? EmployeeName { get; init; }
+    public int Year { get; init; }
+    public int Month { get; init; }
+    public DateTime TerminationDate { get; init; }
+    public string Reason { get; init; } = null!;
+    public string ReasonDisplay { get; init; } = null!;
+    public string Status { get; init; } = null!;
+    public string StatusDisplay { get; init; } = null!;
+    public int SeniorityMonths { get; init; }
+    public decimal GrossMonthlyReference { get; init; }
+    public decimal LegalIndemnityAmount { get; init; }
+    public decimal NoticeIndemnityAmount { get; init; }
+    public decimal UnusedLeaveAmount { get; init; }
+    public decimal OtherIndemnityAmount { get; init; }
+    public decimal TotalIndemnityAmount { get; init; }
+    public string? Notes { get; init; }
+}
+
+public sealed record TerminationSettlementPreviewDto
+{
+    public Guid EmployeeId { get; init; }
+    public string? EmployeeName { get; init; }
+    public DateTime TerminationDate { get; init; }
+    public string Reason { get; init; } = null!;
+    public string ReasonDisplay { get; init; } = null!;
+    public int SeniorityMonths { get; init; }
+    public int IndemnityDays { get; init; }
+    public decimal DailyRate { get; init; }
+    public decimal GrossMonthlyReference { get; init; }
+    public decimal LegalIndemnityAmount { get; init; }
+    public decimal NoticeIndemnityAmount { get; init; }
+    public decimal UnusedLeaveAmount { get; init; }
+    public decimal OtherIndemnityAmount { get; init; }
+    public decimal TotalIndemnityAmount { get; init; }
+}
+
+public sealed record UpsertTerminationSettlementDto
+{
+    public Guid EmployeeId { get; init; }
+    public int Year { get; init; }
+    public int Month { get; init; }
+    public DateTime TerminationDate { get; init; }
+    public string Reason { get; init; } = "Dismissal";
+    public decimal? LegalIndemnityAmount { get; init; }
+    public decimal NoticeIndemnityAmount { get; init; }
+    public decimal UnusedLeaveAmount { get; init; }
+    public decimal OtherIndemnityAmount { get; init; }
+    public string? Notes { get; init; }
+    public bool Approve { get; init; }
+}
+
+// ─────────────────────────────── Annual bonuses ───────────────────────────────
+
+public sealed record AnnualBonusRuleDto
+{
+    public Guid Id { get; init; }
+    public string Code { get; init; } = null!;
+    public string Label { get; init; } = null!;
+    public string Kind { get; init; } = null!;
+    public string KindDisplay { get; init; } = null!;
+    public string Formula { get; init; } = null!;
+    public string FormulaDisplay { get; init; } = null!;
+    public int PaymentMonth { get; init; }
+    public decimal FixedAmount { get; init; }
+    public decimal RatePercent { get; init; }
+    public decimal MonthsOfBase { get; init; }
+    public bool Taxable { get; init; }
+    public bool SubjectToCnss { get; init; }
+    public bool IsActive { get; init; }
+    public int? FiscalYear { get; init; }
+}
+
+public sealed record UpsertAnnualBonusRuleDto
+{
+    public string Code { get; init; } = null!;
+    public string Label { get; init; } = null!;
+    public string Kind { get; init; } = "ThirteenthMonth";
+    public string Formula { get; init; } = "MonthsOfBase";
+    public int PaymentMonth { get; init; } = 12;
+    public decimal FixedAmount { get; init; }
+    public decimal RatePercent { get; init; }
+    public decimal MonthsOfBase { get; init; } = 1m;
+    public bool Taxable { get; init; } = true;
+    public bool SubjectToCnss { get; init; } = true;
+    public bool IsActive { get; init; } = true;
+    public int? FiscalYear { get; init; }
+}
+
+public sealed record EmployeeAnnualBonusRuleDto
+{
+    public Guid Id { get; init; }
+    public Guid EmployeeId { get; init; }
+    public string? EmployeeName { get; init; }
+    public Guid AnnualBonusRuleId { get; init; }
+    public string? RuleLabel { get; init; }
+    public bool IsActive { get; init; }
+    public decimal? OverrideFixedAmount { get; init; }
+    public decimal? OverrideRatePercent { get; init; }
+    public decimal? OverrideMonthsOfBase { get; init; }
+}
+
+public sealed record UpsertEmployeeAnnualBonusRuleDto
+{
+    public Guid EmployeeId { get; init; }
+    public Guid AnnualBonusRuleId { get; init; }
+    public bool IsActive { get; init; } = true;
+    public decimal? OverrideFixedAmount { get; init; }
+    public decimal? OverrideRatePercent { get; init; }
+    public decimal? OverrideMonthsOfBase { get; init; }
+}
+
+// ─────────────────────────────── CIVP ───────────────────────────────
+
+public sealed record CivpAttestationDto
+{
+    public string EmployerCompanyName { get; init; } = null!;
+    public string? EmployerNif { get; init; }
+    public string? EmployerAddressLine { get; init; }
+    public Guid EmployeeId { get; init; }
+    public string EmployeeNumber { get; init; } = null!;
+    public string EmployeeName { get; init; } = null!;
+    public string? Cin { get; init; }
+    public string? JobTitle { get; init; }
+    public DateTime CivpStartDate { get; init; }
+    public DateTime CivpEndDate { get; init; }
+    public decimal CivpStateGrant { get; init; }
+    public decimal CivpEmployerAllowance { get; init; }
+    public string? AnetiReference { get; init; }
+    public string DocumentReference { get; init; } = null!;
+    public DateTime GeneratedAt { get; init; }
+}

@@ -98,6 +98,35 @@ function parseIsoDate(value?: string): Date | null {
         }
       </div>
 
+      @if (type === 'Sivp') {
+        <h4 class="mt-3">CIVP / SIVP</h4>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Début CIVP</label>
+            <p-datepicker [(ngModel)]="civpStartDate" dateFormat="dd/mm/yy" [showIcon]="true" appendTo="body" styleClass="w-full" />
+          </div>
+          <div class="form-group">
+            <label>Fin CIVP (max 12 mois)</label>
+            <p-datepicker [(ngModel)]="civpEndDate" dateFormat="dd/mm/yy" [showIcon]="true" appendTo="body" styleClass="w-full" />
+          </div>
+          <div class="form-group">
+            <label>Subvention État</label>
+            <p-inputNumber [(ngModel)]="civpStateGrant" [minFractionDigits]="3" [locale]="'fr-TN'" styleClass="w-full" />
+          </div>
+          <div class="form-group">
+            <label>Indemnité employeur</label>
+            <p-inputNumber [(ngModel)]="civpEmployerAllowance" [minFractionDigits]="3" [locale]="'fr-TN'" styleClass="w-full" />
+          </div>
+          <div class="form-group full-width">
+            <label>Référence ANETI</label>
+            <input pInputText [(ngModel)]="anetiReference" class="w-full" />
+          </div>
+        </div>
+        @if (editContract) {
+          <app-button variant="outline" class="mt-2" (click)="downloadCivpAttestation()">Télécharger attestation CIVP</app-button>
+        }
+      }
+
       <h4 class="mt-3">Primes</h4>
       <table class="allowance-table">
         <thead>
@@ -158,6 +187,11 @@ export class ContractFormDialogComponent implements OnChanges {
   workAccidentRate = 0.4;
   jobTitle = '';
   isActive = true;
+  civpStartDate: Date | null = null;
+  civpEndDate: Date | null = null;
+  civpStateGrant = 0;
+  civpEmployerAllowance = 0;
+  anetiReference = '';
   allowanceRows: AllowanceRow[] = [];
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -173,6 +207,11 @@ export class ContractFormDialogComponent implements OnChanges {
       this.workAccidentRate = c.workAccidentRate;
       this.jobTitle = c.jobTitle ?? '';
       this.isActive = c.isActive;
+      this.civpStartDate = parseIsoDate(c.civpStartDate);
+      this.civpEndDate = parseIsoDate(c.civpEndDate);
+      this.civpStateGrant = c.civpStateGrant ?? 0;
+      this.civpEmployerAllowance = c.civpEmployerAllowance ?? 0;
+      this.anetiReference = c.anetiReference ?? '';
       this.allowanceRows = c.allowances.map(a => ({
         label: a.label,
         amount: a.amount,
@@ -208,7 +247,12 @@ export class ContractFormDialogComponent implements OnChanges {
       baseSalary: this.baseSalary,
       workAccidentRate: this.workAccidentRate,
       jobTitle: this.jobTitle || undefined,
-      allowances
+      allowances,
+      civpStartDate: this.type === 'Sivp' ? toIsoDate(this.civpStartDate) : undefined,
+      civpEndDate: this.type === 'Sivp' ? toIsoDate(this.civpEndDate) : undefined,
+      civpStateGrant: this.type === 'Sivp' ? this.civpStateGrant : 0,
+      civpEmployerAllowance: this.type === 'Sivp' ? this.civpEmployerAllowance : 0,
+      anetiReference: this.type === 'Sivp' ? (this.anetiReference || undefined) : undefined
     };
 
     const req = this.editContract
@@ -249,6 +293,26 @@ export class ContractFormDialogComponent implements OnChanges {
     this.workAccidentRate = 0.4;
     this.jobTitle = '';
     this.isActive = true;
+    this.civpStartDate = null;
+    this.civpEndDate = null;
+    this.civpStateGrant = 0;
+    this.civpEmployerAllowance = 0;
+    this.anetiReference = '';
     this.allowanceRows = [];
+  }
+
+  downloadCivpAttestation(): void {
+    if (!this.editContract) return;
+    this.employees.exportCivpAttestationPdf(this.editContract.id).subscribe({
+      next: blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `attestation-civp-${this.editContract!.id}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+      },
+      error: () => this.toast.add({ severity: 'error', summary: 'CIVP', detail: 'Téléchargement impossible.' })
+    });
   }
 }

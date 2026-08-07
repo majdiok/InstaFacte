@@ -21,6 +21,15 @@ public class PayrollSettingsController : ControllerBase
         _mediator = mediator;
     }
 
+    [HttpGet("feature-flags")]
+    [Authorize(Policy = PermissionPolicies.PayrollRead)]
+    [ProducesResponseType(typeof(ApiResponse<PayrollFeatureFlagsDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetFeatureFlags(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetPayrollFeatureFlagsQuery(), cancellationToken);
+        return Ok(ApiResponse<PayrollFeatureFlagsDto>.Ok(result));
+    }
+
     [HttpGet("parameters")]
     [Authorize(Policy = PermissionPolicies.PayrollRead)]
     [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<PayrollParametersDto>>), StatusCodes.Status200OK)]
@@ -28,6 +37,15 @@ public class PayrollSettingsController : ControllerBase
     {
         var result = await _mediator.Send(new ListPayrollParametersQuery(), cancellationToken);
         return Ok(ApiResponse<IReadOnlyList<PayrollParametersDto>>.Ok(result));
+    }
+
+    [HttpGet("parameters/{fiscalYear:int}/preset")]
+    [Authorize(Policy = PermissionPolicies.PayrollRead)]
+    [ProducesResponseType(typeof(ApiResponse<PayrollLegalPresetDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetLegalPreset(int fiscalYear, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetPayrollLegalPresetQuery(fiscalYear), cancellationToken);
+        return Ok(ApiResponse<PayrollLegalPresetDto>.Ok(result));
     }
 
     [HttpGet("parameters/{fiscalYear:int}")]

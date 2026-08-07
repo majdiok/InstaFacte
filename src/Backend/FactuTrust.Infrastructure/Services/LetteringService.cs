@@ -2,10 +2,13 @@ using System.Data;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
+using FactuTrust.Domain.Services.Payroll;
 using FactuTrust.Domain.ValueObjects;
 using FactuTrust.Infrastructure.MultiTenancy;
 using FactuTrust.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FactuTrust.Infrastructure.Services;
 
@@ -13,11 +16,16 @@ public sealed class LetteringService : ILetteringService
 {
     private readonly ITenantDbContextFactory _contextFactory;
     private readonly TenantAmbientTransaction _ambient;
+    private readonly ILogger<LetteringService> _logger;
 
-    public LetteringService(ITenantDbContextFactory contextFactory, TenantAmbientTransaction ambient)
+    public LetteringService(
+        ITenantDbContextFactory contextFactory,
+        TenantAmbientTransaction ambient,
+        ILogger<LetteringService>? logger = null)
     {
         _contextFactory = contextFactory;
         _ambient = ambient;
+        _logger = logger ?? NullLogger<LetteringService>.Instance;
     }
 
     public async Task<Result> ManualLetterAsync(IReadOnlyList<Guid> journalEntryLineIds, bool allowPartial = false, CancellationToken cancellationToken = default)
@@ -291,81 +299,76 @@ public sealed class LetteringService : ILetteringService
         if (paymentEntry is null)
             return Result.Success();
 
+        // Écriture ACTIVE du cycle : une OD extournée (cycle rouvert puis revalidé) ne doit jamais
+        // être choisie à la place de l'écriture courante.
         var payrollEntry = await ctx.JournalEntries
             .AsNoTracking()
             .Include(j => j.Lines)
-            .FirstOrDefaultAsync(
-                j => j.SourceEntityType == AccountingService.SourcePayrollRun
-                     && j.SourceEntityId == payrollRunId,
-                cancellationToken);
+            .Where(j => j.SourceEntityType == AccountingService.SourcePayrollRun
+                        && j.SourceEntityId == payrollRunId
+                        && !j.IsReversed)
+            .OrderByDescending(j => j.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
 
         if (payrollEntry is null)
             return Result.Success();
 
-        var payrollCredits = payrollEntry.Lines
-            .Where(l => l.ThirdPartyKind == Domain.Enums.ThirdPartyKind.Employee
+        // Les groupes sont indexés par numéro de compte : un groupe de lettrage porte un compte
+        // unique (invariant de LetteringGroup, vérifié par ValidateLinesAsync). Construire les
+        // groupes à partir du compte rend cet invariant vrai par construction, et couvre
+        // indifféremment l'OD ventilée par salarié (421xxxx) et l'OD agrégée (421) des cycles
+        // validés avant les comptes auxiliaires.
+        var runCredits = payrollEntry.Lines
+            .Where(l => IsPersonnelPayable(l.AccountNumber)
                         && l.CreditAmount.Amount > 0
                         && string.IsNullOrEmpty(l.LetteringCode))
-            .ToList();
+            .GroupBy(l => l.AccountNumber, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
 
         var paymentDebits = paymentEntry.Lines
-            .Where(l => l.ThirdPartyKind == Domain.Enums.ThirdPartyKind.Employee
+            .Where(l => IsPersonnelPayable(l.AccountNumber)
                         && l.DebitAmount.Amount > 0
                         && string.IsNullOrEmpty(l.LetteringCode))
-            .ToList();
+            .GroupBy(l => l.AccountNumber, StringComparer.Ordinal);
 
         var letterRequests = new List<(IReadOnlyList<Guid> LineIds, bool AllowPartial)>();
 
-        foreach (var creditLine in payrollCredits)
+        foreach (var debitGroup in paymentDebits)
         {
-            var debitLine = paymentDebits.FirstOrDefault(d =>
-                d.AccountNumber == creditLine.AccountNumber
-                && d.ThirdPartyId == creditLine.ThirdPartyId);
-
-            if (debitLine is null)
-                continue;
-
-            var totalDebit = creditLine.DebitAmount.Amount + debitLine.DebitAmount.Amount;
-            var totalCredit = creditLine.CreditAmount.Amount + debitLine.CreditAmount.Amount;
-            var balanced = Math.Round(totalDebit, 3) == Math.Round(totalCredit, 3);
-
-            letterRequests.Add((new List<Guid> { creditLine.Id, debitLine.Id }, !balanced));
-        }
-
-        var legacyCredit = payrollEntry.Lines
-            .FirstOrDefault(l => l.AccountNumber.StartsWith("421", StringComparison.Ordinal)
-                                 && l.CreditAmount.Amount > 0
-                                 && l.ThirdPartyKind == Domain.Enums.ThirdPartyKind.None
-                                 && string.IsNullOrEmpty(l.LetteringCode));
-
-        if (legacyCredit is not null)
-        {
-            var employeeDebits = paymentDebits
-                .Where(d => string.IsNullOrEmpty(d.LetteringCode))
-                .ToList();
-            if (employeeDebits.Count > 0)
+            if (!runCredits.TryGetValue(debitGroup.Key, out var credits) || credits.Count == 0)
             {
-                var lineIds = new List<Guid> { legacyCredit.Id };
-                lineIds.AddRange(employeeDebits.Select(d => d.Id));
-                var totalDebit = legacyCredit.DebitAmount.Amount + employeeDebits.Sum(d => d.DebitAmount.Amount);
-                var totalCredit = legacyCredit.CreditAmount.Amount + employeeDebits.Sum(d => d.CreditAmount.Amount);
-                var balanced = Math.Round(totalDebit, 3) == Math.Round(totalCredit, 3);
-                letterRequests.Add((lineIds, !balanced));
+                _logger.LogWarning(
+                    "Lettrage paie : aucune contrepartie non lettrée sur le compte {Account} pour le "
+                    + "cycle {PayrollRunId} (paiement {PayrollPaymentId}). Rapprochement à faire manuellement.",
+                    debitGroup.Key, payrollRunId, payrollPaymentId);
+                continue;
             }
+
+            var group = credits.Concat(debitGroup).ToList();
+            var debit = group.Sum(l => l.DebitAmount.Amount);
+            var credit = group.Sum(l => l.CreditAmount.Amount);
+            var balanced = Math.Round(debit, 3) == Math.Round(credit, 3);
+
+            letterRequests.Add((group.Select(l => l.Id).ToList(), !balanced));
         }
 
         if (letterRequests.Count == 0)
             return Result.Success();
 
+        // Best-effort, comme AutoLetterPaymentAsync : le rapprochement est un confort comptable,
+        // il ne doit jamais faire échouer — donc annuler — un règlement déjà comptabilisé.
         if (_ambient.IsActive)
         {
             await using var letterCtx = _contextFactory.CreateContext();
             foreach (var (lineIds, allowPartial) in letterRequests)
             {
+                // ValidateLinesAsync échoue avant toute mutation du contexte : passer au groupe
+                // suivant laisse intactes les mutations déjà enregistrées, et le SaveChanges final
+                // reste atteint.
                 var result = await LetterInContextAsync(
                     letterCtx, lineIds, allowPartial, saveChanges: false, cancellationToken);
                 if (result.IsFailure)
-                    return result;
+                    LogSkippedLettering(result, payrollPaymentId, payrollRunId);
             }
 
             await letterCtx.SaveChangesAsync(cancellationToken);
@@ -376,11 +379,21 @@ public sealed class LetteringService : ILetteringService
         {
             var result = await ManualLetterAsync(lineIds, allowPartial, cancellationToken);
             if (result.IsFailure)
-                return result;
+                LogSkippedLettering(result, payrollPaymentId, payrollRunId);
         }
 
         return Result.Success();
     }
+
+    /// <summary>Vrai pour le compte de dettes envers le personnel (421) et ses auxiliaires 421xxxx.</summary>
+    private static bool IsPersonnelPayable(string accountNumber) =>
+        accountNumber.StartsWith(PayrollJournalEntryBuilder.PersonnelPayableAccount, StringComparison.Ordinal);
+
+    private void LogSkippedLettering(Result result, Guid payrollPaymentId, Guid payrollRunId) =>
+        _logger.LogWarning(
+            "Lettrage paie non posé pour le paiement {PayrollPaymentId} (cycle {PayrollRunId}) : {Reason}. "
+            + "Le paiement reste enregistré ; le rapprochement peut être fait manuellement.",
+            payrollPaymentId, payrollRunId, result.Error.Description);
 
     public async Task<Result> UnletterPayrollPaymentAsync(Guid payrollPaymentId, CancellationToken cancellationToken = default)
     {

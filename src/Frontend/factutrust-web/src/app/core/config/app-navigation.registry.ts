@@ -496,6 +496,13 @@ export const ALL_NAV_ITEMS: NavItem[] = [
         permissionsAll: [PERMISSIONS.payroll.read]
       },
       {
+        label: 'Soldes de tout compte',
+        route: '/payroll/terminations',
+        icon: 'fa-solid fa-file-signature',
+        modules: [M.Payroll],
+        permissionsAll: [PERMISSIONS.payroll.read]
+      },
+      {
         label: 'Livre de paie',
         route: '/payroll/reports/payroll-book',
         icon: 'fa-solid fa-book',
@@ -520,6 +527,20 @@ export const ALL_NAV_ITEMS: NavItem[] = [
         label: 'Paramètres paie',
         route: '/payroll/settings',
         icon: 'fa-solid fa-sliders',
+        modules: [M.Payroll],
+        permissionsAll: [PERMISSIONS.payroll.settings]
+      },
+      {
+        label: 'Jours fériés',
+        route: '/payroll/settings/holidays',
+        icon: 'fa-solid fa-calendar-day',
+        modules: [M.Payroll],
+        permissionsAll: [PERMISSIONS.payroll.settings]
+      },
+      {
+        label: 'Primes annuelles',
+        route: '/payroll/settings/annual-bonuses',
+        icon: 'fa-solid fa-gift',
         modules: [M.Payroll],
         permissionsAll: [PERMISSIONS.payroll.settings]
       }

@@ -127,6 +127,21 @@ public sealed class UpdatePayrollParametersCommandHandler : IRequestHandler<Upda
         if (bracketResult.IsFailure)
             return bracketResult;
 
+        var ceilingsResult = parameters.UpdateCnssCeilings(
+            dto.CnssMonthlyCeiling,
+            dto.CnssDailyCeiling,
+            dto.CssMonthlyCeiling,
+            dto.AccidentWorkMonthlyCeiling);
+        if (ceilingsResult.IsFailure)
+            return ceilingsResult;
+
+        parameters.SetStatutoryLeaveDefaults(
+            dto.SickLeaveWaitingDays,
+            dto.SickLeaveIjRatePercent,
+            dto.MaternityLeaveDurationDays,
+            dto.PaternityLeaveDurationDays,
+            dto.MaternityEmployerTopUpDefault);
+
         await _parameters.UpdateAsync(parameters, cancellationToken);
         return Result.Success();
     }

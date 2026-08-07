@@ -191,7 +191,7 @@ public static class UserRoleExtensions
             Permissions.CustomData.RecordsRead, Permissions.CustomData.RecordsWrite, Permissions.CustomData.ReportsView,
             Permissions.Payroll.Read, Permissions.Payroll.ManageEmployees, Permissions.Payroll.RunPayroll,
             Permissions.Payroll.Validate, Permissions.Payroll.Declare, Permissions.Payroll.Export, Permissions.Payroll.Pay, Permissions.Payroll.Settings,
-            Permissions.Payroll.ManageGarnishments
+            Permissions.Payroll.ManageGarnishments, Permissions.Payroll.HrDocuments, Permissions.Payroll.ManageTermination
         },
         UserRole.Accountant => new[]
         {
@@ -253,7 +253,7 @@ public static class UserRoleExtensions
             Permissions.CustomData.RecordsRead, Permissions.CustomData.RecordsWrite, Permissions.CustomData.ReportsView,
             Permissions.Payroll.Read, Permissions.Payroll.ManageEmployees, Permissions.Payroll.RunPayroll,
             Permissions.Payroll.Validate, Permissions.Payroll.Declare, Permissions.Payroll.Export, Permissions.Payroll.Pay, Permissions.Payroll.Settings,
-            Permissions.Payroll.ManageGarnishments
+            Permissions.Payroll.ManageGarnishments, Permissions.Payroll.HrDocuments, Permissions.Payroll.ManageTermination
         },
         UserRole.Client => new[]
         {
@@ -384,7 +384,7 @@ public static class UserRoleExtensions
             Permissions.CustomData.RecordsRead, Permissions.CustomData.RecordsWrite, Permissions.CustomData.ReportsView,
             Permissions.Payroll.Read, Permissions.Payroll.ManageEmployees, Permissions.Payroll.RunPayroll,
             Permissions.Payroll.Validate, Permissions.Payroll.Declare, Permissions.Payroll.Export, Permissions.Payroll.Pay, Permissions.Payroll.Settings,
-            Permissions.Payroll.ManageGarnishments
+            Permissions.Payroll.ManageGarnishments, Permissions.Payroll.HrDocuments, Permissions.Payroll.ManageTermination
         },
         UserRole.Developer => new[]
         {
@@ -721,5 +721,9 @@ public static class Permissions
         public const string Settings = "payroll:settings";
         /// <summary>Gérer les saisies sur salaire et pensions alimentaires.</summary>
         public const string ManageGarnishments = "payroll:manage_garnishments";
+        /// <summary>Générer les documents RH (STC, certificat de travail, attestation de salaire).</summary>
+        public const string HrDocuments = "payroll:hr_documents";
+        /// <summary>Traiter les ruptures de contrat et indemnités de départ.</summary>
+        public const string ManageTermination = "payroll:manage_termination";
     }
 }

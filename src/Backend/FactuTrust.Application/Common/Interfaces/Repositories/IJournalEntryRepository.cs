@@ -13,6 +13,14 @@ public interface IJournalEntryRepository
     /// </summary>
     Task<Result> MutateAsync(Guid id, Func<JournalEntry, Result> mutate, CancellationToken cancellationToken = default);
     Task<JournalEntry?> GetBySourceAsync(string sourceEntityType, Guid sourceEntityId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Comme <see cref="GetBySourceAsync"/>, mais ignore les écritures extournées et rend la plus
+    /// récente. Indispensable dès qu'une même source peut porter plusieurs écritures successives
+    /// (cycle de paie rouvert puis revalidé) : <see cref="GetBySourceAsync"/> est un
+    /// <c>FirstOrDefault</c> sans tri et deviendrait alors non déterministe.
+    /// </summary>
+    Task<JournalEntry?> GetActiveBySourceAsync(string sourceEntityType, Guid sourceEntityId, CancellationToken cancellationToken = default);
     Task<JournalEntry?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<JournalEntry>> GetDraftsByPeriodAsync(Guid periodId, string? journalCode, CancellationToken cancellationToken = default);
     Task<int> CountDraftsAsync(CancellationToken cancellationToken = default);

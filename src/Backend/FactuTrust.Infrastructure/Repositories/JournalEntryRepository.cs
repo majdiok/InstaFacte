@@ -27,6 +27,19 @@ public sealed class JournalEntryRepository : IJournalEntryRepository
                 cancellationToken);
     }
 
+    public async Task<JournalEntry?> GetActiveBySourceAsync(string sourceEntityType, Guid sourceEntityId, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.JournalEntries
+            .Include(j => j.Lines)
+            .Include(j => j.AccountingPeriod)
+            .Where(j => j.SourceEntityType == sourceEntityType
+                        && j.SourceEntityId == sourceEntityId
+                        && !j.IsReversed)
+            .OrderByDescending(j => j.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     public async Task<JournalEntry?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();
