@@ -147,8 +147,7 @@ export class AiChatSessionService {
           }
         }
         prevUid = uid;
-      },
-      { allowSignalWrites: true }
+      }
     );
 
     if (isPlatformBrowser(this.platformId)) {

@@ -36,25 +36,19 @@ export class WarehouseContextService {
   readonly resolvedWarehouse = this.resolvedWarehouseSignal.asReadonly();
 
   constructor() {
-    effect(
-      () => {
-        if (!this.authService.user()) {
-          this.selectedId.set(null);
-        }
-      },
-      { allowSignalWrites: true }
-    );
+    effect(() => {
+      if (!this.authService.user()) {
+        this.selectedId.set(null);
+      }
+    });
 
-    effect(
-      () => {
-        if (this.authService.isAccountingFirm()) {
-          this.selectedId.set(null);
-          this.resolvedWarehouseSignal.set(null);
-          clearWarehouseStorage();
-        }
-      },
-      { allowSignalWrites: true }
-    );
+    effect(() => {
+      if (this.authService.isAccountingFirm()) {
+        this.selectedId.set(null);
+        this.resolvedWarehouseSignal.set(null);
+        clearWarehouseStorage();
+      }
+    });
 
     toObservable(this.selectedWarehouseId)
       .pipe(

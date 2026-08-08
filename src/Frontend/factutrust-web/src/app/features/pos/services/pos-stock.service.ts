@@ -27,17 +27,14 @@ export class PosStockService {
   private lastCheckTime = 0;
 
   constructor() {
-    effect(
-      () => {
-        const id = this.warehouseContext.selectedWarehouseId();
-        if (!id) {
-          this.catalogAlertsMap.set(new Map());
-          return;
-        }
-        this.loadCatalogAlertsForWarehouseId(id);
-      },
-      { allowSignalWrites: true }
-    );
+    effect(() => {
+      const id = this.warehouseContext.selectedWarehouseId();
+      if (!id) {
+        this.catalogAlertsMap.set(new Map());
+        return;
+      }
+      this.loadCatalogAlertsForWarehouseId(id);
+    });
   }
 
   getProductAlert(productId: string): ProductAvailabilityDetail | null {

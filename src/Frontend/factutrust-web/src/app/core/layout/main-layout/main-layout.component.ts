@@ -252,32 +252,23 @@ export class MainLayoutComponent implements OnInit {
   aiPanelOpen = signal(false);
 
   constructor() {
-    effect(
-      () => {
-        if (this.isAiAssistantRoute()) {
-          this.aiPanelOpen.set(false);
-        }
-      },
-      { allowSignalWrites: true }
-    );
-    effect(
-      () => {
-        const tick = this.aiAssistantShell.openPanelTick();
-        if (tick > 0 && this.hasAiAccess()) {
-          this.aiPanelOpen.set(true);
-        }
-      },
-      { allowSignalWrites: true }
-    );
-    effect(
-      () => {
-        const suggested = this.routeAgentScope();
-        if (!this.aiPanelOpen()) {
-          this.floatingPanelScope.set(suggested);
-        }
-      },
-      { allowSignalWrites: true }
-    );
+    effect(() => {
+      if (this.isAiAssistantRoute()) {
+        this.aiPanelOpen.set(false);
+      }
+    });
+    effect(() => {
+      const tick = this.aiAssistantShell.openPanelTick();
+      if (tick > 0 && this.hasAiAccess()) {
+        this.aiPanelOpen.set(true);
+      }
+    });
+    effect(() => {
+      const suggested = this.routeAgentScope();
+      if (!this.aiPanelOpen()) {
+        this.floatingPanelScope.set(suggested);
+      }
+    });
   }
 
   ngOnInit(): void {

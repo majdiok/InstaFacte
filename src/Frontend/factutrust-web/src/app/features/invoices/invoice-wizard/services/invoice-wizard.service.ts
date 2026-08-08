@@ -186,7 +186,7 @@ export class InvoiceWizardService {
       for (let i = 0; i <= 5; i++) {
         this.validation.validateStep(state, i);
       }
-    }, { allowSignalWrites: true });
+    });
   }
 
   /** Loads active stamp tax once; safe to call multiple times. */

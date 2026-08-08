@@ -143,7 +143,7 @@ export class StepBillingComponent {
       if (requiresBank && missingBank && !this.paymentExpanded()) {
         this.paymentExpanded.set(true);
       }
-    }, { allowSignalWrites: true });
+    });
   }
 
   togglePayment(): void {
