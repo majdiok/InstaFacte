@@ -7,7 +7,7 @@ import { ButtonModule } from 'primeng/button';
 import { TooltipModule } from 'primeng/tooltip';
 import { DividerModule } from 'primeng/divider';
 import { CardModule } from 'primeng/card';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { AccordionModule } from 'primeng/accordion';
 import { TagModule } from 'primeng/tag';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
@@ -48,7 +48,7 @@ import {
     TooltipModule,
     DividerModule,
     CardModule,
-    TabViewModule,
+    TabsModule,
     AccordionModule,
     TagModule,
     ProgressSpinnerModule,
@@ -70,9 +70,14 @@ import {
         </div>
       </section>
 
-      <p-tabView>
+      <p-tabs [lazy]="true">
+        <p-tablist>
+          <p-tab [value]="0"><i class="pi pi-file"></i><span>Aperçu facture</span></p-tab>
+          <p-tab [value]="1"><i class="pi pi-check-circle"></i><span>Validation conformité</span></p-tab>
+        </p-tablist>
+        <p-tabpanels>
         <!-- Tab 1: Preview -->
-        <p-tabPanel header="Aperçu facture" leftIcon="pi pi-file">
+        <p-tabpanel [value]="0">
           <div class="invoice-preview">
             <!-- Invoice Header -->
             <div class="invoice-header">
@@ -286,10 +291,10 @@ import {
               }
             </div>
           </div>
-        </p-tabPanel>
+        </p-tabpanel>
 
         <!-- Tab 2: Validation -->
-        <p-tabPanel header="Validation conformité" leftIcon="pi pi-check-circle">
+        <p-tabpanel [value]="1">
           <div class="validation-panel">
             <!-- Submission Error in Validation Tab -->
             @if (submissionError) {
@@ -436,8 +441,9 @@ import {
               </div>
             }
           </div>
-        </p-tabPanel>
-      </p-tabView>
+        </p-tabpanel>
+        </p-tabpanels>
+      </p-tabs>
 
       <!-- Submission Error Banner -->
       @if (submissionError) {

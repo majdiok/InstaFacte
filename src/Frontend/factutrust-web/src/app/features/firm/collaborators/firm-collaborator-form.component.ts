@@ -9,7 +9,7 @@ import { SelectModule } from 'primeng/select';
 import { CheckboxModule } from 'primeng/checkbox';
 import { SelectButtonModule } from 'primeng/selectbutton';
 import { MultiSelectModule } from 'primeng/multiselect';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
@@ -39,7 +39,7 @@ type FormMode = 'create' | 'edit' | 'view';
     CheckboxModule,
     SelectButtonModule,
     MultiSelectModule,
-    TabViewModule,
+    TabsModule,
     PageHeaderComponent
   ],
   template: `
@@ -68,8 +68,13 @@ type FormMode = 'create' | 'edit' | 'view';
     </app-page-header>
 
     <div class="fc-card" *ngIf="!loading(); else loadingTpl">
-      <p-tabView>
-        <p-tabPanel header="Informations générales">
+      <p-tabs [lazy]="true">
+        <p-tablist>
+          <p-tab [value]="0">Informations générales</p-tab>
+          <p-tab [value]="1" [disabled]="mode === 'create' || !collaborator()">Binômes</p-tab>
+        </p-tablist>
+        <p-tabpanels>
+        <p-tabpanel [value]="0">
           <form [formGroup]="form" class="form-grid">
             <label class="full">Civilité
               <p-selectButton
@@ -144,9 +149,9 @@ type FormMode = 'create' | 'edit' | 'view';
               </div>
             </div>
           </form>
-        </p-tabPanel>
+        </p-tabpanel>
 
-        <p-tabPanel header="Binômes" [disabled]="mode === 'create' || !collaborator()">
+        <p-tabpanel [value]="1">
           <div class="binomes" *ngIf="mode !== 'create' && collaborator(); else noBinomes">
             <p class="hint">Sélectionnez les collaborateurs binômes (second manager).</p>
             <p-multiSelect
@@ -171,8 +176,9 @@ type FormMode = 'create' | 'edit' | 'view';
           <ng-template #noBinomes>
             <p class="hint">Enregistrez d'abord le collaborateur pour gérer les binômes.</p>
           </ng-template>
-        </p-tabPanel>
-      </p-tabView>
+        </p-tabpanel>
+        </p-tabpanels>
+      </p-tabs>
     </div>
 
     <ng-template #loadingTpl>

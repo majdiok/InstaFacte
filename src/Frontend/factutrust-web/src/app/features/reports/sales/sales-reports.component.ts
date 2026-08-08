@@ -4,7 +4,7 @@ import { ActivatedRoute, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { PaginatorModule } from 'primeng/paginator';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { CardModule } from 'primeng/card';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { StatCardComponent } from '@shared/components/stat-card/stat-card.component';
@@ -44,7 +44,7 @@ interface PeriodOption {
     FormsModule,
     TableModule,
     PaginatorModule,
-    TabViewModule,
+    TabsModule,
     CardModule,
     PageHeaderComponent,
     StatCardComponent,
@@ -154,14 +154,31 @@ interface PeriodOption {
     }
 
     <div class="reports-tabs-wrap">
-      <p-tabView
-        styleClass="ft-tabs"
-        [activeIndex]="activeTabIndex"
+      <p-tabs
+        class="ft-tabs"
         [scrollable]="true"
-        (onChange)="onTabChange($event)"
-        prevButtonAriaLabel="Onglets précédents"
-        nextButtonAriaLabel="Onglets suivants">
-        <p-tabPanel header="Revenus et clients" leftIcon="pi pi-chart-line">
+        [value]="activeTabIndex"
+        (valueChange)="onTabChange($event)"
+        [lazy]="true">
+        <p-tablist>
+          <p-tab [value]="0"><i class="pi pi-chart-line"></i><span>Revenus et clients</span></p-tab>
+          <p-tab [value]="1"><i class="pi pi-calendar"></i><span>Synthèse mensuelle</span></p-tab>
+          <p-tab [value]="2"><i class="pi pi-table"></i><span>Chiffres d'affaires par mois / Année</span></p-tab>
+          <p-tab [value]="3"><i class="pi pi-percentage"></i><span>Taux de conversion devis</span></p-tab>
+          <p-tab [value]="4"><i class="pi pi-chart-bar"></i><span>Répartition par statut</span></p-tab>
+          <p-tab [value]="5"><i class="pi pi-chart-bar"></i><span>Performance produits</span></p-tab>
+          <p-tab [value]="6"><i class="pi pi-chart-line"></i><span>Évolution ventes par produit</span></p-tab>
+          <p-tab [value]="7"><i class="pi pi-shopping-cart"></i><span>Indicateurs panier</span></p-tab>
+          <p-tab [value]="8"><i class="pi pi-box"></i><span>Produits jamais vendus</span></p-tab>
+          <p-tab [value]="9"><i class="pi pi-tag"></i><span>CA par catégorie</span></p-tab>
+          <p-tab [value]="10"><i class="pi pi-list"></i><span>Transactions clients</span></p-tab>
+          <p-tab [value]="11"><i class="pi pi-box"></i><span>Détails ventes par ligne</span></p-tab>
+          <p-tab [value]="12"><i class="pi pi-calculator"></i><span>TVA ventes</span></p-tab>
+          <p-tab [value]="13"><i class="pi pi-percentage"></i><span>Retenues clients</span></p-tab>
+          <p-tab [value]="14"><i class="pi pi-exclamation-triangle"></i><span>Factures en retard</span></p-tab>
+        </p-tablist>
+        <p-tabpanels>
+        <p-tabpanel [value]="0">
         <div class="tab-content">
     <div class="reports-grid">
       <!-- Revenue Chart -->
@@ -267,8 +284,8 @@ interface PeriodOption {
       </div>
     </div>
         </div>
-      </p-tabPanel>
-            <p-tabPanel header="Synthèse mensuelle" leftIcon="pi pi-calendar">
+      </p-tabpanel>
+            <p-tabpanel [value]="1">
         <div class="tab-content">
     @if (!loading() && reportsData()?.monthlySummary && reportsData()!.monthlySummary.length > 0) {
       <div class="section">
@@ -311,8 +328,8 @@ interface PeriodOption {
       </div>
     }
         </div>
-      </p-tabPanel>
-      <p-tabPanel header="Chiffres d'affaires par mois / Année" leftIcon="pi pi-table">
+      </p-tabpanel>
+      <p-tabpanel [value]="2">
         <div class="tab-content">
     <div class="section crosstab-section">
       <div class="section-header">
@@ -382,8 +399,8 @@ interface PeriodOption {
       }
     </div>
         </div>
-      </p-tabPanel>
-      <p-tabPanel header="Taux de conversion devis" leftIcon="pi pi-percentage">
+      </p-tabpanel>
+      <p-tabpanel [value]="3">
         <div class="tab-content">
     @if (!loading() && reportsData()?.quoteConversionRate !== undefined) {
       <div class="section conversion-section">
@@ -404,8 +421,8 @@ interface PeriodOption {
       </div>
     }
         </div>
-      </p-tabPanel>
-      <p-tabPanel header="Répartition par statut" leftIcon="pi pi-chart-bar">
+      </p-tabpanel>
+      <p-tabpanel [value]="4">
         <div class="tab-content">
     <div class="section">
       <div class="section-header">
@@ -446,8 +463,8 @@ interface PeriodOption {
       }
     </div>
         </div>
-      </p-tabPanel>
-      <p-tabPanel header="Performance produits" leftIcon="pi pi-chart-bar">
+      </p-tabpanel>
+      <p-tabpanel [value]="5">
         <div class="tab-content">
           <div class="section">
             <div class="section-header">
@@ -494,8 +511,8 @@ interface PeriodOption {
             }
           </div>
         </div>
-      </p-tabPanel>
-      <p-tabPanel header="Évolution ventes par produit" leftIcon="pi pi-chart-line">
+      </p-tabpanel>
+      <p-tabpanel [value]="6">
         <div class="tab-content">
           <div class="section">
             <div class="section-header">
@@ -536,8 +553,8 @@ interface PeriodOption {
             }
           </div>
         </div>
-      </p-tabPanel>
-      <p-tabPanel header="Indicateurs panier" leftIcon="pi pi-shopping-cart">
+      </p-tabpanel>
+      <p-tabpanel [value]="7">
         <div class="tab-content">
           <div class="section">
             <div class="section-header">
@@ -578,8 +595,8 @@ interface PeriodOption {
             }
           </div>
         </div>
-      </p-tabPanel>
-      <p-tabPanel header="Produits jamais vendus" leftIcon="pi pi-box">
+      </p-tabpanel>
+      <p-tabpanel [value]="8">
         <div class="tab-content">
           <div class="section">
             <div class="section-header">
@@ -616,8 +633,8 @@ interface PeriodOption {
             }
           </div>
         </div>
-      </p-tabPanel>
-      <p-tabPanel header="CA par catégorie" leftIcon="pi pi-tag">
+      </p-tabpanel>
+      <p-tabpanel [value]="9">
         <div class="tab-content">
           <div class="section">
             <div class="section-header">
@@ -654,8 +671,8 @@ interface PeriodOption {
             }
           </div>
         </div>
-      </p-tabPanel>
-      <p-tabPanel header="Transactions clients" leftIcon="pi pi-list">
+      </p-tabpanel>
+      <p-tabpanel [value]="10">
         <div class="tab-content">
     <div class="section">
       <div class="section-header">
@@ -696,8 +713,8 @@ interface PeriodOption {
       }
     </div>
         </div>
-      </p-tabPanel>
-      <p-tabPanel header="Détails ventes par ligne" leftIcon="pi pi-box">
+      </p-tabpanel>
+      <p-tabpanel [value]="11">
         <div class="tab-content">
     <div class="section">
       <div class="section-header">
@@ -740,8 +757,8 @@ interface PeriodOption {
       }
     </div>
         </div>
-      </p-tabPanel>
-      <p-tabPanel header="TVA ventes" leftIcon="pi pi-calculator">
+      </p-tabpanel>
+      <p-tabpanel [value]="12">
         <div class="tab-content">
     <div class="section">
       <div class="section-header">
@@ -778,8 +795,8 @@ interface PeriodOption {
       }
     </div>
         </div>
-      </p-tabPanel>
-      <p-tabPanel header="Retenues clients" leftIcon="pi pi-percentage">
+      </p-tabpanel>
+      <p-tabpanel [value]="13">
         <div class="tab-content">
     <div class="section">
       <div class="section-header">
@@ -826,8 +843,8 @@ interface PeriodOption {
       }
     </div>
         </div>
-      </p-tabPanel>
-      <p-tabPanel header="Factures en retard" leftIcon="pi pi-exclamation-triangle">
+      </p-tabpanel>
+      <p-tabpanel [value]="14">
         <div class="tab-content">
     @if (!loading() && reportsData()?.overdueInvoicesCount && reportsData()!.overdueInvoicesCount > 0) {
       <div class="section">
@@ -883,8 +900,9 @@ interface PeriodOption {
       </div>
     }
         </div>
-      </p-tabPanel>
-      </p-tabView>
+      </p-tabpanel>
+        </p-tabpanels>
+      </p-tabs>
     </div>
 
     <!-- Print-only section -->
@@ -2271,8 +2289,8 @@ export class SalesReportsComponent implements OnInit {
     this.loadClientWithholdings();
   }
 
-  onTabChange(event: { index: number }): void {
-    this.activeTabIndex = event.index;
+  onTabChange(index: string | number): void {
+    this.activeTabIndex = typeof index === 'number' ? index : Number(index);
   }
 
   private getPeriodDates(): { fromDate: string; toDate: string } {

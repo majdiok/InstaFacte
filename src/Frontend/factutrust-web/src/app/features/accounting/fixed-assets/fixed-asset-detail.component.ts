@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { TableModule } from 'primeng/table';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { SupplierService, SupplierListItem } from '@core/services/supplier.service';
@@ -57,7 +57,7 @@ interface AssetFormModel {
     FormsModule,
     RouterModule,
     TableModule,
-    TabViewModule,
+    TabsModule,
     PageHeaderComponent,
     ButtonComponent,
     AccountingStatusBannerComponent
@@ -81,8 +81,13 @@ interface AssetFormModel {
 
     <!-- ============ Fiche immobilisation (création / brouillon / consultation) ============ -->
     <div class="card" *ngIf="isNew() || asset()">
-      <p-tabView>
-        <p-tabPanel header="Généralités">
+      <p-tabs [lazy]="true">
+        <p-tablist>
+          <p-tab [value]="0">Généralités</p-tab>
+          <p-tab [value]="1">Acquisition</p-tab>
+        </p-tablist>
+        <p-tabpanels>
+        <p-tabpanel [value]="0">
           <div class="form-grid">
             <label>
               Désignation *
@@ -195,9 +200,9 @@ interface AssetFormModel {
             </div>
             <span class="field-error" *ngIf="fieldErrors()['accounts']">{{ fieldErrors()['accounts'] }}</span>
           </fieldset>
-        </p-tabPanel>
+        </p-tabpanel>
 
-        <p-tabPanel header="Acquisition">
+        <p-tabpanel [value]="1">
           <div class="form-grid">
             <label>
               Date d'acquisition *
@@ -234,8 +239,9 @@ interface AssetFormModel {
               <input class="accounting-filter-input" [value]="depreciableBase() | number: '1.3-3'" disabled />
             </label>
           </div>
-        </p-tabPanel>
-      </p-tabView>
+        </p-tabpanel>
+        </p-tabpanels>
+      </p-tabs>
 
       <div class="actions" *ngIf="!readonly()">
         <app-button variant="primary" type="button" (click)="save()" [disabled]="saving()">

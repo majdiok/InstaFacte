@@ -5,7 +5,7 @@ import { ButtonModule } from 'primeng/button';
 import { CardModule } from 'primeng/card';
 import { TagModule } from 'primeng/tag';
 import { DividerModule } from 'primeng/divider';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { TableModule } from 'primeng/table';
 import { TooltipModule } from 'primeng/tooltip';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -36,7 +36,7 @@ import { ClientOutstandingPanelComponent } from '../client-outstanding-panel/cli
     CardModule,
     TagModule,
     DividerModule,
-    TabViewModule,
+    TabsModule,
     TableModule,
     TooltipModule,
     ConfirmDialogModule,
@@ -135,9 +135,15 @@ import { ClientOutstandingPanelComponent } from '../client-outstanding-panel/cli
       <div class="detail-grid">
         <!-- Main Content -->
         <div class="main-content">
-          <p-tabView styleClass="ft-tabs">
+          <p-tabs class="ft-tabs" [lazy]="true">
+            <p-tablist>
+              <p-tab [value]="0"><i class="pi pi-info-circle"></i><span>Informations</span></p-tab>
+              <p-tab [value]="1"><i class="pi pi-file"></i><span>Devis</span></p-tab>
+              <p-tab [value]="2"><i class="pi pi-receipt"></i><span>Factures</span></p-tab>
+            </p-tablist>
+            <p-tabpanels>
             <!-- Informations Tab -->
-            <p-tabPanel header="Informations" leftIcon="pi pi-info-circle">
+            <p-tabpanel [value]="0">
               <div class="info-grid">
                 <div class="info-section">
                   <h3>Coordonnées</h3>
@@ -218,10 +224,10 @@ import { ClientOutstandingPanelComponent } from '../client-outstanding-panel/cli
                   </div>
                 }
               </div>
-            </p-tabPanel>
+            </p-tabpanel>
 
             <!-- Quotes Tab -->
-            <p-tabPanel header="Devis" leftIcon="pi pi-file">
+            <p-tabpanel [value]="1">
               <div class="invoices-section">
                 <div class="section-header">
                   <h3>Historique des devis</h3>
@@ -284,10 +290,10 @@ import { ClientOutstandingPanelComponent } from '../client-outstanding-panel/cli
                   </p-table>
                 }
               </div>
-            </p-tabPanel>
+            </p-tabpanel>
 
             <!-- Invoices Tab -->
-            <p-tabPanel header="Factures" leftIcon="pi pi-receipt">
+            <p-tabpanel [value]="2">
               <div class="invoices-section">
                 <div class="section-header">
                   <h3>Historique des factures</h3>
@@ -369,8 +375,9 @@ import { ClientOutstandingPanelComponent } from '../client-outstanding-panel/cli
                   </p-table>
                 }
               </div>
-            </p-tabPanel>
-          </p-tabView>
+            </p-tabpanel>
+            </p-tabpanels>
+          </p-tabs>
         </div>
 
         <!-- Sidebar -->

@@ -1,7 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { TagModule } from 'primeng/tag';
 import { MessageModule } from 'primeng/message';
 import { TableModule } from 'primeng/table';
@@ -32,7 +32,7 @@ import { PayrollConsultBannerComponent, PayrollAmountPipe, formatPayrollAmount }
   imports: [
     CommonModule,
     RouterModule,
-    TabViewModule,
+    TabsModule,
     TagModule,
     MessageModule,
     TableModule,
@@ -81,12 +81,22 @@ import { PayrollConsultBannerComponent, PayrollAmountPipe, formatPayrollAmount }
         </div>
       }
 
-      <p-tabView styleClass="ft-tabs">
-        <p-tabPanel>
-          <ng-template pTemplate="header">
-            <i class="pi pi-id-card mr-2"></i>
-            <span>Informations</span>
-          </ng-template>
+      <p-tabs class="ft-tabs" [lazy]="true">
+        <p-tablist>
+          <p-tab [value]="0"><i class="pi pi-id-card mr-2"></i><span>Informations</span></p-tab>
+          <p-tab [value]="1"><i class="pi pi-file mr-2"></i><span>Contrats</span></p-tab>
+          <p-tab [value]="2"><i class="pi pi-calendar mr-2"></i><span>Congés</span></p-tab>
+          <p-tab [value]="3"><i class="pi pi-building mr-2"></i><span>IJ CNSS</span></p-tab>
+          <p-tab [value]="4"><i class="pi pi-ban mr-2"></i><span>Suspensions</span></p-tab>
+          <p-tab [value]="5"><i class="pi pi-wallet mr-2"></i><span>Avances</span></p-tab>
+          <p-tab [value]="6"><i class="pi pi-heart mr-2"></i><span>Mutuelles</span></p-tab>
+          <p-tab [value]="7"><i class="pi pi-home mr-2"></i><span>Avantages en nature</span></p-tab>
+          <p-tab [value]="8"><i class="pi pi-credit-card mr-2"></i><span>Prêts</span></p-tab>
+          <p-tab [value]="9"><i class="pi pi-exclamation-triangle mr-2"></i><span>Saisies</span></p-tab>
+          <p-tab [value]="10"><i class="pi pi-file-pdf mr-2"></i><span>Documents RH</span></p-tab>
+        </p-tablist>
+        <p-tabpanels>
+        <p-tabpanel [value]="0">
           <dl class="payroll-detail-grid card p-3">
             <div>
               <dt>CIN</dt>
@@ -193,13 +203,9 @@ import { PayrollConsultBannerComponent, PayrollAmountPipe, formatPayrollAmount }
               </dd>
             </div>
           </dl>
-        </p-tabPanel>
+        </p-tabpanel>
 
-        <p-tabPanel>
-          <ng-template pTemplate="header">
-            <i class="pi pi-file mr-2"></i>
-            <span>Contrats</span>
-          </ng-template>
+        <p-tabpanel [value]="1">
           @if (canManage()) {
             <app-button variant="primary" icon="pi-plus" iconPos="left" (click)="openContractDialog()" class="mb-3">Ajouter un contrat</app-button>
           }
@@ -239,82 +245,47 @@ import { PayrollConsultBannerComponent, PayrollAmountPipe, formatPayrollAmount }
           } @empty {
             <p>Aucun contrat enregistré.</p>
           }
-        </p-tabPanel>
+        </p-tabpanel>
 
-        <p-tabPanel>
-          <ng-template pTemplate="header">
-            <i class="pi pi-calendar mr-2"></i>
-            <span>Congés</span>
-          </ng-template>
+        <p-tabpanel [value]="2">
           <app-employee-leaves-tab [employeeId]="employee()!.id" [readOnly]="!canManage()" />
-        </p-tabPanel>
+        </p-tabpanel>
 
-        <p-tabPanel>
-          <ng-template pTemplate="header">
-            <i class="pi pi-building mr-2"></i>
-            <span>IJ CNSS</span>
-          </ng-template>
+        <p-tabpanel [value]="3">
           <app-employee-cnss-ij-claims-tab [employeeId]="employee()!.id" [readOnly]="!canManage()" />
-        </p-tabPanel>
+        </p-tabpanel>
 
-        <p-tabPanel>
-          <ng-template pTemplate="header">
-            <i class="pi pi-ban mr-2"></i>
-            <span>Suspensions</span>
-          </ng-template>
+        <p-tabpanel [value]="4">
           <app-employee-suspensions-tab [employeeId]="employee()!.id" [readOnly]="!canManage()" />
-        </p-tabPanel>
+        </p-tabpanel>
 
-        <p-tabPanel>
-          <ng-template pTemplate="header">
-            <i class="pi pi-wallet mr-2"></i>
-            <span>Avances</span>
-          </ng-template>
+        <p-tabpanel [value]="5">
           <app-employee-advances-tab [employeeId]="employee()!.id" [readOnly]="!canManage()" />
-        </p-tabPanel>
+        </p-tabpanel>
 
-        <p-tabPanel>
-          <ng-template pTemplate="header">
-            <i class="pi pi-heart mr-2"></i>
-            <span>Mutuelles</span>
-          </ng-template>
+        <p-tabpanel [value]="6">
           <app-employee-social-funds-tab [employeeId]="employee()!.id" [readOnly]="!canManage()" />
-        </p-tabPanel>
+        </p-tabpanel>
 
-        <p-tabPanel>
-          <ng-template pTemplate="header">
-            <i class="pi pi-home mr-2"></i>
-            <span>Avantages en nature</span>
-          </ng-template>
+        <p-tabpanel [value]="7">
           <app-employee-in-kind-benefits-tab [employeeId]="employee()!.id" [readOnly]="!canManage()" />
-        </p-tabPanel>
+        </p-tabpanel>
 
-        <p-tabPanel>
-          <ng-template pTemplate="header">
-            <i class="pi pi-credit-card mr-2"></i>
-            <span>Prêts</span>
-          </ng-template>
+        <p-tabpanel [value]="8">
           <app-employee-loans-tab [employeeId]="employee()!.id" [readOnly]="!canManage()" />
-        </p-tabPanel>
+        </p-tabpanel>
 
-        <p-tabPanel>
-          <ng-template pTemplate="header">
-            <i class="pi pi-exclamation-triangle mr-2"></i>
-            <span>Saisies</span>
-          </ng-template>
+        <p-tabpanel [value]="9">
           <app-employee-garnishments-tab [employeeId]="employee()!.id" [readOnly]="!canManageGarnishments()" />
-        </p-tabPanel>
+        </p-tabpanel>
 
-        <p-tabPanel>
-          <ng-template pTemplate="header">
-            <i class="pi pi-file-pdf mr-2"></i>
-            <span>Documents RH</span>
-          </ng-template>
+        <p-tabpanel [value]="10">
           <app-employee-hr-documents
             [employeeId]="employee()!.id"
             [terminationDate]="employee()!.terminationDate" />
-        </p-tabPanel>
-      </p-tabView>
+        </p-tabpanel>
+        </p-tabpanels>
+      </p-tabs>
 
       <app-contract-form-dialog
         [(visible)]="contractDialogVisible"

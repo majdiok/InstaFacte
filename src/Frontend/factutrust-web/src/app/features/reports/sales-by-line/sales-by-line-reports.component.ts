@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { formatLocalDate } from '@core/utils/date.util';
@@ -20,7 +20,7 @@ type GroupBy = 'Product' | 'Category' | 'ProductAndClient';
     RouterModule,
     FormsModule,
     TableModule,
-    TabViewModule,
+    TabsModule,
     PageHeaderComponent,
     ButtonComponent,
     RevenueTableComponent
@@ -45,23 +45,30 @@ type GroupBy = 'Product' | 'Category' | 'ProductAndClient';
       </div>
     </div>
 
-    <p-tabView styleClass="ft-tabs" (onChange)="onTabChange($event)">
-      <p-tabPanel header="Chiffre d'affaires par produit" leftIcon="pi pi-box">
+    <p-tabs class="ft-tabs" (valueChange)="onTabChange($event)" [lazy]="true">
+      <p-tablist>
+        <p-tab [value]="0"><i class="pi pi-box"></i><span>Chiffre d'affaires par produit</span></p-tab>
+        <p-tab [value]="1"><i class="pi pi-tag"></i><span>Chiffre d'affaires par catégorie</span></p-tab>
+        <p-tab [value]="2"><i class="pi pi-users"></i><span>Chiffre d'affaires par produit par client</span></p-tab>
+      </p-tablist>
+      <p-tabpanels>
+      <p-tabpanel [value]="0">
         <div class="tab-content">
           <app-revenue-table [rows]="revenueByProduct()" [loading]="loading()" [currency]="currency()" />
         </div>
-      </p-tabPanel>
-      <p-tabPanel header="Chiffre d'affaires par catégorie" leftIcon="pi pi-tag">
+      </p-tabpanel>
+      <p-tabpanel [value]="1">
         <div class="tab-content">
           <app-revenue-table [rows]="revenueByCategory()" [loading]="loading()" [currency]="currency()" />
         </div>
-      </p-tabPanel>
-      <p-tabPanel header="Chiffre d'affaires par produit par client" leftIcon="pi pi-users">
+      </p-tabpanel>
+      <p-tabpanel [value]="2">
         <div class="tab-content">
           <app-revenue-table [rows]="revenueByProductClient()" [loading]="loading()" [currency]="currency()" [showClientColumn]="true" />
         </div>
-      </p-tabPanel>
-    </p-tabView>
+      </p-tabpanel>
+      </p-tabpanels>
+    </p-tabs>
 
     <div class="back-link-wrap">
       <a routerLink="/reports" class="back-link">Retour aux rapports</a>
@@ -121,8 +128,8 @@ export class SalesByLineReportsComponent implements OnInit {
     this.loadAll();
   }
 
-  onTabChange(event: { index: number }): void {
-    this.activeTabIndex = event.index;
+  onTabChange(index: string | number): void {
+    this.activeTabIndex = typeof index === 'number' ? index : Number(index);
   }
 
   private loadAll(): void {

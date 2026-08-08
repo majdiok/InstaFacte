@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { TableModule } from 'primeng/table';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import {
   AccountingService,
@@ -35,7 +35,7 @@ import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared
     FormsModule,
     RouterModule,
     TableModule,
-    TabViewModule,
+    TabsModule,
     PageHeaderComponent,
     AccountingStatusBannerComponent,
     AccountingFilterBarComponent,
@@ -128,8 +128,14 @@ import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared
       [showRetry]="!!error()"
       retryLabel="Réessayer"
       (retry)="load()" />
-    <p-tabView [(activeIndex)]="activeTabIndex" (activeIndexChange)="onTabChange()">
-      <p-tabPanel header="Générale">
+    <p-tabs [(value)]="activeTabIndex" (valueChange)="onTabChange()" [lazy]="true">
+      <p-tablist>
+        <p-tab [value]="0">Générale</p-tab>
+        <p-tab [value]="1">Détaillée</p-tab>
+        <p-tab [value]="2">Par période</p-tab>
+      </p-tablist>
+      <p-tabpanels>
+      <p-tabpanel [value]="0">
         <p-table [value]="filteredRows()" [paginator]="true" [rows]="25" [rowsPerPageOptions]="[25, 50, 100]"
           [loading]="loading()" [rowHover]="true" [scrollable]="true" scrollHeight="flex"
           styleClass="p-datatable-sm accounting-datatable balance-table"
@@ -181,10 +187,10 @@ import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared
             <tr><td colspan="8" style="text-align:center;padding:2rem">Aucun mouvement sur la période.</td></tr>
           </ng-template>
         </p-table>
-      </p-tabPanel>
+      </p-tabpanel>
 
       <!-- ══ Balance détaillée : chaque solde suivi de ses mouvements ══════ -->
-      <p-tabPanel header="Détaillée">
+      <p-tabpanel [value]="1">
         @if (detailed(); as d) {
           @for (acc of d.accounts; track acc.balance.accountNumber) {
             <section class="bal-detail-block">
@@ -234,10 +240,10 @@ import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared
             </p>
           }
         }
-      </p-tabPanel>
+      </p-tabpanel>
 
       <!-- ══ Balance par période : 12 colonnes mensuelles ══════════════════ -->
-      <p-tabPanel header="Par période">
+      <p-tabpanel [value]="2">
         @if (periodic(); as p) {
           <div class="bal-scroll">
             <table class="bal-matrix">
@@ -278,8 +284,9 @@ import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared
             crédit {{ p.totalCredit | number : '1.3-3' }}
           </p>
         }
-      </p-tabPanel>
-    </p-tabView>
+      </p-tabpanel>
+      </p-tabpanels>
+    </p-tabs>
   `,
   styles: `
     @use '../shared/accounting-layout';

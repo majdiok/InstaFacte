@@ -1,7 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { DtsDeclarationTabComponent } from './dts-declaration-tab.component';
 import { WithholdingCertificatesTabComponent } from './withholding-certificates-tab.component';
@@ -12,7 +12,7 @@ import { CnssRemittanceTabComponent } from './cnss-remittance-tab.component';
   standalone: true,
   imports: [
     CommonModule,
-    TabViewModule,
+    TabsModule,
     PageHeaderComponent,
     DtsDeclarationTabComponent,
     WithholdingCertificatesTabComponent,
@@ -23,39 +23,37 @@ import { CnssRemittanceTabComponent } from './cnss-remittance-tab.component';
       title="Déclarations paie"
       subtitle="DTS CNSS trimestrielle, bordereau mensuel CNSS et certificats de retenue à la source (IRPP/CSS). Seuls les cycles validés ou clôturés sont inclus." />
 
-    <p-tabView styleClass="ft-tabs" [(activeIndex)]="activeTabIndex">
-      <p-tabPanel>
-        <ng-template pTemplate="header">
+    <p-tabs class="ft-tabs" [(value)]="activeTabIndex" [lazy]="true">
+      <p-tablist>
+        <p-tab [value]="0">
           <i class="pi pi-building-columns mr-2"></i>
           <span>DTS CNSS</span>
-        </ng-template>
-        <ng-template pTemplate="content">
+        </p-tab>
+        <p-tab [value]="1">
+          <i class="pi pi-wallet mr-2"></i>
+          <span>Bordereau CNSS</span>
+        </p-tab>
+        <p-tab [value]="2">
+          <i class="pi pi-file-export mr-2"></i>
+          <span>Certificats RS</span>
+        </p-tab>
+      </p-tablist>
+      <p-tabpanels>
+        <p-tabpanel [value]="0">
           <app-dts-declaration-tab
             [initialYear]="initialYear()"
             [initialQuarter]="initialQuarter()" />
-        </ng-template>
-      </p-tabPanel>
-      <p-tabPanel>
-        <ng-template pTemplate="header">
-          <i class="pi pi-wallet mr-2"></i>
-          <span>Bordereau CNSS</span>
-        </ng-template>
-        <ng-template pTemplate="content">
+        </p-tabpanel>
+        <p-tabpanel [value]="1">
           <app-cnss-remittance-tab
             [initialYear]="initialYear()"
             [initialMonth]="initialMonth()" />
-        </ng-template>
-      </p-tabPanel>
-      <p-tabPanel>
-        <ng-template pTemplate="header">
-          <i class="pi pi-file-export mr-2"></i>
-          <span>Certificats RS</span>
-        </ng-template>
-        <ng-template pTemplate="content">
+        </p-tabpanel>
+        <p-tabpanel [value]="2">
           <app-withholding-certificates-tab [initialYear]="initialYear()" />
-        </ng-template>
-      </p-tabPanel>
-    </p-tabView>
+        </p-tabpanel>
+      </p-tabpanels>
+    </p-tabs>
   `
 })
 export class PayrollDeclarationsComponent implements OnInit {

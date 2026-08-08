@@ -6,7 +6,7 @@ import { TableModule } from 'primeng/table';
 import { SelectModule } from 'primeng/select';
 import { CheckboxModule } from 'primeng/checkbox';
 import { MessageModule } from 'primeng/message';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { finalize } from 'rxjs';
 import {
   PayrollService,
@@ -44,7 +44,7 @@ const VIEW_BY_TAB: PayrollJournalView[] = ['ByEmployee', 'Accounting'];
     SelectModule,
     CheckboxModule,
     MessageModule,
-    TabViewModule,
+    TabsModule,
     PageHeaderComponent,
     ButtonComponent,
     AccountingExportMenuComponent,
@@ -119,8 +119,13 @@ const VIEW_BY_TAB: PayrollJournalView[] = ['ByEmployee', 'Accounting'];
     } @else {
       <app-payroll-stat-grid [items]="summaryStats()" class="mb-4" />
 
-      <p-tabView [(activeIndex)]="activeTabIndex">
-        <p-tabPanel header="Par salarié">
+      <p-tabs [(value)]="activeTabIndex" [lazy]="true">
+        <p-tablist>
+          <p-tab [value]="0">Par salarié</p-tab>
+          <p-tab [value]="1">Ventilation comptable</p-tab>
+        </p-tablist>
+        <p-tabpanels>
+        <p-tabpanel [value]="0">
           <div class="payroll-table-scroll">
             <p-table [value]="journal()!.lines" styleClass="p-datatable-sm" [rowHover]="true">
               <ng-template pTemplate="header">
@@ -169,9 +174,9 @@ const VIEW_BY_TAB: PayrollJournalView[] = ['ByEmployee', 'Accounting'];
               </ng-template>
             </p-table>
           </div>
-        </p-tabPanel>
+        </p-tabpanel>
 
-        <p-tabPanel header="Ventilation comptable">
+        <p-tabpanel [value]="1">
           <p-message
             [severity]="journal()!.accountingLinesArePosted ? 'info' : 'warn'"
             [text]="accountingOrigin()"
@@ -211,8 +216,9 @@ const VIEW_BY_TAB: PayrollJournalView[] = ['ByEmployee', 'Accounting'];
               </p-table>
             </div>
           }
-        </p-tabPanel>
-      </p-tabView>
+        </p-tabpanel>
+        </p-tabpanels>
+      </p-tabs>
     }
   `,
   styles: [`

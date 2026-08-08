@@ -1,6 +1,6 @@
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ImportComponent } from './import.component';
 import { ReferenceImportComponent } from './reference-import.component';
@@ -15,29 +15,38 @@ import { ReferenceImportTarget } from '../services/accounting.service';
 @Component({
   selector: 'app-import-hub',
   standalone: true,
-  imports: [CommonModule, TabViewModule, PageHeaderComponent, ImportComponent, ReferenceImportComponent, DossierExportComponent],
+  imports: [CommonModule, TabsModule, PageHeaderComponent, ImportComponent, ReferenceImportComponent, DossierExportComponent],
   template: `
     <app-page-header
       title="Reprise de dossier"
       subtitle="Importer écritures / référentiels, ou exporter l'archive du dossier" />
 
-    <p-tabView>
-      <p-tabPanel header="Écritures">
-        <app-accounting-import />
-      </p-tabPanel>
-      <p-tabPanel header="Plan comptable">
-        <app-reference-import [target]="targets.ChartOfAccounts" />
-      </p-tabPanel>
-      <p-tabPanel header="Plan tiers">
-        <app-reference-import [target]="targets.ThirdParties" />
-      </p-tabPanel>
-      <p-tabPanel header="Balance d'ouverture">
-        <app-reference-import [target]="targets.OpeningBalance" />
-      </p-tabPanel>
-      <p-tabPanel header="Export dossier">
-        <app-dossier-export />
-      </p-tabPanel>
-    </p-tabView>
+    <p-tabs [lazy]="true">
+      <p-tablist>
+        <p-tab [value]="0">Écritures</p-tab>
+        <p-tab [value]="1">Plan comptable</p-tab>
+        <p-tab [value]="2">Plan tiers</p-tab>
+        <p-tab [value]="3">Balance d'ouverture</p-tab>
+        <p-tab [value]="4">Export dossier</p-tab>
+      </p-tablist>
+      <p-tabpanels>
+        <p-tabpanel [value]="0">
+          <app-accounting-import />
+        </p-tabpanel>
+        <p-tabpanel [value]="1">
+          <app-reference-import [target]="targets.ChartOfAccounts" />
+        </p-tabpanel>
+        <p-tabpanel [value]="2">
+          <app-reference-import [target]="targets.ThirdParties" />
+        </p-tabpanel>
+        <p-tabpanel [value]="3">
+          <app-reference-import [target]="targets.OpeningBalance" />
+        </p-tabpanel>
+        <p-tabpanel [value]="4">
+          <app-dossier-export />
+        </p-tabpanel>
+      </p-tabpanels>
+    </p-tabs>
   `
 })
 export class ImportHubComponent {

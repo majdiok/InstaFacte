@@ -2,7 +2,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { TableModule } from 'primeng/table';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { StatCardComponent } from '@shared/components/stat-card/stat-card.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -19,7 +19,7 @@ import { mapClientBalanceRows } from '../shared/party-balances.util';
     CommonModule,
     RouterModule,
     TableModule,
-    TabViewModule,
+    TabsModule,
     PageHeaderComponent,
     StatCardComponent,
     ButtonComponent,
@@ -59,8 +59,13 @@ import { mapClientBalanceRows } from '../shared/party-balances.util';
         </app-stat-card>
       </div>
 
-      <p-tabView styleClass="ft-tabs">
-        <p-tabPanel header="Clients" leftIcon="pi pi-users">
+      <p-tabs class="ft-tabs" [lazy]="true">
+        <p-tablist>
+          <p-tab [value]="0"><i class="pi pi-users"></i><span>Clients</span></p-tab>
+          <p-tab [value]="1"><i class="pi pi-cube"></i><span>Produits</span></p-tab>
+        </p-tablist>
+        <p-tabpanels>
+        <p-tabpanel [value]="0">
           <div class="tab-content">
             <div class="section">
               <div class="section-header">
@@ -123,9 +128,9 @@ import { mapClientBalanceRows } from '../shared/party-balances.util';
               </app-party-balances-table>
             </div>
           </div>
-        </p-tabPanel>
+        </p-tabpanel>
 
-        <p-tabPanel header="Produits" leftIcon="pi pi-cube">
+        <p-tabpanel [value]="1">
           <div class="tab-content">
             <div class="section">
               <div class="section-header">
@@ -176,8 +181,9 @@ import { mapClientBalanceRows } from '../shared/party-balances.util';
               }
             </div>
           </div>
-        </p-tabPanel>
-      </p-tabView>
+        </p-tabpanel>
+        </p-tabpanels>
+      </p-tabs>
     }
   `,
   styles: [`

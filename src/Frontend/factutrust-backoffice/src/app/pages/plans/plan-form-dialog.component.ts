@@ -19,7 +19,7 @@ import { InputSwitchModule } from 'primeng/inputswitch';
 import { SelectModule } from 'primeng/select';
 import { TableModule } from 'primeng/table';
 import { CheckboxModule } from 'primeng/checkbox';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { TooltipModule } from 'primeng/tooltip';
 
 import {
@@ -109,7 +109,7 @@ const DEFAULT_LIMIT_KEYS = [
     SelectModule,
     TableModule,
     CheckboxModule,
-    TabViewModule,
+    TabsModule,
     TooltipModule
   ],
   template: `
@@ -123,9 +123,16 @@ const DEFAULT_LIMIT_KEYS = [
       [style]="{ width: '52rem', maxWidth: '95vw' }"
       [header]="isEdit() ? t('form.title.edit') : t('form.title.create')">
 
-      <p-tabView styleClass="ft-tab-view">
+      <p-tabs class="ft-tab-view" [lazy]="true">
+        <p-tablist>
+          <p-tab [value]="0"><i class="pi pi-info-circle"></i><span>{{ t('form.tab.general') }}</span></p-tab>
+          <p-tab [value]="1"><i class="pi pi-sliders-h"></i><span>{{ t('form.tab.limits') }}</span></p-tab>
+          <p-tab [value]="2"><i class="pi pi-bolt"></i><span>{{ t('form.tab.features') }}</span></p-tab>
+          <p-tab [value]="3"><i class="pi pi-th-large"></i><span>{{ t('form.tab.modules') }}</span></p-tab>
+        </p-tablist>
+        <p-tabpanels>
         <!-- TAB GENERAL -->
-        <p-tabPanel [header]="t('form.tab.general')" leftIcon="pi pi-info-circle">
+        <p-tabpanel [value]="0">
           <div class="grid">
             <div class="field">
               <label for="pf-code">{{ t('form.field.code') }}</label>
@@ -223,10 +230,10 @@ const DEFAULT_LIMIT_KEYS = [
               </label>
             </div>
           </div>
-        </p-tabPanel>
+        </p-tabpanel>
 
         <!-- TAB LIMITS -->
-        <p-tabPanel [header]="t('form.tab.limits')" leftIcon="pi pi-sliders-h">
+        <p-tabpanel [value]="1">
           <div class="row-actions">
             <p-button
               [label]="t('form.limits.add')"
@@ -281,10 +288,10 @@ const DEFAULT_LIMIT_KEYS = [
               </tr>
             </ng-template>
           </p-table>
-        </p-tabPanel>
+        </p-tabpanel>
 
         <!-- TAB FEATURES -->
-        <p-tabPanel [header]="t('form.tab.features')" leftIcon="pi pi-bolt">
+        <p-tabpanel [value]="2">
           <div class="row-actions">
             <p-button
               [label]="t('form.features.add')"
@@ -333,10 +340,10 @@ const DEFAULT_LIMIT_KEYS = [
               </tr>
             </ng-template>
           </p-table>
-        </p-tabPanel>
+        </p-tabpanel>
 
         <!-- TAB MODULES -->
-        <p-tabPanel [header]="t('form.tab.modules')" leftIcon="pi pi-th-large">
+        <p-tabpanel [value]="3">
           <p class="hint">{{ t('form.modules.hint') }}</p>
           <div class="modules-grid">
             @for (m of modules(); track m.module) {
@@ -349,8 +356,9 @@ const DEFAULT_LIMIT_KEYS = [
               </label>
             }
           </div>
-        </p-tabPanel>
-      </p-tabView>
+        </p-tabpanel>
+        </p-tabpanels>
+      </p-tabs>
 
       <ng-template pTemplate="footer">
         <p-button label="Annuler" [text]="true" severity="secondary" [disabled]="busy" (onClick)="onCancel()" />
@@ -435,20 +443,20 @@ const DEFAULT_LIMIT_KEYS = [
 
       :host ::ng-deep .w-full { width: 100%; }
       :host ::ng-deep .p-inputnumber { width: 100%; }
-      :host ::ng-deep .ft-tab-view .p-tabview-nav {
+      :host ::ng-deep .ft-tab-view .p-tablist-tab-list {
         background: transparent;
         border-bottom: 1px solid var(--ft-border, #30363d);
       }
-      :host ::ng-deep .ft-tab-view .p-tabview-nav li .p-tabview-nav-link {
+      :host ::ng-deep .ft-tab-view .p-tab {
         background: transparent;
         color: var(--ft-text-muted);
         border-color: transparent;
       }
-      :host ::ng-deep .ft-tab-view .p-tabview-nav li.p-highlight .p-tabview-nav-link {
+      :host ::ng-deep .ft-tab-view .p-tab.p-tab-active {
         color: var(--ft-accent);
         border-color: var(--ft-accent);
       }
-      :host ::ng-deep .ft-tab-view .p-tabview-panels {
+      :host ::ng-deep .ft-tab-view .p-tabpanels {
         background: transparent;
         padding: 0.85rem 0 0;
       }

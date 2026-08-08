@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { formatLocalDate } from '@core/utils/date.util';
@@ -18,7 +18,7 @@ import { ProfitTableComponent } from './profit-table.component';
     RouterModule,
     FormsModule,
     TableModule,
-    TabViewModule,
+    TabsModule,
     PageHeaderComponent,
     ButtonComponent,
     ProfitTableComponent
@@ -43,40 +43,48 @@ import { ProfitTableComponent } from './profit-table.component';
       </div>
     </div>
 
-    <p-tabView styleClass="ft-tabs" (onChange)="onTabChange($event)">
-      <p-tabPanel header="Par ligne" leftIcon="pi pi-list">
+    <p-tabs class="ft-tabs" (valueChange)="onTabChange($event)" [lazy]="true">
+      <p-tablist>
+        <p-tab [value]="0"><i class="pi pi-list"></i><span>Par ligne</span></p-tab>
+        <p-tab [value]="1"><i class="pi pi-box"></i><span>Par produit</span></p-tab>
+        <p-tab [value]="2"><i class="pi pi-calendar"></i><span>Mensuel</span></p-tab>
+        <p-tab [value]="3"><i class="pi pi-file"></i><span>Par pièce</span></p-tab>
+      </p-tablist>
+      <p-tabpanels>
+      <p-tabpanel [value]="0">
         <div class="tab-content">
           <app-profit-table
             [rows]="profitByLine()"
             [loading]="loading()"
             mode="line" />
         </div>
-      </p-tabPanel>
-      <p-tabPanel header="Par produit" leftIcon="pi pi-box">
+      </p-tabpanel>
+      <p-tabpanel [value]="1">
         <div class="tab-content">
           <app-profit-table
             [rows]="profitByProduct()"
             [loading]="loading()"
             mode="product" />
         </div>
-      </p-tabPanel>
-      <p-tabPanel header="Mensuel" leftIcon="pi pi-calendar">
+      </p-tabpanel>
+      <p-tabpanel [value]="2">
         <div class="tab-content">
           <app-profit-table
             [rows]="profitByMonth()"
             [loading]="loading()"
             mode="month" />
         </div>
-      </p-tabPanel>
-      <p-tabPanel header="Par pièce" leftIcon="pi pi-file">
+      </p-tabpanel>
+      <p-tabpanel [value]="3">
         <div class="tab-content">
           <app-profit-table
             [rows]="profitByPiece()"
             [loading]="loading()"
             mode="piece" />
         </div>
-      </p-tabPanel>
-    </p-tabView>
+      </p-tabpanel>
+      </p-tabpanels>
+    </p-tabs>
 
     <div class="back-link-wrap">
       <a routerLink="/reports" class="back-link">Retour aux rapports</a>
@@ -137,8 +145,8 @@ export class ProfitReportsComponent implements OnInit {
     this.loadAll();
   }
 
-  onTabChange(event: { index: number }): void {
-    this.activeTabIndex = event.index;
+  onTabChange(index: string | number): void {
+    this.activeTabIndex = typeof index === 'number' ? index : Number(index);
   }
 
   private loadAll(): void {

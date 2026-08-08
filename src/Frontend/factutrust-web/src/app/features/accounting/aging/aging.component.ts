@@ -1,7 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { TableModule } from 'primeng/table';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { AccountingService, AgingReportRowDto } from '../services/accounting.service';
@@ -19,7 +19,7 @@ import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared
   imports: [
     CommonModule,
     TableModule,
-    TabViewModule,
+    TabsModule,
     ProgressSpinnerModule,
     PageHeaderComponent,
     AccountingStatusBannerComponent,
@@ -89,8 +89,13 @@ import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared
       </app-accounting-filter-bar>
     </div>
 
-    <p-tabView styleClass="ft-tabs aging-tabs">
-      <p-tabPanel header="Clients" leftIcon="pi pi-users">
+    <p-tabs class="ft-tabs aging-tabs" [lazy]="true">
+      <p-tablist>
+        <p-tab [value]="0"><i class="pi pi-users"></i><span>Clients</span></p-tab>
+        <p-tab [value]="1"><i class="pi pi-truck"></i><span>Fournisseurs</span></p-tab>
+      </p-tablist>
+      <p-tabpanels>
+      <p-tabpanel [value]="0">
         <app-accounting-status-banner
           variant="error"
           [message]="errClients() ?? ''"
@@ -145,8 +150,8 @@ import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared
             }
           </ng-template>
         </p-table>
-      </p-tabPanel>
-      <p-tabPanel header="Fournisseurs" leftIcon="pi pi-truck">
+      </p-tabpanel>
+      <p-tabpanel [value]="1">
         <app-accounting-status-banner
           variant="error"
           [message]="errSup() ?? ''"
@@ -201,8 +206,9 @@ import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared
             }
           </ng-template>
         </p-table>
-      </p-tabPanel>
-    </p-tabView>
+      </p-tabpanel>
+      </p-tabpanels>
+    </p-tabs>
   `
 })
 export class AgingComponent implements OnInit {

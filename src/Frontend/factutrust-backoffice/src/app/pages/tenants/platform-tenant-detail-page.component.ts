@@ -8,7 +8,7 @@ import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { SelectModule } from 'primeng/select';
 import { Textarea } from 'primeng/textarea';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { MessageService } from 'primeng/api';
 import { PlatformTenantService } from '@core/services/platform-tenant.service';
 import { PlatformPermissionsService } from '@core/services/platform-permissions.service';
@@ -35,7 +35,7 @@ import { TenantModulesTabComponent } from './tenant-modules-tab.component';
     DialogModule,
     SelectModule,
     Textarea,
-    TabViewModule,
+    TabsModule,
     TenantInvoicesTabComponent,
     TenantModulesTabComponent
   ],
@@ -73,8 +73,18 @@ import { TenantModulesTabComponent } from './tenant-modules-tab.component';
         </div>
       }
 
-      <p-tabView styleClass="ft-tab-view">
-        <p-tabPanel header="Vue d’ensemble" leftIcon="pi pi-info-circle">
+      <p-tabs class="ft-tab-view" [lazy]="true">
+        <p-tablist>
+          <p-tab [value]="0"><i class="pi pi-info-circle"></i><span>Vue d’ensemble</span></p-tab>
+          @if (canSeeInvoices()) {
+            <p-tab [value]="1"><i class="pi pi-file"></i><span>Factures plateforme</span></p-tab>
+          }
+          @if (canSeeModules()) {
+            <p-tab [value]="2"><i class="pi pi-th-large"></i><span>Modules</span></p-tab>
+          }
+        </p-tablist>
+        <p-tabpanels>
+        <p-tabpanel [value]="0">
           <div class="detail-grid">
             <p-card header="Identité & contact">
               <dl class="dl-grid">
@@ -145,19 +155,20 @@ import { TenantModulesTabComponent } from './tenant-modules-tab.component';
               </p>
             </p-card>
           </div>
-        </p-tabPanel>
+        </p-tabpanel>
 
         @if (canSeeInvoices()) {
-          <p-tabPanel header="Factures plateforme" leftIcon="pi pi-file">
+          <p-tabpanel [value]="1">
             <app-tenant-invoices-tab [tenantId]="detail.tenantId" />
-          </p-tabPanel>
+          </p-tabpanel>
         }
         @if (canSeeModules()) {
-          <p-tabPanel header="Modules" leftIcon="pi pi-th-large">
+          <p-tabpanel [value]="2">
             <app-tenant-modules-tab [tenantId]="detail.tenantId" />
-          </p-tabPanel>
+          </p-tabpanel>
         }
-      </p-tabView>
+        </p-tabpanels>
+      </p-tabs>
     } @else if (!loading) {
       <p class="not-found">Entreprise introuvable.</p>
     }
@@ -342,22 +353,22 @@ import { TenantModulesTabComponent } from './tenant-modules-tab.component';
         width: 100%;
       }
 
-      /* Sous-lot C4.5 — TabView dark-friendly (héritage tokens --ft-*) */
-      :host ::ng-deep .ft-tab-view .p-tabview-nav {
+      /* Sous-lot C4.5 — Tabs dark-friendly (héritage tokens --ft-*) */
+      :host ::ng-deep .ft-tab-view .p-tablist-tab-list {
         background: transparent;
         border-bottom: 1px solid var(--ft-border, #30363d);
       }
-      :host ::ng-deep .ft-tab-view .p-tabview-nav li .p-tabview-nav-link {
+      :host ::ng-deep .ft-tab-view .p-tab {
         background: transparent;
         color: var(--ft-text-muted, #8b949e);
         border-color: transparent;
       }
-      :host ::ng-deep .ft-tab-view .p-tabview-nav li.p-highlight .p-tabview-nav-link {
+      :host ::ng-deep .ft-tab-view .p-tab.p-tab-active {
         color: var(--ft-accent, #58a6ff);
         border-color: var(--ft-accent, #58a6ff);
         background: transparent;
       }
-      :host ::ng-deep .ft-tab-view .p-tabview-panels {
+      :host ::ng-deep .ft-tab-view .p-tabpanels {
         background: transparent;
         padding: 1.1rem 0 0;
       }

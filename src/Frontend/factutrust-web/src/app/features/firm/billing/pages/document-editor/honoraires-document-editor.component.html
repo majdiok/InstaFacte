@@ -231,11 +231,16 @@
 
           <section class="bottom-panels">
             <div class="notes-panel">
-              <p-tabView>
-                <p-tabPanel header="Notes">
+              <p-tabs [lazy]="true">
+                <p-tablist>
+                  <p-tab [value]="0">Notes</p-tab>
+                  <p-tab [value]="1">Conditions de paiement</p-tab>
+                </p-tablist>
+                <p-tabpanels>
+                <p-tabpanel [value]="0">
                   <textarea pTextarea [(ngModel)]="notes" rows="4" [disabled]="!canEdit" class="w-full" placeholder="Notes pour le client"></textarea>
-                </p-tabPanel>
-                <p-tabPanel header="Conditions de paiement">
+                </p-tabpanel>
+                <p-tabpanel [value]="1">
                   <textarea pTextarea [(ngModel)]="paymentTerms" rows="4" [disabled]="!canEdit" class="w-full"></textarea>
                   <div class="pay-row" *ngIf="mode === 'invoice' && !isCreditNote">
                     <p-select [options]="paymentMethods" [(ngModel)]="paymentMethod" [disabled]="!canEdit" placeholder="Mode de paiement"></p-select>
@@ -246,8 +251,9 @@
                     <p-inputSwitch [(ngModel)]="isRecurring" [disabled]="!canEdit"></p-inputSwitch>
                     <p-select *ngIf="isRecurring" [options]="recurrenceOptions" [(ngModel)]="recurrenceFrequency" optionLabel="label" optionValue="value" [disabled]="!canEdit"></p-select>
                   </div>
-                </p-tabPanel>
-              </p-tabView>
+                </p-tabpanel>
+                </p-tabpanels>
+              </p-tabs>
             </div>
             <aside class="totals sticky-totals">
               <div class="totals-row">

@@ -2,7 +2,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import {
@@ -55,7 +55,7 @@ const FILE_BASE_BY_TAB: readonly string[] = [
     CommonModule,
     FormsModule,
     TableModule,
-    TabViewModule,
+    TabsModule,
     PageHeaderComponent,
     ButtonComponent,
     AccountingStatusBannerComponent,
@@ -121,9 +121,15 @@ const FILE_BASE_BY_TAB: readonly string[] = [
       }
     }
 
-    <p-tabView [(activeIndex)]="activeTabIndex" (activeIndexChange)="onTabChange()">
+    <p-tabs [(value)]="activeTabIndex" (valueChange)="onTabChange()" [lazy]="true">
+      <p-tablist>
+        <p-tab [value]="0">Centralisateur</p-tab>
+        <p-tab [value]="1">Récapitulation</p-tab>
+        <p-tab [value]="2">Totaux journaux</p-tab>
+      </p-tablist>
+      <p-tabpanels>
       <!-- ══ Centralisateur : journaux × mois ══════════════════════════════ -->
-      <p-tabPanel header="Centralisateur">
+      <p-tabpanel [value]="0">
         @if (summary(); as s) {
           <div class="js-scroll">
             <table class="js-matrix">
@@ -182,10 +188,10 @@ const FILE_BASE_BY_TAB: readonly string[] = [
             </table>
           </div>
         }
-      </p-tabPanel>
+      </p-tabpanel>
 
       <!-- ══ Récapitulation : journaux × comptes ═══════════════════════════ -->
-      <p-tabPanel header="Récapitulation">
+      <p-tabpanel [value]="1">
         <p-table
           [value]="cells()"
           [paginator]="true"
@@ -227,10 +233,10 @@ const FILE_BASE_BY_TAB: readonly string[] = [
             <tr><td colspan="6" class="js-empty">Aucun mouvement sur la période.</td></tr>
           </ng-template>
         </p-table>
-      </p-tabPanel>
+      </p-tabpanel>
 
       <!-- ══ Totaux journaux ═══════════════════════════════════════════════ -->
-      <p-tabPanel header="Totaux journaux">
+      <p-tabpanel [value]="2">
         <p-table
           [value]="journalTotals()"
           [loading]="loading()"
@@ -265,8 +271,9 @@ const FILE_BASE_BY_TAB: readonly string[] = [
             <tr><td colspan="5" class="js-empty">Aucun mouvement sur la période.</td></tr>
           </ng-template>
         </p-table>
-      </p-tabPanel>
-    </p-tabView>
+      </p-tabpanel>
+      </p-tabpanels>
+    </p-tabs>
   `,
   styles: `
     @use '../shared/accounting-layout';

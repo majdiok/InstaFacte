@@ -6,7 +6,7 @@ import { InputNumberModule } from 'primeng/inputnumber';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { PayrollService, PayrollParameters, PayrollGarnishmentBracket } from '@core/services/payroll.service';
 import { ToastService } from '@core/services/toast.service';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
@@ -19,7 +19,7 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
   imports: [
     CommonModule,
     FormsModule,
-    TabViewModule,
+    TabsModule,
     SelectModule,
     InputNumberModule,
     InputSwitchModule,
@@ -40,12 +40,17 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
 
     @if (params()) {
       <form (ngSubmit)="save()">
-        <p-tabView styleClass="ft-tabs">
-          <p-tabPanel header="Taux légaux">
-            <ng-template pTemplate="header">
-              <i class="pi pi-percentage mr-2"></i>
-              <span>Taux légaux</span>
-            </ng-template>
+        <p-tabs class="ft-tabs" [lazy]="true">
+          <p-tablist>
+            <p-tab [value]="0"><i class="pi pi-percentage mr-2"></i><span>Taux légaux</span></p-tab>
+            <p-tab [value]="1"><i class="pi pi-table mr-2"></i><span>Barème IRPP</span></p-tab>
+            <p-tab [value]="2"><i class="pi pi-users mr-2"></i><span>Déductions familiales</span></p-tab>
+            <p-tab [value]="3"><i class="pi pi-shield mr-2"></i><span>Conformité</span></p-tab>
+            <p-tab [value]="4"><i class="pi pi-exclamation-triangle mr-2"></i><span>Saisies</span></p-tab>
+            <p-tab [value]="5"><i class="pi pi-heart mr-2"></i><span>Mutuelles</span></p-tab>
+          </p-tablist>
+          <p-tabpanels>
+          <p-tabpanel [value]="0">
             <div class="payroll-form-row">
               <div class="payroll-form-group">
                 <label>CNSS salarié (%)</label>
@@ -105,13 +110,9 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
               </div>
             </div>
             <p class="payroll-info-text mt-2">Références légales tunisiennes : CNSS 9,18 % / 16,57 % — CSS 0,5 % (seuil 5 000 TND/an) — TFP 1 % industrie, 2 % autres — FOPROLOS 1 % — frais professionnels 10 % plafonnés à 2 000 TND/an.</p>
-          </p-tabPanel>
+          </p-tabpanel>
 
-          <p-tabPanel header="Barème IRPP">
-            <ng-template pTemplate="header">
-              <i class="pi pi-table mr-2"></i>
-              <span>Barème IRPP</span>
-            </ng-template>
+          <p-tabpanel [value]="1">
             <p-table [value]="params()!.irppBrackets" styleClass="p-datatable-sm mb-3">
               <ng-template pTemplate="header">
                 <tr>
@@ -136,13 +137,9 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
             </p-table>
             <app-button type="button" variant="outline" icon="pi-plus" iconPos="left" (click)="addBracket()">Ajouter une tranche</app-button>
             <p class="payroll-info-text mt-2">Barème LF 2025 : 0 % jusqu'à 5 000 — 15 % — 25 % — 30 % — 33 % — 36 % — 38 % — 40 % au-delà de 70 000 TND/an. La première tranche doit démarrer à 0 et les seuils être strictement croissants.</p>
-          </p-tabPanel>
+          </p-tabpanel>
 
-          <p-tabPanel header="Déductions familiales">
-            <ng-template pTemplate="header">
-              <i class="pi pi-users mr-2"></i>
-              <span>Déductions familiales</span>
-            </ng-template>
+          <p-tabpanel [value]="2">
             <div class="payroll-form-row">
               <div class="payroll-form-group">
                 <label>Chef de famille (annuel, TND)</label>
@@ -173,13 +170,9 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
                 <p-inputNumber [(ngModel)]="params()!.parentAnnualDeductionCap" name="parentCap" [minFractionDigits]="3" [min]="0" [locale]="'fr-TN'" styleClass="w-full" />
               </div>
             </div>
-          </p-tabPanel>
+          </p-tabpanel>
 
-          <p-tabPanel header="Conformité">
-            <ng-template pTemplate="header">
-              <i class="pi pi-shield mr-2"></i>
-              <span>Conformité</span>
-            </ng-template>
+          <p-tabpanel [value]="3">
             <div class="payroll-form-row">
               <div class="payroll-form-group switch-row">
                 <label for="enforceSmig">Contrôle SMIG sur les contrats</label>
@@ -244,13 +237,9 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
               Le prorata automatique réduit le brut des jours non travaillés (congés sans solde, suspensions non rémunérées, sortie en cours de mois).
               Les deux options s'appliquent aux cycles recalculés après modification.
             </p>
-          </p-tabPanel>
+          </p-tabpanel>
 
-          <p-tabPanel header="Saisies sur salaire">
-            <ng-template pTemplate="header">
-              <i class="pi pi-exclamation-triangle mr-2"></i>
-              <span>Saisies</span>
-            </ng-template>
+          <p-tabpanel [value]="4">
             <p class="payroll-info-text mb-3">Barème de quotité saisissable sur le net mensuel (fraction saisissable par tranche). Si vide, 33 % du net s'applique par défaut.</p>
             <p-table [value]="garnishmentBrackets()" styleClass="p-datatable-sm mb-3">
               <ng-template pTemplate="header">
@@ -278,16 +267,13 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
             <div class="form-actions mt-4">
               <app-button type="button" variant="primary" icon="pi-check" iconPos="left" (click)="saveGarnishmentBrackets()">Enregistrer le barème saisies</app-button>
             </div>
-          </p-tabPanel>
+          </p-tabpanel>
 
-          <p-tabPanel header="Caisses complémentaires">
-            <ng-template pTemplate="header">
-              <i class="pi pi-heart mr-2"></i>
-              <span>Mutuelles</span>
-            </ng-template>
+          <p-tabpanel [value]="5">
             <app-payroll-social-funds-settings [fiscalYear]="fiscalYear" />
-          </p-tabPanel>
-        </p-tabView>
+          </p-tabpanel>
+          </p-tabpanels>
+        </p-tabs>
 
         <div class="form-actions mt-4">
           <app-button type="submit" variant="primary" icon="pi-check" iconPos="left">Enregistrer</app-button>

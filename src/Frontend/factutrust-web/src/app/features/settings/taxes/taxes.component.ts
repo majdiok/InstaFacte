@@ -5,7 +5,7 @@ import { RouterModule } from '@angular/router';
 import { Subject, takeUntil } from 'rxjs';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { DialogModule } from 'primeng/dialog';
 import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
@@ -37,7 +37,7 @@ import {
     ReactiveFormsModule,
     TableModule,
     ButtonModule,
-    TabViewModule,
+    TabsModule,
     DialogModule,
     SelectModule,
     InputTextModule,
@@ -76,8 +76,13 @@ import {
         <p>Chargement des taxes...</p>
       </div>
     } @else {
-      <p-tabView [(activeIndex)]="activeTabIndex" styleClass="taxes-tabview">
-        <p-tabPanel header="Taxe">
+      <p-tabs [(value)]="activeTabIndex" class="taxes-tabview" [lazy]="true">
+        <p-tablist>
+          <p-tab [value]="0">Taxe</p-tab>
+          <p-tab [value]="1">TVA</p-tab>
+        </p-tablist>
+        <p-tabpanels>
+        <p-tabpanel [value]="0">
           <p-table
             [value]="nonVatTaxes()"
             [paginator]="nonVatTaxes().length > 10"
@@ -135,9 +140,9 @@ import {
               </tr>
             </ng-template>
           </p-table>
-        </p-tabPanel>
+        </p-tabpanel>
 
-        <p-tabPanel header="TVA">
+        <p-tabpanel [value]="1">
           <p-table
             [value]="vatTaxes()"
             [paginator]="vatTaxes().length > 10"
@@ -195,8 +200,9 @@ import {
               </tr>
             </ng-template>
           </p-table>
-        </p-tabPanel>
-      </p-tabView>
+        </p-tabpanel>
+        </p-tabpanels>
+      </p-tabs>
     }
 
     <p-dialog
@@ -526,7 +532,7 @@ import {
       color: var(--color-neutral-700);
       cursor: not-allowed;
     }
-    :host ::ng-deep .taxes-tabview .p-tabview-panels {
+    :host ::ng-deep .taxes-tabview .p-tabpanels {
       padding-top: var(--spacing-4);
     }
   `]

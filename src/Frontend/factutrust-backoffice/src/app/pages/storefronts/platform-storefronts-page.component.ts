@@ -8,7 +8,7 @@ import {
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { ButtonModule } from 'primeng/button';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { TooltipModule } from 'primeng/tooltip';
 import { MessageService } from 'primeng/api';
 
@@ -43,7 +43,7 @@ interface TabState {
   imports: [
     NgTemplateOutlet,
     ButtonModule,
-    TabViewModule,
+    TabsModule,
     TooltipModule,
     FtPageHeaderComponent,
     FtKpiCardComponent,
@@ -115,24 +115,33 @@ interface TabState {
     </section>
 
     <!-- Tabs -->
-    <p-tabView
-      [activeIndex]="activeIndex()"
-      (activeIndexChange)="onTabChange($event)"
-      styleClass="ft-storefronts-tabs"
+    <p-tabs
+      [value]="activeIndex()"
+      (valueChange)="onTabChange($event)"
+      class="ft-storefronts-tabs"
+      [lazy]="true"
     >
-      <p-tabPanel [header]="t('tab.pending') + ' (' + (stats()?.pending ?? '…') + ')'">
+      <p-tablist>
+        <p-tab [value]="0">{{ t('tab.pending') }} ({{ stats()?.pending ?? '…' }})</p-tab>
+        <p-tab [value]="1">{{ t('tab.published') }} ({{ stats()?.published ?? '…' }})</p-tab>
+        <p-tab [value]="2">{{ t('tab.rejected') }} ({{ stats()?.rejected ?? '…' }})</p-tab>
+        <p-tab [value]="3">{{ t('tab.suspended') }} ({{ stats()?.suspended ?? '…' }})</p-tab>
+      </p-tablist>
+      <p-tabpanels>
+      <p-tabpanel [value]="0">
         <ng-container *ngTemplateOutlet="grid; context: { state: pendingTab() }" />
-      </p-tabPanel>
-      <p-tabPanel [header]="t('tab.published') + ' (' + (stats()?.published ?? '…') + ')'">
+      </p-tabpanel>
+      <p-tabpanel [value]="1">
         <ng-container *ngTemplateOutlet="grid; context: { state: publishedTab() }" />
-      </p-tabPanel>
-      <p-tabPanel [header]="t('tab.rejected') + ' (' + (stats()?.rejected ?? '…') + ')'">
+      </p-tabpanel>
+      <p-tabpanel [value]="2">
         <ng-container *ngTemplateOutlet="grid; context: { state: rejectedTab() }" />
-      </p-tabPanel>
-      <p-tabPanel [header]="t('tab.suspended') + ' (' + (stats()?.suspended ?? '…') + ')'">
+      </p-tabpanel>
+      <p-tabpanel [value]="3">
         <ng-container *ngTemplateOutlet="grid; context: { state: suspendedTab() }" />
-      </p-tabPanel>
-    </p-tabView>
+      </p-tabpanel>
+      </p-tabpanels>
+    </p-tabs>
 
     <!-- Grid template -->
     <ng-template #grid let-state="state">
@@ -197,24 +206,24 @@ interface TabState {
         padding: var(--gap-md) 0;
       }
 
-      :host ::ng-deep .ft-storefronts-tabs .p-tabview-nav {
+      :host ::ng-deep .ft-storefronts-tabs .p-tablist-tab-list {
         background: transparent;
         border-bottom: 1px solid var(--ft-border);
       }
 
-      :host ::ng-deep .ft-storefronts-tabs .p-tabview-nav li .p-tabview-nav-link {
+      :host ::ng-deep .ft-storefronts-tabs .p-tab {
         background: transparent;
         color: var(--ft-text-muted);
         border-color: transparent;
         font-weight: 500;
       }
 
-      :host ::ng-deep .ft-storefronts-tabs .p-tabview-nav li.p-highlight .p-tabview-nav-link {
+      :host ::ng-deep .ft-storefronts-tabs .p-tab.p-tab-active {
         color: var(--ft-accent);
         border-color: var(--ft-accent);
       }
 
-      :host ::ng-deep .ft-storefronts-tabs .p-tabview-panels {
+      :host ::ng-deep .ft-storefronts-tabs .p-tabpanels {
         background: transparent;
         padding: 0;
       }
@@ -263,9 +272,10 @@ export class PlatformStorefrontsPageComponent implements OnInit {
   }
 
   // ----- Tabs -----
-  onTabChange(index: number): void {
-    this.activeIndex.set(index);
-    this.loadTab(index);
+  onTabChange(index: string | number): void {
+    const tabIndex = typeof index === 'number' ? index : Number(index);
+    this.activeIndex.set(tabIndex);
+    this.loadTab(tabIndex);
   }
 
   goToTab(index: number): void {

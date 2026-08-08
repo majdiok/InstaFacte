@@ -11,7 +11,7 @@ import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
 import { Textarea } from 'primeng/textarea';
 import { InputSwitchModule } from 'primeng/inputswitch';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { DialogModule } from 'primeng/dialog';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
@@ -74,7 +74,7 @@ interface LineRow {
     InputTextModule,
     Textarea,
     InputSwitchModule,
-    TabViewModule,
+    TabsModule,
     DialogModule,
     TableModule,
     TagModule,

@@ -2,7 +2,7 @@ import { Component, DestroyRef, HostListener, OnInit, effect, inject, signal } f
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import {
   AccountingService,
@@ -39,7 +39,7 @@ import { EntryTabId } from './models/entry-form.model';
   standalone: true,
   imports: [
     CommonModule,
-    TabViewModule,
+    TabsModule,
     PageHeaderComponent,
     AnalyzeWithAiButtonComponent,
     DraftBannerComponent,
@@ -90,10 +90,18 @@ import { EntryTabId } from './models/entry-form.model';
       [(visible)]="documentImportVisible"
       (applied)="onDocumentProposalApplied($event)" />
 
-    <p-tabView styleClass="ft-tabs entry-main-tabs"
-               [activeIndex]="tabIndex()"
-               (onChange)="onTabChange($event)">
-      <p-tabPanel header="Saisie standard">
+    <p-tabs class="ft-tabs entry-main-tabs"
+            [value]="tabIndex()"
+            (valueChange)="onTabChange($event)"
+            [lazy]="true">
+      <p-tablist>
+        <p-tab [value]="0">Saisie standard</p-tab>
+        <p-tab [value]="1">Saisie guidée</p-tab>
+        <p-tab [value]="2">Saisie par modèle</p-tab>
+        <p-tab [value]="3">Saisie récurrente</p-tab>
+      </p-tablist>
+      <p-tabpanels>
+      <p-tabpanel [value]="0">
         <div class="entry-layout">
           <div class="entry-layout__main">
             <app-entry-header-form />
@@ -115,9 +123,9 @@ import { EntryTabId } from './models/entry-form.model';
             <app-entry-shortcuts-panel />
           </div>
         </div>
-      </p-tabPanel>
+      </p-tabpanel>
 
-      <p-tabPanel header="Saisie guidée">
+      <p-tabpanel [value]="1">
         <div class="entry-layout">
           <div class="entry-layout__main">
             <app-guided-entry (finish)="submit('navigate')" />
@@ -127,16 +135,17 @@ import { EntryTabId } from './models/entry-form.model';
             <app-entry-shortcuts-panel />
           </div>
         </div>
-      </p-tabPanel>
+      </p-tabpanel>
 
-      <p-tabPanel header="Saisie par modèle">
+      <p-tabpanel [value]="2">
         <app-entry-template-tab (apply)="onTemplateSelected($event)" />
-      </p-tabPanel>
+      </p-tabpanel>
 
-      <p-tabPanel header="Saisie récurrente">
+      <p-tabpanel [value]="3">
         <app-entry-recurring-tab />
-      </p-tabPanel>
-    </p-tabView>
+      </p-tabpanel>
+      </p-tabpanels>
+    </p-tabs>
 
     @if (store.error()) {
       <p class="text-danger me-error" role="alert">{{ store.error() }}</p>
@@ -274,9 +283,10 @@ export class ManualEntryComponent implements OnInit {
     }
   }
 
-  onTabChange(event: { index: number }): void {
-    this.tabIndex.set(event.index);
-    this.store.activeTab.set(this.tabIds[event.index] ?? 'standard');
+  onTabChange(index: string | number): void {
+    const tabIndex = typeof index === 'number' ? index : Number(index);
+    this.tabIndex.set(tabIndex);
+    this.store.activeTab.set(this.tabIds[tabIndex] ?? 'standard');
   }
 
   submit(afterSuccess: 'navigate' | 'reset' | 'duplicate' = 'navigate'): void {

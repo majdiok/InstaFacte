@@ -10,7 +10,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { SelectModule } from 'primeng/select';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
@@ -50,7 +50,7 @@ import { DunningCampaignFormDialogComponent } from './dunning-campaign-form-dial
     RouterLink,
     TableModule,
     ButtonModule,
-    TabViewModule,
+    TabsModule,
     SelectModule,
     DialogModule,
     InputTextModule,
@@ -76,9 +76,14 @@ import { DunningCampaignFormDialogComponent } from './dunning-campaign-form-dial
       </ng-container>
     </ft-page-header>
 
-    <p-tabView styleClass="ft-tab-view">
+    <p-tabs class="ft-tab-view" [lazy]="true">
+      <p-tablist>
+        <p-tab [value]="0"><i class="pi pi-clock"></i><span>{{ t('tab.states') }}</span></p-tab>
+        <p-tab [value]="1"><i class="pi pi-megaphone"></i><span>{{ t('tab.campaigns') }}</span></p-tab>
+      </p-tablist>
+      <p-tabpanels>
       <!-- TAB STATES -->
-      <p-tabPanel [header]="t('tab.states')" leftIcon="pi pi-clock">
+      <p-tabpanel [value]="0">
         <section class="kpi-row">
           <ft-kpi-card [label]="t('kpi.active')" [value]="states()?.activeCount ?? null" tone="warning" icon="pi pi-clock" [loading]="loading()" />
           <ft-kpi-card [label]="t('kpi.paid')" [value]="states()?.paidCount ?? null" tone="success" icon="pi pi-check-circle" [loading]="loading()" />
@@ -154,10 +159,10 @@ import { DunningCampaignFormDialogComponent } from './dunning-campaign-form-dial
             </ng-template>
           </p-table>
         }
-      </p-tabPanel>
+      </p-tabpanel>
 
       <!-- TAB CAMPAIGNS -->
-      <p-tabPanel [header]="t('tab.campaigns')" leftIcon="pi pi-megaphone">
+      <p-tabpanel [value]="1">
         <section class="kpi-row">
           <ft-kpi-card [label]="t('campaigns.kpi.total')" [value]="campaigns()?.items?.length ?? null" tone="info" icon="pi pi-list" [loading]="loading()" />
           <ft-kpi-card [label]="t('campaigns.kpi.active')" [value]="campaigns()?.activeCount ?? null" tone="success" icon="pi pi-check-circle" [loading]="loading()" />
@@ -242,8 +247,9 @@ import { DunningCampaignFormDialogComponent } from './dunning-campaign-form-dial
             </ng-template>
           </p-table>
         }
-      </p-tabPanel>
-    </p-tabView>
+      </p-tabpanel>
+      </p-tabpanels>
+    </p-tabs>
 
     <!-- Extend grace dialog -->
     <p-dialog
@@ -322,20 +328,20 @@ import { DunningCampaignFormDialogComponent } from './dunning-campaign-form-dial
       .field label { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ft-text-muted); font-weight: 600; }
 
       :host ::ng-deep .filter-dropdown { min-width: 14rem; }
-      :host ::ng-deep .ft-tab-view .p-tabview-nav {
+      :host ::ng-deep .ft-tab-view .p-tablist-tab-list {
         background: transparent;
         border-bottom: 1px solid var(--ft-border, #30363d);
       }
-      :host ::ng-deep .ft-tab-view .p-tabview-nav li .p-tabview-nav-link {
+      :host ::ng-deep .ft-tab-view .p-tab {
         background: transparent;
         color: var(--ft-text-muted);
         border-color: transparent;
       }
-      :host ::ng-deep .ft-tab-view .p-tabview-nav li.p-highlight .p-tabview-nav-link {
+      :host ::ng-deep .ft-tab-view .p-tab.p-tab-active {
         color: var(--ft-accent);
         border-color: var(--ft-accent);
       }
-      :host ::ng-deep .ft-tab-view .p-tabview-panels { background: transparent; padding: 1.1rem 0 0; }
+      :host ::ng-deep .ft-tab-view .p-tabpanels { background: transparent; padding: 1.1rem 0 0; }
     `
   ]
 })

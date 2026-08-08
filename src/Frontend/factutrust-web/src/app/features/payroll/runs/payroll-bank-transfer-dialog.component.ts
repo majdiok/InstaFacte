@@ -6,7 +6,7 @@ import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
 import { TableModule } from 'primeng/table';
 import { MessageModule } from 'primeng/message';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { finalize } from 'rxjs';
 import {
   PayrollService,
@@ -29,7 +29,7 @@ import { downloadBlob } from '../../accounting/shared/accounting-download.util';
     InputTextModule,
     TableModule,
     MessageModule,
-    TabViewModule,
+    TabsModule,
     ButtonComponent,
     PayrollAmountPipe
   ],
@@ -78,8 +78,13 @@ import { downloadBlob } from '../../accounting/shared/accounting-download.util';
           <span>Total : <strong>{{ preview()!.totalAmount | payrollAmount }}</strong></span>
         </div>
 
-        <p-tabView>
-          <p-tabPanel [header]="'Inclus (' + preview()!.eligibleCount + ')'">
+        <p-tabs [lazy]="true">
+          <p-tablist>
+            <p-tab [value]="0">Inclus ({{ preview()!.eligibleCount }})</p-tab>
+            <p-tab [value]="1">Exclus ({{ preview()!.excludedLines.length }})</p-tab>
+          </p-tablist>
+          <p-tabpanels>
+          <p-tabpanel [value]="0">
             <div class="payroll-table-scroll">
               <p-table [value]="preview()!.lines" styleClass="p-datatable-sm">
                 <ng-template pTemplate="header">
@@ -103,8 +108,8 @@ import { downloadBlob } from '../../accounting/shared/accounting-download.util';
                 </ng-template>
               </p-table>
             </div>
-          </p-tabPanel>
-          <p-tabPanel [header]="'Exclus (' + preview()!.excludedLines.length + ')'">
+          </p-tabpanel>
+          <p-tabpanel [value]="1">
             <div class="payroll-table-scroll">
               <p-table [value]="preview()!.excludedLines" styleClass="p-datatable-sm">
                 <ng-template pTemplate="header">
@@ -128,8 +133,9 @@ import { downloadBlob } from '../../accounting/shared/accounting-download.util';
                 </ng-template>
               </p-table>
             </div>
-          </p-tabPanel>
-        </p-tabView>
+          </p-tabpanel>
+          </p-tabpanels>
+        </p-tabs>
       }
 
       <ng-template pTemplate="footer">

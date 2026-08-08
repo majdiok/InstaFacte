@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { formatLocalDate } from '@core/utils/date.util';
@@ -26,7 +26,7 @@ import { RevenueTableComponent } from '../sales-by-line/revenue-table.component'
     RouterModule,
     FormsModule,
     TableModule,
-    TabViewModule,
+    TabsModule,
     PageHeaderComponent,
     ButtonComponent,
     StatCardComponent,
@@ -52,8 +52,16 @@ import { RevenueTableComponent } from '../sales-by-line/revenue-table.component'
       </div>
     </div>
 
-    <p-tabView styleClass="ft-tabs" (onChange)="onTabChange($event)">
-      <p-tabPanel header="Performance produits" leftIcon="pi pi-chart-bar">
+    <p-tabs class="ft-tabs" (valueChange)="onTabChange($event)" [lazy]="true">
+      <p-tablist>
+        <p-tab [value]="0"><i class="pi pi-chart-bar"></i><span>Performance produits</span></p-tab>
+        <p-tab [value]="1"><i class="pi pi-chart-line"></i><span>Évolution ventes par produit</span></p-tab>
+        <p-tab [value]="2"><i class="pi pi-shopping-cart"></i><span>Indicateurs panier</span></p-tab>
+        <p-tab [value]="3"><i class="pi pi-box"></i><span>Produits jamais vendus</span></p-tab>
+        <p-tab [value]="4"><i class="pi pi-tag"></i><span>CA par catégorie</span></p-tab>
+      </p-tablist>
+      <p-tabpanels>
+      <p-tabpanel [value]="0">
         <div class="tab-content">
           <p class="tab-desc">Classement par CA avec marge et part du chiffre d'affaires.</p>
           @if (loading()) {
@@ -89,9 +97,9 @@ import { RevenueTableComponent } from '../sales-by-line/revenue-table.component'
             </p-table>
           }
         </div>
-      </p-tabPanel>
+      </p-tabpanel>
 
-      <p-tabPanel header="Évolution ventes par produit" leftIcon="pi pi-chart-line">
+      <p-tabpanel [value]="1">
         <div class="tab-content">
           <p class="tab-desc">Ventes par produit et par mois (période sélectionnée).</p>
           @if (loading()) {
@@ -121,9 +129,9 @@ import { RevenueTableComponent } from '../sales-by-line/revenue-table.component'
             </p-table>
           }
         </div>
-      </p-tabPanel>
+      </p-tabpanel>
 
-      <p-tabPanel header="Indicateurs panier" leftIcon="pi pi-shopping-cart">
+      <p-tabpanel [value]="2">
         <div class="tab-content">
           <p class="tab-desc">Panier moyen et nombre de lignes par facture sur la période.</p>
           @if (loading()) {
@@ -159,9 +167,9 @@ import { RevenueTableComponent } from '../sales-by-line/revenue-table.component'
             <div class="empty-placeholder"><i class="pi pi-info-circle"></i> Aucune donnée pour cette période.</div>
           }
         </div>
-      </p-tabPanel>
+      </p-tabpanel>
 
-      <p-tabPanel header="Produits jamais vendus" leftIcon="pi pi-box">
+      <p-tabpanel [value]="3">
         <div class="tab-content">
           <p class="tab-desc">Produits actifs sans vente sur la période sélectionnée (opportunités de mise en avant).</p>
           @if (loading()) {
@@ -187,9 +195,9 @@ import { RevenueTableComponent } from '../sales-by-line/revenue-table.component'
             </p-table>
           }
         </div>
-      </p-tabPanel>
+      </p-tabpanel>
 
-      <p-tabPanel header="CA par catégorie" leftIcon="pi pi-tag">
+      <p-tabpanel [value]="4">
         <div class="tab-content">
           <p class="tab-desc">Répartition du chiffre d'affaires par catégorie.</p>
           <app-revenue-table
@@ -197,8 +205,9 @@ import { RevenueTableComponent } from '../sales-by-line/revenue-table.component'
             [loading]="loading()"
             [currency]="currency()" />
         </div>
-      </p-tabPanel>
-    </p-tabView>
+      </p-tabpanel>
+      </p-tabpanels>
+    </p-tabs>
 
     <div class="back-link-wrap">
       <a routerLink="/reports" class="back-link">Retour aux rapports</a>
@@ -268,8 +277,8 @@ export class ProductSalesAnalyticsComponent implements OnInit {
     this.loadAll();
   }
 
-  onTabChange(event: { index: number }): void {
-    this.activeTabIndex = event.index;
+  onTabChange(index: string | number): void {
+    this.activeTabIndex = typeof index === 'number' ? index : Number(index);
   }
 
   private loadAll(): void {

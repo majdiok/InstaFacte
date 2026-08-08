@@ -13,7 +13,7 @@ import { InputTextModule } from 'primeng/inputtext';
 import { ButtonModule } from 'primeng/button';
 import { SelectModule } from 'primeng/select';
 import { DatePickerModule } from 'primeng/datepicker';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { TooltipModule } from 'primeng/tooltip';
 import { MessageService } from 'primeng/api';
 
@@ -53,7 +53,7 @@ import { SECURITY_FR } from './security.i18n.fr';
     ButtonModule,
     SelectModule,
     DatePickerModule,
-    TabViewModule,
+    TabsModule,
     TooltipModule,
     FtPageHeaderComponent,
     FtKpiCardComponent,
@@ -77,13 +77,19 @@ import { SECURITY_FR } from './security.i18n.fr';
       </ng-container>
     </ft-page-header>
 
-    <p-tabView
-      [activeIndex]="activeTab()"
-      (activeIndexChange)="onTabChange($event)"
-      styleClass="ft-security-tabs">
+    <p-tabs
+      [value]="activeTab()"
+      (valueChange)="onTabChange($event)"
+      class="ft-security-tabs"
+      [lazy]="true">
 
       <!-- ===== Tab Sessions ===== -->
-      <p-tabPanel [header]="t('tab.sessions')">
+      <p-tablist>
+        <p-tab [value]="0">{{ t('tab.sessions') }}</p-tab>
+        <p-tab [value]="1">{{ t('tab.failedLogins') }}</p-tab>
+      </p-tablist>
+      <p-tabpanels>
+      <p-tabpanel [value]="0">
         <section class="kpi-row" role="region" aria-label="Sessions">
           <ft-kpi-card
             [label]="t('sessions.kpi.total')"
@@ -207,10 +213,10 @@ import { SECURITY_FR } from './security.i18n.fr';
             }
           </ng-template>
         </p-table>
-      </p-tabPanel>
+      </p-tabpanel>
 
       <!-- ===== Tab Failed logins ===== -->
-      <p-tabPanel [header]="t('tab.failedLogins')">
+      <p-tabpanel [value]="1">
         <section class="kpi-row" role="region" aria-label="Tentatives échouées">
           <ft-kpi-card
             [label]="t('failed.kpi.total')"
@@ -352,8 +358,9 @@ import { SECURITY_FR } from './security.i18n.fr';
             }
           </ng-template>
         </p-table>
-      </p-tabPanel>
-    </p-tabView>
+      </p-tabpanel>
+      </p-tabpanels>
+    </p-tabs>
 
     <!-- Modal de confirmation révocation -->
     <ft-confirm-action
@@ -380,24 +387,24 @@ import { SECURITY_FR } from './security.i18n.fr';
         margin-bottom: var(--gap-md);
       }
 
-      :host ::ng-deep .ft-security-tabs .p-tabview-nav {
+      :host ::ng-deep .ft-security-tabs .p-tablist-tab-list {
         background: transparent;
         border-bottom: 1px solid var(--ft-border);
       }
 
-      :host ::ng-deep .ft-security-tabs .p-tabview-nav li .p-tabview-nav-link {
+      :host ::ng-deep .ft-security-tabs .p-tab {
         background: transparent;
         color: var(--ft-text-muted);
         border-color: transparent;
         font-weight: 500;
       }
 
-      :host ::ng-deep .ft-security-tabs .p-tabview-nav li.p-highlight .p-tabview-nav-link {
+      :host ::ng-deep .ft-security-tabs .p-tab.p-tab-active {
         color: var(--ft-accent);
         border-color: var(--ft-accent);
       }
 
-      :host ::ng-deep .ft-security-tabs .p-tabview-panels {
+      :host ::ng-deep .ft-security-tabs .p-tabpanels {
         background: transparent;
         padding: var(--gap-md) 0 0;
       }
@@ -577,10 +584,11 @@ export class PlatformSecurityPageComponent implements OnInit {
     else this.loadFailed();
   }
 
-  onTabChange(index: number): void {
-    this.activeTab.set(index);
-    if (index === 0 && !this.sessionsPage()) this.loadSessions();
-    if (index === 1 && !this.failedPage()) this.loadFailed();
+  onTabChange(index: string | number): void {
+    const tabIndex = typeof index === 'number' ? index : Number(index);
+    this.activeTab.set(tabIndex);
+    if (tabIndex === 0 && !this.sessionsPage()) this.loadSessions();
+    if (tabIndex === 1 && !this.failedPage()) this.loadFailed();
   }
 
   // ----- Sessions ----------------------------------------------------------

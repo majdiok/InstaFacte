@@ -12,7 +12,7 @@ import {
 import { DatePipe } from '@angular/common';
 import { Router } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 import { PlatformTenantService } from '@core/services/platform-tenant.service';
 import type { PlatformTenantDetailDto } from '@core/models/platform.models';
 import { FtDrawerComponent } from '@core/ui/drawer/ft-drawer.component';
@@ -45,7 +45,7 @@ import { TENANTS_FR } from './tenants.i18n.fr';
   imports: [
     DatePipe,
     ButtonModule,
-    TabViewModule,
+    TabsModule,
     FtDrawerComponent,
     FtSkeletonComponent,
     FtBadgeComponent,
@@ -95,8 +95,17 @@ import { TENANTS_FR } from './tenants.i18n.fr';
           </div>
         </div>
 
-        <p-tabView styleClass="qv-tabs">
-          <p-tabPanel [header]="t('drawer.tab.overview')">
+        <p-tabs class="qv-tabs" [lazy]="true">
+          <p-tablist>
+            <p-tab [value]="0">{{ t('drawer.tab.overview') }}</p-tab>
+            <p-tab [value]="1">{{ t('drawer.tab.subscription') }}</p-tab>
+            <p-tab [value]="2">{{ t('drawer.tab.modules') }}</p-tab>
+            <p-tab [value]="3">{{ t('drawer.tab.activity') }}</p-tab>
+            <p-tab [value]="4">{{ t('drawer.tab.migrations') }}</p-tab>
+            <p-tab [value]="5">{{ t('drawer.tab.storefront') }}</p-tab>
+          </p-tablist>
+          <p-tabpanels>
+          <p-tabpanel [value]="0">
             <dl class="qv-fields">
               <div><dt>{{ t('drawer.field.nif') }}</dt><dd><code>{{ d.nif }}</code></dd></div>
               <div><dt>{{ t('drawer.field.email') }}</dt><dd>{{ d.companyEmail }}</dd></div>
@@ -120,9 +129,9 @@ import { TENANTS_FR } from './tenants.i18n.fr';
                 <dd><code class="db-name">{{ d.databaseName }}</code></dd>
               </div>
             </dl>
-          </p-tabPanel>
+          </p-tabpanel>
 
-          <p-tabPanel [header]="t('drawer.tab.subscription')">
+          <p-tabpanel [value]="1">
             <dl class="qv-fields">
               <div>
                 <dt>{{ t('drawer.field.plan') }}</dt>
@@ -161,25 +170,25 @@ import { TENANTS_FR } from './tenants.i18n.fr';
                 </dd>
               </div>
             </dl>
-          </p-tabPanel>
+          </p-tabpanel>
 
-          <p-tabPanel [header]="t('drawer.tab.modules')">
+          <p-tabpanel [value]="2">
             <ft-empty-state
               variant="all-clear"
               title="Modules"
               [description]="t('drawer.placeholder.modules')"
             />
-          </p-tabPanel>
+          </p-tabpanel>
 
-          <p-tabPanel [header]="t('drawer.tab.activity')">
+          <p-tabpanel [value]="3">
             <ft-empty-state
               variant="all-clear"
               title="Activité"
               [description]="t('drawer.placeholder.activity')"
             />
-          </p-tabPanel>
+          </p-tabpanel>
 
-          <p-tabPanel [header]="t('drawer.tab.migrations')">
+          <p-tabpanel [value]="4">
             <div class="qv-migrations">
               <div class="qv-migrations__row">
                 <span>{{ t('drawer.field.migrationStatus') }}</span>
@@ -194,16 +203,17 @@ import { TENANTS_FR } from './tenants.i18n.fr';
                 ou cliquez sur "Voir page complète".
               </p>
             </div>
-          </p-tabPanel>
+          </p-tabpanel>
 
-          <p-tabPanel [header]="t('drawer.tab.storefront')">
+          <p-tabpanel [value]="5">
             <ft-empty-state
               variant="all-clear"
               title="Vitrine"
               [description]="t('drawer.placeholder.storefront')"
             />
-          </p-tabPanel>
-        </p-tabView>
+          </p-tabpanel>
+          </p-tabpanels>
+        </p-tabs>
       }
 
       <ng-container ftFooter>
@@ -337,23 +347,23 @@ import { TENANTS_FR } from './tenants.i18n.fr';
         line-height: 1.5;
       }
 
-      :host ::ng-deep .qv-tabs .p-tabview-nav {
+      :host ::ng-deep .qv-tabs .p-tablist-tab-list {
         background: transparent;
         border-bottom: 1px solid var(--ft-border);
       }
 
-      :host ::ng-deep .qv-tabs .p-tabview-nav li .p-tabview-nav-link {
+      :host ::ng-deep .qv-tabs .p-tab {
         background: transparent;
         color: var(--ft-text-muted);
         border-color: transparent;
       }
 
-      :host ::ng-deep .qv-tabs .p-tabview-nav li.p-highlight .p-tabview-nav-link {
+      :host ::ng-deep .qv-tabs .p-tab.p-tab-active {
         color: var(--ft-accent);
         border-color: var(--ft-accent);
       }
 
-      :host ::ng-deep .qv-tabs .p-tabview-panels {
+      :host ::ng-deep .qv-tabs .p-tabpanels {
         background: transparent;
         padding: var(--gap-md) 0 0;
       }

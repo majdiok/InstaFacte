@@ -1,7 +1,7 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { TabViewModule } from 'primeng/tabview';
+import { TabsModule } from 'primeng/tabs';
 
 const ALLOWED_TYPES = [
   'application/pdf',
@@ -17,10 +17,17 @@ const MAX_BYTES = 10 * 1024 * 1024;
 @Component({
   selector: 'app-entry-bottom-tabs',
   standalone: true,
-  imports: [CommonModule, FormsModule, TabViewModule],
+  imports: [CommonModule, FormsModule, TabsModule],
   template: `
-    <p-tabView styleClass="ft-tabs entry-bottom-tabs">
-      <p-tabPanel [header]="'Pièces jointes (' + pendingFiles.length + ')'">
+    <p-tabs class="ft-tabs entry-bottom-tabs" [lazy]="true">
+      <p-tablist>
+        <p-tab [value]="0">Pièces jointes ({{ pendingFiles.length }})</p-tab>
+        <p-tab [value]="1">Notes</p-tab>
+        <p-tab [value]="2">Ventilation analytique</p-tab>
+        <p-tab [value]="3">Historique</p-tab>
+      </p-tablist>
+      <p-tabpanels>
+      <p-tabpanel [value]="0">
         <p class="bottom-tab-hint">
           Les fichiers seront téléversés après l'enregistrement de l'écriture (max 10 Mo, PDF/images/Office).
         </p>
@@ -43,28 +50,29 @@ const MAX_BYTES = 10 * 1024 * 1024;
         @if (attachError) {
           <p class="attach-error" role="alert">{{ attachError }}</p>
         }
-      </p-tabPanel>
+      </p-tabpanel>
 
-      <p-tabPanel header="Notes">
+      <p-tabpanel [value]="1">
         <label class="field-label" for="work-notes">Note de travail (non comptabilisée)</label>
         <textarea id="work-notes" class="notes-area" rows="4"
                   [ngModel]="notes" (ngModelChange)="notesChange.emit($event)"
                   placeholder="Notes internes pour cette saisie…"></textarea>
-      </p-tabPanel>
+      </p-tabpanel>
 
-      <p-tabPanel header="Ventilation analytique">
+      <p-tabpanel [value]="2">
         <div class="locked-panel">
           <p>Le module de ventilation analytique n'est pas encore disponible dans ce dossier.</p>
           <p class="locked-panel__sub">Cette fonctionnalité sera proposée dans une prochaine version.</p>
         </div>
-      </p-tabPanel>
+      </p-tabpanel>
 
-      <p-tabPanel header="Historique">
+      <p-tabpanel [value]="3">
         <div class="locked-panel">
           <p>L'historique des modifications sera disponible après l'enregistrement de l'écriture.</p>
         </div>
-      </p-tabPanel>
-    </p-tabView>
+      </p-tabpanel>
+      </p-tabpanels>
+    </p-tabs>
   `,
   styles: `
     .entry-bottom-tabs { margin-top:var(--spacing-4); }
