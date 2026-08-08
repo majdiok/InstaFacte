@@ -251,6 +251,7 @@ public sealed class HonorairesInvoice : AggregateRoot
             var add = AddLine(l.Designation, l.Description, l.Quantity, l.UnitPrice, l.VatRate, l.DiscountPercent, l.ActivityCode);
             if (add.IsFailure) return add;
         }
+        IncrementVersion();
         return Result.Success();
     }
 
@@ -266,6 +267,7 @@ public sealed class HonorairesInvoice : AggregateRoot
             return Result.Failure(Error.Validation("Client", "Le dossier client est obligatoire"));
 
         Status = HonorairesInvoiceStatus.Validated;
+        IncrementVersion();
         return Result.Success();
     }
 
@@ -276,6 +278,7 @@ public sealed class HonorairesInvoice : AggregateRoot
         Status = HonorairesInvoiceStatus.Cancelled;
         CancelledAt = DateTime.UtcNow;
         CancellationReason = TrimOrNull(reason);
+        IncrementVersion();
         return Result.Success();
     }
 
@@ -292,6 +295,7 @@ public sealed class HonorairesInvoice : AggregateRoot
 
         _payments.Add(payment);
         ReconcilePaymentStatus(nextPaid, payment.PaymentDate);
+        IncrementVersion();
         return Result.Success();
     }
 

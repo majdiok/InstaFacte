@@ -490,6 +490,18 @@ public sealed record VatDeclarationDto
     public string Nif { get; init; } = null!;
     public string TaxRegimeDisplay { get; init; } = null!;
     public string? TradeName { get; init; }
+
+    /// <summary>
+    /// Adresse du siège social sur une ligne. Requise par l'en-tête du formulaire officiel DGI
+    /// (« العنوان أو المقر الاجتماعي ») ; non affichée par l'écran de saisie.
+    /// </summary>
+    public string? AddressLine { get; init; }
+
+    /// <summary>
+    /// Reflet de <c>AccountingSettings.MonthlyDeclarationOfficialFormEnabled</c> : pilote
+    /// l'affichage de l'action « Formulaire officiel » côté client.
+    /// </summary>
+    public bool OfficialFormEnabled { get; init; }
 }
 
 public sealed record AccountingDashboardDto

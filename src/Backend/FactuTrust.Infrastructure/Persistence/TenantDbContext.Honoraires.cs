@@ -71,6 +71,13 @@ public partial class TenantDbContext
                 .HasFilter("[Number] IS NOT NULL");
             entity.HasIndex(i => i.Status);
             entity.HasIndex(i => i.Type);
+
+            // Verrouillage optimiste : le WHERE de l'UPDATE inclut désormais [Version],
+            // et HonorairesInvoice.IncrementVersion() est appelé à chaque mutation
+            // (RecordPayment, Validate, Cancel, ReplaceLines). Deux encaissements simultanés
+            // remontent en 409 CONCURRENCY_CONFLICT au lieu de se marcher dessus.
+            // La colonne existe déjà (int NOT NULL DEFAULT 1) — pas de migration requise.
+            entity.Property(i => i.Version).IsConcurrencyToken();
         });
     }
 

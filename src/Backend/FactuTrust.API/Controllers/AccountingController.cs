@@ -1591,6 +1591,22 @@ public sealed class AccountingController : ControllerBase
     }
 
     /// <summary>
+    /// Édite la déclaration mensuelle sur le formulaire officiel de la DGI
+    /// (« التصريح الشهري بالأداءات »), prêt à être déposé à la recette des finances.
+    /// Soumis au drapeau <c>Accounting:MonthlyDeclarationOfficialFormEnabled</c>.
+    /// </summary>
+    [HttpGet("vat-declaration/official-pdf")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> ExportMonthlyDeclarationOfficialForm([FromQuery] int year, [FromQuery] int month, CancellationToken cancellationToken)
+    {
+        var enforceCompanySubmittedOnly = !_currentUser.IsAccountingFirmDelegatedContext;
+        var r = await _mediator.Send(new ExportMonthlyDeclarationOfficialFormQuery(year, month, enforceCompanySubmittedOnly), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return File(r.Value, "application/pdf", $"declaration_officielle_{year}_{month:D2}.pdf");
+    }
+
+    /// <summary>
     /// Export PDF NCT. Sans paramètres de filtre → PDF legacy intégral (notes agrégées).
     /// Avec <paramref name="filtered"/>=true (ou tout paramètre de sélection) → PDF dialogue filtré.
     /// </summary>

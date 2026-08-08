@@ -168,16 +168,7 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
         managerOnly: true,
         modules: [M.Honoraires],
         permissionsAll: [PERMISSIONS.honorairesQuotes.read]
-      }
-    ]
-  },
-  {
-    label: 'Paiements',
-    icon: 'fa-solid fa-money-bill-transfer',
-    managerOnly: true,
-    modules: [M.Honoraires],
-    permissionsAll: [PERMISSIONS.honorairesPayments.read],
-    children: [
+      },
       {
         label: 'Encaissements',
         route: '/firm/billing/payments',

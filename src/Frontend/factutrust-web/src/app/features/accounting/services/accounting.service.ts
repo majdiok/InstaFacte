@@ -291,6 +291,10 @@ export interface VatDeclarationDto {
   nif?: string;
   taxRegimeDisplay?: string;
   tradeName?: string | null;
+  /** Adresse du siège — utilisée par l'en-tête du formulaire officiel. */
+  addressLine?: string | null;
+  /** Drapeau serveur : l'export au format du formulaire officiel DGI est-il activé ? */
+  officialFormEnabled?: boolean;
 }
 
 /** Autres taxes de la déclaration mensuelle unique + drapeau rectificative. */
@@ -1895,6 +1899,12 @@ export class AccountingService {
   exportVatDeclarationPdf(year: number, month: number): Observable<Blob> {
     const p = new HttpParams().set('year', year).set('month', month);
     return this.http.get(`${this.base}/vat-declaration/pdf`, { params: p, responseType: 'blob' });
+  }
+
+  /** Déclaration mensuelle sur le formulaire officiel DGI (téléchargement blob). */
+  exportMonthlyDeclarationOfficialForm(year: number, month: number): Observable<Blob> {
+    const p = new HttpParams().set('year', year).set('month', month);
+    return this.http.get(`${this.base}/vat-declaration/official-pdf`, { params: p, responseType: 'blob' });
   }
 
   /** PDF de la liasse NCT (téléchargement blob). */

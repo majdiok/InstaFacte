@@ -197,6 +197,7 @@ describe('AppNavService — secondary nav parity', () => {
     expect(labels).not.toContain('Rentabilité de collaborateurs');
     expect(routes).not.toContain('/firm/collaborateurs');
     expect(routes).not.toContain('/firm/billing/invoices');
+    expect(routes).not.toContain('/firm/billing/payments');
     expect(routes).not.toContain('/firm/governance/dossier-time-profitability');
     expect(routes).toContain('/firm/governance/time-sheets');
     expect(routes).toContain('/firm/settings');
@@ -217,10 +218,20 @@ describe('AppNavService — secondary nav parity', () => {
       ]);
 
     expect(labels).toContain('Facturation');
-    expect(labels).toContain('Paiements');
+    expect(labels).not.toContain('Paiements');
     expect(labels).toContain('Rentabilité de collaborateurs');
     expect(routes).toContain('/firm/collaborateurs');
     expect(routes).toContain('/firm/billing/invoices');
+    expect(routes).toContain('/firm/billing/payments');
+
+    const facturation = nav.navItems().find(i => i.label === 'Facturation');
+    expect(facturation?.children?.map(c => c.label)).toEqual([
+      'Factures',
+      'Avoirs',
+      'Devis',
+      'Encaissements'
+    ]);
+    expect(facturation?.children?.some(c => c.route === '/firm/billing/payments')).toBe(true);
   });
 
   it('shows accounting modules only in secondary nav for delegated accounting-firm mode', () => {

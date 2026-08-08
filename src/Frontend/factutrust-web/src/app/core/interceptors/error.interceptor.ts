@@ -152,6 +152,17 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
             return throwError(() => processedError);
           }
 
+          // Encaissement honoraires : la boîte de dialogue rend son propre message + recharge
+          // la facture. On supprime le toast générique pour éviter le doublon (le composant
+          // affiche déjà un toast « warn » spécifique et un message inline).
+          if (
+            processedError.status === 409 &&
+            req.method === 'POST' &&
+            /\/honoraires\/invoices\/[^/]+\/payments$/i.test(req.url)
+          ) {
+            return throwError(() => processedError);
+          }
+
           if (errorHandler.isTenantMigrationFailure(processedError)) {
             tenantSystemStatus.reportTenantMigrationFailure();
             if (!isRegistrationEndpoint && !skipGlobalErrorUi) {

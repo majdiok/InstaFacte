@@ -42,6 +42,11 @@ import { isCompanyAccountingRestricted } from '@core/config/company-accounting-n
               Exporter PDF
             </app-button>
           }
+          @if (showOfficialForm) {
+            <app-button variant="secondary" icon="pi pi-file-export" iconPos="left" type="button" (click)="exportOfficialForm.emit()" [disabled]="loading || !hasData" ariaLabel="Exporter le formulaire officiel DGI">
+              Formulaire officiel
+            </app-button>
+          }
           @if (showPreClosingControls) {
             <a class="vat-toolbar-link" routerLink="/accounting/pre-closing" aria-label="Contrôles de pré-clôture">
               <i class="pi pi-shield" aria-hidden="true"></i> Contrôles
@@ -87,6 +92,8 @@ export class VatDeclarationToolbarComponent {
   @Input() showAiAnalyze = true;
   @Input() showPreview = true;
   @Input() showExportPdf = true;
+  /** Piloté par le drapeau serveur `officialFormEnabled` de la déclaration. */
+  @Input() showOfficialForm = false;
   @Input() payloadBuilder: () => unknown = () => ({});
 
   @Output() yearChange = new EventEmitter<number>();
@@ -95,5 +102,6 @@ export class VatDeclarationToolbarComponent {
   @Output() prevPeriod = new EventEmitter<void>();
   @Output() nextPeriod = new EventEmitter<void>();
   @Output() exportPdf = new EventEmitter<void>();
+  @Output() exportOfficialForm = new EventEmitter<void>();
   @Output() previewPdf = new EventEmitter<void>();
 }

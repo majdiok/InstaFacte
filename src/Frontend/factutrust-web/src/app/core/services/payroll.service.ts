@@ -50,6 +50,7 @@ export interface PayrollFeatureFlags {
   legalPresetsHistoryEnabled: boolean;
 }
 
+export interface PayrollCalculationWarning {
   code: string;
   message: string;
   employeeId?: string;

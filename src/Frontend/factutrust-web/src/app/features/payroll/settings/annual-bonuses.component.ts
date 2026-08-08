@@ -73,7 +73,7 @@ export class AnnualBonusesSettingsComponent implements OnInit {
   load(): void {
     this.payroll.listAnnualBonusRules(this.fiscalYear).subscribe({
       next: res => this.rules.set(res.data ?? []),
-      error: () => this.toast.error('Chargement impossible.')
+      error: () => this.toast.add({ severity: 'error', summary: 'Primes annuelles', detail: 'Chargement impossible.' })
     });
   }
 
@@ -108,8 +108,8 @@ export class AnnualBonusesSettingsComponent implements OnInit {
       ? this.payroll.updateAnnualBonusRule(this.editingId, req)
       : this.payroll.createAnnualBonusRule(req);
     obs.subscribe({
-      next: () => { this.toast.success('Règle enregistrée.'); this.editing.set(false); this.load(); },
-      error: err => this.toast.error(err?.error?.message ?? 'Erreur.')
+      next: () => { this.toast.add({ severity: 'success', summary: 'Primes annuelles', detail: 'Règle enregistrée.' }); this.editing.set(false); this.load(); },
+      error: err => this.toast.add({ severity: 'error', summary: 'Primes annuelles', detail: err?.error?.message ?? 'Erreur.' })
     });
   }
 

@@ -90,9 +90,9 @@ test.describe('Cabinet comptable — authenticated (staging)', () => {
   test('honoraires billing smoke — factures / devis / encaissements', async ({ page }) => {
     // Requires E2E_FIRM_AUTH=1 + FirmManager credentials (see CI secrets / local .env).
     // Flow under test after auth:
-    // 1. Sidemenu contains Facturation + Paiements
+    // 1. Sidemenu Facturation includes Encaissements (no separate Paiements rail)
     // await expect(page.getByRole('navigation')).toContainText(/Facturation/i);
-    // await expect(page.getByRole('navigation')).toContainText(/Paiements/i);
+    // await expect(page.getByRole('navigation')).toContainText(/Encaissements/i);
     //
     // 2. Create draft invoice with activity code, save
     // await page.goto('/firm/billing/invoices/new');
@@ -122,7 +122,7 @@ test.describe('Cabinet comptable — authenticated (staging)', () => {
   });
 
   test('firm accountant cannot access manager-only cabinet routes', async ({ page }) => {
-    // 1. Login as FirmAccountant → sidemenu must not show Facturation, Paiements,
+    // 1. Login as FirmAccountant → sidemenu must not show Facturation (incl. Encaissements),
     //    Rentabilité de collaborateurs, Collaborateurs
     // 2. Direct /firm/collaborateurs → /access-denied (no 403 modal)
     // 3. Direct /firm/billing/invoices → /access-denied

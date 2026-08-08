@@ -137,6 +137,25 @@ describe('errorInterceptor', () => {
     httpMock.verify();
   });
 
+  it('suppresses global toast for honoraires payment 409 (dialog owns the message)', (done) => {
+    http.post('/api/honoraires/invoices/fad25fd1-c365-40b0-a075-9c4880205fbd/payments', {}).subscribe({
+      error: () => {
+        expect(toastService.add).not.toHaveBeenCalled();
+        expect(validationDialog.showValidationFailed).not.toHaveBeenCalled();
+        done();
+      }
+    });
+
+    const req = httpMock.expectOne(
+      '/api/honoraires/invoices/fad25fd1-c365-40b0-a075-9c4880205fbd/payments'
+    );
+    req.flush(
+      { code: 'CONCURRENCY_CONFLICT', message: 'Conflit de concurrence' },
+      { status: 409, statusText: 'Conflict' }
+    );
+    httpMock.verify();
+  });
+
   it('shows toast with server message when 400 body is JSON inside Blob (responseType blob)', (done) => {
     http
       .post('/api/withholding-tax/tej-export/generate', {}, { responseType: 'blob' })

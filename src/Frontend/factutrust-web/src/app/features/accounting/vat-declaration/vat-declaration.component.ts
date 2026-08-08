@@ -14,6 +14,7 @@ import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { wrapLegacyAnalyzePayload } from '@features/ai-assistant/utils/ai-screen-payload.factory';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
+import { downloadBlob } from '../shared/accounting-download.util';
 import { VatDeclarationToolbarComponent } from './vat-declaration-toolbar.component';
 import { VatDeclarationGeneralInfoComponent } from './vat-declaration-general-info.component';
 import { VatDeclarationStatusPanelComponent } from './vat-declaration-status-panel.component';
@@ -71,6 +72,7 @@ const COMPANY_EMPTY_STATE_MESSAGE =
       [showAiAnalyze]="canManage"
       [showPreview]="canManage"
       [showExportPdf]="true"
+      [showOfficialForm]="!!data()?.officialFormEnabled"
       [payloadBuilder]="buildVatAnalyzePayload"
       (yearChange)="onYearChange($event)"
       (monthChange)="onMonthChange($event)"
@@ -78,6 +80,7 @@ const COMPANY_EMPTY_STATE_MESSAGE =
       (prevPeriod)="navigatePeriod(-1)"
       (nextPeriod)="navigatePeriod(1)"
       (exportPdf)="exportPdf()"
+      (exportOfficialForm)="exportOfficialForm()"
       (previewPdf)="previewPdf()" />
 
     <app-accounting-status-banner
@@ -373,6 +376,29 @@ export class VatDeclarationComponent implements OnInit {
     this.api.exportVatDeclarationPdf(this.year, this.month).subscribe({
       next: blob => this.downloadPdf(blob),
       error: () => this.toast.add({ severity: 'error', summary: 'Export PDF', detail: "L'export PDF a échoué.", life: 5000 })
+    });
+  }
+
+  /** Édite la déclaration sur le gabarit officiel de la DGI (prêt à déposer). */
+  exportOfficialForm(): void {
+    if (!this.data()) {
+      this.toast.add({
+        severity: 'warn',
+        summary: 'Formulaire officiel',
+        detail: 'Aucune déclaration soumise à exporter pour cette période.',
+        life: 5000
+      });
+      return;
+    }
+    this.clampPeriod();
+    this.api.exportMonthlyDeclarationOfficialForm(this.year, this.month).subscribe({
+      next: blob => downloadBlob(blob, `declaration_officielle_${this.year}_${String(this.month).padStart(2, '0')}.pdf`),
+      error: () => this.toast.add({
+        severity: 'error',
+        summary: 'Formulaire officiel',
+        detail: "L'export du formulaire officiel a échoué.",
+        life: 5000
+      })
     });
   }
 

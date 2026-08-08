@@ -735,6 +735,13 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
         ConfigureStorefrontOrderItem(builder);
         ConfigureStorefrontPublishingConsent(builder);
         ConfigureStorefrontOutboxInboxEntry(builder);
+
+        // DOIT rester la dernière étape : normalise toutes les clés Guid.Id des entités du domaine
+        // en ValueGenerated.Never (le constructeur d'Entity a déjà positionné l'Id). Voir
+        // PersistenceConventions.ApplyClientGeneratedGuidKeys pour le détail. Les types Identity
+        // ASP.NET (ApplicationUser/Role, IdentityUserRole, ...) n'héritent pas d'Entity et sont
+        // donc épargnés.
+        PersistenceConventions.ApplyClientGeneratedGuidKeys(builder);
     }
 
     private static void ConfigureStorefrontProfile(ModelBuilder builder)

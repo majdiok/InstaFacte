@@ -44,7 +44,7 @@ import { HonorairesRecordPaymentDialogComponent } from '../../components/honorai
   template: `
     <app-breadcrumb [items]="[
       { label: 'Accueil', route: '/firm/dashboard' },
-      { label: 'Paiements' },
+      { label: 'Facturation' },
       { label: 'Encaissements' }
     ]"></app-breadcrumb>
     <div class="page">

@@ -466,6 +466,21 @@ export class HonorairesRecordPaymentDialogComponent implements OnDestroy {
       },
       error: (err) => {
         this.submitting.set(false);
+        const code = err?.error?.code || err?.error?.error?.code;
+        const isConcurrencyConflict = err?.status === 409 || code === 'CONCURRENCY_CONFLICT';
+
+        if (isConcurrencyConflict) {
+          const detail =
+            'Le statut de la facture a été modifié entre-temps. La fiche a été rafraîchie — vérifiez le reste dû puis réessayez si nécessaire.';
+          this.errorMessage.set(detail);
+          this.toast.add({ severity: 'warn', summary: 'Conflit d\u2019encaissement', detail, life: 7000 });
+          // Force le parent à recharger la facture (statut / montant payé / restant dû)
+          // pour que le prochain essai parte d'un état à jour.
+          this.paymentRecorded.emit();
+          this.close();
+          return;
+        }
+
         const detail =
           err?.error?.error?.message ||
           err?.error?.message ||

@@ -19,11 +19,22 @@ public partial class PdfService : IPdfService
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IDocumentTemplateRegistry _templateRegistry;
+    private readonly OfficialForms.OfficialFormStamper _officialFormStamper;
 
-    public PdfService(IHttpClientFactory httpClientFactory, IDocumentTemplateRegistry templateRegistry)
+    /// <param name="officialFormStamper">
+    /// Tamponnage des formulaires officiels préimprimés. Paramètre optionnel : le conteneur
+    /// l'injecte en production, et les appelants historiques à deux arguments restent valides.
+    /// </param>
+    public PdfService(
+        IHttpClientFactory httpClientFactory,
+        IDocumentTemplateRegistry templateRegistry,
+        OfficialForms.OfficialFormStamper? officialFormStamper = null)
     {
         _httpClientFactory = httpClientFactory;
         _templateRegistry = templateRegistry;
+        _officialFormStamper = officialFormStamper
+            ?? new OfficialForms.OfficialFormStamper(
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<OfficialForms.OfficialFormStamper>.Instance);
     }
     // TextStyle par défaut avec fallback pour supporter les caractères Unicode (français, etc.)
     // L'ordre est important : QuestPDF essaiera chaque police dans l'ordre jusqu'à trouver celle qui supporte les glyphes nécessaires

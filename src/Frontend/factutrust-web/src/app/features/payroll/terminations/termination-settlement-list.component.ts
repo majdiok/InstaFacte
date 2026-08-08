@@ -68,7 +68,7 @@ export class TerminationSettlementListComponent implements OnInit {
     this.loading.set(true);
     this.payroll.listTerminationSettlements(this.year, this.month).subscribe({
       next: res => { this.items.set(res.data ?? []); this.loading.set(false); },
-      error: () => { this.toast.error('Impossible de charger les soldes.'); this.loading.set(false); }
+      error: () => { this.toast.add({ severity: 'error', summary: 'Soldes de tout compte', detail: 'Impossible de charger les soldes.' }); this.loading.set(false); }
     });
   }
 }

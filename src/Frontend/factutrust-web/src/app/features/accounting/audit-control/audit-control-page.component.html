@@ -1,0 +1,214 @@
+@if (!dashboardEnabled()) {
+  <app-accounting-health />
+} @else {
+  <app-page-header
+    title="Contrôle d'intégrité & Détection des anomalies"
+    subtitle="Analyse complète de vos données comptables pour garantir la fiabilité et la conformité">
+    <div class="ac-header-actions">
+      <app-button variant="secondary" icon="pi pi-file" type="button" (click)="exportReport('csv')">Exporter CSV</app-button>
+      <app-button variant="secondary" icon="pi pi-file-pdf" type="button" (click)="exportReport('pdf')">Exporter PDF</app-button>
+      <app-button variant="primary" icon="pi pi-play" type="button" [disabled]="loading()" (click)="runControl()">
+        Lancer un nouveau contrôle
+      </app-button>
+    </div>
+  </app-page-header>
+
+  <div class="card accounting-filters-card">
+    <app-accounting-filter-bar ariaLabel="Filtres du contrôle">
+      <div accountingFilterFields class="ac-toolbar-fields">
+        <div class="accounting-filter-field">
+          <label class="accounting-filter-label" for="ac-year">Exercice</label>
+          <input id="ac-year" type="number" min="2000" max="2100" [(ngModel)]="fiscalYear" class="accounting-filter-input" />
+        </div>
+        <div class="accounting-filter-field">
+          <label class="accounting-filter-label" for="ac-search">Recherche</label>
+          <input id="ac-search" type="search" [(ngModel)]="search" class="accounting-filter-input" placeholder="Rechercher une anomalie…" (keyup.enter)="loadAnomalies(1)" />
+        </div>
+      </div>
+      <div accountingFilterActions>
+        <app-button variant="secondary" icon="pi pi-refresh" type="button" [disabled]="loading()" (click)="refreshAll()">Actualiser</app-button>
+      </div>
+    </app-accounting-filter-bar>
+  </div>
+
+  <app-accounting-status-banner variant="error" [message]="error() ?? ''" [showRetry]="!!error()" retryLabel="Réessayer" (retry)="refreshAll()" />
+
+  @if (dashboard(); as dash) {
+    <div class="ac-kpi-grid">
+      <app-stat-card appearance="solid" label="Erreurs bloquantes" [value]="dash.blockingCount" icon="fa-solid fa-circle-xmark" variant="error" />
+      <app-stat-card appearance="solid" label="Avertissements" [value]="dash.warningCount" icon="fa-solid fa-triangle-exclamation" variant="warning" />
+      <app-stat-card appearance="solid" label="Anomalies" [value]="dash.anomalyCount" icon="fa-solid fa-bolt" variant="warning" />
+      <app-stat-card appearance="solid" label="Informations" [value]="dash.infoCount" icon="fa-solid fa-circle-info" variant="primary" />
+      <app-stat-card appearance="solid" label="Taux de conformité" [value]="dash.complianceRate + '%'" icon="fa-solid fa-chart-line" variant="success" [change]="dash.complianceRateDeltaVsPriorYear ?? undefined" />
+      @if (dash.lastRun) {
+        <div class="ac-last-run card">
+          <span class="ac-last-run__label">Dernier contrôle</span>
+          <strong>{{ dash.lastRun.completedAt | date:'dd/MM/yyyy HH:mm' }}</strong>
+          @if (dash.lastRun.triggeredByUserName) {
+            <span class="ac-last-run__meta">{{ dash.lastRun.triggeredByUserName }}</span>
+          }
+        </div>
+      }
+    </div>
+  }
+
+  <div class="ac-tabs">
+    @for (tab of tabs; track tab.key) {
+      <button type="button" class="ac-tab" [class.ac-tab--active]="activeTab === tab.key" (click)="setTab(tab.key)">{{ tab.label }}</button>
+    }
+  </div>
+
+  <div class="ac-main-layout">
+    <div class="ac-table-panel card">
+      <p-table
+        [value]="anomalies()"
+        [lazy]="true"
+        [paginator]="true"
+        [rows]="12"
+        [totalRecords]="totalRecords()"
+        [loading]="loading()"
+        (onLazyLoad)="onLazyLoad($event)"
+        styleClass="p-datatable-sm accounting-datatable"
+        [rowHover]="true">
+        <ng-template pTemplate="header">
+          <tr>
+            <th style="width:7rem">Sévérité</th>
+            <th style="width:8rem">Catégorie</th>
+            <th>Anomalie détectée</th>
+            <th>Compte / Écriture</th>
+            <th style="width:7rem">Montant</th>
+            <th style="width:8rem">Statut</th>
+            <th style="width:9rem">Action</th>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="body" let-row>
+          <tr (click)="openDetail(row)" class="ac-row-clickable">
+            <td><span class="ac-badge" [ngClass]="severityClass(row.severity)">{{ severityLabel(row.severity) }}</span></td>
+            <td>{{ categoryLabel(row.category) }}</td>
+            <td>
+              <div class="ac-cell-title">{{ row.title }}</div>
+              <div class="ac-cell-sub">{{ row.detailSummary }}</div>
+            </td>
+            <td>{{ row.accountRef || '—' }}</td>
+            <td class="text-right">{{ row.amount | number:'1.3-3' }} TND</td>
+            <td>{{ statusLabel(row.status) }}</td>
+            <td>
+              @if (row.deepLinkRoute) {
+                <a class="ac-link" [routerLink]="row.deepLinkRoute" (click)="$event.stopPropagation()">Corriger</a>
+              }
+              <button type="button" class="ac-link ac-link--btn" (click)="openDetail(row); $event.stopPropagation()">Détail</button>
+            </td>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="emptymessage">
+          <tr><td colspan="7" class="ac-empty">Aucune anomalie — lancez un contrôle.</td></tr>
+        </ng-template>
+      </p-table>
+    </div>
+  </div>
+
+  <section class="ac-analytics">
+    <h2 class="ac-section-title">Analyses</h2>
+    <div class="ac-analytics-grid">
+      @if (donutData(); as dd) {
+        <div class="card ac-chart-card">
+          <h3>Répartition par catégorie</h3>
+          <p-chart type="doughnut" [data]="dd" [options]="chartOptions" height="220px" />
+        </div>
+      }
+      @if (lineData(); as ld) {
+        <div class="card ac-chart-card">
+          <h3>Évolution des anomalies</h3>
+          <p-chart type="line" [data]="ld" [options]="chartOptions" height="220px" />
+        </div>
+      }
+      @if (analytics()?.topAccounts?.length) {
+        <div class="card ac-top-accounts">
+          <h3>Top comptes concernés</h3>
+          <ul>
+            @for (acc of analytics()!.topAccounts; track acc.accountNumber) {
+              <li><span>{{ acc.accountNumber }}</span><span>{{ acc.anomalyCount }} · {{ acc.totalAmount | number:'1.0-0' }} TND</span></li>
+            }
+          </ul>
+        </div>
+      }
+      @if (analytics()?.recentActivity?.length) {
+        <div class="card ac-activity">
+          <h3>Activité & suivi</h3>
+          <ul>
+            @for (act of analytics()!.recentActivity; track act.id) {
+              <li><strong>{{ act.userName || 'Système' }}</strong> — {{ act.message }} <em>{{ act.createdAt | date:'short' }}</em></li>
+            }
+          </ul>
+        </div>
+      }
+    </div>
+  </section>
+
+  <section class="ac-modules">
+    <h2 class="ac-section-title">Modules et contrôles disponibles</h2>
+    <div class="ac-modules-grid">
+      @for (mod of modules(); track mod.code) {
+        <button type="button" class="ac-module-tile" [class.ac-module-tile--active]="selectedModuleCode === mod.code" (click)="filterByModule(mod.code)">
+          <i class="fa-solid" [ngClass]="mod.icon"></i>
+          <span class="ac-module-tile__label">{{ mod.label }}</span>
+          <span class="ac-module-tile__count">{{ mod.count }}</span>
+        </button>
+      }
+    </div>
+  </section>
+
+  <p-dialog
+    header="Détail de l'anomalie"
+    [visible]="detailVisible()"
+    (visibleChange)="detailVisible.set($event)"
+    [modal]="true"
+    [style]="{ width: 'min(720px, 96vw)' }"
+    [draggable]="false">
+    @if (selectedAnomaly(); as d) {
+      <div class="ac-detail">
+        <div class="ac-detail__header">
+          <span class="ac-badge" [ngClass]="severityClass(d.severity)">{{ severityLabel(d.severity) }}</span>
+          <span>{{ categoryLabel(d.category) }}</span>
+          <span>{{ statusLabel(d.status) }}</span>
+        </div>
+        <h3>{{ d.title }}</h3>
+        <p>{{ d.description }}</p>
+        <p class="ac-detail__impact"><strong>Impact :</strong> {{ d.impact }}</p>
+        @if (d.recommendations.length) {
+          <div class="ac-detail__reco">
+            <strong>Recommandations</strong>
+            <ol>
+              @for (r of d.recommendations; track r) { <li>{{ r }}</li> }
+            </ol>
+          </div>
+        }
+        @if (d.lines.length) {
+          <p-table [value]="d.lines" styleClass="p-datatable-sm">
+            <ng-template pTemplate="header">
+              <tr>
+                <th>Date</th><th>Compte</th><th>Libellé</th><th>Débit</th><th>Crédit</th><th>Justificatif</th>
+              </tr>
+            </ng-template>
+            <ng-template pTemplate="body" let-l>
+              <tr>
+                <td>{{ l.entryDate | date:'dd/MM/yyyy' }}</td>
+                <td>{{ l.accountNumber }}</td>
+                <td>{{ l.label }}</td>
+                <td class="text-right">{{ l.debit | number:'1.3-3' }}</td>
+                <td class="text-right">{{ l.credit | number:'1.3-3' }}</td>
+                <td>{{ l.justificationStatus || '—' }}</td>
+              </tr>
+            </ng-template>
+          </p-table>
+        }
+        <div class="ac-detail__actions">
+          @if (d.deepLinkRoute) {
+            <a class="ac-btn ac-btn--primary" [routerLink]="d.deepLinkRoute">Corriger cette anomalie</a>
+          }
+          <button type="button" class="ac-btn ac-btn--secondary" (click)="resolveSelected()">Marquer comme corrigé</button>
+        </div>
+      </div>
+    }
+  </p-dialog>
+}

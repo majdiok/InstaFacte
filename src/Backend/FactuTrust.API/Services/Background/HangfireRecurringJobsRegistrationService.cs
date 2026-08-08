@@ -79,6 +79,13 @@ internal sealed class HangfireRecurringJobsRegistrationService : BackgroundServi
                 job => job.ExecuteAsync(CancellationToken.None),
                 Cron.Weekly(DayOfWeek.Sunday, 2),
                 UtcOptions)),
+        new(
+            "accounting-audit-schedules",
+            () => RecurringJob.AddOrUpdate<FactuTrust.Infrastructure.Services.Background.AccountingAuditScheduledJob>(
+                "accounting-audit-schedules",
+                job => job.ExecuteAsync(CancellationToken.None),
+                Cron.Daily(7),
+                UtcOptions)),
     };
 
     private readonly ILogger<HangfireRecurringJobsRegistrationService> _logger;

@@ -1,0 +1,1349 @@
+{
+  "templateVersion": "2026",
+  "templateFile": "mensuelle-2026.pdf",
+  "pageCount": 12,
+  "_generatedBy": "tools/official-form-calibration/build_map.py",
+  "fields": [
+    {
+      "key": "Header.Year.D1",
+      "page": 1,
+      "x": 94.7,
+      "y": 116.5,
+      "align": "center",
+      "fontSize": 9,
+      "label": "السنة (année) — case 1"
+    },
+    {
+      "key": "Header.Year.D2",
+      "page": 1,
+      "x": 109.7,
+      "y": 116.5,
+      "align": "center",
+      "fontSize": 9,
+      "label": "السنة (année) — case 2"
+    },
+    {
+      "key": "Header.Year.D3",
+      "page": 1,
+      "x": 124.6,
+      "y": 116.5,
+      "align": "center",
+      "fontSize": 9,
+      "label": "السنة (année) — case 3"
+    },
+    {
+      "key": "Header.Year.D4",
+      "page": 1,
+      "x": 139.6,
+      "y": 116.5,
+      "align": "center",
+      "fontSize": 9,
+      "label": "السنة (année) — case 4"
+    },
+    {
+      "key": "Header.Month.D1",
+      "page": 1,
+      "x": 224.3,
+      "y": 118.0,
+      "align": "center",
+      "fontSize": 9,
+      "label": "الشهر (mois) — case 1"
+    },
+    {
+      "key": "Header.Month.D2",
+      "page": 1,
+      "x": 238.0,
+      "y": 118.0,
+      "align": "center",
+      "fontSize": 9,
+      "label": "الشهر (mois) — case 2"
+    },
+    {
+      "key": "Header.DeclarationCode",
+      "page": 1,
+      "x": 310.9,
+      "y": 118.0,
+      "align": "center",
+      "fontSize": 9,
+      "label": "رمز التصريح (code de déclaration)"
+    },
+    {
+      "key": "Header.Nif.D1",
+      "page": 1,
+      "x": 344.2,
+      "y": 163.0,
+      "align": "center",
+      "fontSize": 9,
+      "label": "المعرف الجبائي — case 1 (droite→gauche)"
+    },
+    {
+      "key": "Header.Nif.D2",
+      "page": 1,
+      "x": 322.6,
+      "y": 163.0,
+      "align": "center",
+      "fontSize": 9,
+      "label": "المعرف الجبائي — case 2 (droite→gauche)"
+    },
+    {
+      "key": "Header.Nif.D3",
+      "page": 1,
+      "x": 302.8,
+      "y": 163.0,
+      "align": "center",
+      "fontSize": 9,
+      "label": "المعرف الجبائي — case 3 (droite→gauche)"
+    },
+    {
+      "key": "Header.Nif.D4",
+      "page": 1,
+      "x": 281.9,
+      "y": 163.0,
+      "align": "center",
+      "fontSize": 9,
+      "label": "المعرف الجبائي — case 4 (droite→gauche)"
+    },
+    {
+      "key": "Header.Nif.D5",
+      "page": 1,
+      "x": 260.8,
+      "y": 163.0,
+      "align": "center",
+      "fontSize": 9,
+      "label": "المعرف الجبائي — case 5 (droite→gauche)"
+    },
+    {
+      "key": "Header.Nif.D6",
+      "page": 1,
+      "x": 240.3,
+      "y": 163.0,
+      "align": "center",
+      "fontSize": 9,
+      "label": "المعرف الجبائي — case 6 (droite→gauche)"
+    },
+    {
+      "key": "Header.Nif.D7",
+      "page": 1,
+      "x": 220.1,
+      "y": 163.0,
+      "align": "center",
+      "fontSize": 9,
+      "label": "المعرف الجبائي — case 7 (droite→gauche)"
+    },
+    {
+      "key": "Header.Nif.D8",
+      "page": 1,
+      "x": 197.5,
+      "y": 163.0,
+      "align": "center",
+      "fontSize": 9,
+      "label": "المعرف الجبائي — case 8 (droite→gauche)"
+    },
+    {
+      "key": "Header.VatCode",
+      "page": 1,
+      "x": 151.3,
+      "y": 163.0,
+      "align": "center",
+      "fontSize": 9,
+      "label": "رمز الأداء على القيمة المضافة (code TVA)"
+    },
+    {
+      "key": "Header.CategoryCode",
+      "page": 1,
+      "x": 83.4,
+      "y": 163.0,
+      "align": "center",
+      "fontSize": 9,
+      "label": "رمز الصنف (code catégorie)"
+    },
+    {
+      "key": "Identity.Name",
+      "page": 1,
+      "x": 425.0,
+      "y": 183.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الاسم واللقب أو الاسم الاجتماعي"
+    },
+    {
+      "key": "Identity.Address1",
+      "page": 1,
+      "x": 425.0,
+      "y": 196.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "العنوان أو المقر الاجتماعي"
+    },
+    {
+      "key": "Identity.Address2",
+      "page": 1,
+      "x": 540.0,
+      "y": 209.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "العنوان (suite) / الترقيم البريدي"
+    },
+    {
+      "key": "Identity.Activity",
+      "page": 1,
+      "x": 498.0,
+      "y": 226.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "النشاط"
+    },
+    {
+      "key": "Check.Withholding",
+      "page": 1,
+      "x": 524.5,
+      "y": 330.0,
+      "align": "center",
+      "fontSize": 10,
+      "label": "Case à cocher — الخصم من المورد"
+    },
+    {
+      "key": "Check.Tfp",
+      "page": 1,
+      "x": 477.2,
+      "y": 330.0,
+      "align": "center",
+      "fontSize": 10,
+      "label": "Case à cocher — الأداء على التكوين المهني"
+    },
+    {
+      "key": "Check.Foprolos",
+      "page": 1,
+      "x": 414.2,
+      "y": 330.0,
+      "align": "center",
+      "fontSize": 10,
+      "label": "Case à cocher — المساهمة في صندوق النهوض بالمسكن"
+    },
+    {
+      "key": "Check.ConsumptionDuty",
+      "page": 1,
+      "x": 351.7,
+      "y": 330.0,
+      "align": "center",
+      "fontSize": 10,
+      "label": "Case à cocher — المعلوم على الاستهلاك"
+    },
+    {
+      "key": "Check.Vat",
+      "page": 1,
+      "x": 298.7,
+      "y": 330.0,
+      "align": "center",
+      "fontSize": 10,
+      "label": "Case à cocher — الأداء على القيمة المضافة"
+    },
+    {
+      "key": "Check.OtherDuties",
+      "page": 1,
+      "x": 239.9,
+      "y": 330.0,
+      "align": "center",
+      "fontSize": 10,
+      "label": "Case à cocher — معاليم أخرى على رقم المعاملات"
+    },
+    {
+      "key": "Check.StampDuty",
+      "page": 1,
+      "x": 185.0,
+      "y": 330.0,
+      "align": "center",
+      "fontSize": 10,
+      "label": "Case à cocher — معلوم الطابع الجبائي"
+    },
+    {
+      "key": "Check.Tcl",
+      "page": 1,
+      "x": 134.7,
+      "y": 330.0,
+      "align": "center",
+      "fontSize": 10,
+      "label": "Case à cocher — المعلوم على المؤسسات (TCL)"
+    },
+    {
+      "key": "Check.HotelTax",
+      "page": 1,
+      "x": 86.2,
+      "y": 330.0,
+      "align": "center",
+      "fontSize": 10,
+      "label": "Case à cocher — المعلوم على النزل"
+    },
+    {
+      "key": "Check.LicenceFee",
+      "page": 1,
+      "x": 46.5,
+      "y": 330.0,
+      "align": "center",
+      "fontSize": 10,
+      "label": "Case à cocher — معلوم الإجازة"
+    },
+    {
+      "key": "Withholding.Line1.Base",
+      "page": 1,
+      "x": 306.0,
+      "y": 404.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 1- المرتبات والأجور (القانون العام) — Base"
+    },
+    {
+      "key": "Withholding.Line1.Amount",
+      "page": 1,
+      "x": 91.0,
+      "y": 404.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 1- المرتبات والأجور (القانون العام) — Amount"
+    },
+    {
+      "key": "Withholding.Line4Individuals.Base",
+      "page": 1,
+      "x": 306.0,
+      "y": 512.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 4- العمولات/الوساطة/الأكرية — أشخاص طبيعيون مقيمون 10% — Base"
+    },
+    {
+      "key": "Withholding.Line4Individuals.Amount",
+      "page": 1,
+      "x": 91.0,
+      "y": 512.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 4- العمولات/الوساطة/الأكرية — أشخاص طبيعيون مقيمون 10% — Amount"
+    },
+    {
+      "key": "Withholding.Line4Entities.Base",
+      "page": 1,
+      "x": 306.0,
+      "y": 527.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 4- العمولات/الوساطة/الأكرية — أشخاص معنويون مقيمون 10% — Base"
+    },
+    {
+      "key": "Withholding.Line4Entities.Amount",
+      "page": 1,
+      "x": 91.0,
+      "y": 527.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 4- العمولات/الوساطة/الأكرية — أشخاص معنويون مقيمون 10% — Amount"
+    },
+    {
+      "key": "Withholding.Line5.Base",
+      "page": 1,
+      "x": 306.0,
+      "y": 589.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 5- الأتعاب — أشخاص طبيعيون غير خاضعين للنظام الحقيقي 10% — Base"
+    },
+    {
+      "key": "Withholding.Line5.Amount",
+      "page": 1,
+      "x": 91.0,
+      "y": 589.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 5- الأتعاب — أشخاص طبيعيون غير خاضعين للنظام الحقيقي 10% — Amount"
+    },
+    {
+      "key": "Withholding.Line6.Base",
+      "page": 1,
+      "x": 306.0,
+      "y": 617.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 6- الأتعاب — أشخاص معنويون / النظام الحقيقي 3% — Base"
+    },
+    {
+      "key": "Withholding.Line6.Amount",
+      "page": 1,
+      "x": 91.0,
+      "y": 617.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 6- الأتعاب — أشخاص معنويون / النظام الحقيقي 3% — Amount"
+    },
+    {
+      "key": "Withholding.Line8.Base",
+      "page": 1,
+      "x": 306.0,
+      "y": 672.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 8- أكرية النزل 5% — Base"
+    },
+    {
+      "key": "Withholding.Line8.Amount",
+      "page": 1,
+      "x": 91.0,
+      "y": 672.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 8- أكرية النزل 5% — Amount"
+    },
+    {
+      "key": "Withholding.Line10.Base",
+      "page": 2,
+      "x": 306.0,
+      "y": 74.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 10- فوائد الإيداعات والقروض 20% — Base"
+    },
+    {
+      "key": "Withholding.Line10.Amount",
+      "page": 2,
+      "x": 91.0,
+      "y": 74.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 10- فوائد الإيداعات والقروض 20% — Amount"
+    },
+    {
+      "key": "Withholding.Line12.Base",
+      "page": 2,
+      "x": 306.0,
+      "y": 247.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 12- حصص الأسهم — أشخاص طبيعيون مقيمون 10% — Base"
+    },
+    {
+      "key": "Withholding.Line12.Amount",
+      "page": 2,
+      "x": 91.0,
+      "y": 247.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 12- حصص الأسهم — أشخاص طبيعيون مقيمون 10% — Amount"
+    },
+    {
+      "key": "Withholding.Line16.Base",
+      "page": 2,
+      "x": 306.0,
+      "y": 505.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 16- التفويت في العقارات — مقيمون 2,5% — Base"
+    },
+    {
+      "key": "Withholding.Line16.Amount",
+      "page": 2,
+      "x": 91.0,
+      "y": 505.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 16- التفويت في العقارات — مقيمون 2,5% — Amount"
+    },
+    {
+      "key": "Withholding.Line17Rate1.Base",
+      "page": 2,
+      "x": 306.0,
+      "y": 626.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 17- اقتناءات ≥ 1000 د — مؤسسات خاضعة للضريبة 20% → 1% — Base"
+    },
+    {
+      "key": "Withholding.Line17Rate1.Amount",
+      "page": 2,
+      "x": 91.0,
+      "y": 626.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 17- اقتناءات ≥ 1000 د — مؤسسات خاضعة للضريبة 20% → 1% — Amount"
+    },
+    {
+      "key": "Withholding.Line17Rate05.Base",
+      "page": 2,
+      "x": 306.0,
+      "y": 640.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 17- اقتناءات ≥ 1000 د — مؤسسات خاضعة للضريبة 10% → 0,5% — Base"
+    },
+    {
+      "key": "Withholding.Line17Rate05.Amount",
+      "page": 2,
+      "x": 91.0,
+      "y": 640.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 17- اقتناءات ≥ 1000 د — مؤسسات خاضعة للضريبة 10% → 0,5% — Amount"
+    },
+    {
+      "key": "Withholding.Line17Rate15.Base",
+      "page": 2,
+      "x": 306.0,
+      "y": 667.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 17- اقتناءات ≥ 1000 د — مؤسسات أخرى → 1,5% — Base"
+    },
+    {
+      "key": "Withholding.Line17Rate15.Amount",
+      "page": 2,
+      "x": 91.0,
+      "y": 667.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 17- اقتناءات ≥ 1000 د — مؤسسات أخرى → 1,5% — Amount"
+    },
+    {
+      "key": "Withholding.Line18.Base",
+      "page": 3,
+      "x": 306.0,
+      "y": 89.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 18- الخصم بعنوان أ.ق.م — الصفقات العمومية 25% — Base"
+    },
+    {
+      "key": "Withholding.Line18.Amount",
+      "page": 3,
+      "x": 91.0,
+      "y": 89.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 18- الخصم بعنوان أ.ق.م — الصفقات العمومية 25% — Amount"
+    },
+    {
+      "key": "Withholding.Line19.Base",
+      "page": 3,
+      "x": 306.0,
+      "y": 134.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 19- الخصم بعنوان أ.ق.م — غير المستقرين 100% — Base"
+    },
+    {
+      "key": "Withholding.Line19.Amount",
+      "page": 3,
+      "x": 91.0,
+      "y": 134.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 19- الخصم بعنوان أ.ق.م — غير المستقرين 100% — Amount"
+    },
+    {
+      "key": "Withholding.Line24.Base",
+      "page": 3,
+      "x": 306.0,
+      "y": 439.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 24- القيمة الزائدة — أشخاص طبيعيون غير مقيمين 10% — Base"
+    },
+    {
+      "key": "Withholding.Line24.Amount",
+      "page": 3,
+      "x": 91.0,
+      "y": 439.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 24- القيمة الزائدة — أشخاص طبيعيون غير مقيمين 10% — Amount"
+    },
+    {
+      "key": "Withholding.Line25.Base",
+      "page": 3,
+      "x": 306.0,
+      "y": 498.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 25- مكافآت أخرى لغير المقيمين — أشخاص طبيعيون 15% — Base"
+    },
+    {
+      "key": "Withholding.Line25.Amount",
+      "page": 3,
+      "x": 91.0,
+      "y": 498.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 25- مكافآت أخرى لغير المقيمين — أشخاص طبيعيون 15% — Amount"
+    },
+    {
+      "key": "Withholding.Total",
+      "page": 4,
+      "x": 91.0,
+      "y": 206.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — المجموع"
+    },
+    {
+      "key": "Tfp.Manufacturing.Base",
+      "page": 4,
+      "x": 302.0,
+      "y": 325.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الأداء على التكوين المهني — الصناعات المعملية 1% — Base"
+    },
+    {
+      "key": "Tfp.Manufacturing.Amount",
+      "page": 4,
+      "x": 183.0,
+      "y": 325.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الأداء على التكوين المهني — الصناعات المعملية 1% — Amount"
+    },
+    {
+      "key": "Tfp.Other.Base",
+      "page": 4,
+      "x": 302.0,
+      "y": 341.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الأداء على التكوين المهني — الأنشطة الأخرى 2% — Base"
+    },
+    {
+      "key": "Tfp.Other.Amount",
+      "page": 4,
+      "x": 183.0,
+      "y": 341.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الأداء على التكوين المهني — الأنشطة الأخرى 2% — Amount"
+    },
+    {
+      "key": "Tfp.Total",
+      "page": 4,
+      "x": 183.0,
+      "y": 437.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الأداء على التكوين المهني — المجموع"
+    },
+    {
+      "key": "Tfp.Remainder",
+      "page": 4,
+      "x": 270.0,
+      "y": 452.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الأداء على التكوين المهني — الباقي (I)-(II)"
+    },
+    {
+      "key": "Foprolos.Base",
+      "page": 4,
+      "x": 532.0,
+      "y": 630.3,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "المساهمة في صندوق النهوض بالمسكن لفائدة الأجراء 1% — Base"
+    },
+    {
+      "key": "Foprolos.Amount",
+      "page": 4,
+      "x": 192.9,
+      "y": 630.3,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "المساهمة في صندوق النهوض بالمسكن لفائدة الأجراء 1% — Amount"
+    },
+    {
+      "key": "Vat.Rate7.Base",
+      "page": 5,
+      "x": 336.4,
+      "y": 277.7,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "رقم المعاملات الخاضع 7% — Base"
+    },
+    {
+      "key": "Vat.Rate7.Due",
+      "page": 5,
+      "x": 205.5,
+      "y": 277.7,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "رقم المعاملات الخاضع 7% — Due"
+    },
+    {
+      "key": "Vat.Rate13.Base",
+      "page": 5,
+      "x": 338.5,
+      "y": 290.5,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "رقم المعاملات الخاضع 13% — Base"
+    },
+    {
+      "key": "Vat.Rate13.Due",
+      "page": 5,
+      "x": 205.5,
+      "y": 290.5,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "رقم المعاملات الخاضع 13% — Due"
+    },
+    {
+      "key": "Vat.Rate19.Base",
+      "page": 5,
+      "x": 338.5,
+      "y": 303.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "رقم المعاملات الخاضع 19% — Base"
+    },
+    {
+      "key": "Vat.Rate19.Due",
+      "page": 5,
+      "x": 205.5,
+      "y": 303.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "رقم المعاملات الخاضع 19% — Due"
+    },
+    {
+      "key": "Vat.Purchase.RealEstate.Base",
+      "page": 5,
+      "x": 336.0,
+      "y": 395.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "شراء عقارات — Base"
+    },
+    {
+      "key": "Vat.Purchase.RealEstate.Deductible",
+      "page": 5,
+      "x": 108.0,
+      "y": 395.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "شراء عقارات — Deductible"
+    },
+    {
+      "key": "Vat.Purchase.EquipmentLocal.Base",
+      "page": 5,
+      "x": 336.0,
+      "y": 420.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "شراء معدات — محلية — Base"
+    },
+    {
+      "key": "Vat.Purchase.EquipmentLocal.Deductible",
+      "page": 5,
+      "x": 108.0,
+      "y": 420.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "شراء معدات — محلية — Deductible"
+    },
+    {
+      "key": "Vat.Purchase.EquipmentImported.Base",
+      "page": 5,
+      "x": 336.0,
+      "y": 434.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "شراء معدات — موردة — Base"
+    },
+    {
+      "key": "Vat.Purchase.EquipmentImported.Deductible",
+      "page": 5,
+      "x": 108.0,
+      "y": 434.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "شراء معدات — موردة — Deductible"
+    },
+    {
+      "key": "Vat.Purchase.OtherLocal.Base",
+      "page": 5,
+      "x": 336.0,
+      "y": 460.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "شراءات أخرى — محلية — Base"
+    },
+    {
+      "key": "Vat.Purchase.OtherLocal.Deductible",
+      "page": 5,
+      "x": 108.0,
+      "y": 460.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "شراءات أخرى — محلية — Deductible"
+    },
+    {
+      "key": "Vat.Purchase.OtherImported.Base",
+      "page": 5,
+      "x": 336.0,
+      "y": 473.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "شراءات أخرى — موردة — Base"
+    },
+    {
+      "key": "Vat.Purchase.OtherImported.Deductible",
+      "page": 5,
+      "x": 108.0,
+      "y": 473.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "شراءات أخرى — موردة — Deductible"
+    },
+    {
+      "key": "Vat.Total.Due",
+      "page": 5,
+      "x": 204.0,
+      "y": 666.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "أ.ق.م — المجموع المستوجب (I)"
+    },
+    {
+      "key": "Vat.Total.Deductible",
+      "page": 5,
+      "x": 108.0,
+      "y": 666.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "أ.ق.م — المجموع القابل للطرح (II)"
+    },
+    {
+      "key": "Vat.Remainder",
+      "page": 5,
+      "x": 208.0,
+      "y": 694.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الباقي: (ب) مستوجب أو (ف) فائض"
+    },
+    {
+      "key": "Vat.PreviousCredit",
+      "page": 5,
+      "x": 208.0,
+      "y": 709.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الفائض من الشهر السابق"
+    },
+    {
+      "key": "Fodec.Base",
+      "page": 6,
+      "x": 230.0,
+      "y": 476.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "صندوق تنمية القدرة التنافسية — المعلوم المهني 1% — Base"
+    },
+    {
+      "key": "Fodec.Amount",
+      "page": 6,
+      "x": 102.0,
+      "y": 476.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "صندوق تنمية القدرة التنافسية — المعلوم المهني 1% — Amount"
+    },
+    {
+      "key": "Recap.Withholding.Principal",
+      "page": 9,
+      "x": 378.0,
+      "y": 530.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — الخصم من المورد — Principal"
+    },
+    {
+      "key": "Recap.Withholding.Deduction",
+      "page": 9,
+      "x": 304.0,
+      "y": 530.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — الخصم من المورد — Deduction"
+    },
+    {
+      "key": "Recap.Withholding.Due",
+      "page": 9,
+      "x": 229.0,
+      "y": 530.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — الخصم من المورد — Due"
+    },
+    {
+      "key": "Recap.Withholding.Penalties",
+      "page": 9,
+      "x": 157.0,
+      "y": 530.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — الخصم من المورد — Penalties"
+    },
+    {
+      "key": "Recap.Withholding.Total",
+      "page": 9,
+      "x": 91.0,
+      "y": 530.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — الخصم من المورد — Total"
+    },
+    {
+      "key": "Recap.Tfp.Principal",
+      "page": 9,
+      "x": 378.0,
+      "y": 547.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — الأداء على التكوين المهني — Principal"
+    },
+    {
+      "key": "Recap.Tfp.Deduction",
+      "page": 9,
+      "x": 304.0,
+      "y": 547.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — الأداء على التكوين المهني — Deduction"
+    },
+    {
+      "key": "Recap.Tfp.Due",
+      "page": 9,
+      "x": 229.0,
+      "y": 547.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — الأداء على التكوين المهني — Due"
+    },
+    {
+      "key": "Recap.Tfp.Penalties",
+      "page": 9,
+      "x": 157.0,
+      "y": 547.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — الأداء على التكوين المهني — Penalties"
+    },
+    {
+      "key": "Recap.Tfp.Total",
+      "page": 9,
+      "x": 91.0,
+      "y": 547.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — الأداء على التكوين المهني — Total"
+    },
+    {
+      "key": "Recap.Foprolos.Principal",
+      "page": 9,
+      "x": 378.0,
+      "y": 569.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المساهمة في صندوق النهوض بالمسكن — Principal"
+    },
+    {
+      "key": "Recap.Foprolos.Deduction",
+      "page": 9,
+      "x": 304.0,
+      "y": 569.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المساهمة في صندوق النهوض بالمسكن — Deduction"
+    },
+    {
+      "key": "Recap.Foprolos.Due",
+      "page": 9,
+      "x": 229.0,
+      "y": 569.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المساهمة في صندوق النهوض بالمسكن — Due"
+    },
+    {
+      "key": "Recap.Foprolos.Penalties",
+      "page": 9,
+      "x": 157.0,
+      "y": 569.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المساهمة في صندوق النهوض بالمسكن — Penalties"
+    },
+    {
+      "key": "Recap.Foprolos.Total",
+      "page": 9,
+      "x": 91.0,
+      "y": 569.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المساهمة في صندوق النهوض بالمسكن — Total"
+    },
+    {
+      "key": "Recap.ConsumptionDuty.Principal",
+      "page": 9,
+      "x": 378.0,
+      "y": 593.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المعلوم على الاستهلاك — Principal"
+    },
+    {
+      "key": "Recap.ConsumptionDuty.Deduction",
+      "page": 9,
+      "x": 304.0,
+      "y": 593.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المعلوم على الاستهلاك — Deduction"
+    },
+    {
+      "key": "Recap.ConsumptionDuty.Due",
+      "page": 9,
+      "x": 229.0,
+      "y": 593.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المعلوم على الاستهلاك — Due"
+    },
+    {
+      "key": "Recap.ConsumptionDuty.Penalties",
+      "page": 9,
+      "x": 157.0,
+      "y": 593.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المعلوم على الاستهلاك — Penalties"
+    },
+    {
+      "key": "Recap.ConsumptionDuty.Total",
+      "page": 9,
+      "x": 91.0,
+      "y": 593.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المعلوم على الاستهلاك — Total"
+    },
+    {
+      "key": "Recap.Vat.Principal",
+      "page": 9,
+      "x": 378.0,
+      "y": 609.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — الأداء على القيمة المضافة — Principal"
+    },
+    {
+      "key": "Recap.Vat.Deduction",
+      "page": 9,
+      "x": 304.0,
+      "y": 609.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — الأداء على القيمة المضافة — Deduction"
+    },
+    {
+      "key": "Recap.Vat.Due",
+      "page": 9,
+      "x": 229.0,
+      "y": 609.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — الأداء على القيمة المضافة — Due"
+    },
+    {
+      "key": "Recap.Vat.Penalties",
+      "page": 9,
+      "x": 157.0,
+      "y": 609.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — الأداء على القيمة المضافة — Penalties"
+    },
+    {
+      "key": "Recap.Vat.Total",
+      "page": 9,
+      "x": 91.0,
+      "y": 609.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — الأداء على القيمة المضافة — Total"
+    },
+    {
+      "key": "Recap.OtherDuties.Principal",
+      "page": 9,
+      "x": 378.0,
+      "y": 626.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — معاليم أخرى — Principal"
+    },
+    {
+      "key": "Recap.OtherDuties.Deduction",
+      "page": 9,
+      "x": 304.0,
+      "y": 626.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — معاليم أخرى — Deduction"
+    },
+    {
+      "key": "Recap.OtherDuties.Due",
+      "page": 9,
+      "x": 229.0,
+      "y": 626.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — معاليم أخرى — Due"
+    },
+    {
+      "key": "Recap.OtherDuties.Penalties",
+      "page": 9,
+      "x": 157.0,
+      "y": 626.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — معاليم أخرى — Penalties"
+    },
+    {
+      "key": "Recap.OtherDuties.Total",
+      "page": 9,
+      "x": 91.0,
+      "y": 626.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — معاليم أخرى — Total"
+    },
+    {
+      "key": "Recap.StampDuty.Principal",
+      "page": 9,
+      "x": 378.0,
+      "y": 642.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — معاليم الطابع الجبائي — Principal"
+    },
+    {
+      "key": "Recap.StampDuty.Deduction",
+      "page": 9,
+      "x": 304.0,
+      "y": 642.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — معاليم الطابع الجبائي — Deduction"
+    },
+    {
+      "key": "Recap.StampDuty.Due",
+      "page": 9,
+      "x": 229.0,
+      "y": 642.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — معاليم الطابع الجبائي — Due"
+    },
+    {
+      "key": "Recap.StampDuty.Penalties",
+      "page": 9,
+      "x": 157.0,
+      "y": 642.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — معاليم الطابع الجبائي — Penalties"
+    },
+    {
+      "key": "Recap.StampDuty.Total",
+      "page": 9,
+      "x": 91.0,
+      "y": 642.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — معاليم الطابع الجبائي — Total"
+    },
+    {
+      "key": "Recap.HotelTax.Principal",
+      "page": 9,
+      "x": 378.0,
+      "y": 676.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المعلوم على النزل — Principal"
+    },
+    {
+      "key": "Recap.HotelTax.Deduction",
+      "page": 9,
+      "x": 304.0,
+      "y": 676.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المعلوم على النزل — Deduction"
+    },
+    {
+      "key": "Recap.HotelTax.Due",
+      "page": 9,
+      "x": 229.0,
+      "y": 676.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المعلوم على النزل — Due"
+    },
+    {
+      "key": "Recap.HotelTax.Penalties",
+      "page": 9,
+      "x": 157.0,
+      "y": 676.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المعلوم على النزل — Penalties"
+    },
+    {
+      "key": "Recap.HotelTax.Total",
+      "page": 9,
+      "x": 91.0,
+      "y": 676.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المعلوم على النزل — Total"
+    },
+    {
+      "key": "Recap.Tcl.Principal",
+      "page": 9,
+      "x": 378.0,
+      "y": 700.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المعلوم على المؤسسات — Principal"
+    },
+    {
+      "key": "Recap.Tcl.Deduction",
+      "page": 9,
+      "x": 304.0,
+      "y": 700.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المعلوم على المؤسسات — Deduction"
+    },
+    {
+      "key": "Recap.Tcl.Due",
+      "page": 9,
+      "x": 229.0,
+      "y": 700.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المعلوم على المؤسسات — Due"
+    },
+    {
+      "key": "Recap.Tcl.Penalties",
+      "page": 9,
+      "x": 157.0,
+      "y": 700.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المعلوم على المؤسسات — Penalties"
+    },
+    {
+      "key": "Recap.Tcl.Total",
+      "page": 9,
+      "x": 91.0,
+      "y": 700.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المعلوم على المؤسسات — Total"
+    },
+    {
+      "key": "Recap.LicenceFee.Principal",
+      "page": 9,
+      "x": 378.0,
+      "y": 724.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — معلوم الإجازة — Principal"
+    },
+    {
+      "key": "Recap.LicenceFee.Deduction",
+      "page": 9,
+      "x": 304.0,
+      "y": 724.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — معلوم الإجازة — Deduction"
+    },
+    {
+      "key": "Recap.LicenceFee.Due",
+      "page": 9,
+      "x": 229.0,
+      "y": 724.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — معلوم الإجازة — Due"
+    },
+    {
+      "key": "Recap.LicenceFee.Penalties",
+      "page": 9,
+      "x": 157.0,
+      "y": 724.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — معلوم الإجازة — Penalties"
+    },
+    {
+      "key": "Recap.LicenceFee.Total",
+      "page": 9,
+      "x": 91.0,
+      "y": 724.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — معلوم الإجازة — Total"
+    },
+    {
+      "key": "Recap.Total.Principal",
+      "page": 9,
+      "x": 378.0,
+      "y": 741.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المجموع — Principal"
+    },
+    {
+      "key": "Recap.Total.Deduction",
+      "page": 9,
+      "x": 304.0,
+      "y": 741.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المجموع — Deduction"
+    },
+    {
+      "key": "Recap.Total.Due",
+      "page": 9,
+      "x": 229.0,
+      "y": 741.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المجموع — Due"
+    },
+    {
+      "key": "Recap.Total.Penalties",
+      "page": 9,
+      "x": 157.0,
+      "y": 741.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المجموع — Penalties"
+    },
+    {
+      "key": "Recap.Total.Total",
+      "page": 9,
+      "x": 91.0,
+      "y": 741.1,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "خلاصة — المجموع — Total"
+    }
+  ]
+}

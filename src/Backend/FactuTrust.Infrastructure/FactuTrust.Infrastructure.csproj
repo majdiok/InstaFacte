@@ -32,6 +32,8 @@
 
     <!-- PDF Generation (Open Source) -->
     <PackageReference Include="QuestPDF" Version="2024.3.0" />
+    <!-- Tamponnage de formulaires officiels préimprimés (QuestPDF ne sait pas importer un PDF existant) -->
+    <PackageReference Include="PdfSharp" Version="6.2.1" />
     <PackageReference Include="Humanizer" Version="2.14.1" />
     <PackageReference Include="QRCoder" Version="1.6.0" />
 
@@ -97,6 +99,11 @@
   <ItemGroup>
     <EmbeddedResource Include="Resources\TejSchemas\*.xsd" />
     <EmbeddedResource Include="Services\Forecasting\Calendar\Resources\*.json" />
+    <!-- Formulaires officiels DGI : gabarit vierge préimprimé, carte des coordonnées de
+         tamponnage et police embarquée (l'image runtime n'installe aucune police système). -->
+    <EmbeddedResource Include="Resources\OfficialForms\*.pdf" />
+    <EmbeddedResource Include="Resources\OfficialForms\*.json" />
+    <EmbeddedResource Include="Resources\OfficialForms\Fonts\Lato-Regular.ttf" />
   </ItemGroup>
 
   <ItemGroup>

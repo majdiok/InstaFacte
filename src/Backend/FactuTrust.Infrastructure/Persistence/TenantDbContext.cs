@@ -424,8 +424,16 @@ public partial class TenantDbContext : DbContext
         // Honoraires Module — defined in TenantDbContext.Honoraires.cs (partial class).
         ConfigureHonoraires(builder);
 
+        // Accounting audit module — defined in TenantDbContext.AccountingAudit.cs (partial class).
+        ConfigureAccountingAudit(builder);
+
         // Payroll Module (RH & Paie) — defined in TenantDbContext.Payroll.cs (partial class).
         ConfigurePayroll(builder);
+
+        // DOIT rester la dernière étape : normalise toutes les clés Guid.Id des entités du domaine
+        // en ValueGenerated.Never (le constructeur d'Entity a déjà positionné l'Id). Voir
+        // PersistenceConventions.ApplyClientGeneratedGuidKeys pour le détail.
+        PersistenceConventions.ApplyClientGeneratedGuidKeys(builder);
     }
 
     private static void ConfigureDemoDataset(ModelBuilder builder)

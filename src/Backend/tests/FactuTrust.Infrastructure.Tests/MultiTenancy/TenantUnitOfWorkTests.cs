@@ -6,6 +6,8 @@ using FactuTrust.Infrastructure.Persistence;
 using FactuTrust.Infrastructure.Repositories;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -42,11 +44,17 @@ public sealed class TenantUnitOfWorkTests : IDisposable
         var tenantContext = new Mock<ITenantContext>();
         tenantContext.SetupGet(c => c.ConnectionString).Returns(_connectionString);
 
+        var hostEnvironment = new Mock<IHostEnvironment>();
+        hostEnvironment.SetupGet(e => e.EnvironmentName).Returns(Environments.Development);
+
         _factory = new TenantDbContextFactory(
             tenantContext.Object,
             new Mock<IMediator>().Object,
             _ambient,
-            NullLogger<TenantDbContext>.Instance);
+            NullLogger<TenantDbContext>.Instance,
+            NullLoggerFactory.Instance,
+            new ConfigurationBuilder().Build(),
+            hostEnvironment.Object);
         _unitOfWork = new TenantUnitOfWork(_factory, _ambient, NullLogger<TenantUnitOfWork>.Instance);
     }
 

@@ -13,6 +13,20 @@ public interface IPdfService
     /// <summary>Génère le PDF de la déclaration mensuelle des impôts (toutes les cases).</summary>
     Task<byte[]> GenerateVatDeclarationPdfAsync(VatDeclarationDto declaration, string companyName, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Génère la déclaration mensuelle sur le <b>formulaire officiel de la DGI</b>
+    /// (« التصريح الشهري بالأداءات ») : le gabarit préimprimé est repris tel quel et seules les
+    /// valeurs sont tamponnées dans les cases réglementaires.
+    /// </summary>
+    /// <param name="withholdingLines">
+    /// Ventilation de la retenue à la source par ligne officielle du formulaire. Null ou vide =
+    /// seul le total est reporté.
+    /// </param>
+    Task<byte[]> GenerateMonthlyDeclarationOfficialFormPdfAsync(
+        VatDeclarationDto declaration,
+        IReadOnlyDictionary<string, decimal>? withholdingLines = null,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Génère le PDF de la liasse NCT (bilan, résultat, flux, capitaux, notes agrégées) — chemin legacy.</summary>
     Task<byte[]> GenerateNctLiassePdfAsync(NctFinancialStatementsDto statements, string companyName, CancellationToken cancellationToken = default);
 

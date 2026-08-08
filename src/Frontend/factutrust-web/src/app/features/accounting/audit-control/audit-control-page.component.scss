@@ -1,0 +1,172 @@
+@use '../shared/accounting-layout';
+
+.ac-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  align-items: center;
+}
+
+.ac-toolbar-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-4);
+  align-items: flex-end;
+}
+
+.ac-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--spacing-4);
+  margin-bottom: var(--spacing-4);
+}
+
+.ac-last-run {
+  padding: var(--spacing-3) var(--spacing-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  font-size: var(--font-size-sm);
+}
+
+.ac-last-run__label { color: var(--color-text-secondary); }
+.ac-last-run__meta { color: var(--color-text-tertiary); }
+
+.ac-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  margin-bottom: var(--spacing-3);
+}
+
+.ac-tab {
+  border: 1px solid var(--color-border);
+  background: var(--color-background);
+  border-radius: var(--radius-pill);
+  padding: 0.35rem 0.85rem;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.ac-tab--active {
+  background: var(--color-primary-500);
+  color: #fff;
+  border-color: var(--color-primary-500);
+}
+
+.ac-main-layout { margin-bottom: var(--spacing-5); }
+.ac-row-clickable { cursor: pointer; }
+.ac-cell-title { font-weight: var(--font-weight-semibold); }
+.ac-cell-sub { font-size: var(--font-size-sm); color: var(--color-text-secondary); }
+.text-right { text-align: right; }
+.ac-empty { text-align: center; padding: 2rem; }
+
+.ac-badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-pill, 999px);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+.ac-badge--blocking { background: #fee2e2; color: #b91c1c; }
+.ac-badge--warning { background: #fef3c7; color: #a16207; }
+.ac-badge--info { background: var(--color-background-subtle); color: var(--color-text-tertiary); }
+
+.ac-link { color: var(--color-primary-500); text-decoration: none; font-weight: 500; margin-right: 0.5rem; }
+.ac-link--btn { background: none; border: none; cursor: pointer; padding: 0; font: inherit; }
+
+.ac-section-title {
+  font-size: var(--font-size-lg);
+  margin: 0 0 var(--spacing-3);
+}
+
+.ac-analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--spacing-4);
+  margin-bottom: var(--spacing-5);
+}
+
+.ac-chart-card h3, .ac-top-accounts h3, .ac-activity h3 {
+  font-size: var(--font-size-sm);
+  margin: 0 0 var(--spacing-3);
+}
+
+.ac-top-accounts ul, .ac-activity ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: var(--font-size-sm);
+}
+
+.ac-top-accounts li {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.ac-activity li { padding: 0.35rem 0; border-bottom: 1px solid var(--color-border-subtle); }
+.ac-activity em { color: var(--color-text-tertiary); margin-left: 0.25rem; }
+
+.ac-modules-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--spacing-3);
+  margin-bottom: var(--spacing-6);
+}
+
+.ac-module-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-2);
+  padding: var(--spacing-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-background);
+  cursor: pointer;
+  text-align: left;
+}
+
+.ac-module-tile--active {
+  border-color: var(--color-primary-500);
+  box-shadow: 0 0 0 1px var(--color-primary-500);
+}
+
+.ac-module-tile__count {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+}
+
+.ac-detail__header {
+  display: flex;
+  gap: var(--spacing-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--spacing-2);
+  font-size: var(--font-size-sm);
+}
+
+.ac-detail__impact { color: var(--color-text-secondary); }
+.ac-detail__reco ol { margin: var(--spacing-2) 0 0; padding-left: 1.25rem; }
+
+.ac-detail__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-4);
+}
+
+.ac-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+}
+.ac-btn--primary { background: var(--color-danger-500, #dc2626); color: #fff; }
+.ac-btn--secondary { background: var(--color-background-subtle); color: var(--color-text); }

@@ -299,6 +299,10 @@ public static class DependencyInjection
         services.AddScoped<IInvoicePdfContextLoader, InvoicePdfContextLoader>();
         services.AddScoped<IPdfService, PdfService>();
 
+        // Tamponnage des formulaires officiels préimprimés (déclaration mensuelle DGI).
+        // Singleton : sans état, et les gabarits/cartes embarqués sont mis en cache au 1er appel.
+        services.AddSingleton<Services.OfficialForms.OfficialFormStamper>();
+
         // Modèles visuels d'impression (configuration par type de document + surcharge à l'impression).
         services.AddSingleton<IDocumentTemplate, Services.Templates.StandardDocumentTemplate>();
         services.AddSingleton<IDocumentTemplate, Services.Templates.ClassicTvaSyntheseTemplate>();
@@ -389,6 +393,7 @@ public static class DependencyInjection
         services.AddScoped<IRecurringEntryService, RecurringEntryService>();
         services.AddScoped<IPreClosingControlService, PreClosingControlService>();
         services.AddScoped<IAccountingHealthService, AccountingHealthService>();
+        RegisterAccountingAuditServices(services);
         services.AddScoped<IAssistedInventoryEntryService, AssistedInventoryEntryService>();
         services.AddScoped<IFiscalYearLockService, FiscalYearLockService>();
         services.AddScoped<FactuTrust.Infrastructure.Services.Background.RecurringEntriesJob>();
@@ -604,6 +609,54 @@ public static class DependencyInjection
         {
             options.AddInterceptors(sp.GetRequiredService<MasterDbConcurrencyDiagnosticsInterceptor>());
         }
+    }
+
+    private static void RegisterAccountingAuditServices(IServiceCollection services)
+    {
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.DraftEntriesAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.UnbalancedEntriesAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.SuspenseAccountsAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.UnletteredLinesAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.DepreciationAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.VatMissingDeclarationAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.OpenPeriodsAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.SequenceGapsAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.OrphanAccountsAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.OutOfPeriodAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.PieceDuplicatesAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.ThirdPartyMislinkAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.MissingAttachmentsAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.VatDeductibleNoProofAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.BankReconciliationIncompleteAuditRule>();
+
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.AccountingAuditRuleRegistry>(sp =>
+        {
+            var rules = sp.GetServices<IAccountingAuditRule>().ToList();
+            return new FactuTrust.Infrastructure.Services.AccountingAudit.AccountingAuditRuleRegistry(rules);
+        });
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.DraftEntriesAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.UnbalancedEntriesAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.SuspenseAccountsAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.UnletteredLinesAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.DepreciationAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.VatMissingDeclarationAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.OpenPeriodsAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.SequenceGapsAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.OrphanAccountsAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.OutOfPeriodAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.PieceDuplicatesAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.ThirdPartyMislinkAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.MissingAttachmentsAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.VatDeductibleNoProofAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.BankReconciliationIncompleteAuditRule>();
+
+        services.AddScoped<IAccountingAuditEngine, FactuTrust.Infrastructure.Services.AccountingAudit.AccountingAuditEngine>();
+        services.AddScoped<IAccountingAuditQueryService, FactuTrust.Infrastructure.Services.AccountingAudit.AccountingAuditQueryService>();
+        services.AddScoped<IAccountingAuditWorkflowService, FactuTrust.Infrastructure.Services.AccountingAudit.AccountingAuditWorkflowService>();
+        services.AddScoped<IAccountingAuditExportService, FactuTrust.Infrastructure.Services.AccountingAudit.AccountingAuditExportService>();
+        services.AddScoped<IAccountingAuditScheduleService, FactuTrust.Infrastructure.Services.AccountingAudit.AccountingAuditScheduleService>();
+        services.AddScoped<IAccountingAuditRuleSettingsService, FactuTrust.Infrastructure.Services.AccountingAudit.AccountingAuditRuleSettingsService>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.Background.AccountingAuditScheduledJob>();
     }
 }
 

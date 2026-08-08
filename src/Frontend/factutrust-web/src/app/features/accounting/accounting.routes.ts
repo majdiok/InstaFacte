@@ -130,7 +130,7 @@ export const ACCOUNTING_ROUTES: Routes = [
   {
     path: 'health',
     loadComponent: () =>
-      import('./health/health.component').then(m => m.AccountingHealthComponent),
+      import('./audit-control/audit-control-page.component').then(m => m.AuditControlPageComponent),
     title: "Contrôle d'intégrité - InstaFact"
   },
   {

@@ -186,4 +186,28 @@ describe('HonorairesRecordPaymentDialogComponent', () => {
     );
     expect(component.visible).toBeTrue();
   });
+
+  it('on 409 concurrency conflict warns, reloads parent and closes', () => {
+    recordPayment.and.returnValue(
+      throwError(() => ({ status: 409, error: { code: 'CONCURRENCY_CONFLICT' } }))
+    );
+    component.visible = true;
+    fixture.detectChanges();
+
+    const recordedSpy = spyOn(component.paymentRecorded, 'emit');
+    const visibleSpy = spyOn(component.visibleChange, 'emit');
+
+    component.amount = 50;
+    component.clientWithholdingAmount = 0;
+    component.method = 1;
+    component.paymentDate = new Date();
+    component.submit();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      jasmine.objectContaining({ severity: 'warn', summary: 'Conflit d\u2019encaissement' })
+    );
+    expect(recordedSpy).toHaveBeenCalled();
+    expect(visibleSpy).toHaveBeenCalledWith(false);
+    expect(component.visible).toBeFalse();
+  });
 });

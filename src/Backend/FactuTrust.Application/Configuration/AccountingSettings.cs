@@ -37,6 +37,14 @@ public sealed class AccountingSettings
     public bool MonthlyDeclarationV2Enabled { get; set; }
 
     /// <summary>
+    /// Active l'export de la déclaration mensuelle au format du <b>formulaire officiel DGI</b>
+    /// (tamponnage du gabarit arabe préimprimé « التصريح الشهري بالأداءات »). Quand false, seul le
+    /// PDF de synthèse historique est exposé — le bouton correspondant est masqué et l'endpoint
+    /// refuse la demande. Sans effet sur le calcul de la déclaration.
+    /// </summary>
+    public bool MonthlyDeclarationOfficialFormEnabled { get; set; }
+
+    /// <summary>
     /// Active les états financiers au format NCT (bilan/résultat structurés + flux + variation des
     /// capitaux propres + notes). Quand false, seuls les états historiques sont exposés.
     /// </summary>
@@ -159,6 +167,23 @@ public sealed class AccountingSettings
     /// Aucune action corrective (jamais de mutation). OFF = endpoint indisponible.
     /// </summary>
     public bool AccountingHealthEnabled { get; set; }
+
+    /// <summary>
+    /// Active le tableau de bord d'audit comptable (anomalies granulaires, KPI, analytics).
+    /// OFF = l'écran /accounting/health conserve l'UI checklist simple.
+    /// </summary>
+    public bool AccountingAuditDashboardEnabled { get; set; }
+
+    /// <summary>
+    /// Persiste les runs de contrôle et les anomalies détectées (workflow collaboratif).
+    /// OFF = évaluation à la volée sans écriture en base.
+    /// </summary>
+    public bool AccountingAuditPersistenceEnabled { get; set; }
+
+    /// <summary>
+    /// Active la planification Hangfire des contrôles automatiques.
+    /// </summary>
+    public bool AccountingAuditSchedulingEnabled { get; set; }
 
     /// <summary>
     /// Active le lien trésorerie paie : enregistrement des paiements de salaires, écritures JB/JC

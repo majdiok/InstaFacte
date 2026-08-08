@@ -1,9 +1,14 @@
 using FactuTrust.Application.Accounting;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.Accounting.OfficialForm;
+using FactuTrust.Application.Features.WithholdingTax.Queries;
 using FactuTrust.Domain.Common;
 using MediatR;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace FactuTrust.Application.Features.Accounting.Queries;
 
@@ -37,6 +42,77 @@ public sealed class ExportVatDeclarationPdfQueryHandler : IRequestHandler<Export
 
         var company = await _companies.GetDefaultAsync(cancellationToken);
         var bytes = await _pdf.GenerateVatDeclarationPdfAsync(declaration.Value, company?.Name ?? "Société", cancellationToken);
+        return Result.Success(bytes);
+    }
+}
+
+// ── Export de la déclaration mensuelle sur le formulaire officiel DGI ──────────
+
+/// <summary>
+/// Produit la déclaration mensuelle sur le gabarit officiel préimprimé de la DGI. Distinct de
+/// <see cref="ExportVatDeclarationPdfQuery"/>, qui continue de servir la synthèse interne.
+/// </summary>
+public sealed record ExportMonthlyDeclarationOfficialFormQuery(
+    int Year,
+    int Month,
+    bool EnforceCompanySubmittedOnly = false) : IRequest<Result<byte[]>>;
+
+public sealed class ExportMonthlyDeclarationOfficialFormQueryHandler
+    : IRequestHandler<ExportMonthlyDeclarationOfficialFormQuery, Result<byte[]>>
+{
+    private readonly IMediator _mediator;
+    private readonly IPdfService _pdf;
+    private readonly AccountingSettings _settings;
+    private readonly ILogger<ExportMonthlyDeclarationOfficialFormQueryHandler> _logger;
+
+    public ExportMonthlyDeclarationOfficialFormQueryHandler(
+        IMediator mediator,
+        IPdfService pdf,
+        IOptions<AccountingSettings> settings,
+        ILogger<ExportMonthlyDeclarationOfficialFormQueryHandler> logger)
+    {
+        _mediator = mediator;
+        _pdf = pdf;
+        _settings = settings.Value;
+        _logger = logger;
+    }
+
+    public async Task<Result<byte[]>> Handle(
+        ExportMonthlyDeclarationOfficialFormQuery request,
+        CancellationToken cancellationToken)
+    {
+        if (!_settings.MonthlyDeclarationOfficialFormEnabled)
+            return Result.Failure<byte[]>(Error.Forbidden(
+                "L'export au format du formulaire officiel n'est pas activé pour ce dossier."));
+
+        var declaration = await _mediator.Send(
+            new GetVatDeclarationQuery(request.Year, request.Month, request.EnforceCompanySubmittedOnly),
+            cancellationToken);
+        if (declaration.IsFailure)
+            return Result.Failure<byte[]>(declaration.Error);
+
+        // Ventilation de la retenue à la source sur les lignes réglementaires. Best-effort : une
+        // indisponibilité du rapport RS ne doit jamais empêcher l'édition de la déclaration, le
+        // montant total restant porté par la page 4 et le récapitulatif.
+        IReadOnlyDictionary<string, decimal>? withholdingLines = null;
+        try
+        {
+            var report = await _mediator.Send(
+                new GetWithholdingMonthlyReportQuery(request.Year, request.Month), cancellationToken);
+
+            withholdingLines = WithholdingFormLineMapper.Map(
+                report.ByCategory, declaration.Value.WithholdingTax);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex,
+                "Formulaire officiel {Year}-{Month:D2} : ventilation de la retenue à la source indisponible, " +
+                "seul le total sera reporté.", request.Year, request.Month);
+        }
+
+        var bytes = await _pdf.GenerateMonthlyDeclarationOfficialFormPdfAsync(
+            declaration.Value, withholdingLines, cancellationToken);
+
         return Result.Success(bytes);
     }
 }

@@ -119,7 +119,7 @@ export class TerminationSettlementFormComponent implements OnInit {
   notes = '';
 
   ngOnInit(): void {
-    this.employeesApi.list(1, 500, undefined, true).subscribe(res => this.employees.set(res.data?.items ?? []));
+    this.employeesApi.list(undefined, true, 1, 500).subscribe(res => this.employees.set(res.data?.items ?? []));
   }
 
   preview(): void {
@@ -130,7 +130,7 @@ export class TerminationSettlementFormComponent implements OnInit {
         this.previewData.set(res.data ?? null);
         if (res.data) this.legalIndemnity = res.data.legalIndemnityAmount;
       },
-      error: err => this.toast.error(err?.error?.message ?? 'Calcul impossible.')
+      error: err => this.toast.add({ severity: 'error', summary: 'Solde de rupture', detail: err?.error?.message ?? 'Calcul impossible.' })
     });
   }
 
@@ -151,8 +151,8 @@ export class TerminationSettlementFormComponent implements OnInit {
       notes: this.notes || undefined,
       approve
     }).subscribe({
-      next: () => { this.toast.success('Solde enregistré.'); this.router.navigate(['/payroll/terminations']); },
-      error: err => this.toast.error(err?.error?.message ?? 'Enregistrement impossible.')
+      next: () => { this.toast.add({ severity: 'success', summary: 'Solde de rupture', detail: 'Solde enregistré.' }); this.router.navigate(['/payroll/terminations']); },
+      error: err => this.toast.add({ severity: 'error', summary: 'Solde de rupture', detail: err?.error?.message ?? 'Enregistrement impossible.' })
     });
   }
 

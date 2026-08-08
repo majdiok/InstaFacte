@@ -216,7 +216,11 @@ public sealed class GetVatDeclarationQueryHandler : IRequestHandler<GetVatDeclar
             CompanyName = tenantSummary?.CompanyName ?? string.Empty,
             Nif = tenantSummary?.Nif ?? string.Empty,
             TaxRegimeDisplay = tenantSummary?.TaxRegimeDisplay ?? string.Empty,
-            TradeName = tenantSummary?.TradeName
+            TradeName = tenantSummary?.TradeName,
+            // Déjà chargée par le provider mais jusqu'ici non remontée : l'en-tête du formulaire
+            // officiel en a besoin.
+            AddressLine = tenantSummary?.AddressLine,
+            OfficialFormEnabled = _settings.MonthlyDeclarationOfficialFormEnabled
         };
 
         return Result.Success(dto);

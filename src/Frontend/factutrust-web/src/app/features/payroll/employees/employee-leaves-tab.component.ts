@@ -10,6 +10,7 @@ import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
 import { Textarea } from 'primeng/textarea';
 import { CheckboxModule } from 'primeng/checkbox';
+import { TooltipModule } from 'primeng/tooltip';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { EmployeeService } from '@core/services/employee.service';
 import { PayrollService, LeaveRequest, LeaveBalance } from '@core/services/payroll.service';
