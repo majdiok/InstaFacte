@@ -459,7 +459,10 @@ export class ManualEntryComponent implements OnInit {
       if (this.showSaveTemplate()) { this.closeSaveTemplate(); event.preventDefault(); return; }
       return;
     }
-    if (this.showTemplatePicker() || this.showSaveTemplate()) return;
+    // La modale d'import est un p-dialog : il gère Échap lui-même. En revanche les raccourcis
+    // d'édition ne doivent pas traverser la modale — Ctrl+S enregistrerait l'écriture en cours
+    // pendant l'analyse d'une facture.
+    if (this.showTemplatePicker() || this.showSaveTemplate() || this.documentImportVisible()) return;
 
     if ((event.ctrlKey || event.metaKey) && (event.key === 's' || event.key === 'S')) {
       event.preventDefault();

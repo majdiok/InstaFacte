@@ -14,7 +14,7 @@ import { PERMISSIONS } from '@core/config/permission-keys';
       <div class="entry-toolbar__left">
         <div class="dropdown">
           <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle"
-                  (click)="toggleOptions()" [attr.aria-expanded]="optionsOpen">
+                  (click)="toggleOptions($event)" [attr.aria-expanded]="optionsOpen">
             Options d'écriture
           </button>
           @if (optionsOpen) {
@@ -52,7 +52,7 @@ import { PERMISSIONS } from '@core/config/permission-keys';
 
         <div class="dropdown">
           <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle"
-                  (click)="toggleTemplate()" [attr.aria-expanded]="templateOpen">
+                  (click)="toggleTemplate($event)" [attr.aria-expanded]="templateOpen">
             Modèle
           </button>
           @if (templateOpen) {
@@ -70,7 +70,7 @@ import { PERMISSIONS } from '@core/config/permission-keys';
 
         <div class="dropdown">
           <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle"
-                  (click)="toggleImport()" [attr.aria-expanded]="importOpen"
+                  (click)="toggleImport($event)" [attr.aria-expanded]="importOpen"
                   title="Importer une pièce ou des écritures">
             Import
           </button>
@@ -100,7 +100,7 @@ import { PERMISSIONS } from '@core/config/permission-keys';
             {{ store.loading() ? 'Enregistrement…' : 'Enregistrer' }}
           </button>
           <button type="button" class="btn btn-primary dropdown-toggle dropdown-toggle-split"
-                  (click)="toggleSaveMenu()" [attr.aria-expanded]="saveMenuOpen"
+                  (click)="toggleSaveMenu($event)" [attr.aria-expanded]="saveMenuOpen"
                   [disabled]="!canSave()"></button>
           @if (saveMenuOpen) {
             <div class="dropdown-menu dropdown-menu-end show">
@@ -156,12 +156,36 @@ export class EntryToolbarComponent {
     this.store.canSubmit() && this.auth.hasPermission(PERMISSIONS.accounting.create)
   );
 
-  toggleOptions(): void { this.optionsOpen = !this.optionsOpen; this.templateOpen = false; this.saveMenuOpen = false; this.importOpen = false; }
-  toggleTemplate(): void { this.templateOpen = !this.templateOpen; this.optionsOpen = false; this.saveMenuOpen = false; this.importOpen = false; }
-  toggleSaveMenu(): void { this.saveMenuOpen = !this.saveMenuOpen; this.optionsOpen = false; this.templateOpen = false; this.importOpen = false; }
-  toggleImport(): void { this.importOpen = !this.importOpen; this.optionsOpen = false; this.templateOpen = false; this.saveMenuOpen = false; }
+  // Chaque bouton d'ouverture DOIT arrêter la propagation : sans cela le clic remonte jusqu'à
+  // `document`, où `closeMenus()` referme le menu dans la même propagation — avant même le
+  // premier cycle de rendu. Le menu ne s'afficherait jamais.
+  toggleOptions(ev: MouseEvent): void {
+    ev.stopPropagation();
+    this.optionsOpen = !this.optionsOpen;
+    this.templateOpen = false; this.saveMenuOpen = false; this.importOpen = false;
+  }
 
+  toggleTemplate(ev: MouseEvent): void {
+    ev.stopPropagation();
+    this.templateOpen = !this.templateOpen;
+    this.optionsOpen = false; this.saveMenuOpen = false; this.importOpen = false;
+  }
+
+  toggleSaveMenu(ev: MouseEvent): void {
+    ev.stopPropagation();
+    this.saveMenuOpen = !this.saveMenuOpen;
+    this.optionsOpen = false; this.templateOpen = false; this.importOpen = false;
+  }
+
+  toggleImport(ev: MouseEvent): void {
+    ev.stopPropagation();
+    this.importOpen = !this.importOpen;
+    this.optionsOpen = false; this.templateOpen = false; this.saveMenuOpen = false;
+  }
+
+  /** Branché sur `document:click` : referme au clic extérieur, sans cycle inutile si tout est déjà fermé. */
   closeMenus(): void {
+    if (!this.optionsOpen && !this.templateOpen && !this.saveMenuOpen && !this.importOpen) return;
     this.optionsOpen = false;
     this.templateOpen = false;
     this.saveMenuOpen = false;
