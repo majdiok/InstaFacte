@@ -20,6 +20,7 @@ de ces chaînes dans `src/Frontend/factutrust-web/src/**`.
 | Message console | Source | Origine |
 |---|---|---|
 | `[MindStudio][Messaging] Runtime message failed: {type:'launcher/current_url_updated', …}` | `content.js` | Extension **MindStudio** (content script) |
+| `[Auth] Failed to get auth status:` + `message port closed` / `Receiving end does not exist` | `panelState-*.js` | Extension navigateur (content script ↔ service worker suspendu) |
 | `Uncaught (in promise) Error: Could not establish connection. Receiving end does not exist.` | `ai-assistant:1` (URL de la page) | Content script ↔ service worker d’extension suspendu |
 | `Unchecked runtime.lastError: Could not establish connection. Receiving end does not exist.` | — | API `chrome.runtime` d’extension (émis par Chrome) |
 
@@ -64,11 +65,12 @@ Initiator).
 ### Filtre console dev (confort, optionnel)
 
 En build **développement** uniquement, un filtre (`src/app/core/utils/dev-console-noise-filter.ts`,
-branché dans `main.ts` sous `isDevMode()`) neutralise le **rejet de promesse** d’extension
-`Uncaught (in promise) … Could not establish connection. Receiving end does not exist.` (via
-`window.addEventListener(‘unhandledrejection’)` + `preventDefault` sur la **chaîne exacte**). Il ne
-touche **ni la production, ni les intercepteurs HTTP, ni `console.error`/`console.warn`** (donc
-l’attribution des sources d’erreurs dans DevTools reste correcte). Le reste du bruit d’extension —
+branché dans `main.ts` sous `isDevMode()`) neutralise :
+
+- le **rejet de promesse** d’extension `Uncaught (in promise) … Could not establish connection. Receiving end does not exist.` (via `window.addEventListener('unhandledrejection')` + `preventDefault` sur la **chaîne exacte**) ;
+- les logs **`[Auth] Failed to get auth status`** et **`message port closed`** émis via `console.warn` / `console.error` par des scripts d’extension (`panelState-*.js`).
+
+Il ne touche **ni la production, ni les intercepteurs HTTP**. Les wrappers `console.warn` / `console.error` ne filtrent que des signatures documentées d’extensions ; les logs applicatifs réels restent affichés. Le reste du bruit d’extension —
 logs `[MindStudio]` (via `console.error`), `Unchecked runtime.lastError` (émis par Chrome), rejets
 du « monde isolé » des content scripts — n’est pas interceptable depuis la page → utiliser le toggle
 DevTools **« Hide messages from extensions »**.
