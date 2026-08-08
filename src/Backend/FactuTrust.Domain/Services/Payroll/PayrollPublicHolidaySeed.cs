@@ -11,10 +11,18 @@ public static class PayrollPublicHolidaySeed
 {
     public static IReadOnlyList<PayrollPublicHoliday> GetDefaultsForYear(int year)
     {
-        var holidays = new List<PayrollPublicHoliday>();
-        holidays.AddRange(GetFixedHolidays(year));
-        holidays.AddRange(GetIslamicHolidays(year));
-        return holidays;
+        var byDate = new Dictionary<DateTime, PayrollPublicHoliday>();
+
+        foreach (var holiday in GetFixedHolidays(year).Concat(GetIslamicHolidays(year)))
+        {
+            var date = holiday.Date.Date;
+            if (byDate.TryGetValue(date, out var existing))
+                byDate[date] = MergeHolidays(existing, holiday);
+            else
+                byDate[date] = holiday;
+        }
+
+        return byDate.Values.OrderBy(h => h.Date).ToList();
     }
 
     public static IReadOnlyList<PayrollPublicHoliday> GetDefaultsForYears(IEnumerable<int> years) =>
@@ -37,6 +45,30 @@ public static class PayrollPublicHolidaySeed
             if (result.IsSuccess)
                 yield return result.Value;
         }
+    }
+
+    private static PayrollPublicHoliday MergeHolidays(PayrollPublicHoliday existing, PayrollPublicHoliday incoming)
+    {
+        var mergedLabel = $"{existing.Label} / {incoming.Label}";
+        var mergedKind = existing.Kind == PublicHolidayKind.Fixed || incoming.Kind == PublicHolidayKind.Fixed
+            ? PublicHolidayKind.Fixed
+            : PublicHolidayKind.Islamic;
+        var mergedRefs = new[] { existing.DecreeReference, incoming.DecreeReference }
+            .Where(r => !string.IsNullOrWhiteSpace(r))
+            .Distinct()
+            .ToList();
+        var mergedRef = mergedRefs.Count > 0 ? string.Join(" ; ", mergedRefs) : null;
+
+        var result = PayrollPublicHoliday.Create(
+            existing.Year,
+            existing.Date,
+            mergedLabel,
+            mergedKind,
+            isPaid: existing.IsPaid && incoming.IsPaid,
+            isEstimated: existing.IsEstimated || incoming.IsEstimated,
+            decreeReference: mergedRef);
+
+        return result.IsSuccess ? result.Value : existing;
     }
 
     private static IEnumerable<PayrollPublicHoliday> GetIslamicHolidays(int year)

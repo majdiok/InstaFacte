@@ -133,6 +133,7 @@ public sealed class SeedPublicHolidaysCommandHandler : IRequestHandler<SeedPubli
                 }
 
                 toInsert.Add(seed);
+                existingDates.Add(seed.Date.Date);
             }
         }
 
