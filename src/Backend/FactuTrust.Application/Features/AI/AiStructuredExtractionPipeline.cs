@@ -1,9 +1,11 @@
 using System.Diagnostics;
 using System.Text;
+using System.Text.Json;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.AI.DTOs;
+using FactuTrust.Application.Features.AI.Json;
 using FactuTrust.Domain.Common;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -36,6 +38,16 @@ public sealed record AiStructuredExtractionRequest
     public int MaxTextChars { get; init; } = 60_000;
 
     public int MaxImages { get; init; } = 10;
+
+    /// <summary>Force le chemin vision (repli après échec de parsing JSON sur une image).</summary>
+    public bool ForceVision { get; init; }
+
+    /// <summary>
+    /// Schéma JSON contraignant le décodage côté Ollama (clé <c>format</c>). Null = mode
+    /// <c>"json"</c> historique. Sans effet sur OpenRouter, et automatiquement abandonné si le
+    /// serveur Ollama le rejette. Voir <see cref="Json.LlmOutputSchemas"/>.
+    /// </summary>
+    public JsonElement? OutputSchema { get; init; }
 }
 
 /// <summary>Résultat brut d'un appel d'extraction structurée, avant désérialisation.</summary>
@@ -118,13 +130,23 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
         var visionModelId = ResolveVisionModelId();
         var wantPrimaryVision = AiModelCapabilityDetector.DetectVisionSupport(modelRef.ProviderModelId);
 
-        // 2. Extraction du texte (+ image base64 pour fallback vision sur photos).
+        // 2. Extraction du texte (+ image base64 pour fallback vision sur photos et scans).
+        var hasVisionModel = !string.IsNullOrWhiteSpace(visionModelId);
         var extractionSw = Stopwatch.StartNew();
         var extraction = await _documentTextExtractor.ExtractAsync(
             request.FileStream,
             request.FileName,
             request.ContentType,
-            new AiDocumentExtractOptions { RenderPagesAsImages = wantPrimaryVision },
+            new AiDocumentExtractOptions
+            {
+                // Rendu complet des pages : modèle principal multimodal, ou 2ᵉ passe explicitement
+                // forcée après une réponse inexploitable.
+                RenderPagesAsImages = wantPrimaryVision || (request.ForceVision && hasVisionModel),
+
+                // Récupération gratuite des pages scannées que l'OCR a déjà dû rasteriser : sans
+                // cela un PDF scanné n'expose aucune image et ne peut jamais basculer en vision.
+                KeepOcrRenderedImages = hasVisionModel
+            },
             cancellationToken);
 
         if (!extraction.Success)
@@ -140,7 +162,13 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
 
         var extractedText = (extraction.Text ?? string.Empty).Trim();
         var ocrQuality = InvoiceImportOcrQuality.Score(extractedText);
-        var useVisionFallback = ShouldUseVisionFallback(extraction, extractedText, sourceImages.Count, visionModelId);
+        var useVisionFallback = InvoiceImportVisionPolicy.ShouldUseVisionFallback(
+            _ollamaSettings,
+            request.ForceVision,
+            extraction,
+            extractedText,
+            sourceImages.Count,
+            visionModelId);
 
         if (extractedText.Length == 0 && sourceImages.Count == 0)
             return Result.Failure<AiStructuredExtractionOutcome>(Error.Validation(
@@ -149,7 +177,7 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
         if (extractedText.Length == 0 && !useVisionFallback)
         {
             return Result.Failure<AiStructuredExtractionOutcome>(Error.Validation(code,
-                "Photo illisible : OCR vide et aucun modèle vision d'import configuré (clé InvoiceImportVisionModel, ex. llava). "
+                "Photo illisible : OCR vide et aucun modèle vision d'import configuré (clé InvoiceImportVisionModel, ex. gemma3:4b). "
                 + "Exécutez scripts/install-tessdata.ps1 ou contactez l'administrateur plateforme."));
         }
 
@@ -207,9 +235,36 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
         }
 
         // 4. Appel LLM one-shot (texte seul ou vision hybride).
+        // Le schéma de sortie ne concerne qu'Ollama et n'est tenté que si l'appelant en fournit un.
+        var useSchema = request.OutputSchema is not null
+            && activeModelRef.Kind == LlmProviderKind.Ollama
+            && _ollamaSettings.UseStructuredOutputSchema;
+
         var llmSw = Stopwatch.StartNew();
-        var (raw, chunkCount, firstTokenMs) = await CallLlmAsync(
-            activeModelRef, request.SystemPrompt, extractedText, llmImages, code, cancellationToken);
+        string raw;
+        int chunkCount;
+        long? firstTokenMs;
+
+        try
+        {
+            (raw, chunkCount, firstTokenMs) = await CallLlmAsync(
+                activeModelRef, request.SystemPrompt, extractedText, llmImages, code,
+                useSchema ? request.OutputSchema : null, cancellationToken);
+        }
+        catch (OllamaRequestException ex) when (useSchema && IsSchemaRejection(ex))
+        {
+            // Ollama < 0.5 (ou un moteur compatible) ne connaît pas les schémas : on retombe sur
+            // le mode "json" historique plutôt que de faire échouer l'import.
+            _logger.LogWarning(
+                "[{Scope}] Le moteur IA a rejeté le schéma de sortie structurée (status={Status}) ; "
+                + "repli sur format=\"json\". Désactivez « UseStructuredOutputSchema » pour éviter cet aller-retour.",
+                code, ex.HttpStatusCode);
+
+            (raw, chunkCount, firstTokenMs) = await CallLlmAsync(
+                activeModelRef, request.SystemPrompt, extractedText, llmImages, code,
+                outputSchema: null, cancellationToken);
+        }
+
         llmSw.Stop();
 
         if (string.IsNullOrWhiteSpace(raw))
@@ -339,8 +394,8 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
         try
         {
             var platformImport = await _platformAiSettings.GetInvoiceImportModelRefAsync(cancellationToken);
-            if (!string.IsNullOrWhiteSpace(platformImport))
-                return NormalizeModelRef(platformImport);
+            if (ImportAiModelResolver.TryResolvePlatformImportModel(platformImport, _logger, out var platformModel))
+                return platformModel;
         }
         catch (Exception ex)
         {
@@ -348,40 +403,13 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
                 "Import IA : lecture du modèle d'import plateforme impossible ; utilisation de la configuration serveur.");
         }
 
-        var model =
-            !string.IsNullOrWhiteSpace(_ollamaSettings.InvoiceImportModel) ? _ollamaSettings.InvoiceImportModel.Trim()
-            : !string.IsNullOrWhiteSpace(_ollamaSettings.DefaultModel) ? _ollamaSettings.DefaultModel.Trim()
-            : "mistral";
-
-        return NormalizeModelRef(model);
+        return ImportAiModelResolver.ResolveServerImportModel(_ollamaSettings);
     }
 
     public string? ResolveVisionModelId()
     {
         var model = _ollamaSettings.InvoiceImportVisionModel?.Trim();
         return string.IsNullOrWhiteSpace(model) ? null : model;
-    }
-
-    private bool ShouldUseVisionFallback(
-        AiDocumentExtractionResult extraction,
-        string extractedText,
-        int sourceImageCount,
-        string? visionModelId)
-    {
-        if (string.IsNullOrWhiteSpace(visionModelId) || sourceImageCount == 0)
-            return false;
-
-        var isImage = string.Equals(extraction.Format, "image", StringComparison.OrdinalIgnoreCase);
-        var isOcrPdf = extraction.OcrApplied
-            && string.Equals(extraction.Format, "pdf", StringComparison.OrdinalIgnoreCase);
-        if (!isImage && !isOcrPdf)
-            return false;
-
-        var minChars = Math.Max(0, _ollamaSettings.InvoiceImportVisionMinOcrChars);
-        if (_ollamaSettings.InvoiceImportVisionOnEmptyOcr && extractedText.Length == 0)
-            return true;
-
-        return !InvoiceImportOcrQuality.IsSufficient(extractedText, minChars, 0.35);
     }
 
     private static ParsedModelRef NormalizeModelRef(string model)
@@ -407,12 +435,20 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
     // Appel LLM
     // ========================================================================
 
+    /// <summary>
+    /// Vrai quand l'erreur Ollama traduit un schéma de sortie non supporté (moteur antérieur à 0.5)
+    /// plutôt qu'une panne réelle : seul ce cas justifie de retenter sans schéma.
+    /// </summary>
+    private static bool IsSchemaRejection(OllamaRequestException ex) =>
+        ex.HttpStatusCode is 400 or 422 or 500;
+
     private async Task<(string Raw, int ChunkCount, long? FirstTokenMs)> CallLlmAsync(
         ParsedModelRef modelRef,
         string systemPrompt,
         string text,
         List<string> images,
         string scope,
+        JsonElement? outputSchema,
         CancellationToken cancellationToken)
     {
         var sb = new StringBuilder();
@@ -454,13 +490,15 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
                 Model = modelRef.ProviderModelId,
                 Messages = messages,
                 Stream = true,
-                Format = "json",
+                // Schéma quand l'appelant en fournit un (contraint les TYPES), sinon le mode "json"
+                // historique (ne contraint que la syntaxe).
+                Format = outputSchema.HasValue ? outputSchema.Value : LlmOutputSchemas.PlainJson,
                 KeepAlive = $"{Math.Clamp(_ollamaSettings.KeepAliveMinutes, 1, 1440)}m",
                 Options = options
             };
 
             _logger.LogInformation(
-                "[{Scope}] Appel LLM Ollama : modèle={Model} numCtx={NumCtx} numPredict={NumPredict} images={ImageCount} timeoutSec={TimeoutSec} inference_device={InferenceDevice} num_gpu_effective={NumGpuEffective}",
+                "[{Scope}] Appel LLM Ollama : modèle={Model} numCtx={NumCtx} numPredict={NumPredict} images={ImageCount} timeoutSec={TimeoutSec} inference_device={InferenceDevice} num_gpu_effective={NumGpuEffective} schémaStructuré={StructuredSchema}",
                 scope,
                 modelRef.ProviderModelId,
                 numCtx,
@@ -468,7 +506,8 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
                 images.Count,
                 (int)streamTimeout.TotalSeconds,
                 inferenceProfile.Device,
-                inferenceProfile.NumGpu);
+                inferenceProfile.NumGpu,
+                outputSchema.HasValue);
 
             await foreach (var chunk in _ollamaClient.StreamChatAsync(request, cancellationToken, streamTimeout))
             {

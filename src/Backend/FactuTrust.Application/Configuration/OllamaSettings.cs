@@ -356,9 +356,37 @@ public sealed class OllamaSettings
     /// </summary>
     public string InvoiceImportVisionModel { get; set; } = "";
 
+    /// <summary>
+    /// Autorise une 2ᵉ passe en vision quand la 1re passe (texte/OCR) rend une réponse
+    /// inexploitable. Coupe-circuit d'exploitation : à <c>false</c>, un seul appel LLM par import.
+    /// </summary>
+    public bool InvoiceImportVisionRetryEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Transmet à Ollama un SCHÉMA JSON (clé <c>format</c>) plutôt que le simple <c>"json"</c>, ce
+    /// qui contraint les types produits par le modèle. Nécessite Ollama ≥ 0.5 ; en cas de rejet, le
+    /// pipeline retombe automatiquement sur <c>"json"</c>. Sans effet sur OpenRouter.
+    /// </summary>
+    public bool UseStructuredOutputSchema { get; set; } = true;
+
+    /// <summary>
+    /// Nombre de caractères de la réponse LLM brute journalisés lorsqu'elle est inexploitable.
+    ///
+    /// <para><b>Attention</b> : cette trace contient des données de facture (raison sociale,
+    /// matricule fiscal, montants). La relever au-delà de 500 en production suppose que les journaux
+    /// sont traités comme des données à caractère personnel. L'extrait ciblé autour de l'erreur,
+    /// lui, est toujours journalisé et reste borné.</para>
+    /// </summary>
+    public int ImportRawResponseLogChars { get; set; } = 500;
+
     /// <summary>Seuil minimal de caractères OCR avant déclenchement du fallback vision.</summary>
     public int InvoiceImportVisionMinOcrChars { get; set; } = 80;
 
     /// <summary>Déclenche le fallback vision si l'OCR est vide (photos manuscrites).</summary>
     public bool InvoiceImportVisionOnEmptyOcr { get; set; } = true;
+
+    /// <summary>
+    /// Utilise le modèle vision pour toute pièce au format image (PNG/JPG), même si l'OCR semble suffisant.
+    /// </summary>
+    public bool InvoiceImportVisionOnImages { get; set; } = true;
 }

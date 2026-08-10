@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Features.AI;
 using Microsoft.Extensions.Logging;
 
 namespace FactuTrust.Infrastructure.Services.AI;
@@ -86,15 +87,7 @@ public sealed class OllamaModelReadinessChecker : IOllamaModelReadinessChecker
         return (availableRam, totalRam);
     }
 
-    private static bool ModelNameMatches(string requested, string installedName)
-    {
-        requested = requested.Trim();
-        installedName = installedName.Trim();
-        if (string.Equals(requested, installedName, StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        var reqBase = requested.Split(':')[0];
-        var insBase = installedName.Split(':')[0];
-        return string.Equals(reqBase, insBase, StringComparison.OrdinalIgnoreCase);
-    }
+    /// <inheritdoc cref="OllamaModelName.Matches"/>
+    private static bool ModelNameMatches(string requested, string installedName) =>
+        OllamaModelName.Matches(requested, installedName);
 }

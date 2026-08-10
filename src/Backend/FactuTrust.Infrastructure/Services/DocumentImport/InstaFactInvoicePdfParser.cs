@@ -1,5 +1,6 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.RegularExpressions;
+using FactuTrust.Application.Common;
 using FactuTrust.Application.Features.Accounting.DocumentImport;
 using Microsoft.Extensions.Logging;
 using UglyToad.PdfPig;
@@ -559,38 +560,10 @@ public sealed class InstaFactInvoicePdfParser
     /// <summary>
     /// Lit un montant tunisien. Gère « 1,250.000 » (virgule = millier), « +3700.000 »,
     /// « 1 250,000 » (format français) et « 650,000 ».
+    ///
+    /// Le corps a été déplacé tel quel dans <see cref="TunisianNumberParsing.ParseDecimal"/> afin
+    /// d'être partagé avec la désérialisation tolérante des sorties de LLM. Nom, signature et
+    /// accessibilité sont conservés : les tests golden de ce parseur exercent toujours ce code.
     /// </summary>
-    internal static decimal? ParseAmount(string? raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw))
-            return null;
-
-        var text = raw.Replace(' ', ' ').Replace(" ", string.Empty).Trim();
-        if (text.Length == 0)
-            return null;
-
-        var negative = text.StartsWith('-');
-        text = text.TrimStart('+', '-');
-
-        var hasDot = text.Contains('.');
-        var hasComma = text.Contains(',');
-
-        if (hasDot && hasComma)
-        {
-            // « 1,250.000 » : la virgule est le séparateur de milliers.
-            text = text.Replace(",", string.Empty);
-        }
-        else if (hasComma)
-        {
-            // Une seule virgule suivie de 1 à 3 chiffres : séparateur décimal français.
-            text = Regex.IsMatch(text, @"^\d+,\d{1,3}$")
-                ? text.Replace(',', '.')
-                : text.Replace(",", string.Empty);
-        }
-
-        if (!decimal.TryParse(text, NumberStyles.Number, Inv, out var value))
-            return null;
-
-        return negative ? -value : value;
-    }
+    internal static decimal? ParseAmount(string? raw) => TunisianNumberParsing.ParseDecimal(raw);
 }

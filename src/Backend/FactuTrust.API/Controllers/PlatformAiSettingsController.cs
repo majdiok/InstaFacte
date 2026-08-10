@@ -25,6 +25,14 @@ namespace FactuTrust.API.Controllers;
 [Authorize(Policy = PlatformPolicies.PlatformAdmin)]
 public sealed class PlatformAiSettingsController : ControllerBase
 {
+    private const string ChatModelRequiredMessage =
+        "Le modèle doit supporter le chat (modèle instruct). "
+        + "Les modèles d'embedding (ex. nomic-embed-text) ne conviennent pas.";
+
+    private const string ImportChatModelRequiredMessage =
+        "Le modèle d'import doit supporter le chat (modèle instruct). "
+        + "Les modèles d'embedding (ex. nomic-embed-text) ne conviennent pas.";
+
     private readonly IPlatformAiSettingsService _settings;
     private readonly IOllamaClient _ollamaClient;
     private readonly IAiModelRecommender _modelRecommender;
@@ -69,7 +77,8 @@ public sealed class PlatformAiSettingsController : ControllerBase
                     m.Name,
                     m.Size,
                     m.ModifiedAt,
-                    SupportsVision: AiModelCapabilityDetector.DetectVisionSupport(m.Name)));
+                    SupportsVision: AiModelCapabilityDetector.DetectVisionSupport(m.Name),
+                    SupportsChat: AiModelCapabilityDetector.DetectChatCapable(m.Name)));
             }
         }
         catch (Exception ex)
@@ -125,6 +134,12 @@ public sealed class PlatformAiSettingsController : ControllerBase
             var parsed = ModelRef.Parse(request.ModelRef);
             if (string.IsNullOrEmpty(parsed.CanonicalModelRef))
                 return BadRequest(ApiResponse<object>.Fail("Référence de modèle invalide."));
+            if (!AiModelCapabilityDetector.DetectChatCapable(parsed.ProviderModelId))
+                return BadRequest(ApiResponse<object>.Fail(ChatModelRequiredMessage));
+
+            var installed = await EnsureModelInstalledAsync(parsed, "assistant", cancellationToken);
+            if (installed is not null)
+                return installed;
         }
 
         if (request.ModelRef is not null)
@@ -140,6 +155,12 @@ public sealed class PlatformAiSettingsController : ControllerBase
                 var parsedImport = ModelRef.Parse(request.InvoiceImportModelRef);
                 if (string.IsNullOrEmpty(parsedImport.CanonicalModelRef))
                     return BadRequest(ApiResponse<object>.Fail("Référence de modèle d'import invalide."));
+                if (!AiModelCapabilityDetector.DetectChatCapable(parsedImport.ProviderModelId))
+                    return BadRequest(ApiResponse<object>.Fail(ImportChatModelRequiredMessage));
+
+                var installed = await EnsureModelInstalledAsync(parsedImport, "d'import de factures", cancellationToken);
+                if (installed is not null)
+                    return installed;
             }
 
             await _settings.SetInvoiceImportModelRefAsync(request.InvoiceImportModelRef, actorId, cancellationToken);
@@ -153,6 +174,12 @@ public sealed class PlatformAiSettingsController : ControllerBase
                 var parsedStudio = ModelRef.Parse(request.StudioAiModelRef);
                 if (string.IsNullOrEmpty(parsedStudio.CanonicalModelRef))
                     return BadRequest(ApiResponse<object>.Fail("Référence de modèle Studio invalide."));
+                if (!AiModelCapabilityDetector.DetectChatCapable(parsedStudio.ProviderModelId))
+                    return BadRequest(ApiResponse<object>.Fail(ChatModelRequiredMessage));
+
+                var installed = await EnsureModelInstalledAsync(parsedStudio, "Studio", cancellationToken);
+                if (installed is not null)
+                    return installed;
             }
 
             await _settings.SetStudioAiModelRefAsync(request.StudioAiModelRef, actorId, cancellationToken);
@@ -191,5 +218,53 @@ public sealed class PlatformAiSettingsController : ControllerBase
         }
 
         return await Get(cancellationToken);
+    }
+
+    /// <summary>
+    /// Refuse d'enregistrer un modèle Ollama qui n'est pas réellement installé.
+    ///
+    /// <para>Sans ce contrôle, l'écran acceptait sans broncher un modèle inexistant (le back-office
+    /// le propose même explicitement en « (non installé) »). L'anomalie ne se révélait qu'à la
+    /// première utilisation, sous la forme d'un 404 déguisé en « préchauffage lent ».</para>
+    ///
+    /// <para><b>Fail-open délibéré</b> : si la liste des modèles revient vide, c'est qu'Ollama est
+    /// injoignable, pas que le modèle est absent. On laisse alors passer, pour ne pas bloquer
+    /// l'administrateur sur une panne transitoire.</para>
+    /// </summary>
+    /// <returns><c>null</c> si l'enregistrement peut se poursuivre, sinon la réponse d'erreur.</returns>
+    private async Task<IActionResult?> EnsureModelInstalledAsync(
+        ParsedModelRef parsed, string usage, CancellationToken cancellationToken)
+    {
+        // Un modèle cloud (OpenRouter) n'est pas installé localement : rien à vérifier ici.
+        if (parsed.Kind != LlmProviderKind.Ollama || string.IsNullOrWhiteSpace(parsed.ProviderModelId))
+            return null;
+
+        List<OllamaModelInfo> models;
+        try
+        {
+            models = (await _ollamaClient.ListModelsAsync(cancellationToken)).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Impossible de lister les modèles Ollama pour valider « {Model} » ; enregistrement autorisé.",
+                parsed.ProviderModelId);
+            return null;
+        }
+
+        if (models.Count == 0)
+            return null;
+
+        if (models.Any(m => OllamaModelName.Matches(parsed.ProviderModelId, m.Name)))
+            return null;
+
+        var available = string.Join(", ", models.Select(m => m.Name).Order().Take(12));
+        _logger.LogWarning(
+            "Refus d'enregistrer le modèle {Usage} « {Model} » : absent du moteur IA.",
+            usage, parsed.ProviderModelId);
+
+        return BadRequest(ApiResponse<object>.Fail(
+            $"Le modèle {usage} « {parsed.ProviderModelId} » n'est pas installé sur le moteur IA. "
+            + $"Installez-le (ollama pull {parsed.ProviderModelId}) ou choisissez-en un parmi : {available}."));
     }
 }

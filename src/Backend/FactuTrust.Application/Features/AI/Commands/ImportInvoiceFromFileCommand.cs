@@ -1,6 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Text.Json;
-using System.Text.Json.Serialization;
+using FactuTrust.Application.Features.AI.Json;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
@@ -44,14 +44,6 @@ public sealed class ImportInvoiceFromFileHandler
     private const int MaxTextChars = 60_000;
     private const int MaxImages = 10;
     private const int MaxLinesToMatch = 50;
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        NumberHandling = JsonNumberHandling.AllowReadingFromString,
-        AllowTrailingCommas = true,
-        ReadCommentHandling = JsonCommentHandling.Skip
-    };
 
     private const string SystemPrompt = """
 Tu es un moteur d'extraction de données de factures pour un logiciel de facturation tunisien.
@@ -171,7 +163,7 @@ Schéma: documentType, invoiceNumber, issueDate, dueDate, currency, seller{name,
         {
             try
             {
-                parsed = JsonSerializer.Deserialize<LlmInvoiceExtraction>(json, JsonOptions);
+                parsed = JsonSerializer.Deserialize<LlmInvoiceExtraction>(json, LlmJsonOptions.Tolerant);
             }
             catch (JsonException ex)
             {

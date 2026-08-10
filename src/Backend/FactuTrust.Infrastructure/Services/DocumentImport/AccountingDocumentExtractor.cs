@@ -1,7 +1,7 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.AI;
+using FactuTrust.Application.Features.AI.Json;
 using FactuTrust.Application.Features.Accounting.DocumentImport;
 using FactuTrust.Domain.Common;
 using Microsoft.Extensions.Logging;
@@ -22,14 +22,6 @@ public sealed class AccountingDocumentExtractor : IAccountingDocumentExtractor
 {
     /// <summary>Code d'erreur et préfixe de log de ce chemin d'import.</summary>
     private const string ErrorCode = "AccountingDocumentImport";
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        NumberHandling = JsonNumberHandling.AllowReadingFromString,
-        AllowTrailingCommas = true,
-        ReadCommentHandling = JsonCommentHandling.Skip
-    };
 
     private readonly InstaFactInvoicePdfParser _nativeParser;
     private readonly IAiStructuredExtractionPipeline _pipeline;
@@ -91,47 +83,32 @@ public sealed class AccountingDocumentExtractor : IAccountingDocumentExtractor
         AccountingDocumentExtractionRequest request,
         CancellationToken cancellationToken)
     {
-        using var buffer = new MemoryStream(bytes, writable: false);
+        var outcomeResult = await RunPipelineAsync(bytes, request, forceVision: false, cancellationToken);
+        if (outcomeResult.IsFailure)
+            return Result.Failure<AccountingDocumentExtractionDto>(outcomeResult.Error);
 
-        var pipelineResult = await _pipeline.RunAsync(
-            new AiStructuredExtractionRequest
-            {
-                FileStream = buffer,
-                FileName = request.FileName,
-                ContentType = request.ContentType,
-                SystemPrompt = _ollamaSettings.UseCompactImportPrompt
-                    ? AccountingDocumentPrompt.CompactSystem
-                    : AccountingDocumentPrompt.System,
-                ModelOverride = request.ModelOverride,
-                ErrorCode = ErrorCode
-            },
-            cancellationToken);
+        var outcome = outcomeResult.Value;
+        var parsed = TryParseLlmDocument(outcome.RawContent, out var json, out var jsonError);
 
-        if (pipelineResult.IsFailure)
-            return Result.Failure<AccountingDocumentExtractionDto>(pipelineResult.Error);
-
-        var outcome = pipelineResult.Value;
-        var json = InvoiceImportParsing.ExtractFirstJsonObject(outcome.RawContent);
-
-        LlmAccountingDocument? parsed = null;
-        if (!string.IsNullOrWhiteSpace(json))
+        if (parsed is null && ShouldRetryWithVision(outcome))
         {
-            try
-            {
-                parsed = JsonSerializer.Deserialize<LlmAccountingDocument>(json, JsonOptions);
-            }
-            catch (JsonException ex)
-            {
-                _logger.LogWarning(ex,
-                    "[{Scope}] JSON renvoyé par le LLM non désérialisable.", ErrorCode);
-            }
+            _logger.LogWarning(
+                "[{Scope}] Réponse inexploitable sur le chemin texte pour {FileName} ; repli vision.",
+                ErrorCode, request.FileName);
+
+            var visionRetry = await RunPipelineAsync(bytes, request, forceVision: true, cancellationToken);
+            if (visionRetry.IsFailure)
+                return Result.Failure<AccountingDocumentExtractionDto>(visionRetry.Error);
+
+            outcome = visionRetry.Value;
+            parsed = TryParseLlmDocument(outcome.RawContent, out json, out jsonError);
         }
 
         if (parsed is null)
         {
-            return Result.Failure<AccountingDocumentExtractionDto>(Error.Validation(ErrorCode,
-                "L'IA n'a pas pu produire des données exploitables à partir de ce fichier. "
-                + "Réessayez ou saisissez l'écriture manuellement."));
+            LogUnparseableLlmResponse(request.FileName, outcome.RawContent, json, jsonError);
+            return Result.Failure<AccountingDocumentExtractionDto>(
+                Error.Validation(ErrorCode, BuildUnparseableMessage(json, jsonError, outcome)));
         }
 
         var method = outcome.VisionUsed
@@ -148,6 +125,138 @@ public sealed class AccountingDocumentExtractor : IAccountingDocumentExtractor
             document.Lines.Count, document.VatBreakdown.Count, document.Confidence);
 
         return Result.Success(document);
+    }
+
+    private async Task<Result<AiStructuredExtractionOutcome>> RunPipelineAsync(
+        byte[] bytes,
+        AccountingDocumentExtractionRequest request,
+        bool forceVision,
+        CancellationToken cancellationToken)
+    {
+        using var buffer = new MemoryStream(bytes, writable: false);
+        return await _pipeline.RunAsync(
+            new AiStructuredExtractionRequest
+            {
+                FileStream = buffer,
+                FileName = request.FileName,
+                ContentType = request.ContentType,
+                SystemPrompt = _ollamaSettings.UseCompactImportPrompt
+                    ? AccountingDocumentPrompt.CompactSystem
+                    : AccountingDocumentPrompt.System,
+                ModelOverride = request.ModelOverride,
+                ErrorCode = ErrorCode,
+                ForceVision = forceVision,
+
+                // Contraint les types côté Ollama (vatRatePercent entier, confidence énumérée…).
+                // Réduit la fréquence des coercitions ; les convertisseurs tolérants restent la
+                // défense réelle, notamment pour OpenRouter et les moteurs plus anciens.
+                OutputSchema = LlmOutputSchemas.AccountingDocument
+            },
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Le repli vision n'a de sens que pour ESCALADER : passer d'une lecture texte/OCR à une lecture
+    /// de l'image.
+    ///
+    /// <para>Il était jusqu'ici inatteignable pour deux raisons cumulées : il exigeait
+    /// <c>Format == "image"</c>, ce qui excluait tout PDF scanné ; et l'appelant le gardait derrière
+    /// <c>!outcome.VisionUsed</c> alors qu'avec <c>InvoiceImportVisionOnImages = true</c> (valeur par
+    /// défaut) toute image part DÉJÀ en vision dès la 1re passe. Le repli ne pouvait donc jamais
+    /// s'exécuter. La règle correcte tient en quatre conditions, exprimées ici et nulle part
+    /// ailleurs.</para>
+    /// </summary>
+    private bool ShouldRetryWithVision(AiStructuredExtractionOutcome outcome)
+    {
+        if (!_ollamaSettings.InvoiceImportVisionRetryEnabled)
+            return false;
+
+        // Déjà en vision : rien à escalader. C'est aussi le garde anti-boucle.
+        if (outcome.VisionUsed)
+            return false;
+
+        if (string.IsNullOrWhiteSpace(_ollamaSettings.InvoiceImportVisionModel))
+            return false;
+
+        // Critère réel : disposer d'une image à soumettre — quel que soit le format d'origine.
+        // Inclut donc les PDF scannés, dont les pages sont rasterisées pour l'OCR.
+        return outcome.Extraction.Pages.Any(p => !string.IsNullOrWhiteSpace(p.ImageBase64));
+    }
+
+    /// <param name="json">
+    /// Objet JSON isolé de la réponse brute, ou <c>null</c> si aucun objet équilibré n'a pu l'être.
+    /// Remonté à l'appelant car les offsets de la <see cref="JsonException"/> s'y rapportent — pas
+    /// à la réponse brute ; viser dans le mauvais tampon décalerait le diagnostic.
+    /// </param>
+    private LlmAccountingDocument? TryParseLlmDocument(
+        string rawContent, out string? json, out JsonException? jsonError)
+    {
+        jsonError = null;
+        json = InvoiceImportParsing.ExtractFirstJsonObject(rawContent);
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<LlmAccountingDocument>(json, LlmJsonOptions.Tolerant);
+        }
+        catch (JsonException ex)
+        {
+            jsonError = ex;
+            _logger.LogWarning(ex, "[{Scope}] JSON renvoyé par le LLM non désérialisable.", ErrorCode);
+            return null;
+        }
+    }
+
+    private void LogUnparseableLlmResponse(
+        string fileName, string rawContent, string? json, JsonException? jsonError)
+    {
+        var max = Math.Clamp(_ollamaSettings.ImportRawResponseLogChars, 200, 20_000);
+        var preview = rawContent.Length <= max ? rawContent : rawContent[..max] + "…";
+
+        _logger.LogWarning(
+            jsonError,
+            "[{Scope}] Réponse LLM non exploitable pour {FileName} : {Diagnostic} | jsonIsolé={JsonFound} "
+            + "longueurBrute={RawLength} aperçu={PreviewChars}car. : {Preview}",
+            ErrorCode, fileName,
+            LlmJsonDiagnostics.Describe(json, jsonError),
+            json is not null, rawContent.Length, max, preview);
+    }
+
+    /// <summary>
+    /// Message utilisateur construit à partir de ce qui a RÉELLEMENT échoué.
+    ///
+    /// L'ancien message constant accusait systématiquement l'absence d'un modèle vision — y compris,
+    /// comme observé en production, quand gemma3:4b était installé, prêt, et avait effectivement
+    /// produit la réponse. Il envoyait donc l'utilisateur corriger une configuration déjà correcte.
+    /// </summary>
+    private string BuildUnparseableMessage(
+        string? json, JsonException? jsonError, AiStructuredExtractionOutcome outcome)
+    {
+        if (json is null)
+        {
+            return "L'IA a été interrompue avant la fin de sa réponse : les données reçues sont "
+                   + "incomplètes. Réessayez ; si la pièce comporte beaucoup de lignes, relevez "
+                   + "« ImportMaxOutputTokens » côté serveur ou importez la pièce page par page.";
+        }
+
+        var field = string.IsNullOrWhiteSpace(jsonError?.Path) ? null : jsonError!.Path;
+        var detail = field is null ? "." : $" (champ en cause : {field}).";
+        var message = "L'IA a renvoyé une donnée que la comptabilité n'a pas pu interpréter" + detail
+                      + " Le détail technique figure dans les journaux du serveur. Réessayez, ou "
+                      + "saisissez l'écriture manuellement.";
+
+        // La vision n'est évoquée QUE si elle manque réellement sur une pièce qui en aurait besoin.
+        var isScanOrPhoto = outcome.Extraction.OcrApplied
+            || string.Equals(outcome.Extraction.Format, "image", StringComparison.OrdinalIgnoreCase);
+        if (isScanOrPhoto && string.IsNullOrWhiteSpace(_ollamaSettings.InvoiceImportVisionModel))
+        {
+            message += " Cette pièce est un scan ou une photo et aucun modèle vision n'est configuré "
+                       + "(clé « InvoiceImportVisionModel », ex. gemma3:4b) : en installer un "
+                       + "améliorerait nettement la lecture.";
+        }
+
+        return message;
     }
 
     private static async Task<byte[]> ReadAllBytesAsync(Stream stream, CancellationToken cancellationToken)

@@ -18,12 +18,19 @@ public sealed record OllamaChatRequest
     public string? KeepAlive { get; init; }
 
     /// <summary>
-    /// Mode de sortie structurée Ollama ("json" force une réponse JSON syntaxiquement valide).
-    /// Ignoré à la sérialisation quand null : le comportement historique reste strictement inchangé.
+    /// Mode de sortie structurée Ollama. Deux formes acceptées :
+    /// <list type="bullet">
+    /// <item>la chaîne <c>"json"</c> — garantit un JSON syntaxiquement valide, mais rien sur les
+    /// types (c'est ainsi qu'un modèle a pu écrire <c>19.0</c> pour un entier) ;</item>
+    /// <item>un SCHÉMA JSON (objet) — Ollama ≥ 0.5 contraint alors le décodage lui-même, donc les
+    /// types. C'est la correction à la source.</item>
+    /// </list>
+    /// Typé <c>object?</c> pour porter les deux ; la sérialisation d'une chaîne est inchangée au
+    /// caractère près, donc aucun impact sur les appelants existants. Ignoré quand null.
     /// </summary>
     [JsonPropertyName("format")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? Format { get; init; }
+    public object? Format { get; init; }
 }
 
 public sealed record OllamaChatMessage

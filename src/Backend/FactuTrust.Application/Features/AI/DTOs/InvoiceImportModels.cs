@@ -1,8 +1,15 @@
 namespace FactuTrust.Application.Features.AI.DTOs;
 
 // ============================================================================
-// DTOs de SORTIE du LLM (désérialisation tolérante : toutes propriétés nullable
-// et mutables pour absorber un JSON imparfait sans lever d'exception).
+// DTOs de SORTIE du LLM.
+//
+// Le caractère nullable protège contre les champs ABSENTS — jamais contre les champs de MAUVAIS
+// TYPE. Un modèle local écrit « 19.0 » pour un int, « 0.95 » pour une chaîne, un objet pour un
+// élément de List<string> : c'est la désérialisation via LlmJsonOptions.Tolerant, et elle seule,
+// qui absorbe ces écarts.
+//
+// RÈGLE : toute propriété ajoutée ici doit être nullable ET son type doit être couvert par un
+// convertisseur de LlmJsonOptions.Tolerant. LlmDtoContractTests le vérifie par réflexion.
 // ============================================================================
 
 /// <summary>Objet racine renvoyé par le LLM lors de l'extraction d'une facture.</summary>

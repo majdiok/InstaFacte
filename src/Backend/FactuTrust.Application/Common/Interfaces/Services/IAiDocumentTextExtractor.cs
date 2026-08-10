@@ -35,6 +35,18 @@ public sealed record AiDocumentExtractOptions
 {
     /// <summary>Si vrai, rend les pages PDF/image en PNG base64 dans la réponse (pour modèles vision).</summary>
     public bool RenderPagesAsImages { get; init; }
+
+    /// <summary>
+    /// Conserve le PNG que l'OCR a DÉJÀ dû rasteriser faute de couche texte, sans en produire de
+    /// nouveau. Coût de rendu supplémentaire : zéro — l'image existe en mémoire, elle était
+    /// simplement jetée.
+    ///
+    /// <para>Sans cela, un PDF scanné ressort avec zéro image et la politique de repli vision
+    /// court-circuite avant même d'être consultée : la vision est alors structurellement
+    /// inatteignable sur un scan, cas pourtant majoritaire des factures fournisseurs.</para>
+    /// </summary>
+    public bool KeepOcrRenderedImages { get; init; }
+
     /// <summary>DPI de rendu (par défaut 200, max 300).</summary>
     public int RenderDpi { get; init; } = 200;
 

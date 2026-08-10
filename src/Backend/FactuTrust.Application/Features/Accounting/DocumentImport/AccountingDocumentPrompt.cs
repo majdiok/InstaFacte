@@ -20,6 +20,7 @@ RÈGLES ABSOLUES :
 3. Tous les montants sont des nombres décimaux : séparateur décimal point, sans symbole monétaire, sans séparateur de milliers.
 4. "unitPriceHt" est le prix unitaire HORS TAXES (hors TVA).
 5. "vatRatePercent" doit valoir 0, 7, 13 ou 19 (taux de TVA tunisiens, en pourcentage). Arrondis au plus proche.
+   Écris-le en ENTIER NU, sans décimale ni guillemets : 19 — jamais 19.0, jamais "19", jamais "19%".
 6. Les dates sont au format ISO "AAAA-MM-JJ". Convertis "JJ/MM/AAAA" vers "AAAA-MM-JJ". Date absente => null.
 7. "currency" vaut "TND", "EUR" ou "USD". En l'absence d'indication, mets "TND".
 8. Montants tunisiens : "650,000" ou "650.000" signifient 650 dinars (3 décimales TND) → renvoie 650.000 en JSON.
@@ -38,6 +39,11 @@ RÈGLES ABSOLUES :
 17. "reference" est la référence article/code produit de la ligne si elle figure au document.
 18. "confidence" vaut "high", "medium" ou "low" selon ta certitude globale.
 19. "warnings" est une liste de messages courts en français signalant toute ambiguïté ou donnée douteuse.
+    Ce sont des CHAÎNES, jamais des objets.
+20. TYPES STRICTS : "confidence" est une CHAÎNE ("high", "medium" ou "low"), jamais un nombre.
+    Les montants sont des NOMBRES JSON à point décimal (278.000) — jamais entre guillemets, jamais
+    avec de symbole monétaire ni de séparateur de milliers. Une valeur absente vaut null, jamais
+    "" ni "N/A" ni 0.
 
 SCHÉMA JSON EXACT À RESPECTER :
 {
@@ -74,5 +80,6 @@ seller = émetteur (celui qui facture), buyer = destinataire. Les deux sont indi
 vatBreakdown = le tableau de ventilation TVA imprimé (Taxe / Base imposable / Montant), recopié tel quel ; [] s'il n'est pas imprimé — ne le reconstitue pas.
 documentType: INVOICE|CREDIT_NOTE|DELIVERY_NOTE|PROFORMA|UNKNOWN.
 Schéma: documentType, documentNumber, issueDate, dueDate, documentStatus, currency, seller{name,nif,email,phone,street,city,postalCode,governorate}, buyer{idem}, lines[{designation,reference,quantity,unit,unitPriceHt,discountPercent,vatRatePercent}], vatBreakdown[{ratePercent,baseAmount,vatAmount}], totalHt, totalVat, fodecAmount, fiscalStampAmount, withholdingAmount, totalTtc, confidence, warnings[].
+TYPES STRICTS : vatRatePercent et ratePercent = ENTIER NU (19 — jamais 19.0, ni "19", ni "19%"). Montants = NOMBRE JSON à point décimal (278.000 — jamais "278,000", jamais de symbole monétaire). confidence = CHAÎNE "high"|"medium"|"low", jamais un nombre. warnings = tableau de CHAÎNES courtes, jamais d'objets. Valeur absente => null (jamais "", ni "N/A", ni 0).
 """;
 }

@@ -388,17 +388,9 @@ public sealed class OllamaHttpClient : IOllamaClient
         _memoryCache.Remove(AvailabilityCacheKey);
     }
 
-    private static bool ModelNameMatches(string requested, string installedName)
-    {
-        requested = requested.Trim();
-        installedName = installedName.Trim();
-        if (string.Equals(requested, installedName, StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        var reqBase = requested.Split(':')[0];
-        var insBase = installedName.Split(':')[0];
-        return string.Equals(reqBase, insBase, StringComparison.OrdinalIgnoreCase);
-    }
+    /// <inheritdoc cref="OllamaModelName.Matches"/>
+    private static bool ModelNameMatches(string requested, string installedName) =>
+        OllamaModelName.Matches(requested, installedName);
 
     private static string BuildChatErrorUserMessage(System.Net.HttpStatusCode statusCode, string body)
     {

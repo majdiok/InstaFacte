@@ -82,7 +82,9 @@ public sealed class AiDocumentTextExtractor : IAiDocumentTextExtractor
                 using var ms = new MemoryStream();
                 await stream.CopyToAsync(ms, cancellationToken);
                 var bytes = ms.ToArray();
-                return await ExtractPdfAsync(bytes, safeFileName, opts.RenderPagesAsImages, dpi, ocrDpi, cancellationToken);
+                return await ExtractPdfAsync(
+                    bytes, safeFileName, opts.RenderPagesAsImages, opts.KeepOcrRenderedImages,
+                    dpi, ocrDpi, cancellationToken);
             }
 
             if (IsDocx(ct, ext))
@@ -212,8 +214,25 @@ public sealed class AiDocumentTextExtractor : IAiDocumentTextExtractor
         }
     ];
 
+    /// <summary>
+    /// Décide si le PNG d'une page doit être conservé en base64.
+    ///
+    /// <para><paramref name="png"/> n'est non nul que dans deux cas : la vision a été demandée, ou
+    /// la page était sans couche texte et a dû être rasterisée pour l'OCR. Sur le chemin nominal
+    /// (PDF à couche texte, vision non demandée), rien n'est rendu, donc rien n'est encodé : c'est
+    /// la garantie de performance du cas courant.</para>
+    ///
+    /// <para>La qualité est un compromis assumé : l'image récupérée via l'OCR a été rendue à
+    /// <c>ocrDpi</c> (150) et non à <c>dpi</c> (200). La rerendre coûterait une seconde
+    /// rasterisation de chaque page scannée pour un gain nul — les modèles vision redimensionnent
+    /// l'entrée de toute façon.</para>
+    /// </summary>
+    internal static string? BuildPageImageBase64(byte[]? png, bool renderImages, bool keepOcrImages) =>
+        png is not null && (renderImages || keepOcrImages) ? Convert.ToBase64String(png) : null;
+
     private async Task<AiDocumentExtractionResult> ExtractPdfAsync(
-        byte[] bytes, string fileName, bool renderImages, int dpi, int ocrDpi, CancellationToken cancellationToken)
+        byte[] bytes, string fileName, bool renderImages, bool keepOcrImages,
+        int dpi, int ocrDpi, CancellationToken cancellationToken)
     {
         PdfDocument document;
         try
@@ -283,9 +302,7 @@ public sealed class AiDocumentTextExtractor : IAiDocumentTextExtractor
                     PageIndex = i - 1,
                     Text = pageText ?? string.Empty,
                     OcrApplied = ocrThisPage,
-                    ImageBase64 = renderImages && rendered is not null
-                        ? Convert.ToBase64String(rendered.PngBytes)
-                        : null,
+                    ImageBase64 = BuildPageImageBase64(rendered?.PngBytes, renderImages, keepOcrImages),
                     Width = rendered?.Width,
                     Height = rendered?.Height
                 });
