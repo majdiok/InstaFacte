@@ -23,6 +23,8 @@ import { FtSkeletonComponent } from '@core/ui/skeleton/ft-skeleton.component';
 interface ModelOption {
   label: string;
   value: string;
+  /** Vrai pour un modèle configuré mais absent du moteur IA : affiché, jamais sélectionnable. */
+  disabled?: boolean;
 }
 
 interface InferenceDeviceOption {
@@ -118,6 +120,7 @@ interface InferenceDeviceOption {
               [(ngModel)]="selectedModelRef"
               optionLabel="label"
               optionValue="value"
+              optionDisabled="disabled"
               appendTo="body"
               styleClass="w-full" />
           </div>
@@ -132,17 +135,32 @@ interface InferenceDeviceOption {
         <h3>Modèle IA — Import de factures</h3>
         <p class="hint">
           Modèle dédié à l'extraction des factures PDF (plus léger et rapide que le modèle assistant).
-          Prioritaire sur la configuration serveur.
+          Prioritaire sur la configuration serveur. Utilisez un modèle de génération (instruct),
+          pas un modèle d'embedding.
         </p>
+        @if (isImportModelInvalid()) {
+          <p class="warn">
+            Le modèle d'import actuel n'est pas adapté (embedding). Choisissez un modèle instruct
+            ou videz le champ pour utiliser la configuration serveur.
+          </p>
+        }
+        @if (isModelMissing(selectedImportModelRef)) {
+          <p class="warn">
+            Le modèle d'import « {{ selectedImportModelRef }} » n'est pas installé sur le moteur IA :
+            l'import de factures échouera. Choisissez un modèle de la liste, ou installez-le sur le
+            serveur puis rechargez cette page.
+          </p>
+        }
         @if (d.availableModels.length) {
           <div class="field">
             <label for="ai-import-model">Modèle d'import</label>
             <p-select
               inputId="ai-import-model"
-              [options]="modelOptions()"
+              [options]="importModelOptions()"
               [(ngModel)]="selectedImportModelRef"
               optionLabel="label"
               optionValue="value"
+              optionDisabled="disabled"
               appendTo="body"
               styleClass="w-full" />
           </div>
@@ -164,6 +182,7 @@ interface InferenceDeviceOption {
               [(ngModel)]="selectedStudioModelRef"
               optionLabel="label"
               optionValue="value"
+              optionDisabled="disabled"
               appendTo="body"
               styleClass="w-full" />
           </div>
@@ -406,7 +425,9 @@ export class PlatformAiSettingsPageComponent implements OnInit {
       const src = m.providerKey === 'openrouter' ? 'OpenRouter' : 'InstaFact IA';
       options.push({ label: `${src} · ${m.displayLabel}`, value: m.modelRef });
     }
-    // Modèle configuré mais plus installé : on l'ajoute pour ne pas perdre la valeur.
+    // Modèle configuré mais plus installé : on l'affiche pour ne pas masquer la configuration en
+    // cours, mais on le rend NON SÉLECTIONNABLE. L'enregistrer conduisait à un échec silencieux au
+    // premier import (le serveur le refuse désormais aussi, cf. EnsureModelInstalledAsync).
     const configuredRefs = [
       d.configuredModelRef,
       d.invoiceImportModelRef,
@@ -416,11 +437,44 @@ export class PlatformAiSettingsPageComponent implements OnInit {
       if (configured
         && !d.availableModels.some(m => m.modelRef === configured)
         && !options.some(o => o.value === configured)) {
-        options.push({ label: `${configured} (non installé)`, value: configured });
+        options.push({
+          label: `${configured} — non installé, à retirer`,
+          value: configured,
+          disabled: true
+        });
       }
     }
     return options;
   });
+
+  /** Vrai si la valeur actuellement sélectionnée désigne un modèle absent du moteur IA. */
+  protected isModelMissing(ref: string | null | undefined): boolean {
+    const trimmed = ref?.trim();
+    if (!trimmed) return false;
+    const d = this.data();
+    if (!d || d.availableModels.length === 0) return false;
+    return !d.availableModels.some(m => m.modelRef === trimmed);
+  }
+
+  /** Options import : exclut les modèles embedding-only (nomic-embed-text, bge, etc.). */
+  protected readonly importModelOptions = computed<ModelOption[]>(() => {
+    const d = this.data();
+    return this.modelOptions().filter(o => {
+      if (!o.value) return true;
+      if (!d) return true;
+      const model = d.availableModels.find(m => m.modelRef === o.value);
+      return model?.supportsChat !== false;
+    });
+  });
+
+  protected isImportModelInvalid(): boolean {
+    const ref = this.selectedImportModelRef?.trim();
+    if (!ref) return false;
+    const d = this.data();
+    const model = d?.availableModels.find(m => m.modelRef === ref);
+    if (model) return model.supportsChat === false;
+    return /embed/i.test(ref);
+  }
 
   ngOnInit(): void {
     this.load();

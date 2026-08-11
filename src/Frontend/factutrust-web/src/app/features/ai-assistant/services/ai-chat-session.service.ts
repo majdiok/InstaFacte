@@ -2,7 +2,7 @@ import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { Injectable, inject, PLATFORM_ID, signal, effect } from '@angular/core';
 import { Subscription, fromEvent, firstValueFrom } from 'rxjs';
 import { debounceTime, filter } from 'rxjs/operators';
-import { AuthService } from '@core/services/auth.service';
+import { AuthService, User } from '@core/services/auth.service';
 import { createClientUuid } from '@core/utils/safe-random-uuid.util';
 import { AiChatService } from './ai-chat.service';
 import { AiStreamService } from './ai-stream.service';
@@ -134,19 +134,29 @@ export class AiChatSessionService {
   constructor() {
     const auth = inject(AuthService);
     let prevUid: string | null | undefined = undefined;
+    let prevCtxId: string | null | undefined = undefined;
+    let prevAccessMode: User['accessMode'] | null | undefined = undefined;
     effect(
       () => {
-        const uid = auth.user()?.id ?? null;
+        const user = auth.user();
+        const uid = user?.id ?? null;
+        const ctxId = user?.contextTenantId ?? null;
+        const accessMode = user?.accessMode ?? null;
         if (prevUid !== undefined) {
           const accountSwitch =
             prevUid !== null && uid !== null && prevUid !== uid;
           const logout = prevUid !== null && uid === null;
-          if (accountSwitch || logout) {
+          const dossierSwitch =
+            uid !== null &&
+            (prevCtxId !== ctxId || prevAccessMode !== accessMode);
+          if (accountSwitch || logout || dossierSwitch) {
             this.resetSessionForUserChange();
             queueMicrotask(() => this.initialize());
           }
         }
         prevUid = uid;
+        prevCtxId = ctxId;
+        prevAccessMode = accessMode;
       }
     );
 
@@ -501,11 +511,18 @@ export class AiChatSessionService {
     });
   }
 
-  /** Message d'erreur adapté au statut HTTP du flux IA (401 / 429), sinon message générique. */
+  /** Message d'erreur adapté au statut HTTP du flux IA (401 / 403 / 429), sinon message générique. */
   private resolveStreamErrorMessage(err: unknown): string {
     const status = (err as { httpStatus?: number } | null)?.httpStatus;
+    const message = (err as Error | null)?.message;
     if (status === 401) {
       return 'Session expirée. Veuillez vous reconnecter, puis renvoyer votre message.';
+    }
+    if (status === 403) {
+      if (message && !message.startsWith('HTTP 403')) {
+        return message;
+      }
+      return 'Action non autorisée en mode dossier client.';
     }
     if (status === 429) {
       return 'Trop de requêtes vers l’assistant IA. Patientez un instant avant de réessayer.';
@@ -1246,7 +1263,11 @@ export class AiChatSessionService {
     // (évite de rouvrir une conversation Ventes dans le panneau global et inversement).
     const scope = this.agentScope();
     const scopeSuffix = scope !== AssistantAgentScope.None ? `_scope${scope}` : '';
-    return `ft_ai_active_conv_${u.id}_${u.tenantId}${scopeSuffix}`;
+    const dossierSuffix =
+      u.accessMode === 'delegated' && u.contextTenantId
+        ? `_ctx${u.contextTenantId}`
+        : '';
+    return `ft_ai_active_conv_${u.id}_${u.tenantId}${dossierSuffix}${scopeSuffix}`;
   }
 
   private readStoredActiveConversationId(): string | null {

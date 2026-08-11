@@ -118,4 +118,22 @@ describe('delegatedFirmNavGuard', () => {
     );
     expect(managed).not.toBe(true);
   });
+
+  it('allows delegated firm user on /ai-assistant/comptabilite', async () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, delegatedUser);
+    const result = await TestBed.runInInjectionContext(() =>
+      delegatedFirmNavGuard({} as never, { url: '/ai-assistant/comptabilite' } as never)
+    );
+    expect(result).toBe(true);
+  });
+
+  it('blocks delegated firm user on /ai-assistant/ventes', async () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, delegatedUser);
+    const result = await TestBed.runInInjectionContext(() =>
+      delegatedFirmNavGuard({} as never, { url: '/ai-assistant/ventes' } as never)
+    );
+    expect(result).not.toBe(true);
+  });
 });

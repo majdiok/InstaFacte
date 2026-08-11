@@ -576,6 +576,9 @@ public static class Permissions
         /// <summary>Valider les écritures en brouillard (workflow de révision cabinet).</summary>
         public const string Validate = "accounting:validate";
 
+        /// <summary>Supprimer une écriture comptable en brouillon et ses pièces justificatives. Réservé au cabinet en mode délégué.</summary>
+        public const string Delete = "accounting:delete";
+
         /// <summary>Contre-passer (extourner) une écriture validée.</summary>
         public const string Reverse = "accounting:reverse";
 

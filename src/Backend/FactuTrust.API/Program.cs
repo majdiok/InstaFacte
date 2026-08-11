@@ -146,10 +146,15 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(PermissionPolicies.FirmDelegatedContext, policy =>
         policy.RequireAuthenticatedUser()
             .AddRequirements(new FirmDelegatedContextRequirement()));
+
+    options.AddPolicy(PermissionPolicies.PayrollFirmOperation, policy =>
+        policy.RequireAuthenticatedUser()
+            .AddRequirements(new PayrollFirmOperationRequirement()));
 });
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
 builder.Services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
 builder.Services.AddScoped<IAuthorizationHandler, FirmDelegatedContextAuthorizationHandler>();
+builder.Services.AddScoped<IAuthorizationHandler, PayrollFirmOperationAuthorizationHandler>();
 
 var isDevelopment = builder.Environment.IsDevelopment();
 

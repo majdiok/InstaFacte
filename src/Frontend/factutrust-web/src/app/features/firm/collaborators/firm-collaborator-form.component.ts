@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, ViewChild, inject, signal } from '@angular/core';
 import { CommonModule, Location } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { FormsModule } from '@angular/forms';
@@ -22,6 +22,10 @@ import {
   UpdateFirmUserPayload
 } from '@core/services/firm-collaborators.service';
 import { downloadBlob } from '@features/accounting/shared/accounting-download.util';
+import { FirmGovernanceService } from '@core/services/firm-governance.service';
+import {
+  FirmCollaboratorPayrollOnboardingComponent
+} from './firm-collaborator-payroll-onboarding.component';
 
 type FormMode = 'create' | 'edit' | 'view';
 
@@ -40,7 +44,8 @@ type FormMode = 'create' | 'edit' | 'view';
     SelectButtonModule,
     MultiSelectModule,
     TabsModule,
-    PageHeaderComponent
+    PageHeaderComponent,
+    FirmCollaboratorPayrollOnboardingComponent
   ],
   template: `
     <app-page-header [title]="title" [subtitle]="subtitle">
@@ -50,7 +55,7 @@ type FormMode = 'create' | 'edit' | 'view';
         label="Enregistrer"
         icon="pi pi-save"
         [loading]="saving()"
-        [disabled]="form.invalid || saving()"
+        [disabled]="form.invalid || saving() || payrollFormInvalid()"
         (onClick)="save()"></p-button>
       <p-button *ngIf="mode !== 'view'" label="Annuler" [outlined]="true" (onClick)="back()"></p-button>
       <p-button
@@ -71,7 +76,8 @@ type FormMode = 'create' | 'edit' | 'view';
       <p-tabs [lazy]="true">
         <p-tablist>
           <p-tab [value]="0">Informations générales</p-tab>
-          <p-tab [value]="1" [disabled]="mode === 'create' || !collaborator()">Binômes</p-tab>
+          <p-tab [value]="1" *ngIf="autoProvisionEnabled()">Paie</p-tab>
+          <p-tab [value]="autoProvisionEnabled() ? 2 : 1" [disabled]="mode === 'create' || !collaborator()">Binômes</p-tab>
         </p-tablist>
         <p-tabpanels>
         <p-tabpanel [value]="0">
@@ -99,6 +105,19 @@ type FormMode = 'create' | 'edit' | 'view';
                 {{ form.controls.email.getError('server') }}
               </small>
             </label>
+            <div class="full payroll-link-row" *ngIf="mode !== 'create'">
+              <strong>Salarié paie lié</strong>
+              <span *ngIf="payrollLinkLabel(); else noPayrollLink">{{ payrollLinkLabel() }}</span>
+              <ng-template #noPayrollLink>
+                <span class="hint">Aucune liaison — la synchronisation par email ou la page Coûts collaborateurs permet de lier un salarié.</span>
+              </ng-template>
+              <p-button
+                label="Modifier la liaison"
+                icon="pi pi-link"
+                [outlined]="true"
+                size="small"
+                (onClick)="goPayrollCosts()"></p-button>
+            </div>
             <label>Téléphone mobile professionnel
               <input pInputText formControlName="phoneNumber" placeholder="+216…" />
             </label>
@@ -151,7 +170,13 @@ type FormMode = 'create' | 'edit' | 'view';
           </form>
         </p-tabpanel>
 
-        <p-tabpanel [value]="1">
+        <p-tabpanel [value]="1" *ngIf="autoProvisionEnabled()">
+          <app-firm-collaborator-payroll-onboarding
+            #payrollOnboarding
+            [identity]="collaboratorIdentity()" />
+        </p-tabpanel>
+
+        <p-tabpanel [value]="autoProvisionEnabled() ? 2 : 1">
           <div class="binomes" *ngIf="mode !== 'create' && collaborator(); else noBinomes">
             <p class="hint">Sélectionnez les collaborateurs binômes (second manager).</p>
             <p-multiSelect
@@ -206,6 +231,10 @@ type FormMode = 'create' | 'edit' | 'view';
     .cni-row { display: flex; gap: .75rem; align-items: center; }
     .cni-ok { color: var(--color-success-600, #16a34a); font-size: .85rem; }
     .cni-actions { display: flex; gap: .5rem; }
+    .payroll-link-row {
+      display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem;
+      padding: .75rem; border-radius: 12px; background: var(--color-surface-muted, #f8fafc);
+    }
     .binomes { display: flex; flex-direction: column; gap: .75rem; max-width: 640px; }
     .hint { margin: 0; color: var(--color-text-secondary, #64748b); font-size: .875rem; }
     .mt { margin-top: .5rem; align-self: flex-start; }
@@ -218,6 +247,8 @@ type FormMode = 'create' | 'edit' | 'view';
   `]
 })
 export class FirmCollaboratorFormComponent implements OnInit {
+  @ViewChild('payrollOnboarding') payrollOnboarding?: FirmCollaboratorPayrollOnboardingComponent;
+
   private readonly fb = inject(FormBuilder);
   private readonly api = inject(FirmCollaboratorsService);
   private readonly route = inject(ActivatedRoute);
@@ -225,6 +256,7 @@ export class FirmCollaboratorFormComponent implements OnInit {
   private readonly location = inject(Location);
   private readonly toast = inject(ToastService);
   private readonly errorHandler = inject(ErrorHandlerService);
+  private readonly governanceApi = inject(FirmGovernanceService);
 
   mode: FormMode = 'create';
   readOnly = false;
@@ -238,6 +270,8 @@ export class FirmCollaboratorFormComponent implements OnInit {
   readonly collaborator = signal<FirmUser | null>(null);
   readonly allUsers = signal<FirmUser[]>([]);
   readonly binomeCandidates = signal<{ label: string; value: string }[]>([]);
+  readonly payrollLinkLabel = signal<string | null>(null);
+  readonly autoProvisionEnabled = signal(false);
 
   selectedBinomeIds: string[] = [];
   private pendingCni: File | null = null;
@@ -277,6 +311,7 @@ export class FirmCollaboratorFormComponent implements OnInit {
       this.title = "Création d'un nouveau collaborateur";
       this.subtitle = 'Informations générales';
       this.loadFirmAddress();
+      this.loadProvisioningFlags();
     } else if (this.mode === 'edit') {
       this.title = 'Modification du collaborateur';
       this.collaboratorId = this.route.snapshot.paramMap.get('id');
@@ -314,6 +349,29 @@ export class FirmCollaboratorFormComponent implements OnInit {
       return 'edit';
     }
     return 'view';
+  }
+
+  private loadProvisioningFlags(): void {
+    this.governanceApi.getPayrollProvisioningStatus().subscribe({
+      next: res => {
+        this.autoProvisionEnabled.set(!!res.data?.autoProvisionOnCollaboratorCreate);
+      },
+      error: () => this.autoProvisionEnabled.set(false)
+    });
+  }
+
+  collaboratorIdentity(): { firstName: string; lastName: string; email: string } {
+    const raw = this.form.getRawValue();
+    return {
+      firstName: raw.firstName?.trim() ?? '',
+      lastName: raw.lastName?.trim() ?? '',
+      email: raw.email?.trim() ?? ''
+    };
+  }
+
+  payrollFormInvalid(): boolean {
+    if (!this.autoProvisionEnabled() || this.mode !== 'create') return false;
+    return this.payrollOnboarding?.form.invalid ?? true;
   }
 
   private loadFirmAddress(): void {
@@ -357,6 +415,7 @@ export class FirmCollaboratorFormComponent implements OnInit {
         this.selectedBinomeIds = user.binomes.map(b => b.id);
         this.loading.set(false);
         this.loadBinomeCandidates(user.id);
+        this.loadPayrollLink(user.id);
       },
       error: err => {
         this.loading.set(false);
@@ -377,6 +436,26 @@ export class FirmCollaboratorFormComponent implements OnInit {
         );
       }
     });
+  }
+
+  private loadPayrollLink(userId: string): void {
+    const year = new Date().getFullYear();
+    this.governanceApi.listCollaboratorCosts(year).subscribe({
+      next: res => {
+        const row = (res.data ?? []).find(c => c.collaboratorUserId === userId);
+        if (row?.payrollEmployeeName) {
+          const source = row.payrollLinkSourceDisplay ? ` (${row.payrollLinkSourceDisplay})` : '';
+          this.payrollLinkLabel.set(`${row.payrollEmployeeName}${source}`);
+        } else {
+          this.payrollLinkLabel.set(null);
+        }
+      },
+      error: () => this.payrollLinkLabel.set(null)
+    });
+  }
+
+  goPayrollCosts(): void {
+    void this.router.navigate(['/firm/governance/collaborator-costs']);
   }
 
   private onUseFirmAddressChanged(useFirmAddress: boolean): void {
@@ -441,6 +520,17 @@ export class FirmCollaboratorFormComponent implements OnInit {
       this.form.markAllAsTouched();
       return;
     }
+    if (this.autoProvisionEnabled() && this.mode === 'create') {
+      this.payrollOnboarding?.markAllAsTouched();
+      if (this.payrollFormInvalid()) {
+        this.toast.add({
+          severity: 'warn',
+          summary: 'Paie',
+          detail: 'Complétez le dossier paie (onglet Paie) avant d\'enregistrer.'
+        });
+        return;
+      }
+    }
     this.saving.set(true);
     const raw = this.form.getRawValue();
 
@@ -462,15 +552,38 @@ export class FirmCollaboratorFormComponent implements OnInit {
         country: raw.country?.trim() || null,
         sendInvite: !raw.password?.trim() || raw.sendInvite
       };
+      if (this.autoProvisionEnabled()) {
+        const payroll = this.payrollOnboarding?.buildPayload();
+        if (!payroll) {
+          this.saving.set(false);
+          this.toast.add({
+            severity: 'warn',
+            summary: 'Paie',
+            detail: 'Le dossier paie est incomplet (vérifiez le matricule, les dates et le salaire).'
+          });
+          return;
+        }
+        payload.payroll = payroll;
+      }
       this.api.create(payload, this.pendingCni).subscribe({
         next: user => {
           this.saving.set(false);
-          this.toast.add({ severity: 'success', summary: 'Collaborateurs', detail: 'Collaborateur créé' });
+          const detail = user.payrollEmployeeId
+            ? 'Collaborateur et salarié paie créés'
+            : 'Collaborateur créé';
+          this.toast.add({ severity: 'success', summary: 'Collaborateurs', detail });
           void this.router.navigate(['/firm/collaborateurs', user.id, 'edit']);
         },
         error: err => {
           this.saving.set(false);
           const detail = this.errorHandler.extractErrorMessage(err) || 'Création impossible';
+          if (this.isPayrollProvisionError(detail)) {
+            this.showError(
+              detail.startsWith('Collaborateur non créé')
+                ? detail
+                : `Collaborateur non créé : ${detail}`);
+            return;
+          }
           this.showError(detail);
           this.applyEmailServerErrorIfDuplicate(detail);
         }
@@ -544,6 +657,12 @@ export class FirmCollaboratorFormComponent implements OnInit {
 
   back(): void {
     this.location.back();
+  }
+
+  private isPayrollProvisionError(detail: string): boolean {
+    const normalized = detail.toLowerCase();
+    return normalized.includes('impossible de créer le salarié paie')
+      || normalized.includes('payrollprovision');
   }
 
   private showError(detail: string): void {

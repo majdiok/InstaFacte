@@ -10,10 +10,17 @@ export const authGuard: CanActivateFn = (route, state) => {
     return true;
   }
 
+  // Already on login: avoid a redundant navigate that can abort View Transitions
+  // (`InvalidStateError: Transition was aborted because of invalid state`).
+  const path = state.url.split('?')[0];
+  if (path === '/auth/login' || path.startsWith('/auth/login/')) {
+    return false;
+  }
+
   // Store the attempted URL for redirecting after login
-  router.navigate(['/auth/login'], {
+  void router.navigate(['/auth/login'], {
     queryParams: { returnUrl: state.url }
   });
-  
+
   return false;
 };

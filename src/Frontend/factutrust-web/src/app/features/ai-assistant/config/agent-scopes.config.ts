@@ -131,7 +131,14 @@ function matchesPrefix(url: string, prefix: string): boolean {
  * 2. préfixe d'un module (ex. /invoices) → scope suggéré pour la bulle flottante ;
  * 3. sinon None (assistant global) — y compris `/ai-assistant` seul et /dashboard.
  */
-export function resolveScopeFromUrl(url: string | null | undefined): AssistantAgentScope {
+export function resolveScopeFromUrl(
+  url: string | null | undefined,
+  options?: { firmDelegated?: boolean }
+): AssistantAgentScope {
+  if (options?.firmDelegated) {
+    return AssistantAgentScope.Accounting;
+  }
+
   if (!url) {
     return AssistantAgentScope.None;
   }

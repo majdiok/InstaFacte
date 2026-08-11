@@ -1,6 +1,16 @@
 import { PERMISSIONS } from '@core/config/permission-keys';
 import type { AuthService } from '@core/services/auth.service';
 
+/** True when payroll execution is delegated to an assigned accounting firm. */
+export function isPayrollFirmManaged(auth: AuthService): boolean {
+  return auth.isPayrollFirmManaged();
+}
+
+/** Company user with an active cabinet assignment (payroll cycles managed by the firm). */
+export function isCompanyPayrollReadOnly(auth: AuthService): boolean {
+  return !auth.isAccountingFirm() && auth.isPayrollFirmManaged();
+}
+
 /** True when the user may create/edit employees, contracts, leaves and advances. */
 export function canManagePayrollEmployees(auth: AuthService): boolean {
   return auth.hasPermission(PERMISSIONS.payroll.manageEmployees);
@@ -48,3 +58,8 @@ export function isPayrollConsultMode(auth: AuthService): boolean {
   return auth.isAccountingFirm() && auth.isDelegatedMode() && !canManagePayrollEmployees(auth);
 }
 
+export const PAYROLL_FIRM_MANAGED_COMPANY_BANNER =
+  'La gestion des cycles de paie, du calcul, de la régularisation IRPP et des paramètres est assurée par votre cabinet comptable. Vous pouvez consulter les résultats et saisir les éléments variables.';
+
+export const PAYROLL_FIRM_CONSULT_BANNER =
+  'Mode consultation — la gestion des dossiers salariés est réservée à la société cliente.';

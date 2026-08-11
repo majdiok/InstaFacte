@@ -1,7 +1,6 @@
-using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Configuration;
+using FactuTrust.Application.Common.Interfaces;
 using Microsoft.Extensions.Options;
-
 namespace FactuTrust.Infrastructure.Services;
 
 public sealed class FirmGovernanceFeature : IFirmGovernanceFeature
@@ -14,4 +13,7 @@ public sealed class FirmGovernanceFeature : IFirmGovernanceFeature
     }
 
     public bool IsEnabled => _options.Enabled;
+
+    public bool IsInternalPayrollEnabled =>
+        FirmGovernanceNativeAccess.IsInternalPayrollEnabled(_options);
 }

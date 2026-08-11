@@ -1,3 +1,5 @@
+using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Entities.FirmGovernance;
@@ -8,6 +10,7 @@ using FactuTrust.Infrastructure.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
 using TaxRegime = FactuTrust.Domain.Entities.TaxRegime;
@@ -29,8 +32,20 @@ public sealed class FirmCollaboratorRentabilityServiceTests
         return new MasterDbContext(options);
     }
 
-    private static FirmCollaboratorRentabilityService BuildService(MasterDbContext db) =>
-        new(db, CreateUserManager(db).Object, NullLogger<FirmCollaboratorRentabilityService>.Instance);
+    private static FirmCollaboratorRentabilityService BuildService(
+        MasterDbContext db,
+        IFirmCollaboratorCostSyncService? sync = null,
+        FirmGovernanceOptions? options = null)
+    {
+        var syncService = sync ?? new Mock<IFirmCollaboratorCostSyncService>().Object;
+        var opts = Options.Create(options ?? new FirmGovernanceOptions { SilentImportBeforeRentabilityPrefill = false });
+        return new FirmCollaboratorRentabilityService(
+            db,
+            CreateUserManager(db).Object,
+            syncService,
+            opts,
+            NullLogger<FirmCollaboratorRentabilityService>.Instance);
+    }
 
     private static Mock<UserManager<ApplicationUser>> CreateUserManager(MasterDbContext db)
     {
@@ -167,6 +182,38 @@ public sealed class FirmCollaboratorRentabilityServiceTests
         Assert.True(result.IsSuccess);
         Assert.Equal(0m, result.Value.CalculatedTotalRevenue);
         Assert.Empty(result.Value.Portfolio);
+    }
+
+    [Fact]
+    public async Task GetPrefillAsync_triggers_silent_sync_when_flag_enabled()
+    {
+        await using var db = BuildMaster();
+        await SeedAsync(db);
+        var sync = new Mock<IFirmCollaboratorCostSyncService>();
+        sync
+            .Setup(s => s.EnsureFreshAsync(
+                FirmId,
+                2026,
+                FirmCostSyncTrigger.RentabilityPrefill,
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FirmCollaboratorCostSyncResultDto { PayrollAvailable = true });
+
+        var svc = BuildService(
+            db,
+            sync.Object,
+            new FirmGovernanceOptions { SilentImportBeforeRentabilityPrefill = true });
+
+        await svc.GetPrefillAsync(FirmId, UserId, 2026);
+
+        sync.Verify(
+            s => s.EnsureFreshAsync(
+                FirmId,
+                2026,
+                FirmCostSyncTrigger.RentabilityPrefill,
+                false,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]

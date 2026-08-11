@@ -23,11 +23,15 @@ de ces chaînes dans `src/Frontend/factutrust-web/src/**`.
 | `[Auth] Failed to get auth status:` + `message port closed` / `Receiving end does not exist` | `panelState-*.js` | Extension navigateur (content script ↔ service worker suspendu) |
 | `Uncaught (in promise) Error: Could not establish connection. Receiving end does not exist.` | `ai-assistant:1` (URL de la page) | Content script ↔ service worker d’extension suspendu |
 | `Unchecked runtime.lastError: Could not establish connection. Receiving end does not exist.` | — | API `chrome.runtime` d’extension (émis par Chrome) |
+| `Uncaught TypeError: Cannot read properties of undefined (reading 'toLowerCase')` | `keyboard.ts-*.js` | Extension (gestionnaire de mots de passe / assistant clavier) — **aucun** `keyboard.ts` dans `factutrust-web` |
 
 Indices fiables que c’est une extension : présence de `chrome.runtime` / `runtime.lastError`,
-préfixe `[MindStudio]`, type `launcher/current_url_updated`, pile mentionnant `content.js` ou
-`chrome-extension://…`. Extensions vues dans les captures : **MindStudio, MaxAI, Cookie-Editor**,
+préfixe `[MindStudio]`, type `launcher/current_url_updated`, pile mentionnant `content.js`,
+`keyboard.ts-*.js` ou `chrome-extension://…`. Extensions vues dans les captures : **MindStudio, MaxAI, Cookie-Editor**,
 traducteur, gestionnaire de mots de passe.
+
+Pour isoler ce bruit sur `/auth/login` : navigation privée **sans** extensions, ou désactiver
+le gestionnaire de mots de passe pour `localhost:4200`, ou activer DevTools **« Hide messages from extensions »**.
 
 ### Warnings de polices
 
@@ -68,12 +72,32 @@ En build **développement** uniquement, un filtre (`src/app/core/utils/dev-conso
 branché dans `main.ts` sous `isDevMode()`) neutralise :
 
 - le **rejet de promesse** d’extension `Uncaught (in promise) … Could not establish connection. Receiving end does not exist.` (via `window.addEventListener('unhandledrejection')` + `preventDefault` sur la **chaîne exacte**) ;
-- les logs **`[Auth] Failed to get auth status`** et **`message port closed`** émis via `console.warn` / `console.error` par des scripts d’extension (`panelState-*.js`).
+- les logs **`[Auth] Failed to get auth status`** et **`message port closed`** émis via `console.warn` / `console.error` par des scripts d’extension (`panelState-*.js`) ;
+- les **`TypeError … toLowerCase`** dont la pile ou le fichier source mentionne **`keyboard.ts`** (via `unhandledrejection`, `window.error`, et les wrappers console).
 
 Il ne touche **ni la production, ni les intercepteurs HTTP**. Les wrappers `console.warn` / `console.error` ne filtrent que des signatures documentées d’extensions ; les logs applicatifs réels restent affichés. Le reste du bruit d’extension —
 logs `[MindStudio]` (via `console.error`), `Unchecked runtime.lastError` (émis par Chrome), rejets
 du « monde isolé » des content scripts — n’est pas interceptable depuis la page → utiliser le toggle
 DevTools **« Hide messages from extensions »**.
+
+### Page connexion — `InvalidStateError` / View Transitions
+
+Un `Uncaught (in promise) InvalidStateError: Transition was aborted because of invalid state`
+pouvait apparaître sur `/auth/login` lorsqu’une session expirée déclenchait `logout()` →
+`navigate(['/auth/login'])` alors que la page était déjà affichée, en combinaison avec
+`withViewTransitions()`. Correctif applicatif : `invalidateSession()` (clear sans POST inutiles)
+et navigation vers `/auth/login` **uniquement** si l’URL courante n’est pas déjà sous `/auth/*`.
+
+### Warning Angular `NG0956` sur `/auth/login`
+
+Le template login (`features/auth/login`) **n’utilise aucun `@for`**. Un warning
+`NG0956 … collection of size 6` observé sur cette URL est donc en général :
+- un résidu d’une navigation précédente (sidebar / rapports), ou
+- émis par une dépendance / extension, pas par le formulaire de connexion.
+
+Avant de « corriger » le tracking sidebar (`track item.label`), **ouvrir la pile** du warning
+dans DevTools : ne modifier le code métier que si la pile pointe clairement vers un composant
+FactuTrust. Sinon : ignorer (perf warning non bloquant) ou « Hide messages from extensions ».
 
 ## Étape 1 — Valider dans l’onglet Network (≈ 5 min)
 
@@ -111,6 +135,57 @@ Ouvrir un ticket (avec capture Network) **uniquement si** :
 - Vous observez un comportement incorrect (401/403/500, ou corps `ApiResponse` avec `success: false` selon le cas).
 
 Les erreurs HTTP côté SPA sont traitées par les intercepteurs Angular (voir `src/Frontend/factutrust-web/src/app/core/interceptors/error.interceptor.ts`) à partir de **`HttpErrorResponse`** (statuts HTTP d’erreur réels).
+
+## Cabinet comptable — import facture et assistant IA comptabilité
+
+En mode **délégué** (dossier client ouvert), les utilisateurs cabinet reçoivent `ai:chat` et le module `AppModule.AI` si `Features:AccountingFirms:AiAccountingEnabled` est `true` (défaut). Cela active :
+
+- l’import IA de factures externes depuis **Saisie manuelle** (`/accounting/manual-entry`) ;
+- l’assistant expert **Comptabilité** (`/ai-assistant/comptabilite`) uniquement.
+
+**Après déploiement** : les sessions cabinet doivent être rafraîchies (reconnexion ou changement de dossier) pour obtenir le nouveau JWT.
+
+Si l’import affiche *« nécessite l'assistant IA, pour lequel vous n'avez pas d'autorisation »* :
+
+1. Vérifier que l’utilisateur est bien en mode délégué dans un dossier client (pas sur `/firm/*`).
+2. Vérifier `Features:AccountingFirms:AiAccountingEnabled` côté API.
+3. Vérifier que le token contient la permission `ai:chat` (claim JWT).
+
+### Assistant IA : « Génération interrompue » + « Une erreur est survenue » en dossier client
+
+Symptôme typique : le bandeau **Modèle prêt** s’affiche, mais tout message (y compris « salut » ou **Analyser avec l’assistant IA**) échoue immédiatement avec *Génération interrompue* et un message générique.
+
+**Diagnostic Network (DevTools)** :
+
+1. Filtrer `POST /api/ai/chat`.
+2. Si le statut est **403** avec un corps `ApiResponse` du type *« Modification interdite en mode dossier client… »*, le middleware `DelegatedAccessMiddleware` bloque encore les écritures IA — vérifier que le déploiement inclut l’autorisation du préfixe `/api/ai`.
+3. Si le statut est **401**, rafraîchir la session (reconnexion ou changement de dossier).
+4. Si le statut est **200** avec `Content-Type: text/event-stream` mais pas de contenu, investiguer Ollama / modèle cloud (voir sections ci-dessous).
+
+**Correctifs côté utilisateur** :
+
+- Quitter le dossier puis le rouvrir (ou se reconnecter) pour obtenir un JWT délégué avec `ai:chat`.
+- Vérifier `Features:AccountingFirms:AiAccountingEnabled` côté API.
+
+### Erreur « does not support chat » (ex. nomic-embed-text)
+
+Le modèle d'import plateforme configuré dans le backoffice (**Configuration IA → Modèle d'import**) est un modèle **d'embedding**, pas un modèle **instruct/chat**. Ollama refuse l'appel.
+
+**Correctif** :
+
+1. Backoffice → Configuration IA → choisir un modèle instruct (ex. `qwen2.5:7b-instruct`) ou vider le champ (repli sur `Ollama:InvoiceImportModel` dans appsettings).
+2. Depuis la version durcie : le runtime ignore automatiquement un modèle embedding plateforme et retombe sur appsettings — mais corriger la config évite les logs d'avertissement.
+
+### Erreur « données exploitables » / « n'a pas pu structurer cette pièce »
+
+L'appel IA a abouti mais le JSON renvoyé par le modèle n'a pas pu être analysé. Fréquent sur **photos de factures** lorsque le chemin texte/OCR est utilisé sans modèle vision.
+
+**Correctif** :
+
+1. Vérifier `Ollama:InvoiceImportVisionModel` dans appsettings (ex. `gemma3:4b`) et que le modèle est installé (`ollama list`).
+2. S'assurer que `InvoiceImportVisionOnImages` est `true` (défaut) pour forcer la vision sur les fichiers image.
+3. Backoffice → Configuration IA → modèle d'import instruct (`qwen2.5:7b-instruct`), pas d'embedding.
+4. Consulter `GET /api/accounting/document-import/capabilities` : `visionModelReady` doit être `true` pour les imports photo.
 
 ## Politique « pas de régression » (important)
 

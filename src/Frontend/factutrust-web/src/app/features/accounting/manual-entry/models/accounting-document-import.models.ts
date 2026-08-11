@@ -136,6 +136,7 @@ export interface DocumentImportCapabilities {
   ocrAvailable: boolean;
   importModel: string | null;
   visionModel: string | null;
+  visionModelReady?: boolean;
 }
 
 /** Libellé lisible de la méthode d'extraction, pour l'écran de relecture. */

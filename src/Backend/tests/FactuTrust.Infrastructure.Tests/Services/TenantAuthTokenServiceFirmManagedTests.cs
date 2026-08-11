@@ -1,7 +1,10 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Configuration;
+using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Auth;
+using FactuTrust.Domain.Authorization;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.ValueObjects;
@@ -80,7 +83,11 @@ public sealed class TenantAuthTokenServiceFirmManagedTests
         TenantId = FirmId
     };
 
-    private static TenantAuthTokenService BuildService(MasterDbContext db, ApplicationUser user)
+    private static TenantAuthTokenService BuildService(
+        MasterDbContext db,
+        ApplicationUser user,
+        bool aiAccountingEnabled = true,
+        bool enableInternalPayroll = false)
     {
         var store = new Mock<IUserStore<ApplicationUser>>();
         var userManager = new Mock<UserManager<ApplicationUser>>(
@@ -102,11 +109,35 @@ public sealed class TenantAuthTokenServiceFirmManagedTests
             })
             .Build();
 
+        var accountingFirmsOptions = Microsoft.Extensions.Options.Options.Create(new AccountingFirmsOptions
+        {
+            Enabled = true,
+            AiAccountingEnabled = aiAccountingEnabled
+        });
+
+        var payrollOptions = Microsoft.Extensions.Options.Options.Create(new PayrollOptions
+        {
+            FirmExclusiveOperations = true
+        });
+
+        var firmAssignment = new Mock<IFirmAssignmentService>();
+        firmAssignment
+            .Setup(s => s.GetCompanyCurrentAssignmentAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((FirmClientAssignmentDto?)null);
+
         return new TenantAuthTokenService(
             userManager.Object,
             permissions.Object,
+            firmAssignment.Object,
             db,
             config,
+            accountingFirmsOptions,
+            payrollOptions,
+            Microsoft.Extensions.Options.Options.Create(new FirmGovernanceOptions
+            {
+                Enabled = true,
+                EnableFirmInternalPayroll = enableInternalPayroll
+            }),
             Mock.Of<ILogger<TenantAuthTokenService>>());
     }
 
@@ -136,6 +167,8 @@ public sealed class TenantAuthTokenServiceFirmManagedTests
         Assert.Contains((int)AppModule.Fiscal, response.User.EnabledModuleIds);
         Assert.Contains((int)AppModule.Reports, response.User.EnabledModuleIds);
         Assert.Contains((int)AppModule.Payroll, response.User.EnabledModuleIds);
+        Assert.Contains((int)AppModule.AI, response.User.EnabledModuleIds);
+        Assert.Contains(Permissions.AI.Chat, response.User.EffectivePermissions);
 
         var claim = DecodeClaims(response.AccessToken)
             .FirstOrDefault(c => c.Type == AuthClaimTypes.IsFirmManaged);
@@ -158,11 +191,28 @@ public sealed class TenantAuthTokenServiceFirmManagedTests
         Assert.Contains((int)AppModule.Sales, response.User.EnabledModuleIds);
         Assert.Contains((int)AppModule.Purchases, response.User.EnabledModuleIds);
         Assert.Contains((int)AppModule.Treasury, response.User.EnabledModuleIds);
+        Assert.Contains((int)AppModule.AI, response.User.EnabledModuleIds);
+        Assert.Contains(Permissions.AI.Chat, response.User.EffectivePermissions);
 
         var claim = DecodeClaims(response.AccessToken)
             .FirstOrDefault(c => c.Type == AuthClaimTypes.IsFirmManaged);
         Assert.NotNull(claim);
         Assert.Equal("false", claim!.Value);
+    }
+
+    [Fact]
+    public async Task GenerateTokens_delegated_firm_managed_without_ai_flag_omits_ai()
+    {
+        await using var db = BuildMaster();
+        await SeedAsync(db);
+        var user = BuildFirmUser();
+        var service = BuildService(db, user, aiAccountingEnabled: false);
+
+        var response = await service.GenerateTokensAsync(
+            FirmUserId, FirmId, ManagedClientId, "Client Géré SARL");
+
+        Assert.DoesNotContain((int)AppModule.AI, response.User.EnabledModuleIds);
+        Assert.DoesNotContain(Permissions.AI.Chat, response.User.EffectivePermissions);
     }
 
     [Fact]
@@ -199,16 +249,35 @@ public sealed class TenantAuthTokenServiceFirmManagedTests
             })
             .Build();
 
+        var accountingFirmsOptions = Microsoft.Extensions.Options.Options.Create(new AccountingFirmsOptions
+        {
+            Enabled = true,
+            AiAccountingEnabled = true
+        });
+
+        var payrollOptions = Microsoft.Extensions.Options.Options.Create(new PayrollOptions
+        {
+            FirmExclusiveOperations = true
+        });
+
+        var firmAssignment = new Mock<IFirmAssignmentService>();
+
         var tokenService = new TenantAuthTokenService(
             userManager.Object,
             permissions.Object,
+            firmAssignment.Object,
             db,
             config,
+            accountingFirmsOptions,
+            payrollOptions,
+            Microsoft.Extensions.Options.Options.Create(new FirmGovernanceOptions { Enabled = true }),
             Mock.Of<ILogger<TenantAuthTokenService>>());
         var response = await tokenService.GenerateTokensAsync(FirmUserId, FirmId);
 
         Assert.False(response.User.IsFirmManaged);
         Assert.Equal("native", response.User.AccessMode);
+        Assert.DoesNotContain((int)AppModule.AI, response.User.EnabledModuleIds);
+        Assert.DoesNotContain(Permissions.AI.Chat, response.User.EffectivePermissions);
     }
 
     [Fact]
@@ -245,11 +314,28 @@ public sealed class TenantAuthTokenServiceFirmManagedTests
             })
             .Build();
 
+        var accountingFirmsOptions = Microsoft.Extensions.Options.Options.Create(new AccountingFirmsOptions
+        {
+            Enabled = true,
+            AiAccountingEnabled = true
+        });
+
+        var payrollOptions = Microsoft.Extensions.Options.Options.Create(new PayrollOptions
+        {
+            FirmExclusiveOperations = true
+        });
+
+        var firmAssignment = new Mock<IFirmAssignmentService>();
+
         var tokenService = new TenantAuthTokenService(
             userManager.Object,
             permissions.Object,
+            firmAssignment.Object,
             db,
             config,
+            accountingFirmsOptions,
+            payrollOptions,
+            Microsoft.Extensions.Options.Options.Create(new FirmGovernanceOptions { Enabled = true }),
             Mock.Of<ILogger<TenantAuthTokenService>>());
 
         await tokenService.GenerateTokensAsync(FirmUserId, FirmId);
@@ -257,5 +343,114 @@ public sealed class TenantAuthTokenServiceFirmManagedTests
         permissions.Verify(
             p => p.GetUserAccessSnapshotAsync(user.Id, It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task GenerateTokens_native_firm_internal_payroll_flag_adds_payroll_module_and_permissions()
+    {
+        await using var db = BuildMaster();
+        await SeedAsync(db);
+        var user = BuildFirmUser();
+
+        var permissions = new Mock<IEffectivePermissionService>();
+        permissions
+            .Setup(p => p.GetUserAccessSnapshotAsync(user.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UserAccessSnapshot(
+                DelegatedPermissionCatalog.FirmNativePermissions.ToHashSet(),
+                Array.Empty<AppModule>(),
+                IsModulePermissionScoped: false));
+
+        var store = new Mock<IUserStore<ApplicationUser>>();
+        var userManager = new Mock<UserManager<ApplicationUser>>(
+            store.Object, null!, null!, null!, null!, null!, null!, null!, null!);
+        userManager.Setup(m => m.FindByIdAsync(FirmUserId.ToString())).ReturnsAsync(user);
+        userManager.Setup(m => m.GetRolesAsync(user))
+            .ReturnsAsync(new List<string> { UserRole.FirmManager.ToString() });
+        userManager.Setup(m => m.UpdateAsync(It.IsAny<ApplicationUser>()))
+            .ReturnsAsync(IdentityResult.Success);
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["JwtSettings:SecretKey"] = "test-secret-key-at-least-32-chars!!",
+                ["JwtSettings:Issuer"] = "FactuTrust.Tests",
+                ["JwtSettings:Audience"] = "FactuTrust.Tests",
+                ["JwtSettings:ExpiryMinutes"] = "15"
+            })
+            .Build();
+
+        var service = new TenantAuthTokenService(
+            userManager.Object,
+            permissions.Object,
+            Mock.Of<IFirmAssignmentService>(),
+            db,
+            config,
+            Microsoft.Extensions.Options.Options.Create(new AccountingFirmsOptions { Enabled = true }),
+            Microsoft.Extensions.Options.Options.Create(new PayrollOptions { FirmExclusiveOperations = true }),
+            Microsoft.Extensions.Options.Options.Create(new FirmGovernanceOptions
+            {
+                Enabled = true,
+                EnableFirmInternalPayroll = true
+            }),
+            Mock.Of<ILogger<TenantAuthTokenService>>());
+
+        var response = await service.GenerateTokensAsync(FirmUserId, FirmId);
+
+        Assert.Contains((int)AppModule.Payroll, response.User.EnabledModuleIds);
+        Assert.Contains(Permissions.Payroll.ManageEmployees, response.User.EffectivePermissions);
+    }
+
+    [Fact]
+    public async Task GenerateTokens_native_firm_internal_payroll_flag_off_omits_payroll_module()
+    {
+        await using var db = BuildMaster();
+        await SeedAsync(db);
+        var user = BuildFirmUser();
+
+        var store = new Mock<IUserStore<ApplicationUser>>();
+        var userManager = new Mock<UserManager<ApplicationUser>>(
+            store.Object, null!, null!, null!, null!, null!, null!, null!, null!);
+        userManager.Setup(m => m.FindByIdAsync(FirmUserId.ToString())).ReturnsAsync(user);
+        userManager.Setup(m => m.GetRolesAsync(user))
+            .ReturnsAsync(new List<string> { UserRole.FirmManager.ToString() });
+        userManager.Setup(m => m.UpdateAsync(It.IsAny<ApplicationUser>()))
+            .ReturnsAsync(IdentityResult.Success);
+
+        var permissions = new Mock<IEffectivePermissionService>();
+        permissions
+            .Setup(p => p.GetUserAccessSnapshotAsync(user.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UserAccessSnapshot(
+                DelegatedPermissionCatalog.FirmNativePermissions.ToHashSet(),
+                Array.Empty<AppModule>(),
+                IsModulePermissionScoped: false));
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["JwtSettings:SecretKey"] = "test-secret-key-at-least-32-chars!!",
+                ["JwtSettings:Issuer"] = "FactuTrust.Tests",
+                ["JwtSettings:Audience"] = "FactuTrust.Tests",
+                ["JwtSettings:ExpiryMinutes"] = "15"
+            })
+            .Build();
+
+        var service = new TenantAuthTokenService(
+            userManager.Object,
+            permissions.Object,
+            Mock.Of<IFirmAssignmentService>(),
+            db,
+            config,
+            Microsoft.Extensions.Options.Options.Create(new AccountingFirmsOptions { Enabled = true }),
+            Microsoft.Extensions.Options.Options.Create(new PayrollOptions { FirmExclusiveOperations = true }),
+            Microsoft.Extensions.Options.Options.Create(new FirmGovernanceOptions
+            {
+                Enabled = true,
+                EnableFirmInternalPayroll = false
+            }),
+            Mock.Of<ILogger<TenantAuthTokenService>>());
+
+        var response = await service.GenerateTokensAsync(FirmUserId, FirmId);
+
+        Assert.DoesNotContain((int)AppModule.Payroll, response.User.EnabledModuleIds);
     }
 }

@@ -188,7 +188,10 @@ public sealed class GetAccountingDashboardQueryHandler
         // VAT declaration page exactly (same invoice/purchase source + carried-over credit) for
         // the current month — instead of the parallel journal-based approximation.
         var now = DateTime.UtcNow;
-        var vat = await _mediator.Send(new GetVatDeclarationQuery(now.Year, now.Month), cancellationToken);
+        // Estimation : elle doit suivre les écritures du mois en cours, pas le dernier dépôt.
+        var vat = await _mediator.Send(
+            new GetVatDeclarationQuery(now.Year, now.Month, Valuation: VatDeclarationValuation.Live),
+            cancellationToken);
         if (vat.IsSuccess)
             return Result.Success(dashboard.Value with { VatDueEstimate = vat.Value.VatDue });
 

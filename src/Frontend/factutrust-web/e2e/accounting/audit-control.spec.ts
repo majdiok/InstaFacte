@@ -17,4 +17,12 @@ test.describe('Accounting audit control dashboard', () => {
       page.getByRole('heading', { name: /Contrôle d'intégrité/i })
     ).toBeVisible({ timeout: 15000 });
   });
+
+  test('corriger navigates to contextual screen with query params', async ({ page }) => {
+    test.skip(true, 'À exécuter avec session cabinet authentifiée et anomalies détectées');
+    await page.goto('/accounting/health');
+    await page.getByRole('button', { name: 'Corriger' }).first().click();
+    await expect(page).toHaveURL(/accounting\/(lettering|entry-search|journal)/);
+    await expect(page.url()).toMatch(/auto(Load|Search)=1|status=0/);
+  });
 });

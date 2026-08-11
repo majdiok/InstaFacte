@@ -1,6 +1,6 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
+import { ActivatedRoute, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { InputTextModule } from 'primeng/inputtext';
 import { TableModule } from 'primeng/table';
@@ -38,9 +38,11 @@ type StatusFilter = 'all' | 'active' | 'inactive';
     PayrollAmountPipe
   ],
   template: `
-    <app-page-header title="Salariés" subtitle="Dossiers salariés et contrats de travail.">
+    <app-page-header
+      [title]="firmInternal() ? 'Salariés du cabinet' : 'Salariés'"
+      [subtitle]="firmInternal() ? 'Paie interne — collaborateurs du cabinet.' : 'Dossiers salariés et contrats de travail.'">
       @if (canManage()) {
-        <app-button variant="primary" icon="pi-plus" iconPos="left" routerLink="/payroll/employees/new">Nouveau salarié</app-button>
+        <app-button variant="primary" icon="pi-plus" iconPos="left" [routerLink]="routeBase() + '/employees/new'">Nouveau salarié</app-button>
       }
     </app-page-header>
 
@@ -69,7 +71,7 @@ type StatusFilter = 'all' | 'active' | 'inactive';
         [description]="loading() ? undefined : 'Aucun salarié ne correspond à vos critères.'"
         [showAction]="canManage() && !loading()"
         actionLabel="Nouveau salarié"
-        actionRoute="/payroll/employees/new" />
+        [actionRoute]="routeBase() + '/employees/new'" />
     }
 
     @if (!loading() && items().length) {
@@ -108,7 +110,7 @@ type StatusFilter = 'all' | 'active' | 'inactive';
               }
             </td>
             <td>
-              <app-button variant="outline" size="sm" icon="pi-eye" iconPos="left" [routerLink]="['/payroll/employees', e.id]">Voir</app-button>
+              <app-button variant="outline" size="sm" icon="pi-eye" iconPos="left" [routerLink]="[routeBase() + '/employees', e.id]">Voir</app-button>
             </td>
           </tr>
         </ng-template>
@@ -120,6 +122,10 @@ export class EmployeeListComponent implements OnInit {
   private readonly employees = inject(EmployeeService);
   private readonly toast = inject(ToastService);
   private readonly auth = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
+
+  routeBase = signal('/payroll');
+  firmInternal = signal(false);
 
   search = '';
   statusFilter: StatusFilter = 'all';
@@ -133,9 +139,12 @@ export class EmployeeListComponent implements OnInit {
   ];
 
   canManage = computed(() => canManagePayrollEmployees(this.auth));
-  showConsultBanner = computed(() => isPayrollConsultMode(this.auth));
+  showConsultBanner = computed(() => !this.firmInternal() && isPayrollConsultMode(this.auth));
 
   ngOnInit(): void {
+    const data = this.route.snapshot.data;
+    this.routeBase.set(data['payrollRouteBase'] ?? '/payroll');
+    this.firmInternal.set(!!data['firmInternalPayroll']);
     this.load();
   }
 

@@ -7,6 +7,8 @@ import {
   FirmLeaveBalance,
   FirmLeaveCalendarEntry,
   FirmLeaveOverview,
+  FirmLeaveReconciliation,
+  FirmLeaveReplayResult,
   FirmLeaveRequest,
   FirmLeaveSettings,
   FirmLeaveType
@@ -126,6 +128,21 @@ export class FirmLeavesService {
 
   upsertType(body: Partial<FirmLeaveType> & { code: string; label: string }): Observable<ApiResponse<FirmLeaveType>> {
     return this.http.post<ApiResponse<FirmLeaveType>>(`${this.base}/leaves/types`, body);
+  }
+
+  /** Écarts entre congés approuvés et report en paie interne. */
+  getReconciliation(year: number): Observable<ApiResponse<FirmLeaveReconciliation>> {
+    const params = new HttpParams().set('year', year);
+    return this.http.get<ApiResponse<FirmLeaveReconciliation>>(
+      `${this.base}/leaves/reconciliation`, { params });
+  }
+
+  /** Rejoue le report d'une demande, ou de toutes celles en écart si l'id est omis. */
+  replayPayrollMirror(year: number, leaveRequestId?: string): Observable<ApiResponse<FirmLeaveReplayResult>> {
+    let params = new HttpParams().set('year', year);
+    if (leaveRequestId) params = params.set('leaveRequestId', leaveRequestId);
+    return this.http.post<ApiResponse<FirmLeaveReplayResult>>(
+      `${this.base}/leaves/reconciliation/replay`, {}, { params });
   }
 
   getSettings(year: number): Observable<ApiResponse<FirmLeaveSettings>> {

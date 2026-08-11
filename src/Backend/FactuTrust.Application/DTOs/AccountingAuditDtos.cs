@@ -76,6 +76,14 @@ public sealed record PagedAnomaliesDto
     public int IgnoredCount { get; init; }
 }
 
+public sealed record AccountingAuditCorrectionLinkDto
+{
+    public string Route { get; init; } = null!;
+    public IReadOnlyDictionary<string, string> QueryParams { get; init; }
+        = new Dictionary<string, string>();
+    public string? Label { get; init; }
+}
+
 public sealed record AccountingAnomalyListItemDto
 {
     public Guid Id { get; init; }
@@ -93,7 +101,9 @@ public sealed record AccountingAnomalyListItemDto
     public int Status { get; init; }
     public Guid? AssignedToUserId { get; init; }
     public string? AssignedToUserName { get; init; }
+  /// <summary>Route legacy — préférer <see cref="CorrectionLink"/>.</summary>
     public string? DeepLinkRoute { get; init; }
+    public AccountingAuditCorrectionLinkDto? CorrectionLink { get; init; }
     public int LineCount { get; init; }
     public DateTime DetectedAt { get; init; }
 }
@@ -116,7 +126,9 @@ public sealed record AccountingAnomalyDetailDto
     public Guid? AssignedToUserId { get; init; }
     public string? AssignedToUserName { get; init; }
     public DateTime DetectedAt { get; init; }
+  /// <summary>Route legacy — préférer <see cref="CorrectionLink"/>.</summary>
     public string? DeepLinkRoute { get; init; }
+    public AccountingAuditCorrectionLinkDto? CorrectionLink { get; init; }
     public IReadOnlyList<string> Recommendations { get; init; } = Array.Empty<string>();
     public IReadOnlyList<AccountingAnomalyLineDto> Lines { get; init; } = Array.Empty<AccountingAnomalyLineDto>();
     public IReadOnlyList<AccountingAnomalyActivityDto> Activities { get; init; } = Array.Empty<AccountingAnomalyActivityDto>();

@@ -2,6 +2,12 @@
   title="Lettrage"
   subtitle="Rapprochez les écritures débitrices et créditrices d'un même compte" />
 
+<app-accounting-correction-banner />
+
+@if (accountHint) {
+  <p class="lettering-hint" role="note">Vous pouvez aussi consulter le compte {{ accountHint }}.</p>
+}
+
 <div class="lettering-page accounting-page">
   <!-- Filters -->
   <p-card

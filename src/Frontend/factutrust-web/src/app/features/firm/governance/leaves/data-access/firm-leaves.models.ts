@@ -8,6 +8,11 @@ export interface FirmLeaveType {
   isSystem: boolean;
   isActive: boolean;
   sortOrder: number;
+  /** Type de congé de paie créé à l'approbation. Null = aucun effet sur le bulletin. */
+  payrollLeaveType?: number | null;
+  payrollEffectDisplay?: string;
+  /** Décompté du temps de présence productif (dénominateur du taux horaire). */
+  countsAsAbsence?: boolean;
 }
 
 export interface FirmLeaveSettings {
@@ -57,7 +62,63 @@ export interface FirmLeaveRequest {
   processedByUserId?: string;
   processedByName?: string;
   rejectionReason?: string;
+  /** État persistant du report vers la paie interne du cabinet. */
+  payrollMirrorState?: number;
+  payrollMirrorStateDisplay?: string;
+  payrollMirrorMessage?: string;
+  payrollMirroredAt?: string;
+  /** Issue du report déclenché par l'approbation en cours (absent en lecture). */
+  payrollMirror?: FirmLeaveMirrorResult;
 }
+
+export interface FirmLeaveMirrorResult {
+  state: number;
+  stateDisplay: string;
+  message?: string;
+  payrollLeaveRequestId?: string;
+  isApplied: boolean;
+}
+
+export interface FirmLeaveReconciliationRow {
+  leaveRequestId: string;
+  userId: string;
+  collaboratorName: string;
+  leaveTypeLabel: string;
+  startDate: string;
+  endDate: string;
+  days: number;
+  mirrorState: number;
+  mirrorStateDisplay: string;
+  mirrorMessage?: string;
+  mirroredAt?: string;
+  /** Faux sur un mois de paie arrêté : seule une régularisation peut le traiter. */
+  canReplay: boolean;
+}
+
+export interface FirmLeaveReconciliation {
+  year: number;
+  mirroredCount: number;
+  noPayrollEffectCount: number;
+  pending: FirmLeaveReconciliationRow[];
+  payrollAvailable: boolean;
+  unavailableReason?: string;
+}
+
+export interface FirmLeaveReplayResult {
+  replayed: number;
+  succeeded: number;
+  messages: string[];
+}
+
+/** Voir FirmLeavePayrollMirrorState côté serveur. */
+export const FIRM_LEAVE_MIRROR_STATE = {
+  notMirrored: 0,
+  mirrored: 1,
+  noPayrollEffect: 2,
+  blockedFrozenPayroll: 3,
+  failed: 4,
+  revoked: 5
+} as const;
 
 export interface FirmLeaveOverview {
   year: number;

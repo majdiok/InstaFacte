@@ -43,7 +43,10 @@ describe('EmployeeDetailComponent', () => {
     };
   }
 
-  async function setup(canManage: boolean): Promise<ComponentFixture<EmployeeDetailComponent>> {
+  async function setup(
+    canManage: boolean,
+    routeData: Record<string, unknown> = {}
+  ): Promise<ComponentFixture<EmployeeDetailComponent>> {
     employeeServiceSpy.getById.and.returnValue(of({ success: true, data: employeeData }));
     employeeServiceSpy.listLeaves.and.returnValue(of({ success: true, data: [] }));
     employeeServiceSpy.listAdvances.and.returnValue(of({ success: true, data: [] }));
@@ -69,11 +72,14 @@ describe('EmployeeDetailComponent', () => {
           listInKindBenefits: () => of({ success: true, data: [] }),
           listEmployeeLoans: () => of({ success: true, data: [] }),
           listGarnishments: () => of({ success: true, data: [] }),
-          listSuspensions: () => of({ success: true, data: [] })
+          listSuspensions: () => of({ success: true, data: [] }),
+          listCnssIjClaims: () => of({ success: true, data: [] })
         } },
         { provide: ToastService, useValue: toastSpy },
         { provide: ConfirmationService, useValue: confirmSpy },
-        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => 'e1' } } } },
+        // `ngOnInit` lit les données de route (base de route, mode paie interne cabinet) :
+        // sans `snapshot.data`, le composant échoue avant même d'être rendu.
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => 'e1' }, data: routeData } } },
         { provide: AuthService, useValue: createAuthMock(canManage) }
       ]
     }).compileComponents();
@@ -99,5 +105,25 @@ describe('EmployeeDetailComponent', () => {
     expect(el.textContent).toContain('Ajouter un contrat');
     expect(el.textContent).toContain('Ajouter un congé');
     expect(el.textContent).toContain('Nouvelle avance');
+  });
+
+  // Les onglets PrimeNG ne rendent que le panneau actif : ces deux cas portent donc sur l'état
+  // du composant, qui pilote la lecture seule transmise à l'onglet Congés.
+
+  it('bascule en mode cabinet quand la route porte firmInternalPayroll', async () => {
+    // Les congés du cabinet ont une source unique : ils se saisissent côté RH et sont reportés
+    // ici à l'approbation. L'onglet doit donc être en lecture seule, même pour un responsable.
+    const fixture = await setup(true, { firmInternalPayroll: true, payrollRouteBase: '/firm/payroll' });
+
+    expect(fixture.componentInstance.firmInternal()).toBeTrue();
+    expect(fixture.componentInstance.routeBase()).toBe('/firm/payroll');
+  });
+
+  it('reste en mode paie client quand la route ne dit rien', async () => {
+    // Non-régression : le parcours paie client est strictement inchangé.
+    const fixture = await setup(true);
+
+    expect(fixture.componentInstance.firmInternal()).toBeFalse();
+    expect(fixture.componentInstance.routeBase()).toBe('/payroll');
   });
 });

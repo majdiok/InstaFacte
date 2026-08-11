@@ -181,6 +181,11 @@ export interface FirmTimeSheetYearSettings {
   dailyHours: number;
   annualProductiveHours: number;
   totalEmployerChargeRate: number;
+  /**
+   * 0 = forfait commun à tous (défaut), 1 = individualisé sur les congés réellement pris.
+   * Basculer un exercice modifie les taux horaires et donc les marges.
+   */
+  productiveHoursMode?: number;
 }
 
 /** Coût employeur annuel d'un collaborateur et taux horaire qui en découle. */
@@ -192,9 +197,14 @@ export interface FirmCollaboratorYearCost {
   employerContributions: number;
   payrollExtras: number;
   totalEmployerCost: number;
+  /** 0 = aucune donnée, 1 = saisi, 2 = importé de la paie. */
   source: number;
   sourceDisplay: string;
   importedAt?: string;
+  /** Voir FirmCollaboratorCostDiagnostic côté serveur. */
+  costDiagnostic: number;
+  costDiagnosticDisplay: string;
+  costDiagnosticHint?: string;
   hourlyRateOverride?: number;
   overrideJustification?: string;
   effectiveHourlyRate: number;
@@ -202,7 +212,18 @@ export interface FirmCollaboratorYearCost {
   hourlyRateSourceDisplay: string;
   hourlyRateBasis: string;
   annualProductiveHours: number;
+  /** 0 = forfait d'exercice, 1 = individualisé sur les congés réels. */
+  productiveHoursMode?: number;
+  productiveHoursBasis?: string;
+  /** Congés approuvés décomptés du temps de présence, pour comparaison avec le paramétrage. */
+  realAbsenceDays?: number;
+  parametricLeaveDays?: number;
   payrollEmployeeId?: string;
+  payrollEmployeeName?: string;
+  payrollLinkSource?: number;
+  payrollLinkSourceDisplay?: string;
+  payrollLinkedAt?: string;
+  payslipCount?: number;
 }
 
 export interface FirmPayrollEmployeeCost {
@@ -218,13 +239,47 @@ export interface FirmPayrollCostSnapshot {
   isAvailable: boolean;
   unavailableReason?: string;
   employees: FirmPayrollEmployeeCost[];
+  activeEmployeeCount?: number;
+  employeesWithoutPayslips?: number;
 }
 
-export interface FirmPayrollImportResult {
-  imported: number;
-  unlinked: number;
+export interface FirmCollaboratorCostSyncResult {
   payrollAvailable: boolean;
   unavailableReason?: string;
+  linkedByEmail: number;
+  imported: number;
+  skippedManual: number;
+  skippedUnlinked: number;
+  skippedUpToDate: number;
+  syncedAt: string;
+}
+
+export interface FirmPayrollCollaboratorProvisioningRow {
+  collaboratorUserId: string;
+  collaboratorName: string;
+  email?: string;
+  hasPayrollEmployee: boolean;
+  payrollEmployeeId?: string;
+  payrollEmployeeName?: string;
+  payrollLinkSource: number;
+  blockingReason?: string;
+  /** Mentions obligatoires manquantes (N° CNSS, CIN) — informatif, jamais bloquant. */
+  missingPayrollIdentifiers?: string[];
+}
+
+export interface FirmPayrollProvisioningStatus {
+  internalPayrollEnabled: boolean;
+  autoProvisionOnCollaboratorCreate?: boolean;
+  activePayrollEmployees: number;
+  collaborators: FirmPayrollCollaboratorProvisioningRow[];
+  collaboratorsWithIncompleteIdentity?: number;
+}
+
+export interface FirmPayrollProvisionResult {
+  created: number;
+  linked: number;
+  skipped: number;
+  messages: string[];
 }
 
 export interface FirmExpenseNote {
@@ -808,8 +863,25 @@ export class FirmGovernanceService {
       `${this.base}/collaborator-costs/${collaboratorUserId}/payroll-link`, { payrollEmployeeId });
   }
 
-  importPayrollCosts(year: number): Observable<ApiResponse<FirmPayrollImportResult>> {
-    return this.http.post<ApiResponse<FirmPayrollImportResult>>(
-      `${this.base}/collaborator-costs/${year}/import-payroll`, {});
+  syncCollaboratorCosts(year: number, force = false): Observable<ApiResponse<FirmCollaboratorCostSyncResult>> {
+    return this.http.post<ApiResponse<FirmCollaboratorCostSyncResult>>(
+      `${this.base}/collaborator-costs/${year}/sync`,
+      {},
+      { params: { force: String(force) } });
+  }
+
+  getPayrollProvisioningStatus(): Observable<ApiResponse<FirmPayrollProvisioningStatus>> {
+    return this.http.get<ApiResponse<FirmPayrollProvisioningStatus>>(
+      `${environment.apiUrl}/firm/payroll/provisioning-status`);
+  }
+
+  provisionPayrollFromCollaborators(): Observable<ApiResponse<FirmPayrollProvisionResult>> {
+    return this.http.post<ApiResponse<FirmPayrollProvisionResult>>(
+      `${environment.apiUrl}/firm/payroll/provision-from-collaborators`, {});
+  }
+
+  provisionPayrollCollaborator(collaboratorUserId: string): Observable<ApiResponse<FirmPayrollProvisionResult>> {
+    return this.http.post<ApiResponse<FirmPayrollProvisionResult>>(
+      `${environment.apiUrl}/firm/payroll/provision/${collaboratorUserId}`, {});
   }
 }

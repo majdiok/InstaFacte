@@ -77,6 +77,18 @@ public sealed class PayrollYearParameters : AggregateRoot
     /// <summary>Taux de la contribution FOPROLOS (part patronale), en %. Ex. 1.</summary>
     public decimal FoprolosRate { get; private set; }
 
+    /// <summary>
+    /// Le plafond CNSS s'applique-t-il aussi à l'assiette de la TFP, du FOPROLOS et de la CSS
+    /// patronale ? Légalement <b>non</b> : ces taxes sont assises sur la totalité du brut soumis.
+    ///
+    /// <para>
+    /// Reste à <c>true</c> par défaut pour ne pas déplacer les montants des exercices existants ;
+    /// les exercices matérialisés depuis les présets légaux le positionnent à <c>false</c>. Sans
+    /// plafond CNSS paramétré — le cas courant — ce réglage n'a aucun effet.
+    /// </para>
+    /// </summary>
+    public bool ApplyCnssCeilingToPayrollTaxes { get; private set; } = true;
+
     /// <summary>SMIG mensuel indicatif (TND), pour contrôle de cohérence. Optionnel.</summary>
     public decimal MonthlySmig { get; private set; }
 
@@ -392,6 +404,16 @@ public sealed class PayrollYearParameters : AggregateRoot
     public void SetCnssMonthlyCeiling(decimal? ceiling)
     {
         CnssMonthlyCeiling = ceiling.HasValue ? Round(ceiling.Value) : null;
+        IncrementVersion();
+    }
+
+    /// <summary>
+    /// Étend ou non le plafond CNSS à l'assiette des taxes sur salaires. Voir
+    /// <see cref="ApplyCnssCeilingToPayrollTaxes"/> : sans plafond CNSS, sans effet.
+    /// </summary>
+    public void SetApplyCnssCeilingToPayrollTaxes(bool apply)
+    {
+        ApplyCnssCeilingToPayrollTaxes = apply;
         IncrementVersion();
     }
 

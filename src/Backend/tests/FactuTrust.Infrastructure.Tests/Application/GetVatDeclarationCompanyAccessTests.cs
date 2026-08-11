@@ -3,6 +3,7 @@ using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Accounting.Queries;
+using FactuTrust.Application.Features.Accounting.Services;
 using FactuTrust.Application.Features.Reports.Queries;
 using FactuTrust.Application.Features.WithholdingTax.Queries;
 using FactuTrust.Domain.Authorization;
@@ -37,12 +38,14 @@ public sealed class GetVatDeclarationCompanyAccessTests
         return mock;
     }
 
-    private static Mock<IPayrollRunRepository> CreatePayrollRunMock()
+    /// <summary>Aucun cycle de paie : ces tests portent sur l'accès, pas sur les montants.</summary>
+    private static PayrollDeclarationContributionProvider CreatePayrollProvider()
     {
-        var mock = new Mock<IPayrollRunRepository>();
-        mock.Setup(r => r.GetByPeriodAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+        var runs = new Mock<IPayrollRunRepository>();
+        runs.Setup(r => r.GetByPeriodAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((PayrollRun?)null);
-        return mock;
+
+        return new PayrollDeclarationContributionProvider(runs.Object, Mock.Of<IPayrollParametersRepository>());
     }
 
     private static VatDeclaration DraftEntity() => VatDeclaration.CreateDraft(
@@ -68,7 +71,7 @@ public sealed class GetVatDeclarationCompanyAccessTests
             invoices.Object,
             supplierInvoices.Object,
             CreateTenantSummaryMock().Object,
-            CreatePayrollRunMock().Object,
+            CreatePayrollProvider(),
             settings);
     }
 

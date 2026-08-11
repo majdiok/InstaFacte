@@ -1,6 +1,6 @@
 import { DOCUMENT } from '@angular/common';
 import { TestBed, fakeAsync, tick } from '@angular/core/testing';
-import { signal } from '@angular/core';
+import { signal, computed } from '@angular/core';
 import { Observable, of } from 'rxjs';
 import { AuthService, User } from '@core/services/auth.service';
 import { AiChatSessionService } from './ai-chat-session.service';
@@ -26,9 +26,9 @@ describe('AiChatSessionService', () => {
     twoFactorEnabled: false
   };
 
-  function setup(): void {
-    const userSig = signal<User | null>(mockUser);
-    const authMock = { user: userSig.asReadonly() };
+  function setup(initialUser: User = mockUser): ReturnType<typeof signal<User | null>> {
+    const userSig = signal<User | null>(initialUser);
+    const authMock = { user: computed(() => userSig()) };
 
     chatApi = jasmine.createSpyObj<AiChatService>('AiChatService', [
       'checkHealth',
@@ -84,6 +84,7 @@ describe('AiChatSessionService', () => {
     });
 
     service = TestBed.inject(AiChatSessionService);
+    return userSig;
   }
 
   beforeEach(() => {
@@ -635,5 +636,52 @@ describe('AiChatSessionService', () => {
     expect(msgs[1].id).toBe(serverAssistantId);
     expect(msgs[1].serverSynced).toBeTrue();
     expect(service.activeConversationId()).toBe(serverConvId);
+  }));
+
+  it('persiste la conversation active avec un suffixe dossier en mode délégué', () => {
+    TestBed.resetTestingModule();
+    setup({
+      ...mockUser,
+      accessMode: 'delegated',
+      contextTenantId: 'ctx-tenant-a'
+    });
+
+    streamMock.streamChat.and.returnValue(
+      of({ type: 'done', conversationId: 'conv-delegated' } as ChatStreamEvent)
+    );
+    service.initialize();
+    service.sendMessage('Hello');
+
+    expect(
+      sessionStorage.getItem('ft_ai_active_conv_user-1_tenant-1_ctxctx-tenant-a')
+    ).toBe('conv-delegated');
+  });
+
+  it('reset la session quand le dossier client change', fakeAsync(() => {
+    TestBed.resetTestingModule();
+    const userSig = setup({
+      ...mockUser,
+      accessMode: 'delegated',
+      contextTenantId: 'ctx-a'
+    });
+    tick();
+
+    service.initialize();
+    service.setAgentScope(AssistantAgentScope.Accounting);
+    service.activeConversationId.set('conv-a');
+    service.messages.set([
+      { id: '1', role: MessageRole.User, content: 'hi', createdAt: new Date() }
+    ]);
+
+    userSig.set({
+      ...mockUser,
+      accessMode: 'delegated',
+      contextTenantId: 'ctx-b'
+    });
+    tick();
+
+    expect(service.agentScope()).toBe(AssistantAgentScope.None);
+    expect(service.activeConversationId()).toBeUndefined();
+    expect(service.messages().length).toBe(0);
   }));
 });

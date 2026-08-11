@@ -1,7 +1,6 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Enums;
-using FactuTrust.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -17,12 +16,14 @@ namespace FactuTrust.Infrastructure.Services;
 /// </remarks>
 public sealed class FirmPayrollCostProvider : IFirmPayrollCostProvider
 {
-    private readonly ITenantService _tenantService;
+    private readonly FirmTenantPayrollAccessor _payrollAccess;
     private readonly ILogger<FirmPayrollCostProvider> _logger;
 
-    public FirmPayrollCostProvider(ITenantService tenantService, ILogger<FirmPayrollCostProvider> logger)
+    public FirmPayrollCostProvider(
+        FirmTenantPayrollAccessor payrollAccess,
+        ILogger<FirmPayrollCostProvider> logger)
     {
-        _tenantService = tenantService;
+        _payrollAccess = payrollAccess;
         _logger = logger;
     }
 
@@ -33,12 +34,16 @@ public sealed class FirmPayrollCostProvider : IFirmPayrollCostProvider
     {
         try
         {
-            var connectionString = await _tenantService.GetConnectionStringAsync(firmTenantId, cancellationToken);
-            if (string.IsNullOrEmpty(connectionString))
+            await using var context = await _payrollAccess.OpenAsync(firmTenantId, cancellationToken);
+            if (context is null)
                 return FirmPayrollCostSnapshotDto.Unavailable(
                     "Aucune base de paie n'est rattachée au cabinet.");
 
-            await using var context = CreateTenantContext(connectionString);
+            var activeEmployees = await context.Set<Domain.Entities.Payroll.Employee>().AsNoTracking()
+                .CountAsync(e => e.IsActive, cancellationToken);
+            if (activeEmployees == 0)
+                return FirmPayrollCostSnapshotDto.Unavailable(
+                    "Aucun salarié actif dans la paie interne du cabinet. Provisionnez les collaborateurs depuis la page Coûts collaborateurs.");
 
             // Seules les paies arrêtées comptent : un brouillon ou un calcul non validé ne doit pas
             // peser sur une rentabilité présentée en revue.
@@ -50,7 +55,8 @@ public sealed class FirmPayrollCostProvider : IFirmPayrollCostProvider
 
             if (closedRunIds.Count == 0)
                 return FirmPayrollCostSnapshotDto.Unavailable(
-                    $"Aucune paie validée ou clôturée pour l'exercice {year}.");
+                    $"Aucune paie validée ou clôturée pour l'exercice {year}.",
+                    activeEmployees);
 
             var payslips = await context.Payslips.AsNoTracking()
                 .Where(p => closedRunIds.Contains(p.PayrollRunId))
@@ -83,7 +89,7 @@ public sealed class FirmPayrollCostProvider : IFirmPayrollCostProvider
                 .OrderBy(e => e.EmployeeName)
                 .ToList();
 
-            return FirmPayrollCostSnapshotDto.Available(employees);
+            return FirmPayrollCostSnapshotDto.Available(employees, activeEmployees);
         }
         catch (Exception ex)
         {
@@ -96,11 +102,77 @@ public sealed class FirmPayrollCostProvider : IFirmPayrollCostProvider
         }
     }
 
-    private static TenantDbContext CreateTenantContext(string connectionString)
+    public async Task<DateTime?> GetLatestPayrollActivityAtAsync(
+        Guid firmTenantId,
+        int year,
+        CancellationToken cancellationToken = default)
     {
-        var options = new DbContextOptionsBuilder<TenantDbContext>()
-            .UseSqlServer(connectionString)
-            .Options;
-        return new TenantDbContext(options);
+        try
+        {
+            await using var context = await _payrollAccess.OpenAsync(firmTenantId, cancellationToken);
+            if (context is null)
+                return null;
+
+            var runs = await context.PayrollRuns.AsNoTracking()
+                .Where(r => r.Year == year
+                            && (r.Status == PayrollRunStatus.Validated || r.Status == PayrollRunStatus.Closed))
+                .Select(r => new { r.ValidatedAt, r.ClosedAt })
+                .ToListAsync(cancellationToken);
+
+            if (runs.Count == 0)
+                return null;
+
+            return runs
+                .Select(r => r.ClosedAt ?? r.ValidatedAt)
+                .Where(d => d.HasValue)
+                .Max();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Impossible de lire la dernière activité paie pour le cabinet {TenantId}, exercice {Year}",
+                firmTenantId,
+                year);
+            return null;
+        }
+    }
+
+    public async Task<IReadOnlyList<FirmPayrollEmployeeLinkDto>> GetActiveEmployeesForLinkingAsync(
+        Guid firmTenantId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await using var context = await _payrollAccess.OpenAsync(firmTenantId, cancellationToken);
+            if (context is null)
+                return Array.Empty<FirmPayrollEmployeeLinkDto>();
+
+            var rows = await context.Set<Domain.Entities.Payroll.Employee>().AsNoTracking()
+                .Where(e => e.IsActive)
+                .Select(e => new
+                {
+                    e.Id,
+                    Email = e.Email != null ? e.Email.Value : null,
+                    e.FirstName,
+                    e.LastName
+                })
+                .ToListAsync(cancellationToken);
+
+            return rows
+                .Select(e => new FirmPayrollEmployeeLinkDto(
+                    e.Id,
+                    e.Email,
+                    $"{e.FirstName} {e.LastName}".Trim()))
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Impossible de lister les salariés paie pour le cabinet {TenantId}",
+                firmTenantId);
+            return Array.Empty<FirmPayrollEmployeeLinkDto>();
+        }
     }
 }

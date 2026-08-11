@@ -128,16 +128,23 @@ public static class DependencyInjection
             services.AddScoped<IFirmDashboardService, FirmDashboardService>();
             services.AddScoped<IFirmFiscalOpsAggregator, FirmFiscalOpsAggregator>();
             services.AddScoped<IFirmGovernanceService, FirmGovernanceService>();
+            services.AddScoped<IFirmLeaveAbsenceReader, FirmLeaveAbsenceReader>();
+            services.AddScoped<IFirmLeavePayrollMirrorService, FirmLeavePayrollMirrorService>();
             services.AddScoped<IFirmLeaveService, FirmLeaveService>();
             services.AddScoped<IFirmTimeProfitabilityService, FirmTimeProfitabilityService>();
             services.AddScoped<IFirmCollaboratorRentabilityService, FirmCollaboratorRentabilityService>();
+            // Passage unique de la frontière Master → base de paie du cabinet.
+            services.AddScoped<FirmTenantPayrollAccessor>();
             services.AddScoped<IFirmPayrollCostProvider, FirmPayrollCostProvider>();
             services.AddScoped<IFirmCollaboratorCostService, FirmCollaboratorCostService>();
+            services.AddScoped<IFirmCollaboratorCostSyncService, FirmCollaboratorCostSyncService>();
+            services.AddScoped<IFirmInternalPayrollProvisioningService, FirmInternalPayrollProvisioningService>();
             services.AddScoped<IFirmFiscalScheduleService, FirmFiscalScheduleService>();
             services.AddScoped<IFirmFiscalScheduleWriteService, FirmFiscalScheduleWriteService>();
             services.AddScoped<IFirmContextService, FirmContextService>();
             services.AddScoped<IFirmManagedClientService, FirmManagedClientService>();
             services.AddScoped<IFirmCollaboratorService, FirmCollaboratorService>();
+            services.AddScoped<IPayrollFirmOperationGuard, PayrollFirmOperationGuard>();
             services.Configure<FirmCollaboratorStorageOptions>(
                 configuration.GetSection(FirmCollaboratorStorageOptions.SectionName));
             services.AddScoped<INotificationService, NotificationService>();
@@ -446,6 +453,7 @@ public static class DependencyInjection
         services.Configure<FixedAssetsOptions>(configuration.GetSection(FixedAssetsOptions.SectionName));
         services.Configure<AccountingAttachmentsOptions>(configuration.GetSection(AccountingAttachmentsOptions.SectionName));
         services.Configure<AccountingFirmsOptions>(configuration.GetSection(AccountingFirmsOptions.SectionName));
+        services.Configure<PayrollOptions>(configuration.GetSection(PayrollOptions.SectionName));
         services.Configure<TenantProvisioningOptions>(configuration.GetSection(TenantProvisioningOptions.SectionName));
         services.Configure<FirmGovernanceOptions>(configuration.GetSection(FirmGovernanceOptions.SectionName));
         services.Configure<FirmFiscalOpsOptions>(configuration.GetSection(FirmFiscalOpsOptions.SectionName));

@@ -14,6 +14,7 @@ import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { wrapLegacyAnalyzePayload } from '@features/ai-assistant/utils/ai-screen-payload.factory';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
+import { AccountingCorrectionBannerComponent } from '../shared/accounting-correction-banner.component';
 import { downloadBlob } from '../shared/accounting-download.util';
 import { VatDeclarationToolbarComponent } from './vat-declaration-toolbar.component';
 import { VatDeclarationGeneralInfoComponent } from './vat-declaration-general-info.component';
@@ -22,16 +23,19 @@ import { VatDeclarationTaxesTableComponent } from './vat-declaration-taxes-table
 import { VatDeclarationVatDetailTableComponent } from './vat-declaration-vat-detail-table.component';
 import { VatDeclarationDocLinksComponent } from './vat-declaration-doc-links.component';
 import { VatDeclarationSummaryPanelComponent } from './vat-declaration-summary-panel.component';
+import { VatDeclarationDivergenceBannerComponent } from './vat-declaration-divergence-banner.component';
 import {
   VatDeclarationExtras,
   VatExtrasKey,
   buildChartSegments,
+  buildDivergenceRows,
   buildDocLinks,
   buildTaxRows,
   clampExtrasValue,
   computeTotalCollected,
   computeTotalDeductible,
   computeTotalToPay,
+  payrollHint,
   shiftPeriod
 } from './vat-declaration.view-model';
 
@@ -48,13 +52,15 @@ const COMPANY_EMPTY_STATE_MESSAGE =
     CommonModule,
     PageHeaderComponent,
     AccountingStatusBannerComponent,
+    AccountingCorrectionBannerComponent,
     VatDeclarationToolbarComponent,
     VatDeclarationGeneralInfoComponent,
     VatDeclarationStatusPanelComponent,
     VatDeclarationTaxesTableComponent,
     VatDeclarationVatDetailTableComponent,
     VatDeclarationDocLinksComponent,
-    VatDeclarationSummaryPanelComponent
+    VatDeclarationSummaryPanelComponent,
+    VatDeclarationDivergenceBannerComponent
   ],
   template: `
     <app-page-header
@@ -62,6 +68,8 @@ const COMPANY_EMPTY_STATE_MESSAGE =
       [subtitle]="isCompanyReadOnly
         ? 'Consultation des déclarations soumises par le cabinet'
         : 'Préremplissage à partir des ventes et achats du mois'" />
+
+    <app-accounting-correction-banner />
 
     <app-vat-declaration-toolbar
       [year]="year"
@@ -106,6 +114,13 @@ const COMPANY_EMPTY_STATE_MESSAGE =
             [month]="month" />
 
           <app-vat-declaration-status-panel [declaration]="d" />
+
+          <app-vat-declaration-divergence-banner
+            [rows]="divergenceRows()"
+            [payrollHint]="payrollHint()"
+            [actionHint]="divergenceActionHint()"
+            [canResync]="canManage && !isCompanyReadOnly"
+            (resync)="resyncFromModules()" />
 
           <app-vat-declaration-taxes-table
             [rows]="taxRows()"
@@ -216,6 +231,60 @@ export class VatDeclarationComponent implements OnInit {
     if (!d) return [];
     return buildDocLinks(d, this.year, this.month);
   });
+
+  /** Lignes dont le montant déposé s'écarte du recalcul des modules. */
+  readonly divergenceRows = computed(() => {
+    const d = this.data();
+    return d ? buildDivergenceRows(d) : [];
+  });
+
+  readonly payrollHint = computed(() => {
+    const d = this.data();
+    return d ? payrollHint(d) : null;
+  });
+
+  /**
+   * Marche à suivre : un brouillon se corrige en place, une déclaration déposée par rectificative
+   * — c'est ce que le domaine impose (UpdateDraft refuse tout statut autre que Brouillon).
+   */
+  readonly divergenceActionHint = computed(() => {
+    const d = this.data();
+    if (!d) return '';
+    if (this.isCompanyReadOnly)
+      return 'Les montants déposés par le cabinet font foi. Rapprochez-vous de lui pour toute correction.';
+    if (d.status === 0)
+      return 'Les montants enregistrés font foi et ne sont jamais réalignés automatiquement. '
+        + 'Resynchronisez puis enregistrez pour les mettre à jour.';
+    return 'Cette déclaration a été déposée : ses montants restent ceux du dépôt. '
+      + 'Pour la corriger, resynchronisez puis enregistrez une « Rectificative ».';
+  });
+
+  /**
+   * Recopie les valeurs calculées dans les champs éditables. Purement local : rien n'est persisté
+   * tant que l'utilisateur n'a pas explicitement enregistré ou déposé une rectificative.
+   */
+  resyncFromModules(): void {
+    const s = this.data()?.suggested;
+    if (!s || this.isCompanyReadOnly) return;
+
+    this.extras.update(e => ({
+      ...e,
+      fodec: clampExtrasValue(s.fodec),
+      droitTimbre: clampExtrasValue(s.droitTimbre),
+      tcl: clampExtrasValue(s.tcl),
+      tfp: clampExtrasValue(s.tfp),
+      foprolos: clampExtrasValue(s.foprolos),
+      withholdingTax: clampExtrasValue(s.withholdingTax)
+      // Les acomptes provisionnels n'ont aucune source automatique : saisie manuelle préservée.
+    }));
+
+    this.toast.add({
+      severity: 'info',
+      summary: 'Montants resynchronisés',
+      detail: 'Vérifiez les lignes, puis enregistrez pour que la déclaration les porte réellement.',
+      life: 6000
+    });
+  }
 
   ngOnInit(): void {
     this.title.setTitle('Déclaration mensuelle - InstaFact');

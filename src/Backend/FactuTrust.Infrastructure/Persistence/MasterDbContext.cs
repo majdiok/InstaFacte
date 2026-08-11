@@ -1069,6 +1069,7 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Property(p => p.CniFileName).HasMaxLength(260);
             entity.Property(p => p.CniContentType).HasMaxLength(100);
             entity.Property(p => p.HourlyCostRate).HasPrecision(18, 3);
+            entity.Property(p => p.PayrollLinkSource).HasConversion<int>();
             entity.HasIndex(p => p.PayrollEmployeeId);
             entity.HasOne<ApplicationUser>()
                 .WithMany()
@@ -1142,6 +1143,7 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Property(t => t.Code).HasMaxLength(30).IsRequired();
             entity.Property(t => t.Label).HasMaxLength(200).IsRequired();
             entity.Property(t => t.ColorHex).HasMaxLength(9).IsRequired();
+            entity.Property(t => t.PayrollLeaveType).HasConversion<int?>();
         });
 
         builder.Entity<Domain.Entities.FirmGovernance.FirmLeaveSettings>(entity =>
@@ -1176,6 +1178,10 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Property(r => r.Status).HasConversion<int>();
             entity.Property(r => r.StartUnit).HasConversion<int>();
             entity.Property(r => r.EndUnit).HasConversion<int>();
+            entity.Property(r => r.PayrollMirrorState).HasConversion<int>();
+            entity.Property(r => r.PayrollMirrorMessage).HasMaxLength(400);
+            // Le rapprochement liste d'abord les reports en échec ou bloqués.
+            entity.HasIndex(r => new { r.FirmTenantId, r.PayrollMirrorState });
         });
 
     }

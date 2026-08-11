@@ -42,6 +42,8 @@ export const environment = {
   /** Smoothly scale camera/LOD/shadow with storefront count. Switch off for legacy fixed framing. */
   storefrontDynamicFramingEnabled: true,
   accountingFirmsEnabled: true,
+  /** Optional external help URL for accounting-firm delegated sidemenu footer. */
+  firmHelpUrl: 'https://instafact.tn/aide',
   /** Canal WhatsApp (liaison assistant IA + rappels fiscaux). Tuile Paramètres → WhatsApp. */
   channelsEnabled: true,
   featureFlags: {

@@ -4,7 +4,8 @@ import {
   effect,
   OnInit,
   input,
-  output
+  output,
+  computed
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
@@ -19,6 +20,7 @@ import { FirmContextService } from '@core/services/firm-context.service';
 import { BRAND } from '@core/constants/brand';
 import { AppNavService } from '@core/services/app-nav.service';
 import { isNavChildActive } from '@core/utils/nav-path-match';
+import { getNavIconKey } from '@core/utils/nav-icon-key.util';
 
 @Component({
   selector: 'app-sidebar',
@@ -41,14 +43,23 @@ export class SidebarComponent implements OnInit {
 
   readonly dashboardHomeLink = this.appNav.dashboardHomeLink;
   readonly navItems = this.appNav.navItems;
+  readonly delegatedFooterNav = this.appNav.delegatedFooterNav;
+
+  readonly isFirmDelegatedSkin = computed(
+    () => this.auth.isAccountingFirm() && this.auth.isDelegatedMode()
+  );
 
   /** At most one parent section with its submenu open; closed after each navigation. */
   expandedParentLabel: string | null = null;
+
+  /** Inline expansion for footer items (Contrôle & Audit). */
+  expandedFooterLabel: string | null = null;
 
   constructor() {
     effect(() => {
       if (this.collapsed()) {
         this.expandedParentLabel = null;
+        this.expandedFooterLabel = null;
       }
     });
 
@@ -57,7 +68,10 @@ export class SidebarComponent implements OnInit {
         filter((e): e is NavigationEnd => e instanceof NavigationEnd),
         takeUntilDestroyed()
       )
-      .subscribe(() => this.collapseSubmenuPanel());
+      .subscribe(() => {
+        this.collapseSubmenuPanel();
+        this.expandedFooterLabel = null;
+      });
 
     effect(() => {
       const items = this.navItems();
@@ -88,10 +102,15 @@ export class SidebarComponent implements OnInit {
     return this.expandedParentLabel === item.label;
   }
 
+  isFooterExpanded(item: NavItem): boolean {
+    return this.expandedFooterLabel === item.label;
+  }
+
   toggleSubmenu(item: NavItem): void {
     if (!item.children?.length) {
       return;
     }
+    this.expandedFooterLabel = null;
     if (this.collapsed()) {
       this.requestExpand.emit();
       this.expandedParentLabel = item.label;
@@ -101,10 +120,26 @@ export class SidebarComponent implements OnInit {
       this.expandedParentLabel === item.label ? null : item.label;
   }
 
+  toggleFooterSubmenu(item: NavItem): void {
+    if (!item.children?.length) {
+      return;
+    }
+    this.expandedParentLabel = null;
+    this.expandedFooterLabel =
+      this.expandedFooterLabel === item.label ? null : item.label;
+  }
+
   onSubmenuToggleKeydown(event: KeyboardEvent, item: NavItem): void {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       this.toggleSubmenu(item);
+    }
+  }
+
+  onFooterToggleKeydown(event: KeyboardEvent, item: NavItem): void {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      this.toggleFooterSubmenu(item);
     }
   }
 
@@ -123,6 +158,13 @@ export class SidebarComponent implements OnInit {
     return this.isChildActive(item);
   }
 
+  isFooterParentActive(item: NavItem): boolean {
+    if (!item.children?.length) {
+      return false;
+    }
+    return this.isChildActive(item);
+  }
+
   /**
    * Submenu is open for this section but the current route is outside it — discrete styling, not `.active`.
    */
@@ -131,6 +173,19 @@ export class SidebarComponent implements OnInit {
       return false;
     }
     return this.expandedParentLabel === item.label && !this.isChildActive(item);
+  }
+
+  isDossierContextItem(item: NavItem): boolean {
+    return item.label.startsWith('Dossier :');
+  }
+
+  isFooterAuditItem(item: NavItem): boolean {
+    return item.label === 'Contrôle & Audit';
+  }
+
+  /** Font Awesome suffix for pastel icon-box styling (e.g. fa-bag-shopping). */
+  getIconKey(icon?: string): string | null {
+    return getNavIconKey(icon);
   }
 
   async onNavSubItemAction(child: NavSubItem): Promise<void> {

@@ -12,6 +12,7 @@ import { AiChatSessionService } from '../../../features/ai-assistant/services/ai
 import { AiAssistantShellService } from '../../../features/ai-assistant/services/ai-assistant-shell.service';
 import { AssistantAgentScope } from '../../../features/ai-assistant/models/ai-chat.models';
 import { resolveScopeFromUrl } from '../../../features/ai-assistant/config/agent-scopes.config';
+import { canUseAiAssistant } from '../../../features/ai-assistant/utils/ai-access.util';
 import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
 import { FirmContextService } from '../../services/firm-context.service';
 import { LayoutRouteService } from '../layout-route.service';
@@ -33,7 +34,8 @@ import { AppNavService } from '../../services/app-nav.service';
     <div class="full_container">
       <div
         class="inner_container"
-        [class.layout-has-secondary-nav]="appNav.hasSecondaryNav() && !layoutFlags().hideLayout">
+        [class.layout-has-secondary-nav]="appNav.hasSecondaryNav() && !layoutFlags().hideLayout"
+        [class.layout--firm-delegated]="isFirmDelegatedLayout()">
         <app-sidebar
           [collapsed]="sidebarCollapsed()"
           (toggleCollapse)="toggleSidebar()"
@@ -228,6 +230,10 @@ export class MainLayoutComponent implements OnInit {
 
   readonly layoutFlags = this.layoutRoute.flags;
 
+  readonly isFirmDelegatedLayout = computed(
+    () => this.auth.isAccountingFirm() && this.auth.isDelegatedMode()
+  );
+
   readonly routerUrl = toSignal(
     this.router.events.pipe(
       filter((e): e is NavigationEnd => e instanceof NavigationEnd),
@@ -240,7 +246,11 @@ export class MainLayoutComponent implements OnInit {
   readonly isAiAssistantRoute = computed(() => this.routerUrl().includes('/ai-assistant'));
 
   /** Scope expert dérivé de la route (pages dédiées /ai-assistant/<slug> et modules). */
-  readonly routeAgentScope = computed(() => resolveScopeFromUrl(this.routerUrl()));
+  readonly routeAgentScope = computed(() =>
+    resolveScopeFromUrl(this.routerUrl(), {
+      firmDelegated: this.auth.isAccountingFirm() && this.auth.isDelegatedMode()
+    })
+  );
 
   /**
    * Scope de la bulle flottante : suit la route uniquement quand la bulle est FERMÉE — le scope
@@ -299,6 +309,6 @@ export class MainLayoutComponent implements OnInit {
   }
 
   hasAiAccess(): boolean {
-    return this.auth.hasAllPermissions(['ai:chat']);
+    return canUseAiAssistant(this.auth);
   }
 }

@@ -186,7 +186,8 @@ public sealed class AccountingController : ControllerBase
     }
 
     [HttpDelete("journal/{id:guid}")]
-    [Authorize(Policy = PermissionPolicies.AccountingCreate)]
+    [Authorize(Policy = PermissionPolicies.AccountingDelete)]
+    [Authorize(Policy = PermissionPolicies.FirmDelegatedContext)]
     public async Task<IActionResult> DeleteDraftEntry(Guid id, CancellationToken cancellationToken)
     {
         var r = await _mediator.Send(new DeleteDraftJournalEntryCommand(id), cancellationToken);
@@ -236,7 +237,8 @@ public sealed class AccountingController : ControllerBase
     }
 
     [HttpPost("journal/mass-delete-drafts")]
-    [Authorize(Policy = PermissionPolicies.AccountingCreate)]
+    [Authorize(Policy = PermissionPolicies.AccountingDelete)]
+    [Authorize(Policy = PermissionPolicies.FirmDelegatedContext)]
     public async Task<IActionResult> MassDeleteDrafts([FromBody] MassDeleteDraftEntriesRequest request, CancellationToken cancellationToken)
     {
         var r = await _mediator.Send(new MassDeleteDraftEntriesCommand(request.Ids), cancellationToken);
@@ -1474,10 +1476,11 @@ public sealed class AccountingController : ControllerBase
         [FromQuery] string? label, [FromQuery] string? lettering,
         [FromQuery] int? status, [FromQuery] int take,
         [FromQuery] string? pieceRef,
+        [FromQuery] int? entryNumber,
         CancellationToken cancellationToken)
     {
         var r = await _mediator.Send(new SearchJournalEntriesQuery(
-            account, journalCode, from, to, minAmount, maxAmount, label, lettering, status, take, pieceRef), cancellationToken);
+            account, journalCode, from, to, minAmount, maxAmount, label, lettering, status, take, pieceRef, entryNumber), cancellationToken);
         if (r.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
         return Ok(ApiResponse<IReadOnlyList<JournalSearchRowDto>>.Ok(r.Value));

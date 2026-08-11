@@ -112,6 +112,7 @@ export const PERMISSIONS = {
   accounting: {
     read: 'accounting:read',
     create: 'accounting:create',
+    delete: 'accounting:delete',
     close: 'accounting:close',
     validate: 'accounting:validate',
     reverse: 'accounting:reverse',

@@ -1,5 +1,6 @@
 import { isConfiguredDocumentNumber } from '@core/utils/numbering-validation';
 import { createClientUuid } from '@core/utils/safe-random-uuid.util';
+import { normalizeDesignation } from '../utils/invoice-line.utils';
 import { Injectable, inject, computed, signal, effect, DestroyRef } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { HttpClient } from '@angular/common/http';
@@ -951,7 +952,7 @@ export class InvoiceWizardService {
       id: createClientUuid(),
       lineNumber: lines.length + 1,
       productId: line.productId || null,
-      designation: line.designation || '',
+      designation: normalizeDesignation(line.designation),
       description: line.description || null,
       quantity: line.quantity || 1,
       unit: line.unit || 'Unité',
@@ -981,9 +982,14 @@ export class InvoiceWizardService {
   }
 
   updateLine(lineId: string, updates: Partial<InvoiceLine>): void {
+    const normalizedUpdates = { ...updates };
+    if ('designation' in normalizedUpdates) {
+      normalizedUpdates.designation = normalizeDesignation(normalizedUpdates.designation);
+    }
+
     const lines = this.state().lines.map(line => {
       if (line.id === lineId) {
-        const updated = { ...line, ...updates };
+        const updated = { ...line, ...normalizedUpdates };
         this.calculateLineAmounts(updated);
         return updated;
       }
@@ -1912,7 +1918,7 @@ export class InvoiceWizardService {
       } : null,
       lines: state.lines.length > 0 ? state.lines.map(line => ({
         productId: line.productId,
-        designation: line.designation,
+        designation: normalizeDesignation(line.designation),
         description: line.description,
         quantity: line.quantity,
         unit: line.unit,
@@ -2247,7 +2253,7 @@ export class InvoiceWizardService {
       
       lines: state.lines.map(line => ({
         productId: line.productId,
-        designation: line.designation,
+        designation: normalizeDesignation(line.designation),
         description: line.description,
         quantity: line.quantity,
         unit: line.unit,
@@ -2360,7 +2366,7 @@ export class InvoiceWizardService {
             id: `line-${idx}-${Date.now()}`,
             lineNumber: l.lineNumber || idx + 1,
             productId: l.productId || null,
-            designation: l.designation || '',
+            designation: normalizeDesignation(l.designation),
             description: l.description || null,
             quantity: Number(l.quantity) || 0,
             unit: l.unit || null,

@@ -3,6 +3,7 @@ import { CanActivateFn, Router } from '@angular/router';
 import { AuthService } from '@core/services/auth.service';
 import {
   isDelegatedFirmBlockedSalesPurchasesRoute,
+  isDelegatedFirmBlockedAiAssistantRoute,
   isFirmManagedBlockedCommercialRoute
 } from '@core/config/firm-navigation.registry';
 
@@ -25,9 +26,10 @@ export const delegatedFirmNavGuard: CanActivateFn = (_route, state) => {
   }
 
   const path = pathWithoutQuery(state.url);
-  const blocked = auth.isFirmManagedDelegated()
-    ? isFirmManagedBlockedCommercialRoute(path)
-    : isDelegatedFirmBlockedSalesPurchasesRoute(path);
+  const blocked = isDelegatedFirmBlockedAiAssistantRoute(path)
+    || (auth.isFirmManagedDelegated()
+      ? isFirmManagedBlockedCommercialRoute(path)
+      : isDelegatedFirmBlockedSalesPurchasesRoute(path));
 
   if (blocked) {
     return router.createUrlTree(['/access-denied'], {

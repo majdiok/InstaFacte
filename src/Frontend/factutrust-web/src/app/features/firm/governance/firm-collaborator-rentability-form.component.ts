@@ -109,6 +109,24 @@ type FormMode = 'create' | 'edit' | 'view';
         </p-table>
       </div>
 
+      @if (showPayrollCostAlert()) {
+        <div class="fc-card cost-alert">
+          <strong>Masse salariale à zéro</strong>
+          <p>
+            Aucun coût employeur n'a été importé depuis la paie du cabinet pour cet exercice.
+            Synchronisez les coûts avant de préremplir la rentabilité.
+          </p>
+          <button
+            type="button"
+            pButton
+            label="Synchroniser les coûts"
+            icon="pi pi-sync"
+            class="p-button-sm p-button-outlined"
+            [loading]="syncingCosts()"
+            (click)="syncCostsAndReload()"></button>
+        </div>
+      }
+
       <div class="fc-card">
         <h3>Masse salariale</h3>
         <p-table [value]="payrollRows()" responsiveLayout="scroll">
@@ -216,6 +234,8 @@ type FormMode = 'create' | 'edit' | 'view';
     .rentability-box strong { font-size: 1.25rem; }
     .neg { color: #b91c1c; }
     .pos { color: #047857; }
+    .cost-alert { border-color: #f59e0b; background: #fffbeb; font-size: .875rem; }
+    .cost-alert p { margin: .35rem 0 .75rem; }
   `]
 })
 export class FirmCollaboratorRentabilityFormComponent implements OnInit {
@@ -230,6 +250,7 @@ export class FirmCollaboratorRentabilityFormComponent implements OnInit {
   mode = signal<FormMode>('create');
   loading = signal(false);
   saving = signal(false);
+  syncingCosts = signal(false);
   portfolio = signal<FirmRentabilityPortfolioRow[]>([]);
   payrollRows = signal<FirmRentabilityPayrollRow[]>([]);
   calculated = signal<FirmCollaboratorRentabilityDetail | null>(null);
@@ -256,6 +277,11 @@ export class FirmCollaboratorRentabilityFormComponent implements OnInit {
   });
 
   readOnly = computed(() => this.mode() === 'view');
+
+  showPayrollCostAlert = computed(() => {
+    const calc = this.calculated();
+    return (calc?.calculatedPayrollCost ?? 0) <= 0 && this.payrollRows().length === 0 && this.mode() !== 'view';
+  });
 
   title = computed(() => {
     switch (this.mode()) {
@@ -321,6 +347,26 @@ export class FirmCollaboratorRentabilityFormComponent implements OnInit {
           severity: 'error',
           summary: 'Erreur',
           detail: err?.error?.message || 'Préremplissage impossible.'
+        });
+      }
+    });
+  }
+
+  syncCostsAndReload(): void {
+    const year = this.form.getRawValue().year;
+    if (!year) return;
+    this.syncingCosts.set(true);
+    this.api.syncCollaboratorCosts(year).subscribe({
+      next: () => {
+        this.syncingCosts.set(false);
+        this.loadPrefill();
+      },
+      error: err => {
+        this.syncingCosts.set(false);
+        this.toast.add({
+          severity: 'error',
+          summary: 'Erreur',
+          detail: err?.error?.message || 'Synchronisation impossible.'
         });
       }
     });

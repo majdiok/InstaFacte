@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Auth;
 using FactuTrust.Domain.Entities;
@@ -15,6 +16,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
 namespace FactuTrust.API.Controllers;
@@ -32,6 +34,7 @@ public class AuthController : ControllerBase
     private readonly IEffectivePermissionService _effectivePermissionService;
     private readonly IAccountingFirmsFeature _accountingFirmsFeature;
     private readonly IAccountingFirmRegistrationService _accountingFirmRegistrationService;
+    private readonly FirmGovernanceOptions _firmGovernanceOptions;
     private readonly ILogger<AuthController> _logger;
 
     public AuthController(
@@ -44,6 +47,7 @@ public class AuthController : ControllerBase
         IEffectivePermissionService effectivePermissionService,
         IAccountingFirmsFeature accountingFirmsFeature,
         IAccountingFirmRegistrationService accountingFirmRegistrationService,
+        IOptions<FirmGovernanceOptions> firmGovernanceOptions,
         ILogger<AuthController> logger)
     {
         _userManager = userManager;
@@ -55,6 +59,7 @@ public class AuthController : ControllerBase
         _effectivePermissionService = effectivePermissionService;
         _accountingFirmsFeature = accountingFirmsFeature;
         _accountingFirmRegistrationService = accountingFirmRegistrationService;
+        _firmGovernanceOptions = firmGovernanceOptions.Value;
         _logger = logger;
     }
 
@@ -376,11 +381,28 @@ public class AuthController : ControllerBase
         return CreateUserDto(user, tenant, snapshot, roles);
     }
 
-    private static UserDto CreateUserDto(ApplicationUser user, Tenant? tenant, UserAccessSnapshot snapshot, IList<string> roles)
+    private UserDto CreateUserDto(ApplicationUser user, Tenant? tenant, UserAccessSnapshot snapshot, IList<string> roles)
     {
         var roleName = roles.FirstOrDefault(r => !string.Equals(r, PlatformRoles.PlatformAdmin, StringComparison.Ordinal))
             ?? UserRole.Accountant.ToString();
         var roleEnum = Enum.TryParse<UserRole>(roleName, out var r) ? r : UserRole.Accountant;
+
+        IReadOnlyList<int> enabledModuleIds;
+        IReadOnlyList<string> effectivePermissions;
+        if (tenant?.Kind == TenantKind.AccountingFirm)
+        {
+            enabledModuleIds = FirmGovernanceNativeAccess.BuildNativeFirmModuleIds(_firmGovernanceOptions);
+            effectivePermissions = FirmGovernanceNativeAccess.AugmentNativeFirmPermissions(
+                snapshot.EffectivePermissions.ToList(),
+                roleEnum,
+                _firmGovernanceOptions);
+        }
+        else
+        {
+            enabledModuleIds = snapshot.EnabledModules.Select(m => (int)m).ToList();
+            effectivePermissions = snapshot.EffectivePermissions.ToList();
+        }
+
         return new UserDto
         {
             Id = user.Id,
@@ -394,10 +416,8 @@ public class AuthController : ControllerBase
             TenantKind = tenant?.Kind ?? TenantKind.Company,
             AccessMode = "native",
             TwoFactorEnabled = user.TwoFactorEnabled,
-            EnabledModuleIds = tenant?.Kind == TenantKind.AccountingFirm
-                ? new List<int> { (int)AppModule.Administration, (int)AppModule.Honoraires }
-                : snapshot.EnabledModules.Select(m => (int)m).ToList(),
-            EffectivePermissions = snapshot.EffectivePermissions.ToList()
+            EnabledModuleIds = enabledModuleIds.ToList(),
+            EffectivePermissions = effectivePermissions.ToList()
         };
     }
 

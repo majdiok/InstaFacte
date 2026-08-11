@@ -2203,6 +2203,12 @@ namespace FactuTrust.Infrastructure.Migrations
                     b.Property<Guid?>("PayrollEmployeeId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTime?>("PayrollLinkedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("PayrollLinkSource")
+                        .HasColumnType("int");
+
                     b.Property<string>("PhoneLandline")
                         .HasMaxLength(40)
                         .HasColumnType("nvarchar(40)");

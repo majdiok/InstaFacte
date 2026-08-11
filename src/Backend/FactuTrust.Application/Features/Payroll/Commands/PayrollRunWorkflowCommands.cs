@@ -1,11 +1,15 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Configuration;
+using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities.Payroll;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Services.Payroll;
 using MediatR;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace FactuTrust.Application.Features.Payroll.Commands;
 
@@ -29,6 +33,9 @@ public sealed class ValidatePayrollRunCommandHandler : IRequestHandler<ValidateP
     private readonly IAccountingService _accountingService;
     private readonly ITenantUnitOfWork _unitOfWork;
     private readonly ICurrentUser _currentUser;
+    private readonly IFirmCollaboratorCostSyncService _collaboratorCostSync;
+    private readonly FirmGovernanceOptions _firmGovernanceOptions;
+    private readonly ILogger<ValidatePayrollRunCommandHandler> _logger;
 
     public ValidatePayrollRunCommandHandler(
         IPayrollRunRepository runs,
@@ -40,7 +47,10 @@ public sealed class ValidatePayrollRunCommandHandler : IRequestHandler<ValidateP
         IPayrollParametersRepository parameters,
         IAccountingService accountingService,
         ITenantUnitOfWork unitOfWork,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IFirmCollaboratorCostSyncService collaboratorCostSync,
+        IOptions<FirmGovernanceOptions> firmGovernanceOptions,
+        ILogger<ValidatePayrollRunCommandHandler> logger)
     {
         _runs = runs;
         _advances = advances;
@@ -52,11 +62,15 @@ public sealed class ValidatePayrollRunCommandHandler : IRequestHandler<ValidateP
         _accountingService = accountingService;
         _unitOfWork = unitOfWork;
         _currentUser = currentUser;
+        _collaboratorCostSync = collaboratorCostSync;
+        _firmGovernanceOptions = firmGovernanceOptions.Value;
+        _logger = logger;
     }
 
     public async Task<Result> Handle(ValidatePayrollRunCommand request, CancellationToken cancellationToken)
     {
-        return await _unitOfWork.ExecuteAsync(async ct =>
+        var payrollYear = 0;
+        var result = await _unitOfWork.ExecuteAsync(async ct =>
         {
             var run = await _runs.GetByIdWithPayslipsAsync(request.RunId, ct);
             if (run is null)
@@ -169,8 +183,40 @@ public sealed class ValidatePayrollRunCommandHandler : IRequestHandler<ValidateP
             if (entryResult.IsFailure)
                 return entryResult;
 
+            payrollYear = run.Year;
             return Result.Success();
         }, cancellationToken);
+
+        if (result.IsSuccess && payrollYear > 0)
+            await TrySyncCollaboratorCostsAfterPayrollValidateAsync(payrollYear, cancellationToken);
+
+        return result;
+    }
+
+    private async Task TrySyncCollaboratorCostsAfterPayrollValidateAsync(int year, CancellationToken cancellationToken)
+    {
+        if (!FirmPayrollValidateCostSyncPolicy.ShouldSyncAfterValidate(_firmGovernanceOptions, _currentUser))
+            return;
+
+        var tenantId = _currentUser.TenantId!.Value;
+
+        try
+        {
+            await _collaboratorCostSync.EnsureFreshAsync(
+                tenantId,
+                year,
+                FirmCostSyncTrigger.PayrollValidate,
+                forceImport: false,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Import automatique des coûts collaborateurs ignoré après validation paie (tenant {TenantId}, {Year})",
+                tenantId,
+                year);
+        }
     }
 }
 

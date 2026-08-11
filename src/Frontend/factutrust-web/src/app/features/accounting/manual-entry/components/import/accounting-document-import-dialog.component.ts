@@ -3,8 +3,10 @@ import {
   ElementRef,
   EventEmitter,
   Input,
+  OnChanges,
   OnDestroy,
   Output,
+  SimpleChanges,
   ViewChild,
   computed,
   inject,
@@ -22,6 +24,7 @@ import {
   extractionMethodLabel
 } from '../../models/accounting-document-import.models';
 import { ThirdPartyQuickCreateComponent } from './third-party-quick-create.component';
+import { ImportProposalEditorComponent } from './import-proposal-editor.component';
 
 type ImportPhase = 'idle' | 'extracting' | 'review' | 'error';
 
@@ -35,14 +38,14 @@ type ImportPhase = 'idle' | 'extracting' | 'review' | 'error';
 @Component({
   selector: 'app-accounting-document-import-dialog',
   standalone: true,
-  imports: [CommonModule, DialogModule, ButtonComponent, ThirdPartyQuickCreateComponent],
+  imports: [CommonModule, DialogModule, ButtonComponent, ThirdPartyQuickCreateComponent, ImportProposalEditorComponent],
   providers: [AccountingDocumentImportService],
   template: `
     <p-dialog
       header="Importer une facture"
       [(visible)]="visible"
       [modal]="true"
-      [style]="{ width: phase() === 'review' ? '960px' : '560px', maxWidth: '95vw' }"
+      [style]="{ width: phase() === 'review' ? '1100px' : '560px', maxWidth: '98vw' }"
       [draggable]="false"
       [resizable]="false"
       [closable]="true"
@@ -192,60 +195,20 @@ type ImportPhase = 'idle' | 'extracting' | 'review' | 'error';
                 </section>
               </div>
 
-              <!-- Lignes proposées -->
-              <section class="adi-card">
-                <h3 class="adi-card__title">Écriture proposée — journal {{ p.journalCode }}</h3>
-                <div class="adi-table-wrap">
-                  <table class="adi-table">
-                    <thead>
-                      <tr>
-                        <th scope="col">Compte</th>
-                        <th scope="col">Libellé</th>
-                        <th scope="col" class="adi-num">Débit</th>
-                        <th scope="col" class="adi-num">Crédit</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      @for (l of p.lines; track $index) {
-                        <tr>
-                          <td>
-                            <code>{{ l.accountNumber }}</code>
-                            @if (l.accountStatus === 'missing') {
-                              <span class="adi-chip adi-chip--danger" title="Absent du plan comptable">absent</span>
-                            } @else if (l.accountStatus === 'inactive') {
-                              <span class="adi-chip adi-chip--warn" title="Compte désactivé">désactivé</span>
-                            }
-                            @if (l.accountLabel) {
-                              <small class="adi-account-label">{{ l.accountLabel }}</small>
-                            }
-                          </td>
-                          <td>{{ l.label }}</td>
-                          <td class="adi-num">{{ l.debit ? amount(l.debit) : '' }}</td>
-                          <td class="adi-num">{{ l.credit ? amount(l.credit) : '' }}</td>
-                        </tr>
-                      }
-                    </tbody>
-                    <tfoot>
-                      <tr>
-                        <th scope="row" colspan="2">Totaux</th>
-                        <td class="adi-num">{{ amount(p.totalDebit) }}</td>
-                        <td class="adi-num">{{ amount(p.totalCredit) }}</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-                <p class="adi-balanced">
-                  <i class="pi pi-check-circle" aria-hidden="true"></i>
-                  Écriture équilibrée — la contrepartie est calculée à partir des autres lignes.
-                </p>
+              <!-- Écriture proposée (éditable) -->
+              <section class="adi-card adi-card--editor">
+                <app-import-proposal-editor
+                  #proposalEditor
+                  [proposal]="p"
+                  (stateChange)="onEditorStateChange()" />
               </section>
 
               <!-- Diagnostics -->
-              @if (p.diagnostics.length > 0) {
+              @if (displayDiagnostics().length > 0) {
                 <section class="adi-card">
                   <h3 class="adi-card__title">Contrôles</h3>
                   <ul class="adi-diagnostics">
-                    @for (d of p.diagnostics; track $index) {
+                    @for (d of displayDiagnostics(); track $index) {
                       <li class="adi-diagnostic" [class]="'adi-diagnostic--' + d.severity">
                         <i class="pi" [class.pi-times-circle]="d.severity === 'blocking'"
                            [class.pi-exclamation-triangle]="d.severity === 'warning'"
@@ -254,6 +217,11 @@ type ImportPhase = 'idle' | 'extracting' | 'review' | 'error';
                       </li>
                     }
                   </ul>
+                  @if (!canApplyNow() && !reanalyzing()) {
+                    <p class="adi-apply-hint" role="status">
+                      Corrigez les contrôles bloquants ou équilibrez l'écriture avant d'appliquer.
+                    </p>
+                  }
                 </section>
               }
             </div>
@@ -288,7 +256,7 @@ type ImportPhase = 'idle' | 'extracting' | 'review' | 'error';
               Autre pièce
             </app-button>
             <app-button variant="primary" icon="pi-check" iconPos="left"
-                        [disabled]="!canApply()"
+                        [disabled]="!canApplyNow()"
                         (click)="apply()"
                         ariaLabel="Appliquer la proposition à la saisie">
               Appliquer à la saisie
@@ -335,7 +303,10 @@ type ImportPhase = 'idle' | 'extracting' | 'review' | 'error';
     .adi-badge--ok { color:var(--color-success); }
     .adi-badge--warn { color:var(--color-warning); }
 
-    .adi-table-wrap { overflow-x:auto; }
+    .adi-card--editor { padding:0; overflow:hidden; }
+
+    .adi-apply-hint { margin:var(--spacing-2) 0 0; font-size:var(--font-size-xs); color:var(--color-text-secondary); }
+
     .adi-table { width:100%; border-collapse:collapse; font-size:var(--font-size-sm); }
     .adi-table th, .adi-table td { padding:var(--spacing-2); border-bottom:1px solid var(--color-border-subtle); text-align:left; vertical-align:top; }
     .adi-table tfoot th, .adi-table tfoot td { border-bottom:none; border-top:2px solid var(--color-border-default); font-weight:600; }
@@ -355,7 +326,7 @@ type ImportPhase = 'idle' | 'extracting' | 'review' | 'error';
     .adi-footer { display:flex; justify-content:flex-end; gap:var(--spacing-2); }
   `
 })
-export class AccountingDocumentImportDialogComponent implements OnDestroy {
+export class AccountingDocumentImportDialogComponent implements OnChanges, OnDestroy {
   private readonly importService = inject(AccountingDocumentImportService);
 
   @Input() visible = false;
@@ -365,6 +336,7 @@ export class AccountingDocumentImportDialogComponent implements OnDestroy {
   @Output() applied = new EventEmitter<{ proposal: JournalEntryProposal; file: File }>();
 
   @ViewChild('fileInput') fileInput?: ElementRef<HTMLInputElement>;
+  @ViewChild('proposalEditor') proposalEditor?: ImportProposalEditorComponent;
 
   readonly phase = signal<ImportPhase>('idle');
   readonly errorMessage = signal('');
@@ -373,11 +345,7 @@ export class AccountingDocumentImportDialogComponent implements OnDestroy {
   readonly proposal = signal<JournalEntryProposal | null>(null);
   readonly reanalyzing = signal(false);
   readonly capabilityHint = signal<string | null>(null);
-
-  readonly canApply = computed(() => {
-    const p = this.proposal();
-    return !!p && !p.hasBlockingDiagnostic && !this.reanalyzing();
-  });
+  readonly displayDiagnostics = signal<ProposalDiagnostic[]>([]);
 
   readonly methodLabel = computed(() => {
     const p = this.proposal();
@@ -388,6 +356,12 @@ export class AccountingDocumentImportDialogComponent implements OnDestroy {
   private subscription?: Subscription;
   private timer?: ReturnType<typeof setInterval>;
 
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['visible']?.currentValue === true) {
+      this.loadCapabilities();
+    }
+  }
+
   ngOnDestroy(): void {
     this.stopTimer();
     this.subscription?.unsubscribe();
@@ -397,12 +371,19 @@ export class AccountingDocumentImportDialogComponent implements OnDestroy {
   loadCapabilities(): void {
     this.importService.capabilities().subscribe({
       next: (caps) => {
-        this.capabilityHint.set(
-          caps.aiFallbackAvailable
-            ? null
-            : "Analyse IA indisponible pour votre compte : seules les factures émises par "
-              + 'InstaFact pourront être lues.'
-        );
+        if (!caps.aiFallbackAvailable) {
+          this.capabilityHint.set(
+            "Analyse IA indisponible pour votre compte : seules les factures émises par "
+            + 'InstaFact pourront être lues.');
+          return;
+        }
+        if (caps.visionModel && caps.visionModelReady === false) {
+          this.capabilityHint.set(
+            `Le modèle vision d'import (${caps.visionModel}) n'est pas prêt sur le serveur. `
+            + "Les photos de factures pourraient échouer — contactez l'administrateur InstaFact.");
+          return;
+        }
+        this.capabilityHint.set(null);
       },
       error: () => this.capabilityHint.set(null)
     });
@@ -430,11 +411,15 @@ export class AccountingDocumentImportDialogComponent implements OnDestroy {
     if (!current || current.direction === direction || !this.currentFile) {
       return;
     }
+    if (this.proposalEditor?.hasManualEdits() && !this.confirmDiscardEdits()) {
+      return;
+    }
     this.reanalyzing.set(true);
     this.subscription?.unsubscribe();
     this.subscription = this.importService.propose(this.currentFile, direction).subscribe({
       next: (p) => {
         this.proposal.set(p);
+        this.displayDiagnostics.set(p.diagnostics);
         this.reanalyzing.set(false);
       },
       error: (err: Error) => {
@@ -451,11 +436,15 @@ export class AccountingDocumentImportDialogComponent implements OnDestroy {
     if (!current || !this.currentFile) {
       return;
     }
+    if (this.proposalEditor?.hasManualEdits() && !this.confirmDiscardEdits()) {
+      return;
+    }
     this.reanalyzing.set(true);
     this.subscription?.unsubscribe();
     this.subscription = this.importService.propose(this.currentFile, current.direction).subscribe({
       next: (p) => {
         this.proposal.set(p);
+        this.displayDiagnostics.set(p.diagnostics);
         this.reanalyzing.set(false);
       },
       error: () => this.reanalyzing.set(false)
@@ -463,12 +452,41 @@ export class AccountingDocumentImportDialogComponent implements OnDestroy {
   }
 
   apply(): void {
-    const p = this.proposal();
-    if (!p || !this.canApply() || !this.currentFile) {
+    const merged = this.proposalEditor?.getMergedProposal();
+    if (!merged || !this.canApplyNow() || !this.currentFile) {
       return;
     }
-    this.applied.emit({ proposal: p, file: this.currentFile });
+    this.applied.emit({ proposal: merged, file: this.currentFile });
     this.close();
+  }
+
+  canApplyNow(): boolean {
+    if (this.reanalyzing()) {
+      return false;
+    }
+    const editor = this.proposalEditor;
+    if (!editor) {
+      const p = this.proposal();
+      return !!p && !p.hasBlockingDiagnostic;
+    }
+    const merged = editor.getMergedProposal();
+    return !merged.hasBlockingDiagnostic && editor.isBalanced();
+  }
+
+  onEditorStateChange(): void {
+    const editor = this.proposalEditor;
+    if (!editor) {
+      const p = this.proposal();
+      this.displayDiagnostics.set(p?.diagnostics ?? []);
+      return;
+    }
+    this.displayDiagnostics.set(editor.getMergedProposal().diagnostics);
+  }
+
+  private confirmDiscardEdits(): boolean {
+    return window.confirm(
+      'Vos modifications sur l\'écriture proposée seront perdues. Continuer ?'
+    );
   }
 
   cancelImport(): void {
@@ -505,6 +523,7 @@ export class AccountingDocumentImportDialogComponent implements OnDestroy {
       next: (p) => {
         this.stopTimer();
         this.proposal.set(p);
+        this.displayDiagnostics.set(p.diagnostics);
         this.phase.set('review');
       },
       error: (err: Error) => {
@@ -537,6 +556,7 @@ export class AccountingDocumentImportDialogComponent implements OnDestroy {
   private reset(): void {
     this.phase.set('idle');
     this.proposal.set(null);
+    this.displayDiagnostics.set([]);
     this.errorMessage.set('');
     this.selectedFileName.set('');
     this.reanalyzing.set(false);

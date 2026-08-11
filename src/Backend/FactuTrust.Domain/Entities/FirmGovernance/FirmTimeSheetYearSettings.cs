@@ -58,6 +58,16 @@ public sealed class FirmTimeSheetYearSettings : Entity
     /// <summary>Part réellement productive du temps de présence, en % (hors administratif interne, formation).</summary>
     public decimal ProductivityRatePercent { get; private set; }
 
+    /// <summary>
+    /// Forfait commun ou congés réellement pris par collaborateur.
+    /// </summary>
+    /// <remarks>
+    /// Reste à <see cref="FirmProductiveHoursMode.Parametric"/> par défaut : basculer un exercice
+    /// en individualisé change les taux horaires, donc les marges, et doit rester un acte délibéré.
+    /// </remarks>
+    public FirmProductiveHoursMode ProductiveHoursMode { get; private set; }
+        = FirmProductiveHoursMode.Parametric;
+
     // ---- Taux patronaux (repli quand la paie du cabinet n'est pas exploitable) ----
 
     /// <summary>Cotisation CNSS patronale, en % du brut.</summary>
@@ -162,7 +172,8 @@ public sealed class FirmTimeSheetYearSettings : Entity
         decimal tfpRate,
         decimal foprolosRate,
         decimal workAccidentRate,
-        decimal cssEmployerRate = 0m)
+        decimal cssEmployerRate = 0m,
+        FirmProductiveHoursMode productiveHoursMode = FirmProductiveHoursMode.Parametric)
     {
         if (maxDailyHours is <= 0 or > 24)
             return Result.Failure(Error.Validation("MaxDailyHours", "Le plafond journalier doit être compris entre 0 et 24 heures."));
@@ -197,6 +208,7 @@ public sealed class FirmTimeSheetYearSettings : Entity
         FoprolosRate = MillimeRounding.Round(foprolosRate);
         WorkAccidentRate = MillimeRounding.Round(workAccidentRate);
         CssEmployerRate = MillimeRounding.Round(cssEmployerRate);
+        ProductiveHoursMode = productiveHoursMode;
         return Result.Success();
     }
 

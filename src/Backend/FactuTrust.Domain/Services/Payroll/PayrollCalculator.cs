@@ -122,14 +122,19 @@ public static class PayrollCalculator
         var workAccidentRate = input.Regime.IsSubjectToCnss() ? input.WorkAccidentRate : 0m;
         var accidentBase = ApplyAccidentCeiling(cnssContributionBase, parameters);
         var workAccident = R(accidentBase * workAccidentRate / 100m);
+        // Assiette des taxes sur salaires (TFP, FOPROLOS, CSS patronale). Le plafond CNSS est une
+        // règle propre à la CNSS : ces trois taxes n'en ont pas. Le paramètre reste par défaut
+        // aligné sur la CNSS pour ne pas modifier les cycles des exercices déjà paramétrés ; les
+        // exercices créés à partir des présets légaux l'ont désactivé.
+        var payrollTaxBase = parameters.ApplyCnssCeilingToPayrollTaxes ? cnssContributionBase : cnssableGross;
         var tfpRate = input.IsIndustrialSector ? parameters.TfpRateIndustry : parameters.TfpRateOther;
-        var tfp = R(cnssContributionBase * tfpRate / 100m);
-        var foprolos = R(cnssContributionBase * parameters.FoprolosRate / 100m);
-        var cssEmployer = R(cnssContributionBase * parameters.CssEmployerRate / 100m);
+        var tfp = R(payrollTaxBase * tfpRate / 100m);
+        var foprolos = R(payrollTaxBase * parameters.FoprolosRate / 100m);
+        var cssEmployer = R(payrollTaxBase * parameters.CssEmployerRate / 100m);
 
         var lines = BuildLines(
             input, parameters, cnssEmployeeRate, cnssEmployerRate, tfpRate,
-            cnssableGross, cnssContributionBase, accidentBase, cnssEmployee, baseAfterCnss,
+            cnssableGross, cnssContributionBase, payrollTaxBase, accidentBase, cnssEmployee, baseAfterCnss,
             professionalExpenses, professionalExpensesCapped, familyDeductions,
             monthlyNetTaxable, irpp, css, smigExemption, regularization.Irpp, regularization.Css,
             preTaxDeductions, postTaxDeductions,
@@ -161,6 +166,8 @@ public static class PayrollCalculator
             Tfp = tfp,
             Foprolos = foprolos,
             CssEmployer = cssEmployer,
+            PayrollTaxBase = payrollTaxBase,
+            AppliedTfpRate = tfpRate,
             Lines = lines
         };
     }
@@ -293,6 +300,7 @@ public static class PayrollCalculator
         decimal tfpRate,
         decimal cnssableGross,
         decimal cnssContributionBase,
+        decimal payrollTaxBase,
         decimal accidentBase,
         decimal cnssEmployee,
         decimal baseAfterCnss,
@@ -410,11 +418,11 @@ public static class PayrollCalculator
         if (workAccident > 0)
             Add("Accident de travail", PayslipLineKind.EmployerContribution, workAccident, accidentBase, input.WorkAccidentRate);
         if (tfp > 0)
-            Add("TFP", PayslipLineKind.EmployerContribution, tfp, cnssContributionBase, tfpRate);
+            Add("TFP", PayslipLineKind.EmployerContribution, tfp, payrollTaxBase, tfpRate);
         if (foprolos > 0)
-            Add("FOPROLOS", PayslipLineKind.EmployerContribution, foprolos, cnssContributionBase, parameters.FoprolosRate);
+            Add("FOPROLOS", PayslipLineKind.EmployerContribution, foprolos, payrollTaxBase, parameters.FoprolosRate);
         if (cssEmployer > 0)
-            Add("CSS patronale", PayslipLineKind.EmployerContribution, cssEmployer, cnssContributionBase, parameters.CssEmployerRate);
+            Add("CSS patronale", PayslipLineKind.EmployerContribution, cssEmployer, payrollTaxBase, parameters.CssEmployerRate);
 
         foreach (var employerCharge in input.EmployerChargeLines.Where(c => c.Amount > 0))
             Add(employerCharge.Label, PayslipLineKind.EmployerContribution, employerCharge.Amount);

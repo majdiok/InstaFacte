@@ -1,5 +1,6 @@
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
+import { FIRM_DELEGATED_AI_ASSISTANT_SLUG } from '@core/config/firm-navigation.registry';
 import { AuthService } from '@core/services/auth.service';
 
 /** First path segments blocked for accounting firms in native (non-delegated) mode. */
@@ -24,7 +25,6 @@ const FIRM_NATIVE_BLOCKED_SEGMENTS = new Set([
   'forecasting',
   'studio',
   'audit',
-  'ai-assistant',
   'documentation'
 ]);
 
@@ -73,6 +73,16 @@ export const firmNativeRedirectGuard: CanActivateFn = (_route, state) => {
       return true;
     }
     return router.createUrlTree(['/firm/dashboard']);
+  }
+
+  if (first === 'ai-assistant') {
+    if (!auth.isDelegatedMode()) {
+      return router.createUrlTree(['/firm/dashboard']);
+    }
+    if (segments.length === 1) {
+      return router.createUrlTree(['/ai-assistant', FIRM_DELEGATED_AI_ASSISTANT_SLUG]);
+    }
+    return true;
   }
 
   if (FIRM_NATIVE_BLOCKED_SEGMENTS.has(first)) {

@@ -63,7 +63,7 @@ public sealed class FirmCollaboratorCostServiceTests
                           ?? FirmPayrollCostSnapshotDto.Unavailable("Aucune base de paie n'est rattachée au cabinet."));
 
         var options = Options.Create(new FirmGovernanceOptions { Enabled = true, DefaultHourlyCostRate = 50m });
-        return new FirmCollaboratorCostService(db, provider.Object, options);
+        return new FirmCollaboratorCostService(db, provider.Object, new FirmLeaveAbsenceReader(db), options);
     }
 
     // ============================================
@@ -215,7 +215,7 @@ public sealed class FirmCollaboratorCostServiceTests
         var snapshot = FirmPayrollCostSnapshotDto.Available(new[]
         {
             new FirmPayrollEmployeeCostDto(PayrollEmployeeId, "Amine Ben Salah", 30_000m, 5_871m, 12)
-        });
+        }, 1);
         var service = BuildService(db, snapshot);
 
         await service.LinkPayrollEmployeeAsync(FirmId, isManager: true, CollaboratorId, PayrollEmployeeId);
@@ -245,14 +245,21 @@ public sealed class FirmCollaboratorCostServiceTests
         var snapshot = FirmPayrollCostSnapshotDto.Available(new[]
         {
             new FirmPayrollEmployeeCostDto(PayrollEmployeeId, "Amine Ben Salah", 30_000m, 5_871m, 12)
-        });
+        }, 1);
         var service = BuildService(db, snapshot);
 
-        await service.SaveAsync(
-            FirmId, isManager: true, CollaboratorId, Year,
-            new SaveFirmCollaboratorYearCostDto { GrossAnnualSalary = 1m, PayrollExtras = 2_000m });
         await service.LinkPayrollEmployeeAsync(FirmId, isManager: true, CollaboratorId, PayrollEmployeeId);
         await service.ImportFromPayrollAsync(FirmId, isManager: true, Year);
+        await service.SaveAsync(
+            FirmId, isManager: true, CollaboratorId, Year,
+            new SaveFirmCollaboratorYearCostDto
+            {
+                GrossAnnualSalary = 30_000m,
+                EmployerContributions = 5_871m,
+                PayrollExtras = 2_000m
+            });
+        await service.ImportFromPayrollAsync(
+            FirmId, isManager: true, Year, forceOverwriteManual: true);
 
         var row = (await service.ListAsync(FirmId, Year)).Single(r => r.CollaboratorUserId == CollaboratorId);
 

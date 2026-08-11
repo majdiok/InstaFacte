@@ -1,7 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { RouterModule } from '@angular/router';
+import { RouterModule, ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -11,6 +11,7 @@ import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { AccountingService, AccountingPeriodDto, FiscalYearLockDto } from '../services/accounting.service';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
+import { AccountingCorrectionBannerComponent } from '../shared/accounting-correction-banner.component';
 import { AnalyzeWithAiButtonComponent } from '@features/ai-assistant/components/analyze-with-ai-button/analyze-with-ai-button.component';
 import { wrapLegacyAnalyzePayload } from '@features/ai-assistant/utils/ai-screen-payload.factory';
 
@@ -25,11 +26,13 @@ import { wrapLegacyAnalyzePayload } from '@features/ai-assistant/utils/ai-screen
     ConfirmDialogModule,
     PageHeaderComponent,
     AccountingStatusBannerComponent,
+    AccountingCorrectionBannerComponent,
     AnalyzeWithAiButtonComponent
   ],
   providers: [ConfirmationService],
   template: `
     <app-page-header title="Clôture des périodes" subtitle="Verrouillage mensuel des écritures" />
+    <app-accounting-correction-banner />
     <p-confirmDialog />
 
     <app-accounting-status-banner variant="error" [message]="error() ?? ''" [showRetry]="!!error()" retryLabel="Réessayer" (retry)="refresh()" />
@@ -131,6 +134,7 @@ export class ClosingComponent implements OnInit {
   private readonly api = inject(AccountingService);
   private readonly confirmService = inject(ConfirmationService);
   private readonly errorHandler = inject(ErrorHandlerService);
+  private readonly route = inject(ActivatedRoute);
   readonly periods = signal<AccountingPeriodDto[]>([]);
   readonly lockedYears = signal<FiscalYearLockDto[]>([]);
   readonly error = signal<string | null>(null);
@@ -165,6 +169,11 @@ export class ClosingComponent implements OnInit {
     );
 
   ngOnInit(): void {
+    const fy = this.route.snapshot.queryParamMap.get('fiscalYear');
+    if (fy) {
+      const year = Number(fy);
+      if (!Number.isNaN(year)) this.fiscalYearInput = year;
+    }
     this.refresh();
   }
 

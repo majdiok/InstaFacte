@@ -57,6 +57,30 @@ Appliquer les migrations tenant via l'une des options ci-dessus.
 
 ---
 
+## Erreur « Invalid column name 'ApplyCnssCeilingToPayrollTaxes' » sur la fiche salarié / paramètres paie
+
+Si la fiche salarié (`/payroll/employees/{id}`) ou les paramètres paie affichent une erreur HTTP **500** sur `GET /api/payroll/settings/parameters/{year}` :
+
+- **Message :** `Invalid column name 'ApplyCnssCeilingToPayrollTaxes'.`
+- **Cause :** la migration tenant `20260810120000_AddPayrollTaxBase_Tenant` n'a pas été appliquée sur la base du tenant alors que le code backend interroge déjà cette colonne sur `PayrollYearParameters`.
+
+### Solution
+
+Appliquer les migrations tenant via l'une des options de la section [Erreur HTTP 503](#erreur-http-503--tenant_migration_failed).
+
+**Script idempotent (production / DBA) :** [`docs/runbooks/sql/AddPayrollTaxBase_Tenant.idempotent.sql`](runbooks/sql/AddPayrollTaxBase_Tenant.idempotent.sql)
+
+**Vérification SQL :**
+
+```sql
+SELECT MigrationId FROM __EFMigrationsHistory
+WHERE MigrationId LIKE '%AddPayrollTaxBase%';
+
+SELECT COL_LENGTH('dbo.PayrollYearParameters', 'ApplyCnssCeilingToPayrollTaxes') AS ColumnExists;
+```
+
+---
+
 ## Erreur « Invalid object name 'CustomSystemDefinitions' » sur Studio AI
 
 Si la page **Studio AI** (`/studio/ai`) ou la sidebar Studio affiche une erreur HTTP **500** sur `GET /api/studio/nav` :

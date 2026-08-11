@@ -1,6 +1,7 @@
 import {
   buildChartSegments,
   buildCompanyFromAuth,
+  buildDivergenceRows,
   buildDocLinks,
   buildTaxRows,
   canSubmitDeclaration,
@@ -8,6 +9,7 @@ import {
   computeTotalToPay,
   hasSuggestionMismatch,
   isSubmittedOrLocked,
+  payrollHint,
   resolveCompanyDisplay,
   round3,
   shiftPeriod,
@@ -64,6 +66,41 @@ describe('vat-declaration.view-model', () => {
     acomptes: 0
   };
 
+  /**
+   * Déclaration déposée dont les montants ont divergé depuis : le cycle de paie a été clôturé
+   * après le dépôt (TFP/FOPROLOS restés à 0) et les ventes ont augmenté (TCL sous-évaluée).
+   */
+  const suggestedDto = {
+    ...baseDto,
+    payrollTaxBase: 168,
+    tfpRatePercent: 1,
+    foprolosRatePercent: 1,
+    payrollSalariesGrossBase: 168,
+    suggested: {
+      collectedVat19: 657.02,
+      collectedVat13: 67.6,
+      collectedVat7: 601.65,
+      deductibleVatGoods: 0,
+      deductibleVatAssets: 0,
+      previousCredit: 0,
+      vatDue: 1326.27,
+      creditToCarry: 0,
+      fodec: 300.5,
+      droitTimbre: 7,
+      tcl: 188.617,
+      tfp: 1.68,
+      foprolos: 1.68,
+      withholdingTax: 112.65,
+      withholdingFromInvoices: 112.65,
+      withholdingFromSalaries: 0,
+      totalToPay: 1938.397,
+      payrollRunExists: true,
+      payrollRunStatus: 3,
+      payrollRunStatusDisplay: 'Clôturé',
+      payrollRunUsable: true
+    }
+  };
+
   it('computeTotalToPay matches backend formula', () => {
     expect(computeTotalToPay(baseDto, extras)).toBeCloseTo(1486.799, 3);
   });
@@ -107,13 +144,78 @@ describe('vat-declaration.view-model', () => {
     expect(hasSuggestionMismatch(null, 565.3)).toBe(false);
   });
 
-  it('buildTaxRows renseigne la suggestion FODEC/TCL depuis les taux configurés', () => {
+  it('buildTaxRows lit la suggestion depuis le backend, sans la recalculer', () => {
+    // Le backend est seul à connaître la source réelle de chaque taxe. Recalculer « base × taux »
+    // ici produisait un second chiffre : c'est ce qui affichait « 292,600 saisi / 0,000 suggéré »
+    // sur le FODEC, dont le préremplissage ne vient pas de la base FODEC des lignes.
+    const rows = buildTaxRows(suggestedDto, extras, 1486.799, 1, 0.2);
+
+    expect(rows.find(r => r.taxLabel === 'FODEC')?.suggestedAmount).toBe(300.5);
+    expect(rows.find(r => r.taxLabel === 'TCL')?.suggestedAmount).toBe(188.617);
+    expect(rows.find(r => r.taxLabel === 'TFP')?.suggestedAmount).toBe(1.68);
+    expect(rows.find(r => r.taxLabel === 'FOPROLOS')?.suggestedAmount).toBe(1.68);
+    expect(rows.find(r => r.taxLabel === 'Retenues à la source (RS)')?.suggestedAmount).toBe(112.65);
+  });
+
+  it('buildTaxRows sans bloc calculé ne propose aucune suggestion', () => {
     const rows = buildTaxRows(baseDto, extras, 1486.799, 1, 0.2);
-    const fodec = rows.find(r => r.taxLabel === 'FODEC');
-    const tcl = rows.find(r => r.taxLabel === 'TCL');
-    expect(fodec?.suggestedAmount).toBeCloseTo(round3((baseDto.fodecTaxableBase ?? baseDto.salesTaxableBase) * 0.01), 3);
-    expect(fodec?.taxableBase).toBe(baseDto.fodecTaxableBase);
-    expect(tcl?.suggestedAmount).toBeCloseTo(round3(baseDto.salesGrossBase * 0.002), 3);
+    expect(rows.find(r => r.taxLabel === 'FODEC')?.suggestedAmount).toBeNull();
+    expect(rows.find(r => r.taxLabel === 'TCL')?.suggestedAmount).toBeNull();
+  });
+
+  it('buildTaxRows expose la masse salariale et le taux sur les lignes TFP/FOPROLOS', () => {
+    const rows = buildTaxRows(suggestedDto, extras, 1486.799, 1, 0.2);
+    const tfp = rows.find(r => r.taxLabel === 'TFP');
+    const foprolos = rows.find(r => r.taxLabel === 'FOPROLOS');
+
+    expect(tfp?.taxableBase).toBe(168);
+    expect(tfp?.ratePercent).toBe(1);
+    expect(foprolos?.taxableBase).toBe(168);
+    expect(foprolos?.ratePercent).toBe(1);
+  });
+
+  it('buildDivergenceRows liste les lignes déposées qui s’écartent du recalcul', () => {
+    // Cas Ste Bouzgarou 07/2026 : TFP/FOPROLOS gelés à 0, TCL gelée sous sa valeur courante.
+    const rows = buildDivergenceRows(suggestedDto);
+    const labels = rows.map(r => r.label);
+
+    expect(labels).toContain('TFP');
+    expect(labels).toContain('FOPROLOS');
+    expect(labels).toContain('TCL');
+    expect(rows.find(r => r.label === 'TFP')).toEqual({ label: 'TFP', declared: 0, computed: 1.68 });
+    // Le droit de timbre est identique de part et d'autre : pas d'écart à signaler.
+    expect(labels).not.toContain('Droit de timbre');
+  });
+
+  it('buildDivergenceRows ne signale rien sans bloc calculé', () => {
+    expect(buildDivergenceRows(baseDto)).toEqual([]);
+  });
+
+  it('payrollHint invite à valider un cycle de paie non validé', () => {
+    const withCalculatedRun = {
+      ...suggestedDto,
+      suggested: {
+        ...suggestedDto.suggested,
+        payrollRunUsable: false,
+        payrollRunStatusDisplay: 'Calculé'
+      }
+    };
+
+    expect(payrollHint(withCalculatedRun)).toContain('Calculé');
+    expect(payrollHint(withCalculatedRun)).toContain('Validez le cycle');
+  });
+
+  it('payrollHint signale l’absence de cycle de paie', () => {
+    const withoutRun = {
+      ...suggestedDto,
+      suggested: { ...suggestedDto.suggested, payrollRunExists: false, payrollRunUsable: false }
+    };
+
+    expect(payrollHint(withoutRun)).toContain('Aucun cycle de paie');
+  });
+
+  it('payrollHint reste muet quand le cycle est exploitable', () => {
+    expect(payrollHint(suggestedDto)).toBeNull();
   });
 
   it('buildTaxRows ajoute une ligne "Crédit de TVA à reporter" quand creditToCarry > 0', () => {

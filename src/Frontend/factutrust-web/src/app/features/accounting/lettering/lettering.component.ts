@@ -1,6 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { finalize } from 'rxjs/operators';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
@@ -28,6 +29,7 @@ import { AnalyzeWithAiButtonComponent } from '@features/ai-assistant/components/
 import { wrapLegacyAnalyzePayload } from '@features/ai-assistant/utils/ai-screen-payload.factory';
 import { AccountingToolbarActionsComponent } from '../shared/accounting-toolbar-actions.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
+import { AccountingCorrectionBannerComponent } from '../shared/accounting-correction-banner.component';
 
 interface LetteringLine {
   lineId: string;
@@ -59,17 +61,21 @@ interface LetteringLine {
     EmptyStateComponent,
     AnalyzeWithAiButtonComponent,
     AccountingToolbarActionsComponent,
-    ButtonComponent
+    ButtonComponent,
+    AccountingCorrectionBannerComponent
   ],
   templateUrl: './lettering.component.html',
   styleUrl: './lettering.component.scss'
 })
 export class LetteringComponent implements OnInit {
   private readonly api = inject(AccountingService);
+  private readonly route = inject(ActivatedRoute);
 
   account = '';
   fromStr = '';
   toStr = '';
+  accountHint = '';
+  unletteredOnly = false;
   accountSuggestions: string[] = [];
   private allAccounts: ChartOfAccountDto[] = [];
 
@@ -106,11 +112,25 @@ export class LetteringComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    const qp = this.route.snapshot.queryParamMap;
+    const accountParam = qp.get('account');
+    const fromParam = qp.get('from');
+    const toParam = qp.get('to');
+    if (accountParam) this.account = accountParam;
+    if (fromParam) this.fromStr = fromParam;
+    if (toParam) this.toStr = toParam;
+    this.unletteredOnly = qp.get('unletteredOnly') === '1';
+    this.accountHint = qp.get('accountHint') ?? '';
+
     this.api.getChartOfAccounts().subscribe({
       next: res => {
         if (res.success && res.data) this.allAccounts = res.data;
       }
     });
+
+    if (qp.get('autoLoad') === '1' && this.account.trim()) {
+      this.load();
+    }
   }
 
   readonly buildLetteringAnalyzePayload = (): unknown =>
@@ -171,7 +191,10 @@ export class LetteringComponent implements OnInit {
       .subscribe({
         next: res => {
           if (res.success && res.data) {
-            const result = this.extractLinesForAccount(res.data, acct);
+            let result = this.extractLinesForAccount(res.data, acct);
+            if (this.unletteredOnly) {
+              result = result.filter(l => !l.letteringCode);
+            }
             this.lines.set(result);
           } else {
             this.error.set(res.error ?? 'Erreur lors du chargement des écritures.');

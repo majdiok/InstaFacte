@@ -1,11 +1,12 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterModule } from '@angular/router';
+import { ActivatedRoute, RouterModule } from '@angular/router';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { DepreciationRunResultDto, FixedAssetsService } from '../services/fixed-assets.service';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
+import { AccountingCorrectionBannerComponent } from '../shared/accounting-correction-banner.component';
 
 @Component({
   selector: 'app-depreciation-run',
@@ -16,12 +17,15 @@ import { AccountingStatusBannerComponent } from '../shared/accounting-status-ban
     RouterModule,
     PageHeaderComponent,
     ButtonComponent,
-    AccountingStatusBannerComponent
+    AccountingStatusBannerComponent,
+    AccountingCorrectionBannerComponent
   ],
   template: `
     <app-page-header
       title="Dotations immobilisations"
       subtitle="Comptabiliser les amortissements de l'exercice (écritures 681 / 281 — journal JIM)" />
+
+    <app-accounting-correction-banner />
 
     <div class="card">
       <p class="hint">
@@ -87,13 +91,22 @@ import { AccountingStatusBannerComponent } from '../shared/accounting-status-ban
     `
   ]
 })
-export class DepreciationRunComponent {
+export class DepreciationRunComponent implements OnInit {
   private readonly api = inject(FixedAssetsService);
+  private readonly route = inject(ActivatedRoute);
 
   fiscalYear = new Date().getFullYear();
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
   readonly result = signal<DepreciationRunResultDto | null>(null);
+
+  ngOnInit(): void {
+    const fy = this.route.snapshot.queryParamMap.get('fiscalYear');
+    if (fy) {
+      const year = Number(fy);
+      if (!Number.isNaN(year)) this.fiscalYear = year;
+    }
+  }
 
   run(): void {
     this.loading.set(true);

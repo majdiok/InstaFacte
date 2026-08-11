@@ -312,6 +312,7 @@ dans `docs/runbooks/sql/` :
 | `20260805150000_AddPayrollIrppRegularization_Tenant` | `AddPayrollIrppRegularization_Tenant.idempotent.sql` |
 | `20260806300000_AddPayrollSmigIrppExemption_Tenant` | `AddPayrollSmigIrppExemption.idempotent.sql` |
 | `20260807010000_AddEmployeeDependentParents_Tenant` | `AddEmployeeDependentParents_Tenant.idempotent.sql` |
+| `20260810120000_AddPayrollTaxBase_Tenant` | `AddPayrollTaxBase_Tenant.idempotent.sql` |
 
 Conventions : montants `decimal(18,3)`, taux `decimal(8,4)` ; toute nouvelle colonne non
 nullable porte un défaut qui préserve le comportement antérieur.
@@ -416,6 +417,85 @@ saisissable se calcule donc sur le net réellement perçu.
 | Charges patronales mutuelle | 647 |
 
 L'export virement CSV inclut les lignes **bénéficiaires de saisie** (avec RIB valide) en plus des salaires.
+
+## Gouvernance cabinet / société cliente
+
+Lorsqu'une société possède une **affectation cabinet active** (`FirmClientAssignment`), les opérations
+sensibles de paie sont réservées au **cabinet comptable en mode dossier délégué** :
+
+| Opération | Société cliente | Cabinet délégué |
+|-----------|-----------------|-----------------|
+| Consulter cycles, bulletins, exports | Oui | Oui |
+| Gérer fiches salariés, saisir HS/primes/tickets resto | Oui | Non (consultation) |
+| Créer / calculer / valider les cycles | Non | Oui |
+| Régularisation IRPP (calcul, enregistrement) | Non | Oui |
+| Paramètres de paie, jours fériés, primes annuelles | Non | Oui |
+| Déclarations sociales et paiements salaires | Non | Oui |
+
+**Société sans cabinet assigné** : comportement inchangé (autonomie complète sur la paie).
+
+Implémentation : filtrage JWT (`payroll_firm_managed`), policy API `payroll:firm-operation`,
+pipeline MediatR `PayrollFirmOperationBehavior`. Feature flag : `Features:Payroll:FirmExclusiveOperations`
+(défaut `true`).
+
+### Congés de la paie interne du cabinet
+
+Quand le cabinet tient sa **propre** paie (`EnableFirmInternalPayroll`), les congés de ses
+collaborateurs ne se saisissent **pas** ici. Ils viennent de *Congés & Absences*
+(`/firm/governance/leaves`, base Master), qui en est la source unique, et sont reportés dans le
+tenant du cabinet à l'approbation par `FirmLeavePayrollMirrorService`. L'onglet « Congés » de la
+fiche salarié est donc en lecture seule en mode cabinet ; **le mode paie client est inchangé.**
+
+Conséquences pour le moteur :
+
+- un `LeaveRequest` miroir est un `LeaveRequest` ordinaire — il alimente `PayrollInputBuilder`
+  (retenue `ReducesGross()`), `StatutoryLeavePayrollAggregator`, les IJ CNSS et `LeaveBalanceService`
+  exactement comme une saisie directe ;
+- **aucun recalcul** : le nombre de jours est celui arrêté côté cabinet (demi-journées comprises,
+  fériés issus de `ITunisianCalendarService`). Le report ne repasse jamais par
+  `PayrollWorkingDaysCounter`, sans quoi les deux modules afficheraient deux durées ;
+- **les mois arrêtés restent gelés** : si un `PayrollRun` `Validated`/`Closed` couvre la période,
+  le report est refusé (`BlockedFrozenPayroll`) et l'approbateur est invité à passer par une
+  régularisation. L'invariant « un bulletin validé ne se recalcule jamais » prime sur
+  l'automatisation.
+
+Détail du mapping et des états : `docs/firm-leaves.md`.
+
+### Checklist QA manuelle
+
+1. Société autonome : créer cycle → saisir HS → calculer → valider → export PDF bulletin.
+2. Société avec cabinet : saisir HS sur cycle brouillon ; vérifier impossibilité de créer/calculer.
+3. Cabinet délégué : créer cycle → calculer → régularisation IRPP → paramètres → valider.
+4. Révocation affectation → refresh token société → retrouver les droits paie complets.
+5. Module grants custom : permissions paie toujours cohérentes après filtrage.
+
+## Tableau de bord mensuel
+
+`GET api/payroll/dashboard?year&month` (policy `payroll:read`) rend en un appel la vue d'ensemble
+d'un mois : indicateurs et variation M-1, répartition des charges patronales et des retenues,
+ventilation du brut, série des douze mois de l'exercice, salariés du cycle, derniers cycles et
+échéances sociales. Consommé par `/firm/payroll` ; l'endpoint est volontairement générique et
+pourra servir la paie client sans modification serveur.
+
+**Lecture pure.** Tous les montants viennent des totaux figés sur `PayrollRun` au calcul du cycle.
+Rien n'est recalculé : le faire ferait diverger l'écran des bulletins réellement émis.
+
+Deux points méritent attention :
+
+- **La ventilation du brut est reconstituée**, car le bulletin ne porte pas le détail
+  base / primes / heures supplémentaires / avantages. Heures et primes viennent de
+  `PayrollOvertimeLine` et `PayrollVariableAllowanceLine`, les avantages de `EmployeeInKindBenefit`,
+  et le **salaire de base est déduit par différence** pour que les quatre postes retombent
+  exactement sur `TotalGross`. Le cas limite où les éléments variables dépassent le brut (prorata,
+  absences non rémunérées) est signalé par `BreakdownWarning` au lieu d'être masqué.
+- **Aucune notion de jour de paie n'existe en base.** L'indicateur d'échéance affiche donc la
+  prochaine obligation sociale réelle issue de `FiscalScheduleEntry` (paiement CNSS le 15 du mois
+  suivant, DTS trimestrielle, retenue IRPP le 28), et non une date de paie inventée. Échéancier
+  non généré ⇒ liste vide, jamais une erreur.
+
+`GET api/payroll/runs` a été corrigé au passage : le compte de bulletins est désormais projeté en
+base (`IPayrollRunRepository.ListWithPayslipCountsAsync`) au lieu de charger chaque cycle avec tous
+ses bulletins **et leurs lignes** pour en compter les éléments. Le DTO de sortie est inchangé.
 
 ## Tests
 

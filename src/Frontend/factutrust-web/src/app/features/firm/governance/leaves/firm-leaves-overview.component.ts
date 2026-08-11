@@ -9,7 +9,11 @@ import { AuthService } from '@core/services/auth.service';
 import { ToastService } from '@core/services/toast.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { FirmLeavesService } from './data-access/firm-leaves.service';
-import { FirmLeaveOverview } from './data-access/firm-leaves.models';
+import {
+  FIRM_LEAVE_MIRROR_STATE,
+  FirmLeaveMirrorResult,
+  FirmLeaveOverview
+} from './data-access/firm-leaves.models';
 
 @Component({
   selector: 'app-firm-leaves-overview',
@@ -137,7 +141,11 @@ export class FirmLeavesOverviewComponent implements OnInit {
       acceptButtonStyleClass: 'p-button-success',
       accept: () => this.api.process(id, true).subscribe({
         next: r => {
-          if (r.success) { this.toast.add({ severity: 'success', summary: 'Congés', detail: 'Acceptée' }); this.reload(); }
+          if (r.success) {
+            this.toast.add({ severity: 'success', summary: 'Congés', detail: 'Acceptée' });
+            this.notifyPayrollMirror(r.data?.payrollMirror);
+            this.reload();
+          }
           else this.toast.add({ severity: 'error', summary: 'Erreur', detail: r.message ?? '' });
         }
       })
@@ -156,6 +164,18 @@ export class FirmLeavesOverviewComponent implements OnInit {
           else this.toast.add({ severity: 'error', summary: 'Erreur', detail: r.message ?? '' });
         }
       })
+    });
+  }
+
+  /** Alerte l'approbateur quand le congé n'a pas pu produire son effet en paie. */
+  private notifyPayrollMirror(mirror?: FirmLeaveMirrorResult): void {
+    if (!mirror || mirror.isApplied || mirror.state === FIRM_LEAVE_MIRROR_STATE.noPayrollEffect) return;
+
+    this.toast.add({
+      severity: mirror.state === FIRM_LEAVE_MIRROR_STATE.blockedFrozenPayroll ? 'warn' : 'error',
+      summary: 'Report en paie',
+      detail: mirror.message ?? mirror.stateDisplay,
+      life: 10000
     });
   }
 }

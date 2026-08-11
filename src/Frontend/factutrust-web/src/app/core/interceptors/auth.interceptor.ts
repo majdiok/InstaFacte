@@ -37,11 +37,12 @@ export const authInterceptor: HttpInterceptorFn = (req: HttpRequest<unknown>, ne
                 const newReq = addAuthHeader(req, response.data.accessToken);
                 return next(newReq);
               }
-              authService.logout();
+              // Clear only — no POST /logout; skip navigate if already on /auth/*
+              authService.invalidateSession();
               return throwError(() => error);
             }),
             catchError(refreshError => {
-              authService.logout();
+              authService.invalidateSession();
               return throwError(() => refreshError);
             })
           );
@@ -49,7 +50,7 @@ export const authInterceptor: HttpInterceptorFn = (req: HttpRequest<unknown>, ne
         const skipAutoLogout =
           req.url.includes('/auth/login') || req.url.includes('/auth/register');
         if (authService.isAuthenticated() && !skipAutoLogout) {
-          authService.logout();
+          authService.invalidateSession();
         }
       }
       return throwError(() => error);

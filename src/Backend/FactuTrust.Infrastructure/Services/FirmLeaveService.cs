@@ -15,11 +15,16 @@ public sealed class FirmLeaveService : IFirmLeaveService
 {
     private readonly MasterDbContext _db;
     private readonly ITunisianCalendarService _calendar;
+    private readonly IFirmLeavePayrollMirrorService _mirror;
 
-    public FirmLeaveService(MasterDbContext db, ITunisianCalendarService calendar)
+    public FirmLeaveService(
+        MasterDbContext db,
+        ITunisianCalendarService calendar,
+        IFirmLeavePayrollMirrorService mirror)
     {
         _db = db;
         _calendar = calendar;
+        _mirror = mirror;
     }
 
     public async Task EnsureDefaultsAsync(Guid firmTenantId, int year, CancellationToken cancellationToken = default)
@@ -28,9 +33,19 @@ public sealed class FirmLeaveService : IFirmLeaveService
         if (!hasTypes)
         {
             var sort = 0;
-            foreach (var (code, label, color, deducts, requiresApproval) in FirmLeaveType.DefaultCatalog)
+            foreach (var seed in FirmLeaveType.DefaultCatalog)
             {
-                var created = FirmLeaveType.Create(firmTenantId, code, label, color, deducts, requiresApproval, isSystem: true, sortOrder: sort++);
+                var created = FirmLeaveType.Create(
+                    firmTenantId,
+                    seed.Code,
+                    seed.Label,
+                    seed.ColorHex,
+                    seed.DeductsBalance,
+                    seed.RequiresApproval,
+                    isSystem: true,
+                    sortOrder: sort++,
+                    payrollLeaveType: seed.PayrollLeaveType,
+                    countsAsAbsence: seed.CountsAsAbsence);
                 if (created.IsSuccess)
                     _db.FirmLeaveTypes.Add(created.Value);
             }
@@ -66,7 +81,12 @@ public sealed class FirmLeaveService : IFirmLeaveService
         var taken = requests.Where(r => r.Status == (int)FirmLeaveRequestStatus.Approved).Sum(r => r.Days);
         var pending = requests.Where(r => r.Status == (int)FirmLeaveRequestStatus.Submitted).Sum(r => r.Days);
         var collabCount = Math.Max(1, balances.Count);
-        var absenteeism = Math.Round(taken / (collabCount * 220m) * 100m, 2, MidpointRounding.AwayFromZero);
+        // Jours ouvrables de l'exercice : repris des paramètres du cabinet plutôt que d'un 220
+        // codé en dur, incohérent avec la convention 26 j/mois retenue partout ailleurs.
+        var workingDays = await ResolveAnnualWorkingDaysAsync(firmTenantId, year, cancellationToken);
+        var absenteeism = workingDays <= 0m
+            ? 0m
+            : Math.Round(taken / (collabCount * workingDays) * 100m, 2, MidpointRounding.AwayFromZero);
 
         var types = await ListTypesAsync(firmTenantId, activeOnly: true, cancellationToken);
         var typeSummaries = types.Select(t =>
@@ -398,7 +418,15 @@ public sealed class FirmLeaveService : IFirmLeaveService
 
         entity.SetAuditInfo(processorUserId.ToString(), isUpdate: true);
         await _db.SaveChangesAsync(cancellationToken);
-        return Result.Success(await MapRequestByIdAsync(entity.Id, cancellationToken));
+
+        // Le report vers la paie suit l'acte RH, il ne le conditionne pas : son issue est
+        // consignée sur la demande et remontée à l'approbateur, sans jamais annuler l'approbation.
+        FirmLeaveMirrorResultDto? mirror = null;
+        if (dto.Approve)
+            mirror = await _mirror.MirrorApprovedAsync(firmTenantId, entity.Id, cancellationToken);
+
+        var mapped = await MapRequestByIdAsync(entity.Id, cancellationToken);
+        return Result.Success(mapped with { PayrollMirror = mirror });
     }
 
     public async Task<IReadOnlyList<FirmLeaveBalanceDto>> ListBalancesAsync(
@@ -500,7 +528,14 @@ public sealed class FirmLeaveService : IFirmLeaveService
             if (existing is null)
                 return Result.Failure<FirmLeaveTypeDto>(Error.NotFound("LeaveType", dto.Id.Value));
 
-            var upd = existing.Update(dto.Label, dto.ColorHex, dto.DeductsBalance, dto.RequiresApproval, dto.SortOrder);
+            var upd = existing.Update(
+                dto.Label,
+                dto.ColorHex,
+                dto.DeductsBalance,
+                dto.RequiresApproval,
+                dto.SortOrder,
+                ToPayrollLeaveType(dto.PayrollLeaveType),
+                dto.CountsAsAbsence);
             if (upd.IsFailure) return Result.Failure<FirmLeaveTypeDto>(upd.Error);
             if (dto.IsActive) existing.Activate(); else existing.Deactivate();
             await _db.SaveChangesAsync(cancellationToken);
@@ -508,7 +543,16 @@ public sealed class FirmLeaveService : IFirmLeaveService
         }
 
         var created = FirmLeaveType.Create(
-            firmTenantId, dto.Code, dto.Label, dto.ColorHex, dto.DeductsBalance, dto.RequiresApproval, isSystem: false, dto.SortOrder);
+            firmTenantId,
+            dto.Code,
+            dto.Label,
+            dto.ColorHex,
+            dto.DeductsBalance,
+            dto.RequiresApproval,
+            isSystem: false,
+            dto.SortOrder,
+            ToPayrollLeaveType(dto.PayrollLeaveType),
+            dto.CountsAsAbsence);
         if (created.IsFailure) return Result.Failure<FirmLeaveTypeDto>(created.Error);
 
         var codeExists = await _db.FirmLeaveTypes.AnyAsync(
@@ -537,6 +581,100 @@ public sealed class FirmLeaveService : IFirmLeaveService
         if (upd.IsFailure) return Result.Failure<FirmLeaveSettingsDto>(upd.Error);
         await _db.SaveChangesAsync(cancellationToken);
         return Result.Success(MapSettings(s));
+    }
+
+    public async Task<FirmLeaveReconciliationDto> GetReconciliationAsync(
+        Guid firmTenantId, int year, CancellationToken cancellationToken = default)
+    {
+        await EnsureDefaultsAsync(firmTenantId, year, cancellationToken);
+
+        var rows = await (
+            from r in _db.FirmLeaveRequests.AsNoTracking()
+            join t in _db.FirmLeaveTypes.AsNoTracking() on r.LeaveTypeId equals t.Id
+            join u in _db.Users.AsNoTracking() on r.UserId equals u.Id
+            where r.FirmTenantId == firmTenantId
+                  && r.Status == FirmLeaveRequestStatus.Approved
+                  && r.StartDate.Year == year
+            select new { r, TypeLabel = t.Label, Mapped = t.PayrollLeaveType != null, u.FirstName, u.LastName, u.Email })
+            .ToListAsync(cancellationToken);
+
+        var mirrored = rows.Count(x => x.r.PayrollMirrorState == FirmLeavePayrollMirrorState.Mirrored);
+        var noEffect = rows.Count(x =>
+            x.r.PayrollMirrorState == FirmLeavePayrollMirrorState.NoPayrollEffect || !x.Mapped);
+
+        // Un congé approuvé dont le type produit un effet paie mais qui n'est pas reporté est un
+        // écart, y compris quand le report n'a jamais été tenté (demande antérieure au miroir).
+        var pending = rows
+            .Where(x => x.Mapped
+                        && x.r.PayrollMirrorState is not FirmLeavePayrollMirrorState.Mirrored
+                            and not FirmLeavePayrollMirrorState.NoPayrollEffect)
+            .OrderBy(x => x.r.StartDate)
+            .Select(x => new FirmLeaveReconciliationRowDto
+            {
+                LeaveRequestId = x.r.Id,
+                UserId = x.r.UserId,
+                CollaboratorName = $"{x.FirstName} {x.LastName}".Trim() is { Length: > 0 } n
+                    ? n
+                    : x.Email ?? "Collaborateur",
+                LeaveTypeLabel = x.TypeLabel,
+                StartDate = x.r.StartDate,
+                EndDate = x.r.EndDate,
+                Days = x.r.Days,
+                MirrorState = (int)x.r.PayrollMirrorState,
+                MirrorStateDisplay = FirmLeavePayrollMirrorService.DescribeState(x.r.PayrollMirrorState),
+                MirrorMessage = x.r.PayrollMirrorMessage,
+                MirroredAt = x.r.PayrollMirroredAt,
+                // Un mois arrêté le restera : le rejeu ne peut rien y changer, seule une
+                // régularisation le peut.
+                CanReplay = x.r.PayrollMirrorState != FirmLeavePayrollMirrorState.BlockedFrozenPayroll
+            })
+            .ToList();
+
+        return new FirmLeaveReconciliationDto
+        {
+            Year = year,
+            MirroredCount = mirrored,
+            NoPayrollEffectCount = noEffect,
+            Pending = pending,
+            PayrollAvailable = true
+        };
+    }
+
+    public async Task<Result<FirmLeaveReplayResultDto>> ReplayPayrollMirrorAsync(
+        Guid firmTenantId, int year, Guid? leaveRequestId, CancellationToken cancellationToken = default)
+    {
+        var query = _db.FirmLeaveRequests.AsNoTracking()
+            .Where(r => r.FirmTenantId == firmTenantId && r.Status == FirmLeaveRequestStatus.Approved);
+
+        query = leaveRequestId.HasValue
+            ? query.Where(r => r.Id == leaveRequestId.Value)
+            : query.Where(r => r.StartDate.Year == year
+                               && r.PayrollMirrorState != FirmLeavePayrollMirrorState.Mirrored
+                               && r.PayrollMirrorState != FirmLeavePayrollMirrorState.NoPayrollEffect);
+
+        var ids = await query.Select(r => r.Id).ToListAsync(cancellationToken);
+        if (ids.Count == 0)
+            return Result.Success(new FirmLeaveReplayResultDto());
+
+        var succeeded = 0;
+        var messages = new List<string>();
+
+        foreach (var id in ids)
+        {
+            var outcome = await _mirror.MirrorApprovedAsync(firmTenantId, id, cancellationToken);
+            if (outcome.IsApplied)
+                succeeded++;
+            else if (!string.IsNullOrWhiteSpace(outcome.Message))
+                messages.Add(outcome.Message!);
+        }
+
+        return Result.Success(new FirmLeaveReplayResultDto
+        {
+            Replayed = ids.Count,
+            Succeeded = succeeded,
+            // Un même motif se répète souvent (base éteinte, mois arrêté) : on ne le montre qu'une fois.
+            Messages = messages.Distinct().Take(10).ToList()
+        });
     }
 
     public async Task<Result<(byte[] Content, string FileName)>> ExportListAsync(
@@ -695,7 +833,11 @@ public sealed class FirmLeaveService : IFirmLeaveService
         ProcessedAt = r.ProcessedAt,
         ProcessedByUserId = r.ProcessedByUserId,
         ProcessedByName = r.ProcessedByName,
-        RejectionReason = r.RejectionReason
+        RejectionReason = r.RejectionReason,
+        PayrollMirrorState = (int)r.PayrollMirrorState,
+        PayrollMirrorStateDisplay = FirmLeavePayrollMirrorService.DescribeState(r.PayrollMirrorState),
+        PayrollMirrorMessage = r.PayrollMirrorMessage,
+        PayrollMirroredAt = r.PayrollMirroredAt
     };
 
     private static FirmLeaveTypeDto MapType(FirmLeaveType t) => new()
@@ -708,7 +850,12 @@ public sealed class FirmLeaveService : IFirmLeaveService
         RequiresApproval = t.RequiresApproval,
         IsSystem = t.IsSystem,
         IsActive = t.IsActive,
-        SortOrder = t.SortOrder
+        SortOrder = t.SortOrder,
+        PayrollLeaveType = t.PayrollLeaveType.HasValue ? (int)t.PayrollLeaveType.Value : null,
+        PayrollEffectDisplay = t.PayrollLeaveType.HasValue
+            ? t.PayrollLeaveType.Value.ToDisplayString()
+            : "Aucun effet paie",
+        CountsAsAbsence = t.CountsAsAbsence
     };
 
     private static FirmLeaveSettingsDto MapSettings(FirmLeaveSettings s) => new()
@@ -722,6 +869,34 @@ public sealed class FirmLeaveService : IFirmLeaveService
         CarryOverEnabled = s.CarryOverEnabled,
         MaxCarryOverDays = s.MaxCarryOverDays
     };
+
+    /// <summary>
+    /// Convertit le code d'effet paie transmis par le client, en refusant les valeurs inconnues.
+    /// </summary>
+    /// <remarks>
+    /// Un entier arbitraire deviendrait un <c>LeaveType</c> inexistant, que le moteur de paie
+    /// traiterait silencieusement comme neutre. Mieux vaut n'enregistrer aucun effet.
+    /// </remarks>
+    /// <summary>
+    /// Jours ouvrables annuels de l'exercice, d'après les paramètres du cabinet.
+    /// </summary>
+    /// <remarks>
+    /// Les paramètres non enregistrés sont repliés sur les défauts sans écriture en base, comme
+    /// partout ailleurs : l'écran doit rester consultable avant tout paramétrage.
+    /// </remarks>
+    private async Task<decimal> ResolveAnnualWorkingDaysAsync(
+        Guid firmTenantId, int year, CancellationToken cancellationToken)
+    {
+        var persisted = await _db.FirmTimeSheetYearSettings.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.FirmTenantId == firmTenantId && s.Year == year, cancellationToken);
+        var settings = persisted ?? FirmTimeSheetYearSettings.Create(firmTenantId, year).Value;
+        return settings.AnnualWorkingDays;
+    }
+
+    private static LeaveType? ToPayrollLeaveType(int? raw) =>
+        raw.HasValue && Enum.IsDefined(typeof(LeaveType), raw.Value)
+            ? (LeaveType)raw.Value
+            : null;
 
     private static string DisplayName(ApplicationUser u) => $"{u.FirstName} {u.LastName}".Trim();
 

@@ -7,7 +7,8 @@ import { TagModule } from 'primeng/tag';
 import { PayrollService, PayrollRunDetail, PayslipDetail } from '@core/services/payroll.service';
 import { ToastService } from '@core/services/toast.service';
 import { AuthService } from '@core/services/auth.service';
-import { canRunPayroll, canValidatePayroll, canManagePayrollEmployees, canExportPayroll, canPayPayroll } from '@core/utils/payroll-access';
+import { canRunPayroll, canValidatePayroll, canManagePayrollEmployees, canExportPayroll, canPayPayroll, isCompanyPayrollReadOnly, isPayrollConsultMode, PAYROLL_FIRM_MANAGED_COMPANY_BANNER, PAYROLL_FIRM_CONSULT_BANNER } from '@core/utils/payroll-access';
+import { PayrollConsultBannerComponent } from '../shared/payroll-consult-banner.component';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { PayrollOvertimeGridComponent } from './payroll-overtime-grid.component';
@@ -19,6 +20,7 @@ import { PayrollRecordPaymentDialogComponent } from './payroll-record-payment-di
 import { PayrollPaymentsPanelComponent } from './payroll-payments-panel.component';
 import { PayrollProrataPreviewPanelComponent } from './payroll-prorata-preview-panel.component';
 import { PayrollStatGridComponent, PayrollSectionComponent, PayrollAmountPipe, formatPayrollAmount, type PayrollStatItem } from '../shared';
+import { FirmGovernanceService } from '@core/services/firm-governance.service';
 
 @Component({
   selector: 'app-payroll-run-detail',
@@ -41,7 +43,8 @@ import { PayrollStatGridComponent, PayrollSectionComponent, PayrollAmountPipe, f
     PayrollProrataPreviewPanelComponent,
     PayrollStatGridComponent,
     PayrollSectionComponent,
-    PayrollAmountPipe
+    PayrollAmountPipe,
+    PayrollConsultBannerComponent
   ],
   template: `
     @if (run()) {
@@ -66,6 +69,10 @@ import { PayrollStatGridComponent, PayrollSectionComponent, PayrollAmountPipe, f
           <app-button variant="outline" icon="pi-times" iconPos="left" (click)="cancelAllPayments()">Annuler tous les paiements</app-button>
         }
       </app-page-header>
+
+      <app-payroll-consult-banner
+        [visible]="showConsultBanner()"
+        [message]="consultBannerMessage()" />
 
       @if (run()!.status === 'Validated' || run()!.status === 'Closed') {
         <div class="treasury-banner mb-4">
@@ -243,6 +250,7 @@ export class PayrollRunDetailComponent implements OnInit {
   private readonly payroll = inject(PayrollService);
   private readonly toast = inject(ToastService);
   private readonly auth = inject(AuthService);
+  private readonly firmGovernance = inject(FirmGovernanceService);
 
   run = signal<PayrollRunDetail | null>(null);
   selectedPayslip = signal<PayslipDetail | null>(null);
@@ -250,12 +258,17 @@ export class PayrollRunDetailComponent implements OnInit {
   bankTransferVisible = signal(false);
   recordPaymentVisible = signal(false);
   runId = '';
+  routeBase = signal('/payroll');
+  firmInternal = signal(false);
 
   canRun = computed(() => canRunPayroll(this.auth));
   canValidate = computed(() => canValidatePayroll(this.auth));
   canManageEmployees = computed(() => canManagePayrollEmployees(this.auth));
   canExport = computed(() => canExportPayroll(this.auth));
   canPay = computed(() => canPayPayroll(this.auth));
+  showConsultBanner = computed(() => !this.firmInternal() && (isPayrollConsultMode(this.auth) || isCompanyPayrollReadOnly(this.auth)));
+  consultBannerMessage = computed(() =>
+    isCompanyPayrollReadOnly(this.auth) ? PAYROLL_FIRM_MANAGED_COMPANY_BANNER : PAYROLL_FIRM_CONSULT_BANNER);
 
   showBankTransferExport = computed(() => {
     const r = this.run();
@@ -294,6 +307,9 @@ export class PayrollRunDetailComponent implements OnInit {
   });
 
   ngOnInit(): void {
+    const data = this.route.snapshot.data;
+    this.routeBase.set(data['payrollRouteBase'] ?? '/payroll');
+    this.firmInternal.set(!!data['firmInternalPayroll']);
     this.runId = this.route.snapshot.paramMap.get('id')!;
     this.reload();
   }
@@ -365,8 +381,26 @@ export class PayrollRunDetailComponent implements OnInit {
 
   validate(): void {
     if (!this.canValidate()) return;
+    const year = this.run()?.year;
     this.payroll.validateRun(this.runId).subscribe({
-      next: () => { this.toast.add({ severity: 'success', summary: 'Paie', detail: 'Cycle validé.' }); this.reload(); },
+      next: () => {
+        this.toast.add({ severity: 'success', summary: 'Paie', detail: 'Cycle validé.' });
+        if (this.firmInternal() && year != null) {
+          this.firmGovernance.syncCollaboratorCosts(year, false).subscribe({
+            next: res => {
+              const imported = res.data?.imported ?? 0;
+              if (imported > 0) {
+                this.toast.add({
+                  severity: 'info',
+                  summary: 'Coûts collaborateurs',
+                  detail: `${imported} coût(s) mis à jour depuis la paie validée.`
+                });
+              }
+            }
+          });
+        }
+        this.reload();
+      },
       error: err => this.toast.add({ severity: 'error', summary: 'Paie', detail: err?.error?.message ?? 'Validation impossible.' })
     });
   }

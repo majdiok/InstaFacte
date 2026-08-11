@@ -31,6 +31,14 @@ public sealed class PayrollRun : AggregateRoot
     public decimal TotalCnssEmployer { get; private set; }
     public decimal TotalTfp { get; private set; }
     public decimal TotalFoprolos { get; private set; }
+    /// <summary>
+    /// Assiette cumulée des taxes sur salaires (TFP, FOPROLOS, CSS patronale). Reportée telle
+    /// quelle sur le formulaire officiel de la déclaration mensuelle. <c>null</c> sur les cycles
+    /// antérieurs à son introduction : la déclaration retombe alors sur une reconstitution.
+    /// </summary>
+    public decimal? TotalPayrollTaxBase { get; private set; }
+    /// <summary>Taux de TFP appliqué par le cycle (%). <c>null</c> sur les cycles antérieurs.</summary>
+    public decimal? AppliedTfpRate { get; private set; }
     public decimal TotalCssEmployer { get; private set; }
     public decimal TotalWorkAccident { get; private set; }
     /// <summary>Somme des autres retenues (avances, oppositions) figées au calcul.</summary>
@@ -158,6 +166,14 @@ public sealed class PayrollRun : AggregateRoot
         TotalCnssEmployer = R(_payslips.Sum(p => p.CnssEmployer));
         TotalTfp = R(_payslips.Sum(p => p.Tfp));
         TotalFoprolos = R(_payslips.Sum(p => p.Foprolos));
+        // Assiette et taux : null tant qu'aucun bulletin ne les porte (cycles recalculés depuis
+        // des bulletins antérieurs à leur introduction). Le taux est commun à tout le cycle.
+        TotalPayrollTaxBase = _payslips.Any(p => p.PayrollTaxBase.HasValue)
+            ? R(_payslips.Sum(p => p.PayrollTaxBase ?? 0m))
+            : null;
+        AppliedTfpRate = _payslips
+            .Select(p => p.AppliedTfpRate)
+            .FirstOrDefault(rate => rate.HasValue);
         TotalCssEmployer = R(_payslips.Sum(p => p.CssEmployer));
         TotalWorkAccident = R(_payslips.Sum(p => p.WorkAccidentContribution));
         TotalOtherDeductions = R(_payslips.Sum(p => p.OtherDeductions));

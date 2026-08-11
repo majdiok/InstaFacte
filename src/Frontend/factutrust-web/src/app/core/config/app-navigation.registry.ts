@@ -32,6 +32,8 @@ export interface NavItem {
   icon?: string;
   railIconAsset?: string;
   route?: string;
+  /** External help / support link (opens in a new tab). */
+  externalUrl?: string;
   badge?: number;
   children?: NavSubItem[];
   modules?: AppModule[];
@@ -940,6 +942,8 @@ export function filterNavItems(auth: AuthService, items: NavItem[]): NavItem[] {
         continue;
       }
       out.push({ ...item, children });
+    } else if (item.externalUrl) {
+      out.push(item);
     } else if (item.route) {
       if (canSeeNavEntry(auth, item)) {
         out.push(item);

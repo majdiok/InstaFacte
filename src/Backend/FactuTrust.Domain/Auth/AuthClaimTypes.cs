@@ -26,4 +26,11 @@ public static class AuthClaimTypes
     /// (no platform commercial company account). Value: "true" / "false".
     /// </summary>
     public const string IsFirmManaged = "is_firm_managed";
+
+    /// <summary>
+    /// True when the company tenant has an active accounting firm assignment and
+    /// firm-exclusive payroll operations are delegated to the cabinet.
+    /// Value: "true" / "false".
+    /// </summary>
+    public const string PayrollFirmManaged = "payroll_firm_managed";
 }

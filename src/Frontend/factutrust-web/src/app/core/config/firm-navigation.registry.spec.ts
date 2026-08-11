@@ -5,6 +5,7 @@ import {
   filterFirmGovernanceNav,
   filterDelegatedFirmSectionChildren,
   isDelegatedFirmBlockedSalesPurchasesRoute,
+  isDelegatedFirmBlockedAiAssistantRoute,
   isDelegatedReadOnlyRoute,
   isFirmDelegatedReadonly
 } from './firm-navigation.registry';
@@ -19,6 +20,7 @@ describe('firm-navigation.registry — FIRM_NATIVE_NAV', () => {
     '/firm/governance/leaves',
     '/firm/governance/dossier-time-profitability',
     '/firm/governance/collaborator-rentability',
+    '/firm/governance/collaborator-costs',
     '/firm/governance/expense-notes',
     '/firm/governance/social'
   ];
@@ -54,7 +56,9 @@ describe('firm-navigation.registry — FIRM_NATIVE_NAV', () => {
     expect(parent!.route).toBeUndefined();
     expect(parent!.children?.map(c => c.route)).toEqual([
       '/firm/governance/dossier-time-profitability',
-      '/firm/governance/collaborator-rentability'
+      '/firm/governance/collaborator-rentability',
+      '/firm/governance/collaborator-costs',
+      '/firm/payroll'
     ]);
     expect(FIRM_NATIVE_NAV.some(i => i.label === 'Feuilles de temps et rentabilité')).toBe(false);
     expect(FIRM_NATIVE_NAV.some(i => i.label === 'Rentabilité collaborateurs')).toBe(false);
@@ -92,7 +96,7 @@ describe('firm-navigation.registry — FIRM_NATIVE_NAV', () => {
     const managerFlagOn = collectRoutes(filterFirmGovernanceNav(FIRM_NATIVE_NAV, true)).filter(route =>
       governanceRoutes.includes(route)
     );
-    expect(managerFlagOn).toHaveSize(8);
+    expect(managerFlagOn).toHaveSize(9);
 
     const managerFlagOff = collectRoutes(filterFirmGovernanceNav(FIRM_NATIVE_NAV, false)).filter(route =>
       governanceRoutes.includes(route)
@@ -180,6 +184,17 @@ describe('firm-navigation.registry — delegated firm sales/purchases', () => {
     expect(isDelegatedReadOnlyRoute('/suppliers')).toBe(false);
     expect(isDelegatedReadOnlyRoute('/invoices')).toBe(true);
     expect(isDelegatedReadOnlyRoute('/payments')).toBe(true);
+  });
+
+  it('isDelegatedFirmBlockedAiAssistantRoute allows accounting assistant only', () => {
+    expect(isDelegatedFirmBlockedAiAssistantRoute('/ai-assistant/comptabilite')).toBe(false);
+    expect(isDelegatedFirmBlockedAiAssistantRoute('/ai-assistant/ventes')).toBe(true);
+    expect(isDelegatedFirmBlockedAiAssistantRoute('/ai-assistant/achats')).toBe(true);
+    expect(isDelegatedFirmBlockedAiAssistantRoute('/ai-assistant/stock')).toBe(true);
+    expect(isDelegatedFirmBlockedAiAssistantRoute('/ai-assistant/tresorerie')).toBe(true);
+    expect(isDelegatedFirmBlockedAiAssistantRoute('/ai-assistant/crm')).toBe(true);
+    expect(isDelegatedFirmBlockedAiAssistantRoute('/ai-assistant')).toBe(true);
+    expect(isDelegatedFirmBlockedAiAssistantRoute('/accounting/journal')).toBe(false);
   });
 });
 

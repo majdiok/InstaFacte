@@ -86,10 +86,19 @@ public sealed record FirmCollaboratorYearCostDto
     public decimal PayrollExtras { get; init; }
     public decimal TotalEmployerCost { get; init; }
 
-    /// <summary>1 = saisi, 2 = importé de la paie du cabinet.</summary>
+    /// <summary>0 = aucune donnée, 1 = saisi, 2 = importé de la paie du cabinet.</summary>
     public int Source { get; init; }
     public string SourceDisplay { get; init; } = null!;
     public DateTime? ImportedAt { get; init; }
+
+    /// <summary>Pourquoi la ligne est dans cet état — voir <c>FirmCollaboratorCostDiagnostic</c>.</summary>
+    public int CostDiagnostic { get; init; }
+
+    /// <summary>Formulation lisible du diagnostic, affichée en regard de la ligne.</summary>
+    public string CostDiagnosticDisplay { get; init; } = null!;
+
+    /// <summary>Action à mener pour sortir de cet état, vide si la ligne est nominale.</summary>
+    public string? CostDiagnosticHint { get; init; }
 
     public decimal? HourlyRateOverride { get; init; }
     public string? OverrideJustification { get; init; }
@@ -103,8 +112,31 @@ public sealed record FirmCollaboratorYearCostDto
     /// <summary>Dénominateur du taux dérivé, affiché pour rendre le calcul vérifiable.</summary>
     public decimal AnnualProductiveHours { get; init; }
 
+    /// <summary>0 = forfait d'exercice, 1 = individualisé sur les congés réels.</summary>
+    public int ProductiveHoursMode { get; init; }
+
+    /// <summary>Formulation lisible du dénominateur retenu.</summary>
+    public string ProductiveHoursBasis { get; init; } = string.Empty;
+
+    /// <summary>Congés approuvés de l'exercice décomptés du temps de présence.</summary>
+    public decimal RealAbsenceDays { get; init; }
+
+    /// <summary>Jours de congés retenus par les paramètres d'exercice, pour comparaison.</summary>
+    public decimal ParametricLeaveDays { get; init; }
+
     /// <summary>Salarié de la paie du cabinet auquel le collaborateur est lié, le cas échéant.</summary>
     public Guid? PayrollEmployeeId { get; init; }
+
+    public string? PayrollEmployeeName { get; init; }
+
+    /// <summary>0 = aucune, 1 = manuelle, 2 = auto email.</summary>
+    public int PayrollLinkSource { get; init; }
+
+    public string PayrollLinkSourceDisplay { get; init; } = null!;
+
+    public DateTime? PayrollLinkedAt { get; init; }
+
+    public int PayslipCount { get; init; }
 }
 
 public sealed record SaveFirmCollaboratorYearCostDto
@@ -132,6 +164,18 @@ public sealed record LinkFirmPayrollEmployeeDto
     public Guid? PayrollEmployeeId { get; init; }
 }
 
+/// <summary>Une liaison collaborateur ↔ salarié de paie à établir.</summary>
+public sealed record FirmPayrollEmployeeLinkRequest(Guid CollaboratorUserId, Guid PayrollEmployeeId);
+
+/// <summary>Issue d'une pose de liaisons en lot.</summary>
+public sealed record FirmPayrollLinkBatchResultDto
+{
+    public int Linked { get; init; }
+
+    /// <summary>Liaisons écartées, avec leur motif — aucune n'interrompt les autres.</summary>
+    public IReadOnlyList<string> Messages { get; init; } = Array.Empty<string>();
+}
+
 public sealed record FirmPayrollImportResultDto
 {
     public int Imported { get; init; }
@@ -139,8 +183,35 @@ public sealed record FirmPayrollImportResultDto
     /// <summary>Collaborateurs sans liaison paie, donc non importables en l'état.</summary>
     public int Unlinked { get; init; }
 
+    /// <summary>Lignes laissées intactes car saisies manuellement (import non forcé).</summary>
+    public int SkippedManual { get; init; }
+
+    /// <summary>Imports déjà à jour par rapport à la dernière paie validée.</summary>
+    public int SkippedUpToDate { get; init; }
+
     public bool PayrollAvailable { get; init; }
     public string? UnavailableReason { get; init; }
+}
+
+/// <summary>Déclencheur d'une synchronisation des coûts collaborateurs.</summary>
+public enum FirmCostSyncTrigger
+{
+    ManualImport = 1,
+    ManualSync = 2,
+    PayrollValidate = 3,
+    RentabilityPrefill = 4
+}
+
+public sealed record FirmCollaboratorCostSyncResultDto
+{
+    public bool PayrollAvailable { get; init; }
+    public string? UnavailableReason { get; init; }
+    public int LinkedByEmail { get; init; }
+    public int Imported { get; init; }
+    public int SkippedManual { get; init; }
+    public int SkippedUnlinked { get; init; }
+    public int SkippedUpToDate { get; init; }
+    public DateTime SyncedAt { get; init; }
 }
 
 public sealed record FirmCollaboratorRentabilityListItemDto

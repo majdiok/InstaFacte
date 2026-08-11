@@ -2,6 +2,7 @@ using System.Security.Claims;
 using FactuTrust.API.Authorization;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.AI;
 using FactuTrust.Application.Features.AI.Export.PowerPoint.Commands;
 using FactuTrust.Application.Features.AI.Export.PowerPoint.DTOs;
 using FactuTrust.Application.Features.AI.Export.PowerPoint.Models;
@@ -31,19 +32,28 @@ public sealed class AiPowerPointExportController : ControllerBase
     private readonly IMediator _mediator;
     private readonly IExportStorageService _storage;
     private readonly ITenantContext _tenantContext;
+    private readonly ICurrentUser _currentUser;
     private readonly ILogger<AiPowerPointExportController> _logger;
 
     public AiPowerPointExportController(
         IMediator mediator,
         IExportStorageService storage,
         ITenantContext tenantContext,
+        ICurrentUser currentUser,
         ILogger<AiPowerPointExportController> logger)
     {
         _mediator = mediator;
         _storage = storage;
         _tenantContext = tenantContext;
+        _currentUser = currentUser;
         _logger = logger;
     }
+
+    private IActionResult? RejectFirmDelegated() =>
+        _currentUser.IsAccountingFirmDelegatedContext
+            ? StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponse<object>.Fail(FirmDelegatedAiScopePolicy.DeniedScopeMessage))
+            : null;
 
     /// <summary>
     /// Generates a new PowerPoint deck from the selected assistant responses. Small decks are
@@ -61,6 +71,9 @@ public sealed class AiPowerPointExportController : ControllerBase
         [FromBody] PowerPointExportRequestDto request,
         CancellationToken cancellationToken)
     {
+        if (RejectFirmDelegated() is { } denied)
+            return denied;
+
         if (request is null)
             return BadRequest(ApiResponse<object>.Fail("Le corps de la requête est invalide."));
 
@@ -175,6 +188,9 @@ public sealed class AiPowerPointExportController : ControllerBase
         [FromQuery] string? customTitle,
         CancellationToken cancellationToken)
     {
+        if (RejectFirmDelegated() is { } denied)
+            return denied;
+
         var userId = TryGetUserId();
         if (userId is null) return Unauthorized();
 
@@ -199,6 +215,9 @@ public sealed class AiPowerPointExportController : ControllerBase
         [FromQuery] int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
+        if (RejectFirmDelegated() is { } denied)
+            return denied;
+
         var userId = TryGetUserId();
         if (userId is null) return Unauthorized();
 

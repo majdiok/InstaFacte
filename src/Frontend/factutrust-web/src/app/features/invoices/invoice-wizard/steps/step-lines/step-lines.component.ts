@@ -38,6 +38,19 @@ import {
   Currency,
   VAT_RATE_OPTIONS
 } from '../../models/invoice-wizard.models';
+import { normalizeDesignation, resolveDesignation } from '../../utils/invoice-line.utils';
+
+interface WizardProductSuggestion {
+  id: string;
+  code: string;
+  name: string;
+  unitPrice: number;
+  vatRate: TunisianVatRate;
+  unit: string;
+  isFodecApplicable: boolean;
+  isDiscountEnabled: boolean;
+  maxDiscountPercent: number | null;
+}
 
 /**
  * Étape 4 - Lignes de facturation
@@ -170,11 +183,12 @@ import {
                       <div class="edit-cell-product-row">
                         <div class="product-cell-input">
                           <p-autoComplete
-                            [(ngModel)]="editLine.designation"
+                            [(ngModel)]="editSelectedProduct"
                             [suggestions]="productSuggestions()"
                             (completeMethod)="searchProducts($event)"
                             (onSelect)="onProductSelect($event)"
                             field="name"
+                            [forceSelection]="false"
                             [dropdown]="true"
                             [minLength]="0"
                             placeholder="Rechercher un produit..."
@@ -1198,6 +1212,7 @@ export class StepLinesComponent implements OnInit, OnDestroy {
   // Edit state
   editingLineId: string | null = null;
   editLine: Partial<InvoiceLine> = {};
+  editSelectedProduct: WizardProductSuggestion | string | null = null;
   productSuggestions = signal<any[]>([]);
   quickCreateProductVisible = false;
   isLoadingProducts = signal<boolean>(false);
@@ -1290,6 +1305,34 @@ export class StepLinesComponent implements OnInit, OnDestroy {
     return this.mapSuggestionForWizard(product);
   }
 
+  private resolveEditSelectedProduct(line: Partial<InvoiceLine>): WizardProductSuggestion | null {
+    if (!line.productId) {
+      return null;
+    }
+
+    const cached = this.productAutocomplete.getCachedActiveProducts().find(p => p.id === line.productId);
+    if (cached) {
+      return this.mapSuggestionForWizard(cached);
+    }
+
+    const designation = normalizeDesignation(line.designation);
+    if (!designation) {
+      return null;
+    }
+
+    return {
+      id: line.productId,
+      code: '',
+      name: designation,
+      unitPrice: line.unitPriceHT ?? 0,
+      vatRate: line.vatRate ?? TunisianVatRate.Standard,
+      unit: line.unit || 'Unité',
+      isFodecApplicable: line.isFodecApplicable ?? false,
+      isDiscountEnabled: line.productIsDiscountEnabled ?? false,
+      maxDiscountPercent: line.productMaxDiscountPercent ?? null
+    };
+  }
+
   private mapVatRateToEnum(vatRate: number): TunisianVatRate {
     // Map numeric VAT rate to enum
     switch (vatRate) {
@@ -1329,10 +1372,14 @@ export class StepLinesComponent implements OnInit, OnDestroy {
 
   startEditLine(line: InvoiceLine): void {
     this.editingLineId = line.id;
-    this.editLine = { ...line };
+    this.editLine = {
+      ...line,
+      designation: normalizeDesignation(line.designation)
+    };
+    this.editSelectedProduct = this.resolveEditSelectedProduct(this.editLine);
     // If the line has no product yet (typical after AI import), seed the autocomplete
     // with the existing designation so the user lands on relevant matches immediately.
-    const seed = !line.productId && line.designation ? line.designation : '';
+    const seed = !line.productId && this.editLine.designation ? this.editLine.designation : '';
 
     // Serve warm cache immediately for empty seed (dropdown open / add line)
     if (!seed && this.productAutocomplete.hasWarmCache) {
@@ -1347,7 +1394,12 @@ export class StepLinesComponent implements OnInit, OnDestroy {
   }
 
   saveLineEdit(): void {
-    if (this.editingLineId && this.editLine.designation) {
+    const designation = resolveDesignation(this.editLine.designation, this.editSelectedProduct);
+    const selectedProduct = this.editSelectedProduct;
+    const productId = this.editLine.productId
+      ?? (selectedProduct && typeof selectedProduct === 'object' ? selectedProduct.id : null);
+
+    if (this.editingLineId && designation) {
       const lineId = this.editingLineId;
       const priceOverridden = this.editLine.priceOverridden ?? false;
       const serviceLine = this.lines().find(l => l.id === lineId);
@@ -1356,8 +1408,8 @@ export class StepLinesComponent implements OnInit, OnDestroy {
         : (serviceLine?.unitPriceHT ?? (this.editLine.unitPriceHT || 0));
 
       this.wizardService.updateLine(lineId, {
-        productId: this.editLine.productId,
-        designation: this.editLine.designation,
+        productId,
+        designation,
         description: this.editLine.description,
         quantity: this.editLine.quantity || 1,
         unit: this.editLine.unit,
@@ -1367,13 +1419,13 @@ export class StepLinesComponent implements OnInit, OnDestroy {
         discountType: this.editLine.discountType,
         discountValue: this.editLine.discountValue,
         vatRate: this.editLine.vatRate ?? TunisianVatRate.Standard,
-        isFodecApplicable: this.editLine.productId
+        isFodecApplicable: productId
           ? (this.editLine.isFodecApplicable ?? false)
           : false
       });
 
-      if (this.editLine.productId && !priceOverridden) {
-        this.resolveLinePrice(lineId, this.editLine.productId, this.editLine.quantity || 1);
+      if (productId && !priceOverridden) {
+        this.resolveLinePrice(lineId, productId, this.editLine.quantity || 1);
       }
     }
     this.cancelLineEdit();
@@ -1384,11 +1436,12 @@ export class StepLinesComponent implements OnInit, OnDestroy {
     const line = lineId ? this.lines().find(l => l.id === lineId) : undefined;
     const isOrphanLine = line
       && !line.productId
-      && !line.designation.trim()
+      && !normalizeDesignation(line.designation).trim()
       && line.unitPriceHT === 0;
 
     this.editingLineId = null;
     this.editLine = {};
+    this.editSelectedProduct = null;
 
     if (isOrphanLine && lineId) {
       this.wizardService.removeLine(lineId);
@@ -1429,6 +1482,9 @@ export class StepLinesComponent implements OnInit, OnDestroy {
     const product = event?.value;
     if (!product || !this.editingLineId) return;
 
+    const mappedProduct = this.mapSuggestionForWizard(product);
+    this.editSelectedProduct = mappedProduct;
+
     // Mettre à jour immédiatement la ligne dans le service pour que les calculs soient effectués
     this.wizardService.updateLine(this.editingLineId, {
       productId: product.id,
@@ -1446,6 +1502,14 @@ export class StepLinesComponent implements OnInit, OnDestroy {
       discountType: this.editLine.discountType,
       discountValue: this.editLine.discountValue
     });
+
+    const updatedLine = this.lines().find(l => l.id === this.editingLineId);
+    if (updatedLine) {
+      this.editLine = {
+        ...updatedLine,
+        designation: normalizeDesignation(updatedLine.designation)
+      };
+    }
 
     this.resolveLinePrice(this.editingLineId, product.id, this.editLine.quantity || 1, true);
   }
@@ -1486,7 +1550,11 @@ export class StepLinesComponent implements OnInit, OnDestroy {
 
     const updatedLine = this.lines().find(l => l.id === this.editingLineId);
     if (updatedLine) {
-      this.editLine = { ...updatedLine };
+      this.editLine = {
+        ...updatedLine,
+        designation: normalizeDesignation(updatedLine.designation)
+      };
+      this.editSelectedProduct = this.mapProductToSuggestion(product);
     }
 
     const mappedProduct = this.mapProductToSuggestion(product);

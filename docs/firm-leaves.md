@@ -41,7 +41,52 @@ Préfixe : `api/firm/governance/leaves/*`
 
 `AddFirmLeaveManagement_Master` — tables `FirmLeaveTypes`, `FirmLeaveSettings`, `FirmLeaveBalances`, `FirmLeaveRequests`.
 
+`AddFirmLeavePayrollMirror_Master` — mapping vers la paie (`FirmLeaveTypes.PayrollLeaveType`,
+`CountsAsAbsence`) et suivi du report (`FirmLeaveRequests.PayrollLeaveRequestId`,
+`PayrollMirrorState`, `PayrollMirrorMessage`, `PayrollMirroredAt`).
+
+## Report vers la paie interne du cabinet
+
+Depuis le 2026-08-11, ce module est la **source unique** des congés du cabinet : l'onglet
+« Congés » de la fiche salarié passe en lecture seule dès que la paie interne est active
+(`firmInternalPayroll`), et l'approbation d'une demande crée le `Payroll.LeaveRequest`
+correspondant dans le tenant du cabinet (`FirmLeavePayrollMirrorService`). C'est ce miroir qui
+déclenche les mécanismes déjà en place : retenue pour absence non rémunérée, IJ CNSS,
+acquisition de droits à la validation du cycle.
+
+Ce que le miroir **ne fait pas** : aucun recalcul. Les jours arrêtés côté cabinet
+(demi-journées comprises, fériés issus de `ITunisianCalendarService`) sont transmis tels quels.
+
+**Mapping des types système** — un type sans `PayrollLeaveType` n'a aucun effet sur le bulletin.
+
+| Code | `LeaveType` paie | `CountsAsAbsence` |
+|---|---|---|
+| `PAID` | `Paid` | oui |
+| `RTT` | `Recovery` | oui |
+| `SICK` | `Sick` | oui |
+| `UNPAID` | `Unpaid` | oui |
+| `OTHER` | `Other` | non |
+| `TRAINING`, `REMOTE` | — | non |
+
+Un type créé par un cabinet arrive non mappé : il reste sans effet tant que le cabinet ne l'a pas
+rattaché explicitement, plutôt que de deviner un impact sur la paie.
+
+**États du report** (`FirmLeavePayrollMirrorState`) : `NotMirrored`, `Mirrored`,
+`NoPayrollEffect`, `BlockedFrozenPayroll`, `Failed`, `Revoked`.
+
+**Deux règles de conduite :**
+
+- **Mois arrêté = rien n'est écrit.** Si un `PayrollRun` `Validated`/`Closed` couvre l'un des mois
+  de la période, l'état passe à `BlockedFrozenPayroll` et l'approbateur est averti de traiter le
+  congé en régularisation. Les bulletins gelés ne se recalculent jamais (`docs/paie.md`).
+- **Fail-open.** Une base de paie injoignable n'annule pas l'approbation RH : l'état passe à
+  `Failed`, avec son motif, et le report est rejouable. Bloquer une validation de congé parce
+  qu'une base est éteinte serait un recul fonctionnel.
+
 ## Hors scope
 
-- Ne remplace pas les congés **paie** (`LeaveRequest` tenant / RH & Paie).
-- Ne modifie pas `FirmTimeSheetYearSettings.PaidLeaveDaysPerYear` (paramètre productivité).
+- Ne modifie pas `FirmTimeSheetYearSettings.PaidLeaveDaysPerYear`. Séparation à retenir :
+  `FirmLeaveSettings.DefaultAnnualPaidDays` porte le **droit RH**, `PaidLeaveDaysPerYear` est un
+  **paramètre de coût**, utilisé pour les heures productives en mode `Parametric` uniquement.
+- L'annulation d'une demande **déjà approuvée** n'est pas offerte par le domaine
+  (`Cancel()` n'accepte que `Draft`/`Submitted`). `RevokeAsync` existe pour le rapprochement.

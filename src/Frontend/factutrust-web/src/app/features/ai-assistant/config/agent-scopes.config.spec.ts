@@ -62,4 +62,12 @@ describe('agent-scopes.config', () => {
     expect(resolveScopeFromUrl(undefined)).toBe(AssistantAgentScope.None);
     expect(resolveScopeFromUrl('')).toBe(AssistantAgentScope.None);
   });
+
+  it('force Accounting scope for firm delegated users regardless of route', () => {
+    expect(resolveScopeFromUrl('/invoices', { firmDelegated: true })).toBe(AssistantAgentScope.Accounting);
+    expect(resolveScopeFromUrl('/payments', { firmDelegated: true })).toBe(AssistantAgentScope.Accounting);
+    expect(resolveScopeFromUrl('/ai-assistant/ventes', { firmDelegated: true })).toBe(
+      AssistantAgentScope.Accounting
+    );
+  });
 });

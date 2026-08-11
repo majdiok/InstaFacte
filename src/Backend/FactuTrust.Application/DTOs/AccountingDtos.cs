@@ -502,6 +502,87 @@ public sealed record VatDeclarationDto
     /// l'affichage de l'action « Formulaire officiel » côté client.
     /// </summary>
     public bool OfficialFormEnabled { get; init; }
+
+    // ── Assiette des taxes sur salaires (module paie) ──────────────────────
+    // Portées par la déclaration elle-même — et non par la seule suggestion — parce que le
+    // formulaire officiel doit les imprimer en regard des montants déposés.
+
+    /// <summary>Assiette TFP/FOPROLOS : masse salariale soumise du mois. 0 si indéterminable.</summary>
+    public decimal PayrollTaxBase { get; init; }
+
+    /// <summary>Taux de TFP effectivement appliqué par le cycle de paie (1 % ou 2 %). 0 si inconnu.</summary>
+    public decimal TfpRatePercent { get; init; }
+
+    /// <summary>Taux de FOPROLOS effectivement appliqué par le cycle de paie. 0 si inconnu.</summary>
+    public decimal FoprolosRatePercent { get; init; }
+
+    /// <summary>
+    /// Masse salariale brute du mois — assiette portée en regard de la retenue à la source sur
+    /// traitements et salaires (article 1 du formulaire officiel). 0 sans cycle de paie exploitable.
+    /// </summary>
+    public decimal PayrollSalariesGrossBase { get; init; }
+
+    /// <summary>
+    /// Recalcul temps réel de la période depuis les modules (ventes, achats, retenue à la source,
+    /// paie). Toujours renseigné quand la V2 est active.
+    ///
+    /// <para>
+    /// Les montants de premier niveau sont ceux <b>déclarés</b> : tant qu'une déclaration existe en
+    /// base, ce sont les valeurs déposées, figées. Cette section porte ce que les modules
+    /// produiraient aujourd'hui — l'écart entre les deux est ce que l'écran signale à
+    /// l'utilisateur, qui reste seul à décider de réaligner.
+    /// </para>
+    /// </summary>
+    public VatDeclarationComputedDto? Suggested { get; init; }
+}
+
+/// <summary>
+/// Photographie temps réel d'une période, telle que les modules la produiraient. Jamais persistée :
+/// c'est une proposition, pas une déclaration.
+/// </summary>
+public sealed record VatDeclarationComputedDto
+{
+    public decimal CollectedVat19 { get; init; }
+    public decimal CollectedVat13 { get; init; }
+    public decimal CollectedVat7 { get; init; }
+    public decimal DeductibleVatGoods { get; init; }
+    public decimal DeductibleVatAssets { get; init; }
+    public decimal PreviousCredit { get; init; }
+    public decimal VatDue { get; init; }
+    public decimal CreditToCarry { get; init; }
+
+    public decimal Fodec { get; init; }
+    public decimal DroitTimbre { get; init; }
+    public decimal Tcl { get; init; }
+    public decimal Tfp { get; init; }
+    public decimal Foprolos { get; init; }
+    public decimal WithholdingTax { get; init; }
+
+    /// <summary>Part de la RS provenant des factures fournisseurs.</summary>
+    public decimal WithholdingFromInvoices { get; init; }
+
+    /// <summary>Part de la RS provenant des traitements et salaires (IRPP + CSS).</summary>
+    public decimal WithholdingFromSalaries { get; init; }
+
+    /// <summary>Total à payer si l'on retenait l'intégralité des valeurs calculées.</summary>
+    public decimal TotalToPay { get; init; }
+
+    // ── Contexte paie, pour expliquer l'origine des montants à l'écran ──────
+
+    /// <summary>Un cycle de paie existe pour la période, quel que soit son statut.</summary>
+    public bool PayrollRunExists { get; init; }
+
+    /// <summary>Statut du cycle de paie (`null` si aucun cycle).</summary>
+    public int? PayrollRunStatus { get; init; }
+
+    /// <summary>Libellé du statut du cycle, prêt à afficher.</summary>
+    public string? PayrollRunStatusDisplay { get; init; }
+
+    /// <summary>
+    /// Faux quand un cycle existe sans être validé ni clôturé : ses montants sont volontairement
+    /// ignorés, et l'écran doit inviter à le valider plutôt qu'à saisir à la main.
+    /// </summary>
+    public bool PayrollRunUsable { get; init; }
 }
 
 public sealed record AccountingDashboardDto

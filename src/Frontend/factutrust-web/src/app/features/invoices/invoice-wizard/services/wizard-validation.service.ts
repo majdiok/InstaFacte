@@ -28,6 +28,7 @@ import {
   FieldError,
   WizardFieldErrors
 } from '../models/invoice-wizard.models';
+import { normalizeDesignation } from '../utils/invoice-line.utils';
 import { computeWizardTotalsCheck } from './invoice-wizard-calculation.utils';
 
 /**
@@ -250,11 +251,12 @@ export class WizardValidationService {
       const lineErrors: FieldError[] = [];
 
       // Designation validation
-      if (!line.designation) {
+      const designation = normalizeDesignation(line.designation);
+      if (!designation) {
         lineErrors.push(this.createError('REQUIRED', `Ligne ${i + 1}: La désignation est obligatoire`));
-      } else if (line.designation.length < MIN_LENGTHS.designation) {
+      } else if (designation.length < MIN_LENGTHS.designation) {
         lineErrors.push(this.createError('MIN_LENGTH', `Ligne ${i + 1}: ${ERROR_MESSAGES.minLength('La désignation', MIN_LENGTHS.designation)}`));
-      } else if (line.designation.length > MAX_LENGTHS.designation) {
+      } else if (designation.length > MAX_LENGTHS.designation) {
         lineErrors.push(this.createError('MAX_LENGTH', `Ligne ${i + 1}: ${ERROR_MESSAGES.maxLength('La désignation', MAX_LENGTHS.designation)}`));
       }
 

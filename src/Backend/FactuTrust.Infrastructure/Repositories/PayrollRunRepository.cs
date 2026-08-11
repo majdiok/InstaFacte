@@ -68,6 +68,26 @@ public sealed class PayrollRunRepository : IPayrollRunRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<PayrollRunWithPayslipCount>> ListWithPayslipCountsAsync(
+        int? year = null,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        var query = context.PayrollRuns.AsNoTracking().AsQueryable();
+        if (year.HasValue)
+            query = query.Where(r => r.Year == year.Value);
+
+        // Le compte est projeté par le serveur : aucun bulletin, aucune ligne ne remonte.
+        var rows = await query
+            .OrderByDescending(r => r.Year).ThenByDescending(r => r.Month)
+            .Select(r => new { Run = r, PayslipCount = r.Payslips.Count })
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .Select(x => new PayrollRunWithPayslipCount(x.Run, x.PayslipCount))
+            .ToList();
+    }
+
     public async Task<IReadOnlyList<PayrollRun>> ListByQuarterWithPayslipsAsync(int year, int quarter, CancellationToken cancellationToken = default)
     {
         var firstMonth = (quarter - 1) * 3 + 1;

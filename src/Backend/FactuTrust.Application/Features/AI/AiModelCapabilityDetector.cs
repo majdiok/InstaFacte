@@ -20,6 +20,33 @@ public static class AiModelCapabilityDetector
         "gemini-1.5", "gemini-2"
     };
 
+    private static readonly string[] EmbeddingMarkers =
+    {
+        "embed", "embedding", "nomic-embed", "bge-", "e5-", "gte-",
+        "snowflake-arctic-embed", "mxbai-embed", "paraphrase-",
+        "all-minilm", "all-mpnet"
+    };
+
+    /// <summary>
+    /// Vrai si le modèle nommé semble être un modèle d'embedding uniquement (pas de génération/chat).
+    /// </summary>
+    public static bool DetectEmbeddingOnly(string? modelRef)
+    {
+        if (string.IsNullOrWhiteSpace(modelRef)) return false;
+        var name = modelRef.ToLowerInvariant();
+        foreach (var marker in EmbeddingMarkers)
+        {
+            if (name.Contains(marker, StringComparison.Ordinal)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Vrai si le modèle peut être utilisé pour un appel chat/completion (import, assistant).
+    /// </summary>
+    public static bool DetectChatCapable(string? modelRef) =>
+        !string.IsNullOrWhiteSpace(modelRef) && !DetectEmbeddingOnly(modelRef);
+
     /// <summary>
     /// Vrai si le modèle nommé semble supporter l'entrée image (vision multimodale).
     /// Détection conservative : faux par défaut si le nom est inconnu.

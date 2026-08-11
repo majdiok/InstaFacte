@@ -2,6 +2,7 @@ import { Component, computed, inject, input } from '@angular/core';
 import { AuthService } from '@core/services/auth.service';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { AiScreenAnalysisService } from '../../services/ai-screen-analysis.service';
+import { canUseAiAssistant } from '../../utils/ai-access.util';
 
 @Component({
   selector: 'app-analyze-with-ai-button',
@@ -49,7 +50,7 @@ export class AnalyzeWithAiButtonComponent {
   readonly disabled = input(false);
   readonly density = input<'default' | 'toolbar'>('default');
 
-  readonly canUse = computed(() => this.auth.hasAllPermissions(['ai:chat']));
+  readonly canUse = computed(() => canUseAiAssistant(this.auth));
 
   readonly ariaLabelText = computed(() => `Analyser l'écran ${this.screenId()} avec l'assistant IA`);
 

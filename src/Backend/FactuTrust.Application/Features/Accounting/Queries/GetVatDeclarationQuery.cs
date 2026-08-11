@@ -3,6 +3,7 @@ using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.Accounting.Services;
 using FactuTrust.Application.Features.Reports.Queries;
 using FactuTrust.Application.Features.WithholdingTax.Queries;
 using FactuTrust.Domain.Authorization;
@@ -15,14 +16,36 @@ using Microsoft.Extensions.Options;
 
 namespace FactuTrust.Application.Features.Accounting.Queries;
 
+/// <summary>
+/// Quels montants la déclaration doit porter.
+/// </summary>
+public enum VatDeclarationValuation
+{
+    /// <summary>
+    /// Ce qui a été déposé : si une déclaration existe en base, ses montants font foi et rien ne
+    /// bouge derrière le dos de l'utilisateur. Mode de l'écran de saisie et des deux PDF, pour
+    /// qu'un document édité ne diverge jamais du dépôt qu'il représente.
+    /// </summary>
+    Declared = 0,
+
+    /// <summary>
+    /// Ce que les modules produisent aujourd'hui, en ignorant la déclaration enregistrée.
+    /// Réservé aux appelants qui ont besoin du recalcul : la sauvegarde (qui rafraîchit la TVA
+    /// depuis les écritures) et l'estimation du tableau de bord.
+    /// </summary>
+    Live = 1
+}
+
 /// <param name="EnforceCompanySubmittedOnly">
 /// Quand true (GET/PDF HTTP société), n'expose que les déclarations Soumise/Verrouillée.
 /// Laisser false pour les appels internes (save, reporting) afin de ne pas casser le recalcul.
 /// </param>
+/// <param name="Valuation">Voir <see cref="VatDeclarationValuation"/>. Par défaut : les montants déposés.</param>
 public sealed record GetVatDeclarationQuery(
     int Year,
     int Month,
-    bool EnforceCompanySubmittedOnly = false) : IRequest<Result<VatDeclarationDto>>;
+    bool EnforceCompanySubmittedOnly = false,
+    VatDeclarationValuation Valuation = VatDeclarationValuation.Declared) : IRequest<Result<VatDeclarationDto>>;
 
 public sealed class GetVatDeclarationQueryHandler : IRequestHandler<GetVatDeclarationQuery, Result<VatDeclarationDto>>
 {
@@ -34,7 +57,7 @@ public sealed class GetVatDeclarationQueryHandler : IRequestHandler<GetVatDeclar
     private readonly IInvoiceRepository _invoices;
     private readonly ISupplierInvoiceRepository _supplierInvoices;
     private readonly ITenantCompanySummaryProvider _tenantCompanySummary;
-    private readonly IPayrollRunRepository _payrollRuns;
+    private readonly PayrollDeclarationContributionProvider _payroll;
     private readonly AccountingSettings _settings;
 
     public GetVatDeclarationQueryHandler(
@@ -44,7 +67,7 @@ public sealed class GetVatDeclarationQueryHandler : IRequestHandler<GetVatDeclar
         IInvoiceRepository invoices,
         ISupplierInvoiceRepository supplierInvoices,
         ITenantCompanySummaryProvider tenantCompanySummary,
-        IPayrollRunRepository payrollRuns,
+        PayrollDeclarationContributionProvider payroll,
         IOptions<AccountingSettings> settings)
     {
         _mediator = mediator;
@@ -53,7 +76,7 @@ public sealed class GetVatDeclarationQueryHandler : IRequestHandler<GetVatDeclar
         _invoices = invoices;
         _supplierInvoices = supplierInvoices;
         _tenantCompanySummary = tenantCompanySummary;
-        _payrollRuns = payrollRuns;
+        _payroll = payroll;
         _settings = settings.Value;
     }
 
@@ -68,6 +91,112 @@ public sealed class GetVatDeclarationQueryHandler : IRequestHandler<GetVatDeclar
                 return Result.Failure<VatDeclarationDto>(VatDeclarationAccess.NotSubmitted());
         }
 
+        var v2 = _settings.MonthlyDeclarationV2Enabled;
+
+        var context = await BuildPeriodContextAsync(request, cancellationToken);
+        if (context.Error is not null)
+            return Result.Failure<VatDeclarationDto>(context.Error);
+
+        var saved = await _vatDeclarationRepository.GetByYearMonthAsync(request.Year, request.Month, cancellationToken);
+
+        // Ce que les modules produisent aujourd'hui. Calculé dans tous les cas : même quand la
+        // déclaration est déposée et fait foi, l'écart doit rester visible.
+        var live = await ComputeLiveAsync(request, context, v2, cancellationToken);
+
+        // Ce que la déclaration porte réellement. Une déclaration enregistrée fait foi, y compris
+        // pour la TVA : un document déposé ne se réécrit pas tout seul entre deux affichages.
+        var declared = saved is not null && request.Valuation == VatDeclarationValuation.Declared
+            ? TaxAmounts.FromEntity(saved)
+            : live;
+
+        var tenantSummary = await _tenantCompanySummary.GetCurrentTenantSummaryAsync(cancellationToken);
+
+        var dto = new VatDeclarationDto
+        {
+            Year = request.Year,
+            Month = request.Month,
+            CollectedVat19 = declared.CollectedVat19,
+            CollectedVat13 = declared.CollectedVat13,
+            CollectedVat7 = declared.CollectedVat7,
+            DeductibleVatGoods = declared.DeductibleVatGoods,
+            DeductibleVatAssets = declared.DeductibleVatAssets,
+            PreviousCredit = declared.PreviousCredit,
+            VatDue = declared.VatDue,
+            CreditToCarry = declared.CreditToCarry,
+            Currency = context.Currency,
+            Status = saved != null ? (int)saved.Status : (int)VatDeclarationStatus.Draft,
+            Fodec = declared.Fodec,
+            DroitTimbre = declared.DroitTimbre,
+            Tcl = declared.Tcl,
+            Tfp = declared.Tfp,
+            Foprolos = declared.Foprolos,
+            WithholdingTax = declared.WithholdingTax,
+            Acomptes = declared.Acomptes,
+            TotalToPay = TotalToPay(declared, v2),
+            Version = saved?.RevisionNumber ?? 1,
+            IsRectificative = saved?.IsRectificative ?? false,
+            MonthlyDeclarationV2Enabled = v2,
+            CreatedAt = saved?.CreatedAt,
+            UpdatedAt = saved?.UpdatedAt,
+            SubmittedAt = saved?.SubmittedAt,
+            CreatedBy = saved?.CreatedBy,
+            UpdatedBy = saved?.UpdatedBy,
+            FilingDeadline = VatFilingDeadline.ForPeriod(request.Year, request.Month),
+            DeclarationTypeDisplay = v2 ? "Déclaration mensuelle unique" : "Déclaration TVA",
+            CollectedVatBreakdown = context.CollectedVatBreakdown,
+            DeductiblePurchasesTaxableBase = context.DeductiblePurchasesTaxableBase,
+            SalesTaxableBase = context.SalesTaxableBase,
+            SalesGrossBase = context.SalesGrossBase,
+            FodecTaxableBase = context.FodecTaxableBase,
+            FodecRatePercent = _settings.FodecRatePercent,
+            TclRatePercent = _settings.TclRatePercent,
+            // Assiette et taux des taxes sur salaires : contexte, pas montant déclaré. Ils
+            // décrivent la paie du mois et valent donc pour les deux valorisations.
+            PayrollTaxBase = context.Payroll.TaxBase,
+            TfpRatePercent = context.Payroll.TfpRatePercent,
+            FoprolosRatePercent = context.Payroll.FoprolosRatePercent,
+            PayrollSalariesGrossBase = context.Payroll.SalariesGrossBase,
+            CompanyName = tenantSummary?.CompanyName ?? string.Empty,
+            Nif = tenantSummary?.Nif ?? string.Empty,
+            TaxRegimeDisplay = tenantSummary?.TaxRegimeDisplay ?? string.Empty,
+            TradeName = tenantSummary?.TradeName,
+            // Déjà chargée par le provider mais jusqu'ici non remontée : l'en-tête du formulaire
+            // officiel en a besoin.
+            AddressLine = tenantSummary?.AddressLine,
+            OfficialFormEnabled = _settings.MonthlyDeclarationOfficialFormEnabled,
+            Suggested = v2 ? MapComputed(live, context, v2) : null
+        };
+
+        return Result.Success(dto);
+    }
+
+    // ── Contexte de période : sources communes aux deux valorisations ──────────
+
+    /// <summary>
+    /// Assiettes et ventilations de la période. Toujours vivantes : ce sont des éléments de
+    /// contexte (base × taux affichés en regard d'un montant), jamais des montants déclarés.
+    /// </summary>
+    private sealed record PeriodContext
+    {
+        public Error? Error { get; init; }
+        public string Currency { get; init; } = Money.DefaultCurrency;
+        public decimal CollectedVat19 { get; init; }
+        public decimal CollectedVat13 { get; init; }
+        public decimal CollectedVat7 { get; init; }
+        public decimal DeductibleVatGoods { get; init; }
+        public decimal DeductibleVatAssets { get; init; }
+        public decimal PreviousCredit { get; init; }
+        public decimal SalesTaxableBase { get; init; }
+        public decimal SalesGrossBase { get; init; }
+        public decimal DeductiblePurchasesTaxableBase { get; init; }
+        public decimal FodecTaxableBase { get; init; }
+        public PayrollMonthlyContribution Payroll { get; init; } = PayrollMonthlyContribution.None;
+        public IReadOnlyList<VatRateBreakdownDto> CollectedVatBreakdown { get; init; } = Array.Empty<VatRateBreakdownDto>();
+    }
+
+    private async Task<PeriodContext> BuildPeriodContextAsync(
+        GetVatDeclarationQuery request, CancellationToken cancellationToken)
+    {
         var start = new DateTime(request.Year, request.Month, 1);
         var end = start.AddMonths(1).AddDays(-1);
 
@@ -75,11 +204,11 @@ public sealed class GetVatDeclarationQueryHandler : IRequestHandler<GetVatDeclar
         // déclaration, contrairement aux états de consultation qui affichent tout.
         var sales = await _mediator.Send(new GetSalesVatReportQuery(start, end, RealizedOnly: true), cancellationToken);
         if (sales.IsFailure)
-            return Result.Failure<VatDeclarationDto>(sales.Error);
+            return new PeriodContext { Error = sales.Error };
 
         var purchases = await _mediator.Send(new GetPurchasesVatReportQuery(start, end, RealizedOnly: true), cancellationToken);
         if (purchases.IsFailure)
-            return Result.Failure<VatDeclarationDto>(purchases.Error);
+            return new PeriodContext { Error = purchases.Error };
 
         var salesByRate = sales.Value.ToDictionary(r => r.VatRatePercent);
         decimal c19 = salesByRate.TryGetValue(19, out var r19) ? r19.TotalVatAmount : 0;
@@ -99,130 +228,163 @@ public sealed class GetVatDeclarationQueryHandler : IRequestHandler<GetVatDeclar
 
         var prevMonth = start.AddMonths(-1);
         var prev = await _vatDeclarationRepository.GetByYearMonthAsync(prevMonth.Year, prevMonth.Month, cancellationToken);
-        var prevCredit = prev?.CreditToCarry.Amount ?? 0;
 
-        var currency = sales.Value.FirstOrDefault()?.Currency ?? Money.DefaultCurrency;
-        var salesTaxableBase = sales.Value.Sum(r => r.TotalTaxableAmount);
-        var salesGrossBase = sales.Value.Sum(r => r.TotalTaxableAmount + r.TotalVatAmount);
-        var deductiblePurchasesTaxableBase = purchases.Value.Sum(p => p.TotalTaxableAmount);
+        var v2 = _settings.MonthlyDeclarationV2Enabled;
+
+        return new PeriodContext
+        {
+            Currency = sales.Value.FirstOrDefault()?.Currency ?? Money.DefaultCurrency,
+            CollectedVat19 = c19,
+            CollectedVat13 = c13,
+            CollectedVat7 = c7,
+            DeductibleVatGoods = dedGoods,
+            DeductibleVatAssets = dedAssets,
+            PreviousCredit = prev?.CreditToCarry.Amount ?? 0,
+            SalesTaxableBase = sales.Value.Sum(r => r.TotalTaxableAmount),
+            SalesGrossBase = sales.Value.Sum(r => r.TotalTaxableAmount + r.TotalVatAmount),
+            DeductiblePurchasesTaxableBase = purchases.Value.Sum(p => p.TotalTaxableAmount),
+            FodecTaxableBase = v2 ? await _invoices.SumFodecTaxableBaseAsync(start, end, cancellationToken) : 0m,
+            Payroll = v2 ? await _payroll.GetAsync(request.Year, request.Month, cancellationToken) : PayrollMonthlyContribution.None,
+            CollectedVatBreakdown = TunisiaVatRates
+                .Select(rate =>
+                {
+                    salesByRate.TryGetValue(rate, out var row);
+                    return new VatRateBreakdownDto
+                    {
+                        RatePercent = rate,
+                        TaxableBase = row?.TotalTaxableAmount ?? 0,
+                        VatAmount = row?.TotalVatAmount ?? 0
+                    };
+                })
+                .ToList()
+        };
+    }
+
+    // ── Recalcul temps réel ────────────────────────────────────────────────────
+
+    private async Task<TaxAmounts> ComputeLiveAsync(
+        GetVatDeclarationQuery request, PeriodContext context, bool v2, CancellationToken cancellationToken)
+    {
+        var start = new DateTime(request.Year, request.Month, 1);
+        var end = start.AddMonths(1).AddDays(-1);
 
         var draft = VatDeclaration.CreateDraft(
             request.Year,
             request.Month,
-            Money.Create(c19, currency),
-            Money.Create(c13, currency),
-            Money.Create(c7, currency),
-            Money.Create(dedGoods, currency),
-            Money.Create(dedAssets, currency),
-            Money.Create(prevCredit, currency),
-            currency);
+            Money.Create(context.CollectedVat19, context.Currency),
+            Money.Create(context.CollectedVat13, context.Currency),
+            Money.Create(context.CollectedVat7, context.Currency),
+            Money.Create(context.DeductibleVatGoods, context.Currency),
+            Money.Create(context.DeductibleVatAssets, context.Currency),
+            Money.Create(context.PreviousCredit, context.Currency),
+            context.Currency);
 
-        var saved = await _vatDeclarationRepository.GetByYearMonthAsync(request.Year, request.Month, cancellationToken);
-
-        var v2 = _settings.MonthlyDeclarationV2Enabled;
-
-        // Autres taxes : valeurs sauvegardées si la déclaration existe (saisies manuelles conservées),
-        // sinon préremplissage — la RS vient du module Retenue à la Source quand la V2 est active.
-        decimal fodec = 0, timbre = 0, tcl = 0, tfp = 0, foprolos = 0, withholding = 0, acomptes = 0;
-        decimal fodecTaxableBase = 0;
-        var version = 1;
-        var isRectificative = false;
-
-        if (v2)
-            fodecTaxableBase = await _invoices.SumFodecTaxableBaseAsync(start, end, cancellationToken);
-
-        if (saved is not null)
+        var vat = new TaxAmounts
         {
-            fodec = saved.Fodec; timbre = saved.DroitTimbre; tcl = saved.Tcl; tfp = saved.Tfp;
-            foprolos = saved.Foprolos; withholding = saved.WithholdingTax; acomptes = saved.Acomptes;
-            version = saved.RevisionNumber; isRectificative = saved.IsRectificative;
-        }
-        else if (v2)
-        {
-            var rs = await _mediator.Send(new GetWithholdingMonthlyReportQuery(request.Year, request.Month), cancellationToken);
-            withholding = rs.GrandTotalWithheld;
-            fodec = await _invoices.SumFodecAsync(start, end, cancellationToken);
-            tcl = Math.Round(_settings.TclRatePercent / 100m * salesGrossBase, 3);
-            timbre = await _invoices.SumFiscalStampAsync(start, end, cancellationToken);
-
-            // Pré-remplissage TFP/FOPROLOS depuis la paie clôturée/validée du mois (module actif).
-            var payrollRun = await _payrollRuns.GetByPeriodAsync(request.Year, request.Month, cancellationToken);
-            if (payrollRun is { Status: PayrollRunStatus.Validated or PayrollRunStatus.Closed })
-            {
-                tfp = payrollRun.TotalTfp;
-                foprolos = payrollRun.TotalFoprolos;
-            }
-        }
-
-        var vatDue = draft.VatDue.Amount;
-        var totalToPay = v2
-            ? Math.Max(0m, vatDue + fodec + timbre + tcl + tfp + foprolos + withholding - acomptes)
-            : vatDue;
-
-        var collectedVatBreakdown = TunisiaVatRates
-            .Select(rate =>
-            {
-                salesByRate.TryGetValue(rate, out var row);
-                return new VatRateBreakdownDto
-                {
-                    RatePercent = rate,
-                    TaxableBase = row?.TotalTaxableAmount ?? 0,
-                    VatAmount = row?.TotalVatAmount ?? 0
-                };
-            })
-            .ToList();
-
-        var tenantSummary = await _tenantCompanySummary.GetCurrentTenantSummaryAsync(cancellationToken);
-
-        var dto = new VatDeclarationDto
-        {
-            Year = request.Year,
-            Month = request.Month,
             CollectedVat19 = draft.CollectedVat19.Amount,
             CollectedVat13 = draft.CollectedVat13.Amount,
             CollectedVat7 = draft.CollectedVat7.Amount,
             DeductibleVatGoods = draft.DeductibleVatGoods.Amount,
             DeductibleVatAssets = draft.DeductibleVatAssets.Amount,
             PreviousCredit = draft.PreviousCredit.Amount,
-            VatDue = vatDue,
-            CreditToCarry = draft.CreditToCarry.Amount,
-            Currency = currency,
-            Status = saved != null ? (int)saved.Status : (int)VatDeclarationStatus.Draft,
-            Fodec = fodec,
-            DroitTimbre = timbre,
-            Tcl = tcl,
-            Tfp = tfp,
-            Foprolos = foprolos,
-            WithholdingTax = withholding,
-            Acomptes = acomptes,
-            TotalToPay = totalToPay,
-            Version = version,
-            IsRectificative = isRectificative,
-            MonthlyDeclarationV2Enabled = v2,
-            CreatedAt = saved?.CreatedAt,
-            UpdatedAt = saved?.UpdatedAt,
-            SubmittedAt = saved?.SubmittedAt,
-            CreatedBy = saved?.CreatedBy,
-            UpdatedBy = saved?.UpdatedBy,
-            FilingDeadline = VatFilingDeadline.ForPeriod(request.Year, request.Month),
-            DeclarationTypeDisplay = v2 ? "Déclaration mensuelle unique" : "Déclaration TVA",
-            CollectedVatBreakdown = collectedVatBreakdown,
-            DeductiblePurchasesTaxableBase = deductiblePurchasesTaxableBase,
-            SalesTaxableBase = salesTaxableBase,
-            SalesGrossBase = salesGrossBase,
-            FodecTaxableBase = fodecTaxableBase,
-            FodecRatePercent = _settings.FodecRatePercent,
-            TclRatePercent = _settings.TclRatePercent,
-            CompanyName = tenantSummary?.CompanyName ?? string.Empty,
-            Nif = tenantSummary?.Nif ?? string.Empty,
-            TaxRegimeDisplay = tenantSummary?.TaxRegimeDisplay ?? string.Empty,
-            TradeName = tenantSummary?.TradeName,
-            // Déjà chargée par le provider mais jusqu'ici non remontée : l'en-tête du formulaire
-            // officiel en a besoin.
-            AddressLine = tenantSummary?.AddressLine,
-            OfficialFormEnabled = _settings.MonthlyDeclarationOfficialFormEnabled
+            VatDue = draft.VatDue.Amount,
+            CreditToCarry = draft.CreditToCarry.Amount
         };
 
-        return Result.Success(dto);
+        if (!v2)
+            return vat;
+
+        // Retenue à la source : factures fournisseurs (module RS) et traitements et salaires
+        // (IRPP + CSS du cycle de paie). Les deux relèvent de la même ligne de la déclaration.
+        var rs = await _mediator.Send(new GetWithholdingMonthlyReportQuery(request.Year, request.Month), cancellationToken);
+        var withholdingFromInvoices = rs.GrandTotalWithheld;
+        var withholdingFromSalaries = context.Payroll.WithholdingTotal;
+
+        return vat with
+        {
+            Fodec = await _invoices.SumFodecAsync(start, end, cancellationToken),
+            DroitTimbre = await _invoices.SumFiscalStampAsync(start, end, cancellationToken),
+            Tcl = Math.Round(_settings.TclRatePercent / 100m * context.SalesGrossBase, 3),
+            Tfp = context.Payroll.Tfp,
+            Foprolos = context.Payroll.Foprolos,
+            WithholdingFromInvoices = withholdingFromInvoices,
+            WithholdingFromSalaries = withholdingFromSalaries,
+            WithholdingTax = withholdingFromInvoices + withholdingFromSalaries
+            // Acomptes provisionnels : aucune source automatique, saisie manuelle uniquement.
+        };
+    }
+
+    private static decimal TotalToPay(TaxAmounts a, bool v2) => v2
+        ? Math.Max(0m, a.VatDue + a.Fodec + a.DroitTimbre + a.Tcl + a.Tfp + a.Foprolos + a.WithholdingTax - a.Acomptes)
+        : a.VatDue;
+
+    private static VatDeclarationComputedDto MapComputed(TaxAmounts live, PeriodContext context, bool v2) => new()
+    {
+        CollectedVat19 = live.CollectedVat19,
+        CollectedVat13 = live.CollectedVat13,
+        CollectedVat7 = live.CollectedVat7,
+        DeductibleVatGoods = live.DeductibleVatGoods,
+        DeductibleVatAssets = live.DeductibleVatAssets,
+        PreviousCredit = live.PreviousCredit,
+        VatDue = live.VatDue,
+        CreditToCarry = live.CreditToCarry,
+        Fodec = live.Fodec,
+        DroitTimbre = live.DroitTimbre,
+        Tcl = live.Tcl,
+        Tfp = live.Tfp,
+        Foprolos = live.Foprolos,
+        WithholdingTax = live.WithholdingTax,
+        WithholdingFromInvoices = live.WithholdingFromInvoices,
+        WithholdingFromSalaries = live.WithholdingFromSalaries,
+        TotalToPay = TotalToPay(live, v2),
+        PayrollRunExists = context.Payroll.RunExists,
+        PayrollRunStatus = context.Payroll.Status is { } s ? (int)s : null,
+        PayrollRunStatusDisplay = context.Payroll.Status?.ToDisplayString(),
+        PayrollRunUsable = context.Payroll.IsUsable
+    };
+
+    /// <summary>
+    /// Jeu de montants d'une déclaration, qu'il vienne du recalcul ou du dépôt enregistré. Deux
+    /// instances de même forme rendent l'écart calculable ligne à ligne.
+    /// </summary>
+    private sealed record TaxAmounts
+    {
+        public decimal CollectedVat19 { get; init; }
+        public decimal CollectedVat13 { get; init; }
+        public decimal CollectedVat7 { get; init; }
+        public decimal DeductibleVatGoods { get; init; }
+        public decimal DeductibleVatAssets { get; init; }
+        public decimal PreviousCredit { get; init; }
+        public decimal VatDue { get; init; }
+        public decimal CreditToCarry { get; init; }
+        public decimal Fodec { get; init; }
+        public decimal DroitTimbre { get; init; }
+        public decimal Tcl { get; init; }
+        public decimal Tfp { get; init; }
+        public decimal Foprolos { get; init; }
+        public decimal WithholdingTax { get; init; }
+        public decimal WithholdingFromInvoices { get; init; }
+        public decimal WithholdingFromSalaries { get; init; }
+        public decimal Acomptes { get; init; }
+
+        public static TaxAmounts FromEntity(VatDeclaration d) => new()
+        {
+            CollectedVat19 = d.CollectedVat19.Amount,
+            CollectedVat13 = d.CollectedVat13.Amount,
+            CollectedVat7 = d.CollectedVat7.Amount,
+            DeductibleVatGoods = d.DeductibleVatGoods.Amount,
+            DeductibleVatAssets = d.DeductibleVatAssets.Amount,
+            PreviousCredit = d.PreviousCredit.Amount,
+            VatDue = d.VatDue.Amount,
+            CreditToCarry = d.CreditToCarry.Amount,
+            Fodec = d.Fodec,
+            DroitTimbre = d.DroitTimbre,
+            Tcl = d.Tcl,
+            Tfp = d.Tfp,
+            Foprolos = d.Foprolos,
+            WithholdingTax = d.WithholdingTax,
+            // La déclaration ne mémorise pas la répartition de la RS : seul le total est déposé.
+            Acomptes = d.Acomptes
+        };
     }
 }

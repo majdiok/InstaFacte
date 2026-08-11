@@ -1,5 +1,6 @@
 <nav
   class="secondary-nav"
+  [class.secondary-nav--firm-delegated]="isFirmDelegatedSkin()"
   role="navigation"
   aria-label="Modules métier">
   <ul class="secondary-nav__list">
@@ -25,7 +26,13 @@
               [attr.aria-controls]="menuId(section)"
               aria-haspopup="menu">
               @if (section.icon) {
-                <i class="secondary-nav__icon" [ngClass]="section.icon" aria-hidden="true"></i>
+                @if (isFirmDelegatedSkin()) {
+                  <span class="secondary-nav__icon-box" [attr.data-icon]="getIconKey(section.icon)">
+                    <i class="secondary-nav__icon" [ngClass]="section.icon" aria-hidden="true"></i>
+                  </span>
+                } @else {
+                  <i class="secondary-nav__icon" [ngClass]="section.icon" aria-hidden="true"></i>
+                }
               }
               <span class="secondary-nav__label">{{ displayLabel(section) }}</span>
               <i class="fa-solid fa-chevron-down secondary-nav__chevron" aria-hidden="true"></i>
@@ -119,7 +126,13 @@
             [routerLink]="section.route || null"
             (click)="onTopLevelClick(section, $event)">
             @if (section.icon) {
-              <i class="secondary-nav__icon" [ngClass]="section.icon" aria-hidden="true"></i>
+              @if (isFirmDelegatedSkin()) {
+                <span class="secondary-nav__icon-box" [attr.data-icon]="getIconKey(section.icon)">
+                  <i class="secondary-nav__icon" [ngClass]="section.icon" aria-hidden="true"></i>
+                </span>
+              } @else {
+                <i class="secondary-nav__icon" [ngClass]="section.icon" aria-hidden="true"></i>
+              }
             }
             <span class="secondary-nav__label">{{ displayLabel(section) }}</span>
           </a>

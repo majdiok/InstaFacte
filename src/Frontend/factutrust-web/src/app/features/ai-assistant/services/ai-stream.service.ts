@@ -34,7 +34,8 @@ export class AiStreamService {
         }
 
         if (!response.ok) {
-          subscriber.error(this.buildHttpError(response.status, response.statusText));
+          const message = await this.resolveHttpErrorMessage(response);
+          subscriber.error(this.buildHttpError(response.status, message));
           return;
         }
 
@@ -124,15 +125,33 @@ export class AiStreamService {
     }
   }
 
-  private buildHttpError(status: number, statusText: string): AiStreamHttpError {
-    let message: string;
-    if (status === 401) {
-      message = 'Session expirée. Veuillez vous reconnecter, puis renvoyer votre message.';
-    } else if (status === 429) {
-      message = 'Trop de requêtes vers l’assistant IA. Patientez un instant avant de réessayer.';
-    } else {
-      message = `HTTP ${status}: ${statusText}`;
+  private async resolveHttpErrorMessage(response: Response): Promise<string> {
+    if (response.status === 401) {
+      return 'Session expirée. Veuillez vous reconnecter, puis renvoyer votre message.';
     }
+    if (response.status === 429) {
+      return 'Trop de requêtes vers l’assistant IA. Patientez un instant avant de réessayer.';
+    }
+
+    try {
+      const body = (await response.json()) as {
+        message?: string;
+        errors?: string[];
+      };
+      if (body.message?.trim()) {
+        return body.message.trim();
+      }
+      if (body.errors?.length) {
+        return body.errors.join(' ');
+      }
+    } catch {
+      // ignore non-JSON bodies
+    }
+
+    return `HTTP ${response.status}: ${response.statusText}`;
+  }
+
+  private buildHttpError(status: number, message: string): AiStreamHttpError {
     const err = new Error(message) as AiStreamHttpError;
     err.httpStatus = status;
     return err;

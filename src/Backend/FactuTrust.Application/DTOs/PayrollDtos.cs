@@ -527,6 +527,17 @@ public sealed record UpdatePayrollParametersDto
     public decimal MaternityEmployerTopUpDefault { get; init; }
 }
 
+public sealed record PayrollGarnishmentBracketDto
+{
+    public decimal LowerBoundMonthlyNet { get; init; }
+    public decimal SeizableFraction { get; init; }
+}
+
+public sealed record UpdatePayrollGarnishmentBracketsDto
+{
+    public IReadOnlyList<PayrollGarnishmentBracketDto> Brackets { get; init; } = Array.Empty<PayrollGarnishmentBracketDto>();
+}
+
 // ─────────────────────────────── Leaves & advances ───────────────────────────────
 
 public sealed record LeaveRequestDto
@@ -1322,6 +1333,107 @@ public sealed record PayrollBookLineDto
     public decimal OtherDeductions { get; init; }
     public decimal NonTaxableAllowances { get; init; }
     public decimal NetSalary { get; init; }
+}
+
+// ============================================
+// TABLEAU DE BORD MENSUEL
+// ============================================
+
+/// <summary>Indicateur du mois et sa variation par rapport au mois précédent.</summary>
+/// <param name="PreviousAmount">
+/// Nul quand le mois précédent n'a pas de cycle : mieux vaut n'afficher aucune tendance qu'une
+/// progression de 100 % qui ne compare rien.
+/// </param>
+public sealed record PayrollDashboardKpiDto(decimal Amount, decimal? PreviousAmount, decimal? ChangePercent);
+
+/// <summary>Part d'une répartition (charges patronales, éléments de paie, retenues).</summary>
+public sealed record PayrollDashboardSliceDto(string Label, decimal Amount);
+
+/// <summary>Un mois de l'exercice dans la série d'évolution.</summary>
+public sealed record PayrollDashboardMonthDto(
+    int Month,
+    decimal Gross,
+    decimal Net,
+    decimal EmployerCharges,
+    string Status,
+    string StatusDisplay);
+
+/// <summary>Échéance sociale à venir, issue de l'échéancier fiscal.</summary>
+public sealed record PayrollDashboardDeadlineDto(
+    string Label,
+    DateTime DueDate,
+    int DaysRemaining,
+    bool IsOverdue,
+    decimal EstimatedAmount);
+
+/// <summary>Cycle de paie dans la liste des derniers cycles.</summary>
+public sealed record PayrollDashboardRunDto(
+    Guid Id,
+    int Year,
+    int Month,
+    string Label,
+    string Status,
+    string StatusDisplay,
+    decimal TotalGross,
+    decimal TotalNet,
+    DateTime? ValidatedAt,
+    DateTime? ClosedAt);
+
+/// <summary>
+/// Vue d'ensemble de la paie d'un mois : indicateurs, répartitions, série de l'exercice,
+/// salariés du cycle et échéances sociales.
+/// </summary>
+/// <remarks>
+/// Purement en lecture. Tous les montants proviennent des totaux figés au calcul du cycle : rien
+/// n'est recalculé ici, sous peine de faire diverger le tableau de bord des bulletins émis.
+/// </remarks>
+public sealed record PayrollDashboardDto
+{
+    public int Year { get; init; }
+    public int Month { get; init; }
+    public string PeriodLabel { get; init; } = null!;
+
+    /// <summary>Faux quand aucun cycle n'existe pour le mois : l'écran reste consultable.</summary>
+    public bool HasRun { get; init; }
+    public Guid? RunId { get; init; }
+    public string? RunStatus { get; init; }
+    public string? RunStatusDisplay { get; init; }
+
+    public PayrollDashboardKpiDto Gross { get; init; } = new(0m, null, null);
+    public PayrollDashboardKpiDto Net { get; init; } = new(0m, null, null);
+    public PayrollDashboardKpiDto EmployerCharges { get; init; } = new(0m, null, null);
+
+    public int EmployeeCount { get; init; }
+    public int? PreviousEmployeeCount { get; init; }
+
+    /// <summary>Décomposition du brut : salaires de base, primes, heures supplémentaires, avantages.</summary>
+    public IReadOnlyList<PayrollDashboardSliceDto> EarningsBreakdown { get; init; }
+        = Array.Empty<PayrollDashboardSliceDto>();
+
+    public IReadOnlyList<PayrollDashboardSliceDto> DeductionBreakdown { get; init; }
+        = Array.Empty<PayrollDashboardSliceDto>();
+
+    public IReadOnlyList<PayrollDashboardSliceDto> EmployerChargeBreakdown { get; init; }
+        = Array.Empty<PayrollDashboardSliceDto>();
+
+    /// <summary>
+    /// Renseigné quand la décomposition du brut n'a pas pu être refermée exactement — le total
+    /// affiché reste celui du cycle, mais la ventilation est signalée comme approchée.
+    /// </summary>
+    public string? BreakdownWarning { get; init; }
+
+    public IReadOnlyList<PayrollDashboardMonthDto> MonthlySeries { get; init; }
+        = Array.Empty<PayrollDashboardMonthDto>();
+
+    public IReadOnlyList<PayslipListDto> Payslips { get; init; }
+        = Array.Empty<PayslipListDto>();
+
+    public IReadOnlyList<PayrollDashboardRunDto> RecentRuns { get; init; }
+        = Array.Empty<PayrollDashboardRunDto>();
+
+    /// <summary>Vide si l'exercice n'a pas été généré dans l'échéancier — jamais une erreur.</summary>
+    public IReadOnlyList<PayrollDashboardDeadlineDto> UpcomingDeadlines { get; init; }
+        = Array.Empty<PayrollDashboardDeadlineDto>();
 }
 
 /// <summary>

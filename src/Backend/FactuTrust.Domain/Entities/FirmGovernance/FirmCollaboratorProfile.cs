@@ -41,11 +41,27 @@ public sealed class FirmCollaboratorProfile
     /// <summary>
     /// Salarié correspondant dans la paie du cabinet, pour l'import du coût employeur.
     /// </summary>
-    /// <remarks>
-    /// Liaison explicite, choisie par le manager : un rapprochement automatique par nom
-    /// confondrait les homonymes et imputerait un coût au mauvais collaborateur.
-    /// </remarks>
     public Guid? PayrollEmployeeId { get; set; }
+
+    /// <summary>Comment la liaison paie a été établie (manuelle ou rapprochement email).</summary>
+    public FirmPayrollLinkSource PayrollLinkSource { get; set; } = FirmPayrollLinkSource.None;
+
+    /// <summary>Horodatage de la dernière liaison (manuelle ou automatique).</summary>
+    public DateTime? PayrollLinkedAt { get; set; }
+
+    /// <summary>
+    /// Entrée du collaborateur dans le cabinet, pour proratiser sa présence sur un exercice.
+    /// </summary>
+    /// <remarks>
+    /// Nulle par défaut, auquel cas le collaborateur est réputé présent toute l'année — les
+    /// exercices déjà analysés conservent donc exactement leurs heures productives. Délibérément
+    /// portée ici plutôt que dérivée du salarié de paie : la rentabilité ne doit pas dépendre de
+    /// la disponibilité de la base de paie.
+    /// </remarks>
+    public DateTime? HiredOn { get; set; }
+
+    /// <summary>Sortie du collaborateur. Nulle tant qu'il est en poste.</summary>
+    public DateTime? LeftOn { get; set; }
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

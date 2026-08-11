@@ -96,6 +96,12 @@ public sealed record UserDto
     /// Always false in native mode.
     /// </summary>
     public bool IsFirmManaged { get; init; }
+
+    /// <summary>
+    /// True when the company tenant has an active cabinet assignment and payroll execution
+    /// is delegated to the accounting firm. Always false in delegated mode.
+    /// </summary>
+    public bool IsPayrollFirmManaged { get; init; }
     public bool TwoFactorEnabled { get; init; }
 
     /// <summary>Enabled AppModule enum values (int) for UI.</summary>

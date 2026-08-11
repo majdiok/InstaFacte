@@ -120,6 +120,53 @@ public sealed class PermissionAuthorizationHandlerTests
     }
 
     [Fact]
+    public async Task Delegated_firm_accountant_succeeds_accounting_delete()
+    {
+        var handler = new PermissionAuthorizationHandler();
+        var id = new ClaimsIdentity("Bearer");
+        foreach (var perm in DelegatedPermissionCatalog.FirmAccountantDelegated)
+            id.AddClaim(new Claim(AuthClaimTypes.Permission, perm));
+        var user = new ClaimsPrincipal(id);
+        var requirement = new PermissionRequirement(Permissions.Accounting.Delete);
+        var ctx = new AuthorizationHandlerContext(new IAuthorizationRequirement[] { requirement }, user, resource: null);
+
+        await handler.HandleAsync(ctx);
+
+        Assert.True(ctx.HasSucceeded);
+    }
+
+    [Fact]
+    public async Task Delegated_firm_manager_succeeds_accounting_delete()
+    {
+        var handler = new PermissionAuthorizationHandler();
+        var id = new ClaimsIdentity("Bearer");
+        foreach (var perm in DelegatedPermissionCatalog.FirmManagerDelegated)
+            id.AddClaim(new Claim(AuthClaimTypes.Permission, perm));
+        var user = new ClaimsPrincipal(id);
+        var requirement = new PermissionRequirement(Permissions.Accounting.Delete);
+        var ctx = new AuthorizationHandlerContext(new IAuthorizationRequirement[] { requirement }, user, resource: null);
+
+        await handler.HandleAsync(ctx);
+
+        Assert.True(ctx.HasSucceeded);
+    }
+
+    [Fact]
+    public async Task Legacy_company_accountant_denied_accounting_delete()
+    {
+        var handler = new PermissionAuthorizationHandler();
+        var id = new ClaimsIdentity("Bearer");
+        id.AddClaim(new Claim(ClaimTypes.Role, UserRole.Accountant.ToString()));
+        var user = new ClaimsPrincipal(id);
+        var requirement = new PermissionRequirement(Permissions.Accounting.Delete);
+        var ctx = new AuthorizationHandlerContext(new IAuthorizationRequirement[] { requirement }, user, resource: null);
+
+        await handler.HandleAsync(ctx);
+
+        Assert.False(ctx.HasSucceeded);
+    }
+
+    [Fact]
     public async Task Delegated_firm_accountant_denied_settings_read_for_tax_crud()
     {
         var handler = new PermissionAuthorizationHandler();

@@ -927,6 +927,7 @@ export interface AiModelInfoDto {
   sizeBytes: number | null;
   modifiedAtUtc: string | null;
   supportsVision: boolean;
+  supportsChat?: boolean;
 }
 
 export interface AiGpuInfoDto {

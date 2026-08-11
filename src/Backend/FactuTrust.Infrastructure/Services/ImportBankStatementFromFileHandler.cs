@@ -190,17 +190,13 @@ Analyse ce relevé bancaire tunisien et extrais toutes les opérations.
 
     private async Task<ParsedModelRef> ResolveModelRefAsync(CancellationToken cancellationToken)
     {
-        var model = !string.IsNullOrWhiteSpace(_ollamaSettings.BankStatementImportModel)
-            ? _ollamaSettings.BankStatementImportModel.Trim()
-            : !string.IsNullOrWhiteSpace(_ollamaSettings.InvoiceImportModel)
-                ? _ollamaSettings.InvoiceImportModel.Trim()
-                : _ollamaSettings.DefaultModel.Trim();
+        var model = ImportAiModelResolver.ResolveServerBankStatementImportModelName(_ollamaSettings);
 
         try
         {
             var platform = await _platformAiSettings.GetInvoiceImportModelRefAsync(cancellationToken);
-            if (!string.IsNullOrWhiteSpace(platform))
-                model = platform;
+            if (ImportAiModelResolver.TryResolvePlatformImportModel(platform, _logger, out var platformModel))
+                return platformModel;
         }
         catch (Exception ex)
         {

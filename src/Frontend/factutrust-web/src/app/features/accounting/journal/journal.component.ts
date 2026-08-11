@@ -21,9 +21,10 @@ import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.co
 import { AccountingExportMenuComponent } from '../shared/accounting-export-menu.component';
 import { AccountingToolbarActionsComponent } from '../shared/accounting-toolbar-actions.component';
 import { AccountingTableActionsComponent } from '../shared/accounting-table-actions.component';
+import { AccountingCorrectionBannerComponent } from '../shared/accounting-correction-banner.component';
 import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
 import { AuthService } from '@core/services/auth.service';
-import { canValidateAccountingEntries } from '@core/utils/accounting-access';
+import { canDeleteDraftAccountingEntries, canValidateAccountingEntries } from '@core/utils/accounting-access';
 import { AccountingJournalCatalogService } from '../shared/accounting-journal-catalog.service';
 import { AccountingJournalTab } from '../shared/accounting-journal-tabs.model';
 
@@ -62,10 +63,12 @@ type JournalFlatRow = {
     AccountingFilterBarComponent,
     AccountingExportMenuComponent,
     AccountingToolbarActionsComponent,
-    AccountingTableActionsComponent
+    AccountingTableActionsComponent,
+    AccountingCorrectionBannerComponent
   ],
   template: `
     <app-page-header title="Journal comptable" subtitle="Écritures par période" />
+    <app-accounting-correction-banner />
     <div class="card journal-filters-card accounting-filters-card">
       <app-accounting-filter-bar ariaLabel="Période et journal">
         <div accountingFilterFields class="journal-toolbar-fields">
@@ -241,6 +244,19 @@ type JournalFlatRow = {
                   [attr.aria-label]="'Valider l\\'écriture ' + r.journal + ' n° ' + r.piece">
                   Valider
                 </app-button>
+              }
+              @if (r.firstOfEntry && r.isDraft && canDelete()) {
+                <app-button
+                  variant="danger"
+                  size="sm"
+                  icon="pi-trash"
+                  [iconOnly]="true"
+                  [iconAlwaysVisible]="true"
+                  type="button"
+                  (click)="deleteEntry(r.entryId, r.journal, r.piece)"
+                  [disabled]="deletingId() === r.entryId"
+                  [attr.aria-label]="'Supprimer l\\'écriture ' + r.journal + ' n° ' + r.piece"
+                  title="Supprimer" />
               }
               @if (r.firstOfEntry && !r.isDraft && !r.isReversed) {
                 <app-button
@@ -682,6 +698,7 @@ export class JournalComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
 
   readonly canValidate = computed(() => canValidateAccountingEntries(this.auth));
+  readonly canDelete = computed(() => canDeleteDraftAccountingEntries(this.auth));
 
   @ViewChild('dt') dt?: Table;
 
@@ -689,6 +706,7 @@ export class JournalComponent implements OnInit {
   toStr = '';
   journalCode = '';
   searchTerm = '';
+  missingAttachmentOnly = false;
 
   /** Journaux du catalogue (repli sur les journaux standards) — alimente le filtre. */
   readonly journals = signal<readonly AccountingJournalTab[]>([]);
@@ -699,6 +717,7 @@ export class JournalComponent implements OnInit {
   readonly flatRows = signal<JournalFlatRow[]>([]);
 
   readonly validatingId = signal<string | null>(null);
+  readonly deletingId = signal<string | null>(null);
   readonly reverseTarget = signal<{ entryId: string; journal: string; piece: number } | null>(null);
   reverseReason = '';
   readonly reversing = signal(false);
@@ -741,6 +760,7 @@ export class JournalComponent implements OnInit {
     if (journalParam) {
       this.journalCode = journalParam;
     }
+    this.missingAttachmentOnly = qp.get('missingAttachment') === '1';
 
     this.journalCatalog.list().subscribe(list => this.journals.set(list));
     this.load();
@@ -784,7 +804,7 @@ export class JournalComponent implements OnInit {
           this.error.set(res.error ?? 'Erreur');
           return;
         }
-        const flat: JournalFlatRow[] = [];
+        let flat: JournalFlatRow[] = [];
         for (const e of res.data) {
           let first = true;
           for (const l of e.lines) {
@@ -806,6 +826,12 @@ export class JournalComponent implements OnInit {
             });
             first = false;
           }
+        }
+        if (this.missingAttachmentOnly) {
+          const missingEntryIds = new Set(
+            flat.filter(r => r.firstOfEntry && (r.attachmentCount ?? 0) === 0).map(r => r.entryId)
+          );
+          flat = flat.filter(r => missingEntryIds.has(r.entryId));
         }
         this.flatRows.set(flat);
         this.reapplyGlobalFilter();
@@ -863,6 +889,29 @@ export class JournalComponent implements OnInit {
         this.validatingId.set(null);
         this.error.set('Erreur réseau lors de la validation.');
         this.monitoring.logError('journal.validate', err);
+      }
+    });
+  }
+
+  /** Supprime une écriture en brouillard, puis recharge le journal. */
+  deleteEntry(entryId: string, journal: string, piece: number): void {
+    if (!this.canDelete()) return;
+    if (!window.confirm(`Supprimer l'écriture ${journal} n° ${piece} ? Cette action est irréversible.`)) return;
+    if (this.deletingId()) return;
+    this.deletingId.set(entryId);
+    this.api.deleteDraftJournalEntry(entryId).subscribe({
+      next: res => {
+        this.deletingId.set(null);
+        if (!res.success) {
+          this.error.set(res.error ?? 'La suppression a échoué.');
+          return;
+        }
+        this.load();
+      },
+      error: err => {
+        this.deletingId.set(null);
+        this.error.set('Erreur réseau lors de la suppression.');
+        this.monitoring.logError('journal.delete', err);
       }
     });
   }

@@ -298,6 +298,9 @@ public sealed record FirmTimeSheetYearSettingsDto
     public decimal DailyHours { get; init; }
     public decimal AnnualProductiveHours { get; init; }
     public decimal TotalEmployerChargeRate { get; init; }
+
+    /// <summary>0 = forfait commun, 1 = individualisé sur les congés réellement pris.</summary>
+    public int ProductiveHoursMode { get; init; }
 }
 
 public sealed record SaveFirmTimeSheetYearSettingsDto
@@ -316,6 +319,12 @@ public sealed record SaveFirmTimeSheetYearSettingsDto
     public decimal FoprolosRate { get; init; }
     public decimal WorkAccidentRate { get; init; }
     public decimal CssEmployerRate { get; init; }
+
+    /// <summary>
+    /// 0 = forfait commun (défaut), 1 = individualisé. Basculer un exercice modifie les taux
+    /// horaires et donc les marges : c'est un acte délibéré, jamais un effet de bord.
+    /// </summary>
+    public int ProductiveHoursMode { get; init; }
 }
 
 public sealed record FirmExpenseNoteDto

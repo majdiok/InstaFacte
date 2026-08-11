@@ -93,8 +93,8 @@
             <td class="text-right">{{ row.amount | number:'1.3-3' }} TND</td>
             <td>{{ statusLabel(row.status) }}</td>
             <td>
-              @if (row.deepLinkRoute) {
-                <a class="ac-link" [routerLink]="row.deepLinkRoute" (click)="$event.stopPropagation()">Corriger</a>
+              @if (canCorrect(row)) {
+                <button type="button" class="ac-link ac-link--btn" (click)="correctAnomaly(row); $event.stopPropagation()">Corriger</button>
               }
               <button type="button" class="ac-link ac-link--btn" (click)="openDetail(row); $event.stopPropagation()">Détail</button>
             </td>
@@ -187,7 +187,7 @@
           <p-table [value]="d.lines" styleClass="p-datatable-sm">
             <ng-template pTemplate="header">
               <tr>
-                <th>Date</th><th>Compte</th><th>Libellé</th><th>Débit</th><th>Crédit</th><th>Justificatif</th>
+                <th>Date</th><th>Compte</th><th>Libellé</th><th>Débit</th><th>Crédit</th><th>Justificatif</th><th></th>
               </tr>
             </ng-template>
             <ng-template pTemplate="body" let-l>
@@ -198,15 +198,24 @@
                 <td class="text-right">{{ l.debit | number:'1.3-3' }}</td>
                 <td class="text-right">{{ l.credit | number:'1.3-3' }}</td>
                 <td>{{ l.justificationStatus || '—' }}</td>
+                <td>
+                  @if (l.journalEntryId) {
+                    <button type="button" class="ac-link ac-link--btn" (click)="openEntryLine(l)">Ouvrir</button>
+                  }
+                </td>
               </tr>
             </ng-template>
           </p-table>
         }
         <div class="ac-detail__actions">
-          @if (d.deepLinkRoute) {
-            <a class="ac-btn ac-btn--primary" [routerLink]="d.deepLinkRoute">Corriger cette anomalie</a>
+          @if (canCorrect(d)) {
+            <button type="button" class="ac-btn ac-btn--primary" (click)="correctAnomaly(d)">
+              {{ d.correctionLink?.label || 'Corriger cette anomalie' }}
+            </button>
           }
-          <button type="button" class="ac-btn ac-btn--secondary" (click)="resolveSelected()">Marquer comme corrigé</button>
+          <button type="button" class="ac-btn ac-btn--secondary" (click)="resolveSelected()" title="Indique que l'anomalie a été traitée sans relancer le contrôle">
+            Marquer comme traitée
+          </button>
         </div>
       </div>
     }

@@ -59,6 +59,7 @@ public class PayrollRegularizationsController : ControllerBase
     /// </summary>
     [HttpPost("runs/{runId:guid}/regularizations/generate")]
     [Authorize(Policy = PermissionPolicies.PayrollRun)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<GenerateIrppRegularizationsResultDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Generate(Guid runId, CancellationToken cancellationToken)
     {
@@ -81,6 +82,7 @@ public class PayrollRegularizationsController : ControllerBase
     /// <summary>Crée ou ajuste manuellement une régularisation.</summary>
     [HttpPost("regularizations")]
     [Authorize(Policy = PermissionPolicies.PayrollRun)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<Guid>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Upsert([FromBody] UpsertIrppRegularizationDto dto, CancellationToken cancellationToken)
     {
@@ -97,6 +99,7 @@ public class PayrollRegularizationsController : ControllerBase
     /// <summary>Supprime une régularisation (mois non verrouillé uniquement).</summary>
     [HttpDelete("regularizations/{id:guid}")]
     [Authorize(Policy = PermissionPolicies.PayrollRun)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {

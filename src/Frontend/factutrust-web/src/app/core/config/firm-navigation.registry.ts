@@ -112,6 +112,32 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
 
         managerOnly: true
 
+      },
+
+      {
+
+        label: 'Coûts collaborateurs',
+
+        route: '/firm/governance/collaborator-costs',
+
+        icon: 'fa-solid fa-coins',
+
+        managerOnly: true
+
+      },
+
+      {
+
+        label: 'Paie interne',
+
+        route: '/firm/payroll',
+
+        icon: 'fa-solid fa-file-invoice-dollar',
+
+        // Le module n'est accordé que si la paie interne est activée pour le cabinet. Sans ce
+        // gating, l'entrée s'affichait flag éteint et ne menait qu'à /access-denied.
+        modules: [M.Payroll]
+
       }
 
     ]
@@ -438,6 +464,39 @@ export function isDelegatedFirmBlockedSalesPurchasesRoute(path: string): boolean
 
 
 
+/** Slug autorisé pour l'assistant IA en mode délégué cabinet. */
+export const FIRM_DELEGATED_AI_ASSISTANT_SLUG = 'comptabilite';
+
+/**
+
+ * AI assistant routes blocked for accounting firms in delegated mode (accounting scope only).
+
+ */
+
+export function isDelegatedFirmBlockedAiAssistantRoute(path: string): boolean {
+
+  const normalized = path.split('?')[0].split('#')[0];
+
+  if (!pathMatchesPrefix(normalized, '/ai-assistant')) {
+
+    return false;
+
+  }
+
+  if (normalized === '/ai-assistant' || normalized === '/ai-assistant/') {
+
+    return true;
+
+  }
+
+  const slug = normalized.slice('/ai-assistant/'.length).split('/')[0];
+
+  return slug !== FIRM_DELEGATED_AI_ASSISTANT_SLUG;
+
+}
+
+
+
 /**
 
  * Commercial routes blocked for firm-managed dossiers (no platform commercial account).
@@ -616,6 +675,34 @@ export const FIRM_DELEGATED_QUICK_ACCESS = [
 
   {
 
+    label: 'Régularisation IRPP',
+
+    icon: 'fa-solid fa-scale-balanced',
+
+    route: '/payroll/regularization',
+
+    permission: 'payroll:read',
+
+    section: 'navigation' as const
+
+  },
+
+  {
+
+    label: 'Paramètres paie',
+
+    icon: 'fa-solid fa-sliders',
+
+    route: '/payroll/settings',
+
+    permission: 'payroll:settings',
+
+    section: 'navigation' as const
+
+  },
+
+  {
+
     label: 'Retour au cabinet',
 
     icon: 'fa-solid fa-arrow-left',
@@ -630,6 +717,47 @@ export const FIRM_DELEGATED_QUICK_ACCESS = [
 
 ];
 
+/** Footer utilitaire du sidemenu cabinet en mode délégué (Contrôle, Paramètres, Aide). */
+export const FIRM_DELEGATED_FOOTER_NAV: NavItem[] = [
+  {
+    label: 'Contrôle & Audit',
+    icon: 'fa-solid fa-shield-halved',
+    children: [
+      {
+        label: "Contrôle d'intégrité",
+        route: '/accounting/health',
+        icon: 'fa-solid fa-heart-pulse',
+        modules: [M.Accounting],
+        permissionsAll: [PERMISSIONS.accounting.read]
+      },
+      {
+        label: 'Contrôles de pré-clôture',
+        route: '/accounting/pre-closing',
+        icon: 'fa-solid fa-list-check',
+        modules: [M.Accounting],
+        permissionsAll: [PERMISSIONS.accounting.read]
+      },
+      {
+        label: "Journal d'audit",
+        route: '/audit',
+        icon: 'fa-solid fa-shield-halved',
+        modules: [M.Accounting],
+        permissionsAll: ['audit:read']
+      }
+    ]
+  },
+  {
+    label: 'Paramètres',
+    icon: 'fa-solid fa-gear',
+    route: '/settings/profile'
+  },
+  {
+    label: "Centre d'aide",
+    icon: 'fa-solid fa-circle-question',
+    externalUrl: '__FIRM_HELP_URL__'
+  }
+];
+
 function isFirmGovernanceNavRoute(route?: string): boolean {
   if (!route) {
     return false;
@@ -637,7 +765,9 @@ function isFirmGovernanceNavRoute(route?: string): boolean {
   return (
     route.startsWith('/firm/governance') ||
     route === '/firm/affectation' ||
-    route.startsWith('/firm/affectation/')
+    route.startsWith('/firm/affectation/') ||
+    route === '/firm/payroll' ||
+    route.startsWith('/firm/payroll/')
   );
 }
 

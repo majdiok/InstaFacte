@@ -366,7 +366,12 @@ public sealed class SaveVatDeclarationCommandHandler : IRequestHandler<SaveVatDe
             return Result.Failure<Guid>(Error.Forbidden(VatDeclarationAccess.WriteDeniedMessage));
 
         var r = request.Request;
-        var computed = await _mediator.Send(new GetVatDeclarationQuery(r.Year, r.Month), cancellationToken);
+        // Valorisation LIVE explicite : l'enregistrement rafraîchit la TVA depuis les écritures.
+        // En mode « déclaré » (défaut), la query renverrait le dépôt existant et la TVA d'un
+        // brouillon ne se mettrait plus jamais à jour.
+        var computed = await _mediator.Send(
+            new GetVatDeclarationQuery(r.Year, r.Month, Valuation: VatDeclarationValuation.Live),
+            cancellationToken);
         if (computed.IsFailure)
             return Result.Failure<Guid>(computed.Error);
 

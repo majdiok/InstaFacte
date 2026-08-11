@@ -59,6 +59,20 @@ public interface IFirmLeaveService
 
     Task<Result<FirmLeaveSettingsDto>> UpdateSettingsAsync(Guid firmTenantId, int year, UpdateFirmLeaveSettingsDto dto, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Écarts entre les congés approuvés du cabinet et leur report en paie.
+    /// </summary>
+    /// <remarks>
+    /// Contrepartie du fail-open : un report peut échouer sans annuler l'approbation, il faut donc
+    /// un endroit où l'écart se voit et se rattrape.
+    /// </remarks>
+    Task<FirmLeaveReconciliationDto> GetReconciliationAsync(
+        Guid firmTenantId, int year, CancellationToken cancellationToken = default);
+
+    /// <summary>Rejoue le report des congés en écart. <paramref name="leaveRequestId"/> nul = tous.</summary>
+    Task<Result<FirmLeaveReplayResultDto>> ReplayPayrollMirrorAsync(
+        Guid firmTenantId, int year, Guid? leaveRequestId, CancellationToken cancellationToken = default);
+
     Task<Result<(byte[] Content, string FileName)>> ExportListAsync(
         Guid firmTenantId, int? year, int? status, Guid? typeId, CancellationToken cancellationToken = default);
 

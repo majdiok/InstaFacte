@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { authInterceptor } from './auth.interceptor';
 import { AuthService, User } from '../services/auth.service';
 
@@ -25,6 +25,7 @@ describe('authInterceptor', () => {
       'getRefreshToken',
       'refreshToken',
       'logout',
+      'invalidateSession',
       'isAuthenticated'
     ]);
     authService.getAccessToken.and.returnValue('test-access-token');
@@ -55,6 +56,7 @@ describe('authInterceptor', () => {
       'getRefreshToken',
       'refreshToken',
       'logout',
+      'invalidateSession',
       'isAuthenticated'
     ]);
     authService.getAccessToken.and.returnValue('tok');
@@ -85,6 +87,7 @@ describe('authInterceptor', () => {
       'getRefreshToken',
       'refreshToken',
       'logout',
+      'invalidateSession',
       'isAuthenticated'
     ]);
     authService.getAccessToken.and.returnValue('tok');
@@ -115,6 +118,7 @@ describe('authInterceptor', () => {
       'getRefreshToken',
       'refreshToken',
       'logout',
+      'invalidateSession',
       'isAuthenticated'
     ]);
     authService.getAccessToken.and.returnValue('access');
@@ -148,6 +152,7 @@ describe('authInterceptor', () => {
       'getRefreshToken',
       'refreshToken',
       'logout',
+      'invalidateSession',
       'isAuthenticated'
     ]);
     authService.getAccessToken.and.returnValue('access');
@@ -193,12 +198,13 @@ describe('authInterceptor', () => {
     httpMock.verify();
   });
 
-  it('calls logout when API returns 401, no refresh token, and session appears authenticated', () => {
+  it('calls invalidateSession when API returns 401, no refresh token, and session appears authenticated', () => {
     const authService = jasmine.createSpyObj('AuthService', [
       'getAccessToken',
       'getRefreshToken',
       'refreshToken',
       'logout',
+      'invalidateSession',
       'isAuthenticated'
     ]);
     authService.getAccessToken.and.returnValue('expired-access');
@@ -223,7 +229,45 @@ describe('authInterceptor', () => {
     req1.flush(null, { status: 401, statusText: 'Unauthorized' });
 
     expect(authService.refreshToken).not.toHaveBeenCalled();
-    expect(authService.logout).toHaveBeenCalled();
+    expect(authService.invalidateSession).toHaveBeenCalled();
+    expect(authService.logout).not.toHaveBeenCalled();
+    httpMock.verify();
+  });
+
+  it('calls invalidateSession when refreshToken fails after a 401', () => {
+    const authService = jasmine.createSpyObj('AuthService', [
+      'getAccessToken',
+      'getRefreshToken',
+      'refreshToken',
+      'logout',
+      'invalidateSession',
+      'isAuthenticated'
+    ]);
+    authService.getAccessToken.and.returnValue('access');
+    authService.getRefreshToken.and.returnValue('stored-refresh');
+    authService.isAuthenticated.and.returnValue(true);
+    authService.refreshToken.and.returnValue(throwError(() => ({ status: 401 })));
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(withInterceptors([authInterceptor])),
+        provideHttpClientTesting(),
+        { provide: AuthService, useValue: authService }
+      ]
+    });
+
+    const http = TestBed.inject(HttpClient);
+    const httpMock = TestBed.inject(HttpTestingController);
+
+    http.get('/api/inventory').subscribe({ error: () => {} });
+
+    const req1 = httpMock.expectOne('/api/inventory');
+    req1.flush(null, { status: 401, statusText: 'Unauthorized' });
+
+    expect(authService.refreshToken).toHaveBeenCalledTimes(1);
+    expect(authService.invalidateSession).toHaveBeenCalled();
+    expect(authService.logout).not.toHaveBeenCalled();
     httpMock.verify();
   });
 });

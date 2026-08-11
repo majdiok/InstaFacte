@@ -6,6 +6,7 @@ using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Accounting.OfficialForm;
 using FactuTrust.Application.Features.WithholdingTax.Queries;
 using FactuTrust.Domain.Common;
+using FactuTrust.Domain.Enums;
 using MediatR;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -101,7 +102,8 @@ public sealed class ExportMonthlyDeclarationOfficialFormQueryHandler
                 new GetWithholdingMonthlyReportQuery(request.Year, request.Month), cancellationToken);
 
             withholdingLines = WithholdingFormLineMapper.Map(
-                report.ByCategory, declaration.Value.WithholdingTax);
+                WithCategories(report.ByCategory, declaration.Value),
+                declaration.Value.WithholdingTax);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -114,6 +116,36 @@ public sealed class ExportMonthlyDeclarationOfficialFormQueryHandler
             declaration.Value, withholdingLines, cancellationToken);
 
         return Result.Success(bytes);
+    }
+
+    /// <summary>
+    /// Complète la ventilation issue des factures fournisseurs par la retenue opérée sur les
+    /// traitements et salaires (article 1 du formulaire), que le rapport RS ne couvre pas.
+    ///
+    /// <para>
+    /// <b>Réserve fiscale.</b> Comme le reste de la table de correspondance, l'affectation à
+    /// l'article 1 et le choix de la masse salariale brute comme assiette doivent être validés par
+    /// un fiscaliste avant dépôt réel.
+    /// </para>
+    /// </summary>
+    private static IReadOnlyList<WithholdingReportByCategoryDto> WithCategories(
+        IReadOnlyList<WithholdingReportByCategoryDto> invoiceCategories,
+        VatDeclarationDto declaration)
+    {
+        var salaries = declaration.Suggested?.WithholdingFromSalaries ?? 0m;
+        if (salaries <= 0m)
+            return invoiceCategories;
+
+        var categories = new List<WithholdingReportByCategoryDto>(invoiceCategories)
+        {
+            new(WithholdingCategory.Salaires,
+                WithholdingCategory.Salaires.ToDisplayString(),
+                declaration.PayrollSalariesGrossBase,
+                salaries,
+                1)
+        };
+
+        return categories;
     }
 }
 

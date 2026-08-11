@@ -1211,6 +1211,7 @@ public sealed class AccountingReportingService : IAccountingReportingService
         string? accountNumber, string? journalCode, DateTime? from, DateTime? to,
         decimal? minAmount, decimal? maxAmount, string? label, string? letteringCode, int? status, int take,
         string? pieceRef = null,
+        int? entryNumber = null,
         CancellationToken cancellationToken = default)
     {
         await using var ctx = _contextFactory.CreateContext();
@@ -1243,6 +1244,8 @@ public sealed class AccountingReportingService : IAccountingReportingService
             var pr = pieceRef.Trim();
             q = q.Where(l => l.JournalEntry.PieceRef != null && l.JournalEntry.PieceRef.Contains(pr));
         }
+        if (entryNumber.HasValue)
+            q = q.Where(l => l.JournalEntry.EntryNumber == entryNumber.Value);
         if (status.HasValue)
         {
             var st = (JournalEntryStatus)status.Value;

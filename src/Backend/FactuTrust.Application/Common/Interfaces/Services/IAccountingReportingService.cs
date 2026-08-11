@@ -99,6 +99,7 @@ public interface IAccountingReportingService
         string? accountNumber, string? journalCode, DateTime? from, DateTime? to,
         decimal? minAmount, decimal? maxAmount, string? label, string? letteringCode, int? status, int take,
         string? pieceRef = null,
+        int? entryNumber = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

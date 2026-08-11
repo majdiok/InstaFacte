@@ -70,6 +70,7 @@ export class FirmLeavesShellComponent {
     { path: 'validation', label: 'Validation', managerOnly: true },
     { path: 'balances', label: 'Soldes', managerOnly: false },
     { path: 'types', label: 'Types d’absence', managerOnly: true },
+    { path: 'reconciliation', label: 'Rapprochement paie', managerOnly: true },
     { path: 'settings', label: 'Paramètres', managerOnly: true }
   ];
 

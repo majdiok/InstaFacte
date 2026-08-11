@@ -66,6 +66,13 @@ export const FIRM_GOVERNANCE_ROUTES: Routes = [
         title: 'Cabinet — Détail rentabilité'
       },
       {
+        path: 'collaborator-costs',
+        canActivate: [firmManagerGuard],
+        loadComponent: () =>
+          import('./firm-collaborator-costs.component').then(m => m.FirmCollaboratorCostsComponent),
+        title: 'Cabinet — Coûts collaborateurs'
+      },
+      {
         path: 'expense-notes',
         loadComponent: () =>
           import('./firm-expense-notes.component').then(m => m.FirmExpenseNotesComponent),

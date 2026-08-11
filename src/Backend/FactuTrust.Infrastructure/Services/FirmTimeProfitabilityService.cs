@@ -24,17 +24,20 @@ public sealed class FirmTimeProfitabilityService : IFirmTimeProfitabilityService
     private readonly MasterDbContext _master;
     private readonly IFirmDossierAccessService _dossierAccess;
     private readonly ICurrentUser _currentUser;
+    private readonly IFirmLeaveAbsenceReader _absences;
     private readonly FirmGovernanceOptions _options;
 
     public FirmTimeProfitabilityService(
         MasterDbContext master,
         IFirmDossierAccessService dossierAccess,
         ICurrentUser currentUser,
+        IFirmLeaveAbsenceReader absences,
         IOptions<FirmGovernanceOptions> options)
     {
         _master = master;
         _dossierAccess = dossierAccess;
         _currentUser = currentUser;
+        _absences = absences;
         _options = options.Value;
     }
 
@@ -97,7 +100,7 @@ public sealed class FirmTimeProfitabilityService : IFirmTimeProfitabilityService
         var userIds = timeRows.Select(t => t.UserId).Distinct().ToList();
         var profiles = await _master.FirmCollaboratorProfiles.AsNoTracking()
             .Where(p => userIds.Contains(p.UserId))
-            .Select(p => new { p.UserId, p.HourlyCostRate })
+            .Select(p => new { p.UserId, p.HourlyCostRate, p.HiredOn, p.LeftOn })
             .ToListAsync(cancellationToken);
 
         // Coûts employeur et paramètres d'exercice : chargés en une passe, le taux horaire étant
@@ -109,6 +112,12 @@ public sealed class FirmTimeProfitabilityService : IFirmTimeProfitabilityService
             .ToListAsync(cancellationToken);
 
         var settingsByYear = await ResolveSettingsByYearAsync(firmTenantId, years, cancellationToken);
+
+        // Congés réels par exercice : le taux horaire doit être identique à celui de l'écran des
+        // coûts collaborateurs, faute de quoi les deux vues afficheraient deux marges différentes.
+        var absenceDaysByYear = new Dictionary<int, IReadOnlyDictionary<Guid, decimal>>();
+        foreach (var y in years)
+            absenceDaysByYear[y] = await _absences.GetApprovedAbsenceDaysByUserAsync(firmTenantId, y, cancellationToken);
 
         var groups = timeRows.GroupBy(t => new
         {
@@ -136,10 +145,18 @@ public sealed class FirmTimeProfitabilityService : IFirmTimeProfitabilityService
             var fromFallback = yearBudget is null;
             var budget = yearBudget?.BudgetAnnuel ?? pf?.AnnualFeeAmount ?? 0m;
 
+            var profile = profiles.FirstOrDefault(p => p.UserId == g.Key.UserId);
+            absenceDaysByYear[g.Key.Year].TryGetValue(g.Key.UserId, out var realAbsenceDays);
+            var productiveHours = CollaboratorProductiveHoursCalculator.Resolve(
+                settingsByYear[g.Key.Year],
+                realAbsenceDays,
+                CollaboratorProductiveHoursCalculator.ComputePresenceRatio(
+                    g.Key.Year, profile?.HiredOn, profile?.LeftOn));
+
             var resolution = HourlyCostRateCalculator.Resolve(
                 costs.FirstOrDefault(c => c.CollaboratorUserId == g.Key.UserId && c.Year == g.Key.Year),
-                settingsByYear[g.Key.Year],
-                profiles.FirstOrDefault(p => p.UserId == g.Key.UserId)?.HourlyCostRate,
+                productiveHours.Hours,
+                profile?.HourlyCostRate,
                 defaultRate);
 
             var hours = g.Sum(t => t.Hours);

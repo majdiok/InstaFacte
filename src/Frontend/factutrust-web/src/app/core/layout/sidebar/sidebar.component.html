@@ -1,144 +1,506 @@
 <nav
+
   id="sidebar"
+
   [class.sidebar-collapsed]="collapsed()"
+
+  [class.sidebar--firm-delegated]="isFirmDelegatedSkin()"
+
   aria-label="Navigation principale">
+
   
+
   <!-- Left Column: Icon Rail -->
+
   <div class="sidebar-icon-rail">
+
     <!-- Logo area -->
+
     <div class="sidebar-brand">
+
       <a
+
         [routerLink]="dashboardHomeLink()"
+
         [attr.aria-label]="brand.name + ' — Tableau de bord'">
+
         @if (!collapsed()) {
+
           <img
+
             [src]="brand.logoLockup"
+
             [alt]="brand.name"
+
             class="icon-brand-lockup"
+
             loading="eager" />
+
         } @else {
+
           <img
+
             [src]="brand.logoIcon"
+
             alt="IF"
+
             class="icon-logo-only"
+
             loading="eager" />
+
         }
+
       </a>
+
+      @if (isFirmDelegatedSkin()) {
+
+        <button
+
+          type="button"
+
+          class="rail-collapse-btn rail-collapse-btn--header"
+
+          (click)="toggleCollapse.emit()"
+
+          [attr.aria-expanded]="!collapsed()"
+
+          [attr.title]="collapsed() ? 'Agrandir le menu latéral' : 'Réduire le menu latéral'">
+
+          <i class="fa-solid fa-angles-left" aria-hidden="true" [class.rail-collapse-icon--flipped]="collapsed()"></i>
+
+        </button>
+
+      }
+
     </div>
+
+
 
     <!-- Items -->
+
     <ul class="rail-nav" role="list">
+
       @for (item of navItems(); track item.label; let idx = $index) {
-        <li class="rail-item">
+
+        <li
+
+          class="rail-item"
+
+          [class.rail-item--dossier-context]="isFirmDelegatedSkin() && isDossierContextItem(item)">
+
           @if (item.route) {
+
             <a
+
               [routerLink]="item.route"
+
               routerLinkActive="active"
+
               [routerLinkActiveOptions]="item.route === dashboardHomeLink() ? { exact: true } : { exact: false }"
+
               class="rail-link"
+
               [attr.title]="item.label">
+
               @if (item.railIconAsset) {
+
                 <img
+
                   class="rail-icon-img rail-icon-img--assistant"
+
                   [src]="item.railIconAsset"
+
                   alt=""
+
                   aria-hidden="true"
+
                   loading="eager"
+
                   decoding="async" />
+
               } @else if (item.icon) {
-                <i [class]="item.icon" aria-hidden="true"></i>
+
+                @if (isFirmDelegatedSkin()) {
+
+                  <span class="rail-icon-box" [attr.data-icon]="getIconKey(item.icon)">
+
+                    <i [class]="item.icon" aria-hidden="true"></i>
+
+                  </span>
+
+                } @else {
+
+                  <i [class]="item.icon" aria-hidden="true"></i>
+
+                }
+
               }
+
               <span class="rail-label">{{ item.label }}</span>
+
               @if (item.badge != null && item.badge > 0) {
+
                 <span class="badge bg-danger ms-auto">{{ item.badge }}</span>
+
               }
+
               @if (item.railIconAsset) {
+
                 <span class="rail-beta-badge" aria-hidden="true">BETA</span>
+
               }
+
             </a>
+
           } @else if (item.children?.length) {
+
             <button
+
               type="button"
+
               class="rail-link rail-parent"
+
+              [class.rail-parent--dossier]="isFirmDelegatedSkin() && isDossierContextItem(item)"
+
               [class.active]="isRailParentActive(item)"
+
               [class.rail-section-open]="isRailSectionExpandedOnly(item)"
+
               (click)="toggleSubmenu(item)"
+
               (keydown)="onSubmenuToggleKeydown($event, item)"
+
               [attr.aria-expanded]="isExpanded(item)"
+
               [attr.title]="item.label">
+
               @if (item.railIconAsset) {
+
                 <img
+
                   class="rail-icon-img rail-icon-img--assistant"
+
                   [src]="item.railIconAsset"
+
                   alt=""
+
                   aria-hidden="true"
+
                   loading="eager"
+
                   decoding="async" />
+
               } @else if (item.icon) {
-                <i [class]="item.icon" aria-hidden="true"></i>
+
+                @if (isFirmDelegatedSkin()) {
+
+                  <span class="rail-icon-box" [attr.data-icon]="getIconKey(item.icon)">
+
+                    <i [class]="item.icon" aria-hidden="true"></i>
+
+                  </span>
+
+                } @else {
+
+                  <i [class]="item.icon" aria-hidden="true"></i>
+
+                }
+
               }
+
               <span class="rail-label">{{ item.label }}</span>
-              @if (item.railIconAsset) {
-                <span class="rail-beta-badge" aria-hidden="true">BETA</span>
+
+              @if (isFirmDelegatedSkin() && isDossierContextItem(item)) {
+
+                <i class="fa-solid fa-chevron-down rail-chevron rail-chevron--down" aria-hidden="true"></i>
+
               }
+
+              @if (item.railIconAsset) {
+
+                <span class="rail-beta-badge" aria-hidden="true">BETA</span>
+
+              }
+
             </button>
+
           }
+
         </li>
+
       }
+
     </ul>
-    
-    <div class="sidebar-footer-collapse">
-      <button
-        type="button"
-        class="rail-collapse-btn"
-        (click)="toggleCollapse.emit()"
-        [attr.aria-expanded]="!collapsed()"
-        [attr.title]="collapsed() ? 'Agrandir le menu latéral' : 'Réduire le menu latéral'">
-        <i class="fa-solid fa-angles-left" aria-hidden="true" [class.rail-collapse-icon--flipped]="collapsed()"></i>
-      </button>
-    </div>
+
+
+
+    @if (isFirmDelegatedSkin()) {
+
+      <div class="sidebar-delegated-footer">
+
+        <div class="sidebar-delegated-footer-wave" aria-hidden="true"></div>
+
+        <ul class="delegated-footer-nav" role="list">
+
+          @for (item of delegatedFooterNav(); track item.label) {
+
+            <li class="delegated-footer-item">
+
+              @if (item.externalUrl) {
+
+                <a
+
+                  class="delegated-footer-link"
+
+                  [href]="item.externalUrl"
+
+                  target="_blank"
+
+                  rel="noopener noreferrer"
+
+                  [attr.title]="item.label">
+
+                  @if (item.icon) {
+
+                    <span class="rail-icon-box rail-icon-box--footer" [attr.data-icon]="getIconKey(item.icon)">
+
+                      <i [class]="item.icon" aria-hidden="true"></i>
+
+                    </span>
+
+                  }
+
+                  <span class="rail-label">{{ item.label }}</span>
+
+                </a>
+
+              } @else if (item.route) {
+
+                <a
+
+                  [routerLink]="item.route"
+
+                  routerLinkActive="active"
+
+                  [routerLinkActiveOptions]="{ exact: false }"
+
+                  class="delegated-footer-link"
+
+                  [attr.title]="item.label">
+
+                  @if (item.icon) {
+
+                    <span class="rail-icon-box rail-icon-box--footer" [attr.data-icon]="getIconKey(item.icon)">
+
+                      <i [class]="item.icon" aria-hidden="true"></i>
+
+                    </span>
+
+                  }
+
+                  <span class="rail-label">{{ item.label }}</span>
+
+                </a>
+
+              } @else if (item.children?.length) {
+
+                <button
+
+                  type="button"
+
+                  class="delegated-footer-link delegated-footer-link--parent"
+
+                  [class.active]="isFooterParentActive(item)"
+
+                  [class.delegated-footer-link--audit]="isFooterAuditItem(item)"
+
+                  (click)="toggleFooterSubmenu(item)"
+
+                  (keydown)="onFooterToggleKeydown($event, item)"
+
+                  [attr.aria-expanded]="isFooterExpanded(item)"
+
+                  [attr.title]="item.label">
+
+                  @if (item.icon) {
+
+                    <span
+
+                      class="rail-icon-box rail-icon-box--footer"
+
+                      [class.rail-icon-box--audit]="isFooterAuditItem(item)"
+
+                      [attr.data-icon]="getIconKey(item.icon)">
+
+                      <i [class]="item.icon" aria-hidden="true"></i>
+
+                    </span>
+
+                  }
+
+                  <span class="rail-label">{{ item.label }}</span>
+
+                  <i
+
+                    class="fa-solid fa-chevron-down rail-chevron rail-chevron--down"
+
+                    [class.rail-chevron--open]="isFooterExpanded(item)"
+
+                    aria-hidden="true"></i>
+
+                </button>
+
+                @if (isFooterExpanded(item)) {
+
+                  <ul class="delegated-footer-submenu" role="list">
+
+                    @for (child of item.children; track child.label) {
+
+                      <li>
+
+                        <a
+
+                          [routerLink]="child.route"
+
+                          routerLinkActive="active"
+
+                          [routerLinkActiveOptions]="{ exact: false }"
+
+                          class="delegated-footer-sublink">
+
+                          <span>{{ child.label }}</span>
+
+                        </a>
+
+                      </li>
+
+                    }
+
+                  </ul>
+
+                }
+
+              }
+
+            </li>
+
+          }
+
+        </ul>
+
+      </div>
+
+    } @else {
+
+      <div class="sidebar-footer-collapse">
+
+        <button
+
+          type="button"
+
+          class="rail-collapse-btn"
+
+          (click)="toggleCollapse.emit()"
+
+          [attr.aria-expanded]="!collapsed()"
+
+          [attr.title]="collapsed() ? 'Agrandir le menu latéral' : 'Réduire le menu latéral'">
+
+          <i class="fa-solid fa-angles-left" aria-hidden="true" [class.rail-collapse-icon--flipped]="collapsed()"></i>
+
+        </button>
+
+      </div>
+
+    }
+
   </div>
 
+
+
   <!-- Right Column: Submenu Panel (only shown when an item is expanded) -->
+
   <div class="sidebar-submenu-panel">
+
     <!-- Rendu de tous les sous-menus ouverts via flex column -->
+
     <div class="submenu-scroll-area">
+
       @for (item of navItems(); track item.label; let parentGroupIdx = $index) {
+
         @if (item.children?.length && isExpanded(item)) {
+
           <div class="submenu-group" [attr.aria-hidden]="!isExpanded(item)">
+
             <h3 class="submenu-title">{{ item.label }}</h3>
+
             
+
             <ul class="submenu-list" role="list">
+
               @for (child of item.children; track child.label) {
+
                 <li>
+
                   @if (child.action) {
+
                     <button
+
                       type="button"
+
                       class="submenu-link"
+
                       (click)="onNavSubItemAction(child)">
+
                       @if (child.icon) {
+
                         <i [class]="child.icon" aria-hidden="true"></i>
+
                       }
+
                       <span>{{ child.label }}</span>
+
                     </button>
+
                   } @else {
+
                     <a
+
                       [routerLink]="child.route"
+
                       routerLinkActive="active"
+
                       [routerLinkActiveOptions]="{ exact: false }"
+
                       class="submenu-link">
+
                       @if (child.icon) {
+
                         <i [class]="child.icon" aria-hidden="true"></i>
+
                       }
+
                       <span>{{ child.label }}</span>
+
                     </a>
+
                   }
+
                 </li>
+
               }
+
             </ul>
+
           </div>
+
         }
+
       }
+
     </div>
+
   </div>
+
 </nav>
+

@@ -62,9 +62,23 @@ public sealed class Payslip : Entity
     public decimal Foprolos { get; private set; }
     public decimal CssEmployer { get; private set; }
 
+    /// <summary>
+    /// Assiette des taxes sur salaires (TFP, FOPROLOS, CSS patronale) figée au calcul.
+    /// <c>null</c> sur les bulletins antérieurs à son introduction.
+    /// </summary>
+    public decimal? PayrollTaxBase { get; private set; }
+
     // Instantané des principaux taux utilisés (pour traçabilité).
     public decimal AppliedCnssEmployeeRate { get; private set; }
     public decimal AppliedCnssEmployerRate { get; private set; }
+
+    /// <summary>
+    /// Taux de TFP appliqué (%), figé au calcul. Indispensable au formulaire officiel, qui
+    /// distingue la ligne 1 % (industries manufacturières) de la ligne 2 % (autres activités) :
+    /// le relire dans les paramètres exposerait à une modification de taux postérieure au cycle.
+    /// <c>null</c> sur les bulletins antérieurs à son introduction.
+    /// </summary>
+    public decimal? AppliedTfpRate { get; private set; }
 
     /// <summary>Montant déjà payé (trésorerie).</summary>
     public decimal PaidAmount { get; private set; }
@@ -145,8 +159,10 @@ public sealed class Payslip : Entity
             Tfp = computation.Tfp,
             Foprolos = computation.Foprolos,
             CssEmployer = computation.CssEmployer,
+            PayrollTaxBase = computation.PayrollTaxBase,
             AppliedCnssEmployeeRate = appliedCnssEmployeeRate,
-            AppliedCnssEmployerRate = appliedCnssEmployerRate
+            AppliedCnssEmployerRate = appliedCnssEmployerRate,
+            AppliedTfpRate = computation.AppliedTfpRate
         };
 
         foreach (var line in computation.Lines)

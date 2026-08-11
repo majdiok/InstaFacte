@@ -97,6 +97,7 @@ public class PayrollDeclarationsController : ControllerBase
 
     [HttpPost("declarations/cnss-remittance/payment")]
     [Authorize(Policy = PermissionPolicies.PayrollPay)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<Guid>), StatusCodes.Status200OK)]
     public async Task<IActionResult> RecordCnssRemittancePayment(
         [FromBody] RecordCnssContributionPaymentRequest request,
@@ -110,6 +111,7 @@ public class PayrollDeclarationsController : ControllerBase
 
     [HttpPost("declarations/cnss-remittance/payment/{id:guid}/cancel")]
     [Authorize(Policy = PermissionPolicies.PayrollPay)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     public async Task<IActionResult> CancelCnssRemittancePayment(
         Guid id,

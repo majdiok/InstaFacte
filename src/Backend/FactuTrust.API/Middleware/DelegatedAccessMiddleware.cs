@@ -7,7 +7,9 @@ using FactuTrust.Domain.Auth;
 namespace FactuTrust.API.Middleware;
 
 /// <summary>
-/// Blocks mutating requests in delegated firm context except accounting and fiscal endpoints.
+/// Blocks mutating requests in delegated firm context except accounting, fiscal, payroll and AI endpoints.
+/// AI business restrictions (Accounting scope only, invoice import, PowerPoint export) are enforced in
+/// controllers/handlers — not in this middleware.
 /// </summary>
 public sealed class DelegatedAccessMiddleware
 {
@@ -18,7 +20,10 @@ public sealed class DelegatedAccessMiddleware
         "/api/withholding-tax",
         // Payroll (RH & Paie) is a delegated-firm responsibility: the accounting firm must be able
         // to manage employees, run payroll and file social declarations on behalf of client dossiers.
-        "/api/payroll"
+        "/api/payroll",
+        // Accounting-firm AI assistant (chat, warm-up, document extract, conversation management).
+        // Sub-features blocked in delegated mode remain guarded at controller level (invoice import, PPT export).
+        "/api/ai"
     };
 
     /// <summary>

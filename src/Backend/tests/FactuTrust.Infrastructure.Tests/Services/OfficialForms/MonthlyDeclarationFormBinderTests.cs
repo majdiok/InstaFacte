@@ -35,11 +35,17 @@ public sealed class MonthlyDeclarationFormBinderTests
         public decimal Acomptes { get; set; }
         public bool IsRectificative { get; set; }
         public string Nif { get; set; } = "4555965/P/M/L/000";
+        public decimal SalesTaxableBase { get; set; }
+        public decimal PayrollTaxBase { get; set; }
+        public decimal TfpRatePercent { get; set; }
 
         public VatDeclarationDto Build() => new()
         {
             Year = Year,
             Month = Month,
+            SalesTaxableBase = SalesTaxableBase,
+            PayrollTaxBase = PayrollTaxBase,
+            TfpRatePercent = TfpRatePercent,
             CollectedVat19 = CollectedVat19,
             PreviousCredit = PreviousCredit,
             VatDue = VatDue,
@@ -199,6 +205,64 @@ public sealed class MonthlyDeclarationFormBinderTests
 
         Assert.Equal("20,000", values["Tfp.Other.Amount"]);
         Assert.Null(values.GetValueOrDefault("Tfp.Manufacturing.Amount"));
+    }
+
+    [Fact]
+    public void Bind_UsesPayrollBaseForTfpAndFoprolos_NotSalesBase()
+    {
+        // Cas réel Ste Bouzgarou 07/2026 : TFP 1,680 à 1 % (secteur industriel) sur une masse
+        // salariale de 168,000, pour un chiffre d'affaires de 94 308,300. Le CA n'a rien à faire
+        // ici : l'assiette de la TFP et du FOPROLOS est la masse salariale.
+        var values = MonthlyDeclarationFormBinder.Bind(Declaration(d =>
+        {
+            d.Tfp = 1.680m;
+            d.Foprolos = 1.680m;
+            d.SalesTaxableBase = 94_308.300m;
+            d.PayrollTaxBase = 168.000m;
+            d.TfpRatePercent = 1m;
+        }));
+
+        // Taux réel 1 % ⇒ ligne « industries manufacturières », et assiette = masse salariale.
+        Assert.Equal("168,000", values["Tfp.Manufacturing.Base"]);
+        Assert.Equal("1,680", values["Tfp.Manufacturing.Amount"]);
+        Assert.Null(values.GetValueOrDefault("Tfp.Other.Base"));
+        Assert.Null(values.GetValueOrDefault("Tfp.Other.Amount"));
+        Assert.Equal("168,000", values["Foprolos.Base"]);
+    }
+
+    [Fact]
+    public void Bind_SelectsOtherActivitiesLineWhenRateIsTwoPercent()
+    {
+        var values = MonthlyDeclarationFormBinder.Bind(Declaration(d =>
+        {
+            d.Tfp = 3.360m;
+            d.PayrollTaxBase = 168.000m;
+            d.TfpRatePercent = 2m;
+        }));
+
+        Assert.Equal("168,000", values["Tfp.Other.Base"]);
+        Assert.Equal("3,360", values["Tfp.Other.Amount"]);
+        Assert.Null(values.GetValueOrDefault("Tfp.Manufacturing.Amount"));
+    }
+
+    [Fact]
+    public void Bind_LeavesPayrollBasisBlankWhenPayrollIsUnavailable()
+    {
+        // Dossier sans module paie : le montant est saisi à la main et l'assiette est inconnue.
+        // Une case vide se complète au stylo ; le chiffre d'affaires imprimé là serait indétectable.
+        var values = MonthlyDeclarationFormBinder.Bind(Declaration(d =>
+        {
+            d.Tfp = 20m;
+            d.Foprolos = 10m;
+            d.SalesTaxableBase = 94_308.300m;
+        }));
+
+        Assert.Null(values.GetValueOrDefault("Tfp.Other.Base"));
+        Assert.Null(values.GetValueOrDefault("Tfp.Manufacturing.Base"));
+        Assert.Null(values.GetValueOrDefault("Foprolos.Base"));
+        // Le montant, lui, reste bien reporté.
+        Assert.Equal("20,000", values["Tfp.Other.Amount"]);
+        Assert.Equal("10,000", values["Foprolos.Amount"]);
     }
 
     [Fact]

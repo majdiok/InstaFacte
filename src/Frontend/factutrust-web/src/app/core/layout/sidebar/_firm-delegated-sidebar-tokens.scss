@@ -1,0 +1,58 @@
+/**
+ * Design tokens — sidemenu cabinet comptable en mode délégué (skin ContaAudit).
+ * Scoped sous #sidebar.sidebar--firm-delegated uniquement.
+ */
+#sidebar.sidebar--firm-delegated {
+  /* Structure */
+  --sidebar-delegated-radius: 12px;
+  --sidebar-delegated-shadow: 0 4px 24px rgba(10, 31, 68, 0.12);
+  --sidebar-delegated-bg-image: url('/assets/branding/sidebar-delegated-bg.svg');
+
+  /* Header / Footer navy (valeurs locales ; le layout expose les mêmes sur .layout--firm-delegated) */
+  --sidebar-delegated-navy: #0a1f44;
+  --sidebar-delegated-navy-light: #0f2a5c;
+  --sidebar-delegated-gold: #d4af37;
+  --sidebar-delegated-gold-muted: rgba(212, 175, 55, 0.15);
+
+  /* Corps */
+  --sidebar-delegated-body-bg: #f8f9fa;
+  --sidebar-delegated-body-text: #1e293b;
+  --sidebar-delegated-item-hover: #f1f5f9;
+
+  /* Actif */
+  --sidebar-delegated-active-bg: #e8f0fe;
+  --sidebar-delegated-active-text: #1a56db;
+  --sidebar-delegated-active-bar: #1a56db;
+
+  /* Remap rail tokens for delegated skin */
+  --sidebar-rail-bg: var(--sidebar-delegated-body-bg);
+  --sidebar-rail-bg-gradient: var(--sidebar-delegated-body-bg);
+  --sidebar-rail-edge: rgba(10, 31, 68, 0.08);
+  --sidebar-rail-item-default: var(--sidebar-delegated-body-text);
+  --sidebar-rail-item-hover-bg: var(--sidebar-delegated-item-hover);
+  --sidebar-rail-item-active-bg: var(--sidebar-delegated-active-bg);
+  --sidebar-rail-accent: var(--sidebar-delegated-active-text);
+  --sidebar-rail-expanded-bg: #eef2f7;
+  --sidebar-rail-expanded-bar: #93b4f5;
+  --sidebar-submenu-bg: #fafbfc;
+  --sidebar-submenu-border: rgba(10, 31, 68, 0.08);
+  --sidebar-submenu-link-active-bg: var(--sidebar-delegated-active-bg);
+  --sidebar-submenu-link-active-text: var(--sidebar-delegated-active-text);
+  --sidebar-submenu-link-active-accent: var(--sidebar-delegated-active-bar);
+
+  /* Icon box pastels — keyed by data-icon (Font Awesome suffix) */
+  --sidebar-delegated-icon-box-default: #f1f5f9;
+  --sidebar-delegated-icon-box-bag-shopping: #fdf2f8;
+  --sidebar-delegated-icon-box-cart-shopping: #ecfeff;
+  --sidebar-delegated-icon-box-credit-card: #f0fdfa;
+  --sidebar-delegated-icon-box-file-invoice-dollar: #fffbeb;
+  --sidebar-delegated-icon-box-users-gear: #f5f3ff;
+  --sidebar-delegated-icon-box-table-cells-large: #eef2ff;
+  --sidebar-delegated-icon-box-chart-column: #fdf4ff;
+  --sidebar-delegated-icon-box-file-signature: #fff7ed;
+  --sidebar-delegated-icon-box-building: #ecfeff;
+  --sidebar-delegated-icon-box-folder-open: #fef9c3;
+  --sidebar-delegated-icon-box-shield-halved: rgba(212, 175, 55, 0.2);
+  --sidebar-delegated-icon-box-gear: rgba(255, 255, 255, 0.12);
+  --sidebar-delegated-icon-box-circle-question: rgba(255, 255, 255, 0.12);
+}

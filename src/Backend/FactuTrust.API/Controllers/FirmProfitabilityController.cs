@@ -16,17 +16,20 @@ public sealed class FirmProfitabilityController : ControllerBase
     private readonly IFirmTimeProfitabilityService _timeProfitability;
     private readonly IFirmCollaboratorRentabilityService _rentability;
     private readonly IFirmCollaboratorCostService _collaboratorCosts;
+    private readonly IFirmCollaboratorCostSyncService _collaboratorCostSync;
     private readonly IFirmGovernanceFeature _feature;
 
     public FirmProfitabilityController(
         IFirmTimeProfitabilityService timeProfitability,
         IFirmCollaboratorRentabilityService rentability,
         IFirmCollaboratorCostService collaboratorCosts,
+        IFirmCollaboratorCostSyncService collaboratorCostSync,
         IFirmGovernanceFeature feature)
     {
         _timeProfitability = timeProfitability;
         _rentability = rentability;
         _collaboratorCosts = collaboratorCosts;
+        _collaboratorCostSync = collaboratorCostSync;
         _feature = feature;
     }
 
@@ -154,19 +157,63 @@ public sealed class FirmProfitabilityController : ControllerBase
     [HttpPost("collaborator-costs/{year:int}/import-payroll")]
     [Authorize(Roles = nameof(UserRole.FirmManager))]
     public async Task<ActionResult<ApiResponse<FirmPayrollImportResultDto>>> ImportPayrollCosts(
-        int year, CancellationToken cancellationToken)
+        int year,
+        [FromQuery] bool force = false,
+        CancellationToken cancellationToken = default)
     {
         if (!EnsureEnabled(out var disabled)) return disabled!;
         var tenantId = GetHomeTenantId();
         if (tenantId is null) return Unauthorized();
-        var result = await _collaboratorCosts.ImportFromPayrollAsync(
-            tenantId.Value, isManager: true, year, cancellationToken);
-        if (result.IsFailure) return BadRequest(ApiResponse<FirmPayrollImportResultDto>.Fail(result.Error.Description));
+        var sync = await _collaboratorCostSync.EnsureFreshAsync(
+            tenantId.Value,
+            year,
+            FirmCostSyncTrigger.ManualImport,
+            forceImport: force,
+            cancellationToken);
 
-        var message = result.Value.PayrollAvailable
-            ? $"{result.Value.Imported} collaborateur(s) mis à jour depuis la paie."
-            : result.Value.UnavailableReason ?? "Paie du cabinet indisponible.";
-        return Ok(ApiResponse<FirmPayrollImportResultDto>.Ok(result.Value, message));
+        if (!sync.PayrollAvailable)
+        {
+            return Ok(ApiResponse<FirmPayrollImportResultDto>.Ok(
+                new FirmPayrollImportResultDto
+                {
+                    PayrollAvailable = false,
+                    UnavailableReason = sync.UnavailableReason
+                },
+                sync.UnavailableReason ?? "Paie du cabinet indisponible."));
+        }
+
+        var message = force
+            ? $"{sync.Imported} collaborateur(s) mis à jour depuis la paie (import forcé)."
+            : $"{sync.Imported} collaborateur(s) mis à jour depuis la paie.";
+        return Ok(ApiResponse<FirmPayrollImportResultDto>.Ok(
+            new FirmPayrollImportResultDto
+            {
+                PayrollAvailable = true,
+                Imported = sync.Imported,
+                Unlinked = sync.SkippedUnlinked,
+                SkippedManual = sync.SkippedManual,
+                SkippedUpToDate = sync.SkippedUpToDate
+            },
+            message));
+    }
+
+    [HttpPost("collaborator-costs/{year:int}/sync")]
+    [Authorize(Roles = nameof(UserRole.FirmManager))]
+    public async Task<ActionResult<ApiResponse<FirmCollaboratorCostSyncResultDto>>> SyncCollaboratorCosts(
+        int year,
+        [FromQuery] bool force = false,
+        CancellationToken cancellationToken = default)
+    {
+        if (!EnsureEnabled(out var disabled)) return disabled!;
+        var tenantId = GetHomeTenantId();
+        if (tenantId is null) return Unauthorized();
+        var result = await _collaboratorCostSync.EnsureFreshAsync(
+            tenantId.Value,
+            year,
+            FirmCostSyncTrigger.ManualSync,
+            forceImport: force,
+            cancellationToken);
+        return Ok(ApiResponse<FirmCollaboratorCostSyncResultDto>.Ok(result, "Synchronisation terminée."));
     }
 
     [HttpGet("rentability")]

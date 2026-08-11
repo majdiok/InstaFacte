@@ -27,6 +27,7 @@ public class AnnualBonusesController : ControllerBase
 
     [HttpPost("rules")]
     [Authorize(Policy = PermissionPolicies.PayrollSettings)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<Guid>), StatusCodes.Status200OK)]
     public async Task<IActionResult> CreateRule([FromBody] UpsertAnnualBonusRuleDto dto, CancellationToken cancellationToken)
     {
@@ -38,6 +39,7 @@ public class AnnualBonusesController : ControllerBase
 
     [HttpPut("rules/{id:guid}")]
     [Authorize(Policy = PermissionPolicies.PayrollSettings)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateRule(Guid id, [FromBody] UpsertAnnualBonusRuleDto dto, CancellationToken cancellationToken)
     {
@@ -49,6 +51,7 @@ public class AnnualBonusesController : ControllerBase
 
     [HttpDelete("rules/{id:guid}")]
     [Authorize(Policy = PermissionPolicies.PayrollSettings)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     public async Task<IActionResult> DeleteRule(Guid id, CancellationToken cancellationToken)
     {

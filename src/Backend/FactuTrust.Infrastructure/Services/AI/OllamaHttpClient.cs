@@ -403,7 +403,16 @@ public sealed class OllamaHttpClient : IOllamaClient
         }
 
         if (!string.IsNullOrEmpty(ollamaError))
+        {
+            if (ollamaError.Contains("does not support chat", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Le modèle d'import configuré sur la plateforme ne supporte pas l'analyse de documents. "
+                       + "Contactez l'administrateur InstaFact pour choisir un modèle instruct "
+                       + "(ex. qwen2.5:7b-instruct) dans Configuration IA.";
+            }
+
             return $"Erreur InstaFact IA : {ollamaError}";
+        }
 
         return "Le moteur IA InstaFact a renvoyé une erreur. Vérifiez que le service est à jour et que le modèle est disponible.";
     }

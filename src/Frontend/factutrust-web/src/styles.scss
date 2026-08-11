@@ -11,6 +11,7 @@
 @use './styles/payroll';
 @use './styles/superieur-tokens';
 @use './styles/superieur-bridge';
+@use './app/core/layout/firm-delegated-layout-tokens';
 
 @tailwind base;
 @tailwind components;

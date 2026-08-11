@@ -61,7 +61,8 @@ public sealed class JournalEntryAttachmentsController : ControllerBase
     }
 
     [HttpDelete("{attachmentId:guid}")]
-    [Authorize(Policy = PermissionPolicies.AccountingCreate)]
+    [Authorize(Policy = PermissionPolicies.AccountingDelete)]
+    [Authorize(Policy = PermissionPolicies.FirmDelegatedContext)]
     public async Task<IActionResult> Delete(Guid entryId, Guid attachmentId, CancellationToken cancellationToken)
     {
         var r = await _attachments.DeleteAsync(attachmentId, cancellationToken);

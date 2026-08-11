@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Security.Claims;
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Auth;
 using FactuTrust.Domain.Authorization;
@@ -11,6 +12,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
@@ -22,21 +24,33 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
 {
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IEffectivePermissionService _effectivePermissionService;
+    private readonly IFirmAssignmentService _firmAssignmentService;
     private readonly MasterDbContext _masterContext;
     private readonly IConfiguration _configuration;
+    private readonly AccountingFirmsOptions _accountingFirmsOptions;
+    private readonly PayrollOptions _payrollOptions;
+    private readonly FirmGovernanceOptions _firmGovernanceOptions;
     private readonly ILogger<TenantAuthTokenService> _logger;
 
     public TenantAuthTokenService(
         UserManager<ApplicationUser> userManager,
         IEffectivePermissionService effectivePermissionService,
+        IFirmAssignmentService firmAssignmentService,
         MasterDbContext masterContext,
         IConfiguration configuration,
+        IOptions<AccountingFirmsOptions> accountingFirmsOptions,
+        IOptions<PayrollOptions> payrollOptions,
+        IOptions<FirmGovernanceOptions> firmGovernanceOptions,
         ILogger<TenantAuthTokenService> logger)
     {
         _userManager = userManager;
         _effectivePermissionService = effectivePermissionService;
+        _firmAssignmentService = firmAssignmentService;
         _masterContext = masterContext;
         _configuration = configuration;
+        _accountingFirmsOptions = accountingFirmsOptions.Value;
+        _payrollOptions = payrollOptions.Value;
+        _firmGovernanceOptions = firmGovernanceOptions.Value;
         _logger = logger;
     }
 
@@ -79,39 +93,50 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
 
             effectivePermissions = DelegatedPermissionCatalog.GetDelegatedPermissions(roleEnum).ToList();
             enabledModuleIds = isFirmManaged
-                ? new[]
-                {
-                    (int)AppModule.Accounting,
-                    (int)AppModule.Fiscal,
-                    (int)AppModule.Reports,
-                    (int)AppModule.Payroll
-                }
-                : new[]
-                {
-                    (int)AppModule.Accounting,
-                    (int)AppModule.Fiscal,
-                    (int)AppModule.Sales,
-                    (int)AppModule.Treasury,
-                    (int)AppModule.Reports,
-                    (int)AppModule.Purchases,
-                    (int)AppModule.Payroll
-                };
+                ? BuildFirmManagedDelegatedModuleIds()
+                : BuildPlatformClientDelegatedModuleIds();
+
+            if (!_accountingFirmsOptions.AiAccountingEnabled)
+            {
+                effectivePermissions = effectivePermissions
+                    .Where(p => !string.Equals(p, Permissions.AI.Chat, StringComparison.Ordinal))
+                    .ToList();
+                enabledModuleIds = enabledModuleIds
+                    .Where(id => id != (int)AppModule.AI)
+                    .ToList();
+            }
         }
         else if (homeTenant.Kind == TenantKind.AccountingFirm)
         {
             nativeSnapshot = await _effectivePermissionService.GetUserAccessSnapshotAsync(user.Id, cancellationToken);
-            effectivePermissions = nativeSnapshot.EffectivePermissions.ToList();
-            enabledModuleIds = new List<int>
-            {
-                (int)AppModule.Administration,
-                (int)AppModule.Honoraires
-            };
+            effectivePermissions = FirmGovernanceNativeAccess.AugmentNativeFirmPermissions(
+                nativeSnapshot.EffectivePermissions.ToList(),
+                roleEnum,
+                _firmGovernanceOptions);
+            enabledModuleIds = FirmGovernanceNativeAccess.BuildNativeFirmModuleIds(_firmGovernanceOptions);
         }
         else
         {
             nativeSnapshot = await _effectivePermissionService.GetUserAccessSnapshotAsync(user.Id, cancellationToken);
             effectivePermissions = nativeSnapshot.EffectivePermissions.ToList();
             enabledModuleIds = nativeSnapshot.EnabledModules.Select(m => (int)m).ToList();
+        }
+
+        var isPayrollFirmManaged = false;
+        if (!isDelegated
+            && homeTenant.Kind == TenantKind.Company
+            && _payrollOptions.FirmExclusiveOperations)
+        {
+            var assignment = await _firmAssignmentService.GetCompanyCurrentAssignmentAsync(
+                homeTenantId,
+                cancellationToken);
+            if (assignment is not null)
+            {
+                isPayrollFirmManaged = true;
+                effectivePermissions = PayrollOperationsAccess
+                    .FilterCompanyPermissionsWhenFirmAssigned(effectivePermissions)
+                    .ToList();
+            }
         }
 
         var claims = new List<Claim>
@@ -151,6 +176,8 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
             nativeSnapshot ??= await _effectivePermissionService.GetUserAccessSnapshotAsync(user.Id, cancellationToken);
             if (nativeSnapshot.IsModulePermissionScoped)
                 claims.Add(new Claim(AuthClaimTypes.PermissionSource, "modules"));
+            if (isPayrollFirmManaged)
+                claims.Add(new Claim(AuthClaimTypes.PayrollFirmManaged, "true"));
         }
 
         var jwtSettings = _configuration.GetSection("JwtSettings");
@@ -185,10 +212,33 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
             AccessToken = accessToken,
             RefreshToken = refreshToken,
             ExpiresAt = expiry,
-            User = CreateUserDto(user, homeTenant, roleEnum, enabledModuleIds, effectivePermissions, isDelegated, contextTenantId, contextCompanyName, isFirmManaged),
+            User = CreateUserDto(user, homeTenant, roleEnum, enabledModuleIds, effectivePermissions, isDelegated, contextTenantId, contextCompanyName, isFirmManaged, isPayrollFirmManaged),
             Requires2Fa = false
         };
     }
+
+    private static IReadOnlyList<int> BuildFirmManagedDelegatedModuleIds() =>
+        new[]
+        {
+            (int)AppModule.Accounting,
+            (int)AppModule.Fiscal,
+            (int)AppModule.Reports,
+            (int)AppModule.Payroll,
+            (int)AppModule.AI
+        };
+
+    private static IReadOnlyList<int> BuildPlatformClientDelegatedModuleIds() =>
+        new[]
+        {
+            (int)AppModule.Accounting,
+            (int)AppModule.Fiscal,
+            (int)AppModule.Sales,
+            (int)AppModule.Treasury,
+            (int)AppModule.Reports,
+            (int)AppModule.Purchases,
+            (int)AppModule.Payroll,
+            (int)AppModule.AI
+        };
 
     private static UserDto CreateUserDto(
         ApplicationUser user,
@@ -199,7 +249,8 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
         bool isDelegated,
         Guid? contextTenantId,
         string? contextCompanyName,
-        bool isFirmManaged)
+        bool isFirmManaged,
+        bool isPayrollFirmManaged)
     {
         return new UserDto
         {
@@ -218,7 +269,8 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
             AccessMode = isDelegated ? "delegated" : "native",
             ContextTenantId = isDelegated ? contextTenantId : null,
             ContextCompanyName = isDelegated ? contextCompanyName : null,
-            IsFirmManaged = isDelegated && isFirmManaged
+            IsFirmManaged = isDelegated && isFirmManaged,
+            IsPayrollFirmManaged = !isDelegated && isPayrollFirmManaged
         };
     }
 }

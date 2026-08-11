@@ -293,6 +293,44 @@ public sealed class SequenceGapsAuditRule : AccountingAuditRuleBase
         var gaps = sequences.Where(s => s.Max - s.Min + 1 != s.Count).ToList();
         if (gaps.Count == 0) return Array.Empty<AnomalyCandidate>();
 
+        var allLines = new List<AnomalyLineCandidate>();
+        foreach (var g in gaps)
+        {
+            var numbers = await c.Db.JournalEntries.AsNoTracking()
+                .Where(e => e.EntryDate.Year == ctx.FiscalYear
+                            && e.JournalCode == g.Journal
+                            && e.Status != JournalEntryStatus.Brouillon)
+                .Select(e => e.EntryNumber)
+                .ToListAsync(cancellationToken);
+            var numberSet = new HashSet<int>(numbers);
+            var missing = new List<int>();
+            for (var n = g.Min; n <= g.Max && missing.Count < 50; n++)
+            {
+                if (!numberSet.Contains(n))
+                    missing.Add(n);
+            }
+
+            foreach (var missingNum in missing)
+            {
+                allLines.Add(new AnomalyLineCandidate(
+                    null, null, null, null,
+                    $"Pièce manquante n° {missingNum}",
+                    0, 0,
+                    $"{g.Journal}-{missingNum}",
+                    null));
+            }
+
+            if (missing.Count == 0)
+            {
+                allLines.Add(new AnomalyLineCandidate(
+                    null, null, null, null,
+                    $"Journal {g.Journal} ({g.Min}-{g.Max})",
+                    0, 0,
+                    $"{g.Journal}-{g.Min}",
+                    null));
+            }
+        }
+
         return
         [
             SingleGroup(Code, ModuleCode, Category, DefaultSeverity,
@@ -300,7 +338,7 @@ public sealed class SequenceGapsAuditRule : AccountingAuditRuleBase
                 $"{gaps.Count} journal(aux) avec discontinuité de numérotation.",
                 "Peut indiquer des pièces annulées ou des trous de numérotation.",
                 null, 0, null, null,
-                gaps.Select(g => new AnomalyLineCandidate(null, null, null, null, $"Journal {g.Journal}", 0, 0, $"{g.Min}-{g.Max}", null)).ToList(),
+                allLines,
                 ["Vérifier les pièces annulées.", "Documenter les trous de numérotation."],
                 "/accounting/entry-search")
         ];

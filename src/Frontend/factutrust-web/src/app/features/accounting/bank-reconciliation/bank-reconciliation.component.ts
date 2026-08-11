@@ -1,12 +1,14 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { TableModule } from 'primeng/table';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { ToastService } from '@core/services/toast.service';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
 import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.component';
+import { AccountingCorrectionBannerComponent } from '../shared/accounting-correction-banner.component';
 import { AccountingExportMenuComponent } from '../shared/accounting-export-menu.component';
 import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
 import { AccountingService, JournalSearchRowDto } from '../services/accounting.service';
@@ -45,12 +47,15 @@ interface WizardStepDef {
     ButtonComponent,
     AccountingStatusBannerComponent,
     AccountingFilterBarComponent,
-    AccountingExportMenuComponent
+    AccountingExportMenuComponent,
+    AccountingCorrectionBannerComponent
   ],
   template: `
     <app-page-header
       title="Rapprochement bancaire"
       subtitle="Assistant d'importation de relevé et de rapprochement — Import, association automatique, rapprochement manuel, résultat" />
+
+    <app-accounting-correction-banner />
 
     <app-accounting-status-banner variant="error" [message]="error() ?? ''" />
 
@@ -804,6 +809,9 @@ export class BankReconciliationComponent implements OnInit {
   private readonly accounting = inject(AccountingService);
   private readonly bankAccountsApi = inject(BankAccountService);
   private readonly toast = inject(ToastService);
+  private readonly route = inject(ActivatedRoute);
+
+  unmatchedOnly = false;
 
   readonly steps: WizardStepDef[] = [
     { index: 1, label: 'Import', hint: 'Charger le relevé' },
@@ -886,6 +894,13 @@ export class BankReconciliationComponent implements OnInit {
     this.associations().filter(a => a.status === BankLineAssociationStatus.Associated && this.checked().has(a.bankStatementLineId)).length);
 
   ngOnInit(): void {
+    const qp = this.route.snapshot.queryParamMap;
+    const fy = qp.get('fiscalYear');
+    if (fy) {
+      this.fromStr = `${fy}-01-01`;
+      this.toStr = `${fy}-12-31`;
+    }
+    this.unmatchedOnly = qp.get('unmatchedOnly') === '1';
     this.loadStatements();
     this.loadBankAccounts();
   }
@@ -953,8 +968,13 @@ export class BankReconciliationComponent implements OnInit {
     this.api.getStatements(this.accountFilter || null, from, to).subscribe({
       next: res => {
         this.loadingList.set(false);
-        if (res.success && res.data) this.statements.set(res.data);
-        else this.error.set(res.error ?? 'Erreur de chargement des relevés.');
+        if (res.success && res.data) {
+          let list = res.data;
+          if (this.unmatchedOnly) {
+            list = list.filter(s => s.lines.some(l => !l.isReconciled));
+          }
+          this.statements.set(list);
+        } else this.error.set(res.error ?? 'Erreur de chargement des relevés.');
       },
       error: () => {
         this.loadingList.set(false);

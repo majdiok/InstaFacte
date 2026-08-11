@@ -512,3 +512,44 @@
     background: var(--superieur-accent-red) !important;
   }
 }
+
+// --------------------------------------------
+// CABINET DÉLÉGUÉ — annule Superieur sur le skin scoped
+// --------------------------------------------
+#sidebar.sidebar--firm-delegated ul.rail-nav li a.rail-link.active,
+#sidebar.sidebar--firm-delegated ul.rail-nav li button.rail-link.active {
+  color: var(--sidebar-delegated-active-text, #1a56db) !important;
+  background: var(--sidebar-delegated-active-bg, #e8f0fe) !important;
+  box-shadow: inset 3px 0 0 var(--sidebar-delegated-active-bar, #1a56db) !important;
+  border-radius: 8px !important;
+
+  i,
+  .rail-icon-img {
+    color: inherit !important;
+    opacity: 1 !important;
+    filter: none;
+  }
+}
+
+.theme-superieur #sidebar.sidebar--firm-delegated ul.rail-nav li a.rail-link.active,
+.theme-superieur #sidebar.sidebar--firm-delegated ul.rail-nav li button.rail-link.active {
+  color: var(--sidebar-delegated-active-text, #1a56db) !important;
+  background: var(--sidebar-delegated-active-bg, #e8f0fe) !important;
+  box-shadow: inset 3px 0 0 var(--sidebar-delegated-active-bar, #1a56db) !important;
+}
+
+#sidebar.sidebar--firm-delegated ul.submenu-list li a.submenu-link.active {
+  color: var(--sidebar-delegated-active-text, #1a56db) !important;
+  background: var(--sidebar-delegated-active-bg, #e8f0fe) !important;
+  box-shadow: inset 3px 0 0 var(--sidebar-delegated-active-bar, #1a56db) !important;
+  border-radius: 8px !important;
+
+  i {
+    color: inherit !important;
+    opacity: 1 !important;
+  }
+}
+
+.theme-superieur #sidebar.sidebar--firm-delegated .sidebar-brand {
+  background: var(--sidebar-delegated-navy, #0a1f44) !important;
+}

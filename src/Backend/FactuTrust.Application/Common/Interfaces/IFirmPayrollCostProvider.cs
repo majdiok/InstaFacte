@@ -24,11 +24,26 @@ public sealed record FirmPayrollCostSnapshotDto(
     string? UnavailableReason,
     IReadOnlyList<FirmPayrollEmployeeCostDto> Employees)
 {
-    public static FirmPayrollCostSnapshotDto Unavailable(string reason) =>
-        new(false, reason, Array.Empty<FirmPayrollEmployeeCostDto>());
+    /// <summary>Salariés actifs dans la paie cabinet (exploitable uniquement si disponible).</summary>
+    public int? ActiveEmployeeCount { get; init; }
 
-    public static FirmPayrollCostSnapshotDto Available(IReadOnlyList<FirmPayrollEmployeeCostDto> employees) =>
-        new(true, null, employees);
+    /// <summary>Salariés actifs sans bulletin sur les paies arrêtées de l'exercice.</summary>
+    public int? EmployeesWithoutPayslips { get; init; }
+
+    public static FirmPayrollCostSnapshotDto Unavailable(string reason, int? activeEmployeeCount = null) =>
+        new(false, reason, Array.Empty<FirmPayrollEmployeeCostDto>())
+        {
+            ActiveEmployeeCount = activeEmployeeCount
+        };
+
+    public static FirmPayrollCostSnapshotDto Available(
+        IReadOnlyList<FirmPayrollEmployeeCostDto> employees,
+        int activeEmployeeCount) =>
+        new(true, null, employees)
+        {
+            ActiveEmployeeCount = activeEmployeeCount,
+            EmployeesWithoutPayslips = Math.Max(0, activeEmployeeCount - employees.Count)
+        };
 }
 
 /// <summary>
@@ -54,4 +69,18 @@ public interface IFirmPayrollCostProvider
         Guid firmTenantId,
         int year,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Dernière validation ou clôture de paie sur l'exercice (UTC).</summary>
+    Task<DateTime?> GetLatestPayrollActivityAtAsync(
+        Guid firmTenantId,
+        int year,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Salariés actifs de la paie cabinet, pour le rapprochement par email.</summary>
+    Task<IReadOnlyList<FirmPayrollEmployeeLinkDto>> GetActiveEmployeesForLinkingAsync(
+        Guid firmTenantId,
+        CancellationToken cancellationToken = default);
 }
+
+/// <summary>Salarié paie cabinet exposé pour la liaison collaborateur.</summary>
+public sealed record FirmPayrollEmployeeLinkDto(Guid EmployeeId, string? Email, string DisplayName);

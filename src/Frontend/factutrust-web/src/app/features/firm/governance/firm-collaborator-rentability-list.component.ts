@@ -73,6 +73,23 @@ import { ToastService } from '@core/services/toast.service';
       <button type="button" pButton label="Rechercher" icon="pi pi-search" class="p-button-sm" (click)="load()"></button>
     </div>
 
+    @if (zeroCostCount() > 0 && selectedYear) {
+      <div class="fc-card cost-alert">
+        <strong>Coûts employeur manquants</strong>
+        <p>
+          {{ zeroCostCount() }} collaborateur(s) actif(s) n'ont pas de coût employeur renseigné pour {{ selectedYear }}.
+          La rentabilité utilisera le taux horaire par défaut tant que la paie n'est pas synchronisée.
+        </p>
+        <button
+          type="button"
+          pButton
+          label="Configurer les coûts"
+          icon="pi pi-coins"
+          class="p-button-sm p-button-outlined"
+          (click)="goCosts()"></button>
+      </div>
+    }
+
     @if (warnings().length > 0) {
       <div class="fc-card warnings">
         <strong>Cohérence des totaux</strong>
@@ -186,6 +203,8 @@ import { ToastService } from '@core/services/toast.service';
     .bulk-bar { margin-top: .75rem; }
     .warnings { border-color: #f59e0b; background: #fffbeb; font-size: .875rem; }
     .warnings ul { margin: .5rem 0 0; padding-left: 1.25rem; }
+    .cost-alert { border-color: #f59e0b; background: #fffbeb; font-size: .875rem; }
+    .cost-alert p { margin: .35rem 0 .75rem; }
   `]
 })
 export class FirmCollaboratorRentabilityListComponent implements OnInit {
@@ -199,6 +218,7 @@ export class FirmCollaboratorRentabilityListComponent implements OnInit {
   totals = signal<FirmCollaboratorRentabilityListItem | null>(null);
   /** Alertes de cohérence sur les totaux, notamment le double comptage des charges réparties. */
   warnings = signal<string[]>([]);
+  zeroCostCount = signal(0);
   loading = signal(false);
   recalculating = signal(false);
   collaboratorOptions: { label: string; value: string }[] = [];
@@ -281,6 +301,22 @@ export class FirmCollaboratorRentabilityListComponent implements OnInit {
         this.toast.add({ severity: 'error', summary: 'Erreur', detail: 'Chargement impossible.' });
       }
     });
+
+    if (this.selectedYear) {
+      this.api.listCollaboratorCosts(this.selectedYear).subscribe({
+        next: res => {
+          const zero = (res.data ?? []).filter(c => c.totalEmployerCost <= 0).length;
+          this.zeroCostCount.set(zero);
+        },
+        error: () => this.zeroCostCount.set(0)
+      });
+    } else {
+      this.zeroCostCount.set(0);
+    }
+  }
+
+  goCosts(): void {
+    void this.router.navigate(['/firm/governance/collaborator-costs']);
   }
 
   goNew(): void {

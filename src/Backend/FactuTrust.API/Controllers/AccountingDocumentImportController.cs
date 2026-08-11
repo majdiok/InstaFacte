@@ -32,6 +32,7 @@ public sealed class AccountingDocumentImportController : ControllerBase
     private readonly IAccountingDocumentExtractor _extractor;
     private readonly IAccountingEntryProposalService _proposalService;
     private readonly IAiOcrService _ocr;
+    private readonly IOllamaModelReadinessChecker _readinessChecker;
     private readonly ICurrentUser _currentUser;
     private readonly AccountingSettings _accountingSettings;
     private readonly OllamaSettings _ollamaSettings;
@@ -42,6 +43,7 @@ public sealed class AccountingDocumentImportController : ControllerBase
         IAccountingDocumentExtractor extractor,
         IAccountingEntryProposalService proposalService,
         IAiOcrService ocr,
+        IOllamaModelReadinessChecker readinessChecker,
         ICurrentUser currentUser,
         IOptions<AccountingSettings> accountingSettings,
         IOptions<OllamaSettings> ollamaSettings,
@@ -51,6 +53,7 @@ public sealed class AccountingDocumentImportController : ControllerBase
         _extractor = extractor;
         _proposalService = proposalService;
         _ocr = ocr;
+        _readinessChecker = readinessChecker;
         _currentUser = currentUser;
         _accountingSettings = accountingSettings.Value;
         _ollamaSettings = ollamaSettings.Value;
@@ -61,12 +64,19 @@ public sealed class AccountingDocumentImportController : ControllerBase
     /// <summary>Capacités d'import (OCR, modèles configurés) pour diagnostic support.</summary>
     [HttpGet("capabilities")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public IActionResult GetCapabilities()
+    public async Task<IActionResult> GetCapabilities(CancellationToken cancellationToken)
     {
         if (!_accountingSettings.DocumentImportEnabled)
             return NotFound();
 
         var vision = _ollamaSettings.InvoiceImportVisionModel?.Trim();
+        var visionModelReady = false;
+        if (!string.IsNullOrWhiteSpace(vision))
+        {
+            var readiness = await _readinessChecker.CheckAsync(vision, cancellationToken);
+            visionModelReady = readiness.IsReady;
+        }
+
         return Ok(new
         {
             enabled = true,
@@ -78,7 +88,8 @@ public sealed class AccountingDocumentImportController : ControllerBase
             importModel = string.IsNullOrWhiteSpace(_ollamaSettings.InvoiceImportModel)
                 ? _ollamaSettings.DefaultModel
                 : _ollamaSettings.InvoiceImportModel,
-            visionModel = string.IsNullOrWhiteSpace(vision) ? null : vision
+            visionModel = string.IsNullOrWhiteSpace(vision) ? null : vision,
+            visionModelReady
         });
     }
 

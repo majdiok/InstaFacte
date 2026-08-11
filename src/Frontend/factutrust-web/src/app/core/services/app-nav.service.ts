@@ -8,6 +8,7 @@ import {
 } from '@core/config/app-navigation.registry';
 import {
   DELEGATED_SECTION_LABELS,
+  FIRM_DELEGATED_FOOTER_NAV,
   FIRM_MANAGED_HIDDEN_SECTION_LABELS,
   FIRM_NATIVE_NAV,
   filterFirmGovernanceNav,
@@ -125,6 +126,24 @@ export class AppNavService {
   });
 
   readonly hasSecondaryNav = computed(() => this.secondaryNavSections().length > 0);
+
+  /** Footer utilitaire du sidemenu en mode cabinet délégué (Contrôle & Audit, etc.). */
+  readonly delegatedFooterNav = computed((): NavItem[] => {
+    if (!this.auth.isAccountingFirm() || !this.auth.isDelegatedMode()) {
+      return [];
+    }
+    const helpUrl = environment.firmHelpUrl?.trim();
+    const items = FIRM_DELEGATED_FOOTER_NAV.map(item => {
+      if (item.externalUrl === '__FIRM_HELP_URL__') {
+        if (!helpUrl) {
+          return null;
+        }
+        return { ...item, externalUrl: helpUrl };
+      }
+      return item;
+    }).filter((item): item is NavItem => item !== null);
+    return filterNavItems(this.auth, items);
+  });
 
   ensureFirmNavDataLoaded(): void {
     if (this.auth.isAccountingFirm() && !this.auth.isDelegatedMode()) {

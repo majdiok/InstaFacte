@@ -1,4 +1,5 @@
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities.FirmGovernance;
@@ -8,6 +9,7 @@ using FactuTrust.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace FactuTrust.Infrastructure.Services;
 
@@ -26,15 +28,21 @@ public sealed class FirmCollaboratorRentabilityService : IFirmCollaboratorRentab
 {
     private readonly MasterDbContext _master;
     private readonly UserManager<ApplicationUser> _userManager;
+    private readonly IFirmCollaboratorCostSyncService _costSync;
+    private readonly FirmGovernanceOptions _governanceOptions;
     private readonly ILogger<FirmCollaboratorRentabilityService> _logger;
 
     public FirmCollaboratorRentabilityService(
         MasterDbContext master,
         UserManager<ApplicationUser> userManager,
+        IFirmCollaboratorCostSyncService costSync,
+        IOptions<FirmGovernanceOptions> governanceOptions,
         ILogger<FirmCollaboratorRentabilityService> logger)
     {
         _master = master;
         _userManager = userManager;
+        _costSync = costSync;
+        _governanceOptions = governanceOptions.Value;
         _logger = logger;
     }
 
@@ -152,6 +160,27 @@ public sealed class FirmCollaboratorRentabilityService : IFirmCollaboratorRentab
         if (exists)
             return Result.Failure<FirmCollaboratorRentabilityDetailDto>(
                 Error.Conflict("Une rentabilité existe déjà pour ce collaborateur et cette année."));
+
+        if (_governanceOptions.SilentImportBeforeRentabilityPrefill)
+        {
+            try
+            {
+                await _costSync.EnsureFreshAsync(
+                    firmTenantId,
+                    year,
+                    FirmCostSyncTrigger.RentabilityPrefill,
+                    forceImport: false,
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Sync silencieuse des coûts collaborateurs ignorée avant préremplissage (cabinet {TenantId}, {Year})",
+                    firmTenantId,
+                    year);
+            }
+        }
 
         var detail = await BuildLivePrefillAsync(firmTenantId, collaboratorUserId, year, cancellationToken);
         return Result.Success(detail);

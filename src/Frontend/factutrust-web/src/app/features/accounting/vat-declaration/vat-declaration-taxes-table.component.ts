@@ -35,7 +35,7 @@ import { VatDeclarationExtras, VatExtrasKey, VatTaxTableRow, hasSuggestionMismat
                     <span>Suggéré : {{ formatAmount(row.suggestedAmount) }}</span>
                     @if (isMismatch(row)) {
                       <button type="button" class="vat-suggest-apply" (click)="applySuggestion(row)"
-                        title="Aligner le montant sur la valeur calculée Base × Taux">Aligner</button>
+                        title="Aligner le montant sur la valeur calculée par les modules">Aligner</button>
                     }
                   </div>
                 }
@@ -85,7 +85,7 @@ export class VatDeclarationTaxesTableComponent {
     return this.extras[key];
   }
 
-  /** Écart entre le montant saisi et la valeur calculée Base × Taux (FODEC/TCL). */
+  /** Écart entre le montant saisi et ce que les modules produiraient pour cette ligne. */
   isMismatch(row: VatTaxTableRow): boolean {
     if (!row.editableKey) return false;
     return hasSuggestionMismatch(this.getExtra(row.editableKey), row.suggestedAmount);

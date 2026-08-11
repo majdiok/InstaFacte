@@ -33,6 +33,20 @@
   &.fa-file-signature      { color: #d97706; } /* Declarations — amber */
   &.fa-building            { color: #0891b2; } /* Gestion immobilisations — cyan */
   &.fa-shapes              { color: #4f46e5; } /* Studio — indigo */
+  &.fa-sliders             { color: #4f46e5; } /* Configuration — indigo */
+  &.fa-gears               { color: #475569; } /* Traitements — slate */
+  &.fa-table-list          { color: #4f46e5; } /* États — indigo */
+  &.fa-file-contract       { color: #0284c7; } /* Liasse fiscale — sky */
+}
+
+/** Filet de sécurité : icônes neutres éclaircies sur fond navy (sans pastille). */
+@mixin nav-secondary-icon-colors-on-dark {
+  &.fa-sliders,
+  &.fa-gears,
+  &.fa-gear,
+  &.fa-table-list {
+    color: #e2e8f0;
+  }
 }
 
 @mixin nav-submenu-fa-icon-colors {

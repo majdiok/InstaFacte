@@ -297,6 +297,34 @@ describe('AppNavService — secondary nav parity', () => {
     expect(sidebarLabels).toContain('RH & Paie');
   });
 
+  it('exposes delegated footer nav with audit and help links', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, {
+      ...delegatedUser,
+      effectivePermissions: [...(delegatedUser.effectivePermissions ?? []), 'audit:read']
+    });
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const nav = TestBed.inject(AppNavService);
+    expect(nav.delegatedFooterNav().map(i => i.label)).toEqual([
+      'Contrôle & Audit',
+      'Paramètres',
+      "Centre d'aide"
+    ]);
+
+    const help = nav.delegatedFooterNav().find(i => i.label === "Centre d'aide");
+    expect(help?.externalUrl).toContain('https://');
+  });
+
+  it('returns empty delegated footer nav outside delegated mode', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, firmUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const nav = TestBed.inject(AppNavService);
+    expect(nav.delegatedFooterNav()).toEqual([]);
+  });
+
   it('omits empty sections after permission filtering', () => {
     const auth = TestBed.inject(AuthService);
     setUser(auth, {

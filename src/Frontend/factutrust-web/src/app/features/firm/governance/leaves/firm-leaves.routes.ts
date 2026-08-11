@@ -47,6 +47,13 @@ export const FIRM_LEAVES_ROUTES: Routes = [
         title: 'Cabinet — Congés · Types'
       },
       {
+        path: 'reconciliation',
+        canActivate: [firmManagerGuard],
+        loadComponent: () =>
+          import('./firm-leaves-reconciliation.component').then(m => m.FirmLeavesReconciliationComponent),
+        title: 'Cabinet — Congés · Rapprochement paie'
+      },
+      {
         path: 'settings',
         canActivate: [firmManagerGuard],
         loadComponent: () =>

@@ -23,6 +23,8 @@ export interface User {
   contextCompanyName?: string;
   /** True when the active delegated dossier is firm-managed (no platform commercial account). */
   isFirmManaged?: boolean;
+  /** True when payroll execution is delegated to an assigned accounting firm (company native mode). */
+  isPayrollFirmManaged?: boolean;
   twoFactorEnabled: boolean;
   /** AppModule enum values enabled for this user */
   enabledModuleIds?: number[];
@@ -255,6 +257,10 @@ export class AuthService {
   readonly isFirmManagedDelegated = computed(
     () => this.isAccountingFirm() && this.isDelegatedMode() && !!this.userSignal()?.isFirmManaged
   );
+  /** Société cliente avec cabinet assigné : cycles de paie gérés par le cabinet. */
+  readonly isPayrollFirmManaged = computed(
+    () => !this.isAccountingFirm() && !!this.userSignal()?.isPayrollFirmManaged
+  );
   readonly isFirmManager = computed(() => this.userSignal()?.role === 'FirmManager');
   readonly isFirmAccountant = computed(() => this.userSignal()?.role === 'FirmAccountant');
 
@@ -314,8 +320,31 @@ export class AuthService {
       catchError(() => of(null))
     ).subscribe(() => {
       this.clearAuth();
-      this.router.navigate(['/auth/login']);
+      this.redirectToLoginUnlessOnAuthRoute();
     });
+  }
+
+  /**
+   * Clears local session without POST /logout.
+   * Used by the auth interceptor when refresh fails or the JWT is already unusable.
+   * Redirects to login only when not already on an /auth/* route — avoids a redundant
+   * navigation that aborts View Transitions (`InvalidStateError`) on /auth/login.
+   */
+  invalidateSession(): void {
+    this.clearAuth();
+    this.redirectToLoginUnlessOnAuthRoute();
+  }
+
+  /** True when the current router URL is under `/auth` (login, register, …). */
+  private isOnAuthRoute(): boolean {
+    const path = this.router.url.split('?')[0];
+    return /^\/auth(\/|$)/.test(path);
+  }
+
+  private redirectToLoginUnlessOnAuthRoute(): void {
+    if (!this.isOnAuthRoute()) {
+      void this.router.navigate(['/auth/login']);
+    }
   }
 
   /**

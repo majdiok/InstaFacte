@@ -38,6 +38,7 @@ public sealed class SendChatMessageHandler
     private readonly AiVolatileContextFormatter _volatileContextFormatter;
     private readonly AiScreenAnalysisEnricher _screenAnalysisEnricher;
     private readonly IConversationRepository _conversationRepository;
+    private readonly ICurrentUser _currentUser;
     private readonly ILogger<SendChatMessageHandler> _logger;
     private readonly OllamaSettings _ollamaSettings;
     private readonly ScreenAnalysisOptions _screenAnalysisOptions;
@@ -59,6 +60,7 @@ public sealed class SendChatMessageHandler
         AiVolatileContextFormatter volatileContextFormatter,
         AiScreenAnalysisEnricher screenAnalysisEnricher,
         IConversationRepository conversationRepository,
+        ICurrentUser currentUser,
         ILogger<SendChatMessageHandler> logger,
         IOptions<OllamaSettings> ollamaSettings,
         IOptions<ScreenAnalysisOptions> screenAnalysisOptions)
@@ -74,6 +76,7 @@ public sealed class SendChatMessageHandler
         _volatileContextFormatter = volatileContextFormatter;
         _screenAnalysisEnricher = screenAnalysisEnricher;
         _conversationRepository = conversationRepository;
+        _currentUser = currentUser;
         _logger = logger;
         _ollamaSettings = ollamaSettings.Value;
         _screenAnalysisOptions = screenAnalysisOptions.Value;
@@ -109,6 +112,12 @@ public sealed class SendChatMessageHandler
             : command.Options?.AgentScope is { } reqScope && Enum.IsDefined(reqScope)
                 ? reqScope
                 : AssistantAgentScope.None;
+
+        if (_currentUser.IsAccountingFirmDelegatedContext)
+        {
+            requestedAgentScope = FirmDelegatedAiScopePolicy.ResolveAllowedScope(true, requestedAgentScope);
+            agentScope = FirmDelegatedAiScopePolicy.ResolveAllowedScope(true, agentScope);
+        }
 
         // Pré-chargement parallèle : modèle actif (Studio ou Assistant), historique, prompt système.
         var isStudioBuilder = assistantMode == AssistantMode.StudioBuilder;
@@ -244,6 +253,10 @@ public sealed class SendChatMessageHandler
                     correlationId ?? "-", agentScope, storedScope);
                 agentScope = storedScope;
             }
+
+            if (_currentUser.IsAccountingFirmDelegatedContext)
+                agentScope = FirmDelegatedAiScopePolicy.ResolveAllowedScope(true, agentScope);
+
             conversation.AddMessage(MessageRole.User, command.Message);
             if (!deferUserPersist)
                 await _conversationRepository.UpdateAsync(conversation, cancellationToken);

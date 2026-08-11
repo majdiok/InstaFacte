@@ -5,6 +5,8 @@ export const FIRM_MANAGER_ROUTE_PREFIXES = [
   '/firm/collaborateurs',
   '/firm/governance/dossier-time-profitability',
   '/firm/governance/collaborator-rentability',
+  '/firm/governance/collaborator-costs',
+  '/firm/payroll',
   '/firm/billing',
   '/firm/affectation',
   '/firm/clients/new',

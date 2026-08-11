@@ -1,11 +1,14 @@
 using System.Security.Cryptography;
 using ClosedXML.Excel;
+using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities.FirmGovernance;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.Persistence;
+using FluentValidation;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -33,6 +36,10 @@ public sealed class FirmCollaboratorService : IFirmCollaboratorService
     private readonly IEmailService _emailService;
     private readonly IConfiguration _configuration;
     private readonly FirmCollaboratorStorageOptions _storageOptions;
+    private readonly IFirmInternalPayrollProvisioningService _provisioning;
+    private readonly ITenantService _tenantService;
+    private readonly IValidator<FirmCollaboratorPayrollOnboardingDto> _payrollOnboardingValidator;
+    private readonly FirmGovernanceOptions _governanceOptions;
     private readonly ILogger<FirmCollaboratorService> _logger;
 
     public FirmCollaboratorService(
@@ -41,6 +48,10 @@ public sealed class FirmCollaboratorService : IFirmCollaboratorService
         IEmailService emailService,
         IConfiguration configuration,
         IOptions<FirmCollaboratorStorageOptions> storageOptions,
+        IFirmInternalPayrollProvisioningService provisioning,
+        ITenantService tenantService,
+        IValidator<FirmCollaboratorPayrollOnboardingDto> payrollOnboardingValidator,
+        IOptions<FirmGovernanceOptions> governanceOptions,
         ILogger<FirmCollaboratorService> logger)
     {
         _db = db;
@@ -48,6 +59,10 @@ public sealed class FirmCollaboratorService : IFirmCollaboratorService
         _emailService = emailService;
         _configuration = configuration;
         _storageOptions = storageOptions.Value;
+        _provisioning = provisioning;
+        _tenantService = tenantService;
+        _payrollOnboardingValidator = payrollOnboardingValidator;
+        _governanceOptions = governanceOptions.Value;
         _logger = logger;
     }
 
@@ -141,6 +156,33 @@ public sealed class FirmCollaboratorService : IFirmCollaboratorService
         if (validation is not null)
             return Result.Failure<FirmUserDto>(Error.Validation("Create", validation));
 
+        if (FirmGovernanceNativeAccess.ShouldAutoProvisionPayrollOnCollaboratorCreate(_governanceOptions))
+        {
+            var connectionString = await _tenantService.GetConnectionStringAsync(firmTenantId, cancellationToken);
+            if (string.IsNullOrWhiteSpace(connectionString))
+            {
+                return Result.Failure<FirmUserDto>(Error.Validation(
+                    "PayrollProvision",
+                    "Impossible de créer le salarié paie : aucune base de paie n'est rattachée au cabinet."));
+            }
+
+            if (dto.Payroll is null)
+            {
+                return Result.Failure<FirmUserDto>(Error.Validation(
+                    "PayrollProvision",
+                    "Impossible de créer le salarié paie : le dossier paie est obligatoire."));
+            }
+
+            var payrollValidation = await _payrollOnboardingValidator.ValidateAsync(dto.Payroll, cancellationToken);
+            if (!payrollValidation.IsValid)
+            {
+                var reason = string.Join(" ", payrollValidation.Errors.Select(e => e.ErrorMessage));
+                return Result.Failure<FirmUserDto>(Error.Validation(
+                    "PayrollProvision",
+                    $"Impossible de créer le salarié paie : {reason}"));
+            }
+        }
+
         var password = string.IsNullOrWhiteSpace(dto.Password)
             ? GenerateSecurePassword()
             : dto.Password.Trim();
@@ -200,6 +242,38 @@ public sealed class FirmCollaboratorService : IFirmCollaboratorService
 
         _db.FirmCollaboratorProfiles.Add(profile);
         await _db.SaveChangesAsync(cancellationToken);
+
+        if (FirmGovernanceNativeAccess.ShouldAutoProvisionPayrollOnCollaboratorCreate(_governanceOptions))
+        {
+            try
+            {
+                var provision = await _provisioning.ProvisionCollaboratorAsync(
+                    firmTenantId,
+                    isManager: true,
+                    user.Id,
+                    dto.Payroll,
+                    cancellationToken);
+
+                if (provision.IsFailure || provision.Value is { Created: 0, Linked: 0 })
+                {
+                    await RollbackCreatedCollaboratorAsync(firmTenantId, user, profile);
+                    var reason = provision.IsFailure
+                        ? provision.Error.Description
+                        : provision.Value!.Messages.FirstOrDefault() ?? "Provision paie impossible.";
+                    return Result.Failure<FirmUserDto>(Error.Validation(
+                        "PayrollProvision",
+                        $"Impossible de créer le salarié paie : {reason}"));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Payroll auto-provision failed for collaborator {UserId}", user.Id);
+                await RollbackCreatedCollaboratorAsync(firmTenantId, user, profile);
+                return Result.Failure<FirmUserDto>(Error.Validation(
+                    "PayrollProvision",
+                    $"Impossible de créer le salarié paie : {ex.Message}"));
+            }
+        }
 
         if (sendInvite)
             await TrySendInviteAsync(user, password, firmTenantId, cancellationToken);
@@ -657,6 +731,17 @@ public sealed class FirmCollaboratorService : IFirmCollaboratorService
         }
     }
 
+    private async Task RollbackCreatedCollaboratorAsync(
+        Guid firmTenantId,
+        ApplicationUser user,
+        FirmCollaboratorProfile profile)
+    {
+        if (!string.IsNullOrWhiteSpace(profile.CniFileName))
+            TryDeleteCniFile(firmTenantId, user.Id, profile.CniFileName);
+
+        await _userManager.DeleteAsync(user);
+    }
+
     private async Task TrySendInviteAsync(ApplicationUser user, string initialPassword, Guid firmTenantId, CancellationToken cancellationToken)
     {
         try
@@ -819,7 +904,19 @@ public sealed class FirmCollaboratorService : IFirmCollaboratorService
             HasCni = !string.IsNullOrWhiteSpace(profile?.CniFileName),
             CniUploadedAt = profile?.CniUploadedAt,
             Binomes = binomes,
-            BinomesDisplay = binomes.Count == 0 ? null : string.Join(", ", binomes.Select(b => b.FullName))
+            BinomesDisplay = binomes.Count == 0 ? null : string.Join(", ", binomes.Select(b => b.FullName)),
+            PayrollEmployeeId = profile?.PayrollEmployeeId,
+            PayrollLinkSourceDisplay = profile?.PayrollEmployeeId is { } payrollId && payrollId != Guid.Empty
+                ? DescribePayrollLinkSource(profile.PayrollLinkSource)
+                : null
         };
     }
+
+    private static string? DescribePayrollLinkSource(FirmPayrollLinkSource source) => source switch
+    {
+        FirmPayrollLinkSource.Manual => "Manuelle",
+        FirmPayrollLinkSource.AutoEmail => "Auto (email)",
+        FirmPayrollLinkSource.ProvisionedFromCollaborator => "Provisionné",
+        _ => null
+    };
 }

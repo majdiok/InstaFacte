@@ -1,4 +1,5 @@
 using FactuTrust.API.Authorization;
+using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
@@ -27,6 +28,7 @@ public sealed class AiInvoiceImportController : ControllerBase
 
     private readonly ImportInvoiceFromFileHandler _handler;
     private readonly IAiOcrService _ocr;
+    private readonly ICurrentUser _currentUser;
     private readonly OllamaSettings _ollamaSettings;
     private readonly ILogger<AiInvoiceImportController> _logger;
     private readonly IHostEnvironment _environment;
@@ -34,12 +36,14 @@ public sealed class AiInvoiceImportController : ControllerBase
     public AiInvoiceImportController(
         ImportInvoiceFromFileHandler handler,
         IAiOcrService ocr,
+        ICurrentUser currentUser,
         IOptions<OllamaSettings> ollamaSettings,
         ILogger<AiInvoiceImportController> logger,
         IHostEnvironment environment)
     {
         _handler = handler;
         _ocr = ocr;
+        _currentUser = currentUser;
         _ollamaSettings = ollamaSettings.Value;
         _logger = logger;
         _environment = environment;
@@ -76,6 +80,10 @@ public sealed class AiInvoiceImportController : ControllerBase
         [FromQuery] string? model = null,
         CancellationToken cancellationToken = default)
     {
+        if (_currentUser.IsAccountingFirmDelegatedContext)
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponse<object>.Fail(FirmDelegatedAiScopePolicy.DeniedScopeMessage));
+
         if (file is null || file.Length == 0)
             return BadRequest(ApiResponse<object>.Fail("Fichier requis."));
 

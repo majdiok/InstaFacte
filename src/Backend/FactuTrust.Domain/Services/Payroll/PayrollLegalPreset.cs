@@ -80,6 +80,11 @@ public sealed record PayrollLegalPreset
         if (CnssMonthlyCeiling.HasValue)
             result.Value.SetCnssMonthlyCeiling(CnssMonthlyCeiling);
 
+        // TFP, FOPROLOS et CSS patronale ne connaissent pas le plafond CNSS. Le réglage n'est
+        // abaissé que sur les exercices matérialisés depuis les présets : les exercices déjà en
+        // base conservent leur comportement, et donc leurs bulletins.
+        result.Value.SetApplyCnssCeilingToPayrollTaxes(false);
+
         result.Value.SetStatutoryLeaveDefaults(
             SickLeaveWaitingDays,
             SickLeaveIjRatePercent,

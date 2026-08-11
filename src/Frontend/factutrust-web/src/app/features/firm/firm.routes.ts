@@ -111,6 +111,10 @@ export const FIRM_ROUTES: Routes = [
         canActivate: [firmManagerGuard],
         loadChildren: () => import('./billing/billing.routes').then(m => m.FIRM_BILLING_ROUTES)
       },
+      {
+        path: 'payroll',
+        loadChildren: () => import('./payroll/firm-payroll.routes').then(m => m.FIRM_PAYROLL_ROUTES)
+      },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]
   }

@@ -1,6 +1,7 @@
 using System.Reflection;
 using FluentValidation;
 using FactuTrust.Application.Features.Accounting.FiscalSchedule;
+using FactuTrust.Application.Features.Accounting.Services;
 using FactuTrust.Application.Features.Payroll.AnnualBonuses;
 using FactuTrust.Application.Features.Payroll.Declarations.CnssRemittance;
 using FactuTrust.Application.Features.Payroll.HrDocuments;
@@ -34,6 +35,9 @@ public static class DependencyInjection
         // Synchronisation déclaration mensuelle → échéancier fiscal (best-effort, flag-gated)
         services.AddScoped<DeclarationScheduleSynchronizer>();
 
+        // Apport du module paie à la déclaration mensuelle (TFP, FOPROLOS, RS sur salaires)
+        services.AddScoped<PayrollDeclarationContributionProvider>();
+
         services.AddScoped<ISupplierInvoiceNumberService, SupplierInvoiceNumberService>();
         services.AddScoped<PayrollInputBuilder>();
         services.AddScoped<StatutoryIjClaimSyncService>();
@@ -46,6 +50,7 @@ public static class DependencyInjection
 
         // Validation pipeline behavior
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(Authorization.PayrollFirmOperationBehavior<,>));
 
         return services;
     }

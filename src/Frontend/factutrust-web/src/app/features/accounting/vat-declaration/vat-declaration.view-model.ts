@@ -31,8 +31,20 @@ export interface VatTaxTableRow {
   highlight?: boolean;
   bold?: boolean;
   editableKey?: VatExtrasKey;
-  /** Valeur calculée Base × Taux, proposée pour les lignes éditables assises sur un taux (FODEC/TCL). */
+  /**
+   * Montant que les modules produiraient aujourd'hui pour cette ligne, tel que calculé par le
+   * backend. Unique source de la suggestion : la recalculer ici à partir de « base × taux »
+   * donnerait un second chiffre, forcément divergent dès que les deux ne lisent pas la même
+   * donnée — c'était le cas du FODEC.
+   */
   suggestedAmount?: number | null;
+}
+
+/** Une ligne dont le montant déclaré s'écarte de ce que les modules produiraient. */
+export interface VatDivergenceRow {
+  label: string;
+  declared: number;
+  computed: number;
 }
 
 export interface VatDocLinkRow {
@@ -136,10 +148,63 @@ export function round3(value: number): number {
   return Math.round((value + Number.EPSILON) * 1000) / 1000;
 }
 
-/** Valeur suggérée = base × taux%/100, arrondie au millime ; null si base ou taux absent. */
+/**
+ * Valeur suggérée = base × taux%/100, arrondie au millime ; null si base ou taux absent.
+ *
+ * Conservée pour l'affichage pédagogique du couple « base × taux » à l'écran. Elle ne sert
+ * <b>plus</b> à produire la suggestion d'une ligne : celle-ci vient du backend, seul à connaître
+ * la source réelle de chaque taxe.
+ */
 export function suggestedTaxAmount(base: number | null | undefined, ratePercent: number | null | undefined): number | null {
   if (base == null || ratePercent == null) return null;
   return round3(base * (ratePercent / 100));
+}
+
+/**
+ * Écarts entre les montants déposés et le recalcul temps réel des modules.
+ *
+ * Vide tant qu'aucune déclaration n'a été enregistrée : les deux jeux de valeurs sont alors
+ * identiques par construction.
+ */
+export function buildDivergenceRows(d: VatDeclarationDto): VatDivergenceRow[] {
+  const s = d.suggested;
+  if (!s || !d.monthlyDeclarationV2Enabled) return [];
+
+  const candidates: VatDivergenceRow[] = [
+    { label: 'TVA collectée 19 %', declared: d.collectedVat19, computed: s.collectedVat19 },
+    { label: 'TVA collectée 13 %', declared: d.collectedVat13, computed: s.collectedVat13 },
+    { label: 'TVA collectée 7 %', declared: d.collectedVat7, computed: s.collectedVat7 },
+    { label: 'TVA déductible — biens et services', declared: d.deductibleVatGoods, computed: s.deductibleVatGoods },
+    { label: 'TVA déductible — immobilisations', declared: d.deductibleVatAssets, computed: s.deductibleVatAssets },
+    { label: 'Crédit antérieur', declared: d.previousCredit, computed: s.previousCredit },
+    { label: 'FODEC', declared: d.fodec, computed: s.fodec },
+    { label: 'Droit de timbre', declared: d.droitTimbre, computed: s.droitTimbre },
+    { label: 'TCL', declared: d.tcl, computed: s.tcl },
+    { label: 'TFP', declared: d.tfp, computed: s.tfp },
+    { label: 'FOPROLOS', declared: d.foprolos, computed: s.foprolos },
+    { label: 'Retenues à la source (RS)', declared: d.withholdingTax, computed: s.withholdingTax }
+  ];
+
+  return candidates.filter(r => hasSuggestionMismatch(r.declared, r.computed));
+}
+
+/**
+ * Message expliquant l'état du cycle de paie du mois, ou `null` s'il n'y a rien à signaler.
+ * Un cycle non validé est la cause la plus fréquente d'une TFP et d'un FOPROLOS à zéro.
+ */
+export function payrollHint(d: VatDeclarationDto): string | null {
+  const s = d.suggested;
+  if (!s || !d.monthlyDeclarationV2Enabled) return null;
+
+  if (!s.payrollRunExists)
+    return 'Aucun cycle de paie pour cette période : la TFP et le FOPROLOS restent à saisir manuellement.';
+
+  if (!s.payrollRunUsable) {
+    return `Le cycle de paie de la période est au statut « ${s.payrollRunStatusDisplay ?? 'Brouillon'} » : `
+      + 'ses montants TFP et FOPROLOS ne sont pas repris. Validez le cycle pour les intégrer.';
+  }
+
+  return null;
 }
 
 /** Écart significatif (> 0,001) entre le montant saisi et la valeur suggérée Base × Taux. */
@@ -227,6 +292,10 @@ export function buildTaxRows(
   }
 
   if (d.monthlyDeclarationV2Enabled) {
+    // La suggestion vient du backend : c'est le montant qu'il préremplirait, donc exactement ce
+    // que « Aligner » doit poser. Absente (backend antérieur), la ligne n'affiche pas d'écart.
+    const s = d.suggested;
+
     rows.push({
       taxLabel: 'FODEC',
       taxableBase: d.fodecTaxableBase ?? d.salesTaxableBase,
@@ -235,7 +304,7 @@ export function buildTaxRows(
       deductibleAmount: null,
       netAmount: extras.fodec,
       editableKey: 'fodec',
-      suggestedAmount: suggestedTaxAmount(d.fodecTaxableBase ?? d.salesTaxableBase, fodecRatePercent)
+      suggestedAmount: s?.fodec ?? null
     });
     rows.push({
       taxLabel: 'Droit de timbre',
@@ -244,7 +313,8 @@ export function buildTaxRows(
       amountToPay: extras.droitTimbre,
       deductibleAmount: null,
       netAmount: extras.droitTimbre,
-      editableKey: 'droitTimbre'
+      editableKey: 'droitTimbre',
+      suggestedAmount: s?.droitTimbre ?? null
     });
     rows.push({
       taxLabel: 'TCL',
@@ -254,25 +324,29 @@ export function buildTaxRows(
       deductibleAmount: null,
       netAmount: extras.tcl,
       editableKey: 'tcl',
-      suggestedAmount: suggestedTaxAmount(d.salesGrossBase, tclRatePercent)
+      suggestedAmount: s?.tcl ?? null
     });
+    // TFP et FOPROLOS portent désormais leur assiette réelle (masse salariale) et leur taux,
+    // issus du cycle de paie : la ligne devient vérifiable au lieu d'afficher « — ».
     rows.push({
       taxLabel: 'TFP',
-      taxableBase: null,
-      ratePercent: null,
+      taxableBase: d.payrollTaxBase || null,
+      ratePercent: d.tfpRatePercent || null,
       amountToPay: extras.tfp,
       deductibleAmount: null,
       netAmount: extras.tfp,
-      editableKey: 'tfp'
+      editableKey: 'tfp',
+      suggestedAmount: s?.tfp ?? null
     });
     rows.push({
       taxLabel: 'FOPROLOS',
-      taxableBase: null,
-      ratePercent: null,
+      taxableBase: d.payrollTaxBase || null,
+      ratePercent: d.foprolosRatePercent || null,
       amountToPay: extras.foprolos,
       deductibleAmount: null,
       netAmount: extras.foprolos,
-      editableKey: 'foprolos'
+      editableKey: 'foprolos',
+      suggestedAmount: s?.foprolos ?? null
     });
     rows.push({
       taxLabel: 'Retenues à la source (RS)',
@@ -282,7 +356,8 @@ export function buildTaxRows(
       deductibleAmount: null,
       netAmount: extras.withholdingTax,
       highlight: true,
-      editableKey: 'withholdingTax'
+      editableKey: 'withholdingTax',
+      suggestedAmount: s?.withholdingTax ?? null
     });
     rows.push({
       taxLabel: 'Acomptes provisionnels (déduits)',

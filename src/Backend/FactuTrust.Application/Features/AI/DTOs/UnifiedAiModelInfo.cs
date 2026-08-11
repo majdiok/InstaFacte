@@ -9,4 +9,5 @@ public sealed record UnifiedAiModelInfo(
     string DisplayLabel,
     long? SizeBytes,
     DateTime? ModifiedAtUtc,
-    bool SupportsVision = false);
+    bool SupportsVision = false,
+    bool SupportsChat = true);

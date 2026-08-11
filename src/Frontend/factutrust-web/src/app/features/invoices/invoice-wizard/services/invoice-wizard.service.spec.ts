@@ -176,6 +176,33 @@ describe('InvoiceWizardService client normalization', () => {
     expect(svc.totals().totalFodec).toBe(0);
   });
 
+  it('addLine normalizes corrupted designation objects to product name string', () => {
+    const svc = TestBed.inject(InvoiceWizardService);
+    svc.addLine({
+      productId: VALID_PRODUCT_ID,
+      designation: { name: 'Refrigirateur beko', id: VALID_PRODUCT_ID } as unknown as string,
+      quantity: 1,
+      unitPriceHT: 900,
+      vatRate: TunisianVatRate.Standard
+    });
+
+    expect(svc.lines()[0].designation).toBe('Refrigirateur beko');
+    expect(typeof svc.lines()[0].designation).toBe('string');
+  });
+
+  it('updateLine normalizes corrupted designation objects to product name string', () => {
+    const svc = TestBed.inject(InvoiceWizardService);
+    addValidLinkedLine(svc);
+    const lineId = svc.lines()[0].id;
+
+    svc.updateLine(lineId, {
+      designation: { name: 'Tableau mis à jour', id: VALID_PRODUCT_ID } as unknown as string
+    });
+
+    expect(svc.lines()[0].designation).toBe('Tableau mis à jour');
+    expect(typeof svc.lines()[0].designation).toBe('string');
+  });
+
   it('recalculates document totals with FODEC on mixed VAT lines (600 HT → 713.050 TTC)', () => {
     const svc = TestBed.inject(InvoiceWizardService);
     svc.addLine({

@@ -8,6 +8,12 @@
 }
 
 .secondary-nav {
+  --secondary-nav-trigger-text: var(--color-neutral-900, #0f172a);
+  --secondary-nav-trigger-hover-bg: var(--topbar-hover-bg, rgba(255, 255, 255, 0.12));
+  --secondary-nav-trigger-active-bg: var(--topbar-hover-bg, rgba(255, 255, 255, 0.12));
+  --secondary-nav-trigger-active-border: var(--color-neutral-900, #0f172a);
+  --secondary-nav-chevron-color: var(--color-neutral-700, #334155);
+
   display: none;
   background: linear-gradient(
     to right,
@@ -53,7 +59,7 @@
   padding: 0 0.85rem;
   border: 0;
   background: transparent;
-  color: var(--color-neutral-900, #0f172a);
+  color: var(--secondary-nav-trigger-text);
   font-size: var(--font-size-base, 1rem);
   font-weight: 600;
   letter-spacing: 0.01em;
@@ -67,7 +73,7 @@
 }
 
 .secondary-nav__label {
-  color: var(--color-neutral-900, #0f172a);
+  color: inherit;
   font-size: inherit;
   line-height: 1.2;
 }
@@ -79,17 +85,17 @@
 
 .secondary-nav__trigger:hover,
 .secondary-nav__trigger:focus-visible {
-  color: var(--color-neutral-900, #0f172a);
-  background: var(--topbar-hover-bg, rgba(255, 255, 255, 0.12));
+  color: var(--secondary-nav-trigger-text);
+  background: var(--secondary-nav-trigger-hover-bg);
   outline: none;
 }
 
 .secondary-nav__trigger.is-active,
 .secondary-nav__item.is-active > .secondary-nav__trigger,
 .secondary-nav__item.is-active .secondary-nav__trigger {
-  color: var(--color-neutral-900, #0f172a);
-  border-bottom-color: var(--color-neutral-900, #0f172a);
-  background: var(--topbar-hover-bg, rgba(255, 255, 255, 0.12));
+  color: var(--secondary-nav-trigger-text);
+  border-bottom-color: var(--secondary-nav-trigger-active-border);
+  background: var(--secondary-nav-trigger-active-bg);
 }
 
 .secondary-nav__icon {
@@ -100,13 +106,14 @@
 }
 
 /* Colored section icons (do not inherit label text color). */
-.secondary-nav__trigger > i.secondary-nav__icon {
+.secondary-nav__trigger > i.secondary-nav__icon,
+.secondary-nav__trigger .secondary-nav__icon-box > i.secondary-nav__icon {
   @include icons.nav-rail-fa-icon-colors;
 }
 
 .secondary-nav__chevron {
   font-size: 0.7rem;
-  color: var(--color-neutral-700, #334155);
+  color: var(--secondary-nav-chevron-color);
   opacity: 1;
   transition: transform 0.15s ease;
 }
@@ -237,4 +244,112 @@
   .secondary-nav {
     display: block;
   }
+}
+
+/* =========================================================
+   CABINET DÉLÉGUÉ — fond navy + texte clair + pastilles
+   ========================================================= */
+:host-context(.layout--firm-delegated) .secondary-nav,
+.secondary-nav.secondary-nav--firm-delegated {
+  --secondary-nav-trigger-text: var(--secondary-nav-delegated-text, rgba(255, 255, 255, 0.92));
+  --secondary-nav-trigger-hover-bg: var(--secondary-nav-delegated-hover-bg, rgba(255, 255, 255, 0.08));
+  --secondary-nav-trigger-active-bg: var(--secondary-nav-delegated-active-bg, rgba(255, 255, 255, 0.14));
+  --secondary-nav-trigger-active-border: var(--secondary-nav-delegated-active-border, #d4af37);
+  --secondary-nav-chevron-color: var(--secondary-nav-delegated-chevron, rgba(255, 255, 255, 0.65));
+
+  background: var(--secondary-nav-delegated-bg, var(--sidebar-delegated-navy, #0a1f44));
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+:host-context(.layout--firm-delegated.theme-superieur) .secondary-nav,
+:host-context(.theme-superieur) .secondary-nav.secondary-nav--firm-delegated {
+  background: var(--secondary-nav-delegated-bg, var(--sidebar-delegated-navy, #0a1f44));
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+:host-context(.layout--firm-delegated) .secondary-nav__trigger.is-active,
+:host-context(.layout--firm-delegated) .secondary-nav__item.is-active > .secondary-nav__trigger,
+:host-context(.layout--firm-delegated) .secondary-nav__item.is-active .secondary-nav__trigger,
+.secondary-nav--firm-delegated .secondary-nav__trigger.is-active,
+.secondary-nav--firm-delegated .secondary-nav__item.is-active > .secondary-nav__trigger,
+.secondary-nav--firm-delegated .secondary-nav__item.is-active .secondary-nav__trigger {
+  color: var(--secondary-nav-delegated-active-text, #ffffff);
+  background: var(--secondary-nav-delegated-active-bg, rgba(255, 255, 255, 0.14));
+  border-bottom-color: var(--secondary-nav-delegated-active-border, #d4af37);
+}
+
+:host-context(.layout--firm-delegated) .secondary-nav__dropdown-host.show .secondary-nav__trigger,
+.secondary-nav--firm-delegated .secondary-nav__dropdown-host.show .secondary-nav__trigger {
+  color: var(--secondary-nav-delegated-active-text, #ffffff);
+  background: var(--secondary-nav-delegated-hover-bg, rgba(255, 255, 255, 0.08));
+}
+
+/* Pastilles pastel — triggers top-level uniquement (pas dans les dropdowns). */
+.secondary-nav__icon-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  flex-shrink: 0;
+  background: var(--secondary-nav-delegated-icon-box-default, #f1f5f9);
+
+  &[data-icon='fa-sliders'] {
+    background: var(--secondary-nav-delegated-icon-box-sliders, #eef2ff);
+  }
+  &[data-icon='fa-gears'] {
+    background: var(--secondary-nav-delegated-icon-box-gears, #f1f5f9);
+  }
+  &[data-icon='fa-table-list'] {
+    background: var(--secondary-nav-delegated-icon-box-table-list, #eef2ff);
+  }
+  &[data-icon='fa-chart-column'] {
+    background: var(--secondary-nav-delegated-icon-box-chart-column, #fdf4ff);
+  }
+  &[data-icon='fa-file-signature'] {
+    background: var(--secondary-nav-delegated-icon-box-file-signature, #fff7ed);
+  }
+  &[data-icon='fa-file-contract'] {
+    background: var(--secondary-nav-delegated-icon-box-file-contract, #eff6ff);
+  }
+  &[data-icon='fa-building'] {
+    background: var(--secondary-nav-delegated-icon-box-building, #ecfeff);
+  }
+  &[data-icon='fa-bag-shopping'] {
+    background: var(--secondary-nav-delegated-icon-box-bag-shopping, #fdf2f8);
+  }
+  &[data-icon='fa-cart-shopping'] {
+    background: var(--secondary-nav-delegated-icon-box-cart-shopping, #ecfeff);
+  }
+  &[data-icon='fa-credit-card'] {
+    background: var(--secondary-nav-delegated-icon-box-credit-card, #f0fdfa);
+  }
+  &[data-icon='fa-users-gear'] {
+    background: var(--secondary-nav-delegated-icon-box-users-gear, #f5f3ff);
+  }
+  &[data-icon='fa-calculator'] {
+    background: var(--secondary-nav-delegated-icon-box-calculator, #fff1f2);
+  }
+  &[data-icon='fa-file-invoice-dollar'] {
+    background: var(--secondary-nav-delegated-icon-box-file-invoice-dollar, #fffbeb);
+  }
+  &[data-icon='fa-folder-open'] {
+    background: var(--secondary-nav-delegated-icon-box-folder-open, #fef9c3);
+  }
+  &[data-icon='fa-boxes-stacked'] {
+    background: var(--secondary-nav-delegated-icon-box-boxes-stacked, #eef2ff);
+  }
+
+  .secondary-nav__icon {
+    font-size: 0.8rem;
+    width: auto;
+  }
+}
+
+/* Filet si une icône top-level n'a pas de pastille (fallback contraste). */
+:host-context(.layout--firm-delegated) .secondary-nav__trigger > i.secondary-nav__icon,
+.secondary-nav--firm-delegated .secondary-nav__trigger > i.secondary-nav__icon {
+  @include icons.nav-secondary-icon-colors-on-dark;
 }

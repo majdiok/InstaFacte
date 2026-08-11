@@ -28,6 +28,7 @@ public class PayrollSocialFundsController : ControllerBase
 
     [HttpPost("schemes")]
     [Authorize(Policy = PermissionPolicies.PayrollSettings)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<Guid>), StatusCodes.Status201Created)]
     public async Task<IActionResult> CreateScheme([FromBody] UpsertSocialFundSchemeDto dto, CancellationToken cancellationToken)
     {
@@ -39,6 +40,7 @@ public class PayrollSocialFundsController : ControllerBase
 
     [HttpPut("schemes/{id:guid}")]
     [Authorize(Policy = PermissionPolicies.PayrollSettings)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateScheme(Guid id, [FromBody] UpsertSocialFundSchemeDto dto, CancellationToken cancellationToken)
     {

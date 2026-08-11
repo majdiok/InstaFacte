@@ -30,11 +30,14 @@ public sealed class VatDeclaration : AggregateRoot
     public decimal DroitTimbre { get; private set; }
     /// <summary>TCL (Taxe sur les établissements à caractère industriel, commercial ou professionnel).</summary>
     public decimal Tcl { get; private set; }
-    /// <summary>TFP (Taxe de Formation Professionnelle) — assise sur les salaires (saisie manuelle, pas de module paie).</summary>
+    /// <summary>TFP (Taxe de Formation Professionnelle) — assise sur les salaires, proposée depuis le cycle de paie validé du mois.</summary>
     public decimal Tfp { get; private set; }
-    /// <summary>FOPROLOS (Fonds de Promotion des Logements pour Salariés) — assis sur les salaires (saisie manuelle).</summary>
+    /// <summary>FOPROLOS (Fonds de Promotion des Logements pour Salariés) — assis sur les salaires, même source que la TFP.</summary>
     public decimal Foprolos { get; private set; }
-    /// <summary>Retenues à la source opérées durant la période (préremplies depuis le module RS).</summary>
+    /// <summary>
+    /// Retenues à la source opérées durant la période : factures fournisseurs (module RS) et
+    /// traitements et salaires (IRPP + CSS du cycle de paie). Seul le total est déposé.
+    /// </summary>
     public decimal WithholdingTax { get; private set; }
     /// <summary>Acomptes provisionnels (IS) déduits du total à payer.</summary>
     public decimal Acomptes { get; private set; }

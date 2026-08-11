@@ -175,6 +175,10 @@ public partial class TenantDbContext
             entity.Property(r => r.TotalCnssEmployer).HasPrecision(18, 3);
             entity.Property(r => r.TotalTfp).HasPrecision(18, 3);
             entity.Property(r => r.TotalFoprolos).HasPrecision(18, 3);
+            // Nullables : les cycles antérieurs restent sans assiette ni taux, la déclaration
+            // retombe alors sur une reconstitution.
+            entity.Property(r => r.TotalPayrollTaxBase).HasPrecision(18, 3);
+            entity.Property(r => r.AppliedTfpRate).HasPrecision(8, 4);
             entity.Property(r => r.TotalCssEmployer).HasPrecision(18, 3);
             entity.Property(r => r.TotalWorkAccident).HasPrecision(18, 3);
             entity.Property(r => r.TotalOtherDeductions).HasPrecision(18, 3);
@@ -235,8 +239,10 @@ public partial class TenantDbContext
             entity.Property(p => p.Tfp).HasPrecision(18, 3);
             entity.Property(p => p.Foprolos).HasPrecision(18, 3);
             entity.Property(p => p.CssEmployer).HasPrecision(18, 3);
+            entity.Property(p => p.PayrollTaxBase).HasPrecision(18, 3);
             entity.Property(p => p.AppliedCnssEmployeeRate).HasPrecision(8, 4);
             entity.Property(p => p.AppliedCnssEmployerRate).HasPrecision(8, 4);
+            entity.Property(p => p.AppliedTfpRate).HasPrecision(8, 4);
             entity.Property(p => p.PaidAmount).HasPrecision(18, 3).HasDefaultValue(0m);
             entity.Property(p => p.PaidAt);
             entity.Property(p => p.EmployeeAuxiliaryAccount).HasMaxLength(10);
@@ -304,6 +310,9 @@ public partial class TenantDbContext
             entity.Property(p => p.ParentDeductionRatePercent).HasPrecision(8, 4).HasDefaultValue(5m);
             entity.Property(p => p.ParentAnnualDeductionCap).HasPrecision(18, 3).HasDefaultValue(450m);
             entity.Property(p => p.IsIndustrialSector).IsRequired().HasDefaultValue(false);
+            // true = comportement historique (assiette plafonnée comme la CNSS). Les exercices
+            // existants le conservent ; les présets légaux positionnent false à la création.
+            entity.Property(p => p.ApplyCnssCeilingToPayrollTaxes).IsRequired().HasDefaultValue(true);
             entity.Property(p => p.TfpRateIndustry).HasPrecision(8, 4);
             entity.Property(p => p.TfpRateOther).HasPrecision(8, 4);
             entity.Property(p => p.FoprolosRate).HasPrecision(8, 4);

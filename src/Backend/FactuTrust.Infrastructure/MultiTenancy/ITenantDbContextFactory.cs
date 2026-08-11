@@ -23,4 +23,10 @@ public interface ITenantDbContextFactory
     /// (les factories de test sans transaction ambiante n'ont rien à faire).
     /// </summary>
     TenantDbContext CreateIsolatedContext() => CreateContext();
+
+    /// <summary>
+    /// Creates an isolated context for an explicit connection string (e.g. firm internal payroll).
+    /// Default: delegates to <see cref="CreateIsolatedContext"/> (test doubles ignore the string).
+    /// </summary>
+    TenantDbContext CreateIsolatedContext(string connectionString) => CreateIsolatedContext();
 }

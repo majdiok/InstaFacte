@@ -3,6 +3,7 @@ using System.Text.Json;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.Accounting.Audit;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities.AccountingAudit;
 using FactuTrust.Domain.Enums;
@@ -131,6 +132,7 @@ public sealed class AccountingAuditQueryService : IAccountingAuditQueryService
     {
         await using var ctx = _contextFactory.CreateContext();
         var anomaly = await ctx.Set<AccountingAnomaly>().AsNoTracking()
+            .Include(a => a.Run)
             .Include(a => a.Lines)
             .Include(a => a.Activities)
             .FirstOrDefaultAsync(a => a.Id == anomalyId, cancellationToken);
@@ -268,8 +270,15 @@ public sealed class AccountingAuditQueryService : IAccountingAuditQueryService
         }).ToList();
     }
 
-    private static AccountingAnomalyListItemDto MapListItem(AccountingAnomaly a) =>
-        new()
+    private static AccountingAnomalyListItemDto MapListItem(AccountingAnomaly a)
+    {
+        var fiscalYear = a.Run?.FiscalYear ?? (a.PeriodFrom?.Year ?? DateTime.UtcNow.Year);
+        var lineContexts = a.Lines.Select(ToLineContext).ToList();
+        var correctionLink = AuditCorrectionLinkBuilder.Build(
+            a.RuleCode, a.DeepLinkRoute, a.AccountRef, a.PeriodFrom, a.PeriodTo,
+            fiscalYear, a.Id, lineContexts);
+
+        return new AccountingAnomalyListItemDto
         {
             Id = a.Id,
             RuleCode = a.RuleCode,
@@ -286,10 +295,15 @@ public sealed class AccountingAuditQueryService : IAccountingAuditQueryService
             Status = (int)a.Status,
             AssignedToUserId = a.AssignedToUserId,
             AssignedToUserName = a.AssignedToUserName,
-            DeepLinkRoute = a.DeepLinkRoute,
+            DeepLinkRoute = correctionLink.Route,
+            CorrectionLink = correctionLink,
             LineCount = a.Lines.Count,
             DetectedAt = a.DetectedAt
         };
+    }
+
+    private static AuditCorrectionLinkBuilder.LineContext ToLineContext(AccountingAnomalyLine l) =>
+        new(l.JournalEntryId, l.EntryDate, l.AccountNumber, l.Label, l.PieceRef);
 
     private static string BuildDetailSummary(AccountingAnomaly a)
     {
@@ -305,6 +319,12 @@ public sealed class AccountingAuditQueryService : IAccountingAuditQueryService
         var recommendations = string.IsNullOrEmpty(a.RecommendationsJson)
             ? Array.Empty<string>()
             : JsonSerializer.Deserialize<string[]>(a.RecommendationsJson) ?? Array.Empty<string>();
+
+        var fiscalYear = a.Run?.FiscalYear ?? (a.PeriodFrom?.Year ?? DateTime.UtcNow.Year);
+        var lineContexts = a.Lines.Select(ToLineContext).ToList();
+        var correctionLink = AuditCorrectionLinkBuilder.Build(
+            a.RuleCode, a.DeepLinkRoute, a.AccountRef, a.PeriodFrom, a.PeriodTo,
+            fiscalYear, a.Id, lineContexts);
 
         return new AccountingAnomalyDetailDto
         {
@@ -324,7 +344,8 @@ public sealed class AccountingAuditQueryService : IAccountingAuditQueryService
             AssignedToUserId = a.AssignedToUserId,
             AssignedToUserName = a.AssignedToUserName,
             DetectedAt = a.DetectedAt,
-            DeepLinkRoute = a.DeepLinkRoute,
+            DeepLinkRoute = correctionLink.Route,
+            CorrectionLink = correctionLink,
             Recommendations = recommendations,
             Lines = a.Lines.Select(l => new AccountingAnomalyLineDto
             {
@@ -415,6 +436,7 @@ public sealed class AccountingAuditWorkflowService : IAccountingAuditWorkflowSer
     {
         await using var ctx = _contextFactory.CreateContext();
         var anomaly = await ctx.Set<AccountingAnomaly>()
+            .Include(a => a.Run)
             .Include(a => a.Lines)
             .Include(a => a.Activities)
             .FirstOrDefaultAsync(a => a.Id == anomalyId, cancellationToken);

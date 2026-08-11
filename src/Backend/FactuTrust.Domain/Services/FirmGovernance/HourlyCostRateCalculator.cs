@@ -44,9 +44,26 @@ public sealed record FirmHourlyRateResolution(decimal Rate, FirmHourlyRateSource
 /// </remarks>
 public static class HourlyCostRateCalculator
 {
+    /// <summary>
+    /// Taux horaire à partir des heures productives forfaitaires de l'exercice.
+    /// </summary>
     public static FirmHourlyRateResolution Resolve(
         FirmCollaboratorYearCost? cost,
         FirmTimeSheetYearSettings settings,
+        decimal? legacyProfileRate,
+        decimal firmDefaultRate) =>
+        Resolve(cost, settings.AnnualProductiveHours, legacyProfileRate, firmDefaultRate);
+
+    /// <summary>
+    /// Taux horaire à partir d'un dénominateur déjà résolu.
+    /// </summary>
+    /// <remarks>
+    /// Surcharge introduite pour l'individualisation des heures productives : le dénominateur peut
+    /// alors dépendre du collaborateur, et n'est plus déductible des seuls paramètres d'exercice.
+    /// </remarks>
+    public static FirmHourlyRateResolution Resolve(
+        FirmCollaboratorYearCost? cost,
+        decimal productiveHours,
         decimal? legacyProfileRate,
         decimal firmDefaultRate)
     {
@@ -61,7 +78,6 @@ public static class HourlyCostRateCalculator
                 $"Taux imposé — {justification}");
         }
 
-        var productiveHours = settings.AnnualProductiveHours;
         if (cost is not null && cost.TotalEmployerCost > 0 && productiveHours > 0)
         {
             var rate = MillimeRounding.Round(cost.TotalEmployerCost / productiveHours);

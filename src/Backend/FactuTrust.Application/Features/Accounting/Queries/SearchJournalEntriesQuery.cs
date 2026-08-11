@@ -16,7 +16,8 @@ public sealed record SearchJournalEntriesQuery(
     string? LetteringCode,
     int? Status,
     int Take,
-    string? PieceRef = null) : IRequest<Result<IReadOnlyList<JournalSearchRowDto>>>;
+    string? PieceRef = null,
+    int? EntryNumber = null) : IRequest<Result<IReadOnlyList<JournalSearchRowDto>>>;
 
 public sealed class SearchJournalEntriesQueryHandler
     : IRequestHandler<SearchJournalEntriesQuery, Result<IReadOnlyList<JournalSearchRowDto>>>
@@ -32,6 +33,6 @@ public sealed class SearchJournalEntriesQueryHandler
         => _reporting.SearchJournalEntriesAsync(
             request.AccountNumber, request.JournalCode, request.From, request.To,
             request.MinAmount, request.MaxAmount, request.Label, request.LetteringCode, request.Status, request.Take,
-            request.PieceRef,
+            request.PieceRef, request.EntryNumber,
             cancellationToken);
 }

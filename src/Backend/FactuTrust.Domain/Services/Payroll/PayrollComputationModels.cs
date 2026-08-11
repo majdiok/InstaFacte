@@ -133,6 +133,15 @@ public sealed class PayrollComputation
     public decimal Foprolos { get; init; }
     public decimal CssEmployer { get; init; }
 
+    /// <summary>
+    /// Assiette des taxes sur salaires (TFP, FOPROLOS, CSS patronale). Distincte de la base CNSS
+    /// dès lors qu'un plafond CNSS est paramétré : ces taxes n'ont pas de plafond légal.
+    /// </summary>
+    public decimal PayrollTaxBase { get; init; }
+
+    /// <summary>Taux de TFP retenu (%), figé pour la traçabilité et la déclaration mensuelle.</summary>
+    public decimal AppliedTfpRate { get; init; }
+
     /// <summary>Total des charges patronales.</summary>
     public decimal TotalEmployerCharges => CnssEmployer + WorkAccidentContribution + Tfp + Foprolos + CssEmployer;
 

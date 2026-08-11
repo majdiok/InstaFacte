@@ -67,10 +67,15 @@ public sealed class TenantDbContextFactory : ITenantDbContextFactory
         return CreateIsolatedContext();
     }
 
-    public TenantDbContext CreateIsolatedContext()
+    public TenantDbContext CreateIsolatedContext() =>
+        CreateIsolatedContext(
+            _tenantContext.ConnectionString
+            ?? throw new InvalidOperationException("Aucun contexte d'entreprise disponible. Assurez-vous que TenantMiddleware a été exécuté."));
+
+    public TenantDbContext CreateIsolatedContext(string connectionString)
     {
-        var connectionString = _tenantContext.ConnectionString
-            ?? throw new InvalidOperationException("Aucun contexte d'entreprise disponible. Assurez-vous que TenantMiddleware a été exécuté.");
+        if (string.IsNullOrWhiteSpace(connectionString))
+            throw new ArgumentException("Connection string is required.", nameof(connectionString));
 
         var optionsBuilder = new DbContextOptionsBuilder<TenantDbContext>()
             .UseSqlServer(

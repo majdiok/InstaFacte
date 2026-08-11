@@ -12,6 +12,7 @@ public static class DelegatedPermissionCatalog
     {
         Permissions.Accounting.Read,
         Permissions.Accounting.Create,
+        Permissions.Accounting.Delete,
         Permissions.Accounting.Close,
         Permissions.Accounting.Validate,
         Permissions.Accounting.Reverse,
@@ -42,7 +43,8 @@ public static class DelegatedPermissionCatalog
         Permissions.Payroll.Declare,
         Permissions.Payroll.Export,
         Permissions.Payroll.Pay,
-        Permissions.Payroll.Settings
+        Permissions.Payroll.Settings,
+        Permissions.AI.Chat
     };
 
     /// <summary>Accounting operations without period close; same read-only ops context.</summary>
@@ -50,6 +52,7 @@ public static class DelegatedPermissionCatalog
     {
         Permissions.Accounting.Read,
         Permissions.Accounting.Create,
+        Permissions.Accounting.Delete,
         Permissions.Accounting.Validate,
         Permissions.Accounting.Reverse,
         Permissions.Accounting.Import,
@@ -77,7 +80,8 @@ public static class DelegatedPermissionCatalog
         Permissions.Payroll.Declare,
         Permissions.Payroll.Export,
         Permissions.Payroll.Pay,
-        Permissions.Payroll.Settings
+        Permissions.Payroll.Settings,
+        Permissions.AI.Chat
     };
 
     public static IReadOnlyList<string> GetDelegatedPermissions(UserRole role) => role switch
@@ -124,6 +128,35 @@ public static class DelegatedPermissionCatalog
         Permissions.HonorairesQuotes.Convert,
         Permissions.HonorairesPayments.Create,
         Permissions.HonorairesPayments.Read
+    };
+
+    /// <summary>
+    /// Paie interne cabinet — responsable (tenant natif, flag EnableFirmInternalPayroll).
+    /// </summary>
+    /// <remarks>
+    /// Le cabinet est l'employeur de ses propres salariés : il doit disposer du cycle complet,
+    /// du calcul jusqu'au paiement et à la déclaration. S'en tenir au calcul rendait les écrans
+    /// de déclaration et de règlement inaccessibles (403) alors même qu'ils sont routés.
+    /// </remarks>
+    public static readonly IReadOnlyList<string> FirmNativePayrollManagerPermissions = new[]
+    {
+        Permissions.Payroll.Read,
+        Permissions.Payroll.ManageEmployees,
+        Permissions.Payroll.RunPayroll,
+        Permissions.Payroll.Validate,
+        Permissions.Payroll.Settings,
+        Permissions.Payroll.Declare,
+        Permissions.Payroll.Export,
+        Permissions.Payroll.Pay,
+        Permissions.Payroll.HrDocuments,
+        Permissions.Payroll.ManageTermination,
+        Permissions.Payroll.ManageGarnishments
+    };
+
+    /// <summary>Paie interne cabinet — comptable (lecture seule).</summary>
+    public static readonly IReadOnlyList<string> FirmNativePayrollAccountantPermissions = new[]
+    {
+        Permissions.Payroll.Read
     };
 
     public static bool IsWritePermissionDeniedInDelegatedMode(string permission) =>

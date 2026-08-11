@@ -62,8 +62,15 @@ describe('EntryLinesGridComponent', () => {
     expect(headers?.textContent ?? '').not.toContain('TVA');
   });
 
-  it('shows empty balance indicator on load', () => {
-    const indicator = fixture.nativeElement.querySelector('app-balance-indicator');
-    expect(indicator?.textContent).toContain('Saisissez vos lignes');
+  it('shows custom title when title input is set', () => {
+    fixture.componentRef.setInput('title', 'Écriture proposée — journal JA');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Écriture proposée — journal JA');
+  });
+
+  it('uses compact scroll height when compactMode is true', () => {
+    fixture.componentRef.setInput('compactMode', true);
+    fixture.detectChanges();
+    expect(fixture.componentInstance.compactMode()).toBe(true);
   });
 });

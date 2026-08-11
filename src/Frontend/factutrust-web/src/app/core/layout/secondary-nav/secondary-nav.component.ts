@@ -14,7 +14,9 @@ import { filter, map, startWith } from 'rxjs';
 import { NavItem, NavSubItem } from '@core/config/app-navigation.registry';
 import { secondaryNavDisplayLabel } from '@core/config/secondary-nav.config';
 import { AppNavService } from '@core/services/app-nav.service';
+import { AuthService } from '@core/services/auth.service';
 import { FirmContextService } from '@core/services/firm-context.service';
+import { getNavIconKey } from '@core/utils/nav-icon-key.util';
 import {
   isNavChildActive,
   isNavRouteActive,
@@ -33,12 +35,17 @@ import {
 })
 export class SecondaryNavComponent {
   private readonly appNav = inject(AppNavService);
+  private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly firmContext = inject(FirmContextService);
 
   @ViewChildren(NgbDropdown) private readonly dropdowns!: QueryList<NgbDropdown>;
 
   readonly sections = this.appNav.secondaryNavSections;
+
+  readonly isFirmDelegatedSkin = computed(
+    () => this.auth.isAccountingFirm() && this.auth.isDelegatedMode()
+  );
 
   /** Label of the nested flyout currently open (hover / focus / click). */
   readonly openSubmenuLabel = signal<string | null>(null);
@@ -87,6 +94,10 @@ export class SecondaryNavComponent {
 
   displayLabel(section: NavItem): string {
     return secondaryNavDisplayLabel(section.label);
+  }
+
+  getIconKey(icon?: string): string | null {
+    return getNavIconKey(icon);
   }
 
   isSectionActive(section: NavItem): boolean {

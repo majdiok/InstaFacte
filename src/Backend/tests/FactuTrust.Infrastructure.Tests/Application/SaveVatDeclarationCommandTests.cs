@@ -103,6 +103,27 @@ public sealed class SaveVatDeclarationCommandTests
         _repo.Verify(r => r.UpdateAsync(It.IsAny<VatDeclaration>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    /// <summary>
+    /// Garde-fou : la sauvegarde doit réclamer la valorisation LIVE. En mode « déclaré » (défaut de
+    /// la query), elle réécrirait le dépôt existant sur lui-même et la TVA d'un brouillon ne se
+    /// rafraîchirait plus jamais depuis les écritures.
+    /// </summary>
+    [Fact]
+    public async Task Save_RequestsLiveValuation_SoVatKeepsRefreshingFromLedger()
+    {
+        var existing = Draft();
+        _repo.Setup(r => r.GetByYearMonthAsync(2026, 7, It.IsAny<CancellationToken>())).ReturnsAsync(existing);
+
+        var result = await BuildHandler().Handle(Command(submit: false), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        _mediator.Verify(
+            m => m.Send(
+                It.Is<GetVatDeclarationQuery>(q => q.Valuation == VatDeclarationValuation.Live),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
     // ── Brouillon existant : le bug de départ ──────────────────────────────
 
     [Fact]

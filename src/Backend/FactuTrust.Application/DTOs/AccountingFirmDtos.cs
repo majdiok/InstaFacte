@@ -169,6 +169,9 @@ public sealed record CreateFirmUserDto
     public string? Country { get; init; }
     /// <summary>Si true et Password vide, EmailConfirmed=false + email d'invitation. Défaut false pour rétrocompat MVP (password fourni).</summary>
     public bool SendInvite { get; init; }
+
+    /// <summary>Obligatoire lorsque l'auto-provision paie est active à la création.</summary>
+    public FirmCollaboratorPayrollOnboardingDto? Payroll { get; init; }
 }
 
 public sealed record UpdateFirmUserDto
@@ -245,6 +248,8 @@ public sealed record FirmUserDto
     public DateTime? CniUploadedAt { get; init; }
     public string? BinomesDisplay { get; init; }
     public IReadOnlyList<FirmUserBinomeDto> Binomes { get; init; } = Array.Empty<FirmUserBinomeDto>();
+    public Guid? PayrollEmployeeId { get; init; }
+    public string? PayrollLinkSourceDisplay { get; init; }
 }
 
 public sealed record FirmDashboardClientRowDto

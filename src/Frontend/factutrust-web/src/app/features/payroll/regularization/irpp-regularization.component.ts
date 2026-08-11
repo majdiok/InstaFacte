@@ -16,7 +16,8 @@ import { EmployeeService, EmployeeListItem } from '@core/services/employee.servi
 import { PayrollService, IrppRegularizationPreview } from '@core/services/payroll.service';
 import { ToastService } from '@core/services/toast.service';
 import { AuthService } from '@core/services/auth.service';
-import { canRunPayroll } from '@core/utils/payroll-access';
+import { canRunPayroll, isCompanyPayrollReadOnly, PAYROLL_FIRM_MANAGED_COMPANY_BANNER } from '@core/utils/payroll-access';
+import { PayrollConsultBannerComponent } from '../shared/payroll-consult-banner.component';
 import { PayrollAmountPipe } from '../shared';
 import {
   buildDetailRows,
@@ -46,20 +47,25 @@ import {
     PageHeaderComponent,
     ButtonComponent,
     FormSectionComponent,
-    PayrollAmountPipe
+    PayrollAmountPipe,
+    PayrollConsultBannerComponent
   ],
   template: `
     <app-page-header
       title="Régularisation IRPP"
       [subtitle]="'Période : ' + monthLabel(month) + ' ' + year">
       <app-button variant="outline" (click)="reset()">Annuler</app-button>
-      <app-button variant="outline" icon="pi-calculator" iconPos="left"
-        [disabled]="!employeeId || loading()" (click)="calculate()">Calculer</app-button>
       @if (canManage()) {
+        <app-button variant="outline" icon="pi-calculator" iconPos="left"
+          [disabled]="!employeeId || loading()" (click)="calculate()">Calculer</app-button>
         <app-button variant="primary" icon="pi-save" iconPos="left"
           [disabled]="!canSave()" (click)="save()">Enregistrer</app-button>
       }
     </app-page-header>
+
+    <app-payroll-consult-banner
+      [visible]="showCompanyReadOnlyBanner()"
+      [message]="companyReadOnlyBanner" />
 
     @if (notice(); as message) {
       <p-message severity="warn" [text]="message" styleClass="reg-notice" />
@@ -232,6 +238,8 @@ export class IrppRegularizationComponent implements OnInit {
   private readonly auth = inject(AuthService);
 
   readonly canManage = computed(() => canRunPayroll(this.auth));
+  readonly showCompanyReadOnlyBanner = computed(() => isCompanyPayrollReadOnly(this.auth));
+  readonly companyReadOnlyBanner = PAYROLL_FIRM_MANAGED_COMPANY_BANNER;
 
   readonly employees = signal<EmployeeListItem[]>([]);
   readonly preview = signal<IrppRegularizationPreview | null>(null);

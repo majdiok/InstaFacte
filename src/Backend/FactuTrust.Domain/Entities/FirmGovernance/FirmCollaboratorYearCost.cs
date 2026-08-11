@@ -5,10 +5,43 @@ namespace FactuTrust.Domain.Entities.FirmGovernance;
 /// <summary>Origine des montants de coût employeur d'un collaborateur.</summary>
 public enum FirmPayrollCostSource
 {
+    /// <summary>
+    /// Aucun coût n'existe pour cet exercice. Valeur d'affichage uniquement : elle n'est jamais
+    /// persistée, une ligne enregistrée est nécessairement saisie ou importée.
+    /// </summary>
+    /// <remarks>
+    /// Sans elle, l'absence de donnée était présentée comme une saisie (« Saisi » à 0,000), ce qui
+    /// laissait croire à un coût nul délibéré au lieu d'un import qui n'a jamais eu lieu.
+    /// </remarks>
+    None = 0,
     /// <summary>Saisi par le cabinet.</summary>
     Manual = 1,
     /// <summary>Agrégé depuis les bulletins de paie du cabinet.</summary>
     ImportedFromPayroll = 2
+}
+
+/// <summary>
+/// Raison pour laquelle une ligne de coût est dans l'état où elle est.
+/// </summary>
+/// <remarks>
+/// L'écran des coûts collaborateurs affichait des zéros sans jamais dire pourquoi : liaison paie
+/// absente, base de paie injoignable, aucun cycle arrêté sur l'exercice… Ce diagnostic transforme
+/// une ligne vide en une action à mener.
+/// </remarks>
+public enum FirmCollaboratorCostDiagnostic
+{
+    /// <summary>Coût importé de la paie et à jour.</summary>
+    Ok = 0,
+    /// <summary>Coût saisi par le cabinet : l'import ne l'écrasera pas sans forçage.</summary>
+    ManualEntry = 1,
+    /// <summary>Le collaborateur n'est rattaché à aucun salarié de la paie du cabinet.</summary>
+    NoPayrollLink = 2,
+    /// <summary>La base de paie du cabinet n'a pas pu être interrogée.</summary>
+    PayrollUnreadable = 3,
+    /// <summary>Aucun cycle de paie validé ou clôturé sur l'exercice.</summary>
+    NoValidatedRun = 4,
+    /// <summary>Collaborateur lié, mais aucun bulletin arrêté ne le concerne sur l'exercice.</summary>
+    LinkedWithoutPayslip = 5
 }
 
 /// <summary>

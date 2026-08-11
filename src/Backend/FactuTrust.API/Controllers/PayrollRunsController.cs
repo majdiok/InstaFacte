@@ -45,6 +45,7 @@ public class PayrollRunsController : ControllerBase
 
     [HttpPost]
     [Authorize(Policy = PermissionPolicies.PayrollRun)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<Guid>), StatusCodes.Status201Created)]
     public async Task<IActionResult> CreateRun([FromBody] CreatePayrollRunDto dto, CancellationToken cancellationToken)
     {
@@ -60,6 +61,7 @@ public class PayrollRunsController : ControllerBase
 
     [HttpPost("{id:guid}/calculate")]
     [Authorize(Policy = PermissionPolicies.PayrollRun)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<CalculatePayrollRunResultDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Calculate(Guid id, [FromBody] CalculatePayrollRunDto dto, CancellationToken cancellationToken)
     {
@@ -91,6 +93,7 @@ public class PayrollRunsController : ControllerBase
 
     [HttpPost("{id:guid}/validate")]
     [Authorize(Policy = PermissionPolicies.PayrollValidate)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Validate(Guid id, CancellationToken cancellationToken)
     {
@@ -106,6 +109,7 @@ public class PayrollRunsController : ControllerBase
 
     [HttpPost("{id:guid}/reopen")]
     [Authorize(Policy = PermissionPolicies.PayrollValidate)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Reopen(Guid id, CancellationToken cancellationToken)
     {
@@ -121,6 +125,7 @@ public class PayrollRunsController : ControllerBase
 
     [HttpPost("{id:guid}/close")]
     [Authorize(Policy = PermissionPolicies.PayrollValidate)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Close(Guid id, CancellationToken cancellationToken)
     {

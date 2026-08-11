@@ -26,6 +26,12 @@ export interface AccountingAuditDashboardDto {
   } | null;
 }
 
+export interface AccountingAuditCorrectionLinkDto {
+  route: string;
+  queryParams: Record<string, string>;
+  label?: string | null;
+}
+
 export interface AccountingAnomalyListItemDto {
   id: string;
   ruleCode: string;
@@ -43,6 +49,7 @@ export interface AccountingAnomalyListItemDto {
   assignedToUserId?: string | null;
   assignedToUserName?: string | null;
   deepLinkRoute?: string | null;
+  correctionLink?: AccountingAuditCorrectionLinkDto | null;
   lineCount: number;
   detectedAt: string;
 }
@@ -74,6 +81,7 @@ export interface AccountingAnomalyDetailDto {
   assignedToUserName?: string | null;
   detectedAt: string;
   deepLinkRoute?: string | null;
+  correctionLink?: AccountingAuditCorrectionLinkDto | null;
   recommendations: string[];
   lines: {
     id: string;

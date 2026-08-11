@@ -321,7 +321,8 @@ public class AiChatController : ControllerBase
                 m.Name,
                 m.Size,
                 m.ModifiedAt,
-                SupportsVision: AiModelCapabilityDetector.DetectVisionSupport(m.Name)));
+                SupportsVision: AiModelCapabilityDetector.DetectVisionSupport(m.Name),
+                SupportsChat: AiModelCapabilityDetector.DetectChatCapable(m.Name)));
         }
 
         var openRouter = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
@@ -338,7 +339,8 @@ public class AiChatController : ControllerBase
                         string.IsNullOrEmpty(r.Name) ? r.Id : r.Name!,
                         null,
                         null,
-                        SupportsVision: AiModelCapabilityDetector.DetectVisionSupport(r.Id)));
+                        SupportsVision: AiModelCapabilityDetector.DetectVisionSupport(r.Id),
+                        SupportsChat: AiModelCapabilityDetector.DetectChatCapable(r.Id)));
                 }
             }
             catch (Exception ex)

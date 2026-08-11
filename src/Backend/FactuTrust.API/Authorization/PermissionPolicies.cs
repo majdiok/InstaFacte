@@ -89,6 +89,7 @@ public static class PermissionPolicies
 
     public const string AccountingRead = "perm:" + Permissions.Accounting.Read;
     public const string AccountingCreate = "perm:" + Permissions.Accounting.Create;
+    public const string AccountingDelete = "perm:" + Permissions.Accounting.Delete;
     public const string AccountingClose = "perm:" + Permissions.Accounting.Close;
     public const string AccountingValidate = "perm:" + Permissions.Accounting.Validate;
 
@@ -151,6 +152,9 @@ public static class PermissionPolicies
     public const string PayrollManageGarnishments = "perm:" + Permissions.Payroll.ManageGarnishments;
     public const string PayrollHrDocuments = "perm:" + Permissions.Payroll.HrDocuments;
     public const string PayrollManageTermination = "perm:" + Permissions.Payroll.ManageTermination;
+
+    /// <summary>Payroll operations reserved to delegated firm when cabinet assignment is active.</summary>
+    public const string PayrollFirmOperation = "payroll:firm-operation";
 
     public const string FirmUsersManage = "perm:" + Permissions.Firm.UsersManage;
 

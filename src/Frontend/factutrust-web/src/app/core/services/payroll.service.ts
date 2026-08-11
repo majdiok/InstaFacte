@@ -19,6 +19,74 @@ export interface PayrollRunListItem {
   closedAt?: string;
 }
 
+// ── Tableau de bord mensuel ──
+
+export interface PayrollDashboardKpi {
+  amount: number;
+  /** Nul quand le mois précédent n'a pas de cycle : aucune tendance n'est alors affichée. */
+  previousAmount?: number | null;
+  changePercent?: number | null;
+}
+
+export interface PayrollDashboardSlice {
+  label: string;
+  amount: number;
+}
+
+export interface PayrollDashboardMonth {
+  month: number;
+  gross: number;
+  net: number;
+  employerCharges: number;
+  status: string;
+  statusDisplay: string;
+}
+
+export interface PayrollDashboardDeadline {
+  label: string;
+  dueDate: string;
+  daysRemaining: number;
+  isOverdue: boolean;
+  estimatedAmount: number;
+}
+
+export interface PayrollDashboardRun {
+  id: string;
+  year: number;
+  month: number;
+  label: string;
+  status: string;
+  statusDisplay: string;
+  totalGross: number;
+  totalNet: number;
+  validatedAt?: string;
+  closedAt?: string;
+}
+
+export interface PayrollDashboard {
+  year: number;
+  month: number;
+  periodLabel: string;
+  hasRun: boolean;
+  runId?: string;
+  runStatus?: string;
+  runStatusDisplay?: string;
+  gross: PayrollDashboardKpi;
+  net: PayrollDashboardKpi;
+  employerCharges: PayrollDashboardKpi;
+  employeeCount: number;
+  previousEmployeeCount?: number | null;
+  earningsBreakdown: PayrollDashboardSlice[];
+  deductionBreakdown: PayrollDashboardSlice[];
+  employerChargeBreakdown: PayrollDashboardSlice[];
+  /** Renseigné quand la ventilation du brut n'a pas pu être refermée exactement. */
+  breakdownWarning?: string | null;
+  monthlySeries: PayrollDashboardMonth[];
+  payslips: PayslipListItem[];
+  recentRuns: PayrollDashboardRun[];
+  upcomingDeadlines: PayrollDashboardDeadline[];
+}
+
 export interface PayslipListItem {
   id: string;
   employeeId: string;
@@ -1098,6 +1166,15 @@ export class PayrollService {
     let params = new HttpParams();
     if (year) params = params.set('year', year);
     return this.http.get<ApiResponse<PayrollRunListItem[]>>(this.runsUrl, { params });
+  }
+
+  /**
+   * Vue d'ensemble d'un mois : indicateurs, répartitions, série de l'exercice, salariés et
+   * échéances sociales — en un seul appel.
+   */
+  getDashboard(year: number, month: number): Observable<ApiResponse<PayrollDashboard>> {
+    const params = new HttpParams().set('year', year).set('month', month);
+    return this.http.get<ApiResponse<PayrollDashboard>>(`${this.payrollUrl}/dashboard`, { params });
   }
 
   getRun(id: string): Observable<ApiResponse<PayrollRunDetail>> {

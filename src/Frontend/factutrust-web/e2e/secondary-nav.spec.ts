@@ -142,5 +142,15 @@ test.describe('Secondary navigation bar', () => {
     await expect(secondaryNav.getByText('Achats', { exact: true })).toHaveCount(0);
     await expect(secondaryNav.getByText('Trésorerie', { exact: true })).toHaveCount(0);
     await expect(secondaryNav.getByText('RH & Paie', { exact: true })).toHaveCount(0);
+
+    await expect(secondaryNav).toHaveClass(/secondary-nav--firm-delegated/);
+    const iconBoxes = secondaryNav.locator('.secondary-nav__icon-box');
+    await expect(iconBoxes.first()).toBeVisible();
+    expect(await iconBoxes.count()).toBeGreaterThanOrEqual(5);
+
+    const configTrigger = secondaryNav.locator('.secondary-nav__trigger', { hasText: 'Configuration' }).first();
+    const color = await configTrigger.evaluate(el => getComputedStyle(el).color);
+    // rgba(255, 255, 255, 0.92) or rgb(255, 255, 255)
+    expect(color.replace(/\s/g, '')).toMatch(/rgba?\(255,255,255/);
   });
 });

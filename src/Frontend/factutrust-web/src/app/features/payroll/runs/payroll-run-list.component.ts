@@ -1,6 +1,6 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
+import { ActivatedRoute, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
@@ -11,7 +11,7 @@ import { AuthService } from '@core/services/auth.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
-import { canRunPayroll, isPayrollConsultMode } from '@core/utils/payroll-access';
+import { canRunPayroll, isPayrollConsultMode, isCompanyPayrollReadOnly, PAYROLL_FIRM_MANAGED_COMPANY_BANNER, PAYROLL_FIRM_CONSULT_BANNER } from '@core/utils/payroll-access';
 import { PayrollConsultBannerComponent, PayrollEmptyStateComponent, PayrollAmountPipe } from '../shared';
 
 @Component({
@@ -31,7 +31,9 @@ import { PayrollConsultBannerComponent, PayrollEmptyStateComponent, PayrollAmoun
     PayrollAmountPipe
   ],
   template: `
-    <app-page-header title="Cycles de paie" subtitle="Paie mensuelle : brouillon → calcul → validation → clôture.">
+    <app-page-header
+      [title]="firmInternal() ? 'Cycles de paie cabinet' : 'Cycles de paie'"
+      [subtitle]="firmInternal() ? 'Paie interne du cabinet : calcul et validation.' : 'Paie mensuelle : brouillon → calcul → validation → clôture.'">
       @if (canRun() && !currentMonthExists()) {
         <app-button variant="primary" icon="pi-plus" iconPos="left" (click)="createCurrentMonth()">Nouveau cycle (mois courant)</app-button>
       }
@@ -39,7 +41,7 @@ import { PayrollConsultBannerComponent, PayrollEmptyStateComponent, PayrollAmoun
 
     <app-payroll-consult-banner
       [visible]="showConsultBanner()"
-      message="Mode consultation — la création et le calcul des cycles sont réservés à la société cliente." />
+      [message]="consultBannerMessage()" />
 
     <div class="payroll-toolbar">
       <p-select
@@ -84,7 +86,7 @@ import { PayrollConsultBannerComponent, PayrollEmptyStateComponent, PayrollAmoun
             <td class="text-right">{{ r.totalGross | payrollAmount }}</td>
             <td class="text-right">{{ r.totalNet | payrollAmount }}</td>
             <td>
-              <app-button variant="outline" size="sm" icon="pi-external-link" iconPos="left" [routerLink]="['/payroll/runs', r.id]">Ouvrir</app-button>
+              <app-button variant="outline" size="sm" icon="pi-external-link" iconPos="left" [routerLink]="[routeBase() + '/runs', r.id]">Ouvrir</app-button>
             </td>
           </tr>
         </ng-template>
@@ -97,6 +99,10 @@ export class PayrollRunListComponent implements OnInit {
   private readonly toast = inject(ToastService);
   private readonly auth = inject(AuthService);
   private readonly errorHandler = inject(ErrorHandlerService);
+  private readonly route = inject(ActivatedRoute);
+
+  routeBase = signal('/payroll');
+  firmInternal = signal(false);
 
   selectedYear = new Date().getFullYear();
   yearOptions = Array.from({ length: 5 }, (_, i) => {
@@ -108,12 +114,17 @@ export class PayrollRunListComponent implements OnInit {
   currentMonthRun = signal<PayrollRunListItem | null>(null);
 
   canRun = computed(() => canRunPayroll(this.auth));
-  showConsultBanner = computed(() => isPayrollConsultMode(this.auth));
+  showConsultBanner = computed(() => !this.firmInternal() && (isPayrollConsultMode(this.auth) || isCompanyPayrollReadOnly(this.auth)));
+  consultBannerMessage = computed(() =>
+    isCompanyPayrollReadOnly(this.auth) ? PAYROLL_FIRM_MANAGED_COMPANY_BANNER : PAYROLL_FIRM_CONSULT_BANNER);
   currentMonthExists = computed(() => this.currentMonthRun() !== null);
 
   emptyDescription = computed(() => this.loading() ? undefined : 'Aucun cycle pour cet exercice.');
 
   ngOnInit(): void {
+    const data = this.route.snapshot.data;
+    this.routeBase.set(data['payrollRouteBase'] ?? '/payroll');
+    this.firmInternal.set(!!data['firmInternalPayroll']);
     this.reload();
   }
 

@@ -9,7 +9,12 @@ import { DialogModule } from 'primeng/dialog';
 import { ToastService } from '@core/services/toast.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { FirmLeavesService } from './data-access/firm-leaves.service';
-import { FIRM_LEAVE_STATUS, FirmLeaveRequest } from './data-access/firm-leaves.models';
+import {
+  FIRM_LEAVE_MIRROR_STATE,
+  FIRM_LEAVE_STATUS,
+  FirmLeaveMirrorResult,
+  FirmLeaveRequest
+} from './data-access/firm-leaves.models';
 
 @Component({
   selector: 'app-firm-leaves-validation',
@@ -100,6 +105,7 @@ export class FirmLeavesValidationComponent implements OnInit {
           next: res => {
             if (res.success) {
               this.toast.add({ severity: 'success', summary: 'Congés', detail: 'Demande acceptée' });
+              this.notifyPayrollMirror(res.data?.payrollMirror);
               this.reload();
             } else this.toast.add({ severity: 'error', summary: 'Erreur', detail: res.message ?? '' });
           },
@@ -125,6 +131,21 @@ export class FirmLeavesValidationComponent implements OnInit {
           this.reload();
         } else this.toast.add({ severity: 'error', summary: 'Erreur', detail: res.message ?? '' });
       }
+    });
+  }
+
+  /**
+   * Signale à l'approbateur ce que le congé a produit — ou n'a pas pu produire — en paie.
+   * L'approbation reste acquise dans tous les cas : seul le report peut échouer.
+   */
+  private notifyPayrollMirror(mirror?: FirmLeaveMirrorResult): void {
+    if (!mirror || mirror.isApplied || mirror.state === FIRM_LEAVE_MIRROR_STATE.noPayrollEffect) return;
+
+    this.toast.add({
+      severity: mirror.state === FIRM_LEAVE_MIRROR_STATE.blockedFrozenPayroll ? 'warn' : 'error',
+      summary: 'Report en paie',
+      detail: mirror.message ?? mirror.stateDisplay,
+      life: 10000
     });
   }
 }

@@ -489,4 +489,81 @@ describe('SidebarComponent — collapse', () => {
     fixture.componentInstance.toggleSubmenu(ventes!);
     expect(fixture.componentInstance.expandedParentLabel).toBeNull();
   });
+
+  it('applies sidebar--firm-delegated class only in delegated accounting-firm mode', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, firmUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const nativeFixture = TestBed.createComponent(SidebarComponent);
+    nativeFixture.detectChanges();
+    const nativeSidebar = nativeFixture.nativeElement.querySelector('#sidebar') as HTMLElement;
+    expect(nativeSidebar.classList.contains('sidebar--firm-delegated')).toBe(false);
+    expect(nativeFixture.componentInstance.isFirmDelegatedSkin()).toBe(false);
+
+    setUser(auth, delegatedUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const delegatedFixture = TestBed.createComponent(SidebarComponent);
+    delegatedFixture.detectChanges();
+    const delegatedSidebar = delegatedFixture.nativeElement.querySelector('#sidebar') as HTMLElement;
+    expect(delegatedSidebar.classList.contains('sidebar--firm-delegated')).toBe(true);
+    expect(delegatedFixture.componentInstance.isFirmDelegatedSkin()).toBe(true);
+  });
+
+  it('renders delegated footer with Contrôle & Audit in delegated mode', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, {
+      ...delegatedUser,
+      effectivePermissions: [...(delegatedUser.effectivePermissions ?? []), 'audit:read']
+    });
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.detectChanges();
+
+    const footerLabels = fixture.componentInstance.delegatedFooterNav().map(i => i.label);
+    expect(footerLabels).toContain('Contrôle & Audit');
+    expect(footerLabels).toContain('Paramètres');
+    expect(footerLabels).toContain("Centre d'aide");
+
+    const footer = fixture.nativeElement.querySelector('.sidebar-delegated-footer');
+    expect(footer).toBeTruthy();
+  });
+
+  it('extracts Font Awesome icon key for delegated icon boxes', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, delegatedUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.getIconKey('fa-solid fa-bag-shopping')).toBe('fa-bag-shopping');
+    expect(fixture.componentInstance.getIconKey(undefined)).toBeNull();
+  });
+
+  it('toggles footer submenu independently from rail submenu', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, {
+      ...delegatedUser,
+      effectivePermissions: [...(delegatedUser.effectivePermissions ?? []), 'audit:read']
+    });
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.detectChanges();
+
+    const audit = fixture.componentInstance.delegatedFooterNav().find(i => i.label === 'Contrôle & Audit');
+    expect(audit).toBeTruthy();
+
+    fixture.componentInstance.toggleFooterSubmenu(audit!);
+    expect(fixture.componentInstance.expandedFooterLabel).toBe('Contrôle & Audit');
+    expect(fixture.componentInstance.expandedParentLabel).toBeNull();
+
+    const ventes = fixture.componentInstance.navItems().find(i => i.label === 'Ventes');
+    fixture.componentInstance.toggleSubmenu(ventes!);
+    expect(fixture.componentInstance.expandedParentLabel).toBe('Ventes');
+    expect(fixture.componentInstance.expandedFooterLabel).toBeNull();
+  });
 });

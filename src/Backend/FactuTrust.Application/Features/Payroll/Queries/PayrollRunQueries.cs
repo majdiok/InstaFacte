@@ -20,14 +20,12 @@ public sealed class GetPayrollRunsQueryHandler : IRequestHandler<GetPayrollRunsQ
 
     public async Task<IReadOnlyList<PayrollRunListDto>> Handle(GetPayrollRunsQuery request, CancellationToken cancellationToken)
     {
-        var runs = await _runs.ListAsync(request.Year, cancellationToken);
-        var result = new List<PayrollRunListDto>(runs.Count);
-        foreach (var run in runs)
-        {
-            var withPayslips = await _runs.GetByIdWithPayslipsAsync(run.Id, cancellationToken);
-            result.Add(PayrollMappings.ToListDto(run, withPayslips?.Payslips.Count ?? 0));
-        }
-        return result;
+        // Le compte de bulletins est projeté en base : la boucle d'avant chargeait chaque cycle
+        // avec tous ses bulletins et leurs lignes, uniquement pour en connaître le nombre.
+        var rows = await _runs.ListWithPayslipCountsAsync(request.Year, cancellationToken);
+        return rows
+            .Select(x => PayrollMappings.ToListDto(x.Run, x.PayslipCount))
+            .ToList();
     }
 }
 

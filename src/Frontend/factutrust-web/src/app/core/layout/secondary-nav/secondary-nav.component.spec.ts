@@ -286,4 +286,37 @@ describe('SecondaryNavComponent', () => {
     expect(labels).toContain('États');
     expect(labels).toContain('Liasse fiscale');
   });
+
+  it('does not render icon-boxes in company mode', () => {
+    expect(fixture.componentInstance.isFirmDelegatedSkin()).toBe(false);
+    expect(fixture.nativeElement.querySelectorAll('.secondary-nav__icon-box').length).toBe(0);
+    expect(
+      fixture.nativeElement.querySelector('.secondary-nav')?.classList.contains('secondary-nav--firm-delegated')
+    ).toBe(false);
+  });
+
+  it('renders icon-boxes and delegated class in firm delegated mode', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, delegatedUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.isFirmDelegatedSkin()).toBe(true);
+    const nav = fixture.nativeElement.querySelector('.secondary-nav') as HTMLElement;
+    expect(nav.classList.contains('secondary-nav--firm-delegated')).toBe(true);
+
+    const boxes = fixture.nativeElement.querySelectorAll('.secondary-nav__icon-box');
+    expect(boxes.length).toBeGreaterThan(0);
+    expect(fixture.nativeElement.querySelector('.secondary-nav__icon-box[data-icon="fa-sliders"]')).toBeTruthy();
+
+    const configLabel = Array.from(
+      fixture.nativeElement.querySelectorAll('.secondary-nav__label') as NodeListOf<HTMLElement>
+    ).find(el => el.textContent?.trim() === 'Configuration');
+    expect(configLabel).toBeTruthy();
+  });
+
+  it('extracts icon keys for delegated pastilles', () => {
+    expect(fixture.componentInstance.getIconKey('fa-solid fa-sliders')).toBe('fa-sliders');
+    expect(fixture.componentInstance.getIconKey(undefined)).toBeNull();
+  });
 });

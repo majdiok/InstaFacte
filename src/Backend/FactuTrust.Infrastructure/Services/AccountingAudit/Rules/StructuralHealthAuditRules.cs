@@ -99,15 +99,37 @@ public sealed class PieceDuplicatesAuditRule : AccountingAuditRuleBase
             .ToListAsync(cancellationToken);
         if (duplicates.Count == 0) return Array.Empty<AnomalyCandidate>();
 
-        return duplicates.Select(d => SingleGroup(
-            Code, ModuleCode, Category, DefaultSeverity,
-            "Doublon de numéro de pièce",
-            $"Journal {d.JournalCode} — pièce {d.EntryNumber} en {d.Count} exemplaires.",
-            "Risque de confusion et d'audit défavorable.",
-            null, 0, null, null,
-            [new AnomalyLineCandidate(null, null, null, null, $"{d.JournalCode}-{d.EntryNumber}", 0, 0, null, null)],
-            ["Identifier la pièce correcte.", "Renommer ou supprimer le doublon."],
-            "/accounting/entry-search")).ToList();
+        var results = new List<AnomalyCandidate>();
+        foreach (var d in duplicates)
+        {
+            var entries = await c.Db.JournalEntries.AsNoTracking()
+                .Include(e => e.Lines)
+                .Where(e => e.EntryDate.Year == ctx.FiscalYear
+                            && e.JournalCode == d.JournalCode
+                            && e.EntryNumber == d.EntryNumber)
+                .ToListAsync(cancellationToken);
+
+            var lines = entries.Select(e =>
+            {
+                var debit = e.Lines.Sum(l => l.DebitAmount.Amount);
+                var credit = e.Lines.Sum(l => l.CreditAmount.Amount);
+                return new AnomalyLineCandidate(
+                    e.Id, null, e.EntryDate, null, e.Label, debit, credit,
+                    $"{e.JournalCode}-{e.EntryNumber}", null);
+            }).ToList();
+
+            results.Add(SingleGroup(
+                Code, ModuleCode, Category, DefaultSeverity,
+                "Doublon de numéro de pièce",
+                $"Journal {d.JournalCode} — pièce {d.EntryNumber} en {d.Count} exemplaires.",
+                "Risque de confusion et d'audit défavorable.",
+                null, entries.Sum(e => e.Lines.Sum(l => l.DebitAmount.Amount + l.CreditAmount.Amount)), null, null,
+                lines,
+                ["Identifier la pièce correcte.", "Renommer ou supprimer le doublon."],
+                "/accounting/entry-search"));
+        }
+
+        return results;
     }
 }
 

@@ -9,6 +9,8 @@ import { AccountingStatusBannerComponent } from '../shared/accounting-status-ban
 import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.component';
 import { AccountingJournalCatalogService } from '../shared/accounting-journal-catalog.service';
 import { AccountingJournalTab } from '../shared/accounting-journal-tabs.model';
+import { AuthService } from '@core/services/auth.service';
+import { canDeleteDraftAccountingEntries } from '@core/utils/accounting-access';
 import {
   firstDayOfYearLocalYmd,
   parseLocalDateString,
@@ -89,8 +91,8 @@ import {
             Modifier ({{ selectedIds().length }})
           </app-button>
           <app-button variant="danger" icon="pi pi-trash" type="button"
-            (click)="applyDelete()" [disabled]="busy() || selectedIds().length === 0"
-            ariaLabel="Supprimer les brouillons sélectionnés">
+            (click)="applyDelete()" [disabled]="busy() || selectedIds().length === 0 || !canDelete()"
+            [attr.ariaLabel]="canDelete() ? 'Supprimer les brouillons sélectionnés' : 'Suppression réservée au cabinet en mode délégué'">
             Supprimer ({{ selectedIds().length }})
           </app-button>
         </div>
@@ -146,6 +148,9 @@ import {
 export class DraftBatchComponent implements OnInit {
   private readonly api = inject(AccountingService);
   private readonly journalCatalog = inject(AccountingJournalCatalogService);
+  private readonly auth = inject(AuthService);
+
+  readonly canDelete = computed(() => canDeleteDraftAccountingEntries(this.auth));
 
   fromStr = '';
   toStr = '';

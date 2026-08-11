@@ -1,4 +1,4 @@
-import { Component, Input, inject, ElementRef, ViewChild } from '@angular/core';
+import { Component, Input, inject, ElementRef, ViewChild, input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
@@ -18,7 +18,7 @@ import { ThirdPartyRef } from '../models/entry-form.model';
   template: `
     <section class="lines-grid card" aria-labelledby="lines-title">
       <div class="lines-grid__header">
-        <h2 id="lines-title" class="lines-grid__title">Lignes d'écriture</h2>
+        <h2 id="lines-title" class="lines-grid__title">{{ title() }}</h2>
         @if (store.totals().debit > 0 || store.totals().credit > 0) {
           <span class="lines-grid__balance-chip"
                 [class.balanced]="store.isBalanced()"
@@ -39,7 +39,9 @@ import { ThirdPartyRef } from '../models/entry-form.model';
                 [disabled]="store.selectedLineIndexes().size === 0 || store.lines().length <= 2">Supprimer</button>
         <button type="button" class="btn btn-outline-secondary btn-sm" disabled
                 title="Le lettrage est disponible après enregistrement de l'écriture">Lettrer</button>
-        <ng-content select="[entryAnalyzeAction]"></ng-content>
+        @if (!hideAnalyzeSlot()) {
+          <ng-content select="[entryAnalyzeAction]"></ng-content>
+        }
       </div>
 
       <div class="lines-grid__table-wrap" #gridContainer>
@@ -47,7 +49,7 @@ import { ThirdPartyRef } from '../models/entry-form.model';
           [value]="store.lines()"
           dataKey="clientLineId"
           [scrollable]="true"
-          scrollHeight="55vh"
+          [scrollHeight]="compactMode() ? '35vh' : '55vh'"
           styleClass="p-datatable-sm entry-lines-table">
           <ng-template pTemplate="header">
             <tr>
@@ -281,6 +283,10 @@ export class EntryLinesGridComponent {
   @ViewChild('gridContainer') gridContainer?: ElementRef<HTMLElement>;
 
   @Input() vatSide: 'deductible' | 'collected' = 'deductible';
+
+  readonly compactMode = input(false);
+  readonly hideAnalyzeSlot = input(false);
+  readonly title = input('Lignes d\'écriture');
 
   accountSuggestions: AccountSuggestion[] = [];
 

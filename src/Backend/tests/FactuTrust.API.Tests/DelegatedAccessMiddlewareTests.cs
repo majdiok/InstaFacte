@@ -60,6 +60,28 @@ public sealed class DelegatedAccessMiddlewareTests
     }
 
     [Theory]
+    [InlineData("POST", "/api/ai/chat")]
+    [InlineData("POST", "/api/ai/warm-up")]
+    [InlineData("POST", "/api/ai/document-extract")]
+    [InlineData("DELETE", "/api/ai/conversations/a94fc082-160a-42f4-a854-0c95b881914d")]
+    public async Task Delegated_mode_allows_ai_writes(string method, string path)
+    {
+        var (statusCode, nextCalled) = await InvokeAsync(method, path, "delegated");
+
+        Assert.True(nextCalled);
+        Assert.Equal(StatusCodes.Status200OK, statusCode);
+    }
+
+    [Fact]
+    public async Task Native_mode_allows_ai_chat()
+    {
+        var (statusCode, nextCalled) = await InvokeAsync("POST", "/api/ai/chat", "native");
+
+        Assert.True(nextCalled);
+        Assert.Equal(StatusCodes.Status200OK, statusCode);
+    }
+
+    [Theory]
     [InlineData("POST", "/api/accounting/journal-entries")]
     [InlineData("GET", "/api/accounting/chart")]
     public async Task Delegated_mode_allows_accounting_routes(string method, string path)

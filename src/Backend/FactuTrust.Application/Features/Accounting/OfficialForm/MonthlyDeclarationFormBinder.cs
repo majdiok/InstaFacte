@@ -168,16 +168,15 @@ public static class MonthlyDeclarationFormBinder
 
     private static void BindPayrollTaxes(IDictionary<string, string?> values, VatDeclarationDto d)
     {
+        // Assiette de la TFP et du FOPROLOS : la masse salariale soumise, jamais le chiffre
+        // d'affaires. Elle vient du cycle de paie du mois ; à défaut (dossier sans module paie,
+        // saisie manuelle), la case reste vierge — un chiffre faux ne se corrige pas à la main,
+        // une case vide si.
+        var basis = d.PayrollTaxBase;
+
         if (d.Tfp > 0m)
         {
-            // Le formulaire distingue deux lignes exclusives : 1 % (industries manufacturières) et
-            // 2 % (autres activités). Le DTO ne portant que le montant, on déduit la ligne du taux
-            // effectif ; à défaut d'assiette exploitable, on retient « autres activités », cas le
-            // plus fréquent et le plus prudent (taux le plus élevé).
-            var basis = d.SalesTaxableBase;
-            var isManufacturing = basis > 0m && Math.Abs(d.Tfp / basis * 100m - 1m) < 0.05m;
-            var prefix = isManufacturing ? "Tfp.Manufacturing" : "Tfp.Other";
-
+            var prefix = TfpPrefix(d, basis);
             if (basis > 0m)
                 values[$"{prefix}.Base"] = Amount(basis);
             values[$"{prefix}.Amount"] = Amount(d.Tfp);
@@ -187,10 +186,27 @@ public static class MonthlyDeclarationFormBinder
 
         if (d.Foprolos > 0m)
         {
-            if (d.SalesTaxableBase > 0m)
-                values["Foprolos.Base"] = Amount(d.SalesTaxableBase);
+            if (basis > 0m)
+                values["Foprolos.Base"] = Amount(basis);
             values["Foprolos.Amount"] = Amount(d.Foprolos);
         }
+    }
+
+    /// <summary>
+    /// Le formulaire distingue deux lignes exclusives : 1 % (industries manufacturières) et 2 %
+    /// (autres activités). On retient le taux réellement appliqué par le cycle de paie ; à défaut,
+    /// on le reconstitue depuis l'assiette ; en dernier recours « autres activités », cas le plus
+    /// fréquent et le plus prudent (taux le plus élevé).
+    /// </summary>
+    private static string TfpPrefix(VatDeclarationDto d, decimal basis)
+    {
+        var ratePercent = d.TfpRatePercent > 0m
+            ? d.TfpRatePercent
+            : basis > 0m ? d.Tfp / basis * 100m : 0m;
+
+        return ratePercent > 0m && Math.Abs(ratePercent - 1m) < 0.05m
+            ? "Tfp.Manufacturing"
+            : "Tfp.Other";
     }
 
     // ── TVA (page 5) ──────────────────────────────────────────────────────────

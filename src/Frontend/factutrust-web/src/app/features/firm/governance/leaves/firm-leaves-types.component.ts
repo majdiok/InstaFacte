@@ -7,6 +7,7 @@ import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { CheckboxModule } from 'primeng/checkbox';
+import { SelectModule } from 'primeng/select';
 import { TagModule } from 'primeng/tag';
 import { ToastService } from '@core/services/toast.service';
 import { FirmLeavesService } from './data-access/firm-leaves.service';
@@ -17,7 +18,7 @@ import { FirmLeaveType } from './data-access/firm-leaves.models';
   standalone: true,
   imports: [
     CommonModule, ReactiveFormsModule, TableModule, ButtonModule, DialogModule,
-    InputTextModule, InputNumberModule, CheckboxModule, TagModule
+    InputTextModule, InputNumberModule, CheckboxModule, SelectModule, TagModule
   ],
   template: `
     <div class="toolbar">
@@ -27,7 +28,8 @@ import { FirmLeaveType } from './data-access/firm-leaves.models';
       <p-table [value]="rows()" [loading]="loading()">
         <ng-template pTemplate="header">
           <tr>
-            <th>Couleur</th><th>Code</th><th>Libellé</th><th>Déduit solde</th><th>Approbation</th><th>Actif</th><th></th>
+            <th>Couleur</th><th>Code</th><th>Libellé</th><th>Déduit solde</th>
+            <th>Effet paie</th><th>Compte comme absence</th><th>Approbation</th><th>Actif</th><th></th>
           </tr>
         </ng-template>
         <ng-template pTemplate="body" let-t>
@@ -36,6 +38,14 @@ import { FirmLeaveType } from './data-access/firm-leaves.models';
             <td>{{ t.code }}</td>
             <td>{{ t.label }}</td>
             <td>{{ t.deductsBalance ? 'Oui' : 'Non' }}</td>
+            <td>
+              @if (t.payrollLeaveType != null) {
+                {{ t.payrollEffectDisplay }}
+              } @else {
+                <span class="muted">Aucun</span>
+              }
+            </td>
+            <td>{{ t.countsAsAbsence ? 'Oui' : 'Non' }}</td>
             <td>{{ t.requiresApproval ? 'Oui' : 'Non' }}</td>
             <td><p-tag [value]="t.isActive ? 'Actif' : 'Inactif'" [severity]="t.isActive ? 'success' : 'secondary'" /></td>
             <td><button type="button" pButton icon="pi pi-pencil" class="p-button-text p-button-sm" (click)="openEdit(t)"></button></td>
@@ -53,7 +63,22 @@ import { FirmLeaveType } from './data-access/firm-leaves.models';
         <label>Libellé * <input pInputText formControlName="label" /></label>
         <label>Couleur <input pInputText formControlName="colorHex" /></label>
         <label>Ordre <p-inputNumber formControlName="sortOrder" /></label>
+        <label>Effet sur le bulletin
+          <p-select
+            formControlName="payrollLeaveType"
+            [options]="payrollEffectOptions"
+            optionLabel="label"
+            optionValue="value"
+            [showClear]="true"
+            placeholder="Aucun effet paie"
+            appendTo="body" />
+          <small class="hint">Détermine le congé de paie créé à l'approbation (retenue, IJ CNSS…).</small>
+        </label>
         <label class="chk"><p-checkbox formControlName="deductsBalance" [binary]="true" /><span>Déduit du solde</span></label>
+        <label class="chk">
+          <p-checkbox formControlName="countsAsAbsence" [binary]="true" />
+          <span>Décompté du temps de présence</span>
+        </label>
         <label class="chk"><p-checkbox formControlName="requiresApproval" [binary]="true" /><span>Nécessite approbation</span></label>
         <label class="chk"><p-checkbox formControlName="isActive" [binary]="true" /><span>Actif</span></label>
       </form>
@@ -70,6 +95,8 @@ import { FirmLeaveType } from './data-access/firm-leaves.models';
     .dlg { display:grid; gap:.65rem; }
     .dlg label { display:grid; gap:.3rem; font-size:.875rem; }
     .chk { display:flex !important; flex-direction:row !important; align-items:center; gap:.5rem; }
+    .muted { color:#64748b; }
+    .hint { color:#64748b; font-size:.75rem; }
   `]
 })
 export class FirmLeavesTypesComponent implements OnInit {
@@ -89,8 +116,23 @@ export class FirmLeavesTypesComponent implements OnInit {
     sortOrder: [0],
     deductsBalance: [false],
     requiresApproval: [true],
-    isActive: [true]
+    isActive: [true],
+    payrollLeaveType: [null as number | null],
+    countsAsAbsence: [false]
   });
+
+  /** Valeurs de LeaveType côté paie. Un type non mappé reste sans effet sur le bulletin. */
+  readonly payrollEffectOptions = [
+    { label: 'Congé payé', value: 0 },
+    { label: 'Congé sans solde (retenue sur le brut)', value: 1 },
+    { label: 'Congé maladie (IJ CNSS)', value: 2 },
+    { label: 'Congé maternité', value: 3 },
+    { label: 'Absence non justifiée (retenue sur le brut)', value: 4 },
+    { label: 'Congé paternité', value: 5 },
+    { label: 'Congé décès', value: 6 },
+    { label: 'Récupération', value: 7 },
+    { label: 'Autre', value: 99 }
+  ];
 
   ngOnInit(): void { this.reload(); }
 
@@ -106,7 +148,8 @@ export class FirmLeavesTypesComponent implements OnInit {
     this.editingId = null;
     this.form.reset({
       code: '', label: '', colorHex: '#64748b', sortOrder: 0,
-      deductsBalance: false, requiresApproval: true, isActive: true
+      deductsBalance: false, requiresApproval: true, isActive: true,
+      payrollLeaveType: null, countsAsAbsence: false
     });
     this.visible = true;
   }
@@ -128,7 +171,9 @@ export class FirmLeavesTypesComponent implements OnInit {
       sortOrder: v.sortOrder,
       deductsBalance: v.deductsBalance,
       requiresApproval: v.requiresApproval,
-      isActive: v.isActive
+      isActive: v.isActive,
+      payrollLeaveType: v.payrollLeaveType,
+      countsAsAbsence: v.countsAsAbsence
     }).subscribe({
       next: r => {
         if (r.success) {

@@ -295,6 +295,52 @@ export interface VatDeclarationDto {
   addressLine?: string | null;
   /** Drapeau serveur : l'export au format du formulaire officiel DGI est-il activé ? */
   officialFormEnabled?: boolean;
+  // Assiette et taux des taxes sur salaires, issus du cycle de paie du mois.
+  /** Masse salariale soumise — assiette de la TFP et du FOPROLOS. 0 si indéterminable. */
+  payrollTaxBase?: number;
+  /** Taux de TFP appliqué par le cycle de paie (1 % ou 2 %). 0 si inconnu. */
+  tfpRatePercent?: number;
+  /** Taux de FOPROLOS appliqué par le cycle de paie. 0 si inconnu. */
+  foprolosRatePercent?: number;
+  /** Masse salariale brute — assiette de la retenue à la source sur salaires. */
+  payrollSalariesGrossBase?: number;
+  /**
+   * Recalcul temps réel de la période depuis les modules. Les champs de premier niveau portent ce
+   * qui a été **déposé** ; celui-ci porte ce que les modules produiraient **aujourd'hui**. L'écart
+   * entre les deux est ce que l'écran signale — rien n'est réaligné sans geste de l'utilisateur.
+   *
+   * Optionnel : absent si le backend est antérieur, ou si la V2 n'est pas activée.
+   */
+  suggested?: VatDeclarationComputed | null;
+}
+
+/** Photographie temps réel d'une période, telle que les modules la produiraient. */
+export interface VatDeclarationComputed {
+  collectedVat19: number;
+  collectedVat13: number;
+  collectedVat7: number;
+  deductibleVatGoods: number;
+  deductibleVatAssets: number;
+  previousCredit: number;
+  vatDue: number;
+  creditToCarry: number;
+  fodec: number;
+  droitTimbre: number;
+  tcl: number;
+  tfp: number;
+  foprolos: number;
+  withholdingTax: number;
+  /** Part de la RS provenant des factures fournisseurs. */
+  withholdingFromInvoices: number;
+  /** Part de la RS provenant des traitements et salaires (IRPP + CSS). */
+  withholdingFromSalaries: number;
+  totalToPay: number;
+  /** Un cycle de paie existe pour la période, quel que soit son statut. */
+  payrollRunExists: boolean;
+  payrollRunStatus?: number | null;
+  payrollRunStatusDisplay?: string | null;
+  /** Faux quand le cycle existe sans être validé ni clôturé : ses montants sont ignorés. */
+  payrollRunUsable: boolean;
 }
 
 /** Autres taxes de la déclaration mensuelle unique + drapeau rectificative. */
@@ -589,6 +635,8 @@ export interface JournalSearchFilters {
   take?: number;
   /** Filtre sur la référence de pièce externe (contient). */
   pieceRef?: string | null;
+  /** Numéro de pièce interne (journal). */
+  entryNumber?: number | null;
 }
 
 /** Mise à jour d'une écriture en brouillon (journal et date figés). */
@@ -1855,6 +1903,7 @@ export class AccountingService {
     add('lettering', filters.lettering);
     add('status', filters.status);
     add('pieceRef', filters.pieceRef);
+    add('entryNumber', filters.entryNumber);
     return this.http.get<ApiResponse<JournalSearchRowDto[]>>(`${this.base}/search`, { params: p });
   }
 

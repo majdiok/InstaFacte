@@ -2,6 +2,9 @@ using FactuTrust.Domain.Entities.Payroll;
 
 namespace FactuTrust.Application.Common.Interfaces.Repositories;
 
+/// <summary>Un cycle de paie et le nombre de bulletins qu'il porte.</summary>
+public sealed record PayrollRunWithPayslipCount(PayrollRun Run, int PayslipCount);
+
 /// <summary>
 /// Repository interface for the PayrollRun aggregate (module Paie).
 /// </summary>
@@ -22,6 +25,18 @@ public interface IPayrollRunRepository
     Task<Payslip?> GetPayslipByIdAsync(Guid payslipId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<PayrollRun>> ListAsync(int? year = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Runs of a year with only the count of their payslips.
+    /// </summary>
+    /// <remarks>
+    /// La liste des cycles n'a besoin que du nombre de bulletins. Le chemin naïf — charger chaque
+    /// cycle avec ses bulletins <i>et leurs lignes</i> pour en compter les éléments — coûtait douze
+    /// chargements complets pour afficher un exercice.
+    /// </remarks>
+    Task<IReadOnlyList<PayrollRunWithPayslipCount>> ListWithPayslipCountsAsync(
+        int? year = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Runs whose period falls within a civil quarter (used for the DTS declaration).</summary>
     Task<IReadOnlyList<PayrollRun>> ListByQuarterWithPayslipsAsync(int year, int quarter, CancellationToken cancellationToken = default);

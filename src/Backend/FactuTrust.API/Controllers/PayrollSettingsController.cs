@@ -61,6 +61,7 @@ public class PayrollSettingsController : ControllerBase
 
     [HttpPut("parameters/{fiscalYear:int}")]
     [Authorize(Policy = PermissionPolicies.PayrollSettings)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateParameters(int fiscalYear, [FromBody] UpdatePayrollParametersDto dto, CancellationToken cancellationToken)
     {
@@ -68,5 +69,31 @@ public class PayrollSettingsController : ControllerBase
         if (result.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
         return Ok(ApiResponse<object>.Ok(null!, "Paramètres de paie mis à jour."));
+    }
+
+    [HttpGet("parameters/{fiscalYear:int}/garnishment-brackets")]
+    [Authorize(Policy = PermissionPolicies.PayrollRead)]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<PayrollGarnishmentBracketDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetGarnishmentBrackets(int fiscalYear, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetPayrollGarnishmentBracketsQuery(fiscalYear), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<IReadOnlyList<PayrollGarnishmentBracketDto>>.Fail(result.Error.Description));
+        return Ok(ApiResponse<IReadOnlyList<PayrollGarnishmentBracketDto>>.Ok(result.Value));
+    }
+
+    [HttpPut("parameters/{fiscalYear:int}/garnishment-brackets")]
+    [Authorize(Policy = PermissionPolicies.PayrollSettings)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateGarnishmentBrackets(
+        int fiscalYear,
+        [FromBody] UpdatePayrollGarnishmentBracketsDto dto,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new UpdatePayrollGarnishmentBracketsCommand(fiscalYear, dto), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+        return Ok(ApiResponse<object>.Ok(null!, "Barème de saisie mis à jour."));
     }
 }

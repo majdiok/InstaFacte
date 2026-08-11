@@ -1,7 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterModule } from '@angular/router';
+import { RouterModule, ActivatedRoute } from '@angular/router';
 import { TableModule, TableLazyLoadEvent } from 'primeng/table';
 import { ChartModule } from 'primeng/chart';
 import { DialogModule } from 'primeng/dialog';
@@ -28,6 +28,7 @@ import {
   SeverityTab
 } from './audit-control.constants';
 import { downloadBlob } from '../shared/accounting-download.util';
+import { AuditCorrectionNavigator } from './audit-correction.navigation';
 
 @Component({
   selector: 'app-audit-control-page',
@@ -52,6 +53,8 @@ import { downloadBlob } from '../shared/accounting-download.util';
 })
 export class AuditControlPageComponent implements OnInit {
   private readonly auditApi = inject(AccountingAuditService);
+  private readonly correctionNavigator = inject(AuditCorrectionNavigator);
+  private readonly route = inject(ActivatedRoute);
 
   readonly dashboardEnabled = signal(true);
   readonly loading = signal(false);
@@ -105,6 +108,11 @@ export class AuditControlPageComponent implements OnInit {
   };
 
   ngOnInit(): void {
+    const fy = this.route.snapshot.queryParamMap.get('fiscalYear');
+    if (fy) {
+      const year = Number(fy);
+      if (!Number.isNaN(year)) this.fiscalYear = year;
+    }
     this.refreshAll();
   }
 
@@ -220,6 +228,22 @@ export class AuditControlPageComponent implements OnInit {
         }
       }
     });
+  }
+
+  correctAnomaly(item: AccountingAnomalyListItemDto | AccountingAnomalyDetailDto): void {
+    this.correctionNavigator.navigate(item, {
+      fiscalYear: this.fiscalYear,
+      closeDialog: () => this.detailVisible.set(false)
+    });
+  }
+
+  openEntryLine(line: AccountingAnomalyDetailDto['lines'][number]): void {
+    if (!line.journalEntryId) return;
+    this.correctionNavigator.navigateToEntry(line.journalEntryId, line.entryDate ?? null);
+  }
+
+  canCorrect(item: AccountingAnomalyListItemDto | AccountingAnomalyDetailDto): boolean {
+    return !!(item.correctionLink?.route || item.deepLinkRoute);
   }
 
   exportReport(format: 'csv' | 'pdf'): void {

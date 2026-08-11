@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { environment } from '@environments/environment';
 import { AuthService, AuthResponse, User, normalizeTenantRole, normalizeTenantKind } from './auth.service';
 
@@ -375,6 +375,62 @@ describe('AuthService', () => {
       const service = TestBed.inject(AuthService);
       setEffectivePermissions(service, ['products:read']);
       expect(service.hasAnyPermission(['products:create', 'products:delete'])).toBe(false);
+    });
+  });
+
+  describe('invalidateSession / logout redirect', () => {
+    beforeEach(() => {
+      localStorage.clear();
+      sessionStorage.clear();
+      configureAuthTestBed();
+      httpMock = TestBed.inject(HttpTestingController);
+    });
+
+    function seedSession(): AuthService {
+      sessionStorage.setItem('ft_access_token', makeJwt());
+      sessionStorage.setItem('ft_refresh_token', 'r');
+      sessionStorage.setItem('ft_user', JSON.stringify(minimalUser));
+      return TestBed.inject(AuthService);
+    }
+
+    it('invalidateSession clears tokens without POST /logout and skips navigate on /auth/login', () => {
+      const service = seedSession();
+      const router = TestBed.inject(Router);
+      spyOnProperty(router, 'url', 'get').and.returnValue('/auth/login');
+      const navigateSpy = spyOn(router, 'navigate');
+
+      service.invalidateSession();
+
+      expect(sessionStorage.getItem('ft_access_token')).toBeNull();
+      expect(service.user()).toBeNull();
+      expect(navigateSpy).not.toHaveBeenCalled();
+      httpMock.expectNone(r => r.url.includes('/auth/logout'));
+    });
+
+    it('invalidateSession redirects to login when not on an auth route', () => {
+      const service = seedSession();
+      const router = TestBed.inject(Router);
+      spyOnProperty(router, 'url', 'get').and.returnValue('/dashboard');
+      const navigateSpy = spyOn(router, 'navigate').and.resolveTo(true);
+
+      service.invalidateSession();
+
+      expect(sessionStorage.getItem('ft_access_token')).toBeNull();
+      expect(navigateSpy).toHaveBeenCalledWith(['/auth/login']);
+    });
+
+    it('logout clears session and skips navigate when already on /auth/register', () => {
+      const service = seedSession();
+      const router = TestBed.inject(Router);
+      spyOnProperty(router, 'url', 'get').and.returnValue('/auth/register');
+      const navigateSpy = spyOn(router, 'navigate');
+
+      service.logout();
+      const req = httpMock.expectOne(r => r.url === `${environment.apiUrl}/auth/logout`);
+      req.flush({});
+
+      expect(sessionStorage.getItem('ft_access_token')).toBeNull();
+      expect(navigateSpy).not.toHaveBeenCalled();
     });
   });
 });

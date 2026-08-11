@@ -58,7 +58,7 @@ import { PayrollConsultBannerComponent, PayrollAmountPipe, formatPayrollAmount }
     } @else if (employee()) {
       <app-page-header [title]="employee()!.fullName" [subtitle]="'Matricule ' + employee()!.employeeNumber">
         @if (canManage()) {
-          <app-button variant="outline" icon="pi-pencil" iconPos="left" [routerLink]="['/payroll/employees', employee()!.id, 'edit']">Modifier</app-button>
+          <app-button variant="outline" icon="pi-pencil" iconPos="left" [routerLink]="[routeBase() + '/employees', employee()!.id, 'edit']">Modifier</app-button>
           @if (!employee()!.terminationDate) {
             <app-button variant="outline" icon="pi-sign-out" iconPos="left" (click)="departureDialogVisible = true">Déclarer un départ</app-button>
           }
@@ -248,7 +248,21 @@ import { PayrollConsultBannerComponent, PayrollAmountPipe, formatPayrollAmount }
         </p-tabpanel>
 
         <p-tabpanel [value]="2">
-          <app-employee-leaves-tab [employeeId]="employee()!.id" [readOnly]="!canManage()" />
+          @if (firmInternal()) {
+            <!-- Paie interne du cabinet : les congés se saisissent une seule fois, côté RH,
+                 et sont reportés automatiquement ici à l'approbation. -->
+            <div class="leaves-source-banner">
+              <i class="pi pi-info-circle"></i>
+              <div>
+                <strong>Les congés du cabinet se saisissent dans Congés &amp; Absences.</strong>
+                <p>Cette vue reflète les congés approuvés qui ont été reportés en paie.</p>
+              </div>
+              <a routerLink="/firm/governance/leaves" class="banner-link">Ouvrir Congés &amp; Absences</a>
+            </div>
+          }
+          <app-employee-leaves-tab
+            [employeeId]="employee()!.id"
+            [readOnly]="!canManage() || firmInternal()" />
         </p-tabpanel>
 
         <p-tabpanel [value]="3">
@@ -306,6 +320,17 @@ import { PayrollConsultBannerComponent, PayrollAmountPipe, formatPayrollAmount }
     .ml-2 { margin-left: var(--spacing-2); }
     .mt-2 { margin-top: var(--spacing-2); }
     .mr-2 { margin-right: var(--spacing-2); }
+    .leaves-source-banner {
+      display: flex; align-items: flex-start; gap: .75rem; flex-wrap: wrap;
+      border: 1px solid var(--color-border-subtle, #e2e8f0);
+      background: var(--color-surface-muted, #f8fafc);
+      border-radius: var(--radius-lg, 12px);
+      padding: var(--spacing-3, 12px);
+      margin-bottom: var(--spacing-4, 16px);
+      font-size: .875rem;
+    }
+    .leaves-source-banner p { margin: .2rem 0 0; color: var(--color-text-muted, #64748b); }
+    .leaves-source-banner .banner-link { margin-left: auto; color: var(--color-primary, #0f766e); white-space: nowrap; }
   `]
 })
 export class EmployeeDetailComponent implements OnInit {
@@ -323,10 +348,12 @@ export class EmployeeDetailComponent implements OnInit {
   contractDialogVisible = false;
   departureDialogVisible = false;
   editingContract: EmploymentContract | null = null;
+  routeBase = signal('/payroll');
+  firmInternal = signal(false);
 
   canManage = computed(() => canManagePayrollEmployees(this.auth));
   canManageGarnishments = computed(() => userCanManageGarnishments(this.auth));
-  showConsultBanner = computed(() => isPayrollConsultMode(this.auth));
+  showConsultBanner = computed(() => !this.firmInternal() && isPayrollConsultMode(this.auth));
 
   alerts = computed(() => {
     const e = this.employee();
@@ -348,6 +375,9 @@ export class EmployeeDetailComponent implements OnInit {
   });
 
   ngOnInit(): void {
+    const data = this.route.snapshot.data;
+    this.routeBase.set(data['payrollRouteBase'] ?? '/payroll');
+    this.firmInternal.set(!!data['firmInternalPayroll']);
     this.loadSmig();
     this.reload();
   }
@@ -435,7 +465,7 @@ export class EmployeeDetailComponent implements OnInit {
         this.employees.delete(this.employee()!.id).subscribe({
           next: () => {
             this.toast.add({ severity: 'success', summary: 'Salarié', detail: 'Salarié supprimé.' });
-            this.router.navigate(['/payroll/employees']);
+            this.router.navigate([this.routeBase() + '/employees']);
           },
           error: err => this.toast.add({ severity: 'error', summary: 'Salarié', detail: err.error?.message ?? 'Suppression impossible.' })
         });

@@ -1,6 +1,11 @@
+using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.FirmGovernance.Validation;
+using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
+using FactuTrust.Domain.Entities.FirmGovernance;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.ValueObjects;
 using FactuTrust.Infrastructure.Persistence;
@@ -10,7 +15,6 @@ using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -29,10 +33,14 @@ public sealed class FirmCollaboratorServiceTests
         public required UserManager<ApplicationUser> UserManager { get; init; }
         public required FirmCollaboratorService Service { get; init; }
         public required Mock<IEmailService> Email { get; init; }
+        public required Mock<IFirmInternalPayrollProvisioningService> Provisioning { get; init; }
+        public required Mock<ITenantService> TenantService { get; init; }
         public required string StorageRoot { get; init; }
     }
 
-    private static async Task<TestContext> CreateContextAsync()
+    private static async Task<TestContext> CreateContextAsync(
+        FirmGovernanceOptions? governanceOptions = null,
+        Action<Mock<IFirmInternalPayrollProvisioningService>, MasterDbContext>? configureProvisioning = null)
     {
         var dbName = Guid.NewGuid().ToString();
         var options = new DbContextOptionsBuilder<MasterDbContext>()
@@ -100,11 +108,21 @@ public sealed class FirmCollaboratorServiceTests
                 It.IsAny<IReadOnlyDictionary<string, object?>?>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Guid.NewGuid());
 
+        var provisioning = new Mock<IFirmInternalPayrollProvisioningService>();
+        configureProvisioning?.Invoke(provisioning, db);
+
+        var tenantService = new Mock<ITenantService>();
+        tenantService
+            .Setup(t => t.GetConnectionStringAsync(FirmId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync("Server=(localdb)\\mssqllocaldb;Database=PayrollTest;");
+
         var storageRoot = Path.Combine(Path.GetTempPath(), "ft-collab-tests", Guid.NewGuid().ToString("N"));
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["App:FrontendBaseUrl"] = "http://localhost:4200"
         }).Build();
+
+        var governance = governanceOptions ?? new FirmGovernanceOptions();
 
         var service = new FirmCollaboratorService(
             db,
@@ -112,6 +130,10 @@ public sealed class FirmCollaboratorServiceTests
             email.Object,
             config,
             Options.Create(new FirmCollaboratorStorageOptions { BasePath = storageRoot }),
+            provisioning.Object,
+            tenantService.Object,
+            new FirmCollaboratorPayrollOnboardingValidator(),
+            Options.Create(governance),
             NullLogger<FirmCollaboratorService>.Instance);
 
         return new TestContext
@@ -120,9 +142,41 @@ public sealed class FirmCollaboratorServiceTests
             UserManager = userManager,
             Service = service,
             Email = email,
+            Provisioning = provisioning,
+            TenantService = tenantService,
             StorageRoot = storageRoot
         };
     }
+
+    private static CreateFirmUserDto DefaultCreateDto(string email) => new()
+    {
+        Email = email,
+        FirstName = "Ada",
+        LastName = "Lovelace",
+        Password = "Password1!",
+        Role = UserRole.FirmAccountant,
+        Qualification = "Comptable",
+        UseFirmAddress = true
+    };
+
+    private static FirmCollaboratorPayrollOnboardingDto DefaultPayrollOnboarding() => new()
+    {
+        EmployeeNumber = "CAB-TEST-001",
+        HireDate = new DateTime(2025, 6, 1),
+        Contract = new CreateContractDto
+        {
+            Type = "Cdi",
+            Regime = "Rsna",
+            WeeklyRegime = "FortyEightHours",
+            StartDate = new DateTime(2025, 6, 1),
+            BaseSalary = 1500m,
+            WorkAccidentRate = 0.4m,
+            JobTitle = "Collaborateur cabinet"
+        }
+    };
+
+    private static CreateFirmUserDto CreateDtoWithPayroll(string email) =>
+        DefaultCreateDto(email) with { Payroll = DefaultPayrollOnboarding() };
 
     [Fact]
     public async Task Create_WithPassword_KeepsEmailConfirmed_AndSkipsInvite()
@@ -130,16 +184,7 @@ public sealed class FirmCollaboratorServiceTests
         var ctx = await CreateContextAsync();
         await using var db = ctx.Db;
 
-        var result = await ctx.Service.CreateAsync(FirmId, new CreateFirmUserDto
-        {
-            Email = "collab@test.tn",
-            FirstName = "Ada",
-            LastName = "Lovelace",
-            Password = "Password1!",
-            Role = UserRole.FirmAccountant,
-            Qualification = "Comptable",
-            UseFirmAddress = true
-        }, null, null, null);
+        var result = await ctx.Service.CreateAsync(FirmId, DefaultCreateDto("collab@test.tn"), null, null, null);
 
         Assert.True(result.IsSuccess, result.IsFailure ? result.Error.Description : "");
         Assert.True(result.Value.EmailConfirmed);
@@ -147,6 +192,167 @@ public sealed class FirmCollaboratorServiceTests
         ctx.Email.Verify(e => e.EnqueueTemplatedAsync(
             It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>(),
             It.IsAny<IReadOnlyDictionary<string, object?>?>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never);
+        ctx.Provisioning.Verify(
+            p => p.ProvisionCollaboratorAsync(
+                It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<Guid>(),
+                It.IsAny<FirmCollaboratorPayrollOnboardingDto?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Create_WhenAutoProvisionFlagOn_WithoutPayroll_FailsBeforeUserCreation()
+    {
+        var ctx = await CreateContextAsync(new FirmGovernanceOptions
+        {
+            Enabled = true,
+            EnableFirmInternalPayroll = true,
+            AutoProvisionPayrollOnCollaboratorCreate = true
+        });
+
+        var result = await ctx.Service.CreateAsync(FirmId, DefaultCreateDto("no-payroll@test.tn"), null, null, null);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.PayrollProvision", result.Error.Code);
+        Assert.Contains("dossier paie est obligatoire", result.Error.Description);
+        Assert.False(await ctx.Db.Users.AnyAsync(u => u.Email == "no-payroll@test.tn"));
+        ctx.Provisioning.Verify(
+            p => p.ProvisionCollaboratorAsync(
+                It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<Guid>(),
+                It.IsAny<FirmCollaboratorPayrollOnboardingDto?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Create_WhenAutoProvisionFlagOn_AndProvisionSucceeds_SetsPayrollEmployeeId()
+    {
+        var payrollEmployeeId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        var ctx = await CreateContextAsync(
+            new FirmGovernanceOptions
+            {
+                Enabled = true,
+                EnableFirmInternalPayroll = true,
+                AutoProvisionPayrollOnCollaboratorCreate = true
+            },
+            (mock, db) =>
+            {
+                mock.Setup(p => p.ProvisionCollaboratorAsync(
+                        FirmId,
+                        true,
+                        It.IsAny<Guid>(),
+                        It.IsAny<FirmCollaboratorPayrollOnboardingDto?>(),
+                        It.IsAny<CancellationToken>()))
+                    .Returns<Guid, bool, Guid, FirmCollaboratorPayrollOnboardingDto?, CancellationToken>((_, _, userId, _, _) =>
+                    {
+                        var profile = db.FirmCollaboratorProfiles.First(p => p.UserId == userId);
+                        profile.PayrollEmployeeId = payrollEmployeeId;
+                        profile.PayrollLinkSource = FirmPayrollLinkSource.ProvisionedFromCollaborator;
+                        db.SaveChanges();
+                        return Task.FromResult(Result.Success(new FirmPayrollProvisionResultDto { Created = 1 }));
+                    });
+            });
+
+        var payroll = DefaultPayrollOnboarding();
+        var result = await ctx.Service.CreateAsync(
+            FirmId, CreateDtoWithPayroll("payroll-ok@test.tn"), null, null, null);
+
+        Assert.True(result.IsSuccess, result.IsFailure ? result.Error.Description : "");
+        Assert.Equal(payrollEmployeeId, result.Value.PayrollEmployeeId);
+        Assert.Equal("Provisionné", result.Value.PayrollLinkSourceDisplay);
+        ctx.Provisioning.Verify(
+            p => p.ProvisionCollaboratorAsync(
+                FirmId,
+                true,
+                result.Value.Id,
+                It.Is<FirmCollaboratorPayrollOnboardingDto?>(o =>
+                    o != null && o.EmployeeNumber == payroll.EmployeeNumber),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Create_WhenAutoProvisionFlagOn_AndProvisionFails_RollsBackCollaborator()
+    {
+        var ctx = await CreateContextAsync(
+            new FirmGovernanceOptions
+            {
+                Enabled = true,
+                EnableFirmInternalPayroll = true,
+                AutoProvisionPayrollOnCollaboratorCreate = true
+            },
+            (mock, _) =>
+            {
+                mock.Setup(p => p.ProvisionCollaboratorAsync(
+                        FirmId,
+                        true,
+                        It.IsAny<Guid>(),
+                        It.IsAny<FirmCollaboratorPayrollOnboardingDto?>(),
+                        It.IsAny<CancellationToken>()))
+                    .ReturnsAsync(Result.Failure<FirmPayrollProvisionResultDto>(
+                        Error.Validation("Provision", "Base paie indisponible")));
+            });
+
+        var result = await ctx.Service.CreateAsync(
+            FirmId, CreateDtoWithPayroll("payroll-ko@test.tn"), null, null, null);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.PayrollProvision", result.Error.Code);
+        Assert.Contains("Impossible de créer le salarié paie", result.Error.Description);
+        Assert.False(await ctx.Db.Users.AnyAsync(u => u.Email == "payroll-ko@test.tn"));
+    }
+
+    [Fact]
+    public async Task Create_WhenAutoProvisionThrows_RollsBackCollaborator()
+    {
+        var ctx = await CreateContextAsync(
+            new FirmGovernanceOptions
+            {
+                Enabled = true,
+                EnableFirmInternalPayroll = true,
+                AutoProvisionPayrollOnCollaboratorCreate = true
+            },
+            (mock, _) =>
+            {
+                mock.Setup(p => p.ProvisionCollaboratorAsync(
+                        FirmId,
+                        true,
+                        It.IsAny<Guid>(),
+                        It.IsAny<FirmCollaboratorPayrollOnboardingDto?>(),
+                        It.IsAny<CancellationToken>()))
+                    .ThrowsAsync(new InvalidOperationException("Sequence contains no elements."));
+            });
+
+        var result = await ctx.Service.CreateAsync(
+            FirmId, CreateDtoWithPayroll("payroll-ex@test.tn"), null, null, null);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.PayrollProvision", result.Error.Code);
+        Assert.Contains("Sequence contains no elements", result.Error.Description);
+        Assert.False(await ctx.Db.Users.AnyAsync(u => u.Email == "payroll-ex@test.tn"));
+    }
+
+    [Fact]
+    public async Task Create_WhenAutoProvisionFlagOn_AndNoTenantConnection_FailsBeforeUserCreation()
+    {
+        var ctx = await CreateContextAsync(new FirmGovernanceOptions
+        {
+            Enabled = true,
+            EnableFirmInternalPayroll = true,
+            AutoProvisionPayrollOnCollaboratorCreate = true
+        });
+        ctx.TenantService
+            .Setup(t => t.GetConnectionStringAsync(FirmId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string?)null);
+
+        var result = await ctx.Service.CreateAsync(FirmId, DefaultCreateDto("preflight@test.tn"), null, null, null);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.PayrollProvision", result.Error.Code);
+        Assert.False(await ctx.Db.Users.AnyAsync(u => u.Email == "preflight@test.tn"));
+        ctx.Provisioning.Verify(
+            p => p.ProvisionCollaboratorAsync(
+                It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<Guid>(),
+                It.IsAny<FirmCollaboratorPayrollOnboardingDto?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

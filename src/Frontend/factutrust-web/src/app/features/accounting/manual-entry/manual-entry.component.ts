@@ -326,10 +326,13 @@ export class ManualEntryComponent implements OnInit {
     this.pendingFiles.update(files => [...files, event.file]);
     this.tabIndex.set(0);
     this.store.activeTab.set('standard');
+    const lineCount = event.proposal.lines.filter(
+      l => l.debit > 0 || l.credit > 0
+    ).length;
     this.toast.add({
       severity: 'success',
       summary: 'Proposition appliquée',
-      detail: `${event.proposal.lines.length} ligne(s) posée(s). Vérifiez avant d'enregistrer.`
+      detail: `${lineCount} ligne(s) posée(s). Vérifiez avant d'enregistrer.`
     });
   }
 

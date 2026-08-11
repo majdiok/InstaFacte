@@ -24,6 +24,7 @@ export const environment = {
   storefrontProceduralRichEnabled: true,
   storefrontDynamicFramingEnabled: true,
   accountingFirmsEnabled: true,
+  firmHelpUrl: 'https://instafact.tn/aide',
   /** Canal WhatsApp (liaison assistant IA + rappels fiscaux). OFF tant que la passerelle n'est pas déployée. */
   channelsEnabled: false,
   featureFlags: {

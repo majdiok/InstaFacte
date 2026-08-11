@@ -62,7 +62,7 @@ function parseIsoDate(value?: string): Date | null {
     <app-page-header
       [title]="isEditMode() ? 'Modifier le salarié' : 'Nouveau salarié'"
       [subtitle]="isEditMode() ? 'Mettez à jour le dossier salarié.' : 'Créez un dossier salarié et ses informations de base.'">
-      <app-button variant="outline" icon="pi-times" iconPos="left" routerLink="/payroll/employees">Annuler</app-button>
+      <app-button variant="outline" icon="pi-times" iconPos="left" [routerLink]="routeBase() + '/employees'">Annuler</app-button>
     </app-page-header>
 
     @if (loading()) {
@@ -320,6 +320,7 @@ export class EmployeeFormComponent implements OnInit {
   loading = signal(false);
   saving = signal(false);
   employeeId = signal<string | null>(null);
+  routeBase = signal('/payroll');
   parentClaimsStatus = signal<string>('None');
   legacyDependentParents = signal(0);
   isEditMode = computed(() => !!this.employeeId());
@@ -358,11 +359,13 @@ export class EmployeeFormComponent implements OnInit {
   }
 
   breadcrumbItems = computed((): BreadcrumbItem[] => [
-    { label: 'Salariés', route: '/payroll/employees' },
+    { label: 'Salariés', route: `${this.routeBase()}/employees` },
     { label: this.isEditMode() ? 'Modifier' : 'Nouveau' }
   ]);
 
   ngOnInit(): void {
+    const data = this.route.snapshot.data;
+    this.routeBase.set(data['payrollRouteBase'] ?? '/payroll');
     const id = this.route.snapshot.paramMap.get('id');
     if (id && id !== 'new') {
       this.employeeId.set(id);
@@ -423,7 +426,7 @@ export class EmployeeFormComponent implements OnInit {
       },
       error: () => {
         this.toast.add({ severity: 'error', summary: 'Salarié', detail: 'Salarié introuvable.' });
-        this.router.navigate(['/payroll/employees']);
+        this.router.navigate([this.routeBase() + '/employees']);
         this.loading.set(false);
       }
     });
@@ -512,7 +515,7 @@ export class EmployeeFormComponent implements OnInit {
       this.employees.update(this.employeeId()!, body).subscribe({
         next: () => {
           this.toast.add({ severity: 'success', summary: 'Salarié', detail: 'Dossier mis à jour.' });
-          this.router.navigate(['/payroll/employees', this.employeeId()]);
+          this.router.navigate([this.routeBase() + '/employees', this.employeeId()]);
           this.saving.set(false);
         },
         error: err => {
@@ -555,7 +558,7 @@ export class EmployeeFormComponent implements OnInit {
         next: res => {
           if (res.success && res.data) {
             this.toast.add({ severity: 'success', summary: 'Salarié', detail: 'Salarié créé.' });
-            this.router.navigate(['/payroll/employees', res.data]);
+            this.router.navigate([this.routeBase() + '/employees', res.data]);
           }
           this.saving.set(false);
         },

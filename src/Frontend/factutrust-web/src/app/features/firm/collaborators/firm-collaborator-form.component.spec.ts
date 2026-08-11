@@ -5,6 +5,7 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { of, throwError } from 'rxjs';
 import { FirmCollaboratorFormComponent } from './firm-collaborator-form.component';
 import { FirmCollaboratorsService, FirmUser } from '@core/services/firm-collaborators.service';
+import { FirmGovernanceService } from '@core/services/firm-governance.service';
 import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 
@@ -36,6 +37,7 @@ describe('FirmCollaboratorFormComponent', () => {
     id?: string | null;
     url?: string;
     createResult?: ReturnType<typeof of> | ReturnType<typeof throwError>;
+    autoProvisionOnCreate?: boolean;
   }): ComponentFixture<FirmCollaboratorFormComponent> {
     const id = options.id ?? null;
     const url = options.url ?? (id ? `/firm/collaborateurs/${id}` : '/firm/collaborateurs/new');
@@ -78,6 +80,23 @@ describe('FirmCollaboratorFormComponent', () => {
               options.createResult ?? of(firmUser)
             ),
             update: jasmine.createSpy('update')
+          }
+        },
+        {
+          provide: FirmGovernanceService,
+          useValue: {
+            listCollaboratorCosts: jasmine.createSpy('listCollaboratorCosts').and.returnValue(of([])),
+            getPayrollProvisioningStatus: jasmine.createSpy('getPayrollProvisioningStatus').and.returnValue(
+              of({
+                data: {
+                  internalPayrollEnabled: true,
+                  autoProvisionOnCollaboratorCreate: options.autoProvisionOnCreate ?? false,
+                  activePayrollEmployees: 0,
+                  collaborators: [],
+                  collaboratorsWithIncompleteIdentity: 0
+                }
+              })
+            )
           }
         },
         { provide: ToastService, useValue: { add: jasmine.createSpy('add') } }
@@ -181,5 +200,96 @@ describe('FirmCollaboratorFormComponent', () => {
     );
     expect(component.form.controls.email.hasError('server')).toBeTrue();
     expect(component.form.controls.email.getError('server')).toBe(businessMessage);
+  });
+
+  it('does not navigate when create fails with payroll provision error', () => {
+    const payrollMessage =
+      "Impossible de créer le salarié paie : aucune base de paie n'est rattachée au cabinet.";
+    const httpError = new HttpErrorResponse({
+      status: 400,
+      statusText: 'Bad Request',
+      url: 'https://localhost:7001/api/firm/users',
+      error: {
+        success: false,
+        data: null,
+        message: null,
+        error: payrollMessage
+      }
+    });
+
+    const fixture = setup({
+      data: { mode: 'create' },
+      createResult: throwError(() => httpError)
+    });
+    const component = fixture.componentInstance;
+    const router = TestBed.inject(Router);
+    const toast = TestBed.inject(ToastService);
+
+    component.form.patchValue({
+      lastName: 'Test',
+      firstName: 'Payroll',
+      email: 'payroll-fail@example.com',
+      password: 'Password1!'
+    });
+    component.save();
+
+    expect(router.navigate).not.toHaveBeenCalled();
+    expect(toast.add).toHaveBeenCalledWith(
+      jasmine.objectContaining({
+        severity: 'error',
+        detail: `Collaborateur non créé : ${payrollMessage}`
+      })
+    );
+  });
+
+  it('shows Paie tab when auto-provision flag is on in create mode', () => {
+    const fixture = setup({ data: { mode: 'create' }, autoProvisionOnCreate: true });
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.autoProvisionEnabled()).toBeTrue();
+    const tabLabels = Array.from(fixture.nativeElement.querySelectorAll('p-tab'))
+      .map((el: unknown) => (el as Element).textContent?.trim());
+    expect(tabLabels).toContain('Paie');
+  });
+
+  it('includes payroll in create payload when auto-provision is enabled', () => {
+    const fixture = setup({ data: { mode: 'create' }, autoProvisionOnCreate: true });
+    const component = fixture.componentInstance;
+    fixture.detectChanges();
+
+    component.form.patchValue({
+      lastName: 'Test',
+      firstName: 'Payroll',
+      email: 'payroll-ok@example.com',
+      password: 'Password1!'
+    });
+
+    const payrollPayload = {
+      employeeNumber: 'CAB-99',
+      hireDate: '2025-06-01',
+      contract: {
+        type: 'Cdi',
+        regime: 'Rsna',
+        weeklyRegime: 'FortyEightHours',
+        startDate: '2025-06-01',
+        baseSalary: 1500,
+        workAccidentRate: 0.4,
+        jobTitle: 'Collaborateur cabinet'
+      }
+    };
+
+    component.payrollOnboarding = {
+      form: { invalid: false, markAllAsTouched: () => undefined },
+      buildPayload: () => payrollPayload,
+      markAllAsTouched: () => undefined
+    } as unknown as typeof component.payrollOnboarding;
+
+    const api = TestBed.inject(FirmCollaboratorsService);
+    component.save();
+
+    expect(api.create).toHaveBeenCalledWith(
+      jasmine.objectContaining({ payroll: payrollPayload }),
+      null
+    );
   });
 });

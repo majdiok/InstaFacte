@@ -3,6 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, map } from 'rxjs';
 import { environment } from '@environments/environment';
 import { ApiResponse } from '@core/services/auth.service';
+import { CreateContractRequest } from '@core/services/employee.service';
 import { createHttpContextSkipGlobalErrorUi } from '@core/http-context';
 
 export type CollaboratorCivility = 1 | 2; // Mrs=1, Mr=2
@@ -36,6 +37,8 @@ export interface FirmUser {
   cniUploadedAt?: string | null;
   binomesDisplay?: string | null;
   binomes: FirmUserBinome[];
+  payrollEmployeeId?: string | null;
+  payrollLinkSourceDisplay?: string | null;
 }
 
 export interface FirmAddressSnapshot {
@@ -62,6 +65,13 @@ export interface CreateFirmUserPayload {
   city?: string | null;
   country?: string | null;
   sendInvite?: boolean;
+  payroll?: CollaboratorPayrollOnboardingPayload;
+}
+
+export interface CollaboratorPayrollOnboardingPayload {
+  employeeNumber: string;
+  hireDate: string;
+  contract: CreateContractRequest;
 }
 
 export interface UpdateFirmUserPayload {

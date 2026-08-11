@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, input } from '@angular/core';
 
 import { CommonModule } from '@angular/common';
 
@@ -30,15 +30,15 @@ import { formatPeriodLabel } from '../models/guided-scenarios.catalog';
 
 
 
-      <div class="entry-header__grid">
+      <div class="entry-header__grid" [class.entry-header__grid--compact]="compact()">
 
         <div class="form-field">
 
           <label class="field-label" for="eh-journal">Journal <span class="req">*</span></label>
 
           <select id="eh-journal" class="me-input"
-
-                  [ngModel]="store.journalCode()" (ngModelChange)="store.journalCode.set($event)">
+                  [ngModel]="store.journalCode()" (ngModelChange)="store.journalCode.set($event)"
+                  [disabled]="lockJournal()">
 
             @for (opt of store.journalOptions(); track opt.code) {
 
@@ -164,6 +164,9 @@ import { formatPeriodLabel } from '../models/guided-scenarios.catalog';
 
     .entry-header__grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:var(--spacing-4); align-items:end; }
 
+    .entry-header__grid--compact { grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); }
+
+
     .entry-header__grid--secondary { margin-top:var(--spacing-3); }
 
     .entry-header__piece-options { margin-top:var(--spacing-2); }
@@ -193,6 +196,10 @@ export class EntryHeaderFormComponent {
   readonly store = inject(EntryFormStore);
 
   readonly refs = inject(EntryReferenceStore);
+
+  readonly compact = input(false);
+
+  readonly lockJournal = input(false);
 
 
 

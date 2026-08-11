@@ -22,6 +22,19 @@ public sealed class FirmLeaveRequest : AggregateRoot
     public string? ProcessedByName { get; private set; }
     public string? RejectionReason { get; private set; }
 
+    // ── Report vers la paie interne du cabinet ──
+
+    /// <summary>Congé de paie produit par l'approbation, dans le tenant du cabinet.</summary>
+    public Guid? PayrollLeaveRequestId { get; private set; }
+
+    public FirmLeavePayrollMirrorState PayrollMirrorState { get; private set; }
+        = FirmLeavePayrollMirrorState.NotMirrored;
+
+    /// <summary>Motif du dernier report — ce qui rend l'écart explicable au rapprochement.</summary>
+    public string? PayrollMirrorMessage { get; private set; }
+
+    public DateTime? PayrollMirroredAt { get; private set; }
+
     private FirmLeaveRequest() { }
 
     public static Result<FirmLeaveRequest> Create(
@@ -143,6 +156,28 @@ public sealed class FirmLeaveRequest : AggregateRoot
         IncrementVersion();
         return Result.Success();
     }
+
+    /// <summary>
+    /// Enregistre le sort du report vers la paie.
+    /// </summary>
+    /// <remarks>
+    /// Volontairement sans garde sur le statut : le report est un fait technique constaté après
+    /// coup, y compris sur une demande qui n'est plus approuvée. Le refuser ici reviendrait à
+    /// perdre la trace de l'écart que le rapprochement doit précisément montrer.
+    /// </remarks>
+    public void MarkPayrollMirror(
+        FirmLeavePayrollMirrorState state,
+        Guid? payrollLeaveRequestId,
+        string? message = null)
+    {
+        PayrollMirrorState = state;
+        PayrollLeaveRequestId = payrollLeaveRequestId;
+        PayrollMirrorMessage = string.IsNullOrWhiteSpace(message) ? null : message.Trim();
+        PayrollMirroredAt = state == FirmLeavePayrollMirrorState.NotMirrored ? null : DateTime.UtcNow;
+    }
+
+    /// <summary>Le congé doit-il produire un effet en paie dans son état actuel ?</summary>
+    public bool ShouldMirrorToPayroll() => Status == FirmLeaveRequestStatus.Approved;
 
     /// <summary>Chevauchement de plages de dates (jours calendaires).</summary>
     public bool Overlaps(DateTime otherStart, DateTime otherEnd) =>

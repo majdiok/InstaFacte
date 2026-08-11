@@ -1407,7 +1407,8 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
             dto.TfpRate,
             dto.FoprolosRate,
             dto.WorkAccidentRate,
-            dto.CssEmployerRate);
+            dto.CssEmployerRate,
+            ToProductiveHoursMode(dto.ProductiveHoursMode));
         if (update.IsFailure)
             return Result.Failure<FirmTimeSheetYearSettingsDto>(update.Error);
 
@@ -2293,8 +2294,21 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
         AnnualBaseHours = s.AnnualBaseHours,
         DailyHours = s.DailyHours,
         AnnualProductiveHours = s.AnnualProductiveHours,
-        TotalEmployerChargeRate = s.TotalEmployerChargeRate
+        TotalEmployerChargeRate = s.TotalEmployerChargeRate,
+        ProductiveHoursMode = (int)s.ProductiveHoursMode
     };
+
+    /// <summary>
+    /// Mode d'heures productives transmis par le client, replié sur le forfait si inconnu.
+    /// </summary>
+    /// <remarks>
+    /// Le repli va vers <c>Parametric</c> : une valeur douteuse ne doit jamais faire basculer un
+    /// exercice en individualisé, ce qui modifierait des marges déjà présentées.
+    /// </remarks>
+    private static FirmProductiveHoursMode ToProductiveHoursMode(int raw) =>
+        Enum.IsDefined(typeof(FirmProductiveHoursMode), raw)
+            ? (FirmProductiveHoursMode)raw
+            : FirmProductiveHoursMode.Parametric;
 
     private static FirmExpenseNoteDto MapExpenseNote(FirmExpenseNote n) => new()
     {

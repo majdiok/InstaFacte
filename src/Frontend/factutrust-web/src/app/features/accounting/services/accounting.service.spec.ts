@@ -203,6 +203,19 @@ describe('AccountingService', () => {
     });
   });
 
+  describe('deleteDraftJournalEntry', () => {
+    it('should call DELETE journal/{id}', () => {
+      const id = 'draft-id';
+      service.deleteDraftJournalEntry(id).subscribe(res => {
+        expect(res.success).toBe(true);
+      });
+
+      const req = httpMock.expectOne(`${base}/journal/${id}`);
+      expect(req.request.method).toBe('DELETE');
+      req.flush({ success: true, data: true });
+    });
+  });
+
   describe('letterEntries', () => {
     it('should call POST letter with line IDs', () => {
       const ids = ['id1', 'id2'];

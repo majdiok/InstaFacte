@@ -1,3 +1,4 @@
+using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Forecasting;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Enums;
@@ -24,11 +25,34 @@ public sealed class FirmLeaveServiceTests
         return new MasterDbContext(options);
     }
 
-    private static FirmLeaveService BuildService(MasterDbContext db)
+    private static FirmLeaveService BuildService(
+        MasterDbContext db,
+        IFirmLeavePayrollMirrorService? mirror = null)
     {
         var calendar = new Mock<ITunisianCalendarService>();
         calendar.Setup(c => c.IsHoliday(It.IsAny<DateTime>())).Returns(false);
-        return new FirmLeaveService(db, calendar.Object);
+
+        // Par défaut, un report neutre : ces tests portent sur le circuit RH, pas sur la paie.
+        var mirrorService = mirror ?? BuildNoOpMirror();
+        return new FirmLeaveService(db, calendar.Object, mirrorService);
+    }
+
+    private static IFirmLeavePayrollMirrorService BuildNoOpMirror()
+    {
+        var mock = new Mock<IFirmLeavePayrollMirrorService>();
+        mock.Setup(m => m.MirrorApprovedAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FirmLeaveMirrorResultDto
+            {
+                State = (int)FirmLeavePayrollMirrorState.NoPayrollEffect,
+                StateDisplay = "Sans effet paie"
+            });
+        mock.Setup(m => m.RevokeAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FirmLeaveMirrorResultDto
+            {
+                State = (int)FirmLeavePayrollMirrorState.NotMirrored,
+                StateDisplay = "Non reporté"
+            });
+        return mock.Object;
     }
 
     private static async Task SeedUsersAsync(MasterDbContext db)

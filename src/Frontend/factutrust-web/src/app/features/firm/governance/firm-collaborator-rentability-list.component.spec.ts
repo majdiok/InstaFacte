@@ -72,7 +72,11 @@ describe('FirmCollaboratorRentabilityListComponent', () => {
               success: true,
               data: { duplicated: 1, skipped: 0 }
             })),
-            recalculateRentability: recalculateSpy
+            recalculateRentability: recalculateSpy,
+            listCollaboratorCosts: jasmine.createSpy('listCollaboratorCosts').and.returnValue(of({
+              success: true,
+              data: []
+            }))
           }
         },
         { provide: FirmCollaboratorsService, useValue: { list: () => of([]) } },

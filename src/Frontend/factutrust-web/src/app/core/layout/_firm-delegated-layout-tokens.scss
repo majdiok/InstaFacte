@@ -1,0 +1,39 @@
+/**
+ * Tokens partagés du layout cabinet en mode délégué.
+ * Définis sur `.layout--firm-delegated` (main-layout) pour être hérités
+ * par app-sidebar ET app-secondary-nav (composants frères).
+ */
+.layout--firm-delegated {
+  --sidebar-delegated-navy: #0a1f44;
+  --sidebar-delegated-navy-light: #0f2a5c;
+  --sidebar-delegated-gold: #d4af37;
+  --sidebar-delegated-gold-muted: rgba(212, 175, 55, 0.15);
+
+  /* 2e barre — tokens dédiés */
+  --secondary-nav-delegated-bg: var(--sidebar-delegated-navy);
+  --secondary-nav-delegated-text: rgba(255, 255, 255, 0.92);
+  --secondary-nav-delegated-text-muted: rgba(255, 255, 255, 0.72);
+  --secondary-nav-delegated-hover-bg: rgba(255, 255, 255, 0.08);
+  --secondary-nav-delegated-active-bg: rgba(255, 255, 255, 0.14);
+  --secondary-nav-delegated-active-text: #ffffff;
+  --secondary-nav-delegated-active-border: var(--sidebar-delegated-gold);
+  --secondary-nav-delegated-chevron: rgba(255, 255, 255, 0.65);
+
+  /* Pastilles icon-box (alignées sidemenu) */
+  --secondary-nav-delegated-icon-box-default: #f1f5f9;
+  --secondary-nav-delegated-icon-box-sliders: #eef2ff;
+  --secondary-nav-delegated-icon-box-gears: #f1f5f9;
+  --secondary-nav-delegated-icon-box-table-list: #eef2ff;
+  --secondary-nav-delegated-icon-box-chart-column: #fdf4ff;
+  --secondary-nav-delegated-icon-box-file-signature: #fff7ed;
+  --secondary-nav-delegated-icon-box-file-contract: #eff6ff;
+  --secondary-nav-delegated-icon-box-building: #ecfeff;
+  --secondary-nav-delegated-icon-box-bag-shopping: #fdf2f8;
+  --secondary-nav-delegated-icon-box-cart-shopping: #ecfeff;
+  --secondary-nav-delegated-icon-box-credit-card: #f0fdfa;
+  --secondary-nav-delegated-icon-box-users-gear: #f5f3ff;
+  --secondary-nav-delegated-icon-box-calculator: #fff1f2;
+  --secondary-nav-delegated-icon-box-file-invoice-dollar: #fffbeb;
+  --secondary-nav-delegated-icon-box-folder-open: #fef9c3;
+  --secondary-nav-delegated-icon-box-boxes-stacked: #eef2ff;
+}

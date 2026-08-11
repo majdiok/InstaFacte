@@ -28,6 +28,7 @@ public class PayrollPublicHolidaysController : ControllerBase
 
     [HttpPost]
     [Authorize(Policy = PermissionPolicies.PayrollSettings)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<Guid>), StatusCodes.Status201Created)]
     public async Task<IActionResult> Create([FromBody] UpsertPayrollPublicHolidayDto dto, CancellationToken cancellationToken)
     {
@@ -39,6 +40,7 @@ public class PayrollPublicHolidaysController : ControllerBase
 
     [HttpPut("{id:guid}")]
     [Authorize(Policy = PermissionPolicies.PayrollSettings)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpsertPayrollPublicHolidayDto dto, CancellationToken cancellationToken)
     {
@@ -50,6 +52,7 @@ public class PayrollPublicHolidaysController : ControllerBase
 
     [HttpDelete("{id:guid}")]
     [Authorize(Policy = PermissionPolicies.PayrollSettings)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
@@ -61,6 +64,7 @@ public class PayrollPublicHolidaysController : ControllerBase
 
     [HttpPost("seed")]
     [Authorize(Policy = PermissionPolicies.PayrollSettings)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<SeedPayrollPublicHolidaysResultDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Seed([FromBody] SeedPayrollPublicHolidaysDto dto, CancellationToken cancellationToken)
     {

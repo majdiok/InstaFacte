@@ -4,11 +4,14 @@ using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Accounting.Queries;
+using FactuTrust.Application.Features.Accounting.Services;
 using FactuTrust.Application.Features.Reports.Queries;
 using FactuTrust.Application.Features.WithholdingTax.Queries;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Entities.Payroll;
+using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.Services.Payroll;
 using FactuTrust.Domain.ValueObjects;
 using MediatR;
 using Microsoft.Extensions.Options;
@@ -34,12 +37,62 @@ public sealed class GetVatDeclarationV2Tests
         return mock;
     }
 
-    private static Mock<IPayrollRunRepository> CreatePayrollRunMock()
+    /// <summary>
+    /// Fournisseur réel monté sur des dépôts simulés : la logique de sélection du cycle et de
+    /// dérivation de l'assiette est celle de production, seules les données sont contrôlées.
+    /// </summary>
+    private static PayrollDeclarationContributionProvider CreatePayrollProvider(
+        PayrollRun? run = null,
+        PayrollYearParameters? parameters = null)
     {
-        var mock = new Mock<IPayrollRunRepository>();
-        mock.Setup(r => r.GetByPeriodAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((PayrollRun?)null);
-        return mock;
+        var runs = new Mock<IPayrollRunRepository>();
+        runs.Setup(r => r.GetByPeriodAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(run);
+
+        var settings = new Mock<IPayrollParametersRepository>();
+        settings.Setup(r => r.GetByFiscalYearAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(parameters);
+
+        return new PayrollDeclarationContributionProvider(runs.Object, settings.Object);
+    }
+
+    /// <summary>
+    /// Cycle de paie porteur de totaux figés. Le workflow réel (SetPayslips → Validate → Close)
+    /// exigerait des bulletins complets ; on positionne directement les totaux, qui sont la seule
+    /// chose que la déclaration consomme.
+    /// </summary>
+    private static PayrollRun PayrollRunWith(
+        PayrollRunStatus status,
+        decimal tfp = 1.680m,
+        decimal foprolos = 1.680m,
+        decimal irpp = 0m,
+        decimal css = 0m,
+        decimal gross = 168.000m)
+    {
+        var run = PayrollRun.Create(2026, 7, 2026).Value;
+        Set(run, nameof(PayrollRun.Status), status);
+        Set(run, nameof(PayrollRun.TotalTfp), tfp);
+        Set(run, nameof(PayrollRun.TotalFoprolos), foprolos);
+        Set(run, nameof(PayrollRun.TotalIrpp), irpp);
+        Set(run, nameof(PayrollRun.TotalCss), css);
+        Set(run, nameof(PayrollRun.TotalGross), gross);
+        return run;
+
+        static void Set(PayrollRun target, string property, object value) =>
+            typeof(PayrollRun).GetProperty(property)!.SetValue(target, value);
+    }
+
+    /// <summary>Exercice paramétré en secteur industriel : TFP 1 %, FOPROLOS 1 %.</summary>
+    private static PayrollYearParameters IndustrialParameters()
+    {
+        var parameters = PayrollParameterDefaults.CreateDefaults(2026).Value;
+        Set(nameof(PayrollYearParameters.IsIndustrialSector), true);
+        Set(nameof(PayrollYearParameters.TfpRateIndustry), 1m);
+        Set(nameof(PayrollYearParameters.FoprolosRate), 1m);
+        return parameters;
+
+        void Set(string property, object value) =>
+            typeof(PayrollYearParameters).GetProperty(property)!.SetValue(parameters, value);
     }
 
     [Fact]
@@ -86,7 +139,7 @@ public sealed class GetVatDeclarationV2Tests
 
         var tenantSummary = CreateTenantSummaryMock();
         var handler = new GetVatDeclarationQueryHandler(
-            mediator.Object, vatRepo.Object, journals.Object, invoices.Object, supplierInvoices.Object, tenantSummary.Object, CreatePayrollRunMock().Object, settings);
+            mediator.Object, vatRepo.Object, journals.Object, invoices.Object, supplierInvoices.Object, tenantSummary.Object, CreatePayrollProvider(), settings);
 
         var result = await handler.Handle(new GetVatDeclarationQuery(2026, 7), CancellationToken.None);
 
@@ -148,7 +201,7 @@ public sealed class GetVatDeclarationV2Tests
         var tenantSummary = CreateTenantSummaryMock();
 
         var handler = new GetVatDeclarationQueryHandler(
-            mediator.Object, vatRepo.Object, journals.Object, invoices.Object, supplierInvoices.Object, tenantSummary.Object, CreatePayrollRunMock().Object, settings);
+            mediator.Object, vatRepo.Object, journals.Object, invoices.Object, supplierInvoices.Object, tenantSummary.Object, CreatePayrollProvider(), settings);
 
         var result = await handler.Handle(new GetVatDeclarationQuery(2026, 7), CancellationToken.None);
 
@@ -190,7 +243,7 @@ public sealed class GetVatDeclarationV2Tests
         var tenantSummary = CreateTenantSummaryMock();
 
         var handler = new GetVatDeclarationQueryHandler(
-            mediator.Object, vatRepo.Object, journals.Object, invoices.Object, supplierInvoices.Object, tenantSummary.Object, CreatePayrollRunMock().Object, settings);
+            mediator.Object, vatRepo.Object, journals.Object, invoices.Object, supplierInvoices.Object, tenantSummary.Object, CreatePayrollProvider(), settings);
 
         var result = await handler.Handle(new GetVatDeclarationQuery(2026, 7), CancellationToken.None);
 
@@ -207,6 +260,10 @@ public sealed class GetVatDeclarationV2Tests
             .ReturnsAsync(Result.Success<IReadOnlyList<SalesVatReportRowDto>>(new List<SalesVatReportRowDto>()));
         mediator.Setup(m => m.Send(It.IsAny<GetPurchasesVatReportQuery>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success<IReadOnlyList<PurchasesVatReportRowDto>>(new List<PurchasesVatReportRowDto>()));
+        // Le recalcul temps réel tourne désormais même sur une déclaration enregistrée : c'est lui
+        // qui alimente la valeur suggérée et donc l'écart affiché.
+        mediator.Setup(m => m.Send(It.IsAny<GetWithholdingMonthlyReportQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new WithholdingMonthlyReportDto(2024, 5, new(), 0m, 0m, 0));
 
         var createdAt = new DateTime(2024, 6, 1, 10, 30, 0, DateTimeKind.Utc);
         var saved = VatDeclaration.CreateDraft(
@@ -233,7 +290,7 @@ public sealed class GetVatDeclarationV2Tests
         var tenantSummary = CreateTenantSummaryMock();
 
         var handler = new GetVatDeclarationQueryHandler(
-            mediator.Object, vatRepo.Object, journals.Object, invoices.Object, supplierInvoices.Object, tenantSummary.Object, CreatePayrollRunMock().Object, settings);
+            mediator.Object, vatRepo.Object, journals.Object, invoices.Object, supplierInvoices.Object, tenantSummary.Object, CreatePayrollProvider(), settings);
         var result = await handler.Handle(new GetVatDeclarationQuery(2024, 5), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
@@ -274,7 +331,7 @@ public sealed class GetVatDeclarationV2Tests
         var tenantSummary = CreateTenantSummaryMock();
 
         var handler = new GetVatDeclarationQueryHandler(
-            mediator.Object, vatRepo.Object, journals.Object, invoices.Object, supplierInvoices.Object, tenantSummary.Object, CreatePayrollRunMock().Object, settings);
+            mediator.Object, vatRepo.Object, journals.Object, invoices.Object, supplierInvoices.Object, tenantSummary.Object, CreatePayrollProvider(), settings);
 
         var result = await handler.Handle(new GetVatDeclarationQuery(2026, 7), CancellationToken.None);
 
@@ -283,5 +340,169 @@ public sealed class GetVatDeclarationV2Tests
         Assert.Equal(0m, result.Value.DroitTimbre);
         Assert.Equal(190m, result.Value.TotalToPay);
         invoices.Verify(r => r.SumFiscalStampAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // ── Alimentation TFP/FOPROLOS depuis le module paie ────────────────────
+
+    /// <summary>
+    /// Monte un handler avec des sources vides (ventes/achats/RS à zéro) : seuls le cycle de paie
+    /// et l'éventuelle déclaration sauvegardée pilotent le résultat.
+    /// </summary>
+    private static GetVatDeclarationQueryHandler BuildPayrollHandler(
+        PayrollRun? payrollRun,
+        VatDeclaration? saved = null,
+        PayrollYearParameters? parameters = null)
+    {
+        var mediator = new Mock<IMediator>();
+        mediator.Setup(m => m.Send(It.IsAny<GetSalesVatReportQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success<IReadOnlyList<SalesVatReportRowDto>>(new List<SalesVatReportRowDto>()));
+        mediator.Setup(m => m.Send(It.IsAny<GetPurchasesVatReportQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success<IReadOnlyList<PurchasesVatReportRowDto>>(new List<PurchasesVatReportRowDto>()));
+        mediator.Setup(m => m.Send(It.IsAny<GetWithholdingMonthlyReportQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new WithholdingMonthlyReportDto(2026, 7, new(), 0m, 0m, 0));
+
+        var vatRepo = new Mock<IVatDeclarationRepository>();
+        vatRepo.Setup(r => r.GetByYearMonthAsync(2026, 7, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(saved);
+        vatRepo.Setup(r => r.GetByYearMonthAsync(2026, 6, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((VatDeclaration?)null);
+
+        var journals = new Mock<IJournalEntryRepository>();
+        journals.Setup(r => r.SumDebitsByAccountAsync(It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0m);
+
+        var invoices = new Mock<IInvoiceRepository>();
+        var supplierInvoices = new Mock<ISupplierInvoiceRepository>();
+        supplierInvoices.Setup(r => r.SumFixedAssetDeductibleVatAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0m);
+
+        var settings = Options.Create(new AccountingSettings
+        {
+            MonthlyDeclarationV2Enabled = true,
+            FodecRatePercent = 1.0m,
+            TclRatePercent = 0.2m
+        });
+
+        return new GetVatDeclarationQueryHandler(
+            mediator.Object, vatRepo.Object, journals.Object, invoices.Object, supplierInvoices.Object,
+            CreateTenantSummaryMock().Object, CreatePayrollProvider(payrollRun, parameters), settings);
+    }
+
+    [Theory]
+    [InlineData(PayrollRunStatus.Validated)]
+    [InlineData(PayrollRunStatus.Closed)]
+    public async Task Handle_V2_NoSavedDeclaration_PrefillsTfpFoprolosFromPayrollRun(PayrollRunStatus status)
+    {
+        var handler = BuildPayrollHandler(PayrollRunWith(status));
+
+        var result = await handler.Handle(new GetVatDeclarationQuery(2026, 7), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1.680m, result.Value.Tfp);
+        Assert.Equal(1.680m, result.Value.Foprolos);
+    }
+
+    [Theory]
+    [InlineData(PayrollRunStatus.Draft)]
+    [InlineData(PayrollRunStatus.Calculated)]
+    public async Task Handle_V2_UnvalidatedPayrollRun_IsNotPrefilledButIsReported(PayrollRunStatus status)
+    {
+        // Un cycle non validé est provisoire : il ne doit jamais alimenter une déclaration fiscale.
+        // Son existence est en revanche remontée, pour que l'écran invite à le valider.
+        var handler = BuildPayrollHandler(PayrollRunWith(status));
+
+        var result = await handler.Handle(new GetVatDeclarationQuery(2026, 7), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(0m, result.Value.Tfp);
+        Assert.Equal(0m, result.Value.Foprolos);
+
+        var suggested = result.Value.Suggested!;
+        Assert.True(suggested.PayrollRunExists);
+        Assert.False(suggested.PayrollRunUsable);
+        Assert.Equal((int)status, suggested.PayrollRunStatus);
+        Assert.Equal(0m, suggested.Tfp);
+    }
+
+    [Fact]
+    public async Task Handle_V2_SavedDeclaration_KeepsDeclaredAmountsAndExposesTheGap()
+    {
+        // Le cas exact du dossier : déclaration déposée le 11/07 avec TFP/FOPROLOS à zéro, cycle
+        // de paie clôturé après coup. Snapshot strict : le dépôt fait foi, l'écart est exposé.
+        var saved = VatDeclaration.CreateDraft(
+            2026, 7,
+            Money.Zero("TND"), Money.Zero("TND"), Money.Zero("TND"),
+            Money.Zero("TND"), Money.Zero("TND"), Money.Zero("TND"));
+        saved.SetAdditionalTaxes(0m, 0m, 0m, 0m, 0m, 0m, 0m);
+
+        var handler = BuildPayrollHandler(PayrollRunWith(PayrollRunStatus.Closed), saved);
+
+        var result = await handler.Handle(new GetVatDeclarationQuery(2026, 7), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+
+        // Déclaré : intact, rien n'est réécrit dans le dos de l'utilisateur.
+        Assert.Equal(0m, result.Value.Tfp);
+        Assert.Equal(0m, result.Value.Foprolos);
+
+        // Calculé : ce que la paie produirait aujourd'hui — l'écart devient visible.
+        var suggested = result.Value.Suggested!;
+        Assert.Equal(1.680m, suggested.Tfp);
+        Assert.Equal(1.680m, suggested.Foprolos);
+        Assert.True(suggested.PayrollRunUsable);
+    }
+
+    [Fact]
+    public async Task Handle_LiveValuation_IgnoresSavedDeclaration()
+    {
+        // Mode LIVE (sauvegarde, tableau de bord) : le dépôt est ignoré, on veut le recalcul.
+        var saved = VatDeclaration.CreateDraft(
+            2026, 7,
+            Money.Zero("TND"), Money.Zero("TND"), Money.Zero("TND"),
+            Money.Zero("TND"), Money.Zero("TND"), Money.Zero("TND"));
+        saved.SetAdditionalTaxes(0m, 0m, 0m, 0m, 0m, 0m, 0m);
+
+        var handler = BuildPayrollHandler(PayrollRunWith(PayrollRunStatus.Closed), saved);
+
+        var result = await handler.Handle(
+            new GetVatDeclarationQuery(2026, 7, Valuation: VatDeclarationValuation.Live),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1.680m, result.Value.Tfp);
+        Assert.Equal(1.680m, result.Value.Foprolos);
+    }
+
+    [Fact]
+    public async Task Handle_V2_ExposesPayrollTaxBaseAndRates()
+    {
+        // Assiette et taux réels, requis par le formulaire officiel : 1,680 à 1 % ⇒ 168,000.
+        var handler = BuildPayrollHandler(
+            PayrollRunWith(PayrollRunStatus.Closed),
+            parameters: IndustrialParameters());
+
+        var result = await handler.Handle(new GetVatDeclarationQuery(2026, 7), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(168.000m, result.Value.PayrollTaxBase);
+        Assert.Equal(1m, result.Value.TfpRatePercent);
+        Assert.Equal(1m, result.Value.FoprolosRatePercent);
+    }
+
+    [Fact]
+    public async Task Handle_V2_AddsPayrollWithholdingToTheInvoiceWithholding()
+    {
+        // La RS de la déclaration couvre les factures fournisseurs ET les traitements et salaires.
+        // Ici : 0 sur factures (mock) + IRPP 25,500 + CSS 4,500 = 30,000.
+        var handler = BuildPayrollHandler(
+            PayrollRunWith(PayrollRunStatus.Closed, irpp: 25.500m, css: 4.500m));
+
+        var result = await handler.Handle(new GetVatDeclarationQuery(2026, 7), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var suggested = result.Value.Suggested!;
+        Assert.Equal(0m, suggested.WithholdingFromInvoices);
+        Assert.Equal(30.000m, suggested.WithholdingFromSalaries);
+        Assert.Equal(30.000m, suggested.WithholdingTax);
     }
 }

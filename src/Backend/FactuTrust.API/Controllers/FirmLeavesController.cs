@@ -251,6 +251,36 @@ public sealed class FirmLeavesController : ControllerBase
         return File(result.Value.Content, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", result.Value.FileName);
     }
 
+    /// <summary>Écarts entre congés approuvés et report en paie interne.</summary>
+    [HttpGet("leaves/reconciliation")]
+    [Authorize(Roles = nameof(UserRole.FirmManager))]
+    public async Task<IActionResult> GetReconciliation(
+        [FromQuery] int? year, CancellationToken cancellationToken)
+    {
+        if (!EnsureEnabled(out var disabled)) return disabled!;
+        var tenantId = GetHomeTenantId();
+        if (tenantId is null) return Unauthorized();
+        var data = await _leaves.GetReconciliationAsync(
+            tenantId.Value, year ?? DateTime.UtcNow.Year, cancellationToken);
+        return Ok(ApiResponse<FirmLeaveReconciliationDto>.Ok(data));
+    }
+
+    /// <summary>Rejoue le report vers la paie d'une demande, ou de toutes celles en écart.</summary>
+    [HttpPost("leaves/reconciliation/replay")]
+    [Authorize(Roles = nameof(UserRole.FirmManager))]
+    public async Task<IActionResult> ReplayPayrollMirror(
+        [FromQuery] int? year, [FromQuery] Guid? leaveRequestId, CancellationToken cancellationToken)
+    {
+        if (!EnsureEnabled(out var disabled)) return disabled!;
+        var tenantId = GetHomeTenantId();
+        if (tenantId is null) return Unauthorized();
+        var result = await _leaves.ReplayPayrollMirrorAsync(
+            tenantId.Value, year ?? DateTime.UtcNow.Year, leaveRequestId, cancellationToken);
+        return result.IsFailure
+            ? BadRequest(ApiResponse<object>.Fail(result.Error.Description))
+            : Ok(ApiResponse<FirmLeaveReplayResultDto>.Ok(result.Value));
+    }
+
     [HttpGet("leaves/export/synthesis")]
     [Authorize(Roles = nameof(UserRole.FirmManager))]
     public async Task<IActionResult> ExportSynthesis([FromQuery] int? year, CancellationToken cancellationToken)

@@ -116,6 +116,46 @@ public sealed class PayrollParametersRepositoryTests : IDisposable
         Assert.All(parameters.IrppBrackets, b => Assert.Equal(parentId, b.PayrollYearParametersId));
     }
 
+    [Fact]
+    public async Task GetOrCreateForYearAsync_seeds_garnishment_brackets_for_2026()
+    {
+        var parameters = await _repository.GetOrCreateForYearAsync(2026);
+
+        Assert.NotEmpty(parameters.GarnishmentBrackets);
+        var ordered = parameters.GarnishmentBrackets.OrderBy(b => b.LowerBoundMonthlyNet).ToList();
+        Assert.Equal(0m, ordered[0].LowerBoundMonthlyNet);
+        Assert.Equal(0m, ordered[0].SeizableFraction);
+        Assert.Equal(528.320m, ordered[1].LowerBoundMonthlyNet);
+        Assert.Equal(0.333m, ordered[1].SeizableFraction);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_replaces_garnishment_brackets_with_valid_parent_fk()
+    {
+        var parameters = await _repository.GetOrCreateForYearAsync(2026);
+        var parentId = parameters.Id;
+
+        var newBrackets = new[]
+        {
+            PayrollGarnishmentBracket.Create(0m, 0m),
+            PayrollGarnishmentBracket.Create(500m, 0.10m),
+            PayrollGarnishmentBracket.Create(1000m, 0.33m)
+        };
+
+        var replaceResult = parameters.ReplaceGarnishmentBrackets(newBrackets);
+        Assert.True(replaceResult.IsSuccess);
+        Assert.All(parameters.GarnishmentBrackets, b => Assert.Equal(parentId, b.PayrollYearParametersId));
+
+        await _repository.UpdateAsync(parameters);
+
+        var reloaded = await _repository.GetByFiscalYearAsync(2026);
+        Assert.NotNull(reloaded);
+        var stored = reloaded.GarnishmentBrackets.OrderBy(b => b.LowerBoundMonthlyNet).ToList();
+        Assert.Equal(3, stored.Count);
+        Assert.All(stored, b => Assert.Equal(parentId, b.PayrollYearParametersId));
+        Assert.Equal(0.10m, stored[1].SeizableFraction);
+    }
+
     public void Dispose()
     {
         using var context = _contextFactory.CreateContext();

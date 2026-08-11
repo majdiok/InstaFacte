@@ -1,18 +1,22 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { TableModule } from 'primeng/table';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
+import { AccountingCorrectionBannerComponent } from '../shared/accounting-correction-banner.component';
 import { AccountingService, JournalSearchFilters, JournalSearchRowDto } from '../services/accounting.service';
 
 @Component({
   selector: 'app-entry-search',
   standalone: true,
-  imports: [CommonModule, FormsModule, TableModule, PageHeaderComponent, ButtonComponent, AccountingStatusBannerComponent],
+  imports: [CommonModule, FormsModule, TableModule, PageHeaderComponent, ButtonComponent, AccountingStatusBannerComponent, AccountingCorrectionBannerComponent],
   template: `
     <app-page-header title="Recherche d'écriture" subtitle="Recherche multicritère des lignes d'écriture" />
+
+    <app-accounting-correction-banner />
 
     <div class="card es-filters">
       <div class="es-grid">
@@ -97,8 +101,9 @@ import { AccountingService, JournalSearchFilters, JournalSearchRowDto } from '..
     .es-empty { text-align: center; padding: var(--spacing-6); color: var(--color-text-tertiary); }
   `
 })
-export class EntrySearchComponent {
+export class EntrySearchComponent implements OnInit {
   private readonly api = inject(AccountingService);
+  private readonly route = inject(ActivatedRoute);
   readonly journalCodes = ['JV', 'JA', 'JC', 'JB', 'JOD', 'JIM', 'JAN'];
 
   f: JournalSearchFilters = {};
@@ -106,6 +111,30 @@ export class EntrySearchComponent {
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
   readonly searched = signal(false);
+
+  ngOnInit(): void {
+    const qp = this.route.snapshot.queryParamMap;
+    const setStr = (key: keyof JournalSearchFilters, param: string | null) => {
+      if (param != null && param !== '') (this.f as Record<string, unknown>)[key] = param;
+    };
+    setStr('account', qp.get('account'));
+    setStr('journalCode', qp.get('journalCode'));
+    setStr('from', qp.get('from'));
+    setStr('to', qp.get('to'));
+    setStr('label', qp.get('label'));
+    setStr('lettering', qp.get('lettering'));
+    setStr('pieceRef', qp.get('pieceRef'));
+    const status = qp.get('status');
+    if (status != null && status !== '') this.f.status = Number(status);
+    const minAmount = qp.get('minAmount');
+    if (minAmount) this.f.minAmount = Number(minAmount);
+    const maxAmount = qp.get('maxAmount');
+    if (maxAmount) this.f.maxAmount = Number(maxAmount);
+    const entryNumber = qp.get('entryNumber');
+    if (entryNumber) this.f.entryNumber = Number(entryNumber);
+
+    if (qp.get('autoSearch') === '1') this.search();
+  }
 
   search(): void {
     this.loading.set(true);

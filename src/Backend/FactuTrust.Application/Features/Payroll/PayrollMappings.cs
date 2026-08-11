@@ -303,6 +303,16 @@ public static class PayrollMappings
         };
     }
 
+    public static IReadOnlyList<PayrollGarnishmentBracketDto> ToGarnishmentBracketDtos(PayrollYearParameters p) =>
+        p.GarnishmentBrackets
+            .OrderBy(b => b.LowerBoundMonthlyNet)
+            .Select(b => new PayrollGarnishmentBracketDto
+            {
+                LowerBoundMonthlyNet = b.LowerBoundMonthlyNet,
+                SeizableFraction = b.SeizableFraction
+            })
+            .ToList();
+
     public static LeaveRequestDto ToDto(LeaveRequest l, string? employeeName = null)
     {
         return new LeaveRequestDto

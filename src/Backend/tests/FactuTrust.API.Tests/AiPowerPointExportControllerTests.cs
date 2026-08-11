@@ -34,10 +34,13 @@ public sealed class AiPowerPointExportControllerTests
 
         var storage = new Mock<IExportStorageService>();
 
+        var currentUser = new Mock<ICurrentUser>();
+
         var controller = new AiPowerPointExportController(
             mediator.Object,
             storage.Object,
             tenantContext.Object,
+            currentUser.Object,
             NullLogger<AiPowerPointExportController>.Instance);
 
         controller.ControllerContext = new ControllerContext

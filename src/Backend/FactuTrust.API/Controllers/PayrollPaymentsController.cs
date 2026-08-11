@@ -22,6 +22,7 @@ public class PayrollPaymentsController : ControllerBase
 
     [HttpPost("runs/{runId:guid}/payments")]
     [Authorize(Policy = PermissionPolicies.PayrollPay)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<Guid>), StatusCodes.Status201Created)]
     public async Task<IActionResult> RecordRunPayment(
         Guid runId,
@@ -39,6 +40,7 @@ public class PayrollPaymentsController : ControllerBase
 
     [HttpPost("payslips/{payslipId:guid}/payments")]
     [Authorize(Policy = PermissionPolicies.PayrollPay)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<Guid>), StatusCodes.Status201Created)]
     public async Task<IActionResult> RecordPayslipPayment(
         Guid payslipId,
@@ -78,6 +80,7 @@ public class PayrollPaymentsController : ControllerBase
 
     [HttpPost("payments/{paymentId:guid}/cancel")]
     [Authorize(Policy = PermissionPolicies.PayrollPay)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     public async Task<IActionResult> CancelPayment(
         Guid paymentId,
@@ -92,6 +95,7 @@ public class PayrollPaymentsController : ControllerBase
 
     [HttpPost("runs/{runId:guid}/payments/cancel-all")]
     [Authorize(Policy = PermissionPolicies.PayrollPay)]
+    [Authorize(Policy = PermissionPolicies.PayrollFirmOperation)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     public async Task<IActionResult> CancelAllRunPayments(
         Guid runId,
