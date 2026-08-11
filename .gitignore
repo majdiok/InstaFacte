@@ -65,3 +65,6 @@ build-round2.log
 build-sidebar-cleanup.log
 build-submenu-fix.log
 
+
+# Test run artifacts
+**/TestResults/
