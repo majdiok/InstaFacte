@@ -1,10 +1,13 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Common.Validation;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.InvoiceWizard;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace FactuTrust.Infrastructure.Services;
 
@@ -21,17 +24,20 @@ public sealed class InvoiceComplianceValidator : IInvoiceComplianceValidator
     private readonly IClientRepository _clientRepository;
     private readonly IInvoiceRepository _invoiceRepository;
     private readonly ILogger<InvoiceComplianceValidator> _logger;
+    private readonly AccountingSettings _accountingSettings;
 
     public InvoiceComplianceValidator(
         ICompanyRepository companyRepository,
         IClientRepository clientRepository,
         IInvoiceRepository invoiceRepository,
-        ILogger<InvoiceComplianceValidator> logger)
+        ILogger<InvoiceComplianceValidator> logger,
+        IOptions<AccountingSettings> accountingSettings)
     {
         _companyRepository = companyRepository;
         _clientRepository = clientRepository;
         _invoiceRepository = invoiceRepository;
         _logger = logger;
+        _accountingSettings = accountingSettings.Value;
     }
 
     public async Task<WizardValidationResultDto> ValidateAsync(
@@ -328,6 +334,34 @@ public sealed class InvoiceComplianceValidator : IInvoiceComplianceValidator
             };
         }
 
+        if (linkedInvoice.IsCreditNote)
+        {
+            return new WizardValidationCheckDto
+            {
+                Id = "linked-invoice",
+                Category = "LEGAL",
+                Label = "Facture liée",
+                Description = "Un avoir ne peut pas rectifier un autre avoir",
+                Status = "ERROR",
+                IsBlocking = true,
+                Field = "metadata.linkedInvoiceId"
+            };
+        }
+
+        if (linkedInvoice.Status is InvoiceStatus.Draft or InvoiceStatus.Cancelled)
+        {
+            return new WizardValidationCheckDto
+            {
+                Id = "linked-invoice",
+                Category = "LEGAL",
+                Label = "Facture liée",
+                Description = "La facture liée n'est pas émise",
+                Status = "ERROR",
+                IsBlocking = true,
+                Field = "metadata.linkedInvoiceId"
+            };
+        }
+
         return new WizardValidationCheckDto
         {
             Id = "linked-invoice",
@@ -378,28 +412,38 @@ public sealed class InvoiceComplianceValidator : IInvoiceComplianceValidator
             };
         }
 
-        var lines = draft.GetLines();
-        var draftTotal = lines.Sum(l =>
-        {
-            var subtotal = l.Quantity * l.UnitPriceHT;
-            var discount = l.DiscountType == "PERCENT"
-                ? subtotal * (l.DiscountValue ?? 0) / 100
-                : (l.DiscountValue ?? 0);
-            var lineHT = subtotal - discount;
-            return lineHT + (lineHT * l.VatRate / 100);
-        });
+        var draftCommercial = CreditNoteAmountGuard.CommercialTtcFromDraftLines(
+            draft.GetLines(), _accountingSettings.FodecRatePercent);
+        var originalCommercial = CreditNoteAmountGuard.CommercialTtcFromInvoice(linkedInvoice);
+        var alreadyCredited = await _invoiceRepository.SumIssuedCreditNoteCommercialTtcAsync(
+            linkedInvoiceId.Value, cancellationToken);
+        var available = originalCommercial - alreadyCredited;
+        var isValid = CreditNoteAmountGuard.DoesNotExceed(draftCommercial, available);
 
-        var originalTotal = linkedInvoice.TotalAmount.Amount;
-        var isValid = draftTotal <= originalTotal;
+        string description;
+        if (isValid)
+        {
+            description = alreadyCredited > 0
+                ? $"Montant valide: {draftCommercial:N3} TND ≤ reste créditable {Math.Max(0m, available):N3} TND"
+                : $"Montant valide: {draftCommercial:N3} TND ≤ {originalCommercial:N3} TND";
+        }
+        else if (alreadyCredited > 0)
+        {
+            description =
+                $"Le montant de l'avoir ({draftCommercial:N3} TND) dépasse le reste créditable ({Math.Max(0m, available):N3} TND) — cumul des avoirs {alreadyCredited:N3} TND sur {originalCommercial:N3} TND";
+        }
+        else
+        {
+            description =
+                $"Le montant de l'avoir ({draftCommercial:N3} TND) dépasse la facture originale ({originalCommercial:N3} TND)";
+        }
 
         return new WizardValidationCheckDto
         {
             Id = "credit-note-amount",
             Category = "CALCULATION",
             Label = "Montant avoir",
-            Description = isValid
-                ? $"Montant valide: {TunisianValidationRules.RoundToMillimes(draftTotal):N3} TND ≤ {originalTotal:N3} TND"
-                : $"Le montant de l'avoir ({TunisianValidationRules.RoundToMillimes(draftTotal):N3} TND) dépasse la facture originale ({originalTotal:N3} TND)",
+            Description = description,
             Status = isValid ? "VALID" : "ERROR",
             IsBlocking = true,
             Field = "totals"

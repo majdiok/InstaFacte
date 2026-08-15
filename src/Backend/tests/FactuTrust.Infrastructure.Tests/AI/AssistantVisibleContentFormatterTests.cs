@@ -320,4 +320,92 @@ public sealed class AssistantVisibleContentFormatterTests
             $"x\n```json\n{empty}\n```", minMeaningfulChars: 80);
         Assert.Contains("Aucune vente sur la periode du 01/07/2026 au 02/07/2026", enhancedEmpty, StringComparison.Ordinal);
     }
+
+    // ── StripDisallowedScripts : filet anti-dérive CJK (Qwen) ─────────────────────────────────────
+
+    [Fact]
+    public void StripDisallowedScripts_LeavesFrenchProseUnchanged()
+    {
+        const string content = "Ce mois-ci votre chiffre d'affaires s'élève à 1 250,500 TND (16/06/2026).";
+        Assert.False(AssistantVisibleContentFormatter.ContainsCjkScript(content));
+        Assert.Equal(content, AssistantVisibleContentFormatter.StripDisallowedScripts(content));
+    }
+
+    [Fact]
+    public void StripDisallowedScripts_KeepsFrench_DropsChineseParagraphsAndTranslatorNote()
+    {
+        const string french =
+            "Aucun collaborateur n'a été trouvé dans votre portefeuille actuel. "
+            + "Cela pourrait signifier que tous les dossiers sont bien suivis par vos équipes, "
+            + "ou qu'il y a une partie du portefeuille qui n'a pas pu être lue.";
+        var content =
+            french
+            + "\n\n助手：未找到任何协作人员。\n\n"
+            + "注意：以上翻译保持了原文的语气和内容，并已根据中文表达习惯进行了适当调整。";
+
+        var stripped = AssistantVisibleContentFormatter.StripDisallowedScripts(content);
+
+        Assert.Equal(french, stripped.Trim());
+        Assert.DoesNotContain("助手", stripped, StringComparison.Ordinal);
+        Assert.False(AssistantVisibleContentFormatter.ContainsCjkScript(stripped));
+        Assert.True(AssistantVisibleContentFormatter.HasMeaningfulAssistantText(stripped, minChars: 80));
+    }
+
+    [Fact]
+    public void StripDisallowedScripts_AllCjk_YieldsEmpty_NotMeaningful()
+    {
+        const string content = "助手：未找到任何协作人员。请检查您的投资组合。";
+        var stripped = AssistantVisibleContentFormatter.StripDisallowedScripts(content);
+
+        Assert.True(string.IsNullOrWhiteSpace(stripped));
+        Assert.False(AssistantVisibleContentFormatter.HasMeaningfulAssistantText(stripped, minChars: 80));
+    }
+
+    [Fact]
+    public void StripDisallowedScripts_PreservesArabic()
+    {
+        const string content = "Le client شركة النور a un solde de 200,000 TND.";
+        Assert.False(AssistantVisibleContentFormatter.ContainsCjkScript(content));
+        Assert.Equal(content, AssistantVisibleContentFormatter.StripDisallowedScripts(content));
+    }
+
+    [Fact]
+    public void StripDisallowedScripts_IsIdempotent()
+    {
+        const string content = "Réponse française.\n\n助手：中文续写。";
+        var once = AssistantVisibleContentFormatter.StripDisallowedScripts(content);
+        var twice = AssistantVisibleContentFormatter.StripDisallowedScripts(once);
+        Assert.Equal(once, twice);
+    }
+
+    [Fact]
+    public void StripDisallowedScripts_PreservesJsonFences_EvenWithCjkInside()
+    {
+        const string content =
+            "Voici le tableau.\n```json\n{\"title\":\"Trésorerie\",\"note\":\"中文\"}\n```\n助手：忽略。";
+
+        var stripped = AssistantVisibleContentFormatter.StripDisallowedScripts(content);
+
+        Assert.Contains("```json", stripped, StringComparison.Ordinal);
+        Assert.Contains("\"note\":\"中文\"", stripped, StringComparison.Ordinal);
+        Assert.Contains("Voici le tableau.", stripped, StringComparison.Ordinal);
+        Assert.DoesNotContain("助手", stripped, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void StripDisallowedScripts_NullAndEmpty_AreSafe()
+    {
+        Assert.Equal(string.Empty, AssistantVisibleContentFormatter.StripDisallowedScripts(null));
+        Assert.Equal(string.Empty, AssistantVisibleContentFormatter.StripDisallowedScripts(""));
+    }
+
+    [Fact]
+    public void SanitizeVisibleProse_StripsCjkAfterToolNameSubstitution()
+    {
+        const string content = "Utilisez get_sales_revenue.\n助手：忽略。";
+        var sanitized = AssistantVisibleContentFormatter.SanitizeVisibleProse(content);
+        Assert.DoesNotContain("get_sales_revenue", sanitized, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("l'analyse du chiffre d'affaires", sanitized, StringComparison.Ordinal);
+        Assert.False(AssistantVisibleContentFormatter.ContainsCjkScript(sanitized));
+    }
 }

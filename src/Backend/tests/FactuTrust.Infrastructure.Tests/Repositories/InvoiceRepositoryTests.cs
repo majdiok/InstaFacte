@@ -529,6 +529,159 @@ public sealed class InvoiceRepositoryTests : IDisposable
         return await _repository.AddAsync(invoice);
     }
 
+    private async Task<Invoice> AddTypedDocumentAsync(
+        Client client,
+        DateTime issueDate,
+        int sequence,
+        InvoiceType type,
+        Guid? linkedInvoiceId = null)
+    {
+        var invoice = type == InvoiceType.CreditNote
+            ? Invoice.CreateCreditNote(
+                number: InvoiceNumber.Create("AVO", 2026, sequence),
+                client: client,
+                issueDate: issueDate,
+                linkedInvoiceId: linkedInvoiceId ?? Guid.NewGuid(),
+                dueDate: issueDate.AddDays(30),
+                reference: $"AVO-REF-{sequence:000}").Value
+            : Invoice.Create(
+                number: InvoiceNumber.Create("FAC", 2026, sequence),
+                client: client,
+                issueDate: issueDate,
+                dueDate: issueDate.AddDays(30),
+                reference: $"REF-{sequence:000}").Value;
+
+        return await _repository.AddAsync(invoice);
+    }
+
+    [Fact]
+    public async Task SearchAsync_TypeNull_ReturnsInvoicesAndCreditNotes()
+    {
+        var client = await CreateClientAsync(
+            name: "Client Type Mix",
+            email: "typemix@test.com",
+            nifValue: "1234567/A/B/C/070");
+        var today = DateTime.UtcNow.Date;
+
+        var fac = await AddTypedDocumentAsync(client, today, 1, InvoiceType.Standard);
+        await AddTypedDocumentAsync(client, today, 1, InvoiceType.CreditNote, fac.Id);
+
+        var (items, count) = await _repository.SearchAsync(
+            null, null, null, null, null, 1, 20, unpaidOnly: false, type: null);
+
+        Assert.Equal(2, count);
+        Assert.Equal(2, items.Count);
+        Assert.Contains(items, i => i.Type == InvoiceType.Standard);
+        Assert.Contains(items, i => i.Type == InvoiceType.CreditNote);
+    }
+
+    [Fact]
+    public async Task SearchAsync_TypeStandard_ExcludesCreditNotes()
+    {
+        var client = await CreateClientAsync(
+            name: "Client Type Fac",
+            email: "typefac@test.com",
+            nifValue: "1234567/A/B/C/071");
+        var today = DateTime.UtcNow.Date;
+
+        var fac = await AddTypedDocumentAsync(client, today, 1, InvoiceType.Standard);
+        await AddTypedDocumentAsync(client, today, 1, InvoiceType.CreditNote, fac.Id);
+
+        var (items, count) = await _repository.SearchAsync(
+            null, null, null, null, null, 1, 20, unpaidOnly: false, type: InvoiceType.Standard);
+
+        Assert.Equal(1, count);
+        var only = Assert.Single(items);
+        Assert.Equal(InvoiceType.Standard, only.Type);
+        Assert.Equal(fac.Id, only.Id);
+    }
+
+    [Fact]
+    public async Task SearchAsync_TypeCreditNote_ExcludesStandardInvoices()
+    {
+        var client = await CreateClientAsync(
+            name: "Client Type Avo",
+            email: "typeavo@test.com",
+            nifValue: "1234567/A/B/C/072");
+        var today = DateTime.UtcNow.Date;
+
+        var fac = await AddTypedDocumentAsync(client, today, 1, InvoiceType.Standard);
+        var avo = await AddTypedDocumentAsync(client, today, 1, InvoiceType.CreditNote, fac.Id);
+
+        var (items, count) = await _repository.SearchAsync(
+            null, null, null, null, null, 1, 20, unpaidOnly: false, type: InvoiceType.CreditNote);
+
+        Assert.Equal(1, count);
+        var only = Assert.Single(items);
+        Assert.Equal(InvoiceType.CreditNote, only.Type);
+        Assert.Equal(avo.Id, only.Id);
+    }
+
+    [Fact]
+    public async Task SearchAsync_UnpaidOnlyAndStandard_ExcludesUnpaidCreditNotes()
+    {
+        var client = await CreateClientAsync(
+            name: "Client Type Unpaid",
+            email: "typeunpaid@test.com",
+            nifValue: "1234567/A/B/C/073");
+        var today = DateTime.UtcNow.Date;
+
+        var fac = await AddTypedDocumentAsync(client, today, 1, InvoiceType.Standard);
+        await AddTypedDocumentAsync(client, today, 1, InvoiceType.CreditNote, fac.Id);
+
+        var (items, count) = await _repository.SearchAsync(
+            null, null, null, null, null, 1, 20, unpaidOnly: true, type: InvoiceType.Standard);
+
+        Assert.Equal(1, count);
+        var only = Assert.Single(items);
+        Assert.Equal(InvoiceType.Standard, only.Type);
+        Assert.Equal(fac.Id, only.Id);
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_TypeFilter_CountsOnlyMatchingDocuments()
+    {
+        var client = await CreateClientAsync(
+            name: "Client Summary Type",
+            email: "summarytype@test.com",
+            nifValue: "1234567/A/B/C/074");
+        var today = DateTime.UtcNow.Date;
+
+        var fac = await AddTypedDocumentAsync(client, today, 1, InvoiceType.Standard);
+        await AddTypedDocumentAsync(client, today, 1, InvoiceType.CreditNote, fac.Id);
+
+        var all = await _repository.GetSummaryAsync(null, null, null, null, null, false, type: null);
+        var facOnly = await _repository.GetSummaryAsync(null, null, null, null, null, false, type: InvoiceType.Standard);
+        var avoOnly = await _repository.GetSummaryAsync(null, null, null, null, null, false, type: InvoiceType.CreditNote);
+
+        Assert.Equal(2, all.Count);
+        Assert.Equal(1, facOnly.Count);
+        Assert.Equal(1, avoOnly.Count);
+    }
+
+    [Fact]
+    public async Task GetForReportAsync_TypeCreditNote_ReturnsOnlyCreditNotes()
+    {
+        var client = await CreateClientAsync(
+            name: "Client Report Type",
+            email: "reporttype@test.com",
+            nifValue: "1234567/A/B/C/075");
+        var today = new DateTime(2026, 3, 1);
+
+        var fac = await AddTypedDocumentAsync(client, today, 1, InvoiceType.Standard);
+        var avo = await AddTypedDocumentAsync(client, today, 1, InvoiceType.CreditNote, fac.Id);
+
+        var all = await _repository.GetForReportAsync(fromDate: null, toDate: null, clientId: null, type: null);
+        var facOnly = await _repository.GetForReportAsync(fromDate: null, toDate: null, clientId: null, type: InvoiceType.Standard);
+        var avoOnly = await _repository.GetForReportAsync(fromDate: null, toDate: null, clientId: null, type: InvoiceType.CreditNote);
+
+        Assert.Equal(2, all.Count);
+        Assert.Single(facOnly);
+        Assert.Equal(fac.Id, facOnly[0].Id);
+        Assert.Single(avoOnly);
+        Assert.Equal(avo.Id, avoOnly[0].Id);
+    }
+
     [Fact]
     public async Task GetSalesRevenueAggregated_OnlyCountsPaidAndValidatedInvoices()
     {

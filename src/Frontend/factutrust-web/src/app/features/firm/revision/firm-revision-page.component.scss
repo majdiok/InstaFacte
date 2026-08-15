@@ -1,0 +1,298 @@
+// Réviseur de portefeuille cabinet.
+// Palette et rythme repris de l'écran de contrôle d'intégrité (accounting/audit-control) pour que
+// le comptable retrouve les mêmes codes de sévérité d'un écran à l'autre.
+
+.fr-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 1rem 0;
+}
+
+.fr-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary, #64748b);
+
+  input {
+    width: 7rem;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--border-color, #cbd5e1);
+    border-radius: 6px;
+    font-size: 0.9rem;
+  }
+}
+
+.fr-banner {
+  padding: 0.7rem 0.9rem;
+  border-radius: 8px;
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+  border-left: 4px solid;
+
+  &--error { background: #fef2f2; border-color: #ef4444; color: #991b1b; }
+  &--warning { background: #fffbeb; border-color: #f59e0b; color: #92400e; }
+  &--success { background: #f0fdf4; border-color: #22c55e; color: #166534; }
+  &--info { background: #eff6ff; border-color: #3b82f6; color: #1e40af; }
+}
+
+.fr-loading {
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-secondary, #64748b);
+  font-style: italic;
+}
+
+.fr-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.fr-stat-hint {
+  font-size: 0.72rem;
+  opacity: 0.85;
+}
+
+.fr-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  margin-bottom: 1rem;
+}
+
+.fr-tab {
+  padding: 0.55rem 1rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text-secondary, #64748b);
+  border-bottom: 2px solid transparent;
+
+  &--active {
+    color: var(--primary-color, #2563eb);
+    border-bottom-color: var(--primary-color, #2563eb);
+    font-weight: 600;
+  }
+}
+
+.fr-section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 1.25rem 0 0.5rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+// ── Domaines ──────────────────────────────────────────────────────────────────────────────
+
+.fr-family-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.fr-family {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 999px;
+  font-size: 0.85rem;
+
+  &__count {
+    font-weight: 600;
+  }
+}
+
+// ── Sévérité et risque ────────────────────────────────────────────────────────────────────
+
+.fr-badge {
+  display: inline-block;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+
+  &--blocking { background: #fee2e2; color: #991b1b; }
+  &--warning { background: #ffedd5; color: #9a3412; }
+  &--info { background: #dbeafe; color: #1e40af; }
+}
+
+.fr-risk {
+  display: inline-block;
+  padding: 0.12rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+
+  &--critical { background: #fee2e2; color: #991b1b; }
+  &--high { background: #ffedd5; color: #9a3412; }
+  &--moderate { background: #fef9c3; color: #854d0e; }
+  &--clean { background: #dcfce7; color: #166534; }
+  // Un dossier illisible n'est pas conforme : il est inconnu, et se lit en gris, pas en vert.
+  &--unknown { background: #e2e8f0; color: #475569; }
+}
+
+// ── Tableau ───────────────────────────────────────────────────────────────────────────────
+
+.fr-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.fr-actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.fr-row--unreadable {
+  opacity: 0.6;
+}
+
+.fr-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--primary-color, #2563eb);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+
+  &:hover:not(:disabled) { text-decoration: underline; }
+  &:disabled { color: var(--text-secondary, #64748b); cursor: default; }
+}
+
+.fr-note-icon {
+  margin-left: 0.4rem;
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.fr-empty {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-secondary, #64748b);
+  font-style: italic;
+}
+
+// ── File de travail ───────────────────────────────────────────────────────────────────────
+
+.fr-collaborator {
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.9rem;
+
+  &--unassigned {
+    border-style: dashed;
+  }
+
+  &__meta {
+    font-size: 0.8rem;
+    font-weight: 400;
+    color: var(--text-secondary, #64748b);
+  }
+}
+
+.fr-queue {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+
+  &__item {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid var(--border-color-light, #f1f5f9);
+
+    &:last-child { border-bottom: none; }
+  }
+}
+
+// ── Dossier de révision ───────────────────────────────────────────────────────────────────
+
+.fr-detail__header {
+  margin-bottom: 0.75rem;
+
+  h3 { margin: 0; font-size: 1.05rem; }
+  p { margin: 0.2rem 0 0; font-size: 0.85rem; color: var(--text-secondary, #64748b); }
+}
+
+.fr-note__summary {
+  font-size: 0.92rem;
+  line-height: 1.5;
+  padding: 0.75rem;
+  background: var(--surface-alt, #f8fafc);
+  border-radius: 8px;
+}
+
+.fr-note__item {
+  border-top: 1px solid var(--border-color-light, #f1f5f9);
+  padding: 0.75rem 0;
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.35rem;
+
+    .fr-num { margin-left: auto; font-size: 0.85rem; }
+  }
+
+  p { margin: 0 0 0.35rem; font-size: 0.9rem; line-height: 1.5; }
+
+  footer {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    font-size: 0.78rem;
+  }
+}
+
+.fr-note__question {
+  color: #7c2d12;
+}
+
+.fr-action {
+  padding: 0.12rem 0.55rem;
+  border-radius: 999px;
+  background: #ede9fe;
+  color: #5b21b6;
+  font-weight: 600;
+}
+
+.fr-piece {
+  color: var(--text-secondary, #64748b);
+}
+
+.fr-anomalies {
+  ul { list-style: none; padding: 0; margin: 0; }
+
+  li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0.35rem 0;
+    border-bottom: 1px solid var(--border-color-light, #f1f5f9);
+    font-size: 0.88rem;
+
+    &:last-child { border-bottom: none; }
+  }
+}
+
+.fr-anomaly__desc {
+  color: var(--text-secondary, #64748b);
+}

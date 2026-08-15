@@ -8,6 +8,7 @@ public sealed class AiScreenTitleFormatterTests
     [Theory]
     [InlineData("accounting-ledger", "Analyse — Grand livre")]
     [InlineData("invoice-list", "Analyse — Liste des factures")]
+    [InlineData("credit-note-list", "Analyse — Liste des avoirs")]
     [InlineData("dashboard", "Analyse — Tableau de bord")]
     public void BuildScreenAnalysisConversationTitle_maps_known_screen_ids(string screenId, string expected)
     {

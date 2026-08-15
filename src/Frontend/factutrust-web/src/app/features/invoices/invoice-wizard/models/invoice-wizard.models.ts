@@ -283,6 +283,8 @@ export interface InvoiceWizardState {
   draftId: string | null;
   validationResult: ValidationResult | null;
   submissionError: string | null; // Erreur lors de l'émission
+  /** TTC commercial (hors timbre) de la FAC liée, pour le pré-contrôle montant avoir. */
+  linkedInvoiceCommercialTtc: number | null;
 }
 
 // ============================================

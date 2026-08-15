@@ -61,4 +61,14 @@ public static class AiModelCapabilityDetector
         }
         return false;
     }
+
+    /// <summary>
+    /// Les IDs Cursor (composer-2.5, auto-smart, …) n'ont pas de marqueur vision dans le nom.
+    /// Le SDK accepte des images sur <c>SDKUserMessage</c> : on les considère vision-capable.
+    /// </summary>
+    public static bool DetectVisionSupport(ParsedModelRef parsed) =>
+        parsed.Kind == LlmProviderKind.Cursor || DetectVisionSupport(parsed.ProviderModelId);
+
+    public static bool DetectChatCapable(ParsedModelRef parsed) =>
+        parsed.Kind == LlmProviderKind.Cursor || DetectChatCapable(parsed.ProviderModelId);
 }

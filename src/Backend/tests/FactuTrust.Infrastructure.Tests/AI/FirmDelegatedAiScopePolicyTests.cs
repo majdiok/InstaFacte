@@ -21,6 +21,9 @@ public sealed class FirmDelegatedAiScopePolicyTests
     [InlineData(AssistantAgentScope.Stock)]
     [InlineData(AssistantAgentScope.Treasury)]
     [InlineData(AssistantAgentScope.Crm)]
+    // FirmMission n'a de sens qu'en cabinet natif : sans refus explicite, l'arme par défaut de la
+    // policy le réécrirait silencieusement en Accounting.
+    [InlineData(AssistantAgentScope.FirmMission)]
     public void ResolveAllowedScope_firm_delegated_rejects_non_accounting_scopes(AssistantAgentScope requested)
     {
         var ex = Assert.Throws<UnauthorizedAccessException>(() =>

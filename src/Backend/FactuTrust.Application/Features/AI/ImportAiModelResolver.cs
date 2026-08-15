@@ -21,7 +21,7 @@ public static class ImportAiModelResolver
             return false;
 
         var candidate = NormalizeModelRef(platformImport.Trim());
-        if (AiModelCapabilityDetector.DetectChatCapable(candidate.ProviderModelId))
+        if (AiModelCapabilityDetector.DetectChatCapable(candidate))
         {
             modelRef = candidate;
             return true;

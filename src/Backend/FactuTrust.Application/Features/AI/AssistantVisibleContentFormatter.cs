@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using FactuTrust.Application.Features.AI.Tools;
@@ -110,9 +111,111 @@ public static class AssistantVisibleContentFormatter
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Assainissement de prose visible : substitution des noms d'outils puis retrait des écritures CJK
+    /// (hors fences). Idempotent. Utilisé pour le streaming live, le corps final et les canaux.
+    /// </summary>
+    public static string SanitizeVisibleProse(string? content) =>
+        StripDisallowedScripts(SanitizeInternalToolNames(content));
+
+    /// <summary>
+    /// True si le texte contient au moins une rune CJK (idéogrammes, kana, hangul, ponctuation CJK),
+    /// y compris les extensions hors BMP. L'arabe et le latin ne matchent pas.
+    /// </summary>
+    public static bool ContainsCjkScript(string? content)
+    {
+        if (string.IsNullOrEmpty(content))
+            return false;
+        foreach (var rune in content.EnumerateRunes())
+        {
+            if (IsCjkRune(rune))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Retire les écritures CJK de la prose visible (hors fences <c>```</c>) pour bloquer la dérive
+    /// linguistique des petits Qwen. Latin, chiffres, ponctuation occidentale et arabe sont conservés.
+    /// Les lignes devenues vides / ponctuation orpheline après retrait sont supprimées ; les sauts de
+    /// paragraphe français sont préservés. Idempotent ; no-op si aucun CJK.
+    /// </summary>
+    public static string StripDisallowedScripts(string? content)
+    {
+        if (string.IsNullOrEmpty(content))
+            return content ?? string.Empty;
+        if (!ContainsCjkScript(content))
+            return content;
+
+        return ReplaceOutsideCodeFences(content, StripCjkFromProseSegment);
+    }
+
+    private static string StripCjkFromProseSegment(string segment)
+    {
+        var lines = segment.Split('\n');
+        var kept = new List<string>(lines.Length);
+        foreach (var line in lines)
+        {
+            if (!ContainsCjkScript(line))
+            {
+                kept.Add(line);
+                continue;
+            }
+
+            var stripped = CollapseHorizontalWhitespace(StripCjkRunes(line));
+            if (IsOrphanPunctuationLine(stripped))
+                continue;
+            kept.Add(stripped);
+        }
+
+        return MultiBlankLineRegex.Replace(string.Join("\n", kept), "\n\n");
+    }
+
+    private static string StripCjkRunes(string text)
+    {
+        var sb = new StringBuilder(text.Length);
+        foreach (var rune in text.EnumerateRunes())
+        {
+            if (!IsCjkRune(rune))
+                sb.Append(rune);
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Idéogrammes unifiés + extensions, kana, hangul, ponctuation CJK (U+3000–U+303F),
+    /// et plan complémentaire (Ext. B–F). Volontairement hors arabe / cyrillique / thaï.
+    /// </summary>
+    private static bool IsCjkRune(Rune rune)
+    {
+        var value = rune.Value;
+        return value is (>= 0x3400 and <= 0x4DBF)
+            or (>= 0x4E00 and <= 0x9FFF)
+            or (>= 0xF900 and <= 0xFAFF)
+            or (>= 0x3040 and <= 0x309F)
+            or (>= 0x30A0 and <= 0x30FF)
+            or (>= 0xAC00 and <= 0xD7AF)
+            or (>= 0x3000 and <= 0x303F)
+            or (>= 0x20000 and <= 0x2FA1F);
+    }
+
+    private static string CollapseHorizontalWhitespace(string line) =>
+        HorizontalWhitespaceRunRegex.Replace(line, " ");
+
+    private static bool IsOrphanPunctuationLine(string line)
+    {
+        foreach (var rune in line.EnumerateRunes())
+        {
+            if (Rune.IsLetter(rune) || Rune.IsDigit(rune))
+                return false;
+        }
+        return true;
+    }
+
     /// <summary>Toute mention du « JSON » (le spec interne n'a jamais à apparaître côté Studio).</summary>
     private static readonly Regex JsonWordRegex = new(@"\bjson\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex MultiBlankLineRegex = new(@"(?:[ \t]*\n){3,}", RegexOptions.Compiled);
+    private static readonly Regex HorizontalWhitespaceRunRegex = new(@"[ \t]{2,}", RegexOptions.Compiled);
 
     /// <summary>
     /// Redaction CIBLÉE pour l'assistant Studio (StudioBuilder) : retire les fences techniques puis, ligne

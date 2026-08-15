@@ -23,7 +23,9 @@ const MODULE_FEATURE_OPTIONS: Record<AppModule, ModuleFeatureOption[]> = {
   ],
   [AppModule.Treasury]: [
     { key: 'read', label: 'Consultation' },
-    { key: 'manage', label: 'Saisie et mise à jour' }
+    { key: 'manage', label: 'Saisie et mise à jour' },
+    { key: 'forecast_read', label: 'Trésorerie prévisionnelle — consultation' },
+    { key: 'forecast_manage', label: 'Trésorerie prévisionnelle — recalcul et engagements' }
   ],
   [AppModule.Reports]: [
     { key: 'sales', label: 'Ventes' },

@@ -13,13 +13,19 @@ interface AiStreamHttpError extends Error {
 export class AiStreamService {
   private readonly authService = inject(AuthService);
 
+  /**
+   * @param apiBasePath Segment d'API à utiliser. Défaut `/ai` = surface tenant historique, inchangée.
+   *   L'agent cabinet passe `/firm/ai` : surface distincte, permissionnée séparément, dont le scope
+   *   est imposé côté serveur.
+   */
   streamChat(
     request: ChatRequest,
-    onResponseMeta?: (meta: { traceId: string | null }) => void
+    onResponseMeta?: (meta: { traceId: string | null }) => void,
+    apiBasePath: string = '/ai'
   ): Observable<ChatStreamEvent> {
     return new Observable(subscriber => {
       const abortController = new AbortController();
-      const url = `${environment.apiUrl}/ai/chat`;
+      const url = `${environment.apiUrl}${apiBasePath}/chat`;
 
       const run = async (): Promise<void> => {
         // Le flux IA utilise fetch (hors pipeline d'intercepteurs Angular) : on reproduit ici le

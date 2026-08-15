@@ -224,6 +224,7 @@ public sealed class InvoiceDraft : Entity
     {
         IsSubmitting = false;
         SubmissionStartedAt = null;
+        IdempotencyKey = null;
         UpdateLastModified();
     }
 

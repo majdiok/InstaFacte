@@ -11,7 +11,7 @@ public sealed class InvoiceGlobalSearchProvider : IGlobalSearchProvider
     public string RequiredPermission => Permissions.Invoices.Read;
     public async Task<IReadOnlyList<GlobalSearchProviderResult>> SearchAsync(string query, int limit, CancellationToken cancellationToken)
     {
-        var (items, _) = await _invoiceRepository.SearchAsync(query, null, null, null, null, 1, limit, unpaidOnly: false, cancellationToken);
+        var (items, _) = await _invoiceRepository.SearchAsync(query, null, null, null, null, 1, limit, unpaidOnly: false, cancellationToken: cancellationToken);
         return items.Select(i => {
             var number = i.Number.Value;
             var isCreditNote = i.Type == InvoiceType.CreditNote;

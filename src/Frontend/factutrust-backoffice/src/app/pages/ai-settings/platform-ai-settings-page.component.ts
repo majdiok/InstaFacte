@@ -16,6 +16,8 @@ import { MessageService } from 'primeng/api';
 
 import { PlatformAiSettingsService } from '@core/services/platform-ai-settings.service';
 import type { OllamaInferenceDevice, PlatformAiSettingsDto } from '@core/models/platform.models';
+import { aiProviderLabel } from './ai-provider-label';
+import { needsCursorCatalogWarning, needsCursorModelWarning } from './cursor-settings-warnings';
 
 import { FtPageHeaderComponent } from '@core/ui/page-header/ft-page-header.component';
 import { FtSkeletonComponent } from '@core/ui/skeleton/ft-skeleton.component';
@@ -57,7 +59,7 @@ interface InferenceDeviceOption {
   template: `
     <ft-page-header
       title="Configuration IA"
-      subtitle="Modèles et credentials cloud (OpenRouter) partagés par toutes les entreprises." />
+      subtitle="Modèles et credentials cloud (OpenRouter ou Cursor) partagés par toutes les entreprises." />
 
     @if (loading()) {
       <ft-skeleton kind="line" count="5" />
@@ -84,7 +86,7 @@ interface InferenceDeviceOption {
         </p>
         @if (!d.isOllamaAssistantConfigured) {
           <p class="warn">
-            Le modèle assistant configuré est cloud (OpenRouter) : ce réglage s'applique aux modèles InstaFact IA locaux uniquement.
+            Le modèle assistant configuré est cloud (OpenRouter ou Cursor) : ce réglage s'applique aux modèles InstaFact IA locaux uniquement.
           </p>
         }
         @if (selectedInferenceDevice === 'CpuOnly' && isLargeAssistantModel()) {
@@ -127,6 +129,12 @@ interface InferenceDeviceOption {
         } @else {
           <p class="empty">
             Aucun modèle détecté. Vérifiez que le moteur IA InstaFact est démarré sur le serveur de la plateforme.
+          </p>
+        }
+        @if (needsCursorModelWarning()) {
+          <p class="warn">
+            Cursor est activé mais le modèle Assistant n'est pas un modèle Cursor. Le chat utilisera Ollama
+            ou le défaut serveur.
           </p>
         }
       </section>
@@ -276,6 +284,48 @@ interface InferenceDeviceOption {
         }
       </section>
 
+      <section class="card">
+        <h3>Cursor (cloud)</h3>
+        <p class="hint">
+          Clé API Cursor pour l'assistant, WhatsApp, le Studio et les imports. L'inférence est hébergée
+          chez Cursor : les prompts (factures, paie, CRM) quittent le serveur. Consultez Privacy Mode
+          et le usage dashboard Cursor (tag SDK). Laisser la clé vide conserve la valeur déjà enregistrée.
+        </p>
+        <div class="field field-row">
+          <label for="cursor-enabled">Activer Cursor</label>
+          <p-inputSwitch inputId="cursor-enabled" [(ngModel)]="cursorEnabled" />
+        </div>
+        <div class="field">
+          <label for="cursor-display">Nom affiché</label>
+          <input id="cursor-display" type="text" pInputText class="w-full" [(ngModel)]="cursorDisplayName" />
+        </div>
+        <div class="field">
+          <label for="cursor-key">Clé API</label>
+          <input
+            id="cursor-key"
+            type="password"
+            pInputText
+            class="w-full"
+            autocomplete="off"
+            [(ngModel)]="cursorApiKey"
+            [placeholder]="cursorKeyPlaceholder()" />
+          @if (cursorApiKeyConfigured) {
+            <small class="hint">Clé configurée (se termine par …{{ cursorApiKeyLast4 }})</small>
+          }
+        </div>
+        @if (needsCursorKeyWarning()) {
+          <p class="warn">
+            Un modèle Cursor est sélectionné mais aucune clé API n'est configurée.
+            Les appels Cursor échoueront jusqu'à saisie de la clé (et CursorSdk:Enabled=true côté serveur).
+          </p>
+        }
+        @if (needsCursorCatalogWarning()) {
+          <p class="warn">
+            Catalogue Cursor vide : exécutez npm ci dans CursorSdkBridge et redémarrez l'API (Node 22.13+).
+          </p>
+        }
+      </section>
+
       <div class="footer-actions">
         <p-button
           label="Enregistrer"
@@ -386,6 +436,8 @@ export class PlatformAiSettingsPageComponent implements OnInit {
   protected readonly savedOpenRouterEnabled = signal<boolean>(false);
   protected readonly savedOpenRouterDisplayName = signal<string>('');
   protected readonly savedOpenRouterBaseUrl = signal<string>('');
+  protected readonly savedCursorEnabled = signal<boolean>(false);
+  protected readonly savedCursorDisplayName = signal<string>('');
 
   /** Liée par [(ngModel)] au sélecteur. */
   protected selectedModelRef = '';
@@ -401,6 +453,13 @@ export class PlatformAiSettingsPageComponent implements OnInit {
   protected openRouterApiKey = '';
   protected openRouterApiKeyConfigured = false;
   protected openRouterApiKeyLast4: string | null = null;
+
+  /** Cursor SDK : clé partagée assistant/WhatsApp/imports. */
+  protected cursorEnabled = false;
+  protected cursorDisplayName = '';
+  protected cursorApiKey = '';
+  protected cursorApiKeyConfigured = false;
+  protected cursorApiKeyLast4: string | null = null;
 
   protected readonly inferenceDeviceOptions: InferenceDeviceOption[] = [
     {
@@ -422,7 +481,7 @@ export class PlatformAiSettingsPageComponent implements OnInit {
       return options;
     }
     for (const m of d.availableModels) {
-      const src = m.providerKey === 'openrouter' ? 'OpenRouter' : 'InstaFact IA';
+      const src = aiProviderLabel(m.providerKey);
       options.push({ label: `${src} · ${m.displayLabel}`, value: m.modelRef });
     }
     // Modèle configuré mais plus installé : on l'affiche pour ne pas masquer la configuration en
@@ -522,6 +581,15 @@ export class PlatformAiSettingsPageComponent implements OnInit {
     this.savedOpenRouterEnabled.set(this.openRouterEnabled);
     this.savedOpenRouterDisplayName.set(this.openRouterDisplayName);
     this.savedOpenRouterBaseUrl.set(this.openRouterBaseUrl);
+
+    const cursor = d.cursor;
+    this.cursorEnabled = cursor?.isEnabled ?? false;
+    this.cursorDisplayName = cursor?.displayName ?? '';
+    this.cursorApiKeyConfigured = cursor?.isApiKeyConfigured ?? false;
+    this.cursorApiKeyLast4 = cursor?.apiKeyLast4 ?? null;
+    this.cursorApiKey = '';
+    this.savedCursorEnabled.set(this.cursorEnabled);
+    this.savedCursorDisplayName.set(this.cursorDisplayName);
   }
 
   protected hasChanges(): boolean {
@@ -532,13 +600,54 @@ export class PlatformAiSettingsPageComponent implements OnInit {
       || this.openRouterEnabled !== this.savedOpenRouterEnabled()
       || this.openRouterDisplayName !== this.savedOpenRouterDisplayName()
       || this.openRouterBaseUrl !== this.savedOpenRouterBaseUrl()
-      || !!this.openRouterApiKey.trim();
+      || !!this.openRouterApiKey.trim()
+      || this.cursorEnabled !== this.savedCursorEnabled()
+      || this.cursorDisplayName !== this.savedCursorDisplayName()
+      || !!this.cursorApiKey.trim();
   }
 
   protected openRouterKeyPlaceholder(): string {
     return this.openRouterApiKeyConfigured
       ? `••••••••${this.openRouterApiKeyLast4 ?? ''}`
       : 'sk-or-…';
+  }
+
+  protected cursorKeyPlaceholder(): string {
+    return this.cursorApiKeyConfigured
+      ? `••••••••${this.cursorApiKeyLast4 ?? ''}`
+      : 'cursor_…';
+  }
+
+  protected needsCursorKeyWarning(): boolean {
+    const refs = [
+      this.selectedModelRef,
+      this.selectedImportModelRef,
+      this.selectedStudioModelRef
+    ];
+    const usesCursor = refs.some(r => r.toLowerCase().startsWith('cursor:'));
+    const hasKey = this.cursorApiKeyConfigured || !!this.cursorApiKey.trim();
+    return usesCursor && (!this.cursorEnabled || !hasKey);
+  }
+
+  protected needsCursorModelWarning(): boolean {
+    return needsCursorModelWarning({
+      cursorEnabled: this.cursorEnabled,
+      cursorApiKeyConfigured: this.cursorApiKeyConfigured,
+      cursorApiKey: this.cursorApiKey,
+      selectedModelRef: this.selectedModelRef
+    });
+  }
+
+  protected needsCursorCatalogWarning(): boolean {
+    const d = this.data();
+    if (!d) {
+      return false;
+    }
+
+    return needsCursorCatalogWarning({
+      cursorEnabled: this.cursorEnabled,
+      availableModels: d.availableModels
+    });
   }
 
   protected needsOpenRouterKeyWarning(): boolean {
@@ -577,6 +686,7 @@ export class PlatformAiSettingsPageComponent implements OnInit {
     const invoiceImportModelRef = this.selectedImportModelRef ? this.selectedImportModelRef : null;
     const studioAiModelRef = this.selectedStudioModelRef ? this.selectedStudioModelRef : null;
     const apiKey = this.openRouterApiKey.trim();
+    const cursorApiKey = this.cursorApiKey.trim();
     this.api.update({
       modelRef,
       invoiceImportModelRef,
@@ -587,6 +697,11 @@ export class PlatformAiSettingsPageComponent implements OnInit {
         displayName: this.openRouterDisplayName.trim() || null,
         baseUrl: this.openRouterBaseUrl.trim() || null,
         apiKey: apiKey || null
+      },
+      cursor: {
+        isEnabled: this.cursorEnabled,
+        displayName: this.cursorDisplayName.trim() || null,
+        apiKey: cursorApiKey || null
       }
     }).subscribe({
       next: (res) => {
@@ -595,7 +710,7 @@ export class PlatformAiSettingsPageComponent implements OnInit {
           this.toast.add({
             severity: 'success',
             summary: 'Configuration IA enregistrée',
-            detail: 'Les modèles et credentials OpenRouter sont à jour.'
+            detail: 'Les modèles et credentials cloud (OpenRouter ou Cursor) sont à jour.'
           });
         } else {
           this.toast.add({ severity: 'error', summary: 'Erreur', detail: res.message ?? '' });

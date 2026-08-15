@@ -65,6 +65,13 @@ test.describe('Cabinet comptable — authenticated (staging)', () => {
     // Login as FirmManager test account, assert sidemenu labels
   });
 
+  test('firm manager decision tables on dashboard', async ({ page }) => {
+    // Login FirmManager → /firm/dashboard
+    // await expect(page.getByRole('heading', { name: /pilotage décisionnel/i })).toBeVisible();
+    // await expect(page.getByText(/échéances fiscales critiques/i)).toBeVisible();
+    // Clic « Voir tout » échéances → /firm/fiscal-schedule
+  });
+
   test('firm dashboard shows no access denied modal after login', async ({ page }) => {
     // Login as FirmManager → /firm/dashboard
     // await expect(page.getByRole('dialog', { name: /accès refusé/i })).not.toBeVisible();
@@ -187,6 +194,8 @@ test.describe('Cabinet comptable — gouvernance (staging)', () => {
 
   test('governance workflow: permanent file, timesheet, expense note', async ({ page }) => {
     // 1. Login FirmManager → /firm/dashboard (KPI DP complets / en cours visibles, section gouvernance)
+    // 1b. Section « Pilotage décisionnel » visible avec tableaux (échéances, dossiers à risque, …)
+    // 1c. Collaborateur cabinet : section pilotage absente
     // 2. Clic KPI « Dossiers permanents complets » → /permanent-files?status=2 → tableau visible
     // 3. « Ouvrir » sur Complet → ?mode=view → titre « Consultation dossier permanent »
     // 4. « Modifier » → wizard étape 6 (pas étape 1)

@@ -82,6 +82,13 @@ public static class AiToolFrenchLabels
         ["cancel_supplier_invoice"] = "l'annulation de la facture fournisseur",
         ["create_cash_expense"] = "l'enregistrement d'une dépense",
 
+        // ── Agent « Chef de mission » (périmètre cabinet) ──────────────────────
+        ["get_firm_portfolio_overview"] = "la vue d'ensemble du portefeuille",
+        ["get_firm_fiscal_deadlines"] = "la revue des échéances fiscales",
+        ["get_firm_dossier_health"] = "l'analyse de risque des dossiers",
+        ["get_firm_collaborator_workload"] = "la répartition de la charge",
+        ["send_fiscal_deadline_reminder"] = "l'envoi d'un rappel d'échéance",
+
         // ── Stock / entrepôts ────────────────────────────────────────────────
         ["get_warehouses"] = "la liste des entrepôts",
         ["create_warehouse"] = "la création d'entrepôt",
@@ -97,6 +104,8 @@ public static class AiToolFrenchLabels
 
         // ── Prévisions IA ────────────────────────────────────────────────────
         ["forecast_revenue"] = "la prévision du chiffre d'affaires",
+        ["get_cash_flow_forecast"] = "la trésorerie prévisionnelle",
+        ["get_cash_flow_lines"] = "le détail des flux de trésorerie attendus",
         ["forecast_product_demand"] = "la prévision de la demande produit",
         ["get_replenishment_recommendations"] = "les recommandations de réapprovisionnement",
         ["get_promotion_recommendations"] = "les recommandations de promotion",

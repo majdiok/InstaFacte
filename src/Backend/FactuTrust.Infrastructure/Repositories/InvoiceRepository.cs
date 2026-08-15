@@ -470,6 +470,7 @@ public sealed class InvoiceRepository : IInvoiceRepository
         DateTime? fromDate,
         DateTime? toDate,
         Guid? clientId = null,
+        InvoiceType? type = null,
         CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();
@@ -490,6 +491,9 @@ public sealed class InvoiceRepository : IInvoiceRepository
 
         if (clientId.HasValue)
             query = query.Where(i => i.ClientId == clientId.Value);
+
+        if (type.HasValue)
+            query = query.Where(i => i.Type == type.Value);
 
         return await query
             .OrderByDescending(i => i.IssueDate)
@@ -545,6 +549,7 @@ public sealed class InvoiceRepository : IInvoiceRepository
         int page,
         int pageSize,
         bool unpaidOnly = false,
+        InvoiceType? type = null,
         CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();
@@ -555,7 +560,7 @@ public sealed class InvoiceRepository : IInvoiceRepository
                 .Include(i => i.Client)
                 .Include(i => i.Warehouse)
                 .AsQueryable(),
-            searchTerm, status, fromDate, toDate, clientId, unpaidOnly);
+            searchTerm, status, fromDate, toDate, clientId, unpaidOnly, type);
 
         var totalCount = await query.CountAsync(cancellationToken);
 
@@ -569,7 +574,7 @@ public sealed class InvoiceRepository : IInvoiceRepository
     }
 
     /// <summary>
-    /// Applies the invoice list filters (search, status, period, client, unpaid-only) to a query.
+    /// Applies the invoice list filters (search, status, period, client, unpaid-only, type) to a query.
     /// Single source of truth shared by <see cref="SearchAsync"/> and <see cref="GetSummaryAsync"/>
     /// so the list and its totals zone can never diverge.
     /// </summary>
@@ -580,7 +585,8 @@ public sealed class InvoiceRepository : IInvoiceRepository
         DateTime? fromDate,
         DateTime? toDate,
         Guid? clientId,
-        bool unpaidOnly)
+        bool unpaidOnly,
+        InvoiceType? type)
     {
         if (!string.IsNullOrWhiteSpace(searchTerm))
         {
@@ -609,6 +615,9 @@ public sealed class InvoiceRepository : IInvoiceRepository
         if (clientId.HasValue)
             query = query.Where(i => i.ClientId == clientId.Value);
 
+        if (type.HasValue)
+            query = query.Where(i => i.Type == type.Value);
+
         return query;
     }
 
@@ -619,13 +628,14 @@ public sealed class InvoiceRepository : IInvoiceRepository
         DateTime? toDate,
         Guid? clientId,
         bool unpaidOnly = false,
+        InvoiceType? type = null,
         CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();
 
         var filtered = ApplyInvoiceFilters(
             context.Invoices.AsNoTracking(),
-            searchTerm, status, fromDate, toDate, clientId, unpaidOnly);
+            searchTerm, status, fromDate, toDate, clientId, unpaidOnly, type);
 
         // Lightweight per-invoice projection (scalar columns only, no entity graph).
         var rows = await filtered
@@ -877,6 +887,23 @@ public sealed class InvoiceRepository : IInvoiceRepository
             .ToListAsync(cancellationToken);
 
         return grouped.ToDictionary(x => (x.UserId, x.Month), x => x.Sum);
+    }
+
+    public async Task<decimal> SumIssuedCreditNoteCommercialTtcAsync(
+        Guid linkedInvoiceId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        var rows = await context.Invoices
+            .AsNoTracking()
+            .Where(i => i.LinkedInvoiceId == linkedInvoiceId
+                && i.Type == InvoiceType.CreditNote
+                && i.Status != InvoiceStatus.Draft
+                && i.Status != InvoiceStatus.Cancelled)
+            .Select(i => new { Total = i.TotalAmount.Amount, Stamp = i.FiscalStampAmount.Amount })
+            .ToListAsync(cancellationToken);
+
+        return rows.Sum(r => Math.Abs(r.Total - r.Stamp));
     }
 
 }

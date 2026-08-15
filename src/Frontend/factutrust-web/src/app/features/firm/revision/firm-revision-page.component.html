@@ -1,0 +1,244 @@
+<app-page-header
+  title="Révision du portefeuille"
+  subtitle="Anomalies consolidées des dossiers clients, priorisées par impact" />
+
+<section class="fr-toolbar">
+  <label class="fr-field">
+    <span>Exercice</span>
+    <input type="number" [(ngModel)]="fiscalYear" (change)="refresh()" min="2000" max="2100" />
+  </label>
+
+  <app-button variant="secondary" [disabled]="loading()" (clicked)="refresh()">
+    <i class="fa-solid fa-arrows-rotate"></i> Actualiser
+  </app-button>
+
+  <app-button [disabled]="sweeping()" (clicked)="runSweep()">
+    <i class="fa-solid fa-magnifying-glass-chart"></i>
+    {{ sweeping() ? 'Balayage en cours…' : 'Lancer un balayage' }}
+  </app-button>
+</section>
+
+@if (error()) {
+  <div class="fr-banner fr-banner--error" role="alert">{{ error() }}</div>
+}
+@if (notice()) {
+  <div class="fr-banner fr-banner--success" role="status">{{ notice() }}</div>
+}
+@if (partialWarning()) {
+  <div class="fr-banner fr-banner--warning" role="alert">{{ partialWarning() }}</div>
+}
+@if (neverScannedNotice()) {
+  <div class="fr-banner fr-banner--info">{{ neverScannedNotice() }}</div>
+}
+
+@if (loading()) {
+  <p class="fr-loading">Chargement du portefeuille…</p>
+}
+
+@if (!loading() && overview(); as data) {
+
+  <section class="fr-stats">
+    <app-stat-card appearance="solid" label="Dossiers suivis"
+      [value]="data.dossiersCount" icon="fa-solid fa-folder-open" variant="primary" />
+    <app-stat-card appearance="solid" label="Bloquants"
+      [value]="data.blockingCount" icon="fa-solid fa-circle-exclamation"
+      [variant]="data.blockingCount > 0 ? 'error' : 'success'" />
+    <app-stat-card appearance="solid" label="Avertissements"
+      [value]="data.warningCount" icon="fa-solid fa-triangle-exclamation" variant="warning" />
+    <app-stat-card appearance="solid" label="Impact chiffré"
+      [value]="formatImpact(data.totalImpactAmount)" icon="fa-solid fa-coins" variant="primary">
+      <span class="fr-stat-hint">Anomalies dont le montant est un enjeu financier</span>
+    </app-stat-card>
+  </section>
+
+  <nav class="fr-tabs" role="tablist">
+    @for (tab of tabs; track tab.key) {
+      <button type="button" role="tab" class="fr-tab"
+        [class.fr-tab--active]="activeTab === tab.key"
+        [attr.aria-selected]="activeTab === tab.key"
+        (click)="setTab(tab.key)">{{ tab.label }}</button>
+    }
+  </nav>
+
+  @if (activeTab === 'portfolio') {
+
+    @if (families().length > 0) {
+      <section class="fr-families">
+        <h2 class="fr-section-title">Répartition par domaine</h2>
+        <ul class="fr-family-list">
+          @for (family of families(); track family.moduleCode) {
+            <li class="fr-family">
+              <span class="fr-family__label">{{ family.label }}</span>
+              <span class="fr-family__count">{{ family.count }}</span>
+              @if (family.blockingCount > 0) {
+                <span class="fr-badge fr-badge--blocking">{{ family.blockingCount }} bloquant(s)</span>
+              }
+            </li>
+          }
+        </ul>
+      </section>
+    }
+
+    <p-table [value]="dossiers()" [paginator]="true" [rows]="15" styleClass="fr-table">
+      <ng-template pTemplate="header">
+        <tr>
+          <th>Dossier</th>
+          <th>Risque</th>
+          <th class="fr-num">Bloquants</th>
+          <th class="fr-num">Avertissements</th>
+          <th class="fr-num">Impact</th>
+          <th>Collaborateur</th>
+          <th>Dernier contrôle</th>
+          <th></th>
+        </tr>
+      </ng-template>
+
+      <ng-template pTemplate="body" let-row>
+        <tr [class.fr-row--unreadable]="row.readFailed">
+          <td>
+            <button type="button" class="fr-link" (click)="openDossier(row)" [disabled]="row.readFailed">
+              {{ row.companyName }}
+            </button>
+            @if (row.hasRevisionNote) {
+              <i class="fa-solid fa-file-lines fr-note-icon" title="Dossier de révision rédigé"></i>
+            }
+          </td>
+          <td>
+            <span class="fr-risk" [class]="'fr-risk--' + riskLevelOf(row)">{{ riskLabelOf(row) }}</span>
+          </td>
+          <td class="fr-num">{{ row.readFailed ? '—' : row.blockingCount }}</td>
+          <td class="fr-num">{{ row.readFailed ? '—' : row.warningCount }}</td>
+          <td class="fr-num">{{ row.readFailed ? '—' : formatImpact(row.impactAmount) }}</td>
+          <td>{{ row.assignedAccountantName || 'Non affecté' }}</td>
+          <td>
+            {{ row.lastScanAt ? (row.lastScanAt | date:'dd/MM/yyyy HH:mm') : 'Jamais' }}
+          </td>
+          <td class="fr-actions">
+            <app-button variant="secondary" size="sm" (clicked)="openClientDossier(row)">
+              Ouvrir le dossier
+            </app-button>
+          </td>
+        </tr>
+      </ng-template>
+
+      <ng-template pTemplate="emptymessage">
+        <tr><td colspan="8" class="fr-empty">Aucun dossier dans le périmètre.</td></tr>
+      </ng-template>
+    </p-table>
+  }
+
+  @if (activeTab === 'queue') {
+    @if (workQueue(); as queue) {
+      @for (collaborator of queue.collaborators; track collaborator.userId) {
+        <section class="fr-collaborator">
+          <h2 class="fr-section-title">
+            {{ collaborator.name }}
+            <span class="fr-collaborator__meta">
+              {{ collaborator.dossiersCount }} dossier(s) ·
+              {{ collaborator.blockingCount }} bloquant(s) ·
+              {{ formatImpact(collaborator.impactAmount) }}
+            </span>
+          </h2>
+          <ul class="fr-queue">
+            @for (row of collaborator.dossiers; track row.companyTenantId) {
+              <li class="fr-queue__item">
+                <button type="button" class="fr-link" (click)="openDossier(row)">{{ row.companyName }}</button>
+                <span class="fr-risk" [class]="'fr-risk--' + riskLevelOf(row)">{{ riskLabelOf(row) }}</span>
+                <span class="fr-num">{{ formatImpact(row.impactAmount) }}</span>
+              </li>
+            }
+          </ul>
+        </section>
+      }
+
+      @if (queue.unassigned.length > 0) {
+        <section class="fr-collaborator fr-collaborator--unassigned">
+          <h2 class="fr-section-title">
+            Dossiers non affectés
+            <span class="fr-collaborator__meta">Personne ne les traitera spontanément</span>
+          </h2>
+          <ul class="fr-queue">
+            @for (row of queue.unassigned; track row.companyTenantId) {
+              <li class="fr-queue__item">
+                <button type="button" class="fr-link" (click)="openDossier(row)">{{ row.companyName }}</button>
+                <span class="fr-risk" [class]="'fr-risk--' + riskLevelOf(row)">{{ riskLabelOf(row) }}</span>
+                <span class="fr-num">{{ formatImpact(row.impactAmount) }}</span>
+              </li>
+            }
+          </ul>
+        </section>
+      }
+    } @else {
+      <p class="fr-loading">Chargement de la file de travail…</p>
+    }
+  }
+}
+
+<p-dialog [(visible)]="detailVisible" [modal]="true" [style]="{ width: '860px' }"
+  header="Dossier de révision" (onHide)="selectedDossier.set(null)">
+  @if (selectedDossier(); as dossier) {
+    <header class="fr-detail__header">
+      <h3>{{ dossier.companyName }}</h3>
+      <p>
+        Exercice {{ dossier.fiscalYear }} ·
+        @if (dossier.complianceRate !== null && dossier.complianceRate !== undefined) {
+          Conformité {{ dossier.complianceRate }} % ·
+        }
+        Impact {{ formatImpact(dossier.impactAmount) }}
+      </p>
+    </header>
+
+    @if (dossier.note; as note) {
+      <section class="fr-note">
+        @if (!note.aiGenerated) {
+          <p class="fr-banner fr-banner--info">
+            Note rédigée sans assistance : les constats et montants sont ceux des contrôles.
+            @if (note.fallbackReason) { <span>({{ note.fallbackReason }})</span> }
+          </p>
+        }
+        <p class="fr-note__summary">{{ note.executiveSummary }}</p>
+
+        @for (item of noteItems(); track item.anomalyId) {
+          <article class="fr-note__item">
+            <header>
+              <span class="fr-badge" [class]="severityClass(item.severity)">
+                {{ severityLabel(item.severity) }}
+              </span>
+              <strong>{{ item.title }}</strong>
+              <span class="fr-num">{{ formatImpact(item.impactAmount) }}</span>
+            </header>
+            <p>{{ item.workingNote }}</p>
+            @if (item.clientQuestion) {
+              <p class="fr-note__question"><em>À demander au client :</em> {{ item.clientQuestion }}</p>
+            }
+            <footer>
+              <span class="fr-action">{{ item.actionLabel }}</span>
+              @if (item.pieceRef) { <span class="fr-piece">Pièce {{ item.pieceRef }}</span> }
+              @if (item.accountRef) { <span class="fr-piece">Compte {{ item.accountRef }}</span> }
+            </footer>
+          </article>
+        }
+      </section>
+    } @else {
+      <p class="fr-banner fr-banner--info">
+        Aucun dossier de révision rédigé pour ce contrôle. Les anomalies ci-dessous restent
+        exploitables telles quelles.
+      </p>
+    }
+
+    <section class="fr-anomalies">
+      <h4 class="fr-section-title">Anomalies ouvertes ({{ dossier.anomalies.length }})</h4>
+      <ul>
+        @for (anomaly of dossier.anomalies; track anomaly.id) {
+          <li>
+            <span class="fr-badge" [class]="severityClass(anomaly.severity)">
+              {{ severityLabel(anomaly.severity) }}
+            </span>
+            <strong>{{ anomaly.title }}</strong>
+            <span class="fr-anomaly__desc">{{ anomaly.description }}</span>
+          </li>
+        }
+      </ul>
+    </section>
+  }
+</p-dialog>

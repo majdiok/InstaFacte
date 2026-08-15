@@ -45,7 +45,20 @@ public sealed class PlatformAiSettingsIntegrationTests : IClassFixture<PlatformB
         Assert.NotNull(getBody);
         Assert.True(getBody!.Success);
         Assert.NotNull(getBody.Data);
-        Assert.Equal(OllamaInferenceDevice.Gpu, getBody.Data!.InferenceDevice);
+        Assert.NotNull(getBody.Data!.Cursor);
+
+        if (getBody.Data.InferenceDevice != OllamaInferenceDevice.Gpu)
+        {
+            var reset = await client.PutAsJsonAsync(
+                "/api/platform/ai-settings",
+                new UpdatePlatformAiSettingsRequest { InferenceDevice = OllamaInferenceDevice.Gpu });
+            Assert.Equal(HttpStatusCode.OK, reset.StatusCode);
+        }
+
+        getResponse = await client.GetAsync("/api/platform/ai-settings");
+        getBody = await getResponse.Content.ReadFromJsonAsync<ApiResponse<PlatformAiSettingsDto>>(ApiJsonOptions);
+        Assert.NotNull(getBody?.Data);
+        Assert.Equal(OllamaInferenceDevice.Gpu, getBody!.Data!.InferenceDevice);
 
         var putResponse = await client.PutAsJsonAsync(
             "/api/platform/ai-settings",

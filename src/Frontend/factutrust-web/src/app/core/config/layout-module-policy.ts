@@ -14,6 +14,7 @@ export const MODULES_REQUIRED_BY_FIRST_SEGMENT: Record<string, AppModule[]> = {
   'product-categories': [AppModule.Products],
   reports: [AppModule.Reports],
   payments: [AppModule.Treasury],
+  treasury: [AppModule.Treasury],
   stock: [AppModule.Stock],
   inventory: [AppModule.Stock],
   transfers: [AppModule.Stock],
@@ -48,6 +49,9 @@ export const PERMISSIONS_ALL_REQUIRED_BY_FIRST_SEGMENT: Record<string, string[]>
   'purchase-receipts': ['purchase_receipts:read'],
   'supplier-invoices': ['supplier_invoices:read'],
   payments: ['payments:read'],
+  // Le prévisionnel s'adresse au comptable, qui n'a pas forcément `payments:read` :
+  // la garde du segment porte donc sa propre permission.
+  treasury: ['treasury_forecast:view'],
   reports: ['reports:view'],
   settings: ['settings:read'],
   accounting: ['accounting:read'],

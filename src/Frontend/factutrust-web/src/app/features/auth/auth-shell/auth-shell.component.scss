@@ -1,0 +1,9 @@
+@use '../auth-page';
+
+:host {
+  display: block;
+}
+
+.auth-form-card__inner {
+  width: 100%;
+}

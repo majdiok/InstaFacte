@@ -14,8 +14,13 @@ export const authInterceptor: HttpInterceptorFn = (req: HttpRequest<unknown>, ne
     return next(req);
   }
 
-  // Skip auth header for login/register endpoints
-  if (req.url.includes('/auth/login') || req.url.includes('/auth/register')) {
+  // Skip auth header for login/register/password-reset endpoints
+  if (
+    req.url.includes('/auth/login') ||
+    req.url.includes('/auth/register') ||
+    req.url.includes('/auth/forgot-password') ||
+    req.url.includes('/auth/reset-password')
+  ) {
     return next(req);
   }
 
@@ -48,7 +53,10 @@ export const authInterceptor: HttpInterceptorFn = (req: HttpRequest<unknown>, ne
           );
         }
         const skipAutoLogout =
-          req.url.includes('/auth/login') || req.url.includes('/auth/register');
+          req.url.includes('/auth/login') ||
+          req.url.includes('/auth/register') ||
+          req.url.includes('/auth/forgot-password') ||
+          req.url.includes('/auth/reset-password');
         if (authService.isAuthenticated() && !skipAutoLogout) {
           authService.invalidateSession();
         }

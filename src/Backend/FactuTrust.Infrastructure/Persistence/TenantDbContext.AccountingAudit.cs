@@ -11,6 +11,7 @@ public partial class TenantDbContext
     public DbSet<AccountingAnomalyActivity> AccountingAnomalyActivities => Set<AccountingAnomalyActivity>();
     public DbSet<AccountingControlSchedule> AccountingControlSchedules => Set<AccountingControlSchedule>();
     public DbSet<AccountingControlRuleSetting> AccountingControlRuleSettings => Set<AccountingControlRuleSetting>();
+    public DbSet<AccountingRevisionNote> AccountingRevisionNotes => Set<AccountingRevisionNote>();
 
     private static void ConfigureAccountingAudit(ModelBuilder builder)
     {
@@ -22,6 +23,7 @@ public partial class TenantDbContext
             entity.Property(e => e.ErrorMessage).HasMaxLength(2000);
             entity.Property(e => e.ModuleCodesFilter).HasMaxLength(500);
             entity.Property(e => e.ComplianceRate).HasPrecision(5, 1);
+            entity.Property(e => e.EvaluatedRuleCount).HasDefaultValue(0);
             entity.HasIndex(e => new { e.FiscalYear, e.CompletedAt });
         });
 
@@ -90,6 +92,23 @@ public partial class TenantDbContext
             entity.Property(e => e.JsonOptions).HasMaxLength(4000);
             entity.Property(e => e.DecimalThreshold).HasPrecision(18, 3);
             entity.HasIndex(e => e.RuleCode).IsUnique();
+        });
+
+        builder.Entity<AccountingRevisionNote>(entity =>
+        {
+            entity.ToTable("AccountingRevisionNotes");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.GeneratedByUserName).HasMaxLength(256);
+            entity.Property(e => e.ModelRef).HasMaxLength(200);
+            entity.Property(e => e.FallbackReason).HasMaxLength(1000);
+            entity.Property(e => e.ExecutiveSummary).HasMaxLength(4000);
+            entity.Property(e => e.TotalImpactAmount).HasPrecision(18, 3);
+            // Les notes de travail sont libres et volumineuses : pas de plafond de longueur.
+            entity.Property(e => e.ItemsJson).IsRequired();
+            entity.HasIndex(e => new { e.FiscalYear, e.GeneratedAt });
+            // Une note par run : régénérer remplace, on n'empile pas les versions.
+            entity.HasIndex(e => e.RunId).IsUnique();
+            entity.HasOne(e => e.Run).WithMany().HasForeignKey(e => e.RunId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

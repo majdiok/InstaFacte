@@ -2,6 +2,7 @@ import { Routes } from '@angular/router';
 import { firmNativeGuard, accountingFirmsFeatureGuard } from '@core/guards/accounting-firms.guard';
 import { firmManagerGuard } from '@core/guards/firm-manager.guard';
 import { firmGovernanceFeatureGuard } from '@core/guards/firm-governance.guard';
+import { firmRevisionFeatureGuard } from '@core/guards/firm-revision.guard';
 
 export const FIRM_ROUTES: Routes = [
   {
@@ -31,6 +32,18 @@ export const FIRM_ROUTES: Routes = [
         loadComponent: () =>
           import('./affectation/firm-dossier-affectation.component').then(m => m.FirmDossierAffectationComponent),
         title: 'Cabinet — Affectation des dossiers'
+      },
+      {
+        path: 'assistant',
+        loadComponent: () => import('./assistant/firm-assistant.component').then(m => m.FirmAssistantComponent),
+        title: 'Cabinet — Chef de mission'
+      },
+      {
+        path: 'revision',
+        canActivate: [firmRevisionFeatureGuard],
+        loadComponent: () =>
+          import('./revision/firm-revision-page.component').then(m => m.FirmRevisionPageComponent),
+        title: 'Cabinet — Révision du portefeuille'
       },
       {
         path: 'fiscal-schedule',

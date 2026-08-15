@@ -13,8 +13,10 @@ public static class AiScreenAnalysisToolHints
         ["cash-desk"] = ["get_client_payments"],
         ["dashboard"] = ["get_sales_revenue", "get_stock_snapshot"],
         ["invoice-list"] = ["get_client_balances", "get_sales_revenue"],
+        ["credit-note-list"] = ["get_client_balances", "get_sales_revenue"],
         ["stock-simple"] = ["get_stock_snapshot"],
         ["forecasting-revenue"] = ["forecast_revenue"],
+        ["treasury-cash-forecast"] = ["get_cash_flow_forecast", "get_cash_flow_lines"],
         ["forecasting-replenishment"] = ["get_replenishment_recommendations"],
         ["forecasting-abc-xyz"] = ["get_abc_xyz_classification"],
         ["forecasting-promotions"] = ["get_promotion_recommendations"]

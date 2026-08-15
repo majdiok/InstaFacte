@@ -14,10 +14,14 @@ namespace FactuTrust.API.Controllers;
 public sealed class FirmDashboardController : ControllerBase
 {
     private readonly IFirmDashboardService _dashboardService;
+    private readonly IFirmDecisionTablesService _decisionTablesService;
 
-    public FirmDashboardController(IFirmDashboardService dashboardService)
+    public FirmDashboardController(
+        IFirmDashboardService dashboardService,
+        IFirmDecisionTablesService decisionTablesService)
     {
         _dashboardService = dashboardService;
+        _decisionTablesService = decisionTablesService;
     }
 
     [HttpGet]
@@ -29,6 +33,18 @@ public sealed class FirmDashboardController : ControllerBase
 
         var dashboard = await _dashboardService.GetDashboardAsync(tenantId.Value, cancellationToken);
         return Ok(ApiResponse<FirmDashboardDto>.Ok(dashboard));
+    }
+
+    [HttpGet("decision-tables")]
+    [Authorize(Roles = nameof(UserRole.FirmManager))]
+    public async Task<ActionResult<ApiResponse<FirmDecisionTablesDto>>> GetDecisionTables(CancellationToken cancellationToken)
+    {
+        var tenantId = GetHomeTenantId();
+        if (tenantId is null)
+            return Unauthorized();
+
+        var tables = await _decisionTablesService.GetDecisionTablesAsync(tenantId.Value, cancellationToken);
+        return Ok(ApiResponse<FirmDecisionTablesDto>.Ok(tables));
     }
 
     private Guid? GetHomeTenantId()

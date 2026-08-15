@@ -69,7 +69,12 @@ export enum AssistantAgentScope {
   Stock = 3,
   Accounting = 4,
   Treasury = 5,
-  Crm = 6
+  Crm = 6,
+  /**
+   * Agent « Chef de mission » — seul scope au périmètre du CABINET et non d'un dossier.
+   * Servi par une surface HTTP distincte (/firm/ai), sous la route /firm/assistant.
+   */
+  FirmMission = 7
 }
 
 export interface ChatUiContext {
@@ -274,6 +279,13 @@ export interface AiActiveModelDto {
   modelRef: string;
   displayLabel: string;
   supportsVision: boolean;
+}
+
+/** Réponse de GET /api/ai/configured-status — disponibilité réelle des fournisseurs IA. */
+export interface AiConfiguredStatusDto {
+  hasOllamaModels: boolean;
+  hasCloudProvider: boolean;
+  isFullyConfigured: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

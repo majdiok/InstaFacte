@@ -31,7 +31,7 @@ describe('AiChatSessionService', () => {
     const authMock = { user: computed(() => userSig()) };
 
     chatApi = jasmine.createSpyObj<AiChatService>('AiChatService', [
-      'checkHealth',
+      'getConfiguredStatus',
       'getActiveModel',
       'getConversations',
       'getConversation',
@@ -39,7 +39,13 @@ describe('AiChatSessionService', () => {
       'getDailyBriefing',
       'warmUp'
     ]);
-    chatApi.checkHealth.and.returnValue(of({ available: true }));
+    chatApi.getConfiguredStatus.and.returnValue(
+      of({
+        hasOllamaModels: true,
+        hasCloudProvider: false,
+        isFullyConfigured: true
+      })
+    );
     chatApi.getActiveModel.and.returnValue(
       of({
         modelRef: 'ollama:m:latest',
@@ -161,7 +167,17 @@ describe('AiChatSessionService', () => {
     expect(service.activeConversationId()).toBeUndefined();
     expect(service.messages().length).toBe(0);
     expect(service.assistantComplianceMode()).toBeFalse();
-    expect(chatApi.getConversations).toHaveBeenCalledWith(AssistantAgentScope.Stock);
+    // Second argument = surface cabinet. Un expert de module reste sur la surface tenant.
+    expect(chatApi.getConversations).toHaveBeenCalledWith(AssistantAgentScope.Stock, false);
+  });
+
+  it('le scope Chef de mission bascule la session sur la surface HTTP cabinet', () => {
+    service.initialize();
+    chatApi.getConversations.calls.reset();
+
+    service.setAgentScope(AssistantAgentScope.FirmMission);
+
+    expect(chatApi.getConversations).toHaveBeenCalledWith(AssistantAgentScope.FirmMission, true);
   });
 
   it('setAgentScope est un no-op quand le scope ne change pas', () => {
@@ -201,6 +217,20 @@ describe('AiChatSessionService', () => {
   it('initialize warms the active Ollama model once', () => {
     service.initialize();
     expect(chatApi.warmUp).toHaveBeenCalledTimes(1);
+  });
+
+  it('sets aiAvailable from configured-status when only cloud is configured', () => {
+    chatApi.getConfiguredStatus.and.returnValue(
+      of({
+        hasOllamaModels: false,
+        hasCloudProvider: true,
+        isFullyConfigured: true
+      })
+    );
+    TestBed.resetTestingModule();
+    setup();
+    service.initialize();
+    expect(service.aiAvailable()).toBe(true);
   });
 
   it('tracks backend phase events inside assistant progress timeline', () => {

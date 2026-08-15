@@ -37,6 +37,14 @@ public sealed class PlatformAiSettings : Entity
     /// <summary>Last 4 characters of the plaintext API key for masked UI display.</summary>
     public string? OpenRouterApiKeyLast4 { get; private set; }
 
+    public bool CursorIsEnabled { get; private set; }
+
+    public string? CursorDisplayName { get; private set; }
+
+    public string? CursorEncryptedApiKey { get; private set; }
+
+    public string? CursorApiKeyLast4 { get; private set; }
+
     private PlatformAiSettings() { }
 
     public static PlatformAiSettings CreateDefaults() => new() { DefaultModelRef = null };
@@ -82,4 +90,24 @@ public sealed class PlatformAiSettings : Entity
     }
 
     public bool HasOpenRouterApiKey => !string.IsNullOrWhiteSpace(OpenRouterEncryptedApiKey);
+
+    public void SetCursorConfig(
+        bool isEnabled,
+        string? displayName,
+        string? encryptedApiKey,
+        string? apiKeyLast4)
+    {
+        CursorIsEnabled = isEnabled;
+        CursorDisplayName = string.IsNullOrWhiteSpace(displayName)
+            ? (string.IsNullOrWhiteSpace(CursorDisplayName) ? "Cursor" : CursorDisplayName)
+            : displayName.Trim();
+
+        if (encryptedApiKey is not null)
+        {
+            CursorEncryptedApiKey = string.IsNullOrWhiteSpace(encryptedApiKey) ? null : encryptedApiKey;
+            CursorApiKeyLast4 = string.IsNullOrWhiteSpace(apiKeyLast4) ? null : apiKeyLast4.Trim();
+        }
+    }
+
+    public bool HasCursorApiKey => !string.IsNullOrWhiteSpace(CursorEncryptedApiKey);
 }

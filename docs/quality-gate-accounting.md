@@ -28,6 +28,23 @@ dotnet test src/Backend/tests/FactuTrust.Infrastructure.Tests/FactuTrust.Infrast
 | UI + service HTTP | + `accounting.service.spec.ts` + smoke manuel des écrans |
 | API / DTO / lettrage | + `dotnet test` projets ci-dessus |
 | Immobilisations / FF achats | + `fixed-assets.service.spec.ts` + tests `FixedAsset*` / `SupplierInvoiceJournalLineBuilder` backend |
+| **Règle d'audit / moteur de contrôle** | + `dotnet test --filter "FullyQualifiedName~AccountingAudit"` |
+
+### Ajouter une règle de contrôle — points de passage obligés
+
+`AuditRuleContractTests` échoue si l'un d'eux est oublié :
+
+1. **Constructeur sans paramètre.** Une règle lit uniquement par `ctx.Db`. Injecter un repository
+   la ferait lire le tenant *ambiant* — celui du cabinet lors d'un balayage de portefeuille — donc
+   les données d'un autre dossier.
+2. **Code unique**, et `ModuleCode` présent dans `AccountingAuditModuleCatalog`.
+3. **Enregistrement DI** dans `RegisterAccountingAuditServices`, aux deux endroits (type concret et
+   `IAccountingAuditRule`). Sans lui, la règle n'est jamais évaluée — en silence.
+4. **Discriminant d'empreinte** dès que la règle émet plus d'une anomalie par compte et par
+   période : surcharge `SingleGroup(..., discriminator)` avec un identifiant métier *stable*
+   (fournisseur, matricule, n° de pièce). `Fingerprint` porte un index unique — sans discriminant,
+   la seconde anomalie écrase la première.
+5. **Lien de correction** dans `AuditCorrectionLinkBuilder` (à défaut, repli générique).
 
 ## Scénarios manuels rapides (smoke)
 

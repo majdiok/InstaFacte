@@ -156,6 +156,57 @@ public sealed class InvoiceLine : Entity
         return Result.Success(line);
     }
 
+    /// <summary>
+    /// Ligne d'avoir : <paramref name="product"/> conserve le lien stock, mais TVA / FODEC / prix
+    /// viennent du snapshot (facture d'origine), pas du catalogue courant.
+    /// </summary>
+    internal static Result<InvoiceLine> CreateSnapshot(
+        Invoice invoice,
+        int lineNumber,
+        Product? product,
+        string designation,
+        string? description,
+        decimal quantity,
+        string unit,
+        Money unitPrice,
+        VatRate vatRate,
+        decimal? discountPercent = null,
+        bool isFodecApplicable = false,
+        decimal fodecRatePercent = 1.0m)
+    {
+        if (quantity <= 0)
+            return Result.Failure<InvoiceLine>(Error.Validation("Quantity", "La quantité doit être supérieure à zéro"));
+
+        if (discountPercent.HasValue && (discountPercent.Value < 0 || discountPercent.Value > 100))
+            return Result.Failure<InvoiceLine>(Error.Validation("DiscountPercent", "La remise doit être comprise entre 0% et 100%"));
+
+        if (string.IsNullOrWhiteSpace(designation))
+            return Result.Failure<InvoiceLine>(Error.Validation("Designation", "La désignation est obligatoire"));
+
+        var line = new InvoiceLine
+        {
+            InvoiceId = invoice.Id,
+            Invoice = invoice,
+            LineNumber = lineNumber,
+            ProductId = product?.Id ?? Guid.Empty,
+            Product = product!,
+            ProductCode = product?.Code ?? "CUSTOM",
+            ProductName = designation.Trim(),
+            ProductDescription = description,
+            Quantity = quantity,
+            Unit = unit,
+            UnitPrice = unitPrice,
+            VatRate = vatRate,
+            IsFodecApplicable = isFodecApplicable,
+            DiscountPercent = discountPercent,
+            _fodecRatePercent = fodecRatePercent
+        };
+
+        line.Calculate();
+
+        return Result.Success(line);
+    }
+
     internal Result Update(
         decimal quantity,
         Money? customUnitPrice = null,

@@ -8,6 +8,7 @@ import { AccountingStatusBannerComponent } from '../shared/accounting-status-ban
 import { AccountingTableActionsComponent } from '../shared/accounting-table-actions.component';
 import { AccountingAmountInputComponent } from '../shared/accounting-amount-input.component';
 import { ToastService } from '@core/services/toast.service';
+import { ConfirmationService } from '@core/services/confirmation.service';
 import {
   AccountingService,
   JournalEntryTemplateDto,
@@ -243,6 +244,7 @@ const JOURNAL_CODES = ['JV', 'JA', 'JC', 'JB', 'JOD', 'JIM', 'JAN'];
 export class EntryTemplatesComponent implements OnInit {
   private readonly api = inject(AccountingService);
   private readonly toast = inject(ToastService);
+  private readonly confirmationService = inject(ConfirmationService);
   readonly journalCodes = JOURNAL_CODES;
 
   readonly templates = signal<JournalEntryTemplateDto[]>([]);
@@ -357,18 +359,25 @@ export class EntryTemplatesComponent implements OnInit {
 
   /** Génère l'écriture de la prochaine échéance immédiatement (l'échéance suivante est avancée). */
   runNow(t: JournalEntryTemplateDto): void {
-    if (!window.confirm(`Générer maintenant l'écriture du modèle « ${t.name} » (échéance du ${t.nextRunDate?.substring(0, 10)}) ?`)) return;
-    this.runningId.set(t.id);
-    this.error.set(null);
-    this.api.runTemplateRecurrence(t.id).subscribe({
-      next: res => {
-        this.runningId.set(null);
-        if (res.success) {
-          this.toast.add({ severity: 'success', summary: 'Écriture générée', detail: `Le modèle « ${t.name} » a généré son écriture.`, life: 4000 });
-          this.load();
-        } else this.error.set(res.error ?? 'Erreur lors de la génération.');
-      },
-      error: () => { this.runningId.set(null); this.error.set('Erreur réseau lors de la génération.'); }
+    this.confirmationService.confirm({
+      message: `Générer maintenant l'écriture du modèle « ${t.name} » (échéance du ${t.nextRunDate?.substring(0, 10)}) ?`,
+      header: 'Confirmation',
+      acceptLabel: 'Générer',
+      rejectLabel: 'Annuler',
+      accept: () => {
+        this.runningId.set(t.id);
+        this.error.set(null);
+        this.api.runTemplateRecurrence(t.id).subscribe({
+          next: res => {
+            this.runningId.set(null);
+            if (res.success) {
+              this.toast.add({ severity: 'success', summary: 'Écriture générée', detail: `Le modèle « ${t.name} » a généré son écriture.`, life: 4000 });
+              this.load();
+            } else this.error.set(res.error ?? 'Erreur lors de la génération.');
+          },
+          error: () => { this.runningId.set(null); this.error.set('Erreur réseau lors de la génération.'); }
+        });
+      }
     });
   }
 

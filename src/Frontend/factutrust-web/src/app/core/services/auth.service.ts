@@ -52,6 +52,17 @@ export interface LoginRequest {
   rememberMe: boolean;
 }
 
+export interface ForgotPasswordRequest {
+  email: string;
+}
+
+export interface ResetPasswordRequest {
+  email: string;
+  token: string;
+  newPassword: string;
+  confirmNewPassword: string;
+}
+
 export interface RegisterRequest {
   email: string;
   password: string;
@@ -282,6 +293,14 @@ export class AuthService {
           }
         })
       );
+  }
+
+  forgotPassword(email: string): Observable<ApiResponse<null>> {
+    return this.http.post<ApiResponse<null>>(`${this.API_URL}/forgot-password`, { email });
+  }
+
+  resetPassword(dto: ResetPasswordRequest): Observable<ApiResponse<null>> {
+    return this.http.post<ApiResponse<null>>(`${this.API_URL}/reset-password`, dto);
   }
 
   register(data: RegisterRequest): Observable<ApiResponse<AuthResponse>> {

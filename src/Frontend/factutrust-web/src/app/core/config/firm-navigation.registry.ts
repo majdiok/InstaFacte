@@ -20,6 +20,20 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
 
   {
 
+    // Agent « Chef de mission ». Volontairement hors du périmètre Gouvernance : il ne doit pas
+    // disparaître avec ce flag, et ne perturbe pas l'ordre attendu des routes de gouvernance.
+    label: 'Chef de mission',
+
+    icon: 'fa-solid fa-user-tie',
+
+    route: '/firm/assistant',
+
+    permissionsAll: [PERMISSIONS.firmAi.chat]
+
+  },
+
+  {
+
     label: 'Mes dossiers clients',
 
     icon: 'fa-solid fa-briefcase',
@@ -82,6 +96,20 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
 
   {
 
+    label: 'Paie interne',
+
+    route: '/firm/payroll',
+
+    icon: 'fa-solid fa-file-invoice-dollar',
+
+    // Le module n'est accordé que si la paie interne est activée pour le cabinet. Sans ce
+    // gating, l'entrée s'affichait flag éteint et ne menait qu'à /access-denied.
+    modules: [M.Payroll]
+
+  },
+
+  {
+
     label: 'Rentabilité de collaborateurs',
 
     icon: 'fa-solid fa-chart-pie',
@@ -123,20 +151,6 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
         icon: 'fa-solid fa-coins',
 
         managerOnly: true
-
-      },
-
-      {
-
-        label: 'Paie interne',
-
-        route: '/firm/payroll',
-
-        icon: 'fa-solid fa-file-invoice-dollar',
-
-        // Le module n'est accordé que si la paie interne est activée pour le cabinet. Sans ce
-        // gating, l'entrée s'affichait flag éteint et ne menait qu'à /access-denied.
-        modules: [M.Payroll]
 
       }
 

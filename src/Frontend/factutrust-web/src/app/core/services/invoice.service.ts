@@ -43,6 +43,7 @@ export interface InvoiceLine {
   vatRatePercent: number;
   discountPercent: number | null;
   discountAmount: number;
+  allocatedGlobalDiscount?: number;
   subTotal: number;
   isFodecApplicable?: boolean;
   fodecAmount?: number;
@@ -100,8 +101,11 @@ export interface InvoiceDetail {
   notes: string | null;
   paymentTerms: string | null;
   lines: InvoiceLine[];
+  warehouseId?: string | null;
   /** Signed total HT: positive on FAC, negative on AVO. */
   subTotal: number;
+  globalDiscountPercent?: number | null;
+  globalDiscountAmount?: number;
   /** Signed total VAT: positive on FAC, negative on AVO. */
   totalVat: number;
   /** Signed total FODEC: positive on FAC, negative on AVO. */
@@ -162,6 +166,8 @@ export interface InvoiceSearchParams {
   page?: number;
   pageSize?: number;
   unpaidOnly?: boolean;
+  /** Discriminates FAC vs AVO. Omitted = all document types (dashboard, reports, search). */
+  type?: InvoiceTypeCode;
   /** When true, global 403 modal / toast is suppressed (e.g. dashboard aggregate). */
   skipGlobalErrorUi?: boolean;
 }
@@ -232,6 +238,7 @@ export class InvoiceService {
     if (params.page) httpParams = httpParams.set('page', params.page.toString());
     if (params.pageSize) httpParams = httpParams.set('pageSize', params.pageSize.toString());
     if (params.unpaidOnly === true) httpParams = httpParams.set('unpaidOnly', 'true');
+    if (params.type) httpParams = httpParams.set('type', params.type);
 
     // Créer une clé unique pour cette requête basée sur les paramètres (+ sémantique UI erreur)
     const cacheKey = `${httpParams.toString()}|skipUi:${skipGlobalErrorUi ? '1' : '0'}`;
@@ -293,6 +300,7 @@ export class InvoiceService {
     if (params.toDate) httpParams = httpParams.set('toDate', params.toDate);
     if (params.clientId) httpParams = httpParams.set('clientId', params.clientId);
     if (params.unpaidOnly === true) httpParams = httpParams.set('unpaidOnly', 'true');
+    if (params.type) httpParams = httpParams.set('type', params.type);
 
     const requestOptions: {
       params: HttpParams;
@@ -367,11 +375,12 @@ export class InvoiceService {
     );
   }
 
-  downloadReportPdf(fromDate?: string, toDate?: string, clientId?: string): Observable<Blob> {
+  downloadReportPdf(fromDate?: string, toDate?: string, clientId?: string, type?: InvoiceTypeCode): Observable<Blob> {
     let httpParams = new HttpParams();
     if (fromDate) httpParams = httpParams.set('fromDate', fromDate);
     if (toDate) httpParams = httpParams.set('toDate', toDate);
     if (clientId) httpParams = httpParams.set('clientId', clientId);
+    if (type) httpParams = httpParams.set('type', type);
 
     return this.http.get(`${this.API_URL}/report/pdf`, {
       params: httpParams,

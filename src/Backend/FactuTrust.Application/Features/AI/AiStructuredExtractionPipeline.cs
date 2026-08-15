@@ -92,12 +92,14 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
 
     private readonly IOllamaClient _ollamaClient;
     private readonly IOpenAiChatCompletionsClient _openAiClient;
+    private readonly ICursorAgentClient? _cursorAgentClient;
     private readonly IAiDocumentTextExtractor _documentTextExtractor;
     private readonly IOllamaModelReadinessChecker _readinessChecker;
     private readonly IPlatformAiSettingsService _platformAiSettings;
     private readonly IOllamaInferenceProfileResolver _inferenceProfileResolver;
     private readonly ILogger<AiStructuredExtractionPipeline> _logger;
     private readonly OllamaSettings _ollamaSettings;
+    private readonly CursorSdkSettings _cursorSdkSettings;
 
     public AiStructuredExtractionPipeline(
         IOllamaClient ollamaClient,
@@ -107,16 +109,20 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
         IPlatformAiSettingsService platformAiSettings,
         IOllamaInferenceProfileResolver inferenceProfileResolver,
         ILogger<AiStructuredExtractionPipeline> logger,
-        IOptions<OllamaSettings> ollamaSettings)
+        IOptions<OllamaSettings> ollamaSettings,
+        ICursorAgentClient? cursorAgentClient = null,
+        IOptions<CursorSdkSettings>? cursorSdkSettings = null)
     {
         _ollamaClient = ollamaClient;
         _openAiClient = openAiClient;
+        _cursorAgentClient = cursorAgentClient;
         _documentTextExtractor = documentTextExtractor;
         _readinessChecker = readinessChecker;
         _platformAiSettings = platformAiSettings;
         _inferenceProfileResolver = inferenceProfileResolver;
         _logger = logger;
         _ollamaSettings = ollamaSettings.Value;
+        _cursorSdkSettings = cursorSdkSettings?.Value ?? new CursorSdkSettings();
     }
 
     public async Task<Result<AiStructuredExtractionOutcome>> RunAsync(
@@ -128,7 +134,7 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
         // 1. Résolution du modèle texte (JSON structuré).
         var modelRef = await ResolveModelRefAsync(request.ModelOverride, cancellationToken);
         var visionModelId = ResolveVisionModelId();
-        var wantPrimaryVision = AiModelCapabilityDetector.DetectVisionSupport(modelRef.ProviderModelId);
+        var wantPrimaryVision = AiModelCapabilityDetector.DetectVisionSupport(modelRef);
 
         // 2. Extraction du texte (+ image base64 pour fallback vision sur photos et scans).
         var hasVisionModel = !string.IsNullOrWhiteSpace(visionModelId);
@@ -203,36 +209,11 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
         {
             activeModelRef = NormalizeModelRef(visionModelId!);
             llmImages = sourceImages;
-            if (activeModelRef.Kind == LlmProviderKind.Ollama)
-            {
-                if (!await _ollamaClient.IsAvailableAsync(cancellationToken))
-                    return Result.Failure<AiStructuredExtractionOutcome>(Error.Validation(code,
-                        "Le moteur IA InstaFact est indisponible. Vérifiez que le service est démarré sur le serveur."));
+        }
 
-                var visionReadiness = await _readinessChecker.CheckAsync(activeModelRef.ProviderModelId!, cancellationToken);
-                if (!visionReadiness.IsReady)
-                    return Result.Failure<AiStructuredExtractionOutcome>(Error.Validation(code,
-                        visionReadiness.UserMessage ?? "Le modèle vision d'import IA n'est pas prêt."));
-            }
-        }
-        else if (modelRef.Kind == LlmProviderKind.Ollama)
-        {
-            if (!await _ollamaClient.IsAvailableAsync(cancellationToken))
-                return Result.Failure<AiStructuredExtractionOutcome>(Error.Validation(code,
-                    "Le moteur IA InstaFact est indisponible. Vérifiez que le service est démarré sur le serveur."));
-
-            var readiness = await _readinessChecker.CheckAsync(modelRef.ProviderModelId!, cancellationToken);
-            if (!readiness.IsReady)
-                return Result.Failure<AiStructuredExtractionOutcome>(Error.Validation(code,
-                    readiness.UserMessage ?? "Le modèle d'import IA n'est pas prêt."));
-        }
-        else
-        {
-            var credentials = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
-            if (string.IsNullOrEmpty(credentials.ApiKey))
-                return Result.Failure<AiStructuredExtractionOutcome>(Error.Validation(code,
-                    "Aucune clé API OpenRouter configurée. Configurez-la dans le back-office plateforme > Configuration IA (OpenRouter)."));
-        }
+        var providerError = await EnsureProviderAvailableAsync(activeModelRef, code, useVisionFallback, cancellationToken);
+        if (providerError is not null)
+            return providerError;
 
         // 4. Appel LLM one-shot (texte seul ou vision hybride).
         // Le schéma de sortie ne concerne qu'Ollama et n'est tenté que si l'appelant en fournit un.
@@ -263,6 +244,10 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
             (raw, chunkCount, firstTokenMs) = await CallLlmAsync(
                 activeModelRef, request.SystemPrompt, extractedText, llmImages, code,
                 outputSchema: null, cancellationToken);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Result.Failure<AiStructuredExtractionOutcome>(Error.Validation(code, ex.Message));
         }
 
         llmSw.Stop();
@@ -435,6 +420,55 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
     // Appel LLM
     // ========================================================================
 
+    private async Task<Result<AiStructuredExtractionOutcome>?> EnsureProviderAvailableAsync(
+        ParsedModelRef modelRef,
+        string code,
+        bool isVisionFallback,
+        CancellationToken cancellationToken)
+    {
+        switch (modelRef.Kind)
+        {
+            case LlmProviderKind.Ollama:
+                if (!await _ollamaClient.IsAvailableAsync(cancellationToken))
+                    return Result.Failure<AiStructuredExtractionOutcome>(Error.Validation(code,
+                        "Le moteur IA InstaFact est indisponible. Vérifiez que le service est démarré sur le serveur."));
+
+                var readiness = await _readinessChecker.CheckAsync(modelRef.ProviderModelId!, cancellationToken);
+                if (!readiness.IsReady)
+                    return Result.Failure<AiStructuredExtractionOutcome>(Error.Validation(code,
+                        readiness.UserMessage ?? (isVisionFallback
+                            ? "Le modèle vision d'import IA n'est pas prêt."
+                            : "Le modèle d'import IA n'est pas prêt.")));
+                return null;
+
+            case LlmProviderKind.OpenRouter:
+            {
+                var credentials = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
+                if (string.IsNullOrEmpty(credentials.ApiKey))
+                    return Result.Failure<AiStructuredExtractionOutcome>(Error.Validation(code,
+                        "Aucune clé API OpenRouter configurée. Configurez-la dans le back-office plateforme > Configuration IA (OpenRouter)."));
+                return null;
+            }
+
+            case LlmProviderKind.Cursor:
+                if (!_cursorSdkSettings.Enabled)
+                    return Result.Failure<AiStructuredExtractionOutcome>(Error.Validation(code,
+                        "Cursor SDK est désactivé sur le serveur (CursorSdk:Enabled=false)."));
+                var cursorCreds = await _platformAiSettings.GetCursorCredentialsAsync(cancellationToken);
+                if (string.IsNullOrEmpty(cursorCreds.ApiKey))
+                    return Result.Failure<AiStructuredExtractionOutcome>(Error.Validation(code,
+                        "Aucune clé API Cursor configurée. Configurez-la dans le back-office plateforme > Configuration IA (Cursor)."));
+                if (_cursorAgentClient is null || !await _cursorAgentClient.IsAvailableAsync(cancellationToken))
+                    return Result.Failure<AiStructuredExtractionOutcome>(Error.Validation(code,
+                        "Le pont Cursor SDK est indisponible. Vérifiez Node 22.13+ et `npm ci` dans CursorSdkBridge."));
+                return null;
+
+            default:
+                return Result.Failure<AiStructuredExtractionOutcome>(Error.Validation(code,
+                    $"Fournisseur LLM non géré : {modelRef.Kind}."));
+        }
+    }
+
     /// <summary>
     /// Vrai quand l'erreur Ollama traduit un schéma de sortie non supporté (moteur antérieur à 0.5)
     /// plutôt qu'une panne réelle : seul ce cas justifie de retenter sans schéma.
@@ -459,7 +493,9 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
         long? firstTokenMs = null;
         var llmSw = Stopwatch.StartNew();
 
-        if (modelRef.Kind == LlmProviderKind.Ollama)
+        switch (modelRef.Kind)
+        {
+        case LlmProviderKind.Ollama:
         {
             var messages = new List<OllamaChatMessage>
             {
@@ -518,8 +554,10 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
                     sb.Append(chunk.Message.Content);
                 }
             }
+
+            break;
         }
-        else
+        case LlmProviderKind.OpenRouter:
         {
             var openRouter = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
             var baseUrl = openRouter.BaseUrl;
@@ -551,6 +589,60 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
                     sb.Append(chunk.Message.Content);
                 }
             }
+
+            break;
+        }
+        case LlmProviderKind.Cursor:
+        {
+            if (_cursorAgentClient is null)
+                throw new InvalidOperationException("Le pont Cursor SDK n'est pas configuré.");
+
+            var cursorCreds = await _platformAiSettings.GetCursorCredentialsAsync(cancellationToken);
+            if (string.IsNullOrEmpty(cursorCreds.ApiKey))
+                throw new InvalidOperationException(
+                    "Aucune clé API Cursor configurée. Configurez-la dans le back-office plateforme > Configuration IA (Cursor).");
+
+            var scratch = Path.Combine(AppContext.BaseDirectory, "App_Data", "cursor-scratch", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(scratch);
+            try
+            {
+                _logger.LogInformation(
+                    "[{Scope}] Appel LLM Cursor : modèle={Model} images={ImageCount}",
+                    scope, modelRef.ProviderModelId, images.Count);
+
+                var extracted = await _cursorAgentClient.ExtractAsync(
+                    new CursorExtractRequest(
+                        cursorCreds.ApiKey,
+                        modelRef,
+                        systemPrompt,
+                        userPrompt,
+                        CursorToolSpecMapper.FromBase64List(images),
+                        scratch),
+                    cancellationToken);
+                if (!string.IsNullOrEmpty(extracted))
+                {
+                    firstTokenMs ??= llmSw.ElapsedMilliseconds;
+                    sb.Append(extracted);
+                    chunkCount = 1;
+                }
+            }
+            finally
+            {
+                try
+                {
+                    if (Directory.Exists(scratch))
+                        Directory.Delete(scratch, recursive: true);
+                }
+                catch
+                {
+                    // best-effort
+                }
+            }
+
+            break;
+        }
+        default:
+            throw new InvalidOperationException($"Fournisseur LLM non géré : {modelRef.Kind}.");
         }
 
         return (sb.ToString(), chunkCount, firstTokenMs);

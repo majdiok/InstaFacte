@@ -1,0 +1,98 @@
+<div id="main-content" class="auth-page">
+  <div class="auth-page__photo" [style.background-image]="photoLayer" aria-hidden="true"></div>
+  <div class="auth-page__overlay" aria-hidden="true"></div>
+
+  <header class="auth-page-header" aria-label="En-tête InstaFact">
+    <div class="auth-page-header__brand">
+      <app-logo size="medium" variant="lockup" routerLink="/"></app-logo>
+      <span class="auth-page-header__tagline">{{ brand.taglineShort }}</span>
+    </div>
+  </header>
+
+  <div class="auth-page-body" [class.auth-page-body--wide]="config.wideFormCard">
+    <section class="auth-hero-panel" aria-label="Présentation InstaFact">
+      <div class="auth-hero-panel__content">
+        <span [class]="badgeClass()">
+          <i class="pi pi-shield" aria-hidden="true"></i>
+          {{ config.badge }}
+        </span>
+        <h1 class="auth-hero-panel__title">{{ config.title }}</h1>
+        @if (config.description) {
+          <p class="auth-hero-panel__description">{{ config.description }}</p>
+        }
+
+        @if (config.features?.length) {
+          <ul class="auth-hero-panel__features">
+            @for (feature of config.features; track feature.label) {
+              <li>
+                <span class="auth-hero-panel__feature-icon" aria-hidden="true">
+                  <i [class]="'pi ' + feature.icon"></i>
+                </span>
+                <div class="auth-hero-panel__feature-copy">
+                  <span class="auth-hero-panel__feature-label">{{ feature.label }}</span>
+                  @if (feature.description) {
+                    <span class="auth-hero-panel__feature-desc">{{ feature.description }}</span>
+                  }
+                </div>
+              </li>
+            }
+          </ul>
+        }
+
+        @if (config.showAiHighlight) {
+          <div class="auth-ai-highlight" aria-label="Intelligence artificielle">
+            <span class="auth-ai-highlight__mark">IA</span>
+            <div class="auth-ai-highlight__text">
+              <strong>L'intelligence au service de votre gestion.</strong>
+              <span>InstaFact intègre l'intelligence artificielle pour analyser vos données et vous aider à décider plus vite.</span>
+            </div>
+          </div>
+        }
+      </div>
+    </section>
+
+    <main
+      class="auth-form-card"
+      [class.auth-form-card--wide]="config.wideFormCard"
+      [class.auth-form-card--scrollable]="isFormCardScrollable()"
+      role="main"
+    >
+      <div class="auth-form-card__inner">
+        <ng-content></ng-content>
+      </div>
+    </main>
+  </div>
+
+  @if (config.showTrustFooter !== false) {
+    <footer class="auth-trust-footer" aria-label="Garanties InstaFact">
+      <div class="auth-trust-footer__item">
+        <i class="pi pi-shield" aria-hidden="true"></i>
+        <div class="auth-trust-footer__copy">
+          <span class="auth-trust-footer__title">Sécurité garantie</span>
+          <span class="auth-trust-footer__sub">Vos données sont chiffrées</span>
+        </div>
+      </div>
+      <div class="auth-trust-footer__item">
+        <i class="pi pi-verified" aria-hidden="true"></i>
+        <div class="auth-trust-footer__copy">
+          <span class="auth-trust-footer__title">Conforme aux normes</span>
+          <span class="auth-trust-footer__sub">Facturation électronique</span>
+        </div>
+      </div>
+      <div class="auth-trust-footer__item">
+        <i class="pi pi-cloud-upload" aria-hidden="true"></i>
+        <div class="auth-trust-footer__copy">
+          <span class="auth-trust-footer__title">Sauvegarde quotidienne</span>
+          <span class="auth-trust-footer__sub">Données sécurisées 24/7</span>
+        </div>
+      </div>
+      <div class="auth-trust-footer__item">
+        <i class="pi pi-headphones" aria-hidden="true"></i>
+        <div class="auth-trust-footer__copy">
+          <span class="auth-trust-footer__title">Support 7j/7</span>
+          <span class="auth-trust-footer__sub">Assistance disponible</span>
+        </div>
+      </div>
+    </footer>
+  }
+</div>

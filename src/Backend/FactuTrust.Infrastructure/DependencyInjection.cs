@@ -1,6 +1,7 @@
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Forecasting;
+using FactuTrust.Application.Common.Interfaces.Treasury;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Features.Studio.Common;
@@ -18,6 +19,8 @@ using FactuTrust.Infrastructure.Services.Forecasting;
 using FactuTrust.Infrastructure.Services.Forecasting.Background;
 using FactuTrust.Infrastructure.Services.Forecasting.Calendar;
 using FactuTrust.Infrastructure.Services.Storefront;
+using FactuTrust.Infrastructure.Services.Treasury;
+using FactuTrust.Infrastructure.Services.Treasury.Collectors;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -126,6 +129,7 @@ public static class DependencyInjection
             services.AddScoped<FirmDossierAccessService>();
             services.AddScoped<IFirmDossierAccessService>(sp => sp.GetRequiredService<FirmDossierAccessService>());
             services.AddScoped<IFirmDashboardService, FirmDashboardService>();
+            services.AddScoped<IFirmDecisionTablesService, FirmDecisionTablesService>();
             services.AddScoped<IFirmFiscalOpsAggregator, FirmFiscalOpsAggregator>();
             services.AddScoped<IFirmGovernanceService, FirmGovernanceService>();
             services.AddScoped<IFirmLeaveAbsenceReader, FirmLeaveAbsenceReader>();
@@ -141,6 +145,10 @@ public static class DependencyInjection
             services.AddScoped<IFirmInternalPayrollProvisioningService, FirmInternalPayrollProvisioningService>();
             services.AddScoped<IFirmFiscalScheduleService, FirmFiscalScheduleService>();
             services.AddScoped<IFirmFiscalScheduleWriteService, FirmFiscalScheduleWriteService>();
+            // Lecture consolidée du portefeuille (agent Chef de mission). Périmètre d'accès passé
+            // explicitement : utilisable aussi bien en requête HTTP qu'en job Hangfire.
+            services.AddScoped<IFirmPortfolioReadService, FirmPortfolioReadService>();
+            services.AddScoped<Services.Background.FirmMissionBriefingJob>();
             services.AddScoped<IFirmContextService, FirmContextService>();
             services.AddScoped<IFirmManagedClientService, FirmManagedClientService>();
             services.AddScoped<IFirmCollaboratorService, FirmCollaboratorService>();
@@ -406,6 +414,9 @@ public static class DependencyInjection
         services.AddScoped<FactuTrust.Infrastructure.Services.Background.RecurringEntriesJob>();
         services.AddScoped<FiscalReminderService>();
         services.AddScoped<FactuTrust.Infrastructure.Services.Background.FiscalReminderJob>();
+        // Enregistré inconditionnellement : le job porte lui-même la garde du flag, comme les
+        // autres jobs Hangfire du produit.
+        services.AddScoped<FactuTrust.Infrastructure.Services.Background.CashFlowRecomputationJob>();
 
         // Lot C5 — Providers paiement (Konnect / Paymee / Virement) + webhooks signés HMAC
         services.AddScoped<FactuTrust.Infrastructure.Services.Billing.PaymentProviderConfigService>();
@@ -449,6 +460,7 @@ public static class DependencyInjection
         services.Configure<OllamaSettings>(configuration.GetSection(OllamaSettings.SectionName));
         services.Configure<ScreenAnalysisOptions>(configuration.GetSection(ScreenAnalysisOptions.SectionName));
         services.Configure<OpenRouterSettings>(configuration.GetSection(OpenRouterSettings.SectionName));
+        services.Configure<CursorSdkSettings>(configuration.GetSection(CursorSdkSettings.SectionName));
         services.Configure<CashDeskFeaturesOptions>(configuration.GetSection(CashDeskFeaturesOptions.SectionName));
         services.Configure<FixedAssetsOptions>(configuration.GetSection(FixedAssetsOptions.SectionName));
         services.Configure<AccountingAttachmentsOptions>(configuration.GetSection(AccountingAttachmentsOptions.SectionName));
@@ -488,9 +500,17 @@ public static class DependencyInjection
             client.Timeout = TimeSpan.FromSeconds(Math.Clamp(settings.TimeoutSeconds, 10, 600));
         });
         services.AddScoped<IOpenAiChatCompletionsClient, OpenAiChatCompletionsClient>();
+        services.AddSingleton<ICursorToolRunRegistry, CursorToolRunRegistry>();
+        services.AddSingleton<CursorSdkBridgeHost>();
+        services.AddSingleton<ICursorAgentClient>(sp => sp.GetRequiredService<CursorSdkBridgeHost>());
+        services.AddSingleton<CursorToolCallbackService>();
+        services.AddHostedService<CursorSdkBridgeHostedService>();
         services.AddSingleton<IAiDeterministicToolCache, AiDeterministicToolCache>();
         services.AddSingleton<IAiReadOnlyToolCache, AiReadOnlyToolCache>();
         services.AddScoped<IAiToolExecutor, AiToolExecutor>();
+        // Outils au périmètre cabinet (agent Chef de mission) : injecté comme paramètre optionnel
+        // d'AiToolExecutor. Son absence dégrade en erreur explicite, jamais en exception.
+        services.AddScoped<IFirmAgentToolExecutor, FirmAgentToolExecutor>();
         services.AddSingleton<IAiToolExecutorScopeFactory, AiToolExecutorScopeFactory>();
         services.AddSingleton<IAiPdfRenderer, PdfToImagePdfRenderer>();
         services.AddSingleton<IAiOcrService, TesseractOcrService>();
@@ -582,6 +602,47 @@ public static class DependencyInjection
                 services.AddHostedService<PromotionWindowDetectorService>();
         }
 
+        // ────────────────────────────────────────────────────────────────────
+        //  Trésorerie prévisionnelle par IA
+        //
+        //  Enregistrement INCONDITIONNEL, contrairement au module Prévisions IA.
+        //  Ce module expose des handlers MediatR, que MediatR découvre et
+        //  enregistre par balayage d'assembly quel que soit l'état du flag ;
+        //  laisser leurs dépendances non enregistrées ferait échouer la
+        //  validation du conteneur au démarrage (ValidateOnBuild), garde-fou
+        //  qu'il ne serait pas sain de désactiver.
+        //
+        //  L'impact reste nul quand le flag est éteint : chaque route répond
+        //  503, les outils de l'assistant refusent explicitement, et le job
+        //  nocturne sort immédiatement. Rien ne s'exécute sans être appelé.
+        // ────────────────────────────────────────────────────────────────────
+        services.Configure<TreasuryForecastOptions>(configuration.GetSection(TreasuryForecastOptions.SectionName));
+        var treasuryForecastOptions = configuration.GetSection(TreasuryForecastOptions.SectionName)
+            .Get<TreasuryForecastOptions>() ?? new TreasuryForecastOptions();
+
+        services.AddScoped<ICashFlowForecastRepository, CashFlowForecastRepository>();
+        services.AddScoped<IRecurringCashCommitmentRepository, RecurringCashCommitmentRepository>();
+        services.AddScoped<ICashFlowForecastSettingsRepository, CashFlowForecastSettingsRepository>();
+        services.AddScoped<ITreasuryPositionService, TreasuryPositionService>();
+
+        // Collecteurs : l'ordre d'enregistrement est l'ordre d'exécution. Les sources certaines
+        // d'abord, ce qui rend les journaux plus lisibles en cas d'incident.
+        services.AddScoped<ICashFlowSourceCollector, ClientReceivablesCollector>();
+        services.AddScoped<ICashFlowSourceCollector, ClientEffetCollector>();
+        services.AddScoped<ICashFlowSourceCollector, SupplierPayablesCollector>();
+        services.AddScoped<ICashFlowSourceCollector, SupplierEffetCollector>();
+        services.AddScoped<ICashFlowSourceCollector, PayrollCollector>();
+        services.AddScoped<ICashFlowSourceCollector, FiscalObligationsCollector>();
+        services.AddScoped<ICashFlowSourceCollector, LoanScheduleCollector>();
+        services.AddScoped<ICashFlowSourceCollector, RecurringCommitmentCollector>();
+
+        services.AddScoped<ICashFlowForecastService, CashFlowForecastService>();
+
+        // Seule la couche IA reste conditionnelle : l'orchestrateur la reçoit en paramètre
+        // optionnel et demeure purement déterministe en son absence.
+        if (treasuryForecastOptions.Ai.Enabled)
+            services.AddScoped<ICashFlowAiAdvisor, CashFlowAiAdvisor>();
+
         return services;
     }
 
@@ -637,6 +698,39 @@ public static class DependencyInjection
         services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.VatDeductibleNoProofAuditRule>();
         services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.BankReconciliationIncompleteAuditRule>();
 
+        // Réviseur — famille « Comptable ».
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.VatVersusDocumentAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.ThirdPartyAccountMismatchAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.LetteringOrphanAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.ReversalMissingAuditRule>();
+
+        // Réviseur — famille « Documentaire ».
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.SupplierInvoiceWithoutProofAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.SupplierInvoiceDuplicateAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.PurchasePriceDriftAuditRule>();
+
+        // Réviseur — famille « Trésorerie ».
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.CashNegativeBalanceAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.CashInWithoutDocumentAuditRule>();
+
+        // Réviseur — famille « Fiscale ».
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.WithholdingMissingOnFeesAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.FodecMissingAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.VatPeriodNotClosedAuditRule>();
+
+        // Réviseur — famille « Paie ».
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.PayrollCnssRegimeMismatchAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.PayrollDependentWithoutProofAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.PayrollOvertimeOutOfRegimeAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.PayrollBelowSmigAuditRule>();
+
+        // Réviseur — famille « Fraude douce ».
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.ThresholdStructuringAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.SupplierCreatedThenPaidAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.SelfValidatedEntryAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.OffHoursEntryAuditRule>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.Rules.BackdatedEntryAuditRule>();
+
         services.AddScoped<FactuTrust.Infrastructure.Services.AccountingAudit.AccountingAuditRuleRegistry>(sp =>
         {
             var rules = sp.GetServices<IAccountingAuditRule>().ToList();
@@ -658,6 +752,39 @@ public static class DependencyInjection
         services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.VatDeductibleNoProofAuditRule>();
         services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.BankReconciliationIncompleteAuditRule>();
 
+        // Réviseur — famille « Comptable ».
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.VatVersusDocumentAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.ThirdPartyAccountMismatchAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.LetteringOrphanAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.ReversalMissingAuditRule>();
+
+        // Réviseur — famille « Documentaire ».
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.SupplierInvoiceWithoutProofAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.SupplierInvoiceDuplicateAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.PurchasePriceDriftAuditRule>();
+
+        // Réviseur — famille « Trésorerie ».
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.CashNegativeBalanceAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.CashInWithoutDocumentAuditRule>();
+
+        // Réviseur — famille « Fiscale ».
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.WithholdingMissingOnFeesAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.FodecMissingAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.VatPeriodNotClosedAuditRule>();
+
+        // Réviseur — famille « Paie ».
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.PayrollCnssRegimeMismatchAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.PayrollDependentWithoutProofAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.PayrollOvertimeOutOfRegimeAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.PayrollBelowSmigAuditRule>();
+
+        // Réviseur — famille « Fraude douce ».
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.ThresholdStructuringAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.SupplierCreatedThenPaidAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.SelfValidatedEntryAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.OffHoursEntryAuditRule>();
+        services.AddScoped<IAccountingAuditRule, FactuTrust.Infrastructure.Services.AccountingAudit.Rules.BackdatedEntryAuditRule>();
+
         services.AddScoped<IAccountingAuditEngine, FactuTrust.Infrastructure.Services.AccountingAudit.AccountingAuditEngine>();
         services.AddScoped<IAccountingAuditQueryService, FactuTrust.Infrastructure.Services.AccountingAudit.AccountingAuditQueryService>();
         services.AddScoped<IAccountingAuditWorkflowService, FactuTrust.Infrastructure.Services.AccountingAudit.AccountingAuditWorkflowService>();
@@ -665,6 +792,17 @@ public static class DependencyInjection
         services.AddScoped<IAccountingAuditScheduleService, FactuTrust.Infrastructure.Services.AccountingAudit.AccountingAuditScheduleService>();
         services.AddScoped<IAccountingAuditRuleSettingsService, FactuTrust.Infrastructure.Services.AccountingAudit.AccountingAuditRuleSettingsService>();
         services.AddScoped<FactuTrust.Infrastructure.Services.Background.AccountingAuditScheduledJob>();
+
+        // Réviseur de portefeuille cabinet. Enregistré INCONDITIONNELLEMENT : le contrôleur porte
+        // le drapeau et répond 503 quand il est éteint. Un enregistrement conditionnel ferait
+        // échouer la validation du conteneur au démarrage dès qu'un consommateur le référence.
+        services.AddScoped<IFirmRevisionService,
+            FactuTrust.Infrastructure.Services.FirmRevision.FirmRevisionService>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.FirmRevision.IRevisionNoteGenerator,
+            FactuTrust.Infrastructure.Services.FirmRevision.RevisionNoteGenerator>();
+        services.AddScoped<FactuTrust.Application.Features.AI.IAiNarrativeCompletionService,
+            FactuTrust.Application.Features.AI.AiNarrativeCompletionService>();
+        services.AddScoped<FactuTrust.Infrastructure.Services.Background.FirmRevisionSweepJob>();
     }
 }
 

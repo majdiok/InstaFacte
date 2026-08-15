@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AccountingService, JournalEntryTemplateDto } from '../../services/accounting.service';
 import { ToastService } from '@core/services/toast.service';
+import { ConfirmationService } from '@core/services/confirmation.service';
 
 @Component({
   selector: 'app-template-picker-modal',
@@ -151,6 +152,7 @@ export class TemplatePickerModalComponent implements OnInit {
   private readonly api = inject(AccountingService);
   private readonly toast = inject(ToastService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly confirmationService = inject(ConfirmationService);
 
   readonly visible = input<boolean>(false);
   readonly close = output<void>();
@@ -220,42 +222,49 @@ export class TemplatePickerModalComponent implements OnInit {
   onDelete(): void {
     const sel = this.selected();
     if (!sel) return;
-    if (!window.confirm(`Voulez-vous vraiment supprimer le modèle « ${sel.name} » ? Cette action est irréversible.`)) {
-      return;
-    }
-    this.deleting.set(true);
-    this.api.deleteJournalTemplate(sel.id)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: res => {
-          this.deleting.set(false);
-          if (res.success) {
-            this.toast.add({
-              severity: 'success',
-              summary: 'Modèle supprimé',
-              detail: `Le modèle « ${sel.name} » a été supprimé.`,
-              life: 4000
-            });
-            this.templates.update(list => list.filter(t => t.id !== sel.id));
-            this.selected.set(null);
-          } else {
-            this.toast.add({
-              severity: 'error',
-              summary: 'Échec de la suppression',
-              detail: res.error ?? 'Erreur lors de la suppression.',
-              life: 6000
-            });
-          }
-        },
-        error: () => {
-          this.deleting.set(false);
-          this.toast.add({
-            severity: 'error',
-            summary: 'Erreur réseau',
-            detail: 'Impossible de supprimer le modèle.',
-            life: 6000
+    this.confirmationService.confirm({
+      message: `Voulez-vous vraiment supprimer le modèle « ${sel.name} » ? Cette action est irréversible.`,
+      header: 'Confirmation de suppression',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Supprimer',
+      rejectLabel: 'Annuler',
+      acceptButtonStyleClass: 'btn-danger',
+      accept: () => {
+        this.deleting.set(true);
+        this.api.deleteJournalTemplate(sel.id)
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe({
+            next: res => {
+              this.deleting.set(false);
+              if (res.success) {
+                this.toast.add({
+                  severity: 'success',
+                  summary: 'Modèle supprimé',
+                  detail: `Le modèle « ${sel.name} » a été supprimé.`,
+                  life: 4000
+                });
+                this.templates.update(list => list.filter(t => t.id !== sel.id));
+                this.selected.set(null);
+              } else {
+                this.toast.add({
+                  severity: 'error',
+                  summary: 'Échec de la suppression',
+                  detail: res.error ?? 'Erreur lors de la suppression.',
+                  life: 6000
+                });
+              }
+            },
+            error: () => {
+              this.deleting.set(false);
+              this.toast.add({
+                severity: 'error',
+                summary: 'Erreur réseau',
+                detail: 'Impossible de supprimer le modèle.',
+                life: 6000
+              });
+            }
           });
-        }
-      });
+      }
+    });
   }
 }

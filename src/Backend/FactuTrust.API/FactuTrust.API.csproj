@@ -26,6 +26,12 @@
           Exclude="WhatsAppBridge\node_modules\**;WhatsAppBridge\whatsapp-session\**;WhatsAppBridge\.wwebjs_auth\**;WhatsAppBridge\.wwebjs_cache\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <Content Remove="CursorSdkBridge\**" />
+    <None Remove="CursorSdkBridge\**" />
+    <None Include="CursorSdkBridge\**\*"
+          Exclude="CursorSdkBridge\node_modules\**;CursorSdkBridge\scratch\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <!-- Chemin SOURCE du pont, baké dans l'assembly : en DEV (machine de build = machine d'exécution),
@@ -35,6 +41,10 @@
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
       <_Parameter1>WhatsAppBridgeSourceDirectory</_Parameter1>
       <_Parameter2>$(MSBuildProjectDirectory)\WhatsAppBridge</_Parameter2>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>CursorSdkBridgeSourceDirectory</_Parameter1>
+      <_Parameter2>$(MSBuildProjectDirectory)\CursorSdkBridge</_Parameter2>
     </AssemblyAttribute>
   </ItemGroup>
 

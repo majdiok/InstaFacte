@@ -30,6 +30,9 @@ public sealed class SendChatMessageHandler
     private readonly IOllamaClient _ollamaClient;
     private readonly IOllamaGenerationGate _ollamaGenerationGate;
     private readonly IOpenAiChatCompletionsClient _openAiClient;
+    private readonly ICursorAgentClient _cursorAgentClient;
+    private readonly ICursorToolRunRegistry _cursorToolRuns;
+    private readonly ITenantContext _tenantContext;
     private readonly IPlatformAiSettingsService _platformAiSettings;
     private readonly IOllamaInferenceProfileResolver _inferenceProfileResolver;
     private readonly IAiToolExecutor _toolExecutor;
@@ -42,6 +45,7 @@ public sealed class SendChatMessageHandler
     private readonly ILogger<SendChatMessageHandler> _logger;
     private readonly OllamaSettings _ollamaSettings;
     private readonly ScreenAnalysisOptions _screenAnalysisOptions;
+    private readonly CursorSdkSettings _cursorSdkSettings;
 
     private static readonly JsonSerializerOptions SourcesJsonOptions = new()
     {
@@ -52,6 +56,9 @@ public sealed class SendChatMessageHandler
         IOllamaClient ollamaClient,
         IOllamaGenerationGate ollamaGenerationGate,
         IOpenAiChatCompletionsClient openAiClient,
+        ICursorAgentClient cursorAgentClient,
+        ICursorToolRunRegistry cursorToolRuns,
+        ITenantContext tenantContext,
         IPlatformAiSettingsService platformAiSettings,
         IOllamaInferenceProfileResolver inferenceProfileResolver,
         IAiToolExecutor toolExecutor,
@@ -63,11 +70,15 @@ public sealed class SendChatMessageHandler
         ICurrentUser currentUser,
         ILogger<SendChatMessageHandler> logger,
         IOptions<OllamaSettings> ollamaSettings,
-        IOptions<ScreenAnalysisOptions> screenAnalysisOptions)
+        IOptions<ScreenAnalysisOptions> screenAnalysisOptions,
+        IOptions<CursorSdkSettings> cursorSdkSettings)
     {
         _ollamaClient = ollamaClient;
         _ollamaGenerationGate = ollamaGenerationGate;
         _openAiClient = openAiClient;
+        _cursorAgentClient = cursorAgentClient;
+        _cursorToolRuns = cursorToolRuns;
+        _tenantContext = tenantContext;
         _platformAiSettings = platformAiSettings;
         _inferenceProfileResolver = inferenceProfileResolver;
         _toolExecutor = toolExecutor;
@@ -80,6 +91,7 @@ public sealed class SendChatMessageHandler
         _logger = logger;
         _ollamaSettings = ollamaSettings.Value;
         _screenAnalysisOptions = screenAnalysisOptions.Value;
+        _cursorSdkSettings = cursorSdkSettings.Value;
     }
 
     public async IAsyncEnumerable<ChatStreamEvent> HandleAsync(
@@ -177,50 +189,101 @@ public sealed class SendChatMessageHandler
             "provider_availability",
             "running",
             detail: modelRef.CanonicalModelRef);
-        if (modelRef.Kind == LlmProviderKind.Ollama)
+        switch (modelRef.Kind)
         {
-            if (!await _ollamaClient.IsAvailableAsync(cancellationToken))
+            case LlmProviderKind.Ollama:
             {
-                LogPhase("ollama_availability", sw.ElapsedMilliseconds);
-                yield return ChatStreamEvent.PhaseEvent(
-                    "provider_availability",
-                    "failed",
-                    sw.ElapsedMilliseconds,
-                    detail: modelRef.CanonicalModelRef);
-                yield return ChatStreamEvent.ErrorEvent(
-                    "Le moteur IA InstaFact est indisponible. Vérifiez que le service est démarré sur le serveur, ou choisissez un modèle cloud.");
-                yield break;
-            }
+                if (!await _ollamaClient.IsAvailableAsync(cancellationToken))
+                {
+                    LogPhase("ollama_availability", sw.ElapsedMilliseconds);
+                    yield return ChatStreamEvent.PhaseEvent(
+                        "provider_availability",
+                        "failed",
+                        sw.ElapsedMilliseconds,
+                        detail: modelRef.CanonicalModelRef);
+                    yield return ChatStreamEvent.ErrorEvent(
+                        "Le moteur IA InstaFact est indisponible. Vérifiez que le service est démarré sur le serveur, ou choisissez un modèle cloud.");
+                    yield break;
+                }
 
-            if (string.IsNullOrWhiteSpace(modelRef.ProviderModelId) ||
-                !await _ollamaClient.IsModelInstalledAsync(modelRef.ProviderModelId, cancellationToken))
-            {
-                LogPhase("model_installed_check", sw.ElapsedMilliseconds);
-                yield return ChatStreamEvent.PhaseEvent(
-                    "provider_availability",
-                    "failed",
-                    sw.ElapsedMilliseconds,
-                    detail: modelRef.CanonicalModelRef);
-                yield return ChatStreamEvent.ErrorEvent(
-                    $"Le modèle « {modelRef.ProviderModelId} » n'est pas installé sur le moteur IA InstaFact. Contactez l'administrateur plateforme ou choisissez un autre modèle.");
-                yield break;
+                if (string.IsNullOrWhiteSpace(modelRef.ProviderModelId) ||
+                    !await _ollamaClient.IsModelInstalledAsync(modelRef.ProviderModelId, cancellationToken))
+                {
+                    LogPhase("model_installed_check", sw.ElapsedMilliseconds);
+                    yield return ChatStreamEvent.PhaseEvent(
+                        "provider_availability",
+                        "failed",
+                        sw.ElapsedMilliseconds,
+                        detail: modelRef.CanonicalModelRef);
+                    yield return ChatStreamEvent.ErrorEvent(
+                        $"Le modèle « {modelRef.ProviderModelId} » n'est pas installé sur le moteur IA InstaFact. Contactez l'administrateur plateforme ou choisissez un autre modèle.");
+                    yield break;
+                }
+
+                break;
             }
-        }
-        else
-        {
-            var credentials = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
-            if (string.IsNullOrEmpty(credentials.ApiKey))
+            case LlmProviderKind.OpenRouter:
             {
-                LogPhase("openrouter_credentials", sw.ElapsedMilliseconds);
-                yield return ChatStreamEvent.PhaseEvent(
-                    "provider_availability",
-                    "failed",
-                    sw.ElapsedMilliseconds,
-                    detail: modelRef.CanonicalModelRef);
-                yield return ChatStreamEvent.ErrorEvent(
-                    "Aucune clé API OpenRouter configurée. Configurez-la dans le back-office plateforme > Configuration IA (OpenRouter).");
-                yield break;
+                var credentials = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
+                if (string.IsNullOrEmpty(credentials.ApiKey))
+                {
+                    LogPhase("openrouter_credentials", sw.ElapsedMilliseconds);
+                    yield return ChatStreamEvent.PhaseEvent(
+                        "provider_availability",
+                        "failed",
+                        sw.ElapsedMilliseconds,
+                        detail: modelRef.CanonicalModelRef);
+                    yield return ChatStreamEvent.ErrorEvent(
+                        "Aucune clé API OpenRouter configurée. Configurez-la dans le back-office plateforme > Configuration IA (OpenRouter).");
+                    yield break;
+                }
+
+                break;
             }
+            case LlmProviderKind.Cursor:
+            {
+                if (!_cursorSdkSettings.Enabled)
+                {
+                    yield return ChatStreamEvent.PhaseEvent(
+                        "provider_availability",
+                        "failed",
+                        sw.ElapsedMilliseconds,
+                        detail: modelRef.CanonicalModelRef);
+                    yield return ChatStreamEvent.ErrorEvent(
+                        "Cursor SDK est désactivé sur le serveur (CursorSdk:Enabled=false).");
+                    yield break;
+                }
+
+                var cursorCreds = await _platformAiSettings.GetCursorCredentialsAsync(cancellationToken);
+                if (string.IsNullOrEmpty(cursorCreds.ApiKey))
+                {
+                    yield return ChatStreamEvent.PhaseEvent(
+                        "provider_availability",
+                        "failed",
+                        sw.ElapsedMilliseconds,
+                        detail: modelRef.CanonicalModelRef);
+                    yield return ChatStreamEvent.ErrorEvent(
+                        "Aucune clé API Cursor configurée. Configurez-la dans le back-office plateforme > Configuration IA (Cursor).");
+                    yield break;
+                }
+
+                if (!await _cursorAgentClient.IsAvailableAsync(cancellationToken))
+                {
+                    yield return ChatStreamEvent.PhaseEvent(
+                        "provider_availability",
+                        "failed",
+                        sw.ElapsedMilliseconds,
+                        detail: modelRef.CanonicalModelRef);
+                    yield return ChatStreamEvent.ErrorEvent(
+                        "Le pont Cursor SDK est indisponible. Vérifiez Node 22.13+ et `npm ci` dans CursorSdkBridge.");
+                    yield break;
+                }
+
+                break;
+            }
+            default:
+                yield return ChatStreamEvent.ErrorEvent($"Fournisseur LLM non géré : {modelRef.Kind}.");
+                yield break;
         }
 
         LogPhase("provider_availability", sw.ElapsedMilliseconds);
@@ -550,7 +613,148 @@ public sealed class SendChatMessageHandler
             yield return ChatStreamEvent.ToolCallEnd("compliance_check_invoice", complianceCallId, complianceSw.ElapsedMilliseconds);
         }
 
-        if (!conversationalFastPath)
+        if (modelRef.Kind == LlmProviderKind.Cursor)
+        {
+            if (!conversationalFastPath)
+            {
+                var runId = Guid.NewGuid();
+                var callbackToken = CursorToolRunContext.CreateToken();
+                var scratchDir = CreateCursorScratchDirectory(runId);
+                var role = _currentUser.Role ?? UserRole.Client;
+                var cursorCtx = new CursorToolRunContext
+                {
+                    RunId = runId,
+                    Token = callbackToken,
+                    Conversation = conversation,
+                    CorrelationId = correlationId,
+                    ToolExecutor = _toolExecutor,
+                    ScopeFactory = _toolExecutorScopeFactory,
+                    TenantId = _currentUser.TenantId ?? _tenantContext.TenantId ?? Guid.Empty,
+                    ConnectionString = _tenantContext.ConnectionString ?? string.Empty,
+                    UserId = _currentUser.UserId ?? userId,
+                    Email = _currentUser.Email,
+                    Role = role,
+                    Permissions = role.GetPermissions()
+                        .Where(_currentUser.HasPermission)
+                        .ToHashSet(StringComparer.Ordinal)
+                };
+                _cursorToolRuns.Register(cursorCtx);
+                var cursorFailed = false;
+                var fullContent = new System.Text.StringBuilder();
+                sw.Restart();
+                yield return ChatStreamEvent.PhaseEvent(
+                    "llm_stream_round",
+                    "running",
+                    round: 1);
+                try
+                {
+                    var cursorCreds = await _platformAiSettings.GetCursorCredentialsAsync(cancellationToken);
+                    var userText = AiConversationMessageMapper.BuildCursorUserMessage(
+                        systemPrompt,
+                        conversation,
+                        _ollamaSettings.MaxContextMessages,
+                        _ollamaSettings.MaxToolResultChars);
+                    var request = new CursorChatRunRequest(
+                        cursorCreds.ApiKey!,
+                        modelRef,
+                        userText,
+                        CursorToolSpecMapper.FromAttachments(command.Attachments),
+                        CursorToolSpecMapper.FromOllamaTools(tools),
+                        runId,
+                        BuildCursorToolCallbackUrl(runId),
+                        callbackToken,
+                        scratchDir);
+
+                    await foreach (var ev in _cursorAgentClient.RunChatAsync(request, cancellationToken))
+                    {
+                        while (cursorCtx.ExtraEvents.TryDequeue(out var extra))
+                            yield return extra;
+
+                        switch (ev.Type)
+                        {
+                            case "started":
+                                _logger.LogInformation(
+                                    "AI chat {CorrelationId} phase=llm_stream_round cursor agentId={AgentId} runId={RunId}",
+                                    correlationId ?? "-",
+                                    ev.AgentId ?? "-",
+                                    ev.RunId ?? runId.ToString());
+                                break;
+                            case "assistant_text" when !string.IsNullOrEmpty(ev.Text):
+                                fullContent.Append(ev.Text);
+                                totalContentCharsStreamed += ev.Text.Length;
+                                yield return ChatStreamEvent.ContentChunk(ev.Text);
+                                break;
+                            case "done" when !string.IsNullOrEmpty(ev.Text) && fullContent.Length == 0:
+                                fullContent.Append(ev.Text);
+                                totalContentCharsStreamed += ev.Text.Length;
+                                yield return ChatStreamEvent.ContentChunk(ev.Text);
+                                break;
+                            case "error":
+                                cursorFailed = true;
+                                var userError = CursorSdkErrorMapper.ToUserMessage(ev.Error, out var logCursorError);
+                                if (logCursorError)
+                                {
+                                    _logger.LogError(
+                                        "AI chat {CorrelationId} Cursor SDK error: {Error}",
+                                        correlationId ?? "-",
+                                        ev.Error ?? "-");
+                                }
+                                yield return ChatStreamEvent.ErrorEvent(userError);
+                                break;
+                        }
+                    }
+
+                    while (cursorCtx.ExtraEvents.TryDequeue(out var trailing))
+                        yield return trailing;
+                }
+                finally
+                {
+                    _cursorToolRuns.Complete(runId);
+                    TryDeleteScratchDirectory(scratchDir);
+                }
+
+                if (cursorFailed)
+                    yield break;
+
+                toolsExecutedThisRequest += cursorCtx.ToolsExecuted;
+                if (!string.IsNullOrEmpty(cursorCtx.AccumulatedDashboardJson))
+                    accumulatedDashboardJson = cursorCtx.AccumulatedDashboardJson;
+                foreach (var prompt in cursorCtx.AccumulatedSuggestedPrompts)
+                {
+                    if (!accumulatedSuggestedPrompts.Contains(prompt))
+                        accumulatedSuggestedPrompts.Add(prompt);
+                }
+
+                foreach (var (name, callId) in cursorCtx.ToolSources)
+                    toolSourcesForClient.Add(new SourceEntryDto(name, callId));
+                if (cursorCtx.StudioBuilderToolError is not null)
+                    studioBuilderToolError = cursorCtx.StudioBuilderToolError;
+
+                yield return ChatStreamEvent.PhaseEvent(
+                    "llm_stream_round",
+                    "completed",
+                    sw.ElapsedMilliseconds,
+                    1,
+                    hadToolCalls: cursorCtx.ToolsExecuted > 0);
+
+                if (fullContent.Length > 0)
+                {
+                    var assistantBody = BuildFinalAssistantBodyWithAppendices(
+                        fullContent.ToString(),
+                        minMeaningfulTextChars,
+                        accumulatedDashboardJson,
+                        accumulatedSuggestedPrompts);
+                    if (AssistantVisibleContentFormatter.HasMeaningfulAssistantText(assistantBody, minMeaningfulTextChars))
+                    {
+                        contentCharsPersisted = assistantBody.Length;
+                        conversation.AddMessage(MessageRole.Assistant, assistantBody);
+                        meaningfulResponseDelivered = true;
+                        yield return ChatStreamEvent.ContentReplace(assistantBody);
+                    }
+                }
+            }
+        }
+        else if (!conversationalFastPath)
         while (continueLoop && toolCallRound < maxRounds)
         {
             continueLoop = false;
@@ -578,7 +782,9 @@ public sealed class SendChatMessageHandler
 
             int? effectiveNumCtx = null;
             int effectivePromptChars = 0;
-            if (modelRef.Kind == LlmProviderKind.Ollama)
+            switch (modelRef.Kind)
+            {
+            case LlmProviderKind.Ollama:
             {
                 var ollamaMessages = AiConversationMessageMapper.BuildOllamaMessages(systemPrompt, conversation, _ollamaSettings.MaxContextMessages, _ollamaSettings.MaxToolResultChars);
                 AttachImagesToLastUserOllamaMessage(ollamaMessages, command.Attachments, modelRef.ProviderModelId, toolCallRound);
@@ -658,12 +864,8 @@ public sealed class SendChatMessageHandler
                                         || pendingChars >= AiLiveContentStreamer.MinFlushChars))
                                 {
                                     var snapshot = fullContent.ToString();
-                                    var flushTo = AiLiveContentStreamer.ComputeFlushableLength(snapshot, liveFlushedUpTo);
-                                    if (flushTo > liveFlushedUpTo)
+                                    if (TryTakeSanitizedLiveSegment(snapshot, ref liveFlushedUpTo, out var segment))
                                     {
-                                        var segment = AssistantVisibleContentFormatter.SanitizeInternalToolNames(
-                                            snapshot[liveFlushedUpTo..flushTo]);
-                                        liveFlushedUpTo = flushTo;
                                         liveStreamedAny = true;
                                         totalContentCharsStreamed += segment.Length;
                                         yield return ChatStreamEvent.ContentChunk(segment);
@@ -674,8 +876,9 @@ public sealed class SendChatMessageHandler
                         }
                     }
                 }
+                break;
             }
-            else
+            case LlmProviderKind.OpenRouter:
             {
                 var openRouter = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
                 var baseUrl = openRouter.BaseUrl;
@@ -721,12 +924,8 @@ public sealed class SendChatMessageHandler
                                     || pendingChars >= AiLiveContentStreamer.MinFlushChars))
                             {
                                 var snapshot = fullContent.ToString();
-                                var flushTo = AiLiveContentStreamer.ComputeFlushableLength(snapshot, liveFlushedUpTo);
-                                if (flushTo > liveFlushedUpTo)
+                                if (TryTakeSanitizedLiveSegment(snapshot, ref liveFlushedUpTo, out var segment))
                                 {
-                                    var segment = AssistantVisibleContentFormatter.SanitizeInternalToolNames(
-                                        snapshot[liveFlushedUpTo..flushTo]);
-                                    liveFlushedUpTo = flushTo;
                                     liveStreamedAny = true;
                                     totalContentCharsStreamed += segment.Length;
                                     yield return ChatStreamEvent.ContentChunk(segment);
@@ -736,6 +935,16 @@ public sealed class SendChatMessageHandler
                         }
                     }
                 }
+
+                break;
+            }
+            case LlmProviderKind.Cursor:
+                yield return ChatStreamEvent.ErrorEvent(
+                    "Inférence Cursor inattendue dans la boucle Ollama/OpenRouter.");
+                yield break;
+            default:
+                yield return ChatStreamEvent.ErrorEvent($"Fournisseur LLM non géré : {modelRef.Kind}.");
+                yield break;
             }
 
             // Récupération des appels d'outil émis en TEXTE par le petit modèle (qwen2.5:3b émet
@@ -1142,10 +1351,13 @@ public sealed class SendChatMessageHandler
                 ? systemPrompt + "\n\n" + AiScreenAnalysisPromptBuilder.ForcedSynthesisSection
                 : toolsExecutedThisRequest > 0
                     ? systemPrompt + "\n\nSYNTHÈSE FINALE : Des résultats d'outils sont dans l'historique. "
-                      + "Synthétise-les en français avec montants TND. Ne redemande pas la période si l'utilisateur a dit « aujourd'hui »."
+                      + "Synthétise-les en français avec montants TND. Uniquement en français, sans traduction. "
+                      + "Ne redemande pas la période si l'utilisateur a dit « aujourd'hui »."
                     : systemPrompt;
 
-            if (modelRef.Kind == LlmProviderKind.Ollama)
+            switch (modelRef.Kind)
+            {
+            case LlmProviderKind.Ollama:
             {
                 var synthMessages = AiConversationMessageMapper.BuildOllamaMessages(synthSystemPrompt, conversation, _ollamaSettings.MaxContextMessages, _ollamaSettings.MaxToolResultChars);
 
@@ -1194,12 +1406,8 @@ public sealed class SendChatMessageHandler
                                 || pendingChars >= AiLiveContentStreamer.MinFlushChars))
                         {
                             var snapshot = synthContent.ToString();
-                            var flushTo = AiLiveContentStreamer.ComputeFlushableLength(snapshot, synthFlushedUpTo);
-                            if (flushTo > synthFlushedUpTo)
+                            if (TryTakeSanitizedLiveSegment(snapshot, ref synthFlushedUpTo, out var segment))
                             {
-                                var segment = AssistantVisibleContentFormatter.SanitizeInternalToolNames(
-                                    snapshot[synthFlushedUpTo..flushTo]);
-                                synthFlushedUpTo = flushTo;
                                 synthStreamedAny = true;
                                 totalContentCharsStreamed += segment.Length;
                                 yield return ChatStreamEvent.ContentChunk(segment);
@@ -1208,8 +1416,10 @@ public sealed class SendChatMessageHandler
                         }
                     }
                 }
+
+                break;
             }
-            else
+            case LlmProviderKind.OpenRouter:
             {
                 var openRouter = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
                 var baseUrl = openRouter.BaseUrl;
@@ -1238,12 +1448,8 @@ public sealed class SendChatMessageHandler
                             || pendingChars >= AiLiveContentStreamer.MinFlushChars))
                     {
                         var snapshot = synthContent.ToString();
-                        var flushTo = AiLiveContentStreamer.ComputeFlushableLength(snapshot, synthFlushedUpTo);
-                        if (flushTo > synthFlushedUpTo)
+                        if (TryTakeSanitizedLiveSegment(snapshot, ref synthFlushedUpTo, out var segment))
                         {
-                            var segment = AssistantVisibleContentFormatter.SanitizeInternalToolNames(
-                                snapshot[synthFlushedUpTo..flushTo]);
-                            synthFlushedUpTo = flushTo;
                             synthStreamedAny = true;
                             totalContentCharsStreamed += segment.Length;
                             yield return ChatStreamEvent.ContentChunk(segment);
@@ -1251,6 +1457,63 @@ public sealed class SendChatMessageHandler
                         synthFlushSw.Restart();
                     }
                 }
+
+                break;
+            }
+            case LlmProviderKind.Cursor:
+            {
+                var cursorCreds = await _platformAiSettings.GetCursorCredentialsAsync(cancellationToken);
+                if (string.IsNullOrEmpty(cursorCreds.ApiKey))
+                    break;
+
+                var synthRunId = Guid.NewGuid();
+                var synthScratch = CreateCursorScratchDirectory(synthRunId);
+                string? cursorSynthText = null;
+                try
+                {
+                    var synthUser = AiConversationMessageMapper.BuildCursorUserMessage(
+                        synthSystemPrompt,
+                        conversation,
+                        _ollamaSettings.MaxContextMessages,
+                        _ollamaSettings.MaxToolResultChars);
+                    cursorSynthText = await _cursorAgentClient.ExtractAsync(
+                        new CursorExtractRequest(
+                            cursorCreds.ApiKey,
+                            modelRef,
+                            synthSystemPrompt,
+                            synthUser,
+                            Array.Empty<CursorImagePayload>(),
+                            synthScratch),
+                        cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "AI chat {CorrelationId} Cursor synthesis failed", correlationId ?? "-");
+                }
+                finally
+                {
+                    TryDeleteScratchDirectory(synthScratch);
+                }
+
+                if (!string.IsNullOrEmpty(cursorSynthText))
+                {
+                    synthContent.Append(cursorSynthText);
+                    if (synthLive)
+                    {
+                        synthStreamedAny = true;
+                        totalContentCharsStreamed += cursorSynthText.Length;
+                        yield return ChatStreamEvent.ContentChunk(cursorSynthText);
+                    }
+                }
+
+                break;
+            }
+            default:
+                _logger.LogWarning(
+                    "AI chat {CorrelationId} synthèse : fournisseur {Kind} non géré",
+                    correlationId ?? "-",
+                    modelRef.Kind);
+                break;
             }
 
             yield return ChatStreamEvent.PhaseEvent("llm_forced_synthesis", "completed", sw.ElapsedMilliseconds);
@@ -1489,11 +1752,29 @@ public sealed class SendChatMessageHandler
 
     private static string PrepareVisibleAssistantBody(string rawBody, int minMeaningfulChars) =>
         AssistantVisibleContentFormatter.EnhanceForDisplay(
-            // Substitution systématique des identifiants d'outils internes par leur libellé métier —
-            // AVANT tout le reste, y compris quand aucun outil n'a tourné dans la requête (réponse
-            // depuis l'historique) : c'était le trou de la garde anti-fuite « tout ou rien ».
-            AssistantVisibleContentFormatter.SanitizeInternalToolNames(rawBody),
+            // Substitution des identifiants d'outils puis retrait CJK — AVANT tout le reste, y compris
+            // quand aucun outil n'a tourné (réponse depuis l'historique). Le chinois ne doit jamais
+            // compter comme prose « significative » (sinon la synthèse forcée est sautée).
+            AssistantVisibleContentFormatter.SanitizeVisibleProse(rawBody),
             minMeaningfulChars);
+
+    /// <summary>
+    /// Avance toujours <paramref name="flushedUpTo"/> jusqu'à la borne flushable. N'émet un segment
+    /// que s'il reste de la prose après assainissement (un chunk 100 % CJK est avalé, pas streamé).
+    /// </summary>
+    private static bool TryTakeSanitizedLiveSegment(string snapshot, ref int flushedUpTo, out string segment)
+    {
+        var flushTo = AiLiveContentStreamer.ComputeFlushableLength(snapshot, flushedUpTo);
+        if (flushTo <= flushedUpTo)
+        {
+            segment = string.Empty;
+            return false;
+        }
+
+        segment = AssistantVisibleContentFormatter.SanitizeVisibleProse(snapshot[flushedUpTo..flushTo]);
+        flushedUpTo = flushTo;
+        return !string.IsNullOrWhiteSpace(segment);
+    }
 
     /// <summary>
     /// Filet de DERNIER RECOURS anti-fuite : la substitution par libellés
@@ -1811,6 +2092,35 @@ public sealed class SendChatMessageHandler
                 canonicalByKey[key] = call.Id!;
         }
         return map;
+    }
+
+    private static string CreateCursorScratchDirectory(Guid runId)
+    {
+        var dir = Path.Combine(AppContext.BaseDirectory, "App_Data", "cursor-scratch", runId.ToString("N"));
+        Directory.CreateDirectory(dir);
+        return dir;
+    }
+
+    private static void TryDeleteScratchDirectory(string? directory)
+    {
+        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+            return;
+        try
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+        catch
+        {
+            // Best-effort cleanup; leftover scratch dirs are empty and tenant-free.
+        }
+    }
+
+    private string BuildCursorToolCallbackUrl(Guid runId)
+    {
+        var baseUrl = string.IsNullOrWhiteSpace(_cursorSdkSettings.ToolCallbackBaseUrl)
+            ? "http://127.0.0.1:7000"
+            : _cursorSdkSettings.ToolCallbackBaseUrl.TrimEnd('/');
+        return $"{baseUrl}/internal/ai/cursor-tools/{runId}";
     }
 
     private static void EnsureToolCallIds(List<OllamaToolCall> calls)

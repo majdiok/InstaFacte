@@ -54,6 +54,11 @@ import { firstValueFrom } from 'rxjs';
         <a routerLink="calendar" routerLinkActive="active" role="tab">
           <i class="pi pi-calendar"></i> Calendrier TN
         </a>
+        @if (canViewTreasuryForecast()) {
+          <a routerLink="treasury" routerLinkActive="active" role="tab">
+            <i class="pi pi-wallet"></i> Trésorerie
+          </a>
+        }
       </nav>
 
       @if (audit(); as a) {
@@ -115,6 +120,14 @@ export class ForecastingHubComponent implements OnInit {
 
   canManage(): boolean {
     return this.auth.hasAllPermissions(['forecasting:manage']);
+  }
+
+  /**
+   * L'onglet Trésorerie porte sa propre permission : elle est distincte de `forecasting:view`,
+   * que le rôle Comptable ne possède pas.
+   */
+  canViewTreasuryForecast(): boolean {
+    return this.auth.hasAllPermissions(['treasury_forecast:view']);
   }
 
   ngOnInit(): void {

@@ -32,6 +32,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   glossaire: 'Glossaire',
   'quote-templates': 'Modèles de devis',
   unpaid: 'Factures impayées',
+  'credit-notes': 'Avoirs de vente',
   transfers: 'Transferts',
   create: 'Créer',
   'purchase-orders': 'Bons de commande',

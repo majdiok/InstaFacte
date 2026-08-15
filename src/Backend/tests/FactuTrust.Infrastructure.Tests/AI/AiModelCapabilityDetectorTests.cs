@@ -27,6 +27,15 @@ public sealed class AiModelCapabilityDetectorTests
         Assert.True(AiModelCapabilityDetector.DetectChatCapable(modelRef));
     }
 
+    [Fact]
+    public void DetectVisionAndChat_CursorParsedRef_IsAlwaysTrue()
+    {
+        var parsed = ModelRef.Parse("cursor:composer-2.5");
+        Assert.True(AiModelCapabilityDetector.DetectVisionSupport(parsed));
+        Assert.True(AiModelCapabilityDetector.DetectChatCapable(parsed));
+        Assert.False(AiModelCapabilityDetector.DetectVisionSupport(parsed.ProviderModelId));
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

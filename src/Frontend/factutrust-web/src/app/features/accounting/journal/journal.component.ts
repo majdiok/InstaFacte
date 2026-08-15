@@ -24,6 +24,7 @@ import { AccountingTableActionsComponent } from '../shared/accounting-table-acti
 import { AccountingCorrectionBannerComponent } from '../shared/accounting-correction-banner.component';
 import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
 import { AuthService } from '@core/services/auth.service';
+import { ConfirmationService } from '@core/services/confirmation.service';
 import { canDeleteDraftAccountingEntries, canValidateAccountingEntries } from '@core/utils/accounting-access';
 import { AccountingJournalCatalogService } from '../shared/accounting-journal-catalog.service';
 import { AccountingJournalTab } from '../shared/accounting-journal-tabs.model';
@@ -696,6 +697,7 @@ export class JournalComponent implements OnInit {
   private readonly auth = inject(AuthService);
   private readonly journalCatalog = inject(AccountingJournalCatalogService);
   private readonly route = inject(ActivatedRoute);
+  private readonly confirmationService = inject(ConfirmationService);
 
   readonly canValidate = computed(() => canValidateAccountingEntries(this.auth));
   readonly canDelete = computed(() => canDeleteDraftAccountingEntries(this.auth));
@@ -896,22 +898,31 @@ export class JournalComponent implements OnInit {
   /** Supprime une écriture en brouillard, puis recharge le journal. */
   deleteEntry(entryId: string, journal: string, piece: number): void {
     if (!this.canDelete()) return;
-    if (!window.confirm(`Supprimer l'écriture ${journal} n° ${piece} ? Cette action est irréversible.`)) return;
-    if (this.deletingId()) return;
-    this.deletingId.set(entryId);
-    this.api.deleteDraftJournalEntry(entryId).subscribe({
-      next: res => {
-        this.deletingId.set(null);
-        if (!res.success) {
-          this.error.set(res.error ?? 'La suppression a échoué.');
-          return;
-        }
-        this.load();
-      },
-      error: err => {
-        this.deletingId.set(null);
-        this.error.set('Erreur réseau lors de la suppression.');
-        this.monitoring.logError('journal.delete', err);
+    this.confirmationService.confirm({
+      message: `Supprimer l'écriture ${journal} n° ${piece} ? Cette action est irréversible.`,
+      header: 'Confirmation de suppression',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Supprimer',
+      rejectLabel: 'Annuler',
+      acceptButtonStyleClass: 'btn-danger',
+      accept: () => {
+        if (this.deletingId()) return;
+        this.deletingId.set(entryId);
+        this.api.deleteDraftJournalEntry(entryId).subscribe({
+          next: res => {
+            this.deletingId.set(null);
+            if (!res.success) {
+              this.error.set(res.error ?? 'La suppression a échoué.');
+              return;
+            }
+            this.load();
+          },
+          error: err => {
+            this.deletingId.set(null);
+            this.error.set('Erreur réseau lors de la suppression.');
+            this.monitoring.logError('journal.delete', err);
+          }
+        });
       }
     });
   }
@@ -989,18 +1000,27 @@ export class JournalComponent implements OnInit {
   }
 
   deleteAttachment(a: JournalEntryAttachmentDto): void {
-    if (!window.confirm(`Supprimer la pièce « ${a.fileName} » ?`)) return;
-    this.attachBusyId.set(a.id);
-    this.attachError.set(null);
-    this.api.deleteEntryAttachment(a.journalEntryId, a.id).subscribe({
-      next: res => {
-        this.attachBusyId.set(null);
-        if (res.success) this.reloadAttachments(a.journalEntryId);
-        else this.attachError.set(res.error ?? 'Erreur lors de la suppression.');
-      },
-      error: () => {
-        this.attachBusyId.set(null);
-        this.attachError.set('Erreur réseau lors de la suppression.');
+    this.confirmationService.confirm({
+      message: `Supprimer la pièce « ${a.fileName} » ?`,
+      header: 'Confirmation de suppression',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Supprimer',
+      rejectLabel: 'Annuler',
+      acceptButtonStyleClass: 'btn-danger',
+      accept: () => {
+        this.attachBusyId.set(a.id);
+        this.attachError.set(null);
+        this.api.deleteEntryAttachment(a.journalEntryId, a.id).subscribe({
+          next: res => {
+            this.attachBusyId.set(null);
+            if (res.success) this.reloadAttachments(a.journalEntryId);
+            else this.attachError.set(res.error ?? 'Erreur lors de la suppression.');
+          },
+          error: () => {
+            this.attachBusyId.set(null);
+            this.attachError.set('Erreur réseau lors de la suppression.');
+          }
+        });
       }
     });
   }

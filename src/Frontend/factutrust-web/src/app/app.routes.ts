@@ -157,6 +157,10 @@ export const routes: Routes = [
         loadChildren: () => import('./features/forecasting/forecasting.routes').then(m => m.FORECASTING_ROUTES)
       },
       {
+        path: 'treasury',
+        loadChildren: () => import('./features/treasury/treasury.routes').then(m => m.TREASURY_ROUTES)
+      },
+      {
         path: 'exchanges',
         loadChildren: () =>
           import('./features/exchanges/exchanges.routes').then(m => m.EXCHANGES_ROUTES)

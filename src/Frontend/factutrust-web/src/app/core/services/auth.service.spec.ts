@@ -433,4 +433,41 @@ describe('AuthService', () => {
       expect(navigateSpy).not.toHaveBeenCalled();
     });
   });
+
+  describe('password reset', () => {
+    beforeEach(() => {
+      localStorage.clear();
+      sessionStorage.clear();
+      configureAuthTestBed();
+      httpMock = TestBed.inject(HttpTestingController);
+    });
+
+    it('forgotPassword posts email to /auth/forgot-password', () => {
+      const service = TestBed.inject(AuthService);
+      service.forgotPassword('user@example.com').subscribe();
+
+      const req = httpMock.expectOne(
+        r => r.url === `${environment.apiUrl}/auth/forgot-password` && r.method === 'POST'
+      );
+      expect(req.request.body).toEqual({ email: 'user@example.com' });
+      req.flush({ success: true, data: null, message: 'ok', errors: [] });
+    });
+
+    it('resetPassword posts dto to /auth/reset-password', () => {
+      const service = TestBed.inject(AuthService);
+      const dto = {
+        email: 'user@example.com',
+        token: 'tok',
+        newPassword: 'SecurePass123!',
+        confirmNewPassword: 'SecurePass123!',
+      };
+      service.resetPassword(dto).subscribe();
+
+      const req = httpMock.expectOne(
+        r => r.url === `${environment.apiUrl}/auth/reset-password` && r.method === 'POST'
+      );
+      expect(req.request.body).toEqual(dto);
+      req.flush({ success: true, data: null, message: 'ok', errors: [] });
+    });
+  });
 });

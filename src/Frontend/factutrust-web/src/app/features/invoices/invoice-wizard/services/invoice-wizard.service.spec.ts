@@ -736,6 +736,100 @@ describe('InvoiceWizardService initForCreditNote', () => {
     expect(svc.metadata().linkedInvoiceId).toBe(invoiceId);
   });
 
+  it('copies FODEC, allocated discount, empty productId and zero quantity from the source invoice', () => {
+    const svc = TestBed.inject(InvoiceWizardService);
+    setupMinimalValidWizardState(svc);
+
+    const invoiceId = '550e8400-e29b-41d4-a716-446655440000';
+    let completed = false;
+    svc.initForCreditNote(invoiceId).subscribe({
+      next: () => { completed = true; }
+    });
+
+    const invoiceReq = httpMock.expectOne(`${environment.apiUrl}/invoices/${invoiceId}`);
+    invoiceReq.flush({
+      success: true,
+      data: {
+        id: invoiceId,
+        clientId: VALID_CLIENT_ID,
+        warehouseId: '550e8400-e29b-41d4-a716-446655440099',
+        totalAmount: 952,
+        fiscalStampAmount: 1,
+        lines: [
+          {
+            id: 'line-1',
+            lineNumber: 1,
+            productId: '00000000-0000-0000-0000-000000000000',
+            productCode: 'CUSTOM',
+            productName: 'Prestation remisée',
+            productDescription: null,
+            quantity: 1,
+            unit: 'Unité',
+            unitPrice: 1000,
+            vatRatePercent: 19,
+            discountPercent: 0,
+            discountAmount: 0,
+            allocatedGlobalDiscount: 200,
+            subTotal: 800,
+            isFodecApplicable: true,
+            vatAmount: 152,
+            total: 952
+          },
+          {
+            id: 'line-2',
+            lineNumber: 2,
+            productId: VALID_PRODUCT_ID,
+            productCode: 'ART',
+            productName: 'Ligne quantité nulle',
+            productDescription: null,
+            quantity: 0,
+            unit: 'Unité',
+            unitPrice: 10,
+            vatRatePercent: 19,
+            discountPercent: null,
+            discountAmount: 0,
+            subTotal: 0,
+            isFodecApplicable: false,
+            vatAmount: 0,
+            total: 0
+          }
+        ]
+      }
+    });
+
+    const clientReq = httpMock.expectOne(`${environment.apiUrl}/clients/${VALID_CLIENT_ID}`);
+    clientReq.flush({
+      success: true,
+      data: {
+        id: VALID_CLIENT_ID,
+        name: 'Test Client',
+        type: 'Individual',
+        email: 'client@test.com',
+        phone: null,
+        nif: null,
+        address: {
+          street: '2 rue Client',
+          streetLine2: null,
+          postalCode: null,
+          city: 'Tunis',
+          governorate: 'Tunis'
+        }
+      }
+    });
+
+    expect(completed).toBeTrue();
+    const [discounted, zeroQty] = svc.lines();
+    expect(discounted.productId).toBeNull();
+    expect(discounted.isFodecApplicable).toBeTrue();
+    expect(discounted.priceOverridden).toBeTrue();
+    expect(discounted.discountType).toBe('PERCENT');
+    expect(discounted.discountValue).toBeCloseTo(20, 5);
+    expect(discounted.totalHT).toBeCloseTo(800, 3);
+    expect(zeroQty.quantity).toBe(0);
+    expect(svc.metadata().warehouseId).toBe('550e8400-e29b-41d4-a716-446655440099');
+    expect(svc.wizardState().linkedInvoiceCommercialTtc).toBe(951);
+  });
+
   it('propagates HTTP error from initForCreditNote', (done) => {
     const svc = TestBed.inject(InvoiceWizardService);
     const invoiceId = '550e8400-e29b-41d4-a716-446655440000';

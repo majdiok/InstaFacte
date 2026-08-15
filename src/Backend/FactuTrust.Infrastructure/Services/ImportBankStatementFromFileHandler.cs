@@ -19,11 +19,13 @@ public sealed class ImportBankStatementFromFileHandler
 {
     private readonly IOllamaClient _ollamaClient;
     private readonly IOpenAiChatCompletionsClient _openAiClient;
+    private readonly ICursorAgentClient? _cursorAgentClient;
     private readonly IOllamaModelReadinessChecker _readinessChecker;
     private readonly IPlatformAiSettingsService _platformAiSettings;
     private readonly IOllamaInferenceProfileResolver _inferenceProfileResolver;
     private readonly ILogger<ImportBankStatementFromFileHandler> _logger;
     private readonly OllamaSettings _ollamaSettings;
+    private readonly CursorSdkSettings _cursorSdkSettings;
 
     private const int MaxTextChars = 60_000;
     private const int MaxOutputTokens = 8192;
@@ -71,15 +73,19 @@ Schéma :
         IPlatformAiSettingsService platformAiSettings,
         IOllamaInferenceProfileResolver inferenceProfileResolver,
         ILogger<ImportBankStatementFromFileHandler> logger,
-        IOptions<OllamaSettings> ollamaSettings)
+        IOptions<OllamaSettings> ollamaSettings,
+        ICursorAgentClient? cursorAgentClient = null,
+        IOptions<CursorSdkSettings>? cursorSdkSettings = null)
     {
         _ollamaClient = ollamaClient;
         _openAiClient = openAiClient;
+        _cursorAgentClient = cursorAgentClient;
         _readinessChecker = readinessChecker;
         _platformAiSettings = platformAiSettings;
         _inferenceProfileResolver = inferenceProfileResolver;
         _logger = logger;
         _ollamaSettings = ollamaSettings.Value;
+        _cursorSdkSettings = cursorSdkSettings?.Value ?? new CursorSdkSettings();
     }
 
     public async Task<Result<LlmBankStatementExtraction>> ExtractAsync(
@@ -94,22 +100,40 @@ Schéma :
             : extraction.Text;
 
         var modelRef = await ResolveModelRefAsync(cancellationToken);
-        if (modelRef.Kind == LlmProviderKind.Ollama)
+        switch (modelRef.Kind)
         {
-            if (!await _ollamaClient.IsAvailableAsync(cancellationToken))
+            case LlmProviderKind.Ollama:
+                if (!await _ollamaClient.IsAvailableAsync(cancellationToken))
+                    return Result.Failure<LlmBankStatementExtraction>(Error.Validation("BankStatementImport",
+                        "Le moteur IA InstaFact est indisponible pour lire ce relevé scanné."));
+                var readiness = await _readinessChecker.CheckAsync(modelRef.ProviderModelId!, cancellationToken);
+                if (!readiness.IsReady)
+                    return Result.Failure<LlmBankStatementExtraction>(Error.Validation("BankStatementImport",
+                        readiness.UserMessage ?? "Modèle IA non prêt."));
+                break;
+            case LlmProviderKind.OpenRouter:
+            {
+                var credentials = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
+                if (string.IsNullOrEmpty(credentials.ApiKey))
+                    return Result.Failure<LlmBankStatementExtraction>(Error.Validation("BankStatementImport",
+                        "Clé OpenRouter manquante. Configurez-la dans le back-office plateforme > Configuration IA (OpenRouter)."));
+                break;
+            }
+            case LlmProviderKind.Cursor:
+                if (!_cursorSdkSettings.Enabled)
+                    return Result.Failure<LlmBankStatementExtraction>(Error.Validation("BankStatementImport",
+                        "Cursor SDK est désactivé sur le serveur (CursorSdk:Enabled=false)."));
+                var cursorCreds = await _platformAiSettings.GetCursorCredentialsAsync(cancellationToken);
+                if (string.IsNullOrEmpty(cursorCreds.ApiKey))
+                    return Result.Failure<LlmBankStatementExtraction>(Error.Validation("BankStatementImport",
+                        "Clé Cursor manquante. Configurez-la dans le back-office plateforme > Configuration IA (Cursor)."));
+                if (_cursorAgentClient is null || !await _cursorAgentClient.IsAvailableAsync(cancellationToken))
+                    return Result.Failure<LlmBankStatementExtraction>(Error.Validation("BankStatementImport",
+                        "Le pont Cursor SDK est indisponible. Vérifiez Node 22.13+ et `npm ci` dans CursorSdkBridge."));
+                break;
+            default:
                 return Result.Failure<LlmBankStatementExtraction>(Error.Validation("BankStatementImport",
-                    "Le moteur IA InstaFact est indisponible pour lire ce relevé scanné."));
-            var readiness = await _readinessChecker.CheckAsync(modelRef.ProviderModelId!, cancellationToken);
-            if (!readiness.IsReady)
-                return Result.Failure<LlmBankStatementExtraction>(Error.Validation("BankStatementImport",
-                    readiness.UserMessage ?? "Modèle IA non prêt."));
-        }
-        else
-        {
-            var credentials = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
-            if (string.IsNullOrEmpty(credentials.ApiKey))
-                return Result.Failure<LlmBankStatementExtraction>(Error.Validation("BankStatementImport",
-                    "Clé OpenRouter manquante. Configurez-la dans le back-office plateforme > Configuration IA (OpenRouter)."));
+                    $"Fournisseur LLM non géré : {modelRef.Kind}."));
         }
 
         var images = extraction.Pages
@@ -156,7 +180,9 @@ Analyse ce relevé bancaire tunisien et extrais toutes les opérations.
 """;
 
         var sb = new StringBuilder();
-        if (modelRef.Kind == LlmProviderKind.Ollama)
+        switch (modelRef.Kind)
+        {
+        case LlmProviderKind.Ollama:
         {
             var messages = new List<OllamaChatMessage>
             {
@@ -183,6 +209,72 @@ Analyse ce relevé bancaire tunisien et extrais toutes les opérations.
                 if (!string.IsNullOrEmpty(chunk.Message?.Content))
                     sb.Append(chunk.Message.Content);
             }
+
+            break;
+        }
+        case LlmProviderKind.OpenRouter:
+        {
+            var openRouter = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
+            var messages = new List<OpenAiChatMessagePayload>
+            {
+                new() { Role = "system", Content = SystemPrompt },
+                new() { Role = "user", Content = userPrompt }
+            };
+            await foreach (var chunk in _openAiClient.StreamChatAsOllamaCompatibleAsync(
+                               openRouter.BaseUrl,
+                               openRouter.ApiKey!,
+                               modelRef.ProviderModelId,
+                               messages,
+                               Array.Empty<OllamaToolDefinition>(),
+                               0d,
+                               MaxOutputTokens,
+                               cancellationToken))
+            {
+                if (!string.IsNullOrEmpty(chunk.Message?.Content))
+                    sb.Append(chunk.Message.Content);
+            }
+
+            break;
+        }
+        case LlmProviderKind.Cursor:
+        {
+            var cursorCreds = await _platformAiSettings.GetCursorCredentialsAsync(cancellationToken);
+            if (_cursorAgentClient is null || string.IsNullOrEmpty(cursorCreds.ApiKey))
+                break;
+
+            var scratch = Path.Combine(AppContext.BaseDirectory, "App_Data", "cursor-scratch", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(scratch);
+            try
+            {
+                var extracted = await _cursorAgentClient.ExtractAsync(
+                    new CursorExtractRequest(
+                        cursorCreds.ApiKey!,
+                        modelRef,
+                        SystemPrompt,
+                        userPrompt,
+                        CursorToolSpecMapper.FromBase64List(images),
+                        scratch),
+                    cancellationToken);
+                if (!string.IsNullOrEmpty(extracted))
+                    sb.Append(extracted);
+            }
+            finally
+            {
+                try
+                {
+                    if (Directory.Exists(scratch))
+                        Directory.Delete(scratch, recursive: true);
+                }
+                catch
+                {
+                    // best-effort
+                }
+            }
+
+            break;
+        }
+        default:
+            return string.Empty;
         }
 
         return sb.ToString();

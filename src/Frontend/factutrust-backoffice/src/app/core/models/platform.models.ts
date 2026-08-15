@@ -972,6 +972,21 @@ export interface UpdatePlatformOpenRouterRequest {
   apiKey?: string | null;
 }
 
+/** Credentials Cursor SDK partagés (masqués — jamais de clé en clair). */
+export interface PlatformCursorSettingsDto {
+  isEnabled: boolean;
+  displayName: string | null;
+  isApiKeyConfigured: boolean;
+  apiKeyLast4: string | null;
+}
+
+export interface UpdatePlatformCursorRequest {
+  isEnabled: boolean;
+  displayName?: string | null;
+  /** Null/vide = conserver la clé existante. */
+  apiKey?: string | null;
+}
+
 /** Configuration IA plateforme : modèle configuré + données pour en choisir un. */
 export interface PlatformAiSettingsDto {
   configuredModelRef: string | null;
@@ -983,6 +998,7 @@ export interface PlatformAiSettingsDto {
   availableModels: AiModelInfoDto[];
   recommendation: AiModelRecommendationDto | null;
   openRouter: PlatformOpenRouterSettingsDto;
+  cursor: PlatformCursorSettingsDto;
 }
 
 export interface UpdatePlatformAiSettingsRequest {
@@ -991,6 +1007,7 @@ export interface UpdatePlatformAiSettingsRequest {
   studioAiModelRef?: string | null;
   inferenceDevice?: OllamaInferenceDevice | null;
   openRouter?: UpdatePlatformOpenRouterRequest | null;
+  cursor?: UpdatePlatformCursorRequest | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

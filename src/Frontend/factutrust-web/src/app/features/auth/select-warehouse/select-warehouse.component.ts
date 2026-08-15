@@ -4,6 +4,8 @@ import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { LogoComponent } from '@shared/components/logo/logo.component';
+import { AuthShellComponent } from '../auth-shell/auth-shell.component';
+import { SELECT_WAREHOUSE_AUTH_SHELL_CONFIG } from '../auth-shell/auth-shell.config';
 import { StockService, Warehouse } from '@core/services/stock.service';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
 
@@ -15,12 +17,13 @@ import { WarehouseContextService } from '@core/services/warehouse-context.servic
     RouterModule,
     ButtonModule,
     MessageModule,
-    LogoComponent
+    AuthShellComponent
   ],
   templateUrl: './select-warehouse.component.html',
   styleUrl: './select-warehouse.component.scss'
 })
 export class SelectWarehouseComponent implements OnInit {
+  readonly shellConfig = SELECT_WAREHOUSE_AUTH_SHELL_CONFIG;
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private stockService = inject(StockService);

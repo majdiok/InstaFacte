@@ -16,7 +16,8 @@ public sealed record GetInvoicesQuery(
     Guid? ClientId = null,
     int Page = 1,
     int PageSize = 20,
-    bool UnpaidOnly = false) : IRequest<PagedResult<InvoiceListDto>>;
+    bool UnpaidOnly = false,
+    InvoiceType? Type = null) : IRequest<PagedResult<InvoiceListDto>>;
 
 /// <summary>
 /// Handler for GetInvoicesQuery.
@@ -43,6 +44,7 @@ public sealed class GetInvoicesQueryHandler : IRequestHandler<GetInvoicesQuery, 
             request.Page,
             request.PageSize,
             request.UnpaidOnly,
+            request.Type,
             cancellationToken);
 
         var totalPaidByInvoice = await _paymentRepository.GetTotalPaidByInvoiceIdsAsync(

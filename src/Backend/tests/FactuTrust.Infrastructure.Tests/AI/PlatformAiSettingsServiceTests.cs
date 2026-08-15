@@ -268,4 +268,91 @@ public sealed class PlatformAiSettingsServiceTests
         Assert.False(ok);
         Assert.Contains("clé API", error, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public async Task SetCursorConfigAsync_EncryptsAndMasksKey()
+    {
+        var options = new DbContextOptionsBuilder<MasterDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var db = new MasterDbContext(options);
+        var service = CreateService(db);
+        var actorId = Guid.NewGuid();
+
+        var (ok, error) = await service.SetCursorConfigAsync(
+            isEnabled: true,
+            displayName: "Cursor Prod",
+            apiKey: "cursor_abcdefghij",
+            actorId);
+
+        Assert.True(ok);
+        Assert.Null(error);
+
+        var masked = await service.GetCursorSettingsAsync();
+        Assert.True(masked.IsEnabled);
+        Assert.Equal("Cursor Prod", masked.DisplayName);
+        Assert.True(masked.IsApiKeyConfigured);
+        Assert.Equal("ghij", masked.ApiKeyLast4);
+        Assert.DoesNotContain("cursor_", masked.ApiKeyLast4 ?? "");
+
+        var creds = await service.GetCursorCredentialsAsync();
+        Assert.True(creds.IsEnabled);
+        Assert.Equal("cursor_abcdefghij", creds.ApiKey);
+
+        var stored = await db.PlatformAiSettings.AsNoTracking().SingleAsync();
+        Assert.NotEqual("cursor_abcdefghij", stored.CursorEncryptedApiKey);
+    }
+
+    [Fact]
+    public async Task SetCursorConfigAsync_EmptyApiKey_KeepsExistingSecret()
+    {
+        var options = new DbContextOptionsBuilder<MasterDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var db = new MasterDbContext(options);
+        var service = CreateService(db);
+        var actorId = Guid.NewGuid();
+
+        await service.SetCursorConfigAsync(true, "Cursor", "cursor_secret-key12", actorId);
+        var before = await service.GetCursorSettingsAsync();
+
+        var (ok, error) = await service.SetCursorConfigAsync(
+            isEnabled: true,
+            displayName: "Cursor Updated",
+            apiKey: null,
+            actorId);
+
+        Assert.True(ok);
+        Assert.Null(error);
+
+        var after = await service.GetCursorSettingsAsync();
+        Assert.Equal("Cursor Updated", after.DisplayName);
+        Assert.Equal(before.ApiKeyLast4, after.ApiKeyLast4);
+        Assert.True(after.IsApiKeyConfigured);
+
+        var creds = await service.GetCursorCredentialsAsync();
+        Assert.Equal("cursor_secret-key12", creds.ApiKey);
+    }
+
+    [Fact]
+    public async Task SetCursorConfigAsync_EnableWithoutKey_Fails()
+    {
+        var options = new DbContextOptionsBuilder<MasterDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var db = new MasterDbContext(options);
+        var service = CreateService(db);
+
+        var (ok, error) = await service.SetCursorConfigAsync(
+            isEnabled: true,
+            displayName: "Cursor",
+            apiKey: null,
+            Guid.NewGuid());
+
+        Assert.False(ok);
+        Assert.Contains("clé API", error, StringComparison.OrdinalIgnoreCase);
+    }
 }

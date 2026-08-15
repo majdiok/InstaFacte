@@ -72,6 +72,15 @@ internal sealed class HangfireRecurringJobsRegistrationService : BackgroundServi
                 job => job.ExecuteAsync(CancellationToken.None),
                 Cron.Daily(6),
                 UtcOptions)),
+        // 06:30 UTC : évite la collision avec fiscal-reminders (06:00) et accounting-audit (07:00).
+        // Le job sort immédiatement tant que Features:AccountingFirms:FirmAgentDailyBriefingEnabled est faux.
+        new(
+            "firm-mission-briefing",
+            () => RecurringJob.AddOrUpdate<FirmMissionBriefingJob>(
+                "firm-mission-briefing",
+                job => job.ExecuteAsync(CancellationToken.None),
+                "30 6 * * *",
+                UtcOptions)),
         new(
             "tenant-template-maintenance",
             () => RecurringJob.AddOrUpdate<TenantTemplateMaintenanceJob>(
@@ -85,6 +94,25 @@ internal sealed class HangfireRecurringJobsRegistrationService : BackgroundServi
                 "accounting-audit-schedules",
                 job => job.ExecuteAsync(CancellationToken.None),
                 Cron.Daily(7),
+                UtcOptions)),
+        new(
+            // 8 h UTC : premier créneau libre après accounting-audit-schedules (7 h). Le job sort
+            // immédiatement si TreasuryForecast:Enabled est faux.
+            "treasury-forecast-recompute",
+            () => RecurringJob.AddOrUpdate<FactuTrust.Infrastructure.Services.Background.CashFlowRecomputationJob>(
+                "treasury-forecast-recompute",
+                job => job.ExecuteAsync(CancellationToken.None),
+                Cron.Daily(8),
+                UtcOptions)),
+        new(
+            // 9 h UTC : après la trésorerie prévisionnelle (8 h). Le balayage ouvre une connexion
+            // par dossier : il ne doit pas concurrencer les autres travaux de fond. Sort
+            // immédiatement si FirmRevisionEnabled ou FirmRevisionSweepEnabled est faux.
+            "firm-revision-sweep",
+            () => RecurringJob.AddOrUpdate<FactuTrust.Infrastructure.Services.Background.FirmRevisionSweepJob>(
+                "firm-revision-sweep",
+                job => job.ExecuteAsync(CancellationToken.None),
+                Cron.Daily(9),
                 UtcOptions)),
     };
 

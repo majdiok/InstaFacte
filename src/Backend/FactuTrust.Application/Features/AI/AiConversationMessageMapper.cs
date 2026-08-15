@@ -45,11 +45,54 @@ public static class AiConversationMessageMapper
                 Role = "tool",
                 Content = TruncateForLlm(msg.Content, maxToolResultChars)
             },
-            MessageRole.Assistant => new OllamaChatMessage { Role = "assistant", Content = msg.Content },
+            MessageRole.Assistant => new OllamaChatMessage { Role = "assistant", Content = SanitizeAssistantHistory(msg.Content) },
             MessageRole.User => new OllamaChatMessage { Role = "user", Content = msg.Content },
             MessageRole.System => new OllamaChatMessage { Role = "system", Content = msg.Content },
             _ => new OllamaChatMessage { Role = "user", Content = msg.Content }
         };
+    }
+
+    /// <summary>
+    /// Le SDK Cursor n'a pas de rôle system : le prompt FactuTrust et l'historique sont
+    /// aplatis dans un unique message utilisateur (même fenêtre que Ollama/OpenAI).
+    /// </summary>
+    public static string BuildCursorUserMessage(
+        string systemPrompt,
+        Conversation conversation,
+        int maxMessages = DefaultMaxContextMessages,
+        int maxToolResultChars = DefaultMaxToolResultChars)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("[SYSTEM]");
+        sb.AppendLine(systemPrompt ?? string.Empty);
+        sb.AppendLine();
+        sb.AppendLine("[CONVERSATION]");
+
+        var recentMessages = conversation.Messages
+            .OrderBy(m => m.SortOrder)
+            .TakeLast(Math.Max(1, maxMessages));
+
+        foreach (var msg in recentMessages)
+        {
+            var role = msg.Role switch
+            {
+                MessageRole.Assistant => "assistant",
+                MessageRole.Tool => "tool",
+                MessageRole.System => "system",
+                _ => "user"
+            };
+            var content = msg.Role == MessageRole.Tool
+                ? TruncateForLlm(msg.Content, maxToolResultChars)
+                : msg.Role == MessageRole.Assistant
+                    ? SanitizeAssistantHistory(msg.Content)
+                    : msg.Content;
+            if (msg.Role == MessageRole.Tool && !string.IsNullOrEmpty(msg.ToolName))
+                sb.AppendLine($"{role}({msg.ToolName}): {content}");
+            else
+                sb.AppendLine($"{role}: {content}");
+        }
+
+        return sb.ToString();
     }
 
     public static List<OpenAiChatMessagePayload> BuildOpenAiMessages(string systemPrompt, Conversation conversation, int maxMessages = DefaultMaxContextMessages, int maxToolResultChars = DefaultMaxToolResultChars)
@@ -88,7 +131,7 @@ public static class AiConversationMessageMapper
                 ToolCallId = msg.ToolCallId,
                 Content = TruncateForLlm(msg.Content, maxToolResultChars)
             },
-            MessageRole.Assistant => new OpenAiChatMessagePayload { Role = "assistant", Content = msg.Content },
+            MessageRole.Assistant => new OpenAiChatMessagePayload { Role = "assistant", Content = SanitizeAssistantHistory(msg.Content) },
             MessageRole.User => new OpenAiChatMessagePayload { Role = "user", Content = msg.Content },
             MessageRole.System => new OpenAiChatMessagePayload { Role = "system", Content = msg.Content },
             _ => new OpenAiChatMessagePayload { Role = "user", Content = msg.Content }
@@ -139,4 +182,11 @@ public static class AiConversationMessageMapper
             return content ?? string.Empty;
         return content[..limit] + "\n... [résultat tronqué]";
     }
+
+    /// <summary>
+    /// Retire le CJK des messages assistant rejoués vers le LLM (conversations déjà persistées
+    /// avant le filet). Ne touche pas aux messages user/tool ni aux tours avec tool_calls.
+    /// </summary>
+    private static string SanitizeAssistantHistory(string? content) =>
+        AssistantVisibleContentFormatter.StripDisallowedScripts(content);
 }

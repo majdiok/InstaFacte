@@ -28,6 +28,14 @@ export const PERMISSIONS = {
     read: 'payments:read',
     update: 'payments:update'
   },
+  /**
+   * Trésorerie prévisionnelle par IA. Volontairement distinct de `forecasting:*` (Prévisions IA
+   * ventes/stock) : le rôle Comptable possède celles-ci et pas celles-là.
+   */
+  treasuryForecast: {
+    view: 'treasury_forecast:view',
+    manage: 'treasury_forecast:manage'
+  },
   users: {
     create: 'users:create',
     read: 'users:read',
@@ -170,6 +178,11 @@ export const PERMISSIONS = {
     manage: 'firm:manage',
     usersManage: 'firm:users:manage',
     assignmentsManage: 'firm:assignments:manage'
+  },
+  /** Agent « Chef de mission » — distinct de `ai:chat`, qui reste réservé à l'assistant société. */
+  firmAi: {
+    chat: 'firm:ai:chat',
+    remind: 'firm:ai:remind'
   },
   honorairesInvoices: {
     create: 'honoraires.invoices:create',

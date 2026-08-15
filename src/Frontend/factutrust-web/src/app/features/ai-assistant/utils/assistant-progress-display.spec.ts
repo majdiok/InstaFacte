@@ -1,4 +1,4 @@
-import { dedupeToolSources, getAiToolDisplayLabel } from './assistant-progress-display';
+import { dedupeToolSources, getAiToolDisplayLabel, getAssistantStepMeta } from './assistant-progress-display';
 
 describe('assistant-progress-display', () => {
   describe('getAiToolDisplayLabel', () => {
@@ -7,6 +7,14 @@ describe('assistant-progress-display', () => {
       expect(getAiToolDisplayLabel('get_tunisian_commercial_calendar')).toBe('Calendrier commercial tunisien');
       expect(getAiToolDisplayLabel('get_replenishment_recommendations')).toBe('Recommandations de réapprovisionnement');
       expect(getAiToolDisplayLabel('analyze_seasonal_impact')).toBe("Analyse de l'impact saisonnier");
+    });
+
+    it('labels firm chef-de-mission tools in French', () => {
+      expect(getAiToolDisplayLabel('get_firm_portfolio_overview')).toBe("Vue d'ensemble du portefeuille");
+      expect(getAiToolDisplayLabel('get_firm_fiscal_deadlines')).toBe('Échéancier fiscal consolidé');
+      expect(getAiToolDisplayLabel('get_firm_dossier_health')).toBe('Santé des dossiers');
+      expect(getAiToolDisplayLabel('get_firm_collaborator_workload')).toBe('Répartition de la charge');
+      expect(getAiToolDisplayLabel('send_fiscal_deadline_reminder')).toBe("Rappel d'échéance fiscale");
     });
 
     it('never returns raw snake_case for unknown tools (prettified fallback)', () => {
@@ -36,6 +44,19 @@ describe('assistant-progress-display', () => {
     it('handles null/empty input', () => {
       expect(dedupeToolSources(null)).toEqual([]);
       expect(dedupeToolSources([])).toEqual([]);
+    });
+  });
+
+  describe('getAssistantStepMeta provider_availability', () => {
+    it('labels cursor models in French', () => {
+      const meta = getAssistantStepMeta({
+        key: 'provider_availability',
+        code: 'provider_availability',
+        label: "Initialisation de l'assistant",
+        status: 'completed',
+        detail: 'cursor:composer-2.5'
+      });
+      expect(meta).toContain('Modèle Cursor prêt');
     });
   });
 });

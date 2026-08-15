@@ -1846,6 +1846,35 @@ body .modal.show .modal-dialog {
   }
 }
 
+// Dialogue "Créer un avoir" — largeur et overflow pour autocomplete
+body .refund-invoice-id-dialog-window .modal-dialog {
+  max-width: 520px;
+  width: calc(100% - 2rem);
+}
+
+body .refund-invoice-id-dialog .modal-content {
+  overflow: visible;
+}
+
+body .refund-invoice-autocomplete-panel.p-autocomplete-panel {
+  z-index: 1300 !important;
+  min-width: min(480px, calc(100vw - 2rem));
+  max-width: min(520px, calc(100vw - 2rem));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft-md);
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-background-elevated);
+}
+
+body .refund-invoice-autocomplete-panel .p-autocomplete-option {
+  padding: var(--spacing-2) var(--spacing-3);
+}
+
+body .refund-invoice-autocomplete-panel .p-autocomplete-option:hover,
+body .refund-invoice-autocomplete-panel .p-autocomplete-option.p-focus {
+  background: var(--color-primary-50);
+}
+
 // --------------------------------------------
 // InstaFact app shell — overrides thème Pluto (#content / .topbar)
 // style.css Pluto suppose une sidebar en position fixed et compense avec un

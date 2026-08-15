@@ -18,11 +18,15 @@ public static class FirmDelegatedAiScopePolicy
         if (!isFirmDelegated)
             return requested;
 
+        // FirmMission est refusé explicitement : sans ce cas, l'arme par défaut ci-dessous le
+        // réécrirait silencieusement en Accounting. L'agent Chef de mission n'a de sens qu'en mode
+        // cabinet natif ; en contexte délégué l'utilisateur agit AU NOM d'un dossier précis.
         if (requested is AssistantAgentScope.Sales
             or AssistantAgentScope.Purchases
             or AssistantAgentScope.Stock
             or AssistantAgentScope.Treasury
-            or AssistantAgentScope.Crm)
+            or AssistantAgentScope.Crm
+            or AssistantAgentScope.FirmMission)
         {
             throw new UnauthorizedAccessException(DeniedScopeMessage);
         }

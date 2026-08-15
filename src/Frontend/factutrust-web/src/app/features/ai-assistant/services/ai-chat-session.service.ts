@@ -203,8 +203,8 @@ export class AiChatSessionService {
       return;
     }
     this.initDone = true;
-    this.chatService.checkHealth().subscribe({
-      next: res => this.aiAvailable.set(res.available),
+    this.chatService.getConfiguredStatus().subscribe({
+      next: res => this.aiAvailable.set(res.isFullyConfigured),
       error: () => this.aiAvailable.set(false)
     });
     this.syncConversationListFromApi();
@@ -241,7 +241,7 @@ export class AiChatSessionService {
       return;
     }
     this.hydrationAttempted = true;
-    this.chatService.getConversation(id).subscribe({
+    this.chatService.getConversation(id, this.isFirmSurface()).subscribe({
       next: detail => {
         this.hydrateFromConversationDetail(detail);
         this.shouldPersistActiveConversationId(detail.id);
@@ -259,9 +259,22 @@ export class AiChatSessionService {
     }
   }
 
+  /**
+   * Vrai quand la session pilote l'agent cabinet : la surface HTTP est alors `/firm/ai`, permissionnée
+   * séparément. Dérivé du scope plutôt que stocké dans un signal distinct, pour qu'il ne puisse pas
+   * diverger du scope actif.
+   */
+  private isFirmSurface(): boolean {
+    return this.agentScope() === AssistantAgentScope.FirmMission;
+  }
+
+  private apiBasePath(): string {
+    return this.isFirmSurface() ? '/firm/ai' : '/ai';
+  }
+
   syncConversationListFromApi(): void {
     const requestedScope = this.agentScope();
-    this.chatService.getConversations(requestedScope).subscribe({
+    this.chatService.getConversations(requestedScope, this.isFirmSurface()).subscribe({
       next: convs => {
         // Garde anti-course : n'applique la liste que si le scope n'a pas changé entre-temps.
         if (this.agentScope() === requestedScope) {
@@ -301,7 +314,7 @@ export class AiChatSessionService {
   }
 
   loadConversation(id: string): void {
-    this.chatService.getConversation(id).subscribe({
+    this.chatService.getConversation(id, this.isFirmSurface()).subscribe({
       next: detail => {
         this.hydrateFromConversationDetail(detail);
         this.shouldPersistActiveConversationId(detail.id);
@@ -311,7 +324,7 @@ export class AiChatSessionService {
   }
 
   deleteConversation(id: string): void {
-    this.chatService.deleteConversation(id).subscribe({
+    this.chatService.deleteConversation(id, this.isFirmSurface()).subscribe({
       next: () => {
         this.conversations.update(convs => convs.filter(c => c.id !== id));
         if (this.activeConversationId() === id) {
@@ -447,7 +460,8 @@ export class AiChatSessionService {
           ...(options ? { options } : {}),
           ...(attachmentsPayload.length > 0 ? { attachments: attachmentsPayload } : {})
         },
-        meta => this.lastStreamTraceId.set(meta.traceId)
+        meta => this.lastStreamTraceId.set(meta.traceId),
+        this.apiBasePath()
       )
       .subscribe({
         next: (event: ChatStreamEvent) => {

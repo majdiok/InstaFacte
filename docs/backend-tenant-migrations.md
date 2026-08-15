@@ -282,6 +282,91 @@ SELECT OBJECT_ID('HonorairesInvoices') AS Invoices,
 
 ---
 
+## Trésorerie prévisionnelle par IA — `20260813190000_AddTreasuryCashForecast_Tenant`
+
+Migration **strictement additive** : 7 nouvelles tables, aucune table ni colonne existante n'est
+touchée. `Down()` complet (suppression des seuls objets créés, enfants avant parent).
+
+| Table | Rôle |
+|---|---|
+| `CashFlowForecastRuns` | Une projection calculée (solde d'ouverture, agrégats, traçabilité IA) |
+| `CashFlowForecastLines` | Flux attendus datés, rattachés à leur source métier |
+| `CashFlowForecastBuckets` | Agrégats mensuels (graphique et tableau de détail) |
+| `CashFlowScenarios` | Optimiste / réaliste / pessimiste, probabilités déterministe **et** affichée |
+| `CashFlowForecastInsights` | Alertes, facteurs d'influence, recommandations |
+| `RecurringCashCommitments` | Engagements récurrents saisis à la main (loyers, traites…) |
+| `CashFlowForecastSettings` | Seuils de la jauge de position de trésorerie |
+
+Les tables restent vides tant que `TreasuryForecast:Enabled` vaut `false` (défaut) : appliquer la
+migration n'a donc aucun effet fonctionnel et peut se faire avant l'activation du module.
+
+**Script idempotent (production / DBA) :** [`docs/runbooks/sql/AddTreasuryCashForecast_Tenant.idempotent.sql`](runbooks/sql/AddTreasuryCashForecast_Tenant.idempotent.sql)
+
+**Après déploiement :** les utilisateurs doivent se **reconnecter** pour recevoir les permissions
+`treasury_forecast:view` / `treasury_forecast:manage` dans leur JWT, sans quoi l'entrée de menu
+reste masquée (le front est fail-closed).
+
+**Vérification SQL :**
+
+```sql
+SELECT MigrationId FROM __EFMigrationsHistory
+WHERE MigrationId LIKE '%AddTreasuryCashForecast%';
+
+SELECT OBJECT_ID('CashFlowForecastRuns')     AS Runs,
+       OBJECT_ID('CashFlowForecastLines')    AS Lines,
+       OBJECT_ID('CashFlowForecastBuckets')  AS Buckets,
+       OBJECT_ID('CashFlowScenarios')        AS Scenarios,
+       OBJECT_ID('CashFlowForecastInsights') AS Insights,
+       OBJECT_ID('RecurringCashCommitments') AS Commitments,
+       OBJECT_ID('CashFlowForecastSettings') AS Settings;
+```
+
+> ⚠️ **Le snapshot EF du contexte tenant est désynchronisé de l'historique des migrations.**
+> Toutes les migrations tenant depuis le 2026-08-01 sont écrites à la main (attributs `[DbContext]`
+> + `[Migration]`, pas de fichier `.Designer.cs`) sans régénérer
+> `Migrations/Tenant/TenantDbContextModelSnapshot.cs`. Lancer `dotnet ef migrations add` sur ce
+> contexte produit donc une migration qui tente de recréer l'arriéré des autres modules
+> (paie, honoraires, contrôle comptable…) — **ne jamais livrer une telle migration**.
+> Le snapshot comporte en outre un défaut d'ordre qui fait échouer sa propre lecture
+> (`b.Navigation("Items")` de `Pricing.PriceList` et `b.Navigation("Tiers")` de
+> `Pricing.PriceListItem` sont déclarés avant les relations qui créent ces navigations : les
+> déplacer dans la section finale suffit à corriger). Remettre le snapshot en phase est un
+> chantier à part entière, à traiter avant de vouloir régénérer une migration.
+
+---
+
+## Réviseur IA — `20260816120000_AddAccountingRevisionNote_Tenant`
+
+Migration **strictement additive** du socle « contrôles continus / dossier de révision » :
+
+| Objet | Rôle |
+|---|---|
+| `AccountingControlRuns.EvaluatedRuleCount` | Nombre de règles réellement évaluées par un contrôle. Devient le dénominateur du taux de conformité — sans lui, enrichir le catalogue de règles ferait bondir artificiellement le taux de tous les tenants et rendrait deux exercices incomparables. |
+| `AccountingRevisionNotes` | Le dossier de révision rédigé d'un contrôle (synthèse, notes de travail par anomalie, action retenue, impact chiffré). Une note par contrôle : régénérer remplace. |
+
+La colonne a un **défaut à 0** : les contrôles déjà en base conservent leur taux historique tel quel.
+La table reste vide tant que la rédaction n'est pas activée — appliquer la migration n'a donc aucun
+effet fonctionnel et peut se faire avant l'activation du module.
+
+**Script idempotent (production / DBA) :** [`docs/runbooks/sql/AddAccountingRevisionNote_Tenant.idempotent.sql`](runbooks/sql/AddAccountingRevisionNote_Tenant.idempotent.sql)
+
+**Vérification SQL :**
+
+```sql
+SELECT MigrationId FROM __EFMigrationsHistory
+WHERE MigrationId LIKE '%AddAccountingRevisionNote%';
+
+SELECT COL_LENGTH('dbo.AccountingControlRuns', 'EvaluatedRuleCount') AS EvaluatedRuleCountColumn,
+       OBJECT_ID('AccountingRevisionNotes')                          AS RevisionNotesTable;
+```
+
+> Le contrôle comptable planifié (`accounting-audit-schedules`, 7 h UTC) **exécute réellement le
+> moteur** depuis cette livraison — il se contentait auparavant d'actualiser `LastRunAt`. Les
+> planifications actives déjà enregistrées dans `AccountingControlSchedules` se déclencheront donc
+> au premier passage. Le drapeau `Accounting:AccountingAuditSchedulingEnabled` reste l'interrupteur.
+
+---
+
 ## En résumé
 
 - En **développement**, corriger l'erreur de migration puis redémarrer l'API.

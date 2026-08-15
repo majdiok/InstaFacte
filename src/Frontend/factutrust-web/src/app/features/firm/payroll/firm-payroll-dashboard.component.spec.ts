@@ -100,6 +100,18 @@ describe('FirmPayrollDashboardComponent', () => {
     expect(text).toContain('Paiement CNSS');
   });
 
+  it('affiche les accès rapides entre les KPI et les graphiques', async () => {
+    await setup(fullDashboard);
+    const el = fixture.nativeElement as HTMLElement;
+    const kpiRow = el.querySelector('.kpi-row');
+    const hubTitle = el.querySelector('#quick-access-title');
+    const chartsGrid = el.querySelector('.charts-grid');
+
+    expect(kpiRow && hubTitle && chartsGrid).toBeTruthy();
+    expect(kpiRow!.compareDocumentPosition(hubTitle!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(hubTitle!.compareDocumentPosition(chartsGrid!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('totalise les retenues affichées', async () => {
     await setup(fullDashboard);
     expect(fixture.componentInstance.totalDeductions()).toBeCloseTo(15300.25, 2);

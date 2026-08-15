@@ -35,21 +35,30 @@ public sealed class PlatformAiSettingsController : ControllerBase
 
     private readonly IPlatformAiSettingsService _settings;
     private readonly IOllamaClient _ollamaClient;
+    private readonly IOpenAiChatCompletionsClient _openAiClient;
+    private readonly ICursorAgentClient _cursorAgentClient;
     private readonly IAiModelRecommender _modelRecommender;
     private readonly OllamaSettings _ollamaSettings;
+    private readonly CursorSdkSettings _cursorSdkSettings;
     private readonly ILogger<PlatformAiSettingsController> _logger;
 
     public PlatformAiSettingsController(
         IPlatformAiSettingsService settings,
         IOllamaClient ollamaClient,
+        IOpenAiChatCompletionsClient openAiClient,
+        ICursorAgentClient cursorAgentClient,
         IAiModelRecommender modelRecommender,
         IOptions<OllamaSettings> ollamaSettings,
+        IOptions<CursorSdkSettings> cursorSdkSettings,
         ILogger<PlatformAiSettingsController> logger)
     {
         _settings = settings;
         _ollamaClient = ollamaClient;
+        _openAiClient = openAiClient;
+        _cursorAgentClient = cursorAgentClient;
         _modelRecommender = modelRecommender;
         _ollamaSettings = ollamaSettings.Value;
+        _cursorSdkSettings = cursorSdkSettings.Value;
         _logger = logger;
     }
 
@@ -64,6 +73,7 @@ public sealed class PlatformAiSettingsController : ControllerBase
         var studioModel = await _settings.GetStudioAiModelRefAsync(cancellationToken);
         var inferenceDevice = await _settings.GetInferenceDeviceAsync(cancellationToken);
         var openRouter = await _settings.GetOpenRouterSettingsAsync(cancellationToken);
+        var cursor = await _settings.GetCursorSettingsAsync(cancellationToken);
 
         var models = new List<UnifiedAiModelInfo>();
         try
@@ -84,6 +94,48 @@ public sealed class PlatformAiSettingsController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to list Ollama models for platform AI settings.");
+        }
+
+        try
+        {
+            var openRouterCreds = await _settings.GetOpenRouterCredentialsAsync(cancellationToken);
+            if (!string.IsNullOrEmpty(openRouterCreds.ApiKey))
+            {
+                var remote = await _openAiClient.ListModelsAsync(
+                    openRouterCreds.BaseUrl, openRouterCreds.ApiKey, cancellationToken);
+                foreach (var r in remote)
+                {
+                    models.Add(new UnifiedAiModelInfo(
+                        $"{ModelRef.OpenRouterPrefix}{r.Id}",
+                        "openrouter",
+                        string.IsNullOrEmpty(r.Name) ? r.Id : r.Name!,
+                        null,
+                        null,
+                        SupportsVision: AiModelCapabilityDetector.DetectVisionSupport(r.Id),
+                        SupportsChat: AiModelCapabilityDetector.DetectChatCapable(r.Id)));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to list OpenRouter models for platform AI settings.");
+        }
+
+        try
+        {
+            if (_cursorSdkSettings.Enabled)
+            {
+                var cursorCreds = await _settings.GetCursorCredentialsAsync(cancellationToken);
+                if (!string.IsNullOrEmpty(cursorCreds.ApiKey))
+                {
+                    var cursorModels = await _cursorAgentClient.ListModelsAsync(cursorCreds.ApiKey, cancellationToken);
+                    models.AddRange(CursorModelCatalog.ToUnifiedModels(cursorModels));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to list Cursor models for platform AI settings.");
         }
 
         AiModelRecommendationDto? recommendation = null;
@@ -113,7 +165,8 @@ public sealed class PlatformAiSettingsController : ControllerBase
             isOllamaAssistant,
             models,
             recommendation,
-            openRouter);
+            openRouter,
+            cursor);
         return Ok(ApiResponse<PlatformAiSettingsDto>.Ok(dto));
     }
 
@@ -129,13 +182,59 @@ public sealed class PlatformAiSettingsController : ControllerBase
         if (!Guid.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var actorId))
             return Unauthorized(ApiResponse<object>.Fail("Non authentifié."));
 
+        // Credentials d'abord : le même PUT peut activer Cursor/OpenRouter et sélectionner un modèle.
+        if (request.OpenRouter is { } openRouter)
+        {
+            var (success, error) = await _settings.SetOpenRouterConfigAsync(
+                openRouter.IsEnabled,
+                openRouter.DisplayName,
+                openRouter.BaseUrl,
+                openRouter.ApiKey,
+                actorId,
+                cancellationToken);
+            if (!success)
+                return BadRequest(ApiResponse<object>.Fail(error ?? "Configuration OpenRouter invalide."));
+
+            _logger.LogInformation(
+                "Platform admin {ActorId} updated OpenRouter settings (enabled={Enabled})",
+                actorId,
+                openRouter.IsEnabled);
+        }
+
+        if (request.Cursor is { } cursorUpdate)
+        {
+            if (cursorUpdate.IsEnabled && !_cursorSdkSettings.Enabled)
+                return BadRequest(ApiResponse<object>.Fail(
+                    "Cursor SDK est désactivé sur le serveur (CursorSdk:Enabled). Activez-le dans la configuration avant d'enregistrer une clé."));
+
+            var (success, error) = await _settings.SetCursorConfigAsync(
+                cursorUpdate.IsEnabled,
+                cursorUpdate.DisplayName,
+                cursorUpdate.ApiKey,
+                actorId,
+                cancellationToken);
+            if (!success)
+                return BadRequest(ApiResponse<object>.Fail(error ?? "Configuration Cursor invalide."));
+
+            _logger.LogInformation(
+                "Platform admin {ActorId} updated Cursor settings (enabled={Enabled})",
+                actorId,
+                cursorUpdate.IsEnabled);
+        }
+
         if (!string.IsNullOrWhiteSpace(request.ModelRef))
         {
             var parsed = ModelRef.Parse(request.ModelRef);
             if (string.IsNullOrEmpty(parsed.CanonicalModelRef))
                 return BadRequest(ApiResponse<object>.Fail("Référence de modèle invalide."));
-            if (!AiModelCapabilityDetector.DetectChatCapable(parsed.ProviderModelId))
+            if (!AiModelCapabilityDetector.DetectChatCapable(parsed))
                 return BadRequest(ApiResponse<object>.Fail(ChatModelRequiredMessage));
+            if (!CursorModelSelection.TryValidate(parsed, out var cursorError))
+                return BadRequest(ApiResponse<object>.Fail(cursorError ?? "Référence de modèle Cursor invalide."));
+
+            var allowed = await EnsureCursorAllowedAsync(parsed, cancellationToken);
+            if (allowed is not null)
+                return allowed;
 
             var installed = await EnsureModelInstalledAsync(parsed, "assistant", cancellationToken);
             if (installed is not null)
@@ -155,8 +254,14 @@ public sealed class PlatformAiSettingsController : ControllerBase
                 var parsedImport = ModelRef.Parse(request.InvoiceImportModelRef);
                 if (string.IsNullOrEmpty(parsedImport.CanonicalModelRef))
                     return BadRequest(ApiResponse<object>.Fail("Référence de modèle d'import invalide."));
-                if (!AiModelCapabilityDetector.DetectChatCapable(parsedImport.ProviderModelId))
+                if (!AiModelCapabilityDetector.DetectChatCapable(parsedImport))
                     return BadRequest(ApiResponse<object>.Fail(ImportChatModelRequiredMessage));
+                if (!CursorModelSelection.TryValidate(parsedImport, out var cursorImportError))
+                    return BadRequest(ApiResponse<object>.Fail(cursorImportError ?? "Référence de modèle Cursor invalide."));
+
+                var allowedImport = await EnsureCursorAllowedAsync(parsedImport, cancellationToken);
+                if (allowedImport is not null)
+                    return allowedImport;
 
                 var installed = await EnsureModelInstalledAsync(parsedImport, "d'import de factures", cancellationToken);
                 if (installed is not null)
@@ -174,8 +279,14 @@ public sealed class PlatformAiSettingsController : ControllerBase
                 var parsedStudio = ModelRef.Parse(request.StudioAiModelRef);
                 if (string.IsNullOrEmpty(parsedStudio.CanonicalModelRef))
                     return BadRequest(ApiResponse<object>.Fail("Référence de modèle Studio invalide."));
-                if (!AiModelCapabilityDetector.DetectChatCapable(parsedStudio.ProviderModelId))
+                if (!AiModelCapabilityDetector.DetectChatCapable(parsedStudio))
                     return BadRequest(ApiResponse<object>.Fail(ChatModelRequiredMessage));
+                if (!CursorModelSelection.TryValidate(parsedStudio, out var cursorStudioError))
+                    return BadRequest(ApiResponse<object>.Fail(cursorStudioError ?? "Référence de modèle Cursor invalide."));
+
+                var allowedStudio = await EnsureCursorAllowedAsync(parsedStudio, cancellationToken);
+                if (allowedStudio is not null)
+                    return allowedStudio;
 
                 var installed = await EnsureModelInstalledAsync(parsedStudio, "Studio", cancellationToken);
                 if (installed is not null)
@@ -199,24 +310,6 @@ public sealed class PlatformAiSettingsController : ControllerBase
                 device);
         }
 
-        if (request.OpenRouter is { } openRouter)
-        {
-            var (success, error) = await _settings.SetOpenRouterConfigAsync(
-                openRouter.IsEnabled,
-                openRouter.DisplayName,
-                openRouter.BaseUrl,
-                openRouter.ApiKey,
-                actorId,
-                cancellationToken);
-            if (!success)
-                return BadRequest(ApiResponse<object>.Fail(error ?? "Configuration OpenRouter invalide."));
-
-            _logger.LogInformation(
-                "Platform admin {ActorId} updated OpenRouter settings (enabled={Enabled})",
-                actorId,
-                openRouter.IsEnabled);
-        }
-
         return await Get(cancellationToken);
     }
 
@@ -235,7 +328,7 @@ public sealed class PlatformAiSettingsController : ControllerBase
     private async Task<IActionResult?> EnsureModelInstalledAsync(
         ParsedModelRef parsed, string usage, CancellationToken cancellationToken)
     {
-        // Un modèle cloud (OpenRouter) n'est pas installé localement : rien à vérifier ici.
+        // Un modèle cloud (OpenRouter / Cursor) n'est pas installé localement : rien à vérifier ici.
         if (parsed.Kind != LlmProviderKind.Ollama || string.IsNullOrWhiteSpace(parsed.ProviderModelId))
             return null;
 
@@ -266,5 +359,40 @@ public sealed class PlatformAiSettingsController : ControllerBase
         return BadRequest(ApiResponse<object>.Fail(
             $"Le modèle {usage} « {parsed.ProviderModelId} » n'est pas installé sur le moteur IA. "
             + $"Installez-le (ollama pull {parsed.ProviderModelId}) ou choisissez-en un parmi : {available}."));
+    }
+
+    private async Task<IActionResult?> EnsureCursorAllowedAsync(
+        ParsedModelRef parsed, CancellationToken cancellationToken)
+    {
+        if (parsed.Kind != LlmProviderKind.Cursor)
+            return null;
+
+        if (!_cursorSdkSettings.Enabled)
+            return BadRequest(ApiResponse<object>.Fail(
+                "Cursor SDK est désactivé sur le serveur (CursorSdk:Enabled=false)."));
+
+        var creds = await _settings.GetCursorCredentialsAsync(cancellationToken);
+        if (string.IsNullOrEmpty(creds.ApiKey))
+            return BadRequest(ApiResponse<object>.Fail(
+                "Aucune clé API Cursor configurée. Activez Cursor et saisissez la clé dans Configuration IA."));
+
+        try
+        {
+            var catalog = await _cursorAgentClient.ListModelsAsync(creds.ApiKey, cancellationToken);
+            if (catalog.Count == 0)
+                return null;
+
+            if (catalog.Any(m => string.Equals(m.Id, parsed.ProviderModelId, StringComparison.OrdinalIgnoreCase)))
+                return null;
+
+            var available = string.Join(", ", catalog.Select(m => m.Id).Distinct().Take(12));
+            return BadRequest(ApiResponse<object>.Fail(
+                $"Le modèle Cursor « {parsed.ProviderModelId} » n'est pas dans le catalogue de cette clé. Disponibles : {available}."));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Impossible de valider le modèle Cursor {Model} ; enregistrement autorisé.", parsed.ProviderModelId);
+            return null;
+        }
     }
 }

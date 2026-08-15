@@ -60,7 +60,7 @@ public sealed class FirmInternalPayrollController : ControllerBase
         var tenantId = GetHomeTenantId();
         if (tenantId is null) return Unauthorized();
         var result = await _provisioning.ProvisionCollaboratorAsync(
-            tenantId.Value, isManager: true, collaboratorUserId, cancellationToken);
+            tenantId.Value, isManager: true, collaboratorUserId, onboarding: null, cancellationToken);
         if (result.IsFailure)
             return BadRequest(ApiResponse<FirmPayrollProvisionResultDto>.Fail(result.Error.Description));
         return Ok(ApiResponse<FirmPayrollProvisionResultDto>.Ok(result.Value));

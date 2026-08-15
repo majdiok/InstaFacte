@@ -24,12 +24,20 @@ import { wrapLegacyAnalyzePayload } from '@features/ai-assistant/utils/ai-screen
 import { InvoiceImportDialogComponent } from '@features/invoices/components/invoice-import-dialog/invoice-import-dialog.component';
 import { StatusBadgeComponent, StatusBadgeStatus } from '@shared/components/status-badge/status-badge.component';
 import { TableTotalsBarComponent, TotalMetric } from '@shared/components/table-totals-bar/table-totals-bar.component';
-import { InvoiceService, InvoiceListItem, InvoiceSearchParams, InvoiceListSummary } from '@core/services/invoice.service';
+import { InvoiceService, InvoiceListItem, InvoiceSearchParams, InvoiceListSummary, InvoiceTypeCode } from '@core/services/invoice.service';
 import { PrintPreviewService } from '@core/services/print-preview.service';
 import { ClientService, ClientListItem } from '@core/services/client.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { AuthService } from '@core/services/auth.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
+import { NgbModal } from '@ng-bootstrap/ng-bootstrap';
+import {
+  RefundInvoiceIdDialogComponent,
+  REFUND_INVOICE_DIALOG_OPTIONS
+} from '@shared/components/refund-invoice-id-dialog/refund-invoice-id-dialog.component';
+import { LinkedInvoiceRef } from '@core/services/invoice-reference-resolver.service';
+
+type InvoiceListMode = 'invoices' | 'unpaid' | 'creditNotes';
 
 interface StatusOption {
   label: string;
@@ -64,19 +72,19 @@ interface StatusOption {
     <app-breadcrumb [items]="breadcrumbItems()"></app-breadcrumb>
     
     <app-page-header 
-      [title]="unpaidOnlyMode() ? 'Factures impayées' : 'Factures'" 
-      [subtitle]="unpaidOnlyMode() ? 'Factures clients non réglées ou partiellement réglées.' : 'Gérez vos factures'">
+      [title]="pageTitle()" 
+      [subtitle]="pageSubtitle()">
       <app-button 
         variant="secondary"
         icon="pi-print"
         iconPos="left"
         [disabled]="printingReport()"
         (click)="printInvoiceReport()"
-        ariaLabel="Imprimer l'état des factures (période et client optionnels)">
+        [ariaLabel]="printAriaLabel()">
         Imprimer l'état
       </app-button>
       <app-analyze-with-ai-button
-        screenId="invoice-list"
+        [screenId]="analyzeScreenId()"
         [payloadBuilder]="buildInvoiceAnalyzePayload"
         [disabled]="loading() || initialLoad()" />
       @if (canImportInvoice()) {
@@ -89,12 +97,20 @@ interface StatusOption {
           Importer une facture
         </app-button>
       }
-      @if (canCreateInvoice()) {
+      @if (canCreateInvoice() && creditNotesOnlyMode()) {
         <app-button 
           variant="primary"
           icon="pi-plus"
           iconPos="left"
-          routerLink="new">
+          (click)="openNewCreditNote()">
+          Nouvel avoir
+        </app-button>
+      } @else if (canCreateInvoice()) {
+        <app-button 
+          variant="primary"
+          icon="pi-plus"
+          iconPos="left"
+          routerLink="/invoices/new">
           Nouvelle facture
         </app-button>
       }
@@ -202,7 +218,7 @@ interface StatusOption {
           [rows]="pageSize"
           [totalRecords]="totalRecords()"
           [showCurrentPageReport]="true"
-          currentPageReportTemplate="Affichage de {first} à {last} sur {totalRecords} factures"
+          [currentPageReportTemplate]="paginatorTemplate()"
           (onLazyLoad)="onPageChange($event)"
           styleClass="p-datatable-sm">
         
@@ -214,7 +230,7 @@ interface StatusOption {
             <th>Échéance</th>
             <th pSortableColumn="totalAmount">Montant <p-sortIcon field="totalAmount"></p-sortIcon></th>
             <th>Montant payé</th>
-            <th>Reste à payer</th>
+            <th>{{ remainingColumnLabel() }}</th>
             <th>Statut</th>
             <th style="width: 120px">Actions</th>
           </tr>
@@ -223,10 +239,10 @@ interface StatusOption {
         <ng-template pTemplate="body" let-invoice>
           <tr [class.overdue]="invoice.isOverdue" [class.row-avoir]="invoice.isCreditNote">
             <td>
-              <a [routerLink]="[invoice.id]" class="invoice-number">
+              <a [routerLink]="invoiceDetailLink(invoice)" class="invoice-number">
                 {{ invoice.number }}
               </a>
-              @if (invoice.isCreditNote) {
+              @if (invoice.isCreditNote && !creditNotesOnlyMode()) {
                 <span class="doc-type-chip" title="Facture d'avoir">Avoir</span>
               }
             </td>
@@ -258,8 +274,8 @@ interface StatusOption {
                   icon="pi-eye"
                   [iconOnly]="true"
                   [iconAlwaysVisible]="true"
-                  [routerLink]="invoice.id"
-                  ariaLabel="Voir la facture">
+                  [routerLink]="invoiceDetailLink(invoice)"
+                  [ariaLabel]="viewAriaLabel()">
                 </app-button>
                 <app-button 
                   variant="ghost"
@@ -286,6 +302,15 @@ interface StatusOption {
                   actionLabel="Voir toutes les factures"
                   actionRoute="/invoices">
                 </app-empty-state>
+              } @else if (creditNotesOnlyMode()) {
+                <app-empty-state
+                  illustration="empty-invoices.svg"
+                  title="Aucun avoir"
+                  description="Créez votre premier avoir à partir d'une facture existante."
+                  [showAction]="canCreateInvoice()"
+                  actionLabel="Créer un avoir"
+                  (actionClick)="openNewCreditNote()">
+                </app-empty-state>
               } @else {
                 <app-empty-state
                   illustration="empty-invoices.svg"
@@ -293,7 +318,7 @@ interface StatusOption {
                   description="Créez votre première facture pour commencer à facturer vos clients."
                   [showAction]="canCreateInvoice()"
                   actionLabel="Créer une facture"
-                  actionRoute="new">
+                  actionRoute="/invoices/new">
                 </app-empty-state>
               }
             </td>
@@ -402,12 +427,49 @@ export class InvoiceListComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private auth = inject(AuthService);
+  private ngbModal = inject(NgbModal);
+
+  listMode = signal<InvoiceListMode>('invoices');
+  unpaidOnlyMode = computed(() => this.listMode() === 'unpaid');
+  creditNotesOnlyMode = computed(() => this.listMode() === 'creditNotes');
+
+  pageTitle = computed(() => {
+    switch (this.listMode()) {
+      case 'unpaid': return 'Factures impayées';
+      case 'creditNotes': return 'Avoirs de vente';
+      default: return 'Factures';
+    }
+  });
+
+  pageSubtitle = computed(() => {
+    switch (this.listMode()) {
+      case 'unpaid': return 'Factures clients non réglées ou partiellement réglées.';
+      case 'creditNotes': return 'Gérez vos avoirs de vente';
+      default: return 'Gérez vos factures';
+    }
+  });
+
+  analyzeScreenId = computed(() => this.creditNotesOnlyMode() ? 'credit-note-list' : 'invoice-list');
+  remainingColumnLabel = computed(() => this.creditNotesOnlyMode() ? 'Reste à rembourser' : 'Reste à payer');
+  paginatorTemplate = computed(() =>
+    this.creditNotesOnlyMode()
+      ? 'Affichage de {first} à {last} sur {totalRecords} avoirs'
+      : 'Affichage de {first} à {last} sur {totalRecords} factures'
+  );
+  printAriaLabel = computed(() =>
+    this.creditNotesOnlyMode()
+      ? "Imprimer l'état des avoirs (période et client optionnels)"
+      : "Imprimer l'état des factures (période et client optionnels)"
+  );
+  viewAriaLabel = computed(() => this.creditNotesOnlyMode() ? "Voir l'avoir" : 'Voir la facture');
 
   canCreateInvoice = computed(
     () => !this.auth.isFirmDelegatedReadonly() && this.auth.hasPermission(PERMISSIONS.invoices.create)
   );
   /** Le bouton d'import requiert la permission de création ET l'accès à l'IA (policy backend AiChat). */
-  canImportInvoice = computed(() => this.canCreateInvoice() && this.auth.hasAllPermissions(['ai:chat']));
+  canImportInvoice = computed(
+    () => !this.creditNotesOnlyMode() && this.canCreateInvoice() && this.auth.hasAllPermissions(['ai:chat'])
+  );
   importDialogVisible = signal(false);
 
   openImportDialog(): void {
@@ -421,7 +483,6 @@ export class InvoiceListComponent implements OnInit, OnDestroy {
   errorMessage = signal<string | null>(null);
   isRateLimited = signal(false);
   printingReport = signal(false);
-  unpaidOnlyMode = signal(false);
 
   /** Totaux agrégés (backend) sur l'ensemble filtré complet — alimente la zone de totaux. */
   summary = signal<InvoiceListSummary | null>(null);
@@ -431,12 +492,13 @@ export class InvoiceListComponent implements OnInit, OnDestroy {
   summaryMetrics = computed<TotalMetric[]>(() => {
     const s = this.summary();
     const currency = s?.currency ?? 'TND';
+    const creditNotes = this.creditNotesOnlyMode();
     return [
-      { label: 'Factures', value: s?.count, format: 'number', icon: 'pi-file', tone: 'primary' },
+      { label: creditNotes ? 'Avoirs' : 'Factures', value: s?.count, format: 'number', icon: 'pi-file', tone: 'primary' },
       { label: 'Total TTC', value: s?.totalTtc, format: 'currency', currency, icon: 'pi-wallet', tone: 'primary' },
       { label: 'Total HT', value: s?.totalHt, format: 'currency', currency, icon: 'pi-calculator', tone: 'cyan' },
-      { label: 'Total payé', value: s?.totalPaid, format: 'currency', currency, icon: 'pi-check-circle', tone: 'emerald' },
-      { label: 'Reste à payer', value: s?.totalRemaining, format: 'currency', currency, icon: 'pi-clock', tone: 'amber' },
+      { label: creditNotes ? 'Total remboursé' : 'Total payé', value: s?.totalPaid, format: 'currency', currency, icon: 'pi-check-circle', tone: 'emerald' },
+      { label: creditNotes ? 'Reste à rembourser' : 'Reste à payer', value: s?.totalRemaining, format: 'currency', currency, icon: 'pi-clock', tone: 'amber' },
       { label: 'En retard', value: s?.overdueCount, format: 'number', icon: 'pi-exclamation-triangle', tone: 'rose' }
     ];
   });
@@ -463,11 +525,15 @@ export class InvoiceListComponent implements OnInit, OnDestroy {
 
   breadcrumbItems = computed<BreadcrumbItem[]>(() => {
     const base: BreadcrumbItem[] = [
-      { label: 'Accueil', route: '/', icon: 'pi-home' },
-      { label: 'Factures', route: '/invoices' }
+      { label: 'Accueil', route: '/', icon: 'pi-home' }
     ];
-    if (this.unpaidOnlyMode()) {
-      base.push({ label: 'Factures impayées' });
+    if (this.creditNotesOnlyMode()) {
+      base.push({ label: 'Avoirs de vente' });
+    } else {
+      base.push({ label: 'Factures', route: '/invoices' });
+      if (this.unpaidOnlyMode()) {
+        base.push({ label: 'Factures impayées' });
+      }
     }
     return base;
   });
@@ -495,10 +561,10 @@ export class InvoiceListComponent implements OnInit, OnDestroy {
   ];
 
   ngOnInit(): void {
-    this.unpaidOnlyMode.set(this.route.snapshot.data['unpaidOnly'] === true);
+    this.applyListModeFromRouteData(this.route.snapshot.data);
     this.subscriptions.add(
       this.route.data.subscribe((data) => {
-        this.unpaidOnlyMode.set(data['unpaidOnly'] === true);
+        this.applyListModeFromRouteData(data);
       })
     );
     this.subscriptions.add(
@@ -520,6 +586,42 @@ export class InvoiceListComponent implements OnInit, OnDestroy {
 
     this.loadClients();
     this.loadInvoices();
+  }
+
+  private applyListModeFromRouteData(data: { [key: string]: unknown }): void {
+    if (data['creditNotesOnly'] === true) {
+      this.listMode.set('creditNotes');
+    } else if (data['unpaidOnly'] === true) {
+      this.listMode.set('unpaid');
+    } else {
+      this.listMode.set('invoices');
+    }
+  }
+
+  invoiceDetailLink(invoice: InvoiceListItem): string[] {
+    if (this.creditNotesOnlyMode()) {
+      return ['/invoices', 'credit-notes', invoice.id];
+    }
+    if (this.unpaidOnlyMode()) {
+      return ['/invoices', 'unpaid', invoice.id];
+    }
+    return ['/invoices', invoice.id];
+  }
+
+  openNewCreditNote(): void {
+    const ref = this.ngbModal.open(RefundInvoiceIdDialogComponent, REFUND_INVOICE_DIALOG_OPTIONS);
+    ref.result.then(
+      (linkedInvoice: LinkedInvoiceRef) => {
+        if (linkedInvoice?.id) {
+          this.router.navigate(['/invoices', linkedInvoice.id, 'credit-note']);
+        }
+      },
+      () => undefined
+    ).catch(() => undefined);
+  }
+
+  private documentType(): InvoiceTypeCode {
+    return this.creditNotesOnlyMode() ? 'CREDIT_NOTE' : 'INVOICE';
   }
 
   private applyFiltersFromQuery(paramMap: ParamMap): void {
@@ -590,6 +692,7 @@ export class InvoiceListComponent implements OnInit, OnDestroy {
       clientId: this.selectedClient?.id,
       page: this.page,
       pageSize: this.pageSize,
+      type: this.documentType(),
       ...(this.unpaidOnlyMode() ? { unpaidOnly: true } : {})
     };
 
@@ -732,7 +835,7 @@ export class InvoiceListComponent implements OnInit, OnDestroy {
           const url = window.URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = `Facture_${invoice.number}.pdf`;
+          a.download = `${invoice.isCreditNote ? 'Avoir' : 'Facture'}_${invoice.number}.pdf`;
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
@@ -753,11 +856,12 @@ export class InvoiceListComponent implements OnInit, OnDestroy {
     const clientId = this.selectedClient?.id;
 
     this.printingReport.set(true);
-    this.invoiceService.downloadReportPdf(fromDate, toDate, clientId).subscribe({
+    this.invoiceService.downloadReportPdf(fromDate, toDate, clientId, this.documentType()).subscribe({
       next: (blob) => {
         this.printingReport.set(false);
         if (!blob || blob.size === 0) return;
-        this.printPreviewService.openPdfForPrintPreview(blob, `Etat_factures_ventes_${fromDate}_${toDate}.pdf`);
+        const prefix = this.creditNotesOnlyMode() ? 'Etat_avoirs_ventes' : 'Etat_factures_ventes';
+        this.printPreviewService.openPdfForPrintPreview(blob, `${prefix}_${fromDate}_${toDate}.pdf`);
       },
       error: (error: Error) => {
         this.printingReport.set(false);
@@ -797,10 +901,11 @@ export class InvoiceListComponent implements OnInit, OnDestroy {
 
   readonly buildInvoiceAnalyzePayload = (): unknown =>
     wrapLegacyAnalyzePayload(
-      'invoice-list',
+      this.analyzeScreenId(),
       {
-        screen: 'invoice-list',
+        screen: this.analyzeScreenId(),
         unpaidOnly: this.unpaidOnlyMode(),
+        creditNotesOnly: this.creditNotesOnlyMode(),
         filters: {
           search: this.searchTerm || null,
           status: this.selectedStatus,

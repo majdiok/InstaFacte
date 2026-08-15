@@ -13,6 +13,16 @@ const GENERIC_CODE_FENCE = /```[\s\S]*?```/g;
 const INTERNAL_TOOL_TOKEN =
   /`?\b(?:get|forecast|analyze|simulate|generate|create|record|propose|resolve|compliance|studio)_[a-z0-9]+(?:_[a-z0-9]+)*\b`?/g;
 
+/**
+ * Idéogrammes, kana, hangul, ponctuation CJK (hors BMP inclus). L'arabe et le latin ne matchent pas.
+ * Parité avec AssistantVisibleContentFormatter.StripDisallowedScripts.
+ */
+const CJK_SCRIPT =
+  /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF\u3000-\u303F\u{20000}-\u{2FA1F}]/gu;
+
+const MULTI_BLANK_LINE = /(?:[ \t]*\n){3,}/g;
+const HORIZONTAL_WS_RUN = /[ \t]{2,}/g;
+
 /** Minimum visible prose length before treating a response as complete (mirrors backend default). */
 export const MIN_MEANINGFUL_ASSISTANT_CHARS = 80;
 
@@ -381,6 +391,47 @@ export function sanitizeInternalToolNamesForDisplay(content: string): string {
   );
 }
 
+/**
+ * Retire les écritures CJK de la prose visible (hors fences) — miroir du filet serveur pour les
+ * messages déjà persistés avant le correctif. Latin, chiffres, arabe conservés.
+ */
+export function stripDisallowedScriptsForDisplay(content: string): string {
+  if (!content) {
+    return content;
+  }
+  CJK_SCRIPT.lastIndex = 0;
+  if (!CJK_SCRIPT.test(content)) {
+    CJK_SCRIPT.lastIndex = 0;
+    return content;
+  }
+  CJK_SCRIPT.lastIndex = 0;
+  return transformOutsideCodeFences(content, stripCjkFromProseSegment);
+}
+
+function stripCjkFromProseSegment(segment: string): string {
+  const lines = segment.split('\n');
+  const kept: string[] = [];
+  for (const line of lines) {
+    CJK_SCRIPT.lastIndex = 0;
+    if (!CJK_SCRIPT.test(line)) {
+      CJK_SCRIPT.lastIndex = 0;
+      kept.push(line);
+      continue;
+    }
+    CJK_SCRIPT.lastIndex = 0;
+    const stripped = line.replace(CJK_SCRIPT, '').replace(HORIZONTAL_WS_RUN, ' ');
+    if (isOrphanPunctuationLine(stripped)) {
+      continue;
+    }
+    kept.push(stripped);
+  }
+  return kept.join('\n').replace(MULTI_BLANK_LINE, '\n\n');
+}
+
+function isOrphanPunctuationLine(line: string): boolean {
+  return !/[\p{L}\p{N}]/u.test(line);
+}
+
 function transformOutsideCodeFences(content: string, transform: (segment: string) => string): string {
   let out = '';
   let index = 0;
@@ -569,9 +620,11 @@ export function buildAssistantMarkdownForDisplay(
     return '';
   }
   const useSmart = options?.smartJsonFallback !== false;
-  // Assainissement d'affichage : identifiants d'outils → libellés métier (couvre les anciens
-  // messages persistés), puis fences {"sections":…} sans title → puces lisibles.
-  content = replaceSectionsOnlyFences(sanitizeInternalToolNamesForDisplay(content));
+  // Assainissement de prose : identifiants d'outils → libellés, CJK retiré (anciens messages),
+  // puis fences {"sections":…} sans title → puces lisibles.
+  content = replaceSectionsOnlyFences(
+    stripDisallowedScriptsForDisplay(sanitizeInternalToolNamesForDisplay(content))
+  );
   let c = stripNonDashboardJsonFences(content);
   if (useSmart && measureVisibleProseLength(c) <= 15) {
     const humanized = humanizeBusinessJsonFences(content);

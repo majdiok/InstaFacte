@@ -91,6 +91,7 @@ public sealed class GetInvoiceByIdQueryHandler : IRequestHandler<GetInvoiceByIdQ
                 AppliedPromotionId = l.AppliedPromotionId,
                 AppliedPromotionName = l.AppliedPromotionName,
                 DiscountAmount = l.DiscountAmount.Amount,
+                AllocatedGlobalDiscount = l.AllocatedGlobalDiscount.Amount,
                 SubTotal = l.SubTotal.Amount,
                 IsFodecApplicable = l.IsFodecApplicable,
                 FodecAmount = l.FodecAmount.Amount,
@@ -98,6 +99,8 @@ public sealed class GetInvoiceByIdQueryHandler : IRequestHandler<GetInvoiceByIdQ
                 Total = l.Total.Amount
             }).ToList(),
             SubTotal = invoice.SubTotal.Amount,
+            GlobalDiscountPercent = invoice.GlobalDiscountPercent,
+            GlobalDiscountAmount = invoice.GlobalDiscountAmount.Amount,
             FodecAmount = invoice.FodecAmount.Amount,
             TotalVat = invoice.TotalVat.Amount,
             FiscalStampAmount = invoice.FiscalStampAmount.Amount,

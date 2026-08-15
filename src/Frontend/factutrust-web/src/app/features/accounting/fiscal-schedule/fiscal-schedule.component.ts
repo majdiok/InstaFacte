@@ -13,6 +13,7 @@ import { AuthService } from '@core/services/auth.service';
 import { FirmAssignmentService, FirmClientDossier } from '@core/services/firm-assignment.service';
 import { FirmFiscalScheduleService } from '@core/services/firm-fiscal-schedule.service';
 import { ToastService } from '@core/services/toast.service';
+import { ConfirmationService } from '@core/services/confirmation.service';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
 import {
@@ -190,6 +191,7 @@ export class FiscalScheduleComponent implements OnInit {
   private readonly toast = inject(ToastService);
   private readonly auth = inject(AuthService);
   private readonly fb = inject(FormBuilder);
+  private readonly confirmationService = inject(ConfirmationService);
 
   readonly years = this.buildYears();
 
@@ -504,23 +506,33 @@ export class FiscalScheduleComponent implements OnInit {
   }
 
   deleteSelected(): void {
-    if (!this.selected || !this.canDelete || !window.confirm('Annuler cette echeance fiscale ?')) return;
-    const companyId = this.firmWriteCompanyId;
-    const request$ = this.isFirmScope && companyId
-      ? this.firmSchedule.delete(companyId, this.selected.id)
-      : this.schedule.delete(this.selected.id);
+    if (!this.selected || !this.canDelete) return;
+    this.confirmationService.confirm({
+      message: 'Annuler cette echeance fiscale ?',
+      header: 'Confirmation de suppression',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Annuler l\'échéance',
+      rejectLabel: 'Retour',
+      acceptButtonStyleClass: 'btn-danger',
+      accept: () => {
+        const companyId = this.firmWriteCompanyId;
+        const request$ = this.isFirmScope && companyId
+          ? this.firmSchedule.delete(companyId, this.selected!.id)
+          : this.schedule.delete(this.selected!.id);
 
-    request$.subscribe({
-      next: response => {
-        if (!response.success) {
-          this.notify('error', this.responseMessage(response));
-          return;
-        }
-        this.notify('success', 'Echeance annulee.');
-        this.selected = null;
-        this.load();
-      },
-      error: err => this.notify('error', this.httpErrorMessage(err, "L'echeance n'a pas pu etre annulee."))
+        request$.subscribe({
+          next: response => {
+            if (!response.success) {
+              this.notify('error', this.responseMessage(response));
+              return;
+            }
+            this.notify('success', 'Echeance annulee.');
+            this.selected = null;
+            this.load();
+          },
+          error: err => this.notify('error', this.httpErrorMessage(err, "L'echeance n'a pas pu etre annulee."))
+        });
+      }
     });
   }
 
@@ -630,22 +642,32 @@ export class FiscalScheduleComponent implements OnInit {
   }
 
   deleteAttachment(attachment: FiscalScheduleAttachmentDto): void {
-    if (!this.selected || !window.confirm('Supprimer cette piece jointe ?')) return;
-    const companyId = this.firmWriteCompanyId;
-    const request$ = this.isFirmScope && companyId
-      ? this.firmSchedule.deleteAttachment(companyId, this.selected.id, attachment.id)
-      : this.schedule.deleteAttachment(this.selected.id, attachment.id);
+    if (!this.selected) return;
+    this.confirmationService.confirm({
+      message: 'Supprimer cette piece jointe ?',
+      header: 'Confirmation de suppression',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Supprimer',
+      rejectLabel: 'Annuler',
+      acceptButtonStyleClass: 'btn-danger',
+      accept: () => {
+        const companyId = this.firmWriteCompanyId;
+        const request$ = this.isFirmScope && companyId
+          ? this.firmSchedule.deleteAttachment(companyId, this.selected!.id, attachment.id)
+          : this.schedule.deleteAttachment(this.selected!.id, attachment.id);
 
-    request$.subscribe({
-      next: response => {
-        if (!response.success) {
-          this.notify('error', this.responseMessage(response));
-          return;
-        }
-        this.notify('success', 'Piece jointe supprimee.');
-        this.loadSelectedDetails();
-      },
-      error: () => this.notify('error', "La piece jointe n'a pas pu etre supprimee.")
+        request$.subscribe({
+          next: response => {
+            if (!response.success) {
+              this.notify('error', this.responseMessage(response));
+              return;
+            }
+            this.notify('success', 'Piece jointe supprimee.');
+            this.loadSelectedDetails();
+          },
+          error: () => this.notify('error', "La piece jointe n'a pas pu etre supprimee.")
+        });
+      }
     });
   }
 

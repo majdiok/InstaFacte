@@ -427,6 +427,7 @@ export class WizardValidationService {
     // CREDIT NOTE CHECKS
     if (state.metadata.type === InvoiceType.CreditNote) {
       checks.push(this.checkLinkedInvoice(state));
+      checks.push(this.checkCreditNoteAmount(state));
     }
 
     const errorCount = checks.filter(c => c.status === 'ERROR').length;
@@ -848,6 +849,38 @@ export class WizardValidationService {
       status: isValid ? 'VALID' : 'ERROR',
       isBlocking: true,
       field: 'metadata.linkedInvoiceId'
+    };
+  }
+
+  private checkCreditNoteAmount(state: InvoiceWizardState): ComplianceCheck {
+    const available = state.linkedInvoiceCommercialTtc;
+    if (available == null) {
+      return {
+        id: 'credit-note-amount',
+        category: 'CALCULATION',
+        label: 'Montant avoir',
+        description: "Montant à vérifier à l'émission",
+        status: 'VALID',
+        isBlocking: false,
+        field: 'totals'
+      };
+    }
+
+    const draftCommercial = roundToMillimes(
+      state.lines.reduce((sum, line) => sum + (line.totalTTC ?? 0), 0)
+    );
+    const isValid = draftCommercial <= available + NUMERIC_LIMITS.calculationTolerance;
+
+    return {
+      id: 'credit-note-amount',
+      category: 'CALCULATION',
+      label: 'Montant avoir',
+      description: isValid
+        ? `Montant valide: ${draftCommercial.toFixed(3)} TND ≤ ${available.toFixed(3)} TND`
+        : `Le montant de l'avoir (${draftCommercial.toFixed(3)} TND) dépasse la facture originale (${available.toFixed(3)} TND)`,
+      status: isValid ? 'VALID' : 'ERROR',
+      isBlocking: true,
+      field: 'totals'
     };
   }
 

@@ -9,13 +9,23 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { NgbActiveModal } from '@ng-bootstrap/ng-bootstrap';
+import { NgbActiveModal, NgbModalOptions } from '@ng-bootstrap/ng-bootstrap';
 import { AutoCompleteModule } from 'primeng/autocomplete';
+import { OverlayOptions } from 'primeng/api';
 import { InvoiceListItem } from '@core/services/invoice.service';
 import {
   InvoiceReferenceResolverService,
   LinkedInvoiceRef
 } from '@core/services/invoice-reference-resolver.service';
+
+export const REFUND_INVOICE_DIALOG_OPTIONS: NgbModalOptions = {
+  container: 'body',
+  centered: true,
+  backdrop: 'static',
+  keyboard: true,
+  windowClass: 'refund-invoice-id-dialog-window',
+  modalDialogClass: 'refund-invoice-id-dialog',
+};
 
 @Component({
   selector: 'app-refund-invoice-id-dialog',
@@ -40,35 +50,46 @@ import {
       <label for="refundInvoiceSearch" class="refund-dialog-label">
         Facture à rembourser
       </label>
-      <p-autoComplete
-        #invoiceSearchInput
-        inputId="refundInvoiceSearch"
-        [(ngModel)]="searchText"
-        [suggestions]="suggestions"
-        (completeMethod)="onSearch($event)"
-        (onSelect)="onInvoiceSelect($event)"
-        field="number"
-        [dropdown]="false"
-        [minLength]="1"
-        placeholder="Ex. FAC-2026-000042"
-        appendTo="body"
-        [inputStyle]="{ width: '100%' }"
-        [style]="{ width: '100%' }"
-        aria-label="Rechercher une facture à rembourser"
-        aria-describedby="refundDialogTitle">
-        <ng-template let-invoice pTemplate="item">
-          <div class="invoice-suggestion">
-            <span class="invoice-num">{{ invoice.number }}</span>
-            <span class="invoice-client">{{ invoice.clientName }}</span>
-            <span class="invoice-amount">{{ invoice.totalAmount | number:'1.3-3' }} {{ invoice.currency }}</span>
-          </div>
-        </ng-template>
-        <ng-template pTemplate="empty">
-          <div class="invoice-empty">
-            <span>Aucune facture trouvée</span>
-          </div>
-        </ng-template>
-      </p-autoComplete>
+      <div
+        class="refund-dialog-search"
+        [class.refund-dialog-search--open]="suggestions.length > 0">
+        <p-autoComplete
+          #invoiceSearchInput
+          inputId="refundInvoiceSearch"
+          [(ngModel)]="searchText"
+          [suggestions]="suggestions"
+          (completeMethod)="onSearch($event)"
+          (onSelect)="onInvoiceSelect($event)"
+          field="number"
+          [dropdown]="false"
+          [minLength]="1"
+          placeholder="Ex. FAC-2026-000042"
+          appendTo="body"
+          panelStyleClass="refund-invoice-autocomplete-panel"
+          scrollHeight="200px"
+          [overlayOptions]="modalOverlayOptions"
+          [baseZIndex]="modalPrimeBaseZIndex"
+          [inputStyle]="{ width: '100%' }"
+          [style]="{ width: '100%' }"
+          aria-label="Rechercher une facture à rembourser"
+          aria-describedby="refundDialogTitle">
+          <ng-template let-invoice pTemplate="item">
+            <div class="invoice-suggestion">
+              <span class="invoice-num">{{ invoice.number }}</span>
+              <span class="invoice-client">{{ invoice.clientName }}</span>
+              <span class="invoice-meta">
+                <span class="invoice-status">{{ invoice.status }}</span>
+                <span class="invoice-amount">{{ invoice.totalAmount | number:'1.3-3' }} {{ invoice.currency }}</span>
+              </span>
+            </div>
+          </ng-template>
+          <ng-template pTemplate="empty">
+            <div class="invoice-empty">
+              <span>Aucune facture trouvée</span>
+            </div>
+          </ng-template>
+        </p-autoComplete>
+      </div>
       @if (errorMessage()) {
         <p class="refund-dialog-error" role="alert">{{ errorMessage() }}</p>
       }
@@ -174,29 +195,54 @@ import {
       color: var(--color-text-primary, #0f172a);
     }
 
+    .refund-dialog-search {
+      position: relative;
+      min-height: 2.75rem;
+    }
+
+    .refund-dialog-search--open {
+      min-height: 13rem;
+      margin-bottom: var(--spacing-2, 0.5rem);
+    }
+
     .invoice-suggestion {
       display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-      align-items: baseline;
+      flex-direction: column;
+      gap: var(--spacing-1, 0.25rem);
     }
 
     .invoice-num {
-      font-weight: 600;
+      font-weight: var(--font-weight-semibold, 600);
+      font-family: 'JetBrains Mono', monospace;
     }
 
     .invoice-client {
+      font-size: var(--font-size-sm, 0.875rem);
       color: var(--color-text-secondary, #475569);
+    }
+
+    .invoice-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--spacing-2, 0.5rem);
+      font-size: var(--font-size-sm, 0.875rem);
+    }
+
+    .invoice-status {
+      color: var(--color-text-tertiary, #64748b);
     }
 
     .invoice-amount {
-      margin-left: auto;
-      font-size: 0.875rem;
+      font-weight: var(--font-weight-medium, 500);
+      color: var(--color-text-primary, #0f172a);
+      white-space: nowrap;
     }
 
     .invoice-empty {
-      padding: 0.5rem;
+      padding: var(--spacing-2, 0.5rem);
       color: var(--color-text-secondary, #475569);
+      font-size: var(--font-size-sm, 0.875rem);
     }
 
     .refund-dialog-error {
@@ -253,6 +299,9 @@ export class RefundInvoiceIdDialogComponent implements AfterViewInit {
   @ViewChild('invoiceSearchInput') inputRef!: ElementRef<HTMLElement>;
 
   private readonly resolver = inject(InvoiceReferenceResolverService);
+
+  readonly modalOverlayOptions: OverlayOptions = { baseZIndex: 1300 };
+  readonly modalPrimeBaseZIndex = 1300;
 
   searchText = '';
   suggestions: InvoiceListItem[] = [];

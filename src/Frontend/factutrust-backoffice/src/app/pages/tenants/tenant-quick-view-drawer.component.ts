@@ -21,7 +21,6 @@ import { FtBadgeComponent } from '@core/ui/badge/ft-badge.component';
 import { FtStatusDotComponent } from '@core/ui/status-dot/ft-status-dot.component';
 import { FtAvatarComponent } from '@core/ui/avatar/ft-avatar.component';
 import { FtEmptyStateComponent } from '@core/ui/empty-state/ft-empty-state.component';
-import { FtTndCurrencyPipe } from '@core/pipes/ft-tnd-currency.pipe';
 import { FtRelativeDatePipe } from '@core/pipes/ft-relative-date.pipe';
 import type { FtTone } from '@core/ui/badge/ft-badge.component';
 import { TENANTS_FR } from './tenants.i18n.fr';
@@ -52,7 +51,6 @@ import { TENANTS_FR } from './tenants.i18n.fr';
     FtStatusDotComponent,
     FtAvatarComponent,
     FtEmptyStateComponent,
-    FtTndCurrencyPipe,
     FtRelativeDatePipe
   ],
   template: `

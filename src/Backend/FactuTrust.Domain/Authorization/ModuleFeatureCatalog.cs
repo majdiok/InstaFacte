@@ -12,7 +12,7 @@ public static class ModuleFeatureCatalog
         AppModule.Sales => new[] { "sales_orders", "quotes", "delivery_notes", "invoices", "pricing" },
         AppModule.Clients => new[] { "read", "manage" },
         AppModule.Products => new[] { "read", "manage" },
-        AppModule.Treasury => new[] { "read", "manage" },
+        AppModule.Treasury => new[] { "read", "manage", "forecast_read", "forecast_manage" },
         AppModule.Reports => new[] { "sales", "purchases", "stock", "fiches", "payments" },
         AppModule.Administration => new[] { "users", "settings" },
         AppModule.Purchases => new[] { "suppliers", "purchase_orders", "purchase_receipts", "supplier_invoices" },
@@ -75,6 +75,10 @@ public static class ModuleFeatureCatalog
             {
                 Permissions.Payments.Create, Permissions.Payments.Update
             },
+            // Trésorerie prévisionnelle par IA — sous-features distinctes des paiements :
+            // consulter la projection n'implique pas de saisir des règlements, et inversement.
+            (AppModule.Treasury, "forecast_read") => new[] { Permissions.TreasuryForecast.View },
+            (AppModule.Treasury, "forecast_manage") => new[] { Permissions.TreasuryForecast.Manage },
             // Reports: each sub-feature currently maps to both View+Export.
             // Explicit cases prevent the catch-all from silently matching future keys.
             (AppModule.Reports, "sales") => new[]

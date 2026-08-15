@@ -16,7 +16,8 @@ public sealed record GetInvoicesSummaryQuery(
     DateTime? FromDate = null,
     DateTime? ToDate = null,
     Guid? ClientId = null,
-    bool UnpaidOnly = false) : IRequest<InvoiceListSummaryDto>;
+    bool UnpaidOnly = false,
+    InvoiceType? Type = null) : IRequest<InvoiceListSummaryDto>;
 
 /// <summary>
 /// Handler for GetInvoicesSummaryQuery.
@@ -39,5 +40,6 @@ public sealed class GetInvoicesSummaryQueryHandler
             request.ToDate,
             request.ClientId,
             request.UnpaidOnly,
+            request.Type,
             cancellationToken);
 }

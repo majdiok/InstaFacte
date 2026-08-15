@@ -149,7 +149,7 @@ public sealed class FirmProfitabilityController : ControllerBase
         var tenantId = GetHomeTenantId();
         if (tenantId is null) return Unauthorized();
         var result = await _collaboratorCosts.LinkPayrollEmployeeAsync(
-            tenantId.Value, isManager: true, collaboratorUserId, dto.PayrollEmployeeId, cancellationToken);
+            tenantId.Value, isManager: true, collaboratorUserId, dto.PayrollEmployeeId, cancellationToken: cancellationToken);
         if (result.IsFailure) return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
         return Ok(ApiResponse<object>.Ok(null!, "Liaison paie enregistrée."));
     }

@@ -116,6 +116,7 @@ public interface IInvoiceRepository : IRepository<Invoice>
         DateTime? fromDate,
         DateTime? toDate,
         Guid? clientId = null,
+        InvoiceType? type = null,
         CancellationToken cancellationToken = default);
     
     /// <summary>
@@ -146,6 +147,7 @@ public interface IInvoiceRepository : IRepository<Invoice>
         int page,
         int pageSize,
         bool unpaidOnly = false,
+        InvoiceType? type = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -159,6 +161,7 @@ public interface IInvoiceRepository : IRepository<Invoice>
         DateTime? toDate,
         Guid? clientId,
         bool unpaidOnly = false,
+        InvoiceType? type = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -167,5 +170,13 @@ public interface IInvoiceRepository : IRepository<Invoice>
     /// </summary>
     Task<IReadOnlyDictionary<(Guid UserId, int Month), decimal>> GetAchievedRevenueTndByUserMonthForYearAsync(
         int year,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Somme du TTC commercial (Abs(TotalAmount − FiscalStampAmount)) des avoirs déjà émis
+    /// (hors brouillon et annulé) qui rectifient <paramref name="linkedInvoiceId"/>.
+    /// </summary>
+    Task<decimal> SumIssuedCreditNoteCommercialTtcAsync(
+        Guid linkedInvoiceId,
         CancellationToken cancellationToken = default);
 }

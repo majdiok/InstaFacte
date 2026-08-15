@@ -36,6 +36,9 @@ public static class DelegatedPermissionCatalog
         Permissions.SupplierInvoices.Read,
         Permissions.Reports.View,
         Permissions.Reports.Export,
+        // Trésorerie prévisionnelle — consultation seule. Le `:manage` serait de toute façon
+        // retiré par IsWritePermissionDeniedInDelegatedMode : le recalcul reste au client.
+        Permissions.TreasuryForecast.View,
         // Payroll (RH & Paie) — consultation dossiers salariés ; cycles/DTS/paramètres en écriture.
         Permissions.Payroll.Read,
         Permissions.Payroll.RunPayroll,
@@ -73,6 +76,8 @@ public static class DelegatedPermissionCatalog
         Permissions.PurchaseReceipts.Read,
         Permissions.SupplierInvoices.Read,
         Permissions.Reports.View,
+        // Trésorerie prévisionnelle — consultation seule (cf. commentaire côté FirmManager).
+        Permissions.TreasuryForecast.View,
         // Payroll (RH & Paie) — consultation dossiers salariés ; cycles/DTS/paramètres en écriture.
         Permissions.Payroll.Read,
         Permissions.Payroll.RunPayroll,

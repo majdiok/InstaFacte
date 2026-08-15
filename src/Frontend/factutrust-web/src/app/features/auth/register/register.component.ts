@@ -19,7 +19,8 @@ import { AuthService, RegisterRequest } from '@core/services/auth.service';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { ErrorMessageService } from '@core/services/error-message.service';
-import { LogoComponent } from '@shared/components/logo/logo.component';
+import { AuthShellComponent } from '../auth-shell/auth-shell.component';
+import { REGISTER_AUTH_SHELL_CONFIG } from '../auth-shell/auth-shell.config';
 import { environment } from '@environments/environment';
 import { GOVERNORATE_OPTIONS } from '../shared/auth-governorate.options';
 import {
@@ -66,7 +67,7 @@ interface TaxRegime {
     DividerModule,
     CheckboxModule,
     InputSwitchModule,
-    LogoComponent
+    AuthShellComponent
   ],
   animations: [
     trigger('fadeInOut', [
@@ -93,6 +94,7 @@ interface TaxRegime {
 })
 export class RegisterComponent implements OnInit {
   readonly environment = environment;
+  readonly shellConfig = REGISTER_AUTH_SHELL_CONFIG;
   private fb = inject(FormBuilder);
   private authService = inject(AuthService);
   private warehouseContext = inject(WarehouseContextService);

@@ -16,6 +16,7 @@ import { CommonModule } from '@angular/common';
 import { DialogModule } from 'primeng/dialog';
 import { Subscription } from 'rxjs';
 import { ButtonComponent } from '@shared/components/button/button.component';
+import { ConfirmationService } from '@core/services/confirmation.service';
 import { AccountingDocumentImportService } from '../../services/accounting-document-import.service';
 import {
   DocumentDirection,
@@ -328,6 +329,7 @@ type ImportPhase = 'idle' | 'extracting' | 'review' | 'error';
 })
 export class AccountingDocumentImportDialogComponent implements OnChanges, OnDestroy {
   private readonly importService = inject(AccountingDocumentImportService);
+  private readonly confirmationService = inject(ConfirmationService);
 
   @Input() visible = false;
   @Output() visibleChange = new EventEmitter<boolean>();
@@ -411,9 +413,28 @@ export class AccountingDocumentImportDialogComponent implements OnChanges, OnDes
     if (!current || current.direction === direction || !this.currentFile) {
       return;
     }
-    if (this.proposalEditor?.hasManualEdits() && !this.confirmDiscardEdits()) {
+    if (this.proposalEditor?.hasManualEdits()) {
+      this.confirmDiscardEdits(() => this.reanalyzeWithDirection(direction));
       return;
     }
+    this.reanalyzeWithDirection(direction);
+  }
+
+  /** Le tiers vient d'être créé : on relance la proposition pour rattacher l'auxiliaire. */
+  onThirdPartyCreated(_: string): void {
+    const current = this.proposal();
+    if (!current || !this.currentFile) {
+      return;
+    }
+    if (this.proposalEditor?.hasManualEdits()) {
+      this.confirmDiscardEdits(() => this.reanalyzeAfterThirdPartyCreated(current.direction));
+      return;
+    }
+    this.reanalyzeAfterThirdPartyCreated(current.direction);
+  }
+
+  private reanalyzeWithDirection(direction: DocumentDirection): void {
+    if (!this.currentFile) return;
     this.reanalyzing.set(true);
     this.subscription?.unsubscribe();
     this.subscription = this.importService.propose(this.currentFile, direction).subscribe({
@@ -430,18 +451,11 @@ export class AccountingDocumentImportDialogComponent implements OnChanges, OnDes
     });
   }
 
-  /** Le tiers vient d'être créé : on relance la proposition pour rattacher l'auxiliaire. */
-  onThirdPartyCreated(_: string): void {
-    const current = this.proposal();
-    if (!current || !this.currentFile) {
-      return;
-    }
-    if (this.proposalEditor?.hasManualEdits() && !this.confirmDiscardEdits()) {
-      return;
-    }
+  private reanalyzeAfterThirdPartyCreated(direction: DocumentDirection): void {
+    if (!this.currentFile) return;
     this.reanalyzing.set(true);
     this.subscription?.unsubscribe();
-    this.subscription = this.importService.propose(this.currentFile, current.direction).subscribe({
+    this.subscription = this.importService.propose(this.currentFile, direction).subscribe({
       next: (p) => {
         this.proposal.set(p);
         this.displayDiagnostics.set(p.diagnostics);
@@ -483,10 +497,14 @@ export class AccountingDocumentImportDialogComponent implements OnChanges, OnDes
     this.displayDiagnostics.set(editor.getMergedProposal().diagnostics);
   }
 
-  private confirmDiscardEdits(): boolean {
-    return window.confirm(
-      'Vos modifications sur l\'écriture proposée seront perdues. Continuer ?'
-    );
+  private confirmDiscardEdits(onConfirm: () => void): void {
+    this.confirmationService.confirm({
+      message: 'Vos modifications sur l\'écriture proposée seront perdues. Continuer ?',
+      header: 'Confirmation',
+      acceptLabel: 'Continuer',
+      rejectLabel: 'Annuler',
+      accept: onConfirm
+    });
   }
 
   cancelImport(): void {

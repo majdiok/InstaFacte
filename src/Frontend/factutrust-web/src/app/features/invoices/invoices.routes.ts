@@ -31,6 +31,27 @@ export const INVOICES_ROUTES: Routes = [
     }
   },
   {
+    path: 'credit-note/new',
+    canActivate: [permissionGuard],
+    loadComponent: () => import('./credit-note-entry/credit-note-entry.component').then(m => m.CreditNoteEntryComponent),
+    title: 'Nouvel avoir de vente - InstaFact',
+    data: {
+      permissions: [PERMISSIONS.invoices.create]
+    }
+  },
+  {
+    path: 'credit-notes',
+    loadComponent: () => import('./invoice-list/invoice-list.component').then(m => m.InvoiceListComponent),
+    title: 'Avoirs de vente - InstaFact',
+    data: { creditNotesOnly: true }
+  },
+  {
+    path: 'credit-notes/:id',
+    loadComponent: () => import('./invoice-detail/invoice-detail.component').then(m => m.InvoiceDetailComponent),
+    title: 'Détail avoir - InstaFact',
+    data: { creditNotesOnly: true }
+  },
+  {
     path: 'unpaid',
     loadComponent: () => import('./invoice-list/invoice-list.component').then(m => m.InvoiceListComponent),
     title: 'Factures impayées - InstaFact',

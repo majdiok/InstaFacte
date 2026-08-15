@@ -65,6 +65,9 @@ import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
               <div class="ai-status" [class.offline]="session.aiAvailable() === false">
                 <span class="ai-status-dot"></span>
                 <span class="ai-status-text">{{ session.aiAvailable() === false ? 'Hors ligne' : 'Modèle prêt' }}</span>
+                @if (session.activeModel(); as model) {
+                  <span class="ai-status-model" [attr.title]="model.modelRef">{{ model.displayLabel }}</span>
+                }
                 @if (scopeConfig(); as sc) {
                   <span class="scope-badge" [attr.title]="'Assistant expert du module — catalogue et persona ' + sc.expertName">
                     <i [class]="sc.icon" aria-hidden="true"></i>
@@ -168,7 +171,7 @@ import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
           <div class="chat-area">
             <div class="messages-container" #messagesContainer>
               @if (!session.messages().length) {
-                <div class="welcome-state">
+                <div class="welcome-state" [class.welcome-state--catalog]="scopedSuggestionCategories().length">
                   <div class="welcome-icon">
                     <img
                       class="welcome-mark-img"
@@ -200,13 +203,33 @@ import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
                       </ul>
                     </div>
                   }
-                  <div class="suggestions">
-                    @for (s of scopedSuggestions(); track s) {
-                      <button class="suggestion-chip" (click)="session.sendMessage(s)">
-                        {{ s }}
-                      </button>
-                    }
-                  </div>
+                  @if (scopedSuggestionCategories().length) {
+                    <div class="suggestion-catalog">
+                      @for (cat of scopedSuggestionCategories(); track cat.id) {
+                        <section
+                          class="suggestion-category"
+                          role="group"
+                          [attr.aria-labelledby]="'sug-cat-' + cat.id">
+                          <h5 class="suggestion-category-title" [id]="'sug-cat-' + cat.id">{{ cat.label }}</h5>
+                          <div class="suggestions">
+                            @for (q of cat.questions; track q) {
+                              <button type="button" class="suggestion-chip" (click)="session.sendMessage(q)">
+                                {{ q }}
+                              </button>
+                            }
+                          </div>
+                        </section>
+                      }
+                    </div>
+                  } @else {
+                    <div class="suggestions">
+                      @for (s of scopedSuggestions(); track s) {
+                        <button class="suggestion-chip" (click)="session.sendMessage(s)">
+                          {{ s }}
+                        </button>
+                      }
+                    </div>
+                  }
                   <div class="favorite-add" role="group" aria-label="Enregistrer une question favorite">
                     <input
                       #favInput
@@ -418,6 +441,15 @@ import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
       box-shadow: none;
     }
 
+    .ai-status-model {
+      font-size: 11px;
+      color: var(--color-neutral-400, #9ca3af);
+      max-width: 180px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     .scope-badge {
       display: inline-flex;
       align-items: center;
@@ -505,6 +537,12 @@ import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
       color: var(--color-neutral-500, #6b7280);
     }
 
+    .welcome-state--catalog {
+      height: auto;
+      min-height: 100%;
+      justify-content: flex-start;
+    }
+
     .welcome-icon {
       width: 72px;
       height: 72px;
@@ -565,6 +603,29 @@ import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
       border-color: var(--ai-accent-300, #c4b5fd);
       background: var(--ai-accent-50, #f5f3ff);
       color: var(--ai-accent-600, #7c3aed);
+    }
+
+    .suggestion-catalog {
+      width: 100%;
+      max-width: 560px;
+      text-align: left;
+    }
+
+    .suggestion-category {
+      margin-bottom: 16px;
+    }
+
+    .suggestion-category:last-child {
+      margin-bottom: 0;
+    }
+
+    .suggestion-category-title {
+      margin: 0 0 8px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--color-neutral-500, #6b7280);
     }
 
     .favorite-add {
@@ -809,12 +870,20 @@ export class ChatPanelComponent implements AfterViewInit, OnInit, OnChanges, OnD
 
   readonly welcomeDescription = computed(() => {
     const sc = this.scopeConfig();
-    return sc
-      ? `Votre ${sc.expertName} répond aux questions de son domaine. Quelques exemples :`
-      : 'Posez des questions sur vos données commerciales, financières ou de stock. Quelques exemples :';
+    if (!sc) {
+      return 'Posez des questions sur vos données commerciales, financières ou de stock. Quelques exemples :';
+    }
+    const themed = (sc.suggestionCategories?.length ?? 0) > 0;
+    return themed
+      ? `Votre ${sc.expertName} répond aux questions de son domaine. Quelques exemples, classés par thème :`
+      : `Votre ${sc.expertName} répond aux questions de son domaine. Quelques exemples :`;
   });
 
   readonly scopedSuggestions = computed(() => this.scopeConfig()?.suggestions ?? this.suggestions);
+
+  readonly scopedSuggestionCategories = computed(
+    () => this.scopeConfig()?.suggestionCategories ?? []
+  );
 
   showExportDialog = false;
 

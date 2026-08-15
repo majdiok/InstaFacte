@@ -61,7 +61,9 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
           const isLogoutCall = req.url.includes('/auth/logout');
           const isRegistrationEndpoint =
             req.url.includes('/auth/register-firm') ||
-            req.url.endsWith('/auth/register');
+            req.url.endsWith('/auth/register') ||
+            req.url.includes('/auth/forgot-password') ||
+            req.url.includes('/auth/reset-password');
           const skipGlobalErrorUi = req.context.get(SKIP_ERROR_TOAST);
 
           const willShowValidationDialog =
@@ -77,11 +79,11 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
             !isRegistrationEndpoint &&
             !skipGlobalErrorUi;
 
-          const skipConsoleSpamOn401 =
-            processedError.status === 401 &&
-            (req.url.includes('/auth/refresh') || skipGlobalErrorUi);
+          const skipConsoleErrorLog =
+            skipGlobalErrorUi ||
+            (processedError.status === 401 && req.url.includes('/auth/refresh'));
 
-          if (!skipConsoleSpamOn401) {
+          if (!skipConsoleErrorLog) {
             errorHandler.logError(
               `HTTP ${processedError.status} - ${req.method} ${req.url}`,
               processedError,

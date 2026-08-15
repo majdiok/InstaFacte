@@ -75,7 +75,7 @@ public sealed class AccountingAuditRuleParityTests
             nameof(UnbalancedEntriesAuditRule) => new UnbalancedEntriesAuditRule(),
             nameof(SuspenseAccountsAuditRule) => new SuspenseAccountsAuditRule(),
             nameof(UnletteredLinesAuditRule) => new UnletteredLinesAuditRule(),
-            nameof(DepreciationAuditRule) => new DepreciationAuditRule(fixedAssets.Object),
+            nameof(DepreciationAuditRule) => new DepreciationAuditRule(),
             nameof(VatMissingDeclarationAuditRule) => new VatMissingDeclarationAuditRule(),
             nameof(OpenPeriodsAuditRule) => new OpenPeriodsAuditRule(),
             nameof(SequenceGapsAuditRule) => new SequenceGapsAuditRule(),

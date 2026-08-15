@@ -1,5 +1,6 @@
 using FactuTrust.API.Authorization;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.Invoices;
 using FactuTrust.Application.Features.Invoices.Commands;
 using FactuTrust.Application.Features.Invoices.Queries;
 using FactuTrust.Domain.Enums;
@@ -38,9 +39,13 @@ public class InvoicesController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] bool unpaidOnly = false,
+        [FromQuery] string? type = null,
         CancellationToken cancellationToken = default)
     {
-        var query = new GetInvoicesQuery(search, status, fromDate, toDate, clientId, page, pageSize, unpaidOnly);
+        if (!TryResolveInvoiceType(type, out var parsedType, out var errorResult))
+            return errorResult!;
+
+        var query = new GetInvoicesQuery(search, status, fromDate, toDate, clientId, page, pageSize, unpaidOnly, parsedType);
         var result = await _mediator.Send(query, cancellationToken);
 
         return Ok(ApiResponse<PagedResult<InvoiceListDto>>.Ok(result));
@@ -60,9 +65,13 @@ public class InvoicesController : ControllerBase
         [FromQuery] DateTime? toDate,
         [FromQuery] Guid? clientId,
         [FromQuery] bool unpaidOnly = false,
+        [FromQuery] string? type = null,
         CancellationToken cancellationToken = default)
     {
-        var query = new GetInvoicesSummaryQuery(search, status, fromDate, toDate, clientId, unpaidOnly);
+        if (!TryResolveInvoiceType(type, out var parsedType, out var errorResult))
+            return errorResult!;
+
+        var query = new GetInvoicesSummaryQuery(search, status, fromDate, toDate, clientId, unpaidOnly, parsedType);
         var result = await _mediator.Send(query, cancellationToken);
 
         return Ok(ApiResponse<InvoiceListSummaryDto>.Ok(result));
@@ -80,9 +89,13 @@ public class InvoicesController : ControllerBase
         [FromQuery] DateTime? fromDate,
         [FromQuery] DateTime? toDate,
         [FromQuery] Guid? clientId,
+        [FromQuery] string? type = null,
         CancellationToken cancellationToken = default)
     {
-        var query = new ExportInvoiceReportPdfQuery(fromDate, toDate, clientId);
+        if (!TryResolveInvoiceType(type, out var parsedType, out var errorResult))
+            return errorResult!;
+
+        var query = new ExportInvoiceReportPdfQuery(fromDate, toDate, clientId, parsedType);
         var result = await _mediator.Send(query, cancellationToken);
 
         if (result.IsFailure)
@@ -327,5 +340,17 @@ public class InvoicesController : ControllerBase
         }
 
         return Ok(ApiResponse<object>.Ok(null!, "Effet réglé avec succès"));
+    }
+
+    private bool TryResolveInvoiceType(string? type, out InvoiceType? parsedType, out IActionResult? errorResult)
+    {
+        if (InvoiceListTypeParser.TryParse(type, out parsedType, out var error))
+        {
+            errorResult = null;
+            return true;
+        }
+
+        errorResult = BadRequest(ApiResponse<object>.Fail(error!));
+        return false;
     }
 }

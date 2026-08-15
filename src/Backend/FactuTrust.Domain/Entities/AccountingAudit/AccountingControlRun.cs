@@ -19,6 +19,15 @@ public sealed class AccountingControlRun : Entity
     public int BlockingCount { get; set; }
     public int WarningCount { get; set; }
     public int InfoCount { get; set; }
+
+    /// <summary>
+    /// Nombre de règles réellement évaluées par ce run (activées ∩ dans le périmètre de modules).
+    /// Dénominateur de <see cref="ComplianceRate"/> : sans lui, ajouter des règles au catalogue
+    /// ferait bondir le taux de tous les tenants et rendrait deux exercices incomparables.
+    /// 0 sur les runs antérieurs à la colonne — le taux historique est alors laissé tel quel.
+    /// </summary>
+    public int EvaluatedRuleCount { get; set; }
+
     public string? ErrorMessage { get; set; }
     public string? ModuleCodesFilter { get; set; }
 

@@ -1,54 +1,4 @@
-<div class="auth-page">
-  <aside class="branding-panel">
-    <div class="branding-background">
-      <div class="blob shape-1"></div>
-      <div class="blob shape-2"></div>
-      <div class="blob shape-3"></div>
-      <div class="glass-overlay"></div>
-    </div>
-
-    <div class="branding-content">
-      <div class="brand-header">
-        <app-logo size="large" variant="lockup" routerLink="/"></app-logo>
-      </div>
-
-      <div class="value-prop">
-        <span class="badge">Espace cabinet</span>
-        <h1 class="title">Centralisez la comptabilité <br>de vos clients sociétés</h1>
-        <p class="description">
-          Gérez vos dossiers clients, répondez aux invitations et pilotez votre activité depuis un espace dédié aux cabinets d'expertise comptable.
-        </p>
-
-        <ul class="features-list">
-          <li>
-            <div class="icon-wrapper"><i class="pi pi-folder-open" aria-hidden="true"></i></div>
-            <span>Accès délégué aux dossiers clients</span>
-          </li>
-          <li>
-            <div class="icon-wrapper"><i class="pi pi-search" aria-hidden="true"></i></div>
-            <span>Annuaire des cabinets partenaires</span>
-          </li>
-          <li>
-            <div class="icon-wrapper"><i class="pi pi-chart-line" aria-hidden="true"></i></div>
-            <span>Tableau de bord et invitations en un clic</span>
-          </li>
-        </ul>
-      </div>
-
-      <div class="social-proof">
-        <div class="avatars">
-          <div class="avatar bg-1"><i class="pi pi-briefcase"></i></div>
-          <div class="avatar bg-2"><i class="pi pi-users"></i></div>
-          <div class="avatar bg-3"><i class="pi pi-building"></i></div>
-          <div class="avatar-more">EC</div>
-        </div>
-        <p>Pensé pour les experts-comptables et leurs équipes.</p>
-      </div>
-    </div>
-  </aside>
-
-  <main class="form-panel">
-    <div class="form-scrollable-container">
+<app-auth-shell [config]="shellConfig">
       @if (!environment.accountingFirmsEnabled) {
         <p-message severity="warn" text="Fonctionnalité non disponible."></p-message>
         <p class="login-prompt"><a routerLink="/auth/login" class="link-primary fw-semibold">Retour à la connexion</a></p>
@@ -59,10 +9,6 @@
             <i class="pi pi-sign-in" aria-hidden="true"></i>
             Déjà un compte ? Connexion
           </a>
-        </div>
-
-        <div class="form-header mobile-only">
-          <app-logo size="medium" variant="lockup" routerLink="/"></app-logo>
         </div>
 
         <div class="form-header-text">
@@ -471,6 +417,4 @@
           <p>Inscription société ? <a routerLink="/auth/register" class="link-primary fw-semibold">Créer un compte entreprise</a></p>
         </div>
       }
-    </div>
-  </main>
-</div>
+</app-auth-shell>

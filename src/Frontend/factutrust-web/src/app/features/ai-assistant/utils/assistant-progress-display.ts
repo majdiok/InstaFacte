@@ -47,6 +47,8 @@ const toolLabels: Record<string, string> = {
   get_sales_by_product: 'Ventes par produit',
   // \u2500\u2500 Pr\u00e9visions IA \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
   forecast_revenue: "Pr\u00e9vision du chiffre d'affaires",
+  get_cash_flow_forecast: 'Tr\u00e9sorerie pr\u00e9visionnelle',
+  get_cash_flow_lines: 'D\u00e9tail des flux de tr\u00e9sorerie attendus',
   forecast_product_demand: 'Pr\u00e9vision de la demande produit',
   get_replenishment_recommendations: 'Recommandations de r\u00e9approvisionnement',
   get_promotion_recommendations: 'Recommandations de promotion',
@@ -110,7 +112,13 @@ const toolLabels: Record<string, string> = {
   create_crm_activity: "Cr\u00e9ation d'activit\u00e9 CRM",
   create_crm_opportunity: "Cr\u00e9ation d'opportunit\u00e9",
   studio_generate_app: "G\u00e9n\u00e9ration d'application Studio",
-  studio_generate_system: 'G\u00e9n\u00e9ration de syst\u00e8me Studio'
+  studio_generate_system: 'G\u00e9n\u00e9ration de syst\u00e8me Studio',
+  // ── Cabinet / chef de mission ──────────────────────────────────────────
+  get_firm_portfolio_overview: 'Vue d\'ensemble du portefeuille',
+  get_firm_fiscal_deadlines: '\u00c9ch\u00e9ancier fiscal consolid\u00e9',
+  get_firm_dossier_health: 'Sant\u00e9 des dossiers',
+  get_firm_collaborator_workload: 'R\u00e9partition de la charge',
+  send_fiscal_deadline_reminder: 'Rappel d\'\u00e9ch\u00e9ance fiscale'
 };
 
 /** Pr\u00e9fixes techniques retir\u00e9s par le repli \u00ab prettifi\u00e9 \u00bb (nom d'outil inconnu du map). */
@@ -293,6 +301,10 @@ function formatProviderDetail(detail: string | undefined, status: AssistantProgr
 
   if (detail?.startsWith('openrouter:')) {
     return 'Mod\u00e8le cloud pr\u00eat';
+  }
+
+  if (detail?.startsWith('cursor:')) {
+    return 'Mod\u00e8le Cursor pr\u00eat';
   }
 
   return 'Connexion \u00e9tablie';

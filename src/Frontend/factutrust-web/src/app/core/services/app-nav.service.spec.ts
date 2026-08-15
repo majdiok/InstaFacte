@@ -195,10 +195,12 @@ describe('AppNavService — secondary nav parity', () => {
     expect(labels).not.toContain('Facturation');
     expect(labels).not.toContain('Paiements');
     expect(labels).not.toContain('Rentabilité de collaborateurs');
+    expect(labels).not.toContain('Paie interne');
     expect(routes).not.toContain('/firm/collaborateurs');
     expect(routes).not.toContain('/firm/billing/invoices');
     expect(routes).not.toContain('/firm/billing/payments');
     expect(routes).not.toContain('/firm/governance/dossier-time-profitability');
+    expect(routes).not.toContain('/firm/payroll');
     expect(routes).toContain('/firm/governance/time-sheets');
     expect(routes).toContain('/firm/settings');
   });
@@ -220,8 +222,10 @@ describe('AppNavService — secondary nav parity', () => {
     expect(labels).toContain('Facturation');
     expect(labels).not.toContain('Paiements');
     expect(labels).toContain('Rentabilité de collaborateurs');
+    expect(labels).toContain('Paie interne');
     expect(routes).toContain('/firm/collaborateurs');
     expect(routes).toContain('/firm/billing/invoices');
+    expect(routes).toContain('/firm/payroll');
     expect(routes).toContain('/firm/billing/payments');
 
     const facturation = nav.navItems().find(i => i.label === 'Facturation');

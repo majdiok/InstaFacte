@@ -10,6 +10,7 @@ import {
   JournalEntryTemplateDto
 } from '../services/accounting.service';
 import { ToastService } from '@core/services/toast.service';
+import { ConfirmationService } from '@core/services/confirmation.service';
 import { AnalyzeWithAiButtonComponent } from '@features/ai-assistant/components/analyze-with-ai-button/analyze-with-ai-button.component';
 import { wrapLegacyAnalyzePayload } from '@features/ai-assistant/utils/ai-screen-payload.factory';
 import { DraftBannerComponent } from './components/draft-banner.component';
@@ -212,6 +213,7 @@ export class ManualEntryComponent implements OnInit {
   private readonly toast = inject(ToastService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly draftStore = inject(ManualEntryDraftService);
+  private readonly confirmationService = inject(ConfirmationService);
 
   readonly pendingDraft = signal<ManualEntryDraft | null>(null);
   readonly showTemplatePicker = signal(false);
@@ -291,11 +293,20 @@ export class ManualEntryComponent implements OnInit {
 
   submit(afterSuccess: 'navigate' | 'reset' | 'duplicate' = 'navigate'): void {
     if (this.store.workNotes().trim() && afterSuccess !== 'duplicate') {
-      if (!window.confirm('La note de travail ne sera pas enregistrée en comptabilité. Continuer ?')) {
-        return;
-      }
+      this.confirmationService.confirm({
+        message: 'La note de travail ne sera pas enregistrée en comptabilité. Continuer ?',
+        header: 'Confirmation',
+        acceptLabel: 'Continuer',
+        rejectLabel: 'Annuler',
+        accept: () => this.executeSubmit(afterSuccess)
+      });
+      return;
     }
 
+    this.executeSubmit(afterSuccess);
+  }
+
+  private executeSubmit(afterSuccess: 'navigate' | 'reset' | 'duplicate'): void {
     this.submitService
       .submit(this.store, this.pendingFiles(), afterSuccess)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -371,21 +382,36 @@ export class ManualEntryComponent implements OnInit {
       this.store.resetForm();
       return;
     }
-    if (window.confirm('Voulez-vous vraiment vider le formulaire ? Toutes les saisies en cours seront perdues.')) {
-      this.store.resetForm();
-      this.pendingFiles.set([]);
-    }
+    this.confirmationService.confirm({
+      message: 'Voulez-vous vraiment vider le formulaire ? Toutes les saisies en cours seront perdues.',
+      header: 'Confirmation',
+      acceptLabel: 'Vider',
+      rejectLabel: 'Annuler',
+      accept: () => {
+        this.store.resetForm();
+        this.pendingFiles.set([]);
+      }
+    });
   }
 
   openTemplatePicker(): void { this.showTemplatePicker.set(true); }
   closeTemplatePicker(): void { this.showTemplatePicker.set(false); }
 
   onTemplateSelected(template: JournalEntryTemplateDto): void {
-    if (this.store.hasUserInput() && !window.confirm(
-      `Charger le modèle « ${template.name} » va remplacer la saisie en cours. Voulez-vous continuer ?`
-    )) {
+    if (this.store.hasUserInput()) {
+      this.confirmationService.confirm({
+        message: `Charger le modèle « ${template.name} » va remplacer la saisie en cours. Voulez-vous continuer ?`,
+        header: 'Confirmation',
+        acceptLabel: 'Continuer',
+        rejectLabel: 'Annuler',
+        accept: () => this.applySelectedTemplate(template)
+      });
       return;
     }
+    this.applySelectedTemplate(template);
+  }
+
+  private applySelectedTemplate(template: JournalEntryTemplateDto): void {
     this.applyTemplate(template);
     this.tabIndex.set(0);
     this.closeTemplatePicker();

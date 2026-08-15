@@ -171,12 +171,18 @@ public sealed class UnletteredLinesAuditRule : AccountingAuditRuleBase
     }
 }
 
+/// <summary>
+/// Dotations aux amortissements calculées mais non comptabilisées.
+///
+/// <para><b>Pourquoi la requête est ici et non dans <c>IFixedAssetRepository</c>.</b> Le repository
+/// ouvre son propre contexte sur le tenant <i>ambiant</i>. Exécutée dans un balayage de portefeuille
+/// cabinet — où le tenant ambiant est le cabinet et non le dossier examiné — la règle lirait les
+/// immobilisations du mauvais dossier. Une règle d'audit ne lit donc QUE par
+/// <c>ctx.Db</c> : c'est le seul contexte garanti pointer sur le dossier balayé. Le filtre
+/// ci-dessous reproduit à l'identique <c>GetUnpostedScheduleLinesForYearAsync</c>.</para>
+/// </summary>
 public sealed class DepreciationAuditRule : AccountingAuditRuleBase
 {
-    private readonly IFixedAssetRepository _fixedAssets;
-
-    public DepreciationAuditRule(IFixedAssetRepository fixedAssets) => _fixedAssets = fixedAssets;
-
     public override string Code => "depreciation";
     public override string ModuleCode => "fixed-assets";
     public override int Category => (int)AnomalyCategory.Immobilisations;
@@ -185,7 +191,14 @@ public sealed class DepreciationAuditRule : AccountingAuditRuleBase
     public override async Task<IReadOnlyList<AnomalyCandidate>> EvaluateAsync(
         IAuditEvaluationContext ctx, CancellationToken cancellationToken)
     {
-        var unposted = await _fixedAssets.GetUnpostedScheduleLinesForYearAsync(ctx.FiscalYear, cancellationToken);
+        var c = ctx.Ctx();
+        var unposted = await c.Db.DepreciationScheduleLines.AsNoTracking()
+            .Include(l => l.FixedAsset)
+            .Where(l => l.FiscalYear == ctx.FiscalYear && !l.IsPosted && l.DepreciationAmount > 0)
+            .Where(l => l.FixedAsset!.Status == FixedAssetStatus.InService
+                        || l.FixedAsset.Status == FixedAssetStatus.FullyDepreciated)
+            .OrderBy(l => l.FixedAsset!.InventoryNumber)
+            .ToListAsync(cancellationToken);
         if (unposted.Count == 0) return Array.Empty<AnomalyCandidate>();
         return
         [

@@ -7,6 +7,7 @@ using FactuTrust.Domain.Entities.Honoraires;
 using FactuTrust.Domain.Entities.Pricing;
 using FactuTrust.Domain.Entities.Storefront;
 using FactuTrust.Domain.Entities.Studio;
+using FactuTrust.Domain.Entities.Treasury;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Events;
 using FactuTrust.Domain.Services;
@@ -215,6 +216,15 @@ public partial class TenantDbContext : DbContext
     // Replenishment V2 audit trail (gated by Features:Forecasting:ReplenishmentV2:Enabled, table created by migration AddReplenishmentV2_Tenant).
     public DbSet<ReplenishmentDecisionAudit> ReplenishmentDecisionAudits => Set<ReplenishmentDecisionAudit>();
 
+    // Trésorerie prévisionnelle par IA (gated by TreasuryForecast:Enabled — tables created by migration AddTreasuryCashForecast_Tenant).
+    public DbSet<CashFlowForecastRun> CashFlowForecastRuns => Set<CashFlowForecastRun>();
+    public DbSet<CashFlowForecastLine> CashFlowForecastLines => Set<CashFlowForecastLine>();
+    public DbSet<CashFlowForecastBucket> CashFlowForecastBuckets => Set<CashFlowForecastBucket>();
+    public DbSet<CashFlowScenario> CashFlowScenarios => Set<CashFlowScenario>();
+    public DbSet<CashFlowForecastInsight> CashFlowForecastInsights => Set<CashFlowForecastInsight>();
+    public DbSet<RecurringCashCommitment> RecurringCashCommitments => Set<RecurringCashCommitment>();
+    public DbSet<CashFlowForecastSettings> CashFlowForecastSettings => Set<CashFlowForecastSettings>();
+
     // Honoraires Module (cabinet billing) — gated by AppModule.Honoraires.
     public DbSet<HonorairesInvoice> HonorairesInvoices => Set<HonorairesInvoice>();
     public DbSet<HonorairesInvoiceLine> HonorairesInvoiceLines => Set<HonorairesInvoiceLine>();
@@ -420,6 +430,9 @@ public partial class TenantDbContext : DbContext
 
         // AI Forecasting Module — defined in TenantDbContext.Forecasting.cs (partial class).
         ConfigureForecasting(builder);
+
+        // Trésorerie prévisionnelle par IA — defined in TenantDbContext.Treasury.cs (partial class).
+        ConfigureTreasuryForecast(builder);
 
         // Honoraires Module — defined in TenantDbContext.Honoraires.cs (partial class).
         ConfigureHonoraires(builder);

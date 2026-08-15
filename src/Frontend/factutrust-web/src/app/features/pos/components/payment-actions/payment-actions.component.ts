@@ -4,7 +4,10 @@ import { NgbModal } from '@ng-bootstrap/ng-bootstrap';
 import { PosStateService } from '../../services/pos-state.service';
 import { PaymentMethod } from '../../../invoices/invoice-wizard/models/invoice-wizard.models';
 import { SplitPaymentComponent } from '../split-payment/split-payment.component';
-import { RefundInvoiceIdDialogComponent } from '@shared/components/refund-invoice-id-dialog/refund-invoice-id-dialog.component';
+import {
+  RefundInvoiceIdDialogComponent,
+  REFUND_INVOICE_DIALOG_OPTIONS
+} from '@shared/components/refund-invoice-id-dialog/refund-invoice-id-dialog.component';
 import { LinkedInvoiceRef } from '@core/services/invoice-reference-resolver.service';
 
 @Component({
@@ -669,15 +672,7 @@ export class PaymentActionsComponent {
   ];
 
   openRefundInvoiceIdDialog(): void {
-    const ref = this.ngbModal.open(RefundInvoiceIdDialogComponent, {
-      container: 'body',
-      centered: true,
-      backdrop: 'static',
-      keyboard: true,
-      size: 'sm',
-      windowClass: 'refund-invoice-id-dialog-window',
-      modalDialogClass: 'refund-invoice-id-dialog',
-    });
+    const ref = this.ngbModal.open(RefundInvoiceIdDialogComponent, REFUND_INVOICE_DIALOG_OPTIONS);
     ref.result.then(
       (linkedInvoice: LinkedInvoiceRef) => {
         if (linkedInvoice?.id) {

@@ -19,7 +19,8 @@ public sealed record PlatformAiSettingsDto(
     bool IsOllamaAssistantConfigured,
     IReadOnlyList<UnifiedAiModelInfo> AvailableModels,
     AiModelRecommendationDto? Recommendation,
-    PlatformOpenRouterSettingsDto OpenRouter);
+    PlatformOpenRouterSettingsDto OpenRouter,
+    PlatformCursorSettingsDto Cursor);
 
 /// <summary>Masked OpenRouter credentials for the platform back-office.</summary>
 public sealed record PlatformOpenRouterSettingsDto(
@@ -46,6 +47,9 @@ public sealed class UpdatePlatformAiSettingsRequest
 
     /// <summary>When set, updates shared OpenRouter credentials. Empty ApiKey keeps the existing secret.</summary>
     public UpdatePlatformOpenRouterRequest? OpenRouter { get; init; }
+
+    /// <summary>When set, updates shared Cursor SDK credentials. Empty ApiKey keeps the existing secret.</summary>
+    public UpdatePlatformCursorRequest? Cursor { get; init; }
 }
 
 /// <summary>OpenRouter credential update payload (nested under UpdatePlatformAiSettingsRequest).</summary>
@@ -58,8 +62,29 @@ public sealed class UpdatePlatformOpenRouterRequest
     public string? ApiKey { get; init; }
 }
 
+/// <summary>Masked Cursor SDK credentials for the platform back-office.</summary>
+public sealed record PlatformCursorSettingsDto(
+    bool IsEnabled,
+    string? DisplayName,
+    bool IsApiKeyConfigured,
+    string? ApiKeyLast4);
+
+/// <summary>Cursor credential update payload.</summary>
+public sealed class UpdatePlatformCursorRequest
+{
+    public bool IsEnabled { get; init; }
+    public string? DisplayName { get; init; }
+    /// <summary>Plaintext API key. Null/empty = keep existing encrypted key.</summary>
+    public string? ApiKey { get; init; }
+}
+
 /// <summary>Runtime OpenRouter credentials resolved from platform Master DB.</summary>
 public sealed record PlatformOpenRouterCredentials(
     bool IsEnabled,
     string? ApiKey,
     string BaseUrl);
+
+/// <summary>Runtime Cursor credentials. ApiKey is null when disabled or missing/invalid.</summary>
+public sealed record PlatformCursorCredentials(
+    bool IsEnabled,
+    string? ApiKey);

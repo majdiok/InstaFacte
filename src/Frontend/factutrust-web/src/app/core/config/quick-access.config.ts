@@ -27,6 +27,13 @@ export const QUICK_ACCESS_ITEMS: QuickAccessItem[] = [
     section: 'create'
   },
   {
+    label: 'Ajouter un avoir de vente',
+    icon: 'fa-solid fa-receipt',
+    route: '/invoices/credit-note/new',
+    permission: PERMISSIONS.invoices.create,
+    section: 'create'
+  },
+  {
     label: 'Mes clients',
     icon: 'fa-solid fa-users',
     route: '/clients',

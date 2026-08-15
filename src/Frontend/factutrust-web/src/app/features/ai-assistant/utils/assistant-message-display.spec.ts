@@ -13,6 +13,7 @@ import {
   humanizeBusinessJson,
   replaceSectionsOnlyFences,
   sanitizeInternalToolNamesForDisplay,
+  stripDisallowedScriptsForDisplay,
   HUMANIZE_MAX_ROWS
 } from './assistant-message-display';
 
@@ -127,6 +128,51 @@ describe('assistant-message-display', () => {
       expect(out).toContain('{"tool":"get_sales_revenue"}');
       expect(out).toContain("Analyse du chiffre d'affaires");
       expect(out).toContain('REF_2026');
+    });
+  });
+
+  describe('stripDisallowedScriptsForDisplay', () => {
+    it('leaves French prose unchanged', () => {
+      const content = "Ce mois-ci votre chiffre d'affaires s'élève à 1 250,500 TND (16/06/2026).";
+      expect(stripDisallowedScriptsForDisplay(content)).toBe(content);
+    });
+
+    it('keeps French and drops Chinese paragraphs plus translator note', () => {
+      const french =
+        "Aucun collaborateur n'a été trouvé dans votre portefeuille actuel. " +
+        "Cela pourrait signifier que tous les dossiers sont bien suivis par vos équipes, " +
+        "ou qu'il y a une partie du portefeuille qui n'a pas pu être lue.";
+      const content =
+        french +
+        '\n\n助手：未找到任何协作人员。\n\n' +
+        '注意：以上翻译保持了原文的语气和内容，并已根据中文表达习惯进行了适当调整。';
+      const out = stripDisallowedScriptsForDisplay(content);
+      expect(out.trim()).toBe(french);
+      expect(out).not.toContain('助手');
+    });
+
+    it('preserves Arabic names', () => {
+      const content = 'Le client شركة النور a un solde de 200,000 TND.';
+      expect(stripDisallowedScriptsForDisplay(content)).toBe(content);
+    });
+
+    it('preserves JSON fences even when they contain CJK', () => {
+      const content =
+        'Voici le tableau.\n```json\n{"title":"Trésorerie","note":"中文"}\n```\n助手：忽略。';
+      const out = stripDisallowedScriptsForDisplay(content);
+      expect(out).toContain('```json');
+      expect(out).toContain('"note":"中文"');
+      expect(out).toContain('Voici le tableau.');
+      expect(out).not.toContain('助手');
+    });
+  });
+
+  describe('buildAssistantMarkdownForDisplay CJK', () => {
+    it('strips Chinese from persisted mixed replies', () => {
+      const french = "Aucun collaborateur n'a été trouvé dans votre portefeuille actuel.";
+      const md = buildAssistantMarkdownForDisplay(french + '\n\n助手：未找到任何协作人员。');
+      expect(md).toContain(french);
+      expect(md).not.toContain('助手');
     });
   });
 

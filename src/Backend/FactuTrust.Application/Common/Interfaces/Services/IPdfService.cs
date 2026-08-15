@@ -85,6 +85,18 @@ public interface IPdfService
     /// <summary>Génère le PDF de la détermination du résultat fiscal (réintégrations/déductions + calcul de l'impôt).</summary>
     Task<byte[]> GenerateFiscalResultPdfAsync(FiscalResultDeclarationDto dto, AccountingReportHeader header, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Génère le PDF du rapport de contrôle d'intégrité : synthèse de conformité, répartition par
+    /// module, puis détail des anomalies (sévérité, compte, période, montant, statut).
+    /// </summary>
+    Task<byte[]> GenerateAccountingAuditPdfAsync(AccountingAuditPdfContext context, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Génère le PDF du <b>dossier de révision</b> : synthèse, puis une note de travail par
+    /// anomalie avec sa gravité, son impact chiffré, sa pièce et l'action retenue.
+    /// </summary>
+    Task<byte[]> GenerateRevisionDossierPdfAsync(RevisionDossierPdfContext context, CancellationToken cancellationToken = default);
+
     /// <summary>Génère le PDF de la liasse consolidée (états NCT + détermination fiscale + tableaux annexes).</summary>
     Task<byte[]> GenerateConsolidatedLiassePdfAsync(ConsolidatedLiasseDto dto, AccountingReportHeader header, CancellationToken cancellationToken = default);
 

@@ -6,7 +6,6 @@ import {
   inject,
   signal
 } from '@angular/core';
-import { DecimalPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
@@ -38,7 +37,6 @@ import { PlanFormDialogComponent } from './plan-form-dialog.component';
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    DecimalPipe,
     FormsModule,
     ButtonModule,
     TooltipModule,

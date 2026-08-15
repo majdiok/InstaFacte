@@ -132,6 +132,52 @@ public sealed class InvoiceCreditNoteTests
         Assert.Equal(InvoiceStatus.PartiallyPaid, invoice.Status);
     }
 
+    [Fact]
+    public void AddSnapshotLine_UsesDraftVatAndFodec_NotProductCatalog()
+    {
+        var invoice = NewInvoice(InvoiceType.CreditNote);
+        var product = Product.Create(
+            "ART-1",
+            "Catalogue",
+            ProductType.Service,
+            Money.Create(999m),
+            VatRate.Reduced,
+            Guid.NewGuid(),
+            isFodecApplicable: false).Value;
+
+        var add = invoice.AddSnapshotLine(
+            product,
+            "Libellé FAC",
+            null,
+            2m,
+            "Unité",
+            Money.Create(250m),
+            VatRate.Standard,
+            discountPercent: null,
+            isFodecApplicable: true,
+            fodecRatePercent: 1m);
+
+        Assert.True(add.IsSuccess, add.Error?.Description);
+        var line = Assert.Single(invoice.Lines);
+        Assert.Equal(product.Id, line.ProductId);
+        Assert.Equal(250m, line.UnitPrice.Amount);
+        Assert.Equal(VatRate.Standard, line.VatRate);
+        Assert.True(line.IsFodecApplicable);
+        Assert.True(line.FodecAmount.Amount > 0);
+        Assert.Equal("Libellé FAC", line.ProductName);
+    }
+
+    [Fact]
+    public void CancelSubmission_AllowsRetryWithSameIdempotencyKey()
+    {
+        var draft = InvoiceDraft.Create(InvoiceType.CreditNote);
+        const string key = "same-key-same-key-same-key-12";
+        Assert.True(draft.StartSubmission(key).IsSuccess);
+        draft.CancelSubmission();
+        var retry = draft.StartSubmission(key);
+        Assert.True(retry.IsSuccess, retry.Error?.Description);
+    }
+
     private static Invoice NewInvoice(InvoiceType type)
     {
         var address = Address.Create("1 rue de la République", "Tunis", "Tunis").Value;

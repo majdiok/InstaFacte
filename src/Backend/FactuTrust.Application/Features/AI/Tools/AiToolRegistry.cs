@@ -1186,6 +1186,67 @@ public static class AiToolRegistry
             RequiredPermission = Permissions.Forecasting.View
         },
 
+        // ════════════════════════════════════════════════════════════════════
+        //  Trésorerie prévisionnelle
+        // ════════════════════════════════════════════════════════════════════
+
+        new()
+        {
+            Name = "get_cash_flow_forecast",
+            Description =
+                "TRÉSORERIE FUTURE UNIQUEMENT. NE PAS utiliser pour un solde bancaire actuel ni pour l'encours client — pour cela utiliser get_accounting_dashboard ou get_client_balances. " +
+                "Projection du solde de trésorerie (TND) sur un horizon en mois : solde d'ouverture comptable, encaissements et décaissements attendus mois par mois, solde de fin de période. " +
+                "Retourne aussi trois scénarios probabilisés (optimiste / réaliste / pessimiste), les alertes de tension datées et les facteurs d'influence. " +
+                "Les montants proviennent des factures clients et fournisseurs, des effets, de la paie, de l'échéancier fiscal, des emprunts et des engagements récurrents. " +
+                "NE JAMAIS inventer ces chiffres — toujours appeler ce tool.",
+            Parameters = new Dictionary<string, AiToolParameter>
+            {
+                ["horizon_months"] = new()
+                {
+                    Type = "integer",
+                    Description = "Nombre de mois projetés (1 à 12). Défaut : 6."
+                }
+            },
+            RequiredParameters = new(),
+            IsMutating = false,
+            RequiredPermission = Permissions.TreasuryForecast.View
+        },
+
+        new()
+        {
+            Name = "get_cash_flow_lines",
+            Description =
+                "Détail des flux de trésorerie attendus d'une projection : chaque échéance avec son tiers, sa date contractuelle, sa date réellement attendue, son montant et sa probabilité. " +
+                "UTILISER pour répondre à « quelles factures rentrent en août ? » ou « d'où vient ce décaissement ? ». " +
+                "NE PAS utiliser pour un total de période — get_cash_flow_forecast le fournit déjà agrégé.",
+            Parameters = new Dictionary<string, AiToolParameter>
+            {
+                ["direction"] = new()
+                {
+                    Type = "string",
+                    Description = "Sens du flux.",
+                    AllowedValues = new() { "inflow", "outflow" }
+                },
+                ["source_type"] = new()
+                {
+                    Type = "string",
+                    Description = "Origine métier du flux.",
+                    AllowedValues = new()
+                    {
+                        "client_invoice", "client_effet", "supplier_invoice", "supplier_effet",
+                        "payroll", "payroll_contribution", "fiscal_obligation", "loan_installment",
+                        "recurring_commitment"
+                    }
+                },
+                ["from_date"] = new() { Type = "string", Description = "Début de la fenêtre (yyyy-MM-dd)." },
+                ["to_date"] = new() { Type = "string", Description = "Fin de la fenêtre (yyyy-MM-dd)." },
+                ["top_n"] = new() { Type = "integer", Description = "Nombre de flux retournés (1 à 50). Défaut : 20." }
+            },
+            RequiredParameters = new(),
+            IsMutating = false,
+            RequiredPermission = Permissions.TreasuryForecast.View
+        },
+
         new()
         {
             Name = "forecast_product_demand",
@@ -1606,6 +1667,86 @@ public static class AiToolRegistry
             RequiredParameters = new() { "amount", "label" },
             IsMutating = true,
             RequiredPermission = Permissions.Payments.Create
+        },
+
+        // ───────────────────────── Agent « Chef de mission » (périmètre CABINET) ─────────────────────────
+        // Ces outils sont les seuls du catalogue à lire PLUSIEURS dossiers. Ils ne passent jamais par
+        // ITenantContext : le fan-out est explicite et borné par l'ACL du demandeur. Ils ne sont exposés
+        // qu'au scope FirmMission (cf. AiAgentScopeCatalog) et restent invisibles pour une société.
+        new()
+        {
+            Name = "get_firm_portfolio_overview",
+            Description =
+                "Vue d'ensemble du portefeuille du CABINET : nombre de dossiers actifs, échéances fiscales en retard "
+                + "et à venir avec les montants, dossiers sans écriture depuis 30 jours, déclarations TVA en brouillon. "
+                + "UTILISER pour : « où en est mon cabinet », « combien de retards », état général. "
+                + "NE PAS utiliser pour le détail d'un dossier précis (voir get_firm_dossier_health).",
+            Parameters = new Dictionary<string, AiToolParameter>()
+        },
+        new()
+        {
+            Name = "get_firm_fiscal_deadlines",
+            Description =
+                "Liste les échéances fiscales du portefeuille, triées par urgence, avec le dossier concerné et le "
+                + "collaborateur responsable. UTILISER pour : « quelles échéances sont en retard », « qu'est-ce qui "
+                + "tombe cette semaine », « les échéances de tel dossier ». Renvoie aussi le total correspondant "
+                + "quand la liste est tronquée.",
+            Parameters = new Dictionary<string, AiToolParameter>
+            {
+                ["only_overdue"] = new() { Type = "boolean", Description = "true pour ne garder que les échéances déjà en retard (optionnel, défaut false)." },
+                ["within_days"] = new() { Type = "integer", Description = "Fenêtre à venir en jours (optionnel, défaut 30, max 365). Ignoré si only_overdue est true." },
+                ["obligation_type"] = new()
+                {
+                    Type = "string",
+                    Description = "Filtrer sur un type d'obligation (optionnel).",
+                    AllowedValues = new()
+                    {
+                        "MonthlyDeclaration", "ProvisionalCorporateTaxInstallment", "WithholdingTax", "Fodec",
+                        "QuarterlyVat", "FinancialStatements", "SemiAnnualFinancialStatements",
+                        "PersonalIncomeTaxInstallment", "CnssDtsQuarterly", "PayrollIrppWithholding",
+                        "CnssMonthlyRemittance", "Other"
+                    }
+                },
+                ["company_name"] = new() { Type = "string", Description = "Nom (ou fragment) du dossier client pour restreindre la liste (optionnel)." },
+                ["top_n"] = new() { Type = "integer", Description = "Nombre max de lignes (optionnel, défaut 20, max 50)." }
+            }
+        },
+        new()
+        {
+            Name = "get_firm_dossier_health",
+            Description =
+                "Classe les dossiers du cabinet par niveau de risque : retards fiscaux et montants exposés, absence "
+                + "d'écriture depuis 30 jours, déclarations TVA en brouillon, gestionnaire affecté. "
+                + "UTILISER pour : « quels dossiers sont à risque », « lesquels surveiller cette semaine », « dossiers en souffrance ».",
+            Parameters = new Dictionary<string, AiToolParameter>
+            {
+                ["top_n"] = new() { Type = "integer", Description = "Nombre max de dossiers (optionnel, défaut 10, max 50)." }
+            }
+        },
+        new()
+        {
+            Name = "get_firm_collaborator_workload",
+            Description =
+                "Répartition de la charge entre collaborateurs du cabinet : nombre de dossiers suivis, échéances en "
+                + "retard et à venir dont chacun est responsable. Signale aussi les échéances sans responsable désigné. "
+                + "UTILISER pour : « qui est surchargé », « comment se répartit la charge », « qui suit quoi ».",
+            Parameters = new Dictionary<string, AiToolParameter>()
+        },
+        new()
+        {
+            Name = "send_fiscal_deadline_reminder",
+            Description =
+                "Envoie un rappel au collaborateur responsable d'une échéance fiscale précise. UTILISER uniquement "
+                + "après avoir identifié l'échéance via get_firm_fiscal_deadlines et confirmé l'intention de l'utilisateur. "
+                + "Un seul rappel par échéance et par jour.",
+            Parameters = new Dictionary<string, AiToolParameter>
+            {
+                ["deadline_id"] = new() { Type = "string", Description = "Identifiant de l'échéance, tel que renvoyé par get_firm_fiscal_deadlines." },
+                ["company_tenant_id"] = new() { Type = "string", Description = "Identifiant du dossier de l'échéance, tel que renvoyé par get_firm_fiscal_deadlines." }
+            },
+            RequiredParameters = new() { "deadline_id", "company_tenant_id" },
+            IsMutating = true,
+            RequiredPermission = Permissions.Firm.AiRemind
         }
     };
 }

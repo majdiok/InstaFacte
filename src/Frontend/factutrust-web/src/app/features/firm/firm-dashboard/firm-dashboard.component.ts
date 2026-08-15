@@ -18,6 +18,7 @@ import { FirmFeatureFlagsService } from '@core/services/firm-feature-flags.servi
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { StatCardComponent } from '@shared/components/stat-card/stat-card.component';
 import { FirmInvitationActionsService } from '../shared/firm-invitation-actions.service';
+import { FirmDecisionTablesSectionComponent } from './decision-tables/firm-decision-tables-section.component';
 
 interface GovernanceTile {
   label: string;
@@ -35,7 +36,8 @@ interface GovernanceTile {
     ButtonModule,
     TagModule,
     PageHeaderComponent,
-    StatCardComponent
+    StatCardComponent,
+    FirmDecisionTablesSectionComponent
   ],
   template: `
     <app-page-header
@@ -240,6 +242,10 @@ interface GovernanceTile {
           }
         </section>
       </div>
+
+      @if (decisionTablesEnabled()) {
+        <app-firm-decision-tables-section />
+      }
     }
   `,
   styles: [`
@@ -344,6 +350,12 @@ export class FirmDashboardComponent implements OnInit {
   readonly dashboard = signal<FirmDashboardData | null>(null);
   readonly governance = signal<FirmGovernanceDashboard | null>(null);
   readonly governanceEnabled = signal(false);
+
+  decisionTablesEnabled(): boolean {
+    return this.governanceEnabled()
+      && this.featureFlags.isEnabled('firmDecisionTables')
+      && this.auth.isFirmManager();
+  }
 
   readonly tiles: GovernanceTile[] = [
     {

@@ -47,6 +47,8 @@ import {
   roundTnd as roundTndUtil
 } from './invoice-wizard-calculation.utils';
 
+const EMPTY_PRODUCT_GUID = '00000000-0000-0000-0000-000000000000';
+
 /** DTO retourné par GET /api/invoices/wizard/next-number */
 interface NextInvoiceNumberDto {
   number: string;
@@ -128,7 +130,8 @@ export class InvoiceWizardService {
     lastSaved: null,
     draftId: null,
     validationResult: null,
-    submissionError: null
+    submissionError: null,
+    linkedInvoiceCommercialTtc: null
   };
 
   private state = signal<InvoiceWizardState>({ ...this.initialState });
@@ -427,27 +430,54 @@ export class InvoiceWizardService {
         }
 
         const invoiceLines = this.mapApiLinesToWizardLines(data.lines);
+        const warehouseId = data.warehouseId ?? null;
+        const linkedInvoiceCommercialTtc = Math.abs(
+          (data.totalAmount ?? 0) - (data.fiscalStampAmount ?? 0)
+        );
 
         const clientId = data.clientId || data.client?.id;
         if (!clientId) {
           console.warn('[initForCreditNote] No clientId found in invoice data');
-          return of({ clientInfo: undefined as ClientInfo | undefined, invoiceLines });
+          return of({
+            clientInfo: undefined as ClientInfo | undefined,
+            invoiceLines,
+            warehouseId,
+            linkedInvoiceCommercialTtc
+          });
         }
         return this.clientService.getClient(clientId).pipe(
           map((clientResponse) => {
             if (!clientResponse?.success || !clientResponse.data) {
               console.warn('[initForCreditNote] Client fetch failed for id:', clientId);
-              return { clientInfo: undefined as ClientInfo | undefined, invoiceLines };
+              return {
+                clientInfo: undefined as ClientInfo | undefined,
+                invoiceLines,
+                warehouseId,
+                linkedInvoiceCommercialTtc
+              };
             }
-            return { clientInfo: this.mapClientToClientInfo(clientResponse.data), invoiceLines };
+            return {
+              clientInfo: this.mapClientToClientInfo(clientResponse.data),
+              invoiceLines,
+              warehouseId,
+              linkedInvoiceCommercialTtc
+            };
           }),
           catchError((err) => {
             console.error('[initForCreditNote] Error fetching client:', err);
-            return of({ clientInfo: undefined as ClientInfo | undefined, invoiceLines });
+            return of({
+              clientInfo: undefined as ClientInfo | undefined,
+              invoiceLines,
+              warehouseId,
+              linkedInvoiceCommercialTtc
+            });
           })
         );
       }),
-      tap(({ clientInfo, invoiceLines }) => {
+      tap(({ clientInfo, invoiceLines, warehouseId, linkedInvoiceCommercialTtc }) => {
+        this.updateMetadata({ warehouseId });
+        this.updateState({ linkedInvoiceCommercialTtc });
+
         if (clientInfo) {
           this.selectClient(clientInfo);
         }
@@ -572,7 +602,9 @@ export class InvoiceWizardService {
     vatRatePercent: number;
     discountPercent: number | null;
     discountAmount: number;
+    allocatedGlobalDiscount?: number;
     subTotal: number;
+    isFodecApplicable?: boolean;
     vatAmount: number;
     total: number;
   }> | undefined | null): InvoiceLine[] {
@@ -582,23 +614,32 @@ export class InvoiceWizardService {
 
     return apiLines.map((apiLine, index) => {
       const vatRate = this.resolveVatRate(apiLine.vatRatePercent);
-      const discountType: 'PERCENT' | 'AMOUNT' | null =
-        apiLine.discountPercent != null && apiLine.discountPercent > 0 ? 'PERCENT' : null;
-      const discountValue = discountType === 'PERCENT' ? apiLine.discountPercent : null;
+      const quantity = apiLine.quantity ?? 0;
+      const unitPriceHT = apiLine.unitPrice || 0;
+      const gross = quantity * unitPriceHT;
+      const ht = apiLine.subTotal ?? gross;
+      const effectivePct = gross > 0 && ht < gross
+        ? ((gross - ht) / gross) * 100
+        : (apiLine.discountPercent ?? 0);
+      const hasDiscount = effectivePct > 0;
+      const productId = apiLine.productId && apiLine.productId !== EMPTY_PRODUCT_GUID
+        ? apiLine.productId
+        : null;
 
       const line: InvoiceLine = {
         id: createClientUuid(),
         lineNumber: index + 1,
-        productId: apiLine.productId || null,
+        productId,
         designation: apiLine.productName || '',
         description: apiLine.productDescription || null,
-        quantity: apiLine.quantity || 1,
+        quantity,
         unit: apiLine.unit || 'Unité',
-        unitPriceHT: apiLine.unitPrice || 0,
-        discountType,
-        discountValue: discountValue ?? null,
+        unitPriceHT,
+        priceOverridden: true,
+        discountType: hasDiscount ? 'PERCENT' : null,
+        discountValue: hasDiscount ? effectivePct : null,
         vatRate,
-        isFodecApplicable: (apiLine as any).isFodecApplicable ?? false,
+        isFodecApplicable: apiLine.isFodecApplicable ?? false,
         discountAmount: 0,
         totalHT: 0,
         fodecAmount: 0,
@@ -1596,6 +1637,7 @@ export class InvoiceWizardService {
     const err = error as {
       error?: {
         message?: string;
+        description?: string;
         code?: string;
         errors?: string[];
         globalErrors?: string[];
@@ -1610,6 +1652,8 @@ export class InvoiceWizardService {
       }
       if (err.error.message) {
         errorMessage = err.error.message;
+      } else if (err.error.description) {
+        errorMessage = err.error.description;
       } else if (err.error.errors?.length) {
         errorMessage = err.error.errors[0];
       } else if (err.error.globalErrors?.length) {
@@ -1870,13 +1914,7 @@ export class InvoiceWizardService {
           })
         );
       }),
-      catchError(error => {
-        let errorMessage = 'Impossible d\'émettre la facture d\'avoir';
-        if (error?.error?.message) errorMessage = error.error.message;
-        else if (error?.error?.globalErrors?.length) errorMessage = error.error.globalErrors[0];
-        this.updateState({ isSaving: false, submissionError: errorMessage });
-        throw new Error(errorMessage);
-      })
+      catchError(error => this.handleSubmitFailure(error))
     );
   }
 

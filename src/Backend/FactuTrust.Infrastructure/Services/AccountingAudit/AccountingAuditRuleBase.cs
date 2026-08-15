@@ -90,9 +90,51 @@ public abstract class AccountingAuditRuleBase : IAccountingAuditRule
         DateOnly? periodTo,
         IReadOnlyList<AnomalyLineCandidate> lines,
         IReadOnlyList<string> recommendations,
-        string? deepLinkRoute)
+        string? deepLinkRoute) =>
+        SingleGroup(ruleCode, moduleCode, category, severity, title, description, impact,
+            accountRef, amount, periodFrom, periodTo, lines, recommendations, deepLinkRoute,
+            discriminator: null);
+
+    /// <summary>
+    /// Variante avec <paramref name="discriminator"/> : identifiant métier qui distingue deux
+    /// anomalies de la même règle sur la même période.
+    ///
+    /// <para><b>À utiliser dès qu'une règle émet plus d'une anomalie par compte et par période.</b>
+    /// <c>AccountingAnomaly.Fingerprint</c> porte un index UNIQUE et l'empreinte de base ne combine
+    /// que la règle, le compte et la période : deux fournisseurs en doublon, ou deux salariés hors
+    /// régime, produiraient la même empreinte et la seconde anomalie écraserait la première.
+    /// Passer ici l'identifiant du fournisseur, le matricule, le numéro de pièce ou la date
+    /// concernée.</para>
+    ///
+    /// <para>Le discriminant doit être <b>stable d'un run à l'autre</b> : c'est ce qui permet de
+    /// reconnaître la même anomalie et de conserver son statut (assignée, ignorée) au lieu d'en
+    /// recréer une neuve à chaque contrôle. Ne jamais y mettre une date d'exécution ni un GUID
+    /// nouvellement tiré.</para>
+    /// </summary>
+    protected static AnomalyCandidate SingleGroup(
+        string ruleCode,
+        string moduleCode,
+        int category,
+        int severity,
+        string title,
+        string description,
+        string impact,
+        string? accountRef,
+        decimal amount,
+        DateOnly? periodFrom,
+        DateOnly? periodTo,
+        IReadOnlyList<AnomalyLineCandidate> lines,
+        IReadOnlyList<string> recommendations,
+        string? deepLinkRoute,
+        string? discriminator)
     {
-        var fp = AuditFingerprint.Build(ruleCode, accountRef, periodFrom?.ToString(), periodTo?.ToString());
+        // Sans discriminant, l'empreinte doit rester STRICTEMENT identique à l'historique : ajouter
+        // un séparateur vide changerait le hachage de toutes les anomalies déjà en base, qui
+        // seraient alors auto-résolues à tort puis recréées à neuf, perdant statut et affectation.
+        var fp = string.IsNullOrEmpty(discriminator)
+            ? AuditFingerprint.Build(ruleCode, accountRef, periodFrom?.ToString(), periodTo?.ToString())
+            : AuditFingerprint.Build(ruleCode, accountRef, periodFrom?.ToString(), periodTo?.ToString(), discriminator);
+
         return new AnomalyCandidate(
             fp, ruleCode, moduleCode, category, severity,
             title, description, impact, accountRef, amount,

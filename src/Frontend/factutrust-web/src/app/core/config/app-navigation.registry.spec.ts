@@ -220,4 +220,15 @@ describe('app-navigation.registry', () => {
       expect(settingsRoutes).toContain('/settings/promotions');
     });
   });
+
+  describe('avoir de vente navigation entry', () => {
+    it('lists Avoir de vente under Ventes as a read list', () => {
+      const ventes = ALL_NAV_ITEMS.find(i => i.label === 'Ventes');
+      const entry = ventes?.children?.find(c => c.route === '/invoices/credit-notes');
+
+      expect(entry).toBeDefined();
+      expect(entry!.label).toBe('Avoir de vente');
+      expect(entry!.permissionsAll).toContain('invoices:read');
+    });
+  });
 });

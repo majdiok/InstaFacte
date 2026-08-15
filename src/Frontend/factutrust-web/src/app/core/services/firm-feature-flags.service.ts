@@ -7,6 +7,14 @@ export interface FirmFeatureFlags {
   fiscalOpsV2: boolean;
   /** Module gouvernance (dossier permanent, dirigeants, pilotage) */
   firmGovernance: boolean;
+  /** Tableaux décisionnels sur le tableau de bord cabinet (gérants) */
+  firmDecisionTables: boolean;
+  /**
+   * Réviseur de portefeuille (`/firm/revision`).
+   * À basculer CONJOINTEMENT avec `Features:AccountingFirms:FirmRevisionEnabled` côté API : si le
+   * back est off, toutes les routes du module répondent 503.
+   */
+  firmRevision: boolean;
   /** Journalisation console des erreurs cabinet (dev / support) */
   consoleFirmErrors: boolean;
 }
@@ -14,6 +22,8 @@ export interface FirmFeatureFlags {
 const DEFAULT_FLAGS: FirmFeatureFlags = {
   fiscalOpsV2: true,
   firmGovernance: true,
+  firmDecisionTables: true,
+  firmRevision: false,
   consoleFirmErrors: false
 };
 

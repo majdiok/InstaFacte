@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Auth;
@@ -35,6 +36,8 @@ public class AuthController : ControllerBase
     private readonly IAccountingFirmsFeature _accountingFirmsFeature;
     private readonly IAccountingFirmRegistrationService _accountingFirmRegistrationService;
     private readonly FirmGovernanceOptions _firmGovernanceOptions;
+    private readonly AccountingFirmsOptions _accountingFirmsOptions;
+    private readonly IEmailService _emailService;
     private readonly ILogger<AuthController> _logger;
 
     public AuthController(
@@ -48,6 +51,8 @@ public class AuthController : ControllerBase
         IAccountingFirmsFeature accountingFirmsFeature,
         IAccountingFirmRegistrationService accountingFirmRegistrationService,
         IOptions<FirmGovernanceOptions> firmGovernanceOptions,
+        IOptions<AccountingFirmsOptions> accountingFirmsOptions,
+        IEmailService emailService,
         ILogger<AuthController> logger)
     {
         _userManager = userManager;
@@ -60,6 +65,8 @@ public class AuthController : ControllerBase
         _accountingFirmsFeature = accountingFirmsFeature;
         _accountingFirmRegistrationService = accountingFirmRegistrationService;
         _firmGovernanceOptions = firmGovernanceOptions.Value;
+        _accountingFirmsOptions = accountingFirmsOptions.Value;
+        _emailService = emailService;
         _logger = logger;
     }
 
@@ -241,6 +248,110 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
+    /// Request a password reset link by email (always returns success to prevent email enumeration).
+    /// </summary>
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    [EnableRateLimiting("password-reset")]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDto dto, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(dto.Email))
+            return BadRequest(ApiResponse<object>.Fail("L'adresse email est requise."));
+
+        var email = dto.Email.Trim();
+        var user = await _userManager.FindByEmailAsync(email);
+
+        if (user is not null && user.IsActive)
+        {
+            var tenantActive = user.TenantId != Guid.Empty;
+            if (tenantActive)
+            {
+                var tenant = await _masterContext.Tenants.FindAsync(new object[] { user.TenantId }, cancellationToken);
+                tenantActive = tenant is not null && tenant.IsActive;
+            }
+
+            if (tenantActive)
+            {
+                try
+                {
+                    var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+                    var frontendBase = _configuration["App:FrontendBaseUrl"]?.TrimEnd('/') ?? "http://localhost:4200";
+                    var resetUrl =
+                        $"{frontendBase}/auth/reset-password?email={Uri.EscapeDataString(email)}&token={Uri.EscapeDataString(token)}";
+
+                    var recipientName = $"{user.FirstName} {user.LastName}".Trim();
+                    if (string.IsNullOrWhiteSpace(recipientName))
+                        recipientName = email;
+
+                    var htmlBody = $"""
+                        <p>Bonjour <strong>{System.Net.WebUtility.HtmlEncode(recipientName)}</strong>,</p>
+                        <p>Vous avez demandé la réinitialisation de votre mot de passe InstaFact.</p>
+                        <p><a href="{resetUrl}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:white;text-decoration:none;border-radius:6px;">Réinitialiser mon mot de passe</a></p>
+                        <p style="color:#666;font-size:12px;">Si vous n'êtes pas à l'origine de cette demande, ignorez cet email. Ce lien expire après un court délai.</p>
+                        """;
+
+                    await _emailService.SendEmailAsync(
+                        email,
+                        "Réinitialisation de votre mot de passe InstaFact",
+                        htmlBody,
+                        cancellationToken: cancellationToken);
+
+                    _logger.LogInformation("Password reset email queued for {Email}", email);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to send password reset email for {Email}", email);
+                }
+            }
+        }
+
+        return Ok(ApiResponse<object>.Ok(
+            null!,
+            "Si un compte existe avec cette adresse email, un lien de réinitialisation a été envoyé."));
+    }
+
+    /// <summary>
+    /// Reset password using token from email link.
+    /// </summary>
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    [EnableRateLimiting("password-reset")]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto dto, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(dto.Email) || string.IsNullOrWhiteSpace(dto.Token))
+            return BadRequest(ApiResponse<object>.Fail("Email et jeton de réinitialisation requis."));
+
+        if (string.IsNullOrWhiteSpace(dto.NewPassword))
+            return BadRequest(ApiResponse<object>.Fail("Le nouveau mot de passe est requis."));
+
+        if (!string.Equals(dto.NewPassword, dto.ConfirmNewPassword, StringComparison.Ordinal))
+            return BadRequest(ApiResponse<object>.Fail("Les mots de passe ne correspondent pas."));
+
+        var user = await _userManager.FindByEmailAsync(dto.Email.Trim());
+        if (user is null)
+            return BadRequest(ApiResponse<object>.Fail("Jeton de réinitialisation invalide ou expiré."));
+
+        var result = await _userManager.ResetPasswordAsync(user, dto.Token, dto.NewPassword);
+        if (!result.Succeeded)
+        {
+            var errors = IdentityErrorTranslator.TranslateToFrench(result.Errors);
+            return BadRequest(ApiResponse<object>.Fail(errors));
+        }
+
+        user.RefreshToken = null;
+        user.RefreshTokenExpiryTime = null;
+        await _userManager.UpdateAsync(user);
+
+        _logger.LogInformation("Password reset successful for {Email}", dto.Email);
+
+        return Ok(ApiResponse<object>.Ok(null!, "Votre mot de passe a été réinitialisé avec succès."));
+    }
+
+    /// <summary>
     /// Refresh access token using refresh token.
     /// </summary>
     [HttpPost("refresh")]
@@ -395,7 +506,8 @@ public class AuthController : ControllerBase
             effectivePermissions = FirmGovernanceNativeAccess.AugmentNativeFirmPermissions(
                 snapshot.EffectivePermissions.ToList(),
                 roleEnum,
-                _firmGovernanceOptions);
+                _firmGovernanceOptions,
+                _accountingFirmsOptions);
         }
         else
         {

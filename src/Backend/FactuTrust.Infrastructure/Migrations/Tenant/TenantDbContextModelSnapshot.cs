@@ -10298,11 +10298,6 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("FactuTrust.Domain.Entities.Pricing.PriceList", b =>
-                {
-                    b.Navigation("Items");
-                });
-
             modelBuilder.Entity("FactuTrust.Domain.Entities.Pricing.PriceListItem", b =>
                 {
                     b.HasOne("FactuTrust.Domain.Entities.Pricing.PriceList", null)
@@ -10337,8 +10332,6 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
 
                     b.Navigation("UnitPriceHT")
                         .IsRequired();
-
-                    b.Navigation("Tiers");
                 });
 
             modelBuilder.Entity("FactuTrust.Domain.Entities.Pricing.PriceListItemTier", b =>
@@ -12750,6 +12743,16 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
             modelBuilder.Entity("FactuTrust.Domain.Entities.PhysicalInventory", b =>
                 {
                     b.Navigation("CountLines");
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.Pricing.PriceList", b =>
+                {
+                    b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.Pricing.PriceListItem", b =>
+                {
+                    b.Navigation("Tiers");
                 });
 
             modelBuilder.Entity("FactuTrust.Domain.Entities.PurchaseOrder", b =>

@@ -26,7 +26,15 @@ public enum AssistantAgentScope
     Stock = 3,
     Accounting = 4,
     Treasury = 5,
-    Crm = 6
+    Crm = 6,
+
+    /// <summary>
+    /// Agent « Chef de mission » : seul scope au périmètre du CABINET et non d'un dossier.
+    /// Ses outils lisent le portefeuille de dossiers via la base master et un fan-out borné, sans
+    /// jamais passer par <c>ITenantContext</c>. Réservé au cabinet en mode natif (jamais délégué,
+    /// cf. <c>FirmDelegatedAiScopePolicy</c>).
+    /// </summary>
+    FirmMission = 7
 }
 
 public sealed record ChatUiContextEntityDto

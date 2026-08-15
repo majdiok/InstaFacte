@@ -7,6 +7,7 @@ describe('ai-screen-labels.util', () => {
   it('maps known screen ids to French labels', () => {
     expect(resolveScreenLabel('accounting-ledger')).toBe('Grand livre');
     expect(resolveScreenLabel('invoice-list')).toBe('Liste des factures');
+    expect(resolveScreenLabel('credit-note-list')).toBe('Liste des avoirs');
     expect(resolveScreenLabel('dashboard')).toBe('Tableau de bord');
   });
 

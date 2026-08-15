@@ -41,7 +41,6 @@ import { FtCellRelativeDateComponent } from '@core/ui/table-cells/ft-cell-relati
 import { FtCellStatusComponent } from '@core/ui/table-cells/ft-cell-status.component';
 import { FtCellPlanComponent } from '@core/ui/table-cells/ft-cell-plan.component';
 import { FtCellActionsMenuComponent } from '@core/ui/table-cells/ft-cell-actions-menu.component';
-import { FtTndCurrencyPipe } from '@core/pipes/ft-tnd-currency.pipe';
 
 import { TENANTS_FR } from './tenants.i18n.fr';
 import { TenantQuickViewDrawerComponent } from './tenant-quick-view-drawer.component';
@@ -77,7 +76,6 @@ interface ActiveChip {
     FtCellStatusComponent,
     FtCellPlanComponent,
     FtCellActionsMenuComponent,
-    FtTndCurrencyPipe,
     TenantQuickViewDrawerComponent
   ],
   template: `

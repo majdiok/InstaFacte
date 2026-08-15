@@ -112,7 +112,8 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
             effectivePermissions = FirmGovernanceNativeAccess.AugmentNativeFirmPermissions(
                 nativeSnapshot.EffectivePermissions.ToList(),
                 roleEnum,
-                _firmGovernanceOptions);
+                _firmGovernanceOptions,
+                _accountingFirmsOptions);
             enabledModuleIds = FirmGovernanceNativeAccess.BuildNativeFirmModuleIds(_firmGovernanceOptions);
         }
         else

@@ -872,7 +872,8 @@ export class FirmGovernanceService {
 
   getPayrollProvisioningStatus(): Observable<ApiResponse<FirmPayrollProvisioningStatus>> {
     return this.http.get<ApiResponse<FirmPayrollProvisioningStatus>>(
-      `${environment.apiUrl}/firm/payroll/provisioning-status`);
+      `${environment.apiUrl}/firm/payroll/provisioning-status`,
+      { context: createHttpContextSkipGlobalErrorUi() });
   }
 
   provisionPayrollFromCollaborators(): Observable<ApiResponse<FirmPayrollProvisionResult>> {

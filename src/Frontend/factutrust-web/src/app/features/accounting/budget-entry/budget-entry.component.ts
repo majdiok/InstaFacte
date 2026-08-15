@@ -6,6 +6,7 @@ import { PageHeaderComponent } from '@shared/components/page-header/page-header.
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
 import { ToastService } from '@core/services/toast.service';
+import { ConfirmationService } from '@core/services/confirmation.service';
 import { AuthService } from '@core/services/auth.service';
 import { canValidateAccountingEntries } from '@core/utils/accounting-access';
 import {
@@ -165,6 +166,7 @@ export class BudgetEntryComponent implements OnInit {
   private readonly api = inject(AccountingService);
   private readonly toast = inject(ToastService);
   private readonly auth = inject(AuthService);
+  private readonly confirmationService = inject(ConfirmationService);
 
   readonly canValidate = computed(() => canValidateAccountingEntries(this.auth));
 
@@ -300,26 +302,31 @@ export class BudgetEntryComponent implements OnInit {
   validateInitial(): void {
     if (!this.canValidate()) return;
     if (this.busy()) return;
-    if (!window.confirm(
-      `Valider le budget initial ${this.fiscalYear()} ?\n\n` +
-      'Le budget initial sera figé (copié vers le budget révisé, seule version modifiable ensuite). Cette action est irréversible.')) {
-      return;
-    }
-    this.validating.set(true);
-    this.error.set(null);
-    this.api.validateInitialBudget(this.fiscalYear()).subscribe({
-      next: res => {
-        this.validating.set(false);
-        if (!res.success) {
-          this.error.set(res.error ?? 'La validation du budget initial a échoué.');
-          return;
-        }
-        this.toast.add({ severity: 'success', summary: 'Budget initial validé', detail: `Exercice ${this.fiscalYear()}`, life: 4000 });
-        this.load();
-      },
-      error: () => {
-        this.validating.set(false);
-        this.error.set('Erreur réseau lors de la validation du budget initial.');
+    this.confirmationService.confirm({
+      message:
+        `Valider le budget initial ${this.fiscalYear()} ?\n\n` +
+        'Le budget initial sera figé (copié vers le budget révisé, seule version modifiable ensuite). Cette action est irréversible.',
+      header: 'Confirmation',
+      acceptLabel: 'Valider',
+      rejectLabel: 'Annuler',
+      accept: () => {
+        this.validating.set(true);
+        this.error.set(null);
+        this.api.validateInitialBudget(this.fiscalYear()).subscribe({
+          next: res => {
+            this.validating.set(false);
+            if (!res.success) {
+              this.error.set(res.error ?? 'La validation du budget initial a échoué.');
+              return;
+            }
+            this.toast.add({ severity: 'success', summary: 'Budget initial validé', detail: `Exercice ${this.fiscalYear()}`, life: 4000 });
+            this.load();
+          },
+          error: () => {
+            this.validating.set(false);
+            this.error.set('Erreur réseau lors de la validation du budget initial.');
+          }
+        });
       }
     });
   }

@@ -118,6 +118,9 @@ public static class AiAgentScopeCatalog
         "search_invoices",
         "search_supplier_invoices",
         "propose_client_actions",
+        // Trésorerie prévisionnelle — lecture seule.
+        "get_cash_flow_forecast",
+        "get_cash_flow_lines",
         // Mutations
         "record_invoice_payment",
         "record_supplier_payment",
@@ -137,6 +140,18 @@ public static class AiAgentScopeCatalog
         "create_crm_opportunity",
         "create_client",
         "update_client");
+
+    /// <summary>
+    /// Seul scope au périmètre du CABINET : ses outils lisent plusieurs dossiers à la fois, via la
+    /// base master et un fan-out borné par l'ACL, jamais via le contexte tenant courant.
+    /// </summary>
+    private static readonly HashSet<string> FirmMissionToolNames = BuildSet(
+        "get_firm_portfolio_overview",
+        "get_firm_fiscal_deadlines",
+        "get_firm_dossier_health",
+        "get_firm_collaborator_workload",
+        // Seule mutation du scope (exposée uniquement si EnableMutationTools)
+        "send_fiscal_deadline_reminder");
 
     // ── Variantes CPU (≤ 8 outils, lecture seule) : catalogue minimal pour le petit modèle sur CPU,
     //    même esprit que les Cpu*ToolNames de AiToolIntentRouter ──
@@ -194,6 +209,7 @@ public static class AiAgentScopeCatalog
         "get_client_aging",
         "get_supplier_balances",
         "search_supplier_invoices",
+        "get_cash_flow_forecast",
         "propose_follow_up_prompts"
     };
 
@@ -207,6 +223,16 @@ public static class AiAgentScopeCatalog
         "propose_follow_up_prompts"
     };
 
+    private static readonly HashSet<string> CpuFirmMissionToolNames = new(StringComparer.Ordinal)
+    {
+        "resolve_reporting_period",
+        "get_firm_portfolio_overview",
+        "get_firm_fiscal_deadlines",
+        "get_firm_dossier_health",
+        "get_firm_collaborator_workload",
+        "propose_follow_up_prompts"
+    };
+
     /// <summary>Tous les scopes « expert » (sans None), pour les tests et les itérations.</summary>
     public static readonly IReadOnlyList<AssistantAgentScope> AllScopes = new[]
     {
@@ -215,7 +241,8 @@ public static class AiAgentScopeCatalog
         AssistantAgentScope.Stock,
         AssistantAgentScope.Accounting,
         AssistantAgentScope.Treasury,
-        AssistantAgentScope.Crm
+        AssistantAgentScope.Crm,
+        AssistantAgentScope.FirmMission
     };
 
     /// <summary>Sous-ensemble complet d'outils du scope (vide pour None = aucun filtrage).</summary>
@@ -227,6 +254,7 @@ public static class AiAgentScopeCatalog
         AssistantAgentScope.Accounting => AccountingToolNames,
         AssistantAgentScope.Treasury => TreasuryToolNames,
         AssistantAgentScope.Crm => CrmToolNames,
+        AssistantAgentScope.FirmMission => FirmMissionToolNames,
         _ => EmptySet
     };
 
@@ -239,6 +267,7 @@ public static class AiAgentScopeCatalog
         AssistantAgentScope.Accounting => CpuAccountingToolNames,
         AssistantAgentScope.Treasury => CpuTreasuryToolNames,
         AssistantAgentScope.Crm => CpuCrmToolNames,
+        AssistantAgentScope.FirmMission => CpuFirmMissionToolNames,
         _ => EmptySet
     };
 
@@ -253,6 +282,7 @@ public static class AiAgentScopeCatalog
         AssistantAgentScope.Accounting => "Expert Comptabilité",
         AssistantAgentScope.Treasury => "Expert Trésorerie",
         AssistantAgentScope.Crm => "Expert CRM",
+        AssistantAgentScope.FirmMission => "Chef de mission",
         _ => "Assistant global"
     };
 
@@ -263,6 +293,12 @@ public static class AiAgentScopeCatalog
     /// </summary>
     public static string GetPersonaPromptSection(AssistantAgentScope scope, bool compact)
     {
+        // Le Chef de mission a sa propre rédaction : la formule générique de repli oriente vers
+        // « l'Assistant IA global », qui n'existe pas en mode cabinet natif. L'orientation correcte
+        // est d'ouvrir le dossier concerné.
+        if (scope == AssistantAgentScope.FirmMission)
+            return BuildFirmMissionPersona(compact);
+
         var (identity, domain, posture, outOfScope) = scope switch
         {
             AssistantAgentScope.Sales => (
@@ -311,5 +347,33 @@ public static class AiAgentScopeCatalog
         return $"PROFIL EXPERT — {displayName}\n" +
                $"{identity} Ton domaine : {domain}. {posture}\n" +
                $"Si la question sort de ton domaine ({outOfScope}…), dis-le en une phrase et invite l'utilisateur à ouvrir l'Assistant IA global de {BrandConstants.Name} ou l'expert concerné depuis le menu — n'utilise jamais un outil inadapté pour deviner.";
+    }
+
+    /// <summary>
+    /// Persona du Chef de mission. Deux règles y sont explicites parce qu'elles conditionnent la
+    /// justesse des réponses : nommer les dossiers (l'utilisateur en suit des dizaines) et signaler
+    /// une lecture partielle du portefeuille au lieu de présenter un compteur incomplet comme un fait.
+    /// Aucun identifiant technique ici : la persona ne doit contenir aucun nom d'outil.
+    /// </summary>
+    private static string BuildFirmMissionPersona(bool compact)
+    {
+        const string identity = "Chef de mission : tu agis comme un chef de mission expérimenté en cabinet d'expertise comptable.";
+        const string domain = "le portefeuille de dossiers clients du cabinet, l'échéancier fiscal consolidé, le risque par dossier et la charge des collaborateurs";
+
+        if (compact)
+        {
+            return $"PROFIL EXPERT — Chef de mission : {identity} Ton domaine : {domain}. " +
+                   "Nomme toujours les dossiers concernés. Si une partie du portefeuille n'a pas pu être lue, dis-le. " +
+                   "Pour la comptabilité détaillée d'un dossier, invite à ouvrir ce dossier — ne devine jamais.";
+        }
+
+        return "PROFIL EXPERT — Chef de mission\n" +
+               $"{identity} Ton domaine : {domain}. " +
+               "Priorise, alerte et recommande une action concrète, comme un chef de mission qui prépare sa revue hebdomadaire.\n" +
+               "Règles : nomme toujours les dossiers et les responsables concernés plutôt que de donner des totaux nus ; " +
+               "quand une partie du portefeuille n'a pas pu être lue, signale-le explicitement au lieu de présenter les compteurs comme complets ; " +
+               "tu ne vois que les dossiers auxquels l'utilisateur a accès.\n" +
+               "Si la question porte sur la comptabilité détaillée d'un dossier précis (écritures, factures, TVA de ce dossier), " +
+               "dis-le en une phrase et invite l'utilisateur à ouvrir ce dossier — n'utilise jamais un outil inadapté pour deviner.";
     }
 }

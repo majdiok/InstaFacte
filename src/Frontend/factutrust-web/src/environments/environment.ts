@@ -57,6 +57,12 @@ export const environment = {
      * Invoice (and document) product autocomplete: prefetch + local cache + lightweight /products/select.
      * Set false to restore legacy getProducts() per keystroke.
      */
-    invoiceProductSearchV2: true
+    invoiceProductSearchV2: true,
+    /**
+     * Trésorerie prévisionnelle par IA (`/treasury/cash-forecast`).
+     * À basculer CONJOINTEMENT avec `TreasuryForecast:Enabled` côté API : si le back est off,
+     * toutes les routes du module répondent 503.
+     */
+    treasuryCashForecast: false
   }
 };

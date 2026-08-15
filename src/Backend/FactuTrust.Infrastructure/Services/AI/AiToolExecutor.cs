@@ -4,7 +4,9 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Forecasting;
+using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Common.Interfaces.Treasury;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.AI;
@@ -66,6 +68,13 @@ public sealed partial class AiToolExecutor : IAiToolExecutor
     private readonly IAbcXyzClassifier? _abcXyz;
     private readonly ITunisianCalendarService? _calendar;
     private readonly ForecastingOptions _forecastingOptions;
+    // Trésorerie prévisionnelle — optionnels, même contrat que le module Prévisions IA.
+    private readonly ICashFlowForecastService? _cashFlowForecast;
+    private readonly ICashFlowForecastRepository? _cashFlowRepository;
+    private readonly TreasuryForecastOptions _treasuryForecastOptions;
+    // Outils au périmètre cabinet (agent Chef de mission) — seuls outils multi-dossiers du catalogue.
+    // Optionnel (défaut null) pour préserver les constructions existantes des tests.
+    private readonly IFirmAgentToolExecutor? _firmAgent;
 
     private static readonly JsonSerializerOptions SerializeOptions = new()
     {
@@ -92,8 +101,19 @@ public sealed partial class AiToolExecutor : IAiToolExecutor
         IStudioQuotaService? studioQuota = null,
         // Introspection SQL en lecture seule — nécessaire aux outils de FENÊTRE (studio_plan_view).
         // Optionnelle (défaut null) pour ne pas casser les constructions existantes des tests.
-        Application.Features.Studio.Common.ISqlSchemaProvider? sqlSchema = null)
+        Application.Features.Studio.Common.ISqlSchemaProvider? sqlSchema = null,
+        // Agent Chef de mission — optionnel : absent, ses outils renvoient une erreur explicite.
+        IFirmAgentToolExecutor? firmAgent = null,
+        // Trésorerie prévisionnelle — optionnels comme ceux du module Prévisions IA : absents quand
+        // TreasuryForecast:Enabled est faux, les outils renvoient alors une erreur explicite.
+        IOptions<TreasuryForecastOptions>? treasuryForecastOptions = null,
+        ICashFlowForecastService? cashFlowForecast = null,
+        ICashFlowForecastRepository? cashFlowRepository = null)
     {
+        _treasuryForecastOptions = treasuryForecastOptions?.Value ?? new TreasuryForecastOptions();
+        _cashFlowForecast = cashFlowForecast;
+        _cashFlowRepository = cashFlowRepository;
+        _firmAgent = firmAgent;
         _sqlSchema = sqlSchema;
         _mediator = mediator;
         _logger = logger;
@@ -140,6 +160,19 @@ public sealed partial class AiToolExecutor : IAiToolExecutor
         {
             _logger.LogDebug("AI read-only tool cache HIT {ToolName}", toolName);
             return readOnlyCached;
+        }
+
+        // Outils cabinet : dispatch séparé AVANT le catalogue tenant. Ils ne partagent aucune
+        // dépendance avec les autres outils et ne passent jamais par ITenantContext.
+        if (FirmAgentTools.Contains(toolName))
+        {
+            if (_firmAgent is null)
+            {
+                _logger.LogWarning("Outil cabinet {ToolName} appelé sans exécuteur enregistré", toolName);
+                return AiToolResult.Error("L'agent Chef de mission n'est pas disponible dans cet espace.");
+            }
+
+            return await _firmAgent.ExecuteAsync(toolName, arguments, cancellationToken);
         }
 
         try
@@ -223,6 +256,8 @@ public sealed partial class AiToolExecutor : IAiToolExecutor
                 "create_crm_opportunity" => await HandleCreateCrmOpportunity(arguments, cancellationToken),
                 // ── AI Forecasting ──
                 "forecast_revenue" => await HandleForecastRevenue(arguments, cancellationToken),
+                "get_cash_flow_forecast" => await HandleGetCashFlowForecast(arguments, cancellationToken),
+                "get_cash_flow_lines" => await HandleGetCashFlowLines(arguments, cancellationToken),
                 "forecast_product_demand" => await HandleForecastProductDemand(arguments, cancellationToken),
                 "get_replenishment_recommendations" => await HandleGetReplenishment(arguments, cancellationToken),
                 "get_promotion_recommendations" => await HandleGetPromotions(arguments, cancellationToken),

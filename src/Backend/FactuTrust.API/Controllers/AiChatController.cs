@@ -34,12 +34,14 @@ public class AiChatController : ControllerBase
     private readonly SendChatMessageHandler _chatHandler;
     private readonly IOllamaClient _ollamaClient;
     private readonly IOpenAiChatCompletionsClient _openAiClient;
+    private readonly ICursorAgentClient _cursorAgentClient;
     private readonly IPlatformAiSettingsService _platformAiSettings;
     private readonly IOllamaInferenceProfileResolver _inferenceProfileResolver;
     private readonly IAiModelRecommender _modelRecommender;
     private readonly ILogger<AiChatController> _logger;
     private readonly IHostEnvironment _environment;
     private readonly OllamaSettings _ollamaSettings;
+    private readonly CursorSdkSettings _cursorSdkSettings;
     private readonly IAiDocumentTextExtractor _documentTextExtractor;
 
     public AiChatController(
@@ -47,18 +49,21 @@ public class AiChatController : ControllerBase
         SendChatMessageHandler chatHandler,
         IOllamaClient ollamaClient,
         IOpenAiChatCompletionsClient openAiClient,
+        ICursorAgentClient cursorAgentClient,
         IPlatformAiSettingsService platformAiSettings,
         IOllamaInferenceProfileResolver inferenceProfileResolver,
         IAiModelRecommender modelRecommender,
         IAiDocumentTextExtractor documentTextExtractor,
         ILogger<AiChatController> logger,
         IHostEnvironment environment,
-        IOptions<OllamaSettings> ollamaSettings)
+        IOptions<OllamaSettings> ollamaSettings,
+        IOptions<CursorSdkSettings> cursorSdkSettings)
     {
         _mediator = mediator;
         _chatHandler = chatHandler;
         _ollamaClient = ollamaClient;
         _openAiClient = openAiClient;
+        _cursorAgentClient = cursorAgentClient;
         _platformAiSettings = platformAiSettings;
         _inferenceProfileResolver = inferenceProfileResolver;
         _modelRecommender = modelRecommender;
@@ -66,6 +71,7 @@ public class AiChatController : ControllerBase
         _logger = logger;
         _environment = environment;
         _ollamaSettings = ollamaSettings.Value;
+        _cursorSdkSettings = cursorSdkSettings.Value;
     }
 
     private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -349,6 +355,23 @@ public class AiChatController : ControllerBase
             }
         }
 
+        if (_cursorSdkSettings.Enabled)
+        {
+            try
+            {
+                var cursorCreds = await _platformAiSettings.GetCursorCredentialsAsync(cancellationToken);
+                if (!string.IsNullOrEmpty(cursorCreds.ApiKey))
+                {
+                    var cursorModels = await _cursorAgentClient.ListModelsAsync(cursorCreds.ApiKey, cancellationToken);
+                    unified.AddRange(CursorModelCatalog.ToUnifiedModels(cursorModels));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to list Cursor models; returning other providers only.");
+            }
+        }
+
         return Ok(ApiResponse<IReadOnlyList<UnifiedAiModelInfo>>.Ok(unified));
     }
 
@@ -476,21 +499,18 @@ public class AiChatController : ControllerBase
 
     /// <summary>
     /// Returns whether any AI provider is properly configured
-    /// (Ollama available and/or platform OpenRouter with valid API key).
+    /// (Ollama available and/or platform OpenRouter or Cursor with valid API key).
     /// </summary>
     [HttpGet("configured-status")]
     [EnableRateLimiting("ai")]
     [ProducesResponseType(typeof(ApiResponse<AiConfiguredStatusDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetConfiguredStatus(CancellationToken cancellationToken)
     {
-        var ollamaOk = await _ollamaClient.IsAvailableAsync(cancellationToken);
-
-        var openRouter = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
-        var hasCloudProvider = openRouter.IsEnabled && !string.IsNullOrEmpty(openRouter.ApiKey);
+        var state = await ResolveHealthStateAsync(cancellationToken);
         var dto = new AiConfiguredStatusDto(
-            HasOllamaModels: ollamaOk,
-            HasCloudProvider: hasCloudProvider,
-            IsFullyConfigured: ollamaOk || hasCloudProvider);
+            HasOllamaModels: state.OllamaOk,
+            HasCloudProvider: state.HasCloudProvider,
+            IsFullyConfigured: state.Available);
 
         return Ok(ApiResponse<AiConfiguredStatusDto>.Ok(dto));
     }
@@ -513,23 +533,53 @@ public class AiChatController : ControllerBase
             : configured;
 
         var parsed = ModelRef.Parse(rawModel);
-        var supportsVision = AiModelCapabilityDetector.DetectVisionSupport(parsed.ProviderModelId);
+        var supportsVision = AiModelCapabilityDetector.DetectVisionSupport(parsed);
         var dto = new AiActiveModelDto(parsed.CanonicalModelRef, parsed.ProviderModelId, supportsVision);
 
         return Ok(ApiResponse<AiActiveModelDto>.Ok(dto));
     }
 
     /// <summary>
-    /// Check if at least one AI backend is available (Ollama or configured cloud).
+    /// Check if at least one AI backend is available (Ollama or configured cloud, including Cursor).
     /// </summary>
     [HttpGet("health")]
     [AllowAnonymous]
     public async Task<IActionResult> Health(CancellationToken cancellationToken)
     {
+        var state = await ResolveHealthStateAsync(cancellationToken);
+        return Ok(new { available = state.Available });
+    }
+
+    private sealed record AiHealthState(bool Available, bool OllamaOk, bool HasCloudProvider);
+
+    private async Task<AiHealthState> ResolveHealthStateAsync(CancellationToken cancellationToken)
+    {
         var ollamaOk = await _ollamaClient.IsAvailableAsync(cancellationToken);
         var openRouter = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
-        var cloudOk = !string.IsNullOrEmpty(openRouter.ApiKey);
+        var cursor = await _platformAiSettings.GetCursorCredentialsAsync(cancellationToken);
+        var hasCloudProvider = AiAssistantAvailabilityResolver.HasCloudProviderConfigured(
+            openRouter.IsEnabled,
+            openRouter.ApiKey,
+            _cursorSdkSettings.Enabled,
+            cursor.IsEnabled,
+            cursor.ApiKey);
 
-        return Ok(new { available = ollamaOk || cloudOk });
+        var configured = await _platformAiSettings.GetDefaultModelRefAsync(cancellationToken);
+        var fallback = string.IsNullOrWhiteSpace(_ollamaSettings.DefaultModel)
+            ? "mistral"
+            : _ollamaSettings.DefaultModel.Trim();
+        var rawModel = string.IsNullOrWhiteSpace(configured)
+            ? $"{ModelRef.OllamaPrefix}{fallback}"
+            : configured;
+        var activeModel = ModelRef.Parse(rawModel);
+
+        var available = await AiAssistantAvailabilityResolver.IsHealthAvailableAsync(
+            ollamaOk,
+            hasCloudProvider,
+            activeModel,
+            _cursorAgentClient.IsAvailableAsync,
+            cancellationToken);
+
+        return new AiHealthState(available, ollamaOk, hasCloudProvider);
     }
 }

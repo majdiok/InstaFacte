@@ -14,7 +14,7 @@ public static class AiScreenAnalysisPromptBuilder
         "SYNTHÈSE FINALE (analyse d'écran) : le tableau de bord et les résultats d'outils sont déjà dans "
         + "l'historique. N'appelle aucun outil. Rédige MAINTENANT l'analyse complète en sections markdown "
         + "(## Synthèse exécutive, ## Indicateurs clés, ## Analyse détaillée, ## Anomalies et risques, "
-        + "## Opportunités, ## Actions recommandées, ## Points à vérifier), en français, avec les montants "
+        + "## Opportunités, ## Actions recommandées, ## Points à vérifier), en français, sans traduction, avec les montants "
         + "TND du snapshot.";
 
     private const string StandardOutputTemplate = """
@@ -129,7 +129,7 @@ public static class AiScreenAnalysisPromptBuilder
                 - Créances > 90 jours, concentration client, retards de paiement.
                 - Lettrage : écritures non lettrées, écarts de rapprochement.
                 """,
-            "invoice-list" or "dashboard" =>
+            "invoice-list" or "credit-note-list" or "dashboard" =>
                 """
                 FOCUS COMMERCIAL :
                 - Chiffre d'affaires, impayés, concentration clients/produits.
@@ -140,6 +140,13 @@ public static class AiScreenAnalysisPromptBuilder
                 FOCUS STOCK & PRÉVISIONS :
                 - Ruptures, surstock, rotation, classification ABC/XYZ.
                 - Recommandations réappro et promotions avec niveau de confiance.
+                """,
+            "treasury-cash-forecast" =>
+                """
+                FOCUS TRÉSORERIE PRÉVISIONNELLE :
+                - Mois de tension, franchissement de seuil, rupture de trésorerie prévue.
+                - Concentration d'échéances, poids des encaissements incertains, marge de manœuvre.
+                - Les montants et les dates affichés font foi : ne jamais les recalculer ni les extrapoler.
                 """,
             "accounting-closing" =>
                 """

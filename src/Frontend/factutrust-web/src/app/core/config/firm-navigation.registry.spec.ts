@@ -18,6 +18,7 @@ describe('firm-navigation.registry — FIRM_NATIVE_NAV', () => {
     '/firm/affectation',
     '/firm/governance/time-sheets',
     '/firm/governance/leaves',
+    '/firm/payroll',
     '/firm/governance/dossier-time-profitability',
     '/firm/governance/collaborator-rentability',
     '/firm/governance/collaborator-costs',
@@ -57,11 +58,22 @@ describe('firm-navigation.registry — FIRM_NATIVE_NAV', () => {
     expect(parent!.children?.map(c => c.route)).toEqual([
       '/firm/governance/dossier-time-profitability',
       '/firm/governance/collaborator-rentability',
-      '/firm/governance/collaborator-costs',
-      '/firm/payroll'
+      '/firm/governance/collaborator-costs'
     ]);
     expect(FIRM_NATIVE_NAV.some(i => i.label === 'Feuilles de temps et rentabilité')).toBe(false);
     expect(FIRM_NATIVE_NAV.some(i => i.label === 'Rentabilité collaborateurs')).toBe(false);
+    const paie = FIRM_NATIVE_NAV.find(i => i.label === 'Paie interne');
+    expect(paie?.route).toBe('/firm/payroll');
+    expect(paie?.children).toBeUndefined();
+  });
+
+  it('FIRM_NATIVE_NAV places Paie interne directly after Congés & Absences', () => {
+    const idxConges = FIRM_NATIVE_NAV.findIndex(i => i.label === 'Congés & Absences');
+    const idxPaie = FIRM_NATIVE_NAV.findIndex(i => i.label === 'Paie interne');
+    const idxRenta = FIRM_NATIVE_NAV.findIndex(i => i.label === 'Rentabilité de collaborateurs');
+    expect(idxPaie).toBe(idxConges + 1);
+    expect(idxRenta).toBeGreaterThan(idxPaie);
+    expect(FIRM_NATIVE_NAV[idxPaie].route).toBe('/firm/payroll');
   });
 
   it('FIRM_NATIVE_NAV exposes governance routes in expected order (top-level + children)', () => {
@@ -79,8 +91,10 @@ describe('firm-navigation.registry — FIRM_NATIVE_NAV', () => {
     const filtered = filterFirmGovernanceNav(FIRM_NATIVE_NAV, false);
     expect(filtered.some(i => i.label === 'Gouvernance')).toBe(false);
     expect(filtered.some(i => i.label === 'Rentabilité de collaborateurs')).toBe(false);
+    expect(filtered.some(i => i.label === 'Paie interne')).toBe(false);
     expect(collectRoutes(filtered).some(route => route.startsWith('/firm/governance'))).toBe(false);
     expect(collectRoutes(filtered).includes('/firm/affectation')).toBe(false);
+    expect(collectRoutes(filtered).includes('/firm/payroll')).toBe(false);
   });
 
   it('filterFirmGovernanceNav keeps governance when flag on', () => {
@@ -90,13 +104,14 @@ describe('firm-navigation.registry — FIRM_NATIVE_NAV', () => {
     );
     expect(extractedGovernanceRoutes).toEqual(governanceRoutes);
     expect(filtered.some(i => i.label === 'Rentabilité de collaborateurs')).toBe(true);
+    expect(filtered.some(i => i.label === 'Paie interne')).toBe(true);
   });
 
   it('manager/off matrix keeps visibility equivalent to old behavior', () => {
     const managerFlagOn = collectRoutes(filterFirmGovernanceNav(FIRM_NATIVE_NAV, true)).filter(route =>
       governanceRoutes.includes(route)
     );
-    expect(managerFlagOn).toHaveSize(9);
+    expect(managerFlagOn).toHaveSize(10);
 
     const managerFlagOff = collectRoutes(filterFirmGovernanceNav(FIRM_NATIVE_NAV, false)).filter(route =>
       governanceRoutes.includes(route)

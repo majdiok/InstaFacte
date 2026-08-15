@@ -162,6 +162,13 @@ export const ALL_NAV_ITEMS: NavItem[] = [
         permissionsAll: ['invoices:read']
       },
       {
+        label: 'Avoir de vente',
+        route: '/invoices/credit-notes',
+        icon: 'fa-solid fa-receipt',
+        modules: [M.Sales],
+        permissionsAll: ['invoices:read']
+      },
+      {
         label: 'Factures impayées',
         route: '/invoices/unpaid',
         icon: 'fa-solid fa-circle-exclamation',
@@ -353,6 +360,13 @@ export const ALL_NAV_ITEMS: NavItem[] = [
     label: 'Trésorerie',
     icon: 'fa-solid fa-credit-card',
     children: [
+      {
+        label: 'Trésorerie prévisionnelle',
+        route: '/treasury/cash-forecast',
+        icon: 'fa-solid fa-chart-line',
+        modules: [M.Treasury],
+        permissionsAll: [PERMISSIONS.treasuryForecast.view]
+      },
       {
         label: 'Assistant Trésorerie',
         route: '/ai-assistant/tresorerie',
@@ -763,6 +777,8 @@ const ROUTE_KEYWORDS: Record<string, string[]> = {
   '/invoices': ['factures', 'facture', 'FAC', 'ventes'],
   '/invoices/unpaid': ['impayées', 'impayee', 'retard'],
   '/invoices/new': ['nouvelle facture', 'créer facture', 'ajouter facture'],
+  '/invoices/credit-notes': ['avoir', 'avoirs', 'AVO', 'credit note', 'avoir de vente'],
+  '/invoices/credit-note/new': ['nouvel avoir', 'créer avoir', 'ajouter avoir'],
   '/quotes': ['devis', 'DEV', 'proposition'],
   '/quotes/new': ['nouveau devis', 'créer devis', 'ajouter devis'],
   '/delivery-notes': ['bon de livraison', 'BL', 'livraison'],

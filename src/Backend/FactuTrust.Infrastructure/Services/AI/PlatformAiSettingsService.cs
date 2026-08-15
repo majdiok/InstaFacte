@@ -21,17 +21,20 @@ namespace FactuTrust.Infrastructure.Services.AI;
 public sealed class PlatformAiSettingsService : IPlatformAiSettingsService
 {
     public const string DataProtectionPurpose = "PlatformAiProviderSecrets";
+    public const string CursorDataProtectionPurpose = "PlatformCursorSecrets";
 
     private const string CacheKeyDefaultModel = "platform:ai:default-model";
     private const string CacheKeyImportModel = "platform:ai:import-model";
     private const string CacheKeyStudioModel = "platform:ai:studio-model";
     private const string CacheKeyInferenceDevice = "platform:ai:inference-device";
     private const string CacheKeyOpenRouter = "platform:ai:openrouter";
+    private const string CacheKeyCursor = "platform:ai:cursor";
     private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(60);
 
     private readonly MasterDbContext _db;
     private readonly IMemoryCache _cache;
     private readonly IDataProtector _protector;
+    private readonly IDataProtector _cursorProtector;
     private readonly OpenRouterSettings _openRouterDefaults;
     private readonly ILogger<PlatformAiSettingsService> _logger;
 
@@ -45,6 +48,7 @@ public sealed class PlatformAiSettingsService : IPlatformAiSettingsService
         _db = db;
         _cache = cache;
         _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
+        _cursorProtector = dataProtectionProvider.CreateProtector(CursorDataProtectionPurpose);
         _openRouterDefaults = openRouterSettings.Value;
         _logger = logger;
     }
@@ -300,6 +304,120 @@ public sealed class PlatformAiSettingsService : IPlatformAiSettingsService
         }
     }
 
+    public async Task<PlatformCursorSettingsDto> GetCursorSettingsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var cached = await _cache.GetOrCreateAsync(CacheKeyCursor, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = CacheTtl;
+            try
+            {
+                return await _db.PlatformAiSettings
+                    .AsNoTracking()
+                    .Select(s => new CursorCacheRow(
+                        s.CursorIsEnabled,
+                        s.CursorDisplayName,
+                        s.CursorEncryptedApiKey,
+                        s.CursorApiKeyLast4))
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
+            catch (Exception ex) when (ex is SqlException or DbUpdateException or InvalidOperationException)
+            {
+                _logger.LogWarning(ex,
+                    "Impossible de lire les credentials Cursor depuis PlatformAiSettings.");
+                return null;
+            }
+        });
+
+        return MapCursorDto(cached);
+    }
+
+    public async Task<(bool Success, string? Error)> SetCursorConfigAsync(
+        bool isEnabled,
+        string? displayName,
+        string? apiKey,
+        Guid actorUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var current = await GetOrCreateRowAsync(actorUserId, cancellationToken);
+
+        string? encrypted = null;
+        string? last4 = null;
+        var hasNewKey = !string.IsNullOrWhiteSpace(apiKey);
+        if (hasNewKey)
+        {
+            var plain = apiKey!.Trim();
+            encrypted = _cursorProtector.Protect(plain);
+            last4 = plain.Length >= 4 ? plain[^4..] : plain;
+        }
+        else if (isEnabled && !current.HasCursorApiKey)
+        {
+            return (false, "Une clé API est requise pour activer Cursor.");
+        }
+
+        current.SetCursorConfig(
+            isEnabled,
+            displayName,
+            hasNewKey ? encrypted : null,
+            hasNewKey ? last4 : null);
+        current.SetAuditInfo(actorUserId.ToString(), isUpdate: true);
+
+        await _db.SaveChangesAsync(cancellationToken);
+        InvalidateReadCache();
+        return (true, null);
+    }
+
+    public async Task<PlatformCursorCredentials> GetCursorCredentialsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        CursorCacheRow? row;
+        try
+        {
+            row = await _db.PlatformAiSettings
+                .AsNoTracking()
+                .Select(s => new CursorCacheRow(
+                    s.CursorIsEnabled,
+                    s.CursorDisplayName,
+                    s.CursorEncryptedApiKey,
+                    s.CursorApiKeyLast4))
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is SqlException or DbUpdateException or InvalidOperationException)
+        {
+            _logger.LogWarning(ex, "Impossible de déchiffrer les credentials Cursor plateforme.");
+            return new PlatformCursorCredentials(false, null);
+        }
+
+        if (row is null || !row.IsEnabled || string.IsNullOrWhiteSpace(row.EncryptedApiKey))
+            return new PlatformCursorCredentials(row?.IsEnabled ?? false, null);
+
+        try
+        {
+            var plain = _cursorProtector.Unprotect(row.EncryptedApiKey);
+            if (string.IsNullOrWhiteSpace(plain))
+                return new PlatformCursorCredentials(true, null);
+            return new PlatformCursorCredentials(true, plain);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Échec du déchiffrement de la clé Cursor plateforme.");
+            return new PlatformCursorCredentials(true, null);
+        }
+    }
+
+    private static PlatformCursorSettingsDto MapCursorDto(CursorCacheRow? row)
+    {
+        var configured = row is not null
+            && !string.IsNullOrWhiteSpace(row.EncryptedApiKey)
+            && !string.IsNullOrWhiteSpace(row.ApiKeyLast4);
+
+        return new PlatformCursorSettingsDto(
+            row?.IsEnabled ?? false,
+            row?.DisplayName,
+            configured,
+            configured ? row!.ApiKeyLast4 : null);
+    }
+
     private PlatformOpenRouterSettingsDto MapOpenRouterDto(OpenRouterCacheRow? row)
     {
         var defaultBase = (_openRouterDefaults.DefaultBaseUrl ?? "https://openrouter.ai/api/v1").TrimEnd('/');
@@ -337,12 +455,19 @@ public sealed class PlatformAiSettingsService : IPlatformAiSettingsService
         _cache.Remove(CacheKeyStudioModel);
         _cache.Remove(CacheKeyInferenceDevice);
         _cache.Remove(CacheKeyOpenRouter);
+        _cache.Remove(CacheKeyCursor);
     }
 
     private sealed record OpenRouterCacheRow(
         bool IsEnabled,
         string? DisplayName,
         string? BaseUrl,
+        string? EncryptedApiKey,
+        string? ApiKeyLast4);
+
+    private sealed record CursorCacheRow(
+        bool IsEnabled,
+        string? DisplayName,
         string? EncryptedApiKey,
         string? ApiKeyLast4);
 }

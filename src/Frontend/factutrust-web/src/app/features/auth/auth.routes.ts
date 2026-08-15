@@ -9,6 +9,18 @@ export const AUTH_ROUTES: Routes = [
     title: 'Connexion - InstaFact'
   },
   {
+    path: 'forgot-password',
+    loadComponent: () =>
+      import('./forgot-password/forgot-password.component').then(m => m.ForgotPasswordComponent),
+    title: 'Mot de passe oublié - InstaFact'
+  },
+  {
+    path: 'reset-password',
+    loadComponent: () =>
+      import('./reset-password/reset-password.component').then(m => m.ResetPasswordComponent),
+    title: 'Réinitialiser le mot de passe - InstaFact'
+  },
+  {
     path: 'select-warehouse',
     loadComponent: () =>
       import('./select-warehouse/select-warehouse.component').then(

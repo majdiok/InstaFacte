@@ -1,7 +1,8 @@
 @use 'auth-page';
 
 // Wider container for multi-step registration wizards
-.form-panel {
+.form-panel,
+.auth-form-card--wide {
   .form-scrollable-container {
     max-width: 650px;
   }

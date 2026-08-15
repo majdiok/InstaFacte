@@ -21,7 +21,8 @@ import { WarehouseContextService } from '@core/services/warehouse-context.servic
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { ErrorMessageService } from '@core/services/error-message.service';
 import { timeout, TimeoutError, catchError, throwError } from 'rxjs';
-import { LogoComponent } from '@shared/components/logo/logo.component';
+import { AuthShellComponent } from '../auth-shell/auth-shell.component';
+import { REGISTER_FIRM_AUTH_SHELL_CONFIG } from '../auth-shell/auth-shell.config';
 import { TunisianValidators } from '@shared/validation/tunisian-validators';
 import { MAX_LENGTHS } from '@shared/validation/validation-rules';
 import { environment } from '@environments/environment';
@@ -66,7 +67,7 @@ import {
     CheckboxModule,
     InputSwitchModule,
     Textarea,
-    LogoComponent
+    AuthShellComponent
   ],
   animations: [
     trigger('fadeInOut', [
@@ -92,6 +93,7 @@ import {
   styleUrl: './register-firm.component.scss'
 })
 export class RegisterFirmComponent implements OnInit, OnDestroy {
+  readonly shellConfig = REGISTER_FIRM_AUTH_SHELL_CONFIG;
   readonly environment = environment;
 
   private static readonly REGISTRATION_TIMEOUT_MS = 120_000;

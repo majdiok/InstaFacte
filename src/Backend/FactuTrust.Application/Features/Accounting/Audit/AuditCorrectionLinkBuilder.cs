@@ -89,6 +89,88 @@ public static class AuditCorrectionLinkBuilder
                 },
                 "Rapprocher les lignes bancaires"),
 
+            // ── Réviseur : famille Comptable ───────────────────────────────────────────────
+
+            "entry-vat-vs-document" => EntrySearchFromFirstLine(
+                fiscalYear, periodFrom, periodTo, lines,
+                label: "Ouvrir l'écriture de TVA en écart"),
+
+            "thirdparty-account-mismatch" => EntrySearch(
+                fiscalYear, periodFrom, periodTo,
+                account: lines.FirstOrDefault()?.AccountNumber,
+                label: "Corriger l'imputation du tiers"),
+
+            "lettering-orphan" => Lettering(
+                accountRef, fiscalYear, lines, label: "Reprendre le lettrage"),
+
+            "reversal-missing" => EntrySearchFromFirstLine(
+                fiscalYear, periodFrom, periodTo, lines,
+                label: "Ouvrir l'écriture à extourner"),
+
+            // ── Réviseur : famille Documentaire ────────────────────────────────────────────
+
+            "supplier-invoice-no-proof" => SupplierInvoices(
+                fiscalYear, missingAttachment: true, label: "Voir les factures sans pièce"),
+
+            "supplier-invoice-duplicate" => SupplierInvoices(
+                fiscalYear, missingAttachment: false, label: "Comparer les factures en doublon"),
+
+            "purchase-price-drift" => SupplierInvoices(
+                fiscalYear, missingAttachment: false, label: "Vérifier les prix facturés"),
+
+            // ── Réviseur : famille Trésorerie ──────────────────────────────────────────────
+
+            "cash-negative" => Ledger(
+                accountRef ?? lines.FirstOrDefault()?.AccountNumber ?? "54",
+                fiscalYear,
+                label: "Ouvrir le grand livre de caisse"),
+
+            "cash-in-without-invoice" => EntrySearchFromFirstLine(
+                fiscalYear, periodFrom, periodTo, lines,
+                label: "Voir les encaissements non justifiés"),
+
+            // ── Réviseur : famille Fiscale ─────────────────────────────────────────────────
+
+            "withholding-missing-on-fees" => (
+                "/withholding-tax",
+                new Dictionary<string, string> { ["fiscalYear"] = fiscalYear.ToString() },
+                "Ouvrir la retenue à la source"),
+
+            "fodec-missing" => EntrySearch(
+                fiscalYear, periodFrom, periodTo,
+                account: accountRef ?? "4477",
+                label: "Voir les écritures de vente"),
+
+            "vat-period-not-closed" => VatDeclaration(
+                fiscalYear, lines, label: "Verrouiller la déclaration"),
+
+            // ── Réviseur : famille Paie ────────────────────────────────────────────────────
+
+            "payroll-cnss-regime-mismatch" or "payroll-overtime-out-of-regime"
+                or "payroll-below-smig" => (
+                "/payroll/runs",
+                new Dictionary<string, string> { ["year"] = fiscalYear.ToString() },
+                "Ouvrir les cycles de paie"),
+
+            "payroll-dependent-no-proof" => (
+                "/payroll/employees",
+                new Dictionary<string, string>(),
+                "Ouvrir les dossiers salariés"),
+
+            // ── Réviseur : famille Fraude douce ────────────────────────────────────────────
+
+            "threshold-structuring" => SupplierInvoices(
+                fiscalYear, missingAttachment: false, label: "Examiner les factures concernées"),
+
+            "supplier-created-then-paid" => (
+                "/suppliers",
+                new Dictionary<string, string>(),
+                "Ouvrir la fiche fournisseur"),
+
+            "self-validation" or "off-hours-entry" or "backdated-entry" => EntrySearchFromFirstLine(
+                fiscalYear, periodFrom, periodTo, lines,
+                label: "Ouvrir l'écriture concernée"),
+
             _ => Fallback(deepLinkRoute, fiscalYear, periodFrom, periodTo)
         };
 
@@ -205,6 +287,36 @@ public static class AuditCorrectionLinkBuilder
         p["autoLoad"] = "1";
         if (missingAttachment) p["missingAttachment"] = "1";
         return ("/accounting/journal", p, label);
+    }
+
+    /// <summary>Grand livre d'un compte sur l'exercice — la vue qui montre un solde jour par jour.</summary>
+    private static (string Route, Dictionary<string, string> Params, string Label) Ledger(
+        string account,
+        int fiscalYear,
+        string label) =>
+        ("/accounting/ledger",
+            new Dictionary<string, string>
+            {
+                ["account"] = account,
+                ["from"] = new DateOnly(fiscalYear, 1, 1).ToString("yyyy-MM-dd"),
+                ["to"] = new DateOnly(fiscalYear, 12, 31).ToString("yyyy-MM-dd"),
+                ["autoLoad"] = "1"
+            },
+            label);
+
+    private static (string Route, Dictionary<string, string> Params, string Label) SupplierInvoices(
+        int fiscalYear,
+        bool missingAttachment,
+        string label)
+    {
+        var p = new Dictionary<string, string>
+        {
+            ["from"] = new DateOnly(fiscalYear, 1, 1).ToString("yyyy-MM-dd"),
+            ["to"] = new DateOnly(fiscalYear, 12, 31).ToString("yyyy-MM-dd"),
+            ["autoLoad"] = "1"
+        };
+        if (missingAttachment) p["missingAttachment"] = "1";
+        return ("/supplier-invoices", p, label);
     }
 
     private static (string Route, Dictionary<string, string> Params, string Label) VatDeclaration(

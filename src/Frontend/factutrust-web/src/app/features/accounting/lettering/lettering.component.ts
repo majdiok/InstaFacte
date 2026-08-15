@@ -30,6 +30,7 @@ import { wrapLegacyAnalyzePayload } from '@features/ai-assistant/utils/ai-screen
 import { AccountingToolbarActionsComponent } from '../shared/accounting-toolbar-actions.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { AccountingCorrectionBannerComponent } from '../shared/accounting-correction-banner.component';
+import { ConfirmationService } from '@core/services/confirmation.service';
 
 interface LetteringLine {
   lineId: string;
@@ -70,6 +71,7 @@ interface LetteringLine {
 export class LetteringComponent implements OnInit {
   private readonly api = inject(AccountingService);
   private readonly route = inject(ActivatedRoute);
+  private readonly confirmationService = inject(ConfirmationService);
 
   account = '';
   fromStr = '';
@@ -247,27 +249,35 @@ export class LetteringComponent implements OnInit {
   /** Délettrage d'un groupe : libère toutes ses lignes (un partiel se complète ainsi). */
   unletter(code: string): void {
     if (!code) return;
-    if (!window.confirm(`Délettrer le groupe ${code} ? Toutes ses lignes redeviendront lettrables.`)) return;
+    this.confirmationService.confirm({
+      message: `Délettrer le groupe ${code} ? Toutes ses lignes redeviendront lettrables.`,
+      header: 'Confirmation de délettrage',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Délettrer',
+      rejectLabel: 'Annuler',
+      acceptButtonStyleClass: 'btn-danger',
+      accept: () => {
+        this.unlettering.set(code);
+        this.error.set(null);
+        this.successMessage.set(null);
 
-    this.unlettering.set(code);
-    this.error.set(null);
-    this.successMessage.set(null);
-
-    this.api
-      .unletterEntries(code)
-      .pipe(finalize(() => this.unlettering.set(null)))
-      .subscribe({
-        next: res => {
-          if (res.success) {
-            this.successMessage.set(`Groupe ${code} délettré.`);
-            this.selectedLines.set([]);
-            this.load();
-          } else {
-            this.error.set(res.error ?? 'Erreur lors du délettrage.');
-          }
-        },
-        error: () => this.error.set('Erreur réseau lors du délettrage.')
-      });
+        this.api
+          .unletterEntries(code)
+          .pipe(finalize(() => this.unlettering.set(null)))
+          .subscribe({
+            next: res => {
+              if (res.success) {
+                this.successMessage.set(`Groupe ${code} délettré.`);
+                this.selectedLines.set([]);
+                this.load();
+              } else {
+                this.error.set(res.error ?? 'Erreur lors du délettrage.');
+              }
+            },
+            error: () => this.error.set('Erreur réseau lors du délettrage.')
+          });
+      }
+    });
   }
 
   isLettered(line: LetteringLine): boolean {

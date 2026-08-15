@@ -130,6 +130,10 @@ public static class PermissionPolicies
     public const string ForecastingView = "perm:" + Permissions.Forecasting.View;
     public const string ForecastingManage = "perm:" + Permissions.Forecasting.Manage;
 
+    // Trésorerie prévisionnelle par IA (projection de solde, scénarios, alertes de tension).
+    public const string TreasuryForecastView = "perm:" + Permissions.TreasuryForecast.View;
+    public const string TreasuryForecastManage = "perm:" + Permissions.TreasuryForecast.Manage;
+
     // Studio (low-code) — design-time.
     public const string StudioDesignEntities = "perm:" + Permissions.Studio.DesignEntities;
     public const string StudioDesignForms = "perm:" + Permissions.Studio.DesignForms;
@@ -157,6 +161,18 @@ public static class PermissionPolicies
     public const string PayrollFirmOperation = "payroll:firm-operation";
 
     public const string FirmUsersManage = "perm:" + Permissions.Firm.UsersManage;
+
+    /// <summary>Agent « Chef de mission » : consultation (cabinet natif).</summary>
+    public const string FirmAiChat = "perm:" + Permissions.Firm.AiChat;
+
+    /// <summary>Agent « Chef de mission » : relance d'échéance (responsable de cabinet).</summary>
+    public const string FirmAiRemind = "perm:" + Permissions.Firm.AiRemind;
+
+    /// <summary>Réviseur de portefeuille : consultation (responsable et collaborateur).</summary>
+    public const string FirmRevisionView = "perm:" + Permissions.Firm.RevisionView;
+
+    /// <summary>Réviseur de portefeuille : balayage et publication (responsable de cabinet).</summary>
+    public const string FirmRevisionManage = "perm:" + Permissions.Firm.RevisionManage;
 
     public const string HonorairesInvoicesCreate = "perm:" + Permissions.HonorairesInvoices.Create;
     public const string HonorairesInvoicesRead = "perm:" + Permissions.HonorairesInvoices.Read;

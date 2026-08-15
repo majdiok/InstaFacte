@@ -68,3 +68,8 @@ build-submenu-fix.log
 
 # Test run artifacts
 **/TestResults/
+
+# Artefacts d'exécution locale — jamais suivis
+src/Backend/FactuTrust.API/App_Data/attachments/
+src/Frontend/factutrust-web/e2e/test-results/
+src/Frontend/factutrust-web/playwright-report/

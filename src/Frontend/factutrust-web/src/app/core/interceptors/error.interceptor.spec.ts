@@ -251,4 +251,21 @@ describe('errorInterceptor', () => {
     req.flush({ success: false }, { status: 401, statusText: 'Unauthorized' });
     httpMock.verify();
   });
+
+  it('does not log when 404 and SKIP_ERROR_TOAST is set (feature probe)', (done) => {
+    const errorHandler = TestBed.inject(ErrorHandlerService);
+    const logSpy = spyOn(errorHandler, 'logError');
+    const ctx = new HttpContext().set(SKIP_ERROR_TOAST, true);
+
+    http.get('/api/firm/payroll/provisioning-status', { context: ctx }).subscribe({
+      error: () => {
+        expect(logSpy).not.toHaveBeenCalled();
+        done();
+      }
+    });
+
+    const req = httpMock.expectOne('/api/firm/payroll/provisioning-status');
+    req.flush({ success: false, message: 'Ressource non trouvée.' }, { status: 404, statusText: 'Not Found' });
+    httpMock.verify();
+  });
 });

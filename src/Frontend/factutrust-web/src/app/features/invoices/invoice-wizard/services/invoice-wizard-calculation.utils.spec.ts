@@ -55,6 +55,7 @@ function minimalState(overrides?: Partial<InvoiceWizardState>): InvoiceWizardSta
     draftId: null,
     validationResult: null,
     submissionError: null,
+    linkedInvoiceCommercialTtc: null,
     ...overrides
   };
 }

@@ -187,6 +187,8 @@ public static class UserRoleExtensions
             Permissions.Storefront.Manage,
             Permissions.Forecasting.View,
             Permissions.Forecasting.Manage,
+            Permissions.TreasuryForecast.View,
+            Permissions.TreasuryForecast.Manage,
             Permissions.Studio.DesignEntities, Permissions.Studio.DesignForms, Permissions.Studio.DesignReports,
             Permissions.CustomData.RecordsRead, Permissions.CustomData.RecordsWrite, Permissions.CustomData.ReportsView,
             Permissions.Payroll.Read, Permissions.Payroll.ManageEmployees, Permissions.Payroll.RunPayroll,
@@ -251,6 +253,10 @@ public static class UserRoleExtensions
             Permissions.WithholdingTax.Read, Permissions.WithholdingTax.Create, Permissions.WithholdingTax.Edit,
             Permissions.WithholdingTax.Validate, Permissions.WithholdingTax.Delete, Permissions.WithholdingTax.Export,
             Permissions.CustomData.RecordsRead, Permissions.CustomData.RecordsWrite, Permissions.CustomData.ReportsView,
+            // Le prévisionnel de trésorerie est un outil de comptable : il n'est PAS couvert par
+            // Permissions.Forecasting.* (ventes / stock), que ce rôle ne possède pas.
+            Permissions.TreasuryForecast.View,
+            Permissions.TreasuryForecast.Manage,
             Permissions.Payroll.Read, Permissions.Payroll.ManageEmployees, Permissions.Payroll.RunPayroll,
             Permissions.Payroll.Validate, Permissions.Payroll.Declare, Permissions.Payroll.Export, Permissions.Payroll.Pay, Permissions.Payroll.Settings,
             Permissions.Payroll.ManageGarnishments, Permissions.Payroll.HrDocuments, Permissions.Payroll.ManageTermination
@@ -342,6 +348,8 @@ public static class UserRoleExtensions
             Permissions.Stock.Read,
             Permissions.WithholdingTax.Read,
             Permissions.Forecasting.View,
+            // Lecture seule : l'auditeur consulte la projection, il ne la recalcule pas.
+            Permissions.TreasuryForecast.View,
             Permissions.CustomData.RecordsRead, Permissions.CustomData.ReportsView
         },
         UserRole.Supervisor => new[]
@@ -380,6 +388,8 @@ public static class UserRoleExtensions
             Permissions.Storefront.Manage,
             Permissions.Forecasting.View,
             Permissions.Forecasting.Manage,
+            Permissions.TreasuryForecast.View,
+            Permissions.TreasuryForecast.Manage,
             Permissions.Studio.DesignEntities, Permissions.Studio.DesignForms, Permissions.Studio.DesignReports,
             Permissions.CustomData.RecordsRead, Permissions.CustomData.RecordsWrite, Permissions.CustomData.ReportsView,
             Permissions.Payroll.Read, Permissions.Payroll.ManageEmployees, Permissions.Payroll.RunPayroll,
@@ -637,6 +647,24 @@ public static class Permissions
     }
 
     /// <summary>
+    /// Permissions du module « Trésorerie prévisionnelle par IA » (projection du solde de
+    /// trésorerie, scénarios probabilisés, alertes de tension, engagements récurrents).
+    /// Distinctes de <see cref="Forecasting"/> : le prévisionnel de trésorerie s'adresse au
+    /// comptable et à la direction financière, qui ne disposent pas des droits du module
+    /// Prévisions IA (ventes / stock).
+    /// </summary>
+    public static class TreasuryForecast
+    {
+        /// <summary>Consulter la projection, les scénarios, les alertes et les flux attendus.</summary>
+        public const string View = "treasury_forecast:view";
+
+        /// <summary>
+        /// Déclencher un recalcul, gérer les engagements récurrents et les seuils de la jauge.
+        /// </summary>
+        public const string Manage = "treasury_forecast:manage";
+    }
+
+    /// <summary>
     /// Permissions governing the public 3D virtual street storefront module.
     /// Only granted to roles allowed to commit the company to a public publication
     /// (Administrator, Supervisor) to ensure legal/brand accountability.
@@ -673,6 +701,32 @@ public static class Permissions
         public const string Manage = "firm:manage";
         public const string UsersManage = "firm:users:manage";
         public const string AssignmentsManage = "firm:assignments:manage";
+
+        /// <summary>
+        /// Consulter l'agent « Chef de mission » (assistant IA du cabinet en mode natif).
+        /// Distincte de <see cref="AI.Chat"/> : l'assistant cabinet a son propre catalogue d'outils
+        /// (portefeuille de dossiers) et sa propre surface HTTP, il n'ouvre pas l'assistant tenant.
+        /// </summary>
+        public const string AiChat = "firm:ai:chat";
+
+        /// <summary>
+        /// Déclencher une relance d'échéance fiscale depuis l'agent « Chef de mission ».
+        /// Réservée au responsable de cabinet : un collaborateur consulte mais n'envoie pas.
+        /// </summary>
+        public const string AiRemind = "firm:ai:remind";
+
+        /// <summary>
+        /// Consulter la révision de portefeuille : anomalies consolidées des dossiers, file de
+        /// travail, dossier de révision. Accordée au responsable comme au collaborateur —
+        /// l'ACL dossier restreint ensuite chacun à son périmètre réel.
+        /// </summary>
+        public const string RevisionView = "firm:revision:view";
+
+        /// <summary>
+        /// Lancer un balayage de portefeuille et publier un dossier de révision. Réservée au
+        /// responsable de cabinet : un balayage mobilise toutes les bases dossiers.
+        /// </summary>
+        public const string RevisionManage = "firm:revision:manage";
     }
 
     public static class HonorairesInvoices

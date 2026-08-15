@@ -1,0 +1,18 @@
+{
+  "name": "factutrust-cursor-sdk-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pont local @cursor/sdk (127.0.0.1) pilote par l'API FactuTrust.",
+  "main": "bridge.js",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "node bridge.js",
+    "test": "node --test bridge-agent-options.test.js"
+  },
+  "dependencies": {
+    "@cursor/sdk": "1.0.27"
+  }
+}

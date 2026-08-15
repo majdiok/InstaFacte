@@ -29,11 +29,45 @@ public sealed class AccountingAuditEngine : IAccountingAuditEngine
         _settings = settings.Value;
     }
 
+    /// <summary>Exécute le contrôle sur le tenant de la requête courante.</summary>
     public async Task<Result<AccountingAuditRunResultDto>> RunAsync(
         AccountingAuditRunRequestDto request,
         Guid? userId,
         string? userName,
         CancellationToken cancellationToken = default)
+    {
+        var guard = Validate(request);
+        if (guard is not null) return guard;
+
+        await using var ctx = _contextFactory.CreateContext();
+        return await RunCoreAsync(ctx, request, userId, userName, cancellationToken);
+    }
+
+    /// <summary>
+    /// Exécute le contrôle sur une base dossier DÉSIGNÉE, hors tenant ambiant.
+    /// <para>Indispensable aux appelants qui n'ont pas de contexte de requête : le job Hangfire de
+    /// contrôle planifié et le balayage de portefeuille cabinet. Le contexte est <b>isolé</b> :
+    /// il ne rejoint jamais une transaction ambiante appartenant à un autre tenant.</para>
+    /// </summary>
+    public async Task<Result<AccountingAuditRunResultDto>> RunForConnectionAsync(
+        string connectionString,
+        AccountingAuditRunRequestDto request,
+        Guid? userId,
+        string? userName,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return Result.Failure<AccountingAuditRunResultDto>(
+                Error.Validation("Audit", "Chaîne de connexion du dossier indisponible."));
+
+        var guard = Validate(request);
+        if (guard is not null) return guard;
+
+        await using var ctx = _contextFactory.CreateIsolatedContext(connectionString);
+        return await RunCoreAsync(ctx, request, userId, userName, cancellationToken);
+    }
+
+    private Result<AccountingAuditRunResultDto>? Validate(AccountingAuditRunRequestDto request)
     {
         if (!_settings.AccountingAuditDashboardEnabled)
             return Result.Failure<AccountingAuditRunResultDto>(
@@ -42,13 +76,22 @@ public sealed class AccountingAuditEngine : IAccountingAuditEngine
         if (request.FiscalYear is < 2000 or > 2100)
             return Result.Failure<AccountingAuditRunResultDto>(Error.Validation("FiscalYear", "Exercice invalide."));
 
+        return null;
+    }
+
+    private async Task<Result<AccountingAuditRunResultDto>> RunCoreAsync(
+        TenantDbContext ctx,
+        AccountingAuditRunRequestDto request,
+        Guid? userId,
+        string? userName,
+        CancellationToken cancellationToken)
+    {
         var periodFrom = request.PeriodFrom ?? new DateOnly(request.FiscalYear, 1, 1);
         var periodTo = request.PeriodTo ?? new DateOnly(request.FiscalYear, 12, 31);
         var moduleFilter = request.ModuleCodes?.Count > 0
             ? new HashSet<string>(request.ModuleCodes, StringComparer.OrdinalIgnoreCase)
             : null;
 
-        await using var ctx = _contextFactory.CreateContext();
         var ruleSettings = await ctx.Set<AccountingControlRuleSetting>().AsNoTracking().ToListAsync(cancellationToken);
 
         var run = new AccountingControlRun
@@ -72,6 +115,7 @@ public sealed class AccountingAuditEngine : IAccountingAuditEngine
                 ctx, _settings, request.FiscalYear, periodFrom, periodTo, ruleSettings, moduleFilter);
 
             var allCandidates = new List<AnomalyCandidate>();
+            var evaluatedRuleCount = 0;
             foreach (var rule in _registry.GetAll())
             {
                 if (!rule.IsEnabled(_settings, evalCtx.GetRuleSetting(rule.Code)))
@@ -79,15 +123,29 @@ public sealed class AccountingAuditEngine : IAccountingAuditEngine
                 if (!evalCtx.IsModuleInScope(rule.ModuleCode))
                     continue;
 
+                evaluatedRuleCount++;
                 var found = await rule.EvaluateAsync(evalCtx, cancellationToken);
                 allCandidates.AddRange(found);
             }
 
-            var existingOpen = _settings.AccountingAuditPersistenceEnabled
-                ? await ctx.Set<AccountingAnomaly>()
+            // L'auto-résolution ne peut porter QUE sur le périmètre réellement balayé : un run
+            // filtré sur « payroll » n'a rien évalué en TVA, il ne peut donc pas conclure que les
+            // anomalies TVA ont disparu. Même raisonnement pour l'exercice.
+            var existingOpen = new List<AccountingAnomaly>();
+            if (_settings.AccountingAuditPersistenceEnabled)
+            {
+                var openQuery = ctx.Set<AccountingAnomaly>()
                     .Where(a => a.Status != AnomalyStatus.Corrected && a.Status != AnomalyStatus.Ignored)
-                    .ToListAsync(cancellationToken)
-                : [];
+                    .Where(a => a.Run.FiscalYear == request.FiscalYear);
+
+                if (moduleFilter is { Count: > 0 })
+                {
+                    var scopedModules = moduleFilter.ToList();
+                    openQuery = openQuery.Where(a => scopedModules.Contains(a.ModuleCode));
+                }
+
+                existingOpen = await openQuery.ToListAsync(cancellationToken);
+            }
 
             var detectedFingerprints = new HashSet<string>(allCandidates.Select(c => c.Fingerprint));
             foreach (var candidate in allCandidates)
@@ -144,7 +202,8 @@ public sealed class AccountingAuditEngine : IAccountingAuditEngine
             run.BlockingCount = allCandidates.Count(c => c.Severity == (int)PreClosingSeverity.Blocking);
             run.WarningCount = allCandidates.Count(c => c.Severity == (int)PreClosingSeverity.Warning);
             run.InfoCount = allCandidates.Count(c => c.Severity == (int)PreClosingSeverity.Info);
-            run.ComplianceRate = ComputeComplianceRate(run.BlockingCount, run.WarningCount, run.InfoCount, _registry.GetAll().Count);
+            run.EvaluatedRuleCount = evaluatedRuleCount;
+            run.ComplianceRate = ComputeComplianceRate(run.BlockingCount, run.WarningCount, run.InfoCount, evaluatedRuleCount);
 
             if (_settings.AccountingAuditPersistenceEnabled)
                 await ctx.SaveChangesAsync(cancellationToken);
@@ -195,11 +254,17 @@ public sealed class AccountingAuditEngine : IAccountingAuditEngine
         });
     }
 
-    private static decimal ComputeComplianceRate(int blocking, int warning, int info, int ruleCount)
+    /// <summary>
+    /// Taux de conformité, pondéré par sévérité et ramené au nombre de règles <b>réellement
+    /// évaluées</b>. Diviser par la taille du catalogue rendrait le taux dépendant des règles
+    /// ajoutées au produit : deux exercices, ou un run filtré et un run complet, cesseraient
+    /// d'être comparables.
+    /// </summary>
+    private static decimal ComputeComplianceRate(int blocking, int warning, int info, int evaluatedRuleCount)
     {
-        if (ruleCount == 0) return 100m;
+        if (evaluatedRuleCount == 0) return 100m;
         var penalty = blocking * 1m + warning * 0.5m + info * 0.1m;
-        var rate = Math.Max(0, 100m - (penalty / ruleCount * 100m));
+        var rate = Math.Max(0, 100m - (penalty / evaluatedRuleCount * 100m));
         return Math.Round(rate, 1);
     }
 
@@ -259,7 +324,9 @@ public sealed class AccountingAuditEngine : IAccountingAuditEngine
             FiscalYear = fiscalYear,
             BlockingCount = run.BlockingCount,
             WarningCount = run.WarningCount,
-            AnomalyCount = run.WarningCount,
+            // Total, toutes sévérités confondues — et non une seconde copie du compteur
+            // d'avertissements, qui rendait la vignette « anomalies » du tableau de bord fausse.
+            AnomalyCount = run.TotalAnomalies,
             InfoCount = run.InfoCount,
             ComplianceRate = run.ComplianceRate,
             ComplianceRateDeltaVsPriorYear = delta,

@@ -12,11 +12,13 @@ const SCREEN_LABELS: Record<string, string> = {
   'accounting-manual-entry': 'Saisie manuelle',
   'accounting-aging': 'Balance âgée',
   'invoice-list': 'Liste des factures',
+  'credit-note-list': 'Liste des avoirs',
   'cash-desk': 'Caisse',
   'stock-simple': 'Stock',
   dashboard: 'Tableau de bord',
   'forecasting-replenishment': 'Réapprovisionnement',
   'forecasting-revenue': 'Prévision de revenus',
+  'treasury-cash-forecast': 'Trésorerie prévisionnelle',
   'forecasting-abc-xyz': 'Matrice ABC/XYZ',
   'forecasting-promotions': 'Promotions'
 };

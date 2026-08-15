@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterModule, ActivatedRoute } from '@angular/router';
@@ -10,7 +10,10 @@ import { MessageModule } from 'primeng/message';
 import { AuthService } from '@core/services/auth.service';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
 import { ErrorMessageService } from '@core/services/error-message.service';
+import { ToastService } from '@core/services/toast.service';
 import { LogoComponent } from '@shared/components/logo/logo.component';
+import { AuthShellComponent } from '../auth-shell/auth-shell.component';
+import { LOGIN_AUTH_SHELL_CONFIG } from '../auth-shell/auth-shell.config';
 import { environment } from '@environments/environment';
 
 @Component({
@@ -25,18 +28,24 @@ import { environment } from '@environments/environment';
     ButtonModule,
     CheckboxModule,
     MessageModule,
-    LogoComponent
+    LogoComponent,
+    AuthShellComponent,
   ],
   templateUrl: './login.component.html',
   styleUrl: './login.component.scss'
 })
-export class LoginComponent {
+export class LoginComponent implements OnInit {
   readonly environment = environment;
+  readonly shellConfig = LOGIN_AUTH_SHELL_CONFIG;
+  readonly rememberMeHint =
+    'Sans cette option, chaque fenêtre garde sa propre session. Avec cette option, la session est partagée entre tous les onglets de ce navigateur.';
+
   private fb = inject(FormBuilder);
   private authService = inject(AuthService);
   private warehouseContext = inject(WarehouseContextService);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
+  private toastService = inject(ToastService);
   errorMessageService = inject(ErrorMessageService);
 
   loading = signal(false);
@@ -47,6 +56,23 @@ export class LoginComponent {
     password: ['', Validators.required],
     rememberMe: [false]
   });
+
+  ngOnInit(): void {
+    if (this.route.snapshot.queryParams['reset'] === 'success') {
+      this.toastService.add({
+        severity: 'success',
+        summary: 'Mot de passe mis à jour',
+        detail: 'Vous pouvez maintenant vous connecter avec votre nouveau mot de passe.',
+        life: 6000,
+      });
+      void this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { reset: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
+    }
+  }
 
   isEmailInvalid(): boolean {
     const c = this.form.get('email');
@@ -59,7 +85,10 @@ export class LoginComponent {
   }
 
   onSubmit(): void {
-    if (this.form.invalid) return;
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      return;
+    }
 
     this.loading.set(true);
     this.error.set(null);

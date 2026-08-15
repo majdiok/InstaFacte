@@ -1,178 +1,120 @@
-<div id="main-content" class="auth-page">
-  <aside class="branding-panel" aria-label="Présentation InstaFact">
-    <div class="branding-background" aria-hidden="true">
-      <div class="blob shape-1"></div>
-      <div class="blob shape-2"></div>
-      <div class="blob shape-3"></div>
-      <div class="glass-overlay"></div>
+<app-auth-shell [config]="shellConfig">
+  <div class="auth-form-card-header">
+    <div class="auth-form-card-header__logo">
+      <app-logo size="medium" variant="icon-only" routerLink="/"></app-logo>
     </div>
+    <h2>Bienvenue !</h2>
+    <p>Connectez-vous à votre espace InstaFact.</p>
+    <span class="auth-form-card-header__accent" aria-hidden="true"></span>
+  </div>
 
-    <div class="branding-content">
-      <div class="brand-header">
-        <app-logo size="large" variant="lockup" routerLink="/"></app-logo>
+  <form
+    [formGroup]="form"
+    (ngSubmit)="onSubmit()"
+    class="login-form"
+    [attr.aria-label]="'Connexion à InstaFact'"
+    novalidate
+  >
+    @if (error()) {
+      <p-message severity="error" [text]="error()!" styleClass="w-full login-global-error"></p-message>
+    }
+
+    <div class="form-group">
+      <label for="email">Adresse email</label>
+      <div class="input-icon-wrapper">
+        <i class="pi pi-envelope icon" aria-hidden="true"></i>
+        <input
+          pInputText
+          id="email"
+          type="email"
+          formControlName="email"
+          placeholder="Entrez votre adresse email"
+          class="w-full"
+          autocomplete="email"
+          [attr.aria-invalid]="isEmailInvalid()"
+          [attr.aria-describedby]="isEmailInvalid() ? 'login-email-error' : null"
+          [class.ng-invalid]="isEmailInvalid()"
+        />
       </div>
-
-      <div class="value-prop">
-        <span class="badge">Espace sécurisé</span>
-        <h1 class="title">Bon retour <br />parmi nous</h1>
-        <p class="description">
-          Connectez-vous pour accéder à votre tableau de bord et piloter votre facturation électronique en toute sérénité.
-        </p>
-
-        <ul class="features-list">
-          <li>
-            <div class="icon-wrapper"><i class="pi pi-check" aria-hidden="true"></i></div>
-            <span>Tableaux de bord immersifs et temps réel</span>
-          </li>
-          <li>
-            <div class="icon-wrapper"><i class="pi pi-check" aria-hidden="true"></i></div>
-            <span>Gestion complète des ventes et achats</span>
-          </li>
-          <li>
-            <div class="icon-wrapper"><i class="pi pi-check" aria-hidden="true"></i></div>
-            <span>Analyse détaillée de votre activité</span>
-          </li>
-        </ul>
-      </div>
-
-      <div class="social-proof">
-        <div class="avatars">
-          <div class="avatar bg-1"><i class="pi pi-building" aria-hidden="true"></i></div>
-          <div class="avatar bg-2"><i class="pi pi-shop" aria-hidden="true"></i></div>
-          <div class="avatar bg-3"><i class="pi pi-briefcase" aria-hidden="true"></i></div>
-          <div class="avatar-more">+2k</div>
-        </div>
-        <p>Des milliers de professionnels nous font confiance au quotidien.</p>
-      </div>
-    </div>
-  </aside>
-
-  <main class="form-panel" role="main">
-    <div class="form-scrollable-container">
-      <div class="form-top-bar">
-        <span class="form-top-bar__spacer" aria-hidden="true"></span>
-        <a routerLink="/auth/register" class="form-top-bar__link">
-          <i class="pi pi-user-plus" aria-hidden="true"></i>
-          Pas encore de compte ? Inscription
-        </a>
-      </div>
-
-      <div class="form-header mobile-only">
-        <app-logo size="medium" variant="lockup" routerLink="/"></app-logo>
-      </div>
-
-      <div class="form-header-text">
-        <h2>Connexion</h2>
-        <p>Entrez vos identifiants pour accéder à votre espace InstaFact.</p>
-      </div>
-
-      <form
-        [formGroup]="form"
-        (ngSubmit)="onSubmit()"
-        class="login-form"
-        [attr.aria-label]="'Connexion à InstaFact'"
-        novalidate
-      >
-        @if (error()) {
-          <p-message severity="error" [text]="error()!" styleClass="w-full login-global-error"></p-message>
-        }
-
-        <div class="form-group">
-          <label for="email">Adresse email</label>
-          <div class="input-icon-wrapper">
-            <i class="pi pi-envelope icon" aria-hidden="true"></i>
-            <input
-              pInputText
-              id="email"
-              type="email"
-              formControlName="email"
-              placeholder="votre@email.com"
-              class="w-full"
-              autocomplete="email"
-              [attr.aria-invalid]="isEmailInvalid()"
-              [attr.aria-describedby]="isEmailInvalid() ? 'login-email-error' : null"
-              [class.ng-invalid]="isEmailInvalid()"
-            />
-          </div>
-          @if (isEmailInvalid()) {
-            <div class="field-error" id="login-email-error" role="alert">
-              <i class="pi pi-info-circle" aria-hidden="true"></i>
-              <span>{{ errorMessageService.getErrorMessage(form.get('email')) }}</span>
-              @if (errorMessageService.getFieldSuggestion('email', 'email')) {
-                <small class="field-error__hint">
-                  {{ errorMessageService.getFieldSuggestion('email', 'email') }}
-                </small>
-              }
-            </div>
+      @if (isEmailInvalid()) {
+        <div class="field-error" id="login-email-error" role="alert">
+          <i class="pi pi-info-circle" aria-hidden="true"></i>
+          <span>{{ errorMessageService.getErrorMessage(form.get('email')) }}</span>
+          @if (errorMessageService.getFieldSuggestion('email', 'email')) {
+            <small class="field-error__hint">
+              {{ errorMessageService.getFieldSuggestion('email', 'email') }}
+            </small>
           }
         </div>
+      }
+    </div>
 
-        <div class="form-group">
-          <label for="password">Mot de passe</label>
-          <div class="input-icon-wrapper p-password-wrapper">
-            <i class="pi pi-lock icon" aria-hidden="true"></i>
-            <p-password
-              id="password"
-              formControlName="password"
-              [feedback]="false"
-              [toggleMask]="true"
-              placeholder="Votre mot de passe"
-              styleClass="w-full"
-              inputStyleClass="w-full"
-              autocomplete="current-password"
-              [attr.aria-invalid]="isPasswordInvalid()"
-              [attr.aria-describedby]="isPasswordInvalid() ? 'login-password-error' : null"
-            >
-            </p-password>
-          </div>
-          @if (isPasswordInvalid()) {
-            <div class="field-error" id="login-password-error" role="alert">
-              <i class="pi pi-info-circle" aria-hidden="true"></i>
-              <span>{{ errorMessageService.getErrorMessage(form.get('password')) }}</span>
-            </div>
-          }
-        </div>
-
-        <div class="remember-forgot-row">
-          <div class="remember-me-block" role="group" aria-describedby="rememberMe-hint">
-            <p-checkbox
-              formControlName="rememberMe"
-              [binary]="true"
-              inputId="rememberMe"
-              label="Se souvenir de moi"
-            >
-            </p-checkbox>
-            <p class="remember-me-hint" id="rememberMe-hint">
-              Sans cette option, chaque fenêtre garde sa propre session (recommandé pour plusieurs
-              comptes). Avec cette option, la session est partagée entre tous les onglets de ce
-              navigateur.
-            </p>
-          </div>
-          <a class="forgot-link" href="#" (click)="$event.preventDefault()">Mot de passe oublié ?</a>
-        </div>
-
-        <p-button
-          type="submit"
-          label="Se connecter"
-          icon="pi pi-arrow-right"
-          iconPos="right"
-          styleClass="w-full login-submit-btn"
-          [loading]="loading()"
-          [disabled]="form.invalid || loading()"
-          [attr.aria-busy]="loading()"
+    <div class="form-group">
+      <label for="password">Mot de passe</label>
+      <div class="input-icon-wrapper p-password-wrapper">
+        <i class="pi pi-lock icon" aria-hidden="true"></i>
+        <p-password
+          id="password"
+          formControlName="password"
+          [feedback]="false"
+          [toggleMask]="true"
+          placeholder="Entrez votre mot de passe"
+          styleClass="w-full"
+          inputStyleClass="w-full"
+          autocomplete="current-password"
+          [attr.aria-invalid]="isPasswordInvalid()"
+          [attr.aria-describedby]="isPasswordInvalid() ? 'login-password-error' : null"
         >
-        </p-button>
-      </form>
-
-      <div class="login-footer" aria-label="Création de compte">
-        <div class="login-footer__divider" role="presentation"></div>
-        <p class="login-footer__intro">Pas encore de compte ?</p>
-        <a routerLink="/auth/register" class="login-footer__cta">Créer un compte gratuitement</a>
-        @if (environment.accountingFirmsEnabled) {
-          <p class="login-footer__intro mt-2">Vous êtes un cabinet comptable ?</p>
-          <a routerLink="/auth/register-firm" class="login-footer__cta login-footer__cta--secondary">Créer un compte cabinet</a>
-        }
+        </p-password>
       </div>
+      @if (isPasswordInvalid()) {
+        <div class="field-error" id="login-password-error" role="alert">
+          <i class="pi pi-info-circle" aria-hidden="true"></i>
+          <span>{{ errorMessageService.getErrorMessage(form.get('password')) }}</span>
+        </div>
+      }
     </div>
-  </main>
-</div>
+
+    <div class="remember-forgot-row">
+      <div class="remember-me-block">
+        <p-checkbox
+          formControlName="rememberMe"
+          [binary]="true"
+          inputId="rememberMe"
+          label="Se souvenir de moi"
+          [attr.title]="rememberMeHint"
+          [attr.aria-describedby]="'rememberMe-hint'"
+        >
+        </p-checkbox>
+        <span class="sr-only" id="rememberMe-hint">{{ rememberMeHint }}</span>
+      </div>
+      <a class="forgot-link" routerLink="/auth/forgot-password">Mot de passe oublié ?</a>
+    </div>
+
+    <p-button
+      type="submit"
+      label="Se connecter"
+      icon="pi pi-arrow-right"
+      iconPos="right"
+      styleClass="w-full login-submit-btn"
+      [loading]="loading()"
+      [disabled]="form.invalid || loading()"
+      [attr.aria-busy]="loading()"
+    >
+    </p-button>
+
+    <div class="auth-data-protection" role="note">
+      <i class="pi pi-shield" aria-hidden="true"></i>
+      <span>Vos données sont protégées</span>
+    </div>
+  </form>
+
+  <div class="login-footer" aria-label="Création de compte">
+    <p class="login-footer__intro">Pas encore de compte ?</p>
+    <a routerLink="/auth/register" class="login-footer__cta">Créer un compte gratuitement</a>
+    @if (environment.accountingFirmsEnabled) {
+      <p class="login-footer__intro login-footer__intro--block">Vous êtes un cabinet comptable ?</p>
+      <a routerLink="/auth/register-firm" class="login-footer__cta login-footer__cta--secondary">Créer un compte cabinet</a>
+    }
+  </div>
+</app-auth-shell>

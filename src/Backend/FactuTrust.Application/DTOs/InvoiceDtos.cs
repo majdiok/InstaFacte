@@ -130,6 +130,8 @@ public sealed record InvoiceDetailDto
     public IReadOnlyList<InvoiceLineDto> Lines { get; init; } = Array.Empty<InvoiceLineDto>();
     
     public decimal SubTotal { get; init; }
+    public decimal? GlobalDiscountPercent { get; init; }
+    public decimal GlobalDiscountAmount { get; init; }
     public decimal FodecAmount { get; init; }
     public decimal TotalVat { get; init; }
     /// <summary>Signed fiscal stamp (e.g. +1 or -1 TND on credit notes).</summary>
@@ -182,6 +184,7 @@ public sealed record InvoiceLineDto
     public Guid? AppliedPromotionId { get; init; }
     public string? AppliedPromotionName { get; init; }
     public decimal DiscountAmount { get; init; }
+    public decimal AllocatedGlobalDiscount { get; init; }
     public decimal SubTotal { get; init; }
     public bool IsFodecApplicable { get; init; }
     public decimal FodecAmount { get; init; }

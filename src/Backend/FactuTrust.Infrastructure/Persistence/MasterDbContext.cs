@@ -62,6 +62,7 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
     public DbSet<Domain.Entities.FirmGovernance.FirmLeaveSettings> FirmLeaveSettings => Set<Domain.Entities.FirmGovernance.FirmLeaveSettings>();
     public DbSet<Domain.Entities.FirmGovernance.FirmLeaveBalance> FirmLeaveBalances => Set<Domain.Entities.FirmGovernance.FirmLeaveBalance>();
     public DbSet<Domain.Entities.FirmGovernance.FirmLeaveRequest> FirmLeaveRequests => Set<Domain.Entities.FirmGovernance.FirmLeaveRequest>();
+    public DbSet<Domain.Entities.FirmGovernance.FirmMissionBriefingLog> FirmMissionBriefingLogs => Set<Domain.Entities.FirmGovernance.FirmMissionBriefingLog>();
 
     // Public Virtual Street (3D storefront projection)
     public DbSet<StorefrontProfile> StorefrontProfiles => Set<StorefrontProfile>();
@@ -543,6 +544,10 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Property(p => p.OpenRouterBaseUrl).HasMaxLength(500);
             entity.Property(p => p.OpenRouterEncryptedApiKey).HasMaxLength(4000);
             entity.Property(p => p.OpenRouterApiKeyLast4).HasMaxLength(4);
+            entity.Property(p => p.CursorIsEnabled).HasDefaultValue(false);
+            entity.Property(p => p.CursorDisplayName).HasMaxLength(200);
+            entity.Property(p => p.CursorEncryptedApiKey).HasMaxLength(4000);
+            entity.Property(p => p.CursorApiKeyLast4).HasMaxLength(4);
             entity.Property(p => p.CreatedBy).HasMaxLength(450);
             entity.Property(p => p.UpdatedBy).HasMaxLength(450);
         });
@@ -995,6 +1000,17 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Ignore(s => s.DailyHours);
             entity.Ignore(s => s.AnnualProductiveHours);
             entity.Ignore(s => s.TotalEmployerChargeRate);
+        });
+
+        builder.Entity<Domain.Entities.FirmGovernance.FirmMissionBriefingLog>(entity =>
+        {
+            entity.ToTable("FirmMissionBriefingLogs");
+            entity.HasKey(b => b.Id);
+            // C'est CET index qui porte l'anti-doublon du brief quotidien, pas le code du job :
+            // un redéclenchement Hangfire se solde par une violation d'unicité, pas par un doublon.
+            entity.HasIndex(b => new { b.FirmTenantId, b.RecipientUserId, b.BriefingDate }).IsUnique();
+            entity.Property(b => b.BriefingDate).HasColumnType("date");
+            entity.Property(b => b.Channel).HasConversion<int>();
         });
 
         builder.Entity<Domain.Entities.FirmGovernance.FirmCollaboratorYearCost>(entity =>

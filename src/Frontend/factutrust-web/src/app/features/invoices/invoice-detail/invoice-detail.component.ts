@@ -964,20 +964,31 @@ export class InvoiceDetailComponent implements OnInit {
     return this.route.snapshot.data['unpaidOnly'] === true;
   }
 
+  private get creditNotesOnlyFromRoute(): boolean {
+    return this.route.snapshot.data['creditNotesOnly'] === true;
+  }
+
   get listBackRoute(): string {
+    if (this.creditNotesOnlyFromRoute) {
+      return '/invoices/credit-notes';
+    }
     return this.unpaidOnlyFromRoute ? '/invoices/unpaid' : '/invoices';
   }
 
   breadcrumbItems = computed<BreadcrumbItem[]>(() => {
     const inv = this.invoice();
     const base: BreadcrumbItem[] = [
-      { label: 'Tableau de bord', route: '/dashboard', icon: 'pi-home' },
-      { label: 'Factures', route: '/invoices' }
+      { label: 'Tableau de bord', route: '/dashboard', icon: 'pi-home' }
     ];
-    if (this.unpaidOnlyFromRoute) {
-      base.push({ label: 'Factures impayées', route: '/invoices/unpaid' });
+    if (this.creditNotesOnlyFromRoute) {
+      base.push({ label: 'Avoirs de vente', route: '/invoices/credit-notes' });
+    } else {
+      base.push({ label: 'Factures', route: '/invoices' });
+      if (this.unpaidOnlyFromRoute) {
+        base.push({ label: 'Factures impayées', route: '/invoices/unpaid' });
+      }
     }
-    base.push({ label: inv?.number || 'Facture' });
+    base.push({ label: inv?.number || (this.creditNotesOnlyFromRoute ? 'Avoir' : 'Facture') });
     return base;
   });
 

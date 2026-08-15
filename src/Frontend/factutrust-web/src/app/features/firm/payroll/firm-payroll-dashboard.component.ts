@@ -48,35 +48,80 @@ const SLICE_COLORS = ['#3862f5', '#0ea5e9', '#f59e0b', '#8b5cf6', '#10b981', '#e
       </div>
     }
 
-    <!-- Bloc distinct du squelette : l'alias "as" n'est disponible que sur un @if principal. -->
     @if (data(); as d) {
+      @if (!(loading() && initialLoad())) {
+        @if (!d.hasRun) {
+          <div class="notice">
+            <i class="pi pi-info-circle"></i>
+            <span>Aucun cycle de paie pour {{ d.periodLabel }}.</span>
+            <a routerLink="/firm/payroll/runs" class="notice-link">Ouvrir les cycles de paie</a>
+          </div>
+        }
 
-      @if (!d.hasRun) {
-        <div class="notice">
-          <i class="pi pi-info-circle"></i>
-          <span>Aucun cycle de paie pour {{ d.periodLabel }}.</span>
-          <a routerLink="/firm/payroll/runs" class="notice-link">Ouvrir les cycles de paie</a>
+        <div class="kpi-row">
+          <app-stat-card appearance="solid" variant="primary" icon="pi-wallet"
+            label="Total brut" [value]="amount(d.gross.amount)" [change]="d.gross.changePercent ?? 0"
+            [routerLink]="d.runId ? ['/firm/payroll/runs', d.runId] : undefined" />
+          <app-stat-card appearance="solid" variant="success" icon="pi-money-bill"
+            label="Net à payer" [value]="amount(d.net.amount)" [change]="d.net.changePercent ?? 0" />
+          <app-stat-card appearance="solid" variant="warning" icon="pi-building"
+            label="Charges patronales" [value]="amount(d.employerCharges.amount)"
+            [change]="d.employerCharges.changePercent ?? 0" />
+          <app-stat-card appearance="solid" variant="primary" icon="pi-users"
+            label="Effectif du cycle" [value]="d.employeeCount"
+            [routerLink]="['/firm/payroll/employees']" />
+          <app-stat-card appearance="solid" [variant]="nextDeadlineVariant()" icon="pi-calendar-clock"
+            label="Prochaine échéance" [value]="nextDeadlineValue()">
+            <span class="stat-sub">{{ nextDeadlineCaption() }}</span>
+          </app-stat-card>
         </div>
       }
+    }
 
-      <div class="kpi-row">
-        <app-stat-card appearance="solid" variant="primary" icon="pi-wallet"
-          label="Total brut" [value]="amount(d.gross.amount)" [change]="d.gross.changePercent ?? 0"
-          [routerLink]="d.runId ? ['/firm/payroll/runs', d.runId] : undefined" />
-        <app-stat-card appearance="solid" variant="success" icon="pi-money-bill"
-          label="Net à payer" [value]="amount(d.net.amount)" [change]="d.net.changePercent ?? 0" />
-        <app-stat-card appearance="solid" variant="warning" icon="pi-building"
-          label="Charges patronales" [value]="amount(d.employerCharges.amount)"
-          [change]="d.employerCharges.changePercent ?? 0" />
-        <app-stat-card appearance="solid" variant="primary" icon="pi-users"
-          label="Effectif du cycle" [value]="d.employeeCount"
-          [routerLink]="['/firm/payroll/employees']" />
-        <app-stat-card appearance="solid" [variant]="nextDeadlineVariant()" icon="pi-calendar-clock"
-          label="Prochaine échéance" [value]="nextDeadlineValue()">
-          <span class="stat-sub">{{ nextDeadlineCaption() }}</span>
-        </app-stat-card>
+    <section class="quick-access-section" aria-labelledby="quick-access-title">
+      <h2 id="quick-access-title" class="section-title">Accès rapides</h2>
+      <div class="hub-grid">
+        <a routerLink="/firm/payroll/employees" class="hub-card">
+          <i class="pi pi-users hub-icon"></i>
+          <h3>Salariés</h3>
+          <p>Dossiers salariés et contrats des collaborateurs du cabinet.</p>
+        </a>
+        <a routerLink="/firm/payroll/runs" class="hub-card">
+          <i class="pi pi-calendar hub-icon"></i>
+          <h3>Cycles de paie</h3>
+          <p>Créer, calculer et valider les bulletins de paie interne.</p>
+        </a>
+        <a routerLink="/firm/governance/collaborator-costs" class="hub-card">
+          <i class="pi pi-coins hub-icon"></i>
+          <h3>Coûts collaborateurs</h3>
+          <p>Synchroniser les taux horaires depuis la paie validée.</p>
+        </a>
+        @if (isManager()) {
+          <a routerLink="/firm/payroll/declarations" class="hub-card">
+            <i class="pi pi-file-export hub-icon"></i>
+            <h3>Déclarations sociales</h3>
+            <p>DTS CNSS, certificats de retenue et déclarations de salaires.</p>
+          </a>
+          <a routerLink="/firm/payroll/settings" class="hub-card">
+            <i class="pi pi-cog hub-icon"></i>
+            <h3>Paramètres paie</h3>
+            <p>Barèmes de l'exercice, jours fériés et primes annuelles.</p>
+          </a>
+        }
+        <a routerLink="/firm/payroll/reports/payroll-book" class="hub-card">
+          <i class="pi pi-book hub-icon"></i>
+          <h3>Rapports</h3>
+          <p>Livre de paie et journal comptable de la paie interne.</p>
+        </a>
+        <a routerLink="/firm/governance/leaves" class="hub-card">
+          <i class="pi pi-calendar-times hub-icon"></i>
+          <h3>Congés &amp; Absences</h3>
+          <p>Point de saisie unique : les congés approuvés sont reportés en paie.</p>
+        </a>
       </div>
+    </section>
 
+    @if (data(); as d) {
       <div class="charts-grid">
         <app-chart-card title="Répartition des charges patronales"
           [subtitle]="d.hasRun ? amount(d.employerCharges.amount) : 'Aucun cycle'">
@@ -196,47 +241,6 @@ const SLICE_COLORS = ['#3862f5', '#0ea5e9', '#f59e0b', '#8b5cf6', '#10b981', '#e
         }
       </app-dashboard-panel>
     }
-
-    <h2 class="section-title">Accès rapides</h2>
-    <div class="hub-grid">
-      <a routerLink="/firm/payroll/employees" class="hub-card">
-        <i class="pi pi-users hub-icon"></i>
-        <h3>Salariés</h3>
-        <p>Dossiers salariés et contrats des collaborateurs du cabinet.</p>
-      </a>
-      <a routerLink="/firm/payroll/runs" class="hub-card">
-        <i class="pi pi-calendar hub-icon"></i>
-        <h3>Cycles de paie</h3>
-        <p>Créer, calculer et valider les bulletins de paie interne.</p>
-      </a>
-      <a routerLink="/firm/governance/collaborator-costs" class="hub-card">
-        <i class="pi pi-coins hub-icon"></i>
-        <h3>Coûts collaborateurs</h3>
-        <p>Synchroniser les taux horaires depuis la paie validée.</p>
-      </a>
-      @if (isManager()) {
-        <a routerLink="/firm/payroll/declarations" class="hub-card">
-          <i class="pi pi-file-export hub-icon"></i>
-          <h3>Déclarations sociales</h3>
-          <p>DTS CNSS, certificats de retenue et déclarations de salaires.</p>
-        </a>
-        <a routerLink="/firm/payroll/settings" class="hub-card">
-          <i class="pi pi-cog hub-icon"></i>
-          <h3>Paramètres paie</h3>
-          <p>Barèmes de l'exercice, jours fériés et primes annuelles.</p>
-        </a>
-      }
-      <a routerLink="/firm/payroll/reports/payroll-book" class="hub-card">
-        <i class="pi pi-book hub-icon"></i>
-        <h3>Rapports</h3>
-        <p>Livre de paie et journal comptable de la paie interne.</p>
-      </a>
-      <a routerLink="/firm/governance/leaves" class="hub-card">
-        <i class="pi pi-calendar-times hub-icon"></i>
-        <h3>Congés &amp; Absences</h3>
-        <p>Point de saisie unique : les congés approuvés sont reportés en paie.</p>
-      </a>
-    </div>
   `,
   styles: [`
   :host { display: block; }
@@ -298,7 +302,12 @@ const SLICE_COLORS = ['#3862f5', '#0ea5e9', '#f59e0b', '#8b5cf6', '#10b981', '#e
   .row-link { color: var(--color-primary, #3862f5); font-size: .8rem; }
   .panel-empty { padding: var(--spacing-4, 1rem); }
 
-  .section-title { font-size: 1.05rem; margin: var(--spacing-5, 1.5rem) 0 var(--spacing-3, .75rem); }
+  .quick-access-section { margin-bottom: var(--spacing-4, 1rem); }
+  .quick-access-section .section-title {
+    font-size: 1.05rem;
+    margin-top: 0;
+    margin-bottom: var(--spacing-3, .75rem);
+  }
   .hub-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--spacing-4, 1rem); }
   .hub-card {
     display: flex; flex-direction: column; gap: var(--spacing-2, .5rem);

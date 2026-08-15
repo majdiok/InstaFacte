@@ -77,14 +77,27 @@ describe('FirmDashboardComponent', () => {
       .and.returnValue(opts.govError ? throwError(() => new Error('gov down')) : of(govPayload));
     featureFlags = {
       isEnabled: jasmine.createSpy('isEnabled').and.callFake((key: string) =>
-        key === 'firmGovernance' ? opts.governanceEnabled : false
+        key === 'firmGovernance' || key === 'firmDecisionTables' ? opts.governanceEnabled : false
       )
     };
 
     await TestBed.configureTestingModule({
       imports: [FirmDashboardComponent, RouterTestingModule],
       providers: [
-        { provide: FirmDashboardService, useValue: { getDashboard: firmGetDashboard } },
+        { provide: FirmDashboardService, useValue: { getDashboard: firmGetDashboard, getDecisionTables: jasmine.createSpy('getDecisionTables').and.returnValue(of({
+          success: true,
+          data: {
+            criticalFiscalSchedules: [],
+            atRiskDossiers: [],
+            negativeMargins: [],
+            pendingTimeSheets: [],
+            socialAlerts: [],
+            honorairesAlerts: [],
+            meta: { generatedAt: '2026-03-12', partialFailures: [] }
+          },
+          message: null,
+          errors: []
+        })) } },
         { provide: FirmGovernanceService, useValue: { getDashboard: govGetDashboard } },
         { provide: FirmFeatureFlagsService, useValue: featureFlags },
         {
@@ -153,6 +166,18 @@ describe('FirmDashboardComponent', () => {
     expect(text).toContain('Échéances en retard');
     expect(text).toContain('Mes dossiers');
     expect(text).not.toContain('Dossiers permanents complets');
+  });
+
+  it('FirmManager voit la section pilotage décisionnel', async () => {
+    await setup({ governanceEnabled: true, isFirmManager: true });
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Pilotage décisionnel');
+  });
+
+  it('collaborateur ne voit pas la section pilotage décisionnel', async () => {
+    await setup({ governanceEnabled: true, isFirmManager: false });
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).not.toContain('Pilotage décisionnel');
   });
 
   it('FirmManager voit les actions Accepter / Refuser sur les invitations', async () => {

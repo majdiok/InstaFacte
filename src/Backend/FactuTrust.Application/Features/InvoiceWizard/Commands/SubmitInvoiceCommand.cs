@@ -45,6 +45,7 @@ public sealed class SubmitInvoiceCommandHandler
     private readonly IWarehouseRepository _warehouseRepository;
     private readonly IFiscalStampResolver _fiscalStampResolver;
     private readonly ILinePricingOrchestrator _linePricingOrchestrator;
+    private readonly IAccountingService _accountingService;
     private readonly AccountingSettings _accountingSettings;
     private readonly ILogger<SubmitInvoiceCommandHandler> _logger;
 
@@ -62,6 +63,7 @@ public sealed class SubmitInvoiceCommandHandler
         IWarehouseRepository warehouseRepository,
         IFiscalStampResolver fiscalStampResolver,
         ILinePricingOrchestrator linePricingOrchestrator,
+        IAccountingService accountingService,
         IOptions<AccountingSettings> accountingSettings,
         ILogger<SubmitInvoiceCommandHandler> logger)
     {
@@ -78,6 +80,7 @@ public sealed class SubmitInvoiceCommandHandler
         _warehouseRepository = warehouseRepository;
         _fiscalStampResolver = fiscalStampResolver;
         _linePricingOrchestrator = linePricingOrchestrator;
+        _accountingService = accountingService;
         _accountingSettings = accountingSettings.Value;
         _logger = logger;
     }
@@ -129,19 +132,21 @@ public sealed class SubmitInvoiceCommandHandler
 
             // 3. Validate completeness
             if (!draft.IsComplete)
-                return FailSubmission(draft, 
+                return await FailSubmissionAsync(draft, 
                     Error.Validation("Draft", "Le brouillon est incomplet"));
 
             // 4. Run compliance validation
             var validation = await _complianceValidator.ValidateAsync(draft, cancellationToken);
             if (!validation.CanProceed)
             {
-                var errors = string.Join(", ", 
+                var errors = string.Join(", ",
                     validation.Checks
-                        .Where(c => c.Status == "ERROR")
-                        .Select(c => c.Label));
-                
-                return FailSubmission(draft, 
+                        .Where(c => c.Status == "ERROR" && c.IsBlocking)
+                        .Select(c => string.IsNullOrWhiteSpace(c.Description)
+                            ? c.Label
+                            : $"{c.Label} : {c.Description}"));
+
+                return await FailSubmissionAsync(draft,
                     Error.Validation("Compliance", $"Erreurs de conformité: {errors}"));
             }
 
@@ -150,7 +155,7 @@ public sealed class SubmitInvoiceCommandHandler
             // 6. Get or create client
             var client = await GetOrCreateClientAsync(draft, cancellationToken);
             if (client is null)
-                return FailSubmission(draft, 
+                return await FailSubmissionAsync(draft, 
                     Error.NotFound("Client", draft.ClientId ?? Guid.Empty));
 
 
@@ -163,9 +168,9 @@ public sealed class SubmitInvoiceCommandHandler
             {
                 var warehouse = await _warehouseRepository.GetByIdAsync(warehouseId, cancellationToken);
                 if (warehouse is null)
-                    return FailSubmission(draft, Error.NotFound("Warehouse", warehouseId));
+                    return await FailSubmissionAsync(draft, Error.NotFound("Warehouse", warehouseId));
                 if (!warehouse.IsActive)
-                    return FailSubmission(draft,
+                    return await FailSubmissionAsync(draft,
                         Error.Validation("Warehouse", "Cet entrepôt est désactivé"));
             }
 
@@ -182,7 +187,7 @@ public sealed class SubmitInvoiceCommandHandler
             if (draft.Type == InvoiceType.CreditNote)
             {
                 if (metadata.LinkedInvoiceId is not { } linkedInvoiceId || linkedInvoiceId == Guid.Empty)
-                    return FailSubmission(draft,
+                    return await FailSubmissionAsync(draft,
                         Error.Validation("LinkedInvoiceId", "La facture d'origine est obligatoire pour un avoir"));
 
                 invoiceResult = Invoice.CreateCreditNote(
@@ -211,7 +216,7 @@ public sealed class SubmitInvoiceCommandHandler
             }
 
             if (invoiceResult.IsFailure)
-                return FailSubmission(draft, invoiceResult.Error);
+                return await FailSubmissionAsync(draft, invoiceResult.Error);
 
             var invoice = invoiceResult.Value;
 
@@ -221,7 +226,11 @@ public sealed class SubmitInvoiceCommandHandler
             foreach (var line in draft.GetLines())
             {
                 Product? product = null;
-                if (!string.IsNullOrEmpty(line.ProductId) && Guid.TryParse(line.ProductId, out var productId))
+                Guid productId = Guid.Empty;
+                var hasCatalogProductId = !string.IsNullOrEmpty(line.ProductId)
+                    && Guid.TryParse(line.ProductId, out productId)
+                    && productId != Guid.Empty;
+                if (hasCatalogProductId)
                 {
                     product = await _productRepository.GetByIdAsync(productId, cancellationToken);
 
@@ -231,27 +240,28 @@ public sealed class SubmitInvoiceCommandHandler
                     // Products foreign key with an opaque DB error. Fail fast with an actionable
                     // message instead (mirrors CreateInvoiceCommand's product validation).
                     if (product is null)
-                        return FailSubmission(draft, Error.NotFound("Produit", productId));
+                        return await FailSubmissionAsync(draft, Error.NotFound("Produit", productId), cancellationToken);
                 }
 
-                // Calculate discount percent from value if type is AMOUNT
-                decimal? manualDiscountPercent = null;
-                if (line.DiscountValue.HasValue && line.DiscountValue.Value > 0)
-                {
-                    if (line.DiscountType == "PERCENT")
-                    {
-                        manualDiscountPercent = line.DiscountValue;
-                    }
-                    else
-                    {
-                        var gross = line.Quantity * line.UnitPriceHT;
-                        manualDiscountPercent = gross > 0 ? (line.DiscountValue / gross) * 100 : null;
-                    }
-                }
-
-                Result addResult;
+                var manualDiscountPercent = ResolveDraftDiscountPercent(line);
                 var fodecRate = _accountingSettings.FodecRatePercent;
-                if (product != null)
+                Result addResult;
+                if (draft.Type == InvoiceType.CreditNote)
+                {
+                    var unitPrice = Money.Create(line.UnitPriceHT, metadata.Currency);
+                    addResult = invoice.AddSnapshotLine(
+                        product,
+                        line.Designation,
+                        line.Description,
+                        line.Quantity,
+                        line.Unit ?? "Unité",
+                        unitPrice,
+                        MapDraftVatRate(line.VatRate),
+                        manualDiscountPercent,
+                        line.FodecApplicable,
+                        fodecRate);
+                }
+                else if (product != null)
                 {
                     Money? priceOverride = line.PriceOverridden
                         ? Money.Create(line.UnitPriceHT, metadata.Currency)
@@ -267,7 +277,7 @@ public sealed class SubmitInvoiceCommandHandler
                         cancellationToken);
 
                     if (pricing.IsFailure)
-                        return FailSubmission(draft, pricing.Error);
+                        return await FailSubmissionAsync(draft, pricing.Error, cancellationToken);
 
                     addResult = invoice.AddLine(
                         product,
@@ -281,32 +291,20 @@ public sealed class SubmitInvoiceCommandHandler
                 else
                 {
                     var unitPrice = Money.Create(line.UnitPriceHT, metadata.Currency);
-
-                    // Create custom line without product reference
-                    // Convert numeric VAT rate to enum
-                    var vatRate = line.VatRate switch
-                    {
-                        0 => Domain.Enums.VatRate.Exempt,
-                        7 => Domain.Enums.VatRate.Reduced,
-                        13 => Domain.Enums.VatRate.Intermediate,
-                        19 => Domain.Enums.VatRate.Standard,
-                        _ => Domain.Enums.VatRate.Standard
-                    };
-                    
                     addResult = invoice.AddCustomLine(
                         line.Designation,
                         line.Description,
                         line.Quantity,
                         line.Unit ?? "Unité",
                         unitPrice,
-                        vatRate,
+                        MapDraftVatRate(line.VatRate),
                         manualDiscountPercent,
                         line.FodecApplicable,
                         fodecRate);
                 }
 
                 if (addResult.IsFailure)
-                    return FailSubmission(draft, addResult.Error);
+                    return await FailSubmissionAsync(draft, addResult.Error, cancellationToken);
             }
 
             var stampMoney = await _fiscalStampResolver.ResolveSignedStampAsync(
@@ -314,7 +312,7 @@ public sealed class SubmitInvoiceCommandHandler
                 cancellationToken);
             var stampResult = invoice.SetFiscalStampAmount(stampMoney);
             if (stampResult.IsFailure)
-                return FailSubmission(draft, stampResult.Error);
+                return await FailSubmissionAsync(draft, stampResult.Error);
 
             // 11. Set payment info
             var paymentLegal = draft.GetPaymentLegal();
@@ -335,7 +333,7 @@ public sealed class SubmitInvoiceCommandHandler
             // 10. Validate the invoice (changes status from Draft to Validated)
             var validateResult = invoice.Validate();
             if (validateResult.IsFailure)
-                return FailSubmission(draft, validateResult.Error);
+                return await FailSubmissionAsync(draft, validateResult.Error);
 
             invoice.SetAuditInfo(_currentUser.UserId?.ToString() ?? "system");
 
@@ -345,6 +343,18 @@ public sealed class SubmitInvoiceCommandHandler
             // 12. Mark draft as converted
             draft.MarkAsConverted(invoice.Id);
             await _draftRepository.UpdateAsync(draft, cancellationToken);
+
+            // 12b. Écriture comptable — même routage que ValidateInvoiceCommand : avoir
+            //      (miroir de la vente) ou écriture de vente. Générée AVANT le commit pour
+            //      être persistée dans la même unité de travail que la facture. Idempotente
+            //      par source (Invoice / InvoiceCreditNote) et non applicable (succès) si le
+            //      tenant n'a pas de plan comptable initialisé.
+            var entryResult = invoice.Type == InvoiceType.CreditNote
+                ? await _accountingService.GenerateInvoiceCreditNoteEntryAsync(invoice, cancellationToken)
+                : await _accountingService.GenerateInvoiceSaleEntryAsync(invoice, cancellationToken);
+
+            if (entryResult.IsFailure)
+                return await FailSubmissionAsync(draft, entryResult.Error);
 
             // 13. Commit transaction
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -383,7 +393,7 @@ public sealed class SubmitInvoiceCommandHandler
                     "Schema drift on invoice submit for draft {DraftId} (SqlError {Number}): {Detail}",
                     command.DraftId, sqlEx.Number, sqlEx.Message);
 
-                return FailSubmission(draft, Error.Validation(
+                return await FailSubmissionAsync(draft, Error.Validation(
                     "Submission",
                     "Le schéma de base de données n'est pas à jour pour cette entreprise. Lancez la migration."));
             }
@@ -396,7 +406,7 @@ public sealed class SubmitInvoiceCommandHandler
                     command.DraftId, detail);
 
                 // Keep the raw SQL detail in the logs only; surface a stable, non-leaky message.
-                return FailSubmission(draft,
+                return await FailSubmissionAsync(draft,
                     Error.Validation("Submission", "Erreur lors de l'enregistrement de la facture en base de données."));
             }
 
@@ -407,7 +417,7 @@ public sealed class SubmitInvoiceCommandHandler
             // Surface the real (already French) domain/infrastructure message instead of an opaque
             // generic string, so the wizard and the POS can show an actionable error to the user
             // (e.g. an invalid numbering format). Aligns with the standard CreateInvoiceCommand path.
-            return FailSubmission(draft,
+            return await FailSubmissionAsync(draft,
                 Error.Validation("Submission", detail));
         }
     }
@@ -505,16 +515,49 @@ public sealed class SubmitInvoiceCommandHandler
         return client;
     }
 
-    private Result<InvoiceCreatedResultDto> FailSubmission(InvoiceDraft draft, Error error)
+    private static decimal? ResolveDraftDiscountPercent(DraftInvoiceLine line)
+    {
+        if (!line.DiscountValue.HasValue || line.DiscountValue.Value <= 0)
+            return null;
+
+        if (line.DiscountType == "PERCENT")
+            return line.DiscountValue;
+
+        var gross = line.Quantity * line.UnitPriceHT;
+        return gross > 0 ? (line.DiscountValue / gross) * 100 : null;
+    }
+
+    private static Domain.Enums.VatRate MapDraftVatRate(int vatRate) => vatRate switch
+    {
+        0 => Domain.Enums.VatRate.Exempt,
+        7 => Domain.Enums.VatRate.Reduced,
+        13 => Domain.Enums.VatRate.Intermediate,
+        19 => Domain.Enums.VatRate.Standard,
+        _ => Domain.Enums.VatRate.Standard
+    };
+
+    private async Task<Result<InvoiceCreatedResultDto>> FailSubmissionAsync(
+        InvoiceDraft draft,
+        Error error,
+        CancellationToken cancellationToken = default)
     {
         draft.CancelSubmission();
-        // Note: We don't save here to avoid masking the original error
-        // The submission will be retryable after timeout
-        
+        try
+        {
+            await _draftRepository.UpdateAsync(draft, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to persist submission cancellation for draft {DraftId}",
+                draft.Id);
+        }
+
         _logger.LogWarning(
             "Invoice submission failed for draft {DraftId}: {ErrorCode} - {ErrorMessage}",
             draft.Id, error.Code, error.Description);
-        
+
         return Result.Failure<InvoiceCreatedResultDto>(error);
     }
 }

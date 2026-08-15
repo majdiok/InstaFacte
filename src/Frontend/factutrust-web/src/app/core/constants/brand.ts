@@ -2,6 +2,7 @@ export const BRAND = {
   name: 'InstaFact',
   shortName: 'IF',
   tagline: 'GESTION COMMERCIALE INTELLIGENTE',
+  taglineShort: 'GESTION COMMERCIALE',
   taglineLong: 'Plateforme de gestion commerciale intelligente',
   streetName: 'Rue InstaFact',
   logoLockup: 'assets/branding/instafact-lockup.png',

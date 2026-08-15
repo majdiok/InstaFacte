@@ -364,6 +364,55 @@ public sealed class Invoice : AggregateRoot
         return Result.Success();
     }
 
+    /// <summary>
+    /// Ajoute une ligne photographiée (avoir) : conserve le <see cref="Product"/> pour le stock
+    /// mais applique prix, TVA, FODEC et remise du brouillon, pas ceux du catalogue actuel.
+    /// </summary>
+    public Result AddSnapshotLine(
+        Product? product,
+        string designation,
+        string? description,
+        decimal quantity,
+        string unit,
+        Money unitPrice,
+        VatRate vatRate,
+        decimal? discountPercent = null,
+        bool isFodecApplicable = false,
+        decimal fodecRatePercent = 1.0m)
+    {
+        if (!Status.CanBeEdited())
+            return Result.Failure(Error.Validation("Status", "Cette facture ne peut plus être modifiée"));
+
+        if (quantity <= 0)
+            return Result.Failure(Error.Validation("Quantity", "La quantité doit être supérieure à zéro"));
+
+        if (string.IsNullOrWhiteSpace(designation))
+            return Result.Failure(Error.Validation("Designation", "La désignation est obligatoire"));
+
+        var lineNumber = _lines.Count + 1;
+        var lineResult = InvoiceLine.CreateSnapshot(
+            this,
+            lineNumber,
+            product,
+            designation.Trim(),
+            description?.Trim(),
+            quantity,
+            unit,
+            unitPrice,
+            vatRate,
+            discountPercent,
+            isFodecApplicable,
+            fodecRatePercent);
+
+        if (lineResult.IsFailure)
+            return Result.Failure(lineResult.Error);
+
+        _lines.Add(lineResult.Value);
+        RecalculateTotals();
+
+        return Result.Success();
+    }
+
     public Result RemoveLine(Guid lineId)
     {
         if (!Status.CanBeEdited())

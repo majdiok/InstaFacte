@@ -1,9 +1,11 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.ValueObjects;
 using FactuTrust.Infrastructure.Services;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
 
@@ -107,7 +109,8 @@ public sealed class InvoiceComplianceVatRegimeTests
         new(new Mock<ICompanyRepository>().Object,
             new Mock<IClientRepository>().Object,
             new Mock<IInvoiceRepository>().Object,
-            NullLogger<InvoiceComplianceValidator>.Instance);
+            NullLogger<InvoiceComplianceValidator>.Instance,
+            Options.Create(new AccountingSettings()));
 
     private static Invoice NewInvoice(ClientVatRegime regime, VatExemptionCertificate? cert = null)
     {

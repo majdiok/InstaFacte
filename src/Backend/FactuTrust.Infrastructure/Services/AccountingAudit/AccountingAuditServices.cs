@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
@@ -63,7 +64,8 @@ public sealed class AccountingAuditQueryService : IAccountingAuditQueryService
             FiscalYear = fiscalYear,
             BlockingCount = CountFor((int)PreClosingSeverity.Blocking),
             WarningCount = CountFor((int)PreClosingSeverity.Warning),
-            AnomalyCount = CountFor((int)PreClosingSeverity.Warning),
+            // Total des anomalies ouvertes, toutes sévérités confondues.
+            AnomalyCount = openAnomalies.Sum(x => x.Count),
             InfoCount = CountFor((int)PreClosingSeverity.Info),
             ComplianceRate = compliance,
             ComplianceRateDeltaVsPriorYear = delta,
@@ -459,9 +461,25 @@ public sealed class AccountingAuditWorkflowService : IAccountingAuditWorkflowSer
 
 public sealed class AccountingAuditExportService : IAccountingAuditExportService
 {
-    private readonly IAccountingAuditQueryService _queries;
+    /// <summary>
+    /// Anomalies détaillées dans le PDF. Au-delà, le rapport le signale et renvoie vers le CSV :
+    /// un dossier pathologique produirait sinon un document de plusieurs centaines de pages.
+    /// </summary>
+    private const int MaxAnomaliesInPdf = 300;
 
-    public AccountingAuditExportService(IAccountingAuditQueryService queries) => _queries = queries;
+    private readonly IAccountingAuditQueryService _queries;
+    private readonly IPdfService _pdf;
+    private readonly ICompanyRepository _companies;
+
+    public AccountingAuditExportService(
+        IAccountingAuditQueryService queries,
+        IPdfService pdf,
+        ICompanyRepository companies)
+    {
+        _queries = queries;
+        _pdf = pdf;
+        _companies = companies;
+    }
 
     public async Task<Result<byte[]>> ExportCsvAsync(AccountingAnomalyFilterDto filter, CancellationToken cancellationToken = default)
     {
@@ -483,18 +501,33 @@ public sealed class AccountingAuditExportService : IAccountingAuditExportService
     {
         var dash = await _queries.GetDashboardAsync(fiscalYear, cancellationToken);
         if (dash.IsFailure) return Result.Failure<byte[]>(dash.Error);
-        var filter = new AccountingAnomalyFilterDto { FiscalYear = fiscalYear, PageSize = 100 };
+
+        var filter = new AccountingAnomalyFilterDto { FiscalYear = fiscalYear, PageSize = MaxAnomaliesInPdf };
         var anomalies = await _queries.GetAnomaliesAsync(filter, cancellationToken);
         if (anomalies.IsFailure) return Result.Failure<byte[]>(anomalies.Error);
 
-        var sb = new StringBuilder();
-        sb.AppendLine($"Rapport de contrôle d'intégrité — Exercice {fiscalYear}");
-        sb.AppendLine($"Taux de conformité : {dash.Value.ComplianceRate}%");
-        sb.AppendLine($"Bloquants : {dash.Value.BlockingCount} | Avertissements : {dash.Value.WarningCount} | Infos : {dash.Value.InfoCount}");
-        sb.AppendLine();
-        foreach (var a in anomalies.Value.Items)
-            sb.AppendLine($"- [{a.Severity}] {a.Title} ({a.Amount:N3} TND)");
-        return Result.Success(Encoding.UTF8.GetBytes(sb.ToString()));
+        // Les modules sont informatifs : leur absence ne doit pas priver l'utilisateur du rapport.
+        var modules = await _queries.GetModulesAsync(fiscalYear, cancellationToken);
+
+        var company = await _companies.GetDefaultAsync(cancellationToken);
+        var header = new AccountingReportHeader(
+            company?.Name ?? "Société",
+            company?.VatCode,
+            "Rapport de contrôle d'intégrité",
+            $"Exercice {fiscalYear}");
+
+        var pdf = await _pdf.GenerateAccountingAuditPdfAsync(
+            new AccountingAuditPdfContext
+            {
+                Header = header,
+                Dashboard = dash.Value,
+                Anomalies = anomalies.Value.Items,
+                Modules = modules.IsSuccess ? modules.Value : Array.Empty<AccountingControlModuleDto>(),
+                TotalAnomalyCount = anomalies.Value.TotalCount
+            },
+            cancellationToken);
+
+        return Result.Success(pdf);
     }
 
     private static string Escape(string? v) => (v ?? "").Replace(';', ',');

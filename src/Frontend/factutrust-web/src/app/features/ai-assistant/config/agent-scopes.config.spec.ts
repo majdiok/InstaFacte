@@ -1,10 +1,18 @@
 import { AssistantAgentScope } from '../models/ai-chat.models';
 import {
   AGENT_SCOPE_CONFIGS,
+  FIRM_AGENT_SCOPE_CONFIG,
   getAgentScopeConfig,
   getAgentScopeConfigBySlug,
   resolveScopeFromUrl
 } from './agent-scopes.config';
+
+const HISTORICAL_FIRM_SUGGESTIONS = [
+  'Quelles échéances sont en retard et chez quels clients ?',
+  'Quels dossiers sont les plus à risque cette semaine ?',
+  'Comment se répartit la charge entre mes collaborateurs ?',
+  "Quels dossiers n'ont pas eu d'écriture depuis un mois ?"
+] as const;
 
 describe('agent-scopes.config', () => {
   it('expose une config complète et unique pour les 6 experts', () => {
@@ -69,5 +77,43 @@ describe('agent-scopes.config', () => {
     expect(resolveScopeFromUrl('/ai-assistant/ventes', { firmDelegated: true })).toBe(
       AssistantAgentScope.Accounting
     );
+  });
+
+  it('isole le Chef de mission hors des experts de module (routes, slug, URL)', () => {
+    expect(AGENT_SCOPE_CONFIGS.some(c => c.scope === AssistantAgentScope.FirmMission)).toBeFalse();
+    expect(getAgentScopeConfig(AssistantAgentScope.FirmMission)).toBe(FIRM_AGENT_SCOPE_CONFIG);
+    expect(getAgentScopeConfigBySlug('chef-de-mission')).toBeUndefined();
+    expect(resolveScopeFromUrl('/firm/assistant')).toBe(AssistantAgentScope.None);
+    expect(resolveScopeFromUrl('/ai-assistant/chef-de-mission')).toBe(AssistantAgentScope.None);
+  });
+
+  it('ne catégorise pas les suggestions des 6 experts de module', () => {
+    for (const config of AGENT_SCOPE_CONFIGS) {
+      expect(config.suggestionCategories).toBeUndefined();
+    }
+  });
+
+  it('catalogue Chef de mission : catégories cohérentes, flatten = suggestions, questions historiques conservées', () => {
+    const categories = FIRM_AGENT_SCOPE_CONFIG.suggestionCategories;
+    expect(categories).toBeDefined();
+    expect(categories!.map(c => c.id)).toEqual(['overview', 'deadlines', 'risk', 'workload', 'review']);
+
+    const ids = categories!.map(c => c.id);
+    expect(new Set(ids).size).toBe(ids.length);
+
+    for (const category of categories!) {
+      expect(category.id.length).toBeGreaterThan(0);
+      expect(category.label.length).toBeGreaterThan(0);
+      expect(category.questions.length).toBeGreaterThan(0);
+    }
+
+    const flattened = categories!.flatMap(c => [...c.questions]);
+    expect(flattened.length).toBe(19);
+    expect(FIRM_AGENT_SCOPE_CONFIG.suggestions).toEqual(flattened);
+    expect(new Set(flattened).size).toBe(flattened.length);
+
+    for (const historical of HISTORICAL_FIRM_SUGGESTIONS) {
+      expect(flattened).toContain(historical);
+    }
   });
 });

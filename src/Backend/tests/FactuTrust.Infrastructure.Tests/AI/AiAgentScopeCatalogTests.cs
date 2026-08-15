@@ -131,6 +131,12 @@ public sealed class AiAgentScopeCatalogTests
         Assert.Contains("search_invoices", sales);                 // « factures en retard »
         Assert.Contains("get_product_performance", sales);         // « produits qui se vendent le mieux »
 
+        var firmMission = AiAgentScopeCatalog.GetCpuToolNames(AssistantAgentScope.FirmMission);
+        Assert.Contains("get_firm_portfolio_overview", firmMission);      // « où en est mon cabinet »
+        Assert.Contains("get_firm_fiscal_deadlines", firmMission);        // « quelles échéances sont en retard »
+        Assert.Contains("get_firm_dossier_health", firmMission);          // « quels dossiers sont à risque »
+        Assert.Contains("get_firm_collaborator_workload", firmMission);   // « qui est surchargé »
+
         var crm = AiAgentScopeCatalog.GetCpuToolNames(AssistantAgentScope.Crm);
         Assert.Contains("search_crm_opportunities", crm);          // « opportunités ouvertes » / « pipeline »
         Assert.Contains("search_crm_activities", crm);             // « activités cette semaine »

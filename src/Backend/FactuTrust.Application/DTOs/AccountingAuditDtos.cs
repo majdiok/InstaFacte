@@ -224,6 +224,23 @@ public sealed record AccountingControlRuleSettingDto
     public decimal? DecimalThreshold { get; init; }
 }
 
+/// <summary>
+/// Données du rapport de contrôle imprimé. Assemblé par la couche export, consommé par le rendu
+/// PDF : ce dernier ne calcule rien, il met en page des valeurs déjà arrêtées.
+/// </summary>
+public sealed record AccountingAuditPdfContext
+{
+    public AccountingReportHeader Header { get; init; } = null!;
+    public AccountingAuditDashboardDto Dashboard { get; init; } = null!;
+    public IReadOnlyList<AccountingAnomalyListItemDto> Anomalies { get; init; }
+        = Array.Empty<AccountingAnomalyListItemDto>();
+    public IReadOnlyList<AccountingControlModuleDto> Modules { get; init; }
+        = Array.Empty<AccountingControlModuleDto>();
+
+    /// <summary>Renseigné quand la liste imprimée a été tronquée : le PDF le dit au lecteur.</summary>
+    public int TotalAnomalyCount { get; init; }
+}
+
 public sealed record AssignAnomalyRequestDto
 {
     public Guid? AssigneeUserId { get; init; }

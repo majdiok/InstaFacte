@@ -316,8 +316,8 @@ public sealed class ChannelInboundOrchestrator
 
     /// <summary>
     /// Consomme le flux du pipeline (agrégation <see cref="ChannelChatStreamAggregator"/>) et
-    /// produit le texte WhatsApp final. Ceinture-bretelles : re-passage par la substitution des
-    /// noms d'outils internes avant formatage.
+    /// produit le texte WhatsApp final. Ceinture-bretelles : assainissement des noms d'outils
+    /// internes et retrait CJK avant formatage.
     /// </summary>
     private async Task<string> RunPipelineAsync(
         SendChatMessageCommand chatCommand, Guid userId, string traceId, CancellationToken ct)
@@ -331,7 +331,7 @@ public sealed class ChannelInboundOrchestrator
             return ErrorReply;
         }
 
-        var sanitized = AssistantVisibleContentFormatter.SanitizeInternalToolNames(aggregate.Content).Trim();
+        var sanitized = AssistantVisibleContentFormatter.SanitizeVisibleProse(aggregate.Content).Trim();
         if (sanitized.Length == 0)
             return EmptyReply;
 

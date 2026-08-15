@@ -10,7 +10,11 @@ namespace FactuTrust.Application.Features.Invoices.Queries;
 /// <summary>
 /// Query to export the sales invoices report as PDF for a given period and optional client.
 /// </summary>
-public sealed record ExportInvoiceReportPdfQuery(DateTime? FromDate, DateTime? ToDate, Guid? ClientId = null) : IRequest<Result<InvoicePdfResult>>;
+public sealed record ExportInvoiceReportPdfQuery(
+    DateTime? FromDate,
+    DateTime? ToDate,
+    Guid? ClientId = null,
+    InvoiceType? Type = null) : IRequest<Result<InvoicePdfResult>>;
 
 /// <summary>
 /// Handler for ExportInvoiceReportPdfQuery.
@@ -44,14 +48,20 @@ public sealed class ExportInvoiceReportPdfQueryHandler : IRequestHandler<ExportI
         if (request.FromDate.HasValue && request.ToDate.HasValue && request.FromDate.Value > request.ToDate.Value)
             return Result.Failure<InvoicePdfResult>(Error.Validation("Period", "La date de début doit être antérieure à la date de fin."));
 
-        var invoices = await _invoiceRepository.GetForReportAsync(request.FromDate, request.ToDate, request.ClientId, cancellationToken);
+        var invoices = await _invoiceRepository.GetForReportAsync(
+            request.FromDate, request.ToDate, request.ClientId, request.Type, cancellationToken);
 
         var nonCancelled = invoices
             .Where(i => i.Status != InvoiceStatus.Cancelled)
             .ToList();
 
+        var isCreditNotes = request.Type == InvoiceType.CreditNote;
+        var emptyMessage = isCreditNotes
+            ? "Aucun avoir pour cette période."
+            : "Aucune facture pour cette période.";
+
         if (nonCancelled.Count == 0)
-            return Result.Failure<InvoicePdfResult>(new Error("NoInvoices", "Aucune facture pour cette période."));
+            return Result.Failure<InvoicePdfResult>(new Error("NoInvoices", emptyMessage));
 
         if (nonCancelled.Count > MaxInvoicesForReport)
             return Result.Failure<InvoicePdfResult>(new Error("TooManyInvoices", "Trop de factures. Réduisez la période."));
@@ -72,13 +82,14 @@ public sealed class ExportInvoiceReportPdfQueryHandler : IRequestHandler<ExportI
             company,
             clientName);
         
+        var filePrefix = isCreditNotes ? "Etat_avoirs_ventes" : "Etat_factures_ventes";
         var fileName = request.FromDate.HasValue && request.ToDate.HasValue
-            ? $"Etat_factures_ventes_{request.FromDate.Value:yyyy-MM-dd}_{request.ToDate.Value:yyyy-MM-dd}.pdf"
+            ? $"{filePrefix}_{request.FromDate.Value:yyyy-MM-dd}_{request.ToDate.Value:yyyy-MM-dd}.pdf"
             : (!request.FromDate.HasValue && !request.ToDate.HasValue
-                ? "Etat_factures_ventes_toutes.pdf"
+                ? $"{filePrefix}_toutes.pdf"
                 : (!request.FromDate.HasValue
-                    ? $"Etat_factures_ventes_jusquau_{request.ToDate!.Value:yyyy-MM-dd}.pdf"
-                    : $"Etat_factures_ventes_depuisle_{request.FromDate!.Value:yyyy-MM-dd}.pdf"));
+                    ? $"{filePrefix}_jusquau_{request.ToDate!.Value:yyyy-MM-dd}.pdf"
+                    : $"{filePrefix}_depuisle_{request.FromDate!.Value:yyyy-MM-dd}.pdf"));
 
         await _auditService.LogAsync(
             AuditActions.Export.Pdf,

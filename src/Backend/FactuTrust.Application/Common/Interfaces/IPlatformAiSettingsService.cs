@@ -64,4 +64,23 @@ public interface IPlatformAiSettingsService
     /// Resolves runtime OpenRouter credentials. ApiKey is null when disabled or missing/invalid.
     /// </summary>
     Task<PlatformOpenRouterCredentials> GetOpenRouterCredentialsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Masked Cursor settings for the back-office (never returns plaintext key).</summary>
+    Task<PlatformCursorSettingsDto> GetCursorSettingsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates Cursor settings. Empty/null <paramref name="apiKey"/> keeps the existing secret.
+    /// Returns false when enabling without any configured key.
+    /// </summary>
+    Task<(bool Success, string? Error)> SetCursorConfigAsync(
+        bool isEnabled,
+        string? displayName,
+        string? apiKey,
+        Guid actorUserId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resolves runtime Cursor credentials. ApiKey is null when disabled or missing/invalid.
+    /// </summary>
+    Task<PlatformCursorCredentials> GetCursorCredentialsAsync(CancellationToken cancellationToken = default);
 }
