@@ -1,7 +1,7 @@
-using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Entities.Forecasting;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Domain.Services;
 using FactuTrust.Domain.ValueObjects;
 using FactuTrust.Infrastructure.Services.PurchaseOrders;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -17,15 +17,30 @@ namespace FactuTrust.Infrastructure.Tests.Forecasting;
 /// supplier missing/inactive) are surfaced to the caller, while a resolvable line still produces a
 /// Draft PO with no false unlinked entry. This is the backend half of the "PO never appears as
 /// Brouillon" fix: the root cause is a supplier-less recommendation, and the factory must say so.
+/// Also pins the M3 numbering contract: every kept draft reserves its number through the atomic
+/// <c>IDocumentNumberService</c> (one reservation per draft), and skipped groups never burn a
+/// sequence value.
 /// </summary>
 public sealed class PurchaseOrderDraftFactoryTests
 {
-    private static PurchaseOrderDraftFactory CreateFactory()
+    private static readonly Guid TenantId = Guid.NewGuid();
+
+    private static PurchaseOrderDraftFactory CreateFactory(Mock<IDocumentNumberService>? numbering = null)
     {
-        var repo = new Mock<IPurchaseOrderRepository>();
-        repo.Setup(r => r.GetLatestNumberAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string?)null);
-        return new PurchaseOrderDraftFactory(repo.Object, NullLogger<PurchaseOrderDraftFactory>.Instance);
+        numbering ??= new Mock<IDocumentNumberService>();
+        var sequence = 0;
+        numbering.Setup(s => s.ReserveNextAsync(
+                It.IsAny<Guid>(),
+                NumberingDocumentType.PurchaseOrder,
+                It.IsAny<int>(),
+                It.IsAny<DateTime>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid _, NumberingDocumentType _, int year, DateTime _, CancellationToken _) =>
+            {
+                var next = Interlocked.Increment(ref sequence);
+                return new DocumentNumberResult($"BC-{year}-{next:D6}", year, next, "BC");
+            });
+        return new PurchaseOrderDraftFactory(numbering.Object, NullLogger<PurchaseOrderDraftFactory>.Instance);
     }
 
     private static Supplier CreateSupplier(string name = "Fournisseur Test")
@@ -82,7 +97,8 @@ public sealed class PurchaseOrderDraftFactoryTests
             new[] { rec },
             new Dictionary<Guid, Product> { [product.Id] = product },
             new Dictionary<Guid, Supplier> { [supplier.Id] = supplier },
-            actorUserId: "user-1");
+            actorUserId: "user-1",
+            tenantId: TenantId);
 
         var draft = Assert.Single(result.Drafts);
         Assert.Equal(PurchaseOrderStatus.Draft, draft.PurchaseOrder.Status);
@@ -111,7 +127,8 @@ public sealed class PurchaseOrderDraftFactoryTests
             new[] { recA, recB },
             new Dictionary<Guid, Product> { [product.Id] = product },
             new Dictionary<Guid, Supplier> { [supplier.Id] = supplier },
-            actorUserId: "user-1");
+            actorUserId: "user-1",
+            tenantId: TenantId);
 
         Assert.Equal(2, result.Drafts.Count);
         Assert.Equal(2, result.Drafts.Select(d => d.PurchaseOrder.WarehouseId).Distinct().Count());
@@ -139,7 +156,8 @@ public sealed class PurchaseOrderDraftFactoryTests
             new[] { recA, recB },
             new Dictionary<Guid, Product> { [productA.Id] = productA, [productB.Id] = productB },
             new Dictionary<Guid, Supplier> { [supplier.Id] = supplier },
-            actorUserId: "user-1");
+            actorUserId: "user-1",
+            tenantId: TenantId);
 
         // Regression pin: the historical behaviour (one PO per supplier) is preserved
         // when all lines share the same warehouse.
@@ -160,7 +178,8 @@ public sealed class PurchaseOrderDraftFactoryTests
             new[] { rec },
             new Dictionary<Guid, Product> { [product.Id] = product },
             new Dictionary<Guid, Supplier>(),
-            actorUserId: "user-1");
+            actorUserId: "user-1",
+            tenantId: TenantId);
 
         Assert.Empty(result.Drafts);
         Assert.Equal(rec.Id, Assert.Single(result.UnlinkedRecommendationIds));
@@ -179,7 +198,8 @@ public sealed class PurchaseOrderDraftFactoryTests
             new[] { rec },
             new Dictionary<Guid, Product> { [product.Id] = product },
             new Dictionary<Guid, Supplier>(),
-            actorUserId: "user-1");
+            actorUserId: "user-1",
+            tenantId: TenantId);
 
         Assert.Empty(result.Drafts);
         Assert.Equal(rec.Id, Assert.Single(result.UnlinkedRecommendationIds));
@@ -198,7 +218,8 @@ public sealed class PurchaseOrderDraftFactoryTests
             new[] { rec },
             new Dictionary<Guid, Product> { [product.Id] = product },
             new Dictionary<Guid, Supplier> { [supplier.Id] = supplier },
-            actorUserId: "user-1");
+            actorUserId: "user-1",
+            tenantId: TenantId);
 
         Assert.Empty(result.Drafts);
         Assert.Equal(rec.Id, Assert.Single(result.UnlinkedRecommendationIds));
@@ -218,7 +239,8 @@ public sealed class PurchaseOrderDraftFactoryTests
             new[] { recLinked, recUnlinked },
             new Dictionary<Guid, Product> { [withSupplier.Id] = withSupplier, [withoutSupplier.Id] = withoutSupplier },
             new Dictionary<Guid, Supplier> { [supplier.Id] = supplier },
-            actorUserId: "user-1");
+            actorUserId: "user-1",
+            tenantId: TenantId);
 
         var draft = Assert.Single(result.Drafts);
         Assert.Equal(recLinked.Id, Assert.Single(draft.RecommendationIds));
@@ -234,10 +256,97 @@ public sealed class PurchaseOrderDraftFactoryTests
             Array.Empty<ReplenishmentRecommendation>(),
             new Dictionary<Guid, Product>(),
             new Dictionary<Guid, Supplier>(),
-            actorUserId: "user-1");
+            actorUserId: "user-1",
+            tenantId: TenantId);
 
         Assert.Empty(result.Drafts);
         Assert.Empty(result.Warnings);
         Assert.Empty(result.UnlinkedRecommendationIds);
+    }
+
+    [Fact]
+    public async Task BuildDraftPurchaseOrders_TwoGroups_ReservesOneSequentialNumberPerDraft()
+    {
+        var numbering = new Mock<IDocumentNumberService>();
+        var factory = CreateFactory(numbering);
+        var supplier = CreateSupplier();
+        var product = CreateProduct();
+        var warehouseA = Guid.NewGuid();
+        var warehouseB = Guid.NewGuid();
+        var recA = CreateRec(product.Id, supplier.Id, supplier.Name, warehouseA);
+        var recB = CreateRec(product.Id, supplier.Id, supplier.Name, warehouseB);
+
+        var result = await factory.BuildDraftPurchaseOrdersAsync(
+            new[] { recA, recB },
+            new Dictionary<Guid, Product> { [product.Id] = product },
+            new Dictionary<Guid, Supplier> { [supplier.Id] = supplier },
+            actorUserId: "user-1",
+            tenantId: TenantId);
+
+        // M3 regression pin: numbers come from the atomic numbering service — exactly one
+        // reservation per kept draft, sequential and distinct, never from a read-latest +
+        // in-memory increment (which raced and produced duplicate BC numbers).
+        Assert.Equal(2, result.Drafts.Count);
+        var expectedYear = DateTime.UtcNow.Year;
+        Assert.Contains(result.Drafts, d => d.PurchaseOrder.Number.Value == $"BC-{expectedYear}-000001");
+        Assert.Contains(result.Drafts, d => d.PurchaseOrder.Number.Value == $"BC-{expectedYear}-000002");
+        numbering.Verify(
+            s => s.ReserveNextAsync(
+                TenantId,
+                NumberingDocumentType.PurchaseOrder,
+                expectedYear,
+                It.IsAny<DateTime>(),
+                It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task BuildDraftPurchaseOrders_NoResolvableSupplier_NeverReservesNumber()
+    {
+        var numbering = new Mock<IDocumentNumberService>();
+        var factory = CreateFactory(numbering);
+        var product = CreateProduct();
+        var rec = CreateRec(product.Id, supplierId: null);
+
+        var result = await factory.BuildDraftPurchaseOrdersAsync(
+            new[] { rec },
+            new Dictionary<Guid, Product> { [product.Id] = product },
+            new Dictionary<Guid, Supplier>(),
+            actorUserId: "user-1",
+            tenantId: TenantId);
+
+        Assert.Empty(result.Drafts);
+        numbering.Verify(
+            s => s.ReserveNextAsync(
+                It.IsAny<Guid>(), It.IsAny<NumberingDocumentType>(), It.IsAny<int>(),
+                It.IsAny<DateTime>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task BuildDraftPurchaseOrders_NoUsableLine_NeverReservesNumber()
+    {
+        var numbering = new Mock<IDocumentNumberService>();
+        var factory = CreateFactory(numbering);
+        var supplier = CreateSupplier();
+        var product = CreateProduct();
+        var rec = CreateRec(product.Id, supplier.Id, supplier.Name);
+
+        // Product intentionally missing from the dictionary: the only line is unusable, so the
+        // group is skipped BEFORE any number is reserved (no burned sequence value / gap).
+        var result = await factory.BuildDraftPurchaseOrdersAsync(
+            new[] { rec },
+            new Dictionary<Guid, Product>(),
+            new Dictionary<Guid, Supplier> { [supplier.Id] = supplier },
+            actorUserId: "user-1",
+            tenantId: TenantId);
+
+        Assert.Empty(result.Drafts);
+        Assert.Equal(rec.Id, Assert.Single(result.UnlinkedRecommendationIds));
+        numbering.Verify(
+            s => s.ReserveNextAsync(
+                It.IsAny<Guid>(), It.IsAny<NumberingDocumentType>(), It.IsAny<int>(),
+                It.IsAny<DateTime>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 }

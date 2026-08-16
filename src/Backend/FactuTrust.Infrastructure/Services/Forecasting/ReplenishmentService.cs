@@ -617,7 +617,11 @@ public sealed class ReplenishmentService : IReplenishmentService
             .ToDictionaryAsync(s => s.Id, ct);
 
         // ─── Step 4: build POs (no persistence) ───────────────────────────────────
-        var batch = await _poFactory.BuildDraftPurchaseOrdersAsync(recs, products, suppliers, actor, ct);
+        // M3: the factory reserves each BC number through the atomic unified numbering
+        // service (IDocumentNumberService), which requires the tenant id.
+        var tenantId = _currentUser.TenantId
+            ?? throw new InvalidOperationException("Tenant courant introuvable pour la création des bons de commande.");
+        var batch = await _poFactory.BuildDraftPurchaseOrdersAsync(recs, products, suppliers, actor, tenantId, ct);
 
         // ─── Step 5: attach + link + audit in the service's DbContext ─────────────
         foreach (var draft in batch.Drafts)

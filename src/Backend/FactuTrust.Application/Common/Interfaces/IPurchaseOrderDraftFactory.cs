@@ -36,11 +36,19 @@ public interface IPurchaseOrderDraftFactory
     /// <param name="products">Products required for line creation (avoid an extra round trip in the factory).</param>
     /// <param name="suppliers">Active suppliers indexed by id; inactive or missing suppliers produce warnings.</param>
     /// <param name="actorUserId">Used for <c>SetAuditInfo</c> on the freshly-built POs.</param>
+    /// <param name="tenantId">
+    /// Tenant owning the numbering sequence. Each kept draft reserves its <c>PurchaseOrderNumber</c>
+    /// through the unified, transaction-safe <c>IDocumentNumberService</c> (serializable scheme-row
+    /// update) — never by reading the latest number and incrementing in memory, which produced
+    /// duplicate BC numbers under concurrency (Phase 2 review M3). A number is reserved only for a
+    /// group that has at least one usable line, so skipped groups do not burn sequence values.
+    /// </param>
     Task<PurchaseOrderDraftBatchResult> BuildDraftPurchaseOrdersAsync(
         IReadOnlyList<ReplenishmentRecommendation> recommendations,
         IReadOnlyDictionary<Guid, Product> products,
         IReadOnlyDictionary<Guid, Supplier> suppliers,
         string actorUserId,
+        Guid tenantId,
         CancellationToken ct = default);
 }
 
