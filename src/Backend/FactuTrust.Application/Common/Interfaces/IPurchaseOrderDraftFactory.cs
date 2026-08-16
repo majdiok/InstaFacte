@@ -18,8 +18,11 @@ namespace FactuTrust.Application.Common.Interfaces;
 public interface IPurchaseOrderDraftFactory
 {
     /// <summary>
-    /// Builds (but does not save) one draft <see cref="PurchaseOrder"/> per distinct effective supplier
-    /// resolved from <paramref name="recommendations"/>. The caller is responsible for:
+    /// Builds (but does not save) one draft <see cref="PurchaseOrder"/> per distinct
+    /// (effective supplier, warehouse) pair resolved from <paramref name="recommendations"/>.
+    /// The warehouse is part of the grouping so each PO carries a non-null <c>WarehouseId</c> —
+    /// the replenishment engine only counts on-order quantities for warehouse-bound POs.
+    /// The caller is responsible for:
     /// 1. Attaching each <c>PurchaseOrder</c> to its <c>DbContext</c>.
     /// 2. Calling <see cref="ReplenishmentRecommendation.LinkToPurchaseOrder"/> on each recommendation
     ///    listed in <see cref="BuiltDraftPurchaseOrder.RecommendationIds"/>.
@@ -42,7 +45,7 @@ public interface IPurchaseOrderDraftFactory
 }
 
 /// <summary>Aggregated result of a batch PO build call.</summary>
-/// <param name="Drafts">Draft POs built (not yet persisted), one per resolved active supplier.</param>
+/// <param name="Drafts">Draft POs built (not yet persisted), one per resolved active (supplier, warehouse) pair.</param>
 /// <param name="Warnings">Human-readable explanations for each recommendation that was not linked.</param>
 /// <param name="UnlinkedRecommendationIds">
 /// Ids of recommendations that could not be attached to any draft PO (no supplier resolved,

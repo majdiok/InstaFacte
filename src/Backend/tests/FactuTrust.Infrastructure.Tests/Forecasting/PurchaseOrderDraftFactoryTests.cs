@@ -53,11 +53,11 @@ public sealed class PurchaseOrderDraftFactoryTests
     /// <summary>Builds a recommendation for <paramref name="productId"/>, optionally giving it a
     /// preferred supplier (mirrors the real V2 enrichment path).</summary>
     private static ReplenishmentRecommendation CreateRec(
-        Guid productId, Guid? supplierId = null, string? supplierName = null)
+        Guid productId, Guid? supplierId = null, string? supplierName = null, Guid? warehouseId = null)
     {
         var rec = ReplenishmentRecommendation.Create(
             productId: productId,
-            warehouseId: Guid.NewGuid(),
+            warehouseId: warehouseId ?? Guid.NewGuid(),
             recommendedQty: 100m,
             rop: 50m,
             safetyStock: 20m,
@@ -75,7 +75,8 @@ public sealed class PurchaseOrderDraftFactoryTests
         var factory = CreateFactory();
         var supplier = CreateSupplier();
         var product = CreateProduct();
-        var rec = CreateRec(product.Id, supplier.Id, supplier.Name);
+        var warehouseId = Guid.NewGuid();
+        var rec = CreateRec(product.Id, supplier.Id, supplier.Name, warehouseId);
 
         var result = await factory.BuildDraftPurchaseOrdersAsync(
             new[] { rec },
@@ -86,10 +87,66 @@ public sealed class PurchaseOrderDraftFactoryTests
         var draft = Assert.Single(result.Drafts);
         Assert.Equal(PurchaseOrderStatus.Draft, draft.PurchaseOrder.Status);
         Assert.Equal(supplier.Id, draft.PurchaseOrder.SupplierId);
+        // C1 regression pin: the PO must carry the recommendation's warehouse so the next
+        // generation run counts its lines as on-order stock (no duplicate recommendation).
+        Assert.Equal(warehouseId, draft.PurchaseOrder.WarehouseId);
         Assert.Single(draft.PurchaseOrder.Lines);
         Assert.Equal(rec.Id, Assert.Single(draft.RecommendationIds));
         Assert.Empty(result.UnlinkedRecommendationIds);
         Assert.Empty(result.Warnings);
+    }
+
+    [Fact]
+    public async Task BuildDraftPurchaseOrders_SameSupplierTwoWarehouses_BuildsOneDraftPerWarehouse()
+    {
+        var factory = CreateFactory();
+        var supplier = CreateSupplier();
+        var product = CreateProduct();
+        var warehouseA = Guid.NewGuid();
+        var warehouseB = Guid.NewGuid();
+        var recA = CreateRec(product.Id, supplier.Id, supplier.Name, warehouseA);
+        var recB = CreateRec(product.Id, supplier.Id, supplier.Name, warehouseB);
+
+        var result = await factory.BuildDraftPurchaseOrdersAsync(
+            new[] { recA, recB },
+            new Dictionary<Guid, Product> { [product.Id] = product },
+            new Dictionary<Guid, Supplier> { [supplier.Id] = supplier },
+            actorUserId: "user-1");
+
+        Assert.Equal(2, result.Drafts.Count);
+        Assert.Equal(2, result.Drafts.Select(d => d.PurchaseOrder.WarehouseId).Distinct().Count());
+        Assert.Contains(result.Drafts, d => d.PurchaseOrder.WarehouseId == warehouseA);
+        Assert.Contains(result.Drafts, d => d.PurchaseOrder.WarehouseId == warehouseB);
+        Assert.All(result.Drafts, d => Assert.Equal(supplier.Id, d.PurchaseOrder.SupplierId));
+        // Each draft links exactly its own warehouse's recommendation.
+        Assert.Equal(recA.Id, Assert.Single(result.Drafts.Single(d => d.PurchaseOrder.WarehouseId == warehouseA).RecommendationIds));
+        Assert.Equal(recB.Id, Assert.Single(result.Drafts.Single(d => d.PurchaseOrder.WarehouseId == warehouseB).RecommendationIds));
+        Assert.Empty(result.UnlinkedRecommendationIds);
+    }
+
+    [Fact]
+    public async Task BuildDraftPurchaseOrders_SameSupplierSameWarehouse_KeepsSingleDraft()
+    {
+        var factory = CreateFactory();
+        var supplier = CreateSupplier();
+        var productA = CreateProduct("PR-A");
+        var productB = CreateProduct("PR-B");
+        var warehouse = Guid.NewGuid();
+        var recA = CreateRec(productA.Id, supplier.Id, supplier.Name, warehouse);
+        var recB = CreateRec(productB.Id, supplier.Id, supplier.Name, warehouse);
+
+        var result = await factory.BuildDraftPurchaseOrdersAsync(
+            new[] { recA, recB },
+            new Dictionary<Guid, Product> { [productA.Id] = productA, [productB.Id] = productB },
+            new Dictionary<Guid, Supplier> { [supplier.Id] = supplier },
+            actorUserId: "user-1");
+
+        // Regression pin: the historical behaviour (one PO per supplier) is preserved
+        // when all lines share the same warehouse.
+        var draft = Assert.Single(result.Drafts);
+        Assert.Equal(warehouse, draft.PurchaseOrder.WarehouseId);
+        Assert.Equal(2, draft.RecommendationIds.Count);
+        Assert.Equal(2, draft.PurchaseOrder.Lines.Count);
     }
 
     [Fact]

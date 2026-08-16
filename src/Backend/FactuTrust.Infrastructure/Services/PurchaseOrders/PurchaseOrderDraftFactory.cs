@@ -45,18 +45,23 @@ public sealed class PurchaseOrderDraftFactory : IPurchaseOrderDraftFactory
         // Recommendations that end up attached to no draft PO (skip reasons below).
         var unlinked = new List<Guid>();
 
-        // Partition recommendations by effective supplier (manual override > preferred).
-        var bySupplier = recommendations
-            .GroupBy(r => r.GetEffectiveSupplierId())
+        // Partition recommendations by (effective supplier, warehouse) — manual override > preferred.
+        // The warehouse is part of the key because the generated PO MUST carry a WarehouseId:
+        // the replenishment engine only counts on-order quantities for POs whose WarehouseId is set
+        // (ReplenishmentService filters `po.WarehouseId.HasValue`). A PO without warehouse was
+        // therefore invisible to the next generation run, which re-created the same recommendation
+        // (double-order risk + Pending/Ordered/Superseded duplicates on the board).
+        var bySupplierAndWarehouse = recommendations
+            .GroupBy(r => new { SupplierId = r.GetEffectiveSupplierId(), r.WarehouseId })
             .ToList();
 
         var year = DateTime.UtcNow.Year;
         var latestNumberStr = await _purchaseOrderRepository.GetLatestNumberAsync(year, ct);
         var nextNumber = ParseOrInit(latestNumberStr, year);
 
-        foreach (var group in bySupplier)
+        foreach (var group in bySupplierAndWarehouse)
         {
-            var supplierId = group.Key;
+            var supplierId = group.Key.SupplierId;
             if (supplierId is null)
             {
                 foreach (var rec in group)
@@ -88,7 +93,7 @@ public sealed class PurchaseOrderDraftFactory : IPurchaseOrderDraftFactory
                 expectedDeliveryDate: null,
                 reference: null,
                 notes: "Brouillon créé automatiquement depuis le module Prévisions IA — Réapprovisionnement V2.",
-                warehouseId: null);
+                warehouseId: group.Key.WarehouseId);
 
             if (poResult.IsFailure)
             {
