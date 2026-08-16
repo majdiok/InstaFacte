@@ -100,6 +100,15 @@ public partial class TenantDbContext
                   .HasDatabaseName("IX_ReplenishmentRecommendations_ProductGenerated");
             entity.HasIndex(e => new { e.WarehouseId, e.Status });
             entity.HasIndex(e => e.Status);
+            // C4 — database-level backstop against duplicate Pending rows for the same
+            // (product, warehouse): two overlapping generation runs (manual + nightly job)
+            // used to both insert. Filtered on Status = 1 (ReplenishmentStatus.Pending, int storage)
+            // so historical rows in other statuses are unaffected. Created by the hand-written
+            // migration 20260816150000_AddReplenishmentPendingUnique_Tenant (dedup included).
+            entity.HasIndex(e => new { e.ProductId, e.WarehouseId })
+                  .HasDatabaseName("UX_ReplenishmentRecommendations_Pending_ProductWarehouse")
+                  .IsUnique()
+                  .HasFilter("[Status] = 1");
             // V2 lookup: list of recos still pending decision routed to a supplier.
             entity.HasIndex(e => new { e.PreferredSupplierId, e.Status })
                   .HasDatabaseName("IX_ReplenishmentRecommendations_SupplierStatus");

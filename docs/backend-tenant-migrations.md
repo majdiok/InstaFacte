@@ -367,6 +367,36 @@ SELECT COL_LENGTH('dbo.AccountingControlRuns', 'EvaluatedRuleCount') AS Evaluate
 
 ---
 
+## Réapprovisionnement — unicité des « En attente » — `20260816150000_AddReplenishmentPendingUnique_Tenant`
+
+Migration **additive** (fix C4 du module Prévisions IA) :
+
+| Objet | Rôle |
+|---|---|
+| Déduplication | Pour chaque couple (ProductId, WarehouseId), seule la recommandation Pending la plus récente est conservée ; les doublons passent à `Superseded` (aucune suppression). |
+| `UX_ReplenishmentRecommendations_Pending_ProductWarehouse` | Index unique filtré `WHERE Status = 1` — deux générations concurrentes ne peuvent plus insérer de doublon « En attente ». |
+
+Complétée côté applicatif par un verrou par tenant dans `ReplenishmentService` et par la
+conversion d'une violation d'unicité en HTTP 409 (« génération déjà en cours ») au lieu d'un 500.
+
+**Script idempotent (production / DBA) :** [`docs/runbooks/sql/AddReplenishmentPendingUnique_Tenant.idempotent.sql`](runbooks/sql/AddReplenishmentPendingUnique_Tenant.idempotent.sql)
+
+**Vérification SQL :**
+
+```sql
+SELECT MigrationId FROM __EFMigrationsHistory
+WHERE MigrationId LIKE '%AddReplenishmentPendingUnique%';
+
+-- Ne doit retourner aucune ligne :
+SELECT ProductId, WarehouseId, COUNT(*) AS PendingCount
+FROM ReplenishmentRecommendations WHERE Status = 1
+GROUP BY ProductId, WarehouseId HAVING COUNT(*) > 1;
+```
+
+> ⚠️ Le `Down()` supprime l'index mais ne restaure pas les lignes dédupliquées (volontaire).
+
+---
+
 ## En résumé
 
 - En **développement**, corriger l'erreur de migration puis redémarrer l'API.

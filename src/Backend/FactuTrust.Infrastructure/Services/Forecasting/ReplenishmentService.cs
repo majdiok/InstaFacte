@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -11,6 +12,7 @@ using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.MultiTenancy;
 using FactuTrust.Infrastructure.Persistence;
 using FactuTrust.Infrastructure.Services.Forecasting.Statistics;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -52,6 +54,16 @@ public sealed class ReplenishmentService : IReplenishmentService
 
     // ───────────────────────────── Generation ─────────────────────────────
 
+    /// <summary>
+    /// Per-tenant generation gates (fix C4). Without them, two overlapping runs (manual
+    /// "Régénérer" + nightly job, or a double-click) both supersede the Pending rows and both
+    /// insert fresh ones — duplicate Pending recommendations for the same (product, warehouse).
+    /// The filtered unique index <c>UX_ReplenishmentRecommendations_Pending_ProductWarehouse</c>
+    /// is the database-level backstop for cross-process races.
+    /// The dictionary is bounded by the number of tenants served by this instance — no eviction.
+    /// </summary>
+    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> TenantGenerationLocks = new();
+
     public async Task<int> GenerateRecommendationsAsync(
         Guid? warehouseId,
         Guid? productId,
@@ -59,6 +71,36 @@ public sealed class ReplenishmentService : IReplenishmentService
     {
         if (!_options.Enabled) return 0;
 
+        var lockKey = _currentUser.TenantId ?? Guid.Empty;
+        var gate = TenantGenerationLocks.GetOrAdd(lockKey, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
+        try
+        {
+            return await GenerateRecommendationsCoreAsync(warehouseId, productId, ct);
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            // Cross-process race (another API instance won the insert): the DB backstop fired.
+            // Surface a clear conflict instead of a raw 500 — the losing run persisted nothing new.
+            _logger.LogWarning(ex,
+                "Concurrent replenishment generation blocked by the unique Pending index (tenant={Tenant}).", lockKey);
+            throw new InvalidOperationException(
+                "Une génération de recommandations est déjà en cours. Réessayez dans quelques instants.", ex);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private static bool IsUniqueViolation(DbUpdateException ex) =>
+        ex.GetBaseException() is SqlException { Number: 2601 or 2627 };
+
+    private async Task<int> GenerateRecommendationsCoreAsync(
+        Guid? warehouseId,
+        Guid? productId,
+        CancellationToken ct = default)
+    {
         await using var ctx = _contextFactory.CreateContext();
         var v2 = _options.Replenishment;
 
