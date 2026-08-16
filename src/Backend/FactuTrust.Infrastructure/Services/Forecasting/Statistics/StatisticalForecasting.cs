@@ -429,30 +429,43 @@ public static class StatisticalForecasting
     /// <param name="serviceLevelZ">Z-score for the service level (1.65 = 95%, 1.96 = 97.5%).</param>
     /// <param name="quantityOnHand">Current stock-on-hand.</param>
     /// <param name="maximumStock">Configured target / max stock for the product. 0 = unbounded.</param>
+    /// <param name="quantityOnOrder">
+    /// Quantity already on order via open purchase orders (not yet received). Deducted from the
+    /// recommended quantity so we never double-order what is already coming in (fix C2).
+    /// Optional — defaults to 0, which preserves the historical calculation exactly.
+    /// </param>
     public static ReplenishmentMath ComputeReplenishment(
         decimal dailyDemand,
         decimal demandStdDev,
         int leadTimeDays,
         decimal serviceLevelZ,
         decimal quantityOnHand,
-        decimal maximumStock)
+        decimal maximumStock,
+        decimal quantityOnOrder = 0m)
     {
         if (dailyDemand < 0) throw new ArgumentException("DailyDemand must be ≥ 0", nameof(dailyDemand));
         if (demandStdDev < 0) throw new ArgumentException("DemandStdDev must be ≥ 0", nameof(demandStdDev));
         if (leadTimeDays < 0) throw new ArgumentException("LeadTimeDays must be ≥ 0", nameof(leadTimeDays));
         if (serviceLevelZ < 0) throw new ArgumentException("ServiceLevelZ must be ≥ 0", nameof(serviceLevelZ));
         if (quantityOnHand < 0) throw new ArgumentException("QuantityOnHand must be ≥ 0", nameof(quantityOnHand));
+        if (quantityOnOrder < 0) throw new ArgumentException("QuantityOnOrder must be ≥ 0", nameof(quantityOnOrder));
 
         var ss = serviceLevelZ * demandStdDev * (decimal)Math.Sqrt(Math.Max(0, leadTimeDays));
         var rop = dailyDemand * leadTimeDays + ss;
 
-        // Recommended qty: refill to max stock if defined, otherwise 2× lead-time demand.
-        var qty = maximumStock > 0
-            ? Math.Max(0, maximumStock - quantityOnHand)
-            : Math.Max(0, 2 * dailyDemand * leadTimeDays);
+        // Available stock = on-hand + already on-order. The max-stock refill and the ROP floor are
+        // computed against the available stock (on-hand was already deducted historically; on-order
+        // is the additive part).
+        var available = quantityOnHand + quantityOnOrder;
 
-        // Floor: at least the safety stock + lead-time demand minus current on-hand, but never < 0.
-        var minQty = Math.Max(0, rop - quantityOnHand);
+        // Recommended qty: refill to max stock if defined, otherwise 2× lead-time demand
+        // (the fallback historically ignores on-hand — only the on-order part is deducted).
+        var qty = maximumStock > 0
+            ? Math.Max(0, maximumStock - available)
+            : Math.Max(0, 2 * dailyDemand * leadTimeDays - quantityOnOrder);
+
+        // Floor: at least the safety stock + lead-time demand minus available stock, but never < 0.
+        var minQty = Math.Max(0, rop - available);
         if (qty < minQty) qty = minQty;
 
         return new ReplenishmentMath(

@@ -351,5 +351,69 @@ public sealed class StatisticalForecastingTests
         Assert.Throws<ArgumentException>(() => StatisticalForecasting.ComputeReplenishment(1m, 0m, -1, 1m, 0m, 0m));
         Assert.Throws<ArgumentException>(() => StatisticalForecasting.ComputeReplenishment(1m, 0m, 1, -1m, 0m, 0m));
         Assert.Throws<ArgumentException>(() => StatisticalForecasting.ComputeReplenishment(1m, 0m, 1, 1m, -1m, 0m));
+        Assert.Throws<ArgumentException>(() => StatisticalForecasting.ComputeReplenishment(1m, 0m, 1, 1m, 0m, 0m, -1m));
+    }
+
+    [Fact]
+    public void ComputeReplenishment_OnOrderDeductedFromMaxStockRefill()
+    {
+        // Same baseline as ComputeReplenishment_BasicCase (qty would be 50 without on-order).
+        var math = StatisticalForecasting.ComputeReplenishment(
+            dailyDemand: 5m,
+            demandStdDev: 2m,
+            leadTimeDays: 7,
+            serviceLevelZ: 1.65m,
+            quantityOnHand: 10m,
+            maximumStock: 60m,
+            quantityOnOrder: 20m);
+
+        // available = 10 + 20 = 30 → refill = 60 - 30 = 30 ≥ floor (rop - 30 ≈ 13.7) → 30.
+        Assert.Equal(30m, math.RecommendedQty);
+    }
+
+    [Fact]
+    public void ComputeReplenishment_OnOrderDeductedFromFallback()
+    {
+        // No max stock → fallback 2 × d × L, minus the on-order part only.
+        var math = StatisticalForecasting.ComputeReplenishment(
+            dailyDemand: 4m,
+            demandStdDev: 1m,
+            leadTimeDays: 5,
+            serviceLevelZ: 1.65m,
+            quantityOnHand: 0m,
+            maximumStock: 0m,
+            quantityOnOrder: 15m);
+
+        // 2 × 4 × 5 = 40 − 15 = 25 ≥ floor (rop ≈ 23.69 − 15 ≈ 8.69) → 25.
+        Assert.Equal(25m, math.RecommendedQty);
+    }
+
+    [Fact]
+    public void ComputeReplenishment_OnOrderCoveringNeeds_YieldsZero()
+    {
+        var math = StatisticalForecasting.ComputeReplenishment(
+            dailyDemand: 5m,
+            demandStdDev: 2m,
+            leadTimeDays: 7,
+            serviceLevelZ: 1.65m,
+            quantityOnHand: 10m,
+            maximumStock: 60m,
+            quantityOnOrder: 50m);
+
+        // available = 60 ≥ max stock and ≥ rop → nothing to order (the service skips qty ≤ 0).
+        Assert.Equal(0m, math.RecommendedQty);
+    }
+
+    [Fact]
+    public void ComputeReplenishment_ZeroOnOrder_KeepsHistoricalBehaviour()
+    {
+        // Regression pin: omitting the new parameter (or passing 0) yields the pre-C2 results.
+        var explicit0 = StatisticalForecasting.ComputeReplenishment(5m, 2m, 7, 1.65m, 10m, 60m, 0m);
+        var omitted = StatisticalForecasting.ComputeReplenishment(5m, 2m, 7, 1.65m, 10m, 60m);
+
+        Assert.Equal(50m, explicit0.RecommendedQty);
+        Assert.Equal(omitted.RecommendedQty, explicit0.RecommendedQty);
+        Assert.Equal(omitted.Rop, explicit0.Rop);
+        Assert.Equal(omitted.SafetyStock, explicit0.SafetyStock);
     }
 }

@@ -167,17 +167,21 @@ public sealed class ReplenishmentService : IReplenishmentService
             dailyDemand *= (decimal)seasonalFactor;
 
             var z = v2.DefaultServiceLevelZ;
+
+            // Effective stock takes on-order into account so we do NOT double-order.
+            var onOrder = onOrderMap.TryGetValue((item.ProductId, item.WarehouseId), out var oo) ? oo : 0m;
+            var effectiveQty = item.QuantityOnHand + onOrder;
+
+            // Fix C2: the recommended quantity itself also deducts the on-order quantity —
+            // previously only the trigger did, which over-ordered while a PO was in flight.
             var math = StatisticalForecasting.ComputeReplenishment(
                 dailyDemand,
                 demandSd,
                 leadTime,
                 z,
                 item.QuantityOnHand,
-                item.MaximumStock ?? 0m);
-
-            // Effective stock takes on-order into account so we do NOT double-order.
-            var onOrder = onOrderMap.TryGetValue((item.ProductId, item.WarehouseId), out var oo) ? oo : 0m;
-            var effectiveQty = item.QuantityOnHand + onOrder;
+                item.MaximumStock ?? 0m,
+                onOrder);
 
             // Floor the safety stock with the user-configured MinimumStock (V2 — fix F-C4).
             var effectiveRop = Math.Max(math.Rop, item.MinimumStock);
