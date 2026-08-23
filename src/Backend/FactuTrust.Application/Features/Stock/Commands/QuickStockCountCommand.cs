@@ -1,6 +1,8 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Domain.Common;
+using FactuTrust.Domain.Enums;
 using FluentValidation;
 using MediatR;
 
@@ -72,17 +74,20 @@ public sealed class QuickStockCountCommandHandler : IRequestHandler<QuickStockCo
     private readonly IWarehouseRepository _warehouseRepository;
     private readonly IProductRepository _productRepository;
     private readonly ITenantContext _tenantContext;
+    private readonly IStockMutationService _mutation;
 
     public QuickStockCountCommandHandler(
         IStockItemRepository stockItemRepository,
         IWarehouseRepository warehouseRepository,
         IProductRepository productRepository,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        IStockMutationService mutation)
     {
         _stockItemRepository = stockItemRepository;
         _warehouseRepository = warehouseRepository;
         _productRepository = productRepository;
         _tenantContext = tenantContext;
+        _mutation = mutation;
     }
 
     public async Task<Result<QuickStockCountResult>> Handle(QuickStockCountCommand request, CancellationToken cancellationToken)
@@ -98,6 +103,11 @@ public sealed class QuickStockCountCommandHandler : IRequestHandler<QuickStockCo
         if (!product.IsStockManaged)
             return Result.Failure<QuickStockCountResult>(
                 Error.Validation("Product", "Ce produit n'a pas la gestion de stock activée."));
+
+        if (product.TrackingMode != TrackingMode.None)
+            return Result.Failure<QuickStockCountResult>(
+                Error.Validation("TrackingMode",
+                    "Le comptage rapide est interdit sur un article suivi. Utilisez l'inventaire par lot."));
 
         // Déterminer l'entrepôt
         Guid warehouseId;
@@ -145,11 +155,20 @@ public sealed class QuickStockCountCommandHandler : IRequestHandler<QuickStockCo
                 ? "Mise à jour via comptage rapide" 
                 : request.Notes;
             
-            var adjustResult = stockItem.AdjustStock(request.ActualQuantity, notes);
+            var adjustResult = await _mutation.ApplyAsync(new StockMutationRequest
+            {
+                ProductId = request.ProductId,
+                WarehouseId = warehouseId,
+                Kind = StockMutationKind.Adjust,
+                Quantity = request.ActualQuantity,
+                Notes = notes,
+                Reason = MovementReason.InventoryAdjustment
+            }, cancellationToken);
             if (adjustResult.IsFailure)
                 return Result.Failure<QuickStockCountResult>(adjustResult.Error);
 
-            await _stockItemRepository.UpdateAsync(stockItem, cancellationToken);
+            stockItem = await _stockItemRepository.GetByProductAndWarehouseAsync(
+                request.ProductId, warehouseId, cancellationToken) ?? stockItem;
         }
 
         // Générer le message pédagogique

@@ -288,7 +288,7 @@ interface AssetFormModel {
           <input type="date" class="accounting-filter-input" [(ngModel)]="inServiceDate" />
         </label>
         <label *ngIf="!isFromSupplierInvoice()">
-          Compte de crédit (404, 512, 101…) *
+          Compte de crédit (404, 532, 101…) *
           <input class="accounting-filter-input" [(ngModel)]="creditAccount" placeholder="404" />
         </label>
       </div>

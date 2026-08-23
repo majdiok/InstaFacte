@@ -14,8 +14,8 @@ public sealed class InvoiceLine : Entity
     
     public int LineNumber { get; private set; }
     
-    public Guid ProductId { get; private set; }
-    public Product Product { get; private set; } = null!;
+    public Guid? ProductId { get; private set; }
+    public Product? Product { get; private set; }
     
     public string ProductCode { get; private set; } = null!;
     public string ProductName { get; private set; } = null!;
@@ -138,7 +138,8 @@ public sealed class InvoiceLine : Entity
             InvoiceId = invoice.Id,
             Invoice = invoice,
             LineNumber = lineNumber,
-            ProductId = Guid.Empty, // No product reference
+            ProductId = null,
+            Product = null,
             ProductCode = "CUSTOM",
             ProductName = designation,
             ProductDescription = description,
@@ -188,8 +189,8 @@ public sealed class InvoiceLine : Entity
             InvoiceId = invoice.Id,
             Invoice = invoice,
             LineNumber = lineNumber,
-            ProductId = product?.Id ?? Guid.Empty,
-            Product = product!,
+            ProductId = product?.Id,
+            Product = product,
             ProductCode = product?.Code ?? "CUSTOM",
             ProductName = designation.Trim(),
             ProductDescription = description,

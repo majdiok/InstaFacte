@@ -26,7 +26,7 @@ public interface IAccountingService
 
     /// <summary>
     /// Écriture d'encaissement/impayé d'un effet de commerce client à échéance (2ᵉ volet).
-    /// Encaissé : Débit 532 / Crédit 412 (JB). Impayé : Débit 4111 / Crédit 412 (JOD, créance réouverte).
+    /// Encaissé : Débit 532 / Crédit 413 (JB). Impayé : Débit 4111 / Crédit 413 (JOD, créance réouverte).
     /// Idempotent per <c>SourceEffetSettlement</c> + payment id.
     /// </summary>
     Task<Result> GenerateClientEffetSettlementEntryAsync(Payment payment, EffetStatus outcome, CancellationToken cancellationToken = default);

@@ -32,6 +32,10 @@ public sealed record ProductListDto
     public Guid CategoryId { get; init; }
     public string CategoryName { get; init; } = "general";
     public string? ImageUrl { get; init; }
+    public bool IsVariantTemplate { get; init; }
+    public Guid? ParentProductId { get; init; }
+    public TrackingMode TrackingMode { get; init; }
+    public CostingMethod CostingMethod { get; init; }
 
     /// <summary>
     /// Quantité disponible (on hand − réservé) à l'entrepôt par défaut ; null si gestion de stock désactivée ou entrepôt indisponible.
@@ -80,6 +84,13 @@ public sealed record ProductDetailDto
 
     public DateTime CreatedAt { get; init; }
     public DateTime? UpdatedAt { get; init; }
+    public Guid? ParentProductId { get; init; }
+    public bool IsVariantTemplate { get; init; }
+    public TrackingMode TrackingMode { get; init; }
+    public bool HasExpiryTracking { get; init; }
+    public PickingPolicy PickingPolicy { get; init; }
+    public CostingMethod CostingMethod { get; init; }
+    public int? ExpiryAlertDays { get; init; }
 }
 
 /// <summary>
@@ -134,6 +145,13 @@ public sealed record CreateProductDto
 
     /// <summary>Remise maximale (%) autorisée sur les lignes de vente.</summary>
     public decimal? MaxDiscountPercent { get; init; }
+
+    public bool IsVariantTemplate { get; init; }
+    public TrackingMode TrackingMode { get; init; }
+    public bool HasExpiryTracking { get; init; }
+    public PickingPolicy PickingPolicy { get; init; }
+    public CostingMethod CostingMethod { get; init; }
+    public int? ExpiryAlertDays { get; init; }
 }
 
 /// <summary>
@@ -169,4 +187,11 @@ public sealed record UpdateProductDto
 
     /// <summary>Remise maximale (%) autorisée sur les lignes de vente.</summary>
     public decimal? MaxDiscountPercent { get; init; }
+
+    public bool? IsVariantTemplate { get; init; }
+    public TrackingMode? TrackingMode { get; init; }
+    public bool? HasExpiryTracking { get; init; }
+    public PickingPolicy? PickingPolicy { get; init; }
+    public CostingMethod? CostingMethod { get; init; }
+    public int? ExpiryAlertDays { get; init; }
 }

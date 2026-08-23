@@ -48,6 +48,11 @@ test.describe('Cabinet comptable — workflow', () => {
     await page.getByRole('button', { name: /créer le cabinet/i }).click();
 
     await expect(page).toHaveURL(/\/firm\/dashboard/, { timeout: 180_000 });
+    const skipTour = page.locator('.ft-product-tour__skip, .driver-popover-close-btn, button:has-text("Ignorer")').first();
+    if (await skipTour.isVisible().catch(() => false)) {
+      await expect(page.locator('.driver-popover')).not.toContainText('Ventes');
+      await skipTour.click();
+    }
   });
 
   test('login page loads for firm users', async ({ page }) => {

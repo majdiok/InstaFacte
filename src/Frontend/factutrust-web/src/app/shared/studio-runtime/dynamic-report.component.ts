@@ -31,6 +31,13 @@ type ChartType = 'bar' | 'line' | 'pie';
         description="Aucune donnée pour ce rapport ou cette vue."
       />
     } @else {
+      @if (result.truncated) {
+        <div class="dr-truncated" role="status">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          Résultat tronqué à {{ result.rows.length }} ligne(s) sur {{ result.totalRows }}.
+          Les totaux ne portent pas sur la totalité des données — affinez la période ou les filtres.
+        </div>
+      }
       <div class="dr-bar">
         @if (chartable()) {
           <div class="dr-modes">
@@ -106,6 +113,15 @@ type ChartType = 'bar' | 'line' | 'pie';
     .dr-types { display: flex; gap: var(--spacing-2); margin-bottom: var(--spacing-3); }
     .dr-loading { text-align: center; padding: var(--spacing-8); color: var(--color-neutral-500); }
     .dr-modes { display: flex; gap: var(--spacing-1); }
+    .dr-truncated {
+      display: flex; align-items: center; gap: var(--spacing-2);
+      padding: var(--spacing-2) var(--spacing-3); margin-bottom: var(--spacing-3);
+      border-radius: var(--radius-md);
+      background: var(--color-warning-50, #fff7ed);
+      border: 1px solid var(--color-warning-200, #fed7aa);
+      color: var(--color-warning-800, #9a3412);
+      font-size: var(--font-size-sm);
+    }
   `]
 })
 export class DynamicReportComponent {

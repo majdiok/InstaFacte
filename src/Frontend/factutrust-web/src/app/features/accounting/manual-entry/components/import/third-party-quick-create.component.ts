@@ -223,9 +223,19 @@ export class ThirdPartyQuickCreateComponent {
         this.error.set(res?.message || "La création du tiers a échoué.");
       }
     };
-    const onError = (err: { error?: { message?: string }; message?: string }): void => {
+    const onError = (err: {
+      error?: { message?: string | null; error?: string; errors?: string[] };
+      message?: string;
+    }): void => {
       this.saving.set(false);
-      this.error.set(err?.error?.message || err?.message || "La création du tiers a échoué.");
+      const payload = err?.error;
+      const detail =
+        (Array.isArray(payload?.errors) && payload.errors[0]) ||
+        payload?.error ||
+        payload?.message ||
+        err?.message ||
+        "La création du tiers a échoué.";
+      this.error.set(detail);
     };
 
     if (this.isSupplier()) {

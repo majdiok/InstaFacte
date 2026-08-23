@@ -734,6 +734,92 @@ export interface ReferenceImportCommitResultDto {
   skippedCount: number;
 }
 
+// ── Migration assistée par IA (N1) ─────────────────────────────────────────
+
+/** Progiciel comptable source détecté (miroir du backend). */
+export enum MigrationSourceSystem {
+  Inconnu = 0,
+  SageLigne100 = 1,
+  Ebp = 2,
+  Cegid = 3,
+  Quadra = 4,
+  TableurGenerique = 5,
+}
+
+export interface MigrationAnalysisDto {
+  fileName: string;
+  detectedSource: MigrationSourceSystem;
+  confidence: number;
+  format: JournalImportFormat;
+  delimiter: string | null;
+  suggestedTarget: ReferenceImportTarget;
+  targetConfidence: number;
+  headers: string[];
+  sampleRowCount: number;
+  knownFormatMatched: boolean;
+  warnings: string[];
+}
+
+/** Origine d'une suggestion (miroir du backend). */
+export enum MigrationSuggestionOrigin {
+  Synonyme = 0,
+  Catalogue = 1,
+  Ia = 2,
+  Identite = 3,
+  Prefixe = 4,
+}
+
+export interface ColumnMappingSuggestionItemDto {
+  sourceColumn: string;
+  canonicalColumn: string | null;
+  confidence: number;
+  origin: MigrationSuggestionOrigin;
+}
+
+export interface ColumnMappingSuggestionDto {
+  target: ReferenceImportTarget;
+  requiredCanonical: string[];
+  items: ColumnMappingSuggestionItemDto[];
+  complete: boolean;
+  warnings: string[];
+}
+
+export interface AccountMappingSuggestionItemDto {
+  sourceAccount: string;
+  sourceLabel: string | null;
+  targetAccount: string | null;
+  confidence: number;
+  origin: MigrationSuggestionOrigin;
+  justification: string | null;
+}
+
+export interface AccountMappingSuggestionDto {
+  totalAccounts: number;
+  resolvedWithoutModel: number;
+  abstained: number;
+  items: AccountMappingSuggestionItemDto[];
+  warnings: string[];
+}
+
+export interface ThirdPartyDuplicatePairDto {
+  importedName: string;
+  importedRef: string;
+  importedNif: string | null;
+  existingOrigin: string;
+  existingName: string;
+  existingNif: string | null;
+  score: number;
+  reason: string;
+}
+
+export interface ThirdPartyDuplicateDetectionDto {
+  importedCount: number;
+  existingCount: number;
+  candidatePairs: number;
+  pairs: ThirdPartyDuplicatePairDto[];
+  warnings: string[];
+}
+
 /** Une échéance de l'échéancier d'un emprunt. */
 export interface LoanScheduleLineDto {
   installmentNumber: number;
@@ -1666,7 +1752,9 @@ export class AccountingService {
   }
 
   createSubAccount(request: CreateSubAccountRequest): Observable<ApiResponse<string>> {
-    return this.http.post<ApiResponse<string>>(`${this.base}/chart-of-accounts`, request);
+    return this.http.post<ApiResponse<string>>(`${this.base}/chart-of-accounts`, request, {
+      context: createHttpContextSkipGlobalErrorUi()
+    });
   }
 
   updateAccountLabel(id: string, label: string): Observable<ApiResponse<boolean>> {
@@ -2014,5 +2102,60 @@ export class AccountingService {
   /** Génère les codes auxiliaires manquants (C0001…/F0001…) pour les tiers actifs ; renvoie le nombre créé. */
   ensureAuxiliaryCodes(): Observable<ApiResponse<number>> {
     return this.http.post<ApiResponse<number>>(`${this.base}/third-parties/ensure-codes`, {});
+  }
+
+  // ── Migration assistée par IA (N1) — suggestions uniquement ─────────────
+  // L'import effectif passe ensuite par reference-import/preview|commit (inchangés).
+
+  /** Analyse un fichier source : progiciel détecté, format, cible probable. */
+  analyzeMigrationSource(file: File): Observable<ApiResponse<MigrationAnalysisDto>> {
+    const form = new FormData();
+    form.append('file', file);
+    return this.http.post<ApiResponse<MigrationAnalysisDto>>(`${this.base}/migration/analyze`, form);
+  }
+
+  /** Suggestion de correspondance colonnes source → schéma canonique de la cible. */
+  suggestMigrationColumnMapping(
+    file: File,
+    target: ReferenceImportTarget
+  ): Observable<ApiResponse<ColumnMappingSuggestionDto>> {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('target', String(target));
+    return this.http.post<ApiResponse<ColumnMappingSuggestionDto>>(`${this.base}/migration/suggest-column-mapping`, form);
+  }
+
+  /** Suggestion de correspondance comptes source → plan local (mapping de colonnes validé optionnel). */
+  suggestMigrationAccountMapping(
+    file: File,
+    columnMapping?: Record<string, string> | null
+  ): Observable<ApiResponse<AccountMappingSuggestionDto>> {
+    const form = new FormData();
+    form.append('file', file);
+    if (columnMapping) form.append('columnMapping', JSON.stringify(columnMapping));
+    return this.http.post<ApiResponse<AccountMappingSuggestionDto>>(`${this.base}/migration/suggest-account-mapping`, form);
+  }
+
+  /** Détection de doublons de tiers (fichier ↔ référentiel, et interne au fichier). */
+  detectMigrationDuplicates(file: File): Observable<ApiResponse<ThirdPartyDuplicateDetectionDto>> {
+    const form = new FormData();
+    form.append('file', file);
+    return this.http.post<ApiResponse<ThirdPartyDuplicateDetectionDto>>(`${this.base}/migration/detect-duplicates`, form);
+  }
+
+  /**
+   * Réécrit le fichier source en CSV à en-têtes canoniques (mapping validé par l'utilisateur).
+   * Le blob retourné est destiné à previewReferenceImport/commitReferenceImport, inchangés.
+   */
+  transformMigrationFile(
+    file: File,
+    target: ReferenceImportTarget,
+    columnMapping: Record<string, string>
+  ): Observable<Blob> {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('target', String(target));
+    form.append('columnMapping', JSON.stringify(columnMapping));
+    return this.http.post(`${this.base}/migration/transform`, form, { responseType: 'blob' });
   }
 }

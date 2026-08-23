@@ -140,6 +140,12 @@ export interface ReportColumn {
 export interface ReportResult {
   columns: ReportColumn[];
   rows: Record<string, unknown>[];
+  /** Nombre de lignes RÉELLEMENT disponibles — peut dépasser `rows.length` (voir `truncated`). */
   totalRows: number;
+  /**
+   * Vrai quand le résultat a été plafonné : les totaux ne portent alors pas sur la totalité des
+   * données et l'interface DOIT le signaler. Absent = comportement historique (non tronqué).
+   */
+  truncated?: boolean;
   displayValues?: Record<string, string> | null;
 }

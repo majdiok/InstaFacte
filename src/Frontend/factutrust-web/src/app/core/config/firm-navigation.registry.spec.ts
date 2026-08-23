@@ -3,6 +3,7 @@ import {
   DELEGATED_FIRM_VENTES_ALLOWED_ROUTES,
   FIRM_NATIVE_NAV,
   filterFirmGovernanceNav,
+  filterFirmRevisionNav,
   filterDelegatedFirmSectionChildren,
   isDelegatedFirmBlockedSalesPurchasesRoute,
   isDelegatedFirmBlockedAiAssistantRoute,
@@ -22,8 +23,7 @@ describe('firm-navigation.registry — FIRM_NATIVE_NAV', () => {
     '/firm/governance/dossier-time-profitability',
     '/firm/governance/collaborator-rentability',
     '/firm/governance/collaborator-costs',
-    '/firm/governance/expense-notes',
-    '/firm/governance/social'
+    '/firm/governance/expense-notes'
   ];
 
   function collectRoutes(items: NavItem[]): string[] {
@@ -87,6 +87,11 @@ describe('firm-navigation.registry — FIRM_NATIVE_NAV', () => {
     expect(collectRoutes(FIRM_NATIVE_NAV).includes('/firm/governance/dashboard')).toBe(false);
   });
 
+  it('FIRM_NATIVE_NAV no longer includes Suivi social', () => {
+    expect(FIRM_NATIVE_NAV.some(i => i.label === 'Suivi social')).toBe(false);
+    expect(collectRoutes(FIRM_NATIVE_NAV)).not.toContain('/firm/governance/social');
+  });
+
   it('filterFirmGovernanceNav removes governance when flag off', () => {
     const filtered = filterFirmGovernanceNav(FIRM_NATIVE_NAV, false);
     expect(filtered.some(i => i.label === 'Gouvernance')).toBe(false);
@@ -111,7 +116,7 @@ describe('firm-navigation.registry — FIRM_NATIVE_NAV', () => {
     const managerFlagOn = collectRoutes(filterFirmGovernanceNav(FIRM_NATIVE_NAV, true)).filter(route =>
       governanceRoutes.includes(route)
     );
-    expect(managerFlagOn).toHaveSize(10);
+    expect(managerFlagOn).toHaveSize(9);
 
     const managerFlagOff = collectRoutes(filterFirmGovernanceNav(FIRM_NATIVE_NAV, false)).filter(route =>
       governanceRoutes.includes(route)
@@ -125,14 +130,53 @@ describe('firm-navigation.registry — FIRM_NATIVE_NAV', () => {
       '/firm/governance/permanent-files',
       '/firm/governance/time-sheets',
       '/firm/governance/leaves',
-      '/firm/governance/expense-notes',
-      '/firm/governance/social'
+      '/firm/governance/expense-notes'
     ]);
 
     const nonManagerFlagOff = collectRoutes(
       filterFirmManagerNav(filterFirmGovernanceNav(FIRM_NATIVE_NAV, false), false)
     ).filter(route => governanceRoutes.includes(route));
     expect(nonManagerFlagOff).toHaveSize(0);
+  });
+
+  describe('entrée Révision du portefeuille', () => {
+    it('expose /firm/revision juste après Chef de mission', () => {
+      const idxAssistant = FIRM_NATIVE_NAV.findIndex(i => i.label === 'Chef de mission');
+      const idxRevision = FIRM_NATIVE_NAV.findIndex(i => i.label === 'Révision du portefeuille');
+
+      expect(idxAssistant).toBeGreaterThanOrEqual(0);
+      expect(idxRevision).toBe(idxAssistant + 1);
+      expect(FIRM_NATIVE_NAV[idxRevision].route).toBe('/firm/revision');
+    });
+
+    it('est conditionnée par firm:revision:view et non réservée au responsable', () => {
+      const entry = FIRM_NATIVE_NAV.find(i => i.route === '/firm/revision');
+
+      expect(entry).toBeTruthy();
+      expect(entry!.permissionsAll).toEqual(['firm:revision:view']);
+      // Le collaborateur cabinet consulte aussi : l'ACL dossier restreint ensuite son périmètre.
+      expect(entry!.managerOnly).toBeUndefined();
+      // Une entrée à plat : filterNavItems n'évalue pas les permissions d'un parent à enfants.
+      expect(entry!.children).toBeUndefined();
+      expect(entry!.modules).toBeUndefined();
+    });
+
+    it('filterFirmRevisionNav retire la seule entrée Révision quand le drapeau est éteint', () => {
+      const off = filterFirmRevisionNav(FIRM_NATIVE_NAV, false);
+
+      expect(collectRoutes(off)).not.toContain('/firm/revision');
+      expect(off).toHaveSize(FIRM_NATIVE_NAV.length - 1);
+    });
+
+    it('filterFirmRevisionNav est neutre quand le drapeau est allumé', () => {
+      expect(filterFirmRevisionNav(FIRM_NATIVE_NAV, true)).toBe(FIRM_NATIVE_NAV);
+    });
+
+    it("n'est pas emportée par l'extinction du drapeau Gouvernance", () => {
+      const routes = collectRoutes(filterFirmGovernanceNav(FIRM_NATIVE_NAV, false));
+
+      expect(routes).toContain('/firm/revision');
+    });
   });
 });
 
@@ -177,6 +221,9 @@ describe('firm-navigation.registry — delegated firm sales/purchases', () => {
     expect(isDelegatedFirmBlockedSalesPurchasesRoute('/reports/analytics')).toBe(true);
     expect(isDelegatedFirmBlockedSalesPurchasesRoute('/reports/profit')).toBe(true);
     expect(isDelegatedFirmBlockedSalesPurchasesRoute('/suppliers')).toBe(true);
+    expect(isDelegatedFirmBlockedSalesPurchasesRoute('/delivery-notes')).toBe(true);
+    expect(isDelegatedFirmBlockedSalesPurchasesRoute('/return-notes')).toBe(true);
+    expect(isDelegatedFirmBlockedSalesPurchasesRoute('/return-notes/new')).toBe(true);
   });
 
   it('isDelegatedFirmBlockedSalesPurchasesRoute allows invoices and sales/purchases reports', () => {

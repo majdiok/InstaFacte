@@ -140,9 +140,9 @@ public sealed class BankReconciliationIncompleteAuditRule : AccountingAuditRuleB
                 "Rapprochement bancaire incomplet",
                 $"{total} ligne(s) de relevé non rapprochée(s).",
                 "Écart de trésorerie non expliqué.",
-                "512", unmatched.Sum(l => Math.Abs(l.Amount)), null, null,
+                "532", unmatched.Sum(l => Math.Abs(l.Amount)), null, null,
                 unmatched.Select(l => new AnomalyLineCandidate(
-                    null, null, l.TransactionDate, "512", l.Label, l.Amount > 0 ? l.Amount : 0, l.Amount < 0 ? -l.Amount : 0, l.Reference, null)).ToList(),
+                    null, null, l.TransactionDate, "532", l.Label, l.Amount > 0 ? l.Amount : 0, l.Amount < 0 ? -l.Amount : 0, l.Reference, null)).ToList(),
                 ["Rapprocher les lignes de relevé.", "Créer les écritures manquantes."],
                 "/accounting/bank-reconciliation")
         ];

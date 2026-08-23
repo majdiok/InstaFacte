@@ -48,11 +48,11 @@ export const FORECASTING_ROUTES: Routes = [
         data: { permissions: [FORECASTING_VIEW] }
       },
       {
+        // Ancien onglet « Calendrier TN » retiré : favoris / liens profonds
+        // redirigent vers l’onglet par défaut du hub.
         path: 'calendar',
-        loadComponent: () =>
-          import('./pages/calendar-impact/calendar-impact.component').then(m => m.CalendarImpactComponent),
-        canActivate: [permissionGuard],
-        data: { permissions: [FORECASTING_VIEW] }
+        redirectTo: 'revenue',
+        pathMatch: 'full'
       },
       {
         // Même écran que /treasury/cash-forecast : le prévisionnel de trésorerie appartient à la

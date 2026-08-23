@@ -42,7 +42,9 @@ public sealed class ProductRepository : IProductRepository
         await using var context = _contextFactory.CreateContext();
         return await context.Products
             .Include(p => p.Category)
-            .FirstOrDefaultAsync(p => p.Barcode!.Value == normalized, cancellationToken);
+            .FirstOrDefaultAsync(
+                p => p.Barcode!.Value == normalized && !p.IsVariantTemplate,
+                cancellationToken);
     }
 
     public async Task<IReadOnlyList<Product>> GetAllAsync(CancellationToken cancellationToken = default)
@@ -130,7 +132,7 @@ public sealed class ProductRepository : IProductRepository
     {
         await using var context = _contextFactory.CreateContext();
 
-        var query = context.Products.AsNoTracking().AsQueryable();
+        var query = context.Products.AsNoTracking().Where(p => !p.IsVariantTemplate).AsQueryable();
 
         if (isActive.HasValue)
             query = query.Where(p => p.IsActive == isActive.Value);

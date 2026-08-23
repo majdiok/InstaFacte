@@ -13,7 +13,7 @@ using Microsoft.Extensions.Options;
 namespace FactuTrust.Application.Features.Invoices.Commands;
 
 /// <summary>
-/// Règle un effet de commerce client à échéance : encaissement (532/412) ou impayé (4111/412).
+/// Règle un effet de commerce client à échéance : encaissement (532/413) ou impayé (4111/413).
 /// Sur impayé, l'effet est marqué remboursé (exclu des totaux) et la facture est réouverte.
 /// </summary>
 public sealed record SettleClientEffetCommand(Guid PaymentId, SettleEffetRequest Request) : IRequest<Result>;

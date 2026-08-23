@@ -44,4 +44,8 @@ public interface IPaymentRepository : IRepository<Payment>
         DateTime fromDate,
         DateTime toDate,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<Payment>> GetByCashRegisterSessionIdAsync(
+        Guid cashRegisterSessionId,
+        CancellationToken cancellationToken = default);
 }

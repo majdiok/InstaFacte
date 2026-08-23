@@ -7,6 +7,7 @@ import {
   signal
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
 import { SelectModule } from 'primeng/select';
 import { SelectButtonModule } from 'primeng/selectbutton';
@@ -18,6 +19,7 @@ import { PlatformAiSettingsService } from '@core/services/platform-ai-settings.s
 import type { OllamaInferenceDevice, PlatformAiSettingsDto } from '@core/models/platform.models';
 import { aiProviderLabel } from './ai-provider-label';
 import { needsCursorCatalogWarning, needsCursorModelWarning } from './cursor-settings-warnings';
+import { ModalEndpointFieldsComponent } from './modal-endpoint-fields.component';
 
 import { FtPageHeaderComponent } from '@core/ui/page-header/ft-page-header.component';
 import { FtSkeletonComponent } from '@core/ui/skeleton/ft-skeleton.component';
@@ -40,7 +42,8 @@ interface InferenceDeviceOption {
  *
  * Le modèle sélectionné est utilisé par l'Assistant IA de toutes les entreprises
  * (le moteur IA InstaFact tourne sur le serveur partagé de la plateforme). Les utilisateurs des
- * entreprises ne peuvent pas le modifier.
+ * entreprises ne peuvent pas le modifier. L'endpoint Modal (Kimi) peut être surchargé
+ * par entreprise depuis la fiche Entreprises.
  */
 @Component({
   selector: 'app-platform-ai-settings-page',
@@ -54,12 +57,14 @@ interface InferenceDeviceOption {
     InputTextModule,
     SelectButtonModule,
     FtPageHeaderComponent,
-    FtSkeletonComponent
+    FtSkeletonComponent,
+    ModalEndpointFieldsComponent,
+    RouterLink
   ],
   template: `
     <ft-page-header
       title="Configuration IA"
-      subtitle="Modèles et credentials cloud (OpenRouter ou Cursor) partagés par toutes les entreprises." />
+      subtitle="Valeurs par défaut pour toutes les entreprises. Un endpoint Modal dédié se configure sur la fiche de l'entreprise." />
 
     @if (loading()) {
       <ft-skeleton kind="line" count="5" />
@@ -86,7 +91,7 @@ interface InferenceDeviceOption {
         </p>
         @if (!d.isOllamaAssistantConfigured) {
           <p class="warn">
-            Le modèle assistant configuré est cloud (OpenRouter ou Cursor) : ce réglage s'applique aux modèles InstaFact IA locaux uniquement.
+            Le modèle assistant configuré est cloud (OpenRouter, Modal ou Cursor) : ce réglage s'applique aux modèles InstaFact IA locaux uniquement.
           </p>
         }
         @if (selectedInferenceDevice === 'CpuOnly' && isLargeAssistantModel()) {
@@ -326,6 +331,27 @@ interface InferenceDeviceOption {
         }
       </section>
 
+      <section class="card">
+        <h3>Modal (Kimi 3)</h3>
+        <p class="hint">
+          Endpoint OpenAI-compatible hébergé sur Modal (modèle moonshotai/Kimi-K3). Le token Bearer est
+          TOKEN_ID.TOKEN_SECRET (Proxy Auth). Laisser les champs token vides conserve la valeur déjà enregistrée.
+          Ne sélectionnez Kimi comme modèle d'import ou Studio que si vous acceptez le coût et la latence associés.
+          Pour un endpoint propre à une entreprise :
+          <a routerLink="/tenants">Entreprises</a> → menu ⋯ de la ligne, ou fiche → onglet Configuration IA.
+        </p>
+        <app-modal-endpoint-fields
+          [(enabled)]="modalEnabled"
+          [(displayName)]="modalDisplayName"
+          [(baseUrl)]="modalBaseUrl"
+          [(tokenId)]="modalTokenId"
+          [(tokenSecret)]="modalTokenSecret"
+          [apiKeyConfigured]="modalApiKeyConfigured"
+          [apiKeyLast4]="modalApiKeyLast4"
+          [urlPlaceholder]="modalUrlPlaceholder()"
+          [warning]="modalWarning()" />
+      </section>
+
       <div class="footer-actions">
         <p-button
           label="Enregistrer"
@@ -407,7 +433,7 @@ interface InferenceDeviceOption {
       .warn {
         margin: 0.65rem 0 0;
         font-size: 0.85rem;
-        color: var(--ft-warning, #b45309);
+        color: var(--ft-warning);
         line-height: 1.5;
       }
       .footer-actions {
@@ -438,6 +464,9 @@ export class PlatformAiSettingsPageComponent implements OnInit {
   protected readonly savedOpenRouterBaseUrl = signal<string>('');
   protected readonly savedCursorEnabled = signal<boolean>(false);
   protected readonly savedCursorDisplayName = signal<string>('');
+  protected readonly savedModalEnabled = signal<boolean>(false);
+  protected readonly savedModalDisplayName = signal<string>('');
+  protected readonly savedModalBaseUrl = signal<string>('');
 
   /** Liée par [(ngModel)] au sélecteur. */
   protected selectedModelRef = '';
@@ -460,6 +489,16 @@ export class PlatformAiSettingsPageComponent implements OnInit {
   protected cursorApiKey = '';
   protected cursorApiKeyConfigured = false;
   protected cursorApiKeyLast4: string | null = null;
+
+  /** Modal (Kimi 3) : token proxy partagé. */
+  protected modalEnabled = false;
+  protected modalDisplayName = '';
+  protected modalBaseUrl = '';
+  protected modalDefaultBaseUrl = '';
+  protected modalTokenId = '';
+  protected modalTokenSecret = '';
+  protected modalApiKeyConfigured = false;
+  protected modalApiKeyLast4: string | null = null;
 
   protected readonly inferenceDeviceOptions: InferenceDeviceOption[] = [
     {
@@ -590,6 +629,19 @@ export class PlatformAiSettingsPageComponent implements OnInit {
     this.cursorApiKey = '';
     this.savedCursorEnabled.set(this.cursorEnabled);
     this.savedCursorDisplayName.set(this.cursorDisplayName);
+
+    const modal = d.modal;
+    this.modalEnabled = modal?.isEnabled ?? false;
+    this.modalDisplayName = modal?.displayName ?? '';
+    this.modalBaseUrl = modal?.baseUrl ?? '';
+    this.modalDefaultBaseUrl = modal?.defaultBaseUrl || '';
+    this.modalApiKeyConfigured = modal?.isApiKeyConfigured ?? false;
+    this.modalApiKeyLast4 = modal?.apiKeyLast4 ?? null;
+    this.modalTokenId = '';
+    this.modalTokenSecret = '';
+    this.savedModalEnabled.set(this.modalEnabled);
+    this.savedModalDisplayName.set(this.modalDisplayName);
+    this.savedModalBaseUrl.set(this.modalBaseUrl);
   }
 
   protected hasChanges(): boolean {
@@ -603,7 +655,12 @@ export class PlatformAiSettingsPageComponent implements OnInit {
       || !!this.openRouterApiKey.trim()
       || this.cursorEnabled !== this.savedCursorEnabled()
       || this.cursorDisplayName !== this.savedCursorDisplayName()
-      || !!this.cursorApiKey.trim();
+      || !!this.cursorApiKey.trim()
+      || this.modalEnabled !== this.savedModalEnabled()
+      || this.modalDisplayName !== this.savedModalDisplayName()
+      || this.modalBaseUrl !== this.savedModalBaseUrl()
+      || !!this.modalTokenId.trim()
+      || !!this.modalTokenSecret.trim();
   }
 
   protected openRouterKeyPlaceholder(): string {
@@ -616,6 +673,11 @@ export class PlatformAiSettingsPageComponent implements OnInit {
     return this.cursorApiKeyConfigured
       ? `••••••••${this.cursorApiKeyLast4 ?? ''}`
       : 'cursor_…';
+  }
+
+  protected modalUrlPlaceholder(): string {
+    return this.modalDefaultBaseUrl
+      || 'https://…--ep-kimi-k3-server.us-west.modal.direct/v1';
   }
 
   protected needsCursorKeyWarning(): boolean {
@@ -661,6 +723,25 @@ export class PlatformAiSettingsPageComponent implements OnInit {
     return usesCloud && (!this.openRouterEnabled || !hasKey);
   }
 
+  protected modalWarning(): string | null {
+    if (!this.needsModalKeyWarning()) {
+      return null;
+    }
+    return "Un modèle Modal est sélectionné mais le token n'est pas configuré. Les appels Kimi échoueront jusqu'à saisie du TOKEN_ID et du TOKEN_SECRET.";
+  }
+
+  protected needsModalKeyWarning(): boolean {
+    const refs = [
+      this.selectedModelRef,
+      this.selectedImportModelRef,
+      this.selectedStudioModelRef
+    ];
+    const usesModal = refs.some(r => r.toLowerCase().startsWith('modal:'));
+    const hasKey = this.modalApiKeyConfigured
+      || (!!this.modalTokenId.trim() && !!this.modalTokenSecret.trim());
+    return usesModal && (!this.modalEnabled || !hasKey);
+  }
+
   protected inferenceDeviceHint(): string {
     const option = this.inferenceDeviceOptions.find(o => o.value === this.selectedInferenceDevice);
     const base = option?.description ?? '';
@@ -687,6 +768,11 @@ export class PlatformAiSettingsPageComponent implements OnInit {
     const studioAiModelRef = this.selectedStudioModelRef ? this.selectedStudioModelRef : null;
     const apiKey = this.openRouterApiKey.trim();
     const cursorApiKey = this.cursorApiKey.trim();
+    const modalTokenId = this.modalTokenId.trim();
+    const modalTokenSecret = this.modalTokenSecret.trim();
+    const modalApiKey = modalTokenId && modalTokenSecret
+      ? `${modalTokenId}.${modalTokenSecret}`
+      : null;
     this.api.update({
       modelRef,
       invoiceImportModelRef,
@@ -702,6 +788,12 @@ export class PlatformAiSettingsPageComponent implements OnInit {
         isEnabled: this.cursorEnabled,
         displayName: this.cursorDisplayName.trim() || null,
         apiKey: cursorApiKey || null
+      },
+      modal: {
+        isEnabled: this.modalEnabled,
+        displayName: this.modalDisplayName.trim() || null,
+        baseUrl: this.modalBaseUrl.trim() || null,
+        apiKey: modalApiKey
       }
     }).subscribe({
       next: (res) => {
@@ -710,7 +802,7 @@ export class PlatformAiSettingsPageComponent implements OnInit {
           this.toast.add({
             severity: 'success',
             summary: 'Configuration IA enregistrée',
-            detail: 'Les modèles et credentials cloud (OpenRouter ou Cursor) sont à jour.'
+            detail: 'Les modèles et credentials cloud (OpenRouter, Modal ou Cursor) sont à jour.'
           });
         } else {
           this.toast.add({ severity: 'error', summary: 'Erreur', detail: res.message ?? '' });

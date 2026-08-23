@@ -22,6 +22,8 @@ public sealed class ImportBankStatementFromFileHandler
     private readonly ICursorAgentClient? _cursorAgentClient;
     private readonly IOllamaModelReadinessChecker _readinessChecker;
     private readonly IPlatformAiSettingsService _platformAiSettings;
+    private readonly IModalCredentialsResolver _modalCredentials;
+    private readonly ITenantContext _tenantContext;
     private readonly IOllamaInferenceProfileResolver _inferenceProfileResolver;
     private readonly ILogger<ImportBankStatementFromFileHandler> _logger;
     private readonly OllamaSettings _ollamaSettings;
@@ -75,7 +77,9 @@ Schéma :
         ILogger<ImportBankStatementFromFileHandler> logger,
         IOptions<OllamaSettings> ollamaSettings,
         ICursorAgentClient? cursorAgentClient = null,
-        IOptions<CursorSdkSettings>? cursorSdkSettings = null)
+        IOptions<CursorSdkSettings>? cursorSdkSettings = null,
+        IModalCredentialsResolver? modalCredentials = null,
+        ITenantContext? tenantContext = null)
     {
         _ollamaClient = ollamaClient;
         _openAiClient = openAiClient;
@@ -86,6 +90,8 @@ Schéma :
         _logger = logger;
         _ollamaSettings = ollamaSettings.Value;
         _cursorSdkSettings = cursorSdkSettings?.Value ?? new CursorSdkSettings();
+        _modalCredentials = modalCredentials ?? ModalCredentialsFallback.ForPlatform(platformAiSettings);
+        _tenantContext = tenantContext ?? ModalCredentialsFallback.EmptyTenant;
     }
 
     public async Task<Result<LlmBankStatementExtraction>> ExtractAsync(
@@ -117,6 +123,14 @@ Schéma :
                 if (string.IsNullOrEmpty(credentials.ApiKey))
                     return Result.Failure<LlmBankStatementExtraction>(Error.Validation("BankStatementImport",
                         "Clé OpenRouter manquante. Configurez-la dans le back-office plateforme > Configuration IA (OpenRouter)."));
+                break;
+            }
+            case LlmProviderKind.Modal:
+            {
+                var credentials = await _modalCredentials.ResolveAsync(_tenantContext.TenantId, cancellationToken);
+                if (string.IsNullOrEmpty(credentials.ApiKey) || string.IsNullOrWhiteSpace(credentials.BaseUrl))
+                    return Result.Failure<LlmBankStatementExtraction>(Error.Validation("BankStatementImport",
+                        ModalCredentialMessages.Unavailable(credentials)));
                 break;
             }
             case LlmProviderKind.Cursor:
@@ -213,22 +227,41 @@ Analyse ce relevé bancaire tunisien et extrais toutes les opérations.
             break;
         }
         case LlmProviderKind.OpenRouter:
+        case LlmProviderKind.Modal:
         {
-            var openRouter = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
+            string baseUrl;
+            string apiKey;
+            OpenAiCompatibleCallOptions? options = null;
+            if (modelRef.Kind == LlmProviderKind.Modal)
+            {
+                var modal = await _modalCredentials.ResolveAsync(_tenantContext.TenantId, cancellationToken);
+                baseUrl = modal.BaseUrl;
+                apiKey = modal.ApiKey!;
+                options = OpenAiCompatibleCallOptions.ForModal(new ModalSettings(), sessionId: null);
+            }
+            else
+            {
+                var openRouter = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
+                baseUrl = openRouter.BaseUrl;
+                apiKey = openRouter.ApiKey!;
+            }
+
             var messages = new List<OpenAiChatMessagePayload>
             {
                 new() { Role = "system", Content = SystemPrompt },
                 new() { Role = "user", Content = userPrompt }
             };
             await foreach (var chunk in _openAiClient.StreamChatAsOllamaCompatibleAsync(
-                               openRouter.BaseUrl,
-                               openRouter.ApiKey!,
+                               baseUrl,
+                               apiKey,
                                modelRef.ProviderModelId,
                                messages,
                                Array.Empty<OllamaToolDefinition>(),
                                0d,
                                MaxOutputTokens,
-                               cancellationToken))
+                               cancellationToken,
+                               seed: null,
+                               options))
             {
                 if (!string.IsNullOrEmpty(chunk.Message?.Content))
                     sb.Append(chunk.Message.Content);

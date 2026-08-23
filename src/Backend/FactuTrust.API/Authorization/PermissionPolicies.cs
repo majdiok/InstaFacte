@@ -25,6 +25,11 @@ public static class PermissionPolicies
     public const string DeliveryNotesUpdate = "perm:" + Permissions.DeliveryNotes.Update;
     public const string DeliveryNotesDelete = "perm:" + Permissions.DeliveryNotes.Delete;
 
+    public const string SalesReturnNotesCreate = "perm:" + Permissions.SalesReturnNotes.Create;
+    public const string SalesReturnNotesRead = "perm:" + Permissions.SalesReturnNotes.Read;
+    public const string SalesReturnNotesUpdate = "perm:" + Permissions.SalesReturnNotes.Update;
+    public const string SalesReturnNotesDelete = "perm:" + Permissions.SalesReturnNotes.Delete;
+
     public const string InvoicesCreate = "perm:" + Permissions.Invoices.Create;
     public const string InvoicesRead = "perm:" + Permissions.Invoices.Read;
     public const string InvoicesUpdate = "perm:" + Permissions.Invoices.Update;
@@ -81,6 +86,11 @@ public static class PermissionPolicies
     public const string StockTransfersRead = "perm:" + Permissions.StockTransfers.Read;
     public const string StockTransfersUpdate = "perm:" + Permissions.StockTransfers.Update;
     public const string StockTransfersDelete = "perm:" + Permissions.StockTransfers.Delete;
+
+    public const string StockVouchersCreate = "perm:" + Permissions.StockVouchers.Create;
+    public const string StockVouchersRead = "perm:" + Permissions.StockVouchers.Read;
+    public const string StockVouchersUpdate = "perm:" + Permissions.StockVouchers.Update;
+    public const string StockVouchersDelete = "perm:" + Permissions.StockVouchers.Delete;
 
     public const string InventoryCreate = "perm:" + Permissions.Inventory.Create;
     public const string InventoryRead = "perm:" + Permissions.Inventory.Read;
@@ -189,4 +199,31 @@ public static class PermissionPolicies
 
     public const string HonorairesPaymentsCreate = "perm:" + Permissions.HonorairesPayments.Create;
     public const string HonorairesPaymentsRead = "perm:" + Permissions.HonorairesPayments.Read;
+
+    public const string ProjectsRead = "perm:" + Permissions.Projects.Read;
+    public const string ProjectsCreate = "perm:" + Permissions.Projects.Create;
+    public const string ProjectsUpdate = "perm:" + Permissions.Projects.Update;
+    public const string ProjectsDelete = "perm:" + Permissions.Projects.Delete;
+    public const string ProjectsManageTeam = "perm:" + Permissions.Projects.ManageTeam;
+
+    public const string ProjectTasksCreate = "perm:" + Permissions.ProjectTasks.Create;
+    public const string ProjectTasksRead = "perm:" + Permissions.ProjectTasks.Read;
+    public const string ProjectTasksUpdate = "perm:" + Permissions.ProjectTasks.Update;
+    public const string ProjectTasksDelete = "perm:" + Permissions.ProjectTasks.Delete;
+
+    public const string ProjectTimeCreate = "perm:" + Permissions.ProjectTime.Create;
+    public const string ProjectTimeRead = "perm:" + Permissions.ProjectTime.Read;
+    public const string ProjectTimeSubmit = "perm:" + Permissions.ProjectTime.Submit;
+    public const string ProjectTimeValidate = "perm:" + Permissions.ProjectTime.Validate;
+
+    public const string ProjectBillingRead = "perm:" + Permissions.ProjectBilling.Read;
+    public const string ProjectBillingCreate = "perm:" + Permissions.ProjectBilling.Create;
+
+    public const string RecurringContractsRead = "perm:" + Permissions.RecurringContracts.Read;
+    public const string RecurringContractsCreate = "perm:" + Permissions.RecurringContracts.Create;
+    public const string RecurringContractsUpdate = "perm:" + Permissions.RecurringContracts.Update;
+    public const string RecurringContractsDelete = "perm:" + Permissions.RecurringContracts.Delete;
+    public const string RecurringContractsManage = "perm:" + Permissions.RecurringContracts.Manage;
+    public const string RecurringContractsRecordUsage = "perm:" + Permissions.RecurringContracts.RecordUsage;
+    public const string RecurringContractsTriggerBilling = "perm:" + Permissions.RecurringContracts.TriggerBilling;
 }

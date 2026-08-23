@@ -169,22 +169,33 @@ interface LineRow extends LinePromotionPreview {
           </div>
           <div class="lines-table-wrap">
             <table class="lines-table">
+              <colgroup>
+                <col class="col-article" />
+                <col class="col-designation" />
+                <col class="col-qty" />
+                <col class="col-unit" />
+                <col class="col-pu" />
+                <col class="col-origin" />
+                <col class="col-discount" />
+                <col class="col-total" />
+                <col class="col-actions" />
+              </colgroup>
               <thead>
                 <tr>
-                  <th style="width: 23%">Article (Recherche) *</th>
-                  <th style="width: 17%">Désignation</th>
-                  <th style="width: 10%">Qté *</th>
-                  <th style="width: 8%">Unité</th>
-                  <th style="width: 9%">P.U. HT</th>
-                  <th style="width: 8%">Origine</th>
-                  <th style="width: 9%">Remise %</th>
-                  <th style="width: 13%">Total HT</th>
-                  <th style="width: 10%"></th>
+                  <th>Article (Recherche) *</th>
+                  <th>Désignation</th>
+                  <th>Qté *</th>
+                  <th>Unité</th>
+                  <th>P.U. HT</th>
+                  <th>Origine</th>
+                  <th>Remise %</th>
+                  <th>Total HT</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 @for (line of lines; track $index) {
-                  <tr>
+                  <tr class="line-row-main">
                     <td>
                       <div class="product-cell">
                         <div class="product-cell-input">
@@ -196,6 +207,7 @@ interface LineRow extends LinePromotionPreview {
                             field="name"
                             [dropdown]="true"
                             [forceSelection]="true"
+                            appendTo="body"
                             [ngModelOptions]="{ standalone: true }"
                             placeholder="Rechercher un produit..."
                             styleClass="w-full"
@@ -222,9 +234,10 @@ interface LineRow extends LinePromotionPreview {
                       <input
                         pInputText
                         [value]="line.designation"
+                        [title]="line.designation"
                         disabled="true"
                         placeholder="-"
-                        class="w-full bg-gray-50" />
+                        class="w-full bg-gray-50 line-readonly-input" />
                     </td>
                     <td>
                       <p-inputNumber
@@ -235,37 +248,45 @@ interface LineRow extends LinePromotionPreview {
                         [minFractionDigits]="0"
                         [maxFractionDigits]="3"
                         mode="decimal"
-                        class="w-full">
+                        class="w-full"
+                        [inputStyle]="{ width: '100%' }">
                       </p-inputNumber>
                     </td>
                     <td>
                       <input
                         pInputText
                         [value]="line.unit"
+                        [title]="line.unit"
                         disabled="true"
                         placeholder="-"
-                        class="w-full bg-gray-50" />
+                        class="w-full bg-gray-50 line-readonly-input" />
                     </td>
                     <td>
-                      <div class="text-right px-2">
+                      <div class="text-right px-2 line-amount">
                         {{ line.unitPriceHT | number:'1.3-3' }}
                       </div>
                     </td>
-                    <td>
-                      @if (linePricing.resolving()) {
-                        <i class="pi pi-spin pi-spinner" pTooltip="Résolution du prix…"></i>
-                      } @else if (line.priceSource === 'ClientPrice') {
-                        <p-tag severity="success" value="Prix négocié"></p-tag>
-                      } @else if (line.priceSource === 'PriceList') {
-                        <p-tag severity="info" value="Grille"></p-tag>
-                      } @else if (line.priceSource) {
-                        <span class="text-muted">Catalogue</span>
-                      }
-                      @if (line.promotionEligible && line.promotionName) {
-                        <p-tag severity="success" [value]="'Promo : ' + line.promotionName"></p-tag>
-                      } @else if (line.promotionMinQuantityRequired && line.promotionName) {
-                        <small class="promo-hint">{{ line.promotionName }} : qty min. {{ line.promotionMinQuantityRequired }}</small>
-                      }
+                    <td class="cell-origin">
+                      <div class="origin-stack">
+                        @if (linePricing.resolving()) {
+                          <i class="pi pi-spin pi-spinner" pTooltip="Résolution du prix…"></i>
+                        } @else if (line.priceSource === 'ClientPrice') {
+                          <p-tag severity="success" value="Prix négocié"></p-tag>
+                        } @else if (line.priceSource === 'PriceList') {
+                          <p-tag severity="info" value="Grille"></p-tag>
+                        } @else if (line.priceSource) {
+                          <span class="text-muted">Catalogue</span>
+                        }
+                        @if (line.promotionEligible && line.promotionName) {
+                          <p-tag severity="success" [value]="'Promo : ' + line.promotionName"></p-tag>
+                        } @else if (line.promotionMinQuantityRequired && line.promotionName) {
+                          <small
+                            class="promo-hint"
+                            [pTooltip]="line.promotionName + ' : qty min. ' + line.promotionMinQuantityRequired">
+                            {{ line.promotionName }} : qty min. {{ line.promotionMinQuantityRequired }}
+                          </small>
+                        }
+                      </div>
                     </td>
                     <td>
                       <p-inputNumber
@@ -277,11 +298,12 @@ interface LineRow extends LinePromotionPreview {
                         [maxFractionDigits]="2"
                         mode="decimal"
                         placeholder="0"
-                        class="w-full">
+                        class="w-full"
+                        [inputStyle]="{ width: '100%' }">
                       </p-inputNumber>
                     </td>
                     <td>
-                      <div class="text-right px-2 font-bold">
+                      <div class="text-right px-2 font-bold line-amount">
                         {{ lineTotalHT(line) | number:'1.3-3' }}
                       </div>
                     </td>
@@ -297,8 +319,8 @@ interface LineRow extends LinePromotionPreview {
                       </app-button>
                     </td>
                   </tr>
-                  <tr> <!-- Optional Second Row for Description/Notes -->
-                     <td colspan="9" class="pb-4 border-b">
+                  <tr class="line-row-notes">
+                     <td colspan="9">
                         <input
                           pInputText
                           [(ngModel)]="line.notes"
@@ -496,13 +518,25 @@ interface LineRow extends LinePromotionPreview {
     }
     .lines-table {
       width: 100%;
+      min-width: 920px;
+      table-layout: fixed;
       border-collapse: collapse;
     }
+    .col-article { width: 24%; }
+    .col-designation { width: 16%; }
+    .col-qty { width: 8%; }
+    .col-unit { width: 8%; }
+    .col-pu { width: 10%; }
+    .col-origin { width: 14%; }
+    .col-discount { width: 8%; }
+    .col-total { width: 8%; }
+    .col-actions { width: 4%; }
     .lines-table th,
     .lines-table td {
-      padding: var(--spacing-4) var(--spacing-3);
+      padding: var(--spacing-2) var(--spacing-2);
       text-align: left;
-      vertical-align: top;
+      vertical-align: middle;
+      min-width: 0;
     }
     .lines-table th {
       font-size: var(--font-size-xs);
@@ -512,6 +546,70 @@ interface LineRow extends LinePromotionPreview {
       background: var(--color-background-subtle);
       font-weight: var(--font-weight-semibold);
       border-bottom: 1px solid var(--color-border-subtle);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .line-row-notes td {
+      padding-top: 0;
+      padding-bottom: var(--spacing-3);
+      vertical-align: top;
+      border-bottom: 1px solid var(--color-border-subtle);
+    }
+    .line-readonly-input {
+      width: 100%;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .line-amount {
+      font-variant-numeric: tabular-nums;
+    }
+    .origin-stack {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: var(--spacing-1);
+      min-width: 0;
+      max-width: 100%;
+    }
+    :host ::ng-deep .origin-stack .p-tag {
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .promo-hint {
+      display: block;
+      max-width: 100%;
+      font-size: var(--font-size-xs);
+      color: var(--color-text-secondary);
+      line-height: 1.3;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .text-muted {
+      color: var(--color-text-secondary);
+    }
+    :host ::ng-deep .lines-table p-autocomplete,
+    :host ::ng-deep .lines-table p-autocomplete .p-autocomplete {
+      width: 100%;
+      min-width: 0;
+    }
+    :host ::ng-deep .lines-table p-autocomplete .p-autocomplete-input {
+      width: 100%;
+      min-width: 0;
+    }
+    :host ::ng-deep .lines-table .p-autocomplete-panel {
+      min-width: 350px !important;
+    }
+    :host ::ng-deep .lines-table p-inputnumber,
+    :host ::ng-deep .lines-table p-inputnumber .p-inputnumber,
+    :host ::ng-deep .lines-table p-inputnumber .p-inputtext {
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
     }
     .form-actions {
       display: flex;

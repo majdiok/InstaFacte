@@ -7,7 +7,8 @@ public enum SearchEntityType
     DeliveryNote,
     Client,
     Product,
-    Supplier
+    Supplier,
+    SalesReturnNote
 }
 
 public interface IGlobalSearchProvider

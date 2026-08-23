@@ -281,6 +281,45 @@ public sealed class OllamaSettings
     /// </summary>
     public bool EnableStudioAiViewTools { get; set; }
 
+    /// <summary>
+    /// Moteur d'ÉTATS sur les tables réelles du tenant (<c>SqlReportEngine</c>) : agrégation faite par
+    /// SQL, jointures dérivées des clés étrangères réelles, accès filtré par
+    /// <c>SqlReportAccessPolicy</c>. False (défaut) = seules les sources historiques
+    /// (<c>ExistingDataSourceCatalog</c>) restent disponibles, comportement inchangé.
+    /// </summary>
+    public bool EnableStudioSqlReportEngine { get; set; }
+
+    /// <summary>
+    /// Outils d'ÉTATS de l'assistant Studio (<c>studio_list_report_sources</c>,
+    /// <c>studio_describe_report_source</c>, <c>studio_run_report</c>, <c>studio_plan_report</c>).
+    /// Sans effet si <see cref="EnableStudioSqlReportEngine"/> est false. False (défaut) = catalogue
+    /// d'outils strictement identique à aujourd'hui.
+    /// </summary>
+    public bool EnableStudioAiReportTools { get; set; }
+
+    /// <summary>
+    /// Applique le classement par domaine de <c>SqlReportAccessPolicy</c> AUSSI aux fenêtres
+    /// (<c>studio_plan_view</c>, concepteur de fenêtres). False (défaut) = introspection historique
+    /// inchangée. Passer un runbook d'impact avant activation : des fenêtres enregistrées sur des
+    /// tables sensibles cesseraient de se charger.
+    /// </summary>
+    public bool EnableStudioSqlSourceGuard { get; set; }
+
+    /// <summary>
+    /// Raccourci DÉTERMINISTE d'état : quand la demande de l'utilisateur désigne sans ambiguïté un
+    /// état prêt à l'emploi, celui-ci est exécuté AVANT l'appel au modèle (même patron que le
+    /// raccourci de contrôle de conformité). Rend le résultat indépendant de la capacité du modèle
+    /// configuré à émettre un appel d'outil. Sans effet si <see cref="EnableStudioAiReportTools"/>
+    /// ou <see cref="EnableStudioSqlReportEngine"/> est false.
+    /// </summary>
+    public bool EnableStudioReportShortcut { get; set; }
+
+    /// <summary>Lignes de DÉTAIL renvoyées par un état SQL. Les agrégats restent exacts au-delà.</summary>
+    public int StudioReportMaxRows { get; set; } = 5000;
+
+    /// <summary>Délai maximal d'une requête d'état, en secondes (protection de la base tenant).</summary>
+    public int StudioReportCommandTimeoutSeconds { get; set; } = 30;
+
     /// <summary>Maximum conversation messages included in LLM context. Lower values suit smaller models.</summary>
     public int MaxContextMessages { get; set; } = 10;
 

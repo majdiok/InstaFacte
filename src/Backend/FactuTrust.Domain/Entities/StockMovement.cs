@@ -32,6 +32,10 @@ public sealed class StockMovement : Entity
     /// <summary>Vrai si ce mouvement traduit une rupture partiellement honorée.</summary>
     public bool HasShortfall => ShortfallQuantity is > 0;
 
+    public Guid? ProductLotId { get; private set; }
+    public Guid? SerialId { get; private set; }
+    public Guid? ValuationLayerId { get; private set; }
+
     private StockMovement() { }
 
     internal static StockMovement Create(
@@ -43,7 +47,10 @@ public sealed class StockMovement : Entity
         decimal balanceAfter,
         string? reference = null,
         string? notes = null,
-        decimal? shortfallQuantity = null)
+        decimal? shortfallQuantity = null,
+        Guid? productLotId = null,
+        Guid? serialId = null,
+        Guid? valuationLayerId = null)
     {
         // Use explicit constructor call to ensure Entity base class generates the Id
         var movement = new StockMovement();
@@ -57,6 +64,9 @@ public sealed class StockMovement : Entity
         movement.Notes = notes?.Trim();
         movement.OccurredAt = DateTime.UtcNow;
         movement.ShortfallQuantity = shortfallQuantity is > 0 ? shortfallQuantity : null;
+        movement.ProductLotId = productLotId;
+        movement.SerialId = serialId;
+        movement.ValuationLayerId = valuationLayerId;
         return movement;
     }
 }

@@ -19,6 +19,16 @@ export enum PurchaseReceiptStatus {
   Invoiced = 4
 }
 
+export interface PurchaseReceiptLineAllocations {
+  lineId: string;
+  allocations: {
+    quantity: number;
+    lotNumber?: string | null;
+    expiryDate?: string | null;
+    serialNumber?: string | null;
+  }[];
+}
+
 export interface PurchaseReceiptListItem {
   id: string;
   number: string;
@@ -239,7 +249,13 @@ export class PurchaseReceiptService {
     return this.http.put<ApiResponse<object>>(`${this.API_URL}/${id}`, request);
   }
 
-  validatePurchaseReceipt(id: string): Observable<ApiResponse<object>> {
+  validatePurchaseReceipt(
+    id: string,
+    lineAllocations?: PurchaseReceiptLineAllocations[]
+  ): Observable<ApiResponse<object>> {
+    if (lineAllocations && lineAllocations.length > 0) {
+      return this.http.post<ApiResponse<object>>(`${this.API_URL}/${id}/validate`, lineAllocations);
+    }
     return this.http.patch<ApiResponse<object>>(`${this.API_URL}/${id}/validate`, {});
   }
 

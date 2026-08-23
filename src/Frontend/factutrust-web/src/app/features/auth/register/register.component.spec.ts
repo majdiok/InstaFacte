@@ -1,9 +1,9 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick, discardPeriodicTasks } from '@angular/core/testing';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { provideRouter, Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { of, throwError } from 'rxjs';
+import { of, throwError, NEVER } from 'rxjs';
 import { RegisterComponent } from './register.component';
 import { AuthService, ApiResponse, AuthResponse, RegisterRequest } from '@core/services/auth.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
@@ -267,6 +267,10 @@ describe('RegisterComponent', () => {
       });
     });
 
+    afterEach(() => {
+      component.ngOnDestroy();
+    });
+
     it('should not submit if form is invalid', () => {
       component.form.patchValue({ email: '' }); // Make invalid
       
@@ -381,6 +385,32 @@ describe('RegisterComponent', () => {
 
       expect(authService.register).not.toHaveBeenCalled();
     });
+
+    it('should rotate loading messages while waiting for the API', fakeAsync(() => {
+      authService.register.and.returnValue(NEVER);
+
+      component.onSubmit();
+
+      expect(component.loading()).toBeTrue();
+      expect(component.loadingMessage()).toContain('Création de votre espace');
+
+      tick(6_000);
+      expect(component.loadingMessage()).toContain('Configuration de la base');
+
+      component.ngOnDestroy();
+      discardPeriodicTasks();
+    }));
+
+    it('should surface a timeout message after 120 seconds', fakeAsync(() => {
+      authService.register.and.returnValue(NEVER);
+
+      component.onSubmit();
+      tick(120_000);
+
+      expect(component.error()).toContain('plus de temps que prévu');
+      expect(component.loading()).toBeFalse();
+      discardPeriodicTasks();
+    }));
   });
 
   describe('onNifBlur', () => {

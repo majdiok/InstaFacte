@@ -147,6 +147,7 @@ public sealed record ReceiveGoodsLineDto
 {
     public Guid LineId { get; init; }
     public decimal ReceivedQuantity { get; init; }
+    public IReadOnlyList<FactuTrust.Application.Common.Interfaces.Services.StockAllocationInput>? Allocations { get; init; }
 }
 
 /// <summary>

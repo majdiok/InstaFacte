@@ -26,6 +26,7 @@ public sealed record SupplierInvoiceListDto
     public DateTime? PaidAt { get; init; }
     public Guid? WarehouseId { get; init; }
     public string? WarehouseName { get; init; }
+    public Guid? SourcePurchaseReceiptId { get; init; }
     public bool HasFixedAssetLines { get; init; }
 }
 
@@ -231,4 +232,33 @@ public sealed record LinkedSupplierInvoiceSummaryDto
     public SupplierInvoiceStatus Status { get; init; }
     public string StatusDisplay { get; init; } = null!;
     public decimal TotalTTC { get; init; }
+}
+
+/// <summary>
+/// Request body for creating a standalone supplier invoice (no purchase order / receipt).
+/// </summary>
+public sealed record CreateStandaloneSupplierInvoiceDto
+{
+    public Guid SupplierId { get; init; }
+    public string InvoiceNumber { get; init; } = string.Empty;
+    public DateTime InvoiceDate { get; init; }
+    public int PaymentTermDays { get; init; } = 30;
+    public string? ExternalReference { get; init; }
+    public string? Notes { get; init; }
+    public string? PaymentMethod { get; init; }
+    public Guid? WarehouseId { get; init; }
+    public bool UseSuggestedNumber { get; init; }
+    public IReadOnlyList<CreateStandaloneSupplierInvoiceLineDto> Lines { get; init; }
+        = Array.Empty<CreateStandaloneSupplierInvoiceLineDto>();
+}
+
+public sealed record CreateStandaloneSupplierInvoiceLineDto
+{
+    public Guid ProductId { get; init; }
+    public decimal Quantity { get; init; }
+    public decimal? UnitPriceHt { get; init; }
+    public decimal? DiscountPercent { get; init; }
+    public bool IsFixedAsset { get; init; }
+    public string? AssetAccountNumber { get; init; }
+    public Guid? DepreciationRateCategoryId { get; init; }
 }

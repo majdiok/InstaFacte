@@ -127,6 +127,10 @@ export class InventoryWizardComponent implements OnInit, AfterViewChecked {
             this.selectedProductIds().size > 0;
     });
 
+    lineKey(line: { productId: string; productLotId?: string | null }): string {
+        return `${line.productId}::${line.productLotId ?? ''}`;
+    }
+
     showWarehousePicker = computed(() => this.warehouses.length > 1);
 
     wizardSteps = computed(() => {
@@ -355,10 +359,19 @@ export class InventoryWizardComponent implements OnInit, AfterViewChecked {
         if (!inventory || !product) return;
 
         this.submitting.set(true);
-        this.inventoryService.recordCount(inventory.inventoryId, {
-            productId: product.productId,
-            countedQuantity: this.countedQuantity()
-        }).subscribe({
+        this.inventoryService.recordCount(
+            inventory.inventoryId,
+            product.productLotId
+                ? {
+                    productId: product.productId,
+                    countedQuantity: this.countedQuantity(),
+                    productLotId: product.productLotId
+                }
+                : {
+                    productId: product.productId,
+                    countedQuantity: this.countedQuantity()
+                }
+        ).subscribe({
             next: (response) => {
                 if (response.success && response.data) {
                     this.lastCountResult.set(response.data);

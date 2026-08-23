@@ -147,7 +147,7 @@ public sealed class AccountingSettings
     /// <summary>
     /// Active le mode de paiement « traite / effet de commerce » : exposition de l'option à
     /// l'encaissement (ventes &amp; achats), saisie de l'échéance, écritures comptables d'effets
-    /// (réception 412/403, puis encaissement/paiement à échéance 532/412 ou 403/532) et l'action
+    /// (réception 413/403, puis encaissement/paiement à échéance 532/413 ou 403/532) et l'action
     /// « Encaisser l'effet ». OFF = l'option traite est refusée à l'enregistrement d'un paiement et
     /// les endpoints de règlement d'effet sont inertes (comportement historique intégralement préservé).
     /// </summary>
@@ -187,18 +187,18 @@ public sealed class AccountingSettings
 
     /// <summary>
     /// Active le lien trésorerie paie : enregistrement des paiements de salaires, écritures JB/JC
-    /// et lettrage sur le compte 421. OFF = comportement historique (export virement CSV seul).
+    /// et lettrage sur le compte 425. OFF = comportement historique (export virement CSV seul).
     /// </summary>
     public bool PayrollTreasuryLinkEnabled { get; set; } = true;
 
     /// <summary>
-    /// Ventile le crédit 421 par salarié (comptes auxiliaires) à la validation de la paie.
-    /// OFF = une seule ligne 421 agrégée (comportement historique).
+    /// Ventile le crédit 425 par salarié (comptes auxiliaires) à la validation de la paie.
+    /// OFF = une seule ligne 425 agrégée (comportement historique).
     /// </summary>
     public bool PayrollEmployeeAuxiliaryEnabled { get; set; } = true;
 
     /// <summary>Compte SCE pour les prêts salariés en cours (retenues mensuelles).</summary>
-    public string PayrollEmployeeLoansAccount { get; set; } = "425.1";
+    public string PayrollEmployeeLoansAccount { get; set; } = "421.1";
 
     /// <summary>Compte SCE pour les saisies sur salaire et pensions alimentaires.</summary>
     public string PayrollGarnishmentsAccount { get; set; } = "427";

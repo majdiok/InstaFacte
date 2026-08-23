@@ -15,6 +15,8 @@ import {
   CustomRecord,
   CustomReport,
   CustomView,
+  ReportFieldMeta,
+  ReportPreset,
   ReportResult,
   ReportSource,
   RunReportPreviewRequest,
@@ -140,6 +142,16 @@ export class StudioService {
 
   getReportSources(): Observable<ApiResponse<ReportSource[]>> {
     return this.http.get<ApiResponse<ReportSource[]>>(`${this.base}/reports/sources`);
+  }
+
+  /** Champs d'une source. Les sources `sql` sont introspectées à la demande, pas au chargement. */
+  getReportSourceFields(kind: string, dataSourceRef: string): Observable<ApiResponse<ReportFieldMeta[]>> {
+    return this.http.get<ApiResponse<ReportFieldMeta[]>>(
+      `${this.base}/reports/sources/${encodeURIComponent(kind)}/${encodeURIComponent(dataSourceRef)}/fields`);
+  }
+
+  getReportPresets(): Observable<ApiResponse<ReportPreset[]>> {
+    return this.http.get<ApiResponse<ReportPreset[]>>(`${this.base}/reports/presets`);
   }
 
   getReport(id: string): Observable<ApiResponse<CustomReport>> {

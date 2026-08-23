@@ -7,6 +7,7 @@ using FactuTrust.Domain.Entities.Channels;
 using FactuTrust.Domain.Entities.Storefront;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Events;
+using FactuTrust.Domain.ProductOnboarding;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -116,6 +117,9 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
     // Configuration IA plateforme (modèle LLM global, singleton)
     public DbSet<PlatformAiSettings> PlatformAiSettings => Set<PlatformAiSettings>();
 
+    /// <summary>Per-tenant Modal (Kimi) endpoint overrides (Master DB).</summary>
+    public DbSet<TenantModalSettings> TenantModalSettings => Set<TenantModalSettings>();
+
     // Canaux externes (WhatsApp/Telegram) — index de routage master : identité externe → tenant/user.
     // Source de vérité du lien = tables channel de la base tenant (revalidées à chaque traitement).
     public DbSet<ChannelExternalRoute> ChannelExternalRoutes => Set<ChannelExternalRoute>();
@@ -146,6 +150,11 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.ToTable("Users");
             entity.Property(u => u.FirstName).HasMaxLength(100).IsRequired();
             entity.Property(u => u.LastName).HasMaxLength(100).IsRequired();
+            entity.Property(u => u.ProductOnboardingStatus)
+                .HasConversion<byte>()
+                .HasDefaultValue(ProductOnboardingStatus.Completed);
+            entity.Property(u => u.ProductOnboardingVersion).HasDefaultValue(1);
+            entity.Property(u => u.ProductOnboardingChecklistJson).HasMaxLength(2000);
             entity.HasIndex(u => u.Email).IsUnique();
             entity.HasMany(u => u.ModuleGrants)
                 .WithOne()
@@ -548,8 +557,31 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Property(p => p.CursorDisplayName).HasMaxLength(200);
             entity.Property(p => p.CursorEncryptedApiKey).HasMaxLength(4000);
             entity.Property(p => p.CursorApiKeyLast4).HasMaxLength(4);
+            entity.Property(p => p.ModalIsEnabled).HasDefaultValue(false);
+            entity.Property(p => p.ModalDisplayName).HasMaxLength(200);
+            entity.Property(p => p.ModalBaseUrl).HasMaxLength(500);
+            entity.Property(p => p.ModalEncryptedApiKey).HasMaxLength(4000);
+            entity.Property(p => p.ModalApiKeyLast4).HasMaxLength(4);
             entity.Property(p => p.CreatedBy).HasMaxLength(450);
             entity.Property(p => p.UpdatedBy).HasMaxLength(450);
+        });
+
+        builder.Entity<TenantModalSettings>(entity =>
+        {
+            entity.ToTable("TenantModalSettings");
+            entity.HasKey(p => p.Id);
+            entity.HasIndex(p => p.TenantId).IsUnique();
+            entity.Property(p => p.DisplayName).HasMaxLength(200);
+            entity.Property(p => p.BaseUrl).HasMaxLength(500);
+            entity.Property(p => p.EncryptedApiKey).HasMaxLength(4000);
+            entity.Property(p => p.ApiKeyLast4).HasMaxLength(4);
+            entity.Property(p => p.IsEnabled).HasDefaultValue(false);
+            entity.Property(p => p.CreatedBy).HasMaxLength(450);
+            entity.Property(p => p.UpdatedBy).HasMaxLength(450);
+            entity.HasOne<Tenant>()
+                .WithMany()
+                .HasForeignKey(p => p.TenantId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // Canaux externes — routage master (identité externe → tenant/user)
@@ -1299,7 +1331,28 @@ public class ApplicationUser : IdentityUser<Guid>
     public string? RefreshToken { get; set; }
     public DateTime? RefreshTokenExpiryTime { get; set; }
 
+    /// <summary>
+    /// SQL default is <see cref="ProductOnboardingStatus.Completed"/> so existing rows are not
+    /// prompted. Call <see cref="ApplyNewInteractiveProductOnboarding"/> for new interactive users.
+    /// </summary>
+    public ProductOnboardingStatus ProductOnboardingStatus { get; set; } = ProductOnboardingStatus.Completed;
+
+    public int ProductOnboardingVersion { get; set; } = ProductOnboardingDefaults.CatalogVersion;
+
+    public string? ProductOnboardingChecklistJson { get; set; }
+
+    public DateTime? ProductOnboardingUpdatedAt { get; set; }
+
     public ICollection<UserModuleGrant> ModuleGrants { get; set; } = new List<UserModuleGrant>();
+
+    public void ApplyNewInteractiveProductOnboarding()
+    {
+        var seed = ProductOnboardingDefaults.ForNewInteractiveUser();
+        ProductOnboardingStatus = seed.Status;
+        ProductOnboardingVersion = seed.Version;
+        ProductOnboardingChecklistJson = seed.ChecklistJson;
+        ProductOnboardingUpdatedAt = seed.UpdatedAt;
+    }
 }
 
 /// <summary>

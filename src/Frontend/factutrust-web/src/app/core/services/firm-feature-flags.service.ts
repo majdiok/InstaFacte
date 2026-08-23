@@ -23,7 +23,7 @@ const DEFAULT_FLAGS: FirmFeatureFlags = {
   fiscalOpsV2: true,
   firmGovernance: true,
   firmDecisionTables: true,
-  firmRevision: false,
+  firmRevision: true,
   consoleFirmErrors: false
 };
 

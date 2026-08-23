@@ -58,5 +58,16 @@ describe('assistant-progress-display', () => {
       });
       expect(meta).toContain('Modèle Cursor prêt');
     });
+
+    it('labels modal models as cloud ready', () => {
+      const meta = getAssistantStepMeta({
+        key: 'provider_availability',
+        code: 'provider_availability',
+        label: "Initialisation de l'assistant",
+        status: 'completed',
+        detail: 'modal:moonshotai/Kimi-K3'
+      });
+      expect(meta).toContain('Modèle cloud prêt');
+    });
   });
 });

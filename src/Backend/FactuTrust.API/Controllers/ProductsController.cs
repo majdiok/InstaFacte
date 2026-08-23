@@ -5,6 +5,7 @@ using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Products.Commands;
 using FactuTrust.Application.Features.Products.Queries;
+using FactuTrust.Application.Features.Stock.Queries;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
@@ -368,6 +369,136 @@ public class ProductsController : ControllerBase
         await _productRepository.ClearImageUrlAsync(id, cancellationToken);
 
         return Ok(ApiResponse<object>.Ok(null!, "Image supprimée."));
+    }
+
+    [HttpGet("attributes")]
+    [Authorize(Policy = PermissionPolicies.ProductsRead)]
+    public async Task<IActionResult> ListAttributes(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new ListProductAttributesQuery(), cancellationToken);
+        return Ok(ApiResponse<IReadOnlyList<ProductAttributeDto>>.Ok(result));
+    }
+
+    [HttpPost("attributes")]
+    [Authorize(Policy = PermissionPolicies.ProductsCreate)]
+    public async Task<IActionResult> CreateAttribute(
+        [FromBody] CreateProductAttributeCommand command,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(command, cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<Guid>.Fail(result.Error.Description));
+        return Ok(ApiResponse<Guid>.Ok(result.Value, "Attribut créé"));
+    }
+
+    [HttpGet("attributes/{id:guid}")]
+    [Authorize(Policy = PermissionPolicies.ProductsRead)]
+    public async Task<IActionResult> GetAttribute(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetProductAttributeByIdQuery(id), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<ProductAttributeDto>.Fail(result.Error.Description));
+        return Ok(ApiResponse<ProductAttributeDto>.Ok(result.Value));
+    }
+
+    [HttpPut("attributes/{id:guid}")]
+    [Authorize(Policy = PermissionPolicies.ProductsUpdate)]
+    public async Task<IActionResult> UpdateAttribute(
+        Guid id,
+        [FromBody] UpdateProductAttributeRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new UpdateProductAttributeCommand(id, request.Name, request.SortOrder),
+            cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<ProductAttributeDto>.Fail(result.Error.Description));
+        return Ok(ApiResponse<ProductAttributeDto>.Ok(result.Value, "Attribut mis à jour"));
+    }
+
+    [HttpDelete("attributes/{id:guid}")]
+    [Authorize(Policy = PermissionPolicies.ProductsUpdate)]
+    public async Task<IActionResult> DeleteAttribute(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new DeleteProductAttributeCommand(id), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+        return Ok(ApiResponse<object>.Ok(null!, "Attribut supprimé"));
+    }
+
+    [HttpPost("attributes/{id:guid}/values")]
+    [Authorize(Policy = PermissionPolicies.ProductsUpdate)]
+    public async Task<IActionResult> AddAttributeValue(
+        Guid id,
+        [FromBody] AddProductAttributeValueRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new AddProductAttributeValueCommand(id, request.Code, request.Name, request.SortOrder),
+            cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<Guid>.Fail(result.Error.Description));
+        return Ok(ApiResponse<Guid>.Ok(result.Value, "Valeur ajoutée"));
+    }
+
+    [HttpPut("attributes/{definitionId:guid}/values/{valueId:guid}")]
+    [Authorize(Policy = PermissionPolicies.ProductsUpdate)]
+    public async Task<IActionResult> UpdateAttributeValue(
+        Guid definitionId,
+        Guid valueId,
+        [FromBody] UpdateProductAttributeValueRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new UpdateProductAttributeValueCommand(definitionId, valueId, request.Name, request.SortOrder),
+            cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+        return Ok(ApiResponse<object>.Ok(null!, "Valeur mise à jour"));
+    }
+
+    [HttpDelete("attributes/{definitionId:guid}/values/{valueId:guid}")]
+    [Authorize(Policy = PermissionPolicies.ProductsUpdate)]
+    public async Task<IActionResult> DeleteAttributeValue(
+        Guid definitionId,
+        Guid valueId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new DeleteProductAttributeValueCommand(definitionId, valueId),
+            cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+        return Ok(ApiResponse<object>.Ok(null!, "Valeur supprimée"));
+    }
+
+    [HttpPost("{id:guid}/variants")]
+    [Authorize(Policy = PermissionPolicies.ProductsCreate)]
+    public async Task<IActionResult> GenerateVariants(
+        Guid id,
+        [FromBody] IReadOnlyList<GenerateProductVariantAxis> axes,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GenerateProductVariantsCommand(id, axes), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<IReadOnlyList<Guid>>.Fail(result.Error.Description));
+        return Ok(ApiResponse<IReadOnlyList<Guid>>.Ok(result.Value, "Variantes générées"));
+    }
+
+    [HttpPost("{id:guid}/opening-valuation-layer")]
+    [Authorize(Policy = PermissionPolicies.ProductsUpdate)]
+    public async Task<IActionResult> CreateOpeningValuationLayer(
+        Guid id,
+        [FromBody] CreateOpeningValuationLayerCommand command,
+        CancellationToken cancellationToken)
+    {
+        if (command.ProductId != id && command.ProductId != Guid.Empty)
+            return BadRequest(ApiResponse<object>.Fail("L'identifiant produit ne correspond pas."));
+
+        var result = await _mediator.Send(command with { ProductId = id }, cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+        return Ok(ApiResponse<object>.Ok(null!, "Couche d'ouverture créée"));
     }
 }
 

@@ -38,9 +38,15 @@ public sealed class CreateSubAccountCommandHandler : IRequestHandler<CreateSubAc
     public async Task<Result<Guid>> Handle(CreateSubAccountCommand request, CancellationToken cancellationToken)
     {
         var r = request.Request;
+        var accountNumber = (r.AccountNumber ?? string.Empty).Trim();
+        var existing = await _chartOfAccounts.GetByAccountNumberAsync(accountNumber, cancellationToken);
+        if (existing is not null)
+            return Result.Failure<Guid>(Error.Conflict(
+                $"Le compte {existing.AccountNumber} existe déjà ({existing.Label})."));
+
         var nature = (AccountNatureType)r.NatureType;
         var create = ChartOfAccount.Create(
-            r.AccountNumber,
+            accountNumber,
             r.Label,
             r.AccountClass,
             r.ParentAccountNumber,

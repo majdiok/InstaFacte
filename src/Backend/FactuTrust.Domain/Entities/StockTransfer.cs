@@ -1,6 +1,7 @@
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Events;
+using FactuTrust.Domain.Services;
 using FactuTrust.Domain.ValueObjects;
 
 namespace FactuTrust.Domain.Entities;
@@ -75,6 +76,10 @@ public sealed class StockTransfer : AggregateRoot
     {
         if (!Status.CanBeEdited())
             return Result.Failure(Error.Validation("Status", "Ce transfert ne peut plus être modifié"));
+
+        var sellable = ProductCommercialGuards.EnsureCanAppearOnDocument(product);
+        if (sellable.IsFailure)
+            return sellable;
 
         if (_lines.Any(l => l.ProductId == product.Id))
             return Result.Failure(Error.Validation("ProductId",

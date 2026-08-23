@@ -425,7 +425,7 @@
           } @else {
             <button type="submit" class="btn-submit" [disabled]="form.invalid || loading()" [class.is-loading]="loading()">
               @if (loading()) {
-                <i class="pi pi-spin pi-spinner mr-2" aria-hidden="true"></i> Création...
+                <i class="pi pi-spin pi-spinner mr-2" aria-hidden="true"></i> {{ loadingMessage() }}
               } @else {
                 <i class="pi pi-check mr-2" aria-hidden="true"></i> Terminer
               }

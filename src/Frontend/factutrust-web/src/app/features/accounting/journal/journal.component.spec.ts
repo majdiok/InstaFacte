@@ -1,13 +1,16 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { DOCUMENT } from '@angular/common';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
+import { signal } from '@angular/core';
 import { of } from 'rxjs';
 import { JournalComponent } from './journal.component';
 import { AccountingService } from '../services/accounting.service';
 import { AccountingMonitoringService } from '../shared/accounting-monitoring.service';
 import { AuthService } from '@core/services/auth.service';
+import { ConfirmationService } from '@core/services/confirmation.service';
 
 function mockAccountingService(): AccountingService {
   return {
@@ -55,21 +58,27 @@ function mockAuthService(overrides: {
     isAccountingFirm: () => true,
     isDelegatedMode: () => true,
     isFirmManager: () => overrides.isFirmManager ?? true,
-    isFirmAccountant: () => overrides.isFirmAccountant ?? false
+    isFirmAccountant: () => overrides.isFirmAccountant ?? false,
+    user: signal(null)
   } as unknown as AuthService;
 }
 
 async function setupFixture(authOverrides: Parameters<typeof mockAuthService>[0] = {}) {
+  const confirmationSpy = jasmine.createSpyObj<ConfirmationService>('ConfirmationService', ['confirm']);
+  confirmationSpy.confirm.and.callFake((cfg: { accept?: () => void }) => cfg.accept?.());
+
   await TestBed.configureTestingModule({
     imports: [JournalComponent],
     providers: [
       provideNoopAnimations(),
+      { provide: DOCUMENT, useValue: document },
       provideHttpClient(),
       provideHttpClientTesting(),
       provideRouter([]),
       { provide: AccountingService, useValue: mockAccountingService() },
       { provide: AccountingMonitoringService, useValue: { logError: jasmine.createSpy('logError') } },
-      { provide: AuthService, useValue: mockAuthService(authOverrides) }
+      { provide: AuthService, useValue: mockAuthService(authOverrides) },
+      { provide: ConfirmationService, useValue: confirmationSpy }
     ]
   }).compileComponents();
   const fixture = TestBed.createComponent(JournalComponent);
@@ -108,7 +117,6 @@ describe('JournalComponent', () => {
     it('calls deleteDraftJournalEntry when delete button is clicked', () => {
       const service = TestBed.inject(AccountingService) as jasmine.SpyObj<AccountingService>;
       const spy = spyOn(service, 'deleteDraftJournalEntry').and.returnValue(of({ success: true }));
-      spyOn(window, 'confirm').and.returnValue(true);
       const el = fixture.nativeElement as HTMLElement;
       const buttons = el.querySelectorAll('app-button');
       let deleteBtn: Element | null = null;

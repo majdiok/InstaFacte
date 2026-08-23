@@ -109,4 +109,63 @@ public sealed class StudioTextToolCallRecoveryTests
         });
         Assert.False(StudioTextToolCallRecovery.TryExtract(content, out _, out _));
     }
+
+    [Fact]
+    public void TryExtractBareStudioSpec_App_Complete()
+    {
+        const string spec =
+            "{\"entity\":{\"displayName\":\"Contrats Clients\",\"displayNamePlural\":\"Contrats Clients\"},\"fields\":[{\"label\":\"Date de début\",\"type\":\"date\"},{\"label\":\"Montant\",\"type\":\"money\"}]}";
+
+        Assert.True(StudioTextToolCallRecovery.TryExtractBareStudioSpec(spec, out var kind, out var extracted));
+        Assert.Equal(BareStudioSpecKind.App, kind);
+        using var doc = JsonDocument.Parse(extracted);
+        Assert.True(doc.RootElement.TryGetProperty("entity", out _));
+        Assert.True(doc.RootElement.TryGetProperty("fields", out _));
+        Assert.False(StudioTextToolCallRecovery.TryExtract(spec, out _, out _));
+    }
+
+    [Fact]
+    public void TryExtractBareStudioSpec_System_Complete()
+    {
+        Assert.True(StudioTextToolCallRecovery.TryExtractBareStudioSpec(SpecJson, out var kind, out var extracted));
+        Assert.Equal(BareStudioSpecKind.System, kind);
+        using var doc = JsonDocument.Parse(extracted);
+        Assert.True(doc.RootElement.TryGetProperty("system", out _));
+        Assert.True(doc.RootElement.TryGetProperty("entities", out _));
+    }
+
+    [Fact]
+    public void TryExtractBareStudioSpec_Truncated_ReturnsFalse()
+    {
+        const string truncated =
+            "{\n  \"entity\": {\n    \"displayName\": \"Contrats Clients\"\n  },\n  \"fields\": [\n    {\n      \"label\": \"Montant\"";
+
+        Assert.False(StudioTextToolCallRecovery.TryExtractBareStudioSpec(truncated, out var kind, out var spec));
+        Assert.Equal(default, kind);
+        Assert.Equal(string.Empty, spec);
+        Assert.True(StudioTextToolCallRecovery.LooksLikeStudioSpecText(truncated));
+    }
+
+    [Fact]
+    public void TryExtractBareStudioSpec_Ignores_ExistingToolEnvelope()
+    {
+        var content = JsonSerializer.Serialize(new
+        {
+            name = "studio_generate_app",
+            arguments = new { spec_json = "{\"entity\":{\"displayName\":\"X\"},\"fields\":[{\"label\":\"A\",\"type\":\"text\"}]}" }
+        });
+
+        Assert.False(StudioTextToolCallRecovery.TryExtractBareStudioSpec(content, out _, out _));
+        Assert.True(StudioTextToolCallRecovery.TryExtract(content, out var name, out _));
+        Assert.Equal("studio_generate_app", name);
+    }
+
+    [Fact]
+    public void ResolveToolName_HonorsPlanPreview()
+    {
+        Assert.Equal("studio_plan_app", StudioTextToolCallRecovery.ResolveToolName(BareStudioSpecKind.App, planPreview: true));
+        Assert.Equal("studio_generate_app", StudioTextToolCallRecovery.ResolveToolName(BareStudioSpecKind.App, planPreview: false));
+        Assert.Equal("studio_plan_system", StudioTextToolCallRecovery.ResolveToolName(BareStudioSpecKind.System, planPreview: true));
+        Assert.Equal("studio_generate_system", StudioTextToolCallRecovery.ResolveToolName(BareStudioSpecKind.System, planPreview: false));
+    }
 }

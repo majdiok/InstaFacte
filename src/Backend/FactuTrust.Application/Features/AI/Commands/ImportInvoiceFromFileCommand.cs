@@ -123,7 +123,9 @@ Schéma: documentType, invoiceNumber, issueDate, dueDate, currency, seller{name,
             platformAiSettings,
             inferenceProfileResolver,
             NullLogger<AiStructuredExtractionPipeline>.Instance,
-            ollamaSettings);
+            ollamaSettings,
+            ModalCredentialsFallback.ForPlatform(platformAiSettings),
+            ModalCredentialsFallback.EmptyTenant);
     }
 
     public async Task<Result<InvoiceImportResultDto>> HandleAsync(

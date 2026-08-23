@@ -9,7 +9,7 @@ import { firstValueFrom } from 'rxjs';
 
 /**
  * Hub de navigation du module Prévisions IA.
- * Tabs vers : Prévision CA, Réapprovisionnement, Promotions, ABC/XYZ, Calendrier.
+ * Tabs vers : Prévision CA, Réapprovisionnement, Promotions, ABC/XYZ, Trésorerie.
  * Bouton "Recalculer tout" — déclenche IForecastRecomputeOrchestrator (limité à
  * MaxRecomputeRunsPerDay côté backend, gestion d'erreur 429 ici).
  * Bouton "Analyser avec l'IA" — ouvre l'assistant existant avec le contexte courant.
@@ -50,9 +50,6 @@ import { firstValueFrom } from 'rxjs';
         </a>
         <a routerLink="abc-xyz" routerLinkActive="active" role="tab">
           <i class="pi pi-th-large"></i> ABC / XYZ
-        </a>
-        <a routerLink="calendar" routerLinkActive="active" role="tab">
-          <i class="pi pi-calendar"></i> Calendrier TN
         </a>
         @if (canViewTreasuryForecast()) {
           <a routerLink="treasury" routerLinkActive="active" role="tab">

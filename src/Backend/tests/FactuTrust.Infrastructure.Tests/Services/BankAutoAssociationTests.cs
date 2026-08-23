@@ -16,7 +16,7 @@ namespace FactuTrust.Infrastructure.Tests.Services;
 
 /// <summary>
 /// Lot J : association automatique (classement 1/multi/0), rapprochement en lot des paires
-/// confirmées, comptabilisation d'une ligne (écriture 512 ↔ contrepartie + rapprochement).
+/// confirmées, comptabilisation d'une ligne (écriture 532 ↔ contrepartie + rapprochement).
 /// </summary>
 public sealed class BankAutoAssociationTests
 {

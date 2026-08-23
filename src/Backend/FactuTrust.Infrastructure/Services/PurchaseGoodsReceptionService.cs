@@ -12,15 +12,18 @@ public sealed class PurchaseGoodsReceptionService : IPurchaseGoodsReceptionServi
     private readonly IStockItemRepository _stockItemRepository;
     private readonly IStockMovementRepository _stockMovementRepository;
     private readonly IProductRepository _productRepository;
+    private readonly IStockMutationService _mutation;
 
     public PurchaseGoodsReceptionService(
         IStockItemRepository stockItemRepository,
         IStockMovementRepository stockMovementRepository,
-        IProductRepository productRepository)
+        IProductRepository productRepository,
+        IStockMutationService mutation)
     {
         _stockItemRepository = stockItemRepository;
         _stockMovementRepository = stockMovementRepository;
         _productRepository = productRepository;
+        _mutation = mutation;
     }
 
     public async Task<Result> ApplyStockEntriesAsync(
@@ -38,7 +41,7 @@ public sealed class PurchaseGoodsReceptionService : IPurchaseGoodsReceptionServi
 
         var existing = await _stockMovementRepository.GetByReferenceAsync(stockReference, cancellationToken);
         if (existing.Any(m => m.Type == MovementType.Entry))
-            return Result.Success(); // idempotent
+            return Result.Success();
 
         foreach (var line in lines)
         {
@@ -49,42 +52,27 @@ public sealed class PurchaseGoodsReceptionService : IPurchaseGoodsReceptionServi
             if (product is null || !product.IsStockManaged)
                 continue;
 
-            var stockItem = await _stockItemRepository.GetByProductAndWarehouseAsync(
-                line.ProductId, warehouse.Id, cancellationToken);
+            var kind = stockReference.StartsWith("BR ", StringComparison.Ordinal)
+                ? StockDocumentKind.PurchaseReceipt
+                : StockDocumentKind.PurchaseOrderReception;
 
-            if (stockItem is null)
+            var result = await _mutation.ApplyAsync(new StockMutationRequest
             {
-                var createResult = StockItem.Create(line.ProductId, warehouse.Id);
-                if (createResult.IsFailure)
-                    return Result.Failure(createResult.Error);
+                ProductId = line.ProductId,
+                WarehouseId = warehouse.Id,
+                Kind = StockMutationKind.Entry,
+                Quantity = line.Quantity,
+                UnitCost = line.UnitPriceAmount,
+                Reason = MovementReason.Purchase,
+                Reference = stockReference,
+                Notes = notes,
+                DocumentLineId = line.DocumentLineId,
+                DocumentKind = line.DocumentLineId.HasValue ? kind : null,
+                Allocations = line.Allocations
+            }, cancellationToken);
 
-                stockItem = createResult.Value;
-                var entryResult = stockItem.RecordEntry(
-                    line.Quantity,
-                    line.UnitPriceAmount,
-                    MovementReason.Purchase,
-                    reference: stockReference,
-                    notes: notes);
-
-                if (entryResult.IsFailure)
-                    return entryResult;
-
-                await _stockItemRepository.AddAsync(stockItem, cancellationToken);
-            }
-            else
-            {
-                var entryResult = stockItem.RecordEntry(
-                    line.Quantity,
-                    line.UnitPriceAmount,
-                    MovementReason.Purchase,
-                    reference: stockReference,
-                    notes: notes);
-
-                if (entryResult.IsFailure)
-                    return entryResult;
-
-                await _stockItemRepository.UpdateAsync(stockItem, cancellationToken);
-            }
+            if (result.IsFailure)
+                return Result.Failure(result.Error);
 
             product.UpdateLastPurchasePrice(Money.Create(line.UnitPriceAmount, line.Currency));
             await _productRepository.UpdateAsync(product, cancellationToken);
@@ -106,7 +94,41 @@ public sealed class PurchaseGoodsReceptionService : IPurchaseGoodsReceptionServi
         var reverseReference = $"ANNUL {stockReference}";
         var existing = await _stockMovementRepository.GetByReferenceAsync(reverseReference, cancellationToken);
         if (existing.Any(m => m.Type == MovementType.Exit))
-            return Result.Success(); // already reversed
+            return Result.Success();
+
+        var original = await _stockMovementRepository.GetByReferenceAsync(stockReference, cancellationToken);
+        var originalEntries = original.Where(m => m.Type == MovementType.Entry).ToList();
+
+        if (originalEntries.Count > 0 && originalEntries.Any(m => m.ProductLotId.HasValue || m.SerialId.HasValue))
+        {
+            foreach (var movement in originalEntries)
+            {
+                var stockItem = await _stockItemRepository.GetByIdAsync(movement.StockItemId, cancellationToken);
+                if (stockItem is null)
+                    continue;
+
+                var qty = Math.Abs(movement.Quantity);
+                var result = await _mutation.ApplyAsync(new StockMutationRequest
+                {
+                    ProductId = stockItem.ProductId,
+                    WarehouseId = warehouse.Id,
+                    Kind = StockMutationKind.Exit,
+                    Quantity = qty,
+                    UnitCost = movement.UnitCost,
+                    Reason = MovementReason.SupplierReturn,
+                    Reference = reverseReference,
+                    Notes = notes,
+                    Allocations = new[]
+                    {
+                        new StockAllocationInput(qty, ProductLotId: movement.ProductLotId, SerialId: movement.SerialId)
+                    }
+                }, cancellationToken);
+                if (result.IsFailure)
+                    return Result.Failure(result.Error);
+            }
+
+            return Result.Success();
+        }
 
         foreach (var line in lines)
         {
@@ -117,22 +139,19 @@ public sealed class PurchaseGoodsReceptionService : IPurchaseGoodsReceptionServi
             if (product is null || !product.IsStockManaged)
                 continue;
 
-            var stockItem = await _stockItemRepository.GetByProductAndWarehouseAsync(
-                line.ProductId, warehouse.Id, cancellationToken);
+            var result = await _mutation.ApplyAsync(new StockMutationRequest
+            {
+                ProductId = line.ProductId,
+                WarehouseId = warehouse.Id,
+                Kind = StockMutationKind.Exit,
+                Quantity = line.Quantity,
+                Reason = MovementReason.SupplierReturn,
+                Reference = reverseReference,
+                Notes = notes
+            }, cancellationToken);
 
-            if (stockItem is null)
-                continue;
-
-            var exitResult = stockItem.RecordExit(
-                line.Quantity,
-                MovementReason.SupplierReturn,
-                reference: reverseReference,
-                notes: notes);
-
-            if (exitResult.IsFailure)
-                return exitResult;
-
-            await _stockItemRepository.UpdateAsync(stockItem, cancellationToken);
+            if (result.IsFailure)
+                return Result.Failure(result.Error);
         }
 
         return Result.Success();

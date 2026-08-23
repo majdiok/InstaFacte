@@ -40,6 +40,7 @@ public sealed class PlatformAiSettingsController : ControllerBase
     private readonly IAiModelRecommender _modelRecommender;
     private readonly OllamaSettings _ollamaSettings;
     private readonly CursorSdkSettings _cursorSdkSettings;
+    private readonly ModalSettings _modalSettings;
     private readonly ILogger<PlatformAiSettingsController> _logger;
 
     public PlatformAiSettingsController(
@@ -50,6 +51,7 @@ public sealed class PlatformAiSettingsController : ControllerBase
         IAiModelRecommender modelRecommender,
         IOptions<OllamaSettings> ollamaSettings,
         IOptions<CursorSdkSettings> cursorSdkSettings,
+        IOptions<ModalSettings> modalSettings,
         ILogger<PlatformAiSettingsController> logger)
     {
         _settings = settings;
@@ -59,6 +61,7 @@ public sealed class PlatformAiSettingsController : ControllerBase
         _modelRecommender = modelRecommender;
         _ollamaSettings = ollamaSettings.Value;
         _cursorSdkSettings = cursorSdkSettings.Value;
+        _modalSettings = modalSettings.Value;
         _logger = logger;
     }
 
@@ -74,6 +77,7 @@ public sealed class PlatformAiSettingsController : ControllerBase
         var inferenceDevice = await _settings.GetInferenceDeviceAsync(cancellationToken);
         var openRouter = await _settings.GetOpenRouterSettingsAsync(cancellationToken);
         var cursor = await _settings.GetCursorSettingsAsync(cancellationToken);
+        var modal = await _settings.GetModalSettingsAsync(cancellationToken);
 
         var models = new List<UnifiedAiModelInfo>();
         try
@@ -138,6 +142,40 @@ public sealed class PlatformAiSettingsController : ControllerBase
             _logger.LogWarning(ex, "Failed to list Cursor models for platform AI settings.");
         }
 
+        try
+        {
+            var modalCreds = await _settings.GetModalCredentialsAsync(cancellationToken);
+            if (!string.IsNullOrEmpty(modalCreds.ApiKey) && !string.IsNullOrWhiteSpace(modalCreds.BaseUrl))
+            {
+                try
+                {
+                    var remote = await _openAiClient.ListModelsAsync(
+                        modalCreds.BaseUrl,
+                        modalCreds.ApiKey,
+                        cancellationToken,
+                        OpenAiCompatibleCallOptions.ForModal(_modalSettings, sessionId: null));
+                    if (remote.Count == 0)
+                    {
+                        models.Add(ModalModelCatalog.ToUnified(_modalSettings.DefaultModelId));
+                    }
+                    else
+                    {
+                        foreach (var r in remote)
+                            models.Add(ModalModelCatalog.ToUnified(r.Id, r.Name));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to list Modal models for platform AI settings.");
+                    models.Add(ModalModelCatalog.ToUnified(_modalSettings.DefaultModelId));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to resolve Modal credentials for platform AI settings.");
+        }
+
         AiModelRecommendationDto? recommendation = null;
         try
         {
@@ -166,7 +204,8 @@ public sealed class PlatformAiSettingsController : ControllerBase
             models,
             recommendation,
             openRouter,
-            cursor);
+            cursor,
+            modal);
         return Ok(ApiResponse<PlatformAiSettingsDto>.Ok(dto));
     }
 
@@ -222,6 +261,24 @@ public sealed class PlatformAiSettingsController : ControllerBase
                 cursorUpdate.IsEnabled);
         }
 
+        if (request.Modal is { } modalUpdate)
+        {
+            var (success, error) = await _settings.SetModalConfigAsync(
+                modalUpdate.IsEnabled,
+                modalUpdate.DisplayName,
+                modalUpdate.BaseUrl,
+                modalUpdate.ApiKey,
+                actorId,
+                cancellationToken);
+            if (!success)
+                return BadRequest(ApiResponse<object>.Fail(error ?? "Configuration Modal invalide."));
+
+            _logger.LogInformation(
+                "Platform admin {ActorId} updated Modal settings (enabled={Enabled})",
+                actorId,
+                modalUpdate.IsEnabled);
+        }
+
         if (!string.IsNullOrWhiteSpace(request.ModelRef))
         {
             var parsed = ModelRef.Parse(request.ModelRef);
@@ -235,6 +292,10 @@ public sealed class PlatformAiSettingsController : ControllerBase
             var allowed = await EnsureCursorAllowedAsync(parsed, cancellationToken);
             if (allowed is not null)
                 return allowed;
+
+            var modalAllowed = await EnsureModalAllowedAsync(parsed, cancellationToken);
+            if (modalAllowed is not null)
+                return modalAllowed;
 
             var installed = await EnsureModelInstalledAsync(parsed, "assistant", cancellationToken);
             if (installed is not null)
@@ -263,6 +324,10 @@ public sealed class PlatformAiSettingsController : ControllerBase
                 if (allowedImport is not null)
                     return allowedImport;
 
+                var modalImport = await EnsureModalAllowedAsync(parsedImport, cancellationToken);
+                if (modalImport is not null)
+                    return modalImport;
+
                 var installed = await EnsureModelInstalledAsync(parsedImport, "d'import de factures", cancellationToken);
                 if (installed is not null)
                     return installed;
@@ -287,6 +352,10 @@ public sealed class PlatformAiSettingsController : ControllerBase
                 var allowedStudio = await EnsureCursorAllowedAsync(parsedStudio, cancellationToken);
                 if (allowedStudio is not null)
                     return allowedStudio;
+
+                var modalStudio = await EnsureModalAllowedAsync(parsedStudio, cancellationToken);
+                if (modalStudio is not null)
+                    return modalStudio;
 
                 var installed = await EnsureModelInstalledAsync(parsedStudio, "Studio", cancellationToken);
                 if (installed is not null)
@@ -392,6 +461,48 @@ public sealed class PlatformAiSettingsController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Impossible de valider le modèle Cursor {Model} ; enregistrement autorisé.", parsed.ProviderModelId);
+            return null;
+        }
+    }
+
+    private async Task<IActionResult?> EnsureModalAllowedAsync(
+        ParsedModelRef parsed, CancellationToken cancellationToken)
+    {
+        if (parsed.Kind != LlmProviderKind.Modal)
+            return null;
+
+        var creds = await _settings.GetModalCredentialsAsync(cancellationToken);
+        if (string.IsNullOrEmpty(creds.ApiKey))
+            return BadRequest(ApiResponse<object>.Fail(
+                "Aucune clé API Modal configurée. Activez Modal et saisissez le token dans Configuration IA."));
+
+        if (string.IsNullOrWhiteSpace(creds.BaseUrl))
+            return BadRequest(ApiResponse<object>.Fail(
+                "Aucune URL Modal configurée. Renseignez l'URL HTTPS (…/v1) dans Configuration IA."));
+
+        if (string.Equals(parsed.ProviderModelId, _modalSettings.DefaultModelId, StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        try
+        {
+            var catalog = await _openAiClient.ListModelsAsync(
+                creds.BaseUrl,
+                creds.ApiKey,
+                cancellationToken,
+                OpenAiCompatibleCallOptions.ForModal(_modalSettings, sessionId: null));
+            if (catalog.Count == 0)
+                return null;
+
+            if (catalog.Any(m => string.Equals(m.Id, parsed.ProviderModelId, StringComparison.OrdinalIgnoreCase)))
+                return null;
+
+            var available = string.Join(", ", catalog.Select(m => m.Id).Distinct().Take(12));
+            return BadRequest(ApiResponse<object>.Fail(
+                $"Le modèle Modal « {parsed.ProviderModelId} » n'est pas dans le catalogue de cet endpoint. Disponibles : {available}."));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Impossible de valider le modèle Modal {Model} ; enregistrement autorisé.", parsed.ProviderModelId);
             return null;
         }
     }

@@ -89,6 +89,31 @@ public sealed class StudioReportsController : ControllerBase
             : Ok(ApiResponse<IReadOnlyList<ReportSourceDto>>.Ok(result.Value));
     }
 
+    /// <summary>
+    /// Champs d'une source. Les sources SQL sont introspectées À LA DEMANDE : lister les colonnes des
+    /// ~80 tables autorisées à l'ouverture du concepteur serait inutilement coûteux.
+    /// </summary>
+    [HttpGet("sources/{kind}/{dataSourceRef}/fields")]
+    [Authorize(Policy = PermissionPolicies.StudioDesignReports)]
+    public async Task<IActionResult> SourceFields(string kind, string dataSourceRef, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetReportSourceFieldsQuery(kind, dataSourceRef), cancellationToken);
+        return result.IsFailure
+            ? BadRequest(ApiResponse<object>.Fail(result.Error.Description, result.Error.Code))
+            : Ok(ApiResponse<IReadOnlyList<ReportFieldMeta>>.Ok(result.Value));
+    }
+
+    /// <summary>États métier prêts à l'emploi, filtrés par les permissions de l'utilisateur.</summary>
+    [HttpGet("presets")]
+    [Authorize(Policy = PermissionPolicies.StudioDesignReports)]
+    public async Task<IActionResult> Presets(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetReportPresetsQuery(), cancellationToken);
+        return result.IsFailure
+            ? BadRequest(ApiResponse<object>.Fail(result.Error.Description, result.Error.Code))
+            : Ok(ApiResponse<IReadOnlyList<ReportPresetDto>>.Ok(result.Value));
+    }
+
     /// <summary>Live preview for the report designer (ad-hoc definition, not saved).</summary>
     [HttpPost("preview")]
     [Authorize(Policy = PermissionPolicies.StudioDesignReports)]

@@ -16,4 +16,10 @@ public interface ITenantMigrationGuard
     /// Clears the cached migration guard result for the given tenant so the next request re-validates schema.
     /// </summary>
     void Invalidate(Guid tenantId);
+
+    /// <summary>
+    /// Marks the tenant as already migrated so the next request skips the expensive first-GET bootstrap.
+    /// Use after a successful provision that already applied catalogs (template clone + seeds).
+    /// </summary>
+    void MarkApplied(Guid tenantId);
 }

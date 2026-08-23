@@ -138,6 +138,56 @@ export interface UpdateSupplierRequest {
     rs7IsBracket?: SupplierRs7IsBracket | string | null;
 }
 
+const EMPTY_GUID = '00000000-0000-0000-0000-000000000000';
+
+export type SupplierConflictField = 'email' | 'nif';
+
+export interface SupplierCreateConflict {
+    field: SupplierConflictField;
+    existingSupplierId: string | null;
+}
+
+/** Mappe le corps 409 de POST /api/suppliers (metadata existingSupplierId + field). */
+export function parseSupplierCreateConflict(
+    err: { error?: { data?: unknown } } | null | undefined,
+    message: string
+): SupplierCreateConflict {
+    const data = err?.error?.data;
+    const record = data && typeof data === 'object' && !Array.isArray(data)
+        ? data as Record<string, unknown>
+        : null;
+
+    const rawField = typeof record?.['field'] === 'string'
+        ? String(record['field']).toLowerCase()
+        : '';
+    let field: SupplierConflictField = 'email';
+    if (rawField === 'nif' || rawField === 'email') {
+        field = rawField;
+    } else {
+        const lower = (message || '').toLowerCase();
+        if (lower.includes('matricule') || lower.includes('nif')) {
+            field = 'nif';
+        }
+    }
+
+    let existingSupplierId: string | null = null;
+    if (typeof data === 'string' && isRealGuid(data)) {
+        existingSupplierId = data;
+    } else if (record) {
+        const rawId = record['existingSupplierId'] ?? record['ExistingSupplierId'];
+        if (typeof rawId === 'string' && isRealGuid(rawId)) {
+            existingSupplierId = rawId;
+        }
+    }
+
+    return { field, existingSupplierId };
+}
+
+function isRealGuid(value: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+        && value !== EMPTY_GUID;
+}
+
 @Injectable({
     providedIn: 'root'
 })
@@ -178,7 +228,11 @@ export class SupplierService {
     }
 
     createSupplier(request: CreateSupplierRequest): Observable<ApiResponse<string>> {
-        return this.http.post<ApiResponse<string>>(this.API_URL, request);
+        // Le formulaire (et la création rapide) affichent le 409 en inline :
+        // pas de toast global pour éviter le doublon.
+        return this.http.post<ApiResponse<string>>(this.API_URL, request, {
+            context: createHttpContextSkipGlobalErrorUi()
+        });
     }
 
     updateSupplier(id: string, request: UpdateSupplierRequest): Observable<ApiResponse<Supplier>> {

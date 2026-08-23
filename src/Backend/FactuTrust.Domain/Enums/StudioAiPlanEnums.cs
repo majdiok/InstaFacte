@@ -13,7 +13,13 @@ public enum StudioAiPlanKind
     Amendment = 2,
 
     /// <summary>Création d'une fenêtre (vue lecture seule sur une table SQL réelle).</summary>
-    View = 3
+    View = 3,
+
+    /// <summary>
+    /// Création d'un ÉTAT sur les tables réelles du tenant (lecture seule, agrégation SQL).
+    /// Ajouté en fin d'énumération : valeur persistée en <c>int</c>, aucune migration requise.
+    /// </summary>
+    Report = 4
 }
 
 /// <summary>Cycle de vie d'un plan Studio IA : proposé → confirmé/annulé → exécuté.</summary>

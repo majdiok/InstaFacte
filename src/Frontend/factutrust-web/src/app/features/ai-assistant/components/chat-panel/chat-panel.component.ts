@@ -27,6 +27,7 @@ import { AssistantAgentScope, ChatMessage, MessageRole } from '../../models/ai-c
 import { getAgentScopeConfig } from '../../config/agent-scopes.config';
 import { MessageSelectionService, SelectedAssistantMessage } from '../../services/message-selection.service';
 import { PowerPointExportDialogComponent } from '../powerpoint-export-dialog/powerpoint-export-dialog.component';
+import { SuggestionCatalogComponent } from '../suggestion-catalog/suggestion-catalog.component';
 import { buildAssistantMarkdownForDisplay } from '../../utils/assistant-message-display';
 import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
 
@@ -40,7 +41,8 @@ import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
     ChatMessageComponent,
     ChatInputComponent,
     ConversationListComponent,
-    PowerPointExportDialogComponent
+    PowerPointExportDialogComponent,
+    SuggestionCatalogComponent
   ],
   template: `
     <div class="chat-panel" [class.open]="isOpen || embedded" [class.embedded]="embedded">
@@ -204,23 +206,9 @@ import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
                     </div>
                   }
                   @if (scopedSuggestionCategories().length) {
-                    <div class="suggestion-catalog">
-                      @for (cat of scopedSuggestionCategories(); track cat.id) {
-                        <section
-                          class="suggestion-category"
-                          role="group"
-                          [attr.aria-labelledby]="'sug-cat-' + cat.id">
-                          <h5 class="suggestion-category-title" [id]="'sug-cat-' + cat.id">{{ cat.label }}</h5>
-                          <div class="suggestions">
-                            @for (q of cat.questions; track q) {
-                              <button type="button" class="suggestion-chip" (click)="session.sendMessage(q)">
-                                {{ q }}
-                              </button>
-                            }
-                          </div>
-                        </section>
-                      }
-                    </div>
+                    <app-suggestion-catalog
+                      [categories]="scopedSuggestionCategories()"
+                      (questionSelected)="session.sendMessage($event)" />
                   } @else {
                     <div class="suggestions">
                       @for (s of scopedSuggestions(); track s) {
@@ -603,29 +591,6 @@ import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
       border-color: var(--ai-accent-300, #c4b5fd);
       background: var(--ai-accent-50, #f5f3ff);
       color: var(--ai-accent-600, #7c3aed);
-    }
-
-    .suggestion-catalog {
-      width: 100%;
-      max-width: 560px;
-      text-align: left;
-    }
-
-    .suggestion-category {
-      margin-bottom: 16px;
-    }
-
-    .suggestion-category:last-child {
-      margin-bottom: 0;
-    }
-
-    .suggestion-category-title {
-      margin: 0 0 8px;
-      font-size: 12px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: var(--color-neutral-500, #6b7280);
     }
 
     .favorite-add {

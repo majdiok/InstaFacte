@@ -28,6 +28,32 @@ public sealed class AiAssistantAvailabilityResolverTests
         Assert.Equal(expected, actual);
     }
 
+    [Theory]
+    [InlineData(false, null, false, false, null, true, "wk-id.ws-secret", true)]
+    [InlineData(false, null, false, false, null, true, null, false)]
+    [InlineData(false, null, false, false, null, false, "wk-id.ws-secret", false)]
+    public void HasCloudProviderConfigured_matches_modal_rules(
+        bool openRouterEnabled,
+        string? openRouterApiKey,
+        bool cursorSdkEnabled,
+        bool cursorDbEnabled,
+        string? cursorApiKey,
+        bool modalEnabled,
+        string? modalApiKey,
+        bool expected)
+    {
+        var actual = AiAssistantAvailabilityResolver.HasCloudProviderConfigured(
+            openRouterEnabled,
+            openRouterApiKey,
+            cursorSdkEnabled,
+            cursorDbEnabled,
+            cursorApiKey,
+            modalEnabled,
+            modalApiKey);
+
+        Assert.Equal(expected, actual);
+    }
+
     [Fact]
     public async Task IsHealthAvailableAsync_returns_true_when_ollama_ok()
     {
@@ -88,5 +114,23 @@ public sealed class AiAssistantAvailabilityResolverTests
             _ => Task.FromResult(false));
 
         Assert.False(unavailable);
+    }
+
+    [Fact]
+    public async Task IsHealthAvailableAsync_returns_true_for_modal_without_bridge_probe()
+    {
+        var probeCalled = false;
+        var available = await AiAssistantAvailabilityResolver.IsHealthAvailableAsync(
+            ollamaOk: false,
+            hasCloudProvider: true,
+            activeModel: ModelRef.Parse("modal:moonshotai/Kimi-K3"),
+            _ =>
+            {
+                probeCalled = true;
+                return Task.FromResult(false);
+            });
+
+        Assert.True(available);
+        Assert.False(probeCalled);
     }
 }

@@ -12,7 +12,8 @@ public enum PrintableDocumentType
     Quote = 2,
     PurchaseOrder = 3,
     DeliveryNote = 4,
-    SupplierInvoice = 5
+    SupplierInvoice = 5,
+    SalesReturnNote = 6
 }
 
 public static class PrintableDocumentTypeExtensions
@@ -25,6 +26,7 @@ public static class PrintableDocumentTypeExtensions
         PrintableDocumentType.PurchaseOrder => "Bon de commande",
         PrintableDocumentType.DeliveryNote => "Bon de livraison",
         PrintableDocumentType.SupplierInvoice => "Facture d'achat",
+        PrintableDocumentType.SalesReturnNote => "Bon de retour",
         _ => type.ToString()
     };
 }

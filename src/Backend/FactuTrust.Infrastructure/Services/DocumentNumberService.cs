@@ -586,6 +586,54 @@ public sealed class DocumentNumberService : IDocumentNumberService
 
 
 
+            NumberingDocumentType.SalesReturnNote =>
+
+                await context.SalesReturnNotes.AsNoTracking()
+
+                    .Where(n => n.Number.Year == fiscalYear)
+
+                    .Select(n => (int?)n.Number.Sequence)
+
+                    .MaxAsync(cancellationToken) ?? 0,
+
+
+
+            NumberingDocumentType.ZReport =>
+
+                await context.ZReports.AsNoTracking()
+
+                    .Where(z => z.Number.Year == fiscalYear)
+
+                    .Select(z => (int?)z.Number.Sequence)
+
+                    .MaxAsync(cancellationToken) ?? 0,
+
+
+
+            NumberingDocumentType.StockEntry =>
+
+                await context.StockVouchers.AsNoTracking()
+
+                    .Where(v => v.Kind == StockVoucherKind.Entry && v.Number.Year == fiscalYear)
+
+                    .Select(v => (int?)v.Number.Sequence)
+
+                    .MaxAsync(cancellationToken) ?? 0,
+
+
+
+            NumberingDocumentType.StockIssue =>
+
+                await context.StockVouchers.AsNoTracking()
+
+                    .Where(v => v.Kind == StockVoucherKind.Issue && v.Number.Year == fiscalYear)
+
+                    .Select(v => (int?)v.Number.Sequence)
+
+                    .MaxAsync(cancellationToken) ?? 0,
+
+
+
             _ => 0
 
         };

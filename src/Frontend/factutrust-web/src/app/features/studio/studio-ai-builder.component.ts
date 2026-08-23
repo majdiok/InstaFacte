@@ -7,7 +7,10 @@ import { Textarea } from 'primeng/textarea';
 import { AiStreamService } from '@features/ai-assistant/services/ai-stream.service';
 import { AssistantMode, ChatRequest, ChatStreamEvent } from '@features/ai-assistant/models/ai-chat.models';
 import { StudioNavService } from './studio-nav.service';
-import { StudioAiBuildService, StudioPlanEntity, StudioPlanEvent, StudioPlanSummary } from './studio-ai-build.service';
+import {
+  StudioAiBuildService, StudioPlanEntity, StudioPlanEvent, StudioPlanSummary, StudioReportResultEvent
+} from './studio-ai-build.service';
+import { DynamicReportComponent } from '@shared/studio-runtime/dynamic-report.component';
 import { StudioPageShellComponent } from './shared/studio-page-shell.component';
 import { STUDIO_BREADCRUMBS } from './shared/studio-breadcrumb.util';
 
@@ -25,7 +28,7 @@ type BuilderState = 'idle' | 'planning' | 'awaiting_confirmation' | 'executing';
 @Component({
   selector: 'app-studio-ai-builder',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, ButtonModule, Textarea, StudioPageShellComponent],
+  imports: [CommonModule, FormsModule, RouterModule, ButtonModule, Textarea, StudioPageShellComponent, DynamicReportComponent],
   template: `
     <app-studio-page-shell
       title="Assistant Studio (IA)"
@@ -73,14 +76,38 @@ type BuilderState = 'idle' | 'planning' | 'awaiting_confirmation' | 'executing';
               @for (w of p.summary.warnings; track w) {
                 <p class="sab-plan__warning"><i class="fa-solid fa-triangle-exclamation"></i> {{ w }}</p>
               }
+              @if (p.summary.sample; as sample) {
+                <div class="sab-plan__sample">
+                  <h5>Aperçu des données réelles</h5>
+                  <app-dynamic-report [result]="sample" exportName="apercu-etat"></app-dynamic-report>
+                </div>
+              }
               @if (state() === 'awaiting_confirmation') {
                 <div class="sab-plan__actions">
-                  <button pButton type="button" icon="fa-solid fa-check" label="Valider et créer"
+                  <button pButton type="button" icon="fa-solid fa-check"
+                    [label]="p.summary.kind === 'Report' ? 'Valider et enregistrer' : 'Valider et créer'"
                     (click)="confirmPlan()"></button>
                   <button pButton type="button" class="p-button-text" icon="fa-solid fa-xmark" label="Annuler"
                     (click)="cancelPlan()"></button>
                 </div>
               }
+            </div>
+          }
+
+          @if (reportResult(); as report) {
+            <div class="sab-report">
+              <div class="sab-report__head">
+                <div>
+                  <h4>{{ report.title }}</h4>
+                  <p class="sab-report__hint">Source : {{ report.sourceLabel }} — calculé à l'instant, rien n'est enregistré.</p>
+                </div>
+                <button pButton type="button" class="p-button-sm p-button-outlined" icon="fa-solid fa-floppy-disk"
+                  label="Enregistrer comme état" [disabled]="busy()" (click)="saveReportAsState()"></button>
+              </div>
+              @for (w of report.warnings; track w) {
+                <p class="sab-plan__warning"><i class="fa-solid fa-triangle-exclamation"></i> {{ w }}</p>
+              }
+              <app-dynamic-report [result]="report.result" [exportName]="report.title"></app-dynamic-report>
             </div>
           }
 
@@ -143,6 +170,13 @@ type BuilderState = 'idle' | 'planning' | 'awaiting_confirmation' | 'executing';
     .sab-plan__steps { list-style: none; margin: .75rem 0 0; padding: 0; display: flex; flex-direction: column; gap: .35rem; }
     .sab-plan__steps li { display: flex; justify-content: space-between; gap: 1rem; font-size: .9rem;
       border-bottom: 1px dashed var(--surface-300); padding-bottom: .3rem; }
+    .sab-plan__sample { margin-top: .75rem; }
+    .sab-plan__sample h5 { margin: 0 0 .4rem; font-size: .85rem; color: var(--text-color-secondary); }
+    .sab-report { border: 1px solid var(--surface-200); background: var(--surface-0); border-radius: 10px; padding: 1rem; }
+    .sab-report__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;
+      margin-bottom: .75rem; flex-wrap: wrap; }
+    .sab-report__head h4 { margin: 0; font-size: 1rem; }
+    .sab-report__hint { margin: .15rem 0 0; font-size: .82rem; color: var(--text-color-secondary); }
     .sab-plan__label { font-weight: 600; }
     .sab-plan__detail { color: var(--text-color-secondary); text-align: right; }
     .sab-plan__entities { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .75rem; }
@@ -183,6 +217,8 @@ export class StudioAiBuilderComponent {
   readonly actions = signal<NavAction[]>([]);
   readonly error = signal<string | null>(null);
   readonly plan = signal<StudioPlanEvent | null>(null);
+  /** Résultat d'un état calculé en lecture seule : affiché tel quel, rien n'est persisté. */
+  readonly reportResult = signal<StudioReportResultEvent | null>(null);
 
   /** Le compositeur est verrouillé tant qu'un plan attend une décision ou qu'un travail est en cours. */
   busy(): boolean { return this.state() !== 'idle'; }
@@ -201,6 +237,7 @@ export class StudioAiBuilderComponent {
     this.error.set(null);
     this.buildSteps.set([]);
     this.plan.set(null);
+    this.reportResult.set(null);
     this.assistantBuffer = '';
 
     const request: ChatRequest = {
@@ -269,6 +306,9 @@ export class StudioAiBuilderComponent {
       case 'studio_plan':
         this.applyPlan(ev.content);
         break;
+      case 'studio_report_result':
+        this.applyReportResult(ev.content);
+        break;
       case 'studio_progress':
         this.applyProgress(ev.content);
         break;
@@ -330,6 +370,30 @@ export class StudioAiBuilderComponent {
     }
   }
 
+  private applyReportResult(json: string | undefined): void {
+    if (!json) return;
+    try {
+      const payload = JSON.parse(json) as StudioReportResultEvent;
+      if (!payload?.result?.columns) return;
+      payload.warnings ??= [];
+      this.reportResult.set(payload);
+    } catch {
+      // Payload illisible : on laisse le flux se terminer, le texte de l'assistant reste affiché.
+    }
+  }
+
+  /**
+   * Transforme le résultat affiché en état Studio enregistré : on renvoie la MÊME demande à
+   * l'assistant en lui demandant de la conserver, ce qui passe par `studio_plan_report` et donc par
+   * l'aperçu et la validation — aucun raccourci d'écriture depuis le client.
+   */
+  saveReportAsState(): void {
+    const report = this.reportResult();
+    if (!report || this.busy()) return;
+    this.prompt = `Enregistre cet état : ${report.title}`;
+    this.send();
+  }
+
   private applyProgress(json: string | undefined): void {
     if (!json) return;
     try {
@@ -380,22 +444,94 @@ export class StudioAiBuilderComponent {
   }
 
   private strip(text: string): string {
-    // Hide any internal detail the model may leak: ft-meta/dashboard meta fences, ```json blocks, any
-    // fenced block that contains a system/entities spec object, and BARE tool-call envelopes
-    // ({"name":"studio_…","arguments":…}). Then drop any remaining PROSE line that names an internal
-    // tool (studio_*) or mentions the JSON spec — the builder must summarise in plain French only.
-    const noFences = text
-      .replace(/```ft-meta[\s\S]*?```/g, '')
-      .replace(/```dashboard[\s\S]*?```/g, '')
-      .replace(/```json[\s\S]*?```/gi, '')
-      .replace(/```[\s\S]*?"(?:system|entities)"[\s\S]*?```/gi, '')
-      .replace(/\{\s*"(?:type|name)"\s*:[\s\S]*?"name"\s*:\s*"studio_[\s\S]*?"arguments"[\s\S]*?\}\s*\}/gi, '')
-      .replace(/\{\s*"name"\s*:\s*"studio_[\s\S]*?"arguments"\s*:\s*\{[\s\S]*?\}\s*\}/gi, '');
-    return noFences
-      .split('\n')
-      .filter(line => !/studio_[a-z_]+/i.test(line) && !/\bjson\b/i.test(line))
-      .join('\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+    return stripStudioAssistantText(text);
   }
+}
+
+/** Visible-text sanitizer for Studio AI bubbles. Exported for unit tests. */
+export function stripStudioAssistantText(text: string): string {
+  // Hide internal leaks: closed fences, unclosed ```json tails, bare entity/system specs,
+  // and tool-call envelopes. Then drop prose lines that name studio_* or mention JSON.
+  let noFences = text
+    .replace(/```ft-meta[\s\S]*?```/g, '')
+    .replace(/```dashboard[\s\S]*?```/g, '')
+    .replace(/```json[\s\S]*?```/gi, '')
+    .replace(/```[\s\S]*?"(?:system|entities)"[\s\S]*?```/gi, '')
+    .replace(/```(?:json|ft-meta|dashboard)?[\s\S]*$/gi, '')
+    .replace(/\{\s*"(?:type|name)"\s*:[\s\S]*?"name"\s*:\s*"studio_[\s\S]*?"arguments"[\s\S]*?\}\s*\}/gi, '')
+    .replace(/\{\s*"name"\s*:\s*"studio_[\s\S]*?"arguments"\s*:\s*\{[\s\S]*?\}\s*\}/gi, '');
+  noFences = stripBareStudioJsonObjects(noFences);
+  return noFences
+    .split('\n')
+    .filter(line => !/studio_[a-z_]+/i.test(line) && !/\bjson\b/i.test(line))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function stripBareStudioJsonObjects(text: string): string {
+  let result = '';
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] === '{') {
+      const extracted = extractBalancedObject(text, i);
+      if (extracted && isBareStudioSpec(extracted.value)) {
+        i = extracted.end;
+        continue;
+      }
+      if (!extracted && looksLikeStudioSpecSlice(text.slice(i))) {
+        break;
+      }
+    }
+    result += text[i];
+    i++;
+  }
+  return result;
+}
+
+function extractBalancedObject(text: string, start: number): { value: string; end: number } | null {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (c === '\\') escaped = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') {
+      inString = true;
+      continue;
+    }
+    if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) {
+        return { value: text.slice(start, i + 1), end: i + 1 };
+      }
+    }
+  }
+  return null;
+}
+
+function isBareStudioSpec(json: string): boolean {
+  try {
+    const parsed = JSON.parse(json) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object') return false;
+    if ('name' in parsed && 'arguments' in parsed) return false;
+    const entity = parsed['entity'];
+    const fields = parsed['fields'];
+    if (entity && typeof entity === 'object' && Array.isArray(fields) && fields.length > 0) return true;
+    const system = parsed['system'];
+    const entities = parsed['entities'];
+    return !!(system && typeof system === 'object' && Array.isArray(entities) && entities.length > 0);
+  } catch {
+    return false;
+  }
+}
+
+function looksLikeStudioSpecSlice(slice: string): boolean {
+  return /"entity"/.test(slice) || (/"system"/.test(slice) && /"entities"/.test(slice));
 }

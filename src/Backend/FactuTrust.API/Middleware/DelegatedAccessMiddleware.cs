@@ -8,8 +8,9 @@ namespace FactuTrust.API.Middleware;
 
 /// <summary>
 /// Blocks mutating requests in delegated firm context except accounting, fiscal, payroll and AI endpoints.
-/// AI business restrictions (Accounting scope only, invoice import, PowerPoint export) are enforced in
-/// controllers/handlers — not in this middleware.
+/// AI business restrictions (Accounting scope only, invoice import) are enforced in
+/// controllers/handlers — not in this middleware. PowerPoint export is allowed for the
+/// Comptabilité assistant already in delegated scope.
 /// </summary>
 public sealed class DelegatedAccessMiddleware
 {
@@ -21,8 +22,8 @@ public sealed class DelegatedAccessMiddleware
         // Payroll (RH & Paie) is a delegated-firm responsibility: the accounting firm must be able
         // to manage employees, run payroll and file social declarations on behalf of client dossiers.
         "/api/payroll",
-        // Accounting-firm AI assistant (chat, warm-up, document extract, conversation management).
-        // Sub-features blocked in delegated mode remain guarded at controller level (invoice import, PPT export).
+        // Accounting-firm AI assistant (chat, warm-up, document extract, conversation management,
+        // PowerPoint export). Invoice import remains guarded at controller level.
         "/api/ai"
     };
 
@@ -36,7 +37,8 @@ public sealed class DelegatedAccessMiddleware
         "/api/firm/context",
         "/api/auth/refresh",
         "/api/auth/logout",
-        "/api/notifications"
+        "/api/notifications",
+        "/api/me/onboarding"
     };
 
     private static readonly HashSet<string> BlockedPrefixes = new(StringComparer.OrdinalIgnoreCase)

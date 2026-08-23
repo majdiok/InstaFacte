@@ -117,8 +117,23 @@ const VAT_OPTIONS: { label: string; value: number }[] = [
                 [value]="p.isStockManaged ? 'Activée' : 'Désactivée'"
                 [severity]="p.isStockManaged ? 'success' : 'secondary'">
               </p-tag>
+              @if (p.isVariantTemplate) {
+                <p-tag value="Modèle de variantes" severity="warn"></p-tag>
+              }
+              @if (p.parentProductId) {
+                <p-tag value="Variante" severity="info"></p-tag>
+              }
             </p>
           </div>
+          @if (p.trackingMode || p.costingMethod) {
+            <div class="form-group">
+              <span class="field-label">Traçabilité</span>
+              <p class="field-value">
+                {{ p.trackingMode === 1 ? 'Lot' : p.trackingMode === 2 ? 'Série' : 'Aucun suivi' }}
+                · {{ p.costingMethod === 1 ? 'FIFO' : p.costingMethod === 2 ? 'LIFO' : 'CMUP' }}
+              </p>
+            </div>
+          }
 
           @if (isProductType(p)) {
             <div class="form-group">

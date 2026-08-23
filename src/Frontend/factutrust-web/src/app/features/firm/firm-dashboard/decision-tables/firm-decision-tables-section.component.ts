@@ -8,7 +8,6 @@ import { FirmCriticalFiscalTableComponent } from './firm-critical-fiscal-table.c
 import { FirmAtRiskDossiersTableComponent } from './firm-at-risk-dossiers-table.component';
 import { FirmNegativeMarginTableComponent } from './firm-negative-margin-table.component';
 import { FirmPendingTimesheetsTableComponent } from './firm-pending-timesheets-table.component';
-import { FirmSocialAlertsTableComponent } from './firm-social-alerts-table.component';
 import { FirmHonorairesAlertsTableComponent } from './firm-honoraires-alerts-table.component';
 
 @Component({
@@ -20,7 +19,6 @@ import { FirmHonorairesAlertsTableComponent } from './firm-honoraires-alerts-tab
     FirmAtRiskDossiersTableComponent,
     FirmNegativeMarginTableComponent,
     FirmPendingTimesheetsTableComponent,
-    FirmSocialAlertsTableComponent,
     FirmHonorairesAlertsTableComponent
   ],
   template: `
@@ -39,7 +37,6 @@ import { FirmHonorairesAlertsTableComponent } from './firm-honoraires-alerts-tab
         <app-firm-at-risk-dossiers-table [rows]="data()?.atRiskDossiers ?? []" [loading]="loading()" />
         <app-firm-negative-margin-table [rows]="data()?.negativeMargins ?? []" [loading]="loading()" />
         <app-firm-pending-timesheets-table [rows]="data()?.pendingTimeSheets ?? []" [loading]="loading()" />
-        <app-firm-social-alerts-table [rows]="data()?.socialAlerts ?? []" [loading]="loading()" />
         <app-firm-honoraires-alerts-table [rows]="data()?.honorairesAlerts ?? []" [loading]="loading()" />
       </div>
     </section>

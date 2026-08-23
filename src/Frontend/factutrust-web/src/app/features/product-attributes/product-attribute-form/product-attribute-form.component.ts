@@ -1,0 +1,384 @@
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormBuilder, FormGroup, ReactiveFormsModule, Validators, FormsModule } from '@angular/forms';
+import { Router, RouterModule, ActivatedRoute } from '@angular/router';
+import { InputTextModule } from 'primeng/inputtext';
+import { InputNumberModule } from 'primeng/inputnumber';
+import { ToastModule } from 'primeng/toast';
+import { ToastService } from '@core/services/toast.service';
+import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
+import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
+import { FormSectionComponent } from '@shared/components/form-section/form-section.component';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import {
+  ProductService,
+  ProductAttributeValueDto,
+  CreateProductAttributeRequest
+} from '@core/services/product.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
+import { ConfirmationService } from '@core/services/confirmation.service';
+
+interface NewValueRow {
+  code: string;
+  name: string;
+}
+
+@Component({
+  selector: 'app-product-attribute-form',
+  standalone: true,
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    FormsModule,
+    RouterModule,
+    InputTextModule,
+    InputNumberModule,
+    ToastModule,
+    PageHeaderComponent,
+    BreadcrumbComponent,
+    FormSectionComponent,
+    ButtonComponent
+  ],
+  template: `
+    <app-breadcrumb [items]="breadcrumbItems()"></app-breadcrumb>
+
+    <app-page-header
+      [title]="isEditMode() ? 'Modifier l attribut' : 'Nouvel attribut'"
+      [subtitle]="isEditMode() ? 'Modifiez le nom et les valeurs de l attribut.' : 'Créez un axe de variantes (ex. Taille, Couleur).'">
+      <app-button variant="outline" icon="pi-times" iconPos="left" routerLink="/product-attributes">
+        Annuler
+      </app-button>
+    </app-page-header>
+
+    @if (loading()) {
+      <div class="loading-container">
+        <i class="pi pi-spin pi-spinner"></i>
+        <p>Chargement...</p>
+      </div>
+    } @else {
+      <form [formGroup]="form" (ngSubmit)="onSubmit()">
+        <app-form-section title="Informations" icon="pi-tag" [number]="1">
+          @if (isEditMode()) {
+            <div class="form-group">
+              <label>Code</label>
+              <input pInputText [value]="attributeCode()" class="w-full" readonly disabled />
+              <small class="form-hint">Le code n'est pas modifiable.</small>
+            </div>
+          } @else {
+            <div class="form-group">
+              <label for="code">Code <span class="required">*</span></label>
+              <input pInputText id="code" formControlName="code" placeholder="Ex: SIZE" class="w-full" maxlength="50" />
+            </div>
+          }
+          <div class="form-group">
+            <label for="name">Nom <span class="required">*</span></label>
+            <input pInputText id="name" formControlName="name" placeholder="Ex: Taille" class="w-full" maxlength="100" />
+          </div>
+        </app-form-section>
+
+        <app-form-section title="Valeurs" icon="pi-list" [number]="2">
+          @if (isEditMode()) {
+            <table class="values-table">
+              <thead>
+                <tr>
+                  <th>Code</th>
+                  <th>Nom</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (value of existingValues(); track value.id) {
+                  <tr>
+                    <td><code>{{ value.code }}</code></td>
+                    <td>
+                      <input pInputText [(ngModel)]="value.name" [ngModelOptions]="{ standalone: true }" class="w-full" />
+                    </td>
+                    <td class="actions">
+                      <app-button type="button" variant="ghost" size="sm" icon="pi-check" (clicked)="saveValue(value)">
+                        Enregistrer
+                      </app-button>
+                      <app-button type="button" variant="ghost" size="sm" icon="pi-trash" (clicked)="deleteValue(value)">
+                        Supprimer
+                      </app-button>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+
+            <h4 class="sub-title">Ajouter une valeur</h4>
+            <div class="form-row">
+              <input pInputText [(ngModel)]="newValueCode" [ngModelOptions]="{ standalone: true }" placeholder="Code" class="w-full" />
+              <input pInputText [(ngModel)]="newValueName" [ngModelOptions]="{ standalone: true }" placeholder="Nom" class="w-full" />
+              <app-button type="button" variant="outline" icon="pi-plus" (clicked)="addValue()" [disabled]="savingValue()">
+                Ajouter
+              </app-button>
+            </div>
+          } @else {
+            <p class="form-hint">Ajoutez les valeurs initiales (ex. S, M, L pour Taille).</p>
+            @for (row of newValues; track $index; let i = $index) {
+              <div class="form-row">
+                <input pInputText [(ngModel)]="row.code" [ngModelOptions]="{ standalone: true }" placeholder="Code" class="w-full" />
+                <input pInputText [(ngModel)]="row.name" [ngModelOptions]="{ standalone: true }" placeholder="Nom" class="w-full" />
+                <button type="button" class="btn-icon" (click)="removeNewValue(i)" aria-label="Retirer">
+                  <i class="pi pi-times"></i>
+                </button>
+              </div>
+            }
+            <app-button type="button" variant="ghost" size="sm" icon="pi-plus" (clicked)="addNewValueRow()">
+              Ajouter une valeur
+            </app-button>
+          }
+        </app-form-section>
+
+        <div class="form-actions">
+          <app-button type="submit" variant="primary" icon="pi-check" [disabled]="saving() || form.invalid">
+            {{ isEditMode() ? 'Enregistrer' : 'Créer l attribut' }}
+          </app-button>
+        </div>
+      </form>
+    }
+  `,
+  styles: [`
+    .form-group { margin-bottom: 1rem; }
+    .form-hint { color: #64748b; font-size: 0.875rem; }
+    .required { color: #dc2626; }
+    .form-row {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
+    .values-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1rem;
+    }
+    .values-table th, .values-table td {
+      padding: 0.5rem;
+      border-bottom: 1px solid #e2e8f0;
+      text-align: left;
+    }
+    .actions { text-align: right; white-space: nowrap; }
+    .sub-title { margin: 1rem 0 0.5rem; font-size: 0.95rem; }
+    .form-actions { margin-top: 1.5rem; }
+    .loading-container {
+      text-align: center;
+      padding: 2rem;
+      color: #64748b;
+    }
+    .btn-icon {
+      background: none;
+      border: none;
+      color: #64748b;
+      cursor: pointer;
+    }
+  `]
+})
+export class ProductAttributeFormComponent implements OnInit {
+  private fb = inject(FormBuilder);
+  private productService = inject(ProductService);
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
+  private toastService = inject(ToastService);
+  private errorHandler = inject(ErrorHandlerService);
+  private confirmationService = inject(ConfirmationService);
+
+  form: FormGroup = this.fb.group({
+    code: ['', [Validators.required, Validators.maxLength(50)]],
+    name: ['', [Validators.required, Validators.maxLength(100)]]
+  });
+
+  loading = signal(false);
+  saving = signal(false);
+  savingValue = signal(false);
+  attributeId = signal<string | null>(null);
+  attributeCode = signal('');
+  existingValues = signal<ProductAttributeValueDto[]>([]);
+  newValues: NewValueRow[] = [{ code: '', name: '' }];
+  newValueCode = '';
+  newValueName = '';
+
+  isEditMode = computed(() => this.attributeId() !== null);
+
+  breadcrumbItems = computed<BreadcrumbItem[]>(() => [
+    { label: 'Tableau de bord', route: '/dashboard', icon: 'pi-home' },
+    { label: 'Attributs produits', route: '/product-attributes' },
+    { label: this.isEditMode() ? 'Modifier' : 'Nouvel attribut' }
+  ]);
+
+  ngOnInit(): void {
+    const id = this.route.snapshot.paramMap.get('id');
+    if (id) {
+      this.attributeId.set(id);
+      this.form.get('code')?.disable();
+      this.loadAttribute(id);
+    }
+  }
+
+  private loadAttribute(id: string): void {
+    this.loading.set(true);
+    this.productService.getAttribute(id).subscribe({
+      next: res => {
+        this.loading.set(false);
+        if (!res.success || !res.data) return;
+        this.attributeCode.set(res.data.code);
+        this.form.patchValue({ name: res.data.name });
+        this.existingValues.set(res.data.values.map(v => ({ ...v })));
+      },
+      error: err => {
+        this.loading.set(false);
+        this.toastService.add({
+          severity: 'error',
+          summary: 'Erreur',
+          detail: this.errorHandler.extractErrorMessage(err)
+        });
+      }
+    });
+  }
+
+  addNewValueRow(): void {
+    this.newValues.push({ code: '', name: '' });
+  }
+
+  removeNewValue(index: number): void {
+    if (this.newValues.length <= 1) return;
+    this.newValues.splice(index, 1);
+  }
+
+  addValue(): void {
+    const id = this.attributeId();
+    const code = this.newValueCode.trim();
+    const name = this.newValueName.trim();
+    if (!id || !code || !name) return;
+
+    this.savingValue.set(true);
+    this.productService.addAttributeValue(id, { code, name }).subscribe({
+      next: res => {
+        this.savingValue.set(false);
+        if (res.success) {
+          this.newValueCode = '';
+          this.newValueName = '';
+          this.loadAttribute(id);
+          this.toastService.add({ severity: 'success', summary: 'Ajouté', detail: 'Valeur ajoutée' });
+        }
+      },
+      error: err => {
+        this.savingValue.set(false);
+        this.toastService.add({
+          severity: 'error',
+          summary: 'Erreur',
+          detail: this.errorHandler.extractErrorMessage(err)
+        });
+      }
+    });
+  }
+
+  saveValue(value: ProductAttributeValueDto): void {
+    const id = this.attributeId();
+    if (!id) return;
+
+    this.savingValue.set(true);
+    this.productService.updateAttributeValue(id, value.id, { name: value.name.trim() }).subscribe({
+      next: res => {
+        this.savingValue.set(false);
+        if (res.success) {
+          this.toastService.add({ severity: 'success', summary: 'Enregistré', detail: 'Valeur mise à jour' });
+        }
+      },
+      error: err => {
+        this.savingValue.set(false);
+        this.toastService.add({
+          severity: 'error',
+          summary: 'Erreur',
+          detail: this.errorHandler.extractErrorMessage(err)
+        });
+      }
+    });
+  }
+
+  deleteValue(value: ProductAttributeValueDto): void {
+    const id = this.attributeId();
+    if (!id) return;
+
+    this.confirmationService.confirm({
+      header: 'Supprimer la valeur',
+      message: `Supprimer « ${value.name} » ?`,
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Supprimer',
+      rejectLabel: 'Annuler',
+      accept: () => {
+        this.productService.deleteAttributeValue(id, value.id).subscribe({
+          next: res => {
+            if (res.success) {
+              this.loadAttribute(id);
+              this.toastService.add({ severity: 'success', summary: 'Supprimé', detail: 'Valeur supprimée' });
+            }
+          },
+          error: err => {
+            this.toastService.add({
+              severity: 'error',
+              summary: 'Erreur',
+              detail: this.errorHandler.extractErrorMessage(err)
+            });
+          }
+        });
+      }
+    });
+  }
+
+  onSubmit(): void {
+    if (this.form.invalid) return;
+    this.saving.set(true);
+
+    if (this.isEditMode()) {
+      const id = this.attributeId()!;
+      this.productService.updateAttribute(id, { name: this.form.get('name')!.value.trim() }).subscribe({
+        next: res => {
+          this.saving.set(false);
+          if (res.success) {
+            this.toastService.add({ severity: 'success', summary: 'Enregistré', detail: 'Attribut mis à jour' });
+            this.router.navigate(['/product-attributes']);
+          }
+        },
+        error: err => {
+          this.saving.set(false);
+          this.toastService.add({
+            severity: 'error',
+            summary: 'Erreur',
+            detail: this.errorHandler.extractErrorMessage(err)
+          });
+        }
+      });
+      return;
+    }
+
+    const values = this.newValues
+      .map(v => ({ code: v.code.trim(), name: v.name.trim() }))
+      .filter(v => v.code && v.name);
+
+    const request: CreateProductAttributeRequest = {
+      code: this.form.get('code')!.value.trim(),
+      name: this.form.get('name')!.value.trim(),
+      values
+    };
+
+    this.productService.createAttribute(request).subscribe({
+      next: res => {
+        this.saving.set(false);
+        if (res.success) {
+          this.toastService.add({ severity: 'success', summary: 'Créé', detail: 'Attribut créé' });
+          this.router.navigate(['/product-attributes']);
+        }
+      },
+      error: err => {
+        this.saving.set(false);
+        this.toastService.add({
+          severity: 'error',
+          summary: 'Erreur',
+          detail: this.errorHandler.extractErrorMessage(err)
+        });
+      }
+    });
+  }
+}

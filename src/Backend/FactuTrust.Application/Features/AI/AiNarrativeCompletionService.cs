@@ -74,6 +74,8 @@ public sealed class AiNarrativeCompletionService : IAiNarrativeCompletionService
     private readonly IOllamaClient _ollamaClient;
     private readonly IOpenAiChatCompletionsClient _openAiClient;
     private readonly IPlatformAiSettingsService _platformAiSettings;
+    private readonly IModalCredentialsResolver _modalCredentials;
+    private readonly ITenantContext _tenantContext;
     private readonly IOllamaInferenceProfileResolver _inferenceProfileResolver;
     private readonly OllamaSettings _ollamaSettings;
     private readonly ILogger<AiNarrativeCompletionService> _logger;
@@ -84,7 +86,9 @@ public sealed class AiNarrativeCompletionService : IAiNarrativeCompletionService
         IPlatformAiSettingsService platformAiSettings,
         IOllamaInferenceProfileResolver inferenceProfileResolver,
         IOptions<OllamaSettings> ollamaSettings,
-        ILogger<AiNarrativeCompletionService> logger)
+        ILogger<AiNarrativeCompletionService> logger,
+        IModalCredentialsResolver modalCredentials,
+        ITenantContext tenantContext)
     {
         _ollamaClient = ollamaClient;
         _openAiClient = openAiClient;
@@ -92,6 +96,8 @@ public sealed class AiNarrativeCompletionService : IAiNarrativeCompletionService
         _inferenceProfileResolver = inferenceProfileResolver;
         _ollamaSettings = ollamaSettings.Value;
         _logger = logger;
+        _modalCredentials = modalCredentials;
+        _tenantContext = tenantContext;
     }
 
     public async Task<Result<AiNarrativeCompletionOutcome>> CompleteAsync(
@@ -114,7 +120,7 @@ public sealed class AiNarrativeCompletionService : IAiNarrativeCompletionService
             {
                 LlmProviderKind.Ollama => await CallOllamaAsync(
                     modelRef, request, outputCap, timeout, cancellationToken),
-                LlmProviderKind.OpenRouter => await CallOpenRouterAsync(
+                LlmProviderKind.OpenRouter or LlmProviderKind.Modal => await CallOpenAiCompatibleAsync(
                     modelRef, request, outputCap, cancellationToken),
                 _ => throw new NotSupportedException(
                     $"Fournisseur non géré pour la rédaction : {modelRef.Kind}.")
@@ -202,16 +208,34 @@ public sealed class AiNarrativeCompletionService : IAiNarrativeCompletionService
             _ollamaClient.StreamChatAsync(chatRequest, cancellationToken, timeout));
     }
 
-    private async Task<(string Raw, int Chunks, long? FirstTokenMs)> CallOpenRouterAsync(
+    private async Task<(string Raw, int Chunks, long? FirstTokenMs)> CallOpenAiCompatibleAsync(
         ParsedModelRef modelRef,
         AiNarrativeCompletionRequest request,
         int outputCap,
         CancellationToken cancellationToken)
     {
-        var credentials = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
-        if (string.IsNullOrWhiteSpace(credentials.ApiKey))
-            throw new InvalidOperationException(
-                "Aucune clé OpenRouter configurée. Renseignez-la dans le back-office plateforme.");
+        string baseUrl;
+        string apiKey;
+        OpenAiCompatibleCallOptions? options = null;
+
+        if (modelRef.Kind == LlmProviderKind.Modal)
+        {
+            var credentials = await _modalCredentials.ResolveAsync(_tenantContext.TenantId, cancellationToken);
+            if (string.IsNullOrWhiteSpace(credentials.ApiKey) || string.IsNullOrWhiteSpace(credentials.BaseUrl))
+                throw new InvalidOperationException(ModalCredentialMessages.Unavailable(credentials));
+            baseUrl = credentials.BaseUrl;
+            apiKey = credentials.ApiKey!;
+            options = OpenAiCompatibleCallOptions.ForModal(new ModalSettings(), sessionId: null);
+        }
+        else
+        {
+            var credentials = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(credentials.ApiKey))
+                throw new InvalidOperationException(
+                    "Aucune clé OpenRouter configurée. Renseignez-la dans le back-office plateforme.");
+            baseUrl = credentials.BaseUrl;
+            apiKey = credentials.ApiKey!;
+        }
 
         var messages = new List<OpenAiChatMessagePayload>
         {
@@ -220,14 +244,16 @@ public sealed class AiNarrativeCompletionService : IAiNarrativeCompletionService
         };
 
         return await ConsumeAsync(_openAiClient.StreamChatAsOllamaCompatibleAsync(
-            credentials.BaseUrl,
-            credentials.ApiKey!,
+            baseUrl,
+            apiKey,
             modelRef.ProviderModelId,
             messages,
             Array.Empty<OllamaToolDefinition>(),
             0d,
             outputCap,
-            cancellationToken));
+            cancellationToken,
+            seed: null,
+            options));
     }
 
     private static async Task<(string Raw, int Chunks, long? FirstTokenMs)> ConsumeAsync(

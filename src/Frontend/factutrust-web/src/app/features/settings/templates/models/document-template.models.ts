@@ -4,7 +4,8 @@ export type PrintableDocumentType =
   | 'Quote'
   | 'PurchaseOrder'
   | 'DeliveryNote'
-  | 'SupplierInvoice';
+  | 'SupplierInvoice'
+  | 'SalesReturnNote';
 
 export interface DocumentTemplatePreferenceDto {
   documentType: PrintableDocumentType;
@@ -38,5 +39,6 @@ export const DOCUMENT_TYPE_TABS: DocumentTypeTab[] = [
   { type: 'Quote', label: 'Devis', icon: 'pi pi-file-edit' },
   { type: 'PurchaseOrder', label: 'Bons de commande', icon: 'pi pi-shopping-cart' },
   { type: 'DeliveryNote', label: 'Bons de livraison', icon: 'pi pi-truck' },
-  { type: 'SupplierInvoice', label: "Factures d'achat", icon: 'pi pi-receipt' }
+  { type: 'SupplierInvoice', label: "Factures d'achat", icon: 'pi pi-receipt' },
+  { type: 'SalesReturnNote', label: 'Bons de retour', icon: 'pi pi-replay' }
 ];

@@ -36,6 +36,13 @@ export interface Product {
   preferredSupplierId?: string | null;
   createdAt?: string;
   updatedAt?: string | null;
+  parentProductId?: string | null;
+  isVariantTemplate?: boolean;
+  trackingMode?: number;
+  hasExpiryTracking?: boolean;
+  pickingPolicy?: number;
+  costingMethod?: number;
+  expiryAlertDays?: number | null;
 }
 
 export interface ProductListItem {
@@ -66,6 +73,10 @@ export interface ProductListItem {
   imageUrl?: string | null;
   /** Quantité disponible (entrepôt par défaut) ; null si pas de gestion de stock ou indisponible côté API */
   quantityAvailable?: number | null;
+  isVariantTemplate?: boolean;
+  parentProductId?: string | null;
+  trackingMode?: number;
+  costingMethod?: number;
 }
 
 /** Lightweight product DTO for autocomplete / select dropdowns (GET /products/select). */
@@ -121,6 +132,12 @@ export interface CreateProductRequest {
   maxDiscountPercent?: number | null;
   /** Fournisseur préféré (optionnel) ; null/undefined = aucun. */
   preferredSupplierId?: string | null;
+  isVariantTemplate?: boolean;
+  trackingMode?: number;
+  hasExpiryTracking?: boolean;
+  pickingPolicy?: number;
+  costingMethod?: number;
+  expiryAlertDays?: number | null;
 }
 
 export interface UpdateProductRequest extends CreateProductRequest {
@@ -150,15 +167,16 @@ export class ProductService {
     if (params.search) httpParams = httpParams.set('search', params.search);
     
     // Map category string to ProductType enum value
-    // Frontend sends: "Produit" (0), "Service" (1), "Abonnement" (not in enum, treat as null)
+    // Frontend sends: "Produit" (0), "Service" (1), "Abonnement" (2)
     if (params.category) {
       let typeValue: number | null = null;
       if (params.category === 'Produit') {
         typeValue = 0; // ProductType.Product
       } else if (params.category === 'Service') {
         typeValue = 1; // ProductType.Service
+      } else if (params.category === 'Abonnement') {
+        typeValue = 2; // ProductType.Subscription
       }
-      // "Abonnement" is not in ProductType enum, so we don't set type filter
       if (typeValue !== null) {
         httpParams = httpParams.set('type', typeValue.toString());
       }
@@ -201,6 +219,10 @@ export class ProductService {
           isActive: item.isActive,
           isStockManaged: item.isStockManaged ?? false,
           imageUrl: item.imageUrl ?? null,
+          isVariantTemplate: item.isVariantTemplate ?? false,
+          parentProductId: item.parentProductId ?? null,
+          trackingMode: item.trackingMode ?? 0,
+          costingMethod: item.costingMethod ?? 0,
           quantityAvailable:
             item.isStockManaged && item.quantityAvailable != null
               ? Number(item.quantityAvailable)
@@ -317,7 +339,14 @@ export class ProductService {
           imageUrl: response.data.imageUrl ?? null,
           preferredSupplierId: response.data.preferredSupplierId ?? null,
           createdAt: response.data.createdAt,
-          updatedAt: response.data.updatedAt
+          updatedAt: response.data.updatedAt,
+          parentProductId: response.data.parentProductId ?? null,
+          isVariantTemplate: response.data.isVariantTemplate ?? false,
+          trackingMode: response.data.trackingMode ?? 0,
+          hasExpiryTracking: response.data.hasExpiryTracking ?? false,
+          pickingPolicy: response.data.pickingPolicy ?? 0,
+          costingMethod: response.data.costingMethod ?? 0,
+          expiryAlertDays: response.data.expiryAlertDays ?? null
         };
 
         return {
@@ -371,7 +400,11 @@ export class ProductService {
             maxDiscountPercent: d.maxDiscountPercent ?? null,
             isActive: d.isActive,
             isStockManaged: d.isStockManaged ?? false,
-            imageUrl: d.imageUrl ?? null
+            imageUrl: d.imageUrl ?? null,
+            isVariantTemplate: d.isVariantTemplate ?? false,
+            parentProductId: d.parentProductId ?? null,
+            trackingMode: d.trackingMode ?? 0,
+            costingMethod: d.costingMethod ?? 0
           };
 
           return { ...response, data: item } as ApiResponse<ProductListItem>;
@@ -381,12 +414,13 @@ export class ProductService {
 
   createProduct(request: CreateProductRequest): Observable<ApiResponse<string>> {
     // Map category string to ProductType enum
-    // Frontend: "Produit" (0), "Service" (1), "Abonnement" (treat as Service for now)
+    // Frontend: "Produit" (0), "Service" (1), "Abonnement" (2)
     let type: number;
     if (request.category === 'Produit') {
       type = 0; // ProductType.Product
+    } else if (request.category === 'Abonnement') {
+      type = 2; // ProductType.Subscription
     } else {
-      // Service or Abonnement -> treat as Service
       type = 1; // ProductType.Service
     }
 
@@ -405,7 +439,13 @@ export class ProductService {
       isFodecApplicable: request.isFodecApplicable ?? false,
       isDiscountEnabled: request.isDiscountEnabled ?? false,
       maxDiscountPercent: request.isDiscountEnabled ? request.maxDiscountPercent ?? undefined : undefined,
-      preferredSupplierId: request.preferredSupplierId ?? undefined
+      preferredSupplierId: request.preferredSupplierId ?? undefined,
+      isVariantTemplate: request.isVariantTemplate ?? false,
+      trackingMode: request.trackingMode ?? 0,
+      hasExpiryTracking: request.hasExpiryTracking ?? false,
+      pickingPolicy: request.pickingPolicy ?? 0,
+      costingMethod: request.costingMethod ?? 0,
+      expiryAlertDays: request.expiryAlertDays ?? undefined
     };
 
     return this.http.post<ApiResponse<string>>(this.API_URL, backendRequest);
@@ -426,7 +466,13 @@ export class ProductService {
       isDiscountEnabled: request.isDiscountEnabled ?? false,
       maxDiscountPercent: request.isDiscountEnabled ? request.maxDiscountPercent ?? undefined : undefined,
       categoryId: request.productCategoryId,
-      preferredSupplierId: request.preferredSupplierId ?? null
+      preferredSupplierId: request.preferredSupplierId ?? null,
+      isVariantTemplate: request.isVariantTemplate ?? false,
+      trackingMode: request.trackingMode ?? 0,
+      hasExpiryTracking: request.hasExpiryTracking ?? false,
+      pickingPolicy: request.pickingPolicy ?? 0,
+      costingMethod: request.costingMethod ?? 0,
+      expiryAlertDays: request.expiryAlertDays ?? undefined
     };
 
     return this.http.put<ApiResponse<Product>>(`${this.API_URL}/${id}`, backendRequest);
@@ -480,4 +526,99 @@ export class ProductService {
   deleteProductImage(productId: string): Observable<ApiResponse<object | null>> {
     return this.http.delete<ApiResponse<object | null>>(`${this.API_URL}/${productId}/image`);
   }
+
+  listAttributes(): Observable<ApiResponse<ProductAttributeDto[]>> {
+    return this.http.get<ApiResponse<ProductAttributeDto[]>>(`${this.API_URL}/attributes`);
+  }
+
+  getAttribute(id: string): Observable<ApiResponse<ProductAttributeDto>> {
+    return this.http.get<ApiResponse<ProductAttributeDto>>(`${this.API_URL}/attributes/${id}`);
+  }
+
+  createAttribute(request: CreateProductAttributeRequest): Observable<ApiResponse<string>> {
+    return this.http.post<ApiResponse<string>>(`${this.API_URL}/attributes`, request);
+  }
+
+  updateAttribute(id: string, request: UpdateProductAttributeRequest): Observable<ApiResponse<ProductAttributeDto>> {
+    return this.http.put<ApiResponse<ProductAttributeDto>>(`${this.API_URL}/attributes/${id}`, request);
+  }
+
+  deleteAttribute(id: string): Observable<ApiResponse<object>> {
+    return this.http.delete<ApiResponse<object>>(`${this.API_URL}/attributes/${id}`);
+  }
+
+  addAttributeValue(
+    definitionId: string,
+    request: AddProductAttributeValueRequest
+  ): Observable<ApiResponse<string>> {
+    return this.http.post<ApiResponse<string>>(
+      `${this.API_URL}/attributes/${definitionId}/values`,
+      request
+    );
+  }
+
+  updateAttributeValue(
+    definitionId: string,
+    valueId: string,
+    request: UpdateProductAttributeValueRequest
+  ): Observable<ApiResponse<ProductAttributeValueDto>> {
+    return this.http.put<ApiResponse<ProductAttributeValueDto>>(
+      `${this.API_URL}/attributes/${definitionId}/values/${valueId}`,
+      request
+    );
+  }
+
+  deleteAttributeValue(definitionId: string, valueId: string): Observable<ApiResponse<object>> {
+    return this.http.delete<ApiResponse<object>>(
+      `${this.API_URL}/attributes/${definitionId}/values/${valueId}`
+    );
+  }
+
+  generateVariants(
+    productId: string,
+    axes: { definitionId: string; valueIds: string[] }[]
+  ): Observable<ApiResponse<string[]>> {
+    return this.http.post<ApiResponse<string[]>>(`${this.API_URL}/${productId}/variants`, axes);
+  }
+
+  createOpeningValuationLayer(productId: string, costingMethod: number): Observable<ApiResponse<object>> {
+    return this.http.post<ApiResponse<object>>(`${this.API_URL}/${productId}/opening-valuation-layer`, {
+      costingMethod
+    });
+  }
+}
+
+export interface ProductAttributeValueDto {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface ProductAttributeDto {
+  id: string;
+  code: string;
+  name: string;
+  values: ProductAttributeValueDto[];
+}
+
+export interface CreateProductAttributeRequest {
+  code: string;
+  name: string;
+  values: { code: string; name: string }[];
+}
+
+export interface UpdateProductAttributeRequest {
+  name: string;
+  sortOrder?: number;
+}
+
+export interface AddProductAttributeValueRequest {
+  code: string;
+  name: string;
+  sortOrder?: number;
+}
+
+export interface UpdateProductAttributeValueRequest {
+  name: string;
+  sortOrder?: number;
 }

@@ -8,6 +8,7 @@ import {
 } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { PasswordModule } from 'primeng/password';
@@ -45,6 +46,7 @@ type WizardStep = 'idle' | 'qr-shown' | 'recovery-codes';
     InputTextModule,
     PasswordModule,
     DialogModule,
+    RouterLink,
     FtPageHeaderComponent,
     FtBadgeComponent,
     FtSkeletonComponent,
@@ -54,7 +56,11 @@ type WizardStep = 'idle' | 'qr-shown' | 'recovery-codes';
     <ft-page-header
       title="Authentification 2FA"
       subtitle="Renforcez la sécurité de votre compte avec un code à usage unique généré par votre application d'authentification (Google Authenticator, Authy, 1Password…)."
-    />
+    >
+      <ng-container ftActions>
+        <p-button label="Retour" icon="pi pi-arrow-left" [outlined]="true" routerLink="/tenants" />
+      </ng-container>
+    </ft-page-header>
 
     @if (loading()) {
       <div class="card-stack">
@@ -384,7 +390,7 @@ type WizardStep = 'idle' | 'qr-shown' | 'recovery-codes';
       .qr {
         width: 12rem;
         height: 12rem;
-        background: white;
+        background: var(--ft-content-light-bg);
         padding: 0.5rem;
         border-radius: var(--ft-radius);
         flex-shrink: 0;
@@ -546,7 +552,7 @@ type WizardStep = 'idle' | 'qr-shown' | 'recovery-codes';
 
         .recovery-card {
           border: 2px solid #000;
-          background: white;
+          background: var(--ft-content-light-bg);
           color: black;
         }
       }

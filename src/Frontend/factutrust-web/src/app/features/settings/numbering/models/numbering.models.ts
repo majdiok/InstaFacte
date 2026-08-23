@@ -8,7 +8,17 @@ export enum NumberingDocumentType {
   PhysicalInventory = 6,
   CashReceipt = 7,
   CashExpense = 8,
-  BankDeposit = 9
+  BankDeposit = 9,
+  SalesOrder = 10,
+  FeeInvoice = 11,
+  FeeCreditNote = 12,
+  FeeQuote = 13,
+  PurchaseReceipt = 14,
+  SupplierInvoice = 15,
+  SalesReturnNote = 16,
+  ZReport = 17,
+  StockEntry = 18,
+  StockIssue = 19
 }
 
 export enum NumberingBlockType {
@@ -112,7 +122,11 @@ export const DOCUMENT_TYPE_TABS: readonly NumberingDocumentTab[] = [
   { documentType: NumberingDocumentType.PhysicalInventory, label: 'Inventaire physique', shortLabel: 'INVE', icon: 'pi pi-box' },
   { documentType: NumberingDocumentType.CashReceipt, label: 'Encaissement caisse', shortLabel: 'ENC', icon: 'pi pi-wallet' },
   { documentType: NumberingDocumentType.CashExpense, label: 'Décaissement caisse', shortLabel: 'DEP', icon: 'pi pi-money-bill' },
-  { documentType: NumberingDocumentType.BankDeposit, label: 'Remise bancaire', shortLabel: 'REM', icon: 'pi pi-building-columns' }
+  { documentType: NumberingDocumentType.BankDeposit, label: 'Remise bancaire', shortLabel: 'REM', icon: 'pi pi-building-columns' },
+  { documentType: NumberingDocumentType.SalesReturnNote, label: 'Bon de retour', shortLabel: 'BRT', icon: 'pi pi-replay' },
+  { documentType: NumberingDocumentType.ZReport, label: 'Clôture Z', shortLabel: 'Z', icon: 'pi pi-book' },
+  { documentType: NumberingDocumentType.StockEntry, label: "Bon d'entrée", shortLabel: 'BE', icon: 'pi pi-arrow-down' },
+  { documentType: NumberingDocumentType.StockIssue, label: 'Bon de sortie', shortLabel: 'BS', icon: 'pi pi-arrow-up' }
 ];
 
 export const DEFAULT_FREE_TEXT: Record<NumberingDocumentType, string> = {
@@ -125,7 +139,17 @@ export const DEFAULT_FREE_TEXT: Record<NumberingDocumentType, string> = {
   [NumberingDocumentType.PhysicalInventory]: 'INVE',
   [NumberingDocumentType.CashReceipt]: 'ENC',
   [NumberingDocumentType.CashExpense]: 'DEP',
-  [NumberingDocumentType.BankDeposit]: 'REM'
+  [NumberingDocumentType.BankDeposit]: 'REM',
+  [NumberingDocumentType.SalesOrder]: 'CDE',
+  [NumberingDocumentType.FeeInvoice]: 'FAC',
+  [NumberingDocumentType.FeeCreditNote]: 'AVO',
+  [NumberingDocumentType.FeeQuote]: 'DEV',
+  [NumberingDocumentType.PurchaseReceipt]: 'BR',
+  [NumberingDocumentType.SupplierInvoice]: 'FS',
+  [NumberingDocumentType.SalesReturnNote]: 'BRT',
+  [NumberingDocumentType.ZReport]: 'Z',
+  [NumberingDocumentType.StockEntry]: 'BE',
+  [NumberingDocumentType.StockIssue]: 'BS'
 };
 
 export function isDocumentNumberBlock(type: NumberingBlockType): boolean {
@@ -161,7 +185,17 @@ const DOCUMENT_TYPE_BY_STRING: Record<string, NumberingDocumentType> = {
   PhysicalInventory: NumberingDocumentType.PhysicalInventory,
   CashReceipt: NumberingDocumentType.CashReceipt,
   CashExpense: NumberingDocumentType.CashExpense,
-  BankDeposit: NumberingDocumentType.BankDeposit
+  BankDeposit: NumberingDocumentType.BankDeposit,
+  SalesOrder: NumberingDocumentType.SalesOrder,
+  FeeInvoice: NumberingDocumentType.FeeInvoice,
+  FeeCreditNote: NumberingDocumentType.FeeCreditNote,
+  FeeQuote: NumberingDocumentType.FeeQuote,
+  PurchaseReceipt: NumberingDocumentType.PurchaseReceipt,
+  SupplierInvoice: NumberingDocumentType.SupplierInvoice,
+  SalesReturnNote: NumberingDocumentType.SalesReturnNote,
+  ZReport: NumberingDocumentType.ZReport,
+  StockEntry: NumberingDocumentType.StockEntry,
+  StockIssue: NumberingDocumentType.StockIssue
 };
 
 const BLOCK_TYPE_BY_STRING: Record<string, NumberingBlockType> = {

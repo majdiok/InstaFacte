@@ -84,7 +84,7 @@ import { DunningCampaignFormDialogComponent } from './dunning-campaign-form-dial
       <p-tabpanels>
       <!-- TAB STATES -->
       <p-tabpanel [value]="0">
-        <section class="kpi-row">
+        <section class="kpi-row kpi-row--4col">
           <ft-kpi-card [label]="t('kpi.active')" [value]="states()?.activeCount ?? null" tone="warning" icon="pi pi-clock" [loading]="loading()" />
           <ft-kpi-card [label]="t('kpi.paid')" [value]="states()?.paidCount ?? null" tone="success" icon="pi pi-check-circle" [loading]="loading()" />
           <ft-kpi-card [label]="t('kpi.suspended')" [value]="states()?.suspendedCount ?? null" tone="danger" icon="pi pi-ban" [loading]="loading()" />
@@ -108,7 +108,7 @@ import { DunningCampaignFormDialogComponent } from './dunning-campaign-form-dial
         } @else if ((states()?.items?.length ?? 0) === 0) {
           <ft-empty-state variant="table-empty" [title]="t('states.empty.title')" [description]="t('states.empty.desc')" />
         } @else {
-          <p-table [value]="states()!.items" styleClass="ft-table">
+          <p-table [value]="states()!.items" styleClass="p-datatable-sm ft-table">
             <ng-template pTemplate="header">
               <tr>
                 <th>{{ t('states.col.tenant') }}</th>
@@ -163,7 +163,7 @@ import { DunningCampaignFormDialogComponent } from './dunning-campaign-form-dial
 
       <!-- TAB CAMPAIGNS -->
       <p-tabpanel [value]="1">
-        <section class="kpi-row">
+        <section class="kpi-row kpi-row--4col">
           <ft-kpi-card [label]="t('campaigns.kpi.total')" [value]="campaigns()?.items?.length ?? null" tone="info" icon="pi pi-list" [loading]="loading()" />
           <ft-kpi-card [label]="t('campaigns.kpi.active')" [value]="campaigns()?.activeCount ?? null" tone="success" icon="pi pi-check-circle" [loading]="loading()" />
         </section>
@@ -183,7 +183,7 @@ import { DunningCampaignFormDialogComponent } from './dunning-campaign-form-dial
         } @else if ((campaigns()?.items?.length ?? 0) === 0) {
           <ft-empty-state variant="table-empty" [title]="t('campaigns.empty.title')" [description]="t('campaigns.empty.desc')" />
         } @else {
-          <p-table [value]="campaigns()!.items" styleClass="ft-table">
+          <p-table [value]="campaigns()!.items" styleClass="p-datatable-sm ft-table">
             <ng-template pTemplate="header">
               <tr>
                 <th>{{ t('campaigns.col.name') }}</th>
@@ -283,18 +283,6 @@ import { DunningCampaignFormDialogComponent } from './dunning-campaign-form-dial
   `,
   styles: [
     `
-      .kpi-row {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: var(--gap-md);
-        margin-bottom: var(--gap-md);
-      }
-      @media (max-width: 880px) { .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-      @media (max-width: 480px) { .kpi-row { grid-template-columns: 1fr; } }
-
-      .num { text-align: right; font-variant-numeric: tabular-nums; }
-      .strong { font-weight: 600; color: var(--ft-text); }
-      .muted { color: var(--ft-text-subtle); }
       .link { color: var(--ft-accent); text-decoration: none; font-variant-numeric: tabular-nums; }
       .link:hover { text-decoration: underline; }
 

@@ -32,6 +32,8 @@ export interface NavItem {
   icon?: string;
   railIconAsset?: string;
   route?: string;
+  /** Stable product-tour anchor (`data-tour="nav-{tourId}"`). Optional — missing ids are skipped. */
+  tourId?: string;
   /** External help / support link (opens in a new tab). */
   externalUrl?: string;
   badge?: number;
@@ -64,11 +66,12 @@ interface NavVisibilityFields {
 const M = AppModule;
 
 export const ALL_NAV_ITEMS: NavItem[] = [
-  { label: 'Tableau de bord', icon: 'fa-solid fa-gauge-high', route: '/dashboard' },
+  { label: 'Tableau de bord', icon: 'fa-solid fa-gauge-high', route: '/dashboard', tourId: 'dashboard' },
   {
     label: 'Assistant IA',
     railIconAsset: AI_ASSISTANT_MARK_SRC,
     route: '/ai-assistant',
+    tourId: 'ai-assistant',
     modules: [M.AI],
     permissionsAll: ['ai:chat']
   },
@@ -105,13 +108,6 @@ export const ALL_NAV_ITEMS: NavItem[] = [
         icon: 'fa-solid fa-table-cells',
         modules: [M.Forecasting],
         permissionsAll: ['forecasting:view']
-      },
-      {
-        label: 'Calendrier commercial',
-        route: '/forecasting/calendar',
-        icon: 'fa-solid fa-calendar-days',
-        modules: [M.Forecasting],
-        permissionsAll: ['forecasting:view']
       }
     ]
   },
@@ -125,6 +121,7 @@ export const ALL_NAV_ITEMS: NavItem[] = [
   {
     label: 'Ventes',
     icon: 'fa-solid fa-bag-shopping',
+    tourId: 'ventes',
     children: [
       {
         label: 'Assistant Ventes',
@@ -155,6 +152,13 @@ export const ALL_NAV_ITEMS: NavItem[] = [
         permissionsAll: ['delivery_notes:read']
       },
       {
+        label: 'Bon de retour',
+        route: '/return-notes',
+        icon: 'fa-solid fa-rotate-left',
+        modules: [M.Sales],
+        permissionsAll: ['return_notes:read']
+      },
+      {
         label: 'Factures',
         route: '/invoices',
         icon: 'fa-solid fa-file',
@@ -174,6 +178,20 @@ export const ALL_NAV_ITEMS: NavItem[] = [
         icon: 'fa-solid fa-circle-exclamation',
         modules: [M.Sales],
         permissionsAll: ['invoices:read']
+      },
+      {
+        label: 'Contrats récurrents',
+        route: '/recurring-contracts',
+        icon: 'fa-solid fa-arrows-rotate',
+        modules: [M.RecurringContracts],
+        permissionsAll: [PERMISSIONS.recurringContracts.read]
+      },
+      {
+        label: 'Brouillons récurrents',
+        route: '/recurring-contracts/pending-drafts',
+        icon: 'fa-solid fa-file-circle-check',
+        modules: [M.RecurringContracts],
+        permissionsAll: [PERMISSIONS.recurringContracts.read]
       },
       {
         label: 'Solde par client',
@@ -208,6 +226,7 @@ export const ALL_NAV_ITEMS: NavItem[] = [
   {
     label: 'Achats',
     icon: 'fa-solid fa-cart-shopping',
+    tourId: 'achats',
     children: [
       {
         label: 'Assistant Achats',
@@ -277,6 +296,7 @@ export const ALL_NAV_ITEMS: NavItem[] = [
   {
     label: 'Fiches',
     icon: 'fa-regular fa-folder-open',
+    tourId: 'fiches',
     children: [
       {
         label: 'Clients',
@@ -300,6 +320,13 @@ export const ALL_NAV_ITEMS: NavItem[] = [
         permissionsAll: ['products:read']
       },
       {
+        label: 'Attributs',
+        route: '/product-attributes',
+        icon: 'fa-solid fa-th-large',
+        modules: [M.Products],
+        permissionsAll: ['products:read']
+      },
+      {
         label: 'Rapports',
         route: '/reports/fiches',
         icon: 'fa-solid fa-chart-column',
@@ -311,6 +338,7 @@ export const ALL_NAV_ITEMS: NavItem[] = [
   {
     label: 'Stock',
     icon: 'fa-solid fa-boxes-stacked',
+    tourId: 'stock',
     children: [
       {
         label: 'Assistant Stock',
@@ -325,6 +353,20 @@ export const ALL_NAV_ITEMS: NavItem[] = [
         icon: 'fa-solid fa-boxes-stacked',
         modules: [M.Stock],
         permissionsAll: ['stock:read']
+      },
+      {
+        label: "Bons d'entrée",
+        route: '/stock/entries',
+        icon: 'fa-solid fa-arrow-down',
+        modules: [M.Stock],
+        permissionsAll: ['stock_vouchers:read']
+      },
+      {
+        label: 'Bons de sortie',
+        route: '/stock/issues',
+        icon: 'fa-solid fa-arrow-up',
+        modules: [M.Stock],
+        permissionsAll: ['stock_vouchers:read']
       },
       {
         label: 'Transferts',
@@ -359,6 +401,7 @@ export const ALL_NAV_ITEMS: NavItem[] = [
   {
     label: 'Trésorerie',
     icon: 'fa-solid fa-credit-card',
+    tourId: 'tresorerie',
     children: [
       {
         label: 'Trésorerie prévisionnelle',
@@ -456,6 +499,33 @@ export const ALL_NAV_ITEMS: NavItem[] = [
         icon: 'fa-solid fa-file-lines',
         modules: [M.CRM],
         permissionsAll: ['crm:read']
+      }
+    ]
+  },
+  {
+    label: 'Projets',
+    icon: 'fa-solid fa-diagram-project',
+    children: [
+      {
+        label: 'Tableau de bord',
+        route: '/projects/dashboard',
+        icon: 'fa-solid fa-chart-pie',
+        modules: [M.Projects],
+        permissionsAll: [PERMISSIONS.projects.read]
+      },
+      {
+        label: 'Liste des projets',
+        route: '/projects',
+        icon: 'fa-solid fa-list',
+        modules: [M.Projects],
+        permissionsAll: [PERMISSIONS.projects.read]
+      },
+      {
+        label: 'Saisie des temps',
+        route: '/projects/time',
+        icon: 'fa-solid fa-clock',
+        modules: [M.Projects],
+        permissionsAll: [PERMISSIONS.projectTime.read]
       }
     ]
   },
@@ -565,6 +635,7 @@ export const ALL_NAV_ITEMS: NavItem[] = [
   {
     label: 'Comptabilité',
     icon: 'fa-solid fa-calculator',
+    tourId: 'comptabilite',
     children: [
       {
         label: 'Assistant Comptabilité',
@@ -618,7 +689,7 @@ export const ALL_NAV_ITEMS: NavItem[] = [
       {
         label: 'Journaux auxiliaires',
         route: '/accounting/sub-journals',
-        icon: 'fa-solid fa-books',
+        icon: 'fa-solid fa-book-bookmark',
         modules: [M.Accounting],
         permissionsAll: ['accounting:read']
       },
@@ -751,6 +822,7 @@ export const ALL_NAV_ITEMS: NavItem[] = [
   {
     label: 'Paramètres',
     icon: 'fa-solid fa-gear',
+    tourId: 'settings',
     modules: [M.Administration],
     children: [
       {
@@ -774,6 +846,9 @@ export const ALL_NAV_ITEMS: NavItem[] = [
 
 const ROUTE_KEYWORDS: Record<string, string[]> = {
   '/dashboard': ['accueil', 'home', 'tableau'],
+  '/stock': ['stock', 'entrepôt', 'dépôt'],
+  '/stock/entries': ['bon entrée', 'BE', 'entrée stock'],
+  '/stock/issues': ['bon sortie', 'BS', 'sortie stock', 'casse'],
   '/invoices': ['factures', 'facture', 'FAC', 'ventes'],
   '/invoices/unpaid': ['impayées', 'impayee', 'retard'],
   '/invoices/new': ['nouvelle facture', 'créer facture', 'ajouter facture'],
@@ -781,8 +856,12 @@ const ROUTE_KEYWORDS: Record<string, string[]> = {
   '/invoices/credit-note/new': ['nouvel avoir', 'créer avoir', 'ajouter avoir'],
   '/quotes': ['devis', 'DEV', 'proposition'],
   '/quotes/new': ['nouveau devis', 'créer devis', 'ajouter devis'],
+  '/recurring-contracts': ['contrat récurrent', 'abonnement', 'subscription', 'récurrent'],
+  '/recurring-contracts/pending-drafts': ['brouillon récurrent', 'facturation récurrente'],
   '/delivery-notes': ['bon de livraison', 'BL', 'livraison'],
   '/delivery-notes/new': ['nouveau bon', 'créer livraison'],
+  '/return-notes': ['bon de retour', 'BRT', 'retour'],
+  '/return-notes/new': ['nouveau bon de retour', 'créer retour'],
   '/clients': ['client', 'mes clients', 'tiers'],
   '/products': ['produit', 'article', 'service'],
   '/suppliers': ['fournisseur', 'vendor'],

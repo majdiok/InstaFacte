@@ -192,13 +192,6 @@ interface TabState {
         display: block;
       }
 
-      .kpi-row {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-        gap: var(--gap-md);
-        margin-bottom: var(--gap-section);
-      }
-
       .grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));

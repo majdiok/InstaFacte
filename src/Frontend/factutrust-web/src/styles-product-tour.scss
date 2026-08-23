@@ -1,0 +1,64 @@
+@use 'driver.js/dist/driver.css';
+
+.driver-overlay {
+  z-index: 1118 !important;
+}
+
+.driver-active-element {
+  z-index: 1119 !important;
+}
+
+.driver-popover.ft-product-tour {
+  z-index: 1120 !important;
+  max-width: 360px;
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgb(15 23 42 / 0.18);
+}
+
+.ft-product-tour .driver-popover-title {
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.ft-product-tour .driver-popover-description {
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: #334155;
+}
+
+.ft-product-tour .driver-popover-footer {
+  align-items: center;
+}
+
+.ft-product-tour .ft-product-tour__skip,
+.ft-product-tour .driver-popover-close-btn {
+  position: static;
+  margin-right: auto;
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.ft-product-tour .driver-popover-prev-btn:disabled,
+.ft-product-tour .driver-popover-prev-btn[disabled] {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.ft-product-tour .driver-popover-next-btn {
+  background: var(--color-primary-600, #2563eb);
+  color: #fff;
+  border: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .driver-overlay,
+  .driver-popover,
+  .driver-active-element,
+  .driver-popover-arrow {
+    animation: none !important;
+    transition: none !important;
+  }
+}

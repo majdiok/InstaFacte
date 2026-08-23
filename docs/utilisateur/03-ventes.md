@@ -1,6 +1,6 @@
 # 03 - Ventes
 
-Ce chapitre couvre tout ce qui concerne vos ventes : devis, bons de livraison et factures.
+Ce chapitre couvre tout ce qui concerne vos ventes : devis, bons de livraison, bons de retour et factures.
 
 ---
 
@@ -53,6 +53,38 @@ Un **bon de livraison** (BL) atteste qu'un client a bien reçu des marchandises.
 ### Voir le détail d'un bon de livraison
 
 Cliquez sur un bon de livraison dans la liste. La fiche affiche toutes les informations et, si applicable, le lien vers la facture associée.
+
+La fiche indique aussi les quantités **retournées** et **à facturer**. Si tout a été retourné, le bouton **Générer facture** disparaît.
+
+---
+
+## Bons de retour
+
+Un **bon de retour** (préfixe **BRT**) sert à enregistrer un retour client **après livraison et avant facture**. Il réintègre le stock au même dépôt que le bon de livraison et **diminue la quantité facturable** du BL.
+
+Ce n'est **pas** un avoir :
+
+| | Bon de retour | Avoir de vente |
+|---|---|---|
+| Quand ? | Articles livrés, **pas encore facturés** | **Après** une facture émise |
+| Effet | Stock + réduction de la qté à facturer | Document fiscal (TVA, comptabilité) |
+| Numéro | `BRT-AAAA-NNNNNN` | `AVO-…` |
+
+### Créer un bon de retour
+
+1. Dans le menu, cliquez sur **Ventes** puis **Bon de retour**, ou ouvrez le BL livré et cliquez sur **Créer un bon de retour**.
+2. Choisissez le bon de livraison éligible (livré ou partiellement livré, non facturé, avec un restant).
+3. Indiquez la date, un **motif** (obligatoire) et les quantités à retourner (bornées au restant).
+4. Enregistrez le **brouillon** : le stock ne bouge pas encore.
+5. Ouvrez le brouillon et cliquez sur **Confirmer**. Le stock est réintégré et le restant à facturer du BL diminue.
+
+Vous pouvez créer **plusieurs** bons de retour sur le même BL, tant qu'il reste une quantité livrée non facturée.
+
+### Après confirmation
+
+- La facture générée depuis le BL ne porte que le **reliquat**.
+- Si tout est retourné, la facture est refusée et le bouton **Générer facture** est masqué.
+- Un bon de retour confirmé n'est plus modifiable.
 
 ---
 
@@ -143,12 +175,29 @@ Cliquez sur une facture dans la liste. La fiche affiche toutes les informations,
 
 ### Créer un avoir (facture d'avoir)
 
-Un **avoir** annule ou réduit une facture déjà émise (retour de marchandise, erreur, etc.).
+Un **avoir** annule ou réduit une facture déjà émise (retour de marchandise **après facture**, erreur, etc.). Pour un retour **avant facture**, utilisez un **bon de retour**, pas un avoir.
 
 1. Ouvrez la facture concernée.
 2. Cliquez sur **Créer un avoir**.
 3. L'assistant s'ouvre avec les données pré-remplies. Ajustez les montants ou lignes si besoin.
 4. Validez l'avoir.
+
+---
+
+## Recette manuelle — bon de retour
+
+À jouer après déploiement (anti-régression) :
+
+1. BL livré, stock sorti → créer un BRT **partiel** en brouillon : stock **inchangé**, BL encore facturable pour le restant.
+2. Confirmer → stock **+qté** au **même dépôt** que le BL, mouvement « Retour Client ».
+3. Générer la facture depuis le BL → lignes = **restant uniquement** ; valider la facture **ne redéduit pas** le stock.
+4. Second BRT pour le reliquat → facture ensuite refusée ; bouton **Générer facture** masqué.
+5. Tenter un BRT sur un BL déjà facturé → erreur.
+6. Créer un **avoir** sur une autre facture classique → inchangé (stock + écriture).
+7. BL issu d'une commande : « reste à livrer » **inchangé** ; « livré non facturé » **diminue** du retour. Pas de BL complémentaire du seul fait du retour.
+8. Impression PDF BRT + liens croisés BL ↔ BRT.
+9. Utilisateur sans `return_notes:read` : menu absent, route bloquée.
+10. Redémarrage API : migration tenant appliquée, pas de `TENANT_MIGRATION_FAILED`.
 
 ---
 

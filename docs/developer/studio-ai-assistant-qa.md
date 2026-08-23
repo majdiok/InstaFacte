@@ -11,9 +11,16 @@
 | `EnableStudioAiModifyTools` | **`false`** | `false` | Modification de l'existant (`studio_plan_changes`, `studio_get_table_schema`). Sans effet si l'aperçu est off. |
 | `EnableStudioAiViewTools` | **`false`** | `false` | Fenêtres sur tables réelles (`studio_plan_view`, `studio_list_sql_tables`). Sans effet si l'aperçu est off. |
 | `EnableStudioReportPdf` | `true` | `true` | Coupe-circuit de l'impression PDF des états Studio. |
+| `EnableStudioSqlReportEngine` | **`false`** | `false` | Moteur d'ÉTATS sur les tables réelles (concepteur humain **et** IA). |
+| `EnableStudioAiReportTools` | **`false`** | `false` | Outils `studio_*_report` de l'assistant. Sans effet si le moteur est off. |
+| `EnableStudioSqlSourceGuard` | **`false`** | `false` | Étend le classement par domaine aux FENÊTRES. Passer le runbook d'impact d'abord. |
 
-> Les trois drapeaux en gras sont **off par défaut** : sans eux, le comportement du Studio IA est
-> strictement celui d'avant (garde couverte par `StudioAiPlanCatalogTests`).
+> Les drapeaux en gras sont **off par défaut** : sans eux, le comportement du Studio IA est
+> strictement celui d'avant (gardes couvertes par `StudioAiPlanCatalogTests` et
+> `StudioAiReportToolsTests`).
+
+Bornes associées : `StudioReportMaxRows` (défaut 5 000, plafond dur 50 000) et
+`StudioReportCommandTimeoutSeconds` (défaut 30).
 
 ## Smoke tests — comportement historique (tous drapeaux off)
 
@@ -77,6 +84,50 @@
 26. État à plus de 6 colonnes ⇒ bascule automatique en paysage.
 27. Drapeau à `false` ⇒ l'endpoint renvoie 404 et le bouton n'aboutit pas.
 
+## États sur les tables réelles (`EnableStudioSqlReportEngine` + `EnableStudioAiReportTools`)
+
+> Architecture et modèle de sécurité : [`docs/architecture/studio-ai-reports.md`](../architecture/studio-ai-reports.md).
+
+### Non-régression (drapeaux à `false`)
+
+28. `/studio/ai` — « Crée une table Fournisseurs avec nom, ville, téléphone » ⇒ comportement identique
+    à avant. Le catalogue d'outils ne contient AUCUN `studio_*_report`.
+29. `/studio/reports` — les états existants (tables personnalisées et sources historiques) se relancent
+    et s'impriment à l'identique ; le sélecteur de source ne propose que « Mes tables » et
+    « Données existantes ».
+
+### Fonctionnalité (drapeaux à `true`)
+
+30. « Crée un rapport avancé des ventes de produits pour ce trimestre » ⇒ un **tableau s'affiche dans
+    la conversation** (produit, quantité, CA, TVA) avec bascule Graphique et export CSV/XLSX.
+    **Plus aucun message « Je n'ai pas pu lancer la création du système ».**
+31. **Contrôle croisé obligatoire** : comparer les montants au point 30 avec
+    `/reports/sales-by-line` sur la même période ⇒ **égalité au millime**. C'est le test qui valide le
+    moteur ; il ne se contourne pas. (Le préréglage reprend le prédicat de
+    `GetSalesRevenueAggregatedAsync` : factures `Validated` ou `Paid`.)
+32. « Enregistrer comme état » ⇒ carte d'aperçu montrant un **échantillon de vraies lignes** ⇒
+    « Valider et enregistrer » ⇒ l'état apparaît dans `/studio/reports`, se relance et s'imprime en PDF.
+33. Ouvrir cet état dans le concepteur (`/studio/reports/{id}`) ⇒ source, regroupement, mesures et
+    filtres sont modifiables comme pour n'importe quel état Studio.
+34. « Ventes par mois de cette année » ⇒ regroupement calendaire correct (une ligne par mois, triée
+    chronologiquement).
+35. Demander un état de **paie** avec un compte sans `payroll:read` ⇒ refus explicite, **aucune donnée
+    affichée** ; le sélecteur de source du concepteur ne montre pas non plus le domaine « Paie & RH ».
+36. Demander une colonne inexistante ⇒ écartée avec un avertissement dans l'aperçu, jamais inventée.
+37. Demander à croiser deux tables sans clé étrangère (ex. lignes de facture × salariés) ⇒ refus
+    explicite mentionnant l'absence de lien.
+38. État de **détail** dépassant `StudioReportMaxRows` ⇒ bandeau orange de troncature dans l'interface
+    **et** ligne d'avertissement dans le PDF ; l'état **agrégé** équivalent affiche des totaux exacts
+    (revérifier contre le point 31).
+39. Double-clic sur « Valider et enregistrer » ⇒ une seule création (verrou `RowVersion`).
+40. Le modèle ne doit **jamais** annoncer que l'état est enregistré avant validation de l'aperçu.
+
+### Avant d'activer `EnableStudioSqlSourceGuard`
+
+41. Exécuter [`docs/runbooks/sql/studio-views-affected-by-guard.sql`](../runbooks/sql/studio-views-affected-by-guard.sql)
+    sur chaque base tenant. `FenetresActivesCassees = 0` ⇒ activation sans impact ; sinon, reclasser
+    la table ou retirer la fenêtre avant de basculer.
+
 ## Migrations
 
 - `20260624181553_AddStudioSystems_Tenant` (systèmes multi-tables).
@@ -86,6 +137,7 @@
 ## Portée automatisée
 
 - Backend : `dotnet test src\Backend\tests\FactuTrust.Infrastructure.Tests --filter "FullyQualifiedName~.Studio"`
-  (parsers, planificateur de diff, exécuteurs, cycle de vie des plans, catalogue d'outils, rendu PDF).
+  (parsers, planificateur de diff, exécuteurs, cycle de vie des plans, catalogue d'outils, rendu PDF,
+  politique d'accès aux tables, constructeur SQL des états, préréglages).
 - Frontend : `ng test --watch=false --browsers=ChromeHeadless` (service de plans + flux SSE de confirmation).
 - Gate complet : `powershell -File scripts\verify-all.ps1`.

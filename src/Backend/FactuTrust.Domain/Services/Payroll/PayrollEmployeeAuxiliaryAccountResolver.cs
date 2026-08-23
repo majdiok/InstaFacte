@@ -1,7 +1,7 @@
 namespace FactuTrust.Domain.Services.Payroll;
 
 /// <summary>
-/// Résout le numéro de compte auxiliaire SCE 421xxxx pour un salarié.
+/// Résout le numéro de compte auxiliaire SCE 425xxxx pour un salarié.
 /// </summary>
 public static class PayrollEmployeeAuxiliaryAccountResolver
 {
@@ -9,7 +9,7 @@ public static class PayrollEmployeeAuxiliaryAccountResolver
     public const int MaxAccountNumberLength = 10;
 
     /// <summary>
-    /// Génère un compte auxiliaire 421 + matricule numérique zero-paddé (ex. 4210001).
+    /// Génère un compte auxiliaire 425 + matricule numérique zero-paddé (ex. 4250001).
     /// </summary>
     public static string Resolve(string employeeNumber)
     {

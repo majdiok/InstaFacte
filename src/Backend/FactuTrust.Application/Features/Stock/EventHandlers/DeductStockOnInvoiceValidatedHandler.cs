@@ -1,6 +1,7 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Features.Stock.Services;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Events;
@@ -21,6 +22,8 @@ public sealed class DeductStockOnInvoiceValidatedHandler : INotificationHandler<
     private readonly IProductRepository _productRepository;
     private readonly IStockMovementRepository _stockMovementRepository;
     private readonly IAuditService _auditService;
+    private readonly IStockMutationService _mutation;
+    private readonly ITrackedDocumentStockService _trackedStock;
     private readonly ILogger<DeductStockOnInvoiceValidatedHandler> _logger;
 
     public DeductStockOnInvoiceValidatedHandler(
@@ -30,6 +33,8 @@ public sealed class DeductStockOnInvoiceValidatedHandler : INotificationHandler<
         IProductRepository productRepository,
         IStockMovementRepository stockMovementRepository,
         IAuditService auditService,
+        IStockMutationService mutation,
+        ITrackedDocumentStockService trackedStock,
         ILogger<DeductStockOnInvoiceValidatedHandler> logger)
     {
         _invoiceRepository = invoiceRepository;
@@ -38,13 +43,13 @@ public sealed class DeductStockOnInvoiceValidatedHandler : INotificationHandler<
         _productRepository = productRepository;
         _stockMovementRepository = stockMovementRepository;
         _auditService = auditService;
+        _mutation = mutation;
+        _trackedStock = trackedStock;
         _logger = logger;
     }
 
     public async Task Handle(InvoiceValidatedEvent notification, CancellationToken cancellationToken)
     {
-        // Credit notes (AVO) restore stock instead of deducting it — handled by
-        // RestoreStockOnCreditNoteValidatedHandler. Short-circuit before any DB roundtrip.
         if (notification.IsCreditNote)
             return;
 
@@ -53,7 +58,6 @@ public sealed class DeductStockOnInvoiceValidatedHandler : INotificationHandler<
 
         var reference = $"Facture {notification.InvoiceNumber}";
 
-        // Idempotency: skip if movements for this reference already exist
         var existingMovements = await _stockMovementRepository.GetByReferenceAsync(reference, cancellationToken);
         if (existingMovements.Count > 0)
         {
@@ -63,7 +67,6 @@ public sealed class DeductStockOnInvoiceValidatedHandler : INotificationHandler<
             return;
         }
 
-        // Get the invoice with lines
         var invoice = await _invoiceRepository.GetByIdWithLinesAsync(notification.InvoiceId, cancellationToken);
         if (invoice == null)
         {
@@ -71,7 +74,6 @@ public sealed class DeductStockOnInvoiceValidatedHandler : INotificationHandler<
             return;
         }
 
-        // Resolve warehouse: invoice-specific or default fallback
         Warehouse? targetWarehouse = null;
         if (invoice.WarehouseId.HasValue)
             targetWarehouse = await _warehouseRepository.GetByIdAsync(invoice.WarehouseId.Value, cancellationToken);
@@ -80,16 +82,11 @@ public sealed class DeductStockOnInvoiceValidatedHandler : INotificationHandler<
 
         if (targetWarehouse == null)
         {
-            _logger.LogWarning("No warehouse configured - skipping stock deduction for invoice {InvoiceId}", 
+            _logger.LogWarning("No warehouse configured - skipping stock deduction for invoice {InvoiceId}",
                 notification.InvoiceId);
             return;
         }
 
-        // Skip stock deduction if this invoice was generated from a delivery note
-        // (stock was already decremented during delivery via DeductStockOnDeliveryNoteDeliveredHandler).
-        // Le test porte sur la clé étrangère typée, jamais sur Reference : ce champ est une
-        // chaîne libre saisissable par l'appelant, et s'y fier décrémentait le stock deux fois
-        // dès qu'une référence personnalisée était fournie à la facturation du BL.
         if (invoice.SourceDeliveryNoteId.HasValue)
         {
             _logger.LogInformation(
@@ -100,68 +97,70 @@ public sealed class DeductStockOnInvoiceValidatedHandler : INotificationHandler<
 
         foreach (var line in invoice.Lines)
         {
-            // Get product to check if stock-managed
-            var product = await _productRepository.GetByIdAsync(line.ProductId, cancellationToken);
+            if (!line.ProductId.HasValue)
+            {
+                _logger.LogDebug("Skipping stock deduction for custom line {LineNumber} (no product reference)",
+                    line.LineNumber);
+                continue;
+            }
+
+            var product = await _productRepository.GetByIdAsync(line.ProductId.Value, cancellationToken);
             if (product == null || !product.IsStockManaged)
             {
-                _logger.LogDebug("Skipping stock deduction for product {ProductId} (not stock-managed)", 
+                _logger.LogDebug("Skipping stock deduction for product {ProductId} (not stock-managed)",
                     line.ProductId);
                 continue;
             }
 
-            // Get or create stock item
-            var stockItem = await _stockItemRepository.GetByProductAndWarehouseAsync(
-                line.ProductId, targetWarehouse.Id, cancellationToken);
-
-            if (stockItem == null)
+            if (_trackedStock.IsLiveTracked(product))
             {
-                _logger.LogWarning("No stock item found for product {ProductId} in warehouse {WarehouseId}. Creating one.",
-                    line.ProductId, targetWarehouse.Id);
-
-                var createResult = StockItem.Create(line.ProductId, targetWarehouse.Id);
-                if (createResult.IsFailure)
-                {
-                    _logger.LogError("Failed to create stock item for product {ProductId}: {Error}",
-                        line.ProductId, createResult.Error.Description);
-                    continue;
-                }
-
-                stockItem = createResult.Value;
-                await _stockItemRepository.AddAsync(stockItem, cancellationToken);
+                _logger.LogInformation(
+                    "Skipping event-handler deduction for tracked product {ProductId} on invoice {InvoiceNumber} (applied in ValidateInvoice)",
+                    line.ProductId, notification.InvoiceNumber);
+                continue;
             }
 
-            var exitResult = stockItem.RecordExit(
-                line.Quantity, 
-                MovementReason.Sale, 
-                reference, 
-                $"Vente - Ligne de facture");
+            var exitResult = await _mutation.ApplyAsync(new StockMutationRequest
+            {
+                ProductId = line.ProductId.Value,
+                WarehouseId = targetWarehouse.Id,
+                Kind = StockMutationKind.Exit,
+                Quantity = line.Quantity,
+                Reason = MovementReason.Sale,
+                Reference = reference,
+                Notes = "Vente - Ligne de facture"
+            }, cancellationToken);
 
             if (exitResult.IsFailure)
             {
                 var isInsufficientStock = exitResult.Error.Code == "Validation.Quantity"
                     && exitResult.Error.Description.Contains("Stock insuffisant", StringComparison.OrdinalIgnoreCase);
-                var availableToDeduct = stockItem.QuantityAvailable;
+                var stockItem = await _stockItemRepository.GetByProductAndWarehouseAsync(
+                    line.ProductId.Value, targetWarehouse.Id, cancellationToken);
+                var availableToDeduct = stockItem?.QuantityAvailable ?? 0;
 
                 if (isInsufficientStock && availableToDeduct > 0)
                 {
                     var shortfall = line.Quantity - availableToDeduct;
 
-                    var partialExitResult = stockItem.RecordExit(
-                        availableToDeduct,
-                        MovementReason.Sale,
-                        reference,
-                        "Vente - Ligne de facture (déduction limitée au stock disponible)",
-                        shortfallQuantity: shortfall);
+                    var partialExitResult = await _mutation.ApplyAsync(new StockMutationRequest
+                    {
+                        ProductId = line.ProductId.Value,
+                        WarehouseId = targetWarehouse.Id,
+                        Kind = StockMutationKind.Exit,
+                        Quantity = availableToDeduct,
+                        Reason = MovementReason.Sale,
+                        Reference = reference,
+                        Notes = "Vente - Ligne de facture (déduction limitée au stock disponible)",
+                        ShortfallQuantity = shortfall
+                    }, cancellationToken);
 
                     if (partialExitResult.IsSuccess)
                     {
-                        await _stockItemRepository.UpdateAsync(stockItem, cancellationToken);
                         _logger.LogInformation(
                             "Partial stock deduction for product {ProductId}, invoice {InvoiceNumber}: requested {Requested}, deducted {Deducted}. New balance: {NewBalance}",
-                            line.ProductId, notification.InvoiceNumber, line.Quantity, availableToDeduct, stockItem.QuantityOnHand);
+                            line.ProductId, notification.InvoiceNumber, line.Quantity, availableToDeduct, partialExitResult.Value.QuantityOnHand);
 
-                        // Trace de premier ordre : l'écart vendu/sorti doit être réconciliable,
-                        // pas seulement présent dans un journal applicatif.
                         await _auditService.LogAsync(
                             AuditActions.Stock.DeductionShortfall,
                             "Invoice",
@@ -181,7 +180,7 @@ public sealed class DeductStockOnInvoiceValidatedHandler : INotificationHandler<
                     {
                         _logger.LogWarning(
                             "Stock deduction failed for product {ProductId}, invoice {InvoiceNumber}: {Error}. Current stock: {CurrentStock}, Requested: {Requested}",
-                            line.ProductId, notification.InvoiceNumber, exitResult.Error.Description, stockItem.QuantityOnHand, line.Quantity);
+                            line.ProductId, notification.InvoiceNumber, exitResult.Error.Description, stockItem?.QuantityOnHand ?? 0, line.Quantity);
                     }
                 }
                 else
@@ -192,20 +191,18 @@ public sealed class DeductStockOnInvoiceValidatedHandler : INotificationHandler<
                         line.ProductId,
                         notification.InvoiceNumber,
                         exitResult.Error.Description,
-                        stockItem.QuantityOnHand,
+                        stockItem?.QuantityOnHand ?? 0,
                         line.Quantity);
                 }
                 continue;
             }
 
-            await _stockItemRepository.UpdateAsync(stockItem, cancellationToken);
-
             _logger.LogInformation(
                 "Stock deducted for product {ProductId}: {Quantity} units. New balance: {NewBalance}",
-                line.ProductId, line.Quantity, stockItem.QuantityOnHand);
+                line.ProductId, line.Quantity, exitResult.Value.QuantityOnHand);
         }
 
-        _logger.LogInformation("Completed stock deduction processing for invoice {InvoiceNumber}", 
+        _logger.LogInformation("Completed stock deduction processing for invoice {InvoiceNumber}",
             notification.InvoiceNumber);
     }
 }

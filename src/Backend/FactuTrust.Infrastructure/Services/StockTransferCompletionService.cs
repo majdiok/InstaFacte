@@ -18,13 +18,16 @@ public sealed class StockTransferCompletionService : IStockTransferCompletionSer
     private const int MaxConcurrencyAttempts = 3;
 
     private readonly ITenantDbContextFactory _contextFactory;
+    private readonly IStockMutationService _mutation;
     private readonly ILogger<StockTransferCompletionService> _logger;
 
     public StockTransferCompletionService(
         ITenantDbContextFactory contextFactory,
+        IStockMutationService mutation,
         ILogger<StockTransferCompletionService> logger)
     {
         _contextFactory = contextFactory;
+        _mutation = mutation;
         _logger = logger;
     }
 
@@ -156,13 +159,22 @@ public sealed class StockTransferCompletionService : IStockTransferCompletionSer
                         $"Stock insuffisant pour '{line.ProductName}'. Disponible: {sourceStockItem.QuantityAvailable}, Demandé: {line.RequestedQuantity}"));
                 }
 
+                var product = await context.Products.FirstOrDefaultAsync(p => p.Id == line.ProductId, cancellationToken);
+                var store = new EfStockTraceabilityStore(context);
                 var sourceMovementIdsBefore = sourceStockItem.Movements.Select(m => m.Id).ToHashSet();
 
-                var exitResult = sourceStockItem.RecordExit(
-                    line.RequestedQuantity,
-                    MovementReason.Transfer,
-                    reference,
-                    "Transfert sortie vers entrepôt destination");
+                var exitResult = _mutation.Apply(sourceStockItem, new StockMutationRequest
+                {
+                    ProductId = line.ProductId,
+                    WarehouseId = transfer.SourceWarehouseId,
+                    Kind = StockMutationKind.Exit,
+                    Quantity = line.RequestedQuantity,
+                    Reason = MovementReason.Transfer,
+                    Reference = reference,
+                    Notes = "Transfert sortie vers entrepôt destination",
+                    DocumentLineId = line.Id,
+                    DocumentKind = StockDocumentKind.Transfer
+                }, product, store);
 
                 if (exitResult.IsFailure)
                 {
@@ -189,43 +201,35 @@ public sealed class StockTransferCompletionService : IStockTransferCompletionSer
 
                     destStockItem = createResult.Value;
                     context.StockItems.Add(destStockItem);
-
-                    var destMovementIdsBeforeNew = destStockItem.Movements.Select(m => m.Id).ToHashSet();
-
-                    var entryNewResult = destStockItem.RecordEntry(
-                        line.RequestedQuantity,
-                        sourceStockItem.AverageCost,
-                        MovementReason.Transfer,
-                        reference,
-                        "Transfert entrée depuis entrepôt source");
-
-                    if (entryNewResult.IsFailure)
-                    {
-                        await transaction.RollbackAsync(cancellationToken);
-                        return entryNewResult;
-                    }
-
-                    EnsureNewStockMovementsAreAdded(context, destStockItem, destMovementIdsBeforeNew);
                 }
-                else
+
+                var destMovementIdsBefore = destStockItem.Movements.Select(m => m.Id).ToHashSet();
+                var destAllocations = store.ListAllocations(StockDocumentKind.Transfer, line.Id)
+                    .Select(a => new StockAllocationInput(a.Quantity, a.ProductLotId, SerialId: a.SerialId, UnitCost: sourceStockItem.AverageCost))
+                    .ToList();
+
+                var entryResult = _mutation.Apply(destStockItem, new StockMutationRequest
                 {
-                    var destMovementIdsBefore = destStockItem.Movements.Select(m => m.Id).ToHashSet();
+                    ProductId = line.ProductId,
+                    WarehouseId = transfer.DestinationWarehouseId,
+                    Kind = StockMutationKind.Entry,
+                    Quantity = line.RequestedQuantity,
+                    UnitCost = sourceStockItem.AverageCost,
+                    Reason = MovementReason.Transfer,
+                    Reference = reference,
+                    Notes = "Transfert entrée depuis entrepôt source",
+                    DocumentLineId = null,
+                    DocumentKind = null,
+                    Allocations = destAllocations.Count > 0 ? destAllocations : null
+                }, product, store);
 
-                    var entryResult = destStockItem.RecordEntry(
-                        line.RequestedQuantity,
-                        sourceStockItem.AverageCost,
-                        MovementReason.Transfer,
-                        reference,
-                        "Transfert entrée depuis entrepôt source");
-
-                    if (entryResult.IsFailure)
-                    {
-                        await transaction.RollbackAsync(cancellationToken);
-                        return entryResult;
-                    }
-
-                    EnsureNewStockMovementsAreAdded(context, destStockItem, destMovementIdsBefore);
+                if (entryResult.IsFailure)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return entryResult;
                 }
+
+                EnsureNewStockMovementsAreAdded(context, destStockItem, destMovementIdsBefore);
 
                 _logger.LogInformation(
                     "Stock transferred for product {ProductId}: {Quantity} units from warehouse {SourceId} to {DestId}",

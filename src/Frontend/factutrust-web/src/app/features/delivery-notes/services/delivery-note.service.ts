@@ -146,7 +146,9 @@ export class DeliveryNoteService {
      * Confirme un bon de livraison.
      */
     confirmDeliveryNote(id: string): Observable<ApiResponse<object>> {
-        return this.http.post<ApiResponse<object>>(`${this.API_URL}/${id}/confirm`, {});
+        return this.http.post<ApiResponse<object>>(`${this.API_URL}/${id}/confirm`, {}, {
+            context: createHttpContextSkipGlobalErrorUi()
+        });
     }
 
     /**

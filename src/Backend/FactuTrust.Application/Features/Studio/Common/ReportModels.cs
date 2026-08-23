@@ -46,10 +46,17 @@ public sealed record ReportFieldMeta(string Key, string Label, bool Numeric);
 
 public sealed record ReportColumn(string Key, string Label, string Kind); // kind: dimension | measure
 
+/// <summary>
+/// Résultat d'un état. <paramref name="TotalRows"/> est le nombre de lignes RÉELLEMENT disponibles ;
+/// quand il dépasse <c>Rows.Count</c>, <paramref name="Truncated"/> vaut true et l'interface doit le
+/// dire — un total silencieusement faux est le pire défaut possible sur un état.
+/// Paramètre optionnel en fin de record : les appelants historiques restent inchangés.
+/// </summary>
 public sealed record ReportResultDto(
     IReadOnlyList<ReportColumn> Columns,
     IReadOnlyList<IReadOnlyDictionary<string, object?>> Rows,
-    int TotalRows);
+    int TotalRows,
+    bool Truncated = false);
 
 // ---- API DTOs ----
 
@@ -74,8 +81,28 @@ public sealed record RunReportPreviewRequest(
     string DataSourceRef,
     ReportDefinition Definition);
 
-/// <summary>A selectable report data source (custom entity or whitelisted existing source) + its fields.</summary>
-public sealed record ReportSourceDto(string Kind, string Ref, string DisplayName, IReadOnlyList<ReportFieldMeta> Fields);
+/// <summary>
+/// A selectable report data source (custom entity, whitelisted existing source, or real tenant table)
+/// + its fields. Pour les sources <c>sql</c>, <see cref="Fields"/> arrive VIDE : le schéma réel est
+/// chargé à la demande (<c>GetReportSourceFieldsQuery</c>) pour ne pas introspecter 80 tables à
+/// l'ouverture du concepteur. <see cref="Domain"/> est optionnel : les appelants historiques
+/// restent inchangés.
+/// </summary>
+public sealed record ReportSourceDto(
+    string Kind,
+    string Ref,
+    string DisplayName,
+    IReadOnlyList<ReportFieldMeta> Fields,
+    string? Domain = null);
+
+/// <summary>Un état métier prêt à l'emploi proposé dans le concepteur et à l'assistant.</summary>
+public sealed record ReportPresetDto(
+    string Key,
+    string DisplayName,
+    string Description,
+    string Domain,
+    string FactTable,
+    bool HasPeriod);
 
 /// <summary>
 /// Tout ce qu'il faut pour imprimer un état Studio : en-tête société, titre, description de la

@@ -1,6 +1,10 @@
-import { Component, Input } from '@angular/core';
+import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
+import { buildSparklinePaths } from '@shared/utils/sparkline-path.util';
+
+/** Historic decorative polyline kept as fallback when no series is provided. */
+export const DECORATIVE_SPARKLINE_POINTS = '0,22 15,18 30,20 45,12 60,14 75,8 90,10 105,4 120,6';
 
 type StatVariant = 'primary' | 'success' | 'warning' | 'error';
 type StatAppearance = 'default' | 'solid' | 'mini-sparkline';
@@ -29,7 +33,9 @@ type StatAppearance = 'default' | 'solid' | 'mini-sparkline';
         <ng-container *ngTemplateOutlet="cardContent"></ng-container>
       </a>
     } @else {
-      <ng-container *ngTemplateOutlet="cardContent"></ng-container>
+      <div [class]="cardClasses" [class.stat-card--clickable]="clickable && !isNavigable" (click)="onCardClick($event)">
+        <ng-container *ngTemplateOutlet="cardContent"></ng-container>
+      </div>
     }
 
     <ng-template #cardContent>
@@ -43,13 +49,27 @@ type StatAppearance = 'default' | 'solid' | 'mini-sparkline';
               <span class="stat-trend" [class.positive]="change > 0" [class.negative]="change < 0">
                 <i class="fa-solid" [class.fa-arrow-trend-up]="change > 0" [class.fa-arrow-trend-down]="change < 0" aria-hidden="true"></i>
                 {{ change > 0 ? '+' : '' }}{{ change }}%
+                @if (changeSuffix) {
+                  <span class="stat-trend-suffix">{{ changeSuffix }}</span>
+                }
               </span>
             }
           </div>
           <span class="stat-label">{{ label }}</span>
           <span class="stat-value">{{ value }}</span>
           <ng-content></ng-content>
-          @if (appearance === 'solid' || appearance === 'mini-sparkline') {
+          @if (sparklinePath) {
+            <svg class="stat-sparkline" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true">
+              <path [attr.d]="sparklineAreaPath" fill="currentColor" opacity="0.18" />
+              <path
+                [attr.d]="sparklinePath"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round" />
+            </svg>
+          } @else if (showDecorativeSparkline) {
             <svg class="stat-sparkline" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true">
               <polyline
                 fill="none"
@@ -57,7 +77,7 @@ type StatAppearance = 'default' | 'solid' | 'mini-sparkline';
                 stroke-width="2"
                 stroke-linecap="round"
                 stroke-linejoin="round"
-                points="0,22 15,18 30,20 45,12 60,14 75,8 90,10 105,4 120,6" />
+                [attr.points]="decorativeSparklinePoints" />
             </svg>
           }
         </div>
@@ -139,6 +159,10 @@ type StatAppearance = 'default' | 'solid' | 'mini-sparkline';
       transform: scale(1.08) rotate(-3deg);
     }
 
+    .stat-card--clickable {
+      cursor: pointer;
+    }
+
     .stat-trend {
       display: inline-flex;
       align-items: center;
@@ -150,6 +174,10 @@ type StatAppearance = 'default' | 'solid' | 'mini-sparkline';
     }
     .stat-trend.positive { color: var(--color-success-600); background: var(--color-success-50); }
     .stat-trend.negative { color: var(--color-error-600); background: var(--color-error-50); }
+    .stat-trend-suffix {
+      font-weight: var(--font-weight-medium, 500);
+      opacity: 0.85;
+    }
 
     .stat-label {
       display: block;
@@ -218,6 +246,10 @@ type StatAppearance = 'default' | 'solid' | 'mini-sparkline';
       color: rgba(255, 255, 255, 0.9);
     }
 
+    .stat-card:not(.stat-card--solid) .stat-sparkline {
+      color: var(--color-primary-500, #3b82f6);
+    }
+
     @media (max-width: 768px) {
       .stat-card { padding: var(--spacing-4); }
       .stat-value { font-size: var(--font-size-xl); }
@@ -231,15 +263,32 @@ export class StatCardComponent {
   @Input() icon = 'pi-chart-line';
   @Input() variant: StatVariant = 'primary';
   @Input() change?: number;
+  /** Optional suffix after trend percent (e.g. « vs mois dernier »). */
+  @Input() changeSuffix?: string;
   @Input() featured?: boolean;
   /** Teinte précise du badge/blob (clé de la palette $ft-icon-tones). Défaut : dérivée de `variant`. */
   @Input() tone?: string;
   /** Apparence : default (actuel) | solid (KPI Superieur plein) | mini-sparkline */
   @Input() appearance: StatAppearance = 'default';
+  /**
+   * Sparkline series — three-state contract:
+   * - `undefined` (default) + solid/mini-sparkline → decorative polyline (other screens)
+   * - `number[]` with length ≥ 2 → data-driven path
+   * - `null` or too-short array → no curve
+   */
+  @Input() sparkline?: number[] | null;
   @Input() routerLink?: string | any[];
   @Input() queryParams?: Record<string, string>;
   @Input() clickable = false;
   @Input() navigationAriaLabel?: string;
+  @Output() cardClick = new EventEmitter<void>();
+
+  onCardClick(event: MouseEvent): void {
+    if (this.clickable && !this.isNavigable) {
+      event.preventDefault();
+      this.cardClick.emit();
+    }
+  }
 
   private static readonly VARIANT_TONE: Record<StatVariant, string> = {
     primary: 'primary',
@@ -248,8 +297,30 @@ export class StatCardComponent {
     error: 'rose'
   };
 
+  readonly decorativeSparklinePoints = DECORATIVE_SPARKLINE_POINTS;
+
   get isNavigable(): boolean {
     return (this.clickable || this.routerLink !== undefined) && this.routerLink != null && this.routerLink !== '';
+  }
+
+  get showDecorativeSparkline(): boolean {
+    return (this.appearance === 'solid' || this.appearance === 'mini-sparkline')
+      && this.sparkline === undefined;
+  }
+
+  get sparklinePath(): string | null {
+    return this.sparklinePaths?.line ?? null;
+  }
+
+  get sparklineAreaPath(): string | null {
+    return this.sparklinePaths?.area ?? null;
+  }
+
+  private get sparklinePaths() {
+    if (!this.sparkline || this.sparkline.length < 2) {
+      return null;
+    }
+    return buildSparklinePaths(this.sparkline);
   }
 
   get resolvedTone(): string {

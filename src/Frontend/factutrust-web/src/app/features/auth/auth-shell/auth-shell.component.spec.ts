@@ -5,6 +5,7 @@ import {
   AuthShellConfig,
   LOGIN_AUTH_SHELL_CONFIG,
   REGISTER_AUTH_SHELL_CONFIG,
+  REGISTER_FIRM_AUTH_SHELL_CONFIG,
 } from './auth-shell.config';
 
 describe('AuthShellComponent', () => {
@@ -67,12 +68,20 @@ describe('AuthShellComponent', () => {
     expect(card!.classList.contains('auth-form-card--scrollable')).toBeFalse();
   });
 
-  it('marks the register wizard card as wide and internally scrollable', () => {
+  it('marks the register wizard card as wide without an internal scrollbar', () => {
     renderWithConfig(REGISTER_AUTH_SHELL_CONFIG);
     const card = formCard();
     expect(card).not.toBeNull();
     expect(card!.classList.contains('auth-form-card--wide')).toBeTrue();
-    expect(card!.classList.contains('auth-form-card--scrollable')).toBeTrue();
+    expect(card!.classList.contains('auth-form-card--scrollable')).toBeFalse();
+  });
+
+  it('marks the register-firm wizard card as wide without an internal scrollbar', () => {
+    renderWithConfig(REGISTER_FIRM_AUTH_SHELL_CONFIG);
+    const card = formCard();
+    expect(card).not.toBeNull();
+    expect(card!.classList.contains('auth-form-card--wide')).toBeTrue();
+    expect(card!.classList.contains('auth-form-card--scrollable')).toBeFalse();
   });
 
   it('does not mark a compact config without flags as internally scrollable', () => {

@@ -203,6 +203,9 @@
                 <tr [class.row-has-diff]="line.difference !== 0">
                   <td [attr.data-label]="'Produit'">
                     <span class="product-name">{{ line.productName }}</span>
+                    @if (line.lotNumber) {
+                      <span class="lot-label">Lot {{ line.lotNumber }}</span>
+                    }
                   </td>
                   <td [attr.data-label]="'Code'">
                     <code class="product-code">{{ line.productCode ?? '—' }}</code>

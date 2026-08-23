@@ -40,13 +40,12 @@ public sealed class FirmDecisionTablesDtoContractTests
             ],
             NegativeMargins = [],
             PendingTimeSheets = [],
-            SocialAlerts = [],
             HonorairesAlerts = [],
             Meta = new FirmDecisionTablesMetaDto
             {
                 GeneratedAt = new DateTime(2026, 3, 12, 10, 0, 0, DateTimeKind.Utc),
                 PartialFailures = [
-                    new FirmDecisionTablesPartialFailureDto { Section = "socialAlerts", Message = "timeout" }
+                    new FirmDecisionTablesPartialFailureDto { Section = "pendingTimeSheets", Message = "timeout" }
                 ]
             }
         };

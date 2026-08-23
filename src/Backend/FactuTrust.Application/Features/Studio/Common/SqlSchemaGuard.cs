@@ -15,7 +15,12 @@ public static partial class SqlSchemaGuard
         "AuditLogs",
         "CustomEntityDefinitions", "CustomFieldDefinitions", "CustomRecords",
         "CustomFormDefinitions", "CustomReportDefinitions", "CustomViewDefinitions",
+        // Reste des internes Studio : la liste historique en oubliait 5 sur 11. Aucun usage métier
+        // légitime — on ne construit pas une fenêtre sur la plomberie du Studio.
+        "CustomFieldSequences", "CustomSystemDefinitions",
+        "CustomEntityAutomations", "CustomAutomationRuns", "StudioAiBuildPlans",
         "TejXmlExportLogs", "StorefrontOutboxMessages", "UserDashboardLayouts",
+        "DataProtectionKeys",
         "__EFMigrationsHistory"
     };
 
@@ -24,6 +29,34 @@ public static partial class SqlSchemaGuard
         || DeniedTables.Contains(table)
         || table.StartsWith("__", StringComparison.Ordinal)
         || table.StartsWith("AspNet", StringComparison.OrdinalIgnoreCase); // Identity lives in master, but deny defensively
+
+    /// <summary>
+    /// Colonnes qui ne doivent jamais être projetées : secrets, empreintes et jetons de concurrence.
+    /// Utilisé par le moteur d'états (deny-by-default au niveau colonne) — volontairement NON appliqué
+    /// à l'introspection historique des fenêtres, dont le comportement reste inchangé.
+    /// </summary>
+    public static bool IsDeniedColumn(string? column)
+    {
+        if (string.IsNullOrWhiteSpace(column))
+            return true;
+
+        if (string.Equals(column, "RowVersion", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        foreach (var fragment in DeniedColumnFragments)
+        {
+            if (column.Contains(fragment, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static readonly string[] DeniedColumnFragments =
+    {
+        "Password", "Secret", "ApiKey", "AccessToken", "RefreshToken", "TokenHash",
+        "SecurityStamp", "ConcurrencyStamp", "PasswordHash", "PrivateKey"
+    };
 
     [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$")]
     private static partial Regex IdentifierPattern();

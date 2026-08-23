@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, inject, OnInit } from '@angular/core';
+import { Component, Input, Output, EventEmitter, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterModule } from '@angular/router';
 import { NgbDropdownModule } from '@ng-bootstrap/ng-bootstrap';
@@ -10,6 +10,10 @@ import { BreadcrumbService } from '../../services/breadcrumb.service';
 import { QuickAccessMenuComponent } from './quick-access-menu/quick-access-menu.component';
 import { GlobalSearchComponent } from '../global-search/global-search.component';
 import { GlobalSearchService } from '../../services/global-search.service';
+import {
+  isProductOnboardingUiEnabled,
+  ProductOnboardingApiService
+} from '../../onboarding/product-onboarding.service';
 
 @Component({
   selector: 'app-header',
@@ -29,12 +33,14 @@ import { GlobalSearchService } from '../../services/global-search.service';
             <i class="fa fa-bars"></i>
           </button>
 
-          <div class="header-left-actions">
+          <div class="header-left-actions" data-tour="header-quick-access">
             <app-quick-access-menu />
           </div>
 
           <!-- Global Search -->
-          <app-global-search mode="header" />
+          <div data-tour="header-search">
+            <app-global-search mode="header" />
+          </div>
 
           <!-- Right Side -->
           <div class="right_topbar">
@@ -57,6 +63,7 @@ import { GlobalSearchService } from '../../services/global-search.service';
             @if (warehouseContext.resolvedWarehouse(); as wh) {
               <div
                 class="main-header__warehouse"
+                data-tour="header-warehouse"
                 role="status"
                 [attr.title]="'Entrepôt : ' + wh.name"
                 [attr.aria-label]="'Entrepôt actif : ' + wh.name">
@@ -69,13 +76,13 @@ import { GlobalSearchService } from '../../services/global-search.service';
               <ul class="main-header__toolbar-icons">
                 @if (authService.canAccessPlatformSettings()) {
                   <li>
-                    <a routerLink="/settings" aria-label="Paramètres">
+                    <a routerLink="/settings" aria-label="Paramètres" data-tour="header-settings">
                       <i class="fa-solid fa-gear"></i>
                     </a>
                   </li>
                 } @else if (authService.isAccountingFirm() && !authService.isDelegatedMode()) {
                   <li>
-                    <a routerLink="/firm/settings" aria-label="Paramètres cabinet">
+                    <a routerLink="/firm/settings" aria-label="Paramètres cabinet" data-tour="header-settings">
                       <i class="fa-solid fa-gear"></i>
                     </a>
                   </li>
@@ -97,6 +104,7 @@ import { GlobalSearchService } from '../../services/global-search.service';
                     ngbDropdownToggle
                     id="notificationsDropdown"
                     class="notif-bell"
+                    data-tour="header-notifications"
                     aria-label="Notifications"
                     aria-haspopup="menu">
                     <i class="fa-regular fa-bell"></i>
@@ -156,6 +164,7 @@ import { GlobalSearchService } from '../../services/global-search.service';
                     class="dropdown-toggle main-header__user-trigger"
                     id="userDropdown"
                     aria-label="Menu utilisateur"
+                    data-tour="header-profile"
                     aria-haspopup="menu">
                     <div class="user_avatar_image">
                       <img src="assets/theme/pluto/images/layout_img/user_img.jpg" alt="User avatar" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
@@ -168,6 +177,11 @@ import { GlobalSearchService } from '../../services/global-search.service';
                     class="main-header__user-menu dropdown-menu"
                     role="menu">
                     <a ngbDropdownItem routerLink="/settings/profile">Mon profil</a>
+                    @if (canReplayProductTour()) {
+                      <button type="button" ngbDropdownItem (click)="replayProductTour()">
+                        Relancer la visite guidée
+                      </button>
+                    }
                     @if (authService.canAccessPlatformSettings()) {
                       <a ngbDropdownItem routerLink="/settings">Paramètres</a>
                     } @else if (authService.isAccountingFirm() && !authService.isDelegatedMode()) {
@@ -636,6 +650,7 @@ export class HeaderComponent {
   readonly authService = inject(AuthService);
   readonly firmContext = inject(FirmContextService);
   readonly notifications = inject(NotificationService);
+  private readonly productOnboarding = inject(ProductOnboardingApiService);
   private readonly router = inject(Router);
   warehouseContext = inject(WarehouseContextService);
   breadcrumbService = inject(BreadcrumbService);
@@ -675,5 +690,16 @@ export class HeaderComponent {
       return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
     }
     return user.fullName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'U';
+  }
+
+  canReplayProductTour(): boolean {
+    return isProductOnboardingUiEnabled() && !this.authService.isDelegatedMode();
+  }
+
+  replayProductTour(): void {
+    void this.router.navigateByUrl(
+      this.authService.isAccountingFirm() ? '/firm/dashboard' : '/dashboard'
+    );
+    this.productOnboarding.requestReplay();
   }
 }

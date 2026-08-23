@@ -183,9 +183,12 @@ public class InvoicesController : ControllerBase
     [Authorize(Policy = PermissionPolicies.InvoicesUpdate)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> ValidateInvoice(Guid id, CancellationToken cancellationToken)
+    public async Task<IActionResult> ValidateInvoice(
+        Guid id,
+        [FromBody] ValidateInvoiceRequest? request,
+        CancellationToken cancellationToken)
     {
-        var command = new ValidateInvoiceCommand(id);
+        var command = new ValidateInvoiceCommand(id, request?.LineAllocations);
         var result = await _mediator.Send(command, cancellationToken);
 
         if (result.IsFailure)
@@ -282,7 +285,9 @@ public class InvoicesController : ControllerBase
 
         if (result.IsFailure)
         {
-            if (result.Error.Code == "NotFound")
+            if (result.Error.Code == "POS_SESSION_CLOSED")
+                return Conflict(ApiResponse<object>.Fail(result.Error.Description, result.Error.Code));
+            if (result.Error.Code == "NotFound" || result.Error.Code.Contains("NotFound", StringComparison.Ordinal))
                 return NotFound(ApiResponse<object>.Fail(result.Error.Description));
             return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
         }
@@ -311,7 +316,9 @@ public class InvoicesController : ControllerBase
 
         if (result.IsFailure)
         {
-            if (result.Error.Code == "NotFound")
+            if (result.Error.Code == "POS_SESSION_CLOSED")
+                return Conflict(ApiResponse<object>.Fail(result.Error.Description, result.Error.Code));
+            if (result.Error.Code == "NotFound" || result.Error.Code.Contains("NotFound", StringComparison.Ordinal))
                 return NotFound(ApiResponse<object>.Fail(result.Error.Description));
             return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
         }

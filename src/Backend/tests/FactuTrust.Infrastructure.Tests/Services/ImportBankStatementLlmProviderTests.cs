@@ -55,7 +55,8 @@ public sealed class ImportBankStatementLlmProviderTests
                 It.IsAny<double>(),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>(),
-                It.IsAny<int?>()))
+                It.IsAny<int?>(),
+                It.IsAny<OpenAiCompatibleCallOptions?>()))
             .Returns(MockLlmStream(SampleJson));
 
         var platform = new Mock<IPlatformAiSettingsService>();
@@ -84,7 +85,8 @@ public sealed class ImportBankStatementLlmProviderTests
             It.IsAny<double>(),
             It.IsAny<int>(),
             It.IsAny<CancellationToken>(),
-            It.IsAny<int?>()), Times.Once);
+            It.IsAny<int?>(),
+            It.IsAny<OpenAiCompatibleCallOptions?>()), Times.Once);
     }
 
     [Fact]

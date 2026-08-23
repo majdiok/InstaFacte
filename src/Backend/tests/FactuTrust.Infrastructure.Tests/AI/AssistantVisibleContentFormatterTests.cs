@@ -165,6 +165,44 @@ public sealed class AssistantVisibleContentFormatterTests
         Assert.Equal(content, clean);
     }
 
+    [Fact]
+    public void RedactStudioInternalLeaks_UnclosedJsonFence_Removed()
+    {
+        const string content =
+            "Voici le brouillon :\n```json\n{\n  \"entity\": {\n    \"displayName\": \"Contrats Clients\",\n    \"displayNamePlural\": \"Contrats Clients\"\n  },\n  \"fields\": [\n    { \"label\": \"Montant\"";
+
+        var clean = AssistantVisibleContentFormatter.RedactStudioInternalLeaks(content);
+
+        Assert.DoesNotContain("```", clean, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"entity\"", clean, StringComparison.Ordinal);
+        Assert.DoesNotContain("Montant", clean, StringComparison.Ordinal);
+        Assert.False(string.IsNullOrWhiteSpace(clean));
+    }
+
+    [Fact]
+    public void RedactStudioInternalLeaks_BareEntitySpec_Removed_KeepsProse()
+    {
+        const string content =
+            "Je prépare la table des contrats.\n{\"entity\":{\"displayName\":\"Contrats Clients\"},\"fields\":[{\"label\":\"Montant\",\"type\":\"money\"}]}";
+
+        var clean = AssistantVisibleContentFormatter.RedactStudioInternalLeaks(content);
+
+        Assert.Contains("Je prépare la table des contrats.", clean, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"entity\"", clean, StringComparison.Ordinal);
+        Assert.DoesNotContain("Montant", clean, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RedactStudioInternalLeaks_BareEntitySpecOnly_ReturnsGenericAck()
+    {
+        const string content =
+            "{\"entity\":{\"displayName\":\"Contrats Clients\"},\"fields\":[{\"label\":\"Montant\",\"type\":\"money\"}]}";
+
+        var clean = AssistantVisibleContentFormatter.RedactStudioInternalLeaks(content);
+
+        Assert.Equal("D'accord — dites-moi les champs à ajouter et je mets à jour le système.", clean);
+    }
+
     // ── SanitizeInternalToolNames : substitution par libellés (jamais de perte de contenu) ──────
 
     [Fact]

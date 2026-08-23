@@ -1746,67 +1746,6 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
         };
     }
 
-    public async Task<FirmSocialOverviewDto> GetSocialOverviewAsync(Guid firmTenantId, CancellationToken cancellationToken = default)
-    {
-        var allowedCompanyIds = await ResolveAccessibleCompanyIdsAsync(firmTenantId, cancellationToken);
-        if (allowedCompanyIds is { Count: 0 })
-            return new FirmSocialOverviewDto { Clients = [] };
-
-        var clientsQuery =
-            from a in _master.FirmClientAssignments.AsNoTracking()
-            join t in _master.Tenants.AsNoTracking() on a.CompanyTenantId equals t.Id
-            where a.FirmTenantId == firmTenantId && a.Status == FirmAssignmentStatus.Active
-            select new { a.CompanyTenantId, t.CompanyName };
-
-        if (allowedCompanyIds is not null)
-            clientsQuery = clientsQuery.Where(c => allowedCompanyIds.Contains(c.CompanyTenantId));
-
-        var clients = await clientsQuery.ToListAsync(cancellationToken);
-
-        var rows = new List<FirmSocialClientRowDto>();
-        foreach (var c in clients)
-        {
-            var row = new FirmSocialClientRowDto
-            {
-                CompanyTenantId = c.CompanyTenantId,
-                CompanyName = c.CompanyName
-            };
-            try
-            {
-                var conn = await _tenantService.GetConnectionStringAsync(c.CompanyTenantId, cancellationToken);
-                if (string.IsNullOrEmpty(conn))
-                {
-                    rows.Add(row);
-                    continue;
-                }
-
-                await using var ctx = CreateTenantContext(conn);
-                row = row with
-                {
-                    EmployeeCount = await ctx.Set<Domain.Entities.Payroll.Employee>().AsNoTracking().CountAsync(e => e.IsActive, cancellationToken),
-                    PendingLeaveRequests = await ctx.LeaveRequests.AsNoTracking()
-                        .CountAsync(l => !l.IsApproved, cancellationToken),
-                    PayrollRunsDraftCount = await ctx.PayrollRuns.AsNoTracking()
-                        .CountAsync(r => r.Status == PayrollRunStatus.Draft, cancellationToken),
-                    DtsPendingCount = await ctx.FiscalScheduleEntries.AsNoTracking()
-                        .CountAsync(e =>
-                            !e.IsCancelled
-                            && e.ObligationType == FiscalObligationType.CnssDtsQuarterly
-                            && e.DepositDate == null
-                            && e.DueDate.Date <= DateTime.UtcNow.Date.AddDays(30),
-                            cancellationToken)
-                };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Social overview fan-out failed for tenant {TenantId}", c.CompanyTenantId);
-            }
-            rows.Add(row);
-        }
-
-        return new FirmSocialOverviewDto { Clients = rows };
-    }
-
     public async Task<Result> AssignDossierManagerAsync(
         Guid firmTenantId,
         Guid assignedByUserId,

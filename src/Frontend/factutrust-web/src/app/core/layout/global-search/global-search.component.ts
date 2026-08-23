@@ -348,15 +348,19 @@ export class GlobalSearchComponent implements OnInit, OnDestroy {
   @HostListener('document:keydown', ['$event'])
   onGlobalKeydown(event: KeyboardEvent): void {
     if (!this.searchService.isEnabled()) return;
-    const isK = event.key.toLowerCase() === 'k';
+    const key = event.key;
+    if (!key) return;
+
+    const isK = key.toLowerCase() === 'k';
     if ((event.ctrlKey || event.metaKey) && isK) {
+      if (this.router.url.includes('/projects/dashboard')) return;
       event.preventDefault();
       this.searchService.openPalette();
       this.dropdownOpen.set(false);
       this.dropdownReady.set(false);
       queueMicrotask(() => this.paletteInput?.nativeElement?.focus());
     }
-    if (event.key === 'Escape') {
+    if (key === 'Escape') {
       this.closeAll();
     }
   }

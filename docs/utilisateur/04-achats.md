@@ -117,9 +117,11 @@ Astuces de saisie sur le formulaire :
 
 ### Créer une facture fournisseur
 
-La facturation achats est **partielle et multiple** : vous pouvez créer plusieurs factures fournisseur tant qu'il reste des quantités **reçues et non encore facturées**. La réception des marchandises est **obligatoire** avant toute facturation.
+La facturation des **marchandises gérées en stock** est **partielle et multiple** : vous pouvez créer plusieurs factures fournisseur tant qu'il reste des quantités **reçues et non encore facturées**. Pour ces articles, la réception (bon de réception validé) **reste obligatoire** avant facturation.
 
-#### Depuis un bon de réception (recommandé)
+Les **charges et services hors stock** (loyers, STEG, honoraires, prestations, immobilisations non gérées en stock) peuvent être saisis **directement** depuis la liste des factures fournisseurs, sans bon de commande ni bon de réception. Une facture directe **ne met pas à jour le stock**.
+
+#### Depuis un bon de réception (recommandé pour le stock)
 
 1. Validez le bon de réception.
 2. Sur la fiche du BR, cliquez sur **Créer facture fournisseur**.
@@ -150,10 +152,26 @@ Les **factures fournisseurs** sont les factures que vos fournisseurs vous envoie
 
 1. Dans le menu, cliquez sur **Achats** puis **Factures fournisseurs**.
 2. La liste de toutes vos factures fournisseurs s'affiche.
+3. Un bouton **Nouvelle facture** permet de saisir une facture directe (charges / services hors stock).
+4. Les factures sans bon de commande ni bon de réception sont identifiées par le tag **Directe**.
+
+Si la liste est vide, le message propose de créer une facture depuis un bon de commande, un bon de réception, ou directement.
+
+### Créer une facture directe depuis la liste
+
+Utilisez ce flux pour les factures **sans mouvement de stock** (loyers, énergie, honoraires, services, immobilisations hors stock).
+
+1. Dans **Factures fournisseurs**, cliquez sur **Nouvelle facture**.
+2. Sélectionnez le fournisseur, la date, le délai de paiement et, si besoin, le n° papier du fournisseur.
+3. Ajoutez des lignes en choisissant des articles **non gérés en stock** (services ou charges). Les articles de stock sont refusés : passez alors par un bon de réception.
+4. Cliquez sur **Créer la facture**. La facture est enregistrée immédiatement (pas de brouillon) et une écriture comptable d'achat est générée.
+5. Joignez le **scan PDF** de la facture à l'écriture d'achat (journal JA), depuis la comptabilité. La fiche facture n'attache pas de pièce native.
+
+Pour corriger une facture directe : **annulez-la** puis saisissez-en une nouvelle.
 
 ### Voir le détail d'une facture fournisseur
 
-Cliquez sur une facture dans la liste. La fiche affiche toutes les informations, le fournisseur associé et le bon de commande lié (si applicable).
+Cliquez sur une facture dans la liste. La fiche affiche toutes les informations, le fournisseur associé et, le cas échéant, le bon de commande ou le bon de réception lié. Une facture sans BC ni BR est indiquée comme **Facture directe**, avec un rappel pour joindre la pièce à l'écriture comptable.
 
 ---
 

@@ -1,0 +1,781 @@
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
+import { TabsModule } from 'primeng/tabs';
+import { DialogModule } from 'primeng/dialog';
+import { InputTextModule } from 'primeng/inputtext';
+import { InputNumberModule } from 'primeng/inputnumber';
+import { SelectModule } from 'primeng/select';
+import { DatePickerModule } from 'primeng/datepicker';
+import { Textarea } from 'primeng/textarea';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
+import { FormSectionComponent } from '@shared/components/form-section/form-section.component';
+import { AuthService } from '@core/services/auth.service';
+import { ToastService } from '@core/services/toast.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
+import { ConfirmationService } from '@core/services/confirmation.service';
+import { ProductService } from '@core/services/product.service';
+import { SupplierService } from '@core/services/supplier.service';
+import { PERMISSIONS } from '@core/config/permission-keys';
+import {
+  ProjectActivity,
+  ProjectApiService,
+  ProjectAssignableUser,
+  ProjectAttachment,
+  ProjectBillingReadiness,
+  ProjectBudget,
+  ProjectComment,
+  ProjectCostLine,
+  ProjectDetail,
+  ProjectMember,
+  ProjectMilestone,
+  ProjectSituation,
+  ProjectSubcontractor,
+  ProjectTask,
+  ProjectTimeEntry,
+  ProjectWorkloadRow,
+  UpsertMemberPayload,
+  UpsertProjectPayload,
+  UpsertTaskPayload
+} from './project-api.service';
+import {
+  ProjectTaskStatusCode,
+  billingOptionsForKind,
+  canActivate,
+  canCancel,
+  canComplete,
+  canEditProject,
+  canHold,
+  isBtp,
+  parseProjectBillingMode,
+  parseProjectKind,
+  projectStatusBadge,
+  projectUiProfile,
+  toIsoDate
+} from './project-enums';
+import { ProjectOverviewTabComponent } from './tabs/project-overview.tab';
+import { ProjectTasksTabComponent } from './tabs/project-tasks.tab';
+import { CreateTimePayload, ProjectTimeTabComponent, TimeFilterPayload } from './tabs/project-time.tab';
+import { ProductOption, ProjectBudgetTabComponent } from './tabs/project-budget.tab';
+import { ProjectTeamTabComponent } from './tabs/project-team.tab';
+import { ProjectFilesTabComponent } from './tabs/project-files.tab';
+import { ProjectBillingTabComponent, SupplierOption } from './tabs/project-billing.tab';
+import { ProjectSummarySidebarComponent } from './components/project-summary-sidebar.component';
+import { ProjectDetailHeroComponent } from './components/project-detail-hero.component';
+import { ProjectDetailKpiStripComponent } from './components/project-detail-kpi-strip.component';
+import { ProjectActivityTabComponent } from './tabs/project-activity.tab';
+import { ProjectFavoritesService } from './project-favorites.service';
+
+type TabKey = 'overview' | 'tasks' | 'time' | 'budget' | 'team' | 'files' | 'billing' | 'activity';
+
+@Component({
+  selector: 'app-project-detail',
+  standalone: true,
+  imports: [
+    CommonModule,
+    FormsModule,
+    TabsModule,
+    DialogModule,
+    InputTextModule,
+    InputNumberModule,
+    SelectModule,
+    DatePickerModule,
+    Textarea,
+    ButtonComponent,
+    BreadcrumbComponent,
+    FormSectionComponent,
+    ProjectOverviewTabComponent,
+    ProjectTasksTabComponent,
+    ProjectTimeTabComponent,
+    ProjectBudgetTabComponent,
+    ProjectTeamTabComponent,
+    ProjectFilesTabComponent,
+    ProjectBillingTabComponent,
+    ProjectSummarySidebarComponent,
+    ProjectDetailHeroComponent,
+    ProjectDetailKpiStripComponent,
+    ProjectActivityTabComponent
+  ],
+  template: `
+    @if (project(); as p) {
+      <app-breadcrumb [items]="breadcrumbItems()"></app-breadcrumb>
+
+      <app-project-detail-hero
+        [project]="p"
+        [canUpdate]="canUpdate"
+        [showSiteChip]="uiProfile(p.kind).showSiteChip"
+        [favorite]="isFavorite(p.id)"
+        (activate)="activate()"
+        (hold)="hold()"
+        (complete)="complete()"
+        (cancel)="cancel()"
+        (edit)="openEdit()"
+        (toggleFavorite)="toggleFavorite(p.id)"
+        (goList)="goList()" />
+
+      <app-project-detail-kpi-strip
+        class="proj-detail-kpi-wrap"
+        [project]="p"
+        [budget]="budget()"
+        [tasks]="tasks()" />
+
+      <div class="proj-layout-with-sidebar" [class.proj-layout-with-sidebar--full]="showSidebar()">
+        <div class="proj-detail-tabs-wrap">
+      <p-tabs class="ft-tabs proj-detail-tabs" [value]="tab()" [lazy]="true" (valueChange)="onTab($event)">
+        <p-tablist>
+          <p-tab value="overview" [class.proj-tab-emphasis]="isEmphasizedTab('overview')">
+            <i class="pi pi-th-large"></i> Aperçu
+          </p-tab>
+          <p-tab value="tasks" [class.proj-tab-emphasis]="isEmphasizedTab('tasks')">
+            <i class="pi pi-check-square"></i> Tâches
+          </p-tab>
+          <p-tab value="time" [class.proj-tab-emphasis]="isEmphasizedTab('time')">
+            <i class="pi pi-clock"></i> Temps
+          </p-tab>
+          <p-tab value="budget" [class.proj-tab-emphasis]="isEmphasizedTab('budget')">
+            <i class="pi pi-wallet"></i> Budget
+          </p-tab>
+          <p-tab value="team" [class.proj-tab-emphasis]="isEmphasizedTab('team')">
+            <i class="pi pi-users"></i> Équipe
+          </p-tab>
+          <p-tab value="files" [class.proj-tab-emphasis]="isEmphasizedTab('files')">
+            <i class="pi pi-folder"></i> Fichiers
+          </p-tab>
+          <p-tab value="billing" [class.proj-tab-emphasis]="isEmphasizedTab('billing')">
+            <i class="pi pi-file"></i> Facturation
+          </p-tab>
+          <p-tab value="activity" [class.proj-tab-emphasis]="isEmphasizedTab('activity')">
+            <i class="pi pi-history"></i> Activité
+          </p-tab>
+        </p-tablist>
+        <p-tabpanels>
+          <p-tabpanel value="overview">
+            <app-project-overview-tab
+              [project]="p"
+              [budget]="budget()"
+              [tasks]="tasks()"
+              [members]="members()"
+              [users]="users()"
+              [activities]="activities()"
+              (viewBudget)="goTab('budget')"
+              (viewTeam)="goTab('team')"
+              (viewActivity)="goTab('activity')" />
+          </p-tabpanel>
+          <p-tabpanel value="tasks">
+            <app-project-tasks-tab
+              [project]="p"
+              [tasks]="tasks()"
+              [users]="users()"
+              [canCreate]="canCreateTask"
+              [canUpdateTask]="canUpdateTask"
+              [canCreateTime]="canCreateTime"
+              (create)="createTask($event)"
+              (move)="moveTask($event)"
+              (refresh)="reloadTasks()"
+              (logTime)="logTimeFromTasks($event)" />
+          </p-tabpanel>
+          <p-tabpanel value="time">
+            <app-project-time-tab [project]="p" [entries]="timeEntries()" [tasks]="tasks()"
+              [canCreate]="canCreateTime" [canSubmit]="canSubmitTime" [canValidate]="canValidateTime"
+              [canActivate]="canUpdate" (create)="createTime($event)" (updateEntry)="updateTime($event)"
+              (filterChange)="onTimeFilter($event)" (submitEntry)="submitTime($event)"
+              (validateEntry)="validateTime($event)" (activate)="activate()" />
+          </p-tabpanel>
+          <p-tabpanel value="budget">
+            <app-project-budget-tab [project]="p" [budget]="budget()" [costs]="costs()" [products]="products()"
+              [canUpdate]="canUpdate" (cost)="addCost($event)" (stockExit)="stockExit($event)"
+              (assignPurchaseOrder)="assignPurchaseOrder($event)" />
+          </p-tabpanel>
+          <p-tabpanel value="team">
+            <app-project-team-tab [project]="p" [members]="members()" [users]="users()" [workload]="workload()"
+              [canManage]="canManageTeam" (addMember)="addMember($event)" (updateMember)="updateMember($event)"
+              (remove)="removeMember($event)" />
+          </p-tabpanel>
+          <p-tabpanel value="files">
+            <app-project-files-tab [files]="files()" [comments]="comments()" [canUpdate]="canUpdate"
+              (upload)="uploadFile($event)" (download)="downloadFile($event)" (remove)="deleteFile($event)"
+              (comment)="addComment($event)" />
+          </p-tabpanel>
+          <p-tabpanel value="billing">
+            <app-project-billing-tab [project]="p" [readiness]="readiness()" [milestones]="milestones()"
+              [situations]="situations()" [subs]="subs()" [suppliers]="suppliers()"
+              [canBill]="canCreateBilling" [canUpdate]="canUpdate"
+              (activate)="activate()" (invoiceTime)="invoiceTime($event)" (invoiceFixedPrice)="invoiceFixedPrice($event)"
+              (addMilestone)="addMilestone($event)" (invoiceMilestone)="invoiceMilestone($event)"
+              (addSituation)="addSituation($event)" (updateSituation)="updateSituation($event)"
+              (validateSituation)="validateSituation($event)" (invoiceSituation)="invoiceSituation($event)"
+              (addSubcontractor)="addSubcontractor($event)" (updateSubcontractor)="updateSubcontractor($event)" />
+          </p-tabpanel>
+          <p-tabpanel value="activity">
+            <app-project-activity-tab [activities]="activities()" [users]="users()" />
+          </p-tabpanel>
+        </p-tabpanels>
+      </p-tabs>
+        </div>
+        @if (showSidebar()) {
+          <app-project-summary-sidebar
+            [project]="p"
+            [budget]="budget()"
+            [tasks]="tasks()"
+            [activities]="activities()" />
+        }
+      </div>
+    }
+
+    <p-dialog [(visible)]="editVisible" header="Modifier le projet" [modal]="true" [style]="{ width: '52rem' }">
+      <app-form-section title="Identité" icon="pi-id-card" variant="compact">
+        <div class="flex flex-column gap-3">
+          <label>Nom <input pInputText class="w-full" [(ngModel)]="editDraft.name" /></label>
+          <label>Type
+            <input pInputText class="w-full" [value]="project()?.kindDisplay" readonly />
+          </label>
+          <label>Description <textarea pTextarea class="w-full" rows="2" [(ngModel)]="editDraft.description"></textarea></label>
+          <label>Facturation
+            <p-select class="w-full" [options]="editBillingOptions()" [(ngModel)]="editDraft.billingMode" optionLabel="label" optionValue="value" />
+          </label>
+          <label>Chef de projet
+            <p-select class="w-full" [options]="users()" [(ngModel)]="editDraft.ownerUserId" optionLabel="displayName" optionValue="id" [showClear]="true" />
+          </label>
+          <div class="flex gap-2">
+            <label class="flex-1">Début <p-datepicker class="w-full" [(ngModel)]="editStart" dateFormat="dd/mm/yy" /></label>
+            <label class="flex-1">Fin <p-datepicker class="w-full" [(ngModel)]="editEnd" dateFormat="dd/mm/yy" /></label>
+          </div>
+          <label>Budget HT <p-inputNumber class="w-full" [(ngModel)]="editDraft.budgetHt" mode="decimal" [minFractionDigits]="3" /></label>
+        </div>
+      </app-form-section>
+      @if (project() && isBtp(project()!.kind)) {
+        <app-form-section title="Chantier BTP" icon="pi-building" variant="compact">
+          <div class="flex flex-column gap-3">
+            <label>Adresse chantier <input pInputText class="w-full" [(ngModel)]="editDraft.siteAddress" /></label>
+            <label>N° marché <input pInputText class="w-full" [(ngModel)]="editDraft.contractNumber" /></label>
+          </div>
+        </app-form-section>
+      }
+      <ng-template pTemplate="footer">
+        <app-button variant="secondary" (click)="editVisible = false">Annuler</app-button>
+        <app-button variant="primary" (click)="saveEdit()">Enregistrer</app-button>
+      </ng-template>
+    </p-dialog>
+  `,
+})
+export class ProjectDetailComponent implements OnInit {
+  private readonly api = inject(ProjectApiService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly auth = inject(AuthService);
+  private readonly toast = inject(ToastService);
+  private readonly errors = inject(ErrorHandlerService);
+  private readonly confirm = inject(ConfirmationService);
+  private readonly productsApi = inject(ProductService);
+  private readonly suppliersApi = inject(SupplierService);
+  private readonly favorites = inject(ProjectFavoritesService);
+
+  readonly project = signal<ProjectDetail | null>(null);
+  readonly tasks = signal<ProjectTask[]>([]);
+  readonly timeEntries = signal<ProjectTimeEntry[]>([]);
+  readonly budget = signal<ProjectBudget | null>(null);
+  readonly costs = signal<ProjectCostLine[]>([]);
+  readonly members = signal<ProjectMember[]>([]);
+  readonly users = signal<ProjectAssignableUser[]>([]);
+  readonly comments = signal<ProjectComment[]>([]);
+  readonly files = signal<ProjectAttachment[]>([]);
+  readonly activities = signal<ProjectActivity[]>([]);
+  readonly milestones = signal<ProjectMilestone[]>([]);
+  readonly situations = signal<ProjectSituation[]>([]);
+  readonly subs = signal<ProjectSubcontractor[]>([]);
+  readonly workload = signal<ProjectWorkloadRow[]>([]);
+  readonly readiness = signal<ProjectBillingReadiness | null>(null);
+  readonly products = signal<ProductOption[]>([]);
+  readonly suppliers = signal<SupplierOption[]>([]);
+  readonly tab = signal<TabKey>('overview');
+  private id = '';
+  editVisible = false;
+  editStart: Date | null = null;
+  editEnd: Date | null = null;
+  editDraft: UpsertProjectPayload = { clientId: '', name: '', kind: 'Generic', billingMode: 'None', budgetHt: 0 };
+  timeFrom?: string;
+  timeTo?: string;
+  timeStatus?: string;
+  readonly canActivate = canActivate;
+  readonly canHold = canHold;
+  readonly canComplete = canComplete;
+  readonly canCancel = canCancel;
+  readonly canEditProject = canEditProject;
+  readonly isBtp = isBtp;
+  readonly statusBadge = projectStatusBadge;
+
+  uiProfile(kind: ProjectDetail['kind']) {
+    return projectUiProfile(kind);
+  }
+
+  isEmphasizedTab(key: TabKey): boolean {
+    const p = this.project();
+    if (!p) return false;
+    return projectUiProfile(p.kind).emphasizeTabs.includes(key);
+  }
+
+  isFavorite(id: string): boolean {
+    return this.favorites.isFavorite(id);
+  }
+
+  toggleFavorite(id: string): void {
+    this.favorites.toggle(id);
+  }
+
+  editBillingOptions() {
+    return billingOptionsForKind(this.editDraft.kind);
+  }
+
+  get canUpdate(): boolean { return this.auth.hasPermission(PERMISSIONS.projects.update); }
+  get canCreateTask(): boolean { return this.auth.hasPermission(PERMISSIONS.projectTasks.create); }
+  get canUpdateTask(): boolean { return this.auth.hasPermission(PERMISSIONS.projectTasks.update); }
+  get canCreateTime(): boolean { return this.auth.hasPermission(PERMISSIONS.projectTime.create); }
+  get canSubmitTime(): boolean { return this.auth.hasPermission(PERMISSIONS.projectTime.submit); }
+  get canValidateTime(): boolean { return this.auth.hasPermission(PERMISSIONS.projectTime.validate); }
+  get canManageTeam(): boolean { return this.auth.hasPermission(PERMISSIONS.projects.manageTeam); }
+  get canCreateBilling(): boolean { return this.auth.hasPermission(PERMISSIONS.projectBilling.create); }
+
+  breadcrumbItems(): BreadcrumbItem[] {
+    return [
+      { label: 'Accueil', route: '/' },
+      { label: 'Projets', route: '/projects' },
+      { label: this.project()?.name ?? 'Fiche' }
+    ];
+  }
+
+  showSidebar(): boolean {
+    const t = this.tab();
+    return t !== 'overview' && t !== 'activity';
+  }
+
+  ngOnInit(): void {
+    this.id = this.route.snapshot.paramMap.get('id') ?? '';
+    const initialTab = this.route.snapshot.queryParamMap.get('tab') as TabKey | null;
+    if (initialTab && ['overview', 'tasks', 'time', 'budget', 'team', 'files', 'billing', 'activity'].includes(initialTab)) {
+      this.tab.set(initialTab);
+    }
+    this.api.users().subscribe(r => { if (r.success && r.data) this.users.set(r.data); });
+    this.reloadProject();
+    this.loadTab(this.tab());
+  }
+
+  onTab(value: string | number): void {
+    this.goTab(String(value) as TabKey);
+  }
+
+  goTab(key: TabKey): void {
+    this.tab.set(key);
+    void this.router.navigate([], { relativeTo: this.route, queryParams: { tab: key }, queryParamsHandling: 'merge', replaceUrl: true });
+    this.loadTab(key);
+  }
+
+  goList(): void {
+    void this.router.navigate(['/projects']);
+  }
+
+  private fail(err: unknown, fallback: string): void {
+    this.toast.add({ severity: 'error', summary: fallback, detail: this.errors.extractErrorMessage(err) });
+  }
+
+  private ok(summary: string, detail?: string): void {
+    this.toast.add({ severity: 'success', summary, detail });
+  }
+
+  private reloadProject(): void {
+    this.api.get(this.id).subscribe({
+      next: r => { if (r.success && r.data) this.project.set(r.data); },
+      error: err => this.fail(err, 'Chargement du projet')
+    });
+    this.api.budget(this.id).subscribe({
+      next: r => { if (r.success && r.data) this.budget.set(r.data); },
+      error: () => { /* optional KPI */ }
+    });
+    this.api.tasks(this.id).subscribe({
+      next: r => { if (r.success && r.data) this.tasks.set(r.data); },
+      error: () => { /* KPI */ }
+    });
+  }
+
+  private loadTab(tab: TabKey): void {
+    switch (tab) {
+      case 'overview':
+        this.api.activity(this.id).subscribe(r => { if (r.success && r.data) this.activities.set(r.data); });
+        this.api.members(this.id).subscribe(r => { if (r.success && r.data) this.members.set(r.data); });
+        break;
+      case 'activity':
+        this.api.activity(this.id).subscribe(r => { if (r.success && r.data) this.activities.set(r.data); });
+        break;
+      case 'tasks':
+        this.api.tasks(this.id).subscribe(r => { if (r.success && r.data) this.tasks.set(r.data); });
+        break;
+      case 'time':
+        this.api.time({
+          projectId: this.id,
+          from: this.timeFrom,
+          to: this.timeTo,
+          status: this.timeStatus
+        }).subscribe({
+          next: r => { if (r.success && r.data) this.timeEntries.set(r.data); },
+          error: err => this.fail(err, 'Temps')
+        });
+        this.api.tasks(this.id).subscribe(r => { if (r.success && r.data) this.tasks.set(r.data); });
+        break;
+      case 'budget':
+        this.api.budget(this.id).subscribe(r => { if (r.success && r.data) this.budget.set(r.data); });
+        this.api.costs(this.id).subscribe(r => { if (r.success && r.data) this.costs.set(r.data); });
+        if (this.project() && isBtp(this.project()!.kind) && this.products().length === 0) {
+          this.productsApi.getProducts({ isActive: true, page: 1, pageSize: 80 }).subscribe(r => {
+            if (r.success && r.data) this.products.set(r.data.items.map(i => ({ id: i.id, name: `${i.code} — ${i.name}` })));
+          });
+        }
+        break;
+      case 'team':
+        this.api.members(this.id).subscribe(r => { if (r.success && r.data) this.members.set(r.data); });
+        this.api.workload(this.id).subscribe(r => { if (r.success && r.data) this.workload.set(r.data); });
+        break;
+      case 'files':
+        this.api.attachments(this.id).subscribe(r => { if (r.success && r.data) this.files.set(r.data); });
+        this.api.comments(this.id).subscribe(r => { if (r.success && r.data) this.comments.set(r.data); });
+        break;
+      case 'billing':
+        this.api.billingReadiness(this.id).subscribe({
+          next: r => { if (r.success && r.data) this.readiness.set(r.data); },
+          error: err => this.fail(err, 'Facturation')
+        });
+        this.api.milestones(this.id).subscribe(r => { if (r.success && r.data) this.milestones.set(r.data); });
+        this.api.situations(this.id).subscribe(r => { if (r.success && r.data) this.situations.set(r.data); });
+        this.api.subcontractors(this.id).subscribe(r => { if (r.success && r.data) this.subs.set(r.data); });
+        if (this.suppliers().length === 0) {
+          this.suppliersApi.getSuppliers({ page: 1, pageSize: 80, isActive: true }).subscribe(r => {
+            if (r.success && r.data) this.suppliers.set(r.data.items.map(s => ({ id: s.id, name: s.name })));
+          });
+        }
+        break;
+    }
+  }
+
+  activate(): void {
+    this.api.activate(this.id).subscribe({
+      next: () => { this.ok('Projet activé', 'Vous pouvez saisir du temps.'); this.reloadProject(); this.loadTab(this.tab()); },
+      error: err => this.fail(err, 'Activation impossible')
+    });
+  }
+
+  hold(): void {
+    this.confirm.confirm({
+      header: 'Mettre en pause',
+      message: 'Le projet ne pourra plus recevoir de temps tant qu’il est en pause. Continuer ?',
+      accept: () => this.api.hold(this.id).subscribe({
+        next: () => { this.ok('Projet en pause'); this.reloadProject(); },
+        error: err => this.fail(err, 'Mise en pause impossible')
+      })
+    });
+  }
+
+  complete(): void {
+    this.confirm.confirm({
+      header: 'Clôturer le projet',
+      message: 'Validez ou annulez les temps ouverts avant de clôturer. Aucune nouvelle saisie de temps ne sera possible.',
+      accept: () => this.api.complete(this.id).subscribe({
+        next: () => { this.ok('Projet clôturé'); this.reloadProject(); },
+        error: err => this.fail(err, 'Clôture impossible')
+      })
+    });
+  }
+
+  cancel(): void {
+    this.confirm.confirm({
+      header: 'Annuler le projet',
+      message: 'Cette action est irréversible. Le projet passera au statut Annulé.',
+      accept: () => this.api.cancel(this.id).subscribe({
+        next: () => { this.ok('Projet annulé'); this.reloadProject(); },
+        error: err => this.fail(err, 'Annulation impossible')
+      })
+    });
+  }
+
+  openEdit(): void {
+    const p = this.project();
+    if (!p) return;
+    this.editDraft = {
+      clientId: p.clientId,
+      name: p.name,
+      description: p.description,
+      kind: parseProjectKind(p.kind) ?? 'Generic',
+      billingMode: parseProjectBillingMode(p.billingMode) ?? 'None',
+      budgetHt: p.budgetHt,
+      ownerUserId: p.ownerUserId,
+      siteAddress: p.siteAddress,
+      contractNumber: p.contractNumber
+    };
+    this.editStart = p.startDate ? new Date(p.startDate) : null;
+    this.editEnd = p.endDate ? new Date(p.endDate) : null;
+    this.editVisible = true;
+  }
+
+  saveEdit(): void {
+    this.api.update(this.id, {
+      ...this.editDraft,
+      startDate: toIsoDate(this.editStart),
+      endDate: toIsoDate(this.editEnd),
+      ownerUserId: this.editDraft.ownerUserId || null
+    }).subscribe({
+      next: r => {
+        if (r.success) { this.editVisible = false; this.ok('Projet mis à jour'); this.reloadProject(); }
+        else this.toast.add({ severity: 'error', summary: 'Mise à jour impossible', detail: r.message || '' });
+      },
+      error: err => this.fail(err, 'Mise à jour impossible')
+    });
+  }
+
+  createTask(payload: UpsertTaskPayload): void {
+    this.api.createTask(this.id, payload).subscribe({
+      next: () => { this.ok('Tâche créée'); this.loadTab('tasks'); this.reloadProject(); },
+      error: err => this.fail(err, 'Création de tâche')
+    });
+  }
+
+  moveTask(ev: { taskId: string; phaseId: string; status?: ProjectTaskStatusCode }): void {
+    this.api.moveTask(ev.taskId, ev.phaseId, ev.status).subscribe({
+      next: () => this.loadTab('tasks'),
+      error: err => this.fail(err, 'Déplacement impossible')
+    });
+  }
+
+  createTime(payload: CreateTimePayload): void {
+    this.api.createTime(payload).subscribe({
+      next: () => {
+        this.ok('Temps enregistré');
+        if (this.tab() === 'tasks') {
+          this.reloadTasks();
+        } else {
+          this.loadTab('time');
+        }
+        this.reloadProject();
+      },
+      error: err => this.fail(err, 'Saisie des temps')
+    });
+  }
+
+  logTimeFromTasks(payload: CreateTimePayload): void {
+    this.createTime(payload);
+  }
+
+  reloadTasks(): void {
+    this.api.tasks(this.id).subscribe({
+      next: r => { if (r.success && r.data) this.tasks.set(r.data); },
+      error: err => this.fail(err, 'Actualisation des tâches')
+    });
+  }
+
+  onTimeFilter(filters: TimeFilterPayload): void {
+    this.timeFrom = filters.from;
+    this.timeTo = filters.to;
+    this.timeStatus = filters.status;
+    this.loadTab('time');
+  }
+
+  updateTime(ev: { id: string; payload: CreateTimePayload }): void {
+    this.api.updateTime(ev.id, ev.payload).subscribe({
+      next: () => { this.ok('Temps mis à jour'); this.loadTab('time'); },
+      error: err => this.fail(err, 'Mise à jour du temps')
+    });
+  }
+
+  submitTime(id: string): void {
+    this.api.submitTime(id).subscribe({
+      next: () => { this.ok('Temps soumis'); this.loadTab('time'); },
+      error: err => this.fail(err, 'Soumission impossible')
+    });
+  }
+
+  validateTime(id: string): void {
+    this.api.validateTime(id).subscribe({
+      next: () => { this.ok('Temps validé'); this.loadTab('time'); this.reloadProject(); },
+      error: err => this.fail(err, 'Validation impossible')
+    });
+  }
+
+  addCost(payload: { description: string; amountHt: number; occurredOn: string }): void {
+    this.api.addCost(this.id, payload).subscribe({
+      next: () => { this.ok('Coût ajouté'); this.loadTab('budget'); this.reloadProject(); },
+      error: err => this.fail(err, 'Coût')
+    });
+  }
+
+  stockExit(payload: { productId: string; quantity: number; warehouseId?: string; notes?: string }): void {
+    this.api.stockExit(this.id, payload).subscribe({
+      next: () => { this.ok('Sortie de stock'); this.loadTab('budget'); this.reloadProject(); },
+      error: err => this.fail(err, 'Sortie stock')
+    });
+  }
+
+  assignPurchaseOrder(purchaseOrderId: string): void {
+    this.api.assignPurchaseOrder(this.id, purchaseOrderId).subscribe({
+      next: () => { this.ok('Bon de commande associé'); this.loadTab('budget'); },
+      error: err => this.fail(err, 'Association bon de commande')
+    });
+  }
+
+  addMember(payload: UpsertMemberPayload): void {
+    this.api.addMember(this.id, payload).subscribe({
+      next: () => { this.ok('Membre ajouté'); this.loadTab('team'); },
+      error: err => this.fail(err, 'Équipe')
+    });
+  }
+
+  updateMember(ev: { id: string; payload: UpsertMemberPayload }): void {
+    this.api.updateMember(ev.id, ev.payload).subscribe({
+      next: () => { this.ok('Membre mis à jour'); this.loadTab('team'); },
+      error: err => this.fail(err, 'Équipe')
+    });
+  }
+
+  removeMember(id: string): void {
+    this.confirm.confirm({
+      header: 'Retirer le membre',
+      message: 'Retirer cette personne de l’équipe du projet ?',
+      accept: () => this.api.removeMember(id).subscribe({
+        next: () => { this.ok('Membre retiré'); this.loadTab('team'); },
+        error: err => this.fail(err, 'Équipe')
+      })
+    });
+  }
+
+  uploadFile(file: File): void {
+    this.api.uploadAttachment(this.id, file).subscribe({
+      next: () => { this.ok('Fichier ajouté'); this.loadTab('files'); },
+      error: err => this.fail(err, 'Téléversement')
+    });
+  }
+
+  downloadFile(f: ProjectAttachment): void {
+    this.api.downloadAttachment(this.id, f.id).subscribe({
+      next: blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = f.fileName;
+        a.click();
+        URL.revokeObjectURL(url);
+      },
+      error: err => this.fail(err, 'Téléchargement')
+    });
+  }
+
+  deleteFile(id: string): void {
+    this.api.deleteAttachment(this.id, id).subscribe({
+      next: () => { this.ok('Fichier supprimé'); this.loadTab('files'); },
+      error: err => this.fail(err, 'Suppression')
+    });
+  }
+
+  addComment(body: string): void {
+    this.api.addComment(this.id, body).subscribe({
+      next: () => this.loadTab('files'),
+      error: err => this.fail(err, 'Commentaire')
+    });
+  }
+
+  invoiceTime(ev: { groupBy: string; notes?: string }): void {
+    this.api.invoiceTime(this.id, ev.groupBy, ev.notes).subscribe({
+      next: r => {
+        if (r.success && r.data) void this.router.navigate(['/invoices', r.data.invoiceId]);
+        else this.toast.add({ severity: 'error', summary: 'Facturation impossible', detail: r.message || '' });
+      },
+      error: err => this.fail(err, 'Facturation impossible')
+    });
+  }
+
+  invoiceFixedPrice(ev: { amountHt: number; notes?: string }): void {
+    this.api.invoiceFixedPrice(this.id, ev.amountHt, ev.notes).subscribe({
+      next: r => {
+        if (r.success && r.data) {
+          this.ok('Forfait facturé');
+          void this.router.navigate(['/invoices', r.data.invoiceId]);
+        } else {
+          this.toast.add({ severity: 'error', summary: 'Facturation forfait', detail: r.message || '' });
+        }
+      },
+      error: err => this.fail(err, 'Facturation forfait')
+    });
+  }
+
+  addMilestone(payload: { name: string; percent: number; amountHt: number; dueDate?: string | null }): void {
+    this.api.addMilestone(this.id, payload).subscribe({
+      next: () => { this.ok('Jalon ajouté'); this.loadTab('billing'); },
+      error: err => this.fail(err, 'Jalon')
+    });
+  }
+
+  invoiceMilestone(id: string): void {
+    this.api.invoiceMilestone(this.id, id).subscribe({
+      next: r => { if (r.success && r.data) void this.router.navigate(['/invoices', r.data.invoiceId]); },
+      error: err => this.fail(err, 'Facturation jalon')
+    });
+  }
+
+  addSituation(payload: {
+    periodStart: string; periodEnd: string; cumulativePercent: number;
+    grossAmountHt: number; retainageAmountHt: number; vatRatePercent: number;
+  }): void {
+    this.api.createSituation(this.id, payload).subscribe({
+      next: () => { this.ok('Situation créée'); this.loadTab('billing'); },
+      error: err => this.fail(err, 'Situation')
+    });
+  }
+
+  validateSituation(id: string): void {
+    this.confirm.confirm({
+      header: 'Valider la situation',
+      message: 'Une situation validée ne pourra plus être modifiée. Continuer ?',
+      accept: () => this.api.validateSituation(id).subscribe({
+        next: () => { this.ok('Situation validée'); this.loadTab('billing'); },
+        error: err => this.fail(err, 'Validation situation')
+      })
+    });
+  }
+
+  updateSituation(ev: {
+    id: string;
+    payload: {
+      periodStart: string;
+      periodEnd: string;
+      cumulativePercent: number;
+      grossAmountHt: number;
+      retainageAmountHt: number;
+      vatRatePercent: number;
+    };
+  }): void {
+    this.api.updateSituation(ev.id, ev.payload).subscribe({
+      next: () => { this.ok('Situation mise à jour'); this.loadTab('billing'); },
+      error: err => this.fail(err, 'Mise à jour situation')
+    });
+  }
+
+  invoiceSituation(id: string): void {
+    this.api.invoiceSituation(this.id, id).subscribe({
+      next: r => { if (r.success && r.data) void this.router.navigate(['/invoices', r.data.invoiceId]); },
+      error: err => this.fail(err, 'Facturation situation')
+    });
+  }
+
+  addSubcontractor(payload: { supplierId: string; contractReference?: string; amountHt: number; retainagePercent: number }): void {
+    this.api.addSubcontractor(this.id, payload).subscribe({
+      next: () => { this.ok('Sous-traitant ajouté'); this.loadTab('billing'); },
+      error: err => this.fail(err, 'Sous-traitant')
+    });
+  }
+
+  updateSubcontractor(ev: {
+    id: string;
+    payload: { contractReference?: string; amountHt: number; retainagePercent: number };
+  }): void {
+    this.api.updateSubcontractor(ev.id, ev.payload).subscribe({
+      next: () => { this.ok('Sous-traitant mis à jour'); this.loadTab('billing'); },
+      error: err => this.fail(err, 'Sous-traitant')
+    });
+  }
+}

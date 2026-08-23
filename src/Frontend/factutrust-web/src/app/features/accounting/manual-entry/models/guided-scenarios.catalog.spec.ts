@@ -8,7 +8,7 @@ import { computeTotals, isBalancedTotals } from '../services/entry-form.store';
 
 describe('guided-scenarios.catalog', () => {
   const mockResolve = (candidates: readonly string[]) => {
-    const plan = ['607', '43666', '4011', '4111', '707', '436711', '5321', '5411', '658', '211', '43662', '640', '421', '486', '481'];
+    const plan = ['607', '43666', '4011', '4111', '707', '436711', '5321', '5411', '638', '221', '43662', '640', '425', '486', '481'];
     return candidates.find(c => plan.includes(c)) ?? null;
   };
 

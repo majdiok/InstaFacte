@@ -70,7 +70,7 @@ public sealed class ConvertQuoteToSalesOrderCommandHandlerTests
     public async Task Handle_WhenQuoteHasFreeLine_ShouldReturnValidationError()
     {
         var quote = NewQuote(status: QuoteStatus.Accepted, includeFreeLine: true);
-        var freeLine = quote.Lines.FirstOrDefault(l => l.ProductId == Guid.Empty);
+        var freeLine = quote.Lines.FirstOrDefault(l => !l.ProductId.HasValue);
         Assert.NotNull(freeLine);
 
         var quoteRepo = new Mock<IQuoteRepository>();

@@ -31,6 +31,7 @@ public sealed record WizardStepMetadataDto
     public string? InternalReference { get; init; }
     public Guid? LinkedInvoiceId { get; init; }
     public Guid? WarehouseId { get; init; }
+    public Guid? CashRegisterSessionId { get; init; }
 }
 
 /// <summary>

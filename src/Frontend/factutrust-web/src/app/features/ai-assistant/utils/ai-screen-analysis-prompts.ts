@@ -33,7 +33,7 @@ const FAMILY_PROMPTS: Record<string, string> = {
   'forecasting-abc-xyz': `${SCREEN_ANALYSIS_BACKEND_PROMPT_PREFIX}. Analyse la matrice ABC/XYZ : classification produits, priorités de gestion. ${STANDARD_OUTPUT_HINT}`,
   'forecasting-promotions': `${SCREEN_ANALYSIS_BACKEND_PROMPT_PREFIX}. Analyse les promotions recommandées : impact estimé, risques, produits cibles. ${STANDARD_OUTPUT_HINT}`,
   'accounting-closing': `${SCREEN_ANALYSIS_BACKEND_PROMPT_PREFIX}. Analyse la clôture comptable : avancement, contrôles manquants, écritures de clôture. ${STANDARD_OUTPUT_HINT}`,
-  'accounting-chart': `${SCREEN_ANALYSIS_BACKEND_PROMPT_PREFIX}. Analyse le plan comptable : couverture, comptes inutilisés, structure PCG. ${STANDARD_OUTPUT_HINT}`
+  'accounting-chart': `${SCREEN_ANALYSIS_BACKEND_PROMPT_PREFIX}. Analyse le plan comptable : couverture, comptes inutilisés, structure NCT 01 / SCE. ${STANDARD_OUTPUT_HINT}`
 };
 
 const DEFAULT_PROMPT = `${SCREEN_ANALYSIS_BACKEND_PROMPT_PREFIX}. Signale anomalies, risques et opportunités. Propose des actions concrètes. ${STANDARD_OUTPUT_HINT}`;

@@ -14,7 +14,8 @@ public sealed class CreateSubAccountCommandValidator : AbstractValidator<CreateS
         RuleFor(x => x.Request.AccountNumber)
             .NotEmpty().WithMessage("Le numéro de compte est obligatoire.")
             .MaximumLength(20).WithMessage("Le numéro de compte ne peut pas dépasser 20 caractères.")
-            .Matches(@"^\d+$").WithMessage("Le numéro de compte doit contenir uniquement des chiffres.");
+            .Matches(@"^[1-7]\d*(?:\.\d+)*$")
+            .WithMessage("Le numéro de compte doit être un numéro SCE (chiffres, points autorisés).");
 
         RuleFor(x => x.Request.Label)
             .NotEmpty().WithMessage("Le libellé est obligatoire.")

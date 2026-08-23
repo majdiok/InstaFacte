@@ -5,6 +5,7 @@ using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Events;
 using FactuTrust.Domain.ValueObjects;
 using Microsoft.Extensions.Logging.Abstractions;
+using FactuTrust.Infrastructure.Tests.Stock;
 using Moq;
 using Xunit;
 
@@ -33,6 +34,8 @@ public sealed class RestoreStockOnCreditNoteValidatedHandlerTests
             warehouseRepo.Object,
             productRepo.Object,
             movementRepo.Object,
+            StockTestDoubles.Passthrough(stockItemRepo.Object),
+            StockTestDoubles.Untracked(),
             NullLogger<RestoreStockOnCreditNoteValidatedHandler>.Instance);
 
         await handler.Handle(notification, CancellationToken.None);
@@ -67,6 +70,8 @@ public sealed class RestoreStockOnCreditNoteValidatedHandlerTests
             warehouseRepo.Object,
             productRepo.Object,
             movementRepo.Object,
+            StockTestDoubles.Passthrough(stockItemRepo.Object),
+            StockTestDoubles.Untracked(),
             NullLogger<RestoreStockOnCreditNoteValidatedHandler>.Instance);
 
         await handler.Handle(notification, CancellationToken.None);

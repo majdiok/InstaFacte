@@ -5,6 +5,7 @@ using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.ValueObjects;
 using FactuTrust.Infrastructure.Services;
+using FactuTrust.Infrastructure.Tests.Stock;
 using Moq;
 using Xunit;
 
@@ -59,7 +60,7 @@ public sealed class ValidatePurchaseReceiptCommandHandlerTests
             .ReturnsAsync(Array.Empty<StockMovement>());
 
         IPurchaseGoodsReceptionService reception = new PurchaseGoodsReceptionService(
-            stockRepo.Object, movementRepo.Object, productRepo.Object);
+            stockRepo.Object, movementRepo.Object, productRepo.Object, StockTestDoubles.Passthrough(stockRepo.Object));
 
         var handler = new ValidatePurchaseReceiptCommandHandler(
             receiptRepo.Object,
@@ -125,7 +126,7 @@ public sealed class ValidatePurchaseReceiptCommandHandlerTests
             .ReturnsAsync(Array.Empty<StockMovement>());
 
         IPurchaseGoodsReceptionService reception = new PurchaseGoodsReceptionService(
-            stockRepo.Object, movementRepo.Object, productRepo.Object);
+            stockRepo.Object, movementRepo.Object, productRepo.Object, StockTestDoubles.Passthrough(stockRepo.Object));
 
         var handler = new ValidatePurchaseReceiptCommandHandler(
             receiptRepo.Object,

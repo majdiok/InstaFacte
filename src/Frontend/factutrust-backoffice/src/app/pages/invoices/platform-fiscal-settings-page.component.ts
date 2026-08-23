@@ -185,7 +185,7 @@ import { INVOICES_FR } from './invoices.i18n.fr';
         @if (vatLoading()) {
           <ft-skeleton kind="line" count="3" />
         } @else {
-          <p-table [value]="vatPeriods()" styleClass="ft-table">
+          <p-table [value]="vatPeriods()" styleClass="p-datatable-sm ft-table">
             <ng-template pTemplate="header">
               <tr>
                 <th>{{ t('vat.col.month') }}</th>

@@ -6,6 +6,7 @@ import {
   OnChanges,
   Output,
   SimpleChanges,
+  computed,
   inject,
   signal
 } from '@angular/core';
@@ -14,7 +15,8 @@ import { Router } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
 import { TabsModule } from 'primeng/tabs';
 import { PlatformTenantService } from '@core/services/platform-tenant.service';
-import type { PlatformTenantDetailDto } from '@core/models/platform.models';
+import { PlatformPermissionsService } from '@core/services/platform-permissions.service';
+import { PlatformPermission, type PlatformTenantDetailDto } from '@core/models/platform.models';
 import { FtDrawerComponent } from '@core/ui/drawer/ft-drawer.component';
 import { FtSkeletonComponent } from '@core/ui/skeleton/ft-skeleton.component';
 import { FtBadgeComponent } from '@core/ui/badge/ft-badge.component';
@@ -215,6 +217,15 @@ import { TENANTS_FR } from './tenants.i18n.fr';
       }
 
       <ng-container ftFooter>
+        @if (canSeeAiConfig() && detail()?.tenantId) {
+          <p-button
+            [label]="t('drawer.action.openAiConfig')"
+            icon="pi pi-microchip-ai"
+            [outlined]="true"
+            severity="secondary"
+            (onClick)="onOpenAiConfig()"
+          />
+        }
         <p-button
           [label]="t('drawer.action.openFullPage')"
           icon="pi pi-arrow-right"
@@ -371,6 +382,9 @@ import { TENANTS_FR } from './tenants.i18n.fr';
 export class TenantQuickViewDrawerComponent implements OnChanges {
   private readonly api = inject(PlatformTenantService);
   private readonly router = inject(Router);
+  private readonly permissions = inject(PlatformPermissionsService);
+
+  readonly canSeeAiConfig = computed(() => this.permissions.has(PlatformPermission.AiManage));
 
   @Input() visible = false;
   @Input() tenantId: string | null = null;
@@ -445,6 +459,14 @@ export class TenantQuickViewDrawerComponent implements OnChanges {
     if (id) {
       this.onVisibleChange(false);
       void this.router.navigate(['/tenants', id]);
+    }
+  }
+
+  onOpenAiConfig(): void {
+    const id = this.detail()?.tenantId ?? this.tenantId;
+    if (id) {
+      this.onVisibleChange(false);
+      void this.router.navigate(['/tenants', id], { queryParams: { tab: 'ai' } });
     }
   }
 

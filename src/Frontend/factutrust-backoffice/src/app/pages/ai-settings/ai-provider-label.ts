@@ -3,6 +3,8 @@ export function aiProviderLabel(providerKey: string | null | undefined): string 
   switch (providerKey) {
     case 'openrouter':
       return 'OpenRouter';
+    case 'modal':
+      return 'Modal (Kimi)';
     case 'cursor':
       return 'Cursor';
     default:

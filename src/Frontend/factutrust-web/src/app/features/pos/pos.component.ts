@@ -48,6 +48,8 @@ import { environment } from '@environments/environment';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
 import { PricingService } from '@core/services/pricing.service';
+import { PosRegisterSessionService, PosSessionReportDto } from './services/pos-register-session.service';
+import { toApiPaymentMethod } from './services/pos-payment.mapper';
 
 @Component({
   selector: 'app-pos',
@@ -63,7 +65,10 @@ import { PricingService } from '@core/services/pricing.service';
         (onOpenHeld)="showHeldPanel = true"
         (onOpenHistory)="showHistoryPanel = true"
         (onDualScreenToggle)="toggleDualScreen()"
-        (onQuickModeToggle)="posState.toggleQuickMode()" />
+        (onQuickModeToggle)="posState.toggleQuickMode()"
+        (onOpenRegister)="showOpenSessionModal = true"
+        (onXReport)="openXReport()"
+        (onCloseZ)="openCloseZModal()" />
 
       <div class="pos-content pos-content--animated">
         <div class="pos-content__catalog">
@@ -86,6 +91,17 @@ import { PricingService } from '@core/services/pricing.service';
             (onFrequentProductAdd)="addProductToOrder($event)" />
         </div>
       </div>
+
+      @if (registerSession.requireOpenSession() && !registerSession.currentSession() && !registerSession.isLoading()) {
+        <div class="pos-session-gate">
+          <div class="pos-session-gate__box">
+            <i class="pi pi-lock"></i>
+            <h2>Ouvrir la caisse</h2>
+            <p>Une session de caisse doit être ouverte pour vendre.</p>
+            <button type="button" class="pos-idle-btn" (click)="showOpenSessionModal = true">Ouvrir la caisse</button>
+          </div>
+        </div>
+      }
 
       @if (showHeldPanel) {
         <app-held-orders-panel
@@ -180,6 +196,69 @@ import { PricingService } from '@core/services/pricing.service';
             <div class="pos-modal-actions">
               <button type="button" class="pos-modal-btn pos-modal-btn--primary" (click)="restoreCloudSession()">Reprendre</button>
               <button type="button" class="pos-modal-btn" (click)="dismissCloudSession(); showRestoreCloudModal = false">Ignorer</button>
+            </div>
+          </div>
+        </div>
+      }
+
+      @if (showOpenSessionModal) {
+        <div class="pos-modal-overlay" (click)="showOpenSessionModal = false">
+          <div class="pos-modal" (click)="$event.stopPropagation()">
+            <h3>Ouvrir la caisse</h3>
+            <p>Saisissez le fond de caisse déclaré (espèces). Ce montant n'écrit pas d'opération de trésorerie.</p>
+            <label class="pos-modal-label" for="pos-opening-float">Fond de caisse (TND)</label>
+            <input id="pos-opening-float" type="number" min="0" step="0.001" class="pos-idle-input" [(ngModel)]="openingFloatInput" />
+            <div class="pos-modal-actions">
+              <button type="button" class="pos-modal-btn pos-modal-btn--primary" (click)="confirmOpenSession()">Ouvrir</button>
+              <button type="button" class="pos-modal-btn" (click)="showOpenSessionModal = false">Annuler</button>
+            </div>
+          </div>
+        </div>
+      }
+
+      @if (showCloseZModal) {
+        <div class="pos-modal-overlay" (click)="showCloseZModal = false">
+          <div class="pos-modal pos-modal--wide" (click)="$event.stopPropagation()">
+            <h3>Clôture Z</h3>
+            @if (closePreview) {
+              <p>Théorique espèces : <strong>{{ formatSessionAmount(closePreview.expectedCash) }} TND</strong></p>
+              @if (closePreview.heldTicketCount > 0) {
+                <p>Attention : {{ closePreview.heldTicketCount }} ticket(s) encore en attente. Ils ne bloquent pas la clôture.</p>
+              }
+            }
+            <label class="pos-modal-label" for="pos-counted-cash">Comptage espèces (TND)</label>
+            <input id="pos-counted-cash" type="number" min="0" step="0.001" class="pos-idle-input" [(ngModel)]="countedCashInput" />
+            @if (closePreview) {
+              <p [class.pos-variance-zero]="closeVariance() === 0" [class.pos-variance-nonzero]="closeVariance() !== 0">
+                Écart : {{ formatSessionAmount(closeVariance()) }} TND
+              </p>
+            }
+            <div class="pos-modal-actions">
+              <button type="button" class="pos-modal-btn pos-modal-btn--primary" (click)="confirmCloseZ()">Clôturer</button>
+              <button type="button" class="pos-modal-btn" (click)="showCloseZModal = false">Annuler</button>
+            </div>
+          </div>
+        </div>
+      }
+
+      @if (sessionReport) {
+        <div class="pos-modal-overlay" (click)="sessionReport = null">
+          <div class="pos-modal pos-modal--wide pos-z-print" (click)="$event.stopPropagation()">
+            <h3>{{ sessionReport.zReportNumber ? ('Clôture ' + sessionReport.zReportNumber) : 'Rapport X' }}</h3>
+            <p>{{ sessionReport.cashRegisterName }} — fond {{ formatSessionAmount(sessionReport.openingFloat) }} TND</p>
+            <p>Tickets : {{ sessionReport.invoiceCount }} — Avoirs : {{ sessionReport.creditNoteCount }}</p>
+            <p>Théorique : {{ formatSessionAmount(sessionReport.expectedCash) }} TND</p>
+            @if (sessionReport.countedCash != null) {
+              <p>Compté : {{ formatSessionAmount(sessionReport.countedCash) }} TND — écart {{ formatSessionAmount(sessionReport.cashVariance ?? 0) }} TND</p>
+            }
+            <ul>
+              @for (row of sessionReport.totalsByMethod; track row.method) {
+                <li>{{ row.methodDisplay }} : {{ formatSessionAmount(row.amount) }} TND</li>
+              }
+            </ul>
+            <div class="pos-modal-actions">
+              <button type="button" class="pos-modal-btn pos-modal-btn--primary" (click)="printSessionReport()">Imprimer</button>
+              <button type="button" class="pos-modal-btn" (click)="sessionReport = null">Fermer</button>
             </div>
           </div>
         </div>
@@ -501,6 +580,48 @@ import { PricingService } from '@core/services/pricing.service';
       color: var(--color-white);
       border-color: var(--color-primary-500);
     }
+
+    .pos-session-gate {
+      position: fixed;
+      inset: 64px 0 0 0;
+      z-index: 500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(3px);
+    }
+
+    .pos-session-gate__box {
+      background: var(--color-white);
+      border-radius: var(--radius-2xl);
+      padding: var(--spacing-8);
+      text-align: center;
+      max-width: 420px;
+    }
+
+    .pos-session-gate__box i {
+      font-size: 2rem;
+      color: var(--color-primary-500);
+    }
+
+    .pos-modal--wide {
+      max-width: 520px;
+    }
+
+    .pos-modal-label {
+      display: block;
+      font-size: var(--font-size-sm);
+      margin-bottom: var(--spacing-2);
+    }
+
+    .pos-variance-zero { color: #15803d; font-weight: 600; }
+    .pos-variance-nonzero { color: #b45309; font-weight: 600; }
+
+    @media print {
+      .pos-layout > *:not(.pos-z-print) { display: none !important; }
+      .pos-z-print { box-shadow: none; max-width: none; }
+    }
   `]
 })
 export class PosComponent implements OnInit, OnDestroy {
@@ -530,10 +651,17 @@ export class PosComponent implements OnInit, OnDestroy {
   private readonly companyService = inject(CompanyService);
   private readonly warehouseContext = inject(WarehouseContextService);
   private readonly pricingService = inject(PricingService);
+  readonly registerSession = inject(PosRegisterSessionService);
 
   showSuccessToast = false;
   showRestoreDraftModal = false;
   showRestoreCloudModal = false;
+  showOpenSessionModal = false;
+  showCloseZModal = false;
+  openingFloatInput = 0;
+  countedCashInput = 0;
+  closePreview: PosSessionReportDto | null = null;
+  sessionReport: PosSessionReportDto | null = null;
   idleUnlockCode = '';
   successMessage = '';
   showBarcodeToast = false;
@@ -591,6 +719,12 @@ export class PosComponent implements OnInit, OnDestroy {
     effect(() => {
       const clientId = this.posState.client()?.id ?? null;
       this.repriceOrderForClient(clientId);
+    });
+
+    effect(() => {
+      this.posState.lines();
+      this.posState.isDirty();
+      this.sessionSyncService.scheduleSave();
     });
   }
 
@@ -674,14 +808,15 @@ export class PosComponent implements OnInit, OnDestroy {
     this.themeService.init();
     this.idleService.startWatching();
     this.draftAutosaveService.start();
-    this.draftAutosaveService.checkStored();
-    if (this.draftAutosaveService.hasStoredDraft()) {
-      this.showRestoreDraftModal = true;
-    } else {
-      this.sessionSyncService.hasCloudSession().subscribe(has => {
-        if (has) this.showRestoreCloudModal = true;
-      });
-    }
+    this.registerSession.hydrate(this.warehouseContext.selectedWarehouseId()).subscribe(session => {
+      if (!session && this.registerSession.requireOpenSession()) {
+        this.showOpenSessionModal = true;
+      }
+    });
+    void this.heldService.initialize();
+    this.sessionSyncService.hasCloudSession().subscribe(has => {
+      if (has) this.showRestoreCloudModal = true;
+    });
   }
 
   @HostListener('window:keydown', ['$event'])
@@ -868,6 +1003,13 @@ export class PosComponent implements OnInit, OnDestroy {
   validateAndPrint(): void {
     if (!this.posState.canValidate()) return;
 
+    if (!this.registerSession.canSell()) {
+      this.showOpenSessionModal = true;
+      this.posState.setError('Ouvrez la caisse avant de vendre.');
+      this.audioService.beepError();
+      return;
+    }
+
     if (this.posState.isDemoMode()) {
       this.showToast('Mode demo : facture simulee (aucune ecriture)');
       this.audioService.beepSuccess();
@@ -1045,7 +1187,9 @@ export class PosComponent implements OnInit, OnDestroy {
       issueDate: new Date(),
       dueDate: new Date(),
       currency: Currency.TND,
-      internalReference: `POS-AVO-${this.posState.sessionId()}`
+      internalReference: `POS-AVO-${this.posState.sessionId()}`,
+      warehouseId: this.warehouseContext.selectedWarehouseId(),
+      cashRegisterSessionId: this.registerSession.currentSession()?.id ?? null
     });
 
     const posClient = this.posState.client();
@@ -1225,7 +1369,8 @@ export class PosComponent implements OnInit, OnDestroy {
       dueDate,
       currency: Currency.TND,
       internalReference: `POS-${this.posState.sessionId()}`,
-      warehouseId: this.warehouseContext.selectedWarehouseId()
+      warehouseId: this.warehouseContext.selectedWarehouseId(),
+      cashRegisterSessionId: this.registerSession.currentSession()?.id ?? null
     });
 
     if (client) {
@@ -1317,6 +1462,7 @@ export class PosComponent implements OnInit, OnDestroy {
     this.posState.setProcessing(false);
     const totalTTC = this.posState.totals().totalTTC;
     const paymentMethod = this.posState.paymentMethod();
+    const paymentSchedule = this.posState.paymentSchedule();
     const printMode = this.posState.printMode();
 
     if (printMode === 'receipt' || printMode === 'both') {
@@ -1340,7 +1486,7 @@ export class PosComponent implements OnInit, OnDestroy {
       return;
     }
 
-    if (paymentMethod === PaymentMethod.Cash) {
+    if (paymentMethod === PaymentMethod.Cash && paymentSchedule === 'full') {
       this.lastCreatedInvoiceIdForCash = invoiceId;
       this.invoiceService.getInvoice(invoiceId).subscribe({
         next: res => {
@@ -1356,6 +1502,8 @@ export class PosComponent implements OnInit, OnDestroy {
           this.showChangeCalculator = true;
         }
       });
+    } else if (paymentSchedule === 'full') {
+      this.recordImmediatePayment(invoiceId, paymentMethod);
     } else {
       const label = invoiceNumber?.trim() || invoiceId.substring(0, 8);
       this.showToast(`Facture N° ${label}`);
@@ -1467,7 +1615,8 @@ export class PosComponent implements OnInit, OnDestroy {
       const invoiceId = this.lastCreatedInvoiceIdForCash;
       this.invoiceService.recordPayment(invoiceId, {
         paymentDate: formatLocalDate(new Date()),
-        method: 0
+        method: 0,
+        cashRegisterSessionId: this.registerSession.currentSession()?.id ?? undefined
       }).subscribe({
         next: () => {
           this.lastCreatedInvoiceIdForCash = null;
@@ -1501,8 +1650,9 @@ export class PosComponent implements OnInit, OnDestroy {
     const paymentDate = formatLocalDate(new Date());
     const requests = splits.map(split => ({
       paymentDate,
-      method: Number(split.method),
-      amount: split.amount
+      method: toApiPaymentMethod(split.method),
+      amount: split.amount,
+      cashRegisterSessionId: this.registerSession.currentSession()?.id ?? undefined
     }));
 
     this.isRecordingPayment = true;
@@ -1544,5 +1694,113 @@ export class PosComponent implements OnInit, OnDestroy {
     if (err?.error?.globalErrors?.length) return err.error.globalErrors[0];
     if (err?.message) return err.message;
     return fallback;
+  }
+
+  private cashRegisterSessionId(): string | undefined {
+    return this.registerSession.currentSession()?.id ?? undefined;
+  }
+
+  private recordImmediatePayment(invoiceId: string, method: PaymentMethod): void {
+    this.isRecordingPayment = true;
+    this.invoiceService.recordPayment(invoiceId, {
+      paymentDate: formatLocalDate(new Date()),
+      method: toApiPaymentMethod(method),
+      cashRegisterSessionId: this.cashRegisterSessionId()
+    }).subscribe({
+      next: () => {
+        this.isRecordingPayment = false;
+        this.showToast('Paiement enregistré');
+      },
+      error: err => {
+        this.isRecordingPayment = false;
+        const message = this.extractErrorMessage(err, "Erreur lors de l'enregistrement du paiement");
+        this.posState.setError(message);
+        this.audioService.beepError();
+      }
+    });
+  }
+
+  confirmOpenSession(): void {
+    const warehouseId = this.warehouseContext.selectedWarehouseId();
+    if (!warehouseId) {
+      return;
+    }
+    const floatValue = Number(this.openingFloatInput) || 0;
+    this.registerSession.open(warehouseId, floatValue).subscribe({
+      next: () => {
+        this.showOpenSessionModal = false;
+        this.showToast('Caisse ouverte');
+      },
+      error: err => {
+        this.posState.setError(this.extractErrorMessage(err, "Impossible d'ouvrir la caisse"));
+        this.audioService.beepError();
+      }
+    });
+  }
+
+  openXReport(): void {
+    const warehouseId = this.warehouseContext.selectedWarehouseId();
+    if (!warehouseId) {
+      return;
+    }
+    this.registerSession.getXReport(warehouseId).subscribe({
+      next: report => {
+        this.sessionReport = report;
+      },
+      error: err => {
+        this.posState.setError(this.extractErrorMessage(err, 'Rapport X indisponible'));
+      }
+    });
+  }
+
+  openCloseZModal(): void {
+    const warehouseId = this.warehouseContext.selectedWarehouseId();
+    if (!warehouseId) {
+      return;
+    }
+    this.registerSession.getXReport(warehouseId).subscribe({
+      next: report => {
+        this.closePreview = report;
+        this.countedCashInput = report.expectedCash;
+        this.showCloseZModal = true;
+      },
+      error: err => {
+        this.posState.setError(this.extractErrorMessage(err, 'Impossible de préparer la clôture Z'));
+      }
+    });
+  }
+
+  closeVariance(): number {
+    if (!this.closePreview) {
+      return 0;
+    }
+    return (Number(this.countedCashInput) || 0) - this.closePreview.expectedCash;
+  }
+
+  confirmCloseZ(): void {
+    const warehouseId = this.warehouseContext.selectedWarehouseId();
+    if (!warehouseId) {
+      return;
+    }
+    this.registerSession.close(warehouseId, Number(this.countedCashInput) || 0).subscribe({
+      next: report => {
+        this.showCloseZModal = false;
+        this.closePreview = null;
+        this.sessionReport = report;
+        this.showToast(report.zReportNumber ? `Clôture ${report.zReportNumber}` : 'Caisse clôturée');
+      },
+      error: err => {
+        this.posState.setError(this.extractErrorMessage(err, 'Clôture Z impossible'));
+        this.audioService.beepError();
+      }
+    });
+  }
+
+  formatSessionAmount(amount: number): string {
+    return amount.toLocaleString('fr-TN', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  }
+
+  printSessionReport(): void {
+    window.print();
   }
 }

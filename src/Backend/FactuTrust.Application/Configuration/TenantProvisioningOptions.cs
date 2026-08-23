@@ -25,4 +25,10 @@ public sealed class TenantProvisioningOptions
 
     /// <summary>Drop SQL database when firm registration rolls back after successful CREATE DATABASE.</summary>
     public bool CleanupOrphanDatabasesOnFailure { get; set; } = true;
+
+    /// <summary>
+    /// <c>true</c> force BACKUP WITH COMPRESSION, <c>false</c> never compresses,
+    /// <c>null</c> tries compression then retries without (LocalDB / Express).
+    /// </summary>
+    public bool? UseBackupCompression { get; set; }
 }

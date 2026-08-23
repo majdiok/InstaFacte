@@ -1,4 +1,4 @@
-using System.Text;
+using FactuTrust.Application.Common;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Accounting.Audit;
@@ -7,43 +7,6 @@ using FactuTrust.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace FactuTrust.Infrastructure.Services.AccountingAudit.Rules;
-
-/// <summary>
-/// Normalisation des numéros de facture fournisseur pour la détection de doublons.
-///
-/// <para>Un même document arrive sous des graphies différentes selon qu'il est saisi à la main,
-/// importé ou re-saisi : « FA-00123 », « fa 123 », « FA000123 ». Comparer les chaînes brutes ne
-/// détecterait aucun de ces doublons. On réduit donc à un canon : majuscules, alphanumériques
-/// seuls, zéros de tête du bloc numérique final retirés.</para>
-/// </summary>
-internal static class SupplierInvoiceNumberNormalizer
-{
-    public static string Normalize(string? invoiceNumber)
-    {
-        if (string.IsNullOrWhiteSpace(invoiceNumber)) return string.Empty;
-
-        var kept = new StringBuilder(invoiceNumber.Length);
-        foreach (var ch in invoiceNumber)
-        {
-            if (char.IsLetterOrDigit(ch))
-                kept.Append(char.ToUpperInvariant(ch));
-        }
-
-        var canonical = kept.ToString();
-        if (canonical.Length == 0) return string.Empty;
-
-        // Retirer les zéros de tête du dernier bloc de chiffres : « FA000123 » ≡ « FA123 ».
-        var digitsStart = canonical.Length;
-        while (digitsStart > 0 && char.IsDigit(canonical[digitsStart - 1]))
-            digitsStart--;
-
-        if (digitsStart == canonical.Length) return canonical;
-
-        var prefix = canonical[..digitsStart];
-        var digits = canonical[digitsStart..].TrimStart('0');
-        return prefix + (digits.Length == 0 ? "0" : digits);
-    }
-}
 
 /// <summary>
 /// Facture fournisseur sans aucune pièce justificative.

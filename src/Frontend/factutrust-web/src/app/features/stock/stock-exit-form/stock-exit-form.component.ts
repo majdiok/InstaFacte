@@ -303,8 +303,7 @@ export class StockExitFormComponent implements OnInit {
 
   exitReasons = [
     { label: 'Retour Fournisseur', value: MovementReason.SupplierReturn },
-    { label: 'Dommage / Perte', value: MovementReason.Damage },
-    { label: 'Transfert', value: MovementReason.Transfer }
+    { label: 'Dommage / Perte', value: MovementReason.Damage }
   ];
 
   form: FormGroup = this.fb.group({

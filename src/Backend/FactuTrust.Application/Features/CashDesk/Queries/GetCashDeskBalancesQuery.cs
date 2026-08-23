@@ -39,7 +39,7 @@ public sealed class GetCashDeskBalancesQueryHandler
         var secondaryTotals = await _cashOperationRepository.GetNonCancelledTotalsByMethodAndTypeAsync(
             ytdStart, ytdEnd, cancellationToken);
 
-        // La traite n'est pas un instrument de caisse (elle route vers 412/403, jamais vers une
+        // La traite n'est pas un instrument de caisse (elle route vers 413/403, jamais vers une
         // opération de caisse) : on l'exclut des soldes de trésorerie pour ne pas afficher une ligne
         // systématiquement nulle.
         var methods = Enum.GetValues<PaymentMethod>().Where(m => m != PaymentMethod.Traite).ToArray();

@@ -4,6 +4,7 @@ using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Accounting.Notifications;
+using FactuTrust.Application.Features.CashRegister;
 using FactuTrust.Application.Features.Invoices.Services;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
@@ -31,6 +32,7 @@ public sealed class RecordInvoicePaymentCommandHandler : IRequestHandler<RecordI
     private readonly IAuditService _auditService;
     private readonly IPublisher _publisher;
     private readonly AccountingSettings _accountingSettings;
+    private readonly ICashRegisterSessionRepository _cashRegisterSessions;
 
     public RecordInvoicePaymentCommandHandler(
         IInvoiceRepository invoiceRepository,
@@ -38,7 +40,8 @@ public sealed class RecordInvoicePaymentCommandHandler : IRequestHandler<RecordI
         ICurrentUser currentUser,
         IAuditService auditService,
         IPublisher publisher,
-        IOptions<AccountingSettings> accountingSettings)
+        IOptions<AccountingSettings> accountingSettings,
+        ICashRegisterSessionRepository cashRegisterSessions)
     {
         _invoiceRepository = invoiceRepository;
         _paymentRepository = paymentRepository;
@@ -46,6 +49,7 @@ public sealed class RecordInvoicePaymentCommandHandler : IRequestHandler<RecordI
         _auditService = auditService;
         _publisher = publisher;
         _accountingSettings = accountingSettings.Value;
+        _cashRegisterSessions = cashRegisterSessions;
     }
 
     public async Task<Result> Handle(RecordInvoicePaymentCommand request, CancellationToken cancellationToken)
@@ -94,6 +98,16 @@ public sealed class RecordInvoicePaymentCommandHandler : IRequestHandler<RecordI
             return paymentResult;
 
         var payment = paymentResult.Value;
+        var sessionStamp = await CashRegisterSessionGuard.ResolveOpenIdAsync(
+            _cashRegisterSessions,
+            request.Request.CashRegisterSessionId,
+            invoice.CashRegisterSessionId,
+            cancellationToken);
+        if (sessionStamp.IsFailure)
+            return Result.Failure(sessionStamp.Error);
+        if (sessionStamp.Value is { } sessionId)
+            payment.AssignCashRegisterSession(sessionId);
+
         payment.SetAuditInfo(_currentUser.UserId?.ToString() ?? "system", isUpdate: false);
 
         await _paymentRepository.AddAsync(payment, cancellationToken);

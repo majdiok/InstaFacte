@@ -11,6 +11,22 @@ export const CURSOR_RUN_TOOLS = ["mcp"];
  */
 export const CURSOR_RUN_DISALLOWED_TOOLS = ["shell", "edit", "read", "task"];
 
+/**
+ * Windows (and some Linux hosts) do not support Cursor local sandboxing.
+ * Security for chat runs comes from tools=["mcp"] + disallowedTools, not the sandbox.
+ */
+export function buildLocalAgentOptions({ cwd, customTools } = {}) {
+  const local = {
+    cwd,
+    settingSources: [],
+    sandboxOptions: { enabled: false }
+  };
+  if (customTools) {
+    local.customTools = customTools;
+  }
+  return local;
+}
+
 const DISALLOWED_TOOLS_CONFIG_ERROR = "Unknown tool name(s) in disallowedTools";
 
 /**
@@ -29,12 +45,7 @@ export async function assertValidAgentToolOptions(sdkModule) {
       model: { id: "composer-2.5" },
       tools: CURSOR_RUN_TOOLS,
       disallowedTools: CURSOR_RUN_DISALLOWED_TOOLS,
-      local: {
-        cwd: scratch,
-        settingSources: [],
-        sandboxOptions: { enabled: true },
-        customTools: {}
-      }
+      local: buildLocalAgentOptions({ cwd: scratch, customTools: {} })
     });
   } catch (err) {
     const message = err?.message || String(err);

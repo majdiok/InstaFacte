@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using FactuTrust.Application.Common.Interfaces;
@@ -9,6 +10,7 @@ using FactuTrust.Application.Features.AI;
 using FactuTrust.Application.Features.AI.DTOs;
 using FactuTrust.Application.Features.AI.Tools;
 using FactuTrust.Application.Features.Studio.Ai;
+using FactuTrust.Application.Features.Studio.Common.SqlReport;
 using FactuTrust.Domain.Entities.AI;
 using FactuTrust.Domain.Enums;
 using Microsoft.Extensions.Logging;
@@ -34,6 +36,7 @@ public sealed class SendChatMessageHandler
     private readonly ICursorToolRunRegistry _cursorToolRuns;
     private readonly ITenantContext _tenantContext;
     private readonly IPlatformAiSettingsService _platformAiSettings;
+    private readonly IModalCredentialsResolver _modalCredentials;
     private readonly IOllamaInferenceProfileResolver _inferenceProfileResolver;
     private readonly IAiToolExecutor _toolExecutor;
     private readonly IAiToolExecutorScopeFactory _toolExecutorScopeFactory;
@@ -46,11 +49,27 @@ public sealed class SendChatMessageHandler
     private readonly OllamaSettings _ollamaSettings;
     private readonly ScreenAnalysisOptions _screenAnalysisOptions;
     private readonly CursorSdkSettings _cursorSdkSettings;
+    private readonly ModalSettings _modalSettings;
 
     private static readonly JsonSerializerOptions SourcesJsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
+
+    private readonly TimeProvider _timeProvider;
+
+    /// <summary>
+    /// Consigne accompagnant le raccourci d'état : le résultat est DÉJÀ dans la conversation, le
+    /// modèle ne doit ni rappeler d'outil, ni recalculer, ni inventer un chiffre. Aucun nom d'outil
+    /// en snake_case (la garde anti-fuite n'a jamais à intervenir).
+    /// </summary>
+    private const string StudioReportShortcutPromptSuffix =
+        "ÉTAT DÉJÀ CALCULÉ : l'état demandé a DÉJÀ été exécuté — son résultat complet est dans la "
+        + "conversation, et il est affiché à l'utilisateur sous forme de tableau. "
+        + "Présente-le en français en 2 à 4 phrases : ce qui est mesuré, la période retenue, et les "
+        + "1 à 3 enseignements les plus nets (la ligne de tête, un écart marquant). "
+        + "Reprends les chiffres du résultat SANS EN INVENTER AUCUN et n'appelle AUCUN outil. "
+        + "Termine en proposant d'affiner la période ou de l'enregistrer comme état réutilisable.";
 
     public SendChatMessageHandler(
         IOllamaClient ollamaClient,
@@ -60,6 +79,7 @@ public sealed class SendChatMessageHandler
         ICursorToolRunRegistry cursorToolRuns,
         ITenantContext tenantContext,
         IPlatformAiSettingsService platformAiSettings,
+        IModalCredentialsResolver modalCredentials,
         IOllamaInferenceProfileResolver inferenceProfileResolver,
         IAiToolExecutor toolExecutor,
         IAiToolExecutorScopeFactory toolExecutorScopeFactory,
@@ -71,8 +91,13 @@ public sealed class SendChatMessageHandler
         ILogger<SendChatMessageHandler> logger,
         IOptions<OllamaSettings> ollamaSettings,
         IOptions<ScreenAnalysisOptions> screenAnalysisOptions,
-        IOptions<CursorSdkSettings> cursorSdkSettings)
+        IOptions<CursorSdkSettings> cursorSdkSettings,
+        // Horloge unique pour la résolution de période du raccourci d'état. Optionnelle pour ne pas
+        // casser les constructions existantes ; la DI injecte le TimeProvider enregistré.
+        TimeProvider? timeProvider = null,
+        IOptions<ModalSettings>? modalSettings = null)
     {
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _ollamaClient = ollamaClient;
         _ollamaGenerationGate = ollamaGenerationGate;
         _openAiClient = openAiClient;
@@ -80,6 +105,7 @@ public sealed class SendChatMessageHandler
         _cursorToolRuns = cursorToolRuns;
         _tenantContext = tenantContext;
         _platformAiSettings = platformAiSettings;
+        _modalCredentials = modalCredentials;
         _inferenceProfileResolver = inferenceProfileResolver;
         _toolExecutor = toolExecutor;
         _toolExecutorScopeFactory = toolExecutorScopeFactory;
@@ -92,6 +118,7 @@ public sealed class SendChatMessageHandler
         _ollamaSettings = ollamaSettings.Value;
         _screenAnalysisOptions = screenAnalysisOptions.Value;
         _cursorSdkSettings = cursorSdkSettings.Value;
+        _modalSettings = modalSettings?.Value ?? new ModalSettings();
     }
 
     public async IAsyncEnumerable<ChatStreamEvent> HandleAsync(
@@ -131,12 +158,15 @@ public sealed class SendChatMessageHandler
             agentScope = FirmDelegatedAiScopePolicy.ResolveAllowedScope(true, agentScope);
         }
 
-        // Pré-chargement parallèle : modèle actif (Studio ou Assistant), historique, prompt système.
+        // Lectures Master séquentielles : GetDefault + GetStudio partagent le MasterDbContext scoped.
+        // Un Task.WhenAll sur cache miss déclenche « A second operation was started on this context… ».
         var isStudioBuilder = assistantMode == AssistantMode.StudioBuilder;
-        var studioModelTask = isStudioBuilder
-            ? _platformAiSettings.GetStudioAiModelRefAsync(cancellationToken)
-            : Task.FromResult<string?>(null);
-        var defaultModelTask = _platformAiSettings.GetDefaultModelRefAsync(cancellationToken);
+        var assistantConfigured = await _platformAiSettings.GetDefaultModelRefAsync(cancellationToken);
+        string? studioConfigured = isStudioBuilder
+            ? await _platformAiSettings.GetStudioAiModelRefAsync(cancellationToken)
+            : null;
+
+        // Prompt + historique : factories tenant (contextes distincts) — parallèle sûr.
         var systemPromptTask = _contextBuilder.BuildSystemPromptAsync(assistantMode, screenId, agentScope, cancellationToken);
 
         Task<Conversation?>? conversationLoadTask = null;
@@ -151,8 +181,6 @@ public sealed class SendChatMessageHandler
         }
 
         await Task.WhenAll(
-            studioModelTask,
-            defaultModelTask,
             systemPromptTask,
             conversationLoadTask ?? Task.FromResult<Conversation?>(null));
 
@@ -163,11 +191,9 @@ public sealed class SendChatMessageHandler
         // Le modèle est imposé par la configuration globale de la plateforme (back-office) ;
         // le modèle éventuellement transmis par le client et celui de la conversation sont ignorés.
         // StudioBuilder : StudioAiModelRef → Ollama:StudioAiModel → DefaultModelRef → DefaultModel.
-        var assistantConfigured = await defaultModelTask;
         string rawModel;
         if (isStudioBuilder)
         {
-            var studioConfigured = await studioModelTask;
             if (!string.IsNullOrWhiteSpace(studioConfigured))
                 rawModel = studioConfigured;
             else if (!string.IsNullOrWhiteSpace(_ollamaSettings.StudioAiModel))
@@ -235,6 +261,23 @@ public sealed class SendChatMessageHandler
                         detail: modelRef.CanonicalModelRef);
                     yield return ChatStreamEvent.ErrorEvent(
                         "Aucune clé API OpenRouter configurée. Configurez-la dans le back-office plateforme > Configuration IA (OpenRouter).");
+                    yield break;
+                }
+
+                break;
+            }
+            case LlmProviderKind.Modal:
+            {
+                var credentials = await _modalCredentials.ResolveAsync(_tenantContext.TenantId, cancellationToken);
+                if (string.IsNullOrEmpty(credentials.ApiKey) || string.IsNullOrWhiteSpace(credentials.BaseUrl))
+                {
+                    LogPhase("modal_credentials", sw.ElapsedMilliseconds);
+                    yield return ChatStreamEvent.PhaseEvent(
+                        "provider_availability",
+                        "failed",
+                        sw.ElapsedMilliseconds,
+                        detail: modelRef.CanonicalModelRef);
+                    yield return ChatStreamEvent.ErrorEvent(ModalCredentialMessages.Unavailable(credentials));
                     yield break;
                 }
 
@@ -414,9 +457,22 @@ public sealed class SendChatMessageHandler
         OllamaInferenceProfile? inferenceProfile = null;
         if (modelRef.Kind == LlmProviderKind.Ollama)
             inferenceProfile = await _inferenceProfileResolver.ResolveForPlatformAsync(cancellationToken);
+        var studioReportDetection = !isScreenAnalysis
+            && assistantMode == AssistantMode.StudioBuilder
+            && _ollamaSettings.EnableStudioReportShortcut
+            && _ollamaSettings.EnableStudioAiReportTools
+            && _ollamaSettings.EnableStudioSqlReportEngine
+            ? StudioReportIntentRouter.TryInfer(command.Message)
+            : null;
+        var studioToolFocus = assistantMode == AssistantMode.StudioBuilder
+            && (studioReportDetection is not null || StudioReportIntentRouter.LooksLikeReportRequest(command.Message))
+            ? StudioToolFocus.Report
+            : StudioToolFocus.None;
         var tools = BuildOllamaTools(assistantMode, effectiveMutationTools, toolIntent, inferenceProfile, agentScope,
             _ollamaSettings.EnableStudioAiPlanPreview, _ollamaSettings.EnableStudioAiModifyTools,
-            _ollamaSettings.EnableStudioAiViewTools);
+            _ollamaSettings.EnableStudioAiViewTools,
+            _ollamaSettings.EnableStudioAiReportTools && _ollamaSettings.EnableStudioSqlReportEngine,
+            studioToolFocus);
         // Les schémas d'outils sont injectés dans le contexte du modèle : on les compte dans
         // l'estimation de taille pour dimensionner num_ctx (sinon Ollama tronque silencieusement
         // l'invite quand de nombreux outils sont exposés → réponses dégradées / hors-sujet).
@@ -452,6 +508,10 @@ public sealed class SendChatMessageHandler
             && _ollamaSettings.ComplianceCheckShortcutEnabled
             ? AiToolIntentRouter.TryInferComplianceCheckInvoice(command.Message)
             : null;
+        // Raccourci déterministe ÉTAT (même raison d'être que celui ci-dessus, transposé au Studio) :
+        // « créer un rapport de ventes de produits » n'aboutissait jamais, le modèle Studio n'émettant
+        // aucun appel d'outil. On reconnaît la demande et on pré-exécute l'état — le modèle n'a plus
+        // qu'à rédiger. Aucune reconnaissance certaine ⇒ aucun raccourci, le flux normal reprend.
         // Assistant expert : les suffixes Sales/Fallback citent get_sales_revenue — on ne les applique
         // que si l'outil fait partie du catalogue du scope (sinon ils pousseraient le modèle vers un
         // outil qu'il n'a pas). Les autres suffixes (Greeting/Chart/Synthesis) restent génériques.
@@ -464,6 +524,8 @@ public sealed class SendChatMessageHandler
             systemPrompt += "\n\n" + intentSuffix;
         if (complianceDetection is not null)
             systemPrompt += "\n\n" + AiToolIntentRouter.ComplianceShortcutPromptSuffix;
+        if (studioReportDetection is not null)
+            systemPrompt += "\n\n" + StudioReportShortcutPromptSuffix;
         // Question de conseil (« comment gagner plus », « vos conseils pour… ») : cadrage cumulable avec
         // l'intent — recommandations ANCRÉES dans les données, jamais de méta-discours sur les outils.
         if (!isScreenAnalysis && AiToolIntentRouter.LooksLikeAdviceQuestion(command.Message))
@@ -611,6 +673,72 @@ public sealed class SendChatMessageHandler
             toolsExecutedThisRequest++;
             toolSourcesForClient.Add(new SourceEntryDto("compliance_check_invoice", complianceCallId));
             yield return ChatStreamEvent.ToolCallEnd("compliance_check_invoice", complianceCallId, complianceSw.ElapsedMilliseconds);
+        }
+
+        // Pré-exécution de l'ÉTAT (même patron) : la spécification est construite ICI, à partir d'un
+        // préréglage et d'une période reconnus — le modèle n'écrit ni le JSON, ni le SQL, ni les
+        // chiffres. Il ne lui reste qu'à rédiger la phrase d'accompagnement.
+        if (studioReportDetection is not null && !conversationalFastPath)
+        {
+            var reportTool = studioReportDetection.Save ? "studio_plan_report" : "studio_run_report";
+            var period = ReportingPeriodResolver.Resolve(
+                studioReportDetection.PeriodPreset ?? StudioReportIntentRouter.DefaultPeriodPreset,
+                _timeProvider);
+            var preset = SqlReportPresetCatalog.Find(studioReportDetection.PresetKey);
+
+            var reportSpec = JsonSerializer.Serialize(new
+            {
+                title = preset?.DisplayName ?? studioReportDetection.PresetKey,
+                preset = studioReportDetection.PresetKey,
+                from = period.FromDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                to = period.ToDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            });
+
+            var reportCallId = Guid.NewGuid().ToString("N")[..12];
+            yield return ChatStreamEvent.ToolCallStart(reportTool, reportCallId);
+            var reportSw = Stopwatch.StartNew();
+            AiToolResult reportResult;
+            try
+            {
+                reportResult = await _toolExecutor.ExecuteAsync(
+                    reportTool,
+                    new Dictionary<string, object?> { ["spec_json"] = reportSpec },
+                    new AiToolExecutionContext(correlationId, conversation.Id),
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Studio report shortcut failed (preset={Preset})", studioReportDetection.PresetKey);
+                reportResult = AiToolResult.Error($"Erreur lors de l'exécution: {ex.Message}");
+            }
+
+            var reportContent = reportResult.Success
+                ? reportResult.Data ?? string.Empty
+                : $"Erreur: {reportResult.ErrorMessage}";
+            conversation.AddMessage(MessageRole.Tool, reportContent, reportTool, reportCallId);
+            // Décisif : réactive ShouldForceFinalSynthesis (ForceFinalSynthesisOnlyAfterTools) — sans
+            // cela, une réponse trop courte du modèle retomberait dans le filet anti-silence.
+            toolsExecutedThisRequest++;
+            toolSourcesForClient.Add(new SourceEntryDto(reportTool, reportCallId));
+            yield return ChatStreamEvent.ToolCallEnd(reportTool, reportCallId, reportSw.ElapsedMilliseconds);
+
+            if (reportResult.Success && !string.IsNullOrWhiteSpace(reportResult.Data))
+            {
+                yield return studioReportDetection.Save
+                    ? ChatStreamEvent.StudioPlanEvent(reportResult.Data)
+                    : ChatStreamEvent.StudioReportResultEvent(reportResult.Data);
+            }
+            else if (!reportResult.Success)
+            {
+                // Erreur réelle (permission, source refusée…) : la surfacer telle quelle plutôt que
+                // de laisser le modèle la paraphraser en excuse vague.
+                studioBuilderToolError = string.IsNullOrWhiteSpace(reportResult.ErrorMessage)
+                    ? "Le calcul de l'état a échoué."
+                    : reportResult.ErrorMessage;
+            }
+
+            // La période retenue est ANNONCÉE : l'utilisateur doit pouvoir corriger un défaut implicite.
+            systemPrompt += $"\n\nPÉRIODE RETENUE : {period.Label}. Annonce-la explicitement dans ta réponse.";
         }
 
         if (modelRef.Kind == LlmProviderKind.Cursor)
@@ -879,10 +1007,18 @@ public sealed class SendChatMessageHandler
                 break;
             }
             case LlmProviderKind.OpenRouter:
+            case LlmProviderKind.Modal:
             {
-                var openRouter = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
-                var baseUrl = openRouter.BaseUrl;
-                var apiKey = openRouter.ApiKey!;
+                var resolved = await ResolveOpenAiCompatibleAsync(modelRef.Kind, conversation.Id, cancellationToken);
+                if (resolved is null)
+                {
+                    yield return ChatStreamEvent.ErrorEvent(
+                        modelRef.Kind == LlmProviderKind.Modal
+                            ? ModalCredentialMessages.Unavailable()
+                            : "Aucune clé API OpenRouter configurée. Configurez-la dans le back-office plateforme > Configuration IA (OpenRouter).");
+                    yield break;
+                }
+
                 var openAiMessages = AiConversationMessageMapper.BuildOpenAiMessages(systemPrompt, conversation, _ollamaSettings.MaxContextMessages, _ollamaSettings.MaxToolResultChars);
                 AttachImagesToLastUserOpenAiMessage(openAiMessages, command.Attachments, modelRef.ProviderModelId, toolCallRound);
 
@@ -890,16 +1026,21 @@ public sealed class SendChatMessageHandler
                 foreach (var m in openAiMessages)
                     effectivePromptChars += (m.Content as string)?.Length ?? 0;
 
+                var toolsForCall = modelRef.Kind == LlmProviderKind.Modal && !_modalSettings.EnableTools
+                    ? (IReadOnlyList<OllamaToolDefinition>)Array.Empty<OllamaToolDefinition>()
+                    : tools;
+
                 await foreach (var chunk in _openAiClient.StreamChatAsOllamaCompatibleAsync(
-                    baseUrl,
-                    apiKey,
+                    resolved.Value.BaseUrl,
+                    resolved.Value.ApiKey,
                     modelRef.ProviderModelId,
                     openAiMessages,
-                    tools,
+                    toolsForCall,
                     temperature,
                     Math.Max(1, maxTokens),
                     cancellationToken,
-                    _ollamaSettings.Seed))
+                    _ollamaSettings.Seed,
+                    resolved.Value.Options))
                 {
                     if (chunk.Message?.ToolCalls is { Count: > 0 } toolCalls)
                     {
@@ -955,22 +1096,47 @@ public sealed class SendChatMessageHandler
             if (assistantMode == AssistantMode.StudioBuilder
                 && toolCallRound == 0
                 && pendingToolCalls is not { Count: > 0 }
-                && fullContent.Length > 0
-                && StudioTextToolCallRecovery.TryExtract(fullContent.ToString(), out var recoveredToolName, out var recoveredSpecJson))
+                && fullContent.Length > 0)
             {
-                pendingToolCalls = new List<OllamaToolCall>
+                var rawStudio = fullContent.ToString();
+                string? recoveredToolName = null;
+                string? recoveredSpecJson = null;
+                if (StudioTextToolCallRecovery.TryExtract(rawStudio, out var envelopeName, out var envelopeSpec))
                 {
-                    new()
+                    recoveredToolName = envelopeName;
+                    recoveredSpecJson = envelopeSpec;
+                }
+                else if (StudioTextToolCallRecovery.TryExtractBareStudioSpec(rawStudio, out var bareKind, out var bareSpec))
+                {
+                    recoveredToolName = StudioTextToolCallRecovery.ResolveToolName(
+                        bareKind, _ollamaSettings.EnableStudioAiPlanPreview);
+                    recoveredSpecJson = bareSpec;
+                }
+
+                if (recoveredToolName is not null && recoveredSpecJson is not null)
+                {
+                    pendingToolCalls = new List<OllamaToolCall>
                     {
-                        Id = Guid.NewGuid().ToString("N")[..12],
-                        Function = new OllamaToolCallFunction
+                        new()
                         {
-                            Name = recoveredToolName,
-                            Arguments = new Dictionary<string, object?> { ["spec_json"] = recoveredSpecJson }
+                            Id = Guid.NewGuid().ToString("N")[..12],
+                            Function = new OllamaToolCallFunction
+                            {
+                                Name = recoveredToolName,
+                                Arguments = new Dictionary<string, object?> { ["spec_json"] = recoveredSpecJson }
+                            }
                         }
-                    }
-                };
-                fullContent.Clear(); // ne pas laisser fuir l'enveloppe brute comme contenu visible
+                    };
+                    fullContent.Clear(); // ne pas laisser fuir l'enveloppe / spec nu comme contenu visible
+                }
+                else if (StudioTextToolCallRecovery.LooksLikeStudioSpecText(rawStudio))
+                {
+                    // Message choisi d'après l'intention lue dans le texte : parler de « création du
+                    // système » à qui demande un état l'oriente vers une mauvaise reformulation.
+                    // Spec incomplet / fence non fermée : message de reformulation, jamais le JSON brut.
+                    fullContent.Clear();
+                    fullContent.Append(StudioTextToolCallRecovery.ResolveReformulateMessage(null, rawStudio));
+                }
             }
 
             // StudioBuilder : retirer de la prose les fuites internes (noms d'outils studio_*, mentions du
@@ -997,10 +1163,11 @@ public sealed class SendChatMessageHandler
                 // exécutée (récupération impossible : tour > 0 ou parse en échec), ne pas diffuser le
                 // JSON brut / un faux succès — inviter à reformuler.
                 if (assistantMode == AssistantMode.StudioBuilder
-                    && StudioTextToolCallRecovery.TryExtract(fullContent.ToString(), out _, out _))
+                    && (StudioTextToolCallRecovery.TryExtract(fullContent.ToString(), out var leakedTool, out _)
+                        || StudioTextToolCallRecovery.LooksLikeStudioSpecText(fullContent.ToString())))
                 {
                     yield return ChatStreamEvent.ContentReplace(
-                        "Je n'ai pas pu lancer la création du système. Reformulez votre demande (ex. : « Crée un système de gestion de congés avec plusieurs tables liées »).");
+                        StudioTextToolCallRecovery.ResolveReformulateMessage(leakedTool, fullContent.ToString()));
                 }
                 else if (liveStreaming && liveStreamedAny)
                 {
@@ -1261,10 +1428,25 @@ public sealed class SendChatMessageHandler
                     }
                     // Flux plan → aperçu → confirmation : le payload du plan est poussé au client
                     // (événement studio_plan) pour afficher la carte d'aperçu avec Valider/Annuler.
-                    if ((toolCall.Function.Name == "studio_plan_app" || toolCall.Function.Name == "studio_plan_system")
+                    if ((toolCall.Function.Name == "studio_plan_app" || toolCall.Function.Name == "studio_plan_system"
+                            || toolCall.Function.Name == "studio_plan_report")
                         && toolResult.Success && !string.IsNullOrWhiteSpace(toolResult.Data))
                     {
                         yield return ChatStreamEvent.StudioPlanEvent(toolResult.Data);
+                    }
+                    // État calculé en lecture seule : le tableau est poussé au client pour rendu
+                    // immédiat (aucun enregistrement, aucune confirmation à demander).
+                    else if (toolCall.Function.Name == "studio_run_report"
+                        && toolResult.Success && !string.IsNullOrWhiteSpace(toolResult.Data))
+                    {
+                        yield return ChatStreamEvent.StudioReportResultEvent(toolResult.Data);
+                    }
+                    else if (toolCall.Function.Name is "studio_run_report" or "studio_plan_report"
+                        && !toolResult.Success && assistantMode == AssistantMode.StudioBuilder)
+                    {
+                        studioBuilderToolError = string.IsNullOrWhiteSpace(toolResult.ErrorMessage)
+                            ? "Le calcul de l'état a échoué."
+                            : toolResult.ErrorMessage;
                     }
                     else if ((toolCall.Function.Name == "studio_plan_app" || toolCall.Function.Name == "studio_plan_system")
                         && !toolResult.Success && assistantMode == AssistantMode.StudioBuilder)
@@ -1420,22 +1602,25 @@ public sealed class SendChatMessageHandler
                 break;
             }
             case LlmProviderKind.OpenRouter:
+            case LlmProviderKind.Modal:
             {
-                var openRouter = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
-                var baseUrl = openRouter.BaseUrl;
-                var apiKey = openRouter.ApiKey!;
+                var resolved = await ResolveOpenAiCompatibleAsync(modelRef.Kind, conversation.Id, cancellationToken);
+                if (resolved is null)
+                    break;
+
                 var synthMessages = AiConversationMessageMapper.BuildOpenAiMessages(synthSystemPrompt, conversation, _ollamaSettings.MaxContextMessages, _ollamaSettings.MaxToolResultChars);
 
                 await foreach (var chunk in _openAiClient.StreamChatAsOllamaCompatibleAsync(
-                    baseUrl,
-                    apiKey,
+                    resolved.Value.BaseUrl,
+                    resolved.Value.ApiKey,
                     modelRef.ProviderModelId,
                     synthMessages,
                     new List<OllamaToolDefinition>(),
                     temperature,
                     Math.Max(1, maxTokens),
                     cancellationToken,
-                    _ollamaSettings.Seed))
+                    _ollamaSettings.Seed,
+                    resolved.Value.Options))
                 {
                     if (string.IsNullOrEmpty(chunk.Message?.Content))
                         continue;
@@ -2025,6 +2210,43 @@ public sealed class SendChatMessageHandler
         }
     }
 
+    private async Task<OpenAiCompatibleEndpoint?> ResolveOpenAiCompatibleAsync(
+        LlmProviderKind kind,
+        Guid conversationId,
+        CancellationToken cancellationToken)
+    {
+        switch (kind)
+        {
+            case LlmProviderKind.OpenRouter:
+            {
+                var credentials = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
+                if (string.IsNullOrEmpty(credentials.ApiKey))
+                    return null;
+                return new OpenAiCompatibleEndpoint(credentials.BaseUrl, credentials.ApiKey, null);
+            }
+            case LlmProviderKind.Modal:
+            {
+                var credentials = await _modalCredentials.ResolveAsync(_tenantContext.TenantId, cancellationToken);
+                if (string.IsNullOrEmpty(credentials.ApiKey) || string.IsNullOrWhiteSpace(credentials.BaseUrl))
+                    return null;
+                var sessionId = _modalSettings.EnableStickySessions
+                    ? conversationId.ToString("N")
+                    : null;
+                return new OpenAiCompatibleEndpoint(
+                    credentials.BaseUrl,
+                    credentials.ApiKey,
+                    OpenAiCompatibleCallOptions.ForModal(_modalSettings, sessionId));
+            }
+            default:
+                return null;
+        }
+    }
+
+    private readonly record struct OpenAiCompatibleEndpoint(
+        string BaseUrl,
+        string ApiKey,
+        OpenAiCompatibleCallOptions? Options);
+
     private static string BuildConversationTitle(SendChatMessageCommand command)
     {
         if (!string.IsNullOrWhiteSpace(command.UiContext?.AnalysisSummary))
@@ -2224,7 +2446,9 @@ public sealed class SendChatMessageHandler
         AssistantAgentScope agentScope = AssistantAgentScope.None,
         bool studioPlanPreview = false,
         bool studioModifyTools = false,
-        bool studioViewTools = false)
+        bool studioViewTools = false,
+        bool studioReportTools = false,
+        StudioToolFocus studioFocus = StudioToolFocus.None)
     {
         var isCpuOnly = inferenceProfile?.Device == OllamaInferenceDevice.CpuOnly;
         var isScoped = mode == AssistantMode.Default && agentScope != AssistantAgentScope.None;
@@ -2240,7 +2464,7 @@ public sealed class SendChatMessageHandler
         var useCpuIntentSubset = isCpuOnly && !isScoped && effectiveIntent is AiToolIntentRouter.AiToolIntent.Sales
             or AiToolIntentRouter.AiToolIntent.Stock
             or AiToolIntentRouter.AiToolIntent.Accounting;
-        var definitions = AiToolRegistry.GetDefinitionsForMode(mode, enableMutationTools, agentScope, studioPlanPreview, studioModifyTools, studioViewTools)
+        var definitions = AiToolRegistry.GetDefinitionsForMode(mode, enableMutationTools, agentScope, studioPlanPreview, studioModifyTools, studioViewTools, studioReportTools, studioFocus)
             .Where(tool => AiToolIntentRouter.ShouldIncludeTool(
                 tool.Name,
                 effectiveIntent,

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -80,31 +81,40 @@ public class AuthController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Register([FromBody] RegisterDto dto, CancellationToken cancellationToken)
     {
-        // Validate NIF
+        var correlationId = Guid.NewGuid().ToString("N");
+        var totalSw = Stopwatch.StartNew();
+
+        var validationSw = Stopwatch.StartNew();
         var nifResult = NIF.Create(dto.Nif);
         if (nifResult.IsFailure)
             return BadRequest(ApiResponse<AuthResponseDto>.Fail(nifResult.Error.Description));
 
-        // Create address
         var addressResult = Address.Create(dto.Street, dto.City, dto.Governorate, dto.StreetLine2, dto.PostalCode);
         if (addressResult.IsFailure)
             return BadRequest(ApiResponse<AuthResponseDto>.Fail(addressResult.Error.Description));
 
-        // Create email
         var emailResult = Email.Create(dto.CompanyEmail);
         if (emailResult.IsFailure)
             return BadRequest(ApiResponse<AuthResponseDto>.Fail(emailResult.Error.Description));
 
-        // Create phone
         var phoneResult = PhoneNumber.Create(dto.Phone);
         if (phoneResult.IsFailure)
             return BadRequest(ApiResponse<AuthResponseDto>.Fail(phoneResult.Error.Description));
+        LogCompanyRegistrationStep("Validation", validationSw.ElapsedMilliseconds, null, correlationId);
+
+        var emailCheckSw = Stopwatch.StartNew();
+        var existingUser = await _userManager.FindByEmailAsync(dto.Email);
+        LogCompanyRegistrationStep("EmailPrecheck", emailCheckSw.ElapsedMilliseconds, null, correlationId);
+        if (existingUser is not null)
+            return BadRequest(ApiResponse<AuthResponseDto>.Fail("Un compte existe déjà avec cette adresse e-mail."));
+
+        string? provisionedDatabaseName = null;
+        Guid? tenantId = null;
 
         await using var transaction = await _masterContext.Database.BeginTransactionAsync(cancellationToken);
 
         try
         {
-            // Create tenant
             var tenantResult = Tenant.Create(
                 dto.CompanyName,
                 nifResult.Value,
@@ -115,25 +125,29 @@ public class AuthController : ControllerBase
                 dto.Website);
 
             if (tenantResult.IsFailure)
+            {
+                await transaction.RollbackAsync(cancellationToken);
                 return BadRequest(ApiResponse<AuthResponseDto>.Fail(tenantResult.Error.Description));
+            }
 
             var tenant = tenantResult.Value;
             if (tenant.Id == Guid.Empty)
             {
+                await transaction.RollbackAsync(cancellationToken);
                 return BadRequest(ApiResponse<AuthResponseDto>.Fail("Erreur interne : identifiant entreprise invalide."));
             }
 
+            tenantId = tenant.Id;
+            provisionedDatabaseName = tenant.DatabaseName;
+
+            var masterSw = Stopwatch.StartNew();
             _masterContext.Tenants.Add(tenant);
-            await _masterContext.SaveChangesAsync(cancellationToken);
 
-            // Create tenant database with default warehouse
-            await _tenantService.CreateTenantDatabaseAsync(tenant.Id, tenant.DatabaseName, dto.WarehouseName, cancellationToken);
-
-            // Create subscription (Free tier)
             var subscription = Subscription.CreateFree(tenant.Id);
             _masterContext.Subscriptions.Add(subscription);
+            await _masterContext.SaveChangesAsync(cancellationToken);
+            LogCompanyRegistrationStep("MasterEntities", masterSw.ElapsedMilliseconds, tenant.Id, correlationId);
 
-            // Create user
             var user = new ApplicationUser
             {
                 UserName = dto.Email,
@@ -143,36 +157,56 @@ public class AuthController : ControllerBase
                 TenantId = tenant.Id,
                 EmailConfirmed = true // Set to false and require confirmation in production
             };
+            user.ApplyNewInteractiveProductOnboarding();
 
+            var identitySw = Stopwatch.StartNew();
             var createResult = await _userManager.CreateAsync(user, dto.Password);
             if (!createResult.Succeeded)
             {
+                await transaction.RollbackAsync(cancellationToken);
                 var errors = IdentityErrorTranslator.TranslateToFrench(createResult.Errors);
                 return BadRequest(ApiResponse<AuthResponseDto>.Fail(errors));
             }
 
-            // Assign Administrator role
             await _userManager.AddToRoleAsync(user, UserRole.Administrator.ToString());
+            LogCompanyRegistrationStep("IdentityCreate", identitySw.ElapsedMilliseconds, tenant.Id, correlationId);
+
+            var provisionSw = Stopwatch.StartNew();
+            await _tenantService.CreateTenantDatabaseAsync(tenant.Id, tenant.DatabaseName, dto.WarehouseName, cancellationToken);
+            LogCompanyRegistrationStep("DatabaseProvision", provisionSw.ElapsedMilliseconds, tenant.Id, correlationId);
 
             await _masterContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 
-            // Generate tokens
+            var tokenSw = Stopwatch.StartNew();
             var tokens = await _tokenService.GenerateTokensAsync(user.Id, tenant.Id, cancellationToken: cancellationToken);
+            LogCompanyRegistrationStep("TokenGeneration", tokenSw.ElapsedMilliseconds, tenant.Id, correlationId);
 
-            _logger.LogInformation("User {Email} registered with tenant {TenantId}", dto.Email, tenant.Id);
+            totalSw.Stop();
+            LogCompanyRegistrationStep("Total", totalSw.ElapsedMilliseconds, tenant.Id, correlationId);
+
+            _logger.LogInformation(
+                "User {Email} registered with tenant {TenantId}. CorrelationId={CorrelationId} DurationMs={DurationMs}",
+                dto.Email,
+                tenant.Id,
+                correlationId,
+                totalSw.ElapsedMilliseconds);
 
             return CreatedAtAction(nameof(Login), ApiResponse<AuthResponseDto>.Ok(tokens, "Inscription réussie"));
         }
         catch (Exception ex)
         {
             await transaction.RollbackAsync(cancellationToken);
-            var correlationId = Guid.NewGuid().ToString("N");
+
+            if (!string.IsNullOrEmpty(provisionedDatabaseName))
+                await _tenantService.TryDropDatabaseAsync(provisionedDatabaseName, cancellationToken);
+
             _logger.LogError(
                 ex,
-                "Registration failed for {Email}. CorrelationId: {CorrelationId}. Detail: {Detail}",
+                "Registration failed for {Email}. CorrelationId: {CorrelationId}. TenantId: {TenantId}. Detail: {Detail}",
                 dto.Email,
                 correlationId,
+                tenantId,
                 ex.InnerException?.Message ?? ex.Message);
 
             const string userMessage =
@@ -181,6 +215,16 @@ public class AuthController : ControllerBase
                 StatusCodes.Status500InternalServerError,
                 ApiResponse<AuthResponseDto>.Fail(userMessage, $"REG-{correlationId}"));
         }
+    }
+
+    private void LogCompanyRegistrationStep(string step, long durationMs, Guid? tenantId, string correlationId)
+    {
+        _logger.LogInformation(
+            "CompanyRegistration.Step={Step} DurationMs={DurationMs} TenantId={TenantId} CorrelationId={CorrelationId}",
+            step,
+            durationMs,
+            tenantId,
+            correlationId);
     }
 
     /// <summary>
@@ -529,7 +573,10 @@ public class AuthController : ControllerBase
             AccessMode = "native",
             TwoFactorEnabled = user.TwoFactorEnabled,
             EnabledModuleIds = enabledModuleIds.ToList(),
-            EffectivePermissions = effectivePermissions.ToList()
+            EffectivePermissions = effectivePermissions.ToList(),
+            ProductOnboardingStatus = user.ProductOnboardingStatus,
+            ProductOnboardingVersion = user.ProductOnboardingVersion,
+            ProductOnboardingChecklist = ProductOnboardingUserDtoMapper.ChecklistOf(user)
         };
     }
 

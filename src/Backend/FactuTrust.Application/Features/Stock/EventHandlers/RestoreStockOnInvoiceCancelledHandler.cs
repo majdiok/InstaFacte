@@ -1,7 +1,6 @@
-using System.Collections.Generic;
-using System.Linq;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Events;
@@ -21,6 +20,7 @@ public sealed class RestoreStockOnInvoiceCancelledHandler : INotificationHandler
     private readonly IWarehouseRepository _warehouseRepository;
     private readonly IProductRepository _productRepository;
     private readonly IStockMovementRepository _stockMovementRepository;
+    private readonly IStockMutationService _mutation;
     private readonly ILogger<RestoreStockOnInvoiceCancelledHandler> _logger;
 
     public RestoreStockOnInvoiceCancelledHandler(
@@ -29,6 +29,7 @@ public sealed class RestoreStockOnInvoiceCancelledHandler : INotificationHandler
         IWarehouseRepository warehouseRepository,
         IProductRepository productRepository,
         IStockMovementRepository stockMovementRepository,
+        IStockMutationService mutation,
         ILogger<RestoreStockOnInvoiceCancelledHandler> logger)
     {
         _invoiceRepository = invoiceRepository;
@@ -36,6 +37,7 @@ public sealed class RestoreStockOnInvoiceCancelledHandler : INotificationHandler
         _warehouseRepository = warehouseRepository;
         _productRepository = productRepository;
         _stockMovementRepository = stockMovementRepository;
+        _mutation = mutation;
         _logger = logger;
     }
 
@@ -89,46 +91,69 @@ public sealed class RestoreStockOnInvoiceCancelledHandler : INotificationHandler
 
         if (exitQuantitiesByStockItem.Count > 0)
         {
-            foreach (var kv in exitQuantitiesByStockItem)
+            foreach (var movement in exitMovements.Where(m => m.Type == MovementType.Exit && m.Quantity < 0))
             {
-                var stockItemId = kv.Key;
-                var quantityToRestore = kv.Value;
-                var stockItem = await _stockItemRepository.GetByIdAsync(stockItemId, cancellationToken);
+                var stockItem = await _stockItemRepository.GetByIdAsync(movement.StockItemId, cancellationToken);
                 if (stockItem == null)
                 {
                     _logger.LogWarning(
                         "Stock item {StockItemId} not found for restoration (invoice {InvoiceNumber})",
-                        stockItemId, notification.InvoiceNumber);
+                        movement.StockItemId, notification.InvoiceNumber);
                     continue;
                 }
 
+                var quantityToRestore = -movement.Quantity;
                 var notes = $"Réintégration suite à annulation - Motif: {notification.Reason}";
-                var entryResult = stockItem.RecordEntry(
-                    quantityToRestore,
-                    stockItem.AverageCost,
-                    MovementReason.CustomerReturn,
-                    reference,
-                    notes);
+                var allocations = movement.ProductLotId.HasValue || movement.SerialId.HasValue
+                    ? new[]
+                    {
+                        new StockAllocationInput(
+                            quantityToRestore,
+                            movement.ProductLotId,
+                            SerialId: movement.SerialId,
+                            UnitCost: movement.UnitCost)
+                    }
+                    : null;
+
+                var entryResult = await _mutation.ApplyAsync(new StockMutationRequest
+                {
+                    ProductId = stockItem.ProductId,
+                    WarehouseId = stockItem.WarehouseId,
+                    Kind = StockMutationKind.Entry,
+                    Quantity = quantityToRestore,
+                    UnitCost = movement.UnitCost,
+                    Reason = MovementReason.CustomerReturn,
+                    Reference = reference,
+                    Notes = notes,
+                    Allocations = allocations
+                }, cancellationToken);
 
                 if (entryResult.IsFailure)
                 {
                     _logger.LogWarning(
                         "Stock restoration failed for stock item {StockItemId}, product {ProductId}, invoice {InvoiceNumber}: {Error}",
-                        stockItemId, stockItem.ProductId, notification.InvoiceNumber, entryResult.Error.Description);
+                        movement.StockItemId, stockItem.ProductId, notification.InvoiceNumber, entryResult.Error.Description);
                     continue;
                 }
 
-                await _stockItemRepository.UpdateAsync(stockItem, cancellationToken);
                 _logger.LogInformation(
                     "Stock restored for product {ProductId}: {Quantity} units added (from movements). New balance: {NewBalance}",
-                    stockItem.ProductId, quantityToRestore, stockItem.QuantityOnHand);
+                    stockItem.ProductId, quantityToRestore, entryResult.Value.QuantityOnHand);
             }
         }
         else
         {
             foreach (var line in invoice.Lines)
             {
-                var product = await _productRepository.GetByIdAsync(line.ProductId, cancellationToken);
+                if (!line.ProductId.HasValue)
+                {
+                    _logger.LogDebug(
+                        "Skipping stock restoration for custom line {LineNumber} (no product reference)",
+                        line.LineNumber);
+                    continue;
+                }
+
+                var product = await _productRepository.GetByIdAsync(line.ProductId.Value, cancellationToken);
                 if (product == null || !product.IsStockManaged)
                 {
                     _logger.LogDebug(
@@ -138,34 +163,20 @@ public sealed class RestoreStockOnInvoiceCancelledHandler : INotificationHandler
                 }
 
                 var stockItem = await _stockItemRepository.GetByProductAndWarehouseAsync(
-                    line.ProductId, targetWarehouse.Id, cancellationToken);
-
-                if (stockItem == null)
-                {
-                    _logger.LogWarning(
-                        "No stock item found for product {ProductId} in warehouse {WarehouseId}. Creating one.",
-                        line.ProductId, targetWarehouse.Id);
-
-                    var createResult = StockItem.Create(line.ProductId, targetWarehouse.Id);
-                    if (createResult.IsFailure)
-                    {
-                        _logger.LogError(
-                            "Failed to create stock item for product {ProductId}: {Error}",
-                            line.ProductId, createResult.Error.Description);
-                        continue;
-                    }
-
-                    stockItem = createResult.Value;
-                    await _stockItemRepository.AddAsync(stockItem, cancellationToken);
-                }
+                    line.ProductId.Value, targetWarehouse.Id, cancellationToken);
 
                 var notes = $"Réintégration suite à annulation - Motif: {notification.Reason}";
-                var entryResult = stockItem.RecordEntry(
-                    line.Quantity,
-                    stockItem.AverageCost,
-                    MovementReason.CustomerReturn,
-                    reference,
-                    notes);
+                var entryResult = await _mutation.ApplyAsync(new StockMutationRequest
+                {
+                    ProductId = line.ProductId.Value,
+                    WarehouseId = targetWarehouse.Id,
+                    Kind = StockMutationKind.Entry,
+                    Quantity = line.Quantity,
+                    UnitCost = stockItem?.AverageCost ?? 0m,
+                    Reason = MovementReason.CustomerReturn,
+                    Reference = reference,
+                    Notes = notes
+                }, cancellationToken);
 
                 if (entryResult.IsFailure)
                 {
@@ -177,10 +188,9 @@ public sealed class RestoreStockOnInvoiceCancelledHandler : INotificationHandler
                     continue;
                 }
 
-                await _stockItemRepository.UpdateAsync(stockItem, cancellationToken);
                 _logger.LogInformation(
                     "Stock restored for product {ProductId}: {Quantity} units added. New balance: {NewBalance}",
-                    line.ProductId, line.Quantity, stockItem.QuantityOnHand);
+                    line.ProductId, line.Quantity, entryResult.Value.QuantityOnHand);
             }
         }
 

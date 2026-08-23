@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { Component, OnInit, inject, signal, computed, DestroyRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule, ActivatedRoute, Router } from '@angular/router';
@@ -18,14 +18,37 @@ import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { ToastService } from '@core/services/toast.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { MenuItem } from '@shared/models/menu-item.model';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { DocumentActionsMenuComponent } from '@shared/components/document-actions-menu/document-actions-menu.component';
 import { StatusBadgeComponent, StatusBadgeStatus } from '@shared/components/status-badge/status-badge.component';
+import { AuthService } from '@core/services/auth.service';
+import { PERMISSIONS } from '@core/config/permission-keys';
+import { StockService, StockFeatures } from '@core/services/stock.service';
+import { StockAllocationEditorComponent } from '@shared/components/stock-allocation-editor/stock-allocation-editor.component';
+import {
+  AllocationRow,
+  buildAllocationPayload,
+  exitAllocationsValid,
+  showLotSection,
+  showSerialSection,
+  createDefaultLotRow,
+  createDefaultSerialRow,
+  TRACKING_MODE_SERIAL
+} from '@shared/utils/stock-traceability.utils';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DeliveryNoteService } from '../../services/delivery-note.service';
-import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDeliveryLineDto } from '../../models/delivery-note.model';
+import {
+  DeliveryNoteDetailDto,
+  DeliveryNoteStatus,
+  RecordDeliveryDto,
+  RecordDeliveryLineDto,
+  canCreateReturnNoteFromDeliveryNote,
+  canGenerateInvoiceFromDeliveryNote
+} from '../../models/delivery-note.model';
 
 @Component({
   selector: 'app-delivery-note-detail',
@@ -51,7 +74,8 @@ import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDel
     BreadcrumbComponent,
     ButtonComponent,
     DocumentActionsMenuComponent,
-    StatusBadgeComponent
+    StatusBadgeComponent,
+    StockAllocationEditorComponent
   ],
   template: `
     <app-breadcrumb [items]="breadcrumbItems()"></app-breadcrumb>
@@ -66,11 +90,21 @@ import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDel
         routerLink="/delivery-notes">
         Retour
       </app-button>
+      @if (canCreateReturnNote()) {
+        <app-button
+          variant="outline"
+          icon="pi-replay"
+          iconPos="left"
+          (clicked)="createReturnNote()">
+          Créer un bon de retour
+        </app-button>
+      }
       @if (primaryAction(); as action) {
         <app-button
           [variant]="action.variant"
           [icon]="action.icon"
           iconPos="left"
+          [disabled]="workflowActionInProgress()"
           (clicked)="action.command()">
           {{ action.label }}
         </app-button>
@@ -159,6 +193,8 @@ import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDel
                     <th class="text-right">Prix U. HT</th>
                     <th class="text-right">Qté Comm.</th>
                     <th class="text-right">Qté Livrée</th>
+                    <th class="text-right">Retourné</th>
+                    <th class="text-right">À facturer</th>
                     <th class="text-right">Qté Rejetée</th>
                     <th class="text-right">Remise</th>
                     <th class="text-right">TVA</th>
@@ -179,9 +215,11 @@ import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDel
                           <br><small class="line-code">Code: {{ line.productCode }}</small>
                         }
                       </td>
-                      <td class="text-right mono">{{ line.unitPriceHT | currency:'EUR':'symbol':'1.2-2' }} / {{ line.unit }}</td>
+                      <td class="text-right mono">{{ line.unitPriceHT | number:'1.3-3' }} TND / {{ line.unit }}</td>
                       <td class="text-right mono">{{ line.orderedQuantity | number:'1.0-3' }}</td>
                       <td class="text-right mono">{{ line.deliveredQuantity | number:'1.0-3' }}</td>
+                      <td class="text-right mono">{{ (line.returnedQuantity ?? 0) | number:'1.0-3' }}</td>
+                      <td class="text-right mono">{{ (line.invoiceableQuantity ?? line.deliveredQuantity) | number:'1.0-3' }}</td>
                       <td class="text-right mono">
                         {{ line.rejectedQuantity | number:'1.0-3' }}
                         @if (line.rejectionReason) {
@@ -196,8 +234,8 @@ import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDel
                         }
                       </td>
                       <td class="text-right mono">{{ line.vatRatePercent }}%</td>
-                      <td class="text-right mono">{{ line.totalHT | currency:'EUR':'symbol':'1.2-2' }}</td>
-                      <td class="text-right mono">{{ line.totalTTC | currency:'EUR':'symbol':'1.2-2' }}</td>
+                      <td class="text-right mono">{{ line.totalHT | number:'1.3-3' }} TND</td>
+                      <td class="text-right mono">{{ line.totalTTC | number:'1.3-3' }} TND</td>
                     </tr>
                   }
                 </tbody>
@@ -206,24 +244,47 @@ import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDel
               <div class="totals-section">
                 <div class="total-row">
                   <span>Total HT</span>
-                  <span class="mono">{{ deliveryNote()!.totalHT | currency:'EUR':'symbol':'1.2-2' }}</span>
+                  <span class="mono">{{ deliveryNote()!.totalHT | number:'1.3-3' }} TND</span>
                 </div>
                 @if (totalFodec() > 0) {
                   <div class="total-row">
                     <span>FODEC</span>
-                    <span class="mono">{{ totalFodec() | currency:'EUR':'symbol':'1.2-2' }}</span>
+                    <span class="mono">{{ totalFodec() | number:'1.3-3' }} TND</span>
                   </div>
                 }
                 <div class="total-row">
                   <span>Total TVA</span>
-                  <span class="mono">{{ deliveryNote()!.totalVAT | currency:'EUR':'symbol':'1.2-2' }}</span>
+                  <span class="mono">{{ deliveryNote()!.totalVAT | number:'1.3-3' }} TND</span>
                 </div>
                 <div class="total-row total-ttc">
                   <span>Total TTC</span>
-                  <span class="mono">{{ deliveryNote()!.totalTTC | currency:'EUR':'symbol':'1.2-2' }}</span>
+                  <span class="mono">{{ deliveryNote()!.totalTTC | number:'1.3-3' }} TND</span>
                 </div>
               </div>
             </div>
+
+            @if (isFullyReturned()) {
+              <p-divider></p-divider>
+              <p class="return-info">
+                Toutes les quantités livrées ont été retournées — impossible de facturer.
+                Ce n'est pas un avoir : le stock a déjà été réintégré via le bon de retour.
+              </p>
+            }
+
+            @if (deliveryNote()!.returnNotes?.length) {
+              <p-divider></p-divider>
+              <div class="return-notes-section">
+                <h4>Bons de retour liés</h4>
+                <ul class="return-notes-list">
+                  @for (rtn of deliveryNote()!.returnNotes!; track rtn.id) {
+                    <li>
+                      <a [routerLink]="['/return-notes', rtn.id]">{{ rtn.number }}</a>
+                      <span> — {{ rtn.statusDisplay }} · {{ rtn.returnDate | date:'dd/MM/yyyy' }} · qté {{ rtn.totalReturnedQuantity | number:'1.0-3' }}</span>
+                    </li>
+                  }
+                </ul>
+              </div>
+            }
 
             @if (deliveryNote()!.notes || deliveryNote()!.reference) {
               <p-divider></p-divider>
@@ -335,7 +396,8 @@ import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDel
                       <p-inputNumber [(ngModel)]="lineForm.deliveredQuantity" 
                         [min]="0" [max]="lineForm.orderedQuantity" 
                         [minFractionDigits]="0" [maxFractionDigits]="3"
-                        inputStyleClass="input-sm text-right" />
+                        inputStyleClass="input-sm text-right"
+                        (onInput)="onDeliveredQuantityChange(lineForm)" />
                     </td>
                     <td class="text-right">
                       <p-inputNumber [(ngModel)]="lineForm.rejectedQuantity" 
@@ -350,6 +412,21 @@ import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDel
                       }
                     </td>
                   </tr>
+                  @if (showLineTraceability(lineForm) && lineForm.deliveredQuantity > 0 && deliveryWarehouseId()) {
+                    <tr class="delivery-alloc-row">
+                      <td colspan="5">
+                        <app-stock-allocation-editor
+                          mode="exit"
+                          [productId]="lineForm.productId"
+                          [warehouseId]="deliveryWarehouseId()!"
+                          [lineQuantity]="lineForm.deliveredQuantity"
+                          [trackingMode]="lineForm.trackingMode"
+                          [pickingPolicy]="lineForm.pickingPolicy"
+                          [features]="stockFeatures()"
+                          [allocations]="lineForm.lotAllocations" />
+                      </td>
+                    </tr>
+                  }
                 }
               </tbody>
             </table>
@@ -740,6 +817,11 @@ import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDel
       td.motif-col {
         min-width: 140px;
       }
+
+      tr.delivery-alloc-row td {
+        background: var(--color-background-subtle);
+        padding: var(--spacing-2) var(--spacing-3);
+      }
     }
 
     .dialog-footer {
@@ -811,6 +893,19 @@ import { DeliveryNoteDetailDto, DeliveryNoteStatus, RecordDeliveryDto, RecordDel
         }
       }
     }
+
+    .return-info {
+      margin: 0;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      background: var(--color-warning-50, #fffbeb);
+      color: var(--color-warning-800, #92400e);
+    }
+
+    .return-notes-list {
+      margin: 0.5rem 0 0;
+      padding-left: 1.25rem;
+    }
   `]
 })
 export class DeliveryNoteDetailComponent implements OnInit {
@@ -819,22 +914,35 @@ export class DeliveryNoteDetailComponent implements OnInit {
   private router = inject(Router);
   private confirmationService = inject(ConfirmationService);
   private toastService = inject(ToastService);
+  private errorHandler = inject(ErrorHandlerService);
+  private auth = inject(AuthService);
+  private stockService = inject(StockService);
+  private destroyRef = inject(DestroyRef);
 
   loading = signal(true);
+  workflowActionInProgress = signal(false);
   deliveryNote = signal<DeliveryNoteDetailDto | null>(null);
+  stockFeatures = signal<StockFeatures | null>(null);
+  traceabilityByProduct = signal<Map<string, { trackingMode: number; pickingPolicy: number }>>(new Map());
 
   menuItems: MenuItem[] = [];
+
+  deliveryWarehouseId = computed(() => this.deliveryNote()?.warehouseId ?? null);
 
   // Delivery dialog
   showDeliveryDialog = false;
   deliveryForm: { recipientName: string; deliveryDate: Date } = { recipientName: '', deliveryDate: new Date() };
   deliveryLinesForms: Array<{
     lineId: string;
+    productId: string;
     designation: string;
     orderedQuantity: number;
     deliveredQuantity: number;
     rejectedQuantity: number;
     rejectionReason: string;
+    trackingMode: number;
+    pickingPolicy: number;
+    lotAllocations: AllocationRow[];
   }> = [];
 
   breadcrumbItems = computed<BreadcrumbItem[]>(() => {
@@ -859,13 +967,25 @@ export class DeliveryNoteDetailComponent implements OnInit {
     if (note.status === DeliveryNoteStatus.InTransit) {
       return { label: 'Enregistrer livraison', icon: 'pi-check-circle', variant: 'primary' as const, command: () => this.openRecordDeliveryDialog() };
     }
-    if (
-      (note.status === DeliveryNoteStatus.Delivered || note.status === DeliveryNoteStatus.PartiallyDelivered) &&
-      !note.invoiceId
-    ) {
+    if (canGenerateInvoiceFromDeliveryNote(note)) {
       return { label: 'Générer facture', icon: 'pi-file', variant: 'primary' as const, command: () => this.generateInvoice() };
     }
     return null;
+  });
+
+  readonly canCreateReturnNote = computed(() => {
+    const note = this.deliveryNote();
+    return !!note
+      && this.auth.hasPermission(PERMISSIONS.returnNotes.create)
+      && canCreateReturnNoteFromDeliveryNote(note);
+  });
+
+  readonly isFullyReturned = computed(() => {
+    const note = this.deliveryNote();
+    return !!note
+      && !note.invoiceId
+      && (note.status === DeliveryNoteStatus.Delivered || note.status === DeliveryNoteStatus.PartiallyDelivered)
+      && note.hasInvoiceableQuantity === false;
   });
 
   /** FODEC agrégé du bon (0 si aucune ligne n'y est assujettie). */
@@ -920,11 +1040,28 @@ export class DeliveryNoteDetailComponent implements OnInit {
         routerLink: ['/invoices', note.invoiceId]
       });
     }
+
+    if (
+      this.auth.hasPermission(PERMISSIONS.returnNotes.create)
+      && canCreateReturnNoteFromDeliveryNote(note)
+    ) {
+      this.menuItems.push({
+        label: 'Créer un bon de retour',
+        icon: 'pi pi-replay',
+        command: () => this.createReturnNote()
+      });
+    }
+  }
+
+  createReturnNote(): void {
+    const note = this.deliveryNote();
+    if (!note) return;
+    this.router.navigate(['/return-notes/new'], { queryParams: { deliveryNoteId: note.id } });
   }
 
   confirmDeliveryNote(): void {
     const note = this.deliveryNote();
-    if (!note) return;
+    if (!note || this.workflowActionInProgress() || note.status !== DeliveryNoteStatus.Draft) return;
 
     this.confirmationService.confirm({
       header: 'Confirmer le bon de livraison',
@@ -933,8 +1070,10 @@ export class DeliveryNoteDetailComponent implements OnInit {
       rejectLabel: 'Annuler',
       icon: 'pi pi-check-circle',
       accept: () => {
+        this.workflowActionInProgress.set(true);
         this.deliveryNoteService.confirmDeliveryNote(note.id).subscribe({
           next: (response) => {
+            this.workflowActionInProgress.set(false);
             if (response.success) {
               this.toastService.add({
                 severity: 'success',
@@ -949,8 +1088,25 @@ export class DeliveryNoteDetailComponent implements OnInit {
                 detail: (response as any).message || 'Impossible de confirmer le bon de livraison'
               });
             }
+          },
+          error: (err) => {
+            this.workflowActionInProgress.set(false);
+            const message = this.errorHandler.extractErrorMessage(err);
+            if (this.isAlreadyConfirmedError(message)) {
+              this.toastService.add({
+                severity: 'info',
+                summary: 'Information',
+                detail: 'Ce bon est déjà confirmé. Utilisez « Démarrer livraison » pour continuer.'
+              });
+              this.loadDeliveryNote(note.id);
+              return;
+            }
+            this.toastService.add({
+              severity: 'error',
+              summary: 'Erreur',
+              detail: message
+            });
           }
-          // No error handler: the global error interceptor already shows the API error toast.
         });
       }
     });
@@ -958,7 +1114,7 @@ export class DeliveryNoteDetailComponent implements OnInit {
 
   startDelivery(): void {
     const note = this.deliveryNote();
-    if (!note) return;
+    if (!note || this.workflowActionInProgress() || note.status !== DeliveryNoteStatus.Confirmed) return;
 
     this.confirmationService.confirm({
       header: 'Démarrer la livraison',
@@ -967,8 +1123,10 @@ export class DeliveryNoteDetailComponent implements OnInit {
       rejectLabel: 'Annuler',
       icon: 'pi pi-truck',
       accept: () => {
+        this.workflowActionInProgress.set(true);
         this.deliveryNoteService.startDelivery(note.id).subscribe({
           next: (response) => {
+            this.workflowActionInProgress.set(false);
             if (response.success) {
               this.toastService.add({
                 severity: 'success',
@@ -983,8 +1141,15 @@ export class DeliveryNoteDetailComponent implements OnInit {
                 detail: (response as any).message || 'Impossible de démarrer la livraison'
               });
             }
+          },
+          error: (err) => {
+            this.workflowActionInProgress.set(false);
+            this.toastService.add({
+              severity: 'error',
+              summary: 'Erreur',
+              detail: this.errorHandler.extractErrorMessage(err)
+            });
           }
-          // No error handler: the global error interceptor already shows the API error toast.
         });
       }
     });
@@ -996,28 +1161,108 @@ export class DeliveryNoteDetailComponent implements OnInit {
 
     this.deliveryForm = { recipientName: '', deliveryDate: new Date() };
 
-    // Pre-fill line forms: default delivered = ordered, rejected = 0
     this.deliveryLinesForms = note.lines.map(line => ({
       lineId: line.id,
+      productId: line.productId,
       designation: line.designation,
       orderedQuantity: line.orderedQuantity,
       deliveredQuantity: line.orderedQuantity,
       rejectedQuantity: 0,
-      rejectionReason: ''
+      rejectionReason: '',
+      trackingMode: 0,
+      pickingPolicy: 0,
+      lotAllocations: [createDefaultLotRow(line.orderedQuantity)]
     }));
 
+    if (!this.stockFeatures()) {
+      this.stockService.getFeatures()
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(res => {
+          if (res.success && res.data) this.stockFeatures.set(res.data);
+        });
+    }
+
+    this.loadDeliveryTraceabilityContext(note);
     this.showDeliveryDialog = true;
+  }
+
+  showLineTraceability(line: {
+    trackingMode: number;
+    deliveredQuantity: number;
+  }): boolean {
+    const f = this.stockFeatures();
+    if (!f || !this.deliveryWarehouseId()) return false;
+    return line.deliveredQuantity > 0
+      && (showLotSection(line.trackingMode, f) || showSerialSection(line.trackingMode, f));
+  }
+
+  onDeliveredQuantityChange(line: {
+    deliveredQuantity: number;
+    trackingMode: number;
+    lotAllocations: AllocationRow[];
+  }): void {
+    if (line.trackingMode === TRACKING_MODE_SERIAL) {
+      const count = Math.max(1, Math.round(line.deliveredQuantity));
+      if (line.lotAllocations.length !== count) {
+        line.lotAllocations = Array.from({ length: count }, () => createDefaultSerialRow());
+      }
+    } else {
+      const row = line.lotAllocations[0] ?? createDefaultLotRow(0);
+      row.quantity = line.deliveredQuantity;
+      line.lotAllocations = [row];
+    }
+  }
+
+  private loadDeliveryTraceabilityContext(note: DeliveryNoteDetailDto): void {
+    const warehouseId = note.warehouseId;
+    if (!warehouseId || note.lines.length === 0) return;
+
+    const productIds = note.lines.map(l => l.productId);
+    this.stockService.getTraceabilityContext(productIds, warehouseId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(res => {
+        if (!res.success || !res.data) return;
+        const map = new Map(this.traceabilityByProduct());
+        for (const ctx of res.data) {
+          map.set(ctx.productId, { trackingMode: ctx.trackingMode, pickingPolicy: ctx.pickingPolicy });
+        }
+        this.traceabilityByProduct.set(map);
+        for (const lineForm of this.deliveryLinesForms) {
+          const ctx = map.get(lineForm.productId);
+          if (ctx) {
+            lineForm.trackingMode = ctx.trackingMode;
+            lineForm.pickingPolicy = ctx.pickingPolicy;
+            if (ctx.trackingMode === TRACKING_MODE_SERIAL) {
+              lineForm.lotAllocations = Array.from(
+                { length: Math.max(1, Math.round(lineForm.deliveredQuantity)) },
+                () => createDefaultSerialRow()
+              );
+            }
+          }
+        }
+      });
   }
 
   isDeliveryFormValid(): boolean {
     if (!this.deliveryForm.recipientName.trim() || !this.deliveryForm.deliveryDate) return false;
-    // Check each line: delivered + rejected <= ordered
+    const features = this.stockFeatures();
     for (const line of this.deliveryLinesForms) {
       if (line.deliveredQuantity + line.rejectedQuantity > line.orderedQuantity) {
         return false;
       }
       if (line.rejectedQuantity > 0 && !line.rejectionReason.trim()) {
         return false;
+      }
+      if (this.showLineTraceability(line)) {
+        if (!exitAllocationsValid(
+          line.trackingMode,
+          line.pickingPolicy,
+          line.deliveredQuantity,
+          line.lotAllocations,
+          features
+        )) {
+          return false;
+        }
       }
     }
     return true;
@@ -1034,10 +1279,19 @@ export class DeliveryNoteDetailComponent implements OnInit {
       rejectionReason: lf.rejectedQuantity > 0 ? lf.rejectionReason : undefined
     }));
 
+    const lineAllocations = this.deliveryLinesForms
+      .filter(lf => this.showLineTraceability(lf))
+      .map(lf => ({
+        lineId: lf.lineId,
+        allocations: buildAllocationPayload(lf.lotAllocations)
+      }))
+      .filter(la => la.allocations.length > 0);
+
     const dto: RecordDeliveryDto = {
       deliveryDate: this.formatDate(this.deliveryForm.deliveryDate),
       recipientName: this.deliveryForm.recipientName.trim(),
-      lines
+      lines,
+      lineAllocations: lineAllocations.length > 0 ? lineAllocations : undefined
     };
 
     this.deliveryNoteService.recordDelivery(note.id, dto).subscribe({
@@ -1064,7 +1318,11 @@ export class DeliveryNoteDetailComponent implements OnInit {
 
   cancelDeliveryNote(): void {
     const note = this.deliveryNote();
-    if (!note) return;
+    if (
+      !note
+      || this.workflowActionInProgress()
+      || (note.status !== DeliveryNoteStatus.Draft && note.status !== DeliveryNoteStatus.Confirmed)
+    ) return;
 
     this.confirmationService.confirm({
       header: 'Annuler le bon de livraison',
@@ -1074,8 +1332,10 @@ export class DeliveryNoteDetailComponent implements OnInit {
       icon: 'pi pi-exclamation-triangle',
       acceptButtonStyleClass: 'btn-danger',
       accept: () => {
+        this.workflowActionInProgress.set(true);
         this.deliveryNoteService.cancelDeliveryNote(note.id, { reason: 'Annulation manuelle' }).subscribe({
           next: (response) => {
+            this.workflowActionInProgress.set(false);
             if (response.success) {
               this.toastService.add({
                 severity: 'success',
@@ -1090,8 +1350,15 @@ export class DeliveryNoteDetailComponent implements OnInit {
                 detail: (response as any).message || 'Impossible d\'annuler le bon de livraison'
               });
             }
+          },
+          error: (err) => {
+            this.workflowActionInProgress.set(false);
+            this.toastService.add({
+              severity: 'error',
+              summary: 'Erreur',
+              detail: this.errorHandler.extractErrorMessage(err)
+            });
           }
-          // No error handler: the global error interceptor already shows the API error toast.
         });
       }
     });
@@ -1099,7 +1366,15 @@ export class DeliveryNoteDetailComponent implements OnInit {
 
   generateInvoice(): void {
     const note = this.deliveryNote();
-    if (!note) return;
+    if (!note || this.workflowActionInProgress()) return;
+    if (!canGenerateInvoiceFromDeliveryNote(note)) {
+      this.toastService.add({
+        severity: 'warn',
+        summary: 'Facturation impossible',
+        detail: 'Toutes les quantités livrées ont été retournées — impossible de facturer.'
+      });
+      return;
+    }
 
     this.confirmationService.confirm({
       header: 'Générer facture',
@@ -1108,8 +1383,10 @@ export class DeliveryNoteDetailComponent implements OnInit {
       rejectLabel: 'Annuler',
       icon: 'pi pi-file',
       accept: () => {
+        this.workflowActionInProgress.set(true);
         this.deliveryNoteService.generateInvoice(note.id).subscribe({
           next: (response) => {
+            this.workflowActionInProgress.set(false);
             if (response.success) {
               this.toastService.add({
                 severity: 'success',
@@ -1127,11 +1404,23 @@ export class DeliveryNoteDetailComponent implements OnInit {
                 detail: (response as any).message || 'Impossible de générer la facture'
               });
             }
+          },
+          error: (err) => {
+            this.workflowActionInProgress.set(false);
+            this.toastService.add({
+              severity: 'error',
+              summary: 'Erreur',
+              detail: this.errorHandler.extractErrorMessage(err)
+            });
           }
-          // No error handler: the global error interceptor already shows the API error toast.
         });
       }
     });
+  }
+
+  private isAlreadyConfirmedError(message: string): boolean {
+    const normalized = message.toLowerCase();
+    return normalized.includes('déjà confirmé') || normalized.includes('ne peut pas être confirmé');
   }
 
   private formatDate(d: Date): string {

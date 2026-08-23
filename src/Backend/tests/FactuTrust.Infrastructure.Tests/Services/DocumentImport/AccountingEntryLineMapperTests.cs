@@ -100,7 +100,7 @@ public sealed class AccountingEntryLineMapperTests
         Assert.Equal(TunisianPostingAccounts.VatDeductibleGoods, lines[2].AccountNumber);
         Assert.Equal(228.000m, lines[2].Debit);
 
-        // Timbre à l'achat : charge au DÉBIT (6371), et non 4478 comme à la vente.
+        // Timbre à l'achat : charge au DÉBIT (6654), et non 4371 comme à la vente.
         Assert.Equal(TunisianPostingAccounts.FiscalStampOnPurchase, lines[3].AccountNumber);
         Assert.Equal(1.000m, lines[3].Debit);
 

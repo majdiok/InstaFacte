@@ -73,8 +73,7 @@ public sealed class PlatformInvoiceAdminService : IPlatformInvoiceAdminService
 
         var totalCount = await query.CountAsync(cancellationToken);
 
-        var stats = await _db.PlatformInvoices
-            .AsNoTracking()
+        var stats = await query
             .GroupBy(_ => 1)
             .Select(g => new
             {

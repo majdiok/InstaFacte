@@ -94,7 +94,16 @@ import { formatLocalDate } from '@core/utils/date.util';
             @if (inv()!.sourcePurchaseReceiptId && inv()!.sourcePurchaseReceiptNumber) {
               <div class="info-item"><span class="label">Bon de réception</span><a [routerLink]="['/purchase-receipts', inv()!.sourcePurchaseReceiptId]" class="value link">{{ inv()!.sourcePurchaseReceiptNumber }}</a></div>
             }
+            @if (isStandaloneInvoice()) {
+              <div class="info-item"><span class="label">Origine</span><span class="value">Facture directe</span></div>
+            }
           </div>
+          @if (isStandaloneInvoice()) {
+            <div class="asset-banner" role="status">
+              <i class="pi pi-paperclip"></i>
+              <span>Joignez le scan de la facture à l’écriture comptable d’achat (journal JA). Cette facture n’a pas mis à jour le stock.</span>
+            </div>
+          }
         </div>
 
         <div class="detail-card">
@@ -300,7 +309,7 @@ import { formatLocalDate } from '@core/utils/date.util';
     .product-info { display: flex; flex-direction: column; gap: 2px; }
     .product-name { font-weight: var(--font-weight-medium); }
     .product-code { font-size: var(--font-size-xs); color: var(--color-neutral-500); font-family: 'JetBrains Mono', monospace; }
-    .asset-banner { display: flex; align-items: flex-start; gap: var(--spacing-3); margin-bottom: var(--spacing-4); padding: var(--spacing-3) var(--spacing-4); border-radius: var(--radius-lg); border: 1px solid var(--color-primary-200); background: var(--color-primary-50, #eff6ff); font-size: var(--font-size-sm); color: var(--color-primary-800); }
+    .asset-banner { display: flex; align-items: flex-start; gap: var(--spacing-3); margin-top: var(--spacing-4); margin-bottom: var(--spacing-4); padding: var(--spacing-3) var(--spacing-4); border-radius: var(--radius-lg); border: 1px solid var(--color-primary-200); background: var(--color-primary-50, #eff6ff); font-size: var(--font-size-sm); color: var(--color-primary-800); }
     .asset-banner i { margin-top: 2px; color: var(--color-primary-600); }
     .asset-line { background: color-mix(in srgb, var(--color-primary-50) 40%, transparent); }
     .asset-account { display: block; margin-top: var(--spacing-1); font-size: var(--font-size-xs); color: var(--color-text-tertiary); }
@@ -399,6 +408,11 @@ export class SupplierInvoiceDetailComponent implements OnInit {
                 this.router.navigate([this.listBackRoute]);
             }
         });
+    }
+
+    isStandaloneInvoice(): boolean {
+        const invoice = this.inv();
+        return !!invoice && !invoice.purchaseOrderId && !invoice.sourcePurchaseReceiptId;
     }
 
     getStatusSeverity(s: SupplierInvoiceStatus): 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast' {

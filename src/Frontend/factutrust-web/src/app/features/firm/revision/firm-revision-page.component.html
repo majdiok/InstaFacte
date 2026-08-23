@@ -12,10 +12,12 @@
     <i class="fa-solid fa-arrows-rotate"></i> Actualiser
   </app-button>
 
-  <app-button [disabled]="sweeping()" (clicked)="runSweep()">
-    <i class="fa-solid fa-magnifying-glass-chart"></i>
-    {{ sweeping() ? 'Balayage en cours…' : 'Lancer un balayage' }}
-  </app-button>
+  @if (canSweep()) {
+    <app-button [disabled]="sweeping()" (clicked)="runSweep()">
+      <i class="fa-solid fa-magnifying-glass-chart"></i>
+      {{ sweeping() ? 'Balayage en cours…' : 'Lancer un balayage' }}
+    </app-button>
+  }
 </section>
 
 @if (error()) {

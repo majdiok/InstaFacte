@@ -7,7 +7,7 @@ namespace FactuTrust.Domain.Enums;
 /// </summary>
 public enum EffetStatus
 {
-    /// <summary>Effet reçu/accepté, en attente de son échéance (créance/dette portée par 412/403).</summary>
+    /// <summary>Effet reçu/accepté, en attente de son échéance (créance/dette portée par 413/403).</summary>
     EnPortefeuille = 0,
 
     /// <summary>Effet encaissé (client) ou payé (fournisseur) à échéance : la trésorerie a bougé.</summary>

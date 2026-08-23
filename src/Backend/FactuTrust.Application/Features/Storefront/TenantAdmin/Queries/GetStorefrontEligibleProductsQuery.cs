@@ -87,9 +87,10 @@ public sealed class GetStorefrontEligibleProductsQueryHandler
         var categories = await _categoryRepository.GetAllAsync(cancellationToken);
         var categoryMap = categories.ToDictionary(c => c.Id, c => c.Name);
 
+        var eligible = items.Where(p => !p.IsVariantTemplate).ToList();
         var filtered = request.OnlyPubliclyListed is true
-            ? items.Where(p => p.IsPubliclyListed).ToList()
-            : (IReadOnlyList<Domain.Entities.Product>)items;
+            ? eligible.Where(p => p.IsPubliclyListed).ToList()
+            : (IReadOnlyList<Domain.Entities.Product>)eligible;
 
         var dtos = filtered.Select(p => new StorefrontEligibleProductDto
         {

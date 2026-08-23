@@ -21,7 +21,11 @@ public enum AppModule
     Studio = 13,
     Payroll = 14,
     /// <summary>Facturation honoraires du cabinet (firm-native).</summary>
-    Honoraires = 15
+    Honoraires = 15,
+    /// <summary>Module Projets / PSA (ESN, services, BTP) — données en base tenant.</summary>
+    Projects = 16,
+    /// <summary>Contrats récurrents / abonnements B2B.</summary>
+    RecurringContracts = 17
 }
 
 public static class AppModuleExtensions
@@ -44,6 +48,8 @@ public static class AppModuleExtensions
         AppModule.Studio => "Studio (low-code)",
         AppModule.Payroll => "RH & Paie",
         AppModule.Honoraires => "Honoraires",
+        AppModule.Projects => "Projets",
+        AppModule.RecurringContracts => "Contrats récurrents",
         _ => throw new ArgumentOutOfRangeException(nameof(module))
     };
 
@@ -80,6 +86,10 @@ public static class AppModuleExtensions
             Permissions.DeliveryNotes.Read,
             Permissions.DeliveryNotes.Update,
             Permissions.DeliveryNotes.Delete,
+            Permissions.SalesReturnNotes.Create,
+            Permissions.SalesReturnNotes.Read,
+            Permissions.SalesReturnNotes.Update,
+            Permissions.SalesReturnNotes.Delete,
             Permissions.Invoices.Create,
             Permissions.Invoices.Read,
             Permissions.Invoices.Update,
@@ -140,6 +150,10 @@ public static class AppModuleExtensions
             Permissions.StockTransfers.Read,
             Permissions.StockTransfers.Update,
             Permissions.StockTransfers.Delete,
+            Permissions.StockVouchers.Create,
+            Permissions.StockVouchers.Read,
+            Permissions.StockVouchers.Update,
+            Permissions.StockVouchers.Delete,
             Permissions.Inventory.Create,
             Permissions.Inventory.Read,
             Permissions.Inventory.Update,
@@ -219,6 +233,34 @@ public static class AppModuleExtensions
             Permissions.HonorairesQuotes.Convert,
             Permissions.HonorairesPayments.Create,
             Permissions.HonorairesPayments.Read
+        },
+        AppModule.Projects => new[]
+        {
+            Permissions.Projects.Read,
+            Permissions.Projects.Create,
+            Permissions.Projects.Update,
+            Permissions.Projects.Delete,
+            Permissions.Projects.ManageTeam,
+            Permissions.ProjectTasks.Create,
+            Permissions.ProjectTasks.Read,
+            Permissions.ProjectTasks.Update,
+            Permissions.ProjectTasks.Delete,
+            Permissions.ProjectTime.Create,
+            Permissions.ProjectTime.Read,
+            Permissions.ProjectTime.Submit,
+            Permissions.ProjectTime.Validate,
+            Permissions.ProjectBilling.Read,
+            Permissions.ProjectBilling.Create
+        },
+        AppModule.RecurringContracts => new[]
+        {
+            Permissions.RecurringContracts.Read,
+            Permissions.RecurringContracts.Create,
+            Permissions.RecurringContracts.Update,
+            Permissions.RecurringContracts.Delete,
+            Permissions.RecurringContracts.Manage,
+            Permissions.RecurringContracts.RecordUsage,
+            Permissions.RecurringContracts.TriggerBilling
         },
         _ => Array.Empty<string>()
     };

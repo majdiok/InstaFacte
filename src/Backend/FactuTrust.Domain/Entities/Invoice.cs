@@ -90,6 +90,22 @@ public sealed class Invoice : AggregateRoot
     public Guid? SourceSalesOrderId { get; private set; }
 
     /// <summary>
+    /// Projet PSA à l'origine de cette facture commerciale (régie, jalon, situation). Nullable
+    /// and additive: a classic sales invoice remains bit-identical when both project FKs are null.
+    /// Does not replace <see cref="SourceDeliveryNoteId"/> (stock guard).
+    /// </summary>
+    public Guid? SourceProjectId { get; private set; }
+
+    /// <summary>Ligne d'audit <c>ProjectBilling</c> qui a émis cette facture.</summary>
+    public Guid? SourceProjectBillingId { get; private set; }
+
+    /// <summary>Contrat récurrent B2B à l'origine de cette facture.</summary>
+    public Guid? SourceRecurringContractId { get; private set; }
+
+    /// <summary>Exécution de facturation récurrente (période) liée à cette facture.</summary>
+    public Guid? SourceRecurringContractBillingRunId { get; private set; }
+
+    /// <summary>
     /// Facture rectifiée par cet avoir. Obligatoire à la création d'un nouvel avoir : une
     /// facture rectificative doit référencer la facture d'origine.
     /// Reste nullable pour ne pas invalider les avoirs historiques, émis avant que le lien
@@ -117,6 +133,9 @@ public sealed class Invoice : AggregateRoot
     /// </summary>
     public Guid? WarehouseId { get; private set; }
     public Warehouse? Warehouse { get; private set; }
+
+    /// <summary>Optional POS cash-register session (vacation) that produced this invoice.</summary>
+    public Guid? CashRegisterSessionId { get; private set; }
 
     private Invoice() { }
 
@@ -258,6 +277,56 @@ public sealed class Invoice : AggregateRoot
     }
 
     /// <summary>
+    /// Crée une facture commerciale depuis une facturation projet (régie / jalon / situation).
+    /// Réutilise <see cref="Create"/> ; ne touche pas <see cref="SourceDeliveryNoteId"/>.
+    /// </summary>
+    public static Result<Invoice> CreateFromProjectBilling(
+        InvoiceNumber number,
+        Client client,
+        DateTime issueDate,
+        Guid sourceProjectId,
+        Guid sourceProjectBillingId,
+        DateTime? dueDate = null,
+        string? reference = null,
+        string? notes = null,
+        string? paymentTerms = null,
+        Guid? warehouseId = null)
+    {
+        if (sourceProjectId == Guid.Empty)
+            return Result.Failure<Invoice>(Error.Validation("SourceProjectId", "Le projet source est obligatoire"));
+        if (sourceProjectBillingId == Guid.Empty)
+            return Result.Failure<Invoice>(Error.Validation("SourceProjectBillingId", "La facturation projet est obligatoire"));
+
+        var result = Create(number, client, issueDate, dueDate, reference, notes, paymentTerms, warehouseId);
+        if (result.IsFailure)
+            return result;
+
+        result.Value.SourceProjectId = sourceProjectId;
+        result.Value.SourceProjectBillingId = sourceProjectBillingId;
+        return result;
+    }
+
+    /// <summary>
+    /// Links a draft commercial invoice to a project billing row without touching stock guards.
+    /// </summary>
+    public void SetProjectBillingSource(Guid projectId, Guid billingId)
+    {
+        SourceProjectId = projectId;
+        SourceProjectBillingId = billingId;
+    }
+
+    /// <summary>Links invoice to a recurring contract billing run without touching stock guards.</summary>
+    public void SetRecurringContractSource(Guid contractId, Guid billingRunId)
+    {
+        if (contractId == Guid.Empty)
+            throw new ArgumentException("ContractId invalide", nameof(contractId));
+        if (billingRunId == Guid.Empty)
+            throw new ArgumentException("BillingRunId invalide", nameof(billingRunId));
+        SourceRecurringContractId = contractId;
+        SourceRecurringContractBillingRunId = billingRunId;
+    }
+
+    /// <summary>
     /// Déclare que cette facture regroupe PLUSIEURS bons de livraison (facturation
     /// périodique). Le stock a déjà été sorti à chaque livraison : sa validation ne doit donc
     /// rien redéduire.
@@ -338,6 +407,10 @@ public sealed class Invoice : AggregateRoot
         if (!Status.CanBeEdited())
             return Result.Failure(Error.Validation("Status", "Cette facture ne peut plus être modifiée"));
 
+        var sellable = ProductCommercialGuards.EnsureCanAppearOnDocument(product);
+        if (sellable.IsFailure)
+            return sellable;
+
         if (quantity <= 0)
             return Result.Failure(Error.Validation("Quantity", "La quantité doit être supérieure à zéro"));
 
@@ -382,6 +455,13 @@ public sealed class Invoice : AggregateRoot
     {
         if (!Status.CanBeEdited())
             return Result.Failure(Error.Validation("Status", "Cette facture ne peut plus être modifiée"));
+
+        if (product is not null)
+        {
+            var sellable = ProductCommercialGuards.EnsureCanAppearOnDocument(product);
+            if (sellable.IsFailure)
+                return sellable;
+        }
 
         if (quantity <= 0)
             return Result.Failure(Error.Validation("Quantity", "La quantité doit être supérieure à zéro"));
@@ -797,6 +877,14 @@ public sealed class Invoice : AggregateRoot
             ? FiscalStampAmount.Amount
             : 0m;
         TotalAmount = Money.FromSignedAmount(SubTotal.Amount + FodecAmount.Amount + TotalVat.Amount + stamp, currency);
+    }
+
+    public void AssignCashRegisterSession(Guid sessionId)
+    {
+        if (sessionId == Guid.Empty)
+            throw new ArgumentException("L'identifiant de session caisse est requis.", nameof(sessionId));
+
+        CashRegisterSessionId = sessionId;
     }
 
     private void RenumberLines()

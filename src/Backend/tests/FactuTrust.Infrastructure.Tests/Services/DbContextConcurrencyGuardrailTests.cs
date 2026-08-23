@@ -57,6 +57,55 @@ public sealed class DbContextConcurrencyGuardrailTests
                 + string.Join("\n", violations));
     }
 
+    private static readonly string[] PlatformAiSettingsGetters =
+    [
+        "GetStudioAiModelRefAsync",
+        "GetDefaultModelRefAsync",
+        "GetInvoiceImportModelRefAsync",
+        "GetInferenceDeviceAsync",
+        "GetModalCredentialsAsync",
+        "GetOpenRouterCredentialsAsync",
+        "GetCursorCredentialsAsync"
+    ];
+
+    [Fact]
+    public void SendChatMessageHandler_DoesNot_WhenAll_multiple_PlatformAiSettings_getters()
+    {
+        var path = LocateSendChatMessageCommandFile();
+        var content = File.ReadAllText(path);
+        var violations = new List<string>();
+
+        var idx = 0;
+        while ((idx = content.IndexOf("Task.WhenAll", idx, StringComparison.Ordinal)) >= 0)
+        {
+            var openParen = content.IndexOf('(', idx);
+            if (openParen < 0)
+                break;
+
+            var closeParen = FindMatchingParen(content, openParen);
+            if (closeParen < 0)
+            {
+                idx = openParen + 1;
+                continue;
+            }
+
+            var argSlice = content.Substring(openParen, closeParen - openParen + 1);
+            var hits = PlatformAiSettingsGetters.Count(g => argSlice.Contains(g, StringComparison.Ordinal));
+            if (hits >= 2)
+            {
+                var lineNumber = LineNumberOf(content, idx);
+                violations.Add($"SendChatMessageCommand.cs:{lineNumber} → Task.WhenAll couple {hits} getters PlatformAiSettings");
+            }
+
+            idx = closeParen + 1;
+        }
+
+        Assert.True(
+            violations.Count == 0,
+            "Task.WhenAll couple plusieurs lectures PlatformAiSettings (MasterDbContext scoped) :\n"
+                + string.Join("\n", violations));
+    }
+
     private static bool ContainsForbiddenMemberAccess(string slice)
     {
         foreach (var member in ForbiddenMembers)
@@ -119,5 +168,21 @@ public sealed class DbContextConcurrencyGuardrailTests
         throw new DirectoryNotFoundException(
             "Répertoire src/Backend/FactuTrust.Infrastructure/Services introuvable "
             + "(remontée depuis AppContext.BaseDirectory).");
+    }
+
+    private static string LocateSendChatMessageCommandFile()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(
+                dir.FullName, "src", "Backend", "FactuTrust.Application", "Features", "AI",
+                "Commands", "SendChatMessageCommand.cs");
+            if (File.Exists(candidate))
+                return candidate;
+            dir = dir.Parent;
+        }
+        throw new FileNotFoundException(
+            "SendChatMessageCommand.cs introuvable (remontée depuis AppContext.BaseDirectory).");
     }
 }

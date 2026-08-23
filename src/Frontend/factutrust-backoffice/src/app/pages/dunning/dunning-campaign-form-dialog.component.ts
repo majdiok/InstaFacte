@@ -115,7 +115,7 @@ interface StepRow {
           (onClick)="addStep()" />
       </div>
 
-      <p-table [value]="steps()" styleClass="ft-table">
+      <p-table [value]="steps()" styleClass="p-datatable-sm ft-table">
         <ng-template pTemplate="header">
           <tr>
             <th class="col-day">{{ t('form.steps.day') }}</th>

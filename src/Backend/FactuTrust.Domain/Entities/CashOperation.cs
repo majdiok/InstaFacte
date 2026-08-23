@@ -41,6 +41,9 @@ public sealed class CashOperation : AggregateRoot
     public string? SourceType { get; private set; }
     public Guid? SourceId { get; private set; }
 
+    /// <summary>Optional POS cash-register session (vacation) linked to this cash movement.</summary>
+    public Guid? CashRegisterSessionId { get; private set; }
+
     public DateTime? CancelledAt { get; private set; }
     public string? CancellationReason { get; private set; }
 
@@ -270,5 +273,13 @@ public sealed class CashOperation : AggregateRoot
 
         IncrementVersion();
         return Result.Success();
+    }
+
+    public void AssignCashRegisterSession(Guid sessionId)
+    {
+        if (sessionId == Guid.Empty)
+            throw new ArgumentException("L'identifiant de session caisse est requis.", nameof(sessionId));
+
+        CashRegisterSessionId = sessionId;
     }
 }

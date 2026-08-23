@@ -19,6 +19,9 @@ Document envoyé à un fournisseur pour commander des marchandises.
 **Bon de livraison (BL)**  
 Document qui atteste qu'un client a bien reçu des marchandises. Il peut être lié à une facture.
 
+**Bon de retour (BRT)**  
+Document logistique pour renvoyer des articles **déjà livrés et pas encore facturés**. Il réintègre le stock et réduit la quantité facturable du BL. À ne pas confondre avec l'**avoir**, qui intervient après facture.
+
 **Brouillon**  
 Document non finalisé, en cours de saisie. Vous pouvez le modifier. Une fois validé, il devient définitif.
 

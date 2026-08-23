@@ -53,17 +53,6 @@ public sealed record FirmPendingTimeSheetRowDto
     public IReadOnlyList<string> CompanyNames { get; init; } = Array.Empty<string>();
 }
 
-public sealed record FirmSocialAlertRowDto
-{
-    public Guid CompanyTenantId { get; init; }
-    public string CompanyName { get; init; } = null!;
-    public int EmployeeCount { get; init; }
-    public int PendingLeaveRequests { get; init; }
-    public int PayrollRunsDraftCount { get; init; }
-    public int DtsPendingCount { get; init; }
-    public int AlertScore { get; init; }
-}
-
 public sealed record FirmHonorairesAlertRowDto
 {
     public Guid FirmClientAssignmentId { get; init; }
@@ -100,8 +89,6 @@ public sealed record FirmDecisionTablesDto
         Array.Empty<FirmNegativeMarginRowDto>();
     public IReadOnlyList<FirmPendingTimeSheetRowDto> PendingTimeSheets { get; init; } =
         Array.Empty<FirmPendingTimeSheetRowDto>();
-    public IReadOnlyList<FirmSocialAlertRowDto> SocialAlerts { get; init; } =
-        Array.Empty<FirmSocialAlertRowDto>();
     public IReadOnlyList<FirmHonorairesAlertRowDto> HonorairesAlerts { get; init; } =
         Array.Empty<FirmHonorairesAlertRowDto>();
     public FirmDecisionTablesMetaDto Meta { get; init; } = new();

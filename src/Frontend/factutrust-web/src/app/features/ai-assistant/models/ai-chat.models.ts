@@ -16,7 +16,9 @@ export interface ChatStreamEvent {
     /** Plan Studio en attente de validation utilisateur (flux aperçu → confirmation). */
     | 'studio_plan'
     /** Résultat final d'un plan Studio exécuté (émis par l'endpoint de confirmation). */
-    | 'studio_result';
+    | 'studio_result'
+    /** Résultat d'un état calculé en lecture seule, à afficher dans la conversation (rien n'est enregistré). */
+    | 'studio_report_result';
   content?: string;
   toolName?: string;
   toolCallId?: string;

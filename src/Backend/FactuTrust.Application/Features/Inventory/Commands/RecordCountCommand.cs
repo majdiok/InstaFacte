@@ -13,7 +13,8 @@ namespace FactuTrust.Application.Features.Inventory.Commands;
 public sealed record RecordCountCommand(
     Guid InventoryId,
     Guid ProductId,
-    decimal CountedQuantity) : IRequest<Result<RecordCountResult>>;
+    decimal CountedQuantity,
+    Guid? ProductLotId = null) : IRequest<Result<RecordCountResult>>;
 
 /// <summary>
 /// Résultat du comptage avec message pédagogique.
@@ -72,13 +73,14 @@ public sealed class RecordCountCommandHandler : IRequestHandler<RecordCountComma
         if (inventory == null)
             return Result.Failure<RecordCountResult>(Error.NotFound("Inventaire", request.InventoryId));
 
-        // Find the line for this product
-        var line = inventory.CountLines.FirstOrDefault(l => l.ProductId == request.ProductId);
+        var line = request.ProductLotId.HasValue
+            ? inventory.CountLines.FirstOrDefault(l => l.ProductId == request.ProductId && l.ProductLotId == request.ProductLotId)
+            : inventory.CountLines.FirstOrDefault(l => l.ProductId == request.ProductId && l.ProductLotId == null)
+              ?? inventory.CountLines.FirstOrDefault(l => l.ProductId == request.ProductId);
         if (line == null)
             return Result.Failure<RecordCountResult>(Error.NotFound("Produit dans l'inventaire", request.ProductId));
 
-        // Record the count
-        var recordResult = inventory.RecordCount(request.ProductId, request.CountedQuantity);
+        var recordResult = inventory.RecordCount(request.ProductId, request.CountedQuantity, request.ProductLotId);
         if (recordResult.IsFailure)
             return Result.Failure<RecordCountResult>(recordResult.Error);
 

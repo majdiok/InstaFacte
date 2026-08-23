@@ -10,7 +10,13 @@ namespace FactuTrust.Application.Features.PurchaseReceipts.Commands;
 /// Command to validate a draft purchase receipt.
 /// Updates PO received quantities (when linked) and creates stock entries.
 /// </summary>
-public sealed record ValidatePurchaseReceiptCommand(Guid Id) : IRequest<Result>;
+public sealed record PurchaseReceiptLineAllocationsDto(
+    Guid LineId,
+    IReadOnlyList<StockAllocationInput> Allocations);
+
+public sealed record ValidatePurchaseReceiptCommand(
+    Guid Id,
+    IReadOnlyList<PurchaseReceiptLineAllocationsDto>? LineAllocations = null) : IRequest<Result>;
 
 /// <summary>
 /// Handler for ValidatePurchaseReceiptCommand.
@@ -82,12 +88,17 @@ public sealed class ValidatePurchaseReceiptCommandHandler : IRequestHandler<Vali
             return Result.Failure(Error.Validation("Warehouse",
                 "L'entrepôt sélectionné n'est pas actif"));
 
+        var allocationsByLine = (request.LineAllocations ?? Array.Empty<PurchaseReceiptLineAllocationsDto>())
+            .ToDictionary(a => a.LineId, a => a.Allocations);
+
         var stockLines = receivableLines
             .Select(l => new PurchaseReceptionStockLine(
                 l.ProductId,
                 l.ReceivedQuantity,
                 l.UnitPrice.Amount,
-                l.UnitPrice.Currency))
+                l.UnitPrice.Currency,
+                l.Id,
+                allocationsByLine.GetValueOrDefault(l.Id)))
             .ToList();
 
         var stockResult = await _receptionService.ApplyStockEntriesAsync(

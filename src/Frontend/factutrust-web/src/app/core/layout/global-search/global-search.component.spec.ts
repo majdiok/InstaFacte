@@ -206,4 +206,15 @@ describe('GlobalSearchComponent', () => {
     expect(component.dropdownOpen()).toBe(false);
     outside.remove();
   });
+
+  it('onGlobalKeydown ignores events with missing key', () => {
+    if (!searchService.isEnabled()) {
+      pending('globalSearchEnabled is false in this environment');
+    }
+
+    expect(() =>
+      component.onGlobalKeydown({ key: undefined } as unknown as KeyboardEvent)
+    ).not.toThrow();
+    expect(searchService.paletteOpen()).toBe(false);
+  });
 });

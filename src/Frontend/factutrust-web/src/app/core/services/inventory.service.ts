@@ -24,6 +24,8 @@ export interface InventoryProductItem {
     theoreticalQuantity: number;
     isCounted: boolean;
     countedQuantity: number | null;
+    productLotId?: string | null;
+    lotNumber?: string | null;
 }
 
 export interface ActiveInventoryDto {
@@ -50,6 +52,8 @@ export interface InventorySummaryLineDto {
     difference: number;
     humanMessage: string;
     differenceClass: 'positive' | 'negative' | 'neutral';
+    productLotId?: string | null;
+    lotNumber?: string | null;
 }
 
 export interface InventorySummaryDto {
@@ -82,6 +86,7 @@ export interface StartInventoryResult {
 export interface RecordCountRequest {
     productId: string;
     countedQuantity: number;
+    productLotId?: string | null;
 }
 
 export interface RecordCountResult {
@@ -91,6 +96,16 @@ export interface RecordCountResult {
     countedQuantity: number;
     difference: number;
     humanMessage: string;
+}
+
+export interface InventoryPendingCount {
+    productId: string;
+    countedQuantity: number;
+    productLotId?: string | null;
+}
+
+export interface ValidateInventoryRequest {
+    pendingCounts?: InventoryPendingCount[];
 }
 
 export interface ValidateInventoryResult {
@@ -130,6 +145,8 @@ export interface PhysicalInventoryDetailLineDto {
     countedQuantity: number | null;
     difference: number;
     isCounted: boolean;
+    productLotId?: string | null;
+    lotNumber?: string | null;
 }
 
 /** DTO détail (consultation). */
@@ -222,10 +239,13 @@ export class InventoryService {
     /**
      * Valide l'inventaire et applique les ajustements de stock.
      */
-    validateInventory(inventoryId: string): Observable<ApiResponse<ValidateInventoryResult>> {
+    validateInventory(
+        inventoryId: string,
+        request: ValidateInventoryRequest = {}
+    ): Observable<ApiResponse<ValidateInventoryResult>> {
         return this.http.post<ApiResponse<ValidateInventoryResult>>(
             `${this.API_URL}/${inventoryId}/validate`,
-            {}
+            request
         );
     }
 

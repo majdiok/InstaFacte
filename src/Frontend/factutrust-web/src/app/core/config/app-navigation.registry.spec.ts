@@ -207,6 +207,30 @@ describe('app-navigation.registry', () => {
     });
   });
 
+  describe('forecasting navigation after Calendrier TN removal', () => {
+    it('does not expose /forecasting/calendar in the search index', () => {
+      const routes = buildFlatNavSearchEntries().map(e => e.route);
+      expect(routes).not.toContain('/forecasting/calendar');
+    });
+
+    it('keeps the remaining Prévisions IA routes', () => {
+      const routes = buildFlatNavSearchEntries().map(e => e.route);
+      expect(routes).toContain('/forecasting/revenue');
+      expect(routes).toContain('/forecasting/replenishment');
+      expect(routes).toContain('/forecasting/promotions');
+      expect(routes).toContain('/forecasting/abc-xyz');
+    });
+
+    it('does not list Calendrier commercial under Prévisions IA', () => {
+      const forecasting = ALL_NAV_ITEMS.find(i => i.label === 'Prévisions IA');
+      const childRoutes = forecasting?.children?.map(c => c.route) ?? [];
+      const childLabels = forecasting?.children?.map(c => c.label) ?? [];
+
+      expect(childRoutes).not.toContain('/forecasting/calendar');
+      expect(childLabels).not.toContain('Calendrier commercial');
+    });
+  });
+
   describe('promotions navigation placement', () => {
     it('lists promotions under Paramètres and not under Ventes', () => {
       const ventes = ALL_NAV_ITEMS.find(i => i.label === 'Ventes');
@@ -229,6 +253,27 @@ describe('app-navigation.registry', () => {
       expect(entry).toBeDefined();
       expect(entry!.label).toBe('Avoir de vente');
       expect(entry!.permissionsAll).toContain('invoices:read');
+    });
+  });
+
+  describe('bon de retour navigation entry', () => {
+    it('places Bon de retour between Bon de Livraison and Factures', () => {
+      const ventes = ALL_NAV_ITEMS.find(i => i.label === 'Ventes');
+      const labels = (ventes?.children ?? []).map(c => c.label);
+      const bl = labels.indexOf('Bon de Livraison');
+      const brt = labels.indexOf('Bon de retour');
+      const invoices = labels.indexOf('Factures');
+
+      expect(bl).toBeGreaterThanOrEqual(0);
+      expect(brt).toBe(bl + 1);
+      expect(invoices).toBe(brt + 1);
+    });
+
+    it('requires return_notes:read', () => {
+      const ventes = ALL_NAV_ITEMS.find(i => i.label === 'Ventes');
+      const entry = ventes?.children?.find(c => c.route === '/return-notes');
+      expect(entry).toBeDefined();
+      expect(entry!.permissionsAll).toContain('return_notes:read');
     });
   });
 });

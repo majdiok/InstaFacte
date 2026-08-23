@@ -188,6 +188,8 @@ public sealed class FirmCollaboratorServiceTests
 
         Assert.True(result.IsSuccess, result.IsFailure ? result.Error.Description : "");
         Assert.True(result.Value.EmailConfirmed);
+        var created = await db.Users.SingleAsync(u => u.Email == "collab@test.tn");
+        Assert.Equal(ProductOnboardingStatus.NotStarted, created.ProductOnboardingStatus);
         Assert.Contains("12 rue Test", result.Value.AddressLine);
         ctx.Email.Verify(e => e.EnqueueTemplatedAsync(
             It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>(),

@@ -157,7 +157,6 @@ public interface IFirmGovernanceService
     Task<Result> SubmitExpenseNoteAsync(Guid firmTenantId, Guid noteId, CancellationToken cancellationToken = default);
     Task<Result> MarkExpenseNoteReimbursedAsync(Guid firmTenantId, Guid noteId, CancellationToken cancellationToken = default);
     Task<FirmGovernanceDashboardDto> GetGovernanceDashboardAsync(Guid firmTenantId, CancellationToken cancellationToken = default);
-    Task<FirmSocialOverviewDto> GetSocialOverviewAsync(Guid firmTenantId, CancellationToken cancellationToken = default);
     Task<Result> AssignDossierManagerAsync(
         Guid firmTenantId,
         Guid assignedByUserId,

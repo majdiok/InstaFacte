@@ -203,9 +203,9 @@ public sealed class FiscalFamilyRulesTests
             new("436711", "TVA", 0m, vat, null, ThirdPartyKind.None)
         };
 
-        // Le FODEC est soit crédité au 4477, soit — c'est l'anomalie — noyé dans la vente.
+        // Le FODEC est soit crédité au 43652, soit — c'est l'anomalie — noyé dans la vente.
         if (bookFodec)
-            lines.Add(new JournalLineInput("4477", "FODEC", 0m, fodec, null, ThirdPartyKind.None));
+            lines.Add(new JournalLineInput("43652", "FODEC", 0m, fodec, null, ThirdPartyKind.None));
         else
             lines.Add(new JournalLineInput("707", "Vente (FODEC omis)", 0m, fodec, null, ThirdPartyKind.None));
 

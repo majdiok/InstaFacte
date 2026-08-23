@@ -5,6 +5,9 @@ import { InvoiceService, InvoiceListItem } from '@core/services/invoice.service'
 import { QuoteService, QuoteListItem } from '@core/services/quote.service';
 import { ClientService, ClientListItem } from '@core/services/client.service';
 import { isRealizedRevenue } from '@core/utils/invoice-metrics.util';
+import { buildKpiSparklines, type KpiSparklines } from './dashboard-kpi-series.util';
+
+export type { KpiSparklines };
 
 export interface MonthlyRevenueData {
   month: string;
@@ -49,6 +52,7 @@ export interface DashboardAggregatedData {
   monthlyRevenue: MonthlyRevenueData[];
   recentActivity: ActivityItem[];
   kpiTrends: KpiTrends;
+  kpiSparklines: KpiSparklines;
   activeQuotesCount: number;
 }
 
@@ -99,6 +103,7 @@ export class DashboardService {
           monthlyRevenue: this.computeMonthlyRevenue(allInvoices),
           recentActivity: this.buildRecentActivity(allInvoices, allQuotes),
           kpiTrends: this.computeKpiTrends(allInvoices),
+          kpiSparklines: buildKpiSparklines(allInvoices),
           activeQuotesCount: this.countActiveQuotes(allQuotes)
         };
       })

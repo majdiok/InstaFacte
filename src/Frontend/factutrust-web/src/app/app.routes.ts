@@ -64,6 +64,10 @@ export const routes: Routes = [
         loadChildren: () => import('./features/delivery-notes/delivery-notes.routes').then(m => m.DELIVERY_NOTES_ROUTES)
       },
       {
+        path: 'return-notes',
+        loadChildren: () => import('./features/sales-return-notes/sales-return-notes.routes').then(m => m.SALES_RETURN_NOTES_ROUTES)
+      },
+      {
         path: 'sales-orders',
         loadChildren: () => import('./features/sales-orders/sales-orders.routes').then(m => m.SALES_ORDERS_ROUTES)
       },
@@ -82,6 +86,10 @@ export const routes: Routes = [
       {
         path: 'product-categories',
         loadChildren: () => import('./features/product-categories/product-categories.routes').then(m => m.PRODUCT_CATEGORIES_ROUTES)
+      },
+      {
+        path: 'product-attributes',
+        loadChildren: () => import('./features/product-attributes/product-attributes.routes').then(m => m.PRODUCT_ATTRIBUTES_ROUTES)
       },
       {
         path: 'reports',
@@ -149,10 +157,6 @@ export const routes: Routes = [
         loadChildren: () => import('./features/ai-assistant/ai-assistant.routes').then(m => m.AI_ASSISTANT_ROUTES)
       },
       {
-        path: 'crm',
-        loadChildren: () => import('./features/crm/crm.routes').then(m => m.CRM_ROUTES)
-      },
-      {
         path: 'forecasting',
         loadChildren: () => import('./features/forecasting/forecasting.routes').then(m => m.FORECASTING_ROUTES)
       },
@@ -176,6 +180,15 @@ export const routes: Routes = [
       {
         path: 'payroll',
         loadChildren: () => import('./features/payroll/payroll.routes').then(m => m.PAYROLL_ROUTES)
+      },
+      {
+        path: 'projects',
+        loadChildren: () => import('./features/projects/projects.routes').then(m => m.PROJECTS_ROUTES)
+      },
+      {
+        path: 'recurring-contracts',
+        loadChildren: () =>
+          import('./features/recurring-contracts/recurring-contracts.routes').then(m => m.RECURRING_CONTRACTS_ROUTES)
       }
     ]
   },

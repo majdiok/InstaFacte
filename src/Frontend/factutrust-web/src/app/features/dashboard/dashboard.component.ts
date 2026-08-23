@@ -23,7 +23,7 @@ import { DeliveryNoteService } from '../../features/delivery-notes/services/deli
 import { DeliveryNoteListDto, DeliveryNoteStatus } from '../../features/delivery-notes/models/delivery-note.model';
 import { DecimalPipe, DatePipe, CurrencyPipe } from '@angular/common';
 import { QuoteListItem } from '@core/services/quote.service';
-import { DashboardService, MonthlyRevenueData, TopClientData, ActivityItem, KpiTrends } from './services/dashboard.service';
+import { DashboardService, MonthlyRevenueData, TopClientData, ActivityItem, KpiTrends, KpiSparklines } from './services/dashboard.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
 import { AppModule } from '@core/models/app-module';
 import { AccountingService, AccountingDashboardDto } from '../accounting/services/accounting.service';
@@ -46,6 +46,7 @@ import {
   reorderFullOrder
 } from './dashboard-layout.config';
 import { DashboardLayoutService } from './services/dashboard-layout.service';
+import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-checklist.component';
 
 @Component({
   selector: 'app-dashboard',
@@ -67,7 +68,8 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
     StatCardComponent,
     ChartCardComponent,
     DashboardPanelComponent,
-    AnalyzeWithAiButtonComponent
+    AnalyzeWithAiButtonComponent,
+    OnboardingChecklistComponent
   ],
   template: `
     <app-page-header 
@@ -92,6 +94,8 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
         </app-button>
       }
     </app-page-header>
+
+    <app-onboarding-checklist />
 
     @if (tenantMigrationFailed()) {
       <div class="dashboard-migration-banner" role="alert">
@@ -167,7 +171,7 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
         <div class="stat-skeleton"></div>
       </div>
     } @else {
-      <div class="kpi-row">
+      <div class="kpi-row" data-tour="dash-kpi">
         <app-stat-card
           label="Chiffre d'affaires"
           [value]="totalRevenue()"
@@ -175,6 +179,7 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
           variant="primary"
           tone="primary"
           appearance="solid"
+          [sparkline]="kpiSparklines()?.revenue ?? null"
           [change]="kpiTrends()?.revenueChange"
           [routerLink]="drillDown('totalRevenue')?.route"
           [queryParams]="drillDown('totalRevenue')?.queryParams"
@@ -187,6 +192,7 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
           variant="primary"
           tone="cyan"
           appearance="solid"
+          [sparkline]="kpiSparklines()?.salesToday ?? null"
           [routerLink]="drillDown('salesToday')?.route"
           [queryParams]="drillDown('salesToday')?.queryParams"
           [navigationAriaLabel]="drillDown('salesToday')?.ariaLabel">
@@ -198,6 +204,7 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
           variant="success"
           tone="emerald"
           appearance="solid"
+          [sparkline]="kpiSparklines()?.currentMonth ?? null"
           [change]="kpiTrends()?.revenueChange"
           [routerLink]="drillDown('currentMonthRevenue')?.route"
           [queryParams]="drillDown('currentMonthRevenue')?.queryParams"
@@ -210,6 +217,7 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
           variant="warning"
           tone="amber"
           appearance="solid"
+          [sparkline]="kpiSparklines()?.pending ?? null"
           [change]="kpiTrends()?.pendingChange"
           [routerLink]="drillDown('pendingInvoices')?.route"
           [queryParams]="drillDown('pendingInvoices')?.queryParams"
@@ -222,6 +230,7 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
           [variant]="stockAlertsCount() > 0 ? 'error' : 'success'"
           [tone]="stockAlertsCount() > 0 ? 'rose' : 'emerald'"
           appearance="solid"
+          [sparkline]="null"
           [routerLink]="drillDown('stockAlerts')?.route"
           [queryParams]="drillDown('stockAlerts')?.queryParams"
           [navigationAriaLabel]="drillDown('stockAlerts')?.ariaLabel">
@@ -276,7 +285,7 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
     <ng-template #quickActionsTpl>
     <!-- Actions rapides + cartes latérales (style maquette) -->
     <div class="dash-actions-row">
-      <div class="section quick-actions-card">
+      <div class="section quick-actions-card" data-tour="dash-quick-actions">
         <h3 class="qa-title"><i class="fa-solid fa-bolt"></i> Actions rapides</h3>
         <div class="quick-actions">
           @if (canCreateInvoice()) {
@@ -295,6 +304,12 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
             <a routerLink="/delivery-notes/new" class="quick-action-card">
               <div class="quick-action-icon qa-delivery"><i class="fa-solid fa-truck"></i></div>
               <span class="quick-action-label">Bon de livraison</span>
+            </a>
+          }
+          @if (canCreateReturnNote()) {
+            <a routerLink="/return-notes/new" class="quick-action-card">
+              <div class="quick-action-icon qa-return"><i class="fa-solid fa-rotate-left"></i></div>
+              <span class="quick-action-label">Bon de retour</span>
             </a>
           }
           @if (canReadClients()) {
@@ -372,6 +387,7 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
             icon="pi-percentage"
             variant="primary"
             appearance="solid"
+            [sparkline]="null"
             [routerLink]="drillDown('accountingVat')?.route"
             [queryParams]="drillDown('accountingVat')?.queryParams"
             [navigationAriaLabel]="drillDown('accountingVat')?.ariaLabel">
@@ -382,6 +398,7 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
             icon="pi-clock"
             variant="warning"
             appearance="solid"
+            [sparkline]="null"
             [routerLink]="drillDown('accountingReceivables90')?.route"
             [queryParams]="drillDown('accountingReceivables90')?.queryParams"
             [navigationAriaLabel]="drillDown('accountingReceivables90')?.ariaLabel">
@@ -392,6 +409,7 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
             icon="pi-file-excel"
             variant="primary"
             appearance="solid"
+            [sparkline]="null"
             [routerLink]="drillDown('accountingUnposted')?.route"
             [queryParams]="drillDown('accountingUnposted')?.queryParams"
             [navigationAriaLabel]="drillDown('accountingUnposted')?.ariaLabel">
@@ -402,6 +420,7 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
             icon="pi-calendar"
             variant="primary"
             appearance="solid"
+            [sparkline]="null"
             [routerLink]="drillDown('accountingVatDeadline')?.route"
             [queryParams]="drillDown('accountingVatDeadline')?.queryParams"
             [navigationAriaLabel]="drillDown('accountingVatDeadline')?.ariaLabel">
@@ -426,6 +445,7 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
             icon="pi-bell"
             [variant]="crmRemindersCount() > 0 ? 'warning' : 'success'"
             appearance="solid"
+            [sparkline]="null"
             [routerLink]="drillDown('crmReminders')?.route"
             [queryParams]="drillDown('crmReminders')?.queryParams"
             [navigationAriaLabel]="drillDown('crmReminders')?.ariaLabel">
@@ -436,6 +456,7 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
             icon="pi-bullseye"
             variant="primary"
             appearance="solid"
+            [sparkline]="null"
             [routerLink]="drillDown('crmOpenOpportunities')?.route"
             [queryParams]="drillDown('crmOpenOpportunities')?.queryParams"
             [navigationAriaLabel]="drillDown('crmOpenOpportunities')?.ariaLabel">
@@ -550,7 +571,7 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
             </ng-template>
             <ng-template pTemplate="emptymessage">
               <tr>
-                <td colspan="6" class="text-center p-4">
+                <td colspan="6" class="text-center p-4" data-tour="dash-empty-invoice">
                   <app-empty-state
                     illustration="empty-invoices.svg"
                     title="Aucune facture"
@@ -930,6 +951,11 @@ import { DashboardLayoutService } from './services/dashboard-layout.service';
     .qa-delivery {
       background: var(--color-warning-100);
       color: var(--color-warning-600);
+    }
+
+    .qa-return {
+      background: var(--color-info-100, #e0f2fe);
+      color: var(--color-info-600, #0284c7);
     }
 
     .qa-client {
@@ -1763,6 +1789,7 @@ export class DashboardComponent implements OnInit {
   monthlyRevenue = signal<MonthlyRevenueData[]>([]);
   recentActivity = signal<ActivityItem[]>([]);
   kpiTrends = signal<KpiTrends | null>(null);
+  kpiSparklines = signal<KpiSparklines | null>(null);
   activeQuotesCount = signal<number>(0);
   accountingKpis = signal<AccountingDashboardDto | null>(null);
   crmRemindersCount = signal(0);
@@ -1785,6 +1812,7 @@ export class DashboardComponent implements OnInit {
   canReadInvoices = computed(() => this.authService.hasPermission(PERMISSIONS.invoices.read));
   canReadQuotes = computed(() => this.authService.hasPermission(PERMISSIONS.quotes.read));
   canCreateDeliveryNote = computed(() => this.authService.hasPermission(PERMISSIONS.deliveryNotes.create));
+  canCreateReturnNote = computed(() => this.authService.hasPermission(PERMISSIONS.returnNotes.create));
   canReadClients = computed(() => this.authService.hasPermission(PERMISSIONS.clients.read));
   canReadPayments = computed(() => this.authService.hasPermission(PERMISSIONS.payments.read));
   canReadReports = computed(() => this.authService.hasPermission(PERMISSIONS.reports.view));
@@ -1970,6 +1998,7 @@ export class DashboardComponent implements OnInit {
         this.monthlyRevenue.set(data.monthlyRevenue);
         this.recentActivity.set(data.recentActivity);
         this.kpiTrends.set(data.kpiTrends);
+        this.kpiSparklines.set(data.kpiSparklines);
         this.activeQuotesCount.set(data.activeQuotesCount);
 
         const revenues = data.monthlyRevenue.map(m => m.revenue);

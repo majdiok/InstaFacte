@@ -1,28 +1,30 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  HostListener,
+  OnInit,
+  ViewChild,
+  computed,
+  inject,
+  signal
+} from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
 import { ToastModule } from 'primeng/toast';
-import { MenuModule } from 'primeng/menu';
 import { TooltipModule } from 'primeng/tooltip';
 import { MenuItem } from 'primeng/api';
 import { PlatformAuthService } from '@core/services/platform-auth.service';
 import { PlatformPermissionsService } from '@core/services/platform-permissions.service';
+import { PlatformPreferencesService } from '@core/services/platform-preferences.service';
+import { FtOverlayCleanupService } from '@core/services/ft-overlay-cleanup.service';
 import { PlatformPermission } from '@core/models/platform.models';
 import { FtAvatarComponent } from '@core/ui/avatar/ft-avatar.component';
+import { FtUserMenuComponent } from '@core/ui/user-menu/ft-user-menu.component';
+import { FtKeyboardShortcutsDialogComponent } from '@core/ui/keyboard-shortcuts/ft-keyboard-shortcuts-dialog.component';
+import { t } from '@core/i18n/fr';
 
-/**
- * Shell principal du backoffice.
- *
- * Lot A1 :
- *  - Conserve la nav 3 onglets (Entreprises / Migrations / Vitrines 3D).
- *  - Remplace le bloc utilisateur statique par un menu overlay (Profil / Préférences /
- *    Audit / Documentation / Raccourcis / Déconnexion).
- *  - Ajoute des placeholders désactivés pour la recherche globale ⌘K et la cloche
- *    notifications (activation en Lots A4/A5).
- *
- * La structure (header + nav + main) reste identique pour zéro régression visuelle
- * sur les pages enfants.
- */
+const DOCS_URL = 'https://docs.instafact.tn/admin';
+
 @Component({
   selector: 'app-platform-shell',
   standalone: true,
@@ -33,34 +35,35 @@ import { FtAvatarComponent } from '@core/ui/avatar/ft-avatar.component';
     RouterLinkActive,
     ButtonModule,
     ToastModule,
-    MenuModule,
     TooltipModule,
-    FtAvatarComponent
+    FtAvatarComponent,
+    FtUserMenuComponent,
+    FtKeyboardShortcutsDialogComponent
   ],
   template: `
     <p-toast position="top-right" />
     <header class="shell-header">
       <div class="brand-block">
         <img src="assets/branding/instafact-lockup.png" alt="InstaFact" class="brand-logo-img" />
-        <span class="brand-badge">Plateforme</span>
+        <span class="brand-badge">{{ t('app.brand.suffix') }}</span>
       </div>
       <nav class="shell-nav" aria-label="Navigation principale">
         <a routerLink="/tenants" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: false }">
           <i class="pi pi-building" aria-hidden="true"></i>
-          Entreprises
+          {{ t('nav.tenants') }}
         </a>
         <a routerLink="/migrations" routerLinkActive="active">
           <i class="pi pi-database" aria-hidden="true"></i>
-          Migrations
+          {{ t('nav.migrations') }}
         </a>
         <a routerLink="/storefronts" routerLinkActive="active">
           <i class="pi pi-shop" aria-hidden="true"></i>
-          Vitrines 3D
+          {{ t('nav.storefronts') }}
         </a>
         @if (canSeeAdmins()) {
           <a routerLink="/admins" routerLinkActive="active">
             <i class="pi pi-users" aria-hidden="true"></i>
-            Admins
+            {{ t('nav.admins') }}
           </a>
         }
         @if (canSeePlans()) {
@@ -118,14 +121,18 @@ import { FtAvatarComponent } from '@core/ui/avatar/ft-avatar.component';
           </a>
         }
         @if (canSeeAiConfig()) {
-          <a routerLink="/ai-settings" routerLinkActive="active">
+          <a
+            routerLink="/ai-settings"
+            routerLinkActive="active"
+            pTooltip="Endpoint Modal et modèles par défaut (plateforme)."
+            tooltipPosition="bottom"
+          >
             <i class="pi pi-microchip-ai" aria-hidden="true"></i>
             Configuration IA
           </a>
         }
       </nav>
       <div class="user-block">
-        <!-- Placeholder ⌘K (Lot A5) -->
         <button
           type="button"
           class="icon-btn"
@@ -136,8 +143,6 @@ import { FtAvatarComponent } from '@core/ui/avatar/ft-avatar.component';
         >
           <i class="pi pi-search" aria-hidden="true"></i>
         </button>
-
-        <!-- Placeholder notifications (Lot A5) -->
         <button
           type="button"
           class="icon-btn"
@@ -148,23 +153,19 @@ import { FtAvatarComponent } from '@core/ui/avatar/ft-avatar.component';
         >
           <i class="pi pi-bell" aria-hidden="true"></i>
         </button>
-
-        <!-- Menu utilisateur -->
         @if (auth.user(); as u) {
-          <p-menu #userMenu [model]="userMenuItems()" [popup]="true" appendTo="body" />
-          <button
-            type="button"
-            class="user-btn"
-            (click)="userMenu.toggle($event)"
-            [attr.aria-label]="'Menu de ' + u.firstName + ' ' + u.lastName"
+          <ft-user-menu
+            #userMenu
+            [items]="userMenuItems()"
+            [ariaLabel]="'Menu de ' + u.firstName + ' ' + u.lastName"
           >
             <ft-avatar [name]="u.firstName + ' ' + u.lastName" [seed]="u.id" size="sm" />
             <span class="user-meta">
               <span class="user-name">{{ u.firstName }} {{ u.lastName }}</span>
-              <span class="user-role">Plateforme Admin</span>
+              <span class="user-role">{{ t('app.role.platformAdmin') }}</span>
             </span>
             <i class="pi pi-chevron-down user-chevron" aria-hidden="true"></i>
-          </button>
+          </ft-user-menu>
         }
       </div>
     </header>
@@ -173,6 +174,10 @@ import { FtAvatarComponent } from '@core/ui/avatar/ft-avatar.component';
         <router-outlet />
       </div>
     </main>
+    <ft-keyboard-shortcuts-dialog
+      [visible]="shortcutsVisible()"
+      (visibleChange)="shortcutsVisible.set($event)"
+    />
   `,
   styles: [
     `
@@ -230,7 +235,7 @@ import { FtAvatarComponent } from '@core/ui/avatar/ft-avatar.component';
       }
       .shell-nav a:hover {
         color: var(--ft-text, #e6edf3);
-        background: rgba(240, 246, 252, 0.06);
+        background: var(--ft-hover-surface);
       }
       .shell-nav a.active {
         background: var(--ft-accent-muted, rgba(88, 166, 255, 0.18));
@@ -240,13 +245,11 @@ import { FtAvatarComponent } from '@core/ui/avatar/ft-avatar.component';
         outline: 2px solid var(--ft-accent, #58a6ff);
         outline-offset: 2px;
       }
-
       .user-block {
         display: flex;
         align-items: center;
         gap: 0.5rem;
       }
-
       .icon-btn {
         display: inline-flex;
         align-items: center;
@@ -258,45 +261,11 @@ import { FtAvatarComponent } from '@core/ui/avatar/ft-avatar.component';
         color: var(--ft-text-muted);
         border-radius: var(--ft-radius);
         cursor: pointer;
-        transition: background var(--duration-fast) var(--easing-standard),
-          color var(--duration-fast) var(--easing-standard),
-          border-color var(--duration-fast) var(--easing-standard);
       }
-
-      .icon-btn:hover:not(:disabled) {
-        background: var(--ft-surface-3);
-        color: var(--ft-text);
-      }
-
       .icon-btn:disabled {
         opacity: 0.45;
         cursor: not-allowed;
       }
-
-      .user-btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.55rem;
-        padding: 0.3rem 0.6rem 0.3rem 0.4rem;
-        background: transparent;
-        border: 1px solid var(--ft-border);
-        border-radius: var(--ft-radius);
-        cursor: pointer;
-        color: var(--ft-text);
-        transition: background var(--duration-fast) var(--easing-standard),
-          border-color var(--duration-fast) var(--easing-standard);
-      }
-
-      .user-btn:hover {
-        background: var(--ft-surface-3);
-        border-color: var(--ft-border-strong);
-      }
-
-      .user-btn:focus-visible {
-        outline: 2px solid var(--ft-accent);
-        outline-offset: 2px;
-      }
-
       .user-meta {
         display: flex;
         flex-direction: column;
@@ -304,25 +273,21 @@ import { FtAvatarComponent } from '@core/ui/avatar/ft-avatar.component';
         text-align: left;
         line-height: 1.15;
       }
-
       .user-name {
         font-size: 0.85rem;
         font-weight: 500;
         color: var(--ft-text);
       }
-
       .user-role {
         font-size: 0.65rem;
         text-transform: uppercase;
         letter-spacing: 0.06em;
         color: var(--ft-text-muted);
       }
-
       .user-chevron {
         font-size: 0.7rem;
         color: var(--ft-text-subtle);
       }
-
       .shell-main {
         min-height: calc(100vh - 4rem);
         padding: 1.5rem 1.25rem 2.5rem;
@@ -331,14 +296,9 @@ import { FtAvatarComponent } from '@core/ui/avatar/ft-avatar.component';
         max-width: 1400px;
         margin: 0 auto;
       }
-
-      /* Réduit la densité du user-block sur mobile */
       @media (max-width: 640px) {
         .user-meta {
           display: none;
-        }
-        .user-btn {
-          padding: 0.3rem;
         }
       }
     `
@@ -347,105 +307,123 @@ import { FtAvatarComponent } from '@core/ui/avatar/ft-avatar.component';
 export class PlatformShellComponent implements OnInit {
   readonly auth = inject(PlatformAuthService);
   private readonly permissions = inject(PlatformPermissionsService);
+  private readonly prefs = inject(PlatformPreferencesService);
+  private readonly overlayCleanup = inject(FtOverlayCleanupService);
 
-  /** Affiche le lien /admins uniquement si l'utilisateur a la permission de lire la liste. */
+  @ViewChild('userMenu') userMenu?: FtUserMenuComponent;
+
+  readonly shortcutsVisible = signal(false);
+  readonly t = t;
+
   readonly canSeeAdmins = computed(() => this.permissions.has(PlatformPermission.AdminsRead));
-  /** Affiche le lien /security uniquement si l'utilisateur a la permission security:read. */
   readonly canSeeSecurity = computed(() => this.permissions.has(PlatformPermission.SecurityRead));
-  /** Affiche le lien /plans uniquement si l'utilisateur a la permission plans:manage. */
   readonly canSeePlans = computed(() => this.permissions.has(PlatformPermission.PlansManage));
-  /** Affiche le lien /coupons uniquement si l'utilisateur a la permission coupons:manage. */
   readonly canSeeCoupons = computed(() => this.permissions.has(PlatformPermission.CouponsManage));
-  /** Affiche le lien /credits uniquement si l'utilisateur a la permission credits:manage. */
   readonly canSeeCredits = computed(() => this.permissions.has(PlatformPermission.CreditsManage));
-  /** Affiche le lien /invoices uniquement si l'utilisateur a la permission invoice:read. */
   readonly canSeeInvoices = computed(() => this.permissions.has(PlatformPermission.InvoiceRead));
-  /** Affiche le lien /payments uniquement si l'utilisateur a la permission providers:configure. */
-  readonly canSeePaymentProviders = computed(() => this.permissions.has(PlatformPermission.ProvidersConfigure));
-  /** Affiche le lien /dunning uniquement si l'utilisateur a la permission invoice:issue (BillingAdmin). */
+  readonly canSeePaymentProviders = computed(() =>
+    this.permissions.has(PlatformPermission.ProvidersConfigure)
+  );
   readonly canSeeDunning = computed(() => this.permissions.has(PlatformPermission.InvoiceIssue));
-  /** Affiche le lien /audit uniquement si l'utilisateur a la permission audit:read. */
   readonly canSeeAudit = computed(() => this.permissions.has(PlatformPermission.AuditRead));
-  /** Affiche le lien /ai-settings uniquement si l'utilisateur a la permission ai:manage. */
   readonly canSeeAiConfig = computed(() => this.permissions.has(PlatformPermission.AiManage));
 
   ngOnInit(): void {
-    // Lot B1 : charge les permissions au démarrage si pas encore fait. Idempotent.
+    document.documentElement.dataset['tableDensity'] = this.prefs.tableDensity();
     if (!this.permissions.isLoaded() && this.auth.isAuthenticated()) {
-      this.permissions.load().subscribe({
-        error: () => {
-          // Silencieux : si l'API échoue, on tombe sur la nav minimale
-        }
-      });
+      this.permissions.load().subscribe({ error: () => {} });
     }
   }
 
-  /**
-   * Items du menu utilisateur. Construits comme `computed` pour réagir aux
-   * changements de l'utilisateur (signal `auth.user`).
-   *
-   * Les routes `/me`, `/me/audit`, `/preferences` n'existent pas encore (Lots ultérieurs)
-   * et sont marquées `disabled` ; les libellés FR sont conformes au glossaire.
-   */
+  @HostListener('document:keydown', ['$event'])
+  onGlobalKeydown(event: KeyboardEvent): void {
+    if (event.key === '?' && !this.isTypingInInput(event)) {
+      event.preventDefault();
+      this.shortcutsVisible.set(true);
+    }
+  }
+
   readonly userMenuItems = computed<MenuItem[]>(() => {
     const u = this.auth.user();
     return [
       {
         label: u ? `${u.firstName} ${u.lastName}` : '—',
         styleClass: 'mu-header',
-        items: [
-          { label: u?.email ?? '', styleClass: 'mu-email', disabled: true }
-        ]
+        disabled: true
+      },
+      {
+        label: u?.email ?? '',
+        styleClass: 'mu-email',
+        disabled: true
       },
       { separator: true },
       {
-        label: 'Mon profil',
+        label: t('user.menu.profile'),
         icon: 'pi pi-user',
-        disabled: true
+        command: () => this.userMenu?.navigateAndClose('/me')
       },
       {
-        label: 'Préférences',
+        label: t('user.menu.preferences'),
         icon: 'pi pi-cog',
-        disabled: true
+        command: () => this.userMenu?.navigateAndClose('/preferences')
       },
       {
         label: 'Authentification 2FA',
         icon: 'pi pi-shield',
-        routerLink: '/me/2fa'
+        command: () => this.userMenu?.navigateAndClose('/me/2fa')
       },
       {
         label: 'Santé du système',
         icon: 'pi pi-heart',
-        routerLink: '/ops/health',
-        visible: this.canSeeSecurity()
+        visible: this.canSeeSecurity(),
+        command: () => this.userMenu?.navigateAndClose('/ops/health')
       },
       {
-        label: 'Mon audit',
+        label: t('user.menu.audit'),
         icon: 'pi pi-history',
-        disabled: true
+        command: () => this.userMenu?.navigateAndClose('/me/audit')
       },
       {
-        label: 'Documentation',
+        label: t('user.menu.docs'),
         icon: 'pi pi-book',
-        disabled: true
+        command: () =>
+          this.userMenu?.runAndClose(() => window.open(DOCS_URL, '_blank', 'noopener,noreferrer'))
       },
       {
-        label: 'Raccourcis clavier',
+        label: t('user.menu.shortcuts'),
         icon: 'pi pi-key',
-        disabled: true
+        command: () => this.userMenu?.runAndClose(() => this.shortcutsVisible.set(true))
       },
       { separator: true },
       {
-        label: 'Déconnexion',
+        label: t('user.menu.logout'),
         icon: 'pi pi-sign-out',
         styleClass: 'mu-danger',
-        command: () => this.onLogout()
+        command: () => this.userMenu?.runAndClose(() => this.onLogout())
       }
     ];
   });
 
   onLogout(): void {
-    this.permissions.clear();
-    this.auth.logoutAndNavigate();
+    const doLogout = (): void => {
+      this.overlayCleanup.clearOrphanOverlays();
+      this.permissions.clear();
+      this.auth.logoutAndNavigate();
+    };
+
+    if (this.prefs.confirmLogout()) {
+      if (window.confirm('Voulez-vous vraiment vous déconnecter ?')) {
+        doLogout();
+      }
+    } else {
+      doLogout();
+    }
+  }
+
+  private isTypingInInput(event: KeyboardEvent): boolean {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return false;
+    const tag = target.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
   }
 }

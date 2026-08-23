@@ -149,7 +149,7 @@ public class InventoryController : ControllerBase
         [FromRoute] Guid inventoryId,
         [FromBody] RecordCountRequest request)
     {
-        var command = new RecordCountCommand(inventoryId, request.ProductId, request.CountedQuantity);
+        var command = new RecordCountCommand(inventoryId, request.ProductId, request.CountedQuantity, request.ProductLotId);
         var result = await _mediator.Send(command);
 
         if (result.IsFailure)
@@ -183,9 +183,15 @@ public class InventoryController : ControllerBase
     [Authorize(Policy = PermissionPolicies.InventoryUpdate)]
     [ProducesResponseType(typeof(ApiResponse<ValidateInventoryResult>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> ValidateInventory([FromRoute] Guid inventoryId)
+    public async Task<IActionResult> ValidateInventory(
+        [FromRoute] Guid inventoryId,
+        [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)]
+        ValidateInventoryRequest? request = null)
     {
-        var command = new ValidateInventoryCommand(inventoryId);
+        var pendingCounts = request?.PendingCounts?
+            .Select(c => new InventoryPendingCount(c.ProductId, c.CountedQuantity, c.ProductLotId))
+            .ToList();
+        var command = new ValidateInventoryCommand(inventoryId, pendingCounts);
         var result = await _mediator.Send(command);
 
         if (result.IsFailure)
@@ -231,6 +237,22 @@ public sealed record RecordCountRequest
 {
     public Guid ProductId { get; init; }
     public decimal CountedQuantity { get; init; }
+    public Guid? ProductLotId { get; init; }
+}
+
+/// <summary>
+/// Request DTO pour valider un inventaire, avec comptages non encore persistés.
+/// </summary>
+public sealed record ValidateInventoryRequest
+{
+    public List<InventoryPendingCountRequest>? PendingCounts { get; init; }
+}
+
+public sealed record InventoryPendingCountRequest
+{
+    public Guid ProductId { get; init; }
+    public decimal CountedQuantity { get; init; }
+    public Guid? ProductLotId { get; init; }
 }
 
 /// <summary>

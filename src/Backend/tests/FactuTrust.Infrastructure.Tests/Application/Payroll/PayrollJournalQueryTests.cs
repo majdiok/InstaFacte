@@ -200,7 +200,7 @@ public sealed class PayrollJournalQueryTests
         Assert.Contains(dto.AccountingLines, l => l.AccountNumber == PayrollJournalEntryBuilder.EmployerChargesAccount);
         Assert.Contains(dto.AccountingLines, l => l.AccountNumber == PayrollJournalEntryBuilder.SocialOrgAccount);
 
-        // Bucket nul (aucune avance) : la ligne 425 est omise.
+        // Bucket nul (aucune avance) : la ligne 421 est omise.
         Assert.DoesNotContain(dto.AccountingLines, l => l.AccountNumber == PayrollJournalEntryBuilder.AdvancesAccount);
     }
 

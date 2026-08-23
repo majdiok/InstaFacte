@@ -185,6 +185,7 @@ public sealed class TenantUsersController : ControllerBase
                     EmailConfirmed = true,
                     PhoneNumber = string.IsNullOrWhiteSpace(req.PhoneNumber) ? null : req.PhoneNumber.Trim()
                 };
+                user.ApplyNewInteractiveProductOnboarding();
 
                 var create = await _userManager.CreateAsync(user, req.Password);
                 if (!create.Succeeded)

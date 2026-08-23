@@ -37,7 +37,9 @@ public sealed class GetPhysicalInventoryByIdQueryHandler : IRequestHandler<GetPh
             l.TheoreticalQuantity,
             l.CountedQuantity,
             l.Difference,
-            l.IsCounted)).ToList();
+            l.IsCounted,
+            l.ProductLotId,
+            l.LotNumber)).ToList();
 
         var dto = new PhysicalInventoryDetailDto(
             inventory.Id,

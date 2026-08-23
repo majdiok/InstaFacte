@@ -319,10 +319,9 @@ export class StockEntryFormComponent implements OnInit {
     ];
 
     entryReasons = [
-        { label: 'Achat', value: MovementReason.Purchase },
+        { label: 'Achat hors réception', value: MovementReason.Purchase },
         { label: 'Retour Client', value: MovementReason.CustomerReturn },
-        { label: 'Stock Initial', value: MovementReason.InitialStock },
-        { label: 'Transfert', value: MovementReason.Transfer }
+        { label: 'Stock Initial', value: MovementReason.InitialStock }
     ];
 
     form: FormGroup = this.fb.group({

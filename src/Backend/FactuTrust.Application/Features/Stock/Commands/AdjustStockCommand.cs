@@ -1,6 +1,8 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Domain.Common;
+using FactuTrust.Domain.Enums;
 using FluentValidation;
 using MediatR;
 
@@ -15,9 +17,6 @@ public sealed record AdjustStockCommand(
     decimal NewQuantity,
     string? Notes) : IRequest<Result>;
 
-/// <summary>
-/// Validator for AdjustStockCommand.
-/// </summary>
 public sealed class AdjustStockCommandValidator : AbstractValidator<AdjustStockCommand>
 {
     public AdjustStockCommandValidator()
@@ -27,26 +26,26 @@ public sealed class AdjustStockCommandValidator : AbstractValidator<AdjustStockC
     }
 }
 
-/// <summary>
-/// Handler for AdjustStockCommand.
-/// </summary>
 public sealed class AdjustStockCommandHandler : IRequestHandler<AdjustStockCommand, Result>
 {
     private readonly IStockItemRepository _stockItemRepository;
     private readonly IWarehouseRepository _warehouseRepository;
     private readonly IProductRepository _productRepository;
     private readonly ITenantContext _tenantContext;
+    private readonly IStockMutationService _mutation;
 
     public AdjustStockCommandHandler(
         IStockItemRepository stockItemRepository,
         IWarehouseRepository warehouseRepository,
         IProductRepository productRepository,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        IStockMutationService mutation)
     {
         _stockItemRepository = stockItemRepository;
         _warehouseRepository = warehouseRepository;
         _productRepository = productRepository;
         _tenantContext = tenantContext;
+        _mutation = mutation;
     }
 
     public async Task<Result> Handle(AdjustStockCommand request, CancellationToken cancellationToken)
@@ -54,7 +53,6 @@ public sealed class AdjustStockCommandHandler : IRequestHandler<AdjustStockComma
         if (_tenantContext.TenantId is null)
             return Result.Failure(Error.Unauthorized("Aucun contexte d'entreprise disponible."));
 
-        // Validate product exists
         var product = await _productRepository.GetByIdAsync(request.ProductId, cancellationToken);
         if (product == null)
             return Result.Failure(Error.NotFound("Produit", request.ProductId));
@@ -62,7 +60,11 @@ public sealed class AdjustStockCommandHandler : IRequestHandler<AdjustStockComma
         if (!product.IsStockManaged)
             return Result.Failure(Error.Validation("Product", "Ce produit n'a pas la gestion de stock activée."));
 
-        // Determine warehouse
+        if (product.TrackingMode != TrackingMode.None)
+            return Result.Failure(Error.Validation(
+                "TrackingMode",
+                "L'ajustement global est interdit sur un article suivi. Comptez par lot (inventaire)."));
+
         Guid warehouseId;
         if (request.WarehouseId.HasValue)
         {
@@ -76,18 +78,20 @@ public sealed class AdjustStockCommandHandler : IRequestHandler<AdjustStockComma
             warehouseId = defaultWarehouse.Id;
         }
 
-        // Get stock item
         var stockItem = await _stockItemRepository.GetByProductAndWarehouseAsync(request.ProductId, warehouseId, cancellationToken);
         if (stockItem == null)
             return Result.Failure(Error.Validation("StockItem", "Aucun stock trouvé pour ce produit dans cet entrepôt."));
 
-        // Adjust stock
-        var adjustResult = stockItem.AdjustStock(request.NewQuantity, request.Notes);
-        if (adjustResult.IsFailure)
-            return adjustResult;
+        var mutation = await _mutation.ApplyAsync(new StockMutationRequest
+        {
+            ProductId = request.ProductId,
+            WarehouseId = warehouseId,
+            Kind = StockMutationKind.Adjust,
+            Quantity = request.NewQuantity,
+            Notes = request.Notes,
+            Reason = MovementReason.InventoryAdjustment
+        }, cancellationToken);
 
-        await _stockItemRepository.UpdateAsync(stockItem, cancellationToken);
-
-        return Result.Success();
+        return mutation.IsFailure ? Result.Failure(mutation.Error) : Result.Success();
     }
 }

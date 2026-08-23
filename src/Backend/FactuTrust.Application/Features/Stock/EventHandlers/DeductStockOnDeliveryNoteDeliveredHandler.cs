@@ -1,5 +1,7 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Features.Stock.Services;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Events;
@@ -19,6 +21,8 @@ public sealed class DeductStockOnDeliveryNoteDeliveredHandler : INotificationHan
     private readonly IWarehouseRepository _warehouseRepository;
     private readonly IProductRepository _productRepository;
     private readonly IStockMovementRepository _stockMovementRepository;
+    private readonly IStockMutationService _mutation;
+    private readonly ITrackedDocumentStockService _trackedStock;
     private readonly ILogger<DeductStockOnDeliveryNoteDeliveredHandler> _logger;
 
     public DeductStockOnDeliveryNoteDeliveredHandler(
@@ -27,6 +31,8 @@ public sealed class DeductStockOnDeliveryNoteDeliveredHandler : INotificationHan
         IWarehouseRepository warehouseRepository,
         IProductRepository productRepository,
         IStockMovementRepository stockMovementRepository,
+        IStockMutationService mutation,
+        ITrackedDocumentStockService trackedStock,
         ILogger<DeductStockOnDeliveryNoteDeliveredHandler> logger)
     {
         _deliveryNoteRepository = deliveryNoteRepository;
@@ -34,6 +40,8 @@ public sealed class DeductStockOnDeliveryNoteDeliveredHandler : INotificationHan
         _warehouseRepository = warehouseRepository;
         _productRepository = productRepository;
         _stockMovementRepository = stockMovementRepository;
+        _mutation = mutation;
+        _trackedStock = trackedStock;
         _logger = logger;
     }
 
@@ -97,53 +105,43 @@ public sealed class DeductStockOnDeliveryNoteDeliveredHandler : INotificationHan
                 continue;
             }
 
-            // Get or create stock item
-            var stockItem = await _stockItemRepository.GetByProductAndWarehouseAsync(
-                line.ProductId, targetWarehouse.Id, cancellationToken);
-
-            if (stockItem is null)
+            if (_trackedStock.IsLiveTracked(product))
             {
-                _logger.LogWarning(
-                    "No stock item found for product {ProductId} in warehouse {WarehouseId}. Creating one.",
-                    line.ProductId, targetWarehouse.Id);
-
-                var createResult = StockItem.Create(line.ProductId, targetWarehouse.Id);
-                if (createResult.IsFailure)
-                {
-                    _logger.LogError(
-                        "Failed to create stock item for product {ProductId}: {Error}",
-                        line.ProductId, createResult.Error.Description);
-                    continue;
-                }
-
-                stockItem = createResult.Value;
-                await _stockItemRepository.AddAsync(stockItem, cancellationToken);
+                _logger.LogInformation(
+                    "Skipping event-handler deduction for tracked product {ProductId} on BL {DeliveryNoteNumber}",
+                    line.ProductId, notification.DeliveryNoteNumber);
+                continue;
             }
 
-            var exitResult = stockItem.RecordExit(
-                line.DeliveredQuantity,
-                MovementReason.Delivery,
-                reference,
-                $"Livraison - Ligne {line.LineNumber}");
+            var exitResult = await _mutation.ApplyAsync(new StockMutationRequest
+            {
+                ProductId = line.ProductId,
+                WarehouseId = targetWarehouse.Id,
+                Kind = StockMutationKind.Exit,
+                Quantity = line.DeliveredQuantity,
+                Reason = MovementReason.Delivery,
+                Reference = reference,
+                Notes = $"Livraison - Ligne {line.LineNumber}"
+            }, cancellationToken);
 
             if (exitResult.IsFailure)
             {
+                var stockItem = await _stockItemRepository.GetByProductAndWarehouseAsync(
+                    line.ProductId, targetWarehouse.Id, cancellationToken);
                 _logger.LogWarning(
                     "Stock deduction failed for product {ProductId}, BL {DeliveryNoteNumber}: {Error}. " +
                     "Current stock: {CurrentStock}, Requested: {Requested}",
                     line.ProductId,
                     notification.DeliveryNoteNumber,
                     exitResult.Error.Description,
-                    stockItem.QuantityOnHand,
+                    stockItem?.QuantityOnHand ?? 0,
                     line.DeliveredQuantity);
                 continue;
             }
 
-            await _stockItemRepository.UpdateAsync(stockItem, cancellationToken);
-
             _logger.LogInformation(
                 "Stock deducted for product {ProductId}: {Quantity} units (BL {DeliveryNoteNumber}). New balance: {NewBalance}",
-                line.ProductId, line.DeliveredQuantity, notification.DeliveryNoteNumber, stockItem.QuantityOnHand);
+                line.ProductId, line.DeliveredQuantity, notification.DeliveryNoteNumber, exitResult.Value.QuantityOnHand);
         }
 
         _logger.LogInformation(

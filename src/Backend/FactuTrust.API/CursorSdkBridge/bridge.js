@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   assertValidAgentToolOptions,
+  buildLocalAgentOptions,
   CURSOR_RUN_DISALLOWED_TOOLS,
   CURSOR_RUN_TOOLS
 } from "./bridge-agent-options.js";
@@ -160,7 +161,7 @@ async function handleExtract(req, res) {
     const result = await sdkModule.Agent.prompt(message, {
     apiKey: body.apiKey,
     model: toModelSelection(body.model),
-    local: { cwd: scratch, settingSources: [], sandboxOptions: { enabled: true } },
+    local: buildLocalAgentOptions({ cwd: scratch }),
     tools: []
   });
 
@@ -198,12 +199,7 @@ async function handleRuns(req, res) {
       model: toModelSelection(body.model),
       tools: CURSOR_RUN_TOOLS,
       disallowedTools: CURSOR_RUN_DISALLOWED_TOOLS,
-      local: {
-        cwd: scratch,
-        settingSources: [],
-        sandboxOptions: { enabled: true },
-        customTools
-      }
+      local: buildLocalAgentOptions({ cwd: scratch, customTools })
     });
 
     const run = await agent.send(message);

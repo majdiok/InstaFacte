@@ -141,7 +141,8 @@ Les erreurs HTTP côté SPA sont traitées par les intercepteurs Angular (voir `
 En mode **délégué** (dossier client ouvert), les utilisateurs cabinet reçoivent `ai:chat` et le module `AppModule.AI` si `Features:AccountingFirms:AiAccountingEnabled` est `true` (défaut). Cela active :
 
 - l’import IA de factures externes depuis **Saisie manuelle** (`/accounting/manual-entry`) ;
-- l’assistant expert **Comptabilité** (`/ai-assistant/comptabilite`) uniquement.
+- l’assistant expert **Comptabilité** (`/ai-assistant/comptabilite`) uniquement ;
+- l’export PowerPoint depuis cet assistant (même permission `ai:chat` ; isolation tenant = dossier client).
 
 **Après déploiement** : les sessions cabinet doivent être rafraîchies (reconnexion ou changement de dossier) pour obtenir le nouveau JWT.
 

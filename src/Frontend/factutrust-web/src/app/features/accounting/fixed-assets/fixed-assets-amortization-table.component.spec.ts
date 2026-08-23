@@ -21,12 +21,12 @@ describe('FixedAssetsAmortizationTableComponent', () => {
     groupingMode: 'AssetAccount',
     groups: [
       {
-        groupCode: '218',
-        groupLabel: '218 Matériel',
+        groupCode: '228',
+        groupLabel: '228 Matériel',
         rows: [
           {
             assetId: 'a1',
-            assetAccountNumber: '218',
+            assetAccountNumber: '228',
             inventoryNumber: 'IMMO-2026-0001',
             label: 'Camion',
             acquisitionDate: '2026-01-10',

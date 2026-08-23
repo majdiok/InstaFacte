@@ -300,6 +300,10 @@ public sealed class StockMovementRepository : IStockMovementRepository
             MovementReason.Transfer => "Transfert",
             MovementReason.Damage => "Dommage/Perte",
             MovementReason.InitialStock => "Stock Initial",
+            MovementReason.Delivery => "Livraison",
+            MovementReason.InternalUse => "Consommation interne",
+            MovementReason.GiftOrSample => "Don / échantillon",
+            MovementReason.FoundOrOther => "Trouvé / autre",
             _ => reason.ToString()
         };
     }

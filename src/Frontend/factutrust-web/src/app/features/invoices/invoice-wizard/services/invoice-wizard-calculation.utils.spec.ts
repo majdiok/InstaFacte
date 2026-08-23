@@ -22,7 +22,8 @@ function minimalState(overrides?: Partial<InvoiceWizardState>): InvoiceWizardSta
       currency: Currency.TND,
       internalReference: null,
       linkedInvoiceId: null,
-      warehouseId: null
+      warehouseId: null,
+      cashRegisterSessionId: null
     },
     seller: null,
     client: null,

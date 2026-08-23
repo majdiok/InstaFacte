@@ -84,7 +84,9 @@ public sealed class GetActiveInventoryQueryHandler : IRequestHandler<GetActiveIn
             ProductCode = line.ProductCode,
             TheoreticalQuantity = line.TheoreticalQuantity,
             IsCounted = line.IsCounted,
-            CountedQuantity = line.CountedQuantity
+            CountedQuantity = line.CountedQuantity,
+            ProductLotId = line.ProductLotId,
+            LotNumber = line.LotNumber
         }).ToList();
 
         // Progress message

@@ -34,4 +34,27 @@ describe('FORECASTING_ROUTES', () => {
     // The class itself is still named ReplenishmentBoardComponent until Phase C renames it.
     expect((cmp as Function).name).toMatch(/^Replenishment(Board|BoardV2)Component$/);
   });
+
+  it('keeps the business tabs (revenue, replenishment, promotions, abc-xyz, treasury)', () => {
+    for (const path of ['revenue', 'replenishment', 'promotions', 'abc-xyz', 'treasury']) {
+      const child = children.find(c => c.path === path);
+      expect(child).withContext(`missing child route "${path}"`).toBeDefined();
+      expect(child?.loadComponent).withContext(`"${path}" should still lazy-load a page`).toBeDefined();
+    }
+  });
+
+  it('redirects the empty child path to revenue', () => {
+    const empty = children.find(c => c.path === '');
+    expect(empty).toBeDefined();
+    expect(empty?.redirectTo).toBe('revenue');
+    expect(empty?.pathMatch).toBe('full');
+  });
+
+  it('keeps /forecasting/calendar as a bookmark redirect to revenue (Calendrier TN tab removed)', () => {
+    const calendar = children.find(c => c.path === 'calendar');
+    expect(calendar).toBeDefined();
+    expect(calendar?.loadComponent).toBeUndefined();
+    expect(calendar?.redirectTo).toBe('revenue');
+    expect(calendar?.pathMatch).toBe('full');
+  });
 });

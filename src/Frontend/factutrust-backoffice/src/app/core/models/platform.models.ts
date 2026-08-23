@@ -24,6 +24,25 @@ export interface PlatformMePermissionsDto {
   permissions: string[];
 }
 
+/** Profil détaillé GET /api/platform/auth/me */
+export interface PlatformMeProfileDto {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  roles: string[];
+  lastLoginAt: string | null;
+  isMfaEnabled: boolean;
+}
+
+export interface UpdatePlatformMeProfileRequest {
+  firstName: string;
+  lastName: string;
+  currentPassword?: string | null;
+  newPassword?: string | null;
+  confirmNewPassword?: string | null;
+}
+
 /** Lot B1 — Liste des admins plateforme */
 export interface PlatformAdminListItemDto {
   id: string;
@@ -987,6 +1006,56 @@ export interface UpdatePlatformCursorRequest {
   apiKey?: string | null;
 }
 
+/** Credentials Modal (Kimi) partagés (masqués — jamais de token en clair). */
+export interface PlatformModalSettingsDto {
+  isEnabled: boolean;
+  displayName: string | null;
+  baseUrl: string | null;
+  defaultBaseUrl: string;
+  defaultModelId: string;
+  isApiKeyConfigured: boolean;
+  apiKeyLast4: string | null;
+}
+
+export interface UpdatePlatformModalRequest {
+  isEnabled: boolean;
+  displayName?: string | null;
+  baseUrl?: string | null;
+  /** Bearer concaténé TOKEN_ID.TOKEN_SECRET. Null/vide = conserver la clé existante. */
+  apiKey?: string | null;
+}
+
+/** Snapshot masqué de l'endpoint Modal plateforme (jamais de secret). */
+export interface TenantModalPlatformSnapshotDto {
+  isEnabled: boolean;
+  displayName: string | null;
+  baseUrl: string | null;
+  isApiKeyConfigured: boolean;
+  apiKeyLast4: string | null;
+}
+
+/** Configuration Modal d'une entreprise (override optionnel). */
+export interface TenantModalSettingsDto {
+  hasOverride: boolean;
+  isEnabled: boolean;
+  displayName: string | null;
+  baseUrl: string | null;
+  defaultBaseUrl: string;
+  defaultModelId: string;
+  isApiKeyConfigured: boolean;
+  apiKeyLast4: string | null;
+  platformConfiguredModelRef: string | null;
+  platform: TenantModalPlatformSnapshotDto;
+}
+
+export interface UpdateTenantModalSettingsRequest {
+  isEnabled: boolean;
+  displayName?: string | null;
+  baseUrl?: string | null;
+  /** Bearer concaténé TOKEN_ID.TOKEN_SECRET. Null/vide = conserver la clé existante. */
+  apiKey?: string | null;
+}
+
 /** Configuration IA plateforme : modèle configuré + données pour en choisir un. */
 export interface PlatformAiSettingsDto {
   configuredModelRef: string | null;
@@ -999,6 +1068,7 @@ export interface PlatformAiSettingsDto {
   recommendation: AiModelRecommendationDto | null;
   openRouter: PlatformOpenRouterSettingsDto;
   cursor: PlatformCursorSettingsDto;
+  modal: PlatformModalSettingsDto;
 }
 
 export interface UpdatePlatformAiSettingsRequest {
@@ -1008,6 +1078,7 @@ export interface UpdatePlatformAiSettingsRequest {
   inferenceDevice?: OllamaInferenceDevice | null;
   openRouter?: UpdatePlatformOpenRouterRequest | null;
   cursor?: UpdatePlatformCursorRequest | null;
+  modal?: UpdatePlatformModalRequest | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

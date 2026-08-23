@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Domain.Constants;
 using FactuTrust.Domain.Entities;
@@ -74,10 +75,8 @@ public sealed class TenantService : ITenantService
 
     public async Task<string> CreateTenantDatabaseAsync(Guid tenantId, string databaseName, string? warehouseName = null, CancellationToken cancellationToken = default)
     {
-        var masterConnectionString = _configuration.GetConnectionString("MasterConnection")
-            ?? throw new InvalidOperationException("Chaîne de connexion maître introuvable");
+        var masterConnectionString = GetMasterConnectionString();
 
-        // Build tenant connection string
         var builder = new SqlConnectionStringBuilder(masterConnectionString)
         {
             InitialCatalog = databaseName
@@ -85,23 +84,28 @@ public sealed class TenantService : ITenantService
 
         var tenantConnectionString = builder.ConnectionString;
 
-        // Create database
-        await CreateDatabaseAsync(masterConnectionString, databaseName, cancellationToken);
+        var sw = Stopwatch.StartNew();
+        await _provisioner.ProvisionNewTenantDatabaseAsync(
+            masterConnectionString,
+            databaseName,
+            tenantId,
+            cancellationToken);
+        LogProvisionStep("Provision", sw.ElapsedMilliseconds, tenantId, databaseName);
 
-        // Apply migrations to new database
-        await ApplyMigrationsToNewDatabaseAsync(tenantConnectionString, cancellationToken);
-
-        // Seed default warehouse
+        sw.Restart();
         await SeedDefaultWarehouseAsync(tenantConnectionString, warehouseName, cancellationToken);
+        LogProvisionStep("SeedWarehouse", sw.ElapsedMilliseconds, tenantId, databaseName);
 
-        // Seed default passenger client (walk-in client for POS)
+        sw.Restart();
         await SeedDefaultPassengerClientAsync(tenantConnectionString, cancellationToken);
+        LogProvisionStep("SeedPassengerClient", sw.ElapsedMilliseconds, tenantId, databaseName);
 
+        sw.Restart();
         await SeedWithholdingTaxSystemTypesAsync(tenantConnectionString, cancellationToken);
+        LogProvisionStep("SeedWithholding", sw.ElapsedMilliseconds, tenantId, databaseName);
 
-        // Store encrypted connection string
         var encryptedConnectionString = _protector.Protect(tenantConnectionString);
-        
+
         var tenantConnection = new TenantConnectionString
         {
             Id = Guid.NewGuid(),
@@ -113,8 +117,12 @@ public sealed class TenantService : ITenantService
         _masterContext.TenantConnectionStrings.Add(tenantConnection);
         await _masterContext.SaveChangesAsync(cancellationToken);
         _cache.Remove($"{ConnectionStringCacheKeyPrefix}{tenantId}");
+        TenantMigrationGuard.MarkApplied(_cache, tenantId);
 
-        _logger.LogInformation("Created database {DatabaseName} for tenant {TenantId} with default warehouse, passenger client, and withholding tax catalog", databaseName, tenantId);
+        _logger.LogInformation(
+            "Created database {DatabaseName} for tenant {TenantId} with default warehouse, passenger client, and withholding tax catalog",
+            databaseName,
+            tenantId);
 
         return tenantConnectionString;
     }
@@ -149,6 +157,7 @@ public sealed class TenantService : ITenantService
         _masterContext.TenantConnectionStrings.Add(tenantConnection);
         await _masterContext.SaveChangesAsync(cancellationToken);
         _cache.Remove($"{ConnectionStringCacheKeyPrefix}{tenantId}");
+        TenantMigrationGuard.MarkApplied(_cache, tenantId);
 
         _logger.LogInformation("Created lightweight database {DatabaseName} for accounting firm tenant {TenantId}", databaseName, tenantId);
 
@@ -201,19 +210,14 @@ public sealed class TenantService : ITenantService
         _cache.Remove($"{TenantMigrationGuard.CacheKeyPrefix}{tenantId}");
     }
 
-    private async Task CreateDatabaseAsync(string masterConnectionString, string databaseName, CancellationToken cancellationToken)
+    private void LogProvisionStep(string step, long durationMs, Guid tenantId, string databaseName)
     {
-        var createDbSql = $@"
-            IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = N'{databaseName}')
-            BEGIN
-                CREATE DATABASE [{databaseName}]
-            END";
-
-        await using var connection = new SqlConnection(masterConnectionString);
-        await connection.OpenAsync(cancellationToken);
-        
-        await using var command = new SqlCommand(createDbSql, connection);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        _logger.LogInformation(
+            "TenantProvision.Step={Step} DurationMs={DurationMs} TenantId={TenantId} DatabaseName={DatabaseName}",
+            step,
+            durationMs,
+            tenantId,
+            databaseName);
     }
 
     private async Task ApplyMigrationsToNewDatabaseAsync(string connectionString, CancellationToken cancellationToken)

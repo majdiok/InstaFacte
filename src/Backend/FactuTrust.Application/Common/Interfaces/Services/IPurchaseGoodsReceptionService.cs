@@ -7,7 +7,9 @@ public sealed record PurchaseReceptionStockLine(
     Guid ProductId,
     decimal Quantity,
     decimal UnitPriceAmount,
-    string Currency);
+    string Currency,
+    Guid? DocumentLineId = null,
+    IReadOnlyList<StockAllocationInput>? Allocations = null);
 
 /// <summary>
 /// Shared stock entry / reversal for purchase goods reception (legacy ReceiveGoods + BR validation).

@@ -12,6 +12,7 @@ using FactuTrust.Infrastructure.Services.AccountingAudit;
 using FactuTrust.Infrastructure.Services.AccountingAudit.Rules;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
+using FactuTrust.Application.Common;
 
 namespace FactuTrust.Infrastructure.Tests.AccountingAudit;
 

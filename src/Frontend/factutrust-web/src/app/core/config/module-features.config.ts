@@ -19,6 +19,7 @@ const MODULE_FEATURE_OPTIONS: Record<AppModule, ModuleFeatureOption[]> = {
   [AppModule.Sales]: [
     { key: 'quotes', label: 'Devis' },
     { key: 'delivery_notes', label: 'Bons de livraison' },
+    { key: 'return_notes', label: 'Bons de retour' },
     { key: 'invoices', label: 'Factures' }
   ],
   [AppModule.Treasury]: [
@@ -47,7 +48,8 @@ const MODULE_FEATURE_OPTIONS: Record<AppModule, ModuleFeatureOption[]> = {
   [AppModule.Stock]: [
     { key: 'stock', label: 'Mouvements de stock' },
     { key: 'stock_transfers', label: 'Transferts' },
-    { key: 'inventory', label: 'Inventaires' }
+    { key: 'inventory', label: 'Inventaires' },
+    { key: 'stock_vouchers', label: 'Bons d’entrée / sortie' }
   ],
   [AppModule.Accounting]: [
     { key: 'journal', label: 'Journal / écritures' },
@@ -76,6 +78,19 @@ const MODULE_FEATURE_OPTIONS: Record<AppModule, ModuleFeatureOption[]> = {
     { key: 'invoices', label: 'Factures' },
     { key: 'quotes', label: 'Devis' },
     { key: 'payments', label: 'Encaissements' }
+  ],
+  [AppModule.Projects]: [
+    { key: 'core', label: 'Projets et équipe' },
+    { key: 'tasks', label: 'Tâches' },
+    { key: 'time', label: 'Temps' },
+    { key: 'billing', label: 'Facturation projet' },
+    { key: 'esn', label: 'Pack ESN (régie / jalons)' },
+    { key: 'btp', label: 'Pack BTP (situations / chantier)' }
+  ],
+  [AppModule.RecurringContracts]: [
+    { key: 'contracts', label: 'Contrats' },
+    { key: 'usage', label: 'Consommation' },
+    { key: 'billing', label: 'Facturation' }
   ]
 };
 

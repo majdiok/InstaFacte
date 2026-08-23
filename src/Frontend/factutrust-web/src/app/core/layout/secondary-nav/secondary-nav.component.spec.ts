@@ -37,6 +37,7 @@ const companyUser: User = {
     'products:read',
     'stock:read',
     'stock_transfers:read',
+    'stock_vouchers:read',
     'inventory:read',
     'payments:read',
     'reports:view',

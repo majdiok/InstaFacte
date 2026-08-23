@@ -1,6 +1,7 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Features.Stock.EventHandlers;
+using FactuTrust.Infrastructure.Tests.Stock;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Events;
@@ -295,6 +296,8 @@ public sealed class StockDeductionPathsCharacterizationTests
                 ProductRepo.Object,
                 MovementRepo.Object,
                 AuditService.Object,
+                new FakePassthroughStockMutationService(StockItemRepo.Object),
+                StockTestDoubles.Untracked(),
                 NullLogger<DeductStockOnInvoiceValidatedHandler>.Instance);
         }
 

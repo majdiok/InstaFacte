@@ -14,7 +14,9 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
 
     icon: 'fa-solid fa-gauge-high',
 
-    route: '/firm/dashboard'
+    route: '/firm/dashboard',
+
+    tourId: 'dashboard'
 
   },
 
@@ -28,7 +30,25 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
 
     route: '/firm/assistant',
 
+    tourId: 'chef-de-mission',
+
     permissionsAll: [PERMISSIONS.firmAi.chat]
+
+  },
+
+  {
+
+    // Réviseur de portefeuille. Volontairement hors du périmètre Gouvernance, comme « Chef de
+    // mission » : il a son propre drapeau et ne doit pas disparaître avec `firmGovernance`.
+    label: 'Révision du portefeuille',
+
+    icon: 'fa-solid fa-clipboard-check',
+
+    route: '/firm/revision',
+
+    // Le back ne délivre `firm:revision:view` que si FirmRevisionEnabled est vrai : la permission
+    // porte à la fois le droit de l'utilisateur et l'état du module côté serveur.
+    permissionsAll: [PERMISSIONS.firmRevision.view]
 
   },
 
@@ -38,7 +58,9 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
 
     icon: 'fa-solid fa-briefcase',
 
-    route: '/firm/clients'
+    route: '/firm/clients',
+
+    tourId: 'clients'
 
   },
 
@@ -48,7 +70,9 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
 
     icon: 'fa-solid fa-calendar-days',
 
-    route: '/firm/fiscal-schedule'
+    route: '/firm/fiscal-schedule',
+
+    tourId: 'fiscal-schedule'
 
   },
 
@@ -169,16 +193,6 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
   },
 
   {
-
-    label: 'Suivi social',
-
-    route: '/firm/governance/social',
-
-    icon: 'fa-solid fa-users'
-
-  },
-
-  {
     label: 'Facturation',
     icon: 'fa-solid fa-file-invoice-dollar',
     managerOnly: true,
@@ -226,7 +240,9 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
 
     icon: 'fa-solid fa-envelope-open-text',
 
-    route: '/firm/invitations'
+    route: '/firm/invitations',
+
+    tourId: 'invitations'
 
   },
 
@@ -245,6 +261,8 @@ export const FIRM_NATIVE_NAV: NavItem[] = [
     label: 'Mon cabinet',
 
     icon: 'fa-solid fa-building-columns',
+
+    tourId: 'cabinet',
 
     children: [
 
@@ -375,6 +393,7 @@ const DELEGATED_FIRM_BLOCKED_SALES_PURCHASES_PREFIXES = [
   '/quotes',
 
   '/delivery-notes',
+  '/return-notes',
 
   '/suppliers',
 
@@ -783,6 +802,22 @@ function isFirmGovernanceNavRoute(route?: string): boolean {
     route === '/firm/payroll' ||
     route.startsWith('/firm/payroll/')
   );
+}
+
+/**
+ * Interrupteur local du réviseur (`localStorage` → `ft.firm.featureFlags`). Ce n'est PAS la garde
+ * de fonctionnalité — celle-ci est la permission `firm:revision:view`, que l'API ne délivre que
+ * sous `FirmRevisionEnabled`. Ce filtre garantit seulement que couper le drapeau ne laisse pas
+ * dans le menu un lien que `firmRevisionFeatureGuard` renverrait aussitôt au tableau de bord.
+ *
+ * Volontairement plus simple que `filterFirmGovernanceNav` : l'entrée est unique et sans enfants,
+ * la récursion et l'élagage des parents vides n'auraient aucun cas d'emploi.
+ */
+export function filterFirmRevisionNav(items: NavItem[], revisionEnabled: boolean): NavItem[] {
+  if (revisionEnabled) {
+    return items;
+  }
+  return items.filter(item => item.route !== '/firm/revision');
 }
 
 /** Masque les entrées Gouvernance lorsque le feature flag cabinet est désactivé. */

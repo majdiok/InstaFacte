@@ -44,7 +44,9 @@ public sealed record PhysicalInventoryDetailLineDto(
     decimal TheoreticalQuantity,
     decimal? CountedQuantity,
     decimal Difference,
-    bool IsCounted);
+    bool IsCounted,
+    Guid? ProductLotId = null,
+    string? LotNumber = null);
 
 /// <summary>
 /// DTO for physical inventory detail (consultation).

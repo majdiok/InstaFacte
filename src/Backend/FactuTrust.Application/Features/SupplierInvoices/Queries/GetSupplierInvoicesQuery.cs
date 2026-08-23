@@ -72,6 +72,7 @@ public sealed class GetSupplierInvoicesQueryHandler : IRequestHandler<GetSupplie
                 PaidAt = si.PaidAt,
                 WarehouseId = si.WarehouseId,
                 WarehouseName = si.Warehouse?.Name,
+                SourcePurchaseReceiptId = si.SourcePurchaseReceiptId,
                 HasFixedAssetLines = si.Lines.Any(l => l.IsFixedAsset)
             };
         }).ToList();

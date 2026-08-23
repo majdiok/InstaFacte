@@ -32,7 +32,7 @@ public interface IBankReconciliationService
     Task<Result<ApplyAssociationsResultDto>> ApplyAssociationsAsync(Guid statementId, ApplyAssociationsRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Comptabilise une ligne de relevé non rapprochée : crée l'écriture 512 ↔ contrepartie et
+    /// Comptabilise une ligne de relevé non rapprochée : crée l'écriture 532 ↔ contrepartie et
     /// rapproche la ligne sur la ligne du compte banque créée.
     /// </summary>
     Task<Result> CreateEntryForLineAsync(Guid bankStatementLineId, CreateEntryForLineRequest request, CancellationToken cancellationToken = default);

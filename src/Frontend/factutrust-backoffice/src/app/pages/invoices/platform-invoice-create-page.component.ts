@@ -167,7 +167,7 @@ interface TenantOption {
         <p-button [label]="t('create.lines.add')" icon="pi pi-plus" size="small" [outlined]="true" (onClick)="addLine()" />
       </div>
 
-      <p-table [value]="lines" styleClass="ft-table">
+      <p-table [value]="lines" styleClass="p-datatable-sm ft-table">
         <ng-template pTemplate="header">
           <tr>
             <th>{{ t('create.lines.description') }}</th>

@@ -225,6 +225,144 @@ public sealed class PlatformAuthController : ControllerBase
         }));
     }
 
+    /// <summary>Profil détaillé de l'administrateur courant.</summary>
+    [HttpGet("me")]
+    [Authorize(Policy = PlatformPolicies.PlatformAdmin)]
+    [ProducesResponseType(typeof(ApiResponse<PlatformMeProfileDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetMe(CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var userId))
+            return Unauthorized(ApiResponse<PlatformMeProfileDto>.Fail("Non authentifié."));
+
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user is null || user.TenantId != Guid.Empty)
+            return Unauthorized(ApiResponse<PlatformMeProfileDto>.Fail("Utilisateur introuvable."));
+
+        var roles = await GetPlatformRolesAsync(user);
+        if (roles.Count == 0)
+            return Unauthorized(ApiResponse<PlatformMeProfileDto>.Fail("Compte non autorisé."));
+
+        var mfaStatus = await _mfaService.GetStatusAsync(userId, cancellationToken);
+
+        return Ok(ApiResponse<PlatformMeProfileDto>.Ok(new PlatformMeProfileDto
+        {
+            Id = user.Id,
+            Email = user.Email!,
+            FirstName = user.FirstName,
+            LastName = user.LastName,
+            Roles = roles,
+            LastLoginAt = user.LastLoginAt,
+            IsMfaEnabled = mfaStatus.IsEnabled
+        }));
+    }
+
+    /// <summary>Met à jour le profil de l'administrateur courant (nom + mot de passe optionnel).</summary>
+    [HttpPut("me")]
+    [Authorize(Policy = PlatformPolicies.PlatformAdmin)]
+    [ProducesResponseType(typeof(ApiResponse<PlatformMeProfileDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> UpdateMe(
+        [FromBody] UpdatePlatformMeProfileRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ApiResponse<PlatformMeProfileDto>.Fail("Requête invalide."));
+
+        if (!Guid.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var userId))
+            return Unauthorized(ApiResponse<PlatformMeProfileDto>.Fail("Non authentifié."));
+
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user is null || user.TenantId != Guid.Empty)
+            return Unauthorized(ApiResponse<PlatformMeProfileDto>.Fail("Utilisateur introuvable."));
+
+        var roles = await GetPlatformRolesAsync(user);
+        if (roles.Count == 0)
+            return Unauthorized(ApiResponse<PlatformMeProfileDto>.Fail("Compte non autorisé."));
+
+        user.FirstName = request.FirstName.Trim();
+        user.LastName = request.LastName.Trim();
+
+        var hasPasswordChange = !string.IsNullOrWhiteSpace(request.NewPassword)
+            || !string.IsNullOrWhiteSpace(request.CurrentPassword);
+
+        if (hasPasswordChange)
+        {
+            if (string.IsNullOrWhiteSpace(request.CurrentPassword)
+                || string.IsNullOrWhiteSpace(request.NewPassword)
+                || string.IsNullOrWhiteSpace(request.ConfirmNewPassword))
+            {
+                return BadRequest(ApiResponse<PlatformMeProfileDto>.Fail(
+                    "Pour changer le mot de passe, renseignez le mot de passe actuel, le nouveau et sa confirmation."));
+            }
+
+            if (!string.Equals(request.NewPassword, request.ConfirmNewPassword, StringComparison.Ordinal))
+                return BadRequest(ApiResponse<PlatformMeProfileDto>.Fail("La confirmation du mot de passe ne correspond pas."));
+
+            var passwordResult = await _userManager.ChangePasswordAsync(
+                user, request.CurrentPassword, request.NewPassword);
+            if (!passwordResult.Succeeded)
+            {
+                var msg = string.Join(" ", passwordResult.Errors.Select(e => e.Description));
+                return BadRequest(ApiResponse<PlatformMeProfileDto>.Fail(msg));
+            }
+        }
+
+        var updateResult = await _userManager.UpdateAsync(user);
+        if (!updateResult.Succeeded)
+        {
+            var msg = string.Join(" ", updateResult.Errors.Select(e => e.Description));
+            return BadRequest(ApiResponse<PlatformMeProfileDto>.Fail(msg));
+        }
+
+        var mfaStatus = await _mfaService.GetStatusAsync(userId, cancellationToken);
+
+        _logger.LogInformation("Platform user {UserId} updated profile", userId);
+
+        return Ok(ApiResponse<PlatformMeProfileDto>.Ok(new PlatformMeProfileDto
+        {
+            Id = user.Id,
+            Email = user.Email!,
+            FirstName = user.FirstName,
+            LastName = user.LastName,
+            Roles = roles,
+            LastLoginAt = user.LastLoginAt,
+            IsMfaEnabled = mfaStatus.IsEnabled
+        }, "Profil mis à jour."));
+    }
+
+    /// <summary>Sessions actives de l'administrateur courant (self-service).</summary>
+    [HttpGet("me/sessions")]
+    [Authorize(Policy = PlatformPolicies.PlatformAdmin)]
+    [ProducesResponseType(typeof(ApiResponse<UserSessionsPageDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> MySessions(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 25,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Guid.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var userId))
+            return Unauthorized(ApiResponse<UserSessionsPageDto>.Fail("Non authentifié."));
+
+        var result = await _sessionService.ListByUserAsync(userId, page, pageSize, cancellationToken);
+        return Ok(ApiResponse<UserSessionsPageDto>.Ok(result));
+    }
+
+    /// <summary>Tentatives de connexion échouées pour l'email de l'administrateur courant.</summary>
+    [HttpGet("me/failed-logins")]
+    [Authorize(Policy = PlatformPolicies.PlatformAdmin)]
+    [ProducesResponseType(typeof(ApiResponse<FailedLoginAttemptsPageDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> MyFailedLogins(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 25,
+        CancellationToken cancellationToken = default)
+    {
+        var email = User.FindFirst(ClaimTypes.Email)?.Value;
+        if (string.IsNullOrWhiteSpace(email))
+            return Unauthorized(ApiResponse<FailedLoginAttemptsPageDto>.Fail("Non authentifié."));
+
+        var result = await _failedLogins.ListAsync(email, null, null, null, page, pageSize, cancellationToken);
+        return Ok(ApiResponse<FailedLoginAttemptsPageDto>.Ok(result));
+    }
+
     // ============================================================================
     //  Lot B2 — Endpoints 2FA TOTP
     // ============================================================================

@@ -397,6 +397,93 @@ GROUP BY ProductId, WarehouseId HAVING COUNT(*) > 1;
 
 ---
 
+## Bons de retour client — `20260816180000_AddSalesReturnNotes_Tenant`
+
+Migration **additive** du document « Bon de retour » (pré-facture, préfixe BRT) :
+
+| Objet | Rôle |
+|---|---|
+| `DeliveryNoteLines.ReturnedQuantity` | Quantité déjà retournée (défaut 0). La qté facturable devient `DeliveredQuantity - ReturnedQuantity`. |
+| `SalesOrderLines.ReturnedQuantity` | Imputation commande : diminue « livré non facturé » sans rouvrir le reste à livrer. |
+| `SalesReturnNotes` / `SalesReturnNoteLines` | Agrégat du bon de retour (brouillon puis confirmé). |
+
+**Script idempotent (production / DBA) :** [`docs/runbooks/sql/AddSalesReturnNotes_Tenant.idempotent.sql`](runbooks/sql/AddSalesReturnNotes_Tenant.idempotent.sql)
+
+**Vérification SQL :**
+
+```sql
+SELECT MigrationId FROM __EFMigrationsHistory
+WHERE MigrationId LIKE '%AddSalesReturnNotes%';
+
+SELECT COL_LENGTH('dbo.DeliveryNoteLines', 'ReturnedQuantity') AS BlReturnedQty,
+       COL_LENGTH('dbo.SalesOrderLines', 'ReturnedQuantity')   AS SoReturnedQty,
+       OBJECT_ID('dbo.SalesReturnNotes')                       AS ReturnNotesTable,
+       OBJECT_ID('dbo.SalesReturnNoteLines')                   AS ReturnNoteLinesTable;
+```
+
+---
+
+## POS sessions caisse et clôture Z — `20260818180000_AddPosCashRegisterSessions_Tenant`
+
+Migration **additive** (SQL idempotent, snapshot EF non régénéré) :
+
+| Objet | Rôle |
+|---|---|
+| `CashRegisters` | Un registre par entrepôt (`WH-{code}`). |
+| `CashRegisterSessions` | Vacation de caisse (une session **Open** par registre, index unique filtré). |
+| `ZReports` | Snapshot JSON immuable de clôture Z (numérotation `NumberingDocumentType.ZReport = 17`). |
+| `PosCartDrafts` / `PosHeldTickets` | Panier et tickets en attente persistés en base tenant. |
+| `Invoices.CashRegisterSessionId`, `Payments.CashRegisterSessionId`, `CashExpenses.CashRegisterSessionId` | Tampon nullable, **sans FK** (index filtrés). |
+
+Sans cette migration, les routes `/api/pos/cart`, `/session/open` et `/session/close` provoquent `TENANT_MIGRATION_FAILED` (503).
+
+**Vérification SQL :**
+
+```sql
+SELECT MigrationId FROM __EFMigrationsHistory
+WHERE MigrationId LIKE '%AddPosCashRegisterSessions%';
+
+SELECT OBJECT_ID('dbo.CashRegisters') AS CashRegisters,
+       OBJECT_ID('dbo.CashRegisterSessions') AS Sessions,
+       OBJECT_ID('dbo.ZReports') AS ZReports,
+       OBJECT_ID('dbo.PosCartDrafts') AS CartDrafts,
+       OBJECT_ID('dbo.PosHeldTickets') AS HeldTickets,
+       COL_LENGTH('dbo.Invoices', 'CashRegisterSessionId') AS InvoiceSessionCol;
+```
+
+---
+
+## Stock P0 — lots, variantes, FIFO/LIFO — `20260821180000_AddStockTraceabilityAndVariants_Tenant`
+
+Migration **additive** (SQL idempotent, snapshot EF non régénéré). Le grain `StockItems (ProductId, WarehouseId)` **n'est pas modifié**. Tous les drapeaux `Features:Stock` restent **false** par défaut.
+
+| Objet | Rôle |
+|---|---|
+| `Products` colonnes parent/template, `TrackingMode`, `HasExpiryTracking`, `PickingPolicy`, `CostingMethod`, `ExpiryAlertDays` | Variantes SKU + axes traçabilité / valorisation |
+| `ProductLots`, `StockLotBalances`, `ProductSerials` | Sous-soldes lots / séries |
+| `StockValuationLayers` | Couches FIFO/LIFO |
+| `StockDocumentAllocations` | Allocations documentaires (pas de colonnes lot sur les lignes) |
+| `StockMovements` colonnes nullables lot / série / couche | Audit par allocation |
+| `InventoryCountLines.ProductLotId` / `LotNumber` | Inventaire éclaté par lot |
+| Tables attributs variantes | Matrice catalogue |
+
+Script manuel : [AddStockTraceabilityAndVariants_Tenant.idempotent.sql](runbooks/sql/AddStockTraceabilityAndVariants_Tenant.idempotent.sql). Cutover : [stock-lots-cutover.md](runbooks/stock-lots-cutover.md).
+
+**Vérification SQL :**
+
+```sql
+SELECT MigrationId FROM __EFMigrationsHistory
+WHERE MigrationId LIKE '%AddStockTraceabilityAndVariants%';
+
+SELECT COL_LENGTH('dbo.Products', 'TrackingMode') AS TrackingMode,
+       OBJECT_ID('dbo.ProductLots') AS ProductLots,
+       OBJECT_ID('dbo.StockLotBalances') AS LotBalances,
+       OBJECT_ID('dbo.StockValuationLayers') AS Layers,
+       COL_LENGTH('dbo.InventoryCountLines', 'ProductLotId') AS InvLotCol;
+```
+
+---
+
 ## En résumé
 
 - En **développement**, corriger l'erreur de migration puis redémarrer l'API.

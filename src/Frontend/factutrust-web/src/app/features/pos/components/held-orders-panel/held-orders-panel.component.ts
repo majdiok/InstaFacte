@@ -222,6 +222,15 @@ export class HeldOrdersPanelComponent {
   private readonly confirmationService = inject(ConfirmationService);
 
   recallOrder(order: HeldOrder): void {
+    const apply = () => {
+      void this.heldService.recallOrder(order.id).then(ok => {
+        if (ok) {
+          this.onRecall.emit();
+          this.onClose.emit();
+        }
+      });
+    };
+
     if (this.posState.isDirty() && this.posState.lines().length > 0) {
       this.confirmationService.confirm({
         header: 'Remplacer la commande ?',
@@ -229,17 +238,11 @@ export class HeldOrdersPanelComponent {
         icon: 'pi pi-exclamation-triangle',
         acceptLabel: 'Continuer',
         rejectLabel: 'Annuler',
-        accept: () => {
-          this.heldService.recallOrder(order.id);
-          this.onRecall.emit();
-          this.onClose.emit();
-        }
+        accept: apply
       });
       return;
     }
-    this.heldService.recallOrder(order.id);
-    this.onRecall.emit();
-    this.onClose.emit();
+    apply();
   }
 
   deleteOrder(id: string): void {

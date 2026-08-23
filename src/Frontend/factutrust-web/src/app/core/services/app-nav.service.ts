@@ -12,6 +12,7 @@ import {
   FIRM_MANAGED_HIDDEN_SECTION_LABELS,
   FIRM_NATIVE_NAV,
   filterFirmGovernanceNav,
+  filterFirmRevisionNav,
   filterDelegatedFirmSectionChildren
 } from '@core/config/firm-navigation.registry';
 import { filterFirmManagerNav } from '@core/config/firm-manager-access.config';
@@ -187,7 +188,10 @@ export class AppNavService {
     );
 
     const tailFiltered = filterFirmManagerNav(
-      filterFirmGovernanceNav(tail, this.firmFeatureFlags.isEnabled('firmGovernance')),
+      filterFirmRevisionNav(
+        filterFirmGovernanceNav(tail, this.firmFeatureFlags.isEnabled('firmGovernance')),
+        this.firmFeatureFlags.isEnabled('firmRevision')
+      ),
       this.auth.isFirmManager()
     );
 

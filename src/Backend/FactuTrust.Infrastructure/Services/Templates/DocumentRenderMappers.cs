@@ -265,13 +265,19 @@ public static class DocumentRenderMappers
         };
     }
 
-    public static DocumentRenderModel FromDeliveryNote(DeliveryNote dn, Company? issuer, byte[]? logoBytes)
+    public static DocumentRenderModel FromDeliveryNote(
+        DeliveryNote dn,
+        Company? issuer,
+        byte[]? logoBytes,
+        IReadOnlyDictionary<Guid, string>? lotLabels = null)
     {
         var lines = dn.Lines.OrderBy(l => l.LineNumber).Select(l => new DocumentLineModel
         {
             LineNumber = l.LineNumber,
             Reference = string.Equals(l.ProductCode, "CUSTOM", StringComparison.OrdinalIgnoreCase) ? null : l.ProductCode,
-            Name = l.Designation,
+            Name = lotLabels is not null && lotLabels.TryGetValue(l.Id, out var lot) && !string.IsNullOrWhiteSpace(lot)
+                ? $"{l.Designation} — {lot}"
+                : l.Designation,
             Description = l.Description,
             Quantity = l.OrderedQuantity,
             Unit = l.Unit,
@@ -327,6 +333,71 @@ public static class DocumentRenderMappers
             AmountInWords = PdfRenderHelpers.FormatAmountInFrench(dn.TotalTTC),
             Notes = string.IsNullOrWhiteSpace(deliveryAddress) ? dn.Notes : $"Adresse de livraison : {deliveryAddress}",
             ClosingNote = string.IsNullOrWhiteSpace(dn.RecipientName) ? null : $"Réceptionné par : {dn.RecipientName}"
+        };
+    }
+
+    public static DocumentRenderModel FromSalesReturnNote(SalesReturnNote note, Company? issuer, byte[]? logoBytes)
+    {
+        var lines = note.Lines.OrderBy(l => l.LineNumber).Select(l => new DocumentLineModel
+        {
+            LineNumber = l.LineNumber,
+            Reference = string.Equals(l.ProductCode, "CUSTOM", StringComparison.OrdinalIgnoreCase) ? null : l.ProductCode,
+            Name = l.Designation,
+            Description = l.Description,
+            Quantity = l.ReturnedQuantity,
+            Unit = l.Unit,
+            UnitPriceHt = l.UnitPriceHT,
+            VatLabel = VatLineLabel(l.VatRatePercent),
+            VatRatePercent = l.VatRatePercent,
+            DiscountPercent = l.DiscountPercent,
+            LineTotalHt = l.TotalHT,
+            OrderedQuantity = l.ReturnedQuantity,
+            DeliveredQuantity = l.ReturnedQuantity
+        }).ToList();
+
+        var vatBreakdown = note.Lines
+            .GroupBy(l => l.VatRatePercent).OrderBy(g => g.Key)
+            .Select(g => new VatBreakdownLine(
+                VatGroupLabel(g.Key),
+                g.Key,
+                g.Sum(x => x.TotalHT + x.FodecAmount),
+                g.Sum(x => x.TotalVAT)))
+            .ToList();
+
+        var blNumber = note.DeliveryNote?.Number.Value;
+        var meta = new List<DocumentMetaItem>
+        {
+            new("BRT n°", note.Number.Value),
+            new("Date", note.ReturnDate.ToString("dd/MM/yyyy")),
+            new("Statut", note.Status.ToDisplayString())
+        };
+        if (!string.IsNullOrWhiteSpace(blNumber))
+            meta.Add(new("BL d'origine", blNumber));
+        meta.Add(new("Motif", note.Reason));
+
+        return new DocumentRenderModel
+        {
+            DocumentType = PrintableDocumentType.SalesReturnNote,
+            TitleLabel = "BON DE RETOUR",
+            DocumentNumber = note.Number.Value,
+            Issuer = MapIssuer(issuer, null, null),
+            LogoBytes = logoBytes,
+            PartyLabel = "Client",
+            Party = MapClientParty(note.Client),
+            MetaItems = meta,
+            Lines = lines,
+            ShowDeliveryQuantities = false,
+            ShowDiscountColumn = lines.Any(l => l.DiscountPercent is > 0),
+            SubTotal = note.TotalHT,
+            VatBreakdown = vatBreakdown,
+            Fodec = note.TotalFodec,
+            Total = note.TotalTTC,
+            Currency = "TND",
+            AmountInWords = PdfRenderHelpers.FormatAmountInFrench(note.TotalTTC),
+            Notes = note.Notes,
+            ClosingNote = string.IsNullOrWhiteSpace(blNumber)
+                ? "Document logistique — ce bon de retour n'est pas un avoir fiscal."
+                : $"Retour rattaché au bon de livraison {blNumber}. Ce document n'est pas un avoir fiscal."
         };
     }
 

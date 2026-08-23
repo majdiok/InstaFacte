@@ -42,6 +42,7 @@ import {
   cleanPhoneValue,
   dropdownStringValue,
   markAllFormControlsTouched,
+  scrollAuthWizardStepIntoView,
   scrollToFirstInvalidField,
   trimOptional,
   trimRequired,
@@ -253,12 +254,14 @@ export class RegisterFirmComponent implements OnInit, OnDestroy {
     }
     if (this.currentStep() < 2) {
       this.currentStep.update(s => s + 1);
+      scrollAuthWizardStepIntoView();
     }
   }
 
   previousStep(): void {
     if (this.currentStep() > 0) {
       this.currentStep.update(s => s - 1);
+      scrollAuthWizardStepIntoView();
     }
   }
 

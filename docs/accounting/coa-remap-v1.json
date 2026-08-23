@@ -1,0 +1,790 @@
+{
+  "version": "nct01-v1",
+  "protectedPrefixes": [
+    "43651",
+    "43662",
+    "43666",
+    "43667",
+    "43671",
+    "436711",
+    "436712",
+    "4368",
+    "4011",
+    "4111",
+    "705",
+    "707",
+    "607",
+    "5321",
+    "5324",
+    "5411",
+    "6611",
+    "6612",
+    "45311",
+    "453"
+  ],
+  "entries": [
+    {
+      "from": "102",
+      "to": "1012",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Capital appelé non versé NCT 1012"
+    },
+    {
+      "from": "105",
+      "to": "117",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Primes liées au capital NCT 117"
+    },
+    {
+      "from": "106",
+      "to": "144",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Écarts de réévaluation NCT 144"
+    },
+    {
+      "from": "19",
+      "to": "15",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Provisions pour risques NCT 15"
+    },
+    {
+      "from": "17",
+      "to": "1687",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Crédit-bail vers overlay NCT 1687"
+    },
+    {
+      "from": "18",
+      "to": "17",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Liaisons établissements NCT 17"
+    },
+    {
+      "from": "211",
+      "to": "221",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Terrains NCT 221"
+    },
+    {
+      "from": "212",
+      "to": "222",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Constructions NCT 222"
+    },
+    {
+      "from": "213",
+      "to": "223",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Installations techniques NCT 223"
+    },
+    {
+      "from": "218",
+      "to": "228",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Autres immobilisations corporelles NCT 228"
+    },
+    {
+      "from": "231",
+      "to": "232",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Immo corporelles en cours NCT 232"
+    },
+    {
+      "from": "232",
+      "to": "231",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Immo incorporelles en cours NCT 231"
+    },
+    {
+      "from": "22",
+      "to": "24",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Concession FR 22 → NCT 24"
+    },
+    {
+      "from": "20",
+      "to": "21",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Incorporelles FR 20 → NCT 21"
+    },
+    {
+      "from": "21",
+      "to": "22",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Corporelles FR 21 → NCT 22"
+    },
+    {
+      "from": "24",
+      "to": "26",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Financières FR 24 → NCT 26"
+    },
+    {
+      "from": "25",
+      "to": "261",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Titres immobilisés FR 25 → NCT 261"
+    },
+    {
+      "from": "26",
+      "to": "25",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Participations FR 26 → NCT 25"
+    },
+    {
+      "from": "280",
+      "to": "281",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Amort. incorporelles NCT 281"
+    },
+    {
+      "from": "2811",
+      "to": "2821",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Amort. terrains"
+    },
+    {
+      "from": "2812",
+      "to": "2822",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Amort. constructions"
+    },
+    {
+      "from": "2813",
+      "to": "2823",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Amort. installations"
+    },
+    {
+      "from": "2818",
+      "to": "2828",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Amort. autres corporelles"
+    },
+    {
+      "from": "281",
+      "to": "282",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Amort. corporelles NCT 282"
+    },
+    {
+      "from": "312",
+      "to": "321",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Matières consommables NCT 321"
+    },
+    {
+      "from": "36",
+      "to": null,
+      "mode": "deactivate",
+      "prefix": true,
+      "reason": "Compte PCG 36 absent NCT"
+    },
+    {
+      "from": "38",
+      "to": "39",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Dépréciation stocks NCT 39"
+    },
+    {
+      "from": "413",
+      "to": "4197",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Libérer 413 pour effets NCT"
+    },
+    {
+      "from": "412",
+      "to": "413",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Effets à recevoir NCT 413"
+    },
+    {
+      "from": "414",
+      "to": "416",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Clients douteux NCT 416"
+    },
+    {
+      "from": "405",
+      "to": "4011",
+      "mode": "merge-into",
+      "prefix": false,
+      "reason": "Fournisseurs biens/services déjà en 4011"
+    },
+    {
+      "from": "406",
+      "to": "408",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Factures non parvenues NCT 408"
+    },
+    {
+      "from": "407",
+      "to": "4097",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Autres avoirs fournisseurs NCT 4097"
+    },
+    {
+      "from": "43",
+      "to": "453",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Social FR 43 → NCT 453"
+    },
+    {
+      "from": "431",
+      "to": "4531",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Sécurité sociale NCT 4531"
+    },
+    {
+      "from": "433",
+      "to": "45318",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Autres organismes sociaux"
+    },
+    {
+      "from": "435",
+      "to": "4538",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Charges sociales à payer"
+    },
+    {
+      "from": "437",
+      "to": "45318",
+      "mode": "merge-into",
+      "prefix": true,
+      "reason": "Autres charges sociales FR"
+    },
+    {
+      "from": "438",
+      "to": "4538",
+      "mode": "merge-into",
+      "prefix": true,
+      "reason": "Organismes sociaux autres FR"
+    },
+    {
+      "from": "441",
+      "to": "431",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Subventions à recevoir NCT 431"
+    },
+    {
+      "from": "442",
+      "to": "4366",
+      "mode": "merge-into",
+      "prefix": false,
+      "reason": "Impôts recouvrables FR"
+    },
+    {
+      "from": "443",
+      "to": "43651",
+      "mode": "merge-into",
+      "prefix": false,
+      "reason": "TVA due FR"
+    },
+    {
+      "from": "444",
+      "to": "437",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Autres impôts État FR"
+    },
+    {
+      "from": "44560",
+      "to": "4320",
+      "mode": "move",
+      "prefix": true,
+      "reason": "RS divers"
+    },
+    {
+      "from": "44561",
+      "to": "4321",
+      "mode": "move",
+      "prefix": true,
+      "reason": "RS1"
+    },
+    {
+      "from": "44562",
+      "to": "4322",
+      "mode": "move",
+      "prefix": true,
+      "reason": "RS2"
+    },
+    {
+      "from": "44563",
+      "to": "4323",
+      "mode": "move",
+      "prefix": true,
+      "reason": "RS3"
+    },
+    {
+      "from": "44564",
+      "to": "4327",
+      "mode": "move",
+      "prefix": true,
+      "reason": "RS7"
+    },
+    {
+      "from": "44565",
+      "to": "4324",
+      "mode": "move",
+      "prefix": true,
+      "reason": "RS4"
+    },
+    {
+      "from": "44566",
+      "to": "4325",
+      "mode": "move",
+      "prefix": true,
+      "reason": "RS5"
+    },
+    {
+      "from": "44567",
+      "to": "4326",
+      "mode": "move",
+      "prefix": true,
+      "reason": "RS6"
+    },
+    {
+      "from": "445",
+      "to": null,
+      "mode": "deactivate",
+      "prefix": true,
+      "reason": "Racine RS PCG 445"
+    },
+    {
+      "from": "4477",
+      "to": "43652",
+      "mode": "move",
+      "prefix": true,
+      "reason": "FODEC à payer NCT 43652"
+    },
+    {
+      "from": "4478",
+      "to": "4371",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Timbre fiscal vente NCT 4371"
+    },
+    {
+      "from": "447",
+      "to": "437",
+      "mode": "move",
+      "prefix": false,
+      "reason": "État autres comptes FR → 437"
+    },
+    {
+      "from": "448",
+      "to": "438",
+      "mode": "move",
+      "prefix": false,
+      "reason": "État charges à payer NCT 438"
+    },
+    {
+      "from": "44",
+      "to": "43",
+      "mode": "move",
+      "prefix": false,
+      "reason": "État FR 44 → NCT 43"
+    },
+    {
+      "from": "451",
+      "to": "441",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Groupe NCT 441"
+    },
+    {
+      "from": "452",
+      "to": "442",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Associés comptes courants NCT 442"
+    },
+    {
+      "from": "455",
+      "to": "448",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Associés opérations courantes NCT 448"
+    },
+    {
+      "from": "456",
+      "to": "447",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Dividendes NCT 447"
+    },
+    {
+      "from": "45",
+      "to": "44",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Groupe FR 45 → NCT 44"
+    },
+    {
+      "from": "421",
+      "to": "425",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Rémunérations dues NCT 425"
+    },
+    {
+      "from": "425.1",
+      "to": "421.1",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Prêts personnel sous avances NCT 421"
+    },
+    {
+      "from": "425",
+      "to": "421",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Avances personnel NCT 421"
+    },
+    {
+      "from": "512",
+      "to": "523",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Titres CT PCG 512 → NCT 523"
+    },
+    {
+      "from": "511",
+      "to": "523",
+      "mode": "merge-into",
+      "prefix": true,
+      "reason": "Portefeuille placement"
+    },
+    {
+      "from": "51",
+      "to": "52",
+      "mode": "move",
+      "prefix": false,
+      "reason": "VMP FR 51 → NCT 52"
+    },
+    {
+      "from": "531",
+      "to": "541",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Caisse mal parentée FR 531"
+    },
+    {
+      "from": "533",
+      "to": "542",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Caisses succursales NCT 542"
+    },
+    {
+      "from": "534",
+      "to": "55",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Régies NCT 55"
+    },
+    {
+      "from": "535",
+      "to": "58",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Virements internes NCT 58"
+    },
+    {
+      "from": "536",
+      "to": "534",
+      "mode": "move",
+      "prefix": true,
+      "reason": "CCP NCT 534"
+    },
+    {
+      "from": "63",
+      "to": "66",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Impôts FR 63 → NCT 66"
+    },
+    {
+      "from": "651",
+      "to": "631",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Redevances FR 651 → NCT 631"
+    },
+    {
+      "from": "652",
+      "to": "633",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Jetons FR 652 → NCT 633"
+    },
+    {
+      "from": "653",
+      "to": "622",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Honoraires FR 653 → NCT 622"
+    },
+    {
+      "from": "654",
+      "to": "634",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Pertes sur créances FR 654 → NCT 634"
+    },
+    {
+      "from": "658",
+      "to": "638",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Charges diverses FR 658 → NCT 638"
+    },
+    {
+      "from": "659",
+      "to": "67",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Charges exceptionnelles FR 659 → NCT 67"
+    },
+    {
+      "from": "6613",
+      "to": "655",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Pertes de change NCT 655"
+    },
+    {
+      "from": "6614",
+      "to": "654",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Escomptes accordés NCT 654"
+    },
+    {
+      "from": "6615",
+      "to": "657",
+      "mode": "move",
+      "prefix": true,
+      "reason": "Charges assimilées"
+    },
+    {
+      "from": "661",
+      "to": "651",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Intérêts FR 661 → NCT 651"
+    },
+    {
+      "from": "6651",
+      "to": "67",
+      "mode": "merge-into",
+      "prefix": true,
+      "reason": "Pénalités FR"
+    },
+    {
+      "from": "6652",
+      "to": "638",
+      "mode": "merge-into",
+      "prefix": true,
+      "reason": "Divers exceptionnel FR"
+    },
+    {
+      "from": "6653",
+      "to": "638",
+      "mode": "merge-into",
+      "prefix": true,
+      "reason": "Charges gestion FR"
+    },
+    {
+      "from": "665",
+      "to": "67",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Exceptionnel financier FR → 67"
+    },
+    {
+      "from": "6371",
+      "to": "6654",
+      "mode": "merge-into",
+      "prefix": true,
+      "reason": "Timbre achat NCT 6654"
+    },
+    {
+      "from": "675",
+      "to": "636",
+      "mode": "move",
+      "prefix": true,
+      "reason": "VNC cédée NCT 636"
+    },
+    {
+      "from": "6811",
+      "to": "68112",
+      "mode": "move",
+      "prefix": false,
+      "reason": "Dotations corporelles NCT 68112"
+    },
+    {
+      "from": "6812",
+      "to": "68112",
+      "mode": "merge-into",
+      "prefix": true,
+      "reason": "Dotations constructions → 68112"
+    },
+    {
+      "from": "6813",
+      "to": "68112",
+      "mode": "merge-into",
+      "prefix": true,
+      "reason": "Dotations installations → 68112"
+    },
+    {
+      "from": "6818",
+      "to": "68112",
+      "mode": "merge-into",
+      "prefix": true,
+      "reason": "Dotations autres corporelles → 68112"
+    },
+    {
+      "from": "10",
+      "to": "10",
+      "mode": "relabel",
+      "prefix": true,
+      "reason": "Capital NCT"
+    },
+    {
+      "from": "11",
+      "to": "11",
+      "mode": "relabel",
+      "prefix": true,
+      "reason": "Réserves NCT"
+    },
+    {
+      "from": "12",
+      "to": "12",
+      "mode": "relabel",
+      "prefix": true,
+      "reason": "Résultats reportés NCT"
+    },
+    {
+      "from": "13",
+      "to": "13",
+      "mode": "relabel",
+      "prefix": true,
+      "reason": "Résultat de l'exercice NCT"
+    },
+    {
+      "from": "14",
+      "to": "14",
+      "mode": "relabel",
+      "prefix": true,
+      "reason": "Autres capitaux propres NCT"
+    },
+    {
+      "from": "15",
+      "to": "15",
+      "mode": "relabel",
+      "prefix": true,
+      "reason": "Provisions risques NCT"
+    },
+    {
+      "from": "16",
+      "to": "16",
+      "mode": "relabel",
+      "prefix": true,
+      "reason": "Emprunts NCT"
+    },
+    {
+      "from": "101",
+      "to": "101",
+      "mode": "relabel",
+      "prefix": true,
+      "reason": "Capital social"
+    },
+    {
+      "from": "108",
+      "to": "108",
+      "mode": "relabel",
+      "prefix": true,
+      "reason": "Compte de l'exploitant"
+    },
+    {
+      "from": "109",
+      "to": "109",
+      "mode": "relabel",
+      "prefix": true,
+      "reason": "Actionnaires capital non appelé"
+    },
+    {
+      "from": "131",
+      "to": "131",
+      "mode": "relabel",
+      "prefix": true,
+      "reason": "Résultat bénéficiaire"
+    },
+    {
+      "from": "135",
+      "to": "135",
+      "mode": "relabel",
+      "prefix": true,
+      "reason": "Résultat déficitaire"
+    },
+    {
+      "from": "432",
+      "to": "432",
+      "mode": "relabel",
+      "prefix": true,
+      "reason": "État retenues à la source NCT"
+    },
+    {
+      "from": "6611",
+      "to": "6611",
+      "mode": "relabel",
+      "prefix": true,
+      "reason": "TFP"
+    },
+    {
+      "from": "6612",
+      "to": "6612",
+      "mode": "relabel",
+      "prefix": true,
+      "reason": "FOPROLOS"
+    }
+  ]
+}

@@ -28,7 +28,7 @@
 
           <img
 
-            [src]="brand.logoLockup"
+            [src]="brand.logoLockupOnDark"
 
             [alt]="brand.name"
 
@@ -40,7 +40,7 @@
 
           <img
 
-            [src]="brand.logoIcon"
+            [src]="brand.logoIconOnDark"
 
             alt="IF"
 
@@ -99,6 +99,8 @@
               [routerLinkActiveOptions]="item.route === dashboardHomeLink() ? { exact: true } : { exact: false }"
 
               class="rail-link"
+
+              [attr.data-tour]="item.tourId ? 'nav-' + item.tourId : null"
 
               [attr.title]="item.label">
 
@@ -171,6 +173,8 @@
               (keydown)="onSubmenuToggleKeydown($event, item)"
 
               [attr.aria-expanded]="isExpanded(item)"
+
+              [attr.data-tour]="item.tourId ? 'nav-' + item.tourId : null"
 
               [attr.title]="item.label">
 

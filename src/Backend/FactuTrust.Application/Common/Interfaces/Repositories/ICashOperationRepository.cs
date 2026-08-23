@@ -53,4 +53,8 @@ public interface ICashOperationRepository : IRepository<CashOperation>
         PaymentMethod method,
         DateTime upToDateInclusive,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<CashOperation>> GetByCashRegisterSessionIdAsync(
+        Guid cashRegisterSessionId,
+        CancellationToken cancellationToken = default);
 }

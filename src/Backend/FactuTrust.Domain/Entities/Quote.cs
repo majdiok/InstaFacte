@@ -141,6 +141,10 @@ public sealed class Quote : AggregateRoot
         if (!Status.CanBeEdited())
             return Result.Failure(Error.Validation("Status", "Ce devis ne peut plus être modifié"));
 
+        var sellable = ProductCommercialGuards.EnsureCanAppearOnDocument(product);
+        if (sellable.IsFailure)
+            return sellable;
+
         if (quantity <= 0)
             return Result.Failure(Error.Validation("Quantity", "La quantité doit être supérieure à zéro"));
 

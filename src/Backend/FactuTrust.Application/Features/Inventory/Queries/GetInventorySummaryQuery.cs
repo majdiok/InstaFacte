@@ -2,6 +2,7 @@ using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
+using FactuTrust.Domain.Enums;
 using MediatR;
 
 namespace FactuTrust.Application.Features.Inventory.Queries;
@@ -43,6 +44,8 @@ public sealed record InventorySummaryLineDto
     public decimal Difference { get; init; }
     public string HumanMessage { get; init; } = string.Empty;
     public string DifferenceClass { get; init; } = string.Empty; // "positive", "negative", "neutral"
+    public Guid? ProductLotId { get; init; }
+    public string? LotNumber { get; init; }
 }
 
 public sealed class GetInventorySummaryQueryHandler : IRequestHandler<GetInventorySummaryQuery, Result<InventorySummaryDto>>
@@ -69,46 +72,26 @@ public sealed class GetInventorySummaryQueryHandler : IRequestHandler<GetInvento
 
         var summary = inventory.GetSummary();
 
-        var productsOkList = summary.ProductsOk.Select(p => new InventorySummaryLineDto
-        {
-            ProductId = p.ProductId,
-            ProductName = p.ProductName,
-            ProductCode = p.ProductCode,
-            TheoreticalQuantity = inventory.CountLines.First(l => l.ProductId == p.ProductId).TheoreticalQuantity,
-            CountedQuantity = inventory.CountLines.First(l => l.ProductId == p.ProductId).CountedQuantity,
-            Difference = 0,
-            HumanMessage = p.HumanMessage,
-            DifferenceClass = "neutral"
-        }).ToList();
+        var productsOkList = inventory.CountLines
+            .Where(l => l.IsCounted && l.Difference == 0)
+            .Select(l => MapSummaryLine(l, "neutral"))
+            .ToList();
 
-        var productsWithDiffList = summary.ProductsWithDifference.Select(p => new InventorySummaryLineDto
-        {
-            ProductId = p.ProductId,
-            ProductName = p.ProductName,
-            ProductCode = p.ProductCode,
-            TheoreticalQuantity = inventory.CountLines.First(l => l.ProductId == p.ProductId).TheoreticalQuantity,
-            CountedQuantity = inventory.CountLines.First(l => l.ProductId == p.ProductId).CountedQuantity,
-            Difference = p.Difference,
-            HumanMessage = p.HumanMessage,
-            DifferenceClass = p.Difference > 0 ? "positive" : "negative"
-        }).ToList();
+        var productsWithDiffList = inventory.CountLines
+            .Where(l => l.IsCounted && l.Difference != 0)
+            .Select(l => MapSummaryLine(l, l.Difference > 0 ? "positive" : "negative"))
+            .ToList();
 
-        var productsNotCountedList = summary.ProductsNotCounted.Select(p => new InventorySummaryLineDto
-        {
-            ProductId = p.ProductId,
-            ProductName = p.ProductName,
-            ProductCode = p.ProductCode,
-            TheoreticalQuantity = inventory.CountLines.First(l => l.ProductId == p.ProductId).TheoreticalQuantity,
-            CountedQuantity = null,
-            Difference = 0,
-            HumanMessage = p.HumanMessage,
-            DifferenceClass = "neutral"
-        }).ToList();
+        var productsNotCountedList = inventory.CountLines
+            .Where(l => !l.IsCounted)
+            .Select(l => MapSummaryLine(l, "neutral"))
+            .ToList();
 
-        var canValidate = inventory.IsComplete;
-        var statusMessage = canValidate
+        var canValidate = inventory.Status == InventoryStatus.InProgress;
+        var notCounted = summary.ProductsNotCounted.Count;
+        var statusMessage = notCounted == 0
             ? "✅ Prêt à valider ! Tous les produits ont été comptés."
-            : $"⚠️ Il reste {summary.ProductsNotCounted.Count} produit{(summary.ProductsNotCounted.Count > 1 ? "s" : "")} à compter.";
+            : $"Prêt à valider. {notCounted} article{(notCounted > 1 ? "s" : "")} non saisi{(notCounted > 1 ? "s" : "")} seront confirmés à la quantité système.";
 
         return Result.Success(new InventorySummaryDto
         {
@@ -125,4 +108,19 @@ public sealed class GetInventorySummaryQueryHandler : IRequestHandler<GetInvento
             ProductsNotCountedList = productsNotCountedList
         });
     }
+
+    private static InventorySummaryLineDto MapSummaryLine(InventoryCountLine line, string differenceClass) =>
+        new()
+        {
+            ProductId = line.ProductId,
+            ProductName = line.ProductName,
+            ProductCode = line.ProductCode,
+            TheoreticalQuantity = line.TheoreticalQuantity,
+            CountedQuantity = line.IsCounted ? line.CountedQuantity : null,
+            Difference = line.IsCounted ? line.Difference : 0,
+            HumanMessage = line.GetHumanMessage(),
+            DifferenceClass = differenceClass,
+            ProductLotId = line.ProductLotId,
+            LotNumber = line.LotNumber
+        };
 }

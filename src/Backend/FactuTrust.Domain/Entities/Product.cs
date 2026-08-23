@@ -120,6 +120,22 @@ public sealed class Product : AggregateRoot
     /// </summary>
     public int? LeadTimeDaysOverride { get; private set; }
 
+    /// <summary>Parent template when this product is a generated variant SKU.</summary>
+    public Guid? ParentProductId { get; private set; }
+
+    /// <summary>True when this product is a variant matrix template (not sellable, not stockable).</summary>
+    public bool IsVariantTemplate { get; private set; }
+
+    public TrackingMode TrackingMode { get; private set; }
+
+    public bool HasExpiryTracking { get; private set; }
+
+    public PickingPolicy PickingPolicy { get; private set; }
+
+    public CostingMethod CostingMethod { get; private set; }
+
+    public int? ExpiryAlertDays { get; private set; }
+
     private Product() { }
 
     /// <summary>
@@ -127,6 +143,8 @@ public sealed class Product : AggregateRoot
     /// </summary>
     public bool SetPubliclyListed(bool value)
     {
+        if (value && IsVariantTemplate)
+            return false;
         if (IsPubliclyListed == value)
             return false;
         IsPubliclyListed = value;
@@ -186,7 +204,7 @@ public sealed class Product : AggregateRoot
             return Result.Failure<Product>(Error.Validation("PurchasePrice", "Le prix d'achat ne peut pas être négatif"));
 
         // Only physical products can have stock management
-        if (isStockManaged && type == ProductType.Service)
+        if (isStockManaged && type is ProductType.Service or ProductType.Subscription)
             return Result.Failure<Product>(Error.Validation("IsStockManaged", "La gestion de stock n'est pas applicable aux services"));
 
         if (categoryId == Guid.Empty)
@@ -223,7 +241,10 @@ public sealed class Product : AggregateRoot
                 purchasePrice?.Amount,
                 unitPrice.Amount) ?? profitMarginPercent,
             IsDiscountEnabled = isDiscountEnabled,
-            MaxDiscountPercent = isDiscountEnabled ? maxDiscountPercent : null
+            MaxDiscountPercent = isDiscountEnabled ? maxDiscountPercent : null,
+            TrackingMode = TrackingMode.None,
+            CostingMethod = CostingMethod.Average,
+            PickingPolicy = PickingPolicy.None
         };
 
         return Result.Success(product);
@@ -396,10 +417,63 @@ public sealed class Product : AggregateRoot
     /// </summary>
     public Result EnableStockManagement()
     {
-        if (Type == ProductType.Service)
-            return Result.Failure(Error.Validation("Type", "La gestion de stock n'est pas applicable aux services"));
+        if (Type is ProductType.Service or ProductType.Subscription)
+            return Result.Failure(Error.Validation("Type", "La gestion de stock n'est pas applicable aux services et abonnements"));
+
+        if (IsVariantTemplate)
+            return Result.Failure(Error.Validation("IsVariantTemplate",
+                "Un modèle de variantes ne peut pas gérer de stock. Activez le stock sur chaque SKU enfant."));
 
         IsStockManaged = true;
+        return Result.Success();
+    }
+
+    public Result MarkAsVariantTemplate()
+    {
+        if (Type is ProductType.Service or ProductType.Subscription)
+            return Result.Failure(Error.Validation("Type", "Un service ou abonnement ne peut pas être un modèle de variantes"));
+        if (ParentProductId.HasValue)
+            return Result.Failure(Error.Validation("ParentProductId", "Une variante ne peut pas devenir un modèle"));
+
+        IsVariantTemplate = true;
+        IsStockManaged = false;
+        IsPubliclyListed = false;
+        return Result.Success();
+    }
+
+    public Result AttachToParent(Guid parentProductId)
+    {
+        if (parentProductId == Guid.Empty)
+            return Result.Failure(Error.Validation("ParentProductId", "Le produit parent est obligatoire"));
+        if (IsVariantTemplate)
+            return Result.Failure(Error.Validation("IsVariantTemplate", "Un modèle ne peut pas être enfant d'un autre modèle"));
+
+        ParentProductId = parentProductId;
+        return Result.Success();
+    }
+
+    public Result ConfigureTraceability(
+        TrackingMode trackingMode,
+        bool hasExpiryTracking,
+        PickingPolicy pickingPolicy,
+        CostingMethod costingMethod,
+        int? expiryAlertDays)
+    {
+        if (Type is ProductType.Service or ProductType.Subscription && trackingMode != TrackingMode.None)
+            return Result.Failure(Error.Validation("TrackingMode", "La traçabilité n'est pas applicable aux services"));
+
+        if (hasExpiryTracking && trackingMode == TrackingMode.None)
+            return Result.Failure(Error.Validation("HasExpiryTracking",
+                "Le suivi de péremption exige un suivi par lot ou par numéro de série"));
+
+        if (expiryAlertDays is < 0 or > 3650)
+            return Result.Failure(Error.Validation("ExpiryAlertDays", "L'alerte de péremption doit être entre 0 et 3650 jours"));
+
+        TrackingMode = trackingMode;
+        HasExpiryTracking = hasExpiryTracking;
+        PickingPolicy = pickingPolicy;
+        CostingMethod = costingMethod;
+        ExpiryAlertDays = expiryAlertDays;
         return Result.Success();
     }
 
@@ -489,7 +563,12 @@ public enum ProductType
     /// <summary>
     /// Service offering.
     /// </summary>
-    Service = 1
+    Service = 1,
+
+    /// <summary>
+    /// Recurring subscription / B2B contract line item.
+    /// </summary>
+    Subscription = 2
 }
 
 public static class ProductTypeExtensions
@@ -498,6 +577,7 @@ public static class ProductTypeExtensions
     {
         ProductType.Product => "Produit",
         ProductType.Service => "Service",
+        ProductType.Subscription => "Abonnement",
         _ => throw new ArgumentOutOfRangeException(nameof(type))
     };
 }

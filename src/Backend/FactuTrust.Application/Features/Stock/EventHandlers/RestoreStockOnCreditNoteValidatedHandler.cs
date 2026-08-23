@@ -1,4 +1,6 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Features.Stock.Services;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Events;
@@ -20,6 +22,8 @@ public sealed class RestoreStockOnCreditNoteValidatedHandler : INotificationHand
     private readonly IWarehouseRepository _warehouseRepository;
     private readonly IProductRepository _productRepository;
     private readonly IStockMovementRepository _stockMovementRepository;
+    private readonly IStockMutationService _mutation;
+    private readonly ITrackedDocumentStockService _trackedStock;
     private readonly ILogger<RestoreStockOnCreditNoteValidatedHandler> _logger;
 
     public RestoreStockOnCreditNoteValidatedHandler(
@@ -28,6 +32,8 @@ public sealed class RestoreStockOnCreditNoteValidatedHandler : INotificationHand
         IWarehouseRepository warehouseRepository,
         IProductRepository productRepository,
         IStockMovementRepository stockMovementRepository,
+        IStockMutationService mutation,
+        ITrackedDocumentStockService trackedStock,
         ILogger<RestoreStockOnCreditNoteValidatedHandler> logger)
     {
         _invoiceRepository = invoiceRepository;
@@ -35,6 +41,8 @@ public sealed class RestoreStockOnCreditNoteValidatedHandler : INotificationHand
         _warehouseRepository = warehouseRepository;
         _productRepository = productRepository;
         _stockMovementRepository = stockMovementRepository;
+        _mutation = mutation;
+        _trackedStock = trackedStock;
         _logger = logger;
     }
 
@@ -79,7 +87,14 @@ public sealed class RestoreStockOnCreditNoteValidatedHandler : INotificationHand
 
         foreach (var line in invoice.Lines)
         {
-            var product = await _productRepository.GetByIdAsync(line.ProductId, cancellationToken);
+            if (!line.ProductId.HasValue)
+            {
+                _logger.LogDebug("Skipping stock restoration for custom line {LineNumber} (no product reference)",
+                    line.LineNumber);
+                continue;
+            }
+
+            var product = await _productRepository.GetByIdAsync(line.ProductId.Value, cancellationToken);
             if (product == null || !product.IsStockManaged)
             {
                 _logger.LogDebug("Skipping stock restoration for product {ProductId} (not stock-managed)",
@@ -87,35 +102,29 @@ public sealed class RestoreStockOnCreditNoteValidatedHandler : INotificationHand
                 continue;
             }
 
-            var stockItem = await _stockItemRepository.GetByProductAndWarehouseAsync(
-                line.ProductId, targetWarehouse.Id, cancellationToken);
-
-            if (stockItem == null)
+            if (_trackedStock.IsLiveTracked(product))
             {
-                _logger.LogWarning("No stock item found for product {ProductId} in warehouse {WarehouseId}. Creating one.",
-                    line.ProductId, targetWarehouse.Id);
-
-                var createResult = StockItem.Create(line.ProductId, targetWarehouse.Id);
-                if (createResult.IsFailure)
-                {
-                    _logger.LogError("Failed to create stock item for product {ProductId}: {Error}",
-                        line.ProductId, createResult.Error.Description);
-                    continue;
-                }
-
-                stockItem = createResult.Value;
-                await _stockItemRepository.AddAsync(stockItem, cancellationToken);
+                _logger.LogInformation(
+                    "Skipping event-handler restoration for tracked product {ProductId} on credit note {InvoiceNumber}",
+                    line.ProductId, notification.InvoiceNumber);
+                continue;
             }
 
-            // Use the existing average cost so CMUP is preserved (an avoir does not change valuation).
-            var unitCost = stockItem.AverageCost;
+            var stockItem = await _stockItemRepository.GetByProductAndWarehouseAsync(
+                line.ProductId.Value, targetWarehouse.Id, cancellationToken);
+            var unitCost = stockItem?.AverageCost ?? 0m;
 
-            var entryResult = stockItem.RecordEntry(
-                line.Quantity,
-                unitCost,
-                MovementReason.CustomerReturn,
-                reference,
-                "Réintégration suite à avoir client");
+            var entryResult = await _mutation.ApplyAsync(new StockMutationRequest
+            {
+                ProductId = line.ProductId.Value,
+                WarehouseId = targetWarehouse.Id,
+                Kind = StockMutationKind.Entry,
+                Quantity = line.Quantity,
+                UnitCost = unitCost,
+                Reason = MovementReason.CustomerReturn,
+                Reference = reference,
+                Notes = "Réintégration suite à avoir client"
+            }, cancellationToken);
 
             if (entryResult.IsFailure)
             {
@@ -128,11 +137,9 @@ public sealed class RestoreStockOnCreditNoteValidatedHandler : INotificationHand
                 continue;
             }
 
-            await _stockItemRepository.UpdateAsync(stockItem, cancellationToken);
-
             _logger.LogInformation(
                 "Stock restored for product {ProductId}: +{Quantity} units. New balance: {NewBalance}",
-                line.ProductId, line.Quantity, stockItem.QuantityOnHand);
+                line.ProductId, line.Quantity, entryResult.Value.QuantityOnHand);
         }
 
         _logger.LogInformation("Completed stock restoration processing for credit note {InvoiceNumber}",

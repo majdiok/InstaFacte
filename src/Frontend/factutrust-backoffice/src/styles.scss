@@ -52,6 +52,11 @@
   --ft-neutral-surface: rgba(110, 118, 129, 0.14);
   --ft-neutral-border: rgba(110, 118, 129, 0.34);
 
+  /* === Alias & surfaces utilitaires ========================================= */
+  --ft-warning: var(--ft-warning-text);
+  --ft-hover-surface: rgba(240, 246, 252, 0.06);
+  --ft-content-light-bg: #ffffff;
+
   /* === Espacements sémantiques (superposés à --ft-space-N) ================== */
   --gap-xxs: 0.25rem;
   --gap-xs: 0.5rem;
@@ -216,6 +221,326 @@ textarea.p-textarea:enabled:focus {
 .p-datepicker .p-inputtext:enabled:focus {
   border-color: var(--ft-accent);
   box-shadow: 0 0 0 1px var(--ft-accent-muted);
+}
+
+.p-select {
+  background: var(--ft-surface-2);
+  border-color: var(--ft-border);
+  color: var(--ft-text);
+}
+
+.p-select .p-select-label {
+  color: var(--ft-text);
+}
+
+.p-select .p-select-dropdown {
+  color: var(--ft-text-muted);
+}
+
+.p-menu {
+  background: var(--ft-surface-overlay);
+  border: 1px solid var(--ft-border);
+  color: var(--ft-text);
+}
+
+.p-menu .p-menuitem-link {
+  color: var(--ft-text);
+}
+
+.p-menu .p-menuitem-link:not(.p-disabled):hover {
+  background: var(--ft-surface-3);
+  color: var(--ft-text);
+}
+
+.p-menu .p-menuitem.mu-header > .p-menuitem-content > .p-menuitem-link {
+  font-weight: 600;
+  cursor: default;
+}
+
+.p-menu .p-menuitem.mu-email > .p-menuitem-content > .p-menuitem-link {
+  font-size: 0.8rem;
+  color: var(--ft-text-muted);
+  cursor: default;
+}
+
+.p-menu .p-menuitem.mu-danger > .p-menuitem-content > .p-menuitem-link {
+  color: var(--ft-danger-text);
+}
+
+.p-menu .p-menuitem-link.p-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ft-user-menu-panel {
+  min-width: 14rem;
+  box-shadow: var(--ft-elev-overlay);
+}
+
+.p-tabs .p-tablist {
+  background: transparent;
+  border-color: var(--ft-border);
+}
+
+.p-tabs .p-tab {
+  color: var(--ft-text-muted);
+  border-color: var(--ft-border);
+}
+
+.p-tabs .p-tab:not(.p-disabled):hover {
+  color: var(--ft-text);
+  background: var(--ft-hover-surface);
+}
+
+.p-tabs .p-tab.p-tab-active {
+  color: var(--ft-accent);
+  border-color: var(--ft-accent);
+}
+
+.p-sidebar {
+  background: var(--ft-surface);
+  border-color: var(--ft-border);
+  color: var(--ft-text);
+}
+
+.p-password input {
+  background: var(--ft-surface-2);
+  border-color: var(--ft-border);
+  color: var(--ft-text);
+}
+
+.p-message {
+  color: var(--ft-text);
+}
+
+.p-tag {
+  background: var(--ft-neutral-surface);
+  color: var(--ft-neutral-text);
+  border: 1px solid var(--ft-neutral-border);
+}
+
+.p-button-outlined.p-button-success {
+  border-color: var(--ft-success-border);
+  color: var(--ft-success-text);
+}
+
+.p-button-outlined.p-button-success:not(:disabled):hover {
+  background: var(--ft-success-surface);
+  border-color: var(--ft-success-border);
+  color: var(--ft-success-text);
+}
+
+/* ============================================================================
+   PrimeNG DataTable dark (filet de sécurité)
+   ============================================================================ */
+.p-datatable {
+  .p-datatable-table-container,
+  .p-datatable-wrapper {
+    background: var(--ft-surface);
+  }
+
+  .p-datatable-thead > tr > th {
+    background: var(--ft-surface-2);
+    color: var(--ft-text-muted);
+    border-color: var(--ft-border);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+  }
+
+  .p-datatable-tbody > tr {
+    background: var(--ft-surface);
+    color: var(--ft-text);
+    transition: background var(--duration-fast) var(--easing-standard);
+
+    > td {
+      border-color: var(--ft-border-subtle);
+      color: var(--ft-text);
+    }
+
+    &:hover {
+      background: var(--ft-surface-3);
+    }
+
+    &.p-highlight {
+      background: var(--ft-accent-surface);
+    }
+  }
+
+  .p-datatable-footer {
+    background: var(--ft-surface);
+    border-color: var(--ft-border);
+    color: var(--ft-text-muted);
+  }
+}
+
+/* ============================================================================
+   Layout utilities (pages list)
+   ============================================================================ */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--gap-md);
+  margin-bottom: var(--gap-section);
+}
+
+.kpi-row--compact {
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  margin-bottom: var(--gap-md);
+}
+
+.kpi-row--dense {
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+}
+
+.kpi-row--3col {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: var(--gap-lg);
+}
+
+.kpi-row--4col {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: var(--gap-md);
+}
+
+.kpi-row--5col {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-bottom: var(--gap-lg);
+}
+
+.kpi-row--6col {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  margin-bottom: var(--gap-lg);
+}
+
+@media (max-width: 1280px) {
+  .kpi-row--6col {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1100px) {
+  .kpi-row--5col {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  .kpi-row--4col {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 880px) {
+  .kpi-row--2col-sm {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .kpi-row--5col,
+  .kpi-row--6col {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .kpi-row--3col-md {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .kpi-row--3col {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 540px) {
+  .kpi-row--4col {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .kpi-row--1col-xs {
+    grid-template-columns: 1fr;
+  }
+
+  .kpi-row--4col {
+    grid-template-columns: 1fr;
+  }
+}
+
+.search-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.search-wrap .pi-search {
+  position: absolute;
+  left: 0.7rem;
+  color: var(--ft-text-muted);
+  pointer-events: none;
+  font-size: 0.85rem;
+}
+
+.search-wrap input {
+  padding-left: 2rem;
+  min-width: 14rem;
+  width: min(22rem, 100%);
+  background: var(--ft-surface-2);
+  color: var(--ft-text);
+  border: 1px solid var(--ft-border);
+  border-radius: var(--ft-radius);
+}
+
+.ft-dd {
+  min-width: 9.5rem;
+}
+
+.ft-dd-large {
+  min-width: 16rem;
+}
+
+.ft-cal {
+  min-width: 10rem;
+}
+
+.cell-mono {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.82rem;
+  color: var(--ft-text-muted);
+}
+
+.muted {
+  color: var(--ft-text-subtle);
+}
+
+.strong {
+  font-weight: 600;
+  color: var(--ft-text);
+}
+
+.col-actions {
+  text-align: end;
+  white-space: nowrap;
+  width: 4rem;
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+ft-filter-toolbar {
+  .p-select,
+  .p-inputtext {
+    background: var(--ft-surface-2);
+  }
+
+  .p-select-label,
+  .p-select-dropdown {
+    color: var(--ft-text);
+  }
 }
 
 /* ============================================================================

@@ -298,19 +298,6 @@ export interface FirmExpenseNote {
   notes?: string;
 }
 
-export interface FirmSocialOverview {
-  clients: FirmSocialClientRow[];
-}
-
-export interface FirmSocialClientRow {
-  companyTenantId: string;
-  companyName: string;
-  employeeCount: number;
-  pendingLeaveRequests: number;
-  payrollRunsDraftCount: number;
-  dtsPendingCount: number;
-}
-
 /** 0=Tous, 1=En attente, 2=Affectés */
 export type DossierAssignmentFilter = 0 | 1 | 2;
 
@@ -723,10 +710,6 @@ export class FirmGovernanceService {
 
   markExpenseNoteReimbursed(noteId: string): Observable<ApiResponse<unknown>> {
     return this.http.post<ApiResponse<unknown>>(`${this.base}/expense-notes/${noteId}/reimburse`, {});
-  }
-
-  getSocialOverview(): Observable<ApiResponse<FirmSocialOverview>> {
-    return this.http.get<ApiResponse<FirmSocialOverview>>(`${this.base}/social-overview`);
   }
 
   listDossierAssignments(

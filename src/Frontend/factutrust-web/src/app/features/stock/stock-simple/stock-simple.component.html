@@ -15,11 +15,11 @@
             </app-warehouse-selector>
         </div>
         @if (canCreateStockMovement()) {
-            <a routerLink="entry" class="stock-btn stock-btn-entry">
+            <a routerLink="/stock/entries/new" class="stock-btn stock-btn-entry">
                 <i class="pi pi-arrow-down"></i>
                 <span>Entrée Stock</span>
             </a>
-            <a routerLink="exit" class="stock-btn stock-btn-exit">
+            <a routerLink="/stock/issues/new" class="stock-btn stock-btn-exit">
                 <i class="pi pi-arrow-up"></i>
                 <span>Sortie Stock</span>
             </a>

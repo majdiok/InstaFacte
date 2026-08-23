@@ -39,7 +39,31 @@ public enum NumberingDocumentType
     /// Facture fournisseur interne. Ajouté EN FIN d'énumération : les valeurs sont persistées
     /// en entier dans <c>DocumentNumberingSchemes.DocumentType</c>.
     /// </summary>
-    SupplierInvoice = 15
+    SupplierInvoice = 15,
+
+    /// <summary>
+    /// Bon de retour client (articles livrés non facturés). Ajouté EN FIN d'énumération.
+    /// Préfixe BRT — BR est déjà pris par <see cref="PurchaseReceipt"/>.
+    /// </summary>
+    SalesReturnNote = 16,
+
+    /// <summary>
+    /// Clôture Z de caisse POS. Ajouté EN FIN d'énumération : les valeurs sont persistées
+    /// en entier dans <c>DocumentNumberingSchemes.DocumentType</c>.
+    /// </summary>
+    ZReport = 17,
+
+    /// <summary>
+    /// Bon d'entrée de stock générique. Ajouté EN FIN d'énumération.
+    /// Préfixe BE.
+    /// </summary>
+    StockEntry = 18,
+
+    /// <summary>
+    /// Bon de sortie de stock générique. Ajouté EN FIN d'énumération.
+    /// Préfixe BS.
+    /// </summary>
+    StockIssue = 19
 }
 
 public static class NumberingDocumentTypeExtensions
@@ -62,6 +86,10 @@ public static class NumberingDocumentTypeExtensions
         NumberingDocumentType.FeeQuote => "Devis honoraires",
         NumberingDocumentType.PurchaseReceipt => "Bon de réception",
         NumberingDocumentType.SupplierInvoice => "Facture fournisseur",
+        NumberingDocumentType.SalesReturnNote => "Bon de retour",
+        NumberingDocumentType.ZReport => "Clôture Z",
+        NumberingDocumentType.StockEntry => "Bon d'entrée de stock",
+        NumberingDocumentType.StockIssue => "Bon de sortie de stock",
         _ => type.ToString()
     };
 
@@ -83,6 +111,10 @@ public static class NumberingDocumentTypeExtensions
         NumberingDocumentType.FeeQuote => "DEV",
         NumberingDocumentType.PurchaseReceipt => "BR",
         NumberingDocumentType.SupplierInvoice => "FS",
+        NumberingDocumentType.SalesReturnNote => "BRT",
+        NumberingDocumentType.ZReport => "Z",
+        NumberingDocumentType.StockEntry => "BE",
+        NumberingDocumentType.StockIssue => "BS",
         _ => "DOC"
     };
 

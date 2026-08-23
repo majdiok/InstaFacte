@@ -19,14 +19,16 @@ import { SplitButtonModule } from 'primeng/splitbutton';
 import { TooltipModule } from 'primeng/tooltip';
 import { MessageService, MenuItem } from 'primeng/api';
 import { PlatformTenantService } from '@core/services/platform-tenant.service';
-import type {
-  PlatformTenantListItemDto,
-  PlatformTenantStatsDto,
-  SavedTenantView,
-  SubscriptionPlanValue,
-  SubscriptionStatusValue,
-  TaxRegimeValue,
-  TenantSortKey
+import { PlatformPermissionsService } from '@core/services/platform-permissions.service';
+import {
+  PlatformPermission,
+  type PlatformTenantListItemDto,
+  type PlatformTenantStatsDto,
+  type SavedTenantView,
+  type SubscriptionPlanValue,
+  type SubscriptionStatusValue,
+  type TaxRegimeValue,
+  type TenantSortKey
 } from '@core/models/platform.models';
 
 import { FtPageHeaderComponent } from '@core/ui/page-header/ft-page-header.component';
@@ -335,7 +337,7 @@ interface ActiveChip {
             <ft-cell-relative-date [date]="row.lastActivityAt ?? null" />
           </td>
           <td class="col-actions" (click)="$event.stopPropagation()">
-            <ft-cell-actions-menu [items]="actionsForRow(row)" />
+            <ft-cell-actions-menu [items]="rowActionsById().get(row.tenantId) ?? []" />
           </td>
         </tr>
       </ng-template>
@@ -388,7 +390,8 @@ interface ActiveChip {
 
     <!-- Quick view drawer -->
     <app-tenant-quick-view-drawer
-      [(visible)]="drawerOpen"
+      [visible]="drawerOpen()"
+      (visibleChange)="drawerOpen.set($event)"
       [tenantId]="drawerTenantId()"
     />
   `,
@@ -396,43 +399,6 @@ interface ActiveChip {
     `
       :host {
         display: block;
-      }
-
-      /* KPI row layout — 4 cards responsive */
-      .kpi-row {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-        gap: var(--gap-md);
-        margin-bottom: var(--gap-section);
-      }
-
-      /* Search input wrap with leading icon */
-      .search-wrap {
-        position: relative;
-        display: inline-flex;
-        align-items: center;
-      }
-
-      .search-wrap .pi-search {
-        position: absolute;
-        left: 0.7rem;
-        color: var(--ft-text-muted);
-        pointer-events: none;
-        font-size: 0.85rem;
-      }
-
-      .search-wrap input {
-        padding-left: 2rem;
-        min-width: 14rem;
-        width: min(22rem, 100%);
-        background: var(--ft-surface-2);
-        color: var(--ft-text);
-        border: 1px solid var(--ft-border);
-        border-radius: var(--ft-radius);
-      }
-
-      :host ::ng-deep .ft-dd {
-        min-width: 9.5rem;
       }
 
       .chip-clear {
@@ -478,47 +444,10 @@ interface ActiveChip {
         cursor: pointer;
       }
 
-      .num {
-        text-align: right;
-      }
-
-      .col-actions {
-        text-align: end;
-        width: 4rem;
-      }
-
-      .cell-mono {
-        font-family: ui-monospace, SFMono-Regular, monospace;
-        font-size: 0.82rem;
-        color: var(--ft-text-muted);
-      }
-
       .skel-cell {
         display: flex;
         align-items: center;
         gap: 0.6rem;
-      }
-
-      :host ::ng-deep .ft-table.p-datatable .p-datatable-thead > tr > th {
-        font-size: 0.72rem;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: var(--ft-text-muted);
-        border-color: var(--ft-border);
-        background: var(--ft-surface-2);
-        font-weight: 600;
-      }
-
-      :host ::ng-deep .ft-table.p-datatable .p-datatable-tbody > tr > td {
-        border-color: var(--ft-border-subtle);
-      }
-
-      :host ::ng-deep .ft-table.p-datatable .p-datatable-tbody > tr:hover {
-        background: var(--ft-surface-3);
-      }
-
-      :host ::ng-deep .ft-table.p-datatable .p-datatable-tbody > tr.p-highlight {
-        background: var(--ft-accent-surface);
       }
     `
   ]
@@ -527,6 +456,7 @@ export class PlatformTenantsPageComponent implements OnInit, OnDestroy {
   private readonly api = inject(PlatformTenantService);
   private readonly messages = inject(MessageService);
   private readonly router = inject(Router);
+  private readonly permissions = inject(PlatformPermissionsService);
   private readonly destroy$ = new Subject<void>();
   private readonly searchInput$ = new Subject<string>();
 
@@ -572,8 +502,20 @@ export class PlatformTenantsPageComponent implements OnInit, OnDestroy {
   }
 
   // ----- Drawer -----
-  drawerOpen = false;
+  readonly drawerOpen = signal(false);
   readonly drawerTenantId = signal<string | null>(null);
+
+  /** Cache stable des items kebab (évite de recréer command/routerLink à chaque CD). */
+  readonly rowActionsById = computed(() => {
+    this.permissions.current();
+    const map = new Map<string, MenuItem[]>();
+    for (const row of this.rows()) {
+      map.set(row.tenantId, this.buildRowActions(row));
+    }
+    return map;
+  });
+
+  private lastLazyKey = '';
 
   // ----- Saved views -----
   private readonly savedViewsSig = signal<SavedTenantView[]>([]);
@@ -745,17 +687,28 @@ export class PlatformTenantsPageComponent implements OnInit, OnDestroy {
   }
 
   onLazyLoad(event: TableLazyLoadEvent): void {
-    this.tableFirst.set(event.first ?? 0);
-    this.pageSize.set(event.rows ?? 25);
+    const first = event.first ?? 0;
+    const rows = event.rows ?? 25;
+    let sortField = this.sortField();
+    let sortOrder = this.sortOrder();
 
-    // Map PrimeNG sort field/order vers nos paramètres serveur
     if (event.sortField && typeof event.sortField === 'string') {
-      this.sortField.set(event.sortField);
+      sortField = event.sortField;
     }
     if (event.sortOrder !== null && event.sortOrder !== undefined) {
-      this.sortOrder.set(event.sortOrder);
+      sortOrder = event.sortOrder;
     }
 
+    const key = `${first}|${rows}|${sortField}|${sortOrder}`;
+    if (key === this.lastLazyKey) {
+      return;
+    }
+    this.lastLazyKey = key;
+
+    this.tableFirst.set(first);
+    this.pageSize.set(rows);
+    this.sortField.set(sortField);
+    this.sortOrder.set(sortOrder);
     this.loadList();
   }
 
@@ -901,15 +854,15 @@ export class PlatformTenantsPageComponent implements OnInit, OnDestroy {
       return;
     }
     this.drawerTenantId.set(row.tenantId);
-    this.drawerOpen = true;
+    this.drawerOpen.set(true);
   }
 
-  actionsForRow(row: PlatformTenantListItemDto): MenuItem[] {
+  private buildRowActions(row: PlatformTenantListItemDto): MenuItem[] {
     return [
       {
         label: TENANTS_FR['rowAction.viewDetails'],
         icon: 'pi pi-arrow-right',
-        command: () => void this.router.navigate(['/tenants', row.tenantId])
+        routerLink: ['/tenants', row.tenantId]
       },
       {
         label: TENANTS_FR['rowAction.quickView'],
@@ -919,8 +872,18 @@ export class PlatformTenantsPageComponent implements OnInit, OnDestroy {
       {
         label: TENANTS_FR['rowAction.editSubscription'],
         icon: 'pi pi-pencil',
-        command: () => void this.router.navigate(['/tenants', row.tenantId])
+        routerLink: ['/tenants', row.tenantId]
       },
+      ...(this.permissions.has(PlatformPermission.AiManage)
+        ? [
+            {
+              label: TENANTS_FR['rowAction.aiConfig'],
+              icon: 'pi pi-microchip-ai',
+              routerLink: ['/tenants', row.tenantId],
+              queryParams: { tab: 'ai' }
+            }
+          ]
+        : []),
       { separator: true },
       {
         label: row.isActive
@@ -990,7 +953,12 @@ export class PlatformTenantsPageComponent implements OnInit, OnDestroy {
     return (allowed as readonly string[]).includes(f) ? (f as TenantSortKey) : 'name';
   }
 
+  private syncLazyKeyFromState(): void {
+    this.lastLazyKey = `${this.tableFirst()}|${this.pageSize()}|${this.sortField()}|${this.sortOrder()}`;
+  }
+
   private loadList(): void {
+    this.syncLazyKeyFromState();
     this.loading.set(true);
     this.api
       .list({

@@ -20,6 +20,9 @@ public sealed class PlatformAiSettingsSerializationTests
     private static PlatformCursorSettingsDto EmptyCursor =>
         new(false, null, false, null);
 
+    private static PlatformModalSettingsDto EmptyModal =>
+        new(false, null, null, "", "moonshotai/Kimi-K3", false, null);
+
     [Fact]
     public void InferenceDevice_serializes_as_pascal_case_string()
     {
@@ -33,7 +36,8 @@ public sealed class PlatformAiSettingsSerializationTests
             Array.Empty<UnifiedAiModelInfo>(),
             null,
             EmptyOpenRouter,
-            EmptyCursor);
+            EmptyCursor,
+            EmptyModal);
 
         var json = JsonSerializer.Serialize(dto, ApiJsonOptions);
 
@@ -41,8 +45,10 @@ public sealed class PlatformAiSettingsSerializationTests
         Assert.Contains("\"studioAiModelRef\":null", json);
         Assert.Contains("\"openRouter\"", json);
         Assert.Contains("\"cursor\"", json);
+        Assert.Contains("\"modal\"", json);
         Assert.DoesNotContain("sk-", json);
         Assert.DoesNotContain("cursor_", json);
+        Assert.DoesNotContain("wk-", json);
     }
 
     [Fact]
@@ -116,5 +122,80 @@ public sealed class PlatformAiSettingsSerializationTests
         Assert.Equal("xy89", dto.Cursor.ApiKeyLast4);
         Assert.DoesNotContain("sk-", json);
         Assert.DoesNotContain("cursor_", json);
+    }
+
+    [Fact]
+    public void Modal_deserializes_and_does_not_leak_api_key()
+    {
+        const string json = """
+            {
+              "configuredModelRef": "modal:moonshotai/Kimi-K3",
+              "invoiceImportModelRef": null,
+              "studioAiModelRef": null,
+              "serverInvoiceImportVisionModel": null,
+              "inferenceDevice": "Gpu",
+              "isOllamaAssistantConfigured": false,
+              "availableModels": [],
+              "recommendation": null,
+              "openRouter": {
+                "isEnabled": false,
+                "displayName": null,
+                "baseUrl": null,
+                "defaultBaseUrl": "https://openrouter.ai/api/v1",
+                "isApiKeyConfigured": false,
+                "apiKeyLast4": null
+              },
+              "cursor": {
+                "isEnabled": false,
+                "displayName": null,
+                "isApiKeyConfigured": false,
+                "apiKeyLast4": null
+              },
+              "modal": {
+                "isEnabled": true,
+                "displayName": "Kimi 3",
+                "baseUrl": "https://example--ep-kimi-k3-server.us-west.modal.direct/v1",
+                "defaultBaseUrl": "",
+                "defaultModelId": "moonshotai/Kimi-K3",
+                "isApiKeyConfigured": true,
+                "apiKeyLast4": "cret"
+              }
+            }
+            """;
+
+        var dto = JsonSerializer.Deserialize<PlatformAiSettingsDto>(json, ApiJsonOptions);
+
+        Assert.NotNull(dto);
+        Assert.NotNull(dto!.Modal);
+        Assert.True(dto.Modal.IsEnabled);
+        Assert.Equal("cret", dto.Modal.ApiKeyLast4);
+        Assert.Equal("moonshotai/Kimi-K3", dto.Modal.DefaultModelId);
+        Assert.DoesNotContain("wk-", json);
+        Assert.DoesNotContain("ws-", json);
+    }
+
+    [Fact]
+    public void TenantModalSettings_serializes_without_leaking_tokens()
+    {
+        var dto = new TenantModalSettingsDto(
+            HasOverride: true,
+            IsEnabled: true,
+            DisplayName: "Kimi 3",
+            BaseUrl: "https://example--ep-kimi-k3-server.us-west.modal.direct/v1",
+            DefaultBaseUrl: "",
+            DefaultModelId: "moonshotai/Kimi-K3",
+            IsApiKeyConfigured: true,
+            ApiKeyLast4: "cret",
+            PlatformConfiguredModelRef: "modal:moonshotai/Kimi-K3",
+            Platform: new TenantModalPlatformSnapshotDto(true, "modal", null, true, "ht2t"));
+
+        var json = JsonSerializer.Serialize(dto, ApiJsonOptions);
+
+        Assert.Contains("\"hasOverride\":true", json);
+        Assert.Contains("\"apiKeyLast4\":\"cret\"", json);
+        Assert.Contains("\"platform\"", json);
+        Assert.DoesNotContain("wk-", json);
+        Assert.DoesNotContain("ws-", json);
+        Assert.DoesNotContain("TOKEN_SECRET", json);
     }
 }

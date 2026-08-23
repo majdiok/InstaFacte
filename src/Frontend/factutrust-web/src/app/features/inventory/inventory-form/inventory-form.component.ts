@@ -18,6 +18,7 @@ import {
 import { StockService, Warehouse } from '@core/services/stock.service';
 import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
+import { ConfirmationService } from '@core/services/confirmation.service';
 
 import { SelectModule } from 'primeng/select';
 import { InputNumberModule } from 'primeng/inputnumber';
@@ -63,6 +64,7 @@ export class InventoryFormComponent implements OnInit {
     private stockService = inject(StockService);
     private toastService = inject(ToastService);
     private errorHandler = inject(ErrorHandlerService);
+    private confirmationService = inject(ConfirmationService);
     private router = inject(Router);
     private route = inject(ActivatedRoute);
 
@@ -91,20 +93,13 @@ export class InventoryFormComponent implements OnInit {
     hasActiveInventory = computed(() => this.activeInventory() !== null);
 
     /** Whether any line has unsaved count */
-    hasDirtyLines = computed(() =>
-        this.lines().some(
-            (line) =>
-                line.lastSavedCount === null
-                    ? line.countedInput !== line.theoreticalQuantity
-                    : line.countedInput !== line.lastSavedCount
-        )
-    );
+    hasDirtyLines = computed(() => this.lines().some((line) => this.isDirtyLine(line)));
 
-    /** All products have a counted value entered (for validation button) */
+    /** Active inventory with at least one line, not already saving/validating. */
     canValidate = computed(() => {
         const inv = this.activeInventory();
         if (!inv) return false;
-        return inv.products.every((p) => p.isCounted);
+        return this.lines().length > 0 && !this.validating() && !this.saving();
     });
 
     documentDate = computed(() => {
@@ -241,27 +236,51 @@ export class InventoryFormComponent implements OnInit {
             });
     }
 
-    updateLineCount(productId: string, value: number): void {
+    updateLineCount(line: InventoryFormLine, value: number | null): void {
+        const key = this.lineKey(line);
         this.lines.update((list) =>
-            list.map((line) =>
-                line.productId === productId
-                    ? { ...line, countedInput: value }
-                    : line
+            list.map((item) =>
+                this.lineKey(item) === key
+                    ? { ...item, countedInput: value ?? item.theoreticalQuantity }
+                    : item
             )
         );
     }
 
+    lineKey(line: { productId: string; productLotId?: string | null }): string {
+        return `${line.productId}::${line.productLotId ?? ''}`;
+    }
+
+    private countPayload(line: InventoryFormLine): { productId: string; countedQuantity: number; productLotId?: string } {
+        const countedQuantity = this.resolveCountedInput(line);
+        return line.productLotId
+            ? { productId: line.productId, countedQuantity, productLotId: line.productLotId }
+            : { productId: line.productId, countedQuantity };
+    }
+
+    isDirtyLine(line: InventoryFormLine): boolean {
+        if (line.lastSavedCount === null) {
+            return line.countedInput !== line.theoreticalQuantity;
+        }
+        return line.countedInput !== line.lastSavedCount;
+    }
+
+    getDirtyLines(): InventoryFormLine[] {
+        return this.lines().filter((line) => this.isDirtyLine(line));
+    }
+
+    resolveCountedInput(line: InventoryFormLine): number {
+        const value = line.countedInput;
+        return value == null || Number.isNaN(Number(value))
+            ? line.theoreticalQuantity
+            : Number(value);
+    }
+
     saveCounts(): void {
         const inv = this.activeInventory();
-        const list = this.lines();
         if (!inv) return;
 
-        const toSave = list.filter((line) => {
-            if (line.lastSavedCount === null) {
-                return line.countedInput !== line.theoreticalQuantity;
-            }
-            return line.countedInput !== line.lastSavedCount;
-        });
+        const toSave = this.getDirtyLines();
 
         if (toSave.length === 0) {
             this.toastService.add({
@@ -291,10 +310,7 @@ export class InventoryFormComponent implements OnInit {
 
             const line = queue[index];
             this.inventoryService
-                .recordCount(inv.inventoryId, {
-                    productId: line.productId,
-                    countedQuantity: line.countedInput,
-                })
+                .recordCount(inv.inventoryId, this.countPayload(line))
                 .subscribe({
                     next: () => {
                         index++;
@@ -321,8 +337,37 @@ export class InventoryFormComponent implements OnInit {
         const inv = this.activeInventory();
         if (!inv || !this.canValidate()) return;
 
+        const implicitCount = this.lines().filter((l) => !l.isCounted && !this.isDirtyLine(l)).length;
+        const varianceCount = this.lines().filter(
+            (l) => this.resolveCountedInput(l) !== l.theoreticalQuantity
+        ).length;
+
+        const implicitPart = implicitCount > 0
+            ? `${implicitCount} article${implicitCount > 1 ? 's' : ''} non saisi${implicitCount > 1 ? 's' : ''} seront confirmés à la quantité système.`
+            : 'Tous les articles saisis seront enregistrés.';
+        const variancePart = varianceCount > 0
+            ? ` ${varianceCount} écart${varianceCount > 1 ? 's' : ''} ${varianceCount > 1 ? 'seront appliqués' : 'sera appliqué'} au stock.`
+            : ' Aucun ajustement de stock.';
+
+        this.confirmationService.confirm({
+            header: 'Valider l\'inventaire',
+            message: `${implicitPart}${variancePart}`,
+            icon: 'pi pi-exclamation-triangle',
+            acceptLabel: 'Valider',
+            rejectLabel: 'Retour',
+            size: 'md',
+            accept: () => this.executeValidate()
+        });
+    }
+
+    private executeValidate(): void {
+        const inv = this.activeInventory();
+        if (!inv || !this.canValidate()) return;
+
+        const pendingCounts = this.getDirtyLines().map((line) => this.countPayload(line));
+
         this.validating.set(true);
-        this.inventoryService.validateInventory(inv.inventoryId).subscribe({
+        this.inventoryService.validateInventory(inv.inventoryId, { pendingCounts }).subscribe({
             next: (res) => {
                 if (res.success && res.data) {
                     this.toastService.add({

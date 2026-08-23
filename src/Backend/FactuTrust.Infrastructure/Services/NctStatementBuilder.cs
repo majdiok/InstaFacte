@@ -45,11 +45,11 @@ public static class NctStatementBuilder
         decimal PrevA(Func<string, decimal, bool> p) => SumWhere(prev, p);
 
         // Actif — valeurs présentées en net (débit − crédit).
-        var incorp = (CurA((a, n) => Cls(a) == 2 && a.StartsWith("21")), PrevA((a, n) => Cls(a) == 2 && a.StartsWith("21")));
-        var corp = (CurA((a, n) => Cls(a) == 2 && (a.StartsWith("22") || a.StartsWith("23") || a.StartsWith("24"))),
-                    PrevA((a, n) => Cls(a) == 2 && (a.StartsWith("22") || a.StartsWith("23") || a.StartsWith("24"))));
-        var fin = (CurA((a, n) => Cls(a) == 2 && !a.StartsWith("21") && !a.StartsWith("22") && !a.StartsWith("23") && !a.StartsWith("24")),
-                   PrevA((a, n) => Cls(a) == 2 && !a.StartsWith("21") && !a.StartsWith("22") && !a.StartsWith("23") && !a.StartsWith("24")));
+        var incorp = (CurA((a, n) => Cls(a) == 2 && Root2(a) == "21"), PrevA((a, n) => Cls(a) == 2 && Root2(a) == "21"));
+        var corp = (CurA((a, n) => Cls(a) == 2 && (Root2(a) is "22" or "23" or "24")),
+                    PrevA((a, n) => Cls(a) == 2 && (Root2(a) is "22" or "23" or "24")));
+        var fin = (CurA((a, n) => Cls(a) == 2 && Root2(a) is not ("21" or "22" or "23" or "24")),
+                   PrevA((a, n) => Cls(a) == 2 && Root2(a) is not ("21" or "22" or "23" or "24")));
         var ancTotal = (incorp.Item1 + corp.Item1 + fin.Item1, incorp.Item2 + corp.Item2 + fin.Item2);
 
         var stocks = (CurA((a, n) => Cls(a) == 3), PrevA((a, n) => Cls(a) == 3));
@@ -365,6 +365,10 @@ public static class NctStatementBuilder
 
     private static int Cls(string account) =>
         !string.IsNullOrEmpty(account) && char.IsDigit(account[0]) ? account[0] - '0' : 0;
+
+    /// <summary>Sous-classe NCT à deux chiffres (« 21 » vs « 221 » : StartsWith("21") est faux).</summary>
+    private static string Root2(string account) =>
+        account.Length >= 2 ? account[..2] : account;
 
     private static bool IsClient(string a) =>
         a.StartsWith("411") || a.StartsWith("413") || a.StartsWith("416") || a.StartsWith("417") || a.StartsWith("418");

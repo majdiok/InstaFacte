@@ -16,10 +16,12 @@ public interface IOpenAiChatCompletionsClient
         double temperature,
         int maxTokens,
         CancellationToken cancellationToken = default,
-        int? seed = null);
+        int? seed = null,
+        OpenAiCompatibleCallOptions? options = null);
 
     Task<IReadOnlyList<OpenAiRemoteModelInfo>> ListModelsAsync(
         string baseUrl,
         string apiKey,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        OpenAiCompatibleCallOptions? options = null);
 }

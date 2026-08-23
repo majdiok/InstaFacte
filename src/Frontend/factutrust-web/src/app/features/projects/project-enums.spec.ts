@@ -1,0 +1,167 @@
+import {
+  billingOptionsForKind,
+  canActivate,
+  canBeBilled,
+  canComplete,
+  canHold,
+  canHoldOrComplete,
+  canReceiveTime,
+  defaultBillingForKind,
+  isBtp,
+  isEsn,
+  isFixedPriceBilling,
+  parseProjectBillingMode,
+  parseProjectKind,
+  parseProjectStatus,
+  parseProjectTaskStatus,
+  parseProjectTimeStatus,
+  projectStatusBadge,
+  showMilestones,
+  showWorkload,
+  taskStatusBadge,
+  taskStatusForPhaseSortOrder,
+  computeProjectProgressPercent,
+  defaultKanbanColumnsForKind,
+  formatDaysUntilDue,
+  projectKindPillClass,
+  projectUiProfile,
+  TUNISIAN_VAT_OPTIONS,
+  timeStatusBadge
+} from './project-enums';
+
+describe('project-enums', () => {
+  it('parses project status from PascalCase, camelCase and numbers', () => {
+    expect(parseProjectStatus('Draft')).toBe('Draft');
+    expect(parseProjectStatus('draft')).toBe('Draft');
+    expect(parseProjectStatus(0)).toBe('Draft');
+    expect(parseProjectStatus('0')).toBe('Draft');
+    expect(parseProjectStatus('Active')).toBe('Active');
+    expect(parseProjectStatus(1)).toBe('Active');
+    expect(parseProjectStatus('OnHold')).toBe('OnHold');
+    expect(parseProjectStatus(2)).toBe('OnHold');
+  });
+
+  it('exposes lifecycle helpers matching backend CanReceiveTime / CanBeBilled', () => {
+    expect(canActivate('Draft')).toBe(true);
+    expect(canActivate('OnHold')).toBe(true);
+    expect(canActivate('Active')).toBe(false);
+    expect(canHold('Active')).toBe(true);
+    expect(canHold('OnHold')).toBe(false);
+    expect(canComplete('Active')).toBe(true);
+    expect(canComplete('OnHold')).toBe(true);
+    expect(canComplete('Draft')).toBe(false);
+    expect(canHoldOrComplete('Active')).toBe(true);
+    expect(canReceiveTime('Draft')).toBe(false);
+    expect(canReceiveTime('Active')).toBe(true);
+    expect(canBeBilled('Draft')).toBe(false);
+    expect(canBeBilled('Active')).toBe(true);
+    expect(canBeBilled('Completed')).toBe(true);
+    expect(canBeBilled(0)).toBe(false);
+    expect(canBeBilled(1)).toBe(true);
+  });
+
+  it('filters billing options by kind', () => {
+    expect(billingOptionsForKind('Btp').some(o => o.value === 'ProgressSituations')).toBe(true);
+    expect(billingOptionsForKind('Esn').some(o => o.value === 'ProgressSituations')).toBe(false);
+  });
+
+  it('maps kanban phase sortOrder to task status', () => {
+    expect(taskStatusForPhaseSortOrder('Generic', 0)).toBe('Todo');
+    expect(taskStatusForPhaseSortOrder('Generic', 3)).toBe('Done');
+    expect(taskStatusForPhaseSortOrder('Esn', 4)).toBe('Done');
+    expect(taskStatusForPhaseSortOrder('Btp', 1)).toBe('InProgress');
+  });
+
+  it('parses kind and billing mode', () => {
+    expect(parseProjectKind('Esn')).toBe('Esn');
+    expect(parseProjectKind('esn')).toBe('Esn');
+    expect(parseProjectKind(1)).toBe('Esn');
+    expect(parseProjectKind(2)).toBe('Btp');
+    expect(isEsn('Esn')).toBe(true);
+    expect(isBtp('Btp')).toBe(true);
+    expect(isBtp('Esn')).toBe(false);
+    expect(parseProjectBillingMode('TimeAndMaterials')).toBe('TimeAndMaterials');
+    expect(parseProjectBillingMode(1)).toBe('TimeAndMaterials');
+    expect(parseProjectBillingMode(4)).toBe('ProgressSituations');
+    expect(defaultBillingForKind('Esn')).toBe('TimeAndMaterials');
+    expect(defaultBillingForKind('Btp')).toBe('ProgressSituations');
+    expect(defaultBillingForKind('Generic')).toBe('None');
+  });
+
+  it('shows milestones for ESN and Generic+Milestone', () => {
+    expect(showMilestones('Esn', 'None')).toBe(true);
+    expect(showMilestones('Generic', 'Milestone')).toBe(true);
+    expect(showMilestones('Btp', 'ProgressSituations')).toBe(false);
+  });
+
+  it('parses task and time statuses and maps badges', () => {
+    expect(parseProjectTaskStatus('InProgress')).toBe('InProgress');
+    expect(parseProjectTaskStatus(1)).toBe('InProgress');
+    expect(parseProjectTimeStatus('Draft')).toBe('Draft');
+    expect(parseProjectTimeStatus(0)).toBe('Draft');
+    expect(parseProjectTimeStatus(1)).toBe('Submitted');
+    expect(projectStatusBadge('Draft')).toBe('draft');
+    expect(projectStatusBadge('Active')).toBe('active');
+    expect(taskStatusBadge('Done')).toBe('validated');
+    expect(timeStatusBadge(0)).toBe('draft');
+    expect(timeStatusBadge('Validated')).toBe('validated');
+  });
+
+  it('hides the invoice action while the project is still Draft', () => {
+    expect(canBeBilled('Draft')).toBe(false);
+    expect(canBeBilled('Brouillon')).toBe(false);
+  });
+
+  it('shows workload for ESN and TimeAndMaterials billing', () => {
+    expect(showWorkload('Esn', 'None')).toBe(true);
+    expect(showWorkload('Generic', 'TimeAndMaterials')).toBe(true);
+    expect(showWorkload('Generic', 'FixedPrice')).toBe(false);
+    expect(showWorkload('Btp', 'ProgressSituations')).toBe(false);
+  });
+
+  it('detects fixed-price billing mode', () => {
+    expect(isFixedPriceBilling('FixedPrice')).toBe(true);
+    expect(isFixedPriceBilling('TimeAndMaterials')).toBe(false);
+    expect(isFixedPriceBilling(2)).toBe(true);
+  });
+
+  it('exposes Tunisian VAT options', () => {
+    expect(TUNISIAN_VAT_OPTIONS.map(o => o.value)).toEqual([0, 7, 13, 19]);
+  });
+
+  it('computes project progress percent safely', () => {
+    expect(computeProjectProgressPercent(2, 5)).toBe(40);
+    expect(computeProjectProgressPercent(0, 0)).toBe(0);
+  });
+
+  it('exposes kanban columns per kind for creation wizard', () => {
+    expect(defaultKanbanColumnsForKind('Esn')[0].name).toBe('Backlog');
+    expect(defaultKanbanColumnsForKind('Btp')[0].name).toBe('Préparation');
+  });
+
+  it('returns UI profile emphasis by kind', () => {
+    expect(projectUiProfile('Esn').emphasizeTabs).toContain('time');
+    expect(projectUiProfile('Btp').showSiteChip).toBe(true);
+  });
+
+  it('formats relative due labels', () => {
+    const today = new Date();
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    expect(formatDaysUntilDue(null)).toBeNull();
+    expect(formatDaysUntilDue(iso(today))).toBe("Aujourd'hui");
+
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    expect(formatDaysUntilDue(iso(tomorrow))).toBe('Demain');
+
+    const late = new Date(today);
+    late.setDate(late.getDate() - 3);
+    expect(formatDaysUntilDue(iso(late))).toBe('En retard de 3 jours');
+  });
+
+  it('maps kind to pill css class', () => {
+    expect(projectKindPillClass('Esn')).toBe('proj-kind-pill--esn');
+    expect(projectKindPillClass('Btp')).toBe('proj-kind-pill--btp');
+    expect(projectKindPillClass('Generic')).toBe('proj-kind-pill--generic');
+  });
+});

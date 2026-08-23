@@ -22,6 +22,7 @@ public sealed class PlatformAiSettingsService : IPlatformAiSettingsService
 {
     public const string DataProtectionPurpose = "PlatformAiProviderSecrets";
     public const string CursorDataProtectionPurpose = "PlatformCursorSecrets";
+    public const string ModalDataProtectionPurpose = "PlatformModalSecrets";
 
     private const string CacheKeyDefaultModel = "platform:ai:default-model";
     private const string CacheKeyImportModel = "platform:ai:import-model";
@@ -29,13 +30,16 @@ public sealed class PlatformAiSettingsService : IPlatformAiSettingsService
     private const string CacheKeyInferenceDevice = "platform:ai:inference-device";
     private const string CacheKeyOpenRouter = "platform:ai:openrouter";
     private const string CacheKeyCursor = "platform:ai:cursor";
+    private const string CacheKeyModal = "platform:ai:modal";
     private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(60);
 
     private readonly MasterDbContext _db;
     private readonly IMemoryCache _cache;
     private readonly IDataProtector _protector;
     private readonly IDataProtector _cursorProtector;
+    private readonly IDataProtector _modalProtector;
     private readonly OpenRouterSettings _openRouterDefaults;
+    private readonly ModalSettings _modalDefaults;
     private readonly ILogger<PlatformAiSettingsService> _logger;
 
     public PlatformAiSettingsService(
@@ -43,13 +47,16 @@ public sealed class PlatformAiSettingsService : IPlatformAiSettingsService
         IMemoryCache cache,
         IDataProtectionProvider dataProtectionProvider,
         IOptions<OpenRouterSettings> openRouterSettings,
+        IOptions<ModalSettings> modalSettings,
         ILogger<PlatformAiSettingsService> logger)
     {
         _db = db;
         _cache = cache;
         _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
         _cursorProtector = dataProtectionProvider.CreateProtector(CursorDataProtectionPurpose);
+        _modalProtector = dataProtectionProvider.CreateProtector(ModalDataProtectionPurpose);
         _openRouterDefaults = openRouterSettings.Value;
+        _modalDefaults = modalSettings.Value;
         _logger = logger;
     }
 
@@ -405,6 +412,172 @@ public sealed class PlatformAiSettingsService : IPlatformAiSettingsService
         }
     }
 
+    public async Task<PlatformModalSettingsDto> GetModalSettingsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var cached = await _cache.GetOrCreateAsync(CacheKeyModal, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = CacheTtl;
+            try
+            {
+                return await _db.PlatformAiSettings
+                    .AsNoTracking()
+                    .Select(s => new ModalCacheRow(
+                        s.ModalIsEnabled,
+                        s.ModalDisplayName,
+                        s.ModalBaseUrl,
+                        s.ModalEncryptedApiKey,
+                        s.ModalApiKeyLast4))
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
+            catch (Exception ex) when (ex is SqlException or DbUpdateException or InvalidOperationException)
+            {
+                _logger.LogWarning(ex,
+                    "Impossible de lire les credentials Modal depuis PlatformAiSettings.");
+                return null;
+            }
+        });
+
+        return MapModalDto(cached);
+    }
+
+    public async Task<(bool Success, string? Error)> SetModalConfigAsync(
+        bool isEnabled,
+        string? displayName,
+        string? baseUrl,
+        string? apiKey,
+        Guid actorUserId,
+        CancellationToken cancellationToken = default)
+    {
+        string? normalizedUrl = null;
+        if (!string.IsNullOrWhiteSpace(baseUrl))
+        {
+            if (!ModalEndpointUrl.TryNormalize(baseUrl, out normalizedUrl, out var urlError))
+                return (false, urlError ?? "URL Modal invalide.");
+        }
+
+        var current = await GetOrCreateRowAsync(actorUserId, cancellationToken);
+        var urlToStore = normalizedUrl ?? current.ModalBaseUrl;
+
+        if (isEnabled)
+        {
+            var effectiveUrl = urlToStore ?? _modalDefaults.DefaultBaseUrl;
+            if (!ModalEndpointUrl.TryNormalize(effectiveUrl, out var checkedUrl, out var enableUrlError)
+                || string.IsNullOrWhiteSpace(checkedUrl))
+            {
+                return (false, enableUrlError ?? "Une URL de base HTTPS (se terminant par /v1) est requise pour activer Modal.");
+            }
+
+            urlToStore = checkedUrl;
+        }
+
+        string? encrypted = null;
+        string? last4 = null;
+        var hasNewKey = !string.IsNullOrWhiteSpace(apiKey);
+        if (hasNewKey)
+        {
+            var plain = apiKey!.Trim();
+            encrypted = _modalProtector.Protect(plain);
+            last4 = plain.Length >= 4 ? plain[^4..] : plain;
+        }
+        else if (isEnabled && !current.HasModalApiKey)
+        {
+            return (false, "Une clé API (TOKEN_ID.TOKEN_SECRET) est requise pour activer Modal.");
+        }
+
+        current.SetModalConfig(
+            isEnabled,
+            displayName,
+            urlToStore,
+            hasNewKey ? encrypted : null,
+            hasNewKey ? last4 : null);
+        current.SetAuditInfo(actorUserId.ToString(), isUpdate: true);
+
+        await _db.SaveChangesAsync(cancellationToken);
+        InvalidateReadCache();
+        return (true, null);
+    }
+
+    public async Task<PlatformModalCredentials> GetModalCredentialsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var defaultBase = ResolveModalDefaultBaseUrl();
+
+        ModalCacheRow? row;
+        try
+        {
+            row = await _db.PlatformAiSettings
+                .AsNoTracking()
+                .Select(s => new ModalCacheRow(
+                    s.ModalIsEnabled,
+                    s.ModalDisplayName,
+                    s.ModalBaseUrl,
+                    s.ModalEncryptedApiKey,
+                    s.ModalApiKeyLast4))
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is SqlException or DbUpdateException or InvalidOperationException)
+        {
+            _logger.LogWarning(ex, "Impossible de déchiffrer les credentials Modal plateforme.");
+            return new PlatformModalCredentials(false, null, defaultBase);
+        }
+
+        var baseUrl = defaultBase;
+        if (!string.IsNullOrWhiteSpace(row?.BaseUrl)
+            && ModalEndpointUrl.TryNormalize(row.BaseUrl, out var stored, out _)
+            && !string.IsNullOrWhiteSpace(stored))
+        {
+            baseUrl = stored;
+        }
+
+        if (row is null || !row.IsEnabled || string.IsNullOrWhiteSpace(row.EncryptedApiKey))
+            return new PlatformModalCredentials(row?.IsEnabled ?? false, null, baseUrl);
+
+        try
+        {
+            var plain = _modalProtector.Unprotect(row.EncryptedApiKey);
+            if (string.IsNullOrWhiteSpace(plain))
+                return new PlatformModalCredentials(true, null, baseUrl);
+            return new PlatformModalCredentials(true, plain, baseUrl);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Échec du déchiffrement de la clé Modal plateforme.");
+            return new PlatformModalCredentials(true, null, baseUrl);
+        }
+    }
+
+    private PlatformModalSettingsDto MapModalDto(ModalCacheRow? row)
+    {
+        var defaultBase = ResolveModalDefaultBaseUrl();
+        var defaultModel = string.IsNullOrWhiteSpace(_modalDefaults.DefaultModelId)
+            ? "moonshotai/Kimi-K3"
+            : _modalDefaults.DefaultModelId.Trim();
+        var configured = row is not null
+            && !string.IsNullOrWhiteSpace(row.EncryptedApiKey)
+            && !string.IsNullOrWhiteSpace(row.ApiKeyLast4);
+
+        return new PlatformModalSettingsDto(
+            row?.IsEnabled ?? false,
+            row?.DisplayName,
+            row?.BaseUrl,
+            defaultBase,
+            defaultModel,
+            configured,
+            configured ? row!.ApiKeyLast4 : null);
+    }
+
+    private string ResolveModalDefaultBaseUrl()
+    {
+        if (ModalEndpointUrl.TryNormalize(_modalDefaults.DefaultBaseUrl, out var normalized, out _)
+            && !string.IsNullOrWhiteSpace(normalized))
+        {
+            return normalized;
+        }
+
+        return string.Empty;
+    }
+
     private static PlatformCursorSettingsDto MapCursorDto(CursorCacheRow? row)
     {
         var configured = row is not null
@@ -456,6 +629,7 @@ public sealed class PlatformAiSettingsService : IPlatformAiSettingsService
         _cache.Remove(CacheKeyInferenceDevice);
         _cache.Remove(CacheKeyOpenRouter);
         _cache.Remove(CacheKeyCursor);
+        _cache.Remove(CacheKeyModal);
     }
 
     private sealed record OpenRouterCacheRow(
@@ -468,6 +642,13 @@ public sealed class PlatformAiSettingsService : IPlatformAiSettingsService
     private sealed record CursorCacheRow(
         bool IsEnabled,
         string? DisplayName,
+        string? EncryptedApiKey,
+        string? ApiKeyLast4);
+
+    private sealed record ModalCacheRow(
+        bool IsEnabled,
+        string? DisplayName,
+        string? BaseUrl,
         string? EncryptedApiKey,
         string? ApiKeyLast4);
 }

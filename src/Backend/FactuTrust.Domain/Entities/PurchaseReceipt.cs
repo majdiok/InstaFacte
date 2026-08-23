@@ -1,6 +1,7 @@
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Events;
+using FactuTrust.Domain.Services;
 using FactuTrust.Domain.ValueObjects;
 
 namespace FactuTrust.Domain.Entities;
@@ -97,6 +98,10 @@ public sealed class PurchaseReceipt : AggregateRoot
     {
         if (!Status.CanBeEdited())
             return Result.Failure(Error.Validation("Status", "Ce bon de réception ne peut plus être modifié"));
+
+        var sellable = ProductCommercialGuards.EnsureCanAppearOnDocument(product);
+        if (sellable.IsFailure)
+            return sellable;
 
         var lineResult = PurchaseReceiptLine.Create(
             this,

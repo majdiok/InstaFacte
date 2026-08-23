@@ -5,6 +5,7 @@ using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.InvoiceWizard.Commands;
+using FactuTrust.Application.Features.Stock.Services;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Services;
@@ -213,6 +214,17 @@ public sealed class SubmitInvoiceAccountingRoutingTests
             .ReturnsAsync((bool isCreditNote, CancellationToken _) =>
                 Money.FromSignedAmount(isCreditNote ? -1m : 1m, "TND"));
 
+        var trackedStock = new Mock<ITrackedDocumentStockService>();
+        trackedStock
+            .Setup(x => x.ApplyExitsAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<MovementReason>(),
+                It.IsAny<IReadOnlyList<TrackedDocumentLine>>(),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<bool>()))
+            .ReturnsAsync(global::FactuTrust.Domain.Common.Result.Success());
+
         return new SubmitInvoiceCommandHandler(
             draftRepository.Object,
             invoiceRepository.Object,
@@ -229,6 +241,9 @@ public sealed class SubmitInvoiceAccountingRoutingTests
             new Mock<ILinePricingOrchestrator>().Object,
             accounting.Object,
             Options.Create(new AccountingSettings()),
-            NullLogger<SubmitInvoiceCommandHandler>.Instance);
+            NullLogger<SubmitInvoiceCommandHandler>.Instance,
+            new Mock<ICashRegisterSessionRepository>().Object,
+            trackedStock.Object,
+            new Mock<IRecurringContractInvoiceLinker>().Object);
     }
 }

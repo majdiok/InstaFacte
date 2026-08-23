@@ -200,6 +200,7 @@ public sealed class FirmCollaboratorService : IFirmCollaboratorService
             IsActive = true,
             PhoneNumber = string.IsNullOrWhiteSpace(dto.PhoneNumber) ? null : dto.PhoneNumber.Trim()
         };
+        user.ApplyNewInteractiveProductOnboarding();
 
         var createResult = await _userManager.CreateAsync(user, password);
         if (!createResult.Succeeded)

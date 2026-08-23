@@ -81,7 +81,7 @@ public sealed class LetteringServiceAmbientTransactionTests : IDisposable
                 new[]
                 {
                     new JournalLineInput("640", "Charges", 1151.733m, 0m, null, ThirdPartyKind.None),
-                    new JournalLineInput("4210001", "Salaire", 0m, 1151.733m, employeeId, ThirdPartyKind.Employee)
+                    new JournalLineInput("4250001", "Salaire", 0m, 1151.733m, employeeId, ThirdPartyKind.Employee)
                 }).Value;
             payrollEntry.SetAuditInfo("test", false);
 
@@ -90,7 +90,7 @@ public sealed class LetteringServiceAmbientTransactionTests : IDisposable
                 period.Id, true, "PayrollPayment", Guid.NewGuid(),
                 new[]
                 {
-                    new JournalLineInput("4210001", "Paiement", 1151.733m, 0m, employeeId, ThirdPartyKind.Employee),
+                    new JournalLineInput("4250001", "Paiement", 1151.733m, 0m, employeeId, ThirdPartyKind.Employee),
                     new JournalLineInput("5321", "Banque", 0m, 1151.733m, null, ThirdPartyKind.None)
                 }).Value;
             paymentEntry.SetAuditInfo("test", false);
@@ -98,8 +98,8 @@ public sealed class LetteringServiceAmbientTransactionTests : IDisposable
             ctx.JournalEntries.AddRange(payrollEntry, paymentEntry);
             await ctx.SaveChangesAsync(ct);
 
-            payroll421LineId = payrollEntry.Lines.Single(l => l.AccountNumber.StartsWith("421")).Id;
-            payment421LineId = paymentEntry.Lines.Single(l => l.AccountNumber.StartsWith("421")).Id;
+            payroll421LineId = payrollEntry.Lines.Single(l => l.AccountNumber.StartsWith("425")).Id;
+            payment421LineId = paymentEntry.Lines.Single(l => l.AccountNumber.StartsWith("425")).Id;
 
             return await _lettering!.ManualLetterAsync(new[] { payroll421LineId, payment421LineId }, cancellationToken: ct);
         });
@@ -142,7 +142,7 @@ public sealed class LetteringServiceAmbientTransactionTests : IDisposable
                 new[]
                 {
                     new JournalLineInput("640", "Charges", 100m, 0m, null, ThirdPartyKind.None),
-                    new JournalLineInput("4210001", "Salaire", 0m, 100m, employeeId, ThirdPartyKind.Employee)
+                    new JournalLineInput("4250001", "Salaire", 0m, 100m, employeeId, ThirdPartyKind.Employee)
                 }).Value;
             payrollEntry.SetAuditInfo("test", false);
 
@@ -151,7 +151,7 @@ public sealed class LetteringServiceAmbientTransactionTests : IDisposable
                 period.Id, true, "PayrollPayment", Guid.NewGuid(),
                 new[]
                 {
-                    new JournalLineInput("4210001", "Paiement", 100m, 0m, employeeId, ThirdPartyKind.Employee),
+                    new JournalLineInput("4250001", "Paiement", 100m, 0m, employeeId, ThirdPartyKind.Employee),
                     new JournalLineInput("5321", "Banque", 0m, 100m, null, ThirdPartyKind.None)
                 }).Value;
             paymentEntry.SetAuditInfo("test", false);
@@ -159,8 +159,8 @@ public sealed class LetteringServiceAmbientTransactionTests : IDisposable
             ctx.JournalEntries.AddRange(payrollEntry, paymentEntry);
             await ctx.SaveChangesAsync(ct);
 
-            payroll421LineId = payrollEntry.Lines.Single(l => l.AccountNumber.StartsWith("421")).Id;
-            payment421LineId = paymentEntry.Lines.Single(l => l.AccountNumber.StartsWith("421")).Id;
+            payroll421LineId = payrollEntry.Lines.Single(l => l.AccountNumber.StartsWith("425")).Id;
+            payment421LineId = paymentEntry.Lines.Single(l => l.AccountNumber.StartsWith("425")).Id;
 
             var letterResult = await _lettering!.ManualLetterAsync(new[] { payroll421LineId, payment421LineId }, cancellationToken: ct);
             if (letterResult.IsFailure)

@@ -152,6 +152,10 @@ public sealed class CursorSdkBridgeHostContractTests
                 "Unknown tool name(s) in disallowedTools",
                 firstError.Error,
                 StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(
+                "sandboxing is not supported",
+                firstError.Error,
+                StringComparison.OrdinalIgnoreCase);
         }
     }
 

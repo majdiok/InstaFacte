@@ -34,6 +34,7 @@ public sealed class GenerateInvoiceFromDeliveryNotesCommandHandler
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
     private readonly IAuditService _auditService;
+    private readonly ITenantUnitOfWork _unitOfWork;
 
     public GenerateInvoiceFromDeliveryNotesCommandHandler(
         IDeliveryNoteRepository deliveryNoteRepository,
@@ -42,7 +43,8 @@ public sealed class GenerateInvoiceFromDeliveryNotesCommandHandler
         IInvoiceNumberGenerator numberGenerator,
         ITenantContext tenantContext,
         ICurrentUser currentUser,
-        IAuditService auditService)
+        IAuditService auditService,
+        ITenantUnitOfWork unitOfWork)
     {
         _deliveryNoteRepository = deliveryNoteRepository;
         _invoiceRepository = invoiceRepository;
@@ -51,9 +53,14 @@ public sealed class GenerateInvoiceFromDeliveryNotesCommandHandler
         _tenantContext = tenantContext;
         _currentUser = currentUser;
         _auditService = auditService;
+        _unitOfWork = unitOfWork;
     }
 
-    public async Task<Result<Guid>> Handle(
+    public Task<Result<Guid>> Handle(
+        GenerateInvoiceFromDeliveryNotesCommand request, CancellationToken cancellationToken)
+        => _unitOfWork.ExecuteAsync(ct => HandleCoreAsync(request, ct), cancellationToken);
+
+    private async Task<Result<Guid>> HandleCoreAsync(
         GenerateInvoiceFromDeliveryNotesCommand request, CancellationToken cancellationToken)
     {
         var dto = request.Dto;
@@ -91,15 +98,19 @@ public sealed class GenerateInvoiceFromDeliveryNotesCommandHandler
                 return Result.Failure<Guid>(Error.Validation("Status",
                     $"Le bon de livraison {note.Number.Value} ne peut pas être facturé " +
                     $"(statut : {note.Status.ToDisplayString()})"));
+
+            if (!note.HasInvoiceableQuantity)
+                return Result.Failure<Guid>(Error.Validation("Lines",
+                    $"Le bon de livraison {note.Number.Value} n'a plus de quantité facturable (retours)."));
         }
 
         var deliveredLines = notes
-            .SelectMany(n => n.Lines.Where(l => l.DeliveredQuantity > 0))
+            .SelectMany(n => n.Lines.Where(l => l.InvoiceableQuantity > 0))
             .ToList();
 
         if (deliveredLines.Count == 0)
             return Result.Failure<Guid>(Error.Validation("Lines",
-                "Aucune ligne livrée sur les bons sélectionnés"));
+                "Toutes les quantités livrées ont été retournées — impossible de facturer."));
 
         var tenantId = _tenantContext.TenantId;
         if (tenantId is null || tenantId == Guid.Empty)
@@ -161,7 +172,7 @@ public sealed class GenerateInvoiceFromDeliveryNotesCommandHandler
                 g.Key.DiscountPercent,
                 g.Key.FodecRatePercent,
                 Product = g.First().Product,
-                Quantity = g.Sum(l => l.DeliveredQuantity),
+                Quantity = g.Sum(l => l.InvoiceableQuantity),
                 Designation = g.First().Designation
             })
             .OrderBy(g => g.Designation)
@@ -201,18 +212,25 @@ public sealed class GenerateInvoiceFromDeliveryNotesCommandHandler
             await _deliveryNoteRepository.UpdateAsync(note, cancellationToken);
         }
 
-        await _auditService.LogAsync(
-            AuditActions.Invoice.Created,
-            "Invoice",
-            invoice.Id,
-            newValues: new
-            {
-                invoice.Number.Value,
-                invoice.TotalAmount.Amount,
-                DeliveryNoteCount = orderedNotes.Count,
-                DeliveryNotes = orderedNotes.Select(n => n.Number.Value).ToList()
-            },
-            cancellationToken: cancellationToken);
+        try
+        {
+            await _auditService.LogAsync(
+                AuditActions.Invoice.Created,
+                "Invoice",
+                invoice.Id,
+                newValues: new
+                {
+                    invoice.Number.Value,
+                    invoice.TotalAmount.Amount,
+                    DeliveryNoteCount = orderedNotes.Count,
+                    DeliveryNotes = orderedNotes.Select(n => n.Number.Value).ToList()
+                },
+                cancellationToken: cancellationToken);
+        }
+        catch
+        {
+            // Audit failure must not roll back a successful invoice generation.
+        }
 
         return Result.Success(invoice.Id);
     }

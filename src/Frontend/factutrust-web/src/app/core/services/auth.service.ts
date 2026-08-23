@@ -6,6 +6,11 @@ import { environment } from '@environments/environment';
 import { AppModule } from '@core/models/app-module';
 import { createHttpContextSkipGlobalErrorUi } from '@core/http-context';
 import { clearWarehouseStorage } from './warehouse-storage';
+import {
+  ProductOnboardingChecklist,
+  ProductOnboardingStatus,
+  normalizeOnboardingStatus
+} from '@core/onboarding/product-onboarding.models';
 
 export interface User {
   id: string;
@@ -29,6 +34,9 @@ export interface User {
   /** AppModule enum values enabled for this user */
   enabledModuleIds?: number[];
   effectivePermissions?: string[];
+  productOnboardingStatus?: ProductOnboardingStatus;
+  productOnboardingVersion?: number;
+  productOnboardingChecklist?: ProductOnboardingChecklist;
 }
 
 export interface AuthResponse {
@@ -225,7 +233,15 @@ export function normalizeTenantKind(raw: unknown, role?: unknown): NormalizedTen
 function normalizeUserFields(user: User): User {
   const role = normalizeTenantRole(user.role);
   const tenantKind = normalizeTenantKind(user.tenantKind, role);
-  return { ...user, role, tenantKind };
+  return {
+    ...user,
+    role,
+    tenantKind,
+    productOnboardingStatus:
+      user.productOnboardingStatus === undefined || user.productOnboardingStatus === null
+        ? 'Completed'
+        : normalizeOnboardingStatus(user.productOnboardingStatus)
+  };
 }
 
 /**
@@ -595,6 +611,28 @@ export class AuthService {
     } else {
       sessionStorage.setItem(this.USER_KEY, json);
     }
+  }
+
+  /** Merge first-login tour fields into the in-memory + stored user (no token change). */
+  patchLocalOnboarding(partial: {
+    productOnboardingStatus?: ProductOnboardingStatus;
+    productOnboardingVersion?: number;
+    productOnboardingChecklist?: ProductOnboardingChecklist;
+  }): void {
+    const current = this.userSignal();
+    if (!current) {
+      return;
+    }
+    const next: User = {
+      ...current,
+      ...partial,
+      productOnboardingStatus:
+        partial.productOnboardingStatus === undefined || partial.productOnboardingStatus === null
+          ? current.productOnboardingStatus
+          : normalizeOnboardingStatus(partial.productOnboardingStatus)
+    };
+    this.userSignal.set(next);
+    this.persistUser(next);
   }
 
   private clearAuth(): void {

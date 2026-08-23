@@ -555,16 +555,6 @@ public sealed class FirmGovernanceController : ControllerBase
         return Ok(ApiResponse<object>.Ok(null!, "Note marquée remboursée."));
     }
 
-    [HttpGet("social-overview")]
-    public async Task<ActionResult<ApiResponse<FirmSocialOverviewDto>>> GetSocialOverview(CancellationToken cancellationToken)
-    {
-        if (!EnsureEnabled(out var disabled)) return disabled!;
-        var tenantId = GetHomeTenantId();
-        if (tenantId is null) return Unauthorized();
-        var dto = await _governance.GetSocialOverviewAsync(tenantId.Value, cancellationToken);
-        return Ok(ApiResponse<FirmSocialOverviewDto>.Ok(dto));
-    }
-
     [HttpGet("dossier-assignments")]
     [Authorize(Roles = nameof(UserRole.FirmManager))]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<FirmDossierAssignmentListItemDto>>>> ListDossierAssignments(

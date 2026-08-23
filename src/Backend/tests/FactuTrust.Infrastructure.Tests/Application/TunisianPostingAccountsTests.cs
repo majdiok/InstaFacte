@@ -1,3 +1,4 @@
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.Accounting;
 using Xunit;
 
@@ -16,13 +17,13 @@ public sealed class TunisianPostingAccountsTests
     [InlineData("707", nameof(TunisianPostingAccounts.SalesOfGoods))]
     [InlineData("705", nameof(TunisianPostingAccounts.SalesOfServices))]
     [InlineData("607", nameof(TunisianPostingAccounts.PurchasesOfGoods))]
-    [InlineData("218", nameof(TunisianPostingAccounts.DefaultFixedAsset))]
+    [InlineData("228", nameof(TunisianPostingAccounts.DefaultFixedAsset))]
     [InlineData("436711", nameof(TunisianPostingAccounts.VatCollected))]
     [InlineData("43666", nameof(TunisianPostingAccounts.VatDeductibleGoods))]
     [InlineData("43662", nameof(TunisianPostingAccounts.VatDeductibleFixedAssets))]
-    [InlineData("4477", nameof(TunisianPostingAccounts.Fodec))]
-    [InlineData("4478", nameof(TunisianPostingAccounts.FiscalStampOnSale))]
-    [InlineData("6371", nameof(TunisianPostingAccounts.FiscalStampOnPurchase))]
+    [InlineData("43652", nameof(TunisianPostingAccounts.Fodec))]
+    [InlineData("4371", nameof(TunisianPostingAccounts.FiscalStampOnSale))]
+    [InlineData("6654", nameof(TunisianPostingAccounts.FiscalStampOnPurchase))]
     public void Account_KeepsItsHistoricalNumber(string expected, string constantName)
     {
         var actual = typeof(TunisianPostingAccounts)
@@ -50,5 +51,11 @@ public sealed class TunisianPostingAccountsTests
             TunisianPostingAccounts.FiscalStampOnPurchase);
         Assert.StartsWith("4", TunisianPostingAccounts.FiscalStampOnSale);
         Assert.StartsWith("6", TunisianPostingAccounts.FiscalStampOnPurchase);
+    }
+
+    [Fact]
+    public void PayrollLoanSetting_DefaultsToNctAdvanceSubdivision()
+    {
+        Assert.Equal("421.1", new AccountingSettings().PayrollEmployeeLoansAccount);
     }
 }

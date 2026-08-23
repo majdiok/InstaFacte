@@ -44,6 +44,11 @@ public sealed class GetProductByBarcodeQueryHandler
         if (product is null)
             return Result.Failure<ProductDetailDto>(Error.NotFound("Product", Guid.Empty));
 
+        if (product.IsVariantTemplate)
+            return Result.Failure<ProductDetailDto>(Error.Validation(
+                "Product",
+                "Un modèle de variantes ne peut pas être scanné. Choisissez une variante (SKU)."));
+
         return Result.Success(ProductDetailMapper.ToDetailDto(product));
     }
 }

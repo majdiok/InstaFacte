@@ -17,7 +17,9 @@ export enum AppModule {
   Forecasting = 12,
   Studio = 13,
   Payroll = 14,
-  Honoraires = 15
+  Honoraires = 15,
+  Projects = 16,
+  RecurringContracts = 17
 }
 
 export const APP_MODULE_OPTIONS: { value: AppModule; label: string }[] = [
@@ -36,5 +38,7 @@ export const APP_MODULE_OPTIONS: { value: AppModule; label: string }[] = [
   { value: AppModule.Forecasting, label: 'Prévisions IA' },
   { value: AppModule.Studio, label: 'Studio (low-code)' },
   { value: AppModule.Payroll, label: 'RH & Paie' },
-  { value: AppModule.Honoraires, label: 'Honoraires' }
+  { value: AppModule.Honoraires, label: 'Honoraires' },
+  { value: AppModule.Projects, label: 'Projets' },
+  { value: AppModule.RecurringContracts, label: 'Contrats récurrents' }
 ];

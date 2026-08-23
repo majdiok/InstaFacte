@@ -52,8 +52,8 @@ public sealed class ImputeSalesOrderOnInvoiceHandler : INotificationHandler<Invo
         // Rapprochement par produit : la ligne de facture ne porte pas d'identifiant de ligne
         // de commande. Les lignes libres (ProductId vide) sont ignorées.
         var byProduct = invoice.Lines
-            .Where(l => l.ProductId != Guid.Empty && l.Quantity > 0)
-            .GroupBy(l => l.ProductId)
+            .Where(l => l.ProductId.HasValue && l.Quantity > 0)
+            .GroupBy(l => l.ProductId!.Value)
             .ToDictionary(g => g.Key, g => g.Sum(l => l.Quantity));
 
         var imputations = new List<(Guid LineId, decimal Quantity)>();

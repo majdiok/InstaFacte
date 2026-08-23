@@ -98,7 +98,11 @@ describe('numbering tab state', () => {
       NumberingDocumentType.PhysicalInventory,
       NumberingDocumentType.CashReceipt,
       NumberingDocumentType.CashExpense,
-      NumberingDocumentType.BankDeposit
+      NumberingDocumentType.BankDeposit,
+      NumberingDocumentType.SalesReturnNote,
+      NumberingDocumentType.ZReport,
+      NumberingDocumentType.StockEntry,
+      NumberingDocumentType.StockIssue
     ];
 
     for (let index = 0; index < expectedTypes.length; index++) {

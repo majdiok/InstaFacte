@@ -45,6 +45,17 @@ public sealed class PlatformAiSettings : Entity
 
     public string? CursorApiKeyLast4 { get; private set; }
 
+    public bool ModalIsEnabled { get; private set; }
+
+    public string? ModalDisplayName { get; private set; }
+
+    /// <summary>Optional Modal base URL override (no trailing slash, includes /v1); null = appsettings default.</summary>
+    public string? ModalBaseUrl { get; private set; }
+
+    public string? ModalEncryptedApiKey { get; private set; }
+
+    public string? ModalApiKeyLast4 { get; private set; }
+
     private PlatformAiSettings() { }
 
     public static PlatformAiSettings CreateDefaults() => new() { DefaultModelRef = null };
@@ -110,4 +121,26 @@ public sealed class PlatformAiSettings : Entity
     }
 
     public bool HasCursorApiKey => !string.IsNullOrWhiteSpace(CursorEncryptedApiKey);
+
+    public void SetModalConfig(
+        bool isEnabled,
+        string? displayName,
+        string? baseUrl,
+        string? encryptedApiKey,
+        string? apiKeyLast4)
+    {
+        ModalIsEnabled = isEnabled;
+        ModalDisplayName = string.IsNullOrWhiteSpace(displayName)
+            ? (string.IsNullOrWhiteSpace(ModalDisplayName) ? "Modal (Kimi)" : ModalDisplayName)
+            : displayName.Trim();
+        ModalBaseUrl = string.IsNullOrWhiteSpace(baseUrl) ? null : baseUrl.Trim().TrimEnd('/');
+
+        if (encryptedApiKey is not null)
+        {
+            ModalEncryptedApiKey = string.IsNullOrWhiteSpace(encryptedApiKey) ? null : encryptedApiKey;
+            ModalApiKeyLast4 = string.IsNullOrWhiteSpace(apiKeyLast4) ? null : apiKeyLast4.Trim();
+        }
+    }
+
+    public bool HasModalApiKey => !string.IsNullOrWhiteSpace(ModalEncryptedApiKey);
 }

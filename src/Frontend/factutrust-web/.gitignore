@@ -7,3 +7,5 @@ src/assets/virtual-street/textures/
 # Regenerated on every e2e run; must not be versioned.
 test-results/
 playwright-report/
+junit.xml
+e2e/test-results/

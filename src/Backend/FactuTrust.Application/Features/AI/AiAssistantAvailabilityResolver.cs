@@ -10,9 +10,12 @@ public static class AiAssistantAvailabilityResolver
         string? openRouterApiKey,
         bool cursorSdkEnabled,
         bool cursorDbEnabled,
-        string? cursorApiKey) =>
+        string? cursorApiKey,
+        bool modalEnabled = false,
+        string? modalApiKey = null) =>
         (openRouterEnabled && !string.IsNullOrEmpty(openRouterApiKey))
-        || (cursorSdkEnabled && cursorDbEnabled && !string.IsNullOrEmpty(cursorApiKey));
+        || (cursorSdkEnabled && cursorDbEnabled && !string.IsNullOrEmpty(cursorApiKey))
+        || (modalEnabled && !string.IsNullOrEmpty(modalApiKey));
 
     /// <summary>
     /// Vrai si l'assistant peut raisonnablement être considéré disponible (badge UI).

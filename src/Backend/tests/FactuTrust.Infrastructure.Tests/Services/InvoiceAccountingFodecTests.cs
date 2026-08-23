@@ -15,15 +15,15 @@ using Xunit;
 namespace FactuTrust.Infrastructure.Tests.Services;
 
 /// <summary>
-/// Comptabilisation FODEC sur factures de vente et avoirs (compte 4477).
+/// Comptabilisation FODEC sur factures de vente et avoirs (compte 43652).
 /// </summary>
 public sealed class InvoiceAccountingFodecTests
 {
     private static ChartOfAccount Acc(string number, AccountNatureType nature = AccountNatureType.Debit) =>
         ChartOfAccount.Create(number, $"Compte {number}", int.Parse(number[..1].ToString()), null, nature).Value;
 
-    private static ChartOfAccount Parent447() =>
-        ChartOfAccount.Create("447", "État - autres comptes", 4, "44", AccountNatureType.Credit, isSystem: true).Value;
+    private static ChartOfAccount Parent4365() =>
+        ChartOfAccount.Create("4365", "État, impôts et taxes à payer", 4, "436", AccountNatureType.Credit, isSystem: true).Value;
 
     private static (AccountingService service, List<JournalEntry> captured, Mock<IChartOfAccountRepository> chart) BuildService(
         bool includeFodecAccount = true,
@@ -39,9 +39,9 @@ public sealed class InvoiceAccountingFodecTests
 
                 return n switch
                 {
-                    "447" => Parent447(),
+                    "4365" => Parent4365(),
                     AccountingService.FodecAccountNumber => Acc(AccountingService.FodecAccountNumber, AccountNatureType.Credit),
-                    "4478" => Acc("4478", AccountNatureType.Credit),
+                    "4371" => Acc("4371", AccountNatureType.Credit),
                     "436711" => Acc("436711", AccountNatureType.Credit),
                     "707" => Acc("707", AccountNatureType.Credit),
                     "4111" => Acc("4111", AccountNatureType.Debit),
@@ -121,7 +121,7 @@ public sealed class InvoiceAccountingFodecTests
         (entry.Lines.Sum(l => l.DebitAmount.Amount), entry.Lines.Sum(l => l.CreditAmount.Amount));
 
     [Fact]
-    public async Task GenerateInvoiceSaleEntry_WithFodec_PostsCredit4477AndBalances()
+    public async Task GenerateInvoiceSaleEntry_WithFodec_PostsCredit43652AndBalances()
     {
         var invoice = NewSaleInvoice();
         AddCustomLine(invoice, "Television", 1m, 450m, VatRate.Standard, fodecApplicable: true);
@@ -143,7 +143,7 @@ public sealed class InvoiceAccountingFodecTests
     }
 
     [Fact]
-    public async Task GenerateInvoiceSaleEntry_WithoutFodec_DoesNotPost4477()
+    public async Task GenerateInvoiceSaleEntry_WithoutFodec_DoesNotPost43652()
     {
         var invoice = NewSaleInvoice();
         AddCustomLine(invoice, "Service", 1m, 4600m, VatRate.Standard, fodecApplicable: false);
@@ -161,7 +161,7 @@ public sealed class InvoiceAccountingFodecTests
     }
 
     [Fact]
-    public async Task GenerateInvoiceCreditNoteEntry_WithFodec_PostsDebit4477AndBalances()
+    public async Task GenerateInvoiceCreditNoteEntry_WithFodec_PostsDebit43652AndBalances()
     {
         var invoice = NewSaleInvoice(InvoiceType.CreditNote);
         AddCustomLine(invoice, "Retour", 10m, 100m, VatRate.Standard, fodecApplicable: true);
@@ -199,7 +199,7 @@ public sealed class InvoiceAccountingFodecTests
     }
 
     [Fact]
-    public async Task GenerateInvoiceSaleEntry_AutoCreates4477WhenMissing()
+    public async Task GenerateInvoiceSaleEntry_AutoCreates43652WhenMissing()
     {
         var autoCreated = new List<ChartOfAccount>();
         var invoice = NewSaleInvoice();
@@ -213,7 +213,7 @@ public sealed class InvoiceAccountingFodecTests
         chart.Verify(x => x.AddAsync(
             It.Is<ChartOfAccount>(a => a.AccountNumber == AccountingService.FodecAccountNumber),
             It.IsAny<CancellationToken>()), Times.Once);
-        Assert.Contains(autoCreated, a => a.AccountNumber == AccountingService.FodecAccountNumber && a.ParentAccountNumber == "447");
+        Assert.Contains(autoCreated, a => a.AccountNumber == AccountingService.FodecAccountNumber && a.ParentAccountNumber == "4365");
 
         var entry = Assert.Single(captured);
         Assert.Contains(entry.Lines, l => l.AccountNumber == AccountingService.FodecAccountNumber);

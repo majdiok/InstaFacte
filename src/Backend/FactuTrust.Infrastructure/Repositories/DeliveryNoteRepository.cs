@@ -1,6 +1,7 @@
 using System.Reflection;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.ValueObjects;
@@ -190,8 +191,41 @@ public sealed class DeliveryNoteRepository : IDeliveryNoteRepository
             .Where(d => d.ClientId == clientId &&
                         d.InvoiceId == null &&
                         (d.Status == DeliveryNoteStatus.Delivered ||
-                         d.Status == DeliveryNoteStatus.PartiallyDelivered))
+                         d.Status == DeliveryNoteStatus.PartiallyDelivered) &&
+                        d.Lines.Any(l => l.DeliveredQuantity - l.ReturnedQuantity > 0))
             .OrderBy(d => d.IssueDate)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<DeliveryNote>> GetEligibleForReturnAsync(
+        Guid? clientId = null,
+        string? search = null,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        var query = context.DeliveryNotes
+            .Include(d => d.Client)
+            .Include(d => d.Warehouse)
+            .Include(d => d.Lines)
+                .ThenInclude(l => l.Product)
+            .Where(d => d.InvoiceId == null &&
+                        (d.Status == DeliveryNoteStatus.Delivered ||
+                         d.Status == DeliveryNoteStatus.PartiallyDelivered) &&
+                        d.Lines.Any(l => l.DeliveredQuantity - l.ReturnedQuantity > 0));
+
+        if (clientId.HasValue)
+            query = query.Where(d => d.ClientId == clientId.Value);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(d =>
+                d.Number.Value.Contains(term) ||
+                d.Client.Name.Contains(term));
+        }
+
+        return await query
+            .OrderByDescending(d => d.IssueDate)
             .ToListAsync(cancellationToken);
     }
 
@@ -340,7 +374,50 @@ public sealed class DeliveryNoteRepository : IDeliveryNoteRepository
                 context.Entry(product.Category).State = EntityState.Unchanged;
         }
 
+        // Detached aggregates may call IncrementVersion() (MarkAsInvoiced, etc.) before UpdateAsync.
+        // Attach() sets OriginalValue = CurrentValue, breaking optimistic concurrency (0 rows updated).
+        // ApplyReturnsAsync avoids this by mutating a tracked entity; restore the store token here.
+        var dbVersion = await context.DeliveryNotes
+            .AsNoTracking()
+            .Where(d => d.Id == deliveryNote.Id)
+            .Select(d => (int?)d.Version)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (dbVersion is not null)
+            context.Entry(deliveryNote).Property(d => d.Version).OriginalValue = dbVersion.Value;
+
         await context.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<Result> ApplyReturnsAsync(
+        Guid deliveryNoteId,
+        IReadOnlyList<(Guid LineId, decimal Quantity)> returns,
+        string updatedBy,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        var deliveryNote = await context.DeliveryNotes
+            .Include(d => d.Lines)
+            .FirstOrDefaultAsync(d => d.Id == deliveryNoteId, cancellationToken);
+        if (deliveryNote is null)
+            return Result.Failure(Error.NotFound("DeliveryNote", deliveryNoteId));
+
+        if (deliveryNote.InvoiceId.HasValue)
+            return Result.Failure(Error.Conflict(
+                "Le bon de livraison a été facturé entre-temps. Rechargez la page."));
+
+        foreach (var (lineId, quantity) in returns)
+        {
+            var recordResult = deliveryNote.RecordReturn(lineId, quantity);
+            if (recordResult.IsFailure)
+                return recordResult;
+        }
+
+        if (!string.IsNullOrWhiteSpace(updatedBy))
+            deliveryNote.SetAuditInfo(updatedBy, isUpdate: true);
+
+        await context.SaveChangesAsync(cancellationToken);
+        return Result.Success();
     }
 
     public async Task DeleteAsync(DeliveryNote entity, CancellationToken cancellationToken = default)

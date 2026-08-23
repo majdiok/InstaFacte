@@ -1,11 +1,14 @@
 using System.Text.Json.Nodes;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.Studio.Common;
+using FactuTrust.Application.Features.Studio.Common.SqlReport;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities.Studio;
 using FactuTrust.Domain.Enums;
 using MediatR;
+using Microsoft.Extensions.Options;
 
 namespace FactuTrust.Application.Features.Studio.Reports;
 
@@ -23,8 +26,14 @@ internal static class ReportExecutor
         ICustomFieldRepository fields,
         ICustomRecordRepository records,
         IExistingDataSourceProvider existing,
+        ISqlReportEngine sqlReports,
         CancellationToken ct)
     {
+        // Troisième branche, strictement additive : les deux chemins historiques ci-dessous sont
+        // inchangés, y compris leur troncature en mémoire (désormais SIGNALÉE, plus silencieuse).
+        if (kind == CustomReportDataSourceKind.SqlQuery)
+            return await sqlReports.RunAsync(tenantId, dataSourceRef, def, cancellationToken: ct);
+
         if (kind == CustomReportDataSourceKind.ExistingSource)
         {
             var source = ExistingDataSourceCatalog.Find(dataSourceRef);
@@ -35,7 +44,10 @@ internal static class ReportExecutor
             if (rows is null)
                 return Result.Failure<ReportResultDto>(Error.Validation("dataSourceRef", "Source de données non autorisée."));
 
-            return Result.Success(CustomReportRunner.Run(source.Fields, rows, def));
+            // Le chargement est plafonné : au plafond, les agrégats portent sur un échantillon et
+            // doivent le DIRE. Un total silencieusement faux est le pire défaut d'un état.
+            return Result.Success(CustomReportRunner.Run(source.Fields, rows, def)
+                with { Truncated = rows.Count >= MaxRecords });
         }
 
         var entity = await entities.GetByKeyAsync(tenantId, dataSourceRef, ct);
@@ -51,7 +63,8 @@ internal static class ReportExecutor
 
         var rawRecords = await records.GetAllForReportAsync(tenantId, entity.Id, MaxRecords, ct);
         var parsed = rawRecords.Select(r => ParseRecord(r.DataJson)).ToList();
-        return Result.Success(CustomReportRunner.Run(meta, parsed, def));
+        return Result.Success(CustomReportRunner.Run(meta, parsed, def)
+            with { Truncated = rawRecords.Count >= MaxRecords });
     }
 
     private static IReadOnlyDictionary<string, object?> ParseRecord(string dataJson)
@@ -155,7 +168,14 @@ public sealed class UpsertCustomReportCommandHandler : IRequestHandler<UpsertCus
             return Result.Failure<CustomReportDto>(Error.Validation("displayName", "Le nom du rapport est obligatoire."));
 
         // Validate the data source against its kind (deny-by-default for existing sources).
-        if (req.DataSourceKind == CustomReportDataSourceKind.ExistingSource)
+        if (req.DataSourceKind == CustomReportDataSourceKind.SqlQuery)
+        {
+            // Même politique qu'à l'exécution : table classée ET permission détenue. On refuse à
+            // l'enregistrement plutôt que de laisser un état qui échouera à chaque lancement.
+            if (!SqlReportAccessPolicy.TryAuthorize(req.DataSourceRef, _currentUser.HasPermission, out _, out var accessError))
+                return Result.Failure<CustomReportDto>(Error.Validation("dataSourceRef", accessError!));
+        }
+        else if (req.DataSourceKind == CustomReportDataSourceKind.ExistingSource)
         {
             if (!ExistingDataSourceCatalog.IsWhitelisted(req.DataSourceRef))
                 return Result.Failure<CustomReportDto>(Error.Validation("dataSourceRef", "Source de données non autorisée."));
@@ -243,18 +263,20 @@ public sealed class RunSavedReportQueryHandler : IRequestHandler<RunSavedReportQ
     private readonly ICustomFieldRepository _fields;
     private readonly ICustomRecordRepository _records;
     private readonly IExistingDataSourceProvider _existing;
+    private readonly ISqlReportEngine _sqlReports;
     private readonly ICurrentUser _currentUser;
 
     public RunSavedReportQueryHandler(
         ICustomReportRepository reports, ICustomEntityRepository entities,
         ICustomFieldRepository fields, ICustomRecordRepository records,
-        IExistingDataSourceProvider existing, ICurrentUser currentUser)
+        IExistingDataSourceProvider existing, ISqlReportEngine sqlReports, ICurrentUser currentUser)
     {
         _reports = reports;
         _entities = entities;
         _fields = fields;
         _records = records;
         _existing = existing;
+        _sqlReports = sqlReports;
         _currentUser = currentUser;
     }
 
@@ -269,7 +291,7 @@ public sealed class RunSavedReportQueryHandler : IRequestHandler<RunSavedReportQ
 
         var def = ReportDefinitionJson.Parse(report.DefinitionJson);
         return await ReportExecutor.ExecuteAsync(tenantId, report.DataSourceKind, report.DataSourceRef, def,
-            _entities, _fields, _records, _existing, cancellationToken);
+            _entities, _fields, _records, _existing, _sqlReports, cancellationToken);
     }
 }
 
@@ -283,16 +305,18 @@ public sealed class RunReportPreviewQueryHandler : IRequestHandler<RunReportPrev
     private readonly ICustomFieldRepository _fields;
     private readonly ICustomRecordRepository _records;
     private readonly IExistingDataSourceProvider _existing;
+    private readonly ISqlReportEngine _sqlReports;
     private readonly ICurrentUser _currentUser;
 
     public RunReportPreviewQueryHandler(
         ICustomEntityRepository entities, ICustomFieldRepository fields, ICustomRecordRepository records,
-        IExistingDataSourceProvider existing, ICurrentUser currentUser)
+        IExistingDataSourceProvider existing, ISqlReportEngine sqlReports, ICurrentUser currentUser)
     {
         _entities = entities;
         _fields = fields;
         _records = records;
         _existing = existing;
+        _sqlReports = sqlReports;
         _currentUser = currentUser;
     }
 
@@ -302,7 +326,7 @@ public sealed class RunReportPreviewQueryHandler : IRequestHandler<RunReportPrev
             return Result.Failure<ReportResultDto>(err);
 
         return await ReportExecutor.ExecuteAsync(tenantId, request.Kind, request.DataSourceRef, request.Definition ?? new ReportDefinition(),
-            _entities, _fields, _records, _existing, cancellationToken);
+            _entities, _fields, _records, _existing, _sqlReports, cancellationToken);
     }
 }
 
@@ -315,12 +339,18 @@ public sealed class GetReportSourcesQueryHandler : IRequestHandler<GetReportSour
     private readonly ICustomEntityRepository _entities;
     private readonly ICustomFieldRepository _fields;
     private readonly ICurrentUser _currentUser;
+    private readonly OllamaSettings _settings;
 
-    public GetReportSourcesQueryHandler(ICustomEntityRepository entities, ICustomFieldRepository fields, ICurrentUser currentUser)
+    public GetReportSourcesQueryHandler(
+        ICustomEntityRepository entities,
+        ICustomFieldRepository fields,
+        ICurrentUser currentUser,
+        IOptions<OllamaSettings> settings)
     {
         _entities = entities;
         _fields = fields;
         _currentUser = currentUser;
+        _settings = settings.Value;
     }
 
     public async Task<Result<IReadOnlyList<ReportSourceDto>>> Handle(GetReportSourcesQuery request, CancellationToken cancellationToken)
@@ -343,6 +373,119 @@ public sealed class GetReportSourcesQueryHandler : IRequestHandler<GetReportSour
         foreach (var s in ExistingDataSourceCatalog.Sources)
             sources.Add(new ReportSourceDto("existing", s.Key, s.DisplayName, s.Fields));
 
+        // Tables réelles du tenant : uniquement celles que CET utilisateur a le droit de lire.
+        // Champs volontairement vides — chargés à la sélection (GetReportSourceFieldsQuery).
+        if (_settings.EnableStudioSqlReportEngine)
+        {
+            foreach (var table in SqlReportAccessPolicy.AllowedFor(_currentUser.HasPermission))
+            {
+                sources.Add(new ReportSourceDto(
+                    "sql",
+                    table.Table,
+                    table.DisplayName,
+                    Array.Empty<ReportFieldMeta>(),
+                    SqlReportAccessPolicy.DomainLabel(table.Domain)));
+            }
+        }
+
         return Result.Success<IReadOnlyList<ReportSourceDto>>(sources);
+    }
+}
+
+// ---- Fields of one source (lazy: the SQL sources are introspected on demand) ----
+
+public sealed record GetReportSourceFieldsQuery(string Kind, string DataSourceRef)
+    : IRequest<Result<IReadOnlyList<ReportFieldMeta>>>;
+
+public sealed class GetReportSourceFieldsQueryHandler
+    : IRequestHandler<GetReportSourceFieldsQuery, Result<IReadOnlyList<ReportFieldMeta>>>
+{
+    private readonly ICustomEntityRepository _entities;
+    private readonly ICustomFieldRepository _fields;
+    private readonly ISqlReportEngine _sqlReports;
+    private readonly ICurrentUser _currentUser;
+
+    public GetReportSourceFieldsQueryHandler(
+        ICustomEntityRepository entities, ICustomFieldRepository fields,
+        ISqlReportEngine sqlReports, ICurrentUser currentUser)
+    {
+        _entities = entities;
+        _fields = fields;
+        _sqlReports = sqlReports;
+        _currentUser = currentUser;
+    }
+
+    public async Task<Result<IReadOnlyList<ReportFieldMeta>>> Handle(
+        GetReportSourceFieldsQuery request, CancellationToken cancellationToken)
+    {
+        if (!StudioContext.TryGet(_currentUser, out var tenantId, out _, out var err))
+            return Result.Failure<IReadOnlyList<ReportFieldMeta>>(err);
+
+        switch ((request.Kind ?? string.Empty).ToLowerInvariant())
+        {
+            case "sql":
+                return await _sqlReports.DescribeAsync(tenantId, request.DataSourceRef, cancellationToken);
+
+            case "existing":
+            {
+                var source = ExistingDataSourceCatalog.Find(request.DataSourceRef);
+                return source is null
+                    ? Result.Failure<IReadOnlyList<ReportFieldMeta>>(
+                        Error.Validation("dataSourceRef", "Source de données non autorisée."))
+                    : Result.Success(source.Fields);
+            }
+
+            default:
+            {
+                var entity = await _entities.GetByKeyAsync(tenantId, request.DataSourceRef, cancellationToken);
+                if (entity is null)
+                    return Result.Failure<IReadOnlyList<ReportFieldMeta>>(
+                        Error.Validation("dataSourceRef", $"Table « {request.DataSourceRef} » introuvable."));
+
+                var fieldDefs = await _fields.ListByEntityAsync(tenantId, entity.Id, includeInactive: false, cancellationToken);
+                return Result.Success<IReadOnlyList<ReportFieldMeta>>(fieldDefs
+                    .OrderBy(f => f.SortOrder)
+                    .Select(f => new ReportFieldMeta(f.Key, f.Label,
+                        f.FieldType is CustomFieldType.Number or CustomFieldType.Decimal))
+                    .ToList());
+            }
+        }
+    }
+}
+
+// ---- Ready-made business reports ----
+
+public sealed record GetReportPresetsQuery : IRequest<Result<IReadOnlyList<ReportPresetDto>>>;
+
+public sealed class GetReportPresetsQueryHandler
+    : IRequestHandler<GetReportPresetsQuery, Result<IReadOnlyList<ReportPresetDto>>>
+{
+    private readonly ICurrentUser _currentUser;
+    private readonly OllamaSettings _settings;
+
+    public GetReportPresetsQueryHandler(ICurrentUser currentUser, IOptions<OllamaSettings> settings)
+    {
+        _currentUser = currentUser;
+        _settings = settings.Value;
+    }
+
+    public Task<Result<IReadOnlyList<ReportPresetDto>>> Handle(
+        GetReportPresetsQuery request, CancellationToken cancellationToken)
+    {
+        if (!StudioContext.TryGet(_currentUser, out _, out _, out var err))
+            return Task.FromResult(Result.Failure<IReadOnlyList<ReportPresetDto>>(err));
+
+        if (!_settings.EnableStudioSqlReportEngine)
+            return Task.FromResult(Result.Success<IReadOnlyList<ReportPresetDto>>(Array.Empty<ReportPresetDto>()));
+
+        // Un préréglage n'apparaît que si l'utilisateur a le droit de lire sa table de faits.
+        var presets = SqlReportPresetCatalog.All
+            .Where(p => SqlReportAccessPolicy.TryAuthorize(p.FactTable, _currentUser.HasPermission, out _, out _))
+            .Select(p => new ReportPresetDto(
+                p.Key, p.DisplayName, p.Description,
+                SqlReportAccessPolicy.DomainLabel(p.Domain), p.FactTable, p.PeriodFieldKey is not null))
+            .ToList();
+
+        return Task.FromResult(Result.Success<IReadOnlyList<ReportPresetDto>>(presets));
     }
 }

@@ -1,4 +1,5 @@
 using FactuTrust.Application.DTOs;
+using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.ValueObjects;
@@ -59,6 +60,24 @@ public interface IDeliveryNoteRepository : IRepository<DeliveryNote>
     /// </summary>
     Task<IReadOnlyList<DeliveryNote>> GetUninvoicedByClientAsync(
         Guid clientId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Delivered / partially delivered notes that still have invoiceable quantity (for return notes).
+    /// </summary>
+    Task<IReadOnlyList<DeliveryNote>> GetEligibleForReturnAsync(
+        Guid? clientId = null,
+        string? search = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Applies confirmed return quantities on a tracked BL instance so <c>Version</c>
+    /// concurrency uses the store token, not a detached incremented value.
+    /// </summary>
+    Task<Result> ApplyReturnsAsync(
+        Guid deliveryNoteId,
+        IReadOnlyList<(Guid LineId, decimal Quantity)> returns,
+        string updatedBy,
         CancellationToken cancellationToken = default);
 
     /// <summary>

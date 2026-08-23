@@ -50,6 +50,7 @@ public static class StudioAiPlanDefaults
     public static string RequiredPermission(StudioAiPlanKind kind) => kind switch
     {
         StudioAiPlanKind.View => Permissions.Studio.DesignForms,
+        StudioAiPlanKind.Report => Permissions.Studio.DesignReports,
         _ => Permissions.Studio.DesignEntities
     };
 }

@@ -1,6 +1,7 @@
 using System;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Common.Models;
+using FactuTrust.Application.Features.Stock.Queries;
 using FactuTrust.Domain.Constants;
 using Microsoft.Extensions.Http;
 using FactuTrust.Domain.Entities;
@@ -20,21 +21,20 @@ public partial class PdfService : IPdfService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IDocumentTemplateRegistry _templateRegistry;
     private readonly OfficialForms.OfficialFormStamper _officialFormStamper;
+    private readonly IStockTraceabilityQuery? _traceability;
 
-    /// <param name="officialFormStamper">
-    /// Tamponnage des formulaires officiels préimprimés. Paramètre optionnel : le conteneur
-    /// l'injecte en production, et les appelants historiques à deux arguments restent valides.
-    /// </param>
     public PdfService(
         IHttpClientFactory httpClientFactory,
         IDocumentTemplateRegistry templateRegistry,
-        OfficialForms.OfficialFormStamper? officialFormStamper = null)
+        OfficialForms.OfficialFormStamper? officialFormStamper = null,
+        IStockTraceabilityQuery? traceability = null)
     {
         _httpClientFactory = httpClientFactory;
         _templateRegistry = templateRegistry;
         _officialFormStamper = officialFormStamper
             ?? new OfficialForms.OfficialFormStamper(
                 Microsoft.Extensions.Logging.Abstractions.NullLogger<OfficialForms.OfficialFormStamper>.Instance);
+        _traceability = traceability;
     }
     // TextStyle par défaut avec fallback pour supporter les caractères Unicode (français, etc.)
     // L'ordre est important : QuestPDF essaiera chaque police dans l'ordre jusqu'à trouver celle qui supporte les glyphes nécessaires
@@ -113,7 +113,23 @@ public partial class PdfService : IPdfService
         // Aucun rendu historique individuel pour le BL : on passe toujours par le pipeline unifié
         // (le modèle par défaut "standard" fournit une mise en page propre).
         var logoBytes = await TryDownloadLogoAsync(issuer?.LogoUrl, cancellationToken).ConfigureAwait(false);
-        var model = Templates.DocumentRenderMappers.FromDeliveryNote(deliveryNote, issuer, logoBytes);
+        IReadOnlyDictionary<Guid, string>? lotLabels = null;
+        if (_traceability is not null)
+        {
+            lotLabels = await _traceability.GetLotLabelsAsync(
+                StockDocumentKind.DeliveryNote,
+                deliveryNote.Lines.Select(l => l.Id).ToList(),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        var model = Templates.DocumentRenderMappers.FromDeliveryNote(deliveryNote, issuer, logoBytes, lotLabels);
+        return _templateRegistry.Get(templateKey).Render(model);
+    }
+
+    public async Task<byte[]> GenerateSalesReturnNotePdfAsync(SalesReturnNote note, Company? issuer, string? templateKey, CancellationToken cancellationToken = default)
+    {
+        var logoBytes = await TryDownloadLogoAsync(issuer?.LogoUrl, cancellationToken).ConfigureAwait(false);
+        var model = Templates.DocumentRenderMappers.FromSalesReturnNote(note, issuer, logoBytes);
         return _templateRegistry.Get(templateKey).Render(model);
     }
 
@@ -671,8 +687,17 @@ public partial class PdfService : IPdfService
         });
     }
 
-    public Task<byte[]> GeneratePurchaseReceiptPdfAsync(PurchaseReceipt receipt, CancellationToken cancellationToken = default)
+    public async Task<byte[]> GeneratePurchaseReceiptPdfAsync(PurchaseReceipt receipt, CancellationToken cancellationToken = default)
     {
+        IReadOnlyDictionary<Guid, string>? lotLabels = null;
+        if (_traceability is not null)
+        {
+            lotLabels = await _traceability.GetLotLabelsAsync(
+                StockDocumentKind.PurchaseReceipt,
+                receipt.Lines.Select(l => l.Id).ToList(),
+                cancellationToken).ConfigureAwait(false);
+        }
+
         var document = Document.Create(container =>
         {
             container.Page(page =>
@@ -740,7 +765,10 @@ public partial class PdfService : IPdfService
                         {
                             table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(4).Text(line.LineNumber.ToString()).FontSize(8);
                             table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(4).Text(line.ProductCode).FontSize(8);
-                            table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(4).Text(line.ProductName).FontSize(8);
+                            table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(4).Text(
+                                lotLabels is not null && lotLabels.TryGetValue(line.Id, out var lot) && !string.IsNullOrWhiteSpace(lot)
+                                    ? $"{line.ProductName} — {lot}"
+                                    : line.ProductName).FontSize(8);
                             table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(4).AlignRight().Text($"{line.ReceivedQuantity:N3}").FontSize(8);
                             table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(4).AlignRight().Text(line.DiscountPercent?.ToString("N1") ?? "-").FontSize(8);
                             table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(4).AlignRight().Text($"{line.UnitPrice.Amount:N3}").FontSize(8);
@@ -787,7 +815,7 @@ public partial class PdfService : IPdfService
             });
         });
 
-        return Task.FromResult(document.GeneratePdf());
+        return document.GeneratePdf();
     }
 
     /// <summary>
@@ -912,6 +940,108 @@ public partial class PdfService : IPdfService
                 {
                     text.Span($"Transfert {stockTransfer.Number.Value} — Généré le {DateTime.UtcNow:dd/MM/yyyy HH:mm}").FontSize(8).FontColor(Colors.Grey.Medium);
                 });
+            });
+        });
+
+        var bytes = document.GeneratePdf();
+        return Task.FromResult(bytes);
+    }
+
+    public Task<byte[]> GenerateStockVoucherPdfAsync(StockVoucher voucher, CancellationToken cancellationToken = default)
+    {
+        var isEntry = voucher.Kind == StockVoucherKind.Entry;
+        var title = isEntry ? "BON D'ENTRÉE DE STOCK" : "BON DE SORTIE DE STOCK";
+        var accent = isEntry ? Colors.Teal.Darken2 : Colors.Orange.Darken2;
+
+        var document = Document.Create(container =>
+        {
+            container.Page(page =>
+            {
+                page.Size(PageSizes.A4);
+                page.Margin(30);
+                page.DefaultTextStyle(DefaultTextStyle);
+
+                page.Header().Row(row =>
+                {
+                    row.RelativeItem().Column(column =>
+                    {
+                        column.Item().Text(title).FontSize(22).Bold().FontColor(accent);
+                        column.Item().Text($"N° {voucher.Number.Value}").FontSize(14);
+                        column.Item().PaddingTop(5).Text($"Date : {voucher.VoucherDate:dd/MM/yyyy}");
+                        column.Item().Text($"Motif : {voucher.Kind.ToVoucherReasonDisplay(voucher.Reason)}").FontSize(9);
+                        if (!string.IsNullOrEmpty(voucher.ExternalReference))
+                            column.Item().Text($"Réf : {voucher.ExternalReference}").FontSize(9);
+                    });
+
+                    row.RelativeItem().AlignRight().Column(column =>
+                    {
+                        column.Item().Text($"Statut : {voucher.Status.ToDisplayString()}").Bold();
+                        column.Item().Text($"Dépôt : {voucher.Warehouse?.Name ?? "—"}").FontSize(10);
+                        if (voucher.ValidatedAt.HasValue)
+                            column.Item().Text($"Validé le : {voucher.ValidatedAt:dd/MM/yyyy HH:mm}").FontSize(8);
+                    });
+                });
+
+                page.Content().PaddingVertical(20).Column(column =>
+                {
+                    column.Item().Table(table =>
+                    {
+                        table.ColumnsDefinition(columns =>
+                        {
+                            columns.ConstantColumn(30);
+                            columns.ConstantColumn(80);
+                            columns.RelativeColumn(3);
+                            columns.ConstantColumn(50);
+                            columns.ConstantColumn(70);
+                            columns.ConstantColumn(80);
+                            columns.ConstantColumn(80);
+                        });
+
+                        table.Header(header =>
+                        {
+                            var headerStyle = TextStyle.Default.FontSize(9).Bold().FontColor(Colors.White);
+                            header.Cell().Background(accent).Padding(5).Text("#").Style(headerStyle);
+                            header.Cell().Background(accent).Padding(5).Text("Code").Style(headerStyle);
+                            header.Cell().Background(accent).Padding(5).Text("Produit").Style(headerStyle);
+                            header.Cell().Background(accent).Padding(5).Text("Unité").Style(headerStyle);
+                            header.Cell().Background(accent).Padding(5).AlignRight().Text("Qté").Style(headerStyle);
+                            header.Cell().Background(accent).Padding(5).AlignRight().Text("Coût").Style(headerStyle);
+                            header.Cell().Background(accent).Padding(5).AlignRight().Text("Valorisation").Style(headerStyle);
+                        });
+
+                        foreach (var line in voucher.Lines.OrderBy(l => l.LineNumber))
+                        {
+                            var bg = line.LineNumber % 2 == 0 ? Colors.Grey.Lighten4 : Colors.White;
+                            table.Cell().Background(bg).Padding(5).Text(line.LineNumber.ToString()).FontSize(9);
+                            table.Cell().Background(bg).Padding(5).Text(line.ProductCode).FontSize(9);
+                            table.Cell().Background(bg).Padding(5).Text(line.ProductName).FontSize(9);
+                            table.Cell().Background(bg).Padding(5).Text(line.Unit ?? "—").FontSize(9);
+                            table.Cell().Background(bg).Padding(5).AlignRight().Text(line.Quantity.ToString("N3")).FontSize(9);
+                            table.Cell().Background(bg).Padding(5).AlignRight().Text(line.UnitCost.ToString("N3")).FontSize(9);
+                            table.Cell().Background(bg).Padding(5).AlignRight().Text(line.LineValue.ToString("N3")).FontSize(9);
+                        }
+                    });
+
+                    column.Item().PaddingTop(10).AlignRight().Text(
+                        $"Total qté : {voucher.TotalQuantity:N3}    Valorisation : {voucher.TotalValue:N3} TND")
+                        .Bold().FontSize(10);
+
+                    if (!string.IsNullOrEmpty(voucher.Notes))
+                    {
+                        column.Item().PaddingTop(15).Text("Notes :").Bold().FontSize(9);
+                        column.Item().Text(voucher.Notes).FontSize(9);
+                    }
+
+                    if (voucher.Status == StockVoucherStatus.Cancelled && !string.IsNullOrEmpty(voucher.CancellationReason))
+                    {
+                        column.Item().PaddingTop(10).Text($"Annulé : {voucher.CancellationReason}")
+                            .FontColor(Colors.Red.Darken2).FontSize(9);
+                    }
+                });
+
+                page.Footer().AlignCenter().Text(
+                    $"{voucher.Kind.ToDisplayString()} {voucher.Number.Value} — Généré le {DateTime.UtcNow:dd/MM/yyyy HH:mm}")
+                    .FontSize(8).FontColor(Colors.Grey.Medium);
             });
         });
 

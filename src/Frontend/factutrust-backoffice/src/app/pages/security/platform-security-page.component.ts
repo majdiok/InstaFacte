@@ -90,7 +90,7 @@ import { SECURITY_FR } from './security.i18n.fr';
       </p-tablist>
       <p-tabpanels>
       <p-tabpanel [value]="0">
-        <section class="kpi-row" role="region" aria-label="Sessions">
+        <section class="kpi-row kpi-row--compact" role="region" aria-label="Sessions">
           <ft-kpi-card
             [label]="t('sessions.kpi.total')"
             [value]="sessionsPage()?.totalCount ?? null"
@@ -138,7 +138,7 @@ import { SECURITY_FR } from './security.i18n.fr';
           [showCurrentPageReport]="true"
           [currentPageReportTemplate]="'{first}–{last} sur {totalRecords}'"
           responsiveLayout="scroll"
-          styleClass="p-datatable-sm ft-security-table"
+          styleClass="p-datatable-sm ft-table"
           [tableStyle]="{ 'min-width': '64rem' }">
           <ng-template pTemplate="header">
             <tr>
@@ -217,7 +217,7 @@ import { SECURITY_FR } from './security.i18n.fr';
 
       <!-- ===== Tab Failed logins ===== -->
       <p-tabpanel [value]="1">
-        <section class="kpi-row" role="region" aria-label="Tentatives échouées">
+        <section class="kpi-row kpi-row--compact" role="region" aria-label="Tentatives échouées">
           <ft-kpi-card
             [label]="t('failed.kpi.total')"
             [value]="failedPage()?.totalCount ?? null"
@@ -313,7 +313,7 @@ import { SECURITY_FR } from './security.i18n.fr';
           [showCurrentPageReport]="true"
           [currentPageReportTemplate]="'{first}–{last} sur {totalRecords}'"
           responsiveLayout="scroll"
-          styleClass="p-datatable-sm ft-security-table"
+          styleClass="p-datatable-sm ft-table"
           [tableStyle]="{ 'min-width': '54rem' }">
           <ng-template pTemplate="header">
             <tr>
@@ -378,13 +378,6 @@ import { SECURITY_FR } from './security.i18n.fr';
     `
       :host {
         display: block;
-      }
-
-      .kpi-row {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-        gap: var(--gap-md);
-        margin-bottom: var(--gap-md);
       }
 
       :host ::ng-deep .ft-security-tabs .p-tablist-tab-list {
@@ -492,28 +485,6 @@ import { SECURITY_FR } from './security.i18n.fr';
         text-align: end;
         white-space: nowrap;
         width: 4rem;
-      }
-
-      :host ::ng-deep .ft-dd {
-        min-width: 11rem;
-      }
-
-      :host ::ng-deep .ft-cal .p-inputtext {
-        min-width: 9rem;
-      }
-
-      :host ::ng-deep .ft-security-table.p-datatable .p-datatable-thead > tr > th {
-        font-size: 0.72rem;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: var(--ft-text-muted);
-        border-color: var(--ft-border);
-        background: var(--ft-surface-2);
-        font-weight: 600;
-      }
-
-      :host ::ng-deep .ft-security-table.p-datatable .p-datatable-tbody > tr > td {
-        border-color: var(--ft-border-subtle);
       }
     `
   ]

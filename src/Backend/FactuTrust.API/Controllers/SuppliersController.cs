@@ -2,6 +2,7 @@ using FactuTrust.API.Authorization;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Suppliers.Commands;
 using FactuTrust.Application.Features.Suppliers.Queries;
+using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -99,7 +100,7 @@ public class SuppliersController : ControllerBase
         if (result.IsFailure)
         {
             if (result.Error.Code == "Conflict")
-                return Conflict(ApiResponse<Guid>.Fail(result.Error.Description));
+                return Conflict(MapConflict(result.Error));
             return BadRequest(ApiResponse<Guid>.Fail(result.Error.Description));
         }
 
@@ -179,5 +180,15 @@ public class SuppliersController : ControllerBase
         _logger.LogInformation("Supplier {SupplierId} deleted", id);
 
         return Ok(ApiResponse<object>.Ok(null!, "Fournisseur supprimé."));
+    }
+
+    private static FactuTrust.Application.DTOs.ApiResponse<object> MapConflict(Error error)
+    {
+        // InventoryController définit un autre ApiResponse<T> dans ce namespace
+        // (Fail remplit `error`, pas `message`/`errors`). On force le DTO applicatif.
+        var response = FactuTrust.Application.DTOs.ApiResponse<object>.Fail(error.Description, error.Code);
+        if (error.Metadata is { Count: > 0 })
+            response = response with { Data = error.Metadata };
+        return response;
     }
 }

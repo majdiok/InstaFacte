@@ -78,7 +78,7 @@ import { PAYMENTS_FR } from './payments.i18n.fr';
       </ng-container>
     </ft-page-header>
 
-    <section class="kpi-row">
+    <section class="kpi-row kpi-row--3col">
       <ft-kpi-card
         [label]="t('kpi.total')"
         [value]="page()?.items?.length ?? null"
@@ -98,7 +98,7 @@ import { PAYMENTS_FR } from './payments.i18n.fr';
     } @else if ((page()?.items?.length ?? 0) === 0) {
       <ft-empty-state variant="table-empty" [title]="t('empty.title')" [description]="t('empty.desc')" />
     } @else {
-      <p-table [value]="page()!.items" styleClass="ft-table">
+      <p-table [value]="page()!.items" styleClass="p-datatable-sm ft-table">
         <ng-template pTemplate="header">
           <tr>
             <th>{{ t('col.provider') }}</th>
@@ -208,14 +208,6 @@ import { PAYMENTS_FR } from './payments.i18n.fr';
   `,
   styles: [
     `
-      .kpi-row {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: var(--gap-md);
-        margin-bottom: var(--gap-lg);
-      }
-      @media (max-width: 720px) { .kpi-row { grid-template-columns: 1fr; } }
-
       .provider-code {
         display: block;
         font-family: var(--font-mono, ui-monospace);

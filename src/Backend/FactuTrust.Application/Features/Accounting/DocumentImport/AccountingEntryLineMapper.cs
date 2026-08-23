@@ -119,8 +119,8 @@ public static class AccountingEntryLineMapper
         var stamp = MillimeRounding.Round(Math.Abs(document.FiscalStampAmount ?? 0m));
         if (stamp > 0m)
         {
-            // Vente : collecté pour l'État → crédit d'un compte de dette (4478).
-            // Achat : supporté par l'entreprise → débit d'un compte de charge (6371).
+            // Vente : collecté pour l'État → crédit d'un compte de dette (4371).
+            // Achat : supporté par l'entreprise → débit d'un compte de charge (6654).
             lines.Add(new ProposedLineDto
             {
                 AccountNumber = accounts.StampAccount,

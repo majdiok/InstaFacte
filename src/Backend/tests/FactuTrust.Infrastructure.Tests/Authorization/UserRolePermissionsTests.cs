@@ -110,4 +110,51 @@ public sealed class UserRolePermissionsTests
         Assert.Contains(Permissions.HonorairesInvoices.Create, permissions);
         Assert.Contains(Permissions.HonorairesPayments.Read, permissions);
     }
+
+    [Theory]
+    [InlineData(UserRole.Administrator)]
+    [InlineData(UserRole.Accountant)]
+    [InlineData(UserRole.Supervisor)]
+    public void CompanyManagers_CanManageProjects(UserRole role)
+    {
+        var permissions = role.GetPermissions();
+        Assert.Contains(Permissions.Projects.Read, permissions);
+        Assert.Contains(Permissions.Projects.Create, permissions);
+        Assert.Contains(Permissions.ProjectTime.Validate, permissions);
+        Assert.Contains(Permissions.ProjectBilling.Create, permissions);
+    }
+
+    [Fact]
+    public void Auditor_CanReadProjectsOnly()
+    {
+        var permissions = UserRole.Auditor.GetPermissions();
+        Assert.Contains(Permissions.Projects.Read, permissions);
+        Assert.DoesNotContain(Permissions.Projects.Create, permissions);
+        Assert.DoesNotContain(Permissions.ProjectBilling.Create, permissions);
+    }
+
+    [Fact]
+    public void AppModuleProjects_ExposesPermissionKeys()
+    {
+        Assert.Contains(Permissions.Projects.Read, AppModule.Projects.GetPermissionKeys());
+        Assert.Equal(16, (int)AppModule.Projects);
+        Assert.Equal(15, (int)AppModule.Honoraires);
+    }
+
+    [Fact]
+    public void FirmAccountant_DoesNotInclude_ProjectsPermissions()
+    {
+        var permissions = UserRole.FirmAccountant.GetPermissions();
+        Assert.DoesNotContain(Permissions.Projects.Read, permissions);
+        Assert.DoesNotContain(Permissions.ProjectTime.Read, permissions);
+        Assert.DoesNotContain(Permissions.ProjectBilling.Create, permissions);
+    }
+
+    [Fact]
+    public void FirmDelegatedCatalogs_DoNotInclude_Projects()
+    {
+        Assert.DoesNotContain(Permissions.Projects.Read, DelegatedPermissionCatalog.FirmAccountantDelegated);
+        Assert.DoesNotContain(Permissions.Projects.Read, DelegatedPermissionCatalog.FirmManagerDelegated);
+        Assert.DoesNotContain(Permissions.ProjectTime.Validate, DelegatedPermissionCatalog.FirmAccountantDelegated);
+    }
 }

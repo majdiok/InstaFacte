@@ -30,16 +30,26 @@ du code, le mot est écrit par le modèle.*
 `src/Backend/FactuTrust.API/appsettings.json` → `Features:AccountingFirms` :
 
 ```jsonc
-"FirmRevisionEnabled": false,          // interrupteur maître — 503 sur /api/firm/revision
-"FirmRevisionSweepEnabled": false,     // balayage nocturne du portefeuille
-"FirmRevisionAiEnabled": false,        // rédaction par le modèle ; OFF = notes déterministes
+"FirmRevisionEnabled": true,           // interrupteur maître — 503 sur /api/firm/revision
+"FirmRevisionSweepEnabled": true,      // balayage nocturne du portefeuille
+"FirmRevisionAiEnabled": true,         // rédaction par le modèle ; OFF = notes déterministes
 "FirmRevisionAiTimeoutSeconds": 60,
 "FirmRevisionMaxAnomaliesInPrompt": 40
 ```
 
-Front : `FirmFeatureFlagsService` → `firmRevision` (défaut `false`, `localStorage`
-`ft.firm.featureFlags`). **Basculer les deux ensemble** : front actif avec back éteint donne un
-écran dont toutes les requêtes répondent 503.
+**`FirmRevisionEnabled` est la garde de fonctionnalité, et la seule.** Elle commande à la fois les
+503 du contrôleur et la délivrance des permissions `firm:revision:*` dans le profil cabinet
+(`FirmGovernanceNativeAccess`). Côté front, la présence de `firm:revision:view` suffit donc à
+décider de l'entrée de menu comme de l'accès à la route : il n'y a pas de second drapeau à
+synchroniser.
+
+Front : `FirmFeatureFlagsService` → `firmRevision` (défaut `true`, `localStorage`
+`ft.firm.featureFlags`). Ce n'est **pas** la garde de fonctionnalité mais un interrupteur local de
+secours : l'éteindre retire l'entrée de menu (`filterFirmRevisionNav`) *et* ferme la route, les
+deux ensemble, pour ne jamais laisser un lien mort.
+
+> `appsettings.Production.json` n'override aucun de ces drapeaux : la production hérite donc des
+> valeurs ci-dessus, balayage nocturne compris (Hangfire, 9 h UTC, une connexion SQL par dossier).
 
 Le moteur de contrôle lui-même reste piloté par `Accounting:AccountingAuditDashboardEnabled`,
 `AccountingAuditPersistenceEnabled` et `AccountingAuditSchedulingEnabled`.
@@ -134,7 +144,7 @@ Sévérité : **B** bloquant · **W** avertissement · **I** information.
 | `cash-negative` | B | Solde **cumulé chronologique** des comptes 54x passant sous zéro. Le solde d'ouverture compte ; les banques sont exclues (elles peuvent être à découvert) |
 | `cash-in-without-invoice` | W | Entrée de trésorerie sans document source, sans tiers rattaché et sans contrepartie client lettrée. Origines connues (paie, effets, dépôts, virements internes 58x) exclues |
 
-> **Z-caisse vs théorique : hors périmètre.** Aucune entité de session de caisse n'existe.
+> **Z-caisse vs théorique :** le POS persiste désormais une vacation (`CashRegisterSession`) et un rapport Z immuable (`ZReport`). Le réviseur IA ne compare pas encore le Z au théorique caisse — cette règle santé reste hors périmètre.
 
 ### Famille Fiscale
 
@@ -250,8 +260,17 @@ Permissions `firm:revision:view` / `firm:revision:manage`, accordées sous drape
 `FirmGovernanceNativeAccess` : responsable **et** collaborateur consultent (l'ACL dossier restreint
 ensuite chacun) ; seul le responsable déclenche un balayage, qui mobilise toutes les bases dossiers.
 
-> **Après déploiement**, les utilisateurs cabinet doivent se **reconnecter** pour recevoir les
-> permissions dans leur JWT, sans quoi l'entrée de menu reste masquée (le front est fail-closed).
+> **Après déploiement**, les deux plans ne se rafraîchissent pas au même rythme, et l'écart est
+> visible :
+>
+> - le **front** recalcule ses permissions à chaque démarrage via `/auth/me`
+>   (`AuthService.bootstrapRefresh`), **sans faire tourner le JWT** — un simple rechargement de page
+>   suffit donc à faire apparaître l'entrée de menu ;
+> - les **politiques de l'API** lisent les revendications du **jeton**, qui datent de la connexion.
+>
+> Entre les deux, l'écran est atteignable mais `/api/firm/revision/*` répond 403. La page le dit
+> explicitement (« Vos droits ont changé depuis votre connexion »). Une **reconnexion** referme
+> l'écart.
 
 ### Enregistrement DI
 
@@ -263,7 +282,16 @@ enregistrement conditionnel ferait échouer la validation du conteneur au démar
 ## 10. Écran
 
 `src/app/features/firm/revision/` — route `/firm/revision`, sous `accountingFirmsFeatureGuard`,
-`firmNativeGuard` et `firmRevisionFeatureGuard` (fail-closed).
+`firmNativeGuard` et `firmRevisionFeatureGuard` (fail-closed : drapeau local **et**
+`firm:revision:view`, sans quoi retour au tableau de bord cabinet).
+
+**Entrée de menu** « Révision du portefeuille » (`FIRM_NATIVE_NAV`), juste après « Chef de
+mission », conditionnée par `firm:revision:view` — donc invisible tant que l'API n'accorde pas le
+module. Menu visible, route ouverte et action autorisée reposent ainsi sur la même condition.
+
+Le bouton **« Lancer un balayage » n'est rendu qu'avec `firm:revision:manage`** : le collaborateur
+consulte le portefeuille sans pouvoir mobiliser toutes les bases dossiers. La traduction du 403
+dans `runSweep()` est conservée en défense en profondeur.
 
 Deux onglets : **Portefeuille** (dossiers triés par risque, répartition par domaine) et **File de
 travail** (ventilée par collaborateur, dossiers non affectés isolés). La logique de présentation vit
@@ -283,6 +311,9 @@ dans `firm-revision.view-model.ts`, pure et testée hors DOM.
 | Narratif | `AccountingAudit/RevisionDossierGuardTests.cs` | Les six garde-fous, lecture tolérante, chaîne complète du repli |
 | PDF | `AccountingAudit/RevisionDossierPdfTests.cs` | Vrai fichier PDF (signature `%PDF`), dossier vide, impact non chiffrable, 60 anomalies paginées, accents |
 | Front | `firm/revision/firm-revision.view-model.spec.ts` | Niveaux de risque, « non chiffrable », tris, bandeaux |
+| Menu | `core/config/firm-navigation.registry.spec.ts` | Entrée après « Chef de mission », gating par `firm:revision:view`, survie au drapeau Gouvernance éteint, bascule de `filterFirmRevisionNav` |
+| Menu | `core/services/app-nav.service.spec.ts` | Entrée masquée sans la permission, visible pour les deux rôles cabinet qui la portent |
+| Garde | `core/guards/firm-revision.guard.spec.ts` | Responsable et collaborateur passent ; redirection sans permission ; redirection drapeau éteint |
 
 ```bash
 dotnet test src/Backend/tests/FactuTrust.Infrastructure.Tests/FactuTrust.Infrastructure.Tests.csproj --filter "FullyQualifiedName~AccountingAudit"
@@ -307,9 +338,9 @@ documente le même piège.
 
 ## 12. Hors périmètre
 
-- **Z-caisse vs théorique** — aucune entité de session de caisse (`PointOfSale`, `ZReport`,
-  `CashRegisterSession`) : `CashOperation` est un journal d'opérations sans clôture de session.
-  À rouvrir quand le POS sera durci.
+- **Z-caisse vs théorique (réviseur)** — la vacation POS existe (`CashRegisterSession` / `ZReport`)
+  mais le réviseur IA ne croise pas encore le snapshot Z avec le journal `CashOperation`.
+  `CashOperation` reste un journal d'opérations ; la clôture Z ne poste pas de deuxième écriture 5411.
 - **Apprentissage** — les anomalies marquées « ignorée » ne réduisent pas encore le bruit ; cela
   suppose le journal de décision IA (S2 de la
   [feuille de route IA](../strategy/ai-differentiation-roadmap.md) §4.2).

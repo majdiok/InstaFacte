@@ -165,6 +165,16 @@ public static class AuditActions
         public const string DeductionShortfall = "Stock.DeductionShortfall";
     }
 
+    public static class StockVoucher
+    {
+        public const string Created = "StockVoucher.Created";
+        public const string Updated = "StockVoucher.Updated";
+        public const string Validated = "StockVoucher.Validated";
+        public const string Cancelled = "StockVoucher.Cancelled";
+        public const string Deleted = "StockVoucher.Deleted";
+        public const string Exported = "StockVoucher.Exported";
+    }
+
     public static class Product
     {
         public const string Created = "Product.Created";
@@ -227,6 +237,15 @@ public static class AuditActions
         public const string ModificationAttempted = "DeliveryNote.ModificationAttempted";
     }
 
+    public static class SalesReturnNote
+    {
+        public const string Created = "SalesReturnNote.Created";
+        public const string Updated = "SalesReturnNote.Updated";
+        public const string Confirmed = "SalesReturnNote.Confirmed";
+        public const string Deleted = "SalesReturnNote.Deleted";
+        public const string Exported = "SalesReturnNote.Exported";
+    }
+
     public static class Supplier
     {
         public const string Created = "Supplier.Created";
@@ -276,6 +295,12 @@ public static class AuditActions
     {
         public const string Created = "CashOperation.Created";
         public const string Cancelled = "CashOperation.Cancelled";
+    }
+
+    public static class CashRegisterSession
+    {
+        public const string Opened = "CashRegisterSession.Opened";
+        public const string Closed = "CashRegisterSession.Closed";
     }
 
     public static class BankAccount

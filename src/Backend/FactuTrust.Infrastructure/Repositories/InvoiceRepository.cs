@@ -284,8 +284,8 @@ public sealed class InvoiceRepository : IInvoiceRepository
 
         return await context.InvoiceLines
             .AsNoTracking()
-            .Where(l => l.Invoice.IssueDate >= from && l.Invoice.IssueDate <= to && l.ProductId != Guid.Empty)
-            .GroupBy(l => l.ProductId)
+            .Where(l => l.Invoice.IssueDate >= from && l.Invoice.IssueDate <= to && l.ProductId.HasValue)
+            .GroupBy(l => l.ProductId!.Value)
             .Select(g => new InvoiceProductLineAggregateDto
             {
                 ProductId = g.Key,
@@ -318,10 +318,10 @@ public sealed class InvoiceRepository : IInvoiceRepository
 
         return await context.InvoiceLines
             .AsNoTracking()
-            .Where(l => l.Invoice.IssueDate >= from && l.Invoice.IssueDate <= to && l.ProductId != Guid.Empty)
+            .Where(l => l.Invoice.IssueDate >= from && l.Invoice.IssueDate <= to && l.ProductId.HasValue)
             .GroupBy(l => new
             {
-                l.ProductId,
+                ProductId = l.ProductId!.Value,
                 l.Invoice.IssueDate.Year,
                 l.Invoice.IssueDate.Month
             })
@@ -356,8 +356,8 @@ public sealed class InvoiceRepository : IInvoiceRepository
 
         var ids = await context.InvoiceLines
             .AsNoTracking()
-            .Where(l => l.Invoice.IssueDate >= from && l.Invoice.IssueDate <= to && l.ProductId != Guid.Empty)
-            .Select(l => l.ProductId)
+            .Where(l => l.Invoice.IssueDate >= from && l.Invoice.IssueDate <= to && l.ProductId.HasValue)
+            .Select(l => l.ProductId!.Value)
             .Distinct()
             .ToListAsync(cancellationToken);
 
@@ -447,8 +447,8 @@ public sealed class InvoiceRepository : IInvoiceRepository
 
         return await context.InvoiceLines
             .AsNoTracking()
-            .Where(l => l.Invoice.IssueDate >= from && l.Invoice.IssueDate <= to)
-            .GroupBy(l => l.ProductId)
+            .Where(l => l.Invoice.IssueDate >= from && l.Invoice.IssueDate <= to && l.ProductId.HasValue)
+            .GroupBy(l => l.ProductId!.Value)
             .Select(g => new SalesByLineReportRowDto
             {
                 ProductId = g.Key,
@@ -906,4 +906,15 @@ public sealed class InvoiceRepository : IInvoiceRepository
         return rows.Sum(r => Math.Abs(r.Total - r.Stamp));
     }
 
+    public async Task<IReadOnlyList<Invoice>> GetByCashRegisterSessionIdAsync(
+        Guid cashRegisterSessionId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.Invoices
+            .AsNoTracking()
+            .Where(i => i.CashRegisterSessionId == cashRegisterSessionId)
+            .OrderBy(i => i.CreatedAt)
+            .ToListAsync(cancellationToken);
+    }
 }

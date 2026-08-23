@@ -118,7 +118,7 @@ import { AdminResetPasswordDialogComponent } from './admin-reset-password-dialog
     <p-table
       [value]="page()?.items ?? []"
       [loading]="loading()"
-      styleClass="p-datatable-sm ft-admins-table"
+      styleClass="p-datatable-sm ft-table"
       [tableStyle]="{ 'min-width': '60rem' }"
       responsiveLayout="scroll"
     >
@@ -166,7 +166,7 @@ import { AdminResetPasswordDialogComponent } from './admin-reset-password-dialog
             }
           </td>
           <td class="col-actions">
-            <ft-cell-actions-menu [items]="actionsForRow(row)" />
+            <ft-cell-actions-menu [items]="rowActionsById().get(row.id) ?? []" />
           </td>
         </tr>
       </ng-template>
@@ -232,13 +232,6 @@ import { AdminResetPasswordDialogComponent } from './admin-reset-password-dialog
         display: block;
       }
 
-      .kpi-row {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-        gap: var(--gap-md);
-        margin-bottom: var(--gap-section);
-      }
-
       .cell-name {
         display: inline-flex;
         align-items: center;
@@ -248,40 +241,6 @@ import { AdminResetPasswordDialogComponent } from './admin-reset-password-dialog
       .cell-name strong {
         color: var(--ft-text);
         font-weight: 600;
-      }
-
-      .cell-mono {
-        font-family: ui-monospace, SFMono-Regular, monospace;
-        font-size: 0.85rem;
-        color: var(--ft-text-muted);
-      }
-
-      .muted {
-        color: var(--ft-text-subtle);
-      }
-
-      .col-actions {
-        text-align: end;
-        white-space: nowrap;
-        width: 4rem;
-      }
-
-      :host ::ng-deep .ft-admins-table.p-datatable .p-datatable-thead > tr > th {
-        font-size: 0.72rem;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: var(--ft-text-muted);
-        border-color: var(--ft-border);
-        background: var(--ft-surface-2);
-        font-weight: 600;
-      }
-
-      :host ::ng-deep .ft-admins-table.p-datatable .p-datatable-tbody > tr > td {
-        border-color: var(--ft-border-subtle);
-      }
-
-      :host ::ng-deep .ft-admins-table.p-datatable .p-datatable-tbody > tr:hover {
-        background: var(--ft-surface-3);
       }
     `
   ]
@@ -330,6 +289,16 @@ export class PlatformAdminsPageComponent implements OnInit {
 
   readonly canManage = computed(() => this.permissions.has(PlatformPermission.AdminsManage));
 
+  /** Cache stable des items kebab par admin id. */
+  readonly rowActionsById = computed(() => {
+    this.canManage();
+    const map = new Map<string, MenuItem[]>();
+    for (const row of this.page()?.items ?? []) {
+      map.set(row.id, this.buildRowActions(row));
+    }
+    return map;
+  });
+
   ngOnInit(): void {
     this.load();
   }
@@ -368,7 +337,7 @@ export class PlatformAdminsPageComponent implements OnInit {
   }
 
   // ----- Actions -----------------------------------------------------------
-  actionsForRow(row: PlatformAdminListItemDto): MenuItem[] {
+  private buildRowActions(row: PlatformAdminListItemDto): MenuItem[] {
     return [
       {
         label: ADMINS_FR['action.changeRole'],

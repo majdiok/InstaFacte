@@ -34,6 +34,7 @@ public sealed class SalesOrderNumberingTests
     {
         Assert.Equal(NumberingDocumentType.SalesOrder, DocumentNumberMapper.ToNumberingType("CDE"));
         Assert.Equal(NumberingDocumentType.SalesOrder, DocumentNumberMapper.ToNumberingType("cde"));
+        Assert.Equal(NumberingDocumentType.SalesReturnNote, DocumentNumberMapper.ToNumberingType("BRT"));
     }
 
     [Fact]

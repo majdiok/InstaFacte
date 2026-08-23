@@ -17,11 +17,23 @@ import { PageHeaderComponent } from '@shared/components/page-header/page-header.
 import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
 import { FormSectionComponent } from '@shared/components/form-section/form-section.component';
 import { WarehouseSelectorComponent } from '@shared/components/warehouse-selector/warehouse-selector.component';
+import { StockAllocationEditorComponent } from '@shared/components/stock-allocation-editor/stock-allocation-editor.component';
+import {
+  AllocationRow,
+  buildAllocationPayload,
+  showLotSection,
+  showSerialSection,
+  createDefaultLotRow,
+  createDefaultSerialRow,
+  TRACKING_MODE_SERIAL
+} from '@shared/utils/stock-traceability.utils';
+import { StockFeatures } from '@core/services/stock.service';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { formatLocalDate } from '@core/utils/date.util';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
 import {
   PurchaseReceiptService,
+  PurchaseReceiptLineAllocations,
   PurchaseReceiptStatus,
   PurchaseReceiptAttachment,
   CreatePurchaseReceiptRequest,
@@ -36,6 +48,7 @@ import {
 } from '@core/services/purchase-order.service';
 import { SupplierService, SupplierListItem } from '@core/services/supplier.service';
 import { ProductService, ProductListItem } from '@core/services/product.service';
+import { StockService } from '@core/services/stock.service';
 import {
   ProductAutocompleteService,
   ProductSuggestion,
@@ -49,10 +62,12 @@ import {
   debounceTime,
   distinctUntilChanged,
   catchError,
-  takeUntil
+  takeUntil,
+  map
 } from 'rxjs';
 
 interface ReceiptLineRow {
+  id: string | null;
   product: ProductListItem | null;
   productId: string | null;
   productCode: string;
@@ -66,6 +81,9 @@ interface ReceiptLineRow {
   discountPercent: number | null;
   vatRate: number;
   purchaseOrderLineId: string | null;
+  lotAllocations: AllocationRow[];
+  trackingMode?: number;
+  pickingPolicy?: number;
 }
 
 @Component({
@@ -77,7 +95,8 @@ interface ReceiptLineRow {
     Textarea, AutoCompleteModule, TagModule, FileUploadModule,
     DialogModule, ToastModule,
     PageHeaderComponent, BreadcrumbComponent, FormSectionComponent,
-    WarehouseSelectorComponent, ButtonComponent
+    WarehouseSelectorComponent, ButtonComponent,
+    StockAllocationEditorComponent
   ],
   template: `
     <app-breadcrumb [items]="breadcrumbItems"></app-breadcrumb>
@@ -142,7 +161,7 @@ interface ReceiptLineRow {
                   label="Entrepôt"
                   [required]="true"
                   [value]="selectedWarehouseId"
-                  (valueChange)="selectedWarehouseId = $event">
+                  (valueChange)="onWarehouseSelected($event)">
                 </app-warehouse-selector>
               </div>
 
@@ -340,6 +359,22 @@ interface ReceiptLineRow {
                         </app-button>
                       </td>
                     </tr>
+                    @if (showLineTraceability(line)) {
+                    <tr>
+                      <td [attr.colspan]="11">
+                        <app-stock-allocation-editor
+                          mode="entry"
+                          [productId]="line.productId!"
+                          [warehouseId]="selectedWarehouseId!"
+                          [lineQuantity]="line.receivedQuantity"
+                          [trackingMode]="line.trackingMode ?? 0"
+                          [pickingPolicy]="line.pickingPolicy ?? 0"
+                          [features]="stockFeatures()"
+                          [allocations]="line.lotAllocations">
+                        </app-stock-allocation-editor>
+                      </td>
+                    </tr>
+                    }
                   } @empty {
                     <tr>
                       <td colspan="11" class="empty-lines">
@@ -521,6 +556,16 @@ interface ReceiptLineRow {
     </p-dialog>
   `,
   styles: [`
+    .lot-alloc {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      padding: 0.5rem 0;
+    }
+    .lot-alloc-label { font-size: 0.75rem; font-weight: 600; color: #64748b; margin-right: 0.5rem; }
+    .btn-icon { background: none; border: none; cursor: pointer; color: #64748b; }
+
     .loading-container {
       display: flex;
       flex-direction: column;
@@ -854,6 +899,7 @@ export class PurchaseReceiptFormComponent implements OnInit, OnDestroy {
   private poService = inject(PurchaseOrderService);
   private supplierService = inject(SupplierService);
   private productService = inject(ProductService);
+  private stockService = inject(StockService);
   private readonly productAutocomplete = inject(ProductAutocompleteService);
   private toastService = inject(ToastService);
   private warehouseContext = inject(WarehouseContextService);
@@ -885,6 +931,8 @@ export class PurchaseReceiptFormComponent implements OnInit, OnDestroy {
   deliveryNoteNumber = '';
   notes = '';
   lines: ReceiptLineRow[] = [];
+  stockFeatures = signal<StockFeatures | null>(null);
+  traceabilityByProduct = signal<Map<string, { trackingMode: number; pickingPolicy: number }>>(new Map());
 
   totalHT = signal(0);
   totalVat = signal(0);
@@ -909,6 +957,11 @@ export class PurchaseReceiptFormComponent implements OnInit, OnDestroy {
     if (ctxWh) this.selectedWarehouseId = ctxWh;
 
     this.setupProductSearch();
+    this.stockService.getFeatures().subscribe({
+      next: res => {
+        if (res.success && res.data) this.stockFeatures.set(res.data);
+      }
+    });
 
     const id = this.route.snapshot.paramMap.get('id');
     const poId = this.route.snapshot.queryParamMap.get('purchaseOrderId');
@@ -1050,6 +1103,7 @@ export class PurchaseReceiptFormComponent implements OnInit, OnDestroy {
         this.attachments.set(detail.attachments ?? []);
 
         this.lines = detail.lines.map(l => ({
+          id: l.id,
           product: {
             id: l.productId,
             code: l.productCode,
@@ -1076,8 +1130,12 @@ export class PurchaseReceiptFormComponent implements OnInit, OnDestroy {
           unitPriceHT: l.unitPriceHT,
           discountPercent: l.discountPercent,
           vatRate: this.parseVatRate(l.vatRateDisplay),
-          purchaseOrderLineId: l.purchaseOrderLineId
+          purchaseOrderLineId: l.purchaseOrderLineId,
+          trackingMode: 0,
+          pickingPolicy: 0,
+          lotAllocations: [createDefaultLotRow(l.receivedQuantity)]
         }));
+        this.loadTraceabilityContext();
 
         this.loadEligiblePurchaseOrders(detail.supplier.id);
         this.recalculateTotals();
@@ -1149,9 +1207,14 @@ export class PurchaseReceiptFormComponent implements OnInit, OnDestroy {
             unitPriceHT: l.unitPriceHT,
             discountPercent: null,
             vatRate: 19,
-            purchaseOrderLineId: l.purchaseOrderLineId
+            purchaseOrderLineId: l.purchaseOrderLineId,
+            id: null,
+            trackingMode: 0,
+            pickingPolicy: 0,
+            lotAllocations: [createDefaultLotRow(l.pendingQuantity)]
           }));
 
+        this.loadTraceabilityContext();
         // Enrich VAT from product catalog when possible
         this.enrichVatRates();
         this.recalculateTotals();
@@ -1175,8 +1238,9 @@ export class PurchaseReceiptFormComponent implements OnInit, OnDestroy {
         next: (res) => {
           if (res.success && res.data) {
             line.vatRate = res.data.vatRate;
-            this.recalculateTotals();
+            line.trackingMode = res.data.trackingMode ?? 0;
           }
+          this.recalculateTotals();
         }
       });
     }
@@ -1210,8 +1274,73 @@ export class PurchaseReceiptFormComponent implements OnInit, OnDestroy {
     this.recalculateTotals();
   }
 
+  addLotAllocation(line: ReceiptLineRow): void {
+    line.lotAllocations.push({ lotNumber: '', expiryDate: null, quantity: 0 });
+  }
+
+  removeLotAllocation(lineIndex: number, allocIndex: number): void {
+    const line = this.lines[lineIndex];
+    if (!line || line.lotAllocations.length <= 1) return;
+    line.lotAllocations.splice(allocIndex, 1);
+  }
+
+  private buildLotAllocations(serverLineIds: string[]): PurchaseReceiptLineAllocations[] | undefined {
+    const payload: PurchaseReceiptLineAllocations[] = [];
+    this.lines.forEach((line, i) => {
+      const lineId = line.id || serverLineIds[i];
+      const allocations = buildAllocationPayload(line.lotAllocations ?? []);
+      if (lineId && allocations.length > 0) {
+        payload.push({ lineId, allocations });
+      }
+    });
+    return payload.length > 0 ? payload : undefined;
+  }
+
+  showLineTraceability(line: ReceiptLineRow): boolean {
+    const f = this.stockFeatures();
+    if (!f || !this.selectedWarehouseId || !line.productId) return false;
+    const mode = line.trackingMode ?? 0;
+    return showLotSection(mode, f) || showSerialSection(mode, f);
+  }
+
+  private hasTrackedLines(): boolean {
+    return this.lines.some(l => this.showLineTraceability(l));
+  }
+
+  private loadTraceabilityContext(): void {
+    if (!this.selectedWarehouseId) return;
+    const productIds = this.lines.map(l => l.productId).filter((id): id is string => !!id);
+    if (productIds.length === 0) return;
+    this.stockService.getTraceabilityContext(productIds, this.selectedWarehouseId).subscribe(res => {
+      if (!res.success || !res.data) return;
+      const map = new Map(this.traceabilityByProduct());
+      for (const ctx of res.data) {
+        map.set(ctx.productId, { trackingMode: ctx.trackingMode, pickingPolicy: ctx.pickingPolicy });
+      }
+      this.traceabilityByProduct.set(map);
+      for (const line of this.lines) {
+        if (!line.productId) continue;
+        const ctx = map.get(line.productId);
+        if (ctx) {
+          line.trackingMode = ctx.trackingMode;
+          line.pickingPolicy = ctx.pickingPolicy;
+        }
+      }
+    });
+  }
+
+  private defaultAllocationsForProduct(product: ProductListItem, quantity: number): AllocationRow[] {
+    const mode = product.trackingMode ?? 0;
+    if (mode === TRACKING_MODE_SERIAL) {
+      const count = Math.max(1, Math.round(quantity));
+      return Array.from({ length: count }, () => createDefaultSerialRow());
+    }
+    return [createDefaultLotRow(quantity)];
+  }
+
   private createEmptyLine(): ReceiptLineRow {
     return {
+      id: null,
       product: null,
       productId: null,
       productCode: '',
@@ -1224,8 +1353,16 @@ export class PurchaseReceiptFormComponent implements OnInit, OnDestroy {
       unitPriceHT: 0,
       discountPercent: null,
       vatRate: 19,
-      purchaseOrderLineId: null
+      purchaseOrderLineId: null,
+      trackingMode: 0,
+      pickingPolicy: 0,
+      lotAllocations: [createDefaultLotRow(1)]
     };
+  }
+
+  onWarehouseSelected(id: string | null): void {
+    this.selectedWarehouseId = id;
+    this.loadTraceabilityContext();
   }
 
   searchProducts(event: AutoCompleteCompleteEvent): void {
@@ -1242,7 +1379,11 @@ export class PurchaseReceiptFormComponent implements OnInit, OnDestroy {
     line.unit = product.unit ?? '';
     line.unitPriceHT = product.purchasePrice ?? product.unitPrice ?? 0;
     line.vatRate = product.vatRate ?? 19;
+    line.trackingMode = product.trackingMode ?? 0;
+    line.pickingPolicy = this.traceabilityByProduct().get(product.id)?.pickingPolicy ?? 0;
+    line.lotAllocations = this.defaultAllocationsForProduct(product, line.receivedQuantity);
     if (!line.orderedQuantity) line.orderedQuantity = 0;
+    this.loadTraceabilityContext();
     this.recalculateTotals();
   }
 
@@ -1328,7 +1469,13 @@ export class PurchaseReceiptFormComponent implements OnInit, OnDestroy {
       switchMap(id => {
         if (!id) return of({ id: null as string | null, validated: false });
         if (mode !== 'validate') return of({ id, validated: false });
-        return this.receiptService.validatePurchaseReceipt(id).pipe(
+        const validate$ = this.hasTrackedLines()
+          ? this.receiptService.getPurchaseReceipt(id).pipe(
+              map(res => this.buildLotAllocations(res.data?.lines?.map(l => l.id) ?? [])),
+              switchMap(alloc => this.receiptService.validatePurchaseReceipt(id, alloc))
+            )
+          : this.receiptService.validatePurchaseReceipt(id);
+        return validate$.pipe(
           switchMap(res => of({ id, validated: res.success }))
         );
       })

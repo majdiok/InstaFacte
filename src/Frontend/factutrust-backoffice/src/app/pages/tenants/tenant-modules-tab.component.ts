@@ -48,7 +48,11 @@ const MODULE_CATALOG: ModuleOption[] = [
   { value: 9, label: 'CRM Commercial' },
   { value: 10, label: 'Fiscal / TEJ' },
   { value: 11, label: 'Assistant IA' },
-  { value: 12, label: 'Prévisions IA' }
+  { value: 12, label: 'Prévisions IA' },
+  { value: 13, label: 'Studio (low-code)' },
+  { value: 14, label: 'RH & Paie' },
+  { value: 15, label: 'Honoraires' },
+  { value: 16, label: 'Projets' }
 ];
 
 /**
@@ -111,7 +115,7 @@ const MODULE_CATALOG: ModuleOption[] = [
         [title]="'Aucun override'"
         [description]="'Cette entreprise utilise les modules définis par son plan.'" />
     } @else {
-      <p-table [value]="overrides()" styleClass="ft-table">
+      <p-table [value]="overrides()" styleClass="p-datatable-sm ft-table">
         <ng-template pTemplate="header">
           <tr>
             <th>Module</th>

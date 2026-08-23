@@ -8,17 +8,17 @@ namespace FactuTrust.Domain.Services.Payroll;
 /// <summary>
 /// Construit les lignes d'écriture OD de paie (comptes SCE) à partir des totaux d'un cycle.
 /// Fonction pure : omet les buckets à montant nul pour respecter les invariants de
-/// <see cref="JournalEntry"/>, et crédite le compte 425 pour les autres retenues (avances).
+/// <see cref="JournalEntry"/>, et crédite le compte 421 pour les autres retenues (avances).
 /// </summary>
 public static class PayrollJournalEntryBuilder
 {
     public const string SalaryAccount = "640";
     public const string IndemnityAccount = "641";
     public const string EmployerChargesAccount = "647";
-    public const string PersonnelPayableAccount = "421";
+    public const string PersonnelPayableAccount = "425";
     public const string StateWithholdingAccount = "432";
     public const string SocialOrgAccount = "453";
-    public const string AdvancesAccount = "425";
+    public const string AdvancesAccount = "421";
 
     /// <summary>
     /// Agrège les buckets paie et produit les lignes journal (montants strictement &gt; 0 uniquement).
@@ -60,7 +60,7 @@ public static class PayrollJournalEntryBuilder
     }
 
     /// <summary>
-    /// Variante avec ventilation du crédit 421 par salarié (comptes auxiliaires).
+    /// Variante avec ventilation du crédit 425 par salarié (comptes auxiliaires).
     /// </summary>
     public static Result<IReadOnlyList<JournalLineInput>> BuildLines(
         decimal totalGross,

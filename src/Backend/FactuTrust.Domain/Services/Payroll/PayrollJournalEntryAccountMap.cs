@@ -8,7 +8,7 @@ namespace FactuTrust.Domain.Services.Payroll;
 public sealed class PayrollJournalEntryAccountMap
 {
     public string AdvancesAccount { get; init; } = PayrollJournalEntryBuilder.AdvancesAccount;
-    public string LoansAccount { get; init; } = "425.1";
+    public string LoansAccount { get; init; } = "421.1";
     public string GarnishmentsAccount { get; init; } = "427";
     public string MutuelleEmployeeAccount { get; init; } = "428.1";
     public string MealVoucherEmployeeAccount { get; init; } = "428.2";

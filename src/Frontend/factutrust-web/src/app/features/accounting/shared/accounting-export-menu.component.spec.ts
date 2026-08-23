@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { DOCUMENT } from '@angular/common';
 import { AccountingExportMenuComponent } from './accounting-export-menu.component';
 
 describe('AccountingExportMenuComponent', () => {
@@ -9,7 +10,10 @@ describe('AccountingExportMenuComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [AccountingExportMenuComponent],
-      providers: [provideNoopAnimations()]
+      providers: [
+        provideNoopAnimations(),
+        { provide: DOCUMENT, useValue: document }
+      ]
     }).compileComponents();
     fixture = TestBed.createComponent(AccountingExportMenuComponent);
     component = fixture.componentInstance;

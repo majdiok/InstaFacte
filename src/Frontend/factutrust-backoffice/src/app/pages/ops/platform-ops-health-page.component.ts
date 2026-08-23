@@ -130,7 +130,7 @@ import type { FtTone } from '@core/ui/badge/ft-badge.component';
       @if (data()!.hangfire; as hf) {
         <section class="hf-section">
           <h2>Background jobs (Hangfire)</h2>
-          <div class="kpi-row">
+          <div class="kpi-row kpi-row--dense">
             <ft-kpi-card
               label="Serveurs en ligne"
               [value]="hf.serversOnline"
@@ -299,12 +299,6 @@ import type { FtTone } from '@core/ui/badge/ft-badge.component';
         margin: 0 0 var(--gap-md);
         font-size: 1.05rem;
         color: var(--ft-text);
-      }
-
-      .kpi-row {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-        gap: var(--gap-md);
       }
 
       .muted {

@@ -1,12 +1,13 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Features.Accounting;
 using FactuTrust.Domain.ValueObjects;
 
 namespace FactuTrust.Infrastructure.Services;
 
 public sealed class FiscalStampResolver : IFiscalStampResolver
 {
-    public const string FiscalStampAccountNumber = "4478";
+    public const string FiscalStampAccountNumber = TunisianPostingAccounts.FiscalStampOnSale;
 
     private readonly ITaxRepository _taxRepository;
 

@@ -231,4 +231,47 @@ describe('InventoryWizardComponent', () => {
       expect(component.countedQuantity()).toBe(10);
     });
   });
+
+  describe('goToSummary', () => {
+    it('opens the summary while products remain uncounted', () => {
+      inventoryService.getSummary.and.returnValue(of({
+        success: true,
+        data: {
+          inventoryId: 'inv-1',
+          totalProducts: 2,
+          countedProducts: 1,
+          productsOk: 1,
+          productsWithDifference: 0,
+          productsNotCounted: 1,
+          canValidate: true,
+          statusMessage: 'Prêt à valider. 1 article non saisi sera confirmé à la quantité système.',
+          productsOkList: [],
+          productsWithDifferenceList: [],
+          productsNotCountedList: [{
+            productId: 'b',
+            productName: 'Produit B',
+            productCode: 'PB',
+            theoreticalQuantity: 3,
+            countedQuantity: null,
+            difference: 0,
+            humanMessage: 'Non compté',
+            differenceClass: 'neutral'
+          }]
+        },
+        message: null,
+        errors: []
+      }));
+
+      component.activeInventory.set(makeInventory([
+        makeProduct({ productId: 'a', isCounted: true, countedQuantity: 5 }),
+        makeProduct({ productId: 'b', isCounted: false, theoreticalQuantity: 3 })
+      ]));
+
+      component.goToSummary();
+
+      expect(component.step()).toBe('summary');
+      expect(component.inventorySummary()?.canValidate).toBeTrue();
+      expect(component.inventorySummary()?.productsNotCounted).toBe(1);
+    });
+  });
 });

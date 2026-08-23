@@ -19,6 +19,7 @@ import { PageHeaderComponent } from '@shared/components/page-header/page-header.
 import { StatCardComponent } from '@shared/components/stat-card/stat-card.component';
 import { FirmInvitationActionsService } from '../shared/firm-invitation-actions.service';
 import { FirmDecisionTablesSectionComponent } from './decision-tables/firm-decision-tables-section.component';
+import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-checklist.component';
 
 interface GovernanceTile {
   label: string;
@@ -37,12 +38,15 @@ interface GovernanceTile {
     TagModule,
     PageHeaderComponent,
     StatCardComponent,
-    FirmDecisionTablesSectionComponent
+    FirmDecisionTablesSectionComponent,
+    OnboardingChecklistComponent
   ],
   template: `
     <app-page-header
       [title]="'Tableau de bord cabinet'"
       [subtitle]="welcomeSubtitle()" />
+
+    <app-onboarding-checklist />
 
     @if (loading()) {
       <p class="loading">Chargement…</p>
@@ -177,7 +181,7 @@ interface GovernanceTile {
             <a routerLink="/firm/clients" pButton label="Voir tous" class="p-button-text"></a>
           </div>
           @if ((dashboard()?.clients?.length ?? 0) === 0) {
-            <p class="empty">Aucun dossier client actif. Acceptez une invitation pour commencer.</p>
+            <p class="empty" data-tour="firm-empty-clients">Aucun dossier client actif. Acceptez une invitation pour commencer.</p>
           } @else {
             <table class="dossier-table">
               <thead>
@@ -387,12 +391,6 @@ export class FirmDashboardComponent implements OnInit {
       subtitle: 'Obligations TVA, TEJ, liasse',
       route: '/firm/fiscal-schedule',
       icon: 'fa-solid fa-calendar-check'
-    },
-    {
-      label: 'Suivi social & paie',
-      subtitle: 'CNSS, congés, cycles paie',
-      route: '/firm/governance/social',
-      icon: 'fa-solid fa-users'
     }
   ];
 

@@ -4,52 +4,95 @@ import { PERMISSIONS } from '@core/config/permission-keys';
 
 export const STOCK_ROUTES: Routes = [
     {
-        // Vue simplifiée par défaut (pour utilisateurs non techniciens)
         path: '',
         loadComponent: () => import('./stock-simple/stock-simple.component').then(m => m.StockSimpleComponent),
         title: 'Mon Stock - InstaFact'
     },
     {
-        // Vue technique avancée (pour utilisateurs expérimentés)
         path: 'advanced',
         loadComponent: () => import('./stock-list/stock-list.component').then(m => m.StockListComponent),
         title: 'Gestion du Stock (Avancée) - InstaFact'
     },
     {
-        // Entrée de stock depuis la vue avancée
-        path: 'advanced/entry',
+        path: 'entries/new',
         canActivate: [permissionGuard],
-        data: { permissions: [PERMISSIONS.stock.create] },
-        loadComponent: () => import('./stock-entry-form/stock-entry-form.component').then(m => m.StockEntryFormComponent),
-        title: 'Nouvelle entrée (Avancée) - InstaFact'
+        data: { permissions: [PERMISSIONS.stockVouchers.create], kind: 'Entry' },
+        loadComponent: () => import('../stock-vouchers/stock-voucher-form.component').then(m => m.StockVoucherFormComponent),
+        title: "Nouveau bon d'entrée - InstaFact"
     },
     {
-        // Sortie de stock depuis la vue avancée
-        path: 'advanced/exit',
+        path: 'entries/:id/edit',
         canActivate: [permissionGuard],
-        data: { permissions: [PERMISSIONS.stock.create] },
-        loadComponent: () => import('./stock-exit-form/stock-exit-form.component').then(m => m.StockExitFormComponent),
-        title: 'Nouvelle sortie (Avancée) - InstaFact'
+        data: { permissions: [PERMISSIONS.stockVouchers.update], kind: 'Entry' },
+        loadComponent: () => import('../stock-vouchers/stock-voucher-form.component').then(m => m.StockVoucherFormComponent),
+        title: "Modifier bon d'entrée - InstaFact"
     },
     {
-        // Historique des mouvements depuis la vue avancée
-        path: 'advanced/:id/history',
-        loadComponent: () => import('./stock-history/stock-history.component').then(m => m.StockHistoryComponent),
-        title: 'Historique mouvements (Avancée) - InstaFact'
+        path: 'entries/:id',
+        canActivate: [permissionGuard],
+        data: { permissions: [PERMISSIONS.stockVouchers.read], kind: 'Entry' },
+        loadComponent: () => import('../stock-vouchers/stock-voucher-detail.component').then(m => m.StockVoucherDetailComponent),
+        title: "Détail bon d'entrée - InstaFact"
+    },
+    {
+        path: 'entries',
+        canActivate: [permissionGuard],
+        data: { permissions: [PERMISSIONS.stockVouchers.read], kind: 'Entry' },
+        loadComponent: () => import('../stock-vouchers/stock-voucher-list.component').then(m => m.StockVoucherListComponent),
+        title: "Bons d'entrée - InstaFact"
+    },
+    {
+        path: 'issues/new',
+        canActivate: [permissionGuard],
+        data: { permissions: [PERMISSIONS.stockVouchers.create], kind: 'Issue' },
+        loadComponent: () => import('../stock-vouchers/stock-voucher-form.component').then(m => m.StockVoucherFormComponent),
+        title: 'Nouveau bon de sortie - InstaFact'
+    },
+    {
+        path: 'issues/:id/edit',
+        canActivate: [permissionGuard],
+        data: { permissions: [PERMISSIONS.stockVouchers.update], kind: 'Issue' },
+        loadComponent: () => import('../stock-vouchers/stock-voucher-form.component').then(m => m.StockVoucherFormComponent),
+        title: 'Modifier bon de sortie - InstaFact'
+    },
+    {
+        path: 'issues/:id',
+        canActivate: [permissionGuard],
+        data: { permissions: [PERMISSIONS.stockVouchers.read], kind: 'Issue' },
+        loadComponent: () => import('../stock-vouchers/stock-voucher-detail.component').then(m => m.StockVoucherDetailComponent),
+        title: 'Détail bon de sortie - InstaFact'
+    },
+    {
+        path: 'issues',
+        canActivate: [permissionGuard],
+        data: { permissions: [PERMISSIONS.stockVouchers.read], kind: 'Issue' },
+        loadComponent: () => import('../stock-vouchers/stock-voucher-list.component').then(m => m.StockVoucherListComponent),
+        title: 'Bons de sortie - InstaFact'
     },
     {
         path: 'entry',
-        canActivate: [permissionGuard],
-        data: { permissions: [PERMISSIONS.stock.create] },
-        loadComponent: () => import('./stock-entry-form/stock-entry-form.component').then(m => m.StockEntryFormComponent),
-        title: 'Nouvelle entrée - InstaFact'
+        redirectTo: '/stock/entries/new',
+        pathMatch: 'full'
     },
     {
         path: 'exit',
-        canActivate: [permissionGuard],
-        data: { permissions: [PERMISSIONS.stock.create] },
-        loadComponent: () => import('./stock-exit-form/stock-exit-form.component').then(m => m.StockExitFormComponent),
-        title: 'Nouvelle sortie - InstaFact'
+        redirectTo: '/stock/issues/new',
+        pathMatch: 'full'
+    },
+    {
+        path: 'advanced/entry',
+        redirectTo: '/stock/entries/new',
+        pathMatch: 'full'
+    },
+    {
+        path: 'advanced/exit',
+        redirectTo: '/stock/issues/new',
+        pathMatch: 'full'
+    },
+    {
+        path: 'advanced/:id/history',
+        loadComponent: () => import('./stock-history/stock-history.component').then(m => m.StockHistoryComponent),
+        title: 'Historique mouvements (Avancée) - InstaFact'
     },
     {
         path: ':id/history',
@@ -57,4 +100,3 @@ export const STOCK_ROUTES: Routes = [
         title: 'Historique mouvements - InstaFact'
     }
 ];
-

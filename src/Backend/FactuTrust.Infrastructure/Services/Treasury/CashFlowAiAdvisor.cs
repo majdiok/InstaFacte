@@ -34,6 +34,8 @@ public sealed class CashFlowAiAdvisor : ICashFlowAiAdvisor
     private readonly IOllamaClient _ollama;
     private readonly IOpenAiChatCompletionsClient _openAi;
     private readonly IPlatformAiSettingsService _platformSettings;
+    private readonly IModalCredentialsResolver _modalCredentials;
+    private readonly ITenantContext _tenantContext;
     private readonly TreasuryForecastOptions _options;
     private readonly ILogger<CashFlowAiAdvisor> _logger;
 
@@ -41,12 +43,16 @@ public sealed class CashFlowAiAdvisor : ICashFlowAiAdvisor
         IOllamaClient ollama,
         IOpenAiChatCompletionsClient openAi,
         IPlatformAiSettingsService platformSettings,
+        IModalCredentialsResolver modalCredentials,
+        ITenantContext tenantContext,
         IOptions<TreasuryForecastOptions> options,
         ILogger<CashFlowAiAdvisor> logger)
     {
         _ollama = ollama;
         _openAi = openAi;
         _platformSettings = platformSettings;
+        _modalCredentials = modalCredentials;
+        _tenantContext = tenantContext;
         _options = options.Value;
         _logger = logger;
     }
@@ -101,6 +107,7 @@ public sealed class CashFlowAiAdvisor : ICashFlowAiAdvisor
             {
                 LlmProviderKind.Ollama => await CompleteWithOllamaAsync(parsed.ProviderModelId, userPrompt, timeout.Token),
                 LlmProviderKind.OpenRouter => await CompleteWithOpenRouterAsync(parsed.ProviderModelId, userPrompt, timeout.Token),
+                LlmProviderKind.Modal => await CompleteWithModalAsync(parsed.ProviderModelId, userPrompt, timeout.Token),
                 _ => null
             };
 
@@ -239,6 +246,44 @@ public sealed class CashFlowAiAdvisor : ICashFlowAiAdvisor
                            temperature: 0.2,
                            maxTokens: 1200,
                            cancellationToken))
+        {
+            if (chunk.Message?.Content is { Length: > 0 } content)
+                sb.Append(content);
+        }
+
+        return sb.ToString();
+    }
+
+    private async Task<string?> CompleteWithModalAsync(
+        string model,
+        string userPrompt,
+        CancellationToken cancellationToken)
+    {
+        var credentials = await _modalCredentials.ResolveAsync(_tenantContext.TenantId, cancellationToken);
+        if (!credentials.IsEnabled || string.IsNullOrWhiteSpace(credentials.ApiKey) || string.IsNullOrWhiteSpace(credentials.BaseUrl))
+        {
+            _logger.LogDebug("Trésorerie prévisionnelle : Modal non configuré, analyse IA ignorée.");
+            return null;
+        }
+
+        var messages = new List<OpenAiChatMessagePayload>
+        {
+            new() { Role = "system", Content = SystemPrompt },
+            new() { Role = "user", Content = userPrompt }
+        };
+
+        var sb = new StringBuilder();
+        await foreach (var chunk in _openAi.StreamChatAsOllamaCompatibleAsync(
+                           credentials.BaseUrl,
+                           credentials.ApiKey!,
+                           model,
+                           messages,
+                           Array.Empty<OllamaToolDefinition>(),
+                           temperature: 0.2,
+                           maxTokens: 1200,
+                           cancellationToken,
+                           seed: null,
+                           OpenAiCompatibleCallOptions.ForModal(new ModalSettings(), sessionId: null)))
         {
             if (chunk.Message?.Content is { Length: > 0 } content)
                 sb.Append(content);

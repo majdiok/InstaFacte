@@ -19,6 +19,15 @@ export class ErrorMessageService {
 
     const firstError = Object.keys(control.errors)[0];
     const error = control.errors[firstError];
+
+    if (firstError === 'server') {
+      if (typeof error === 'string' && error.trim()) {
+        return error;
+      }
+      if (error && typeof error === 'object' && typeof error.message === 'string' && error.message.trim()) {
+        return error.message;
+      }
+    }
     
     let message = this.errorMessages[firstError] || 'Ce champ contient une erreur';
     

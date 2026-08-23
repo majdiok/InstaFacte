@@ -130,6 +130,20 @@ export class PlatformAuthService {
     void this.router.navigate(['/login']);
   }
 
+  /** Met à jour le profil stocké localement après édition (prénom/nom). */
+  updateStoredUser(partial: Pick<PlatformUserDto, 'firstName' | 'lastName'>): void {
+    const current = this.userSignal();
+    if (!current) return;
+    const updated: PlatformUserDto = {
+      ...current,
+      firstName: partial.firstName,
+      lastName: partial.lastName,
+      fullName: `${partial.firstName} ${partial.lastName}`
+    };
+    localStorage.setItem(STORAGE_USER, JSON.stringify(updated));
+    this.userSignal.set(updated);
+  }
+
   private persistSession(data: PlatformAuthResponseDto): void {
     localStorage.setItem(STORAGE_ACCESS, data.accessToken);
     localStorage.setItem(STORAGE_REFRESH, data.refreshToken);

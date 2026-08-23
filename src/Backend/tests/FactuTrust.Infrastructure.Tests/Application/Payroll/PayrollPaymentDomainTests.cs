@@ -11,7 +11,7 @@ public sealed class PayrollPaymentDomainTests
     public void AuxiliaryAccountResolver_PadsEmployeeNumber()
     {
         var account = PayrollEmployeeAuxiliaryAccountResolver.Resolve("1");
-        Assert.Equal("4210000001", account);
+        Assert.Equal("4250000001", account);
     }
 
     [Fact]

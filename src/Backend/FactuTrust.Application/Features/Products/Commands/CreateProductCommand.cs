@@ -144,6 +144,22 @@ public sealed class CreateProductCommandHandler : IRequestHandler<CreateProductC
 
         product.SetAuditInfo(_currentUser.UserId?.ToString() ?? "system");
 
+        if (dto.IsVariantTemplate)
+        {
+            var template = product.MarkAsVariantTemplate();
+            if (template.IsFailure)
+                return Result.Failure<Guid>(template.Error);
+        }
+
+        var trace = product.ConfigureTraceability(
+            dto.TrackingMode,
+            dto.HasExpiryTracking,
+            dto.PickingPolicy,
+            dto.CostingMethod,
+            dto.ExpiryAlertDays);
+        if (trace.IsFailure)
+            return Result.Failure<Guid>(trace.Error);
+
         await _productRepository.AddAsync(product, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 

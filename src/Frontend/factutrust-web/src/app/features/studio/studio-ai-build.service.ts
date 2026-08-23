@@ -5,6 +5,7 @@ import { environment } from '@environments/environment';
 import { AuthService } from '@core/services/auth.service';
 import { ApiResponse } from '@core/services/client.service';
 import { ChatStreamEvent } from '@features/ai-assistant/models/ai-chat.models';
+import { ReportResult } from '@shared/studio-runtime/studio-runtime.models';
 
 /** Étape de l'aperçu (checklist) d'un plan Studio IA. */
 export interface StudioPlanStep {
@@ -26,6 +27,20 @@ export interface StudioPlanSummary {
   steps: StudioPlanStep[];
   entities: StudioPlanEntity[];
   warnings: string[];
+  /** Présent pour un plan d'ÉTAT : quelques lignes réelles, pour valider sur des chiffres. */
+  sample?: ReportResult | null;
+}
+
+/** Payload de l'événement SSE `studio_report_result` (retour de l'outil studio_run_report). */
+export interface StudioReportResultEvent {
+  success: boolean;
+  title: string;
+  source: string;
+  sourceLabel: string;
+  preset?: string | null;
+  result: ReportResult;
+  warnings: string[];
+  message: string;
 }
 
 /** Payload de l'événement SSE `studio_plan` (retour de l'outil studio_plan_*). */

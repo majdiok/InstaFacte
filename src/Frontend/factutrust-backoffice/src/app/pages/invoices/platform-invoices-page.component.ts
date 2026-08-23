@@ -94,7 +94,7 @@ interface StatusOption {
       </ng-container>
     </ft-page-header>
 
-    <section class="kpi-row" role="region">
+    <section class="kpi-row kpi-row--6col" role="region">
       <ft-kpi-card
         [label]="t('kpi.total')"
         [value]="page()?.totalCount ?? null"
@@ -178,7 +178,7 @@ interface StatusOption {
         [value]="page()!.items"
         [rowHover]="true"
         [responsiveLayout]="'scroll'"
-        styleClass="ft-table"
+        styleClass="p-datatable-sm ft-table"
         (onRowSelect)="onRowSelect($event)"
         selectionMode="single">
         <ng-template pTemplate="header">
@@ -227,23 +227,8 @@ interface StatusOption {
   `,
   styles: [
     `
-      .kpi-row {
-        display: grid;
-        grid-template-columns: repeat(6, minmax(0, 1fr));
-        gap: var(--gap-md);
-        margin-bottom: var(--gap-lg);
-      }
-      @media (max-width: 1280px) {
-        .kpi-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-      }
-      @media (max-width: 720px) {
-        .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      }
-
       .skeleton-block { padding: 1rem 0; }
-      .num { text-align: right; font-variant-numeric: tabular-nums; }
       .cell-strong { font-weight: 500; color: var(--ft-text); }
-      .muted { color: var(--ft-text-subtle); }
       .num-link {
         color: var(--ft-accent);
         text-decoration: none;

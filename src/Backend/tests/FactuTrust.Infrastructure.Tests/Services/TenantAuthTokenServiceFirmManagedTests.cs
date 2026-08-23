@@ -168,6 +168,7 @@ public sealed class TenantAuthTokenServiceFirmManagedTests
         Assert.Contains((int)AppModule.Reports, response.User.EnabledModuleIds);
         Assert.Contains((int)AppModule.Payroll, response.User.EnabledModuleIds);
         Assert.Contains((int)AppModule.AI, response.User.EnabledModuleIds);
+        Assert.DoesNotContain((int)AppModule.Projects, response.User.EnabledModuleIds);
         Assert.Contains(Permissions.AI.Chat, response.User.EffectivePermissions);
 
         var claim = DecodeClaims(response.AccessToken)
@@ -192,6 +193,7 @@ public sealed class TenantAuthTokenServiceFirmManagedTests
         Assert.Contains((int)AppModule.Purchases, response.User.EnabledModuleIds);
         Assert.Contains((int)AppModule.Treasury, response.User.EnabledModuleIds);
         Assert.Contains((int)AppModule.AI, response.User.EnabledModuleIds);
+        Assert.DoesNotContain((int)AppModule.Projects, response.User.EnabledModuleIds);
         Assert.Contains(Permissions.AI.Chat, response.User.EffectivePermissions);
 
         var claim = DecodeClaims(response.AccessToken)

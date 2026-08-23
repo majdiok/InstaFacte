@@ -3,6 +3,7 @@
 // Voir tailwind.config.js et styles/_design-layer.scss.
 // @use doit précéder toute autre règle (contrainte Dart Sass).
 // ============================================
+@use 'sass:meta';
 @use './styles/design-layer';
 @use './styles/form-layout';
 @use './styles/primeng-bridge';
@@ -2012,3 +2013,8 @@ button.quick-access__item > i {
   font-weight: 400;
   font-style: normal;
 }
+
+@include meta.load-css('styles-product-tour');
+
+@include meta.load-css('./app/features/projects/projects.scss');
+

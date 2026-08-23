@@ -12,6 +12,8 @@ public sealed class InventoryCountLine : Entity
     public Guid ProductId { get; private set; }
     public string ProductName { get; private set; } = string.Empty;
     public string? ProductCode { get; private set; }
+    public Guid? ProductLotId { get; private set; }
+    public string? LotNumber { get; private set; }
     
     /// <summary>
     /// Quantité théorique dans le système au moment du démarrage de l'inventaire.
@@ -27,8 +29,11 @@ public sealed class InventoryCountLine : Entity
     /// <summary>
     /// Différence entre la quantité comptée et théorique.
     /// Positif = surplus trouvé, Négatif = manque.
+    /// Zéro tant que le produit n'a pas été compté (évite un faux écart vers 0).
     /// </summary>
-    public decimal Difference => (CountedQuantity ?? 0) - TheoreticalQuantity;
+    public decimal Difference => IsCounted
+        ? CountedQuantity!.Value - TheoreticalQuantity
+        : 0;
     
     /// <summary>
     /// Indique si ce produit a été compté.
@@ -47,7 +52,9 @@ public sealed class InventoryCountLine : Entity
         Guid productId,
         string productName,
         string? productCode,
-        decimal theoreticalQuantity)
+        decimal theoreticalQuantity,
+        Guid? productLotId = null,
+        string? lotNumber = null)
     {
         return new InventoryCountLine
         {
@@ -55,6 +62,8 @@ public sealed class InventoryCountLine : Entity
             ProductId = productId,
             ProductName = productName,
             ProductCode = productCode,
+            ProductLotId = productLotId,
+            LotNumber = string.IsNullOrWhiteSpace(lotNumber) ? null : lotNumber.Trim().ToUpperInvariant(),
             TheoreticalQuantity = theoreticalQuantity,
             CountedQuantity = null,
             CountedAt = null

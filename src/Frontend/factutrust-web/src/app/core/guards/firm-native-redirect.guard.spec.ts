@@ -49,6 +49,16 @@ describe('firmNativeRedirectGuard', () => {
     expect(router.serializeUrl(result as never)).toContain('/firm/dashboard');
   });
 
+  it('redirects firm native user from /return-notes', async () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, firmUser);
+    const result = await TestBed.runInInjectionContext(() =>
+      firmNativeRedirectGuard({} as never, { url: '/return-notes' } as never)
+    );
+    const router = TestBed.inject(Router);
+    expect(router.serializeUrl(result as never)).toContain('/firm/dashboard');
+  });
+
   it('redirects firm native user from /invoices/unpaid', async () => {
     const auth = TestBed.inject(AuthService);
     setUser(auth, firmUser);

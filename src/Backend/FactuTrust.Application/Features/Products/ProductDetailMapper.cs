@@ -44,7 +44,14 @@ internal static class ProductDetailMapper
             ImageUrl = product.ImageUrl,
             PreferredSupplierId = product.PreferredSupplierId,
             CreatedAt = product.CreatedAt,
-            UpdatedAt = product.UpdatedAt
+            UpdatedAt = product.UpdatedAt,
+            ParentProductId = product.ParentProductId,
+            IsVariantTemplate = product.IsVariantTemplate,
+            TrackingMode = product.TrackingMode,
+            HasExpiryTracking = product.HasExpiryTracking,
+            PickingPolicy = product.PickingPolicy,
+            CostingMethod = product.CostingMethod,
+            ExpiryAlertDays = product.ExpiryAlertDays
         };
     }
 
@@ -81,7 +88,11 @@ internal static class ProductDetailMapper
             CategoryId = product.CategoryId,
             CategoryName = product.Category.Name,
             ImageUrl = product.ImageUrl,
-            QuantityAvailable = quantityAvailable
+            QuantityAvailable = quantityAvailable,
+            IsVariantTemplate = product.IsVariantTemplate,
+            ParentProductId = product.ParentProductId,
+            TrackingMode = product.TrackingMode,
+            CostingMethod = product.CostingMethod
         };
     }
 

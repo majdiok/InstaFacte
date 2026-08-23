@@ -5,6 +5,7 @@ using FactuTrust.Domain.Entities.Channels;
 using FactuTrust.Domain.Entities.Forecasting;
 using FactuTrust.Domain.Entities.Honoraires;
 using FactuTrust.Domain.Entities.Pricing;
+using FactuTrust.Domain.Entities.RecurringContracts;
 using FactuTrust.Domain.Entities.Storefront;
 using FactuTrust.Domain.Entities.Studio;
 using FactuTrust.Domain.Entities.Treasury;
@@ -95,6 +96,11 @@ public partial class TenantDbContext : DbContext
     public DbSet<ClientProductPrice> ClientProductPrices => Set<ClientProductPrice>();
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<CashOperation> CashOperations => Set<CashOperation>();
+    public DbSet<CashRegister> CashRegisters => Set<CashRegister>();
+    public DbSet<CashRegisterSession> CashRegisterSessions => Set<CashRegisterSession>();
+    public DbSet<ZReport> ZReports => Set<ZReport>();
+    public DbSet<PosCartDraft> PosCartDrafts => Set<PosCartDraft>();
+    public DbSet<PosHeldTicket> PosHeldTickets => Set<PosHeldTicket>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<InvoiceDraft> InvoiceDrafts => Set<InvoiceDraft>();
     public DbSet<InvoiceNumberSequence> InvoiceNumberSequences => Set<InvoiceNumberSequence>();
@@ -111,6 +117,15 @@ public partial class TenantDbContext : DbContext
     public DbSet<Warehouse> Warehouses => Set<Warehouse>();
     public DbSet<StockItem> StockItems => Set<StockItem>();
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
+    public DbSet<ProductLot> ProductLots => Set<ProductLot>();
+    public DbSet<StockLotBalance> StockLotBalances => Set<StockLotBalance>();
+    public DbSet<ProductSerial> ProductSerials => Set<ProductSerial>();
+    public DbSet<StockValuationLayer> StockValuationLayers => Set<StockValuationLayer>();
+    public DbSet<StockDocumentAllocation> StockDocumentAllocations => Set<StockDocumentAllocation>();
+    public DbSet<ProductAttributeDefinition> ProductAttributeDefinitions => Set<ProductAttributeDefinition>();
+    public DbSet<ProductAttributeValue> ProductAttributeValues => Set<ProductAttributeValue>();
+    public DbSet<ProductVariantAxis> ProductVariantAxes => Set<ProductVariantAxis>();
+    public DbSet<ProductVariantAttributeValue> ProductVariantAttributeValues => Set<ProductVariantAttributeValue>();
 
     // Physical Inventory
     public DbSet<PhysicalInventory> PhysicalInventories => Set<PhysicalInventory>();
@@ -119,6 +134,10 @@ public partial class TenantDbContext : DbContext
     // Delivery Notes
     public DbSet<DeliveryNote> DeliveryNotes => Set<DeliveryNote>();
     public DbSet<DeliveryNoteLine> DeliveryNoteLines => Set<DeliveryNoteLine>();
+
+    // Sales return notes (bons de retour client, pré-facture)
+    public DbSet<SalesReturnNote> SalesReturnNotes => Set<SalesReturnNote>();
+    public DbSet<SalesReturnNoteLine> SalesReturnNoteLines => Set<SalesReturnNoteLine>();
 
     // Purchasing
     public DbSet<Supplier> Suppliers => Set<Supplier>();
@@ -137,6 +156,9 @@ public partial class TenantDbContext : DbContext
     // Stock Transfers
     public DbSet<StockTransfer> StockTransfers => Set<StockTransfer>();
     public DbSet<StockTransferLine> StockTransferLines => Set<StockTransferLine>();
+
+    public DbSet<StockVoucher> StockVouchers => Set<StockVoucher>();
+    public DbSet<StockVoucherLine> StockVoucherLines => Set<StockVoucherLine>();
 
     // Accounting (SCE Tunisia)
     public DbSet<ChartOfAccount> ChartOfAccounts => Set<ChartOfAccount>();
@@ -233,6 +255,30 @@ public partial class TenantDbContext : DbContext
     public DbSet<HonorairesPayment> HonorairesPayments => Set<HonorairesPayment>();
     public DbSet<HonorairesAttachment> HonorairesAttachments => Set<HonorairesAttachment>();
 
+    // Projects / PSA — gated by AppModule.Projects + Features:Projects:Enabled.
+    public DbSet<Domain.Entities.Projects.Project> Projects => Set<Domain.Entities.Projects.Project>();
+    public DbSet<Domain.Entities.Projects.ProjectPhase> ProjectPhases => Set<Domain.Entities.Projects.ProjectPhase>();
+    public DbSet<Domain.Entities.Projects.ProjectTask> ProjectTasks => Set<Domain.Entities.Projects.ProjectTask>();
+    public DbSet<Domain.Entities.Projects.ProjectTaskDependency> ProjectTaskDependencies => Set<Domain.Entities.Projects.ProjectTaskDependency>();
+    public DbSet<Domain.Entities.Projects.ProjectComment> ProjectComments => Set<Domain.Entities.Projects.ProjectComment>();
+    public DbSet<Domain.Entities.Projects.ProjectAttachment> ProjectAttachments => Set<Domain.Entities.Projects.ProjectAttachment>();
+    public DbSet<Domain.Entities.Projects.ProjectMember> ProjectMembers => Set<Domain.Entities.Projects.ProjectMember>();
+    public DbSet<Domain.Entities.Projects.ProjectTimeEntry> ProjectTimeEntries => Set<Domain.Entities.Projects.ProjectTimeEntry>();
+    public DbSet<Domain.Entities.Projects.ProjectCostLine> ProjectCostLines => Set<Domain.Entities.Projects.ProjectCostLine>();
+    public DbSet<Domain.Entities.Projects.ProjectActivity> ProjectActivities => Set<Domain.Entities.Projects.ProjectActivity>();
+    public DbSet<Domain.Entities.Projects.ProjectMilestone> ProjectMilestones => Set<Domain.Entities.Projects.ProjectMilestone>();
+    public DbSet<Domain.Entities.Projects.ProjectSituation> ProjectSituations => Set<Domain.Entities.Projects.ProjectSituation>();
+    public DbSet<Domain.Entities.Projects.ProjectSubcontractor> ProjectSubcontractors => Set<Domain.Entities.Projects.ProjectSubcontractor>();
+    public DbSet<Domain.Entities.Projects.ProjectBilling> ProjectBillings => Set<Domain.Entities.Projects.ProjectBilling>();
+
+    // Recurring contracts / B2B subscriptions — gated by AppModule.RecurringContracts.
+    public DbSet<RecurringContract> RecurringContracts => Set<RecurringContract>();
+    public DbSet<RecurringContractLine> RecurringContractLines => Set<RecurringContractLine>();
+    public DbSet<UsageMetric> UsageMetrics => Set<UsageMetric>();
+    public DbSet<UsageRecord> UsageRecords => Set<UsageRecord>();
+    public DbSet<RecurringContractBillingRun> RecurringContractBillingRuns => Set<RecurringContractBillingRun>();
+    public DbSet<RecurringContractAmendment> RecurringContractAmendments => Set<RecurringContractAmendment>();
+
     // Payroll Module (RH & Paie) — gated by AppModule.Payroll, tables created by migration AddPayrollModule_Tenant.
     public DbSet<Domain.Entities.Payroll.Employee> Employees => Set<Domain.Entities.Payroll.Employee>();
     public DbSet<Domain.Entities.Payroll.EmploymentContract> EmploymentContracts => Set<Domain.Entities.Payroll.EmploymentContract>();
@@ -301,6 +347,8 @@ public partial class TenantDbContext : DbContext
         builder.Ignore<DeliveryNoteFailedEvent>();
         builder.Ignore<DeliveryNoteCancelledEvent>();
         builder.Ignore<DeliveryNoteInvoicedEvent>();
+        builder.Ignore<SalesReturnNoteCreatedEvent>();
+        builder.Ignore<SalesReturnNoteConfirmedEvent>();
         builder.Ignore<InventorySummary>();
         builder.Ignore<InventorySummaryItem>();
         builder.Ignore<StockTransferCreatedEvent>();
@@ -338,6 +386,11 @@ public partial class TenantDbContext : DbContext
         ConfigureStudio(builder);
         ConfigureCashOperationNumberSequence(builder);
         ConfigureCashOperation(builder);
+        ConfigureCashRegister(builder);
+        ConfigureCashRegisterSession(builder);
+        ConfigureZReport(builder);
+        ConfigurePosCartDraft(builder);
+        ConfigurePosHeldTicket(builder);
         ConfigureBankDepositNumberSequence(builder);
         ConfigureBankDeposit(builder);
         ConfigureBankAccount(builder);
@@ -346,6 +399,7 @@ public partial class TenantDbContext : DbContext
         ConfigureWarehouse(builder);
         ConfigureStockItem(builder);
         ConfigureStockMovement(builder);
+        ConfigureStockTraceability(builder);
 
         // Physical Inventory
         ConfigurePhysicalInventory(builder);
@@ -355,6 +409,8 @@ public partial class TenantDbContext : DbContext
         // Delivery Notes
         ConfigureDeliveryNote(builder);
         ConfigureDeliveryNoteLine(builder);
+        ConfigureSalesReturnNote(builder);
+        ConfigureSalesReturnNoteLine(builder);
 
         // Purchasing
         ConfigureSupplier(builder);
@@ -372,6 +428,8 @@ public partial class TenantDbContext : DbContext
         // Stock Transfers
         ConfigureStockTransfer(builder);
         ConfigureStockTransferLine(builder);
+        ConfigureStockVoucher(builder);
+        ConfigureStockVoucherLine(builder);
 
         ConfigureChartOfAccount(builder);
         ConfigureAccountingPeriod(builder);
@@ -436,6 +494,12 @@ public partial class TenantDbContext : DbContext
 
         // Honoraires Module — defined in TenantDbContext.Honoraires.cs (partial class).
         ConfigureHonoraires(builder);
+
+        // Projects / PSA — defined in TenantDbContext.Projects.cs (partial class).
+        ConfigureProjects(builder);
+
+        // Recurring contracts — defined in TenantDbContext.RecurringContracts.cs (partial class).
+        ConfigureRecurringContracts(builder);
 
         // Accounting audit module — defined in TenantDbContext.AccountingAudit.cs (partial class).
         ConfigureAccountingAudit(builder);
@@ -960,6 +1024,19 @@ public partial class TenantDbContext : DbContext
 
             entity.Property(p => p.IsFodecApplicable).HasDefaultValue(false);
             entity.HasIndex(p => p.IsPubliclyListed);
+
+            entity.Property(p => p.IsVariantTemplate).HasDefaultValue(false);
+            entity.Property(p => p.HasExpiryTracking).HasDefaultValue(false);
+            entity.Property(p => p.TrackingMode).HasConversion<int>().HasDefaultValue(TrackingMode.None);
+            entity.Property(p => p.PickingPolicy).HasConversion<int>().HasDefaultValue(PickingPolicy.None);
+            entity.Property(p => p.CostingMethod).HasConversion<int>().HasDefaultValue(CostingMethod.Average);
+            entity.HasIndex(p => p.ParentProductId);
+            entity.HasIndex(p => p.IsVariantTemplate);
+            entity.HasOne<Product>()
+                .WithMany()
+                .HasForeignKey(p => p.ParentProductId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired(false);
         });
     }
 
@@ -1010,6 +1087,22 @@ public partial class TenantDbContext : DbContext
             entity.Property(i => i.SourceSalesOrderId);
             entity.HasIndex(i => i.SourceSalesOrderId)
                 .HasFilter("[SourceSalesOrderId] IS NOT NULL");
+
+            entity.Property(i => i.SourceProjectId);
+            entity.HasIndex(i => i.SourceProjectId)
+                .HasFilter("[SourceProjectId] IS NOT NULL");
+
+            entity.Property(i => i.SourceProjectBillingId);
+            entity.HasIndex(i => i.SourceProjectBillingId)
+                .HasFilter("[SourceProjectBillingId] IS NOT NULL");
+
+            entity.Property(i => i.SourceRecurringContractId);
+            entity.HasIndex(i => i.SourceRecurringContractId)
+                .HasFilter("[SourceRecurringContractId] IS NOT NULL");
+
+            entity.Property(i => i.SourceRecurringContractBillingRunId);
+            entity.HasIndex(i => i.SourceRecurringContractBillingRunId)
+                .HasFilter("[SourceRecurringContractBillingRunId] IS NOT NULL");
 
             entity.Property(i => i.IssuerCompanyId);
 
@@ -1139,6 +1232,8 @@ public partial class TenantDbContext : DbContext
             entity.HasIndex(i => i.SourceQuoteId);
             entity.HasIndex(i => i.WarehouseId);
             entity.HasIndex(i => i.IssuerCompanyId);
+            entity.HasIndex(i => i.CashRegisterSessionId)
+                .HasFilter("[CashRegisterSessionId] IS NOT NULL");
 
             // Remise de pied de document (tranche 5B). Le montant est persisté : il fait foi au
             // rechargement, quand le pourcentage n'est pas renseigné.
@@ -1265,6 +1360,7 @@ public partial class TenantDbContext : DbContext
             entity.HasOne(l => l.Product)
                 .WithMany()
                 .HasForeignKey(l => l.ProductId)
+                .IsRequired(false)
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(l => l.InvoiceId);
@@ -1316,6 +1412,8 @@ public partial class TenantDbContext : DbContext
 
             entity.HasIndex(p => p.InvoiceId);
             entity.HasIndex(p => p.PaymentDate);
+            entity.HasIndex(p => p.CashRegisterSessionId)
+                .HasFilter("[CashRegisterSessionId] IS NOT NULL");
         });
     }
 
@@ -1413,6 +1511,163 @@ public partial class TenantDbContext : DbContext
             entity.HasIndex(e => new { e.Origin, e.SourceType, e.SourceId })
                 .IsUnique()
                 .HasFilter("[SourceId] IS NOT NULL");
+            entity.HasIndex(e => e.CashRegisterSessionId)
+                .HasFilter("[CashRegisterSessionId] IS NOT NULL");
+        });
+    }
+
+    private static void ConfigureCashRegister(ModelBuilder builder)
+    {
+        builder.Entity<CashRegister>(entity =>
+        {
+            entity.ToTable("CashRegisters");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Version).IsConcurrencyToken();
+
+            entity.Property(e => e.Code)
+                .HasMaxLength(20)
+                .IsRequired();
+
+            entity.Property(e => e.Name)
+                .HasMaxLength(100)
+                .IsRequired();
+
+            entity.Property(e => e.IsActive)
+                .IsRequired();
+
+            entity.HasOne(e => e.Warehouse)
+                .WithMany()
+                .HasForeignKey(e => e.WarehouseId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(e => e.Code).IsUnique();
+            entity.HasIndex(e => e.WarehouseId);
+            entity.HasIndex(e => e.IsActive);
+        });
+    }
+
+    private static void ConfigureCashRegisterSession(ModelBuilder builder)
+    {
+        builder.Entity<CashRegisterSession>(entity =>
+        {
+            entity.ToTable("CashRegisterSessions");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Status).IsRequired();
+            entity.Property(e => e.OpenedAt).IsRequired();
+            entity.Property(e => e.OpenedByUserId).IsRequired();
+
+            entity.OwnsOne(e => e.OpeningFloat, money =>
+            {
+                money.Property(m => m.Amount)
+                    .HasColumnName("OpeningFloat")
+                    .HasPrecision(18, 3)
+                    .IsRequired();
+                money.Property(m => m.Currency)
+                    .HasColumnName("OpeningFloatCurrency")
+                    .HasMaxLength(3)
+                    .IsRequired();
+            });
+            entity.Navigation(e => e.OpeningFloat).IsRequired();
+
+            ConfigureOwnedMoney(entity, e => e.ClosingCountedCash, "ClosingCountedCash");
+            ConfigureOwnedMoney(entity, e => e.ClosingExpectedCash, "ClosingExpectedCash");
+            ConfigureOwnedMoney(entity, e => e.CashVariance, "CashVariance");
+
+            entity.HasOne(e => e.CashRegister)
+                .WithMany()
+                .HasForeignKey(e => e.CashRegisterId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(e => e.CashRegisterId)
+                .IsUnique()
+                .HasFilter("[Status] = 0")
+                .HasDatabaseName("IX_CashRegisterSessions_OpenPerRegister");
+
+            entity.HasIndex(e => new { e.CashRegisterId, e.OpenedAt });
+            entity.HasIndex(e => e.ZReportId)
+                .IsUnique()
+                .HasFilter("[ZReportId] IS NOT NULL");
+        });
+    }
+
+    private static void ConfigureZReport(ModelBuilder builder)
+    {
+        builder.Entity<ZReport>(entity =>
+        {
+            entity.ToTable("ZReports");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Version).IsConcurrencyToken();
+            entity.Property(e => e.SnapshotJson).IsRequired();
+            entity.Property(e => e.GeneratedAt).IsRequired();
+
+            entity.OwnsOne(e => e.Number, num =>
+            {
+                num.Property(x => x.Value)
+                    .HasColumnName("Number")
+                    .HasMaxLength(50)
+                    .IsRequired();
+
+                num.Property(x => x.Year)
+                    .HasColumnName("NumberYear")
+                    .IsRequired();
+
+                num.Property(x => x.Sequence)
+                    .HasColumnName("NumberSequence")
+                    .IsRequired();
+
+                num.HasIndex(x => x.Value).IsUnique();
+            });
+
+            entity.HasIndex(e => e.CashRegisterSessionId).IsUnique();
+            entity.HasIndex(e => e.GeneratedAt);
+        });
+    }
+
+    private static void ConfigurePosCartDraft(ModelBuilder builder)
+    {
+        builder.Entity<PosCartDraft>(entity =>
+        {
+            entity.ToTable("PosCartDrafts");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Version).IsConcurrencyToken();
+            entity.Property(e => e.StateJson).IsRequired();
+            entity.Property(e => e.UserId).IsRequired();
+            entity.Property(e => e.CashRegisterId).IsRequired();
+
+            entity.HasIndex(e => new { e.UserId, e.CashRegisterId }).IsUnique();
+            entity.HasIndex(e => e.CashRegisterId);
+        });
+    }
+
+    private static void ConfigurePosHeldTicket(ModelBuilder builder)
+    {
+        builder.Entity<PosHeldTicket>(entity =>
+        {
+            entity.ToTable("PosHeldTickets");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Version).IsConcurrencyToken();
+
+            entity.Property(e => e.Label)
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(e => e.TotalTtc)
+                .HasPrecision(18, 3)
+                .IsRequired();
+
+            entity.Property(e => e.StateJson).IsRequired();
+            entity.Property(e => e.HeldAt).IsRequired();
+
+            entity.HasIndex(e => e.CashRegisterId);
+            entity.HasIndex(e => e.CashRegisterSessionId)
+                .HasFilter("[CashRegisterSessionId] IS NOT NULL");
+            entity.HasIndex(e => e.HeldByUserId);
+            entity.HasIndex(e => e.HeldAt);
         });
     }
 
@@ -1992,6 +2247,7 @@ public partial class TenantDbContext : DbContext
             entity.Property(l => l.Quantity).HasPrecision(18, 4).IsRequired();
             entity.Property(l => l.DeliveredQuantity).HasPrecision(18, 4).IsRequired();
             entity.Property(l => l.InvoicedQuantity).HasPrecision(18, 4).IsRequired();
+            entity.Property(l => l.ReturnedQuantity).HasPrecision(18, 4).IsRequired();
 
             entity.Property(l => l.DiscountPercent).HasPrecision(5, 2);
             entity.Property(l => l.AppliedPromotionName).HasMaxLength(100);
@@ -2164,6 +2420,7 @@ public partial class TenantDbContext : DbContext
             entity.HasOne(l => l.Product)
                 .WithMany()
                 .HasForeignKey(l => l.ProductId)
+                .IsRequired(false)
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(l => l.QuoteId);
@@ -2299,6 +2556,10 @@ public partial class TenantDbContext : DbContext
             entity.Property(m => m.OccurredAt)
                 .IsRequired();
 
+            entity.HasIndex(m => m.ProductLotId);
+            entity.HasIndex(m => m.SerialId);
+            entity.HasIndex(m => m.ValuationLayerId);
+
             // Indexes for queries
             entity.HasIndex(m => m.StockItemId);
             entity.HasIndex(m => m.OccurredAt);
@@ -2383,9 +2644,12 @@ public partial class TenantDbContext : DbContext
             entity.Property(l => l.CountedQuantity)
                 .HasPrecision(18, 4);
 
+            entity.Property(l => l.LotNumber)
+                .HasMaxLength(50);
+
             entity.HasIndex(l => l.InventoryId);
             entity.HasIndex(l => l.ProductId);
-            entity.HasIndex(l => new { l.InventoryId, l.ProductId }).IsUnique();
+            entity.HasIndex(l => l.ProductLotId);
         });
     }
 
@@ -2395,6 +2659,8 @@ public partial class TenantDbContext : DbContext
         {
             entity.ToTable("DeliveryNotes");
             entity.HasKey(d => d.Id);
+
+            entity.Property(d => d.Version).IsConcurrencyToken();
 
             entity.Property(d => d.Reference)
                 .HasMaxLength(100);
@@ -2531,6 +2797,10 @@ public partial class TenantDbContext : DbContext
                 .HasPrecision(18, 4)
                 .IsRequired();
 
+            entity.Property(l => l.ReturnedQuantity)
+                .HasPrecision(18, 4)
+                .IsRequired();
+
             entity.Property(l => l.RejectionReason)
                 .HasMaxLength(500);
 
@@ -2543,6 +2813,123 @@ public partial class TenantDbContext : DbContext
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(l => l.DeliveryNoteId);
+            entity.HasIndex(l => l.ProductId);
+        });
+    }
+
+    private static void ConfigureSalesReturnNote(ModelBuilder builder)
+    {
+        builder.Entity<SalesReturnNote>(entity =>
+        {
+            entity.ToTable("SalesReturnNotes");
+            entity.HasKey(n => n.Id);
+
+            entity.Property(n => n.Version).IsConcurrencyToken();
+
+            entity.Property(n => n.Reason)
+                .HasMaxLength(500)
+                .IsRequired();
+
+            entity.Property(n => n.Notes)
+                .HasMaxLength(2000);
+
+            entity.OwnsOne(n => n.Number, num =>
+            {
+                num.Property(x => x.Value)
+                    .HasColumnName("Number")
+                    .HasMaxLength(50)
+                    .IsRequired();
+
+                num.Property(x => x.Year)
+                    .HasColumnName("NumberYear")
+                    .IsRequired();
+
+                num.Property(x => x.Sequence)
+                    .HasColumnName("NumberSequence")
+                    .IsRequired();
+
+                num.HasIndex(x => x.Value).IsUnique();
+            });
+
+            entity.HasOne(n => n.Client)
+                .WithMany()
+                .HasForeignKey(n => n.ClientId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(n => n.DeliveryNote)
+                .WithMany()
+                .HasForeignKey(n => n.DeliveryNoteId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(n => n.Warehouse)
+                .WithMany()
+                .HasForeignKey(n => n.WarehouseId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(n => n.Lines)
+                .WithOne(l => l.SalesReturnNote)
+                .HasForeignKey(l => l.SalesReturnNoteId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(n => n.DeliveryNoteId);
+            entity.HasIndex(n => n.ClientId);
+            entity.HasIndex(n => n.Status);
+            entity.HasIndex(n => n.ReturnDate);
+        });
+    }
+
+    private static void ConfigureSalesReturnNoteLine(ModelBuilder builder)
+    {
+        builder.Entity<SalesReturnNoteLine>(entity =>
+        {
+            entity.ToTable("SalesReturnNoteLines");
+            entity.HasKey(l => l.Id);
+
+            entity.Property(l => l.ProductCode)
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(l => l.Designation)
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(l => l.Description)
+                .HasMaxLength(1000);
+
+            entity.Property(l => l.Unit)
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(l => l.UnitPriceHT)
+                .HasPrecision(18, 3)
+                .IsRequired();
+
+            entity.Property(l => l.DiscountPercent)
+                .HasPrecision(5, 2);
+
+            entity.Property(l => l.FodecRatePercent)
+                .HasPrecision(5, 2)
+                .IsRequired();
+
+            entity.Property(l => l.ReturnedQuantity)
+                .HasPrecision(18, 4)
+                .IsRequired();
+
+            entity.Property(l => l.Notes)
+                .HasMaxLength(500);
+
+            entity.HasOne(l => l.Product)
+                .WithMany()
+                .HasForeignKey(l => l.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne<DeliveryNoteLine>()
+                .WithMany()
+                .HasForeignKey(l => l.DeliveryNoteLineId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(l => l.SalesReturnNoteId);
+            entity.HasIndex(l => l.DeliveryNoteLineId);
             entity.HasIndex(l => l.ProductId);
         });
     }
@@ -2711,6 +3098,10 @@ public partial class TenantDbContext : DbContext
             entity.HasIndex(po => po.OrderDate);
             entity.HasIndex(po => po.SupplierId);
             entity.HasIndex(po => po.WarehouseId);
+
+            entity.Property(po => po.ProjectId);
+            entity.HasIndex(po => po.ProjectId)
+                .HasFilter("[ProjectId] IS NOT NULL");
         });
     }
 
@@ -3270,6 +3661,71 @@ public partial class TenantDbContext : DbContext
 
             entity.HasIndex(l => l.StockTransferId);
             entity.HasIndex(l => l.ProductId);
+        });
+    }
+
+    private static void ConfigureStockVoucher(ModelBuilder builder)
+    {
+        builder.Entity<StockVoucher>(entity =>
+        {
+            entity.ToTable("StockVouchers");
+            entity.HasKey(v => v.Id);
+
+            entity.Property(v => v.Version).IsConcurrencyToken();
+            entity.Property(v => v.ExternalReference).HasMaxLength(100);
+            entity.Property(v => v.Notes).HasMaxLength(2000);
+            entity.Property(v => v.CancellationReason).HasMaxLength(500);
+
+            entity.OwnsOne(v => v.Number, num =>
+            {
+                num.Property(n => n.Value).HasColumnName("Number").HasMaxLength(50).IsRequired();
+                num.Property(n => n.Prefix).HasColumnName("NumberPrefix").HasMaxLength(10).IsRequired();
+                num.Property(n => n.Year).HasColumnName("NumberYear").IsRequired();
+                num.Property(n => n.Sequence).HasColumnName("NumberSequence").IsRequired();
+                num.HasIndex(n => n.Value).IsUnique();
+            });
+
+            entity.HasOne(v => v.Warehouse)
+                .WithMany()
+                .HasForeignKey(v => v.WarehouseId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(v => v.Lines)
+                .WithOne(l => l.StockVoucher)
+                .HasForeignKey(l => l.StockVoucherId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(v => v.Status);
+            entity.HasIndex(v => v.Kind);
+            entity.HasIndex(v => v.VoucherDate);
+            entity.HasIndex(v => v.WarehouseId);
+            entity.HasIndex(v => new { v.Kind, v.Status });
+
+            entity.Ignore(v => v.TotalQuantity);
+            entity.Ignore(v => v.TotalValue);
+            entity.Ignore(v => v.StockMovementReference);
+            entity.Ignore(v => v.StockReversalReference);
+        });
+    }
+
+    private static void ConfigureStockVoucherLine(ModelBuilder builder)
+    {
+        builder.Entity<StockVoucherLine>(entity =>
+        {
+            entity.ToTable("StockVoucherLines");
+            entity.HasKey(l => l.Id);
+
+            entity.Property(l => l.ProductCode).HasMaxLength(50).IsRequired();
+            entity.Property(l => l.ProductName).HasMaxLength(200).IsRequired();
+            entity.Property(l => l.Unit).HasMaxLength(50);
+            entity.Property(l => l.Quantity).HasPrecision(18, 4);
+            entity.Property(l => l.UnitCost).HasPrecision(18, 4);
+            entity.Property(l => l.Notes).HasMaxLength(500);
+            entity.Ignore(l => l.LineValue);
+
+            entity.HasIndex(l => l.StockVoucherId);
+            entity.HasIndex(l => l.ProductId);
+            entity.HasIndex(l => new { l.StockVoucherId, l.ProductId }).IsUnique();
         });
     }
 

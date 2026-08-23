@@ -116,6 +116,21 @@ public sealed class SupplierInvoiceRepository : ISupplierInvoiceRepository
             .AnyAsync(si => si.InvoiceNumber == invoiceNumber, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<string>> GetNonCancelledExternalReferencesForSupplierAsync(
+        Guid supplierId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.SupplierInvoices
+            .AsNoTracking()
+            .Where(si => si.SupplierId == supplierId
+                         && si.Status != SupplierInvoiceStatus.Cancelled
+                         && si.ExternalReference != null
+                         && si.ExternalReference != "")
+            .Select(si => si.ExternalReference!)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<decimal> SumFixedAssetDeductibleVatAsync(
         DateTime fromDate,
         DateTime toDate,

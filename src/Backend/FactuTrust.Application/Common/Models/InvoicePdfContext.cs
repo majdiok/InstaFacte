@@ -10,4 +10,5 @@ public sealed record InvoicePdfContext(
     Invoice Invoice,
     Company? Issuer,
     string? SourceQuoteNumber,
-    string? LinkedInvoiceNumber = null);
+    string? LinkedInvoiceNumber = null,
+    IReadOnlyDictionary<Guid, string>? LotLabelsByLineId = null);

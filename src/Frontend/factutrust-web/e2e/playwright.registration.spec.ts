@@ -610,6 +610,10 @@ test.describe('Tests Playwright - Inscription FactuTrust', () => {
       await page.waitForURL('**/dashboard', { timeout: 15000 });
       const currentUrl = page.url();
       expect(currentUrl).toContain('/dashboard');
+      const skipTour = page.locator('.ft-product-tour__skip, .driver-popover-close-btn, button:has-text("Ignorer")').first();
+      if (await skipTour.isVisible().catch(() => false)) {
+        await skipTour.click();
+      }
       console.log('✅ Inscription réussie, redirection vers dashboard');
     } catch (error) {
       // Attendre un peu pour que le message d'erreur apparaisse

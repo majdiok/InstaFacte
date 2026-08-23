@@ -62,6 +62,27 @@ export const QUICK_ACCESS_ITEMS: QuickAccessItem[] = [
     section: 'create'
   },
   {
+    label: 'Ajouter un bon de retour',
+    icon: 'fa-solid fa-rotate-left',
+    route: '/return-notes/new',
+    permission: PERMISSIONS.returnNotes.create,
+    section: 'create'
+  },
+  {
+    label: "Ajouter un bon d'entrée",
+    icon: 'fa-solid fa-arrow-down',
+    route: '/stock/entries/new',
+    permission: PERMISSIONS.stockVouchers.create,
+    section: 'create'
+  },
+  {
+    label: 'Ajouter un bon de sortie',
+    icon: 'fa-solid fa-arrow-up',
+    route: '/stock/issues/new',
+    permission: PERMISSIONS.stockVouchers.create,
+    section: 'create'
+  },
+  {
     label: 'Paiements',
     icon: 'fa-solid fa-credit-card',
     route: '/payments',

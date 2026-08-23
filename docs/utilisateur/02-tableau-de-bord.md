@@ -2,6 +2,8 @@
 
 Le tableau de bord est la première page que vous voyez après la connexion. Il vous donne une vue d'ensemble de votre activité.
 
+Pour un **nouveau compte**, une carte **Premiers pas** apparaît au-dessus des indicateurs. Elle propose les actions essentielles (fiche entreprise, premier client, premier article, première facture). Vous pouvez la masquer. La visite guidée se relance depuis le menu profil.
+
 ---
 
 ## Vue d'ensemble
@@ -66,13 +68,14 @@ Si les modules sont activés :
 
 ## Actions rapides
 
-Six boutons permettent d'accéder rapidement aux actions les plus courantes :
+Des boutons permettent d'accéder rapidement aux actions les plus courantes :
 
 | Action | Description |
 |--------|-------------|
 | **Créer une facture** | Créer une facture client |
 | **Nouveau devis** | Accéder aux devis |
 | **Bon de livraison** | Créer un bon de livraison |
+| **Bon de retour** | Créer un bon de retour (livré, non facturé) |
 | **Mes clients** | Gérer votre liste de clients |
 | **Paiements** | Voir et enregistrer les paiements |
 | **Rapports** | Consulter les statistiques |

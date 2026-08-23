@@ -233,6 +233,10 @@ public partial class PdfService
                         c.Item().Text(line.ProductName).Bold().FontSize(8);
                         if (!string.IsNullOrEmpty(line.ProductDescription))
                             c.Item().Text(CleanTextForPdf(line.ProductDescription)).FontSize(7).FontColor(Colors.Grey.Darken1);
+                        if (ctx.LotLabelsByLineId is not null
+                            && ctx.LotLabelsByLineId.TryGetValue(line.Id, out var lotLabel)
+                            && !string.IsNullOrWhiteSpace(lotLabel))
+                            c.Item().Text(lotLabel).FontSize(7).FontColor(Colors.Grey.Darken2);
                     });
                     table.Cell().Background(bg).Padding(4).AlignRight().AlignMiddle()
                         .Text($"{line.Quantity:N2}").FontSize(8);

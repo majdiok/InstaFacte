@@ -72,10 +72,6 @@ public sealed class FirmDecisionTablesServiceTests
         It.IsAny<CancellationToken>()))
       .ReturnsAsync(new FirmDossierTimeProfitabilityReportDto());
 
-    var governance = new Mock<IFirmGovernanceService>();
-    governance.Setup(g => g.GetSocialOverviewAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-      .ReturnsAsync(new FirmSocialOverviewDto { Clients = [] });
-
     var rentability = new Mock<IFirmCollaboratorRentabilityService>();
     rentability.Setup(r => r.ListAsync(It.IsAny<Guid>(), It.IsAny<int?>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
       .ReturnsAsync(new FirmCollaboratorRentabilityListDto
@@ -91,7 +87,6 @@ public sealed class FirmDecisionTablesServiceTests
     var service = CreateService(
       fiscal: fiscal,
       timeProfit: timeProfit,
-      governance: governance,
       rentability: rentability,
       today: today);
     var result = await service.GetDecisionTablesAsync(Guid.NewGuid());
@@ -104,7 +99,6 @@ public sealed class FirmDecisionTablesServiceTests
   private static FirmDecisionTablesService CreateService(
     Mock<IFirmFiscalScheduleService>? fiscal = null,
     Mock<IFirmTimeProfitabilityService>? timeProfit = null,
-    Mock<IFirmGovernanceService>? governance = null,
     Mock<IFirmCollaboratorRentabilityService>? rentability = null,
     DateTime? today = null)
   {
@@ -131,13 +125,6 @@ public sealed class FirmDecisionTablesServiceTests
         .ReturnsAsync(new FirmDossierTimeProfitabilityReportDto());
     }
 
-    if (governance is null)
-    {
-      governance = new Mock<IFirmGovernanceService>();
-      governance.Setup(g => g.GetSocialOverviewAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-        .ReturnsAsync(new FirmSocialOverviewDto { Clients = [] });
-    }
-
     if (rentability is null)
     {
       rentability = new Mock<IFirmCollaboratorRentabilityService>();
@@ -156,7 +143,6 @@ public sealed class FirmDecisionTablesServiceTests
       Mock.Of<ITenantService>(),
       fiscal.Object,
       timeProfit.Object,
-      governance.Object,
       rentability.Object,
       new MemoryCache(new MemoryCacheOptions()),
       time,

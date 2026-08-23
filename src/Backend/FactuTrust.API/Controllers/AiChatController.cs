@@ -36,12 +36,15 @@ public class AiChatController : ControllerBase
     private readonly IOpenAiChatCompletionsClient _openAiClient;
     private readonly ICursorAgentClient _cursorAgentClient;
     private readonly IPlatformAiSettingsService _platformAiSettings;
+    private readonly IModalCredentialsResolver _modalCredentials;
+    private readonly ITenantContext _tenantContext;
     private readonly IOllamaInferenceProfileResolver _inferenceProfileResolver;
     private readonly IAiModelRecommender _modelRecommender;
     private readonly ILogger<AiChatController> _logger;
     private readonly IHostEnvironment _environment;
     private readonly OllamaSettings _ollamaSettings;
     private readonly CursorSdkSettings _cursorSdkSettings;
+    private readonly ModalSettings _modalSettings;
     private readonly IAiDocumentTextExtractor _documentTextExtractor;
 
     public AiChatController(
@@ -51,13 +54,16 @@ public class AiChatController : ControllerBase
         IOpenAiChatCompletionsClient openAiClient,
         ICursorAgentClient cursorAgentClient,
         IPlatformAiSettingsService platformAiSettings,
+        IModalCredentialsResolver modalCredentials,
+        ITenantContext tenantContext,
         IOllamaInferenceProfileResolver inferenceProfileResolver,
         IAiModelRecommender modelRecommender,
         IAiDocumentTextExtractor documentTextExtractor,
         ILogger<AiChatController> logger,
         IHostEnvironment environment,
         IOptions<OllamaSettings> ollamaSettings,
-        IOptions<CursorSdkSettings> cursorSdkSettings)
+        IOptions<CursorSdkSettings> cursorSdkSettings,
+        IOptions<ModalSettings> modalSettings)
     {
         _mediator = mediator;
         _chatHandler = chatHandler;
@@ -65,6 +71,8 @@ public class AiChatController : ControllerBase
         _openAiClient = openAiClient;
         _cursorAgentClient = cursorAgentClient;
         _platformAiSettings = platformAiSettings;
+        _modalCredentials = modalCredentials;
+        _tenantContext = tenantContext;
         _inferenceProfileResolver = inferenceProfileResolver;
         _modelRecommender = modelRecommender;
         _documentTextExtractor = documentTextExtractor;
@@ -72,6 +80,7 @@ public class AiChatController : ControllerBase
         _environment = environment;
         _ollamaSettings = ollamaSettings.Value;
         _cursorSdkSettings = cursorSdkSettings.Value;
+        _modalSettings = modalSettings.Value;
     }
 
     private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -372,6 +381,40 @@ public class AiChatController : ControllerBase
             }
         }
 
+        try
+        {
+            var modal = await _modalCredentials.ResolveAsync(_tenantContext.TenantId, cancellationToken);
+            if (!string.IsNullOrEmpty(modal.ApiKey) && !string.IsNullOrWhiteSpace(modal.BaseUrl))
+            {
+                try
+                {
+                    var remote = await _openAiClient.ListModelsAsync(
+                        modal.BaseUrl,
+                        modal.ApiKey,
+                        cancellationToken,
+                        OpenAiCompatibleCallOptions.ForModal(_modalSettings, sessionId: null));
+                    if (remote.Count == 0)
+                    {
+                        unified.Add(ModalModelCatalog.ToUnified(_modalSettings.DefaultModelId));
+                    }
+                    else
+                    {
+                        foreach (var r in remote)
+                            unified.Add(ModalModelCatalog.ToUnified(r.Id, r.Name));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to list Modal models; injecting static catalogue.");
+                    unified.Add(ModalModelCatalog.ToUnified(_modalSettings.DefaultModelId));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to resolve Modal credentials; returning other providers only.");
+        }
+
         return Ok(ApiResponse<IReadOnlyList<UnifiedAiModelInfo>>.Ok(unified));
     }
 
@@ -506,7 +549,7 @@ public class AiChatController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<AiConfiguredStatusDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetConfiguredStatus(CancellationToken cancellationToken)
     {
-        var state = await ResolveHealthStateAsync(cancellationToken);
+        var state = await ResolveHealthStateAsync(useTenantModal: true, cancellationToken);
         var dto = new AiConfiguredStatusDto(
             HasOllamaModels: state.OllamaOk,
             HasCloudProvider: state.HasCloudProvider,
@@ -546,23 +589,29 @@ public class AiChatController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> Health(CancellationToken cancellationToken)
     {
-        var state = await ResolveHealthStateAsync(cancellationToken);
+        var state = await ResolveHealthStateAsync(useTenantModal: false, cancellationToken);
         return Ok(new { available = state.Available });
     }
 
     private sealed record AiHealthState(bool Available, bool OllamaOk, bool HasCloudProvider);
 
-    private async Task<AiHealthState> ResolveHealthStateAsync(CancellationToken cancellationToken)
+    private async Task<AiHealthState> ResolveHealthStateAsync(bool useTenantModal, CancellationToken cancellationToken)
     {
         var ollamaOk = await _ollamaClient.IsAvailableAsync(cancellationToken);
         var openRouter = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
         var cursor = await _platformAiSettings.GetCursorCredentialsAsync(cancellationToken);
+        var modal = useTenantModal
+            ? await _modalCredentials.ResolveAsync(_tenantContext.TenantId, cancellationToken)
+            : ResolvedModalCredentials.FromPlatform(
+                await _platformAiSettings.GetModalCredentialsAsync(cancellationToken));
         var hasCloudProvider = AiAssistantAvailabilityResolver.HasCloudProviderConfigured(
             openRouter.IsEnabled,
             openRouter.ApiKey,
             _cursorSdkSettings.Enabled,
             cursor.IsEnabled,
-            cursor.ApiKey);
+            cursor.ApiKey,
+            modal.IsEnabled,
+            modal.ApiKey);
 
         var configured = await _platformAiSettings.GetDefaultModelRefAsync(cancellationToken);
         var fallback = string.IsNullOrWhiteSpace(_ollamaSettings.DefaultModel)

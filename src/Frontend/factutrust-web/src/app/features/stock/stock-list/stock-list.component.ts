@@ -1,7 +1,7 @@
 import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule, CurrencyPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { StockService, StockItem, Warehouse, MovementReason, RecordExitRequest, AdjustStockRequest } from '@core/services/stock.service';
+import { StockService, StockItem, Warehouse, MovementReason, RecordExitRequest, AdjustStockRequest, StockFeatures, StockLotBalance, ExpiryAlert } from '@core/services/stock.service';
 import { ProductService, ProductListItem } from '@core/services/product.service';
 import { TableTotalsBarComponent, TotalMetric } from '@shared/components/table-totals-bar/table-totals-bar.component';
 
@@ -28,6 +28,8 @@ import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
+import { AuthService } from '@core/services/auth.service';
+import { PERMISSIONS } from '@core/config/permission-keys';
 
 interface StatusOption {
   label: string;
@@ -69,6 +71,9 @@ export class StockListComponent implements OnInit {
   private confirmationService = inject(ConfirmationService);
   private errorHandler = inject(ErrorHandlerService);
   private router = inject(Router);
+  private auth = inject(AuthService);
+
+  canCreateStockVoucher = computed(() => this.auth.hasPermission(PERMISSIONS.stockVouchers.create));
 
   // Data Signals
   items = signal<StockItem[]>([]);
@@ -97,6 +102,9 @@ export class StockListComponent implements OnInit {
   exitDialogVisible = false;
   adjustDialogVisible = false;
   selectedItemForAdjust: StockItem | null = null;
+  lotTrackingEnabled = signal(false);
+  expiryAlerts = signal<ExpiryAlert[]>([]);
+  expandedLots = signal<Record<string, StockLotBalance[]>>({});
 
   // Filters
   searchTerm = '';
@@ -137,8 +145,7 @@ export class StockListComponent implements OnInit {
 
   exitReasons = [
     { label: 'Retour Fournisseur', value: MovementReason.SupplierReturn },
-    { label: 'Dommage / Perte', value: MovementReason.Damage },
-    { label: 'Transfert', value: MovementReason.Transfer }
+    { label: 'Dommage / Perte', value: MovementReason.Damage }
   ];
 
   // Adjustment Form Model
@@ -151,6 +158,35 @@ export class StockListComponent implements OnInit {
     this.loadData();
     this.loadWarehouses();
     this.loadProducts();
+    this.stockService.getFeatures().subscribe({
+      next: res => {
+        if (res.success && res.data) {
+          this.lotTrackingEnabled.set(res.data.lotTrackingEnabled);
+          if (res.data.expiryTrackingEnabled) {
+            this.stockService.getExpiryAlerts().subscribe({
+              next: alerts => {
+                if (alerts.success && alerts.data) this.expiryAlerts.set(alerts.data);
+              }
+            });
+          }
+        }
+      }
+    });
+  }
+
+  toggleLots(item: StockItem): void {
+    const current = this.expandedLots();
+    if (current[item.id]) {
+      const next = { ...current };
+      delete next[item.id];
+      this.expandedLots.set(next);
+      return;
+    }
+    this.stockService.getLots(item.id).subscribe({
+      next: res => {
+        this.expandedLots.set({ ...this.expandedLots(), [item.id]: res.data ?? [] });
+      }
+    });
   }
 
   loadData() {

@@ -85,16 +85,6 @@ export interface FirmPendingTimeSheetRow {
   companyNames: string[];
 }
 
-export interface FirmSocialAlertRow {
-  companyTenantId: string;
-  companyName: string;
-  employeeCount: number;
-  pendingLeaveRequests: number;
-  payrollRunsDraftCount: number;
-  dtsPendingCount: number;
-  alertScore: number;
-}
-
 export interface FirmHonorairesAlertRow {
   firmClientAssignmentId: string;
   companyTenantId?: string;
@@ -122,7 +112,6 @@ export interface FirmDecisionTablesData {
   atRiskDossiers: FirmAtRiskDossierRow[];
   negativeMargins: FirmNegativeMarginRow[];
   pendingTimeSheets: FirmPendingTimeSheetRow[];
-  socialAlerts: FirmSocialAlertRow[];
   honorairesAlerts: FirmHonorairesAlertRow[];
   meta: FirmDecisionTablesMeta;
 }

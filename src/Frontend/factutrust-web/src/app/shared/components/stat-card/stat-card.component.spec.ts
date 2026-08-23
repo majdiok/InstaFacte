@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { StatCardComponent } from './stat-card.component';
+import { DECORATIVE_SPARKLINE_POINTS, StatCardComponent } from './stat-card.component';
 
 describe('StatCardComponent', () => {
   let fixture: ComponentFixture<StatCardComponent>;
@@ -30,6 +30,48 @@ describe('StatCardComponent', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('.stat-card--solid')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('.stat-sparkline')).toBeTruthy();
+  });
+
+  it('should not render a sparkline in default appearance', () => {
+    component.appearance = 'default';
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.stat-sparkline')).toBeNull();
+  });
+
+  it('should keep the decorative polyline when solid and sparkline is omitted', () => {
+    component.appearance = 'solid';
+    fixture.detectChanges();
+    const polyline = fixture.nativeElement.querySelector('.stat-sparkline polyline') as SVGPolylineElement | null;
+    expect(polyline).toBeTruthy();
+    expect(polyline!.getAttribute('points')).toBe(DECORATIVE_SPARKLINE_POINTS);
+  });
+
+  it('should render a data-driven path when a series is provided', () => {
+    component.appearance = 'solid';
+    component.sparkline = [1, 3, 2];
+    fixture.detectChanges();
+    const svg = fixture.nativeElement.querySelector('.stat-sparkline') as SVGElement | null;
+    const paths = fixture.nativeElement.querySelectorAll('.stat-sparkline path');
+    expect(svg).toBeTruthy();
+    expect(paths.length).toBe(2);
+    expect(paths[1].getAttribute('d')).toContain('M ');
+    expect(paths[1].getAttribute('d')).toContain(' L ');
+    expect(fixture.nativeElement.querySelector('.stat-sparkline polyline')).toBeNull();
+    expect(paths[1].getAttribute('d')).not.toContain(DECORATIVE_SPARKLINE_POINTS);
+  });
+
+  it('should hide the sparkline when sparkline is explicitly null', () => {
+    component.appearance = 'solid';
+    component.sparkline = null;
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.stat-sparkline')).toBeNull();
+  });
+
+  it('should hide the sparkline when the series is too short', () => {
+    component.appearance = 'solid';
+    component.sparkline = [42];
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.stat-sparkline')).toBeNull();
   });
 
   it('should use black label color in solid appearance', () => {

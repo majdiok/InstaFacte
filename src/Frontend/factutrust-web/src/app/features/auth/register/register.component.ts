@@ -1,9 +1,10 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators, FormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { trigger, transition, style, animate } from '@angular/animations';
 import { HttpErrorResponse } from '@angular/common/http';
+import { timeout, TimeoutError, catchError, throwError } from 'rxjs';
 import { InputTextModule } from 'primeng/inputtext';
 import { PasswordModule } from 'primeng/password';
 import { ButtonModule } from 'primeng/button';
@@ -38,6 +39,7 @@ import {
   cleanPhoneValue,
   dropdownStringValue,
   markAllFormControlsTouched,
+  scrollAuthWizardStepIntoView,
   scrollToFirstInvalidField,
   trimOptional,
   trimRequired,
@@ -92,9 +94,12 @@ interface TaxRegime {
   templateUrl: './register.component.html',
   styleUrl: './register.component.scss'
 })
-export class RegisterComponent implements OnInit {
+export class RegisterComponent implements OnInit, OnDestroy {
   readonly environment = environment;
   readonly shellConfig = REGISTER_AUTH_SHELL_CONFIG;
+
+  private static readonly REGISTRATION_TIMEOUT_MS = 120_000;
+
   private fb = inject(FormBuilder);
   private authService = inject(AuthService);
   private warehouseContext = inject(WarehouseContextService);
@@ -103,8 +108,12 @@ export class RegisterComponent implements OnInit {
   errorMessageService = inject(ErrorMessageService);
 
   loading = signal(false);
+  loadingMessage = signal('Création de votre espace...');
   error = signal<string | null>(null);
   currentStep = signal(0);
+
+  private loadingMessageTimer: ReturnType<typeof setInterval> | null = null;
+  private loadingStartedAt = 0;
 
   /** Libellé ARIA pour le formulaire multi-étapes (progression + contexte). */
   registrationFormAriaLabel = computed(() => {
@@ -219,6 +228,10 @@ export class RegisterComponent implements OnInit {
     });
   }
 
+  ngOnDestroy(): void {
+    this.clearLoadingMessageTimer();
+  }
+
   isInvalid(field: string): boolean {
     const control = this.form.get(field);
     return !!(control?.invalid && control?.touched);
@@ -248,12 +261,14 @@ export class RegisterComponent implements OnInit {
   nextStep(): void {
     if (this.isCurrentStepValid() && this.currentStep() < 2) {
       this.currentStep.update(s => s + 1);
+      scrollAuthWizardStepIntoView();
     }
   }
 
   previousStep(): void {
     if (this.currentStep() > 0) {
       this.currentStep.update(s => s - 1);
+      scrollAuthWizardStepIntoView();
     }
   }
 
@@ -280,6 +295,9 @@ export class RegisterComponent implements OnInit {
 
     this.loading.set(true);
     this.error.set(null);
+    this.loadingMessage.set('Création de votre espace...');
+    this.loadingStartedAt = Date.now();
+    this.startLoadingMessageTimer();
 
     // Nettoyer le NIF une fois et réutiliser partout (évite que l'InputMask écrase notre valeur)
     const nifControl = this.form.get('nif');
@@ -301,7 +319,7 @@ export class RegisterComponent implements OnInit {
     );
     if (validationErrors.length > 0) {
       this.error.set(validationErrors.join(', '));
-      this.loading.set(false);
+      this.stopLoading();
       return;
     }
 
@@ -337,48 +355,80 @@ export class RegisterComponent implements OnInit {
       confirmPassword: '***'
     });
 
-    this.authService.register(request).subscribe({
+    this.authService.register(request).pipe(
+      timeout(RegisterComponent.REGISTRATION_TIMEOUT_MS),
+      catchError(err => {
+        if (err instanceof TimeoutError) {
+          return throwError(() => ({
+            status: 0,
+            message: 'La création du compte prend plus de temps que prévu. Veuillez patienter ou réessayer dans quelques instants.'
+          }));
+        }
+        return throwError(() => err);
+      })
+    ).subscribe({
       next: (response) => {
         if (response.success) {
           console.log('[RegisterComponent] Registration successful');
           this.warehouseContext.navigateAfterSuccessfulAuth('/dashboard');
         } else {
-          // Backend returned success: false in response body
           const errorMessage = response.errors?.length > 0
             ? response.errors.join(', ')
             : response.message || 'Une erreur est survenue lors de l\'inscription';
           this.error.set(errorMessage);
           this.errorHandler.logError('Registration failed (success: false)', { response });
         }
-        this.loading.set(false);
+        this.stopLoading();
       },
-      error: (err: HttpErrorResponse | any) => {
-        // Use centralized error handler for consistent error extraction
-        let errorMessage = this.errorHandler.extractErrorMessage(err);
+      error: (err: HttpErrorResponse | { status?: number; message?: string }) => {
+        let errorMessage = err instanceof HttpErrorResponse
+          ? this.errorHandler.extractErrorMessage(err)
+          : ('message' in err && err.message ? err.message : this.errorHandler.extractErrorMessage(err as HttpErrorResponse));
 
-        // Fallback if error message is still undefined or empty
         if (!errorMessage || errorMessage === 'undefined' || errorMessage.trim() === '' || errorMessage.includes('undefined')) {
-          // Check for network errors
-          if (!err || !err.status || err.status === 0 || err.status === undefined) {
+          const status = 'status' in err ? err.status : (err as HttpErrorResponse)?.status;
+          if (!status) {
             errorMessage = 'Impossible de se connecter au serveur. Vérifiez que le backend est démarré sur https://localhost:7001.';
           } else {
-            errorMessage = `Une erreur est survenue lors de l'inscription (${err.status || 'erreur inconnue'}). Veuillez réessayer.`;
+            errorMessage = `Une erreur est survenue lors de l'inscription (${status || 'erreur inconnue'}). Veuillez réessayer.`;
           }
         }
 
-        // S'assurer qu'on ne définit jamais "undefined" comme message
         if (!errorMessage || errorMessage === 'undefined') {
           errorMessage = 'Une erreur est survenue lors de l\'inscription. Veuillez réessayer.';
         }
 
         this.error.set(errorMessage);
-
-        // Log detailed error for debugging
         this.errorHandler.logError('Registration HTTP error', err);
-
-        this.loading.set(false);
+        this.stopLoading();
       }
     });
+  }
+
+  private startLoadingMessageTimer(): void {
+    this.clearLoadingMessageTimer();
+    this.loadingMessageTimer = setInterval(() => {
+      const elapsed = Date.now() - this.loadingStartedAt;
+      if (elapsed < 5_000) {
+        this.loadingMessage.set('Création de votre espace...');
+      } else if (elapsed < 30_000) {
+        this.loadingMessage.set('Configuration de la base de données, cela peut prendre une minute...');
+      } else {
+        this.loadingMessage.set('Finalisation en cours, merci de patienter...');
+      }
+    }, 1_000);
+  }
+
+  private clearLoadingMessageTimer(): void {
+    if (this.loadingMessageTimer !== null) {
+      clearInterval(this.loadingMessageTimer);
+      this.loadingMessageTimer = null;
+    }
+  }
+
+  private stopLoading(): void {
+    this.clearLoadingMessageTimer();
+    this.loading.set(false);
   }
 
   onNifBlur(): void {

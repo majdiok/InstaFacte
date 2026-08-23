@@ -7,6 +7,8 @@ export const BRAND = {
   streetName: 'Rue InstaFact',
   logoLockup: 'assets/branding/instafact-lockup.png',
   logoIcon: 'assets/branding/instafact-icon.png',
+  logoLockupOnDark: 'assets/branding/instafact-lockup-on-dark.png',
+  logoIconOnDark: 'assets/branding/instafact-icon-on-dark.png',
 } as const;
 
 export function pageTitle(page: string): string {

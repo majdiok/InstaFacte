@@ -76,13 +76,13 @@ public sealed class PayrollPaymentLetteringTests : IDisposable
         await SeedAsync(
             runId,
             paymentId,
-            runCredits: new[] { ("421", 926.341m, (Guid?)null, ThirdPartyKind.None) },
-            paymentDebits: new[] { ("421", 926.341m, (Guid?)null, ThirdPartyKind.None) });
+            runCredits: new[] { ("425", 926.341m, (Guid?)null, ThirdPartyKind.None) },
+            paymentDebits: new[] { ("425", 926.341m, (Guid?)null, ThirdPartyKind.None) });
 
         var result = await _lettering!.AutoLetterPayrollPaymentAsync(paymentId, runId);
         Assert.True(result.IsSuccess);
 
-        var codes = await LetteringCodesAsync("421");
+        var codes = await LetteringCodesAsync("425");
         Assert.Equal(2, codes.Count);
         Assert.Single(codes.Distinct());
         Assert.StartsWith("L", codes[0]);
@@ -104,20 +104,20 @@ public sealed class PayrollPaymentLetteringTests : IDisposable
             paymentId,
             runCredits: new[]
             {
-                ("4210001", 600m, (Guid?)alice, ThirdPartyKind.Employee),
-                ("4210002", 400m, (Guid?)bob, ThirdPartyKind.Employee)
+                ("4250001", 600m, (Guid?)alice, ThirdPartyKind.Employee),
+                ("4250002", 400m, (Guid?)bob, ThirdPartyKind.Employee)
             },
             paymentDebits: new[]
             {
-                ("4210001", 600m, (Guid?)alice, ThirdPartyKind.Employee),
-                ("4210002", 400m, (Guid?)bob, ThirdPartyKind.Employee)
+                ("4250001", 600m, (Guid?)alice, ThirdPartyKind.Employee),
+                ("4250002", 400m, (Guid?)bob, ThirdPartyKind.Employee)
             });
 
         var result = await _lettering!.AutoLetterPayrollPaymentAsync(paymentId, runId);
         Assert.True(result.IsSuccess);
 
-        var first = await LetteringCodesAsync("4210001");
-        var second = await LetteringCodesAsync("4210002");
+        var first = await LetteringCodesAsync("4250001");
+        var second = await LetteringCodesAsync("4250002");
 
         Assert.Equal(2, first.Count);
         Assert.Single(first.Distinct());
@@ -143,8 +143,8 @@ public sealed class PayrollPaymentLetteringTests : IDisposable
         await SeedAsync(
             runId,
             paymentId,
-            runCredits: new[] { ("421", 926.341m, (Guid?)null, ThirdPartyKind.None) },
-            paymentDebits: new[] { ("4210001", 926.341m, (Guid?)employeeId, ThirdPartyKind.Employee) });
+            runCredits: new[] { ("425", 926.341m, (Guid?)null, ThirdPartyKind.None) },
+            paymentDebits: new[] { ("4250001", 926.341m, (Guid?)employeeId, ThirdPartyKind.Employee) });
 
         var result = await _lettering!.AutoLetterPayrollPaymentAsync(paymentId, runId);
 
@@ -168,13 +168,13 @@ public sealed class PayrollPaymentLetteringTests : IDisposable
         await SeedAsync(
             runId,
             paymentId,
-            runCredits: new[] { ("421", 1000m, (Guid?)null, ThirdPartyKind.None) },
-            paymentDebits: new[] { ("421", 400m, (Guid?)null, ThirdPartyKind.None) });
+            runCredits: new[] { ("425", 1000m, (Guid?)null, ThirdPartyKind.None) },
+            paymentDebits: new[] { ("425", 400m, (Guid?)null, ThirdPartyKind.None) });
 
         var result = await _lettering!.AutoLetterPayrollPaymentAsync(paymentId, runId);
         Assert.True(result.IsSuccess);
 
-        var codes = await LetteringCodesAsync("421");
+        var codes = await LetteringCodesAsync("425");
         Assert.Equal(2, codes.Count);
         Assert.StartsWith("P", codes[0]);
     }
@@ -202,7 +202,7 @@ public sealed class PayrollPaymentLetteringTests : IDisposable
                 new[]
                 {
                     new JournalLineInput("640", "Charges", 500m, 0m, null, ThirdPartyKind.None),
-                    new JournalLineInput("421", "Net", 0m, 500m, null, ThirdPartyKind.None)
+                    new JournalLineInput("425", "Net", 0m, 500m, null, ThirdPartyKind.None)
                 });
             stale.MarkReversedBy(Guid.NewGuid());
 
@@ -211,14 +211,14 @@ public sealed class PayrollPaymentLetteringTests : IDisposable
                 new[]
                 {
                     new JournalLineInput("640", "Charges", 900m, 0m, null, ThirdPartyKind.None),
-                    new JournalLineInput("421", "Net", 0m, 900m, null, ThirdPartyKind.None)
+                    new JournalLineInput("425", "Net", 0m, 900m, null, ThirdPartyKind.None)
                 });
 
             var payment = NewEntry(1, "JB", new DateTime(2026, 9, 3), "Paiement paie", period.Id,
                 AccountingService.SourcePayrollPayment, paymentId,
                 new[]
                 {
-                    new JournalLineInput("421", "Paiement", 900m, 0m, null, ThirdPartyKind.None),
+                    new JournalLineInput("425", "Paiement", 900m, 0m, null, ThirdPartyKind.None),
                     new JournalLineInput(Bank, "Banque", 0m, 900m, null, ThirdPartyKind.None)
                 });
 
@@ -235,7 +235,7 @@ public sealed class PayrollPaymentLetteringTests : IDisposable
 
         // La ligne lettrée côté cycle est celle de l'écriture ACTIVE (900), pas la périmée (500).
         var letteredRunLine = await verify.JournalEntryLines.AsNoTracking()
-            .Where(l => l.AccountNumber == "421" && l.CreditAmount.Amount > 0 && l.LetteringCode != null)
+            .Where(l => l.AccountNumber == "425" && l.CreditAmount.Amount > 0 && l.LetteringCode != null)
             .SingleAsync();
         Assert.Equal(900m, letteredRunLine.CreditAmount.Amount);
     }

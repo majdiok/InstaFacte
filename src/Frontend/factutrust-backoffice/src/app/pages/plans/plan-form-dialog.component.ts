@@ -53,7 +53,7 @@ interface LimitRow {
   value: string;
 }
 
-/** Catalogue des 13 modules AppModule (mirror du back). */
+/** Catalogue des modules AppModule (mirror du back, valeurs 0–16). */
 const MODULE_CATALOG: { value: number; display: string }[] = [
   { value: 0, display: 'Clients' },
   { value: 1, display: 'Produits et services' },
@@ -67,7 +67,11 @@ const MODULE_CATALOG: { value: number; display: string }[] = [
   { value: 9, display: 'CRM Commercial' },
   { value: 10, display: 'Fiscal / TEJ' },
   { value: 11, display: 'Assistant IA' },
-  { value: 12, display: 'Prévisions IA' }
+  { value: 12, display: 'Prévisions IA' },
+  { value: 13, display: 'Studio (low-code)' },
+  { value: 14, display: 'RH & Paie' },
+  { value: 15, display: 'Honoraires' },
+  { value: 16, display: 'Projets' }
 ];
 
 const DEFAULT_FEATURE_KEYS = [
@@ -244,7 +248,7 @@ const DEFAULT_LIMIT_KEYS = [
               (onClick)="addLimit()" />
             <small class="hint">{{ t('form.limits.hint') }}</small>
           </div>
-          <p-table [value]="limits()" styleClass="ft-table">
+          <p-table [value]="limits()" styleClass="p-datatable-sm ft-table">
             <ng-template pTemplate="header">
               <tr>
                 <th>{{ t('form.limits.key') }}</th>
@@ -302,7 +306,7 @@ const DEFAULT_LIMIT_KEYS = [
               (onClick)="addFeature()" />
             <small class="hint">{{ t('form.features.hint') }}</small>
           </div>
-          <p-table [value]="features()" styleClass="ft-table">
+          <p-table [value]="features()" styleClass="p-datatable-sm ft-table">
             <ng-template pTemplate="header">
               <tr>
                 <th>{{ t('form.features.key') }}</th>

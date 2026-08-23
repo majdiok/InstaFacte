@@ -32,9 +32,12 @@ public static class TunisianPostingAccounts
     /// <summary>Achats de marchandises.</summary>
     public const string PurchasesOfGoods = "607";
 
+    /// <summary>Achats d'études et de prestations de services (factures autonomes, <c>ProductType.Service</c>).</summary>
+    public const string PurchasesOfServices = "604";
+
     /// <summary>Immobilisation par défaut lorsqu'une ligne d'achat est marquée immobilisation
     /// sans compte d'immobilisation explicite.</summary>
-    public const string DefaultFixedAsset = "218";
+    public const string DefaultFixedAsset = "228";
 
     // ---- TVA ------------------------------------------------------------------------------
 
@@ -50,19 +53,19 @@ public static class TunisianPostingAccounts
     // ---- Autres taxes ---------------------------------------------------------------------
 
     /// <summary>FODEC collecté (dette envers l'État). Crédité à la vente, débité en avoir.</summary>
-    public const string Fodec = "4477";
+    public const string Fodec = "43652";
 
     /// <summary>
     /// Timbre fiscal sur une facture de VENTE : collecté pour le compte de l'État, donc au CRÉDIT
     /// d'un compte de dette (classe 4).
     /// </summary>
-    public const string FiscalStampOnSale = "4478";
+    public const string FiscalStampOnSale = "4371";
 
     /// <summary>
     /// Timbre fiscal sur une facture d'ACHAT : supporté par l'entreprise, donc au DÉBIT d'un
     /// compte de charge (classe 6). L'asymétrie avec <see cref="FiscalStampOnSale"/> est voulue.
     /// </summary>
-    public const string FiscalStampOnPurchase = "6371";
+    public const string FiscalStampOnPurchase = "6654";
 
     // ---- Journaux -------------------------------------------------------------------------
 

@@ -7,6 +7,7 @@ using FactuTrust.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
+using FactuTrust.Infrastructure.Tests.Stock;
 using Xunit;
 
 namespace FactuTrust.Infrastructure.Tests.StockTransfers;
@@ -33,7 +34,7 @@ public sealed class StockTransferCompletionServiceTests
     {
         var dbName = Guid.NewGuid().ToString();
         var factory = new InMemoryTenantDbContextFactory(dbName);
-        var sut = new StockTransferCompletionService(factory, NullLogger<StockTransferCompletionService>.Instance);
+        var sut = new StockTransferCompletionService(factory, StockTestDoubles.Real(factory), NullLogger<StockTransferCompletionService>.Instance);
 
         var missingId = Guid.NewGuid();
         var result = await sut.CompleteTransferAsync(missingId);
@@ -94,7 +95,7 @@ public sealed class StockTransferCompletionServiceTests
             Assert.Equal(StockTransferStatus.Confirmed, persisted.Status);
         }
 
-        var sut = new StockTransferCompletionService(factory, NullLogger<StockTransferCompletionService>.Instance);
+        var sut = new StockTransferCompletionService(factory, StockTestDoubles.Real(factory), NullLogger<StockTransferCompletionService>.Instance);
         var result = await sut.CompleteTransferAsync(transfer.Id);
 
         Assert.True(result.IsSuccess, result.IsFailure ? $"{result.Error.Code}: {result.Error.Description}" : "");

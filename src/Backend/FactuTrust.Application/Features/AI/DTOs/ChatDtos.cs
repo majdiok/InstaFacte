@@ -118,6 +118,14 @@ public sealed record ChatStreamEvent
     public static ChatStreamEvent StudioPlanEvent(string planJson) =>
         new() { Type = "studio_plan", Content = planJson };
 
+    /// <summary>
+    /// Résultat d'un état calculé en lecture seule (type <c>studio_report_result</c>) : tableau et
+    /// graphique rendus dans la conversation. Rien n'est enregistré — l'utilisateur peut ensuite
+    /// demander d'en faire un état Studio.
+    /// </summary>
+    public static ChatStreamEvent StudioReportResultEvent(string reportJson) =>
+        new() { Type = "studio_report_result", Content = reportJson };
+
     public static ChatStreamEvent PhaseEvent(
         string phase,
         string phaseStatus,

@@ -9,17 +9,19 @@ public static class ModuleFeatureCatalog
 {
     public static IReadOnlyList<string> GetValidFeatureKeys(AppModule module) => module switch
     {
-        AppModule.Sales => new[] { "sales_orders", "quotes", "delivery_notes", "invoices", "pricing" },
+        AppModule.Sales => new[] { "sales_orders", "quotes", "delivery_notes", "return_notes", "invoices", "pricing" },
         AppModule.Clients => new[] { "read", "manage" },
         AppModule.Products => new[] { "read", "manage" },
         AppModule.Treasury => new[] { "read", "manage", "forecast_read", "forecast_manage" },
         AppModule.Reports => new[] { "sales", "purchases", "stock", "fiches", "payments" },
         AppModule.Administration => new[] { "users", "settings" },
         AppModule.Purchases => new[] { "suppliers", "purchase_orders", "purchase_receipts", "supplier_invoices" },
-        AppModule.Stock => new[] { "stock", "stock_transfers", "inventory" },
+        AppModule.Stock => new[] { "stock", "stock_transfers", "inventory", "stock_vouchers", "stock_lots" },
         AppModule.Accounting => new[] { "journal", "ledger", "aging", "vat_declaration", "closing", "audit_log", "fixed_assets" },
         AppModule.CRM => new[] { "opportunities", "activities", "targets", "templates", "dashboard" },
         AppModule.Honoraires => new[] { "invoices", "quotes", "payments" },
+        AppModule.Projects => new[] { "core", "tasks", "time", "billing", "esn", "btp" },
+        AppModule.RecurringContracts => new[] { "contracts", "usage", "billing" },
         _ => Array.Empty<string>()
     };
 
@@ -49,6 +51,11 @@ public static class ModuleFeatureCatalog
             {
                 Permissions.DeliveryNotes.Create, Permissions.DeliveryNotes.Read, Permissions.DeliveryNotes.Update,
                 Permissions.DeliveryNotes.Delete
+            },
+            (AppModule.Sales, "return_notes") => new[]
+            {
+                Permissions.SalesReturnNotes.Create, Permissions.SalesReturnNotes.Read,
+                Permissions.SalesReturnNotes.Update, Permissions.SalesReturnNotes.Delete
             },
             (AppModule.Sales, "invoices") => new[]
             {
@@ -132,10 +139,19 @@ public static class ModuleFeatureCatalog
             {
                 Permissions.Stock.Create, Permissions.Stock.Read, Permissions.Stock.Update, Permissions.Stock.Delete
             },
+            (AppModule.Stock, "stock_lots") => new[]
+            {
+                Permissions.Stock.Create, Permissions.Stock.Read, Permissions.Stock.Update, Permissions.Stock.Delete
+            },
             (AppModule.Stock, "stock_transfers") => new[]
             {
                 Permissions.StockTransfers.Create, Permissions.StockTransfers.Read, Permissions.StockTransfers.Update,
                 Permissions.StockTransfers.Delete
+            },
+            (AppModule.Stock, "stock_vouchers") => new[]
+            {
+                Permissions.StockVouchers.Create, Permissions.StockVouchers.Read, Permissions.StockVouchers.Update,
+                Permissions.StockVouchers.Delete
             },
             (AppModule.Stock, "inventory") => new[]
             {
@@ -192,6 +208,49 @@ public static class ModuleFeatureCatalog
             (AppModule.Honoraires, "payments") => new[]
             {
                 Permissions.HonorairesPayments.Create, Permissions.HonorairesPayments.Read
+            },
+            (AppModule.Projects, "core") => new[]
+            {
+                Permissions.Projects.Read, Permissions.Projects.Create, Permissions.Projects.Update,
+                Permissions.Projects.Delete, Permissions.Projects.ManageTeam
+            },
+            (AppModule.Projects, "tasks") => new[]
+            {
+                Permissions.ProjectTasks.Create, Permissions.ProjectTasks.Read,
+                Permissions.ProjectTasks.Update, Permissions.ProjectTasks.Delete
+            },
+            (AppModule.Projects, "time") => new[]
+            {
+                Permissions.ProjectTime.Create, Permissions.ProjectTime.Read,
+                Permissions.ProjectTime.Submit, Permissions.ProjectTime.Validate
+            },
+            (AppModule.Projects, "billing") => new[]
+            {
+                Permissions.ProjectBilling.Read, Permissions.ProjectBilling.Create
+            },
+            (AppModule.Projects, "esn") => new[]
+            {
+                Permissions.ProjectBilling.Read, Permissions.ProjectBilling.Create,
+                Permissions.Projects.Read, Permissions.ProjectTime.Read
+            },
+            (AppModule.Projects, "btp") => new[]
+            {
+                Permissions.ProjectBilling.Read, Permissions.ProjectBilling.Create,
+                Permissions.Projects.Read, Permissions.PurchaseOrders.Read
+            },
+            (AppModule.RecurringContracts, "contracts") => new[]
+            {
+                Permissions.RecurringContracts.Read, Permissions.RecurringContracts.Create,
+                Permissions.RecurringContracts.Update, Permissions.RecurringContracts.Delete,
+                Permissions.RecurringContracts.Manage
+            },
+            (AppModule.RecurringContracts, "usage") => new[]
+            {
+                Permissions.RecurringContracts.Read, Permissions.RecurringContracts.RecordUsage
+            },
+            (AppModule.RecurringContracts, "billing") => new[]
+            {
+                Permissions.RecurringContracts.Read, Permissions.RecurringContracts.TriggerBilling
             },
             _ => Array.Empty<string>()
         };

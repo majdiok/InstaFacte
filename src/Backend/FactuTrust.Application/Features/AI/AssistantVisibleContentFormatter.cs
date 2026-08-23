@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using FactuTrust.Application.Features.AI.Tools;
+using FactuTrust.Application.Features.Studio.Ai;
 
 namespace FactuTrust.Application.Features.AI;
 
@@ -12,6 +13,9 @@ public static class AssistantVisibleContentFormatter
     private static readonly Regex JsonFenceRegex = new("```json[\\s\\S]*?```", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex FtMetaFenceRegex = new("```ft-meta[\\s\\S]*?```", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex GenericCodeFenceRegex = new("```[\\s\\S]*?```", RegexOptions.Compiled);
+    private static readonly Regex UnclosedFenceRegex = new(
+        "```(?:json|ft-meta|dashboard)?[\\s\\S]*$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     /// <summary>Plafond de lignes humanisées dans le repli (parité avec HUMANIZE_MAX_ROWS du frontend).</summary>
     private const int MaxHumanizedRows = 50;
@@ -229,6 +233,8 @@ public static class AssistantVisibleContentFormatter
             return content ?? string.Empty;
 
         var text = StripTechnicalFences(content);
+        text = UnclosedFenceRegex.Replace(text, string.Empty);
+        text = StudioTextToolCallRecovery.StripBareStudioJson(text);
         var kept = text
             .Split('\n')
             .Where(line => !InternalToolNameRegex.IsMatch(line) && !JsonWordRegex.IsMatch(line));

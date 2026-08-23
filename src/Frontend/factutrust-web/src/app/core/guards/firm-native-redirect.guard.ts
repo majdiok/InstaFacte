@@ -9,6 +9,7 @@ const FIRM_NATIVE_BLOCKED_SEGMENTS = new Set([
   'invoices',
   'quotes',
   'delivery-notes',
+  'return-notes',
   'clients',
   'products',
   'product-categories',

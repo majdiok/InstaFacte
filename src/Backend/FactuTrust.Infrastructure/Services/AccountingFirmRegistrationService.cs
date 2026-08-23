@@ -128,6 +128,7 @@ public sealed class AccountingFirmRegistrationService : IAccountingFirmRegistrat
                 TenantId = tenant.Id,
                 EmailConfirmed = true
             };
+            user.ApplyNewInteractiveProductOnboarding();
 
             var identitySw = Stopwatch.StartNew();
             var createResult = await _userManager.CreateAsync(user, dto.Password);

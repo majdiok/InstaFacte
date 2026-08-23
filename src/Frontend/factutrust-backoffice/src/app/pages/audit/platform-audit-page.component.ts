@@ -106,7 +106,7 @@ import { AuditDetailDialogComponent } from './audit-detail-dialog.component';
         [description]="t('picker.empty.desc')" />
     } @else {
       <!-- KPIs -->
-      <section class="kpi-row" role="region" aria-label="Indicateurs audit">
+      <section class="kpi-row kpi-row--compact" role="region" aria-label="Indicateurs audit">
         <ft-kpi-card
           [label]="t('kpi.total')"
           [value]="page()?.totalCount ?? null"
@@ -212,7 +212,7 @@ import { AuditDetailDialogComponent } from './audit-detail-dialog.component';
         [showCurrentPageReport]="true"
         [currentPageReportTemplate]="'{first}–{last} sur {totalRecords}'"
         responsiveLayout="scroll"
-        styleClass="p-datatable-sm ft-audit-table"
+        styleClass="p-datatable-sm ft-table"
         [tableStyle]="{ 'min-width': '60rem' }">
         <ng-template pTemplate="header">
           <tr>
@@ -319,13 +319,6 @@ import { AuditDetailDialogComponent } from './audit-detail-dialog.component';
         flex: 1;
       }
 
-      .kpi-row {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-        gap: var(--gap-md);
-        margin-bottom: var(--gap-md);
-      }
-
       .integrity-card {
         display: flex;
         align-items: flex-start;
@@ -425,24 +418,6 @@ import { AuditDetailDialogComponent } from './audit-detail-dialog.component';
 
       .muted {
         color: var(--ft-text-muted);
-      }
-
-      :host ::ng-deep .ft-audit-table.p-datatable .p-datatable-thead > tr > th {
-        font-size: 0.72rem;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: var(--ft-text-muted);
-        border-color: var(--ft-border);
-        background: var(--ft-surface-2);
-        font-weight: 600;
-      }
-
-      :host ::ng-deep .ft-audit-table.p-datatable .p-datatable-tbody > tr > td {
-        border-color: var(--ft-border-subtle);
-      }
-
-      :host ::ng-deep .ft-audit-table.p-datatable .p-datatable-tbody > tr:hover {
-        background: var(--ft-surface-3);
       }
     `
   ]

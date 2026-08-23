@@ -1,3 +1,5 @@
+import type { DocumentLineAllocations } from '@core/services/stock.service';
+
 /**
  * Delivery Note enums matching backend DeliveryNoteStatus.
  */
@@ -69,6 +71,10 @@ export interface DeliveryNoteLineDto {
   fodecRatePercent: number;
   /** FODEC sur la quantité commandée (assiette : HT après remise). */
   fodecAmount: number;
+  /** Quantité déjà retournée via des bons de retour confirmés. */
+  returnedQuantity?: number;
+  /** Quantité encore facturable (livré − retourné). */
+  invoiceableQuantity?: number;
 }
 
 /**
@@ -105,6 +111,21 @@ export interface DeliveryNoteDetailDto {
   lines: DeliveryNoteLineDto[];
   createdAt: string;
   updatedAt?: string;
+  warehouseId?: string;
+  warehouseName?: string;
+  totalReturnedQuantity?: number;
+  totalInvoiceableQuantity?: number;
+  hasInvoiceableQuantity?: boolean;
+  returnNotes?: DeliveryNoteLinkedReturnNoteDto[];
+}
+
+export interface DeliveryNoteLinkedReturnNoteDto {
+  id: string;
+  number: string;
+  status: string;
+  statusDisplay: string;
+  returnDate: string;
+  totalReturnedQuantity: number;
 }
 
 /**
@@ -152,6 +173,7 @@ export interface RecordDeliveryDto {
   recipientName: string;
   recipientSignature?: string;
   lines?: RecordDeliveryLineDto[];
+  lineAllocations?: DocumentLineAllocations[];
 }
 
 /**
@@ -169,5 +191,27 @@ export interface GenerateInvoiceFromDeliveryNoteDto {
   dueDate?: string;
   reference?: string;
   notes?: string;
+}
+
+export function isDeliveryNoteEligibleForReturn(status: DeliveryNoteStatus): boolean {
+  return status === DeliveryNoteStatus.Delivered || status === DeliveryNoteStatus.PartiallyDelivered;
+}
+
+export function canGenerateInvoiceFromDeliveryNote(note: {
+  status: DeliveryNoteStatus;
+  invoiceId?: string;
+  hasInvoiceableQuantity?: boolean;
+}): boolean {
+  return isDeliveryNoteEligibleForReturn(note.status)
+    && !note.invoiceId
+    && note.hasInvoiceableQuantity !== false;
+}
+
+export function canCreateReturnNoteFromDeliveryNote(note: {
+  status: DeliveryNoteStatus;
+  invoiceId?: string;
+  hasInvoiceableQuantity?: boolean;
+}): boolean {
+  return canGenerateInvoiceFromDeliveryNote(note);
 }
 

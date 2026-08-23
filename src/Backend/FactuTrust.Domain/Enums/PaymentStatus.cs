@@ -63,7 +63,7 @@ public enum PaymentMethod
 
     /// <summary>
     /// Bill of exchange / promissory note (traite, effet de commerce). Unlike the other modes this
-    /// is not an immediate treasury movement: it creates an effet en portefeuille (client → 412,
+    /// is not an immediate treasury movement: it creates an effet en portefeuille (client → 413,
     /// supplier → 403) with a maturity date, settled later at échéance.
     /// </summary>
     Traite = 5,

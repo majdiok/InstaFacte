@@ -22,6 +22,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   warehouses: 'Entrepôts',
   profile: 'Mon profil',
   new: 'Nouveau',
+  edit: 'Modifier',
   wizard: 'Assistant',
   documentation: 'Documentation',
   'premiers-pas': 'Premiers pas',
@@ -34,10 +35,13 @@ const SEGMENT_LABELS: Record<string, string> = {
   unpaid: 'Factures impayées',
   'credit-notes': 'Avoirs de vente',
   transfers: 'Transferts',
+  entries: "Bons d'entrée",
+  issues: 'Bons de sortie',
   create: 'Créer',
   'purchase-orders': 'Bons de commande',
   'purchase-receipts': 'Bons de réception',
   'delivery-notes': 'Bons de livraison',
+  'return-notes': 'Bons de retour',
   'supplier-invoices': 'Factures fournisseurs',
   suppliers: 'Fournisseurs',
 };
@@ -86,6 +90,8 @@ export class BreadcrumbService {
       const prevSegment = segments[i - 1]?.toLowerCase();
       if (i > 0 && prevSegment === 'reports' && REPORTS_CHILD_LABELS[segmentLower]) {
         label = REPORTS_CHILD_LABELS[segmentLower];
+      } else if (segmentLower === 'stock' && prevSegment !== 'reports') {
+        label = 'Stock';
       } else if (i > 0 && prevSegment === 'payments') {
         if (segmentLower === 'clients') label = 'Paiements clients';
         else if (segmentLower === 'suppliers') label = 'Paiements fournisseurs';

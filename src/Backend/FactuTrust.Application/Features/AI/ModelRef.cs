@@ -2,13 +2,14 @@ namespace FactuTrust.Application.Features.AI;
 
 /// <summary>
 /// Canonical model identifiers: <c>ollama:modelname</c>, <c>openrouter:vendor/model</c>,
-/// or <c>cursor:id</c> / <c>cursor:id|param=value</c>.
+/// <c>modal:vendor/model</c>, or <c>cursor:id</c> / <c>cursor:id|param=value</c>.
 /// Legacy values without prefix are treated as Ollama.
 /// </summary>
 public static class ModelRef
 {
     public const string OllamaPrefix = "ollama:";
     public const string OpenRouterPrefix = "openrouter:";
+    public const string ModalPrefix = "modal:";
     public const string CursorPrefix = "cursor:";
 
     public static ParsedModelRef Parse(string? raw)
@@ -21,6 +22,12 @@ public static class ModelRef
         {
             var id = s[OpenRouterPrefix.Length..].Trim();
             return new ParsedModelRef(LlmProviderKind.OpenRouter, id, s);
+        }
+
+        if (s.StartsWith(ModalPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var id = s[ModalPrefix.Length..].Trim();
+            return new ParsedModelRef(LlmProviderKind.Modal, id, s);
         }
 
         if (s.StartsWith(CursorPrefix, StringComparison.OrdinalIgnoreCase))
@@ -118,13 +125,14 @@ public enum LlmProviderKind
 {
     Ollama = 0,
     OpenRouter = 1,
-    Cursor = 2
+    Cursor = 2,
+    Modal = 3
 }
 
 public readonly record struct CursorModelParam(string Id, string Value);
 
 /// <param name="Kind">Backend to use.</param>
-/// <param name="ProviderModelId">Ollama model name, OpenRouter model id, or Cursor model id.</param>
+/// <param name="ProviderModelId">Ollama model name, OpenRouter/Modal model id, or Cursor model id.</param>
 /// <param name="CanonicalModelRef">Stable value stored on conversations (e.g. ollama:qwen2.5:latest).</param>
 public readonly record struct ParsedModelRef(LlmProviderKind Kind, string ProviderModelId, string CanonicalModelRef)
 {

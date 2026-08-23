@@ -4,9 +4,11 @@ using FactuTrust.Application.Common.Interfaces.Forecasting;
 using FactuTrust.Application.Common.Interfaces.Treasury;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Features.Stock.Queries;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Application.Features.AI;
 using FactuTrust.Application.Features.AI.Commands;
+using FactuTrust.Application.Features.AI.DTOs;
 using FactuTrust.Application.Features.AI.Tools;
 using FactuTrust.Application.Features.WithholdingTax.Services;
 using FactuTrust.Domain.Services;
@@ -126,6 +128,9 @@ public static class DependencyInjection
             services.AddScoped<FirmAssignmentService>();
             services.AddScoped<IFirmAssignmentService>(sp => sp.GetRequiredService<FirmAssignmentService>());
             services.AddScoped<IHonorairesBillingService, FactuTrust.Infrastructure.Services.Honoraires.HonorairesBillingService>();
+            services.AddScoped<IProjectService, FactuTrust.Infrastructure.Services.Projects.ProjectService>();
+            services.AddScoped<IRecurringContractService, FactuTrust.Infrastructure.Services.RecurringContracts.RecurringContractService>();
+            services.AddScoped<FactuTrust.Infrastructure.Services.RecurringContracts.RecurringContractBillingService>();
             services.AddScoped<FirmDossierAccessService>();
             services.AddScoped<IFirmDossierAccessService>(sp => sp.GetRequiredService<FirmDossierAccessService>());
             services.AddScoped<IFirmDashboardService, FirmDashboardService>();
@@ -164,6 +169,7 @@ public static class DependencyInjection
             services.AddSingleton<IFirmFiscalOpsFeature, FirmFiscalOpsFeature>();
             services.AddScoped<ITunisianFiscalDeadlineService, TunisianFiscalDeadlineService>();
             services.AddScoped<ITenantMigrationGuard, TenantMigrationGuard>();
+            services.AddHostedService<FactuTrust.Infrastructure.Services.Background.TenantTemplateWarmupHostedService>();
             // TenantDbContextFactory is already registered above
         }
 
@@ -184,15 +190,20 @@ public static class DependencyInjection
         services.AddScoped<IStockMovementRepository, StockMovementRepository>();
         services.AddScoped<IPhysicalInventoryRepository, PhysicalInventoryRepository>();
         services.AddScoped<IStockTransferRepository, StockTransferRepository>();
+        services.AddScoped<IStockVoucherRepository, StockVoucherRepository>();
 
         // Delivery Notes Repository
         services.AddScoped<IDeliveryNoteRepository, DeliveryNoteRepository>();
+        services.AddScoped<ISalesReturnNoteRepository, SalesReturnNoteRepository>();
 
         // Purchasing Repositories
         services.AddScoped<ISupplierRepository, SupplierRepository>();
         services.AddScoped<IPurchaseOrderRepository, PurchaseOrderRepository>();
         services.AddScoped<IPurchaseReceiptRepository, PurchaseReceiptRepository>();
         services.AddScoped<IPurchaseGoodsReceptionService, PurchaseGoodsReceptionService>();
+        services.AddScoped<IStockMutationService, StockMutationService>();
+        services.AddScoped<IProductAttributeRepository, ProductAttributeRepository>();
+        services.AddScoped<IStockTraceabilityQuery, EfStockTraceabilityQuery>();
         services.AddScoped<ISalesOrderRepository, SalesOrderRepository>();
         services.AddScoped<Application.Features.SalesOrders.Services.ISalesOrderStockReservationService,
             Application.Features.SalesOrders.Services.SalesOrderStockReservationService>();
@@ -214,6 +225,11 @@ public static class DependencyInjection
         services.AddScoped<ISupplierInvoiceRepository, SupplierInvoiceRepository>();
         services.AddScoped<ISupplierPaymentRepository, SupplierPaymentRepository>();
         services.AddScoped<ICashOperationRepository, CashOperationRepository>();
+        services.AddScoped<ICashRegisterRepository, CashRegisterRepository>();
+        services.AddScoped<ICashRegisterSessionRepository, CashRegisterSessionRepository>();
+        services.AddScoped<IPosCartDraftRepository, PosCartDraftRepository>();
+        services.AddScoped<IPosHeldTicketRepository, PosHeldTicketRepository>();
+        services.AddScoped<IZReportRepository, ZReportRepository>();
         services.AddScoped<IBankDepositRepository, BankDepositRepository>();
         services.AddScoped<IBankAccountRepository, BankAccountRepository>();
 
@@ -296,6 +312,8 @@ public static class DependencyInjection
         services.AddScoped<IFecExportService, FecExportService>();
         services.AddScoped<IJournalImportService, JournalImportService>();
         services.AddScoped<IReferenceDataImportService, ReferenceDataImportService>();
+        // Migration assistée par IA (N1) : suggestions uniquement — l'import reste dans les services ci-dessus.
+        services.AddScoped<IMigrationAssistantService, Services.Migration.MigrationAssistantService>();
         services.AddScoped<IJournalEntryAttachmentService, JournalEntryAttachmentService>();
         services.AddScoped<IFiscalScheduleGenerator, FiscalScheduleGenerator>();
         services.AddScoped<IFiscalScheduleAttachmentService, FiscalScheduleAttachmentService>();
@@ -328,6 +346,7 @@ public static class DependencyInjection
         services.AddSingleton<IDocumentTemplateRegistry, Services.Templates.DocumentTemplateRegistry>();
         services.AddScoped<IDocumentTemplatePreferenceRepository, DocumentTemplatePreferenceRepository>();
         services.AddScoped<IUserDashboardLayoutRepository, UserDashboardLayoutRepository>();
+        services.AddScoped<IProductOnboardingService, ProductOnboardingService>();
         // Studio (low-code) repositories.
         services.AddScoped<ICustomEntityRepository, Repositories.Studio.CustomEntityRepository>();
         services.AddScoped<ICustomSystemRepository, Repositories.Studio.CustomSystemRepository>();
@@ -338,6 +357,9 @@ public static class DependencyInjection
         services.AddScoped<ICustomViewRepository, Repositories.Studio.CustomViewRepository>();
         services.AddScoped<FactuTrust.Application.Features.Studio.Common.IExistingDataSourceProvider, Services.Studio.ExistingDataSourceProvider>();
         services.AddScoped<FactuTrust.Application.Features.Studio.Common.ISqlSchemaProvider, Services.Studio.SqlSchemaProvider>();
+        // Enregistré inconditionnellement (les handlers MediatR + ValidateOnBuild l'exigent) ; le
+        // coupe-circuit est le drapeau EnableStudioSqlReportEngine, vérifié dans le moteur lui-même.
+        services.AddScoped<FactuTrust.Application.Features.Studio.Common.SqlReport.ISqlReportEngine, Services.Studio.SqlReportEngine>();
         services.AddScoped<ISqlColumnValueFormatter, Services.Studio.SqlColumnValueFormatter>();
         services.AddScoped<ISqlViewResultEnricher, Services.Studio.SqlViewResultEnricher>();
         services.AddScoped<IJsonIndexManager, Services.Studio.JsonIndexManager>();
@@ -358,6 +380,8 @@ public static class DependencyInjection
         services.AddScoped<IAuditChainRepairService, AuditChainRepairService>();
         services.AddScoped<ISubscriptionResolver, SubscriptionResolver>();
         services.AddScoped<IInvoiceComplianceValidator, InvoiceComplianceValidator>();
+        // Enregistré inconditionnellement : requis par SubmitInvoiceCommandHandler (MediatR + ValidateOnBuild).
+        services.AddScoped<IRecurringContractInvoiceLinker, FactuTrust.Infrastructure.Services.RecurringContracts.RecurringContractInvoiceLinker>();
         services.AddScoped<IInvoiceNumberGenerator, InvoiceNumberGenerator>();
         services.AddScoped<IQuoteNumberGenerator, QuoteNumberGenerator>();
         services.AddScoped<ICashOperationNumberGenerator, CashOperationNumberGenerator>();
@@ -366,6 +390,7 @@ public static class DependencyInjection
         services.AddScoped<INumberingSchemeRepository, NumberingSchemeRepository>();
         services.AddScoped<IQuoteToInvoiceConversionService, QuoteToInvoiceConversionService>();
         services.AddScoped<IStockTransferCompletionService, StockTransferCompletionService>();
+        services.AddScoped<IStockVoucherMovementService, StockVoucherMovementService>();
         services.AddScoped<IEmailService, EmailService>();
         // Lot C2 — Email options + log query service + Hangfire SendEmailJob
         services.Configure<FactuTrust.Infrastructure.Services.Email.SmtpOptions>(
@@ -460,6 +485,7 @@ public static class DependencyInjection
         services.Configure<OllamaSettings>(configuration.GetSection(OllamaSettings.SectionName));
         services.Configure<ScreenAnalysisOptions>(configuration.GetSection(ScreenAnalysisOptions.SectionName));
         services.Configure<OpenRouterSettings>(configuration.GetSection(OpenRouterSettings.SectionName));
+        services.Configure<ModalSettings>(configuration.GetSection(ModalSettings.SectionName));
         services.Configure<CursorSdkSettings>(configuration.GetSection(CursorSdkSettings.SectionName));
         services.Configure<CashDeskFeaturesOptions>(configuration.GetSection(CashDeskFeaturesOptions.SectionName));
         services.Configure<FixedAssetsOptions>(configuration.GetSection(FixedAssetsOptions.SectionName));
@@ -470,8 +496,11 @@ public static class DependencyInjection
         services.Configure<FirmGovernanceOptions>(configuration.GetSection(FirmGovernanceOptions.SectionName));
         services.Configure<FirmFiscalOpsOptions>(configuration.GetSection(FirmFiscalOpsOptions.SectionName));
         services.Configure<AccountingSettings>(configuration.GetSection(AccountingSettings.SectionName));
+        services.Configure<ProductOnboardingSettings>(configuration.GetSection(ProductOnboardingSettings.SectionName));
+        services.Configure<MigrationAiSettings>(configuration.GetSection(MigrationAiSettings.SectionName));
         services.Configure<StorefrontOptions>(configuration.GetSection(StorefrontOptions.SectionName));
         services.Configure<SalesOrderOptions>(configuration.GetSection(SalesOrderOptions.SectionName));
+        services.Configure<StockTraceabilityOptions>(configuration.GetSection(StockTraceabilityOptions.SectionName));
         services.Configure<ChannelsSettings>(configuration.GetSection(ChannelsSettings.SectionName));
         // Canaux externes (WhatsApp) : liaison d'identité en base tenant/master. Le pont Node et
         // l'envoi sortant (IChannelOutboundSender) sont hébergés côté API (processus enfant piloté).
@@ -498,6 +527,11 @@ public static class DependencyInjection
         {
             var settings = configuration.GetSection(OpenRouterSettings.SectionName).Get<OpenRouterSettings>() ?? new OpenRouterSettings();
             client.Timeout = TimeSpan.FromSeconds(Math.Clamp(settings.TimeoutSeconds, 10, 600));
+        });
+        services.AddHttpClient(OpenAiCompatibleCallOptions.ModalClientName, (sp, client) =>
+        {
+            var settings = configuration.GetSection(ModalSettings.SectionName).Get<ModalSettings>() ?? new ModalSettings();
+            client.Timeout = TimeSpan.FromSeconds(Math.Clamp(settings.TimeoutSeconds, 30, 600));
         });
         services.AddScoped<IOpenAiChatCompletionsClient, OpenAiChatCompletionsClient>();
         services.AddSingleton<ICursorToolRunRegistry, CursorToolRunRegistry>();
@@ -530,6 +564,8 @@ public static class DependencyInjection
         services.AddScoped<IOllamaModelReadinessChecker, OllamaModelReadinessChecker>();
         services.AddScoped<IAiModelRecommender, OllamaModelRecommender>();
         services.AddScoped<IPlatformAiSettingsService, FactuTrust.Infrastructure.Services.AI.PlatformAiSettingsService>();
+        services.AddScoped<ITenantModalSettingsService, FactuTrust.Infrastructure.Services.AI.TenantModalSettingsService>();
+        services.AddScoped<IModalCredentialsResolver, FactuTrust.Infrastructure.Services.AI.ModalCredentialsResolver>();
         services.AddScoped<IOllamaInferenceProfileResolver, OllamaInferenceProfileResolver>();
 
         // Import de pièce comptable depuis la saisie manuelle d'écritures : parseur déterministe
@@ -583,6 +619,8 @@ public static class DependencyInjection
         //  module is off.
         // ────────────────────────────────────────────────────────────────────
         services.Configure<ForecastingOptions>(configuration.GetSection(ForecastingOptions.SectionName));
+        services.Configure<ProjectsOptions>(configuration.GetSection(ProjectsOptions.SectionName));
+        services.Configure<RecurringContractsOptions>(configuration.GetSection(RecurringContractsOptions.SectionName));
         var forecastingOptions = configuration.GetSection(ForecastingOptions.SectionName).Get<ForecastingOptions>() ?? new ForecastingOptions();
         if (forecastingOptions.Enabled)
         {

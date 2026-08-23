@@ -52,112 +52,114 @@ function escapeHtml(text: string): string {
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="pos-receipt" #receiptEl>
-      <div class="pos-receipt__content">
-        @if (safeReceipt.logoUrl) {
-          <div class="pos-receipt__logo-wrap">
-            <img class="pos-receipt__logo" [src]="safeReceipt.logoUrl" alt="" />
-          </div>
-        }
-        <div class="pos-receipt__header">
-          <h2 class="pos-receipt__title">{{ safeReceipt.companyName }}</h2>
-          @if (safeReceipt.companyAddressLine) {
-            <p class="pos-receipt__muted">{{ safeReceipt.companyAddressLine }}</p>
+    @if (receipt) {
+      <div class="pos-receipt" #receiptEl>
+        <div class="pos-receipt__content">
+          @if (receipt.logoUrl) {
+            <div class="pos-receipt__logo-wrap">
+              <img class="pos-receipt__logo" [src]="receipt.logoUrl" alt="" />
+            </div>
           }
-          @if (safeReceipt.companyEmail) {
-            <p class="pos-receipt__muted">Email: {{ safeReceipt.companyEmail }}</p>
-          }
-        </div>
-        <div class="pos-receipt__banner">{{ safeReceipt.documentBanner }}</div>
-        <div class="pos-receipt__meta">
-          <div class="pos-receipt__meta-col">
-            <p class="pos-receipt__label">Nom:</p>
-            <p class="pos-receipt__value">{{ safeReceipt.clientName }}</p>
-            <p class="pos-receipt__label">Client Id:</p>
-            <p class="pos-receipt__value">{{ safeReceipt.clientIdDisplay }}</p>
+          <div class="pos-receipt__header">
+            <h2 class="pos-receipt__title">{{ receipt.companyName }}</h2>
+            @if (receipt.companyAddressLine) {
+              <p class="pos-receipt__muted">{{ receipt.companyAddressLine }}</p>
+            }
+            @if (receipt.companyEmail) {
+              <p class="pos-receipt__muted">Email: {{ receipt.companyEmail }}</p>
+            }
           </div>
-          <div class="pos-receipt__meta-col pos-receipt__meta-col--right">
-            <p class="pos-receipt__label">Facture N°:</p>
-            <p class="pos-receipt__value">{{ safeReceipt.invoiceNumber || '—' }}</p>
-            <p class="pos-receipt__label">Date:</p>
-            <p class="pos-receipt__value">{{ formatDate(safeReceipt.issuedAt) }}</p>
+          <div class="pos-receipt__banner">{{ receipt.documentBanner }}</div>
+          <div class="pos-receipt__meta">
+            <div class="pos-receipt__meta-col">
+              <p class="pos-receipt__label">Nom:</p>
+              <p class="pos-receipt__value">{{ receipt.clientName }}</p>
+              <p class="pos-receipt__label">Client Id:</p>
+              <p class="pos-receipt__value">{{ receipt.clientIdDisplay }}</p>
+            </div>
+            <div class="pos-receipt__meta-col pos-receipt__meta-col--right">
+              <p class="pos-receipt__label">Facture N°:</p>
+              <p class="pos-receipt__value">{{ receipt.invoiceNumber || '—' }}</p>
+              <p class="pos-receipt__label">Date:</p>
+              <p class="pos-receipt__value">{{ formatDate(receipt.issuedAt) }}</p>
+            </div>
           </div>
-        </div>
-        <div class="pos-receipt__rule"></div>
-        <table class="pos-receipt__table">
-          <thead>
-            <tr>
-              <th class="pos-receipt__th-qty">Qté</th>
-              <th class="pos-receipt__th-art">Article</th>
-              <th class="pos-receipt__th-num">Prix</th>
-              <th class="pos-receipt__th-num">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (line of safeReceipt.lines; track line.designation + line.quantity) {
+          <div class="pos-receipt__rule"></div>
+          <table class="pos-receipt__table">
+            <thead>
               <tr>
-                <td class="pos-receipt__td-qty">{{ line.quantity }}</td>
-                <td class="pos-receipt__td-art">{{ line.designation }}</td>
-                <td class="pos-receipt__td-num">{{ formatAmount(line.unitPriceTTC) }} DT</td>
-                <td class="pos-receipt__td-num">{{ formatAmount(line.lineTotalTTC) }} DT</td>
+                <th class="pos-receipt__th-qty">Qté</th>
+                <th class="pos-receipt__th-art">Article</th>
+                <th class="pos-receipt__th-num">Prix</th>
+                <th class="pos-receipt__th-num">Total</th>
               </tr>
+            </thead>
+            <tbody>
+              @for (line of receipt.lines; track line.designation + line.quantity) {
+                <tr>
+                  <td class="pos-receipt__td-qty">{{ line.quantity }}</td>
+                  <td class="pos-receipt__td-art">{{ line.designation }}</td>
+                  <td class="pos-receipt__td-num">{{ formatAmount(line.unitPriceTTC) }} DT</td>
+                  <td class="pos-receipt__td-num">{{ formatAmount(line.lineTotalTTC) }} DT</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+          <div class="pos-receipt__rule"></div>
+          <div class="pos-receipt__totals">
+            <div class="pos-receipt__total-row">
+              <span>Sous-Total:</span>
+              <span>{{ formatAmount(receipt.subTotalHT) }} DT</span>
+            </div>
+            <div class="pos-receipt__total-row">
+              <span>Remise:</span>
+              <span>{{ formatAmount(receipt.remise) }}</span>
+            </div>
+            <div class="pos-receipt__rule pos-receipt__rule--short"></div>
+            <div class="pos-receipt__total-row">
+              <span>BASE TVA:</span>
+              <span>{{ formatAmount(receipt.baseTVA) }} DT</span>
+            </div>
+            <div class="pos-receipt__total-row">
+              <span>TOTAL TVA:</span>
+              <span>{{ formatAmount(receipt.totalTVA) }} DT</span>
+            </div>
+            @if (receipt.vatDetails.length > 1) {
+              @for (d of receipt.vatDetails; track d.rateDisplay) {
+                <div class="pos-receipt__total-row pos-receipt__total-row--sub">
+                  <span> dont TVA {{ d.rateDisplay }}</span>
+                  <span>{{ formatAmount(d.vatAmount) }} DT</span>
+                </div>
+              }
             }
-          </tbody>
-        </table>
-        <div class="pos-receipt__rule"></div>
-        <div class="pos-receipt__totals">
-          <div class="pos-receipt__total-row">
-            <span>Sous-Total:</span>
-            <span>{{ formatAmount(safeReceipt.subTotalHT) }} DT</span>
+            <div class="pos-receipt__total-row">
+              <span>Timbre fiscal:</span>
+              <span>{{ formatAmount(receipt.timbreFiscal) }} DT</span>
+            </div>
+            <div class="pos-receipt__rule pos-receipt__rule--short"></div>
+            <div class="pos-receipt__total-row">
+              <span>Facture totale:</span>
+              <span>{{ formatAmount(receipt.grandTotal) }} DT</span>
+            </div>
+            <div class="pos-receipt__total-row">
+              <span>Payable :</span>
+              <span>{{ formatAmount(receipt.grandTotal) }} DT</span>
+            </div>
+            <div class="pos-receipt__total-row pos-receipt__total-row--strong">
+              <span>Total à payer:</span>
+              <span>{{ formatAmount(receipt.grandTotal) }} DT</span>
+            </div>
           </div>
-          <div class="pos-receipt__total-row">
-            <span>Remise:</span>
-            <span>{{ formatAmount(safeReceipt.remise) }}</span>
-          </div>
-          <div class="pos-receipt__rule pos-receipt__rule--short"></div>
-          <div class="pos-receipt__total-row">
-            <span>BASE TVA:</span>
-            <span>{{ formatAmount(safeReceipt.baseTVA) }} DT</span>
-          </div>
-          <div class="pos-receipt__total-row">
-            <span>TOTAL TVA:</span>
-            <span>{{ formatAmount(safeReceipt.totalTVA) }} DT</span>
-          </div>
-          @if (safeReceipt.vatDetails.length > 1) {
-            @for (d of safeReceipt.vatDetails; track d.rateDisplay) {
-              <div class="pos-receipt__total-row pos-receipt__total-row--sub">
-                <span> dont TVA {{ d.rateDisplay }}</span>
-                <span>{{ formatAmount(d.vatAmount) }} DT</span>
-              </div>
-            }
+          <p class="pos-receipt__payment">{{ receipt.paymentLabel }}</p>
+          <div class="pos-receipt__rule"></div>
+          @if (receipt.footerLegal) {
+            <div class="pos-receipt__footer-legal">{{ receipt.footerLegal }}</div>
           }
-          <div class="pos-receipt__total-row">
-            <span>Timbre fiscal:</span>
-            <span>{{ formatAmount(safeReceipt.timbreFiscal) }} DT</span>
-          </div>
-          <div class="pos-receipt__rule pos-receipt__rule--short"></div>
-          <div class="pos-receipt__total-row">
-            <span>Facture totale:</span>
-            <span>{{ formatAmount(safeReceipt.grandTotal) }} DT</span>
-          </div>
-          <div class="pos-receipt__total-row">
-            <span>Payable :</span>
-            <span>{{ formatAmount(safeReceipt.grandTotal) }} DT</span>
-          </div>
-          <div class="pos-receipt__total-row pos-receipt__total-row--strong">
-            <span>Total à payer:</span>
-            <span>{{ formatAmount(safeReceipt.grandTotal) }} DT</span>
-          </div>
+          <div class="pos-receipt__rule"></div>
+          <p class="pos-receipt__powered">{{ receipt.poweredByLabel }}</p>
         </div>
-        <p class="pos-receipt__payment">{{ safeReceipt.paymentLabel }}</p>
-        <div class="pos-receipt__rule"></div>
-        @if (safeReceipt.footerLegal) {
-          <div class="pos-receipt__footer-legal">{{ safeReceipt.footerLegal }}</div>
-        }
-        <div class="pos-receipt__rule"></div>
-        <p class="pos-receipt__powered">{{ safeReceipt.poweredByLabel }}</p>
       </div>
-    </div>
+    }
   `,
   styles: [`
     @media screen {
@@ -383,8 +385,10 @@ export class PosReceiptComponent {
     };
   }
 
+  private static readonly EMPTY_RECEIPT = PosReceiptComponent.emptyModel();
+
   get safeReceipt(): PosReceiptModel {
-    return this.receipt ?? PosReceiptComponent.emptyModel();
+    return this.receipt ?? PosReceiptComponent.EMPTY_RECEIPT;
   }
 
   formatDate(d: Date): string {

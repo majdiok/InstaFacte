@@ -8,8 +8,8 @@ using Microsoft.Extensions.Logging;
 namespace FactuTrust.Application.Features.Accounting.EventHandlers;
 
 /// <summary>
-/// Génère le 2ᵉ volet comptable d'un effet client réglé à échéance : encaissement (532/412)
-/// ou impayé (4111/412). L'issue est portée par le statut de l'effet positionné avant publication.
+/// Génère le 2ᵉ volet comptable d'un effet client réglé à échéance : encaissement (532/413)
+/// ou impayé (4111/413). L'issue est portée par le statut de l'effet positionné avant publication.
 /// </summary>
 public sealed class GenerateJournalEntryOnClientEffetSettledHandler : INotificationHandler<ClientEffetSettledNotification>
 {

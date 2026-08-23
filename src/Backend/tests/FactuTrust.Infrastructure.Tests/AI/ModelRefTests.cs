@@ -89,5 +89,25 @@ public sealed class ModelRefTests
         Assert.Equal(0, (int)LlmProviderKind.Ollama);
         Assert.Equal(1, (int)LlmProviderKind.OpenRouter);
         Assert.Equal(2, (int)LlmProviderKind.Cursor);
+        Assert.Equal(3, (int)LlmProviderKind.Modal);
+    }
+
+    [Fact]
+    public void Parse_ModalPrefix()
+    {
+        var p = ModelRef.Parse("modal:moonshotai/Kimi-K3");
+        Assert.Equal(LlmProviderKind.Modal, p.Kind);
+        Assert.Equal("moonshotai/Kimi-K3", p.ProviderModelId);
+        Assert.Equal("modal:moonshotai/Kimi-K3", p.CanonicalModelRef);
+        Assert.Empty(p.Params);
+    }
+
+    [Fact]
+    public void Parse_UnprefixedMoonshotId_RemainsOllama()
+    {
+        var p = ModelRef.Parse("moonshotai/Kimi-K3");
+        Assert.Equal(LlmProviderKind.Ollama, p.Kind);
+        Assert.Equal("moonshotai/Kimi-K3", p.ProviderModelId);
+        Assert.Equal("ollama:moonshotai/Kimi-K3", p.CanonicalModelRef);
     }
 }

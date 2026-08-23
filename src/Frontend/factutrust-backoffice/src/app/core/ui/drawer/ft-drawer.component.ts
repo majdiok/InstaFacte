@@ -1,6 +1,7 @@
-import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnDestroy, Output, inject } from '@angular/core';
 import { SidebarModule } from 'primeng/sidebar';
 import { ButtonModule } from 'primeng/button';
+import { FtOverlayCleanupService } from '@core/services/ft-overlay-cleanup.service';
 
 /**
  * Drawer latéral droit, wrappant `p-sidebar` avec un look unifié.
@@ -123,7 +124,7 @@ import { ButtonModule } from 'primeng/button';
     `
   ]
 })
-export class FtDrawerComponent {
+export class FtDrawerComponent implements OnDestroy {
   @Input() visible = false;
   @Output() visibleChange = new EventEmitter<boolean>();
   @Input({ required: true }) title = '';
@@ -131,9 +132,19 @@ export class FtDrawerComponent {
   @Input() width = '480px';
   @Input() dismissible = true;
 
+  private readonly overlayCleanup = inject(FtOverlayCleanupService);
+
+  ngOnDestroy(): void {
+    this.visible = false;
+    this.overlayCleanup.clearOrphanOverlays();
+  }
+
   onVisibleChange(value: boolean): void {
     this.visible = value;
     this.visibleChange.emit(value);
+    if (!value) {
+      this.overlayCleanup.clearOrphanOverlays();
+    }
   }
 
   onClose(): void {

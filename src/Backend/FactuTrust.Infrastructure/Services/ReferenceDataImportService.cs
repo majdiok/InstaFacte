@@ -218,8 +218,9 @@ public sealed class ReferenceDataImportService : IReferenceDataImportService
     }
 
     // ── Schémas de colonnes par cible ─────────────────────────────────────────
-
-    private static (Dictionary<string, string[]> Synonyms, string[] Required, string Expected) Schema(ReferenceImportTarget target) => target switch
+    // internal (et non private) : réutilisé par la migration assistée (Services/Migration) pour
+    // proposer un mapping de colonnes SANS dupliquer les synonymes — source unique de vérité.
+    internal static (Dictionary<string, string[]> Synonyms, string[] Required, string Expected) Schema(ReferenceImportTarget target) => target switch
     {
         ReferenceImportTarget.ChartOfAccounts => (
             new Dictionary<string, string[]>

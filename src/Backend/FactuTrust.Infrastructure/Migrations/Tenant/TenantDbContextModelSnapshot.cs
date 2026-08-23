@@ -3214,7 +3214,7 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
 
-                    b.Property<Guid>("ProductId")
+                    b.Property<Guid?>("ProductId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("ProductName")
@@ -6288,7 +6288,7 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
 
-                    b.Property<Guid>("ProductId")
+                    b.Property<Guid?>("ProductId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("ProductName")
@@ -9617,8 +9617,7 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.HasOne("FactuTrust.Domain.Entities.Product", "Product")
                         .WithMany()
                         .HasForeignKey("ProductId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.OwnsOne("FactuTrust.Domain.ValueObjects.Money", "DiscountAmount", b1 =>
                         {
@@ -11246,8 +11245,7 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.HasOne("FactuTrust.Domain.Entities.Product", "Product")
                         .WithMany()
                         .HasForeignKey("ProductId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("FactuTrust.Domain.Entities.Quote", "Quote")
                         .WithMany("Lines")

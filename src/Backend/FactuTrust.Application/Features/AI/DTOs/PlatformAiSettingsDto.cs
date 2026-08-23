@@ -20,7 +20,8 @@ public sealed record PlatformAiSettingsDto(
     IReadOnlyList<UnifiedAiModelInfo> AvailableModels,
     AiModelRecommendationDto? Recommendation,
     PlatformOpenRouterSettingsDto OpenRouter,
-    PlatformCursorSettingsDto Cursor);
+    PlatformCursorSettingsDto Cursor,
+    PlatformModalSettingsDto Modal);
 
 /// <summary>Masked OpenRouter credentials for the platform back-office.</summary>
 public sealed record PlatformOpenRouterSettingsDto(
@@ -50,6 +51,9 @@ public sealed class UpdatePlatformAiSettingsRequest
 
     /// <summary>When set, updates shared Cursor SDK credentials. Empty ApiKey keeps the existing secret.</summary>
     public UpdatePlatformCursorRequest? Cursor { get; init; }
+
+    /// <summary>When set, updates shared Modal (Kimi) credentials. Empty ApiKey keeps the existing secret.</summary>
+    public UpdatePlatformModalRequest? Modal { get; init; }
 }
 
 /// <summary>OpenRouter credential update payload (nested under UpdatePlatformAiSettingsRequest).</summary>
@@ -88,3 +92,79 @@ public sealed record PlatformOpenRouterCredentials(
 public sealed record PlatformCursorCredentials(
     bool IsEnabled,
     string? ApiKey);
+
+/// <summary>Masked Modal endpoint credentials for the platform back-office.</summary>
+public sealed record PlatformModalSettingsDto(
+    bool IsEnabled,
+    string? DisplayName,
+    string? BaseUrl,
+    string DefaultBaseUrl,
+    string DefaultModelId,
+    bool IsApiKeyConfigured,
+    string? ApiKeyLast4);
+
+/// <summary>Modal credential update payload. ApiKey is the concatenated proxy token (id.secret).</summary>
+public sealed class UpdatePlatformModalRequest
+{
+    public bool IsEnabled { get; init; }
+    public string? DisplayName { get; init; }
+    public string? BaseUrl { get; init; }
+    /// <summary>Plaintext Bearer token (<c>TOKEN_ID.TOKEN_SECRET</c>). Null/empty = keep existing encrypted key.</summary>
+    public string? ApiKey { get; init; }
+}
+
+/// <summary>Runtime Modal credentials. ApiKey is null when disabled or missing/invalid.</summary>
+public sealed record PlatformModalCredentials(
+    bool IsEnabled,
+    string? ApiKey,
+    string BaseUrl);
+
+/// <summary>Where resolved Modal credentials came from.</summary>
+public enum ModalCredentialSource
+{
+    Platform = 0,
+    TenantOverride = 1,
+    Disabled = 2
+}
+
+/// <summary>Runtime Modal credentials after tenant override resolution.</summary>
+public sealed record ResolvedModalCredentials(
+    bool IsEnabled,
+    string? ApiKey,
+    string BaseUrl,
+    ModalCredentialSource Source)
+{
+    public static ResolvedModalCredentials FromPlatform(PlatformModalCredentials platform) =>
+        new(platform.IsEnabled, platform.ApiKey, platform.BaseUrl, ModalCredentialSource.Platform);
+}
+
+/// <summary>Masked snapshot of the shared platform Modal endpoint (never includes the secret).</summary>
+public sealed record TenantModalPlatformSnapshotDto(
+    bool IsEnabled,
+    string? DisplayName,
+    string? BaseUrl,
+    bool IsApiKeyConfigured,
+    string? ApiKeyLast4);
+
+/// <summary>Per-tenant Modal settings for the platform back-office (masked).</summary>
+public sealed record TenantModalSettingsDto(
+    bool HasOverride,
+    bool IsEnabled,
+    string? DisplayName,
+    string? BaseUrl,
+    string DefaultBaseUrl,
+    string DefaultModelId,
+    bool IsApiKeyConfigured,
+    string? ApiKeyLast4,
+    string? PlatformConfiguredModelRef,
+    TenantModalPlatformSnapshotDto Platform);
+
+/// <summary>Upsert body for a tenant Modal override. Empty ApiKey keeps the existing secret.</summary>
+public sealed class UpdateTenantModalSettingsRequest
+{
+    public bool IsEnabled { get; init; }
+    public string? DisplayName { get; init; }
+    public string? BaseUrl { get; init; }
+    /// <summary>Plaintext Bearer token (<c>TOKEN_ID.TOKEN_SECRET</c>). Null/empty = keep existing encrypted key.</summary>
+    public string? ApiKey { get; init; }
+}

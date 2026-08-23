@@ -14,8 +14,8 @@ public sealed class QuoteLine : Entity
     
     public int LineNumber { get; private set; }
     
-    public Guid ProductId { get; private set; }
-    public Product Product { get; private set; } = null!;
+    public Guid? ProductId { get; private set; }
+    public Product? Product { get; private set; }
     
     public string ProductCode { get; private set; } = null!;
     public string ProductName { get; private set; } = null!;
@@ -148,7 +148,8 @@ public sealed class QuoteLine : Entity
             QuoteId = quote.Id,
             Quote = quote,
             LineNumber = lineNumber,
-            ProductId = Guid.Empty, // No product reference
+            ProductId = null,
+            Product = null,
             ProductCode = "CUSTOM",
             ProductName = designation,
             ProductDescription = description,

@@ -96,6 +96,14 @@ internal sealed class HangfireRecurringJobsRegistrationService : BackgroundServi
                 Cron.Daily(7),
                 UtcOptions)),
         new(
+            // 6 h 30 UTC : génération des brouillons de facture pour contrats récurrents B2B.
+            "recurring-contract-billing",
+            () => RecurringJob.AddOrUpdate<FactuTrust.Infrastructure.Services.Background.RecurringContractBillingJob>(
+                "recurring-contract-billing",
+                job => job.ExecuteAsync(CancellationToken.None),
+                "30 6 * * *",
+                UtcOptions)),
+        new(
             // 8 h UTC : premier créneau libre après accounting-audit-schedules (7 h). Le job sort
             // immédiatement si TreasuryForecast:Enabled est faux.
             "treasury-forecast-recompute",

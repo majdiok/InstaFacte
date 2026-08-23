@@ -313,6 +313,8 @@ public sealed record DraftMetadata
     public Guid? LinkedInvoiceId { get; init; }
     /// <summary>Optional warehouse for stock deduction when the invoice is validated.</summary>
     public Guid? WarehouseId { get; init; }
+    /// <summary>Optional POS cash-register session (vacation) when the invoice is submitted from POS.</summary>
+    public Guid? CashRegisterSessionId { get; init; }
 }
 
 /// <summary>

@@ -1688,7 +1688,7 @@ public sealed class AccountingController : ControllerBase
     /// <summary>
     /// Regenerates missing accounting journal entries for validated invoices.
     /// This is a remediation endpoint for invoices that failed accounting entry
-    /// generation due to missing chart of accounts entries (e.g., account 4478).
+    /// generation due to missing chart of accounts entries (e.g., account 4371).
     /// The operation is idempotent — invoices with existing entries are skipped.
     /// </summary>
     [HttpPost("regenerate-invoice-entries")]

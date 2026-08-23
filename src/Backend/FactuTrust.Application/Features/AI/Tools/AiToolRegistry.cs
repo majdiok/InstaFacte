@@ -3,6 +3,19 @@ using FactuTrust.Domain.Enums;
 
 namespace FactuTrust.Application.Features.AI.Tools;
 
+/// <summary>
+/// Famille d'outils Studio à exposer, déduite de l'intention de l'utilisateur.
+/// <see cref="None"/> conserve le catalogue historique à l'identique.
+/// </summary>
+public enum StudioToolFocus
+{
+    None = 0,
+    /// <summary>Analyse : outils d'états uniquement.</summary>
+    Report,
+    /// <summary>Construction : tables, systèmes, modifications, fenêtres — sans les états.</summary>
+    Build
+}
+
 public static class AiToolRegistry
 {
     private static readonly HashSet<string> ComplianceToolNames = new(StringComparer.Ordinal)
@@ -37,15 +50,17 @@ public static class AiToolRegistry
         "get_abc_xyz_classification"
     };
 
-    /// <summary>Focused catalogue for the Studio "AI builder" surface (generation / report / extraction).</summary>
+    /// <summary>
+    /// Focused catalogue for the Studio "AI builder" surface (generation / report / extraction).
+    /// Note : <c>studio_build_report</c>, <c>studio_extract_record</c>, <c>studio_list_custom_tables</c>
+    /// et <c>studio_query_records</c> figuraient ici sans avoir jamais eu de définition dans
+    /// <see cref="All"/> — ils filtraient donc dans le vide. Retirés (comportement inchangé) ; les
+    /// états sont désormais servis par <see cref="StudioReportToolNames"/>.
+    /// </summary>
     private static readonly HashSet<string> StudioBuilderToolNames = new(StringComparer.Ordinal)
     {
         "studio_generate_app",
         "studio_generate_system",
-        "studio_build_report",
-        "studio_extract_record",
-        "studio_list_custom_tables",
-        "studio_query_records",
         "propose_follow_up_prompts"
     };
 
@@ -58,10 +73,6 @@ public static class AiToolRegistry
     {
         "studio_plan_app",
         "studio_plan_system",
-        "studio_build_report",
-        "studio_extract_record",
-        "studio_list_custom_tables",
-        "studio_query_records",
         "propose_follow_up_prompts"
     };
 
@@ -79,6 +90,26 @@ public static class AiToolRegistry
         "studio_plan_view"
     };
 
+    /// <summary>
+    /// États sur les tables réelles (EnableStudioAiReportTools) : catalogue des sources, description
+    /// d'une source, exécution en lecture seule, et plan d'enregistrement. Contrairement aux fenêtres,
+    /// ces outils sont disponibles MÊME sans le flux d'aperçu : <c>studio_run_report</c> ne crée rien,
+    /// il répond. Seul <c>studio_plan_report</c> exige l'aperçu.
+    /// </summary>
+    private static readonly HashSet<string> StudioReportToolNames = new(StringComparer.Ordinal)
+    {
+        "studio_list_report_sources",
+        "studio_describe_report_source",
+        "studio_run_report",
+        "studio_plan_report"
+    };
+
+    /// <summary>Outils utiles quelle que soit l'intention Studio : jamais retirés par le focus.</summary>
+    private static readonly HashSet<string> StudioCrossCuttingToolNames = new(StringComparer.Ordinal)
+    {
+        "propose_follow_up_prompts"
+    };
+
     /// <param name="enableMutationTools">When false, tools with <see cref="AiToolDefinition.IsMutating"/> are excluded.</param>
     /// <param name="agentScope">
     /// Expert de module optionnel : ne restreint le catalogue qu'en mode Default (les autres modes ont déjà
@@ -88,13 +119,25 @@ public static class AiToolRegistry
     /// Quand true, le mode StudioBuilder expose les outils de plan (aperçu + confirmation) à la place des
     /// outils de génération directe. False (défaut) = catalogue historique strictement inchangé.
     /// </param>
+    /// <param name="studioReportTools">
+    /// États sur les tables réelles. Additif et indépendant de l'aperçu : <c>studio_run_report</c> est
+    /// en lecture seule. False (défaut) = catalogue strictement inchangé.
+    /// </param>
+    /// <param name="studioFocus">
+    /// Restreint le catalogue StudioBuilder à la famille d'outils correspondant à l'intention détectée.
+    /// Le catalogue complet (11 outils ≈ 9 100 caractères de schémas) sature le budget de contexte et
+    /// noie les bons outils ; le focus le divise par trois. <see cref="StudioToolFocus.None"/> (défaut)
+    /// = catalogue strictement inchangé.
+    /// </param>
     public static IReadOnlyList<AiToolDefinition> GetDefinitionsForMode(
         AssistantMode mode,
         bool enableMutationTools,
         AssistantAgentScope agentScope = AssistantAgentScope.None,
         bool studioPlanPreview = false,
         bool studioModifyTools = false,
-        bool studioViewTools = false)
+        bool studioViewTools = false,
+        bool studioReportTools = false,
+        StudioToolFocus studioFocus = StudioToolFocus.None)
     {
         var studioSet = studioPlanPreview ? StudioBuilderPlanToolNames : StudioBuilderToolNames;
         // Modification et fenêtres ne sont proposées qu'en mode aperçu (rien ne s'applique sans validation).
@@ -104,6 +147,33 @@ public static class AiToolRegistry
             if (studioModifyTools) expanded.UnionWith(StudioModifyToolNames);
             if (studioViewTools) expanded.UnionWith(StudioViewToolNames);
             studioSet = expanded;
+        }
+        if (studioReportTools)
+        {
+            var withReports = new HashSet<string>(studioSet, StringComparer.Ordinal);
+            withReports.UnionWith(StudioReportToolNames);
+            // Sans le flux d'aperçu, le plan d'état n'a pas de chemin de confirmation : on ne l'expose pas.
+            if (!studioPlanPreview) withReports.Remove("studio_plan_report");
+            studioSet = withReports;
+        }
+        // Focus : ne montrer que la famille d'outils correspondant à l'intention. Le modèle choisit
+        // beaucoup mieux parmi 5 outils que parmi 11, et le budget de contexte respire.
+        if (mode == AssistantMode.StudioBuilder && studioFocus != StudioToolFocus.None)
+        {
+            var focused = new HashSet<string>(studioSet, StringComparer.Ordinal);
+            if (studioFocus == StudioToolFocus.Report)
+            {
+                // Ne garder que les outils d'états (s'ils sont activés) + les outils transverses.
+                focused.IntersectWith(StudioReportToolNames.Concat(StudioCrossCuttingToolNames));
+            }
+            else
+            {
+                // Construction : retirer les outils d'états, garder tout le reste.
+                focused.ExceptWith(StudioReportToolNames);
+            }
+            // Un focus qui ne laisserait rien d'actionnable serait pire que pas de focus du tout.
+            if (focused.Any(name => !StudioCrossCuttingToolNames.Contains(name)))
+                studioSet = focused;
         }
         IEnumerable<AiToolDefinition> q = mode switch
         {
@@ -1616,6 +1686,84 @@ public static class AiToolRegistry
             RequiredParameters = new() { "spec_json" },
             IsMutating = true,
             RequiredPermission = Permissions.Studio.DesignForms
+        },
+
+        // ════════════════════════════════════════════════════════════════════
+        //  Studio « états » — analyses sur les tables RÉELLES de la solution.
+        //  Le modèle ne produit jamais de SQL : il nomme un état prêt à l'emploi
+        //  ou une source + des champs, confrontés au schéma vivant. Append-only.
+        // ════════════════════════════════════════════════════════════════════
+        new()
+        {
+            Name = "studio_list_report_sources",
+            Description =
+                "Liste les ÉTATS PRÊTS À L'EMPLOI (ventes par produit, par client, par mois, achats, stock, "
+                + "encaissements…) et les SOURCES de données analysables, avec leur domaine. "
+                + "À APPELER EN PREMIER quand l'utilisateur demande un rapport, un état, une analyse ou des "
+                + "statistiques et que tu ne sais pas quelle source utiliser. Lecture seule.",
+            Parameters = new Dictionary<string, AiToolParameter>(),
+            RequiredParameters = new(),
+            RequiredPermission = Permissions.Studio.DesignReports
+        },
+        new()
+        {
+            Name = "studio_describe_report_source",
+            Description =
+                "Renvoie les CHAMPS RÉELS d'une source d'états (clés au format `Table_Colonne`). "
+                + "À APPELER AVANT studio_run_report / studio_plan_report quand tu n'utilises PAS un état prêt "
+                + "à l'emploi, pour t'appuyer sur les vraies clés au lieu de les deviner. "
+                + "Les clés suffixées `__month`, `__quarter`, `__year` regroupent par période. Lecture seule.",
+            Parameters = new Dictionary<string, AiToolParameter>
+            {
+                ["source"] = new() { Type = "string", Description = "Nom de la source (ex. InvoiceLines), tel que listé par studio_list_report_sources." }
+            },
+            RequiredParameters = new() { "source" },
+            RequiredPermission = Permissions.Studio.DesignReports
+        },
+        new()
+        {
+            Name = "studio_run_report",
+            Description =
+                "EXÉCUTE un état et renvoie le tableau de résultats à afficher dans la conversation. "
+                + "N'enregistre RIEN. UTILISER pour « montre-moi les ventes par produit ce trimestre ». "
+                + "Fournir UN seul argument `spec_json` : "
+                + "{ \"title\": string, \"preset\"?: clé d'état prêt à l'emploi, \"source\"?: table, "
+                + "\"groupBy\"?: [clés], \"measures\"?: [ { \"field\": clé, \"fn\": \"sum|avg|count|min|max\" } ], "
+                + "\"columns\"?: [clés] (état de détail, si pas de groupBy), "
+                + "\"filters\"?: [ { \"field\": clé, \"op\": \"eq|neq|gt|gte|lt|lte|contains|in|between\", \"value\": any, \"value2\"?: any } ], "
+                + "\"sort\"?: [ { \"field\": clé, \"dir\": \"asc|desc\" } ], \"from\"?: \"yyyy-MM-dd\", \"to\"?: \"yyyy-MM-dd\" }. "
+                + "PRÉFÈRE `preset` : c'est exact et cela tient en un seul appel. Dériver les dates du CONTEXTE "
+                + "TEMPOREL ; ne pas inventer d'année. N'émets QU'UN seul appel.",
+            Parameters = new Dictionary<string, AiToolParameter>
+            {
+                ["spec_json"] = new()
+                {
+                    Type = "string",
+                    Description = "Spécification JSON de l'état (preset OU source + groupBy/measures) conforme au schéma."
+                }
+            },
+            RequiredParameters = new() { "spec_json" },
+            RequiredPermission = Permissions.Studio.DesignReports
+        },
+        new()
+        {
+            Name = "studio_plan_report",
+            Description =
+                "PRÉPARE l'ENREGISTREMENT d'un état comme état Studio réutilisable, soumis à VALIDATION "
+                + "utilisateur (rien n'est créé immédiatement). UTILISER quand l'utilisateur demande de "
+                + "« créer », « enregistrer » ou « garder » un rapport. Même schéma `spec_json` que "
+                + "studio_run_report. L'aperçu montre un échantillon des vraies données.",
+            Parameters = new Dictionary<string, AiToolParameter>
+            {
+                ["spec_json"] = new()
+                {
+                    Type = "string",
+                    Description = "Spécification JSON de l'état, identique à celle de studio_run_report."
+                }
+            },
+            RequiredParameters = new() { "spec_json" },
+            IsMutating = true,
+            RequiredPermission = Permissions.Studio.DesignReports
         },
 
         // ════════════════════════════════════════════════════════════════════

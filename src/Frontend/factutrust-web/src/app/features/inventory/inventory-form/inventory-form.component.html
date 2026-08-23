@@ -113,12 +113,15 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @for (line of lines(); track line.productId) {
+                            @for (line of lines(); track lineKey(line)) {
                                 <tr>
                                     <td>
                                         <span class="product-name">{{ line.productName }}</span>
                                         @if (line.productCode) {
                                             <span class="product-code">REF: {{ line.productCode }}</span>
+                                        }
+                                        @if (line.lotNumber) {
+                                            <span class="lot-label">Lot {{ line.lotNumber }}</span>
                                         }
                                     </td>
                                     <td class="col-qty theoretical">
@@ -127,10 +130,10 @@
                                     <td class="col-qty">
                                         <p-inputNumber
                                             [ngModel]="line.countedInput"
-                                            (ngModelChange)="updateLineCount(line.productId, $event)"
+                                            (ngModelChange)="updateLineCount(line, $event)"
                                             [min]="0"
                                             [maxFractionDigits]="2"
-                                            inputId="count-{{ line.productId }}"
+                                            inputId="count-{{ lineKey(line) }}"
                                             styleClass="count-input"
                                             [attr.aria-label]="'Quantité comptée pour ' + line.productName"
                                         />

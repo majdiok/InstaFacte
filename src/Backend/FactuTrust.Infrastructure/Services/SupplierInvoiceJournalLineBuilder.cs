@@ -5,15 +5,21 @@ using FactuTrust.Domain.Enums;
 namespace FactuTrust.Infrastructure.Services;
 
 /// <summary>
-/// Builds journal lines for supplier invoices (goods vs immobilisations).
+/// Builds journal lines for supplier invoices (goods vs services vs immobilisations).
 /// </summary>
 internal static class SupplierInvoiceJournalLineBuilder
 {
-    internal sealed record BuiltLines(decimal GoodsHt, decimal GoodsVat, decimal AssetHt, decimal AssetVat);
-
-    public static (List<JournalLineInput> Lines, BuiltLines Totals) Build(SupplierInvoice invoice)
+    internal sealed record BuiltLines(decimal GoodsHt, decimal GoodsVat, decimal AssetHt, decimal AssetVat)
     {
-        decimal goodsHt = 0, goodsVat = 0, assetHt = 0, assetVat = 0;
+        public decimal ServicesHt { get; init; }
+        public decimal ServicesVat { get; init; }
+    }
+
+    public static (List<JournalLineInput> Lines, BuiltLines Totals) Build(
+        SupplierInvoice invoice,
+        IReadOnlyDictionary<Guid, ProductType>? lineProductTypes = null)
+    {
+        decimal goodsHt = 0, goodsVat = 0, assetHt = 0, assetVat = 0, servicesHt = 0, servicesVat = 0;
         var assetDebits = new Dictionary<string, decimal>(StringComparer.Ordinal);
 
         foreach (var line in invoice.Lines)
@@ -27,12 +33,20 @@ internal static class SupplierInvoiceJournalLineBuilder
                     : line.AssetAccountNumber.Trim();
                 assetDebits.TryGetValue(acc, out var sum);
                 assetDebits[acc] = sum + line.SubTotal.Amount;
+                continue;
             }
-            else
+
+            if (lineProductTypes is not null
+                && lineProductTypes.TryGetValue(line.ProductId, out var productType)
+                && productType == ProductType.Service)
             {
-                goodsHt += line.SubTotal.Amount;
-                goodsVat += line.VatAmount.Amount;
+                servicesHt += line.SubTotal.Amount;
+                servicesVat += line.VatAmount.Amount;
+                continue;
             }
+
+            goodsHt += line.SubTotal.Amount;
+            goodsVat += line.VatAmount.Amount;
         }
 
         var lines = new List<JournalLineInput>();
@@ -40,8 +54,12 @@ internal static class SupplierInvoiceJournalLineBuilder
 
         if (goodsHt > 0)
             lines.Add(new JournalLineInput(TunisianPostingAccounts.PurchasesOfGoods, $"Achats — {label}", goodsHt, 0, null, ThirdPartyKind.None));
-        if (goodsVat > 0)
-            lines.Add(new JournalLineInput(TunisianPostingAccounts.VatDeductibleGoods, $"TVA déductible — {label}", goodsVat, 0, null, ThirdPartyKind.None));
+        if (servicesHt > 0)
+            lines.Add(new JournalLineInput(TunisianPostingAccounts.PurchasesOfServices, $"Prestations — {label}", servicesHt, 0, null, ThirdPartyKind.None));
+
+        var deductibleVat = goodsVat + servicesVat;
+        if (deductibleVat > 0)
+            lines.Add(new JournalLineInput(TunisianPostingAccounts.VatDeductibleGoods, $"TVA déductible — {label}", deductibleVat, 0, null, ThirdPartyKind.None));
 
         foreach (var kv in assetDebits.OrderBy(k => k.Key))
         {
@@ -67,6 +85,10 @@ internal static class SupplierInvoiceJournalLineBuilder
             invoice.SupplierId,
             ThirdPartyKind.Supplier));
 
-        return (lines, new BuiltLines(goodsHt, goodsVat, assetHt, assetVat));
+        return (lines, new BuiltLines(goodsHt, goodsVat, assetHt, assetVat)
+        {
+            ServicesHt = servicesHt,
+            ServicesVat = servicesVat
+        });
     }
 }

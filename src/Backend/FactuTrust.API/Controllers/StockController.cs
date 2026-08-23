@@ -76,6 +76,98 @@ public class StockController : ControllerBase
         return Ok(ApiResponse<StockAlertsResult>.Ok(result));
     }
 
+    [HttpGet("items/{stockItemId:guid}/lots")]
+    [Authorize(Policy = PermissionPolicies.StockRead)]
+    public async Task<ActionResult<IReadOnlyList<StockLotBalanceDto>>> GetStockItemLots(
+        Guid stockItemId,
+        CancellationToken cancellationToken = default)
+    {
+        var guardResult = await EnsureStockSchemaAsync(cancellationToken);
+        if (guardResult != null)
+            return guardResult;
+
+        var result = await _mediator.Send(new GetStockItemLotsQuery(stockItemId), cancellationToken);
+        return Ok(ApiResponse<IReadOnlyList<StockLotBalanceDto>>.Ok(result));
+    }
+
+    [HttpGet("expiry-alerts")]
+    [Authorize(Policy = PermissionPolicies.StockRead)]
+    public async Task<ActionResult<IReadOnlyList<ExpiryAlertDto>>> GetExpiryAlerts(
+        [FromQuery] Guid? warehouseId,
+        CancellationToken cancellationToken = default)
+    {
+        var guardResult = await EnsureStockSchemaAsync(cancellationToken);
+        if (guardResult != null)
+            return guardResult;
+
+        var result = await _mediator.Send(new GetExpiryAlertsQuery(warehouseId), cancellationToken);
+        return Ok(ApiResponse<IReadOnlyList<ExpiryAlertDto>>.Ok(result));
+    }
+
+    [HttpGet("features")]
+    [Authorize(Policy = PermissionPolicies.StockRead)]
+    public async Task<ActionResult<StockFeaturesDto>> GetStockFeatures(CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(new GetStockFeaturesQuery(), cancellationToken);
+        return Ok(ApiResponse<StockFeaturesDto>.Ok(result));
+    }
+
+    [HttpGet("products/{productId:guid}/lots")]
+    [Authorize(Policy = PermissionPolicies.StockRead)]
+    public async Task<ActionResult<IReadOnlyList<StockLotBalanceDto>>> GetProductLots(
+        Guid productId,
+        [FromQuery] Guid warehouseId,
+        CancellationToken cancellationToken = default)
+    {
+        var guardResult = await EnsureStockSchemaAsync(cancellationToken);
+        if (guardResult != null)
+            return guardResult;
+
+        if (warehouseId == Guid.Empty)
+            return BadRequest(ApiResponse<IReadOnlyList<StockLotBalanceDto>>.Fail("L'entrepôt est obligatoire."));
+
+        var result = await _mediator.Send(new GetProductLotsByProductQuery(productId, warehouseId), cancellationToken);
+        return Ok(ApiResponse<IReadOnlyList<StockLotBalanceDto>>.Ok(result));
+    }
+
+    [HttpGet("products/{productId:guid}/serials")]
+    [Authorize(Policy = PermissionPolicies.StockRead)]
+    public async Task<ActionResult<IReadOnlyList<ProductSerialDto>>> GetProductSerials(
+        Guid productId,
+        [FromQuery] Guid warehouseId,
+        CancellationToken cancellationToken = default)
+    {
+        var guardResult = await EnsureStockSchemaAsync(cancellationToken);
+        if (guardResult != null)
+            return guardResult;
+
+        if (warehouseId == Guid.Empty)
+            return BadRequest(ApiResponse<IReadOnlyList<ProductSerialDto>>.Fail("L'entrepôt est obligatoire."));
+
+        var result = await _mediator.Send(new GetProductSerialsQuery(productId, warehouseId), cancellationToken);
+        return Ok(ApiResponse<IReadOnlyList<ProductSerialDto>>.Ok(result));
+    }
+
+    [HttpGet("traceability/context")]
+    [Authorize(Policy = PermissionPolicies.StockRead)]
+    public async Task<ActionResult<IReadOnlyList<ProductTraceabilityContextDto>>> GetTraceabilityContext(
+        [FromQuery] Guid warehouseId,
+        [FromQuery] List<Guid> productIds,
+        CancellationToken cancellationToken = default)
+    {
+        var guardResult = await EnsureStockSchemaAsync(cancellationToken);
+        if (guardResult != null)
+            return guardResult;
+
+        if (warehouseId == Guid.Empty)
+            return BadRequest(ApiResponse<IReadOnlyList<ProductTraceabilityContextDto>>.Fail("L'entrepôt est obligatoire."));
+
+        var result = await _mediator.Send(
+            new GetTraceabilityContextQuery(productIds ?? [], warehouseId),
+            cancellationToken);
+        return Ok(ApiResponse<IReadOnlyList<ProductTraceabilityContextDto>>.Ok(result));
+    }
+
     [HttpGet("{stockItemId:guid}/movements")]
     [Authorize(Policy = PermissionPolicies.StockRead)]
     public async Task<ActionResult<StockMovementsResult>> GetStockMovements(

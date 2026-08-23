@@ -1,6 +1,7 @@
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Events;
+using FactuTrust.Domain.Services;
 using FactuTrust.Domain.ValueObjects;
 
 namespace FactuTrust.Domain.Entities;
@@ -27,6 +28,9 @@ public sealed class PurchaseOrder : AggregateRoot
     /// </summary>
     public Guid? WarehouseId { get; private set; }
     public Warehouse? Warehouse { get; private set; }
+
+    /// <summary>Optional BTP/ESN project this purchase order is charged to. Additive nullable FK.</summary>
+    public Guid? ProjectId { get; private set; }
 
     private readonly List<PurchaseOrderLine> _lines = new();
     public IReadOnlyCollection<PurchaseOrderLine> Lines => _lines.AsReadOnly();
@@ -144,10 +148,22 @@ public sealed class PurchaseOrder : AggregateRoot
         return Result.Success(order);
     }
 
+    public Result AssignToProject(Guid? projectId)
+    {
+        if (projectId == Guid.Empty)
+            projectId = null;
+        ProjectId = projectId;
+        return Result.Success();
+    }
+
     public Result AddLine(Product product, decimal quantity, Money? customUnitPrice = null)
     {
         if (!Status.CanBeEdited())
             return Result.Failure(Error.Validation("Status", "Cette commande ne peut plus être modifiée"));
+
+        var sellable = ProductCommercialGuards.EnsureCanAppearOnDocument(product);
+        if (sellable.IsFailure)
+            return sellable;
 
         if (quantity <= 0)
             return Result.Failure(Error.Validation("Quantity", "La quantité doit être supérieure à zéro"));

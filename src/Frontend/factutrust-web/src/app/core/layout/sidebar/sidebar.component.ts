@@ -120,6 +120,25 @@ export class SidebarComponent implements OnInit {
       this.expandedParentLabel === item.label ? null : item.label;
   }
 
+  /**
+   * Opens the rail section that matches a product-tour id. Returns the previous
+   * expanded label so the tour can restore it afterwards.
+   */
+  expandSectionForTour(tourId: string): string | null {
+    const previous = this.expandedParentLabel;
+    const item = this.navItems().find(i => i.tourId === tourId);
+    if (!item?.children?.length) {
+      return previous;
+    }
+    this.expandedFooterLabel = null;
+    this.expandedParentLabel = item.label;
+    return previous;
+  }
+
+  restoreSectionAfterTour(label: string | null): void {
+    this.expandedParentLabel = label;
+  }
+
   toggleFooterSubmenu(item: NavItem): void {
     if (!item.children?.length) {
       return;

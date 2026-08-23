@@ -5,6 +5,7 @@ using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.AI;
 using FactuTrust.Application.Features.AI.DTOs;
+using FactuTrust.Application.Features.Studio.Common.SqlReport;
 using FactuTrust.Domain.Constants;
 using FactuTrust.Domain.Enums;
 using Microsoft.Extensions.Caching.Memory;
@@ -28,6 +29,7 @@ public sealed class AiContextBuilder : IAiContextBuilder
     private readonly ScreenAnalysisOptions _screenAnalysisOptions;
     private readonly TimeProvider _timeProvider;
     private readonly ForecastingOptions _forecastingOptions;
+    private readonly ICurrentUser? _currentUser;
 
     public AiContextBuilder(
         ICompanyRepository companyRepository,
@@ -37,8 +39,12 @@ public sealed class AiContextBuilder : IAiContextBuilder
         IOptions<OllamaSettings> ollamaSettings,
         TimeProvider timeProvider,
         IOptions<ScreenAnalysisOptions>? screenAnalysisOptions = null,
-        IOptions<ForecastingOptions>? forecastingOptions = null)
+        IOptions<ForecastingOptions>? forecastingOptions = null,
+        // Permissions de l'utilisateur courant : l'index des états injecté dans le prompt ne doit
+        // citer que ce qu'il a le droit de lire. Optionnel pour ne pas casser les constructions de test.
+        ICurrentUser? currentUser = null)
     {
+        _currentUser = currentUser;
         _companyRepository = companyRepository;
         _tenantContext = tenantContext;
         _memoryCache = memoryCache;
@@ -66,10 +72,13 @@ public sealed class AiContextBuilder : IAiContextBuilder
 
         if (assistantMode == AssistantMode.StudioBuilder)
         {
+            var reportTools = _ollamaSettings.EnableStudioAiReportTools && _ollamaSettings.EnableStudioSqlReportEngine;
             return BuildStudioBuilderSystemPrompt(
                 _ollamaSettings.EnableStudioAiPlanPreview,
                 _ollamaSettings.EnableStudioAiPlanPreview && _ollamaSettings.EnableStudioAiModifyTools,
-                _ollamaSettings.EnableStudioAiPlanPreview && _ollamaSettings.EnableStudioAiViewTools)
+                _ollamaSettings.EnableStudioAiPlanPreview && _ollamaSettings.EnableStudioAiViewTools,
+                reportTools,
+                reportTools ? BuildReportSourceDigest() : null)
                 + BuildTemporalContextSuffix();
         }
 
@@ -88,7 +97,8 @@ public sealed class AiContextBuilder : IAiContextBuilder
     /// emit ONE structured tool call per request and never invent data or expose tool names.
     /// </summary>
     private static string BuildStudioBuilderSystemPrompt(
-        bool planPreview = false, bool modifyTools = false, bool viewTools = false)
+        bool planPreview = false, bool modifyTools = false, bool viewTools = false,
+        bool reportTools = false, string? reportSourceDigest = null)
     {
         // Flux plan → aperçu → confirmation : mêmes règles, mais les outils deviennent studio_plan_*
         // et le modèle ne doit JAMAIS prétendre que la création a déjà eu lieu.
@@ -128,8 +138,57 @@ public sealed class AiContextBuilder : IAiContextBuilder
                 + "PUIS `studio_plan_view`. Une fenêtre est en LECTURE SEULE : elle n'écrit ni ne modifie jamais de données. "
                 + "Ne confonds pas avec une TABLE personnalisée, qui, elle, stocke de nouvelles données.");
         }
+        if (reportTools)
+        {
+            sb.AppendLine("10. ÉTATS / RAPPORTS / ANALYSES sur les données EXISTANTES de la solution "
+                + "(« rapport des ventes de produits », « chiffre d'affaires par client ce trimestre », "
+                + "« statistiques de stock ») : c'est un ÉTAT, PAS une table à créer. "
+                + "Pour AFFICHER un résultat → `studio_run_report`. Pour l'ENREGISTRER durablement → `studio_plan_report`.");
+            sb.AppendLine("10b. Utilise en priorité un état PRÊT À L'EMPLOI (`preset`) : il est exact et tient en un seul appel. "
+                + "Les états disponibles sont listés ci-dessous. Si aucun ne convient, appelle `studio_list_report_sources` "
+                + "puis `studio_describe_report_source` pour connaître les VRAIES clés de champ.");
+            sb.AppendLine("10c. N'invente JAMAIS un nom de champ ni un chiffre. Les montants et les totaux sont calculés par "
+                + "la base : tu ne fais que décrire ce que l'état montre. Précise toujours la période dans `from`/`to` "
+                + "(format yyyy-MM-dd, dérivé du CONTEXTE TEMPOREL — ne devine pas l'année).");
+            if (!string.IsNullOrEmpty(reportSourceDigest))
+                sb.AppendLine("ÉTATS PRÊTS À L'EMPLOI : " + reportSourceDigest);
+        }
         sb.AppendLine();
         sb.AppendLine("EXEMPLE système congés : system + entities employes/types_conges/demandes/soldes avec relations relationTo, seed sur types_conges.");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Index compact des états prêts à l'emploi que l'utilisateur courant peut lire. Injecté dans le
+    /// prompt StudioBuilder (qui n'est PAS mis en cache) pour qu'un petit modèle sur CPU — limité à UN
+    /// tour d'outil — puisse répondre sans passer par une phase de découverte du schéma.
+    /// Volontairement borné : le contexte CPU est étroit et les schémas d'outils y comptent déjà.
+    /// </summary>
+    private const int ReportDigestMaxChars = 900;
+
+    private string BuildReportSourceDigest()
+    {
+        if (_currentUser is null)
+            return string.Empty;
+
+        var allowed = SqlReportPresetCatalog.All
+            .Where(p => SqlReportAccessPolicy.TryAuthorize(p.FactTable, _currentUser.HasPermission, out _, out _))
+            .ToList();
+        if (allowed.Count == 0)
+            return string.Empty;
+
+        var sb = new StringBuilder();
+        foreach (var preset in allowed)
+        {
+            var entry = $"{preset.Key} ({preset.DisplayName})";
+            if (sb.Length + entry.Length + 2 > ReportDigestMaxChars)
+            {
+                sb.Append(" …");
+                break;
+            }
+            if (sb.Length > 0) sb.Append(", ");
+            sb.Append(entry);
+        }
         return sb.ToString();
     }
 

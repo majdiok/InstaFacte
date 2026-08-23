@@ -180,7 +180,7 @@ import { INVOICES_FR } from './invoices.i18n.fr';
 
       <!-- Lignes -->
       <h3 class="section-title">{{ t('detail.section.lines') }}</h3>
-      <p-table [value]="d.lines" styleClass="ft-table">
+      <p-table [value]="d.lines" styleClass="p-datatable-sm ft-table">
         <ng-template pTemplate="header">
           <tr>
             <th>{{ t('create.lines.description') }}</th>
@@ -206,7 +206,7 @@ import { INVOICES_FR } from './invoices.i18n.fr';
       @if (d.receipts.length === 0) {
         <p class="empty">{{ t('detail.empty.receipts') }}</p>
       } @else {
-        <p-table [value]="d.receipts" styleClass="ft-table">
+        <p-table [value]="d.receipts" styleClass="p-datatable-sm ft-table">
           <ng-template pTemplate="header">
             <tr>
               <th>N° reçu</th>

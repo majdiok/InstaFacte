@@ -3,6 +3,7 @@ using System.Data.Common;
 using FactuTrust.Application.Features.Studio.Common;
 using FactuTrust.Infrastructure.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace FactuTrust.Infrastructure.Services.Studio;
 
@@ -10,6 +11,10 @@ namespace FactuTrust.Infrastructure.Services.Studio;
 /// READ-ONLY introspection + querying of the tenant database. Every table/column name is validated
 /// against the live INFORMATION_SCHEMA (deny-by-default + denylist) and bracket-quoted before being
 /// placed in SQL; values (offset/fetch/search) are always parameterized. Only SELECT is ever issued.
+///
+/// Le SCHÉMA (liste de tables, colonnes, clés étrangères) est mis en cache par tenant : il ne change
+/// qu'à une migration, alors qu'un état ou une fenêtre l'interroge plusieurs fois par requête.
+/// Les DONNÉES ne sont jamais mises en cache.
 /// </summary>
 public sealed class SqlSchemaProvider : ISqlSchemaProvider
 {
@@ -17,9 +22,16 @@ public sealed class SqlSchemaProvider : ISqlSchemaProvider
     private const int MaxColumns = 50;
     private const int MaxLookupIds = 500;
 
-    private readonly ITenantDbContextFactory _contextFactory;
+    private static readonly TimeSpan SchemaCacheTtl = TimeSpan.FromMinutes(5);
 
-    public SqlSchemaProvider(ITenantDbContextFactory contextFactory) => _contextFactory = contextFactory;
+    private readonly ITenantDbContextFactory _contextFactory;
+    private readonly IMemoryCache? _cache;
+
+    public SqlSchemaProvider(ITenantDbContextFactory contextFactory, IMemoryCache? cache = null)
+    {
+        _contextFactory = contextFactory;
+        _cache = cache;
+    }
 
     public async Task<IReadOnlyList<SqlTableInfo>> ListTablesAsync(Guid tenantId, CancellationToken cancellationToken = default)
     {
@@ -27,7 +39,7 @@ public sealed class SqlSchemaProvider : ISqlSchemaProvider
         var conn = ctx.Database.GetDbConnection();
         await EnsureOpenAsync(conn, cancellationToken);
 
-        var names = await ReadAllowedTableNamesAsync(conn, cancellationToken);
+        var names = await AllowedTablesAsync(tenantId, conn, cancellationToken);
         return names.Select(n => new SqlTableInfo(n)).ToList();
     }
 
@@ -40,11 +52,11 @@ public sealed class SqlSchemaProvider : ISqlSchemaProvider
         var conn = ctx.Database.GetDbConnection();
         await EnsureOpenAsync(conn, cancellationToken);
 
-        var allowed = await ReadAllowedTableNamesAsync(conn, cancellationToken);
+        var allowed = await AllowedTablesAsync(tenantId, conn, cancellationToken);
         if (!allowed.Contains(table))
             return null;
 
-        return await ReadColumnsAsync(conn, table, cancellationToken);
+        return await ColumnsAsync(tenantId, conn, table, cancellationToken);
     }
 
     public async Task<SqlQueryResultDto?> QueryAsync(
@@ -58,11 +70,11 @@ public sealed class SqlSchemaProvider : ISqlSchemaProvider
         var conn = ctx.Database.GetDbConnection();
         await EnsureOpenAsync(conn, cancellationToken);
 
-        var allowed = await ReadAllowedTableNamesAsync(conn, cancellationToken);
+        var allowed = await AllowedTablesAsync(tenantId, conn, cancellationToken);
         if (!allowed.Contains(table))
             return null;
 
-        var liveColumns = await ReadColumnsAsync(conn, table, cancellationToken);
+        var liveColumns = await ColumnsAsync(tenantId, conn, table, cancellationToken);
         var liveByName = liveColumns.ToDictionary(c => c.Name, StringComparer.Ordinal);
 
         // Keep only requested columns that are valid identifiers AND exist in the live schema, preserving order.
@@ -145,10 +157,10 @@ public sealed class SqlSchemaProvider : ISqlSchemaProvider
         var conn = ctx.Database.GetDbConnection();
         await EnsureOpenAsync(conn, cancellationToken);
 
-        var allowed = await ReadAllowedTableNamesAsync(conn, cancellationToken);
+        var allowed = await AllowedTablesAsync(tenantId, conn, cancellationToken);
         if (!allowed.Contains(table)) return null;
 
-        var liveColumns = await ReadColumnsAsync(conn, table, cancellationToken);
+        var liveColumns = await ColumnsAsync(tenantId, conn, table, cancellationToken);
         var liveNames = liveColumns.Select(c => c.Name).ToHashSet(StringComparer.Ordinal);
         if (!liveNames.Contains(displayColumn)) return null;
 
@@ -191,10 +203,10 @@ public sealed class SqlSchemaProvider : ISqlSchemaProvider
         var conn = ctx.Database.GetDbConnection();
         await EnsureOpenAsync(conn, cancellationToken);
 
-        var allowed = await ReadAllowedTableNamesAsync(conn, cancellationToken);
+        var allowed = await AllowedTablesAsync(tenantId, conn, cancellationToken);
         if (!allowed.Contains(table)) return result;
 
-        var liveColumns = await ReadColumnsAsync(conn, table, cancellationToken);
+        var liveColumns = await ColumnsAsync(tenantId, conn, table, cancellationToken);
         var liveNames = liveColumns.Select(c => c.Name).ToHashSet(StringComparer.Ordinal);
         if (!liveNames.Contains(displayColumn)) return result;
 
@@ -221,6 +233,30 @@ public sealed class SqlSchemaProvider : ISqlSchemaProvider
             if (!string.IsNullOrEmpty(label)) result[id] = label!;
         }
         return result;
+    }
+
+    // ---- schema cache ----
+
+    private async Task<HashSet<string>> AllowedTablesAsync(Guid tenantId, DbConnection conn, CancellationToken ct)
+    {
+        var key = $"factutrust:studio:sqlschema:tables:{tenantId}";
+        if (_cache is not null && _cache.TryGetValue(key, out HashSet<string>? cached) && cached is not null)
+            return cached;
+
+        var names = await ReadAllowedTableNamesAsync(conn, ct);
+        _cache?.Set(key, names, SchemaCacheTtl);
+        return names;
+    }
+
+    private async Task<List<SqlColumnInfo>> ColumnsAsync(Guid tenantId, DbConnection conn, string table, CancellationToken ct)
+    {
+        var key = $"factutrust:studio:sqlschema:cols:{tenantId}:{table}";
+        if (_cache is not null && _cache.TryGetValue(key, out List<SqlColumnInfo>? cached) && cached is not null)
+            return cached;
+
+        var cols = await ReadColumnsAsync(conn, table, ct);
+        _cache?.Set(key, cols, SchemaCacheTtl);
+        return cols;
     }
 
     // ---- internals ----

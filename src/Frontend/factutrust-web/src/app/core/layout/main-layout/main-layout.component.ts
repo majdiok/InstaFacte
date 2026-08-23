@@ -1,4 +1,4 @@
-import { Component, signal, inject, computed, effect, OnInit } from '@angular/core';
+import { Component, signal, inject, computed, effect, OnInit, viewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterModule, NavigationEnd } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -18,6 +18,9 @@ import { FirmContextService } from '../../services/firm-context.service';
 import { LayoutRouteService } from '../layout-route.service';
 import { DrawerOverlayService } from '../../services/drawer-overlay.service';
 import { AppNavService } from '../../services/app-nav.service';
+import { ProductTourHostComponent } from '../../onboarding/product-tour-host.component';
+import { ProductTourLayoutBridge } from '../../onboarding/product-tour-layout.bridge';
+import { ProductOnboardingApiService } from '../../onboarding/product-onboarding.service';
 
 @Component({
   selector: 'app-main-layout',
@@ -28,7 +31,8 @@ import { AppNavService } from '../../services/app-nav.service';
     SidebarComponent,
     HeaderComponent,
     SecondaryNavComponent,
-    ChatPanelComponent
+    ChatPanelComponent,
+    ProductTourHostComponent
   ],
   template: `
     <div class="full_container">
@@ -68,14 +72,19 @@ import { AppNavService } from '../../services/app-nav.service';
                 (close)="onAiPanelClose()"
               />
             }
-          </div>
         </div>
       </div>
+      <app-product-tour-host />
+    </div>
 
       @if (hasAiAccess() && !isAiAssistantRoute() && !layoutFlags().hideLayout && !drawerOverlay.isOpen()) {
         <button
           class="ai-fab"
+          data-tour="ai-fab"
+          type="button"
           (click)="toggleAiPanel()"
+          [hidden]="tourRunning()"
+          [attr.inert]="tourRunning() ? '' : null"
           [class.active]="aiPanelOpen()"
           title="Assistant IA">
           @if (aiPanelOpen()) {
@@ -179,9 +188,8 @@ import { AppNavService } from '../../services/app-nav.service';
       transform: scale(1.05);
     }
 
-    .ai-fab.active {
-      background: var(--color-neutral-600, #4b5563);
-      box-shadow: 0 4px 12px rgba(75, 85, 99, 0.35);
+    .ai-fab[hidden] {
+      display: none !important;
     }
 
     .ai-fab-mark {
@@ -218,6 +226,8 @@ import { AppNavService } from '../../services/app-nav.service';
 })
 export class MainLayoutComponent implements OnInit {
   readonly aiMarkSrc = AI_ASSISTANT_MARK_SRC;
+  private readonly sidebar = viewChild(SidebarComponent);
+  private readonly tourLayout = inject(ProductTourLayoutBridge);
 
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
@@ -227,6 +237,8 @@ export class MainLayoutComponent implements OnInit {
   private readonly firmContext = inject(FirmContextService);
   readonly appNav = inject(AppNavService);
   readonly drawerOverlay = inject(DrawerOverlayService);
+  private readonly productOnboarding = inject(ProductOnboardingApiService);
+  readonly tourRunning = this.productOnboarding.isTourRunning;
 
   readonly layoutFlags = this.layoutRoute.flags;
 
@@ -262,6 +274,12 @@ export class MainLayoutComponent implements OnInit {
   aiPanelOpen = signal(false);
 
   constructor() {
+    this.tourLayout.expandSidebar = () => this.expandSidebar();
+    this.tourLayout.closeAiPanel = () => this.aiPanelOpen.set(false);
+    this.tourLayout.expandNavSection = tourId => this.sidebar()?.expandSectionForTour(tourId) ?? null;
+    this.tourLayout.restoreNavSection = label => this.sidebar()?.restoreSectionAfterTour(label);
+    this.tourLayout.hasNavItems = () => this.appNav.navItems().length > 0;
+
     effect(() => {
       if (this.isAiAssistantRoute()) {
         this.aiPanelOpen.set(false);

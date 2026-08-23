@@ -7,6 +7,7 @@ import { FirmGovernanceService } from '@core/services/firm-governance.service';
 import { FirmFeatureFlagsService } from '@core/services/firm-feature-flags.service';
 import { AuthService } from '@core/services/auth.service';
 import { FirmInvitationActionsService } from '../shared/firm-invitation-actions.service';
+import { ProductOnboardingApiService } from '@core/onboarding/product-onboarding.service';
 
 const firmPayload = {
   success: true,
@@ -91,7 +92,6 @@ describe('FirmDashboardComponent', () => {
             atRiskDossiers: [],
             negativeMargins: [],
             pendingTimeSheets: [],
-            socialAlerts: [],
             honorairesAlerts: [],
             meta: { generatedAt: '2026-03-12', partialFailures: [] }
           },
@@ -103,8 +103,26 @@ describe('FirmDashboardComponent', () => {
         {
           provide: AuthService,
           useValue: {
-            user: () => ({ companyName: 'Cabinet Test' }),
-            isFirmManager: () => opts.isFirmManager ?? true
+            user: () => ({
+              companyName: 'Cabinet Test',
+              productOnboardingStatus: 'Completed',
+              productOnboardingChecklist: { dismissed: true, doneIds: [] }
+            }),
+            isFirmManager: () => opts.isFirmManager ?? true,
+            isAccountingFirm: () => true,
+            isDelegatedMode: () => false,
+            isAdmin: () => false,
+            hasPermission: () => true
+          }
+        },
+        {
+          provide: ProductOnboardingApiService,
+          useValue: {
+            get: () => of(null),
+            patch: () => of(null),
+            replayTick: () => 0,
+            isTourRunning: () => false,
+            requestReplay: () => undefined
           }
         },
         {
@@ -150,7 +168,7 @@ describe('FirmDashboardComponent', () => {
     expect(text).toContain('Feuilles de temps');
     expect(text).toContain('Notes de frais');
     expect(text).toContain('Invitations clients');
-    expect(text).toContain('Suivi social & paie');
+    expect(text).not.toContain('Suivi social & paie');
     expect(text).not.toContain('Gestion des portefeuilles');
     expect(text).toContain('Conformité, productivité et pilotage multi-dossiers');
     // dédup: une seule occurrence des libellés partagés

@@ -156,6 +156,16 @@ public partial class PdfService
                         + $"({ctx.Result.Rows.Count} au total). Utilisez l'export Excel pour la totalité.")
                     .FontSize(8).Italic().FontColor(Colors.Grey.Darken1);
             }
+
+            // Avertissement de troncature de la SOURCE (distinct de la pagination d'impression) :
+            // les chiffres ci-dessus ne portent pas sur la totalité des données.
+            if (ctx.Result.Truncated)
+            {
+                col.Item().PaddingTop(6)
+                    .Text($"Attention : résultat tronqué à {ctx.Result.Rows.Count} ligne(s) sur {ctx.Result.TotalRows}. "
+                        + "Les totaux ne portent pas sur la totalité des données — affinez la période ou les filtres.")
+                    .FontSize(8).Bold().FontColor(Colors.Orange.Darken2);
+            }
         });
     }
 

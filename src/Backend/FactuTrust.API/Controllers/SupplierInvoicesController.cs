@@ -3,6 +3,7 @@ using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.SupplierInvoices.Commands;
 using FactuTrust.Application.Features.SupplierInvoices.Queries;
+using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -94,6 +95,34 @@ public class SupplierInvoicesController : ControllerBase
         var date = invoiceDate ?? DateTime.UtcNow;
         var number = await _supplierInvoiceNumberService.PreviewNextAsync(date, cancellationToken);
         return Ok(ApiResponse<string>.Ok(number));
+    }
+
+    /// <summary>
+    /// Create a standalone supplier invoice (no purchase order / receipt). Stock is not updated.
+    /// </summary>
+    [HttpPost]
+    [Authorize(Policy = PermissionPolicies.SupplierInvoicesCreate)]
+    [ProducesResponseType(typeof(ApiResponse<SupplierInvoiceCreationResponse>), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> CreateStandalone(
+        [FromBody] CreateStandaloneSupplierInvoiceDto dto,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new CreateStandaloneSupplierInvoiceCommand(dto), cancellationToken);
+        if (result.IsFailure)
+            return MapFailure(result.Error);
+
+        var payload = new SupplierInvoiceCreationResponse(result.Value.Id, result.Value.InvoiceNumber);
+        _logger.LogInformation(
+            "Standalone supplier invoice created: {InvoiceId} ({InvoiceNumber})",
+            payload.Id, payload.InvoiceNumber);
+
+        return CreatedAtAction(
+            nameof(GetSupplierInvoice),
+            new { id = payload.Id },
+            ApiResponse<SupplierInvoiceCreationResponse>.Ok(payload, "Facture fournisseur créée avec succès"));
     }
 
     /// <summary>
@@ -230,6 +259,21 @@ public class SupplierInvoicesController : ControllerBase
 
         _logger.LogInformation("Supplier invoice {SupplierInvoiceId} cancelled", id);
         return Ok(ApiResponse<object>.Ok(null!, "Facture fournisseur annulée."));
+    }
+
+    private IActionResult MapFailure(Error error)
+    {
+        if (error.Code.EndsWith(".NotFound", StringComparison.Ordinal))
+            return NotFound(ApiResponse<object>.Fail(error.Description, error.Code));
+        if (string.Equals(error.Code, "Conflict", StringComparison.Ordinal))
+        {
+            var response = ApiResponse<object>.Fail(error.Description, error.Code);
+            if (error.Metadata is { Count: > 0 })
+                response = response with { Data = error.Metadata };
+            return Conflict(response);
+        }
+
+        return BadRequest(ApiResponse<object>.Fail(error.Description, error.Code));
     }
 }
 

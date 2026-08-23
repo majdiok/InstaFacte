@@ -11,7 +11,6 @@ const decisionPayload = {
     atRiskDossiers: [],
     negativeMargins: [],
     pendingTimeSheets: [],
-    socialAlerts: [],
     honorairesAlerts: [],
     meta: { generatedAt: '2026-03-12T10:00:00Z', partialFailures: [] }
   },
@@ -44,5 +43,6 @@ describe('FirmDecisionTablesSectionComponent', () => {
     expect(text).toContain('Pilotage décisionnel');
     expect(text).toContain('Échéances fiscales critiques');
     expect(text).toContain('Dossiers à risque');
+    expect(text).not.toContain('Social & paie clients');
   });
 });

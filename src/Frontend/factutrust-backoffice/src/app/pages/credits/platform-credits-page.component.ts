@@ -81,7 +81,7 @@ import { CREDITS_FR } from './credits.i18n.fr';
       </ng-container>
     </ft-page-header>
 
-    <section class="kpi-row" role="region">
+    <section class="kpi-row kpi-row--compact" role="region">
       <ft-kpi-card [label]="t('kpi.total')" [value]="page()?.totalCount ?? null" tone="info" icon="pi pi-wallet" [loading]="loading()" />
       <ft-kpi-card [label]="t('kpi.active')" [value]="page()?.activeCount ?? null" tone="success" icon="pi pi-check-circle" [loading]="loading()" />
       <ft-kpi-card [label]="t('kpi.granted')" [value]="page()?.totalGrantedTND ?? null" tone="accent" icon="pi pi-money-bill" hint="TND" [loading]="loading()" />
@@ -112,7 +112,7 @@ import { CREDITS_FR } from './credits.i18n.fr';
     <p-table
       [value]="page()?.items ?? []"
       [loading]="loading()"
-      styleClass="p-datatable-sm ft-credits-table"
+      styleClass="p-datatable-sm ft-table"
       [tableStyle]="{ 'min-width': '70rem' }"
       responsiveLayout="scroll">
       <ng-template pTemplate="header">
@@ -300,13 +300,6 @@ import { CREDITS_FR } from './credits.i18n.fr';
         display: block;
       }
 
-      .kpi-row {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-        gap: var(--gap-md);
-        margin-bottom: var(--gap-md);
-      }
-
       .muted {
         color: var(--ft-text-muted);
       }
@@ -320,30 +313,6 @@ import { CREDITS_FR } from './credits.i18n.fr';
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-      }
-
-      .col-actions {
-        text-align: end;
-        white-space: nowrap;
-        width: 4rem;
-      }
-
-      :host ::ng-deep .ft-dd {
-        min-width: 11rem;
-      }
-
-      :host ::ng-deep .ft-dd-large {
-        min-width: 16rem;
-      }
-
-      :host ::ng-deep .ft-credits-table.p-datatable .p-datatable-thead > tr > th {
-        font-size: 0.72rem;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: var(--ft-text-muted);
-        border-color: var(--ft-border);
-        background: var(--ft-surface-2);
-        font-weight: 600;
       }
 
       .field {

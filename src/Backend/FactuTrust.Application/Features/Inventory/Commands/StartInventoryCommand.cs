@@ -1,5 +1,6 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Features.Stock.Queries;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
@@ -42,6 +43,8 @@ public sealed record InventoryProductItem
     public decimal TheoreticalQuantity { get; init; }
     public bool IsCounted { get; init; }
     public decimal? CountedQuantity { get; init; }
+    public Guid? ProductLotId { get; init; }
+    public string? LotNumber { get; init; }
 }
 
 public sealed class StartInventoryCommandValidator : AbstractValidator<StartInventoryCommand>
@@ -69,6 +72,7 @@ public sealed class StartInventoryCommandHandler : IRequestHandler<StartInventor
     private readonly IProductRepository _productRepository;
     private readonly ITenantContext _tenantContext;
     private readonly IDocumentNumberService _documentNumberService;
+    private readonly IStockTraceabilityQuery _traceability;
 
     public StartInventoryCommandHandler(
         IPhysicalInventoryRepository inventoryRepository,
@@ -76,7 +80,8 @@ public sealed class StartInventoryCommandHandler : IRequestHandler<StartInventor
         IWarehouseRepository warehouseRepository,
         IProductRepository productRepository,
         ITenantContext tenantContext,
-        IDocumentNumberService documentNumberService)
+        IDocumentNumberService documentNumberService,
+        IStockTraceabilityQuery traceability)
     {
         _inventoryRepository = inventoryRepository;
         _stockItemRepository = stockItemRepository;
@@ -84,6 +89,7 @@ public sealed class StartInventoryCommandHandler : IRequestHandler<StartInventor
         _productRepository = productRepository;
         _tenantContext = tenantContext;
         _documentNumberService = documentNumberService;
+        _traceability = traceability;
     }
 
     public async Task<Result<StartInventoryResult>> Handle(StartInventoryCommand request, CancellationToken cancellationToken)
@@ -160,11 +166,31 @@ public sealed class StartInventoryCommandHandler : IRequestHandler<StartInventor
             DateTime.UtcNow,
             cancellationToken);
         var reference = docResult.Value;
-        var inventoryResult = PhysicalInventory.Start(
+        var detailed = new List<(Guid ProductId, string ProductName, string? ProductCode, decimal TheoreticalQuantity, Guid? ProductLotId, string? LotNumber)>();
+        foreach (var row in productsToInventory)
+        {
+            var stockItem = await _stockItemRepository.GetByProductAndWarehouseAsync(row.ProductId, warehouseId, cancellationToken);
+            if (stockItem is not null)
+            {
+                var lots = await _traceability.ListLotsAsync(stockItem.Id, cancellationToken);
+                if (lots.Count > 0)
+                {
+                    foreach (var lot in lots)
+                    {
+                        detailed.Add((row.ProductId, row.ProductName, row.ProductCode, lot.QuantityOnHand, lot.ProductLotId, lot.LotNumber));
+                    }
+                    continue;
+                }
+            }
+
+            detailed.Add((row.ProductId, row.ProductName, row.ProductCode, row.TheoreticalQuantity, null, null));
+        }
+
+        var inventoryResult = PhysicalInventory.StartDetailed(
             reference,
             warehouseId,
             request.Type,
-            productsToInventory,
+            detailed,
             request.Notes);
 
         if (inventoryResult.IsFailure)
@@ -178,11 +204,11 @@ public sealed class StartInventoryCommandHandler : IRequestHandler<StartInventor
         catch (DbUpdateException ex) when (IsInventoryReferenceUniqueViolation(ex))
         {
             reference = await _inventoryRepository.GetNextReferenceAsync(cancellationToken);
-            inventoryResult = PhysicalInventory.Start(
+            inventoryResult = PhysicalInventory.StartDetailed(
                 reference,
                 warehouseId,
                 request.Type,
-                productsToInventory,
+                detailed,
                 request.Notes);
             if (inventoryResult.IsFailure)
                 return Result.Failure<StartInventoryResult>(inventoryResult.Error);
@@ -199,14 +225,16 @@ public sealed class StartInventoryCommandHandler : IRequestHandler<StartInventor
             InventoryId = inventory.Id,
             TotalProducts = productsToInventory.Count,
             HumanMessage = humanMessage,
-            Products = productsToInventory.Select(p => new InventoryProductItem
+            Products = inventory.CountLines.Select(l => new InventoryProductItem
             {
-                ProductId = p.ProductId,
-                ProductName = p.ProductName,
-                ProductCode = p.ProductCode,
-                TheoreticalQuantity = p.TheoreticalQuantity,
-                IsCounted = false,
-                CountedQuantity = null
+                ProductId = l.ProductId,
+                ProductName = l.ProductName,
+                ProductCode = l.ProductCode,
+                TheoreticalQuantity = l.TheoreticalQuantity,
+                IsCounted = l.IsCounted,
+                CountedQuantity = l.CountedQuantity,
+                ProductLotId = l.ProductLotId,
+                LotNumber = l.LotNumber
             }).ToList()
         });
     }

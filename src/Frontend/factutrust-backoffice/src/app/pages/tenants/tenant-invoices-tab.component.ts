@@ -51,7 +51,7 @@ import type { FtTone } from '@core/ui/badge/ft-badge.component';
     FtEmptyStateComponent
   ],
   template: `
-    <section class="kpi-row">
+    <section class="kpi-row kpi-row--4col">
       <ft-kpi-card
         [label]="'Total factures'"
         [value]="page()?.totalCount ?? null"
@@ -92,13 +92,13 @@ import type { FtTone } from '@core/ui/badge/ft-badge.component';
       <ft-skeleton kind="line" count="6" />
     } @else if (errored()) {
       <p class="error">Impossible de charger les factures de ce tenant.</p>
-    } @else if ((page()?.items?.length ?? 0) === 0) {
+    } @else if ((page()?.totalCount ?? 0) === 0) {
       <ft-empty-state
         variant="table-empty"
         [title]="'Aucune facture plateforme'"
         [description]="'Aucun document fiscal n’a encore été émis à cette entreprise.'" />
     } @else {
-      <p-table [value]="page()!.items" styleClass="ft-table">
+      <p-table [value]="page()!.items" styleClass="p-datatable-sm ft-table">
         <ng-template pTemplate="header">
           <tr>
             <th>N°</th>
@@ -143,18 +143,6 @@ import type { FtTone } from '@core/ui/badge/ft-badge.component';
       :host {
         display: block;
         padding-top: 0.6rem;
-      }
-      .kpi-row {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: var(--gap-md, 1rem);
-        margin-bottom: var(--gap-md, 1rem);
-      }
-      @media (max-width: 980px) {
-        .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      }
-      @media (max-width: 540px) {
-        .kpi-row { grid-template-columns: 1fr; }
       }
       .tab-actions {
         display: flex;

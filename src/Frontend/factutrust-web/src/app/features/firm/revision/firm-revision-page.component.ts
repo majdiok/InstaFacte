@@ -5,6 +5,8 @@ import { Router, RouterModule } from '@angular/router';
 import { TableModule } from 'primeng/table';
 import { DialogModule } from 'primeng/dialog';
 import { TagModule } from 'primeng/tag';
+import { PERMISSIONS } from '@core/config/permission-keys';
+import { AuthService } from '@core/services/auth.service';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { StatCardComponent } from '@shared/components/stat-card/stat-card.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -49,6 +51,14 @@ type RevisionTab = 'portfolio' | 'queue';
 export class FirmRevisionPageComponent implements OnInit {
   private readonly api = inject(FirmRevisionService);
   private readonly router = inject(Router);
+  private readonly auth = inject(AuthService);
+
+  /**
+   * Le balayage mobilise toutes les bases dossiers : réservé au responsable de cabinet. Le
+   * collaborateur consulte mais ne déclenche pas. `runSweep()` conserve la traduction du 403 en
+   * défense en profondeur, si le JWT et l'API divergeaient.
+   */
+  readonly canSweep = computed(() => this.auth.hasPermission(PERMISSIONS.firmRevision.manage));
 
   readonly loading = signal(false);
   readonly sweeping = signal(false);
@@ -98,9 +108,20 @@ export class FirmRevisionPageComponent implements OnInit {
       error: err => {
         this.loading.set(false);
         // 503 = module éteint côté API. Le dire explicitement plutôt qu'« erreur réseau ».
-        this.error.set(err?.status === 503
-          ? "Le réviseur de portefeuille n'est pas activé sur cette instance."
-          : 'Erreur réseau lors du chargement du portefeuille.');
+        if (err?.status === 503) {
+          this.error.set("Le réviseur de portefeuille n'est pas activé sur cette instance.");
+          return;
+        }
+        // 403 = fenêtre de jeton périmé : `/auth/me` rafraîchit les permissions du front sans
+        // faire tourner le JWT, donc le menu peut s'ouvrir avant que les revendications du jeton
+        // ne portent `firm:revision:view`. Une reconnexion referme l'écart.
+        if (err?.status === 403) {
+          this.error.set(
+            'Vos droits ont changé depuis votre connexion. Reconnectez-vous pour accéder au réviseur.'
+          );
+          return;
+        }
+        this.error.set('Erreur réseau lors du chargement du portefeuille.');
       }
     });
 

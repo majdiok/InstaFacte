@@ -1,6 +1,8 @@
+using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Features.Stock.Services;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
@@ -11,7 +13,9 @@ namespace FactuTrust.Application.Features.Invoices.Commands;
 /// <summary>
 /// Command to validate an invoice (finalize draft).
 /// </summary>
-public sealed record ValidateInvoiceCommand(Guid InvoiceId) : IRequest<Result>;
+public sealed record ValidateInvoiceCommand(
+    Guid InvoiceId,
+    IReadOnlyList<DocumentLineAllocationsDto>? LineAllocations = null) : IRequest<Result>;
 
 /// <summary>
 /// Handler for ValidateInvoiceCommand.
@@ -29,6 +33,10 @@ public sealed class ValidateInvoiceCommandHandler : IRequestHandler<ValidateInvo
     private readonly ICurrentUser _currentUser;
     private readonly IAuditService _auditService;
     private readonly IInvoiceComplianceValidator _complianceValidator;
+    private readonly ITrackedDocumentStockService _trackedStock;
+    private readonly IWarehouseRepository _warehouseRepository;
+    private readonly IProductRepository _productRepository;
+    private readonly IStockAllocationValidator _allocationValidator;
 
     public ValidateInvoiceCommandHandler(
         IInvoiceRepository invoiceRepository,
@@ -36,7 +44,11 @@ public sealed class ValidateInvoiceCommandHandler : IRequestHandler<ValidateInvo
         ITenantUnitOfWork unitOfWork,
         ICurrentUser currentUser,
         IAuditService auditService,
-        IInvoiceComplianceValidator complianceValidator)
+        IInvoiceComplianceValidator complianceValidator,
+        ITrackedDocumentStockService trackedStock,
+        IWarehouseRepository warehouseRepository,
+        IProductRepository productRepository,
+        IStockAllocationValidator allocationValidator)
     {
         _invoiceRepository = invoiceRepository;
         _accountingService = accountingService;
@@ -44,6 +56,10 @@ public sealed class ValidateInvoiceCommandHandler : IRequestHandler<ValidateInvo
         _currentUser = currentUser;
         _auditService = auditService;
         _complianceValidator = complianceValidator;
+        _trackedStock = trackedStock;
+        _warehouseRepository = warehouseRepository;
+        _productRepository = productRepository;
+        _allocationValidator = allocationValidator;
     }
 
     public async Task<Result> Handle(ValidateInvoiceCommand request, CancellationToken cancellationToken)
@@ -71,6 +87,13 @@ public sealed class ValidateInvoiceCommandHandler : IRequestHandler<ValidateInvo
                     blocking.Count > 0
                         ? $"Facture non conforme — {string.Join(" ; ", blocking)}"
                         : "Facture non conforme"));
+            }
+
+            if (invoice.Type != InvoiceType.CreditNote && !invoice.SourceDeliveryNoteId.HasValue)
+            {
+                var stockResult = await DeductTrackedStockAsync(invoice, request.LineAllocations, ct);
+                if (stockResult.IsFailure)
+                    return stockResult;
             }
 
             var validateResult = invoice.Validate();
@@ -103,5 +126,61 @@ public sealed class ValidateInvoiceCommandHandler : IRequestHandler<ValidateInvo
             cancellationToken: cancellationToken);
 
         return result;
+    }
+
+    private async Task<Result> DeductTrackedStockAsync(
+        Invoice invoice,
+        IReadOnlyList<DocumentLineAllocationsDto>? lineAllocations,
+        CancellationToken cancellationToken)
+    {
+        var allocationsByLine = (lineAllocations ?? Array.Empty<DocumentLineAllocationsDto>())
+            .ToDictionary(a => a.LineId, a => a.Allocations);
+
+        var lines = new List<TrackedDocumentLine>();
+        var anyTracked = false;
+        foreach (var line in invoice.Lines)
+        {
+            if (!line.ProductId.HasValue)
+                continue;
+
+            var product = await _productRepository.GetByIdAsync(line.ProductId.Value, cancellationToken);
+            if (product is null || !product.IsStockManaged)
+                continue;
+
+            if (_trackedStock.IsLiveTracked(product))
+                anyTracked = true;
+
+            var allocations = allocationsByLine.GetValueOrDefault(line.Id);
+            var validateAlloc = await _allocationValidator.ValidateExitAllocationsAsync(
+                line.ProductId.Value, line.Quantity, allocations, cancellationToken);
+            if (validateAlloc.IsFailure)
+                return validateAlloc;
+
+            lines.Add(new TrackedDocumentLine(
+                line.ProductId.Value,
+                line.Quantity,
+                line.Id,
+                StockDocumentKind.Invoice,
+                allocations));
+        }
+
+        if (!anyTracked)
+            return Result.Success();
+
+        Warehouse? warehouse = null;
+        if (invoice.WarehouseId.HasValue)
+            warehouse = await _warehouseRepository.GetByIdAsync(invoice.WarehouseId.Value, cancellationToken);
+        warehouse ??= await _warehouseRepository.GetDefaultAsync(cancellationToken);
+        if (warehouse is null)
+            return Result.Failure(Error.Validation("Warehouse",
+                "Un entrepôt est obligatoire pour valider une facture contenant des articles suivis."));
+
+        return await _trackedStock.ApplyExitsAsync(
+            warehouse.Id,
+            $"Facture {invoice.Number.Value}",
+            MovementReason.Sale,
+            lines,
+            cancellationToken,
+            includeUntracked: true);
     }
 }

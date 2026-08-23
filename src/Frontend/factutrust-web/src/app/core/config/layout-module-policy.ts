@@ -9,6 +9,7 @@ export const MODULES_REQUIRED_BY_FIRST_SEGMENT: Record<string, AppModule[]> = {
   invoices: [AppModule.Sales],
   quotes: [AppModule.Sales],
   'delivery-notes': [AppModule.Sales],
+  'return-notes': [AppModule.Sales],
   clients: [AppModule.Clients],
   products: [AppModule.Products],
   'product-categories': [AppModule.Products],
@@ -27,7 +28,8 @@ export const MODULES_REQUIRED_BY_FIRST_SEGMENT: Record<string, AppModule[]> = {
   audit: [AppModule.Accounting],
   crm: [AppModule.CRM],
   'withholding-tax': [AppModule.Fiscal],
-  payroll: [AppModule.Payroll]
+  payroll: [AppModule.Payroll],
+  projects: [AppModule.Projects]
 };
 
 /**
@@ -37,6 +39,7 @@ export const MODULES_REQUIRED_BY_FIRST_SEGMENT: Record<string, AppModule[]> = {
 export const PERMISSIONS_ALL_REQUIRED_BY_FIRST_SEGMENT: Record<string, string[]> = {
   quotes: ['quotes:read'],
   'delivery-notes': ['delivery_notes:read'],
+  'return-notes': ['return_notes:read'],
   invoices: ['invoices:read'],
   clients: ['clients:read'],
   products: ['products:read'],
@@ -58,7 +61,8 @@ export const PERMISSIONS_ALL_REQUIRED_BY_FIRST_SEGMENT: Record<string, string[]>
   audit: ['audit:read'],
   crm: ['crm:read'],
   'withholding-tax': ['withholding_tax:read'],
-  payroll: ['payroll:read']
+  payroll: ['payroll:read'],
+  projects: ['projects:read']
 };
 
 /** POS loads products, warehouses (stock), and creates invoices. */

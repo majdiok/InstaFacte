@@ -121,7 +121,7 @@ public sealed class WithholdingMissingOnFeesAuditRule : AccountingAuditRuleBase
 /// FODEC facturé mais non comptabilisé, ou l'inverse.
 ///
 /// <para>Le FODEC est collecté pour le compte de l'État : une facture qui l'affiche sans le
-/// comptabiliser au 4477 crée une dette invisible. La règle compare, facture par facture, le FODEC
+/// comptabiliser au 43652 crée une dette invisible. La règle compare, facture par facture, le FODEC
 /// du document à celui de son écriture.</para>
 /// </summary>
 public sealed class FodecMissingAuditRule : AccountingAuditRuleBase
@@ -209,7 +209,7 @@ public sealed class FodecMissingAuditRule : AccountingAuditRuleBase
                     x.Expected, x.Booked, x.Number, null)).ToList(),
                 recommendations:
                 [
-                    "Comptabiliser le FODEC au crédit du 4477.",
+                    "Comptabiliser le FODEC au crédit du 43652.",
                     "Vérifier le paramétrage FODEC des articles concernés."
                 ],
                 deepLinkRoute: "/accounting/entry-search")

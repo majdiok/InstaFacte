@@ -45,7 +45,7 @@ public sealed class AccountingService : IAccountingService
     public const string FixedAssetJournalCode = "JIM";
 
     /// <summary>Comptes d'effets de commerce (traites) — alignés sur le seed du plan comptable tenant.</summary>
-    public const string ClientEffetAccountNumber = "412";   // Clients - effets à recevoir
+    public const string ClientEffetAccountNumber = "413";   // Clients - effets à recevoir (NCT 01)
     public const string SupplierEffetAccountNumber = "403";  // Fournisseurs - effets à payer
 
     /// <summary>Compte FODEC collecté (dette envers l'État). Crédité à la vente, débité en avoir.</summary>
@@ -149,7 +149,7 @@ public sealed class AccountingService : IAccountingService
     private async Task<bool> TryAutoCreateSubAccountAsync(string accountNumber, CancellationToken cancellationToken)
     {
         // Try progressively shorter prefixes to find a parent account
-        // e.g., for "4478": try "447", then "44", then "4"
+        // e.g., for "4371": try "437", then "43", then "4"
         for (var len = accountNumber.Length - 1; len >= 1; len--)
         {
             var parentNumber = accountNumber[..len];
@@ -434,7 +434,7 @@ public sealed class AccountingService : IAccountingService
             const string stampAccount = TunisianPostingAccounts.FiscalStampOnSale;
             if (stamp < 0)
             {
-                // Negative stamp (typical for AVO) = we owe back the stamp = DEBIT 4478.
+                // Negative stamp (typical for AVO) = we owe back the stamp = DEBIT 4371.
                 lines.Add(new JournalLineInput(
                     stampAccount,
                     $"Timbre fiscal — Avoir {invoice.Number.Value}",
@@ -501,7 +501,7 @@ public sealed class AccountingService : IAccountingService
         var period = periodResult.Value;
         var currency = payment.Amount.Currency;
         // Traite (effet de commerce) : la créance client n'est pas encaissée mais transformée en
-        // effet à recevoir (412), sans mouvement de trésorerie → journal des opérations diverses.
+        // effet à recevoir (413), sans mouvement de trésorerie → journal des opérations diverses.
         var isEffet = payment.Method == PaymentMethod.Traite;
         var debitAccount = isEffet ? ClientEffetAccountNumber : TreasuryAccount(payment.Method);
         var debitLabel = isEffet ? $"Effet à recevoir — {invoice.Number.Value}" : $"Encaissement — {invoice.Number.Value}";
@@ -728,7 +728,8 @@ public sealed class AccountingService : IAccountingService
 
         var period = periodResult.Value;
         var currency = invoice.TotalAmount.Currency;
-        var (lines, _) = SupplierInvoiceJournalLineBuilder.Build(invoice);
+        var productTypes = await TryLoadStandaloneProductTypesAsync(invoice, cancellationToken);
+        var (lines, _) = SupplierInvoiceJournalLineBuilder.Build(invoice, productTypes);
 
         var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
         if (accountValidation.IsFailure)
@@ -756,6 +757,27 @@ public sealed class AccountingService : IAccountingService
         entry.SetAuditInfo("system", false);
         await _journalEntries.AddAsync(entry, cancellationToken);
         return Result.Success();
+    }
+
+    /// <summary>
+    /// Loads catalog product types only for standalone invoices (no PO / receipt).
+    /// BC/BR invoices keep the historic 607 posting by returning null.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<Guid, ProductType>?> TryLoadStandaloneProductTypesAsync(
+        SupplierInvoice invoice,
+        CancellationToken cancellationToken)
+    {
+        if (invoice.PurchaseOrderId is not null || invoice.SourcePurchaseReceiptId is not null)
+            return null;
+
+        var productIds = invoice.Lines.Select(l => l.ProductId).Distinct().ToList();
+        if (productIds.Count == 0)
+            return null;
+
+        await using var context = _contextFactory.CreateContext();
+        return await context.Products.AsNoTracking()
+            .Where(p => productIds.Contains(p.Id))
+            .ToDictionaryAsync(p => p.Id, p => p.Type, cancellationToken);
     }
 
     public async Task<Result> GenerateSupplierPaymentEntryAsync(SupplierPayment payment, CancellationToken cancellationToken = default)
@@ -842,7 +864,7 @@ public sealed class AccountingService : IAccountingService
 
         var period = periodResult.Value;
         var currency = payment.Amount.Currency;
-        // Le compte 412 porte le net reçu à la réception de l'effet ; c'est ce montant qui bouge à échéance.
+        // Le compte 413 porte le net reçu à la réception de l'effet ; c'est ce montant qui bouge à échéance.
         var net = payment.Amount.Amount;
 
         List<JournalLineInput> lines;
@@ -1384,16 +1406,16 @@ public sealed class AccountingService : IAccountingService
     {
         return operationCode switch
         {
-            var c when c.StartsWith("RS1", StringComparison.OrdinalIgnoreCase) => "44561",
-            var c when c.StartsWith("RS2", StringComparison.OrdinalIgnoreCase) => "44562",
-            var c when c.StartsWith("RS3", StringComparison.OrdinalIgnoreCase) => "44563",
-            var c when c.StartsWith("RS4", StringComparison.OrdinalIgnoreCase) => "44565",
-            var c when c.StartsWith("RS5", StringComparison.OrdinalIgnoreCase) => "44566",
-            var c when c.StartsWith("RS6", StringComparison.OrdinalIgnoreCase) => "44567",
-            var c when c.StartsWith("RS7", StringComparison.OrdinalIgnoreCase) => "44564",
-            var c when c.StartsWith("RS8", StringComparison.OrdinalIgnoreCase) => "44560",
-            var c when c.StartsWith("RS9", StringComparison.OrdinalIgnoreCase) => "44560",
-            _ => "44560"
+            var c when c.StartsWith("RS1", StringComparison.OrdinalIgnoreCase) => "4321",
+            var c when c.StartsWith("RS2", StringComparison.OrdinalIgnoreCase) => "4322",
+            var c when c.StartsWith("RS3", StringComparison.OrdinalIgnoreCase) => "4323",
+            var c when c.StartsWith("RS4", StringComparison.OrdinalIgnoreCase) => "4324",
+            var c when c.StartsWith("RS5", StringComparison.OrdinalIgnoreCase) => "4325",
+            var c when c.StartsWith("RS6", StringComparison.OrdinalIgnoreCase) => "4326",
+            var c when c.StartsWith("RS7", StringComparison.OrdinalIgnoreCase) => "4327",
+            var c when c.StartsWith("RS8", StringComparison.OrdinalIgnoreCase) => "4320",
+            var c when c.StartsWith("RS9", StringComparison.OrdinalIgnoreCase) => "4320",
+            _ => "4320"
         };
     }
 
@@ -1402,7 +1424,7 @@ public sealed class AccountingService : IAccountingService
 
     private static string RevenueAccountForLine(InvoiceLine line)
     {
-        if (line.ProductId == Guid.Empty || line.Product is null)
+        if (!line.ProductId.HasValue || line.Product is null)
             return TunisianPostingAccounts.SalesOfGoods;
         return line.Product.Type == ProductType.Service
             ? TunisianPostingAccounts.SalesOfServices
@@ -1595,7 +1617,7 @@ public sealed class AccountingService : IAccountingService
         if (gainOrLoss > 0)
         {
             lines.Add(new JournalLineInput(
-                "781",
+                "736",
                 $"Plus-value cession — {asset.InventoryNumber}",
                 0,
                 gainOrLoss,
@@ -1605,7 +1627,7 @@ public sealed class AccountingService : IAccountingService
         else if (gainOrLoss < 0)
         {
             lines.Add(new JournalLineInput(
-                "675",
+                "636",
                 $"Moins-value cession — {asset.InventoryNumber}",
                 Math.Abs(gainOrLoss),
                 0,

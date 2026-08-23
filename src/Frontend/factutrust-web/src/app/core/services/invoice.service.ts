@@ -202,6 +202,7 @@ export interface RecordPaymentRequest {
   clientWithholdingAmount?: number;
   /** Échéance de la traite (yyyy-MM-dd). Requis lorsque method = 5 (Traite). */
   effetDueDate?: string;
+  cashRegisterSessionId?: string;
 }
 
 /** Requête de règlement d'un effet client à échéance. */
@@ -325,8 +326,11 @@ export class InvoiceService {
     return this.http.post<ApiResponse<string>>(this.API_URL, invoice);
   }
 
-  validateInvoice(id: string): Observable<ApiResponse<void>> {
-    return this.http.post<ApiResponse<void>>(`${this.API_URL}/${id}/validate`, {});
+  validateInvoice(
+    id: string,
+    body?: { lineAllocations?: import('./stock.service').DocumentLineAllocations[] }
+  ): Observable<ApiResponse<void>> {
+    return this.http.post<ApiResponse<void>>(`${this.API_URL}/${id}/validate`, body ?? {});
   }
 
   signInvoice(id: string): Observable<ApiResponse<string>> {

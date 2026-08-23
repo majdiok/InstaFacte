@@ -435,6 +435,75 @@ describe('SidebarComponent — collapse', () => {
     expect(getComputedStyle(sidebar).getPropertyValue('--sidebar-rail-width').trim()).toBe('72px');
   });
 
+  it('shows the brand lockup and hides the icon-only mark when expanded', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, delegatedUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.componentRef.setInput('collapsed', false);
+    fixture.detectChanges();
+
+    const lockup = fixture.nativeElement.querySelectorAll('.icon-brand-lockup');
+    const iconOnly = fixture.nativeElement.querySelectorAll('.icon-logo-only');
+    expect(lockup.length).toBe(1);
+    expect(iconOnly.length).toBe(0);
+    expect((lockup[0] as HTMLImageElement).src).toContain('instafact-lockup-on-dark');
+    const lockupFilter = getComputedStyle(lockup[0] as HTMLImageElement).filter;
+    expect(lockupFilter).not.toContain('invert');
+    expect(lockupFilter).not.toContain('brightness(0)');
+  });
+
+  it('sizes the expanded lockup from brand height minus inset', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, delegatedUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.componentRef.setInput('collapsed', false);
+    fixture.detectChanges();
+
+    const sidebar = fixture.nativeElement.querySelector('#sidebar') as HTMLElement;
+    const lockup = fixture.nativeElement.querySelector('.icon-brand-lockup') as HTMLImageElement;
+    expect(getComputedStyle(sidebar).getPropertyValue('--sidebar-brand-logo-inset').trim()).toBe('8px');
+    expect(getComputedStyle(lockup).maxHeight).toBe('40px');
+
+    sidebar.style.setProperty('--sidebar-brand-height', '92px');
+    expect(getComputedStyle(lockup).maxHeight).toBe('84px');
+  });
+
+  it('shows the icon-only mark and hides the brand lockup when collapsed', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, delegatedUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.componentRef.setInput('collapsed', true);
+    fixture.detectChanges();
+
+    const lockup = fixture.nativeElement.querySelectorAll('.icon-brand-lockup');
+    const iconOnly = fixture.nativeElement.querySelectorAll('.icon-logo-only');
+    expect(lockup.length).toBe(0);
+    expect(iconOnly.length).toBe(1);
+    expect((iconOnly[0] as HTMLImageElement).src).toContain('instafact-icon-on-dark');
+  });
+
+  it('keeps the collapsed icon within the 72px rail', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, delegatedUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.componentRef.setInput('collapsed', true);
+    fixture.detectChanges();
+
+    const sidebar = fixture.nativeElement.querySelector('#sidebar') as HTMLElement;
+    const icon = fixture.nativeElement.querySelector('.icon-logo-only') as HTMLImageElement;
+    expect(getComputedStyle(sidebar).getPropertyValue('--sidebar-rail-width').trim()).toBe('72px');
+    expect(parseFloat(getComputedStyle(icon).width)).toBeLessThanOrEqual(52);
+    expect(parseFloat(getComputedStyle(icon).width)).toBeGreaterThanOrEqual(32);
+  });
+
   it('clears expandedParentLabel when collapsed becomes true', () => {
     const auth = TestBed.inject(AuthService);
     setUser(auth, delegatedUser);
@@ -565,5 +634,31 @@ describe('SidebarComponent — collapse', () => {
     fixture.componentInstance.toggleSubmenu(ventes!);
     expect(fixture.componentInstance.expandedParentLabel).toBe('Ventes');
     expect(fixture.componentInstance.expandedFooterLabel).toBeNull();
+  });
+
+  it('sets data-tour on rail items that have a tourId', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, delegatedUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.detectChanges();
+
+    const ventesAnchor = fixture.nativeElement.querySelector('[data-tour="nav-ventes"]');
+    expect(ventesAnchor).toBeTruthy();
+  });
+
+  it('expandSectionForTour opens then restoreSectionAfterTour restores', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, delegatedUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.detectChanges();
+
+    const previous = fixture.componentInstance.expandSectionForTour('ventes');
+    expect(fixture.componentInstance.expandedParentLabel).toBe('Ventes');
+    fixture.componentInstance.restoreSectionAfterTour(previous);
+    expect(fixture.componentInstance.expandedParentLabel).toBe(previous);
   });
 });

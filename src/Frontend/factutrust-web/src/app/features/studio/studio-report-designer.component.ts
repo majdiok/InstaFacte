@@ -10,8 +10,8 @@ import { MessageService } from 'primeng/api';
 import { DynamicReportComponent } from '@shared/studio-runtime/dynamic-report.component';
 import { StudioService } from './studio.service';
 import {
-  ReportAggFn, ReportAggregation, ReportDataSourceKind, ReportDefinition, ReportFilter, ReportFilterOp,
-  ReportResult, ReportSort, ReportSource
+  ReportAggFn, ReportAggregation, ReportDataSourceKind, ReportDefinition, ReportFieldMeta, ReportFilter,
+  ReportFilterOp, ReportResult, ReportSort, ReportSource
 } from './studio.models';
 import { StudioPageShellComponent } from './shared/studio-page-shell.component';
 import { StudioDesignerShellComponent } from './shared/studio-designer-shell.component';
@@ -113,6 +113,8 @@ export class StudioReportDesignerComponent implements OnInit {
   readonly result = signal<ReportResult | null>(null);
   readonly saving = signal(false);
   private readonly sourcesRaw = signal<ReportSource[]>([]);
+  /** Champs introspectés à la demande, mémorisés par `kind:ref` pour ne pas retourner au serveur. */
+  private readonly lazyFields = signal<Record<string, ReportFieldMeta[]>>({});
 
   reportId: string | null = null;
   sourceId: string | null = null;
@@ -131,35 +133,58 @@ export class StudioReportDesignerComponent implements OnInit {
     { label: 'Min', value: 'min' },
     { label: 'Max', value: 'max' }
   ];
+  // `in` et `between` étaient déjà gérés côté serveur mais absents de l'interface.
   readonly opOptions: { label: string; value: ReportFilterOp }[] = [
     { label: '=', value: 'eq' }, { label: '≠', value: 'neq' },
     { label: '>', value: 'gt' }, { label: '≥', value: 'gte' },
     { label: '<', value: 'lt' }, { label: '≤', value: 'lte' },
-    { label: 'contient', value: 'contains' }
+    { label: 'contient', value: 'contains' },
+    { label: 'parmi', value: 'in' }, { label: 'entre', value: 'between' }
   ];
   readonly dirOptions = [{ label: 'Croissant', value: 'asc' }, { label: 'Décroissant', value: 'desc' }];
 
-  /** Grouped dropdown: custom tables and existing sources, each option id = `${kind}:${ref}`. */
+  /**
+   * Grouped dropdown: custom tables, whitelisted existing sources, then the tenant's real tables
+   * grouped by business domain (Ventes, Achats, Stock…). Option id = `${kind}:${ref}`.
+   */
   readonly sources = computed(() => {
     const all = this.sourcesRaw();
     const custom = all.filter(s => s.kind === 'custom').map(this.toOption);
     const existing = all.filter(s => s.kind === 'existing').map(this.toOption);
-    const groups = [];
+    const groups: { label: string; items: { displayName: string; id: string }[] }[] = [];
     if (custom.length) groups.push({ label: 'Mes tables', items: custom });
     if (existing.length) groups.push({ label: 'Données existantes (lecture seule)', items: existing });
+
+    // Un groupe par domaine métier : 80 tables à plat seraient inutilisables.
+    const byDomain = new Map<string, { displayName: string; id: string }[]>();
+    for (const source of all.filter(s => s.kind === 'sql')) {
+      const domain = source.domain ?? 'Autres';
+      (byDomain.get(domain) ?? byDomain.set(domain, []).get(domain)!).push(this.toOption(source));
+    }
+    for (const [label, items] of byDomain) {
+      groups.push({ label, items: items.sort((a, b) => a.displayName.localeCompare(b.displayName, 'fr')) });
+    }
     return groups;
   });
 
   readonly selectedSource = computed(() => this.sourcesRaw().find(s => `${s.kind}:${s.ref}` === this.sourceId) ?? null);
-  readonly fieldOptions = computed(() => (this.selectedSource()?.fields ?? []).map(f => ({ label: f.label, value: f.key })));
-  readonly numericFieldOptions = computed(() => (this.selectedSource()?.fields ?? []).filter(f => f.numeric).map(f => ({ label: f.label, value: f.key })));
+
+  /** Champs de la source sélectionnée : ceux du catalogue, ou ceux chargés à la demande (sources SQL). */
+  readonly selectedFields = computed(() => {
+    const source = this.selectedSource();
+    if (!source) return [];
+    return source.fields.length > 0 ? source.fields : (this.lazyFields()[`${source.kind}:${source.ref}`] ?? []);
+  });
+
+  readonly fieldOptions = computed(() => this.selectedFields().map(f => ({ label: f.label, value: f.key })));
+  readonly numericFieldOptions = computed(() => this.selectedFields().filter(f => f.numeric).map(f => ({ label: f.label, value: f.key })));
   readonly sortFieldOptions = computed(() => {
-    const src = this.selectedSource();
-    if (!src) return [];
-    const labelByKey = new Map(src.fields.map(f => [f.key, f.label] as const));
+    const fields = this.selectedFields();
+    if (fields.length === 0) return [];
+    const labelByKey = new Map(fields.map(f => [f.key, f.label] as const));
     const keys = this.grouping.length > 0
       ? [...this.grouping, ...this.aggregations.map(a => a.fn === 'count' ? 'count' : `${a.fn}_${a.field}`)]
-      : src.fields.map(f => f.key);
+      : fields.map(f => f.key);
     return keys.map(k => ({ label: labelByKey.get(k) ?? k, value: k }));
   });
 
@@ -189,8 +214,11 @@ export class StudioReportDesignerComponent implements OnInit {
         if (res.success) {
           const d = res.data;
           this.displayName = d.displayName;
-          const kind = d.dataSourceKind === ReportDataSourceKind.ExistingSource ? 'existing' : 'custom';
+          const kind = d.dataSourceKind === ReportDataSourceKind.ExistingSource ? 'existing'
+            : d.dataSourceKind === ReportDataSourceKind.SqlQuery ? 'sql'
+            : 'custom';
           this.sourceId = `${kind}:${d.dataSourceRef}`;
+          this.ensureFieldsLoaded();
           this.grouping = [...(d.definition.grouping ?? [])];
           this.detailFields = [...(d.definition.fields ?? [])];
           this.aggregations = (d.definition.aggregations ?? []).map(a => ({ ...a }));
@@ -209,6 +237,33 @@ export class StudioReportDesignerComponent implements OnInit {
     this.filters = [];
     this.sort = [];
     this.result.set(null);
+    this.ensureFieldsLoaded();
+  }
+
+  /**
+   * Les sources SQL arrivent sans champs : on introspecte la table à la sélection seulement.
+   * Lister les colonnes des ~80 tables autorisées à l'ouverture du concepteur serait inutile.
+   */
+  private ensureFieldsLoaded(): void {
+    const source = this.selectedSource();
+    if (!source || source.fields.length > 0) return;
+
+    const cacheKey = `${source.kind}:${source.ref}`;
+    if (this.lazyFields()[cacheKey]) return;
+
+    this.studio.getReportSourceFields(source.kind, source.ref).subscribe({
+      next: res => {
+        if (res.success) {
+          this.lazyFields.update(current => ({ ...current, [cacheKey]: res.data ?? [] }));
+        } else {
+          this.toast.add({ severity: 'error', summary: 'Erreur', detail: res.errors?.[0] ?? 'Champs indisponibles.' });
+        }
+      },
+      error: err => this.toast.add({
+        severity: 'error', summary: 'Erreur',
+        detail: err?.error?.message ?? 'Champs de la source indisponibles.'
+      })
+    });
   }
 
   addAgg(): void { this.aggregations = [...this.aggregations, { field: '', fn: 'count' }]; }
@@ -229,7 +284,11 @@ export class StudioReportDesignerComponent implements OnInit {
   }
 
   private kindValue(): number {
-    return this.selectedSource()?.kind === 'existing' ? ReportDataSourceKind.ExistingSource : ReportDataSourceKind.CustomEntity;
+    switch (this.selectedSource()?.kind) {
+      case 'existing': return ReportDataSourceKind.ExistingSource;
+      case 'sql': return ReportDataSourceKind.SqlQuery;
+      default: return ReportDataSourceKind.CustomEntity;
+    }
   }
 
   preview(): void {

@@ -103,6 +103,25 @@ describe('PosStateService FODEC', () => {
   });
 });
 
+describe('PosStateService restoreSnapshot', () => {
+  beforeEach(() => {
+    TestBed.configureTestingModule({ providers: [PosStateService] });
+  });
+
+  it('restores lines but generates a new ticket id', () => {
+    const svc = TestBed.inject(PosStateService);
+    svc.addProduct({ ...fodecProduct(), isFodecApplicable: false });
+    const snapshot = svc.getSnapshot();
+    const previousTicketId = snapshot.sessionId;
+
+    svc.resetOrder();
+    svc.restoreSnapshot(snapshot);
+
+    expect(svc.lines().length).toBe(1);
+    expect(svc.sessionId()).not.toBe(previousTicketId);
+  });
+});
+
 describe('PosStateService applyResolvedPrices', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({ providers: [PosStateService] });

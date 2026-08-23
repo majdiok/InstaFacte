@@ -16,6 +16,16 @@ describe('audit-action-labels', () => {
 
   it('maps entity type to French', () => {
     expect(auditEntityTypeLabel('Invoice')).toBe('Facture');
+    expect(auditEntityTypeLabel('SalesReturnNote')).toBe('Bon de retour');
+  });
+
+  it('maps sales return note actions to French', () => {
+    expect(auditActionLabel('SalesReturnNote.Confirmed')).toBe('Bon de retour confirmé');
+  });
+
+  it('maps stock voucher actions and entity to French', () => {
+    expect(auditActionLabel('StockVoucher.Validated')).toBe('Bon de stock validé');
+    expect(auditEntityTypeLabel('StockVoucher')).toBe('Bon d’entrée / sortie');
   });
 
   it('exposes non-empty select options', () => {

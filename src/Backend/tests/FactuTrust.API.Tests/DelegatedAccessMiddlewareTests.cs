@@ -51,6 +51,8 @@ public sealed class DelegatedAccessMiddlewareTests
     [InlineData("POST", "/api/notifications/a94fc082-160a-42f4-a854-0c95b881914d/read")]
     [InlineData("POST", "/api/notifications/read-all")]
     [InlineData("GET", "/api/notifications")]
+    [InlineData("PATCH", "/api/me/onboarding")]
+    [InlineData("GET", "/api/me/onboarding")]
     public async Task Delegated_mode_allows_firm_context_and_auth_session_writes(string method, string path)
     {
         var (statusCode, nextCalled) = await InvokeAsync(method, path, "delegated");

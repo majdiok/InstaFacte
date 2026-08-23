@@ -34,6 +34,9 @@ describe('firm-manager-access.config', () => {
     expect(routes).not.toContain('/firm/affectation');
     expect(routes).toContain('/firm/governance/time-sheets');
     expect(routes).toContain('/firm/settings');
+    // Le collaborateur cabinet consulte la révision : l'ACL dossier restreint ensuite son
+    // périmètre, et seul le balayage est réservé au responsable.
+    expect(routes).toContain('/firm/revision');
   });
 });
 

@@ -17,6 +17,19 @@ public sealed class CursorSdkErrorMapperTests
     }
 
     [Fact]
+    public void ToUserMessage_maps_sandbox_unsupported_error()
+    {
+        var message = CursorSdkErrorMapper.ToUserMessage(
+            "Local SDK sandboxing was requested, but sandboxing is not supported in this environment. Disable `local.sandboxOptions.enabled` or remove `~/.cursor/sandbox.json` to run without sandboxing.",
+            out var shouldLog);
+
+        Assert.Contains("sandbox", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("administrateur", message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("~/.cursor/sandbox.json", message, StringComparison.Ordinal);
+        Assert.True(shouldLog);
+    }
+
+    [Fact]
     public void ToUserMessage_maps_invalid_api_key()
     {
         var message = CursorSdkErrorMapper.ToUserMessage("Invalid User API Key", out var shouldLog);

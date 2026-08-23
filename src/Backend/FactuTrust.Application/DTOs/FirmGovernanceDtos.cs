@@ -369,21 +369,6 @@ public sealed record FirmGovernanceDashboardDto
     public int UnreadNotificationsCount { get; init; }
 }
 
-public sealed record FirmSocialOverviewDto
-{
-    public IReadOnlyList<FirmSocialClientRowDto> Clients { get; init; } = Array.Empty<FirmSocialClientRowDto>();
-}
-
-public sealed record FirmSocialClientRowDto
-{
-    public Guid CompanyTenantId { get; init; }
-    public string CompanyName { get; init; } = null!;
-    public int EmployeeCount { get; init; }
-    public int PendingLeaveRequests { get; init; }
-    public int PayrollRunsDraftCount { get; init; }
-    public int DtsPendingCount { get; init; }
-}
-
 public sealed record AssignDossierManagerDto
 {
     public Guid AssignmentId { get; init; }

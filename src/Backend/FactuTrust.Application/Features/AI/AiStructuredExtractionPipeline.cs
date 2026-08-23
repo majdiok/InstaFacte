@@ -96,6 +96,8 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
     private readonly IAiDocumentTextExtractor _documentTextExtractor;
     private readonly IOllamaModelReadinessChecker _readinessChecker;
     private readonly IPlatformAiSettingsService _platformAiSettings;
+    private readonly IModalCredentialsResolver _modalCredentials;
+    private readonly ITenantContext _tenantContext;
     private readonly IOllamaInferenceProfileResolver _inferenceProfileResolver;
     private readonly ILogger<AiStructuredExtractionPipeline> _logger;
     private readonly OllamaSettings _ollamaSettings;
@@ -110,6 +112,8 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
         IOllamaInferenceProfileResolver inferenceProfileResolver,
         ILogger<AiStructuredExtractionPipeline> logger,
         IOptions<OllamaSettings> ollamaSettings,
+        IModalCredentialsResolver modalCredentials,
+        ITenantContext tenantContext,
         ICursorAgentClient? cursorAgentClient = null,
         IOptions<CursorSdkSettings>? cursorSdkSettings = null)
     {
@@ -122,6 +126,8 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
         _inferenceProfileResolver = inferenceProfileResolver;
         _logger = logger;
         _ollamaSettings = ollamaSettings.Value;
+        _modalCredentials = modalCredentials;
+        _tenantContext = tenantContext;
         _cursorSdkSettings = cursorSdkSettings?.Value ?? new CursorSdkSettings();
     }
 
@@ -450,6 +456,15 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
                 return null;
             }
 
+            case LlmProviderKind.Modal:
+            {
+                var credentials = await _modalCredentials.ResolveAsync(_tenantContext.TenantId, cancellationToken);
+                if (string.IsNullOrEmpty(credentials.ApiKey) || string.IsNullOrWhiteSpace(credentials.BaseUrl))
+                    return Result.Failure<AiStructuredExtractionOutcome>(Error.Validation(code,
+                        ModalCredentialMessages.Unavailable(credentials)));
+                return null;
+            }
+
             case LlmProviderKind.Cursor:
                 if (!_cursorSdkSettings.Enabled)
                     return Result.Failure<AiStructuredExtractionOutcome>(Error.Validation(code,
@@ -558,10 +573,25 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
             break;
         }
         case LlmProviderKind.OpenRouter:
+        case LlmProviderKind.Modal:
         {
-            var openRouter = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
-            var baseUrl = openRouter.BaseUrl;
-            var apiKey = openRouter.ApiKey!;
+            string baseUrl;
+            string apiKey;
+            OpenAiCompatibleCallOptions? options = null;
+            if (modelRef.Kind == LlmProviderKind.Modal)
+            {
+                var modal = await _modalCredentials.ResolveAsync(_tenantContext.TenantId, cancellationToken);
+                baseUrl = modal.BaseUrl;
+                apiKey = modal.ApiKey!;
+                options = OpenAiCompatibleCallOptions.ForModal(new ModalSettings(), sessionId: null);
+            }
+            else
+            {
+                var openRouter = await _platformAiSettings.GetOpenRouterCredentialsAsync(cancellationToken);
+                baseUrl = openRouter.BaseUrl;
+                apiKey = openRouter.ApiKey!;
+            }
+
             var messages = new List<OpenAiChatMessagePayload>
             {
                 new() { Role = "system", Content = systemPrompt },
@@ -569,8 +599,12 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
             };
 
             _logger.LogInformation(
-                "[{Scope}] Appel LLM OpenRouter : modèle={Model} maxTokens={MaxTokens} images={ImageCount}",
-                scope, modelRef.ProviderModelId, outputCap, images.Count);
+                "[{Scope}] Appel LLM {Provider} : modèle={Model} maxTokens={MaxTokens} images={ImageCount}",
+                scope,
+                modelRef.Kind,
+                modelRef.ProviderModelId,
+                outputCap,
+                images.Count);
 
             await foreach (var chunk in _openAiClient.StreamChatAsOllamaCompatibleAsync(
                                baseUrl,
@@ -580,7 +614,9 @@ public sealed class AiStructuredExtractionPipeline : IAiStructuredExtractionPipe
                                Array.Empty<OllamaToolDefinition>(),
                                0d,
                                outputCap,
-                               cancellationToken))
+                               cancellationToken,
+                               seed: null,
+                               options))
             {
                 chunkCount++;
                 if (!string.IsNullOrEmpty(chunk.Message?.Content))

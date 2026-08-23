@@ -8,6 +8,7 @@ import { PosStateService } from '../../services/pos-state.service';
 import { PosVoiceCommandService } from '../../services/pos-voice-command.service';
 import { PosIdleService } from '../../services/pos-idle.service';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
+import { PosRegisterSessionService } from '../../services/pos-register-session.service';
 
 @Component({
   selector: 'app-pos-header',
@@ -44,6 +45,35 @@ import { WarehouseContextService } from '@core/services/warehouse-context.servic
               <i class="pi pi-building" aria-hidden="true"></i>
               <span class="pos-header__warehouse-name">{{ wh.name }}</span>
             </div>
+          }
+          @if (registerSession.requireOpenSession()) {
+            <button
+              type="button"
+              class="pos-header__pill"
+              [class.pos-header__pill--session-open]="registerSession.currentSession()"
+              [class.pos-header__pill--session-closed]="!registerSession.currentSession()"
+              (click)="registerSession.currentSession() ? onXReport.emit() : onOpenRegister.emit()"
+              [title]="registerSession.currentSession() ? 'Caisse ouverte' : 'Ouvrir la caisse'"
+              [attr.aria-label]="registerSession.currentSession() ? 'Caisse ouverte' : 'Ouvrir la caisse'">
+              <i class="pi" [class.pi-lock-open]="registerSession.currentSession()" [class.pi-lock]="!registerSession.currentSession()"></i>
+              <span>{{ registerSession.currentSession() ? 'Caisse ouverte' : 'Caisse fermée' }}</span>
+            </button>
+          }
+          @if (registerSession.currentSession()) {
+            <button type="button" class="pos-header__pill" (click)="onXReport.emit()" title="Rapport X" aria-label="Rapport X">
+              <i class="pi pi-eye"></i>
+              <span>X</span>
+            </button>
+            <button type="button" class="pos-header__pill pos-header__pill--z" (click)="onCloseZ.emit()" title="Clôturer Z" aria-label="Clôturer Z">
+              <i class="pi pi-book"></i>
+              <span>Clôturer Z</span>
+            </button>
+          }
+          @if (!registerSession.currentSession() && registerSession.requireOpenSession()) {
+            <button type="button" class="pos-header__pill pos-header__pill--active" (click)="onOpenRegister.emit()" title="Ouvrir la caisse" aria-label="Ouvrir la caisse">
+              <i class="pi pi-unlock"></i>
+              <span>Ouvrir</span>
+            </button>
           }
           <div class="pos-header__clock" aria-live="off">
             <i class="pi pi-clock" aria-hidden="true"></i>
@@ -315,6 +345,16 @@ import { WarehouseContextService } from '@core/services/warehouse-context.servic
       color: var(--color-white);
     }
 
+    .pos-header__pill--session-open {
+      background: rgba(34, 197, 94, 0.35);
+    }
+
+    .pos-header__pill--session-closed,
+    .pos-header__pill--z {
+      background: rgba(234, 179, 8, 0.35);
+      color: #fef3c7;
+    }
+
     .pos-header__pill--demo {
       background: rgba(234, 179, 8, 0.35);
       color: #fef3c7;
@@ -581,6 +621,9 @@ export class PosHeaderComponent implements OnInit, OnDestroy {
   @Output() onOpenHistory = new EventEmitter<void>();
   @Output() onDualScreenToggle = new EventEmitter<void>();
   @Output() onQuickModeToggle = new EventEmitter<void>();
+  @Output() onOpenRegister = new EventEmitter<void>();
+  @Output() onXReport = new EventEmitter<void>();
+  @Output() onCloseZ = new EventEmitter<void>();
 
   private readonly router = inject(Router);
   readonly offlineService = inject(PosOfflineService);
@@ -589,6 +632,7 @@ export class PosHeaderComponent implements OnInit, OnDestroy {
   readonly posState = inject(PosStateService);
   readonly voiceCommandService = inject(PosVoiceCommandService);
   readonly warehouseContext = inject(WarehouseContextService);
+  readonly registerSession = inject(PosRegisterSessionService);
 
   themeOptions: { id: PosThemeId; label: string }[] = [
     { id: 'default', label: 'Defaut' },

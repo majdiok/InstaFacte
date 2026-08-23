@@ -52,6 +52,7 @@ public sealed class UpdateProductCommandHandler : IRequestHandler<UpdateProductC
     private readonly IProductRepository _productRepository;
     private readonly IProductCategoryRepository _productCategoryRepository;
     private readonly ISupplierRepository _supplierRepository;
+    private readonly IStockItemRepository _stockItemRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUser _currentUser;
     private readonly IAuditService _auditService;
@@ -60,6 +61,7 @@ public sealed class UpdateProductCommandHandler : IRequestHandler<UpdateProductC
         IProductRepository productRepository,
         IProductCategoryRepository productCategoryRepository,
         ISupplierRepository supplierRepository,
+        IStockItemRepository stockItemRepository,
         IUnitOfWork unitOfWork,
         ICurrentUser currentUser,
         IAuditService auditService)
@@ -67,6 +69,7 @@ public sealed class UpdateProductCommandHandler : IRequestHandler<UpdateProductC
         _productRepository = productRepository;
         _productCategoryRepository = productCategoryRepository;
         _supplierRepository = supplierRepository;
+        _stockItemRepository = stockItemRepository;
         _unitOfWork = unitOfWork;
         _currentUser = currentUser;
         _auditService = auditService;
@@ -138,6 +141,48 @@ public sealed class UpdateProductCommandHandler : IRequestHandler<UpdateProductC
                 return Result.Failure<ProductDetailDto>(Error.Validation("PreferredSupplierId", "Le fournisseur sélectionné n'existe pas"));
         }
         product.SetPreferredSupplier(preferredSupplierId);
+
+        if (dto.IsVariantTemplate == true && !product.IsVariantTemplate)
+        {
+            var template = product.MarkAsVariantTemplate();
+            if (template.IsFailure)
+                return Result.Failure<ProductDetailDto>(template.Error);
+        }
+
+        if (dto.TrackingMode.HasValue || dto.HasExpiryTracking.HasValue || dto.PickingPolicy.HasValue
+            || dto.CostingMethod.HasValue || dto.ExpiryAlertDays.HasValue)
+        {
+            var nextMode = dto.TrackingMode ?? product.TrackingMode;
+            if (product.TrackingMode == TrackingMode.None && nextMode != TrackingMode.None)
+            {
+                var stocks = await _stockItemRepository.GetByProductAsync(product.Id, cancellationToken);
+                if (stocks.Any(s => s.QuantityOnHand > 0))
+                {
+                    return Result.Failure<ProductDetailDto>(Error.Validation("TrackingMode",
+                        "Impossible d'activer le suivi par lot/série tant qu'un stock physique existe. Passez par un inventaire d'ouverture."));
+                }
+            }
+
+            var nextCosting = dto.CostingMethod ?? product.CostingMethod;
+            if (product.CostingMethod == CostingMethod.Average && nextCosting is CostingMethod.Fifo or CostingMethod.Lifo)
+            {
+                var stocks = await _stockItemRepository.GetByProductAsync(product.Id, cancellationToken);
+                if (stocks.Any(s => s.QuantityOnHand > 0))
+                {
+                    return Result.Failure<ProductDetailDto>(Error.Validation("CostingMethod",
+                        "Le passage CMUP → FIFO/LIFO exige une couche d'ouverture (inventaire). Stock physique non nul."));
+                }
+            }
+
+            var trace = product.ConfigureTraceability(
+                nextMode,
+                dto.HasExpiryTracking ?? product.HasExpiryTracking,
+                dto.PickingPolicy ?? product.PickingPolicy,
+                nextCosting,
+                dto.ExpiryAlertDays ?? product.ExpiryAlertDays);
+            if (trace.IsFailure)
+                return Result.Failure<ProductDetailDto>(trace.Error);
+        }
 
         product.SetAuditInfo(_currentUser.UserId?.ToString() ?? "system", isUpdate: true);
 

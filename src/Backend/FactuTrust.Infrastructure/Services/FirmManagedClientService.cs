@@ -132,6 +132,7 @@ public sealed class FirmManagedClientService : IFirmManagedClientService
             if (permanentFileResult.IsFailure)
             {
                 await transaction.RollbackAsync(cancellationToken);
+                await _tenantService.TryDropDatabaseAsync(tenant.DatabaseName, cancellationToken);
                 return Result.Failure<FirmManagedClientCreatedDto>(permanentFileResult.Error);
             }
 
@@ -165,6 +166,8 @@ public sealed class FirmManagedClientService : IFirmManagedClientService
                     "Rollback Master impossible après échec provisioning (CorrelationId: {CorrelationId})",
                     correlationId);
             }
+
+            await _tenantService.TryDropDatabaseAsync(tenant.DatabaseName, cancellationToken);
 
             // Retirer les entités trackées pour ne pas polluer les appels suivants du même scope.
             _masterContext.ChangeTracker.Clear();

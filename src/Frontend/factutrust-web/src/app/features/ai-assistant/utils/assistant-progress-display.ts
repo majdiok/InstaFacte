@@ -303,6 +303,10 @@ function formatProviderDetail(detail: string | undefined, status: AssistantProgr
     return 'Mod\u00e8le cloud pr\u00eat';
   }
 
+  if (detail?.startsWith('modal:')) {
+    return 'Mod\u00e8le cloud pr\u00eat';
+  }
+
   if (detail?.startsWith('cursor:')) {
     return 'Mod\u00e8le Cursor pr\u00eat';
   }

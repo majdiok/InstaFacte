@@ -61,6 +61,49 @@ public sealed class CreateCashOperationOnInvoicePaymentHandlerTests
     }
 
     [Fact]
+    public async Task Handle_WhenPaymentHasCashRegisterSession_ShouldCopyOntoCashOperation()
+    {
+        var sessionId = Guid.NewGuid();
+        var payment = CreatePayment(PaymentMethod.Cash);
+        payment.AssignCashRegisterSession(sessionId);
+
+        var paymentRepository = new Mock<IPaymentRepository>();
+        paymentRepository
+            .Setup(x => x.GetByIdAsync(payment.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(payment);
+
+        var cashRepository = new Mock<ICashOperationRepository>();
+        cashRepository
+            .Setup(x => x.ExistsBySourceAsync("Payment", payment.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        cashRepository
+            .Setup(x => x.AddAsync(It.IsAny<CashOperation>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CashOperation operation, CancellationToken _) => operation);
+
+        var numberGenerator = new Mock<ICashOperationNumberGenerator>();
+        numberGenerator
+            .Setup(x => x.ReserveNextNumberAsync(It.IsAny<Guid>(), payment.PaymentDate.Year, CashOperationType.Credit, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CashOperationNumber.Create(CashOperationNumber.CreditPrefix, payment.PaymentDate.Year, 123).Value);
+
+        var currentUser = new Mock<ICurrentUser>();
+        currentUser.SetupGet(x => x.TenantId).Returns(Guid.NewGuid());
+        currentUser.SetupGet(x => x.UserId).Returns(Guid.NewGuid());
+
+        var handler = new CreateCashOperationOnInvoicePaymentHandler(
+            paymentRepository.Object,
+            cashRepository.Object,
+            numberGenerator.Object,
+            currentUser.Object,
+            NullLogger<CreateCashOperationOnInvoicePaymentHandler>.Instance,
+            Options.Create(new CashDeskFeaturesOptions { AutoCashFromInvoicePayment = true }));
+
+        await handler.Handle(new InvoicePaymentRecordedNotification(payment.Id), CancellationToken.None);
+
+        cashRepository.Verify(x => x.AddAsync(It.Is<CashOperation>(op =>
+            op.CashRegisterSessionId == sessionId), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task Handle_WhenPaymentIsNotCash_ShouldSkipCreation()
     {
         var payment = CreatePayment(PaymentMethod.BankTransfer);

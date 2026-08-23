@@ -179,4 +179,8 @@ public interface IInvoiceRepository : IRepository<Invoice>
     Task<decimal> SumIssuedCreditNoteCommercialTtcAsync(
         Guid linkedInvoiceId,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<Invoice>> GetByCashRegisterSessionIdAsync(
+        Guid cashRegisterSessionId,
+        CancellationToken cancellationToken = default);
 }

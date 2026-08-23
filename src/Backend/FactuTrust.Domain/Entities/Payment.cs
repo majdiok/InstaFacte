@@ -34,6 +34,9 @@ public sealed class Payment : AggregateRoot
     public DateTime? RefundedAt { get; private set; }
     public string? RefundReason { get; private set; }
 
+    /// <summary>Optional POS cash-register session (vacation) that recorded this payment.</summary>
+    public Guid? CashRegisterSessionId { get; private set; }
+
     /// <summary>Vrai si ce paiement est une traite (effet de commerce).</summary>
     public bool IsEffet => Method == PaymentMethod.Traite;
 
@@ -115,5 +118,13 @@ public sealed class Payment : AggregateRoot
         RefundReason = reason.Trim();
 
         return Result.Success();
+    }
+
+    public void AssignCashRegisterSession(Guid sessionId)
+    {
+        if (sessionId == Guid.Empty)
+            throw new ArgumentException("L'identifiant de session caisse est requis.", nameof(sessionId));
+
+        CashRegisterSessionId = sessionId;
     }
 }

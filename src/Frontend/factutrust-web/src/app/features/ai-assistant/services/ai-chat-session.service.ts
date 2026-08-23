@@ -149,7 +149,9 @@ export class AiChatSessionService {
           const dossierSwitch =
             uid !== null &&
             (prevCtxId !== ctxId || prevAccessMode !== accessMode);
-          if (accountSwitch || logout || dossierSwitch) {
+          if (logout) {
+            this.resetSessionForUserChange();
+          } else if (accountSwitch || dossierSwitch) {
             this.resetSessionForUserChange();
             queueMicrotask(() => this.initialize());
           }
@@ -200,6 +202,10 @@ export class AiChatSessionService {
 
   initialize(): void {
     if (this.initDone) {
+      return;
+    }
+    if (!this.auth.user()) {
+      this.aiAvailable.set(false);
       return;
     }
     this.initDone = true;
@@ -280,7 +286,8 @@ export class AiChatSessionService {
         if (this.agentScope() === requestedScope) {
           this.conversations.set(convs);
         }
-      }
+      },
+      error: () => this.conversations.set([])
     });
   }
 

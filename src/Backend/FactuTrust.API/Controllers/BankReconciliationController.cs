@@ -155,7 +155,7 @@ public sealed class BankReconciliationController : ControllerBase
         return Ok(ApiResponse<ApplyAssociationsResultDto>.Ok(result.Value, $"{result.Value.AppliedCount} rapprochement(s) appliqué(s)."));
     }
 
-    /// <summary>Comptabilise une ligne non rapprochée : écriture 512 ↔ contrepartie + rapprochement.</summary>
+    /// <summary>Comptabilise une ligne non rapprochée : écriture 532 ↔ contrepartie + rapprochement.</summary>
     [HttpPost("statements/{id:guid}/lines/{lineId:guid}/create-entry")]
     [Authorize(Policy = PermissionPolicies.AccountingCreate)]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]

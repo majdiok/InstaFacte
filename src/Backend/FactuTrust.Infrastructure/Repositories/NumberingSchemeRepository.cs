@@ -54,6 +54,12 @@ public sealed class NumberingSchemeRepository : INumberingSchemeRepository
             NumberingDocumentType.CashReceipt => await context.CashOperations.AnyAsync(c => c.Number.Year == fiscalYear && c.Number.PrefixValue == "ENC", cancellationToken),
             NumberingDocumentType.CashExpense => await context.CashOperations.AnyAsync(c => c.Number.Year == fiscalYear && c.Number.PrefixValue == "DEP", cancellationToken),
             NumberingDocumentType.BankDeposit => await context.BankDeposits.AnyAsync(b => b.Number.Year == fiscalYear, cancellationToken),
+            NumberingDocumentType.SalesReturnNote => await context.SalesReturnNotes.AnyAsync(n => n.Number.Year == fiscalYear, cancellationToken),
+            NumberingDocumentType.ZReport => await context.ZReports.AnyAsync(z => z.Number.Year == fiscalYear, cancellationToken),
+            NumberingDocumentType.StockEntry => await context.StockVouchers.AnyAsync(
+                v => v.Kind == StockVoucherKind.Entry && v.Number.Year == fiscalYear, cancellationToken),
+            NumberingDocumentType.StockIssue => await context.StockVouchers.AnyAsync(
+                v => v.Kind == StockVoucherKind.Issue && v.Number.Year == fiscalYear, cancellationToken),
             _ => false
         };
     }

@@ -94,8 +94,8 @@ public sealed class GetCommercialProfitReportQueryHandler
         {
             var stockReference = referenceByInvoiceId[line.InvoiceId];
             var period = line.IssueDate.ToString("yyyy-MM");
-            var key = (stockReference, line.ProductId);
-            var unitCost = unitCostByReferenceProduct.TryGetValue(key, out var uc)
+            var unitCost = line.ProductId is { } productId
+                && unitCostByReferenceProduct.TryGetValue((stockReference, productId), out var uc)
                 ? uc
                 : line.FallbackUnitCost;
             var cost = line.Quantity * unitCost;

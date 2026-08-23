@@ -76,6 +76,8 @@ public sealed class AiStructuredExtractionPipelineCursorTests
                 InvoiceImportModel = "qwen2.5:7b-instruct",
                 ImportMaxOutputTokens = 1536
             }),
+            Mock.Of<IModalCredentialsResolver>(),
+            Mock.Of<ITenantContext>(),
             cursor.Object,
             Options.Create(new CursorSdkSettings { Enabled = true }));
 

@@ -8,6 +8,7 @@ using FactuTrust.Application.Features.Payroll.HrDocuments;
 using FactuTrust.Application.Features.Payroll.Services;
 using FactuTrust.Application.Features.Search;
 using FactuTrust.Application.Features.Search.Providers;
+using FactuTrust.Application.Features.Stock.Services;
 using FactuTrust.Application.Features.SupplierInvoices.Services;
 using FactuTrust.Application.Common.Interfaces.Services;
 using MediatR;
@@ -31,6 +32,7 @@ public static class DependencyInjection
         services.AddScoped<IGlobalSearchProvider, ClientGlobalSearchProvider>();
         services.AddScoped<IGlobalSearchProvider, ProductGlobalSearchProvider>();
         services.AddScoped<IGlobalSearchProvider, SupplierGlobalSearchProvider>();
+        services.AddScoped<IGlobalSearchProvider, SalesReturnNoteGlobalSearchProvider>();
 
         // Synchronisation déclaration mensuelle → échéancier fiscal (best-effort, flag-gated)
         services.AddScoped<DeclarationScheduleSynchronizer>();
@@ -39,6 +41,8 @@ public static class DependencyInjection
         services.AddScoped<PayrollDeclarationContributionProvider>();
 
         services.AddScoped<ISupplierInvoiceNumberService, SupplierInvoiceNumberService>();
+        services.AddScoped<ITrackedDocumentStockService, TrackedDocumentStockService>();
+        services.AddScoped<IStockAllocationValidator, StockAllocationValidator>();
         services.AddScoped<PayrollInputBuilder>();
         services.AddScoped<StatutoryIjClaimSyncService>();
         services.AddScoped<AnnualBonusSyncService>();

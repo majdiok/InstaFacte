@@ -238,3 +238,30 @@ export function applyQuoteListFiltersFromQuery(
 
   return next;
 }
+
+export interface ProjectListFilterState {
+  search: string | null;
+  status: string | null;
+  kind: string | null;
+  clientId: string | null;
+}
+
+export function applyProjectListFiltersFromQuery(
+  params: ParamMap,
+  state: ProjectListFilterState
+): ProjectListFilterState {
+  const next: ProjectListFilterState = { ...state };
+  const search = parseSearchQueryParam(params);
+  if (search) next.search = search;
+
+  const status = params.get('status');
+  if (status) next.status = status;
+
+  const kind = params.get('kind');
+  if (kind) next.kind = kind;
+
+  const clientId = params.get('clientId');
+  if (clientId) next.clientId = clientId;
+
+  return next;
+}

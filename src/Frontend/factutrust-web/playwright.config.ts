@@ -20,14 +20,16 @@ export default defineConfig({
   /* Parallélisation */
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  retries: 0,
   workers: process.env.CI ? 1 : undefined,
   
   /* Reporter */
   reporter: [
     ['html'],
     ['list'],
-    ['json', { outputFile: 'e2e/test-results/results.json' }]
+    ['json', { outputFile: 'e2e/test-results/results.json' }],
+    ['junit', { outputFile: 'e2e/test-results/junit.xml' }],
+    ['./playwright-junit-file-paths.reporter.ts', { outputFile: 'e2e/test-results/junit.xml' }]
   ],
   
   /* Shared settings */

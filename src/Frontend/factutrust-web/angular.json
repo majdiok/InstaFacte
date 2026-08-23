@@ -95,6 +95,16 @@
         },
         "serve": {
           "builder": "@angular-devkit/build-angular:dev-server",
+          "options": {
+            "prebundle": {
+              "exclude": [
+                "primeng",
+                "@primeuix/themes",
+                "@primeuix/styled",
+                "@primeuix/utils"
+              ]
+            }
+          },
           "configurations": {
             "production": {
               "buildTarget": "factutrust-web:build:production"

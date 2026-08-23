@@ -1,4 +1,5 @@
 using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.Accounting;
 
 namespace FactuTrust.Application.Features.Accounting.Audit;
 
@@ -138,7 +139,7 @@ public static class AuditCorrectionLinkBuilder
 
             "fodec-missing" => EntrySearch(
                 fiscalYear, periodFrom, periodTo,
-                account: accountRef ?? "4477",
+                account: accountRef ?? TunisianPostingAccounts.Fodec,
                 label: "Voir les écritures de vente"),
 
             "vat-period-not-closed" => VatDeclaration(

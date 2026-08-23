@@ -6,14 +6,16 @@
 <!-- Page Header -->
 <app-page-header title="Gestion du Stock" subtitle="Suivez l'état de vos stocks en temps réel">
   <div class="stock-actions">
-    <a routerLink="entry" class="stock-btn stock-btn-entry">
-      <i class="pi pi-arrow-down"></i>
-      <span>Entrée Stock</span>
-    </a>
-    <a routerLink="exit" class="stock-btn stock-btn-exit">
-      <i class="pi pi-arrow-up"></i>
-      <span>Sortie Stock</span>
-    </a>
+    @if (canCreateStockVoucher()) {
+      <a routerLink="/stock/entries/new" class="stock-btn stock-btn-entry">
+        <i class="pi pi-arrow-down"></i>
+        <span>Entrée Stock</span>
+      </a>
+      <a routerLink="/stock/issues/new" class="stock-btn stock-btn-exit">
+        <i class="pi pi-arrow-up"></i>
+        <span>Sortie Stock</span>
+      </a>
+    }
   </div>
 </app-page-header>
 
@@ -91,6 +93,17 @@
 <!-- Totaux filtrés (conformes aux filtres appliqués au tableau) -->
 <app-table-totals-bar [metrics]="summaryMetrics()" [loading]="loading()"></app-table-totals-bar>
 
+@if (expiryAlerts().length > 0) {
+<div class="filters-card" style="margin-bottom: 1rem; border-color: #f59e0b;">
+  <h3 class="filters-title">Alertes DLUO</h3>
+  <ul>
+    @for (alert of expiryAlerts(); track alert.lotNumber + alert.productId) {
+      <li>{{ alert.productName }} — lot {{ alert.lotNumber }} ({{ alert.daysRemaining }} j, {{ alert.quantityOnHand }} u.)</li>
+    }
+  </ul>
+</div>
+}
+
 <!-- Stock Table -->
 <div class="table-card">
   @if (initialLoad()) {
@@ -151,12 +164,45 @@
             <app-button variant="ghost" size="sm" icon="pi-history" [iconOnly]="true" pTooltip="Historique mouvements"
               tooltipPosition="top" [routerLink]="[item.id, 'history']" ariaLabel="Voir l'historique">
             </app-button>
+            @if (lotTrackingEnabled()) {
+            <app-button variant="ghost" size="sm" icon="pi-tags" [iconOnly]="true" pTooltip="Lots"
+              tooltipPosition="top" (click)="toggleLots(item)" ariaLabel="Voir les lots">
+            </app-button>
+            }
             <app-button variant="ghost" size="sm" icon="pi-sliders-h" [iconOnly]="true" pTooltip="Ajuster le stock"
               tooltipPosition="top" (click)="openAdjustDialog(item)" ariaLabel="Ajuster le stock">
             </app-button>
           </div>
         </td>
       </tr>
+      @if (expandedLots()[item.id]; as lots) {
+      <tr>
+        <td colspan="7">
+          @if (lots.length === 0) {
+            <span class="text-xs text-gray-500">Aucun lot pour cet article.</span>
+          } @else {
+            <table class="w-full">
+              <thead>
+                <tr>
+                  <th>Lot</th>
+                  <th>DLUO</th>
+                  <th class="text-right">Qté</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (lot of lots; track lot.productLotId) {
+                  <tr>
+                    <td>{{ lot.lotNumber }}</td>
+                    <td>{{ lot.expiryDate ? (lot.expiryDate | date:'shortDate') : '—' }}</td>
+                    <td class="text-right">{{ lot.quantityOnHand }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+        </td>
+      </tr>
+      }
     </ng-template>
 
     <ng-template pTemplate="emptymessage">

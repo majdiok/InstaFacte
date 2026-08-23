@@ -64,7 +64,9 @@ Renseignez :
 
 Cliquez sur **Créer mon compte**.
 
-Un message de confirmation s'affiche. Vous êtes redirigé vers la connexion.
+Vous êtes connecté automatiquement et arrivez sur le **tableau de bord**. Une **visite guidée** des fonctions principales s’affiche (vous pouvez cliquer sur **Ignorer** ou **Suivant**). Une carte **Premiers pas** reste visible jusqu’à ce que les étapes essentielles soient faites.
+
+> Ancienne mention « retour à la connexion » : l’inscription connecte désormais le compte tout de suite.
 
 ---
 
@@ -81,6 +83,8 @@ Un message de confirmation s'affiche. Vous êtes redirigé vers la connexion.
 6. Cliquez sur **Se connecter**.
 
 Vous arrivez sur le **tableau de bord**.
+
+Si c’est votre **première connexion** (compte nouvellement créé ou utilisateur invité), la visite guidée et la checklist **Premiers pas** s’affichent. Relancez la visite plus tard via le menu profil → **Relancer la visite guidée**.
 
 > **Mot de passe oublié ?** Un lien est disponible sur la page de connexion. Cliquez dessus pour réinitialiser votre mot de passe (si cette fonctionnalité est activée).
 

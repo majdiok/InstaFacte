@@ -76,13 +76,20 @@ public sealed class PayrollAccountingEntryTests
         Assert.Contains(lines, l => l.AccountNumber == PayrollJournalEntryBuilder.StateWithholdingAccount && l.Credit > 0);
         Assert.Contains(lines, l => l.AccountNumber == PayrollJournalEntryBuilder.SocialOrgAccount && l.Credit > 0);
         Assert.DoesNotContain(lines, l => l.AccountNumber == PayrollJournalEntryBuilder.AdvancesAccount);
+        Assert.DoesNotContain(lines, l => l.AccountNumber is "6611" or "6612");
+        Assert.Equal("425", PayrollJournalEntryBuilder.PersonnelPayableAccount);
+        Assert.Equal("421", PayrollJournalEntryBuilder.AdvancesAccount);
+        Assert.Equal("432", PayrollJournalEntryBuilder.StateWithholdingAccount);
+        Assert.Equal("453", PayrollJournalEntryBuilder.SocialOrgAccount);
+        Assert.Equal("641", PayrollJournalEntryBuilder.IndemnityAccount);
+        Assert.Equal("421.1", new PayrollJournalEntryAccountMap().LoansAccount);
         Assert.Equal(0m, run.TotalOtherDeductions);
 
         AssertCreateSucceeds(lines);
     }
 
     [Fact]
-    public void BuildLines_WithEmployeeAuxiliaryCredits_CreatesPerEmployee421Lines()
+    public void BuildLines_WithEmployeeAuxiliaryCredits_CreatesPerEmployee425Lines()
     {
         var run = BuildRun(new PayrollComputationInput
         {
@@ -93,7 +100,7 @@ public sealed class PayrollAccountingEntryTests
         var payslip = run.Payslips.First();
         var credits = new List<PayrollJournalEntryBuilder.EmployeeAuxiliaryCredit>
         {
-            new(payslip.EmployeeId, payslip.EmployeeName, "4210001", payslip.NetSalary)
+            new(payslip.EmployeeId, payslip.EmployeeName, "4250001", payslip.NetSalary)
         };
 
         var linesResult = PayrollJournalEntryBuilder.BuildLines(
@@ -102,8 +109,8 @@ public sealed class PayrollAccountingEntryTests
             run.TotalWorkAccident, run.TotalOtherDeductions, "Paie 08/2026", credits);
 
         Assert.True(linesResult.IsSuccess);
-        Assert.Contains(linesResult.Value, l => l.AccountNumber == "4210001" && l.Credit > 0);
-        Assert.DoesNotContain(linesResult.Value, l => l.AccountNumber == "421" && l.ThirdPartyKind == ThirdPartyKind.None);
+        Assert.Contains(linesResult.Value, l => l.AccountNumber == "4250001" && l.Credit > 0);
+        Assert.DoesNotContain(linesResult.Value, l => l.AccountNumber == "425" && l.ThirdPartyKind == ThirdPartyKind.None);
     }
 
     [Fact]
@@ -321,7 +328,7 @@ public sealed class PayrollAccountingEntryTests
     }
 
     [Fact]
-    public void BuildLines_SmigExemption_Reduces432AndIncreases421()
+    public void BuildLines_SmigExemption_Reduces432AndIncreases425()
     {
         var input = new PayrollComputationInput { BaseSalary = 528.320m, Regime = SocialRegime.Rsna };
         var baseRun = BuildRun(input);
@@ -344,11 +351,11 @@ public sealed class PayrollAccountingEntryTests
 
         var base432 = baseLines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.StateWithholdingAccount).Credit;
         var exempt432 = exemptLines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.StateWithholdingAccount).Credit;
-        var base421 = baseLines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.PersonnelPayableAccount).Credit;
-        var exempt421 = exemptLines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.PersonnelPayableAccount).Credit;
+        var base425 = baseLines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.PersonnelPayableAccount).Credit;
+        var exempt425 = exemptLines.Single(l => l.AccountNumber == PayrollJournalEntryBuilder.PersonnelPayableAccount).Credit;
 
         Assert.Equal(base432 - exempt432, exemptRun.TotalIrppSmigExemption);
-        Assert.Equal(exempt421 - base421, exemptRun.TotalIrppSmigExemption);
+        Assert.Equal(exempt425 - base425, exemptRun.TotalIrppSmigExemption);
         AssertCreateSucceeds(exemptLines);
     }
 

@@ -1121,7 +1121,7 @@ public sealed record ApplyAssociationsResultDto
     public IReadOnlyList<string> Failures { get; init; } = Array.Empty<string>();
 }
 
-/// <summary>Comptabilisation directe d'une ligne de relevé non rapprochée (écriture 512 ↔ contrepartie).</summary>
+/// <summary>Comptabilisation directe d'une ligne de relevé non rapprochée (écriture 532 ↔ contrepartie).</summary>
 public sealed record CreateEntryForLineRequest
 {
     public string JournalCode { get; init; } = "BQ";

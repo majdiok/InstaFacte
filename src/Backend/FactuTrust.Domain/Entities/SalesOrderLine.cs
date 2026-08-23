@@ -41,6 +41,11 @@ public sealed class SalesOrderLine : Entity
     /// <summary>Quantité effectivement facturée, cumulée sur toutes les factures.</summary>
     public decimal InvoicedQuantity { get; private set; }
 
+    /// <summary>
+    /// Quantité retournée après livraison et avant facture, sans rouvrir le reste à livrer.
+    /// </summary>
+    public decimal ReturnedQuantity { get; private set; }
+
     public Money UnitPrice { get; private set; } = null!;
     public VatRate VatRate { get; private set; }
 
@@ -90,11 +95,11 @@ public sealed class SalesOrderLine : Entity
     /// <summary>Reste à livrer. C'est le reliquat que le bon de livraison seul ne sait pas porter.</summary>
     public decimal PendingDeliveryQuantity => Math.Max(0m, Quantity - DeliveredQuantity);
 
-    /// <summary>Reste à facturer.</summary>
-    public decimal PendingInvoiceQuantity => Math.Max(0m, Quantity - InvoicedQuantity);
+    /// <summary>Reste à facturer (retours pré-facture exclus).</summary>
+    public decimal PendingInvoiceQuantity => Math.Max(0m, Quantity - InvoicedQuantity - ReturnedQuantity);
 
     /// <summary>Quantité livrée mais pas encore facturée — assiette de la facturation périodique.</summary>
-    public decimal DeliveredNotInvoicedQuantity => Math.Max(0m, DeliveredQuantity - InvoicedQuantity);
+    public decimal DeliveredNotInvoicedQuantity => Math.Max(0m, DeliveredQuantity - InvoicedQuantity - ReturnedQuantity);
 
     public bool IsFullyDelivered => DeliveredQuantity >= Quantity;
     public bool IsFullyInvoiced => InvoicedQuantity >= Quantity;
@@ -136,6 +141,7 @@ public sealed class SalesOrderLine : Entity
             Quantity = quantity,
             DeliveredQuantity = 0m,
             InvoicedQuantity = 0m,
+            ReturnedQuantity = 0m,
             UnitPrice = unitPrice,
             VatRate = product.VatRate,
             DiscountPercent = discountPercent,
@@ -202,6 +208,23 @@ public sealed class SalesOrderLine : Entity
                 $"Facturation supérieure au reste à facturer sur la ligne {LineNumber} (reste : {PendingInvoiceQuantity})"));
 
         InvoicedQuantity += invoicedQuantity;
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Impute un retour commercial pré-facture. Ne diminue pas <see cref="DeliveredQuantity"/>
+    /// (le reliquat à livrer reste fermé) — seulement le « livré non facturé ».
+    /// </summary>
+    internal Result RecordReturn(decimal returnedQuantity)
+    {
+        if (returnedQuantity <= 0)
+            return Result.Failure(Error.Validation("ReturnedQuantity", "La quantité retournée doit être positive"));
+
+        if (ReturnedQuantity + returnedQuantity > DeliveredQuantity - InvoicedQuantity)
+            return Result.Failure(Error.Validation("ReturnedQuantity",
+                $"Retour supérieur au livré non facturé sur la ligne {LineNumber} (reste : {DeliveredNotInvoicedQuantity})"));
+
+        ReturnedQuantity += returnedQuantity;
         return Result.Success();
     }
 

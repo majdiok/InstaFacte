@@ -1322,12 +1322,15 @@ public sealed class ExchangeService : IExchangeService
         d.Id, d.ThreadId, d.MessageId, d.RequestId, d.TaskId, d.FileName, d.ContentType, d.SizeBytes,
         d.UploadedByUserId, d.UploadedAt);
 
-    private async Task AddAuditAsync(Guid threadId, Guid actorUserId, string displayName,
+    // Sans aucun await : la signature async déclenchait CS1998 (bloquant avec TreatWarningsAsErrors).
+    // Retour Task.CompletedTask = comportement strictement identique (corps déjà synchrone).
+    private Task AddAuditAsync(Guid threadId, Guid actorUserId, string displayName,
         ExchangeAuditEventType type, string? payload)
     {
         var audit = ExchangeAuditEvent.Create(threadId, actorUserId, displayName, type, payload);
         if (audit.IsSuccess)
             _db.ExchangeAuditEvents.Add(audit.Value);
+        return Task.CompletedTask;
     }
 
     private Task<Dictionary<Guid, string>> GetTenantNamesAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken)

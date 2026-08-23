@@ -88,7 +88,7 @@ public sealed class CreateSupplierCommandHandler : IRequestHandler<CreateSupplie
 
         var existingByEmail = await _supplierRepository.GetByEmailAsync(emailResult.Value.Value, cancellationToken);
         if (existingByEmail is not null)
-            return Result.Failure<Guid>(Error.Conflict("Un fournisseur existe déjà avec cet email."));
+            return DuplicateConflict(existingByEmail.Id, "email", "Un fournisseur existe déjà avec cet email.");
 
         NIF? nif = null;
         if (!string.IsNullOrWhiteSpace(dto.Nif))
@@ -100,7 +100,7 @@ public sealed class CreateSupplierCommandHandler : IRequestHandler<CreateSupplie
 
             var existingByNif = await _supplierRepository.GetByNifAsync(nif.Value, cancellationToken);
             if (existingByNif is not null)
-                return Result.Failure<Guid>(Error.Conflict("Un fournisseur existe déjà avec ce matricule fiscal."));
+                return DuplicateConflict(existingByNif.Id, "nif", "Un fournisseur existe déjà avec ce matricule fiscal.");
         }
         else if (dto.Type == SupplierType.Business)
         {
@@ -183,4 +183,13 @@ public sealed class CreateSupplierCommandHandler : IRequestHandler<CreateSupplie
 
         return Result.Success(supplier.Id);
     }
+
+    private static Result<Guid> DuplicateConflict(Guid existingSupplierId, string field, string message) =>
+        Result.Failure<Guid>(Error.Conflict(
+            message,
+            new Dictionary<string, object?>
+            {
+                ["existingSupplierId"] = existingSupplierId.ToString(),
+                ["field"] = field
+            }));
 }

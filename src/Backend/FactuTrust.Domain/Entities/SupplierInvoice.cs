@@ -5,8 +5,9 @@ using FactuTrust.Domain.ValueObjects;
 namespace FactuTrust.Domain.Entities;
 
 /// <summary>
-/// Represents a supplier invoice (facture fournisseur) created from a received purchase order
-/// and/or purchase receipt. Tracks amounts owed to suppliers and payment status.
+/// Represents a supplier invoice (facture fournisseur) created from a received purchase order,
+/// a purchase receipt, or entered standalone (charges / services without stock movement).
+/// Tracks amounts owed to suppliers and payment status.
 /// </summary>
 public sealed class SupplierInvoice : AggregateRoot
 {
@@ -199,6 +200,55 @@ public sealed class SupplierInvoice : AggregateRoot
         return Result.Success(invoice);
     }
 
+    public static Result<SupplierInvoice> CreateStandalone(
+        Supplier supplier,
+        string invoiceNumber,
+        DateTime invoiceDate,
+        IReadOnlyList<StandaloneSupplierInvoiceLineInput> lines,
+        int paymentTermDays = 30,
+        string? externalReference = null,
+        string? notes = null,
+        string? paymentMethod = null,
+        Guid? warehouseId = null)
+    {
+        if (supplier is null)
+            return Result.Failure<SupplierInvoice>(Error.Validation("Supplier",
+                "Le fournisseur est obligatoire"));
+
+        if (string.IsNullOrWhiteSpace(invoiceNumber))
+            return Result.Failure<SupplierInvoice>(Error.Validation("InvoiceNumber",
+                "Le numéro de facture fournisseur est obligatoire"));
+
+        if (lines is null || lines.Count == 0)
+            return Result.Failure<SupplierInvoice>(Error.Validation("Lines",
+                "Sélectionnez au moins une ligne à facturer"));
+
+        var invoice = CreateShell(
+            supplier,
+            purchaseOrder: null,
+            sourceReceipt: null,
+            invoiceNumber,
+            invoiceDate,
+            paymentTermDays,
+            externalReference,
+            notes,
+            paymentMethod,
+            warehouseId);
+
+        var lineNumber = 1;
+        foreach (var input in lines)
+        {
+            var lineResult = BuildStandaloneLine(invoice, lineNumber++, input);
+            if (lineResult.IsFailure)
+                return Result.Failure<SupplierInvoice>(lineResult.Error);
+
+            invoice._lines.Add(lineResult.Value);
+        }
+
+        invoice.RecalculateTotals();
+        return Result.Success(invoice);
+    }
+
     /// <summary>
     /// Reassigns the invoice number. Reserved for the persistence pipeline when a duplicate
     /// key exception forces an atomic re-reservation (see SupplierInvoiceCreationHelper retry loop).
@@ -319,6 +369,45 @@ public sealed class SupplierInvoice : AggregateRoot
             total,
             purchaseOrderLineId: prLine.PurchaseOrderLineId,
             purchaseReceiptLineId: prLine.Id));
+    }
+
+    private static Result<SupplierInvoiceLine> BuildStandaloneLine(
+        SupplierInvoice invoice,
+        int lineNumber,
+        StandaloneSupplierInvoiceLineInput input)
+    {
+        if (input.ProductId == Guid.Empty)
+            return Result.Failure<SupplierInvoiceLine>(Error.Validation("ProductId",
+                $"Le produit est obligatoire sur la ligne {lineNumber}"));
+
+        if (input.Quantity <= 0)
+            return Result.Failure<SupplierInvoiceLine>(Error.Validation("Quantity",
+                $"La quantité doit être positive sur la ligne {lineNumber}"));
+
+        if (input.DiscountPercent is < 0m or > 100m)
+            return Result.Failure<SupplierInvoiceLine>(Error.Validation("DiscountPercent",
+                $"La remise doit être comprise entre 0 et 100 % sur la ligne {lineNumber}"));
+
+        var gross = input.UnitPrice.Multiply(input.Quantity);
+        var discountFactor = 1m - (input.DiscountPercent / 100m);
+        var subTotal = gross.Multiply(discountFactor);
+        var vatAmount = subTotal.ApplyPercentage(input.VatRate.ToDecimal());
+        var total = subTotal.Add(vatAmount);
+
+        return Result.Success(SupplierInvoiceLine.Create(
+            invoice,
+            lineNumber,
+            input.ProductId,
+            input.ProductCode,
+            input.ProductName,
+            input.ProductDescription,
+            input.Quantity,
+            input.Unit,
+            input.UnitPrice,
+            input.VatRate,
+            subTotal,
+            vatAmount,
+            total));
     }
 
     private void RecalculateTotals()

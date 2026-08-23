@@ -92,7 +92,7 @@ Efforts en **jours/homme (j/h)** pour une équipe senior connaissant le codebase
 
 | Module | Statut | Commentaire |
 |---|---|---|
-| POS | ⚠️ Partiel | UI complète ; API session in-memory (`PosSessionController`) |
+| POS | ✅ | UI + persistance tenant (panier, tickets en attente, vacation caisse, clôture Z) |
 | Virtual Street | ✅ | Vitrine 3D + commandes ; hors `AppModule` |
 | Backoffice plateforme | ✅ | Billing, dunning, plans, migrations, 2FA admin |
 | ChannelGateway | 🔜 Prévu | Entités DB ; orchestrateur vide ; pas de source Node |
@@ -518,7 +518,7 @@ Ces éléments **existent partiellement** dans le codebase et doivent être comp
 
 | Élément | Fichier / zone | Action |
 |---|---|---|
-| POS session in-memory | `PosSessionController.cs` | Persistance EF/Redis, modèle caisse |
+| POS session in-memory | `PosSessionController.cs` | **Fait** — panier/tickets SQL, vacation `CashRegisterSession`, clôture Z immuable |
 | ChannelGateway | `src/ChannelGateway/` | Implémenter source Node + webhooks |
 | MultiLevelApproval réappro | `ForecastingOptions.cs` | Activer + UI workflow |
 | Email facture fournisseur | `CreateSupplierInvoiceFromPOCommand.cs` | TODO ligne 139 |

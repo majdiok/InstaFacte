@@ -1,5 +1,6 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { Component, OnInit, inject, signal, computed, DestroyRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { RouterModule, ActivatedRoute, Router } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
 import { CardModule } from 'primeng/card';
@@ -11,6 +12,7 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { ToastModule } from 'primeng/toast';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TimelineModule } from 'primeng/timeline';
+import { DialogModule } from 'primeng/dialog';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { ToastService } from '@core/services/toast.service';
 import { AuthService } from '@core/services/auth.service';
@@ -23,6 +25,19 @@ import { StatusBadgeComponent, StatusBadgeStatus } from '@shared/components/stat
 import { RecordPaymentDialogComponent } from '@shared/components/record-payment-dialog/record-payment-dialog.component';
 import { InvoiceService, InvoiceDetail } from '@core/services/invoice.service';
 import { formatLocalDate } from '@core/utils/date.util';
+import { StockService, StockFeatures } from '@core/services/stock.service';
+import { StockAllocationEditorComponent } from '@shared/components/stock-allocation-editor/stock-allocation-editor.component';
+import {
+  AllocationRow,
+  buildAllocationPayload,
+  exitAllocationsValid,
+  showLotSection,
+  showSerialSection,
+  createDefaultLotRow,
+  createDefaultSerialRow,
+  TRACKING_MODE_SERIAL
+} from '@shared/utils/stock-traceability.utils';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 interface TimelineEvent {
   status: string;
@@ -36,6 +51,7 @@ interface TimelineEvent {
   standalone: true,
   imports: [
     CommonModule,
+    FormsModule,
     RouterModule,
     ButtonModule,
     CardModule,
@@ -47,12 +63,14 @@ interface TimelineEvent {
     ToastModule,
     SkeletonModule,
     TimelineModule,
+    DialogModule,
     PageHeaderComponent,
     BreadcrumbComponent,
     ButtonComponent,
     DocumentActionsMenuComponent,
     StatusBadgeComponent,
-    RecordPaymentDialogComponent
+    RecordPaymentDialogComponent,
+    StockAllocationEditorComponent
   ],
   template: `
     <app-breadcrumb [items]="breadcrumbItems()"></app-breadcrumb>
@@ -382,6 +400,61 @@ interface TimelineEvent {
           }
         </div>
       </div>
+
+      <p-dialog
+        header="Valider la facture"
+        [(visible)]="showValidateDialog"
+        [modal]="true"
+        [style]="{ width: '750px', maxWidth: '95vw' }"
+        [draggable]="false"
+        [resizable]="false"
+        [contentStyle]="{ overflow: 'visible' }">
+        <p class="validate-dialog-hint">
+          Confirmez la validation de {{ invoice()!.number }}. Sélectionnez les lots ou numéros de série si nécessaire.
+        </p>
+        @if (needsStockAllocationOnValidate()) {
+          <table class="validate-lines-table">
+            <thead>
+              <tr>
+                <th>Produit</th>
+                <th class="text-right">Quantité</th>
+                <th>Traçabilité</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (lineForm of validateLineForms; track lineForm.lineId) {
+                <tr>
+                  <td>{{ lineForm.designation }}</td>
+                  <td class="text-right mono">{{ lineForm.quantity | number:'1.0-3' }}</td>
+                  <td>
+                    @if (showValidateLineTraceability(lineForm) && validateWarehouseId()) {
+                      <app-stock-allocation-editor
+                        mode="exit"
+                        [productId]="lineForm.productId"
+                        [warehouseId]="validateWarehouseId()!"
+                        [lineQuantity]="lineForm.quantity"
+                        [trackingMode]="lineForm.trackingMode"
+                        [pickingPolicy]="lineForm.pickingPolicy"
+                        [features]="stockFeatures()"
+                        [allocations]="lineForm.lotAllocations" />
+                    } @else {
+                      <span class="muted">—</span>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+        <ng-template pTemplate="footer">
+          <div class="dialog-footer">
+            <app-button variant="outline" icon="pi-times" (click)="showValidateDialog = false">Annuler</app-button>
+            <app-button variant="primary" icon="pi-check" [disabled]="!isValidateFormValid()" (click)="submitValidate()">
+              Valider
+            </app-button>
+          </div>
+        </ng-template>
+      </p-dialog>
     } @else {
       <div class="not-found">
         <i class="pi pi-exclamation-triangle"></i>
@@ -890,6 +963,39 @@ interface TimelineEvent {
       }
     }
 
+    .validate-dialog-hint {
+      margin-bottom: 1rem;
+      color: var(--color-text-secondary);
+      font-size: var(--font-size-sm);
+    }
+
+    .validate-lines-table {
+      width: 100%;
+      border-collapse: collapse;
+
+      th, td {
+        padding: var(--spacing-3);
+        border-bottom: 1px solid var(--color-border-subtle);
+        font-size: var(--font-size-sm);
+      }
+
+      th {
+        text-transform: uppercase;
+        font-size: var(--font-size-xs);
+        color: var(--color-text-secondary);
+      }
+    }
+
+    .dialog-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: var(--spacing-3);
+    }
+
+    .muted {
+      color: var(--color-text-secondary);
+    }
+
     .not-found {
       display: flex;
       flex-direction: column;
@@ -953,9 +1059,26 @@ export class InvoiceDetailComponent implements OnInit {
   private confirmationService = inject(ConfirmationService);
   private toastService = inject(ToastService);
   private readonly auth = inject(AuthService);
+  private stockService = inject(StockService);
+  private destroyRef = inject(DestroyRef);
 
   loading = signal(true);
   invoice = signal<InvoiceDetail | null>(null);
+  stockFeatures = signal<StockFeatures | null>(null);
+  traceabilityByProduct = signal<Map<string, { trackingMode: number; pickingPolicy: number }>>(new Map());
+
+  showValidateDialog = false;
+  validateLineForms: Array<{
+    lineId: string;
+    productId: string;
+    designation: string;
+    quantity: number;
+    trackingMode: number;
+    pickingPolicy: number;
+    lotAllocations: AllocationRow[];
+  }> = [];
+
+  validateWarehouseId = computed(() => this.invoice()?.warehouseId ?? null);
 
   menuItems: MenuItem[] = [];
   timeline: TimelineEvent[] = [];
@@ -1179,8 +1302,8 @@ export class InvoiceDetailComponent implements OnInit {
     this.confirmationService.confirm({
       header: outcome === 1 ? 'Encaisser l\'effet' : 'Marquer l\'effet impayé',
       message: outcome === 1
-        ? 'Confirmer l\'encaissement de cet effet à échéance ? L\'écriture bancaire (532/412) sera générée.'
-        : 'Confirmer le retour impayé de cet effet ? La créance client sera réouverte (4111/412).',
+        ? 'Confirmer l\'encaissement de cet effet à échéance ? L\'écriture bancaire (532/413) sera générée.'
+        : 'Confirmer le retour impayé de cet effet ? La créance client sera réouverte (4111/413).',
       icon: outcome === 1 ? 'pi pi-check-circle' : 'pi pi-exclamation-triangle',
       acceptLabel: outcome === 1 ? 'Encaisser' : 'Marquer impayé',
       rejectLabel: 'Annuler',
@@ -1216,34 +1339,128 @@ export class InvoiceDetailComponent implements OnInit {
     const invoice = this.invoice();
     if (!invoice) return;
 
-    this.confirmationService.confirm({
-      header: 'Valider la facture',
-      message: `Êtes-vous sûr de vouloir valider la facture ${invoice.number} ? Elle ne sera plus modifiable.`,
-      icon: 'pi pi-check-circle',
-      acceptLabel: 'Valider',
-      rejectLabel: 'Annuler',
-      accept: () => {
-        this.invoiceService.validateInvoice(invoice.id).subscribe({
-          next: (response) => {
-            if (response.success) {
-              this.toastService.add({
-                severity: 'success',
-                summary: 'Succès',
-                detail: 'Facture validée avec succès'
-              });
-              this.loadInvoice(invoice.id);
-            } else {
-              this.toastService.add({
-                severity: 'error',
-                summary: 'Erreur',
-                detail: (response as any).message || 'Impossible de valider la facture'
-              });
-            }
-          }
-          // No error handler: the global error interceptor already shows the API error toast.
+    this.validateLineForms = invoice.lines.map(line => ({
+      lineId: line.id,
+      productId: line.productId,
+      designation: line.productName,
+      quantity: line.quantity,
+      trackingMode: 0,
+      pickingPolicy: 0,
+      lotAllocations: [createDefaultLotRow(line.quantity)]
+    }));
+
+    if (!this.stockFeatures()) {
+      this.stockService.getFeatures()
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(res => {
+          if (res.success && res.data) this.stockFeatures.set(res.data);
         });
+    }
+
+    if (this.needsStockAllocationOnValidate() && invoice.warehouseId) {
+      this.loadValidateTraceabilityContext(invoice);
+    }
+
+    this.showValidateDialog = true;
+  }
+
+  needsStockAllocationOnValidate(): boolean {
+    const inv = this.invoice();
+    return !!inv && !inv.isCreditNote && !!inv.warehouseId;
+  }
+
+  showValidateLineTraceability(line: { trackingMode: number; quantity: number }): boolean {
+    const f = this.stockFeatures();
+    if (!f || !this.validateWarehouseId()) return false;
+    return line.quantity > 0
+      && (showLotSection(line.trackingMode, f) || showSerialSection(line.trackingMode, f));
+  }
+
+  isValidateFormValid(): boolean {
+    if (!this.needsStockAllocationOnValidate()) return true;
+    const features = this.stockFeatures();
+    for (const line of this.validateLineForms) {
+      if (this.showValidateLineTraceability(line)) {
+        if (!exitAllocationsValid(
+          line.trackingMode,
+          line.pickingPolicy,
+          line.quantity,
+          line.lotAllocations,
+          features
+        )) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  submitValidate(): void {
+    const invoice = this.invoice();
+    if (!invoice || !this.isValidateFormValid()) return;
+
+    const lineAllocations = this.needsStockAllocationOnValidate()
+      ? this.validateLineForms
+          .filter(lf => this.showValidateLineTraceability(lf))
+          .map(lf => ({
+            lineId: lf.lineId,
+            allocations: buildAllocationPayload(lf.lotAllocations)
+          }))
+          .filter(la => la.allocations.length > 0)
+      : undefined;
+
+    this.invoiceService.validateInvoice(
+      invoice.id,
+      lineAllocations && lineAllocations.length > 0 ? { lineAllocations } : undefined
+    ).subscribe({
+      next: (response) => {
+        if (response.success) {
+          this.showValidateDialog = false;
+          this.toastService.add({
+            severity: 'success',
+            summary: 'Succès',
+            detail: 'Facture validée avec succès'
+          });
+          this.loadInvoice(invoice.id);
+        } else {
+          this.toastService.add({
+            severity: 'error',
+            summary: 'Erreur',
+            detail: (response as any).message || 'Impossible de valider la facture'
+          });
+        }
       }
     });
+  }
+
+  private loadValidateTraceabilityContext(invoice: InvoiceDetail): void {
+    const warehouseId = invoice.warehouseId;
+    if (!warehouseId || invoice.lines.length === 0) return;
+
+    const productIds = invoice.lines.map(l => l.productId);
+    this.stockService.getTraceabilityContext(productIds, warehouseId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(res => {
+        if (!res.success || !res.data) return;
+        const map = new Map(this.traceabilityByProduct());
+        for (const ctx of res.data) {
+          map.set(ctx.productId, { trackingMode: ctx.trackingMode, pickingPolicy: ctx.pickingPolicy });
+        }
+        this.traceabilityByProduct.set(map);
+        for (const lineForm of this.validateLineForms) {
+          const ctx = map.get(lineForm.productId);
+          if (ctx) {
+            lineForm.trackingMode = ctx.trackingMode;
+            lineForm.pickingPolicy = ctx.pickingPolicy;
+            if (ctx.trackingMode === TRACKING_MODE_SERIAL) {
+              lineForm.lotAllocations = Array.from(
+                { length: Math.max(1, Math.round(lineForm.quantity)) },
+                () => createDefaultSerialRow()
+              );
+            }
+          }
+        }
+      });
   }
 
   signInvoice(): void {

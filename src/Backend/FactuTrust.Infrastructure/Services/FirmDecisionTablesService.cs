@@ -21,7 +21,6 @@ public sealed class FirmDecisionTablesService : IFirmDecisionTablesService
     private readonly ITenantService _tenantService;
     private readonly IFirmFiscalScheduleService _fiscalSchedule;
     private readonly IFirmTimeProfitabilityService _timeProfitability;
-    private readonly IFirmGovernanceService _governance;
     private readonly IFirmCollaboratorRentabilityService _rentability;
     private readonly IMemoryCache _cache;
     private readonly TimeProvider _timeProvider;
@@ -32,7 +31,6 @@ public sealed class FirmDecisionTablesService : IFirmDecisionTablesService
         ITenantService tenantService,
         IFirmFiscalScheduleService fiscalSchedule,
         IFirmTimeProfitabilityService timeProfitability,
-        IFirmGovernanceService governance,
         IFirmCollaboratorRentabilityService rentability,
         IMemoryCache cache,
         TimeProvider timeProvider,
@@ -42,7 +40,6 @@ public sealed class FirmDecisionTablesService : IFirmDecisionTablesService
         _tenantService = tenantService;
         _fiscalSchedule = fiscalSchedule;
         _timeProfitability = timeProfitability;
-        _governance = governance;
         _rentability = rentability;
         _cache = cache;
         _timeProvider = timeProvider;
@@ -83,11 +80,6 @@ public sealed class FirmDecisionTablesService : IFirmDecisionTablesService
             failures,
             () => BuildPendingTimeSheetsAsync(firmTenantId, cancellationToken));
 
-        var socialAlerts = await SafeSectionAsync(
-            "socialAlerts",
-            failures,
-            () => BuildSocialAlertsAsync(firmTenantId, cancellationToken));
-
         var honorairesAlerts = await SafeSectionAsync(
             "honorairesAlerts",
             failures,
@@ -99,7 +91,6 @@ public sealed class FirmDecisionTablesService : IFirmDecisionTablesService
             AtRiskDossiers = atRisk,
             NegativeMargins = negativeMargins,
             PendingTimeSheets = pendingTimeSheets,
-            SocialAlerts = socialAlerts,
             HonorairesAlerts = honorairesAlerts,
             Meta = new FirmDecisionTablesMetaDto
             {
@@ -370,34 +361,6 @@ public sealed class FirmDecisionTablesService : IFirmDecisionTablesService
             .ToList();
 
         return grouped;
-    }
-
-    private async Task<IReadOnlyList<FirmSocialAlertRowDto>> BuildSocialAlertsAsync(
-        Guid firmTenantId,
-        CancellationToken cancellationToken)
-    {
-        var overview = await _governance.GetSocialOverviewAsync(firmTenantId, cancellationToken);
-
-        return overview.Clients
-            .Select(c =>
-            {
-                var score = c.PendingLeaveRequests + c.PayrollRunsDraftCount + c.DtsPendingCount;
-                return new FirmSocialAlertRowDto
-                {
-                    CompanyTenantId = c.CompanyTenantId,
-                    CompanyName = c.CompanyName,
-                    EmployeeCount = c.EmployeeCount,
-                    PendingLeaveRequests = c.PendingLeaveRequests,
-                    PayrollRunsDraftCount = c.PayrollRunsDraftCount,
-                    DtsPendingCount = c.DtsPendingCount,
-                    AlertScore = score
-                };
-            })
-            .Where(c => c.AlertScore > 0)
-            .OrderByDescending(c => c.AlertScore)
-            .ThenBy(c => c.CompanyName)
-            .Take(RowLimit)
-            .ToList();
     }
 
     private async Task<IReadOnlyList<FirmHonorairesAlertRowDto>> BuildHonorairesAlertsAsync(

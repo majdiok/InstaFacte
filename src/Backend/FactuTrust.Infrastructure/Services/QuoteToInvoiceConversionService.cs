@@ -128,7 +128,7 @@ public sealed class QuoteToInvoiceConversionService : IQuoteToInvoiceConversionS
                     Result addResult;
                     // Le devis est la source de vérité du FODEC : le taux annoncé au client
                     // est repris tel quel, pour que la facture égale le devis accepté.
-                    if (line.ProductId != Guid.Empty && line.Product != null)
+                    if (line.ProductId.HasValue && line.Product != null)
                     {
                         addResult = invoice.AddLine(
                             line.Product,

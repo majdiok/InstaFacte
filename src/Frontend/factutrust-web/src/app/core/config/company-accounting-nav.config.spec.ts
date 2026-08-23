@@ -120,6 +120,7 @@ describe('company-accounting-nav.config', () => {
     expect(children.length).toBe(11);
     expect(children.map(c => c.route)).toEqual(etatsModule!.links.map(l => l.route));
     expect(children.map(c => c.label)).toEqual(etatsModule!.links.map(l => l.label));
+    expect(children.map(c => c.icon)).toEqual(etatsModule!.links.map(l => l.icon));
 
     const etatsEntry = COMPANY_ACCOUNTING_SIDEBAR_CHILDREN.find(c => c.label === 'États comptables');
     expect(etatsEntry?.children?.length).toBe(11);

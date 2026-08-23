@@ -14,10 +14,21 @@
   --sidebar-submenu-width: 260px;
   --sidebar-brand-height: var(--topbar-height, 48px);
   --sidebar-brand-height-collapsed: var(--topbar-height, 48px);
-  --sidebar-brand-logo-icon-size-collapsed: 32px;
-  --sidebar-brand-logo-max-height: 36px;
-  --sidebar-brand-logo-max-width: 160px;
-  --sidebar-brand-logo-icon-size: 36px;
+  --sidebar-brand-logo-inset: 8px;
+  --sidebar-brand-logo-max-height: calc(
+    var(--sidebar-brand-height) - var(--sidebar-brand-logo-inset)
+  );
+  --sidebar-brand-logo-max-width: calc(100% - 16px);
+  --sidebar-brand-logo-icon-size: min(
+    48px,
+    calc(var(--sidebar-brand-height) - var(--sidebar-brand-logo-inset)),
+    calc(var(--sidebar-rail-width) - 20px)
+  );
+  --sidebar-brand-logo-icon-size-collapsed: min(
+    48px,
+    calc(var(--sidebar-brand-height-collapsed) - var(--sidebar-brand-logo-inset)),
+    calc(var(--sidebar-rail-width-collapsed) - 20px)
+  );
   --sidebar-rail-icon-size: 24px;
   --sidebar-rail-icon-raster-size: 26px;
   --sidebar-rail-icon-assistant-size: 28px;
@@ -112,6 +123,8 @@
     justify-content: center;
     width: 100%;
     height: 100%;
+    padding: 4px 8px;
+    box-sizing: border-box;
     text-decoration: none;
     transition: background 0.2s ease;
 
@@ -127,19 +140,25 @@
 
   .icon-brand-lockup,
   .icon-logo-only {
-    filter: brightness(0) invert(1);
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4))
+      drop-shadow(0 0 1px rgba(255, 255, 255, 0.35));
   }
 
   .icon-brand-lockup {
+    display: block;
     max-height: var(--sidebar-brand-logo-max-height);
     max-width: var(--sidebar-brand-logo-max-width);
     width: auto;
+    height: auto;
     object-fit: contain;
   }
 
   .icon-logo-only {
     width: var(--sidebar-brand-logo-icon-size);
     height: var(--sidebar-brand-logo-icon-size);
+    object-fit: contain;
+    filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.55))
+      drop-shadow(0 0 2px rgba(255, 255, 255, 0.65));
   }
 }
 
@@ -381,7 +400,7 @@
   &.fa-clock               { color: #d97706; } /* Feuilles de temps — amber */
   &.fa-chart-pie           { color: #e11d48; } /* Rentabilité de collaborateurs — rose */
   &.fa-receipt             { color: #d97706; } /* Notes de frais dirigeants — amber */
-  &.fa-users               { color: #7c3aed; } /* Suivi social — violet */
+  &.fa-users               { color: #7c3aed; } /* Collaborateurs — violet */
   &.fa-building-columns    { color: #0d9488; } /* Mon cabinet — teal */
   &.fa-users-gear          { color: #7c3aed; } /* RH & Paie — violet */
   &.fa-table-cells-large   { color: #4f46e5; } /* Comptabilité hub délégué — indigo */
@@ -590,6 +609,11 @@
       justify-content: flex-start;
       width: auto;
       flex: 1;
+      padding: 0;
+    }
+
+    .icon-brand-lockup {
+      max-width: 100%;
     }
   }
 

@@ -15,8 +15,8 @@ using Xunit;
 namespace FactuTrust.Infrastructure.Tests.Services;
 
 /// <summary>
-/// Comptabilité des effets de commerce (traites) : réception (412/403 via JOD), encaissement/paiement
-/// à échéance (532/412, 403/532 via JB), impayé (4111/412), idempotence, et non-régression des modes usuels.
+/// Comptabilité des effets de commerce (traites) : réception (413/403 via JOD), encaissement/paiement
+/// à échéance (532/413, 403/532 via JB), impayé (4111/413), idempotence, et non-régression des modes usuels.
 /// </summary>
 public sealed class EffetDeCommerceAccountingTests
 {
@@ -105,7 +105,7 @@ public sealed class EffetDeCommerceAccountingTests
     // ─────────────── Réception (1er volet) ───────────────
 
     [Fact]
-    public async Task ClientTraite_Reception_DebitsEffetAccount412ViaJod()
+    public async Task ClientTraite_Reception_DebitsEffetAccount413ViaJod()
     {
         var (service, _, captured) = BuildService();
         var payment = ClientPayment(PaymentMethod.Traite, new DateTime(2026, 6, 20));
@@ -117,7 +117,7 @@ public sealed class EffetDeCommerceAccountingTests
         Assert.Equal("JOD", entry.JournalCode);
         var debit = entry.Lines.Single(l => l.DebitAmount.Amount > 0);
         var credit = entry.Lines.Single(l => l.CreditAmount.Amount > 0);
-        Assert.Equal("412", debit.AccountNumber);
+        Assert.Equal(AccountingService.ClientEffetAccountNumber, debit.AccountNumber);
         Assert.Equal(813.450m, debit.DebitAmount.Amount);
         Assert.Equal("4111", credit.AccountNumber);
     }
@@ -154,7 +154,7 @@ public sealed class EffetDeCommerceAccountingTests
     // ─────────────── Règlement à échéance (2ᵉ volet) ───────────────
 
     [Fact]
-    public async Task ClientEffet_Encaisse_DebitsBank532CreditsEffet412ViaJb()
+    public async Task ClientEffet_Encaisse_DebitsBank532CreditsEffet413ViaJb()
     {
         var (service, _, captured) = BuildService();
         var payment = ClientPayment(PaymentMethod.Traite, new DateTime(2026, 6, 20));
@@ -166,7 +166,7 @@ public sealed class EffetDeCommerceAccountingTests
         var entry = Assert.Single(captured);
         Assert.Equal("JB", entry.JournalCode);
         Assert.Equal("5321", entry.Lines.Single(l => l.DebitAmount.Amount > 0).AccountNumber);
-        Assert.Equal("412", entry.Lines.Single(l => l.CreditAmount.Amount > 0).AccountNumber);
+        Assert.Equal(AccountingService.ClientEffetAccountNumber, entry.Lines.Single(l => l.CreditAmount.Amount > 0).AccountNumber);
     }
 
     [Fact]
@@ -182,7 +182,7 @@ public sealed class EffetDeCommerceAccountingTests
         var entry = Assert.Single(captured);
         Assert.Equal("JOD", entry.JournalCode);
         Assert.Equal("4111", entry.Lines.Single(l => l.DebitAmount.Amount > 0).AccountNumber);
-        Assert.Equal("412", entry.Lines.Single(l => l.CreditAmount.Amount > 0).AccountNumber);
+        Assert.Equal(AccountingService.ClientEffetAccountNumber, entry.Lines.Single(l => l.CreditAmount.Amount > 0).AccountNumber);
     }
 
     [Fact]
@@ -211,7 +211,7 @@ public sealed class EffetDeCommerceAccountingTests
             new[]
             {
                 new JournalLineInput("5321", "x", 10m, 0, null, ThirdPartyKind.None),
-                new JournalLineInput("412", "y", 0, 10m, null, ThirdPartyKind.None)
+                new JournalLineInput(AccountingService.ClientEffetAccountNumber, "y", 0, 10m, null, ThirdPartyKind.None)
             }, Money.DefaultCurrency).Value;
 
         var (service, journals, _) = BuildService(existingBySource: existing);

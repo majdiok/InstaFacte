@@ -5,6 +5,8 @@ using FactuTrust.Application.Common.Interfaces.Pricing;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.Stock.Services;
+using FactuTrust.Application.Features.CashRegister;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Constants;
 using FactuTrust.Domain.Entities;
@@ -48,6 +50,9 @@ public sealed class SubmitInvoiceCommandHandler
     private readonly IAccountingService _accountingService;
     private readonly AccountingSettings _accountingSettings;
     private readonly ILogger<SubmitInvoiceCommandHandler> _logger;
+    private readonly ICashRegisterSessionRepository _cashRegisterSessions;
+    private readonly ITrackedDocumentStockService _trackedStock;
+    private readonly IRecurringContractInvoiceLinker _recurringContractLinker;
 
     public SubmitInvoiceCommandHandler(
         IInvoiceDraftRepository draftRepository,
@@ -65,7 +70,10 @@ public sealed class SubmitInvoiceCommandHandler
         ILinePricingOrchestrator linePricingOrchestrator,
         IAccountingService accountingService,
         IOptions<AccountingSettings> accountingSettings,
-        ILogger<SubmitInvoiceCommandHandler> logger)
+        ILogger<SubmitInvoiceCommandHandler> logger,
+        ICashRegisterSessionRepository cashRegisterSessions,
+        ITrackedDocumentStockService trackedStock,
+        IRecurringContractInvoiceLinker recurringContractLinker)
     {
         _draftRepository = draftRepository;
         _invoiceRepository = invoiceRepository;
@@ -83,6 +91,9 @@ public sealed class SubmitInvoiceCommandHandler
         _accountingService = accountingService;
         _accountingSettings = accountingSettings.Value;
         _logger = logger;
+        _cashRegisterSessions = cashRegisterSessions;
+        _trackedStock = trackedStock;
+        _recurringContractLinker = recurringContractLinker;
     }
 
     public async Task<Result<InvoiceCreatedResultDto>> Handle(
@@ -222,6 +233,16 @@ public sealed class SubmitInvoiceCommandHandler
 
             invoice.SetIssuerCompanyId(draft.SellerId);
 
+            if (metadata.CashRegisterSessionId is { } posSessionId && posSessionId != Guid.Empty)
+            {
+                var sessionStamp = await CashRegisterSessionGuard.ResolveOpenIdAsync(
+                    _cashRegisterSessions, posSessionId, null, cancellationToken);
+                if (sessionStamp.IsFailure)
+                    return await FailSubmissionAsync(draft, sessionStamp.Error);
+                if (sessionStamp.Value is { } openSessionId)
+                    invoice.AssignCashRegisterSession(openSessionId);
+            }
+
             // 10. Add invoice lines
             foreach (var line in draft.GetLines())
             {
@@ -236,9 +257,9 @@ public sealed class SubmitInvoiceCommandHandler
 
                     // The line references a real catalog product but it could not be resolved
                     // (deleted, or not visible in this tenant context). Falling through to a custom
-                    // line would set InvoiceLine.ProductId = Guid.Empty and violate the required
-                    // Products foreign key with an opaque DB error. Fail fast with an actionable
-                    // message instead (mirrors CreateInvoiceCommand's product validation).
+                    // line would set InvoiceLine.ProductId = null (custom line) and skip stock;
+                    // a missing catalog product must fail fast with an actionable message instead
+                    // (mirrors CreateInvoiceCommand's product validation).
                     if (product is null)
                         return await FailSubmissionAsync(draft, Error.NotFound("Produit", productId), cancellationToken);
                 }
@@ -329,6 +350,16 @@ public sealed class SubmitInvoiceCommandHandler
                     invoice.AddLegalMention(paymentLegal.CustomMention);
                 }
             }
+
+            // 10. Déduction stock articles suivis (FEFO auto — pas d'allocations au checkout POS/wizard)
+            if (draft.Type != InvoiceType.CreditNote)
+            {
+                var stockResult = await DeductTrackedStockAsync(invoice, cancellationToken);
+                if (stockResult.IsFailure)
+                    return await FailSubmissionAsync(draft, stockResult.Error);
+            }
+
+            await _recurringContractLinker.LinkIfRecurringDraftAsync(draft.Id, invoice, cancellationToken);
 
             // 10. Validate the invoice (changes status from Draft to Validated)
             var validateResult = invoice.Validate();
@@ -559,6 +590,49 @@ public sealed class SubmitInvoiceCommandHandler
             draft.Id, error.Code, error.Description);
 
         return Result.Failure<InvoiceCreatedResultDto>(error);
+    }
+
+    private async Task<Result> DeductTrackedStockAsync(Invoice invoice, CancellationToken cancellationToken)
+    {
+        var lines = new List<TrackedDocumentLine>();
+        var anyTracked = false;
+        foreach (var line in invoice.Lines)
+        {
+            if (!line.ProductId.HasValue)
+                continue;
+
+            var product = await _productRepository.GetByIdAsync(line.ProductId.Value, cancellationToken);
+            if (product is null || !product.IsStockManaged)
+                continue;
+
+            if (_trackedStock.IsLiveTracked(product))
+                anyTracked = true;
+
+            lines.Add(new TrackedDocumentLine(
+                line.ProductId.Value,
+                line.Quantity,
+                line.Id,
+                StockDocumentKind.Invoice));
+        }
+
+        if (!anyTracked)
+            return Result.Success();
+
+        Warehouse? warehouse = null;
+        if (invoice.WarehouseId.HasValue)
+            warehouse = await _warehouseRepository.GetByIdAsync(invoice.WarehouseId.Value, cancellationToken);
+        warehouse ??= await _warehouseRepository.GetDefaultAsync(cancellationToken);
+        if (warehouse is null)
+            return Result.Failure(Error.Validation("Warehouse",
+                "Un entrepôt est obligatoire pour valider une facture contenant des articles suivis."));
+
+        return await _trackedStock.ApplyExitsAsync(
+            warehouse.Id,
+            $"Facture {invoice.Number.Value}",
+            MovementReason.Sale,
+            lines,
+            cancellationToken,
+            includeUntracked: true);
     }
 }
 

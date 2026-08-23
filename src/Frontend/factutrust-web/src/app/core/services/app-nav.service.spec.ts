@@ -38,6 +38,7 @@ const companyUser: User = {
     'products:read',
     'stock:read',
     'stock_transfers:read',
+    'stock_vouchers:read',
     'inventory:read',
     'payments:read',
     'reports:view',
@@ -203,6 +204,8 @@ describe('AppNavService — secondary nav parity', () => {
     expect(routes).not.toContain('/firm/payroll');
     expect(routes).toContain('/firm/governance/time-sheets');
     expect(routes).toContain('/firm/settings');
+    expect(labels).not.toContain('Suivi social');
+    expect(routes).not.toContain('/firm/governance/social');
   });
 
   it('shows manager-only firm nav entries for FirmManager', () => {
@@ -223,6 +226,8 @@ describe('AppNavService — secondary nav parity', () => {
     expect(labels).not.toContain('Paiements');
     expect(labels).toContain('Rentabilité de collaborateurs');
     expect(labels).toContain('Paie interne');
+    expect(labels).not.toContain('Suivi social');
+    expect(routes).not.toContain('/firm/governance/social');
     expect(routes).toContain('/firm/collaborateurs');
     expect(routes).toContain('/firm/billing/invoices');
     expect(routes).toContain('/firm/payroll');
@@ -236,6 +241,45 @@ describe('AppNavService — secondary nav parity', () => {
       'Encaissements'
     ]);
     expect(facturation?.children?.some(c => c.route === '/firm/billing/payments')).toBe(true);
+  });
+
+  it('hides the portfolio revision entry without firm:revision:view', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, firmAccountantUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const nav = TestBed.inject(AppNavService);
+    const routes = nav.navItems().map(item => item.route);
+
+    expect(routes).not.toContain('/firm/revision');
+  });
+
+  it('shows the portfolio revision entry to both firm roles that hold firm:revision:view', () => {
+    const auth = TestBed.inject(AuthService);
+    const context = TestBed.inject(FirmContextService);
+    const nav = TestBed.inject(AppNavService);
+
+    for (const base of [firmUser, firmAccountantUser]) {
+      setUser(auth, {
+        ...base,
+        effectivePermissions: [...base.effectivePermissions!, 'firm:revision:view']
+      });
+      context.syncFromUser();
+
+      const items = nav.navItems();
+      const idxAssistant = items.findIndex(i => i.route === '/firm/assistant');
+      const idxRevision = items.findIndex(i => i.route === '/firm/revision');
+
+      expect(idxRevision)
+        .withContext(`${base.role} doit voir /firm/revision`)
+        .toBeGreaterThanOrEqual(0);
+      expect(items[idxRevision].label).toBe('Révision du portefeuille');
+      // « Chef de mission » n'est visible que via firm:ai:chat, absent de ces deux jeux de
+      // permissions : on vérifie l'ordre seulement lorsqu'il est effectivement rendu.
+      if (idxAssistant >= 0) {
+        expect(idxRevision).toBe(idxAssistant + 1);
+      }
+    }
   });
 
   it('shows accounting modules only in secondary nav for delegated accounting-firm mode', () => {

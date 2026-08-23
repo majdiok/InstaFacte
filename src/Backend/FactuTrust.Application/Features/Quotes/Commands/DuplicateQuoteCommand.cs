@@ -79,9 +79,9 @@ public sealed class DuplicateQuoteCommandHandler : IRequestHandler<DuplicateQuot
         foreach (var line in quote.Lines.OrderBy(l => l.LineNumber))
         {
             Result addResult;
-            if (line.ProductId != Guid.Empty)
+            if (line.ProductId.HasValue)
             {
-                var product = await _productRepository.GetByIdAsync(line.ProductId, cancellationToken);
+                var product = await _productRepository.GetByIdAsync(line.ProductId.Value, cancellationToken);
                 if (product is null)
                 {
                     addResult = newQuote.AddCustomLine(

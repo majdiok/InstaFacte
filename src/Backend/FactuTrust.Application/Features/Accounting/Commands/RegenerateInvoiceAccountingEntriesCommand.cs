@@ -11,7 +11,7 @@ namespace FactuTrust.Application.Features.Accounting.Commands;
 /// <summary>
 /// Command to regenerate missing journal entries for validated invoices.
 /// This is a remediation command for invoices that were validated before
-/// the chart of accounts was complete (e.g., missing account 4478).
+/// the chart of accounts was complete (e.g., missing account 4371).
 /// 
 /// The command is idempotent: invoices that already have a journal entry
 /// (source = "Invoice") are skipped automatically by the accounting service.

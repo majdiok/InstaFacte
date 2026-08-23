@@ -53,6 +53,11 @@ const ACTION_LABELS: Readonly<Record<string, string>> = {
   'DeliveryNote.Viewed': 'Bon consulté',
   'DeliveryNote.Exported': 'Bon exporté',
   'DeliveryNote.ModificationAttempted': 'Tentative de modification',
+  'SalesReturnNote.Created': 'Bon de retour créé',
+  'SalesReturnNote.Updated': 'Bon de retour modifié',
+  'SalesReturnNote.Confirmed': 'Bon de retour confirmé',
+  'SalesReturnNote.Deleted': 'Bon de retour supprimé',
+  'SalesReturnNote.Exported': 'Bon de retour exporté',
   'Supplier.Created': 'Fournisseur créé',
   'Supplier.Updated': 'Fournisseur modifié',
   'Supplier.Deleted': 'Fournisseur supprimé',
@@ -71,6 +76,8 @@ const ACTION_LABELS: Readonly<Record<string, string>> = {
   'CashExpense.Cancelled': 'Dépense caisse annulée',
   'CashOperation.Created': 'Opération caisse créée',
   'CashOperation.Cancelled': 'Opération caisse annulée',
+  'CashRegisterSession.Opened': 'Session de caisse ouverte',
+  'CashRegisterSession.Closed': 'Session de caisse clôturée',
   'BankAccount.Created': 'Compte bancaire créé',
   'BankAccount.Updated': 'Compte bancaire modifié',
   'BankAccount.Deleted': 'Compte bancaire supprimé',
@@ -98,7 +105,13 @@ const ACTION_LABELS: Readonly<Record<string, string>> = {
   'Accounting.SubAccountCreated': 'Sous-compte créé',
   'Accounting.AccountLabelUpdated': 'Libellé de compte modifié',
   'Accounting.AccountToggled': 'Compte activé/désactivé',
-  'Accounting.FecExported': 'Export FEC'
+  'Accounting.FecExported': 'Export FEC',
+  'StockVoucher.Created': 'Bon de stock créé',
+  'StockVoucher.Updated': 'Bon de stock modifié',
+  'StockVoucher.Validated': 'Bon de stock validé',
+  'StockVoucher.Cancelled': 'Bon de stock annulé',
+  'StockVoucher.Deleted': 'Bon de stock supprimé',
+  'StockVoucher.Exported': 'Bon de stock exporté'
 };
 
 const ENTITY_LABELS: Readonly<Record<string, string>> = {
@@ -108,6 +121,7 @@ const ENTITY_LABELS: Readonly<Record<string, string>> = {
   User: 'Utilisateur',
   Quote: 'Devis',
   DeliveryNote: 'Bon de livraison',
+  SalesReturnNote: 'Bon de retour',
   Supplier: 'Fournisseur',
   PurchaseOrder: 'Bon de commande',
   SupplierInvoice: 'Facture fournisseur',
@@ -118,6 +132,7 @@ const ENTITY_LABELS: Readonly<Record<string, string>> = {
   WithholdingCertificate: 'Attestation à la source',
   TejExport: 'Export TEJ',
   Accounting: 'Comptabilité',
+  StockVoucher: 'Bon d’entrée / sortie',
   Settings: 'Paramètres',
   Subscription: 'Abonnement',
   Export: 'Export',

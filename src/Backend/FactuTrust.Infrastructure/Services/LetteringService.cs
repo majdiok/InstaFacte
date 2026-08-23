@@ -385,7 +385,7 @@ public sealed class LetteringService : ILetteringService
         return Result.Success();
     }
 
-    /// <summary>Vrai pour le compte de dettes envers le personnel (421) et ses auxiliaires 421xxxx.</summary>
+    /// <summary>Vrai pour le compte de dettes envers le personnel (425) et ses auxiliaires 425xxxx.</summary>
     private static bool IsPersonnelPayable(string accountNumber) =>
         accountNumber.StartsWith(PayrollJournalEntryBuilder.PersonnelPayableAccount, StringComparison.Ordinal);
 

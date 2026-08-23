@@ -68,6 +68,8 @@ public sealed record RecordInvoicePaymentRequest
     public decimal? ClientWithholdingAmount { get; init; }
     /// <summary>Échéance de la traite. Obligatoire lorsque <see cref="Method"/> == Traite.</summary>
     public DateTime? EffetDueDate { get; init; }
+    /// <summary>Optional POS cash-register session. When omitted, inherited from the invoice.</summary>
+    public Guid? CashRegisterSessionId { get; init; }
 }
 
 /// <summary>
@@ -172,7 +174,7 @@ public sealed record InvoiceLineDto
 {
     public Guid Id { get; init; }
     public int LineNumber { get; init; }
-    public Guid ProductId { get; init; }
+    public Guid? ProductId { get; init; }
     public string ProductCode { get; init; } = null!;
     public string ProductName { get; init; } = null!;
     public string? ProductDescription { get; init; }

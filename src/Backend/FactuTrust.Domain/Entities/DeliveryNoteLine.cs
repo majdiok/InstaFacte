@@ -88,6 +88,12 @@ public sealed class DeliveryNoteLine : Entity
     public decimal RejectedQuantity { get; private set; }
 
     /// <summary>
+    /// Quantity returned after delivery and before invoicing, accumulated across confirmed return notes.
+    /// Does not rewrite <see cref="DeliveredQuantity"/> — the signed delivery stays historical.
+    /// </summary>
+    public decimal ReturnedQuantity { get; private set; }
+
+    /// <summary>
     /// Reason for rejection if any quantity was rejected.
     /// </summary>
     public string? RejectionReason { get; private set; }
@@ -146,6 +152,7 @@ public sealed class DeliveryNoteLine : Entity
             OrderedQuantity = orderedQuantity,
             DeliveredQuantity = 0,
             RejectedQuantity = 0,
+            ReturnedQuantity = 0,
             Notes = notes?.Trim(),
             DiscountPercent = discountPercent,
             AppliedPromotionId = appliedPromotionId,
@@ -209,6 +216,32 @@ public sealed class DeliveryNoteLine : Entity
         RejectedQuantity = rejectedQuantity;
         RejectionReason = rejectionReason?.Trim();
 
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Increments the returned quantity after a confirmed bon de retour.
+    /// Blocked if the parent BL is invoiced or not in a delivered state.
+    /// </summary>
+    public Result RecordReturn(decimal quantity)
+    {
+        if (DeliveryNote.InvoiceId.HasValue)
+            return Result.Failure(Error.Validation("Invoice",
+                "Ce bon de livraison a déjà été facturé — utilisez un avoir"));
+
+        if (!DeliveryNote.Status.CanBeInvoiced())
+            return Result.Failure(Error.Validation("Status",
+                "Un retour n'est possible que sur un bon livré et non facturé"));
+
+        if (quantity <= 0)
+            return Result.Failure(Error.Validation("ReturnedQuantity",
+                "La quantité retournée doit être supérieure à zéro"));
+
+        if (quantity > InvoiceableQuantity)
+            return Result.Failure(Error.Validation("ReturnedQuantity",
+                $"La quantité retournée ({quantity}) dépasse le restant facturable ({InvoiceableQuantity})"));
+
+        ReturnedQuantity += quantity;
         return Result.Success();
     }
 
@@ -293,4 +326,12 @@ public sealed class DeliveryNoteLine : Entity
     /// Returns the pending quantity (ordered - delivered - rejected).
     /// </summary>
     public decimal PendingQuantity => Math.Max(0, OrderedQuantity - DeliveredQuantity - RejectedQuantity);
+
+    /// <summary>
+    /// Quantity still invoiceable after confirmed returns.
+    /// </summary>
+    public decimal InvoiceableQuantity => Math.Max(0, DeliveredQuantity - ReturnedQuantity);
+
+    /// <summary>True when every delivered unit has been returned.</summary>
+    public bool IsFullyReturned => DeliveredQuantity > 0 && ReturnedQuantity >= DeliveredQuantity;
 }

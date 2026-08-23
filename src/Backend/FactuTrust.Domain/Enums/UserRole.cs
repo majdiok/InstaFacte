@@ -116,6 +116,10 @@ public static class UserRoleExtensions
             Permissions.DeliveryNotes.Read,
             Permissions.DeliveryNotes.Update,
             Permissions.DeliveryNotes.Delete,
+            Permissions.SalesReturnNotes.Create,
+            Permissions.SalesReturnNotes.Read,
+            Permissions.SalesReturnNotes.Update,
+            Permissions.SalesReturnNotes.Delete,
             Permissions.SalesOrders.Create,
             Permissions.SalesOrders.Read,
             Permissions.SalesOrders.Update,
@@ -174,6 +178,10 @@ public static class UserRoleExtensions
             Permissions.StockTransfers.Read,
             Permissions.StockTransfers.Update,
             Permissions.StockTransfers.Delete,
+            Permissions.StockVouchers.Create,
+            Permissions.StockVouchers.Read,
+            Permissions.StockVouchers.Update,
+            Permissions.StockVouchers.Delete,
             Permissions.Inventory.Create,
             Permissions.Inventory.Read,
             Permissions.Inventory.Update,
@@ -193,7 +201,15 @@ public static class UserRoleExtensions
             Permissions.CustomData.RecordsRead, Permissions.CustomData.RecordsWrite, Permissions.CustomData.ReportsView,
             Permissions.Payroll.Read, Permissions.Payroll.ManageEmployees, Permissions.Payroll.RunPayroll,
             Permissions.Payroll.Validate, Permissions.Payroll.Declare, Permissions.Payroll.Export, Permissions.Payroll.Pay, Permissions.Payroll.Settings,
-            Permissions.Payroll.ManageGarnishments, Permissions.Payroll.HrDocuments, Permissions.Payroll.ManageTermination
+            Permissions.Payroll.ManageGarnishments, Permissions.Payroll.HrDocuments, Permissions.Payroll.ManageTermination,
+            Permissions.Projects.Read, Permissions.Projects.Create, Permissions.Projects.Update, Permissions.Projects.Delete, Permissions.Projects.ManageTeam,
+            Permissions.ProjectTasks.Create, Permissions.ProjectTasks.Read, Permissions.ProjectTasks.Update, Permissions.ProjectTasks.Delete,
+            Permissions.ProjectTime.Create, Permissions.ProjectTime.Read, Permissions.ProjectTime.Submit, Permissions.ProjectTime.Validate,
+            Permissions.ProjectBilling.Read, Permissions.ProjectBilling.Create,
+            Permissions.RecurringContracts.Read, Permissions.RecurringContracts.Create,
+            Permissions.RecurringContracts.Update, Permissions.RecurringContracts.Delete,
+            Permissions.RecurringContracts.Manage, Permissions.RecurringContracts.RecordUsage,
+            Permissions.RecurringContracts.TriggerBilling
         },
         UserRole.Accountant => new[]
         {
@@ -208,6 +224,9 @@ public static class UserRoleExtensions
             Permissions.DeliveryNotes.Create,
             Permissions.DeliveryNotes.Read,
             Permissions.DeliveryNotes.Update,
+            Permissions.SalesReturnNotes.Create,
+            Permissions.SalesReturnNotes.Read,
+            Permissions.SalesReturnNotes.Update,
             Permissions.SalesOrders.Create,
             Permissions.SalesOrders.Read,
             Permissions.SalesOrders.Update,
@@ -244,6 +263,9 @@ public static class UserRoleExtensions
             Permissions.Stock.Read,
             Permissions.Stock.Create,
             Permissions.Stock.Update,
+            Permissions.StockVouchers.Create,
+            Permissions.StockVouchers.Read,
+            Permissions.StockVouchers.Update,
             Permissions.StockTransfers.Create,
             Permissions.StockTransfers.Read,
             Permissions.StockTransfers.Update,
@@ -259,7 +281,12 @@ public static class UserRoleExtensions
             Permissions.TreasuryForecast.Manage,
             Permissions.Payroll.Read, Permissions.Payroll.ManageEmployees, Permissions.Payroll.RunPayroll,
             Permissions.Payroll.Validate, Permissions.Payroll.Declare, Permissions.Payroll.Export, Permissions.Payroll.Pay, Permissions.Payroll.Settings,
-            Permissions.Payroll.ManageGarnishments, Permissions.Payroll.HrDocuments, Permissions.Payroll.ManageTermination
+            Permissions.Payroll.ManageGarnishments, Permissions.Payroll.HrDocuments, Permissions.Payroll.ManageTermination,
+            Permissions.Projects.Read, Permissions.Projects.Create, Permissions.Projects.Update, Permissions.Projects.Delete, Permissions.Projects.ManageTeam,
+            Permissions.ProjectTasks.Create, Permissions.ProjectTasks.Read, Permissions.ProjectTasks.Update, Permissions.ProjectTasks.Delete,
+            Permissions.ProjectTime.Create, Permissions.ProjectTime.Read, Permissions.ProjectTime.Submit, Permissions.ProjectTime.Validate,
+            Permissions.ProjectBilling.Read, Permissions.ProjectBilling.Create,
+            Permissions.RecurringContracts.Read, Permissions.RecurringContracts.TriggerBilling
         },
         UserRole.Client => new[]
         {
@@ -272,6 +299,7 @@ public static class UserRoleExtensions
             Permissions.Products.Read,
             Permissions.Quotes.Create, Permissions.Quotes.Read, Permissions.Quotes.Update,
             Permissions.DeliveryNotes.Create, Permissions.DeliveryNotes.Read, Permissions.DeliveryNotes.Update, Permissions.DeliveryNotes.Delete,
+            Permissions.SalesReturnNotes.Create, Permissions.SalesReturnNotes.Read, Permissions.SalesReturnNotes.Update, Permissions.SalesReturnNotes.Delete,
             Permissions.SalesOrders.Create, Permissions.SalesOrders.Read, Permissions.SalesOrders.Update,
             Permissions.Invoices.Create, Permissions.Invoices.Read, Permissions.Invoices.Update, Permissions.Invoices.Send,
             Permissions.Payments.Read,
@@ -280,7 +308,13 @@ public static class UserRoleExtensions
             Permissions.Reports.SalesOwn,
             Permissions.Forecasting.View,
             // Le commercial doit VOIR le prix négocié qui s'appliquera, sans pouvoir le fixer.
-            Permissions.Pricing.Read
+            Permissions.Pricing.Read,
+            Permissions.Projects.Read, Permissions.Projects.Create, Permissions.Projects.Update,
+            Permissions.ProjectTasks.Create, Permissions.ProjectTasks.Read, Permissions.ProjectTasks.Update,
+            Permissions.ProjectTime.Create, Permissions.ProjectTime.Read, Permissions.ProjectTime.Submit,
+            Permissions.ProjectBilling.Read, Permissions.ProjectBilling.Create,
+            Permissions.RecurringContracts.Read, Permissions.RecurringContracts.Create,
+            Permissions.RecurringContracts.Update, Permissions.RecurringContracts.RecordUsage
         },
         UserRole.SalesManager => new[]
         {
@@ -288,6 +322,7 @@ public static class UserRoleExtensions
             Permissions.Products.Read,
             Permissions.Quotes.Create, Permissions.Quotes.Read, Permissions.Quotes.Update, Permissions.Quotes.Delete,
             Permissions.DeliveryNotes.Create, Permissions.DeliveryNotes.Read, Permissions.DeliveryNotes.Update, Permissions.DeliveryNotes.Delete,
+            Permissions.SalesReturnNotes.Create, Permissions.SalesReturnNotes.Read, Permissions.SalesReturnNotes.Update, Permissions.SalesReturnNotes.Delete,
             Permissions.SalesOrders.Create, Permissions.SalesOrders.Read, Permissions.SalesOrders.Update, Permissions.SalesOrders.Delete,
             Permissions.Invoices.Create, Permissions.Invoices.Read, Permissions.Invoices.Update, Permissions.Invoices.Delete, Permissions.Invoices.Sign, Permissions.Invoices.Send,
             Permissions.Payments.Read,
@@ -298,15 +333,25 @@ public static class UserRoleExtensions
             Permissions.Forecasting.Manage,
             // Fixer les grilles et les prix négociés relève de la direction commerciale.
             Permissions.Pricing.Create, Permissions.Pricing.Read,
-            Permissions.Pricing.Update, Permissions.Pricing.Delete
+            Permissions.Pricing.Update, Permissions.Pricing.Delete,
+            Permissions.Projects.Read, Permissions.Projects.Create, Permissions.Projects.Update, Permissions.Projects.Delete, Permissions.Projects.ManageTeam,
+            Permissions.ProjectTasks.Create, Permissions.ProjectTasks.Read, Permissions.ProjectTasks.Update, Permissions.ProjectTasks.Delete,
+            Permissions.ProjectTime.Create, Permissions.ProjectTime.Read, Permissions.ProjectTime.Submit, Permissions.ProjectTime.Validate,
+            Permissions.ProjectBilling.Read, Permissions.ProjectBilling.Create,
+            Permissions.RecurringContracts.Read, Permissions.RecurringContracts.Create,
+            Permissions.RecurringContracts.Update, Permissions.RecurringContracts.Delete,
+            Permissions.RecurringContracts.Manage, Permissions.RecurringContracts.RecordUsage,
+            Permissions.RecurringContracts.TriggerBilling
         },
         UserRole.Warehouse => new[]
         {
             Permissions.Products.Read,
             Permissions.Stock.Read, Permissions.Stock.Create, Permissions.Stock.Update, Permissions.Stock.Delete,
             Permissions.StockTransfers.Create, Permissions.StockTransfers.Read, Permissions.StockTransfers.Update, Permissions.StockTransfers.Delete,
+            Permissions.StockVouchers.Create, Permissions.StockVouchers.Read, Permissions.StockVouchers.Update, Permissions.StockVouchers.Delete,
             Permissions.Inventory.Create, Permissions.Inventory.Read, Permissions.Inventory.Update, Permissions.Inventory.Delete,
-            Permissions.Forecasting.View
+            Permissions.Forecasting.View,
+            Permissions.Projects.Read
         },
         UserRole.Purchaser => new[]
         {
@@ -316,8 +361,10 @@ public static class UserRoleExtensions
             Permissions.PurchaseReceipts.Create, Permissions.PurchaseReceipts.Read, Permissions.PurchaseReceipts.Update, Permissions.PurchaseReceipts.Delete,
             Permissions.SupplierInvoices.Create, Permissions.SupplierInvoices.Read, Permissions.SupplierInvoices.Update, Permissions.SupplierInvoices.Delete,
             Permissions.Stock.Read,
+            Permissions.StockVouchers.Read,
             Permissions.Forecasting.View,
-            Permissions.Forecasting.Manage
+            Permissions.Forecasting.Manage,
+            Permissions.Projects.Read, Permissions.ProjectBilling.Read
         },
         UserRole.Cashier => new[]
         {
@@ -337,6 +384,8 @@ public static class UserRoleExtensions
             Permissions.Products.Read,
             Permissions.Invoices.Read,
             Permissions.SalesOrders.Read,
+            Permissions.DeliveryNotes.Read,
+            Permissions.SalesReturnNotes.Read,
             Permissions.Payments.Read,
             Permissions.Reports.View, Permissions.Reports.Export,
             Permissions.Accounting.Read,
@@ -346,17 +395,20 @@ public static class UserRoleExtensions
             Permissions.PurchaseReceipts.Read,
             Permissions.SupplierInvoices.Read,
             Permissions.Stock.Read,
+            Permissions.StockVouchers.Read,
             Permissions.WithholdingTax.Read,
             Permissions.Forecasting.View,
             // Lecture seule : l'auditeur consulte la projection, il ne la recalcule pas.
             Permissions.TreasuryForecast.View,
-            Permissions.CustomData.RecordsRead, Permissions.CustomData.ReportsView
+            Permissions.CustomData.RecordsRead, Permissions.CustomData.ReportsView,
+            Permissions.Projects.Read, Permissions.ProjectTasks.Read, Permissions.ProjectTime.Read, Permissions.ProjectBilling.Read
         },
         UserRole.Supervisor => new[]
         {
             Permissions.Invoices.Create, Permissions.Invoices.Read, Permissions.Invoices.Update, Permissions.Invoices.Delete, Permissions.Invoices.Sign, Permissions.Invoices.Send,
             Permissions.Quotes.Create, Permissions.Quotes.Read, Permissions.Quotes.Update, Permissions.Quotes.Delete,
             Permissions.DeliveryNotes.Create, Permissions.DeliveryNotes.Read, Permissions.DeliveryNotes.Update, Permissions.DeliveryNotes.Delete,
+            Permissions.SalesReturnNotes.Create, Permissions.SalesReturnNotes.Read, Permissions.SalesReturnNotes.Update, Permissions.SalesReturnNotes.Delete,
             Permissions.SalesOrders.Create, Permissions.SalesOrders.Read, Permissions.SalesOrders.Update, Permissions.SalesOrders.Delete,
             Permissions.Clients.Create, Permissions.Clients.Read, Permissions.Clients.Update, Permissions.Clients.Delete,
             Permissions.Products.Create, Permissions.Products.Read, Permissions.Products.Update, Permissions.Products.Delete,
@@ -378,6 +430,7 @@ public static class UserRoleExtensions
             Permissions.SupplierInvoices.Create, Permissions.SupplierInvoices.Read, Permissions.SupplierInvoices.Update, Permissions.SupplierInvoices.Delete,
             Permissions.Stock.Read, Permissions.Stock.Create, Permissions.Stock.Update, Permissions.Stock.Delete,
             Permissions.StockTransfers.Create, Permissions.StockTransfers.Read, Permissions.StockTransfers.Update, Permissions.StockTransfers.Delete,
+            Permissions.StockVouchers.Create, Permissions.StockVouchers.Read, Permissions.StockVouchers.Update, Permissions.StockVouchers.Delete,
             Permissions.Inventory.Create, Permissions.Inventory.Read, Permissions.Inventory.Update, Permissions.Inventory.Delete,
             Permissions.CRM.Read, Permissions.CRM.Create, Permissions.CRM.Update, Permissions.CRM.Delete,
             Permissions.SalesTargets.Read, Permissions.SalesTargets.Manage,
@@ -394,7 +447,11 @@ public static class UserRoleExtensions
             Permissions.CustomData.RecordsRead, Permissions.CustomData.RecordsWrite, Permissions.CustomData.ReportsView,
             Permissions.Payroll.Read, Permissions.Payroll.ManageEmployees, Permissions.Payroll.RunPayroll,
             Permissions.Payroll.Validate, Permissions.Payroll.Declare, Permissions.Payroll.Export, Permissions.Payroll.Pay, Permissions.Payroll.Settings,
-            Permissions.Payroll.ManageGarnishments, Permissions.Payroll.HrDocuments, Permissions.Payroll.ManageTermination
+            Permissions.Payroll.ManageGarnishments, Permissions.Payroll.HrDocuments, Permissions.Payroll.ManageTermination,
+            Permissions.Projects.Read, Permissions.Projects.Create, Permissions.Projects.Update, Permissions.Projects.Delete, Permissions.Projects.ManageTeam,
+            Permissions.ProjectTasks.Create, Permissions.ProjectTasks.Read, Permissions.ProjectTasks.Update, Permissions.ProjectTasks.Delete,
+            Permissions.ProjectTime.Create, Permissions.ProjectTime.Read, Permissions.ProjectTime.Submit, Permissions.ProjectTime.Validate,
+            Permissions.ProjectBilling.Read, Permissions.ProjectBilling.Create
         },
         UserRole.Developer => new[]
         {
@@ -406,7 +463,8 @@ public static class UserRoleExtensions
             Permissions.Reports.View,
             Permissions.Clients.Read,
             Permissions.Products.Read,
-            Permissions.Invoices.Read
+            Permissions.Invoices.Read,
+            Permissions.Projects.Read
         },
         UserRole.FirmManager => DelegatedPermissionCatalog.FirmManagerDelegated
             .Concat(DelegatedPermissionCatalog.FirmNativePermissions)
@@ -494,6 +552,17 @@ public static class Permissions
         public const string Delete = "delivery_notes:delete";
     }
 
+    /// <summary>
+    /// Bons de retour client (articles livrés non facturés). Distincts des avoirs.
+    /// </summary>
+    public static class SalesReturnNotes
+    {
+        public const string Create = "return_notes:create";
+        public const string Read = "return_notes:read";
+        public const string Update = "return_notes:update";
+        public const string Delete = "return_notes:delete";
+    }
+
     public static class Suppliers
     {
         public const string Create = "suppliers:create";
@@ -567,6 +636,14 @@ public static class Permissions
         public const string Read = "stock_transfers:read";
         public const string Update = "stock_transfers:update";
         public const string Delete = "stock_transfers:delete";
+    }
+
+    public static class StockVouchers
+    {
+        public const string Create = "stock_vouchers:create";
+        public const string Read = "stock_vouchers:read";
+        public const string Update = "stock_vouchers:update";
+        public const string Delete = "stock_vouchers:delete";
     }
 
     public static class Inventory
@@ -782,5 +859,47 @@ public static class Permissions
         public const string HrDocuments = "payroll:hr_documents";
         /// <summary>Traiter les ruptures de contrat et indemnités de départ.</summary>
         public const string ManageTermination = "payroll:manage_termination";
+    }
+
+    public static class Projects
+    {
+        public const string Read = "projects:read";
+        public const string Create = "projects:create";
+        public const string Update = "projects:update";
+        public const string Delete = "projects:delete";
+        public const string ManageTeam = "projects:manage_team";
+    }
+
+    public static class ProjectTasks
+    {
+        public const string Create = "project_tasks:create";
+        public const string Read = "project_tasks:read";
+        public const string Update = "project_tasks:update";
+        public const string Delete = "project_tasks:delete";
+    }
+
+    public static class ProjectTime
+    {
+        public const string Create = "project_time:create";
+        public const string Read = "project_time:read";
+        public const string Submit = "project_time:submit";
+        public const string Validate = "project_time:validate";
+    }
+
+    public static class ProjectBilling
+    {
+        public const string Read = "project_billing:read";
+        public const string Create = "project_billing:create";
+    }
+
+    public static class RecurringContracts
+    {
+        public const string Read = "recurring_contracts:read";
+        public const string Create = "recurring_contracts:create";
+        public const string Update = "recurring_contracts:update";
+        public const string Delete = "recurring_contracts:delete";
+        public const string Manage = "recurring_contracts:manage";
+        public const string RecordUsage = "recurring_contracts:usage";
+        public const string TriggerBilling = "recurring_contracts:billing";
     }
 }

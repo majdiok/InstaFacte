@@ -73,7 +73,7 @@ import { CouponFormDialogComponent } from './coupon-form-dialog.component';
       </ng-container>
     </ft-page-header>
 
-    <section class="kpi-row" role="region">
+    <section class="kpi-row kpi-row--compact" role="region">
       <ft-kpi-card [label]="t('kpi.total')" [value]="page()?.totalCount ?? null" tone="info" icon="pi pi-tag" [loading]="loading()" />
       <ft-kpi-card [label]="t('kpi.active')" [value]="page()?.activeCount ?? null" tone="success" icon="pi pi-check-circle" [loading]="loading()" />
       <ft-kpi-card [label]="t('kpi.redeemable')" [value]="page()?.redeemableCount ?? null" tone="accent" icon="pi pi-bolt" [loading]="loading()" />
@@ -100,7 +100,7 @@ import { CouponFormDialogComponent } from './coupon-form-dialog.component';
     <p-table
       [value]="page()?.items ?? []"
       [loading]="loading()"
-      styleClass="p-datatable-sm ft-coupons-table"
+      styleClass="p-datatable-sm ft-table"
       [tableStyle]="{ 'min-width': '60rem' }"
       responsiveLayout="scroll">
       <ng-template pTemplate="header">
@@ -226,13 +226,6 @@ import { CouponFormDialogComponent } from './coupon-form-dialog.component';
         display: block;
       }
 
-      .kpi-row {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-        gap: var(--gap-md);
-        margin-bottom: var(--gap-md);
-      }
-
       .cell-code {
         font-family: ui-monospace, SFMono-Regular, monospace;
         font-size: 0.85rem;
@@ -254,30 +247,6 @@ import { CouponFormDialogComponent } from './coupon-form-dialog.component';
 
       .block {
         display: block;
-      }
-
-      .col-actions {
-        text-align: end;
-        white-space: nowrap;
-        width: 7rem;
-      }
-
-      :host ::ng-deep .ft-dd {
-        min-width: 11rem;
-      }
-
-      :host ::ng-deep .ft-coupons-table.p-datatable .p-datatable-thead > tr > th {
-        font-size: 0.72rem;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: var(--ft-text-muted);
-        border-color: var(--ft-border);
-        background: var(--ft-surface-2);
-        font-weight: 600;
-      }
-
-      :host ::ng-deep .ft-coupons-table.p-datatable .p-datatable-tbody > tr:hover {
-        background: var(--ft-surface-3);
       }
     `
   ]

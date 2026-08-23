@@ -96,6 +96,8 @@ public sealed class CreateCashOperationOnInvoicePaymentHandler
         }
 
         var operation = createResult.Value;
+        if (payment.CashRegisterSessionId is { } sessionId)
+            operation.AssignCashRegisterSession(sessionId);
         operation.SetAuditInfo(_currentUser.UserId?.ToString() ?? "system", isUpdate: false);
         var saved = await _cashOperationRepository.AddAsync(operation, cancellationToken);
 

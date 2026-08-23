@@ -18,9 +18,10 @@ import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcru
 import { FormSectionComponent } from '@shared/components/form-section/form-section.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { ErrorMessageService } from '@core/services/error-message.service';
-import { ProductService, CreateProductRequest, UpdateProductRequest } from '@core/services/product.service';
+import { ProductService, CreateProductRequest, UpdateProductRequest, ProductAttributeDto } from '@core/services/product.service';
 import { ProductCategoryService } from '@core/services/product-category.service';
 import { SupplierService } from '@core/services/supplier.service';
+import { StockService, StockFeatures } from '@core/services/stock.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { AuthService } from '@core/services/auth.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
@@ -267,6 +268,93 @@ interface VatOption {
             </div>
           }
         </app-form-section>
+
+        @if (showVariantsSection()) {
+          <app-form-section title="Variantes" icon="pi-th-large" [number]="1">
+            <div class="form-group">
+              <label for="isVariantTemplate">Modèle de variantes</label>
+              <div class="status-switch">
+                <p-inputSwitch id="isVariantTemplate" formControlName="isVariantTemplate"></p-inputSwitch>
+                <span [class.active]="form.get('isVariantTemplate')?.value">
+                  {{ form.get('isVariantTemplate')?.value ? 'Oui — le parent n\'est pas vendable' : 'Non' }}
+                </span>
+              </div>
+              <small class="form-hint">Génère des SKU enfants (taille, couleur…). Le modèle est exclu des factures, du POS et du stock.</small>
+            </div>
+            @if (isEditMode() && form.get('isVariantTemplate')?.value) {
+              <div class="form-group">
+                <label>Générer la matrice</label>
+                <p class="form-hint">Sélectionnez les valeurs pour chaque attribut — la combinaison crée les SKU enfants.</p>
+                @for (attr of attributes(); track attr.id) {
+                  <div class="variant-axis">
+                    <strong>{{ attr.name }}</strong>
+                    <div class="variant-values">
+                      @for (value of attr.values; track value.id) {
+                        <label class="variant-value">
+                          <input
+                            type="checkbox"
+                            [checked]="isVariantValueSelected(attr.id, value.id)"
+                            (change)="toggleVariantValue(attr.id, value.id)" />
+                          {{ value.name }}
+                        </label>
+                      }
+                    </div>
+                  </div>
+                }
+                <app-button type="button" variant="secondary" icon="pi-sitemap" iconPos="left"
+                            (clicked)="generateVariants()" [disabled]="generatingVariants() || !hasVariantSelection()">
+                  Générer les SKU
+                </app-button>
+              </div>
+            }
+          </app-form-section>
+        }
+
+        @if (showTraceabilitySection()) {
+          <app-form-section title="Traçabilité et valorisation" icon="pi-qrcode" [number]="1">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="trackingMode">Suivi</label>
+                <p-select id="trackingMode" [options]="trackingModeOptions" formControlName="trackingMode"
+                          optionLabel="label" optionValue="value" styleClass="w-full"></p-select>
+              </div>
+              <div class="form-group">
+                <label for="pickingPolicy">Picking</label>
+                <p-select id="pickingPolicy" [options]="pickingPolicyOptions" formControlName="pickingPolicy"
+                          optionLabel="label" optionValue="value" styleClass="w-full"></p-select>
+              </div>
+            </div>
+            @if (form.get('trackingMode')?.value === 1 || form.get('trackingMode')?.value === 2) {
+              <div class="form-group">
+                <label for="hasExpiryTracking">Suivi de péremption (DLUO)</label>
+                <div class="status-switch">
+                  <p-inputSwitch id="hasExpiryTracking" formControlName="hasExpiryTracking"></p-inputSwitch>
+                  <span [class.active]="form.get('hasExpiryTracking')?.value">
+                    {{ form.get('hasExpiryTracking')?.value ? 'Activé' : 'Désactivé' }}
+                  </span>
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="expiryAlertDays">Alerte DLUO (jours)</label>
+                <p-inputNumber id="expiryAlertDays" formControlName="expiryAlertDays" [min]="0" [max]="3650" styleClass="w-full"></p-inputNumber>
+              </div>
+            }
+            @if (stockFeatures()?.fifoLifoValuationEnabled) {
+              <div class="form-group">
+                <label for="costingMethod">Méthode de coût</label>
+                <p-select id="costingMethod" [options]="costingMethodOptions" formControlName="costingMethod"
+                          optionLabel="label" optionValue="value" styleClass="w-full"></p-select>
+                <small class="form-hint">LIFO : souvent non retenu pour les comptes statutaires. Défaut recommandé : CMUP.</small>
+                @if (isEditMode() && (form.get('costingMethod')?.value === 1 || form.get('costingMethod')?.value === 2)) {
+                  <app-button type="button" variant="outline" size="sm" class="mt-2"
+                              (clicked)="createOpeningLayer()" [disabled]="saving()">
+                    Créer la couche d'ouverture FIFO/LIFO
+                  </app-button>
+                }
+              </div>
+            }
+          </app-form-section>
+        }
 
         <!-- Pricing -->
         <app-form-section title="Tarification" icon="pi-dollar" [number]="2">
@@ -744,6 +832,20 @@ interface VatOption {
         width: 100%;
       }
     }
+
+    .variant-values {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin: 0.75rem 0;
+    }
+
+    .variant-value {
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+      font-size: 0.875rem;
+    }
   `]
 })
 export class ProductFormComponent implements OnInit {
@@ -754,6 +856,7 @@ export class ProductFormComponent implements OnInit {
   private productService = inject(ProductService);
   private productCategoryService = inject(ProductCategoryService);
   private supplierService = inject(SupplierService);
+  private stockService = inject(StockService);
   private errorHandler = inject(ErrorHandlerService);
   errorMessageService = inject(ErrorMessageService);
   private auth = inject(AuthService);
@@ -769,6 +872,10 @@ export class ProductFormComponent implements OnInit {
   imageToRemove = signal(false);
   lastPurchasePrice = signal<number | null>(null);
   weightedAverageCost = signal<number | null>(null);
+  stockFeatures = signal<StockFeatures | null>(null);
+  attributes = signal<ProductAttributeDto[]>([]);
+  variantAxesSelection = signal<Record<string, string[]>>({});
+  generatingVariants = signal(false);
   private pricingSync = false;
 
   isEditMode = computed(() => !!this.productId());
@@ -784,6 +891,39 @@ export class ProductFormComponent implements OnInit {
   showStockManagementSection = computed(
     () => this.auth.hasModule(AppModule.Stock) && this.canMutateProduct()
   );
+
+  showVariantsSection(): boolean {
+    return (this.stockFeatures()?.productVariantsEnabled ?? false) && this.isProductCategory() && this.canMutateProduct();
+  }
+
+  showTraceabilitySection(): boolean {
+    const f = this.stockFeatures();
+    if (!f || !this.isProductCategory() || !this.canMutateProduct()) return false;
+    return f.lotTrackingEnabled || f.serialTrackingEnabled || f.expiryTrackingEnabled || f.fifoLifoValuationEnabled;
+  }
+
+  hasVariantSelection = computed(() =>
+    Object.values(this.variantAxesSelection()).some(ids => ids.length > 0)
+  );
+
+  trackingModeOptions = [
+    { label: 'Aucun', value: 0 },
+    { label: 'Lot', value: 1 },
+    { label: 'N° de série', value: 2 }
+  ];
+
+  pickingPolicyOptions = [
+    { label: 'Aucun (saisie manuelle)', value: 0 },
+    { label: 'FEFO (péremption)', value: 1 },
+    { label: 'FIFO physique', value: 2 },
+    { label: 'Manuel', value: 3 }
+  ];
+
+  costingMethodOptions = [
+    { label: 'CMUP', value: 0 },
+    { label: 'FIFO', value: 1 },
+    { label: 'LIFO (attention comptes statutaires)', value: 2 }
+  ];
 
   displayImageUrl = computed(() => {
     if (this.imageToRemove()) return null;
@@ -852,12 +992,19 @@ export class ProductFormComponent implements OnInit {
     maxDiscountPercent: [null as number | null, [Validators.min(0), Validators.max(100)]],
     isStockManaged: [false],
     preferredSupplierId: [null as string | null],
-    isActive: [true]
+    isActive: [true],
+    isVariantTemplate: [false],
+    trackingMode: [0],
+    hasExpiryTracking: [false],
+    pickingPolicy: [0],
+    costingMethod: [0],
+    expiryAlertDays: [null as number | null]
   });
 
   ngOnInit(): void {
     this.loadProductCategories();
     this.loadSuppliers();
+    this.loadStockFeatures();
 
     const id = this.route.snapshot.paramMap.get('id');
     if (id) {
@@ -1043,7 +1190,13 @@ export class ProductFormComponent implements OnInit {
             maxDiscountPercent: product.maxDiscountPercent ?? null,
             isStockManaged: product.isStockManaged ?? false,
             preferredSupplierId: product.preferredSupplierId ?? null,
-            isActive: product.isActive ?? true
+            isActive: product.isActive ?? true,
+            isVariantTemplate: product.isVariantTemplate ?? false,
+            trackingMode: product.trackingMode ?? 0,
+            hasExpiryTracking: product.hasExpiryTracking ?? false,
+            pickingPolicy: product.pickingPolicy ?? 0,
+            costingMethod: product.costingMethod ?? 0,
+            expiryAlertDays: product.expiryAlertDays ?? null
           });
 
           this.syncDiscountControls(product.isDiscountEnabled ?? false);
@@ -1108,7 +1261,13 @@ export class ProductFormComponent implements OnInit {
         maxDiscountPercent: formValue.isDiscountEnabled ? formValue.maxDiscountPercent ?? null : null,
         isStockManaged: formValue.isStockManaged ?? false,
         preferredSupplierId: formValue.preferredSupplierId || null,
-        isActive: formValue.isActive ?? true
+        isActive: formValue.isActive ?? true,
+        isVariantTemplate: formValue.isVariantTemplate ?? false,
+        trackingMode: formValue.trackingMode ?? 0,
+        hasExpiryTracking: formValue.hasExpiryTracking ?? false,
+        pickingPolicy: formValue.pickingPolicy ?? 0,
+        costingMethod: formValue.costingMethod ?? 0,
+        expiryAlertDays: formValue.expiryAlertDays ?? null
       };
 
       this.productService.updateProduct(this.productId()!, updateRequest).subscribe({
@@ -1190,7 +1349,13 @@ export class ProductFormComponent implements OnInit {
         isDiscountEnabled: formValue.isDiscountEnabled ?? false,
         maxDiscountPercent: formValue.isDiscountEnabled ? formValue.maxDiscountPercent ?? null : null,
         isStockManaged: formValue.isStockManaged ?? false,
-        preferredSupplierId: formValue.preferredSupplierId || null
+        preferredSupplierId: formValue.preferredSupplierId || null,
+        isVariantTemplate: formValue.isVariantTemplate ?? false,
+        trackingMode: formValue.trackingMode ?? 0,
+        hasExpiryTracking: formValue.hasExpiryTracking ?? false,
+        pickingPolicy: formValue.pickingPolicy ?? 0,
+        costingMethod: formValue.costingMethod ?? 0,
+        expiryAlertDays: formValue.expiryAlertDays ?? null
       };
 
       this.productService.createProduct(createRequest).subscribe({
@@ -1255,6 +1420,97 @@ export class ProductFormComponent implements OnInit {
 
   isProductCategory(): boolean {
     return this.form.get('category')?.value === 'Produit';
+  }
+
+  private loadStockFeatures(): void {
+    this.stockService.getFeatures().subscribe({
+      next: res => {
+        if (res.success && res.data) {
+          this.stockFeatures.set(res.data);
+          if (res.data.productVariantsEnabled) {
+            this.productService.listAttributes().subscribe({
+              next: attr => {
+                if (attr.success && attr.data) this.attributes.set(attr.data);
+              }
+            });
+          }
+        }
+      }
+    });
+  }
+
+  isVariantValueSelected(definitionId: string, valueId: string): boolean {
+    return (this.variantAxesSelection()[definitionId] ?? []).includes(valueId);
+  }
+
+  toggleVariantValue(definitionId: string, valueId: string): void {
+    const current = { ...this.variantAxesSelection() };
+    const list = current[definitionId] ?? [];
+    current[definitionId] = list.includes(valueId)
+      ? list.filter(x => x !== valueId)
+      : [...list, valueId];
+    if (current[definitionId].length === 0) delete current[definitionId];
+    this.variantAxesSelection.set(current);
+  }
+
+  generateVariants(): void {
+    const productId = this.productId();
+    if (!productId) return;
+
+    const axes = Object.entries(this.variantAxesSelection())
+      .filter(([, valueIds]) => valueIds.length > 0)
+      .map(([definitionId, valueIds]) => ({ definitionId, valueIds }));
+
+    if (axes.length === 0) return;
+
+    this.generatingVariants.set(true);
+    this.productService.generateVariants(productId, axes).subscribe({
+      next: res => {
+        this.generatingVariants.set(false);
+        if (res.success) {
+          this.toastService.add({
+            severity: 'success',
+            summary: 'Variantes',
+            detail: `${res.data?.length ?? 0} SKU enfant(s) créé(s)`
+          });
+        }
+      },
+      error: err => {
+        this.generatingVariants.set(false);
+        this.toastService.add({
+          severity: 'error',
+          summary: 'Variantes',
+          detail: this.errorHandler.extractErrorMessage(err)
+        });
+      }
+    });
+  }
+
+  createOpeningLayer(): void {
+    const productId = this.productId();
+    if (!productId) return;
+    const costingMethod = this.form.get('costingMethod')?.value ?? 1;
+    this.saving.set(true);
+    this.productService.createOpeningValuationLayer(productId, costingMethod).subscribe({
+      next: res => {
+        this.saving.set(false);
+        if (res.success) {
+          this.toastService.add({
+            severity: 'success',
+            summary: 'Valorisation',
+            detail: 'Couche d\'ouverture créée. Vous pouvez enregistrer le produit.'
+          });
+        }
+      },
+      error: err => {
+        this.saving.set(false);
+        this.toastService.add({
+          severity: 'error',
+          summary: 'Valorisation',
+          detail: this.errorHandler.extractErrorMessage(err)
+        });
+      }
+    });
   }
 
   private syncStockManagement(category: string | null, preserveValue: boolean = false): void {

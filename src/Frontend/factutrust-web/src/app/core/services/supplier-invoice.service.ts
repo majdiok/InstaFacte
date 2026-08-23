@@ -120,7 +120,38 @@ export interface SupplierInvoiceListItem {
     totalPaid: number;
     remainingAmount: number;
     paidAt: string | null;
+    warehouseId?: string | null;
+    warehouseName?: string | null;
+    sourcePurchaseReceiptId?: string | null;
     hasFixedAssetLines?: boolean;
+}
+
+export interface CreateStandaloneSupplierInvoiceLineRequest {
+    productId: string;
+    quantity: number;
+    unitPriceHt?: number;
+    discountPercent?: number;
+    isFixedAsset?: boolean;
+    assetAccountNumber?: string;
+    depreciationRateCategoryId?: string;
+}
+
+export interface CreateStandaloneSupplierInvoiceRequest {
+    supplierId: string;
+    invoiceNumber?: string;
+    invoiceDate: string;
+    paymentTermDays?: number;
+    externalReference?: string;
+    notes?: string;
+    paymentMethod?: string;
+    warehouseId?: string;
+    useSuggestedNumber?: boolean;
+    lines: CreateStandaloneSupplierInvoiceLineRequest[];
+}
+
+export interface SupplierInvoiceCreationResponse {
+    id: string;
+    invoiceNumber: string;
 }
 
 export interface SupplierInvoiceDetail {
@@ -230,6 +261,10 @@ export class SupplierInvoiceService {
     private readonly API_URL = `${environment.apiUrl}/supplierinvoices`;
     private http = inject(HttpClient);
     private readonly cashDesk = inject(CashDeskService);
+
+    create(payload: CreateStandaloneSupplierInvoiceRequest): Observable<ApiResponse<SupplierInvoiceCreationResponse>> {
+        return this.http.post<ApiResponse<SupplierInvoiceCreationResponse>>(this.API_URL, payload);
+    }
 
     previewNumber(invoiceDate: Date): Observable<ApiResponse<string>> {
         const year = invoiceDate.getFullYear();

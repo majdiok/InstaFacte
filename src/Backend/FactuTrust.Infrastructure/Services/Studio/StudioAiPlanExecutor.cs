@@ -68,6 +68,12 @@ public sealed class StudioAiPlanExecutor : IStudioAiPlanExecutor
                     return (false, error ?? "Spécification de fenêtre invalide.", null);
                 return await ExecuteViewAsync(spec, plan.TenantId, progress, cancellationToken);
             }
+            case StudioAiPlanKind.Report:
+            {
+                if (!StudioAiReportSpec.TryParse(plan.SpecJson, out var spec, out var error) || spec is null)
+                    return (false, error ?? "Spécification d'état invalide.", null);
+                return await ExecuteReportAsync(spec, progress, cancellationToken);
+            }
             default:
                 return (false, $"Type de plan non pris en charge : {plan.Kind}.", null);
         }
@@ -163,6 +169,45 @@ public sealed class StudioAiPlanExecutor : IStudioAiPlanExecutor
     /// Crée une fenêtre (vue lecture seule). Le schéma est RELU ici : la table et les colonnes sont
     /// revalidées par le fournisseur gardé au moment de l'exécution, pas seulement à l'aperçu.
     /// </summary>
+    /// <summary>
+    /// Enregistre un état sur les tables réelles. Passe par <c>UpsertCustomReportCommand</c> — la MÊME
+    /// commande que le concepteur humain : validation de source, permissions et audit sont mutualisés,
+    /// et l'état créé par l'IA est en tout point un état Studio ordinaire.
+    /// </summary>
+    private async Task<(bool Success, string? Error, object? Payload)> ExecuteReportAsync(
+        ParsedReportSpec spec, IStudioBuildProgress? progress, CancellationToken ct)
+    {
+        void Report(string phase, string label, string status, string? detail = null) =>
+            progress?.Report(new StudioBuildStep(phase, label, status, null, detail));
+
+        var (factTable, definition) = StudioAiReportSpec.Materialize(spec);
+
+        Report("creating_report", $"État « {spec.Title} »", "running");
+        var result = await _mediator.Send(new UpsertCustomReportCommand(null,
+            new SaveCustomReportRequest(null, spec.Title, CustomReportDataSourceKind.SqlQuery, factTable, definition)), ct);
+        if (!result.IsSuccess)
+        {
+            Report("creating_report", $"État « {spec.Title} »", "error", result.Error.Description);
+            return (false, result.Error.Description, null);
+        }
+        Report("creating_report", $"État « {spec.Title} »", "done");
+        Report("completed", "État créé", "done");
+
+        var report = result.Value;
+        var payload = new
+        {
+            success = true,
+            reportId = report.Id,
+            reportKey = report.Key,
+            displayName = report.DisplayName,
+            source = factTable,
+            warnings = spec.Warnings,
+            openUrl = $"/studio/reports/{report.Id}/view",
+            message = $"État « {report.DisplayName} » créé sur « {factTable} »."
+        };
+        return (true, null, payload);
+    }
+
     private async Task<(bool Success, string? Error, object? Payload)> ExecuteViewAsync(
         ParsedViewSpec spec, Guid tenantId, IStudioBuildProgress? progress, CancellationToken ct)
     {

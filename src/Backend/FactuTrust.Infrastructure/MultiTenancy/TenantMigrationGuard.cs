@@ -101,8 +101,7 @@ public sealed class TenantMigrationGuard : ITenantMigrationGuard
                 return schemaCheck;
             }
 
-            await EnsureWithholdingTaxCatalogAsync(connectionString, cancellationToken);
-            await EnsureWithholdingChartAccountsAsync(connectionString, cancellationToken);
+            await EnsureRuntimeCatalogsAsync(connectionString, cancellationToken);
 
             var cacheDuration = _environment.IsDevelopment() ? CacheDurationDevelopment : CacheDuration;
             _cache.Set(cacheKey, true, cacheDuration);
@@ -127,9 +126,11 @@ public sealed class TenantMigrationGuard : ITenantMigrationGuard
             // Cache failure for a short duration to prevent retry storms when DB is down
             _cache.Set(cacheKey, false, FailureCacheDuration);
 
-            return Result.Failure(Error.Validation(
-                "Migration",
-                "Impossible d'accéder à la base de données. Veuillez vérifier la connexion ou contacter l'administrateur."));
+            var message = "Impossible d'accéder à la base de données. Veuillez vérifier la connexion ou contacter l'administrateur.";
+            if (_environment.IsDevelopment() && !string.IsNullOrWhiteSpace(ex.Message))
+                message = $"{message} {ex.Message}";
+
+            return Result.Failure(Error.Validation("Migration", message));
         }
         finally
         {
@@ -143,6 +144,20 @@ public sealed class TenantMigrationGuard : ITenantMigrationGuard
             return;
 
         _cache.Remove($"{CacheKeyPrefixInternal}{tenantId}");
+    }
+
+    public void MarkApplied(Guid tenantId)
+    {
+        MarkApplied(_cache, tenantId, _environment.IsDevelopment());
+    }
+
+    public static void MarkApplied(IMemoryCache cache, Guid tenantId, bool isDevelopment = false)
+    {
+        if (tenantId == Guid.Empty)
+            return;
+
+        var duration = isDevelopment ? CacheDurationDevelopment : CacheDuration;
+        cache.Set($"{CacheKeyPrefix}{tenantId}", true, duration);
     }
 
     private static async Task<IReadOnlyList<string>> GetPendingMigrationsAsync(
@@ -169,25 +184,13 @@ public sealed class TenantMigrationGuard : ITenantMigrationGuard
         }
     }
 
-    private static async Task EnsureWithholdingTaxCatalogAsync(string connectionString, CancellationToken cancellationToken)
+    private static async Task EnsureRuntimeCatalogsAsync(string connectionString, CancellationToken cancellationToken)
     {
         var options = new DbContextOptionsBuilder<TenantDbContext>()
             .UseSqlServer(connectionString, b => b.MigrationsAssembly(typeof(TenantDbContext).Assembly.FullName))
             .Options;
 
         await using var context = new TenantDbContext(options);
-        await WithholdingTaxCatalogInitializer.EnsureSystemTypesSeededAsync(context, cancellationToken);
-        await WithholdingFiscalYearParameterInitializer.EnsureDefaultsSeededAsync(context, cancellationToken);
-        await IncomeTaxYearParameterInitializer.EnsureDefaultsSeededAsync(context, cancellationToken);
-    }
-
-    private static async Task EnsureWithholdingChartAccountsAsync(string connectionString, CancellationToken cancellationToken)
-    {
-        var options = new DbContextOptionsBuilder<TenantDbContext>()
-            .UseSqlServer(connectionString, b => b.MigrationsAssembly(typeof(TenantDbContext).Assembly.FullName))
-            .Options;
-
-        await using var context = new TenantDbContext(options);
-        await WithholdingChartAccountsInitializer.EnsureAccountsAsync(context, cancellationToken);
+        await TenantRuntimeCatalogBootstrapper.EnsureAsync(context, cancellationToken);
     }
 }

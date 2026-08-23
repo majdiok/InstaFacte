@@ -96,7 +96,7 @@ public sealed class ConvertQuoteToSalesOrderCommandHandler
         // quels, pour que la commande porte exactement le montant accepté par le client.
         foreach (var line in quote.Lines.OrderBy(l => l.LineNumber))
         {
-            if (line.ProductId == Guid.Empty)
+            if (!line.ProductId.HasValue)
             {
                 return Result.Failure<Guid>(Error.Validation("Lines",
                     $"La ligne {line.LineNumber} « {line.ProductName} » est une ligne libre : " +
@@ -104,10 +104,10 @@ public sealed class ConvertQuoteToSalesOrderCommandHandler
             }
 
             var product = line.Product
-                ?? await _productRepository.GetByIdAsync(line.ProductId, cancellationToken);
+                ?? await _productRepository.GetByIdAsync(line.ProductId.Value, cancellationToken);
 
             if (product is null)
-                return Result.Failure<Guid>(Error.NotFound("Produit", line.ProductId));
+                return Result.Failure<Guid>(Error.NotFound("Produit", line.ProductId.Value));
 
             var addResult = order.AddLine(
                 product,

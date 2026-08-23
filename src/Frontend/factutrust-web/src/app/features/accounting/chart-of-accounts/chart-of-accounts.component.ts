@@ -1,5 +1,6 @@
 import { Component, OnInit, ViewChild, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { Table, TableModule } from 'primeng/table';
 import { InputTextModule } from 'primeng/inputtext';
@@ -13,7 +14,11 @@ import { AccountingStatusBannerComponent } from '../shared/accounting-status-ban
 import { AnalyzeWithAiButtonComponent } from '@features/ai-assistant/components/analyze-with-ai-button/analyze-with-ai-button.component';
 import { wrapLegacyAnalyzePayload } from '@features/ai-assistant/utils/ai-screen-payload.factory';
 import { AuthService } from '@core/services/auth.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { ToastService } from '@core/services/toast.service';
+
+/** SCE tunisien : classe 1–7, chiffres, segments optionnels après un point (ex. 428.3). */
+export const SCE_ACCOUNT_NUMBER_PATTERN = /^[1-7]\d*(?:\.\d+)*$/;
 
 @Component({
   selector: 'app-chart-of-accounts',
@@ -32,7 +37,7 @@ import { ToastService } from '@core/services/toast.service';
   ],
   providers: [ConfirmationService],
   template: `
-    <app-page-header title="Plan comptable" subtitle="Plan comptable standard tunisien (SCE) — comptes système verrouillés" />
+    <app-page-header title="Plan comptable" subtitle="NCT 01 + overlay métier — comptes système verrouillés" />
     <p-confirmDialog />
     <div class="card coa-card">
       <app-accounting-filter-bar ariaLabel="Recherche et actualisation du plan comptable">
@@ -188,7 +193,7 @@ import { ToastService } from '@core/services/toast.service';
             </div>
             <div class="coa-field coa-field-wide">
               <label class="coa-lbl" for="coa-parent">Sous compte de</label>
-              <select id="coa-parent" class="coa-inp" [(ngModel)]="form.parentAccountNumber">
+              <select id="coa-parent" class="coa-inp" [(ngModel)]="form.parentAccountNumber" (ngModelChange)="onParentChange($event)">
                 <option [ngValue]="null">—</option>
                 @for (a of parentOptions(); track a.accountNumber) {
                   <option [ngValue]="a.accountNumber">{{ a.accountNumber }} — {{ a.label }}</option>
@@ -212,13 +217,17 @@ import { ToastService } from '@core/services/toast.service';
           <div class="coa-grid">
             <div class="coa-field">
               <label class="coa-lbl" for="coa-num">Compte numéro</label>
-              <input id="coa-num" class="coa-inp" [(ngModel)]="form.accountNumber" placeholder="Ex. 41100001" />
+              <input id="coa-num" class="coa-inp" [(ngModel)]="form.accountNumber" (ngModelChange)="onAccountNumberChange()" placeholder="Ex. 428.3 ou 41100001" />
             </div>
             <div class="coa-field coa-field-wide">
               <label class="coa-lbl" for="coa-label">Libellé</label>
               <input id="coa-label" class="coa-inp" [(ngModel)]="form.label" placeholder="Ex. Client Société X" />
             </div>
           </div>
+
+          @if (createError()) {
+            <p class="coa-create-error" role="alert">{{ createError() }}</p>
+          }
 
           <div class="coa-modal-actions">
             <button type="button" class="btn btn-secondary" (click)="closeCreate()" [disabled]="creating()">Annuler</button>
@@ -396,6 +405,16 @@ import { ToastService } from '@core/services/toast.service';
     .coa-field-wide { flex: 2 1 16rem; }
     .coa-lbl { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); color: var(--color-text-primary); }
     .coa-inp { padding: var(--spacing-2) var(--spacing-3); border: 1px solid var(--color-border-default); border-radius: var(--radius-md); background: var(--color-background-elevated); color: var(--color-text-primary); font-size: var(--font-size-sm); width: 100%; }
+    .coa-create-error {
+      margin: var(--spacing-4) 0 0;
+      padding: var(--spacing-2) var(--spacing-3);
+      border-radius: var(--radius-md);
+      border: 1px solid #fecaca;
+      background: #fef2f2;
+      color: #b42318;
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-semibold);
+    }
     .coa-modal-actions { display: flex; justify-content: flex-end; gap: var(--spacing-3); margin-top: var(--spacing-5); padding-top: var(--spacing-3); border-top: 1px solid var(--color-border-subtle); }
     .btn { padding: var(--spacing-2) var(--spacing-4); border-radius: var(--radius-md); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); cursor: pointer; border: 1px solid transparent; }
     .btn-secondary { background: var(--color-background-subtle); color: var(--color-text-primary); border-color: var(--color-border-default); }
@@ -407,12 +426,14 @@ export class ChartOfAccountsComponent implements OnInit {
   private readonly api = inject(AccountingService);
   private readonly auth = inject(AuthService);
   private readonly toast = inject(ToastService);
+  private readonly errorHandler = inject(ErrorHandlerService);
   private readonly confirmService = inject(ConfirmationService);
 
   @ViewChild('dt') dt?: Table;
 
   readonly rows = signal<ChartOfAccountDto[]>([]);
   readonly error = signal<string | null>(null);
+  readonly createError = signal<string | null>(null);
   readonly loading = signal(false);
 
   readonly canCreate = this.auth.hasPermission('accounting:create');
@@ -421,6 +442,7 @@ export class ChartOfAccountsComponent implements OnInit {
   readonly togglingId = signal<string | null>(null);
 
   form = this.emptyForm();
+  lastSuggestedNumber = '';
 
   searchTerm = '';
 
@@ -437,11 +459,14 @@ export class ChartOfAccountsComponent implements OnInit {
 
   openCreate(): void {
     this.form = this.emptyForm();
+    this.lastSuggestedNumber = '';
+    this.createError.set(null);
     this.showCreate.set(true);
   }
 
   closeCreate(): void {
     this.showCreate.set(false);
+    this.createError.set(null);
   }
 
   /** Sélectionne le type de compte et pré-remplit la hiérarchie (façon Axeane). */
@@ -452,15 +477,64 @@ export class ChartOfAccountsComponent implements OnInit {
       const parent = this.rows().find(a => a.accountNumber.startsWith('411')) ?? this.rows().find(a => a.accountNumber.startsWith('41'));
       this.form.parentAccountNumber = parent?.accountNumber ?? null;
       this.form.affectationAccountNumber = parent?.accountNumber ?? null;
+      this.applySuggestedNumber(this.form.parentAccountNumber);
     } else if (type === 2) { // Fournisseur
       this.form.isAuxiliary = true;
       const parent = this.rows().find(a => a.accountNumber.startsWith('401')) ?? this.rows().find(a => a.accountNumber.startsWith('40'));
       this.form.parentAccountNumber = parent?.accountNumber ?? null;
       this.form.affectationAccountNumber = parent?.accountNumber ?? null;
+      this.applySuggestedNumber(this.form.parentAccountNumber);
     } else {
       this.form.isAuxiliary = false;
       this.form.affectationAccountNumber = null;
     }
+  }
+
+  onParentChange(parent: string | null): void {
+    this.form.parentAccountNumber = parent;
+    this.applySuggestedNumber(parent);
+  }
+
+  onAccountNumberChange(): void {
+    this.createError.set(null);
+  }
+
+  applySuggestedNumber(parent: string | null): void {
+    const current = this.form.accountNumber.trim();
+    const canReplace = current.length === 0 || current === this.lastSuggestedNumber;
+    if (!canReplace) return;
+    const next = this.nextFreeChildNumber(parent);
+    this.form.accountNumber = next ?? '';
+    this.lastSuggestedNumber = next ?? '';
+    this.createError.set(null);
+  }
+
+  /** Prochain numéro libre sous le parent (43671 + 436711/436712 → 436713). */
+  nextFreeChildNumber(parent: string | null): string | null {
+    if (!parent) return null;
+    const existing = new Set(this.rows().map(r => r.accountNumber));
+    let maxSuffix = 0;
+    let width = 1;
+    let foundChild = false;
+    for (const acc of existing) {
+      if (acc.length <= parent.length || !acc.startsWith(parent)) continue;
+      const suffix = acc.slice(parent.length);
+      if (!/^\d+$/.test(suffix)) continue;
+      foundChild = true;
+      width = Math.max(width, suffix.length);
+      maxSuffix = Math.max(maxSuffix, Number.parseInt(suffix, 10));
+    }
+    let candidate = foundChild ? maxSuffix + 1 : 1;
+    for (let i = 0; i < 10000; i++) {
+      const num = parent + String(candidate).padStart(width, '0');
+      if (!existing.has(num)) return num;
+      candidate++;
+    }
+    return null;
+  }
+
+  formatDuplicateMessage(account: Pick<ChartOfAccountDto, 'accountNumber' | 'label'>): string {
+    return `Le compte ${account.accountNumber} existe déjà (${account.label}).`;
   }
 
   /** Comptes proposés comme parent selon le type choisi. */
@@ -472,12 +546,18 @@ export class ChartOfAccountsComponent implements OnInit {
 
   canSubmit(): boolean {
     const num = this.form.accountNumber.trim();
-    return num.length >= 2 && /^[1-7]/.test(num) && this.form.label.trim().length > 0;
+    return num.length >= 2 && SCE_ACCOUNT_NUMBER_PATTERN.test(num) && this.form.label.trim().length > 0;
   }
 
   create(): void {
     if (!this.canSubmit() || this.creating()) return;
     const num = this.form.accountNumber.trim();
+    this.createError.set(null);
+    const existing = this.rows().find(a => a.accountNumber === num);
+    if (existing) {
+      this.createError.set(this.formatDuplicateMessage(existing));
+      return;
+    }
     // Nature dérivée du type : Client → débit, Fournisseur → crédit, sinon mixte.
     const natureType = this.form.accountType === 1 ? 0 : this.form.accountType === 2 ? 1 : 2;
     const request: CreateSubAccountRequest = {
@@ -495,18 +575,28 @@ export class ChartOfAccountsComponent implements OnInit {
       next: res => {
         this.creating.set(false);
         if (res.success) {
+          this.createError.set(null);
           this.toast.add({ severity: 'success', summary: 'Compte créé', detail: `${num} — ${request.label}`, life: 4000 });
           this.showCreate.set(false);
           this.load();
         } else {
-          this.error.set(res.error ?? 'La création du compte a échoué.');
+          this.createError.set(res.error ?? 'La création du compte a échoué.');
         }
       },
-      error: () => {
+      error: err => {
         this.creating.set(false);
-        this.error.set('Erreur réseau lors de la création du compte.');
+        this.createError.set(this.httpFailureMessage(err, 'Erreur réseau lors de la création du compte.'));
       }
     });
+  }
+
+  /** Messages API (4xx/5xx) via ErrorHandlerService ; repli « erreur réseau » seulement si status 0. */
+  httpFailureMessage(err: unknown, networkFallback: string): string {
+    const he = err as HttpErrorResponse;
+    if (he?.status === 0) {
+      return networkFallback;
+    }
+    return this.errorHandler.extractErrorMessage(err);
   }
 
   ngOnInit(): void {
@@ -543,9 +633,9 @@ export class ChartOfAccountsComponent implements OnInit {
           this.error.set(res.error ?? 'Le changement de statut a échoué.');
         }
       },
-      error: () => {
+      error: (err: HttpErrorResponse) => {
         this.togglingId.set(null);
-        this.error.set('Erreur réseau lors du changement de statut du compte.');
+        this.error.set(this.httpFailureMessage(err, 'Erreur réseau lors du changement de statut du compte.'));
       }
     });
   }

@@ -108,15 +108,67 @@ public sealed class PhysicalInventory : AggregateRoot
         return Result.Success(inventory);
     }
 
+    public static Result<PhysicalInventory> StartDetailed(
+        string reference,
+        Guid warehouseId,
+        InventoryType type,
+        IEnumerable<(Guid ProductId, string ProductName, string? ProductCode, decimal TheoreticalQuantity, Guid? ProductLotId, string? LotNumber)> products,
+        string? notes = null)
+    {
+        if (string.IsNullOrWhiteSpace(reference))
+            return Result.Failure<PhysicalInventory>(Error.Validation("Reference", "La référence est obligatoire."));
+        if (reference.Length > 50)
+            return Result.Failure<PhysicalInventory>(Error.Validation("Reference", "La référence ne peut pas dépasser 50 caractères."));
+        if (warehouseId == Guid.Empty)
+            return Result.Failure<PhysicalInventory>(Error.Validation("WarehouseId", "L'entrepôt est obligatoire."));
+
+        var productList = products.ToList();
+        if (!productList.Any())
+            return Result.Failure<PhysicalInventory>(Error.Validation("Products", "Aucun produit à inventorier."));
+
+        var inventory = new PhysicalInventory
+        {
+            Reference = reference.Trim(),
+            WarehouseId = warehouseId,
+            StartedAt = DateTime.UtcNow,
+            Type = type,
+            Status = InventoryStatus.InProgress,
+            Notes = notes?.Trim()
+        };
+
+        foreach (var product in productList)
+        {
+            var line = InventoryCountLine.Create(
+                inventory.Id,
+                product.ProductId,
+                product.ProductName,
+                product.ProductCode,
+                product.TheoreticalQuantity,
+                product.ProductLotId,
+                product.LotNumber);
+            inventory._countLines.Add(line);
+        }
+
+        inventory.AddDomainEvent(new InventoryStartedEvent(
+            inventory.Id,
+            warehouseId,
+            productList.Count));
+
+        return Result.Success(inventory);
+    }
+
     /// <summary>
     /// Enregistre le comptage d'un produit.
     /// </summary>
-    public Result RecordCount(Guid productId, decimal countedQuantity)
+    public Result RecordCount(Guid productId, decimal countedQuantity, Guid? productLotId = null)
     {
         if (Status != InventoryStatus.InProgress)
             return Result.Failure(Error.Validation("Status", "Cet inventaire n'est plus en cours."));
 
-        var line = _countLines.FirstOrDefault(l => l.ProductId == productId);
+        var line = productLotId.HasValue
+            ? _countLines.FirstOrDefault(l => l.ProductId == productId && l.ProductLotId == productLotId)
+            : _countLines.FirstOrDefault(l => l.ProductId == productId && l.ProductLotId == null)
+              ?? _countLines.FirstOrDefault(l => l.ProductId == productId);
         if (line == null)
             return Result.Failure(Error.NotFound("Produit", productId));
 
@@ -124,20 +176,35 @@ public sealed class PhysicalInventory : AggregateRoot
     }
 
     /// <summary>
+    /// Confirme les lignes non saisies à la quantité théorique (aucun écart).
+    /// </summary>
+    public Result ConfirmUncountedAsTheoretical()
+    {
+        if (Status != InventoryStatus.InProgress)
+            return Result.Failure(Error.Validation("Status", "Cet inventaire n'est plus en cours."));
+
+        foreach (var line in _countLines.Where(l => !l.IsCounted))
+        {
+            var result = line.RecordCount(line.TheoreticalQuantity);
+            if (result.IsFailure)
+                return result;
+        }
+
+        return Result.Success();
+    }
+
+    /// <summary>
     /// Valide l'inventaire et génère les ajustements de stock.
-    /// Tous les produits doivent avoir été comptés.
+    /// Les lignes non saisies sont confirmées à la quantité système.
     /// </summary>
     public Result Validate()
     {
         if (Status != InventoryStatus.InProgress)
             return Result.Failure(Error.Validation("Status", "Cet inventaire n'est plus en cours."));
 
-        if (!IsComplete)
-        {
-            var remaining = TotalProducts - CountedProducts;
-            return Result.Failure(Error.Validation("CountLines", 
-                $"Il reste {remaining} produit{(remaining > 1 ? "s" : "")} à compter."));
-        }
+        var confirmResult = ConfirmUncountedAsTheoretical();
+        if (confirmResult.IsFailure)
+            return confirmResult;
 
         Status = InventoryStatus.Validated;
         CompletedAt = DateTime.UtcNow;

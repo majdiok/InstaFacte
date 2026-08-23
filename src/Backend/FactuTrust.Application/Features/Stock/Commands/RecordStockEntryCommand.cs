@@ -1,7 +1,7 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Domain.Common;
-using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FluentValidation;
 using MediatR;
@@ -20,9 +20,6 @@ public sealed record RecordStockEntryCommand(
     string? Reference,
     string? Notes) : IRequest<Result<Guid>>;
 
-/// <summary>
-/// Validator for RecordStockEntryCommand.
-/// </summary>
 public sealed class RecordStockEntryCommandValidator : AbstractValidator<RecordStockEntryCommand>
 {
     public RecordStockEntryCommandValidator()
@@ -35,26 +32,23 @@ public sealed class RecordStockEntryCommandValidator : AbstractValidator<RecordS
     }
 }
 
-/// <summary>
-/// Handler for RecordStockEntryCommand.
-/// </summary>
 public sealed class RecordStockEntryCommandHandler : IRequestHandler<RecordStockEntryCommand, Result<Guid>>
 {
-    private readonly IStockItemRepository _stockItemRepository;
     private readonly IWarehouseRepository _warehouseRepository;
     private readonly IProductRepository _productRepository;
     private readonly ITenantContext _tenantContext;
+    private readonly IStockMutationService _mutation;
 
     public RecordStockEntryCommandHandler(
-        IStockItemRepository stockItemRepository,
         IWarehouseRepository warehouseRepository,
         IProductRepository productRepository,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        IStockMutationService mutation)
     {
-        _stockItemRepository = stockItemRepository;
         _warehouseRepository = warehouseRepository;
         _productRepository = productRepository;
         _tenantContext = tenantContext;
+        _mutation = mutation;
     }
 
     public async Task<Result<Guid>> Handle(RecordStockEntryCommand request, CancellationToken cancellationToken)
@@ -62,7 +56,6 @@ public sealed class RecordStockEntryCommandHandler : IRequestHandler<RecordStock
         if (_tenantContext.TenantId is null)
             return Result.Failure<Guid>(Error.Unauthorized("Aucun contexte d'entreprise disponible."));
 
-        // Validate product exists and is stock-managed
         var product = await _productRepository.GetByIdAsync(request.ProductId, cancellationToken);
         if (product == null)
             return Result.Failure<Guid>(Error.NotFound("Produit", request.ProductId));
@@ -70,7 +63,6 @@ public sealed class RecordStockEntryCommandHandler : IRequestHandler<RecordStock
         if (!product.IsStockManaged)
             return Result.Failure<Guid>(Error.Validation("Product", "Ce produit n'a pas la gestion de stock activée."));
 
-        // Determine warehouse (use default if not specified)
         Guid warehouseId;
         if (request.WarehouseId.HasValue)
         {
@@ -87,70 +79,21 @@ public sealed class RecordStockEntryCommandHandler : IRequestHandler<RecordStock
             warehouseId = defaultWarehouse.Id;
         }
 
-        // Get or create stock item
-        var stockItem = await _stockItemRepository.GetByProductAndWarehouseAsync(request.ProductId, warehouseId, cancellationToken);
-        
-        if (stockItem == null)
+        var mutation = await _mutation.ApplyAsync(new StockMutationRequest
         {
-            // Create new stock item
-            var createResult = StockItem.Create(request.ProductId, warehouseId);
-            if (createResult.IsFailure)
-                return Result.Failure<Guid>(createResult.Error);
+            ProductId = request.ProductId,
+            WarehouseId = warehouseId,
+            Kind = StockMutationKind.Entry,
+            Quantity = request.Quantity,
+            UnitCost = request.UnitCost,
+            Reason = request.Reason,
+            Reference = request.Reference,
+            Notes = request.Notes
+        }, cancellationToken);
 
-            stockItem = createResult.Value;
-            try
-            {
-                await _stockItemRepository.AddAsync(stockItem, cancellationToken);
-            }
-            catch (Exception ex) when (IsUniqueConstraintViolation(ex))
-            {
-                var existingStockItem = await _stockItemRepository.GetByProductAndWarehouseAsync(
-                    request.ProductId,
-                    warehouseId,
-                    cancellationToken);
+        if (mutation.IsFailure)
+            return Result.Failure<Guid>(mutation.Error);
 
-                if (existingStockItem != null)
-                {
-                    stockItem = existingStockItem;
-                }
-                else
-                {
-                    throw;
-                }
-            }
-        }
-
-        // Record the entry
-        var entryResult = stockItem.RecordEntry(request.Quantity, request.UnitCost, request.Reason, request.Reference, request.Notes);
-        if (entryResult.IsFailure)
-            return Result.Failure<Guid>(entryResult.Error);
-
-        await _stockItemRepository.UpdateAsync(stockItem, cancellationToken);
-
-        return Result.Success(stockItem.Id);
-    }
-
-    private static bool IsUniqueConstraintViolation(Exception exception)
-    {
-        var current = exception;
-        while (current != null)
-        {
-            if (IsUniqueConstraintMessage(current.Message))
-                return true;
-
-            current = current.InnerException;
-        }
-
-        return false;
-    }
-
-    private static bool IsUniqueConstraintMessage(string? message)
-    {
-        if (string.IsNullOrWhiteSpace(message))
-            return false;
-
-        return message.Contains("IX_StockItems_ProductId_WarehouseId", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("duplicate", StringComparison.OrdinalIgnoreCase);
+        return Result.Success(mutation.Value.StockItemId);
     }
 }

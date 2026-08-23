@@ -6,6 +6,7 @@ using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.ValueObjects;
 using FactuTrust.Infrastructure.Services;
+using FactuTrust.Infrastructure.Tests.Stock;
 using Moq;
 using Xunit;
 
@@ -210,7 +211,8 @@ public sealed class ReceiveGoodsCommandHandlerTests
         IPurchaseGoodsReceptionService receptionService = new PurchaseGoodsReceptionService(
             stockRepo.Object,
             movementRepo.Object,
-            productRepo.Object);
+            productRepo.Object,
+            StockTestDoubles.Passthrough(stockRepo.Object));
 
         return new ReceiveGoodsCommandHandler(
             poRepo.Object,

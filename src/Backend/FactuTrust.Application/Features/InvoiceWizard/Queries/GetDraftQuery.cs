@@ -178,7 +178,8 @@ public sealed class GetDraftQueryHandler : IRequestHandler<GetDraftQuery, Result
                 Currency = metadata.Currency,
                 InternalReference = metadata.InternalReference,
                 LinkedInvoiceId = metadata.LinkedInvoiceId,
-                WarehouseId = metadata.WarehouseId
+                WarehouseId = metadata.WarehouseId,
+                CashRegisterSessionId = metadata.CashRegisterSessionId
             } : null,
             Seller = seller,
             Client = client,

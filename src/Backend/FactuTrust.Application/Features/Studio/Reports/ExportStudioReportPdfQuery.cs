@@ -3,6 +3,7 @@ using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Features.Invoices.Queries;
 using FactuTrust.Application.Features.Studio.Common;
+using FactuTrust.Application.Features.Studio.Common.SqlReport;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
@@ -25,6 +26,7 @@ public sealed class ExportStudioReportPdfQueryHandler
     private readonly ICustomFieldRepository _fields;
     private readonly ICustomRecordRepository _records;
     private readonly IExistingDataSourceProvider _existing;
+    private readonly ISqlReportEngine _sqlReports;
     private readonly ICompanyRepository _companies;
     private readonly IPdfService _pdfService;
     private readonly IAuditService _audit;
@@ -36,6 +38,7 @@ public sealed class ExportStudioReportPdfQueryHandler
         ICustomFieldRepository fields,
         ICustomRecordRepository records,
         IExistingDataSourceProvider existing,
+        ISqlReportEngine sqlReports,
         ICompanyRepository companies,
         IPdfService pdfService,
         IAuditService audit,
@@ -46,6 +49,7 @@ public sealed class ExportStudioReportPdfQueryHandler
         _fields = fields;
         _records = records;
         _existing = existing;
+        _sqlReports = sqlReports;
         _companies = companies;
         _pdfService = pdfService;
         _audit = audit;
@@ -63,7 +67,7 @@ public sealed class ExportStudioReportPdfQueryHandler
 
         var definition = ReportDefinitionJson.Parse(report.DefinitionJson);
         var runResult = await ReportExecutor.ExecuteAsync(tenantId, report.DataSourceKind, report.DataSourceRef,
-            definition, _entities, _fields, _records, _existing, cancellationToken);
+            definition, _entities, _fields, _records, _existing, _sqlReports, cancellationToken);
         if (runResult.IsFailure)
             return Result.Failure<InvoicePdfResult>(runResult.Error);
 
@@ -89,6 +93,9 @@ public sealed class ExportStudioReportPdfQueryHandler
     private async Task<string?> ResolveSourceLabelAsync(
         Guid tenantId, CustomReportDataSourceKind kind, string dataSourceRef, CancellationToken ct)
     {
+        if (kind == CustomReportDataSourceKind.SqlQuery)
+            return SqlReportAccessPolicy.Describe(dataSourceRef)?.DisplayName ?? dataSourceRef;
+
         if (kind == CustomReportDataSourceKind.ExistingSource)
             return ExistingDataSourceCatalog.Find(dataSourceRef)?.DisplayName ?? dataSourceRef;
 

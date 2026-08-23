@@ -1,8 +1,10 @@
 import { Component, inject, OnInit, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { PosHistoryService } from '../../services/pos-history.service';
+import { PosRegisterSessionService } from '../../services/pos-register-session.service';
 import { InvoiceService } from '@core/services/invoice.service';
 import { PrintPreviewService } from '@core/services/print-preview.service';
+import { WarehouseContextService } from '@core/services/warehouse-context.service';
 
 @Component({
   selector: 'app-pos-history-panel',
@@ -17,6 +19,10 @@ import { PrintPreviewService } from '@core/services/print-preview.service';
             <i class="pi pi-times"></i>
           </button>
         </div>
+        <div class="history-panel__chips">
+          <button type="button" class="history-panel__chip" [class.history-panel__chip--active]="historyService.activeFilter() === 'today'" (click)="historyService.setFilter('today')">Aujourd'hui</button>
+          <button type="button" class="history-panel__chip" [class.history-panel__chip--active]="historyService.activeFilter() === 'session'" (click)="showThisSession()">Cette session</button>
+        </div>
 
         @if (historyService.isLoading()) {
           <div class="history-panel__loading">
@@ -26,7 +32,7 @@ import { PrintPreviewService } from '@core/services/print-preview.service';
         } @else if (historyService.todayTransactions().length === 0) {
           <div class="history-panel__empty">
             <i class="pi pi-inbox"></i>
-            <p>Aucune transaction aujourd'hui</p>
+            <p>{{ historyService.activeFilter() === 'session' ? 'Aucune transaction dans cette session' : 'Aucune transaction aujourd\'hui' }}</p>
           </div>
         } @else {
           <div class="history-panel__summary">
@@ -93,6 +99,30 @@ import { PrintPreviewService } from '@core/services/print-preview.service';
       font-weight: var(--font-weight-bold);
       margin: 0;
       color: var(--color-text-primary);
+    }
+
+    .history-panel__chips {
+      display: flex;
+      gap: var(--spacing-2);
+      padding: 0 var(--spacing-5) var(--spacing-4);
+      border-bottom: 1px solid var(--color-border-subtle);
+    }
+
+    .history-panel__chip {
+      border: 1px solid var(--color-border-subtle);
+      background: var(--color-white);
+      color: var(--color-text-secondary);
+      border-radius: 999px;
+      padding: 0.35rem 0.85rem;
+      font-size: var(--font-size-sm);
+      cursor: pointer;
+    }
+
+    .history-panel__chip--active {
+      background: var(--color-primary-50, #eff6ff);
+      border-color: var(--color-primary, #2563eb);
+      color: var(--color-primary, #2563eb);
+      font-weight: var(--font-weight-semibold);
     }
 
     .history-panel__close {
@@ -229,9 +259,31 @@ export class PosHistoryPanelComponent implements OnInit {
   readonly historyService = inject(PosHistoryService);
   private readonly invoiceService = inject(InvoiceService);
   private readonly printPreviewService = inject(PrintPreviewService);
+  private readonly warehouseContext = inject(WarehouseContextService);
+  private readonly registerSession = inject(PosRegisterSessionService);
 
   ngOnInit(): void {
     this.historyService.loadHistory();
+  }
+
+  showThisSession(): void {
+    const warehouseId = this.warehouseContext.selectedWarehouseId();
+    if (!warehouseId) {
+      this.historyService.setSessionInvoiceIds([]);
+      this.historyService.setFilter('session');
+      return;
+    }
+
+    this.registerSession.getXReport(warehouseId).subscribe({
+      next: report => {
+        this.historyService.setSessionInvoiceIds(report.invoiceIds ?? []);
+        this.historyService.setFilter('session');
+      },
+      error: () => {
+        this.historyService.setSessionInvoiceIds([]);
+        this.historyService.setFilter('session');
+      }
+    });
   }
 
   reprint(invoiceId: string): void {

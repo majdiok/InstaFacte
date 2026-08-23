@@ -101,7 +101,8 @@ public sealed class SaveDraftCommandHandler : IRequestHandler<SaveDraftCommand, 
                 Currency = request.Metadata.Currency,
                 InternalReference = request.Metadata.InternalReference,
                 LinkedInvoiceId = request.Metadata.LinkedInvoiceId,
-                WarehouseId = request.Metadata.WarehouseId
+                WarehouseId = request.Metadata.WarehouseId,
+                CashRegisterSessionId = request.Metadata.CashRegisterSessionId
             });
         }
 
@@ -320,7 +321,8 @@ public sealed class SaveDraftCommandHandler : IRequestHandler<SaveDraftCommand, 
                 Currency = metadata.Currency,
                 InternalReference = metadata.InternalReference,
                 LinkedInvoiceId = metadata.LinkedInvoiceId,
-                WarehouseId = metadata.WarehouseId
+                WarehouseId = metadata.WarehouseId,
+                CashRegisterSessionId = metadata.CashRegisterSessionId
             } : null,
             Seller = seller,
             Client = client,

@@ -192,7 +192,7 @@ public sealed class FixedAssetDomainTests
     public void DepreciationRateCategory_UsefulLifeYears_ShouldDeriveFromRate()
     {
         var cat = DepreciationRateCategory.Create(
-            "VEH_UTIL", "Véhicule utilitaire", 20m, "218", "2818", "6818", false, 10);
+            "VEH_UTIL", "Véhicule utilitaire", 20m, "228", "2828", "68112", false, 10);
 
         Assert.Equal(5m, cat.UsefulLifeYears);
     }

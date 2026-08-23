@@ -113,7 +113,7 @@ public static class AiScreenAnalysisPromptBuilder
                 - Calcule et commente les ratios clés (marge brute, marge nette, variation N/N-1).
                 - Identifie les postes à plus forte variation vs N-1.
                 - Signale les incohérences matérielles (charges > produits, soldes anormaux).
-                - Mentionne la conformité PCG tunisien lorsque pertinent.
+                - Mentionne la conformité NCT 01 / SCE tunisien lorsque pertinent.
                 """,
             "accounting-ledger" or "accounting-journal" or "accounting-sub-journals" or "accounting-manual-entry" =>
                 """
@@ -156,7 +156,7 @@ public static class AiScreenAnalysisPromptBuilder
             "accounting-chart" =>
                 """
                 FOCUS PLAN COMPTABLE :
-                - Couverture des comptes, comptes inutilisés, structure PCG.
+                - Couverture des comptes, comptes inutilisés, structure NCT 01 / SCE.
                 """,
             _ => "Analyse approfondie des données du snapshot avec recommandations actionnables."
         };

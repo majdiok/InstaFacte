@@ -4,7 +4,8 @@
   | 'deliverynote'
   | 'client'
   | 'product'
-  | 'supplier';
+  | 'supplier'
+  | 'salesreturnnote';
 
 export interface SearchEntityConfig {
   type: SearchEntityType;
@@ -20,7 +21,8 @@ export const SEARCH_ENTITY_CONFIG: Record<SearchEntityType, SearchEntityConfig> 
   deliverynote: { type: 'deliverynote', label: 'Bon de livraison', labelPlural: 'Bons de livraison', icon: 'fa-truck', listRoute: '/delivery-notes' },
   client: { type: 'client', label: 'Client', labelPlural: 'Clients', icon: 'fa-users', listRoute: '/clients' },
   product: { type: 'product', label: 'Produit', labelPlural: 'Produits', icon: 'fa-cube', listRoute: '/products' },
-  supplier: { type: 'supplier', label: 'Fournisseur', labelPlural: 'Fournisseurs', icon: 'fa-building', listRoute: '/suppliers' }
+  supplier: { type: 'supplier', label: 'Fournisseur', labelPlural: 'Fournisseurs', icon: 'fa-building', listRoute: '/suppliers' },
+  salesreturnnote: { type: 'salesreturnnote', label: 'Bon de retour', labelPlural: 'Bons de retour', icon: 'fa-rotate-left', listRoute: '/return-notes' }
 };
 
 export function getEntityGroupLabel(entityType?: string): string {

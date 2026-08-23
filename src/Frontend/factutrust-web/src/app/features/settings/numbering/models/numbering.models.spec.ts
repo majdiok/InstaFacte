@@ -20,6 +20,14 @@ describe('numbering.models', () => {
       expect(parseNumberingDocumentType('CreditNote')).toBe(NumberingDocumentType.CreditNote);
       expect(parseNumberingDocumentType('DeliveryNote')).toBe(NumberingDocumentType.DeliveryNote);
       expect(parseNumberingDocumentType('BankDeposit')).toBe(NumberingDocumentType.BankDeposit);
+      expect(parseNumberingDocumentType('SalesReturnNote')).toBe(NumberingDocumentType.SalesReturnNote);
+      expect(parseNumberingDocumentType(16)).toBe(NumberingDocumentType.SalesReturnNote);
+      expect(parseNumberingDocumentType('ZReport')).toBe(NumberingDocumentType.ZReport);
+      expect(parseNumberingDocumentType(17)).toBe(NumberingDocumentType.ZReport);
+      expect(parseNumberingDocumentType('StockEntry')).toBe(NumberingDocumentType.StockEntry);
+      expect(parseNumberingDocumentType(18)).toBe(NumberingDocumentType.StockEntry);
+      expect(parseNumberingDocumentType('StockIssue')).toBe(NumberingDocumentType.StockIssue);
+      expect(parseNumberingDocumentType(19)).toBe(NumberingDocumentType.StockIssue);
     });
 
     it('falls back to Invoice for unknown values', () => {
@@ -127,6 +135,7 @@ describe('numbering.models', () => {
       expect(getDocumentTypeForTabIndex(0)).toBe(NumberingDocumentType.Invoice);
       expect(getDocumentTypeForTabIndex(2)).toBe(NumberingDocumentType.Quote);
       expect(getDocumentTypeForTabIndex(3)).toBe(NumberingDocumentType.DeliveryNote);
+      expect(getDocumentTypeForTabIndex(10)).toBe(NumberingDocumentType.SalesReturnNote);
     });
 
     it('falls back to Invoice for invalid index', () => {

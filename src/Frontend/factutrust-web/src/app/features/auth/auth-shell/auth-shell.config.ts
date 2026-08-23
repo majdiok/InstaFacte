@@ -131,7 +131,7 @@ export const REGISTER_AUTH_SHELL_CONFIG: AuthShellConfig = {
   showAiHighlight: true,
   showTrustFooter: true,
   wideFormCard: true,
-  scrollableFormCard: true,
+  scrollableFormCard: false,
 };
 
 export const REGISTER_FIRM_AUTH_SHELL_CONFIG: AuthShellConfig = {
@@ -144,7 +144,7 @@ export const REGISTER_FIRM_AUTH_SHELL_CONFIG: AuthShellConfig = {
   showAiHighlight: false,
   showTrustFooter: true,
   wideFormCard: true,
-  scrollableFormCard: true,
+  scrollableFormCard: false,
 };
 
 export const SELECT_WAREHOUSE_AUTH_SHELL_CONFIG: AuthShellConfig = {

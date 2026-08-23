@@ -89,6 +89,66 @@ public sealed class CancelSupplierInvoiceCommandHandlerTests
         Assert.Equal(0m, receipt.Lines.First().InvoicedQuantity);
     }
 
+    [Fact]
+    public async Task Handle_StandaloneInvoiceWithoutSources_ReversesAccountingOnly()
+    {
+        var supplier = BuildSupplier();
+        var category = ProductCategory.Create("C", "Cat").Value;
+        var price = Money.Create(100m);
+        var product = Product.Create(
+            "LOYER", "Loyer", ProductType.Service, price, VatRate.Standard,
+            category.Id, purchasePrice: price).Value;
+
+        var invoice = SupplierInvoice.CreateStandalone(
+            supplier,
+            "FS-2026-DIRECT",
+            new DateTime(2026, 8, 17),
+            [
+                new StandaloneSupplierInvoiceLineInput(
+                    product.Id, product.Code, product.Name, null, 1m, product.Unit, price, product.VatRate)
+            ]).Value;
+
+        var invoiceRepo = new Mock<ISupplierInvoiceRepository>();
+        invoiceRepo
+            .Setup(r => r.GetByIdWithLinesAsync(invoice.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(invoice);
+        invoiceRepo
+            .Setup(r => r.UpdateAsync(invoice, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var poRepo = new Mock<IPurchaseOrderRepository>();
+        var receiptRepo = new Mock<IPurchaseReceiptRepository>();
+        var accounting = new Mock<IAccountingService>();
+        accounting
+            .Setup(a => a.ReverseSupplierInvoiceEntryAsync(
+                invoice.Id, invoice.InvoiceNumber, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(FactuTrust.Domain.Common.Result.Success());
+
+        var handler = new CancelSupplierInvoiceCommandHandler(
+            invoiceRepo.Object,
+            poRepo.Object,
+            receiptRepo.Object,
+            new Mock<IAuditService>().Object,
+            accounting.Object);
+
+        var result = await handler.Handle(
+            new CancelSupplierInvoiceCommand(invoice.Id, "Saisie erronée"),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(SupplierInvoiceStatus.Cancelled, invoice.Status);
+        poRepo.Verify(
+            r => r.UpdateAsync(It.IsAny<PurchaseOrder>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        receiptRepo.Verify(
+            r => r.UpdateAsync(It.IsAny<PurchaseReceipt>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        accounting.Verify(
+            a => a.ReverseSupplierInvoiceEntryAsync(
+                invoice.Id, invoice.InvoiceNumber, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
     private static Supplier BuildSupplier()
     {
         var address = Address.Create("1 rue", "Tunis", "Tunis").Value;

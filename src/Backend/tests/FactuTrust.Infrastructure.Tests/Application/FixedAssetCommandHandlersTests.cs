@@ -16,7 +16,7 @@ public sealed class FixedAssetCommandHandlersTests
 {
     private static DepreciationRateCategory CreateCategory(decimal rate = 15m) =>
         DepreciationRateCategory.Create(
-            "OTHER", "Autres immobilisations", rate, "218", "2818", "6818",
+            "OTHER", "Autres immobilisations", rate, "228", "2828", "68112",
             isNonDepreciable: false, sortOrder: 99);
 
     private static FixedAsset CreateDraftAsset(
@@ -29,9 +29,9 @@ public sealed class FixedAssetCommandHandlersTests
             category.Id,
             category.LegalRatePercent,
             category.UsefulLifeYears,
-            "218",
-            "2818",
-            "6818",
+            "228",
+            "2828",
+            "68112",
             10_000m,
             0m,
             0m,

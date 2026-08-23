@@ -19,6 +19,36 @@ async function getRailWidth(page: import('@playwright/test').Page): Promise<numb
 }
 
 test.describe('Sidebar collapse', () => {
+  test('brand lockup fills the header when expanded and switches to icon when collapsed', async ({ page }) => {
+    if (!(await ensureAuthenticated(page))) {
+      test.skip(true, 'DOC_EMAIL/DOC_PASSWORD or demo credentials required');
+    }
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await waitForAppReady(page);
+    await page.goto('/dashboard');
+
+    const lockup = page.locator('#sidebar .icon-brand-lockup');
+    await expect(lockup).toBeVisible();
+    const box = await lockup.boundingBox();
+    expect(box).toBeTruthy();
+    expect(box!.height).toBeGreaterThan(52);
+    expect(box!.height).toBeLessThan(90);
+    expect(box!.width).toBeGreaterThan(140);
+    expect(box!.width).toBeLessThan(232);
+
+    await page.locator('.rail-collapse-btn').click();
+    await page.waitForTimeout(350);
+
+    await expect(page.locator('#sidebar.sidebar-collapsed')).toBeVisible();
+    await expect(page.locator('#sidebar .icon-logo-only')).toBeVisible();
+    await expect(page.locator('#sidebar .icon-brand-lockup')).toHaveCount(0);
+
+    const collapsedWidth = await getRailWidth(page);
+    expect(collapsedWidth).toBeGreaterThanOrEqual(68);
+    expect(collapsedWidth).toBeLessThanOrEqual(76);
+  });
+
   test('rail shrinks from expanded to collapsed width on toggle', async ({ page }) => {
     if (!(await ensureAuthenticated(page))) {
       test.skip(true, 'DOC_EMAIL/DOC_PASSWORD or demo credentials required');

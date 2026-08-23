@@ -1,224 +1,41 @@
-# Generates Row() lines for AddAccountingModule_Tenant migration (extended SCE seed).
-existing = {
-    401, 4011, 411, 4111, 4341, 43651, 43666, 43662, 43667, 43671, 436711, 436712, 4368,
-    532, 5321, 5324, 541, 5411, 607, 701, 705, 707, 6611, 6612, 6654, 691, 45311, 101, 131,
-}
+#!/usr/bin/env python3
+"""Read the canonical NCT 01 catalog JSON.
 
-rows = []
+New tenants receive the NCT plan via Nct01ChartMigrationService (embedded
+nct01-coa-catalog.json), not via the historical AddAccountingModule_Tenant seed.
+Do not paste generated rows into 20260326233329_AddAccountingModule_Tenant.cs.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+CATALOG = ROOT / "docs" / "accounting" / "nct01-coa-catalog.json"
 
 
-def add(num, label, cls, par, nat):
-    n = str(num)
-    if n in existing:
-        return
-    assert par is None or n.startswith(str(par)), (n, par)
-    lvl = len(n)
-    rows.append((n, label, cls, par, nat, lvl))
+def main() -> None:
+    data = json.loads(CATALOG.read_text(encoding="utf-8"))
+    accounts = data["accounts"]
+    numbers = {a["number"] for a in accounts}
+    print(f"version={data.get('version')} accounts={len(accounts)} source={data.get('source')}")
+    for required in ("603", "79", "7865", "43652", "4371", "4320", "641", "228"):
+        status = "ok" if required in numbers else "MISSING"
+        print(f"  {required}: {status}")
+    if "4477" in numbers:
+        raise SystemExit("Catalogue must not contain 4477 (FODEC overlay is 43652).")
+
+    print()
+    print("// Sample Row() lines for documentation only — do not seed 20260326.")
+    for account in accounts[:8]:
+        parent = "null" if not account.get("parent") else f'"{account["parent"]}"'
+        print(
+            f'            Row(Guid.NewGuid().ToString(), "{account["number"]}", '
+            f'"{account["label"]}", {account["accountClass"]}, {parent}, '
+            f'{account["natureType"]}, {account["level"]});'
+        )
 
 
-# Classe 1
-add(10, "Capital et réserves assimilées", 1, None, 1)
-add(102, "Capital appelé non versé", 1, "10", 1)
-add(105, "Primes liées au capital", 1, "10", 1)
-add(106, "Écarts de réévaluation", 1, "10", 1)
-add(108, "Comptes de l'exploitant", 1, "10", 1)
-add(109, "Actionnaires : capital souscrit non appelé", 1, "10", 1)
-add(11, "Réserves", 1, None, 1)
-add(12, "Report à nouveau", 1, None, 1)
-add(13, "Résultat net de l'exercice", 1, None, 1)
-add(135, "Résultat net : perte", 1, "13", 1)
-add(14, "Subventions d'investissement", 1, None, 1)
-add(15, "Provisions réglementées", 1, None, 1)
-add(16, "Emprunts et dettes assimilées", 1, None, 1)
-add(17, "Dettes de crédit-bail et assimilées", 1, None, 1)
-add(18, "Comptes de liaison des établissements", 1, None, 1)
-add(19, "Provisions pour risques et charges", 1, None, 1)
-
-# Classe 2
-add(20, "Immobilisations incorporelles", 2, None, 0)
-add(21, "Immobilisations corporelles", 2, None, 0)
-add(211, "Terrains", 2, "21", 0)
-add(212, "Constructions", 2, "21", 0)
-add(213, "Installations techniques", 2, "21", 0)
-add(218, "Autres immobilisations corporelles", 2, "21", 0)
-add(22, "Immobilisations mises en concession", 2, None, 0)
-add(23, "Immobilisations en cours", 2, None, 0)
-add(231, "Immobilisations corporelles en cours", 2, "23", 0)
-add(232, "Immobilisations incorporelles en cours", 2, "23", 0)
-add(233, "Immobilisations financières en cours", 2, "23", 0)
-add(235, "Immobilisations incorporelles", 2, "23", 0)
-add(2351, "Frais de développement", 2, "235", 0)
-add(237, "Avances et acomptes sur immobilisations", 2, "23", 0)
-add(238, "Avances et acomptes versés sur commandes", 2, "23", 0)
-add(24, "Immobilisations financières", 2, None, 0)
-add(25, "Titres immobilisés", 2, None, 0)
-add(251, "Titres du portefeuille d'immobilisation", 2, "25", 0)
-add(252, "Titres immobilisés de l'activité de portefeuille", 2, "25", 0)
-add(258, "Titres immobilisés autres", 2, "25", 0)
-add(26, "Participations et créances rattachées", 2, None, 0)
-add(27, "Autres immobilisations financières", 2, None, 0)
-add(28, "Amortissements des immobilisations", 2, None, 0)
-add(281, "Amortissements des immobilisations corporelles", 2, "28", 0)
-add(29, "Provisions pour dépréciation des immobilisations", 2, None, 0)
-
-# Classe 3
-add(31, "Matières premières et fournitures", 3, None, 0)
-add(311, "Matières premières", 3, "31", 0)
-add(312, "Matières et fournitures consommables", 3, "31", 0)
-add(313, "Emballages", 3, "31", 0)
-add(32, "Autres approvisionnements", 3, None, 0)
-add(33, "En-cours de production de biens", 3, None, 0)
-add(34, "En-cours de production de services", 3, None, 0)
-add(35, "Stocks de produits", 3, None, 0)
-add(36, "Stocks provenant d'immobilisations", 3, None, 0)
-add(37, "Stocks de marchandises", 3, None, 0)
-add(38, "Provisions pour dépréciation des stocks", 3, None, 0)
-add(39, "Provisions pour dépréciation des en-cours", 3, None, 0)
-
-# Classe 4
-add(40, "Fournisseurs et comptes rattachés", 4, None, 1)
-add(403, "Fournisseurs - effets à payer", 4, "40", 1)
-add(404, "Fournisseurs d'immobilisations", 4, "40", 1)
-add(405, "Fournisseurs de biens et services", 4, "40", 1)
-add(406, "Fournisseurs - factures non parvenues", 4, "40", 1)
-add(407, "Fournisseurs - autres avoirs", 4, "40", 1)
-add(408, "Fournisseurs - autres dettes", 4, "40", 1)
-add(409, "Fournisseurs - rabais, remises, ristournes", 4, "40", 1)
-add(41, "Clients et comptes rattachés", 4, None, 0)
-add(412, "Clients - effets à recevoir", 4, "41", 0)
-add(413, "Clients - autres avoirs", 4, "41", 0)
-add(414, "Clients - créances douteuses", 4, "41", 0)
-add(415, "Clients - autres créances", 4, "41", 0)
-add(416, "Clients - factures à établir", 4, "41", 0)
-add(417, "Clients - produits à recevoir", 4, "41", 0)
-add(418, "Clients - autres avoirs à recevoir", 4, "41", 0)
-add(42, "Personnel et comptes rattachés", 4, None, 1)
-add(43, "Sécurité sociale et autres organismes sociaux", 4, None, 1)
-add(431, "Sécurité sociale", 4, "43", 1)
-add(432, "Autres organismes sociaux", 4, "43", 1)
-add(433, "Caisse de retraite", 4, "43", 1)
-add(435, "Charges sociales à payer", 4, "43", 1)
-add(437, "Autres charges sociales", 4, "43", 1)
-add(438, "Organismes sociaux - autres", 4, "43", 1)
-add(44, "État et autres collectivités publiques", 4, None, 1)
-add(441, "État - subventions à recevoir", 4, "44", 1)
-add(442, "État - impôts et taxes recouvrables", 4, "44", 1)
-add(443, "État - TVA due", 4, "44", 1)
-add(444, "État - autres impôts", 4, "44", 1)
-add(445, "État - autres créances", 4, "44", 1)
-add(446, "État - autres dettes", 4, "44", 1)
-add(447, "État - autres comptes", 4, "44", 1)
-add(448, "État - charges à payer", 4, "44", 1)
-add(45, "Groupe et associés", 4, None, 1)
-add(451, "Groupe - comptes courants", 4, "45", 1)
-add(452, "Associés - comptes courants", 4, "45", 1)
-add(455, "Associés - opérations courantes", 4, "45", 1)
-add(456, "Associés - dividendes à payer", 4, "45", 1)
-add(46, "Débiteurs et créditeurs divers", 4, None, 0)
-add(47, "Comptes de régularisation", 4, None, 0)
-add(48, "Comptes de répartition périodique des charges", 4, None, 0)
-add(49, "Provisions pour dépréciation des comptes de tiers", 4, None, 0)
-
-# Classe 5
-add(51, "Valeurs mobilières de placement", 5, None, 0)
-add(511, "Titres du portefeuille de placement", 5, "51", 0)
-add(512, "Titres à court terme", 5, "51", 0)
-add(52, "Instruments de trésorerie", 5, None, 0)
-add(53, "Banques, établissements financiers et caisses", 5, None, 0)
-add(531, "Caisse siège social", 5, "53", 0)
-add(533, "Caisse succursales", 5, "53", 0)
-add(534, "Régies d'avances et d'accréditifs", 5, "53", 0)
-add(535, "Virements internes", 5, "53", 0)
-add(536, "Chèques postaux", 5, "53", 0)
-
-# Classe 6
-add(60, "Achats", 6, None, 0)
-add(601, "Achats stockés - Matières premières", 6, "60", 0)
-add(602, "Achats stockés - Autres approvisionnements", 6, "60", 0)
-add(603, "Variations des stocks", 6, "60", 0)
-add(604, "Achats d'études et prestations de services", 6, "60", 0)
-add(605, "Achats de matériel, équipements et travaux", 6, "60", 0)
-add(606, "Achats non stockés de matières et fournitures", 6, "60", 0)
-add(608, "Frais accessoires sur achats", 6, "60", 0)
-add(609, "Rabais, remises et ristournes obtenus sur achats", 6, "60", 0)
-add(61, "Services extérieurs", 6, None, 0)
-add(611, "Sous-traitance générale", 6, "61", 0)
-add(612, "Redevances de crédit-bail", 6, "61", 0)
-add(613, "Locations", 6, "61", 0)
-add(614, "Charges locatives et de copropriété", 6, "61", 0)
-add(615, "Entretien et réparations", 6, "61", 0)
-add(616, "Primes d'assurances", 6, "61", 0)
-add(617, "Études et recherches", 6, "61", 0)
-add(618, "Divers", 6, "61", 0)
-add(62, "Autres services extérieurs", 6, None, 0)
-add(63, "Impôts, taxes et versements assimilés", 6, None, 0)
-add(64, "Charges de personnel", 6, None, 0)
-add(651, "Redevances pour concessions, brevets, licences", 6, None, 0)
-add(652, "Jetons de présence", 6, None, 0)
-add(653, "Rémunérations d'intermédiaires et honoraires", 6, None, 0)
-add(654, "Pertes sur créances irrécouvrables", 6, None, 0)
-add(655, "Quotes-parts de résultat sur opérations faites en commun", 6, None, 0)
-add(656, "Charges de personnel externalisé", 6, None, 0)
-add(657, "Autres charges de personnel", 6, None, 0)
-add(658, "Charges diverses de gestion courante", 6, None, 0)
-add(659, "Charges exceptionnelles", 6, None, 0)
-add(66, "Charges financières", 6, None, 0)
-add(661, "Charges d'intérêts", 6, "66", 0)
-add(6613, "Pertes de change", 6, "661", 0)
-add(6614, "Escomptes accordés", 6, "661", 0)
-add(6615, "Charges assimilées", 6, "661", 0)
-add(662, "Pertes sur créances liées à des participations", 6, "66", 0)
-add(663, "Pertes sur titres de placement", 6, "66", 0)
-add(664, "Pertes sur instruments de trésorerie", 6, "66", 0)
-add(665, "Charges exceptionnelles financières", 6, "66", 0)
-add(6651, "Pénalités et amendes", 6, "665", 0)
-add(6652, "Divers", 6, "665", 0)
-add(6653, "Charges sur opérations de gestion", 6, "665", 0)
-add(666, "Dotations aux amortissements financiers", 6, "66", 0)
-add(667, "Dotations aux provisions financières", 6, "66", 0)
-add(668, "Autres charges financières", 6, "66", 0)
-add(669, "Charges financières de gestion courante", 6, "66", 0)
-add(67, "Charges exceptionnelles", 6, None, 0)
-add(671, "Charges exceptionnelles sur opérations de gestion", 6, "67", 0)
-add(672, "Charges exceptionnelles sur opérations en capital", 6, "67", 0)
-add(673, "Dotations exceptionnelles aux amortissements", 6, "67", 0)
-add(674, "Dotations exceptionnelles aux provisions", 6, "67", 0)
-add(675, "Valeurs comptables des éléments d'actif cédés", 6, "67", 0)
-add(676, "Autres charges exceptionnelles", 6, "67", 0)
-add(678, "Charges exceptionnelles diverses", 6, "67", 0)
-add(68, "Dotations aux amortissements et aux provisions", 6, None, 0)
-add(681, "Dotations aux amortissements sur immobilisations", 6, "68", 0)
-add(686, "Dotations aux provisions pour risques", 6, "68", 0)
-add(687, "Dotations aux provisions pour charges", 6, "68", 0)
-add(688, "Dotations aux autres provisions", 6, "68", 0)
-add(69, "Impôts sur les bénéfices et assimilés", 6, None, 0)
-
-# Classe 7
-add(70, "Ventes de produits finis, prestations et marchandises", 7, None, 1)
-add(702, "Ventes de produits intermédiaires", 7, "70", 1)
-add(703, "Ventes de produits résiduels", 7, "70", 1)
-add(704, "Travaux", 7, "70", 1)
-add(706, "Ventes de services", 7, "70", 1)
-add(708, "Produits des activités annexes", 7, "70", 1)
-add(71, "Subventions d'exploitation", 7, None, 1)
-add(72, "Production immobilisée", 7, None, 1)
-add(73, "Variations des stocks de produits", 7, None, 1)
-add(74, "Subventions d'exploitation reçues", 7, None, 1)
-add(75, "Autres produits de gestion courante", 7, None, 1)
-add(76, "Produits financiers", 7, None, 1)
-add(77, "Produits exceptionnels", 7, None, 1)
-add(78, "Reprises sur amortissements et provisions", 7, None, 1)
-add(79, "Transferts de charges", 7, None, 1)
-
-rows = rows[:151]
-out = __import__("sys").stderr
-print(f"count={len(rows)}", file=out)
-lines = []
-for i, r in enumerate(rows):
-    seq = 30 + i
-    g = f"11111111-1111-1111-1111-111111{seq:06d}"
-    num, label, cls, par, nat, lvl = r
-    par_sql = "null" if par is None else f'"{par}"'
-    lines.append(f'            Row("{g}", "{num}", "{label}", {cls}, {par_sql}, {nat}, {lvl});')
-Path = __import__("pathlib").Path
-Path(__file__).with_name("coa_seed_fragment.cs").write_text("\n".join(lines) + "\n", encoding="utf-8")
+if __name__ == "__main__":
+    main()

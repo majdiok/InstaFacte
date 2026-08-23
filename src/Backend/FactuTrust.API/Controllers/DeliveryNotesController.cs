@@ -226,7 +226,7 @@ public class DeliveryNotesController : ControllerBase
             "Recording delivery for note {DeliveryNoteId} with recipient {RecipientName}",
             id, dto.RecipientName);
 
-        var command = new RecordDeliveryCommand(id, dto);
+        var command = new RecordDeliveryCommand(id, dto, dto.LineAllocations);
         var result = await _mediator.Send(command, cancellationToken);
 
         if (result.IsFailure)

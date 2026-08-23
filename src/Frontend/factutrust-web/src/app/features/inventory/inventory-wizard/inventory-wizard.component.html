@@ -221,7 +221,7 @@
                 </div>
 
                 <div class="products-list" role="list" aria-label="Liste des produits à compter">
-                    @for (product of activeInventory()?.products; track product.productId; let i = $index) {
+                    @for (product of activeInventory()?.products; track lineKey(product); let i = $index) {
                     <div
                         class="product-item"
                         [class.active]="currentProductIndex() === i"
@@ -244,6 +244,9 @@
                             <strong>{{ product.productName }}</strong>
                             @if (product.productCode) {
                             <span class="product-code">{{ product.productCode }}</span>
+                            }
+                            @if (product.lotNumber) {
+                            <span class="product-code">Lot {{ product.lotNumber }}</span>
                             }
                         </div>
                         <div class="product-quantity">
@@ -276,6 +279,9 @@
                     <div class="count-form" (keydown)="onCountKeydown($event)">
                         @if (currentProduct()?.productCode) {
                         <span class="product-sku">REF: {{ currentProduct()?.productCode }}</span>
+                        }
+                        @if (currentProduct()?.lotNumber) {
+                        <span class="product-sku">Lot {{ currentProduct()?.lotNumber }}</span>
                         }
 
                         <div class="count-input-zone">
@@ -335,15 +341,17 @@
                 }
 
                 <div class="count-actions">
-                    @if (activeInventory()?.remainingProducts === 0) {
                     <app-button
                         variant="primary"
                         icon="pi-arrow-right"
                         iconPos="right"
                         (click)="goToSummary()">
+                        @if (activeInventory()?.remainingProducts === 0) {
                         Voir le résumé
+                        } @else {
+                        Terminer / voir le récapitulatif
+                        }
                     </app-button>
-                    }
                     <app-button
                         variant="ghost"
                         icon="pi-times"
@@ -374,9 +382,9 @@
                     Stock conforme ({{ inventorySummary()?.productsOk }} produits)
                 </h3>
                 <div class="summary-items">
-                    @for (item of inventorySummary()?.productsOkList; track item.productId) {
+                    @for (item of inventorySummary()?.productsOkList; track lineKey(item)) {
                     <div class="summary-item ok">
-                        <span class="item-name">{{ item.productName }}</span>
+                        <span class="item-name">{{ item.productName }}@if (item.lotNumber) { <span class="item-lot"> · Lot {{ item.lotNumber }}</span> }</span>
                         <span class="item-message">{{ item.humanMessage }}</span>
                     </div>
                     }
@@ -391,9 +399,9 @@
                     Différences détectées ({{ inventorySummary()?.productsWithDifference }} produits)
                 </h3>
                 <div class="summary-items">
-                    @for (item of inventorySummary()?.productsWithDifferenceList; track item.productId) {
+                    @for (item of inventorySummary()?.productsWithDifferenceList; track lineKey(item)) {
                     <div class="summary-item {{ item.differenceClass }}">
-                        <span class="item-name">{{ item.productName }}</span>
+                        <span class="item-name">{{ item.productName }}@if (item.lotNumber) { <span class="item-lot"> · Lot {{ item.lotNumber }}</span> }</span>
                         <span
                             class="item-difference"
                             [class.positive]="item.difference > 0"
@@ -410,12 +418,15 @@
             <div class="summary-group not-counted-group">
                 <h3>
                     <i class="pi pi-clock" aria-hidden="true"></i>
-                    Non comptés ({{ inventorySummary()?.productsNotCounted }} produits)
+                    Non saisis ({{ inventorySummary()?.productsNotCounted }} produits)
                 </h3>
+                <p class="not-counted-hint">
+                    Ces articles seront confirmés à la quantité système. Aucun ajustement de stock pour ces lignes.
+                </p>
                 <div class="summary-items">
-                    @for (item of inventorySummary()?.productsNotCountedList; track item.productId) {
+                    @for (item of inventorySummary()?.productsNotCountedList; track lineKey(item)) {
                     <div class="summary-item not-counted">
-                        <span class="item-name">{{ item.productName }}</span>
+                        <span class="item-name">{{ item.productName }}@if (item.lotNumber) { <span class="item-lot"> · Lot {{ item.lotNumber }}</span> }</span>
                         <span class="item-message">{{ item.humanMessage || 'Non compté' }}</span>
                     </div>
                     }

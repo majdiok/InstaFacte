@@ -91,6 +91,10 @@ public sealed class SetProductPublicVisibilityCommandHandler
                 return Result.Failure<bool>(Error.Validation(
                     "Product",
                     "Un produit inactif ne peut pas être publié sur la vitrine publique."));
+            if (product.IsVariantTemplate)
+                return Result.Failure<bool>(Error.Validation(
+                    "Product",
+                    "Un modèle de variantes ne peut pas être publié. Publiez les SKU enfants."));
         }
 
         var writeResult = await _tenantWriter.SetProductPublicVisibilityAsync(

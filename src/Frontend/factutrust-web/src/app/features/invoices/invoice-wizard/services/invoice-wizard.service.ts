@@ -294,7 +294,8 @@ export class InvoiceWizardService {
       currency: Currency.TND,
       internalReference: null,
       linkedInvoiceId: null,
-      warehouseId: null
+      warehouseId: null,
+      cashRegisterSessionId: null
     };
   }
 
@@ -1932,7 +1933,8 @@ export class InvoiceWizardService {
         currency: meta.currency,
         internalReference: meta.internalReference,
         linkedInvoiceId: isValidInvoiceGuid(meta.linkedInvoiceId) ? meta.linkedInvoiceId : null,
-        warehouseId: meta.warehouseId || null
+        warehouseId: meta.warehouseId || null,
+        cashRegisterSessionId: meta.cashRegisterSessionId || null
       },
       sellerId: state.seller?.id || null,
       client: state.client ? {
@@ -2337,7 +2339,8 @@ export class InvoiceWizardService {
           currency: (meta?.currency as Currency) || Currency.TND,
           internalReference: meta?.internalReference || null,
           linkedInvoiceId: meta?.linkedInvoiceId || null,
-          warehouseId: meta?.warehouseId ?? null
+          warehouseId: meta?.warehouseId ?? null,
+          cashRegisterSessionId: meta?.cashRegisterSessionId ?? null
         };
 
         const sellerInfo: SellerInfo | null = seller ? {

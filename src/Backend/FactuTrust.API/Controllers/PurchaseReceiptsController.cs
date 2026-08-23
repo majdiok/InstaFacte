@@ -278,6 +278,21 @@ public class PurchaseReceiptsController : ControllerBase
         return Ok(ApiResponse<object>.Ok(null!, "Bon de réception validé."));
     }
 
+    [HttpPost("{id:guid}/validate")]
+    [Authorize(Policy = PermissionPolicies.PurchaseReceiptsUpdate)]
+    public async Task<IActionResult> ValidatePurchaseReceiptWithAllocations(
+        Guid id,
+        [FromBody] IReadOnlyList<PurchaseReceiptLineAllocationsDto>? lineAllocations,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new ValidatePurchaseReceiptCommand(id, lineAllocations), cancellationToken);
+
+        if (result.IsFailure)
+            return MapFailure(result.Error);
+
+        return Ok(ApiResponse<object>.Ok(null!, "Bon de réception validé."));
+    }
+
     /// <summary>
     /// Cancel a purchase receipt (reverses stock/PO if previously validated).
     /// </summary>

@@ -92,11 +92,16 @@ public sealed class ReceiveGoodsCommandHandler : IRequestHandler<ReceiveGoodsCom
             if (line is null)
                 return Result.Failure(Error.Validation("Lines", "Ligne de commande introuvable."));
 
+            var lineAllocations = request.Dto.Lines
+                .FirstOrDefault(l => l.LineId == lineId)?.Allocations;
+
             stockLines.Add(new PurchaseReceptionStockLine(
                 line.ProductId,
                 receivedQty,
                 line.UnitPrice.Amount,
-                line.UnitPrice.Currency));
+                line.UnitPrice.Currency,
+                line.Id,
+                lineAllocations));
         }
 
         // Legacy stock reference kept as "BC {number}" for compatibility with existing movements.

@@ -79,7 +79,11 @@ public record DeliveryNoteDetailDto(
     DateTime CreatedAt,
     DateTime? UpdatedAt,
     Guid? WarehouseId = null,
-    string? WarehouseName = null);
+    string? WarehouseName = null,
+    decimal TotalReturnedQuantity = 0m,
+    decimal TotalInvoiceableQuantity = 0m,
+    bool HasInvoiceableQuantity = true,
+    IReadOnlyList<LinkedSalesReturnNoteDto>? ReturnNotes = null);
 
 /// <summary>
 /// DTO for delivery note lines — includes product snapshot for display and invoicing.
@@ -110,7 +114,9 @@ public record DeliveryNoteLineDto(
     decimal DiscountAmount = 0m,
     bool IsFodecApplicable = false,
     decimal FodecRatePercent = 0m,
-    decimal FodecAmount = 0m);
+    decimal FodecAmount = 0m,
+    decimal ReturnedQuantity = 0m,
+    decimal InvoiceableQuantity = 0m);
 
 /// <summary>
 /// DTO for creating a new delivery note.
@@ -145,7 +151,8 @@ public record RecordDeliveryDto(
     DateTime DeliveryDate,
     string RecipientName,
     string? RecipientSignature,
-    IReadOnlyList<RecordDeliveryLineDto>? Lines);
+    IReadOnlyList<RecordDeliveryLineDto>? Lines,
+    IReadOnlyList<DocumentLineAllocationsDto>? LineAllocations = null);
 
 /// <summary>
 /// DTO for recording delivery quantities per line.

@@ -17,6 +17,13 @@ public static class CursorSdkErrorMapper
             return "Configuration serveur Cursor invalide. Contactez l'administrateur.";
         }
 
+        if (rawError.Contains("sandboxing is not supported", StringComparison.OrdinalIgnoreCase)
+            || rawError.Contains("sandboxOptions.enabled", StringComparison.OrdinalIgnoreCase))
+        {
+            shouldLogAsError = true;
+            return "Configuration serveur Cursor invalide (sandbox). Contactez l'administrateur.";
+        }
+
         if (rawError.Contains("Invalid User API Key", StringComparison.OrdinalIgnoreCase)
             || rawError.Contains("AuthenticationError", StringComparison.OrdinalIgnoreCase)
             || rawError.Contains("authentication", StringComparison.OrdinalIgnoreCase))

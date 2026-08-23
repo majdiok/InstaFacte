@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using FactuTrust.Application.Configuration;
+using FactuTrust.Infrastructure.Accounting;
 using FactuTrust.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -13,6 +14,8 @@ namespace FactuTrust.Infrastructure.MultiTenancy;
 /// </summary>
 public sealed class TenantDatabaseProvisioner
 {
+    private static readonly SemaphoreSlim TemplateLock = new(1, 1);
+
     private readonly IOptions<TenantProvisioningOptions> _options;
     private readonly ILogger<TenantDatabaseProvisioner> _logger;
 
@@ -53,22 +56,41 @@ public sealed class TenantDatabaseProvisioner
 
     public async Task EnsureTenantTemplateAsync(string masterConnectionString, CancellationToken cancellationToken)
     {
+        await TemplateLock.WaitAsync(cancellationToken);
+        try
+        {
+            await EnsureTenantTemplateCoreAsync(masterConnectionString, cancellationToken);
+        }
+        finally
+        {
+            TemplateLock.Release();
+        }
+    }
+
+    private async Task EnsureTenantTemplateCoreAsync(string masterConnectionString, CancellationToken cancellationToken)
+    {
         var opts = _options.Value;
         var templateName = opts.TemplateDatabaseName;
         var backupPath = ResolveBackupPath(masterConnectionString);
+
+        if (await IsTemplateReadyForFastCloneAsync(masterConnectionString, templateName, backupPath, cancellationToken))
+        {
+            _logger.LogInformation(
+                "Tenant template {TemplateName} is current; skipping rebuild. BackupPath={BackupPath}",
+                templateName,
+                backupPath);
+            return;
+        }
 
         if (!await DatabaseExistsAsync(masterConnectionString, templateName, cancellationToken))
         {
             _logger.LogInformation("Creating tenant template database {TemplateName}", templateName);
             await CreateEmptyDatabaseAsync(masterConnectionString, templateName, cancellationToken);
-            var templateConn = BuildConnectionString(masterConnectionString, templateName);
-            await ApplyMigrationsAsync(templateConn, templateName, null, cancellationToken);
         }
-        else
-        {
-            var templateConn = BuildConnectionString(masterConnectionString, templateName);
-            await ApplyMigrationsAsync(templateConn, templateName, null, cancellationToken);
-        }
+
+        var templateConn = BuildConnectionString(masterConnectionString, templateName);
+        await ApplyMigrationsAsync(templateConn, templateName, null, cancellationToken);
+        await SeedTemplateCatalogsAsync(templateConn, cancellationToken);
 
         Directory.CreateDirectory(Path.GetDirectoryName(backupPath)!);
         await BackupDatabaseAsync(masterConnectionString, templateName, backupPath, cancellationToken);
@@ -107,16 +129,19 @@ END";
         Guid? tenantId,
         CancellationToken cancellationToken)
     {
-        var sw = Stopwatch.StartNew();
-        await EnsureTenantTemplateAsync(masterConnectionString, cancellationToken);
-
         var backupPath = ResolveBackupPath(masterConnectionString);
+        var templateName = _options.Value.TemplateDatabaseName;
+
+        if (!await IsTemplateReadyForFastCloneAsync(masterConnectionString, templateName, backupPath, cancellationToken))
+            await EnsureTenantTemplateAsync(masterConnectionString, cancellationToken);
+
         if (!File.Exists(backupPath))
             throw new InvalidOperationException($"Template backup not found at {backupPath}");
 
         if (await DatabaseExistsAsync(masterConnectionString, databaseName, cancellationToken))
             return;
 
+        var sw = Stopwatch.StartNew();
         var (dataLogical, logLogical) = await GetBackupFileListAsync(masterConnectionString, backupPath, cancellationToken);
         var dataDir = ResolveDataFileDirectory(masterConnectionString);
         Directory.CreateDirectory(dataDir);
@@ -183,6 +208,82 @@ WITH
         LogStep("ApplyMigrations", sw.ElapsedMilliseconds, tenantId, databaseName);
     }
 
+    private async Task SeedTemplateCatalogsAsync(string connectionString, CancellationToken cancellationToken)
+    {
+        var sw = Stopwatch.StartNew();
+        var options = new DbContextOptionsBuilder<TenantDbContext>()
+            .UseSqlServer(connectionString, b => b.MigrationsAssembly(typeof(TenantDbContext).Assembly.FullName))
+            .Options;
+
+        await using var context = new TenantDbContext(options);
+        await TenantRuntimeCatalogBootstrapper.EnsureAsync(context, cancellationToken);
+        LogStep("SeedTemplateCatalogs", sw.ElapsedMilliseconds, null);
+    }
+
+    private async Task<bool> IsTemplateReadyForFastCloneAsync(
+        string masterConnectionString,
+        string templateName,
+        string backupPath,
+        CancellationToken cancellationToken)
+    {
+        if (!File.Exists(backupPath))
+            return false;
+
+        if (!await DatabaseExistsAsync(masterConnectionString, templateName, cancellationToken))
+            return false;
+
+        var templateConn = BuildConnectionString(masterConnectionString, templateName);
+        var pendingCount = await GetPendingMigrationCountAsync(templateConn, cancellationToken);
+        var nctApplied = await IsNctCatalogAppliedAsync(templateConn, cancellationToken);
+        return TenantTemplateFreshness.CanRestoreWithoutRebuild(
+            backupFileExists: true,
+            templateDatabaseExists: true,
+            pendingMigrationCount: pendingCount,
+            nctCatalogApplied: nctApplied);
+    }
+
+    private static async Task<int> GetPendingMigrationCountAsync(
+        string connectionString,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var options = new DbContextOptionsBuilder<TenantDbContext>()
+                .UseSqlServer(connectionString, b => b.MigrationsAssembly(typeof(TenantDbContext).Assembly.FullName))
+                .Options;
+
+            await using var context = new TenantDbContext(options);
+            if (!await context.Database.CanConnectAsync(cancellationToken))
+                return int.MaxValue;
+
+            var pending = await context.Database.GetPendingMigrationsAsync(cancellationToken);
+            return pending.Count();
+        }
+        catch
+        {
+            return int.MaxValue;
+        }
+    }
+
+    private static async Task<bool> IsNctCatalogAppliedAsync(
+        string connectionString,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var options = new DbContextOptionsBuilder<TenantDbContext>()
+                .UseSqlServer(connectionString, b => b.MigrationsAssembly(typeof(TenantDbContext).Assembly.FullName))
+                .Options;
+
+            await using var context = new TenantDbContext(options);
+            return await Nct01ChartMigrationService.IsAppliedAsync(context, cancellationToken);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private async Task CreateEmptyDatabaseAsync(
         string masterConnectionString,
         string databaseName,
@@ -224,10 +325,40 @@ END";
         string backupPath,
         CancellationToken cancellationToken)
     {
-        var sql = $@"
-BACKUP DATABASE [{EscapeSqlIdentifier(databaseName)}]
-TO DISK = @path
-WITH INIT, COPY_ONLY, COMPRESSION, STATS = 10";
+        var compressionPref = _options.Value.UseBackupCompression;
+        if (compressionPref == true)
+        {
+            await ExecuteBackupAsync(masterConnectionString, databaseName, backupPath, compression: true, cancellationToken);
+            return;
+        }
+
+        if (compressionPref == false)
+        {
+            await ExecuteBackupAsync(masterConnectionString, databaseName, backupPath, compression: false, cancellationToken);
+            return;
+        }
+
+        try
+        {
+            await ExecuteBackupAsync(masterConnectionString, databaseName, backupPath, compression: true, cancellationToken);
+        }
+        catch (SqlException ex)
+        {
+            _logger.LogInformation(
+                ex,
+                "Backup compression is unavailable on this SQL edition; retrying without compression.");
+            await ExecuteBackupAsync(masterConnectionString, databaseName, backupPath, compression: false, cancellationToken);
+        }
+    }
+
+    private static async Task ExecuteBackupAsync(
+        string masterConnectionString,
+        string databaseName,
+        string backupPath,
+        bool compression,
+        CancellationToken cancellationToken)
+    {
+        var sql = TenantBackupSql.Build(EscapeSqlIdentifier(databaseName), compression);
 
         await using var connection = new SqlConnection(masterConnectionString);
         await connection.OpenAsync(cancellationToken);
@@ -306,7 +437,7 @@ WITH INIT, COPY_ONLY, COMPRESSION, STATS = 10";
     private void LogStep(string step, long durationMs, Guid? tenantId, string? databaseName = null)
     {
         _logger.LogInformation(
-            "FirmRegistration.Step={Step} DurationMs={DurationMs} TenantId={TenantId} DatabaseName={DatabaseName}",
+            "TenantProvision.Step={Step} DurationMs={DurationMs} TenantId={TenantId} DatabaseName={DatabaseName}",
             step,
             durationMs,
             tenantId,

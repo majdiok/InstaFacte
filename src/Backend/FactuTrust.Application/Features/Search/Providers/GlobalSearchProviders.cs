@@ -146,3 +146,27 @@ public sealed class SupplierGlobalSearchProvider : IGlobalSearchProvider
         }).ToList();
     }
 }
+
+public sealed class SalesReturnNoteGlobalSearchProvider : IGlobalSearchProvider
+{
+    private readonly ISalesReturnNoteRepository _repository;
+    public SalesReturnNoteGlobalSearchProvider(ISalesReturnNoteRepository repository) => _repository = repository;
+    public SearchEntityType EntityType => SearchEntityType.SalesReturnNote;
+    public string RequiredPermission => Permissions.SalesReturnNotes.Read;
+    public async Task<IReadOnlyList<GlobalSearchProviderResult>> SearchAsync(string query, int limit, CancellationToken cancellationToken)
+    {
+        var (items, _) = await _repository.SearchAsync(query, null, null, null, null, null, 1, limit, cancellationToken);
+        return items.Select(n => new GlobalSearchProviderResult
+        {
+            Id = n.Id,
+            Title = n.Number.Value,
+            Subtitle = n.Client?.Name ?? "Client inconnu",
+            Status = n.Status.ToDisplayString(),
+            Date = n.ReturnDate,
+            DetailRoute = $"/return-notes/{n.Id}",
+            ListRoute = $"/return-notes?search={Uri.EscapeDataString(query)}",
+            Icon = "fa-rotate-left",
+            Score = SearchScoring.ScoreMatch(query, n.Number.Value, n.Client?.Name, n.DeliveryNote?.Number.Value, n.Reason)
+        }).ToList();
+    }
+}

@@ -23,6 +23,7 @@ public static class SampleDocumentRenderModelFactory
             PrintableDocumentType.PurchaseOrder => "BON DE COMMANDE",
             PrintableDocumentType.DeliveryNote => "BON DE LIVRAISON",
             PrintableDocumentType.SupplierInvoice => "FACTURE D'ACHAT",
+            PrintableDocumentType.SalesReturnNote => "BON DE RETOUR",
             _ => "DOCUMENT"
         };
 

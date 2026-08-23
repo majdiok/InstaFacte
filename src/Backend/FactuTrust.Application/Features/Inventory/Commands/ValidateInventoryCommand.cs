@@ -1,18 +1,29 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
+using FactuTrust.Domain.Enums;
 using FluentValidation;
 using MediatR;
 
 namespace FactuTrust.Application.Features.Inventory.Commands;
 
 /// <summary>
+/// Comptage non encore persisté, appliqué juste avant la validation.
+/// </summary>
+public sealed record InventoryPendingCount(
+    Guid ProductId,
+    decimal CountedQuantity,
+    Guid? ProductLotId = null);
+
+/// <summary>
 /// Valide l'inventaire et applique les ajustements de stock.
-/// Tous les produits doivent avoir été comptés.
+/// Les lignes non saisies sont confirmées à la quantité système.
 /// </summary>
 public sealed record ValidateInventoryCommand(
-    Guid InventoryId) : IRequest<Result<ValidateInventoryResult>>;
+    Guid InventoryId,
+    IReadOnlyList<InventoryPendingCount>? PendingCounts = null) : IRequest<Result<ValidateInventoryResult>>;
 
 /// <summary>
 /// Résultat de la validation avec résumé pédagogique.
@@ -47,6 +58,20 @@ public sealed class ValidateInventoryCommandValidator : AbstractValidator<Valida
         RuleFor(x => x.InventoryId)
             .NotEmpty()
             .WithMessage("L'identifiant de l'inventaire est obligatoire.");
+
+        When(x => x.PendingCounts != null, () =>
+        {
+            RuleForEach(x => x.PendingCounts).ChildRules(count =>
+            {
+                count.RuleFor(c => c.ProductId)
+                    .NotEmpty()
+                    .WithMessage("L'identifiant du produit est obligatoire.");
+
+                count.RuleFor(c => c.CountedQuantity)
+                    .GreaterThanOrEqualTo(0)
+                    .WithMessage("La quantité comptée ne peut pas être négative.");
+            });
+        });
     }
 }
 
@@ -54,15 +79,21 @@ public sealed class ValidateInventoryCommandHandler : IRequestHandler<ValidateIn
 {
     private readonly IPhysicalInventoryRepository _inventoryRepository;
     private readonly IStockItemRepository _stockItemRepository;
+    private readonly IProductRepository _productRepository;
+    private readonly IStockMutationService _mutation;
     private readonly ITenantContext _tenantContext;
 
     public ValidateInventoryCommandHandler(
         IPhysicalInventoryRepository inventoryRepository,
         IStockItemRepository stockItemRepository,
+        IProductRepository productRepository,
+        IStockMutationService mutation,
         ITenantContext tenantContext)
     {
         _inventoryRepository = inventoryRepository;
         _stockItemRepository = stockItemRepository;
+        _productRepository = productRepository;
+        _mutation = mutation;
         _tenantContext = tenantContext;
     }
 
@@ -76,7 +107,16 @@ public sealed class ValidateInventoryCommandHandler : IRequestHandler<ValidateIn
         if (inventory == null)
             return Result.Failure<ValidateInventoryResult>(Error.NotFound("Inventaire", request.InventoryId));
 
-        // Validate the inventory (checks all products are counted)
+        if (request.PendingCounts is { Count: > 0 })
+        {
+            foreach (var pending in request.PendingCounts)
+            {
+                var recordResult = inventory.RecordCount(pending.ProductId, pending.CountedQuantity, pending.ProductLotId);
+                if (recordResult.IsFailure)
+                    return Result.Failure<ValidateInventoryResult>(recordResult.Error);
+            }
+        }
+
         var validateResult = inventory.Validate();
         if (validateResult.IsFailure)
             return Result.Failure<ValidateInventoryResult>(validateResult.Error);
@@ -93,35 +133,59 @@ public sealed class ValidateInventoryCommandHandler : IRequestHandler<ValidateIn
             var stockItem = await _stockItemRepository.GetByProductAndWarehouseAsync(
                 line.ProductId, inventory.WarehouseId, cancellationToken);
 
-            if (stockItem == null)
+            var difference = line.Difference;
+            Result mutationResult;
+            if (line.ProductLotId.HasValue)
             {
-                var createResult = StockItem.Create(line.ProductId, inventory.WarehouseId);
-                if (createResult.IsFailure)
-                    return Result.Failure<ValidateInventoryResult>(createResult.Error);
-
-                stockItem = createResult.Value;
-                try
+                var qty = Math.Abs(difference);
+                mutationResult = difference > 0
+                    ? ResultFrom(await _mutation.ApplyAsync(new StockMutationRequest
+                    {
+                        ProductId = line.ProductId,
+                        WarehouseId = inventory.WarehouseId,
+                        Kind = StockMutationKind.Entry,
+                        Quantity = qty,
+                        UnitCost = stockItem?.AverageCost ?? 0,
+                        Reason = MovementReason.InventoryAdjustment,
+                        Notes = $"Ajustement inventaire lot {line.LotNumber}",
+                        DocumentLineId = line.Id,
+                        DocumentKind = StockDocumentKind.Inventory,
+                        Allocations = new[]
+                        {
+                            new StockAllocationInput(qty, line.ProductLotId, LotNumber: line.LotNumber)
+                        }
+                    }, cancellationToken))
+                    : ResultFrom(await _mutation.ApplyAsync(new StockMutationRequest
+                    {
+                        ProductId = line.ProductId,
+                        WarehouseId = inventory.WarehouseId,
+                        Kind = StockMutationKind.Exit,
+                        Quantity = qty,
+                        Reason = MovementReason.InventoryAdjustment,
+                        Notes = $"Ajustement inventaire lot {line.LotNumber}",
+                        DocumentLineId = line.Id,
+                        DocumentKind = StockDocumentKind.Inventory,
+                        Allocations = new[]
+                        {
+                            new StockAllocationInput(qty, line.ProductLotId, LotNumber: line.LotNumber)
+                        }
+                    }, cancellationToken));
+            }
+            else
+            {
+                mutationResult = ResultFrom(await _mutation.ApplyAsync(new StockMutationRequest
                 {
-                    await _stockItemRepository.AddAsync(stockItem, cancellationToken);
-                }
-                catch (Exception ex) when (IsUniqueConstraintViolation(ex))
-                {
-                    var existing = await _stockItemRepository.GetByProductAndWarehouseAsync(
-                        line.ProductId, inventory.WarehouseId, cancellationToken);
-                    if (existing != null)
-                        stockItem = existing;
-                    else
-                        throw;
-                }
+                    ProductId = line.ProductId,
+                    WarehouseId = inventory.WarehouseId,
+                    Kind = StockMutationKind.Adjust,
+                    Quantity = line.CountedQuantity.Value,
+                    Notes = $"Ajustement inventaire #{inventory.Id:N}",
+                    Reason = MovementReason.InventoryAdjustment
+                }, cancellationToken));
             }
 
-            var adjustResult = stockItem.AdjustStock(line.CountedQuantity.Value,
-                $"Ajustement inventaire #{inventory.Id:N}");
-
-            if (adjustResult.IsFailure)
-                return Result.Failure<ValidateInventoryResult>(adjustResult.Error);
-
-            await _stockItemRepository.UpdateAsync(stockItem, cancellationToken);
+            if (mutationResult.IsFailure)
+                return Result.Failure<ValidateInventoryResult>(mutationResult.Error);
 
             adjustments.Add(new AdjustmentSummaryItem
             {
@@ -162,27 +226,6 @@ public sealed class ValidateInventoryCommandHandler : IRequestHandler<ValidateIn
         return $"✅ Inventaire terminé ! {ok} produit{(ok > 1 ? "s" : "")} OK, {withChanges} ajusté{(withChanges > 1 ? "s" : "")}.";
     }
 
-    private static bool IsUniqueConstraintViolation(Exception exception)
-    {
-        var current = exception;
-        while (current != null)
-        {
-            if (IsUniqueConstraintMessage(current.Message))
-                return true;
-
-            current = current.InnerException;
-        }
-
-        return false;
-    }
-
-    private static bool IsUniqueConstraintMessage(string? message)
-    {
-        if (string.IsNullOrWhiteSpace(message))
-            return false;
-
-        return message.Contains("IX_StockItems_ProductId_WarehouseId", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("duplicate", StringComparison.OrdinalIgnoreCase);
-    }
+    private static Result ResultFrom<T>(Result<T> result) =>
+        result.IsFailure ? Result.Failure(result.Error) : Result.Success();
 }

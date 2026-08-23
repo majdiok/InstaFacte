@@ -1,5 +1,6 @@
 import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { TooltipModule } from 'primeng/tooltip';
 
 /**
  * En-tête de page avec slot d'actions (`.page-header-actions`).
@@ -9,14 +10,26 @@ import { CommonModule } from '@angular/common';
 @Component({
   selector: 'app-page-header',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, TooltipModule],
   template: `
     <div class="page-header">
       <div class="page-header-content">
         <div class="page-header-breadcrumb">
           <ng-content select="[page-breadcrumb]"></ng-content>
         </div>
-        <h1 class="page-title">{{ title }}</h1>
+        <h1 class="page-title">
+          {{ title }}
+          @if (hint) {
+            <button
+              type="button"
+              class="page-title-hint"
+              [pTooltip]="hint"
+              tooltipPosition="bottom"
+              aria-label="Informations sur cette page">
+              <i class="pi pi-info-circle" aria-hidden="true"></i>
+            </button>
+          }
+        </h1>
         <p class="page-subtitle" *ngIf="subtitle">{{ subtitle }}</p>
       </div>
       <div class="page-header-actions">
@@ -81,6 +94,28 @@ import { CommonModule } from '@angular/common';
       margin: 0 0 var(--spacing-2);
       line-height: 1.2;
       letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-2, 0.5rem);
+    }
+
+    .page-title-hint {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      background: transparent;
+      color: var(--color-text-secondary, #64748b);
+      cursor: help;
+      padding: 0.15rem;
+      font-size: 1rem;
+      line-height: 1;
+      border-radius: var(--radius-full, 999px);
+    }
+
+    .page-title-hint:focus-visible {
+      outline: 2px solid var(--color-primary-500);
+      outline-offset: 2px;
     }
 
     :host-context(.theme-superieur) .page-title {
@@ -120,4 +155,5 @@ import { CommonModule } from '@angular/common';
 export class PageHeaderComponent {
   @Input() title = '';
   @Input() subtitle?: string;
+  @Input() hint?: string;
 }

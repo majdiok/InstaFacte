@@ -80,9 +80,8 @@ export const FIRM_GOVERNANCE_ROUTES: Routes = [
       },
       {
         path: 'social',
-        loadComponent: () =>
-          import('./firm-social-overview.component').then(m => m.FirmSocialOverviewComponent),
-        title: 'Cabinet — Suivi social'
+        redirectTo: '/firm/dashboard',
+        pathMatch: 'full'
       },
       {
         path: 'leaves',

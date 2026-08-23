@@ -23,7 +23,9 @@ import {
   CreateSupplierRequest,
   UpdateSupplierRequest,
   SupplierType,
-  SupplierRs7IsBracket
+  SupplierRs7IsBracket,
+  parseSupplierCreateConflict,
+  SupplierConflictField
 } from '@core/services/supplier.service';
 import {
   normalizeSupplierRs7IsBracket,
@@ -141,6 +143,11 @@ interface GovernorateOption {
                     <span>{{ getNifErrorMessage() }}</span>
                   </div>
                 }
+                @if (conflictSupplierId() && conflictField() === 'nif') {
+                  <a class="form-conflict-link" [routerLink]="['/suppliers', conflictSupplierId()]">
+                    Ouvrir le fournisseur existant
+                  </a>
+                }
               </div>
             </div>
 
@@ -180,6 +187,11 @@ interface GovernorateOption {
                   <i class="pi pi-exclamation-circle"></i>
                   <span>{{ errorMessageService.getErrorMessage(form.get('email')) }}</span>
                 </div>
+              }
+              @if (conflictSupplierId() && conflictField() === 'email') {
+                <a class="form-conflict-link" [routerLink]="['/suppliers', conflictSupplierId()]">
+                  Ouvrir le fournisseur existant
+                </a>
               }
             </div>
 
@@ -519,6 +531,14 @@ interface GovernorateOption {
       }
     }
 
+    .form-conflict-link {
+      display: inline-block;
+      margin-top: var(--spacing-1);
+      font-size: var(--font-size-sm);
+      color: var(--color-primary-600);
+      text-decoration: underline;
+    }
+
     .form-hint {
       color: var(--color-neutral-500);
       font-size: var(--font-size-sm);
@@ -586,6 +606,8 @@ export class SupplierFormComponent implements OnInit {
   saving = signal(false);
   supplierId: string | null = null;
   isEditMode = false;
+  readonly conflictSupplierId = signal<string | null>(null);
+  readonly conflictField = signal<SupplierConflictField | null>(null);
 
   breadcrumbItems: BreadcrumbItem[] = [];
 
@@ -661,6 +683,13 @@ export class SupplierFormComponent implements OnInit {
 
     this.form.get('isResident')?.valueChanges.subscribe(() => this.updateResidenceValidators());
     this.updateResidenceValidators();
+
+    this.form.get('email')?.valueChanges
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.clearServerConflict('email'));
+    this.form.get('nif')?.valueChanges
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.clearServerConflict('nif'));
 
     this.withholdingTaxService.getTypes(true).subscribe({
       next: (types) => {
@@ -828,6 +857,15 @@ export class SupplierFormComponent implements OnInit {
     if (control.errors['pattern']) {
       return 'Matricule fiscal invalide. Format attendu: NNNNNNN/L/A/M/NNN';
     }
+    if (control.errors['server']) {
+      const server = control.errors['server'];
+      if (typeof server === 'string') {
+        return server;
+      }
+      if (server && typeof server === 'object' && typeof server.message === 'string') {
+        return server.message;
+      }
+    }
     return '';
   }
 
@@ -922,8 +960,7 @@ export class SupplierFormComponent implements OnInit {
         },
         error: (err) => {
           this.saving.set(false);
-          const msg = this.errorHandler.extractErrorMessage(err);
-          this.toastService.add({ severity: 'error', summary: 'Erreur', detail: msg });
+          this.applySaveError(err);
         }
       });
     } else {
@@ -965,10 +1002,58 @@ export class SupplierFormComponent implements OnInit {
         },
         error: (err) => {
           this.saving.set(false);
-          const msg = this.errorHandler.extractErrorMessage(err);
-          this.toastService.add({ severity: 'error', summary: 'Erreur', detail: msg });
+          this.applySaveError(err);
         }
       });
     }
+  }
+
+  private applySaveError(err: { status?: number; error?: { data?: unknown } }): void {
+    if (err?.status === 409) {
+      this.applyDuplicateConflict(err);
+      return;
+    }
+    const msg = this.errorHandler.extractErrorMessage(err);
+    this.toastService.add({ severity: 'error', summary: 'Erreur', detail: msg });
+  }
+
+  private applyDuplicateConflict(err: { error?: { data?: unknown } }): void {
+    const msg = this.errorHandler.extractErrorMessage(err);
+    const conflict = parseSupplierCreateConflict(err, msg);
+    const control = this.form.get(conflict.field);
+    if (control) {
+      control.setErrors({ ...(control.errors ?? {}), server: msg });
+      control.markAsTouched();
+    }
+    this.conflictField.set(conflict.field);
+    this.conflictSupplierId.set(conflict.existingSupplierId);
+    this.toastService.add({
+      severity: 'warn',
+      summary: 'Fournisseur existant',
+      detail: msg,
+      life: 6000
+    });
+    this.focusField(conflict.field);
+  }
+
+  private clearServerConflict(field: SupplierConflictField): void {
+    const control = this.form.get(field);
+    if (control?.errors?.['server']) {
+      const rest = { ...control.errors };
+      delete rest['server'];
+      control.setErrors(Object.keys(rest).length ? rest : null);
+    }
+    if (this.conflictField() === field) {
+      this.conflictField.set(null);
+      this.conflictSupplierId.set(null);
+    }
+  }
+
+  private focusField(field: string): void {
+    queueMicrotask(() => {
+      const el = document.getElementById(field);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el?.focus();
+    });
   }
 }

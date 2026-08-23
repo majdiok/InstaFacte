@@ -73,7 +73,7 @@ export const ACCOUNTING_MODULES: AccountingModuleDef[] = [
     links: [
       { label: 'Journal', route: '/accounting/journal', icon: 'fa-solid fa-book', perms: ['accounting:read'] },
       { label: 'Grand livre', route: '/accounting/ledger', icon: 'fa-solid fa-book-open', perms: ['accounting:read'] },
-      { label: 'Journaux auxiliaires', route: '/accounting/sub-journals', icon: 'fa-solid fa-books', perms: ['accounting:read'] },
+      { label: 'Journaux auxiliaires', route: '/accounting/sub-journals', icon: 'fa-solid fa-book-bookmark', perms: ['accounting:read'] },
       { label: 'Récapitulatifs journaux', route: '/accounting/journal-summary', icon: 'fa-solid fa-table-cells-large', perms: ['accounting:read'] },
       { label: 'Balance', route: '/accounting/balance', icon: 'fa-solid fa-scale-balanced', perms: ['accounting:read'] },
       { label: 'Balance auxiliaire', route: '/accounting/auxiliary-balance', icon: 'fa-solid fa-address-book', perms: ['accounting:read'] },

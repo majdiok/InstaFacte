@@ -164,10 +164,12 @@ export interface ReportDefinition {
   sort: ReportSort[];
 }
 
-/** 0 = CustomEntity, 1 = ExistingSource (mirrors backend CustomReportDataSourceKind). */
+/** 0 = CustomEntity, 1 = ExistingSource, 2 = SqlQuery (mirrors backend CustomReportDataSourceKind). */
 export enum ReportDataSourceKind {
   CustomEntity = 0,
-  ExistingSource = 1
+  ExistingSource = 1,
+  /** Table réelle du tenant : filtres, jointures et agrégation exécutés par SQL. */
+  SqlQuery = 2
 }
 
 export interface ReportFieldMeta {
@@ -177,10 +179,23 @@ export interface ReportFieldMeta {
 }
 
 export interface ReportSource {
-  kind: 'custom' | 'existing';
+  kind: 'custom' | 'existing' | 'sql';
   ref: string;
   displayName: string;
+  /** Vide pour les sources `sql` : les champs sont chargés à la sélection (introspection à la demande). */
   fields: ReportFieldMeta[];
+  /** Domaine métier (Ventes, Achats, Stock…), utilisé pour grouper le sélecteur de source. */
+  domain?: string;
+}
+
+/** État métier prêt à l'emploi : le concepteur le charge d'un clic, l'assistant le nomme. */
+export interface ReportPreset {
+  key: string;
+  displayName: string;
+  description: string;
+  domain: string;
+  factTable: string;
+  hasPeriod: boolean;
 }
 
 export interface CustomReport {

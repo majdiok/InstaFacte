@@ -1,7 +1,9 @@
-import { Component, computed, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, OnInit, signal, untracked } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { EMPTY, distinctUntilChanged, finalize, map, switchMap } from 'rxjs';
 import { CardModule } from 'primeng/card';
 import { TagModule } from 'primeng/tag';
 import { ButtonModule } from 'primeng/button';
@@ -21,6 +23,8 @@ import {
 } from '@core/models/platform.models';
 import { TenantInvoicesTabComponent } from './tenant-invoices-tab.component';
 import { TenantModulesTabComponent } from './tenant-modules-tab.component';
+import { TenantModalSettingsTabComponent } from './tenant-modal-settings-tab.component';
+import { FtSkeletonComponent } from '@core/ui/skeleton/ft-skeleton.component';
 
 @Component({
   selector: 'app-platform-tenant-detail-page',
@@ -37,22 +41,34 @@ import { TenantModulesTabComponent } from './tenant-modules-tab.component';
     Textarea,
     TabsModule,
     TenantInvoicesTabComponent,
-    TenantModulesTabComponent
+    TenantModulesTabComponent,
+    TenantModalSettingsTabComponent,
+    FtSkeletonComponent
   ],
   template: `
     <p-button
       label="Retour à la liste"
       icon="pi pi-arrow-left"
       [outlined]="true"
+      severity="secondary"
       routerLink="/tenants"
       styleClass="back-btn" />
 
-    @if (detail) {
+    @if (loading()) {
+      <div class="detail-loading" aria-busy="true" aria-label="Chargement de l'entreprise">
+        <ft-skeleton shape="line" width="min(18rem, 70%)" />
+        <ft-skeleton shape="rect" width="100%" height="2.25rem" />
+        <ft-skeleton shape="line" />
+        <ft-skeleton shape="line" width="85%" />
+        <ft-skeleton shape="line" width="60%" />
+      </div>
+    } @else {
+      @if (detail(); as d) {
       <div class="detail-header">
-        <h1 class="page-title">{{ detail.companyName }}</h1>
+        <h1 class="page-title">{{ d.companyName }}</h1>
         <p-tag
-          [severity]="detail.isPayingSubscriber ? 'success' : 'secondary'"
-          [value]="detail.isPayingSubscriber ? 'Abonné payant' : 'Non abonné'" />
+          [severity]="d.isPayingSubscriber ? 'success' : 'secondary'"
+          [value]="d.isPayingSubscriber ? 'Abonné payant' : 'Non abonné'" />
       </div>
 
       <!-- Lot C6 (complément) — Bandeau cycle dunning actif -->
@@ -73,7 +89,11 @@ import { TenantModulesTabComponent } from './tenant-modules-tab.component';
         </div>
       }
 
-      <p-tabs class="ft-tab-view" [lazy]="true">
+      <p-tabs
+        class="ft-tab-view"
+        [lazy]="true"
+        [value]="activeTab()"
+        (valueChange)="onTabChange($event)">
         <p-tablist>
           <p-tab [value]="0"><i class="pi pi-info-circle"></i><span>Vue d’ensemble</span></p-tab>
           @if (canSeeInvoices()) {
@@ -82,6 +102,9 @@ import { TenantModulesTabComponent } from './tenant-modules-tab.component';
           @if (canSeeModules()) {
             <p-tab [value]="2"><i class="pi pi-th-large"></i><span>Modules</span></p-tab>
           }
+          @if (canSeeAiConfig()) {
+            <p-tab [value]="3"><i class="pi pi-microchip-ai"></i><span>Configuration IA</span></p-tab>
+          }
         </p-tablist>
         <p-tabpanels>
         <p-tabpanel [value]="0">
@@ -89,17 +112,23 @@ import { TenantModulesTabComponent } from './tenant-modules-tab.component';
             <p-card header="Identité & contact">
               <dl class="dl-grid">
                 <dt>Email</dt>
-                <dd>{{ detail.companyEmail }}</dd>
+                <dd [attr.title]="d.companyEmail">
+                  @if (d.companyEmail) {
+                    <a class="muted-link" [href]="'mailto:' + d.companyEmail">{{ d.companyEmail }}</a>
+                  } @else {
+                    —
+                  }
+                </dd>
                 <dt>NIF</dt>
-                <dd>{{ detail.nif }}</dd>
+                <dd>{{ d.nif }}</dd>
                 <dt>Téléphone</dt>
-                <dd>{{ detail.phone }}</dd>
+                <dd>{{ d.phone }}</dd>
                 <dt>Adresse</dt>
-                <dd>{{ detail.city }}, {{ detail.governorate }}</dd>
+                <dd>{{ d.city }}, {{ d.governorate }}</dd>
                 <dt>Site web</dt>
-                <dd>{{ detail.website ?? '—' }}</dd>
+                <dd [attr.title]="d.website ?? undefined">{{ d.website ?? '—' }}</dd>
                 <dt>Régime fiscal</dt>
-                <dd>{{ detail.taxRegimeDisplay }}</dd>
+                <dd>{{ d.taxRegimeDisplay }}</dd>
               </dl>
             </p-card>
 
@@ -107,15 +136,15 @@ import { TenantModulesTabComponent } from './tenant-modules-tab.component';
               <div class="sub-block">
                 <div class="sub-row">
                   <span class="sub-label">Plan</span>
-                  <span>{{ detail.subscriptionPlanDisplay ?? '—' }}</span>
+                  <span>{{ d.subscriptionPlanDisplay ?? '—' }}</span>
                 </div>
                 <div class="sub-row">
                   <span class="sub-label">Statut</span>
-                  <span>{{ detail.subscriptionStatusDisplay ?? '—' }}</span>
+                  <span>{{ d.subscriptionStatusDisplay ?? '—' }}</span>
                 </div>
                 <div class="sub-row">
                   <span class="sub-label">Fin de période</span>
-                  <span>{{ formatDate(detail.subscriptionEndDate) }}</span>
+                  <span>{{ formatDate(d.subscriptionEndDate) }}</span>
                 </div>
               </div>
               <div class="sub-actions">
@@ -132,12 +161,12 @@ import { TenantModulesTabComponent } from './tenant-modules-tab.component';
             <p-card header="Technique">
               <dl class="dl-grid">
                 <dt>Base de données</dt>
-                <dd><code class="code-pill">{{ detail.databaseName }}</code></dd>
+                <dd [attr.title]="d.databaseName"><code class="code-pill">{{ d.databaseName }}</code></dd>
                 <dt>Migrations tenant</dt>
                 <dd>
                   <p-tag
-                    [severity]="detail.hasMigrationsApplied ? 'success' : 'warning'"
-                    [value]="detail.hasMigrationsApplied ? 'À jour' : 'Manquantes'" />
+                    [severity]="d.hasMigrationsApplied ? 'success' : 'warning'"
+                    [value]="d.hasMigrationsApplied ? 'À jour' : 'Manquantes'" />
                 </dd>
                 <dt></dt>
                 <dd>
@@ -148,9 +177,9 @@ import { TenantModulesTabComponent } from './tenant-modules-tab.component';
 
             <p-card header="Statut entreprise">
               <p>
-                <p-tag [severity]="detail.isActive ? 'success' : 'danger'" [value]="detail.isActive ? 'Actif' : 'Inactif'" />
-                @if (detail.deactivatedAt) {
-                  <span class="deact"> Désactivée le {{ formatDate(detail.deactivatedAt) }}</span>
+                <p-tag [severity]="d.isActive ? 'success' : 'danger'" [value]="d.isActive ? 'Actif' : 'Inactif'" />
+                @if (d.deactivatedAt) {
+                  <span class="deact"> Désactivée le {{ formatDate(d.deactivatedAt) }}</span>
                 }
               </p>
             </p-card>
@@ -159,18 +188,24 @@ import { TenantModulesTabComponent } from './tenant-modules-tab.component';
 
         @if (canSeeInvoices()) {
           <p-tabpanel [value]="1">
-            <app-tenant-invoices-tab [tenantId]="detail.tenantId" />
+            <app-tenant-invoices-tab [tenantId]="d.tenantId" />
           </p-tabpanel>
         }
         @if (canSeeModules()) {
           <p-tabpanel [value]="2">
-            <app-tenant-modules-tab [tenantId]="detail.tenantId" />
+            <app-tenant-modules-tab [tenantId]="d.tenantId" />
+          </p-tabpanel>
+        }
+        @if (canSeeAiConfig()) {
+          <p-tabpanel [value]="3">
+            <app-tenant-modal-settings-tab [tenantId]="d.tenantId" />
           </p-tabpanel>
         }
         </p-tabpanels>
       </p-tabs>
-    } @else if (!loading) {
-      <p class="not-found">Entreprise introuvable.</p>
+      } @else {
+        <p class="not-found">Entreprise introuvable.</p>
+      }
     }
 
     <p-dialog
@@ -224,6 +259,13 @@ import { TenantModulesTabComponent } from './tenant-modules-tab.component';
       .back-btn {
         margin-bottom: var(--ft-space-4, 1rem);
       }
+
+      .detail-loading {
+        display: flex;
+        flex-direction: column;
+        gap: var(--ft-space-4, 1rem);
+        margin-top: var(--ft-space-2, 0.5rem);
+      }
       .detail-header {
         display: flex;
         flex-wrap: wrap;
@@ -268,7 +310,11 @@ import { TenantModulesTabComponent } from './tenant-modules-tab.component';
       .detail-grid {
         display: grid;
         gap: var(--ft-space-4, 1rem);
-        grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+        align-items: stretch;
+      }
+      :host ::ng-deep .detail-grid .p-card {
+        height: 100%;
       }
       :host ::ng-deep .detail-grid .p-card .p-card-title {
         font-size: 0.8rem;
@@ -293,6 +339,8 @@ import { TenantModulesTabComponent } from './tenant-modules-tab.component';
       dd {
         margin: 0;
         color: var(--ft-text, #e6edf3);
+        word-break: break-word;
+        overflow-wrap: anywhere;
       }
       .code-pill {
         font-size: 0.8rem;
@@ -300,6 +348,9 @@ import { TenantModulesTabComponent } from './tenant-modules-tab.component';
         border-radius: 6px;
         background: var(--ft-surface-2, #0d1117);
         border: 1px solid var(--ft-border, #30363d);
+        word-break: break-all;
+        display: inline-block;
+        max-width: 100%;
       }
       .sub-block {
         display: flex;
@@ -377,18 +428,33 @@ import { TenantModulesTabComponent } from './tenant-modules-tab.component';
 })
 export class PlatformTenantDetailPageComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly api = inject(PlatformTenantService);
   private readonly dunningApi = inject(PlatformDunningService);
   private readonly messages = inject(MessageService);
   private readonly permissions = inject(PlatformPermissionsService);
+  private readonly destroyRef = inject(DestroyRef);
 
-  detail: PlatformTenantDetailDto | null = null;
-  loading = true;
+  readonly detail = signal<PlatformTenantDetailDto | null>(null);
+  readonly loading = signal(true);
+  /** 0 overview · 1 invoices · 2 modules · 3 ai — ids stables, indépendants des @if. */
+  readonly activeTab = signal(0);
+  private loadedTenantId: string | null = null;
+
+  constructor() {
+    effect(() => {
+      if (!this.permissions.isLoaded()) {
+        return;
+      }
+      untracked(() => this.syncTabFromRoute());
+    });
+  }
 
   /** Visible si l'admin a la permission de lire les factures plateforme. */
   readonly canSeeInvoices = computed(() => this.permissions.has(PlatformPermission.InvoiceRead));
   /** Visible si l'admin a la permission de gérer les plans (donc les overrides modules). */
   readonly canSeeModules = computed(() => this.permissions.has(PlatformPermission.PlansManage));
+  readonly canSeeAiConfig = computed(() => this.permissions.has(PlatformPermission.AiManage));
   /** Lien direct vers la page Dunning si l'utilisateur a la permission `invoice:issue`. */
   readonly canSeeDunningLink = computed(() => this.permissions.has(PlatformPermission.InvoiceIssue));
 
@@ -409,12 +475,135 @@ export class PlatformTenantDetailPageComponent implements OnInit {
   cancelSaving = false;
 
   ngOnInit(): void {
-    const id = this.route.snapshot.paramMap.get('tenantId');
-    if (!id) {
-      this.loading = false;
+    this.route.queryParamMap
+      .pipe(
+        map((p) => p.get('tab') ?? 'overview'),
+        distinctUntilChanged(),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => this.syncTabFromRoute());
+
+    this.route.paramMap
+      .pipe(
+        map((p) => p.get('tenantId')),
+        distinctUntilChanged(),
+        switchMap((id) => {
+          if (!id) {
+            this.loadedTenantId = null;
+            this.detail.set(null);
+            this.loading.set(false);
+            return EMPTY;
+          }
+          this.loadedTenantId = id;
+          this.detail.set(null);
+          this.loading.set(true);
+          return this.api.get(id).pipe(finalize(() => this.loading.set(false)));
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: (res) => this.handleTenantResponse(res),
+        error: () => {
+          this.detail.set(null);
+          this.messages.add({
+            severity: 'error',
+            summary: 'Erreur',
+            detail: 'Impossible de charger le détail'
+          });
+        }
+      });
+  }
+
+  onTabChange(index: string | number): void {
+    const tabIndex = typeof index === 'number' ? index : Number(index);
+    if (Number.isNaN(tabIndex)) {
       return;
     }
-    this.load(id);
+
+    const key = this.tabKeyFromIndex(tabIndex);
+    const current = this.route.snapshot.queryParamMap.get('tab') ?? 'overview';
+    this.activeTab.set(tabIndex);
+
+    if (key === current) {
+      return;
+    }
+
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { tab: key },
+      queryParamsHandling: 'merge',
+      replaceUrl: true
+    });
+  }
+
+  private syncTabFromRoute(): void {
+    const next = this.clampTabIndex(this.tabIndexFromQuery(this.route.snapshot.queryParamMap.get('tab')));
+    if (this.activeTab() !== next) {
+      this.activeTab.set(next);
+    }
+  }
+
+  private clampTabIndex(index: number): number {
+    if (index === 3 && !this.canSeeAiConfig()) {
+      return 0;
+    }
+    if (index === 2 && !this.canSeeModules()) {
+      return 0;
+    }
+    if (index === 1 && !this.canSeeInvoices()) {
+      return 0;
+    }
+    return index;
+  }
+
+  private tabIndexFromQuery(raw: string | null): number {
+    if (raw === 'ai' && this.canSeeAiConfig()) {
+      return 3;
+    }
+    if (raw === 'invoices' && this.canSeeInvoices()) {
+      return 1;
+    }
+    if (raw === 'modules' && this.canSeeModules()) {
+      return 2;
+    }
+    return 0;
+  }
+
+  private tabKeyFromIndex(index: number): string {
+    switch (index) {
+      case 1:
+        return 'invoices';
+      case 2:
+        return 'modules';
+      case 3:
+        return 'ai';
+      default:
+        return 'overview';
+    }
+  }
+
+  private handleTenantResponse(res: { success: boolean; data?: PlatformTenantDetailDto | null; message?: string | null }): void {
+    if (res.success && res.data) {
+      this.detail.set(res.data);
+      const d = res.data;
+      if (d.subscriptionPlan != null) {
+        const p = d.subscriptionPlan;
+        if (typeof p === 'string') {
+          this.changePlan = p;
+        } else {
+          const map = ['Free', 'Monthly', 'Annual'] as const;
+          this.changePlan = map[p as number] ?? 'Free';
+        }
+      }
+      const id = this.loadedTenantId;
+      if (id) {
+        this.loadActiveDunning(id);
+      }
+      this.syncTabFromRoute();
+    } else {
+      this.detail.set(null);
+      this.messages.add({ severity: 'error', summary: 'Erreur', detail: res.message ?? 'Introuvable' });
+    }
   }
 
   formatDate(iso: string | null): string {
@@ -423,33 +612,26 @@ export class PlatformTenantDetailPageComponent implements OnInit {
     return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('fr-FR');
   }
 
+  /** Recharge le tenant courant (après changement d’abonnement). */
   load(id: string): void {
-    this.loading = true;
-    this.api.get(id).subscribe({
-      next: res => {
-        this.loading = false;
-        if (res.success && res.data) {
-          this.detail = res.data;
-          if (this.detail.subscriptionPlan != null) {
-            const p = this.detail.subscriptionPlan;
-            if (typeof p === 'string') {
-              this.changePlan = p;
-            } else {
-              const map = ['Free', 'Monthly', 'Annual'] as const;
-              this.changePlan = map[p as number] ?? 'Free';
-            }
-          }
-          // Lot C6 (complément) — Fetch async du cycle dunning actif (silencieux si erreur).
-          this.loadActiveDunning(id);
-        } else {
-          this.messages.add({ severity: 'error', summary: 'Erreur', detail: res.message ?? 'Introuvable' });
+    this.loading.set(true);
+    this.api
+      .get(id)
+      .pipe(
+        finalize(() => this.loading.set(false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: (res) => this.handleTenantResponse(res),
+        error: () => {
+          this.detail.set(null);
+          this.messages.add({
+            severity: 'error',
+            summary: 'Erreur',
+            detail: 'Impossible de charger le détail'
+          });
         }
-      },
-      error: () => {
-        this.loading = false;
-        this.messages.add({ severity: 'error', summary: 'Erreur', detail: 'Impossible de charger le détail' });
-      }
-    });
+      });
   }
 
   /** Lot C6 (complément) — Cherche s'il y a un cycle dunning Active pour ce tenant. */
@@ -478,7 +660,7 @@ export class PlatformTenantDetailPageComponent implements OnInit {
   }
 
   saveChangePlan(): void {
-    const id = this.detail?.tenantId;
+    const id = this.detail()?.tenantId;
     if (!id) return;
     this.changeSaving = true;
     this.api.changeSubscription(id, this.changePlan).subscribe({
@@ -500,7 +682,7 @@ export class PlatformTenantDetailPageComponent implements OnInit {
   }
 
   saveCancel(): void {
-    const id = this.detail?.tenantId;
+    const id = this.detail()?.tenantId;
     if (!id) return;
     const reason = this.cancelReason.trim();
     if (reason.length < 10) {

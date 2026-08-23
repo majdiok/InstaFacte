@@ -144,19 +144,18 @@ export enum MovementType {
 }
 
 export enum MovementReason {
-    // Entries
     Purchase = 1,
-    CustomerReturn = 3,
-    InitialStock = 8,
-
-    // Exits
     Sale = 2,
+    CustomerReturn = 3,
     SupplierReturn = 4,
+    InventoryAdjustment = 5,
     Damage = 6,
-
-    // Both
     Transfer = 7,
-    InventoryAdjustment = 5
+    InitialStock = 8,
+    Delivery = 9,
+    InternalUse = 10,
+    GiftOrSample = 11,
+    FoundOrOther = 12
 }
 
 @Injectable({
@@ -323,6 +322,114 @@ export class StockService {
             body
         );
     }
+
+    getFeatures(): Observable<ApiResponse<StockFeatures>> {
+        return this.http.get<ApiResponse<StockFeatures>>(`${this.API_URL}/features`);
+    }
+
+    getLots(stockItemId: string): Observable<ApiResponse<StockLotBalance[]>> {
+        return this.http.get<ApiResponse<StockLotBalance[]>>(`${this.API_URL}/items/${stockItemId}/lots`);
+    }
+
+    getExpiryAlerts(warehouseId?: string): Observable<ApiResponse<ExpiryAlert[]>> {
+        let params = new HttpParams();
+        if (warehouseId) params = params.set('warehouseId', warehouseId);
+        return this.http.get<ApiResponse<ExpiryAlert[]>>(`${this.API_URL}/expiry-alerts`, { params });
+    }
+
+    getLotsByProduct(productId: string, warehouseId: string): Observable<ApiResponse<StockLotBalance[]>> {
+        const params = new HttpParams().set('warehouseId', warehouseId);
+        return this.http.get<ApiResponse<StockLotBalance[]>>(
+            `${this.API_URL}/products/${productId}/lots`,
+            { params }
+        );
+    }
+
+    getSerialsByProduct(productId: string, warehouseId: string): Observable<ApiResponse<ProductSerial[]>> {
+        const params = new HttpParams().set('warehouseId', warehouseId);
+        return this.http.get<ApiResponse<ProductSerial[]>>(
+            `${this.API_URL}/products/${productId}/serials`,
+            { params }
+        );
+    }
+
+    getTraceabilityContext(
+        productIds: string[],
+        warehouseId: string
+    ): Observable<ApiResponse<ProductTraceabilityContext[]>> {
+        let params = new HttpParams().set('warehouseId', warehouseId);
+        for (const id of productIds) {
+            params = params.append('productIds', id);
+        }
+        return this.http.get<ApiResponse<ProductTraceabilityContext[]>>(
+            `${this.API_URL}/traceability/context`,
+            { params }
+        );
+    }
+}
+
+export interface StockFeatures {
+    lotTrackingEnabled: boolean;
+    serialTrackingEnabled: boolean;
+    expiryTrackingEnabled: boolean;
+    productVariantsEnabled: boolean;
+    fifoLifoValuationEnabled: boolean;
+    blockExpiredLotsOnExit: boolean;
+    strictTrackedAllocation: boolean;
+}
+
+export interface StockLotBalance {
+    productLotId: string;
+    lotNumber: string;
+    expiryDate: string | null;
+    quantityOnHand: number;
+    quantityReserved: number;
+    quantityAvailable: number;
+}
+
+export interface ExpiryAlert {
+    productId: string;
+    productCode: string;
+    productName: string;
+    warehouseId: string;
+    warehouseName: string;
+    lotNumber: string;
+    expiryDate: string;
+    quantityOnHand: number;
+    daysRemaining: number;
+}
+
+export interface ProductSerial {
+    id: string;
+    serialNumber: string;
+    productLotId: string | null;
+    lotNumber: string | null;
+    expiryDate: string | null;
+}
+
+export interface ProductTraceabilityContext {
+    productId: string;
+    trackingMode: number;
+    pickingPolicy: number;
+    hasExpiryTracking: boolean;
+    lotCount: number;
+    serialCount: number;
+}
+
+export interface StockAllocationInput {
+    quantity: number;
+    productLotId?: string | null;
+    lotNumber?: string | null;
+    expiryDate?: string | null;
+    manufacturedOn?: string | null;
+    serialId?: string | null;
+    serialNumber?: string | null;
+    unitCost?: number | null;
+}
+
+export interface DocumentLineAllocations {
+    lineId: string;
+    allocations: StockAllocationInput[];
 }
 
 // =====================================================

@@ -40,6 +40,14 @@ public interface ISupplierInvoiceRepository : IRepository<SupplierInvoice>
     /// </summary>
     Task<bool> ExistsByInvoiceNumberAsync(string invoiceNumber, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Non-cancelled invoices' external references for a supplier (paper invoice numbers).
+    /// Used to detect duplicate standalone captures after normalization.
+    /// </summary>
+    Task<IReadOnlyList<string>> GetNonCancelledExternalReferencesForSupplierAsync(
+        Guid supplierId,
+        CancellationToken cancellationToken = default);
+
     Task<(IReadOnlyList<SupplierInvoice> Items, int TotalCount)> SearchAsync(
         string? searchTerm,
         SupplierInvoiceStatus? status,

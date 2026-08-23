@@ -109,6 +109,7 @@ import type { FtTone } from '../badge/ft-badge.component';
         padding: var(--gap-card);
         min-height: 132px;
         position: relative;
+        box-shadow: var(--ft-elev-1);
         transition: border-color var(--duration-normal) var(--easing-standard),
           background var(--duration-normal) var(--easing-standard),
           transform var(--duration-fast) var(--easing-standard);
@@ -154,6 +155,7 @@ import type { FtTone } from '../badge/ft-badge.component';
       .kpi__icon {
         font-size: 1.05rem;
         color: var(--ft-text-subtle);
+        opacity: 0.85;
       }
 
       .kpi__row {
@@ -202,7 +204,7 @@ import type { FtTone } from '../badge/ft-badge.component';
 
       .kpi__hint {
         font-size: 0.78rem;
-        color: var(--ft-text-muted);
+        color: var(--ft-text-subtle);
       }
 
       /* Couleur de la sparkline et accent par tone */

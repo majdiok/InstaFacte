@@ -21,9 +21,9 @@ public sealed class CreateFixedAssetsFromSupplierInvoiceHandlerTests
             "OTHER",
             "Autres immobilisations",
             10m,
-            "218",
-            "2818",
-            "6818",
+            "228",
+            "2828",
+            "68112",
             isNonDepreciable: false,
             sortOrder: 99);
 
@@ -74,7 +74,7 @@ public sealed class CreateFixedAssetsFromSupplierInvoiceHandlerTests
     public async Task Handle_WhenFeatureDisabled_ShouldSkipCreation()
     {
         var category = DepreciationRateCategory.Create(
-            "OTHER", "Autres", 10m, "218", "2818", "6818", isNonDepreciable: false, sortOrder: 99);
+            "OTHER", "Autres", 10m, "228", "2828", "68112", isNonDepreciable: false, sortOrder: 99);
         var invoice = BuildSupplierInvoiceWithAssetLine(category.Id);
 
         var supplierInvoices = new Mock<ISupplierInvoiceRepository>();
@@ -135,7 +135,7 @@ public sealed class CreateFixedAssetsFromSupplierInvoiceHandlerTests
 
         var invoice = invoiceResult.Value;
         invoice.ApplyLineAssetClassifications([
-            (LineNumber: 1, IsFixedAsset: true, AssetAccountNumber: "218", DepreciationRateCategoryId: categoryId)
+            (LineNumber: 1, IsFixedAsset: true, AssetAccountNumber: "228", DepreciationRateCategoryId: categoryId)
         ]);
         return invoice;
     }

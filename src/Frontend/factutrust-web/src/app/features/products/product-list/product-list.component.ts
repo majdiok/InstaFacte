@@ -177,6 +177,18 @@ interface CategoryOption {
                 [value]="product.isStockManaged ? 'Stock activé' : 'Sans stock'" 
                 [severity]="product.isStockManaged ? 'success' : 'secondary'">
               </p-tag>
+              @if (product.isVariantTemplate) {
+                <p-tag value="Matrice" severity="warn" styleClass="ml-1"></p-tag>
+              }
+              @if (product.parentProductId) {
+                <p-tag value="Variante" severity="info" styleClass="ml-1"></p-tag>
+              }
+              @if (product.trackingMode === 1) {
+                <p-tag value="Lot" severity="contrast" styleClass="ml-1"></p-tag>
+              }
+              @if (product.trackingMode === 2) {
+                <p-tag value="Série" severity="contrast" styleClass="ml-1"></p-tag>
+              }
             </td>
             <td>
               <p-tag 

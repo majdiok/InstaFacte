@@ -142,9 +142,10 @@ public sealed class ReplenishmentService : IReplenishmentService
             .Where(il => il.Invoice.IssueDate >= since
                          && il.Invoice.Status != InvoiceStatus.Draft
                          && il.Invoice.Status != InvoiceStatus.Cancelled
+                         && il.ProductId.HasValue
                          && (warehouseId == null || il.Invoice.WarehouseId == warehouseId)
                          && (productId == null || il.ProductId == productId))
-            .GroupBy(il => new { il.ProductId, il.Invoice.IssueDate.Date })
+            .GroupBy(il => new { ProductId = il.ProductId!.Value, il.Invoice.IssueDate.Date })
             .Select(g => new { ProductId = g.Key.ProductId, Date = g.Key.Date, Qty = g.Sum(l => l.Quantity) })
             .ToListAsync(ct);
 

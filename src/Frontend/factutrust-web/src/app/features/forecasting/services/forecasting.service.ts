@@ -8,7 +8,6 @@ import { formatLocalDate } from '@core/utils/date.util';
 import {
   AbcClass,
   AbcXyzMatrix,
-  CalendarEvent,
   CreatePurchaseOrdersResult,
   ForecastHorizon,
   ForecastScopeType,
@@ -269,15 +268,6 @@ export class ForecastingService {
   }
 
   // ────────────────────── Calendar / Seasonal ───────────────────────────
-
-  getCalendar(from?: string, to?: string): Observable<CalendarEvent[]> {
-    let p = new HttpParams();
-    if (from) p = p.set('from', from);
-    if (to) p = p.set('to', to);
-    return this.http
-      .get<ApiResponse<CalendarEvent[]>>(`${this.base}/calendar`, { params: p })
-      .pipe(map(r => r.data ?? []));
-  }
 
   getSeasonalImpact(opts: { productId?: string; categoryId?: string; from?: string; to?: string } = {}): Observable<SeasonalImpact> {
     let p = new HttpParams();

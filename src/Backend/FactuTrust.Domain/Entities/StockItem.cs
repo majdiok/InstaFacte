@@ -69,7 +69,11 @@ public sealed class StockItem : AggregateRoot
         decimal unitCost,
         MovementReason reason,
         string? reference = null,
-        string? notes = null)
+        string? notes = null,
+        Guid? productLotId = null,
+        Guid? serialId = null,
+        Guid? valuationLayerId = null,
+        bool updateWeightedAverage = true)
     {
         if (quantity <= 0)
             return Result.Failure(Error.Validation("Quantity", "La quantité doit être positive"));
@@ -77,17 +81,18 @@ public sealed class StockItem : AggregateRoot
         if (unitCost < 0)
             return Result.Failure(Error.Validation("UnitCost", "Le coût unitaire ne peut pas être négatif"));
 
-        // Calculate new weighted average cost (CMUP)
-        var totalCurrentValue = QuantityOnHand * AverageCost;
-        var entryValue = quantity * unitCost;
-        var newTotalQuantity = QuantityOnHand + quantity;
-
-        if (newTotalQuantity > 0)
+        if (updateWeightedAverage)
         {
-            AverageCost = (totalCurrentValue + entryValue) / newTotalQuantity;
+            var totalCurrentValue = QuantityOnHand * AverageCost;
+            var entryValue = quantity * unitCost;
+            var newTotalQuantity = QuantityOnHand + quantity;
+            if (newTotalQuantity > 0)
+            {
+                AverageCost = (totalCurrentValue + entryValue) / newTotalQuantity;
+            }
         }
 
-        QuantityOnHand = newTotalQuantity;
+        QuantityOnHand += quantity;
 
         var movement = StockMovement.Create(
             Id,
@@ -97,7 +102,11 @@ public sealed class StockItem : AggregateRoot
             unitCost,
             QuantityOnHand,
             reference,
-            notes);
+            notes,
+            shortfallQuantity: null,
+            productLotId,
+            serialId,
+            valuationLayerId);
 
         _movements.Add(movement);
 
@@ -125,7 +134,11 @@ public sealed class StockItem : AggregateRoot
         MovementReason reason,
         string? reference = null,
         string? notes = null,
-        decimal? shortfallQuantity = null)
+        decimal? shortfallQuantity = null,
+        decimal? unitCostOverride = null,
+        Guid? productLotId = null,
+        Guid? serialId = null,
+        Guid? valuationLayerId = null)
     {
         if (quantity <= 0)
             return Result.Failure(Error.Validation("Quantity", "La quantité doit être positive"));
@@ -136,16 +149,21 @@ public sealed class StockItem : AggregateRoot
 
         QuantityOnHand -= quantity;
 
+        var unitCost = unitCostOverride ?? AverageCost;
+
         var movement = StockMovement.Create(
             Id,
             MovementType.Exit,
             reason,
             -quantity, // Negative for exits
-            AverageCost,
+            unitCost,
             QuantityOnHand,
             reference,
             notes,
-            shortfallQuantity);
+            shortfallQuantity,
+            productLotId,
+            serialId,
+            valuationLayerId);
 
         _movements.Add(movement);
 
@@ -310,6 +328,16 @@ public sealed class StockItem : AggregateRoot
 
     public void Deactivate() => IsActive = false;
     public void Activate() => IsActive = true;
+
+    /// <summary>
+    /// Recalcule le coût unitaire d'affichage (CMUP écran) à partir de la valeur restante
+    /// des couches FIFO/LIFO. Sans effet sur le chemin Average, qui continue d'écrire AverageCost
+    /// dans <see cref="RecordEntry"/>.
+    /// </summary>
+    public void RecalculateDisplayAverageCost(decimal remainingValue)
+    {
+        AverageCost = QuantityOnHand > 0 ? remainingValue / QuantityOnHand : 0;
+    }
 
     /// <summary>
     /// Checks if stock is below minimum threshold.

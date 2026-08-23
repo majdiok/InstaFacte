@@ -61,6 +61,8 @@ public sealed partial class AiToolExecutor : IAiToolExecutor
     private readonly IStudioQuotaService? _studioQuota;
     // Introspection SQL en lecture seule (fenêtres Studio) — même fournisseur gardé que le designer humain.
     private readonly Application.Features.Studio.Common.ISqlSchemaProvider? _sqlSchema;
+    // Moteur d'états sur les tables réelles — même moteur que le concepteur d'états humain.
+    private readonly Application.Features.Studio.Common.SqlReport.ISqlReportEngine? _sqlReports;
     // Forecasting module — optional. Resolved as singleton if registered (Features:Forecasting:Enabled=true), else null.
     private readonly IForecastingService? _forecasting;
     private readonly IReplenishmentService? _replenishment;
@@ -108,8 +110,11 @@ public sealed partial class AiToolExecutor : IAiToolExecutor
         // TreasuryForecast:Enabled est faux, les outils renvoient alors une erreur explicite.
         IOptions<TreasuryForecastOptions>? treasuryForecastOptions = null,
         ICashFlowForecastService? cashFlowForecast = null,
-        ICashFlowForecastRepository? cashFlowRepository = null)
+        ICashFlowForecastRepository? cashFlowRepository = null,
+        // Moteur d'états — optionnel comme les autres, pour ne pas casser les constructions de test.
+        Application.Features.Studio.Common.SqlReport.ISqlReportEngine? sqlReports = null)
     {
+        _sqlReports = sqlReports;
         _treasuryForecastOptions = treasuryForecastOptions?.Value ?? new TreasuryForecastOptions();
         _cashFlowForecast = cashFlowForecast;
         _cashFlowRepository = cashFlowRepository;
@@ -277,6 +282,11 @@ public sealed partial class AiToolExecutor : IAiToolExecutor
                 "studio_get_table_schema" => await HandleStudioGetTableSchema(arguments, cancellationToken),
                 "studio_plan_view" => await HandleStudioPlanView(arguments, cancellationToken),
                 "studio_list_sql_tables" => await HandleStudioListSqlTables(arguments, cancellationToken),
+                // ── Studio : états sur les tables réelles ──
+                "studio_list_report_sources" => await HandleStudioListReportSources(arguments, cancellationToken),
+                "studio_describe_report_source" => await HandleStudioDescribeReportSource(arguments, cancellationToken),
+                "studio_run_report" => await HandleStudioRunReport(arguments, cancellationToken),
+                "studio_plan_report" => await HandleStudioPlanReport(arguments, cancellationToken),
                 // ── Studio ERP bridge actions ──
                 "generate_invoice" => await HandleGenerateInvoice(arguments, cancellationToken),
                 "create_cash_expense" => await HandleCreateCashExpense(arguments, cancellationToken),

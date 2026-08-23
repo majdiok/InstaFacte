@@ -67,7 +67,7 @@ export class StockSimpleComponent implements OnInit {
     readonly warehouseContext = inject(WarehouseContextService);
     private auth = inject(AuthService);
 
-    canCreateStockMovement = computed(() => this.auth.hasPermission(PERMISSIONS.stock.create));
+    canCreateStockMovement = computed(() => this.auth.hasPermission(PERMISSIONS.stockVouchers.create));
 
     // Data
     overview = signal<SimpleStockOverview | null>(null);

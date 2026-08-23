@@ -1,0 +1,39 @@
+trigger:
+  - main
+  - master
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  TRUNK_ORG_URL_SLUG: instafact
+
+steps:
+  - task: NodeTool@0
+    inputs:
+      versionSpec: '20.x'
+    displayName: Install Node.js
+
+  - script: npm ci --legacy-peer-deps
+    workingDirectory: src/Frontend/factutrust-web
+    displayName: Install frontend dependencies
+
+  - script: npx playwright install --with-deps chromium
+    workingDirectory: src/Frontend/factutrust-web
+    displayName: Install Playwright Chromium
+
+  - script: npx playwright test --project=chromium
+    workingDirectory: src/Frontend/factutrust-web
+    displayName: Run Playwright tests
+
+  - script: |
+      curl -fL --retry 3 "https://github.com/trunk-io/analytics-cli/releases/latest/download/trunk-analytics-cli-x86_64-unknown-linux.tar.gz" | tar -xz
+      chmod +x trunk-analytics-cli
+      ./trunk-analytics-cli upload --junit-paths "src/Frontend/factutrust-web/e2e/test-results/junit.xml" \
+        --org-url-slug $(TRUNK_ORG_URL_SLUG) \
+        --token $(TRUNK_API_TOKEN)
+    condition: always()
+    displayName: Upload test results to Trunk.io
+    env:
+      TRUNK_API_TOKEN: $(TRUNK_API_TOKEN)
+      TRUNK_ORG_URL_SLUG: $(TRUNK_ORG_URL_SLUG)

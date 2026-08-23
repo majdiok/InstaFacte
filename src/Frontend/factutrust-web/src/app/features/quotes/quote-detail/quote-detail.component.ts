@@ -26,6 +26,7 @@ import {
   QuoteService,
   QuoteDetail,
 } from '@core/services/quote.service';
+import { RecurringContractService } from '@core/services/recurring-contract.service';
 
 interface TimelineEvent {
   status: string;
@@ -95,6 +96,15 @@ interface TimelineEvent {
             iconPos="left"
             (click)="confirmConvertToSalesOrder()">
             Transformer en commande
+          </app-button>
+        }
+        @if (canConvertToRecurringContract()) {
+          <app-button
+            variant="outline"
+            icon="pi-refresh"
+            iconPos="left"
+            (click)="confirmConvertToRecurringContract()">
+            Créer un contrat récurrent
           </app-button>
         }
       }
@@ -667,6 +677,8 @@ interface TimelineEvent {
 })
 export class QuoteDetailComponent implements OnInit {
   private quoteService = inject(QuoteService);
+  private recurringContractService = inject(RecurringContractService);
+  private auth = inject(AuthService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private confirmationService = inject(ConfirmationService);
@@ -811,6 +823,59 @@ export class QuoteDetailComponent implements OnInit {
 
   canConvertToOrder(): boolean {
     return this.quote()?.status === 'Accepted' && !this.quote()?.convertedInvoiceId && !this.quote()?.convertedSalesOrderId;
+  }
+
+  canConvertToRecurringContract(): boolean {
+    const q = this.quote();
+    return !!q
+      && q.status === 'Accepted'
+      && !q.convertedInvoiceId
+      && !q.convertedSalesOrderId
+      && this.auth.hasPermission(PERMISSIONS.recurringContracts.create);
+  }
+
+  confirmConvertToRecurringContract(): void {
+    this.confirmationService.confirm({
+      header: 'Créer un contrat récurrent',
+      message:
+        'Un contrat récurrent sera créé à partir de ce devis (lignes et client repris). Vous pourrez ajuster la périodicité avant activation.',
+      icon: 'pi pi-refresh',
+      acceptLabel: 'Créer le contrat',
+      rejectLabel: 'Annuler',
+      accept: () => this.convertToRecurringContract(),
+    });
+  }
+
+  convertToRecurringContract(): void {
+    const q = this.quote();
+    if (!q) return;
+    const today = new Date().toISOString().slice(0, 10);
+    this.recurringContractService.convertFromQuote(q.id, {
+      clientId: q.clientId,
+      billingFrequency: 0,
+      billingDayOfMonth: new Date().getDate(),
+      startDate: today,
+      autoRenew: true,
+      noticePeriodDays: 30,
+      sourceQuoteId: q.id,
+      lines: []
+    }).subscribe({
+      next: (contractId) => {
+        this.toastService.add({
+          severity: 'success',
+          summary: 'Contrat créé',
+          detail: 'Le contrat récurrent a été créé depuis le devis.',
+        });
+        void this.router.navigate(['/recurring-contracts', contractId]);
+      },
+      error: (err) => {
+        this.toastService.add({
+          severity: 'error',
+          summary: 'Échec',
+          detail: err?.error?.message ?? 'Impossible de créer le contrat.',
+        });
+      },
+    });
   }
 
   confirmConvertToInvoice(): void {

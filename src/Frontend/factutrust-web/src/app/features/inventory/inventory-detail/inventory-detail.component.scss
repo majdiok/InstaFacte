@@ -362,6 +362,13 @@
   color: var(--color-text-primary);
 }
 
+.lot-label {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
 .product-code {
   display: inline-block;
   padding: 2px 8px;

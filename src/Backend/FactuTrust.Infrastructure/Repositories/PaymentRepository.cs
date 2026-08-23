@@ -204,4 +204,17 @@ public sealed class PaymentRepository : IPaymentRepository
         await using var context = _contextFactory.CreateContext();
         return await context.Payments.AnyAsync(p => p.Id == id, cancellationToken);
     }
+
+    public async Task<IReadOnlyList<Payment>> GetByCashRegisterSessionIdAsync(
+        Guid cashRegisterSessionId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.Payments
+            .Include(p => p.Invoice)
+            .Where(p => p.CashRegisterSessionId == cashRegisterSessionId)
+            .OrderBy(p => p.PaymentDate)
+            .ThenBy(p => p.CreatedAt)
+            .ToListAsync(cancellationToken);
+    }
 }

@@ -44,6 +44,8 @@ export { FtCellRelativeDateComponent } from './table-cells/ft-cell-relative-date
 export { FtCellStatusComponent } from './table-cells/ft-cell-status.component';
 export { FtCellActionsMenuComponent } from './table-cells/ft-cell-actions-menu.component';
 export { FtCellPlanComponent } from './table-cells/ft-cell-plan.component';
+export { FtUserMenuComponent } from './user-menu/ft-user-menu.component';
+export { FtKeyboardShortcutsDialogComponent } from './keyboard-shortcuts/ft-keyboard-shortcuts-dialog.component';
 
 // Pipes (utiles à importer dans les composants pages)
 export { FtRelativeDatePipe } from '../pipes/ft-relative-date.pipe';

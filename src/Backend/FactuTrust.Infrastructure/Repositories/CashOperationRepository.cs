@@ -180,4 +180,16 @@ public sealed class CashOperationRepository : ICashOperationRepository
         await using var context = _contextFactory.CreateContext();
         return await context.CashOperations.AnyAsync(e => e.Id == id, cancellationToken);
     }
+
+    public async Task<IReadOnlyList<CashOperation>> GetByCashRegisterSessionIdAsync(
+        Guid cashRegisterSessionId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.CashOperations
+            .Where(e => e.CashRegisterSessionId == cashRegisterSessionId)
+            .OrderBy(e => e.OperationDate)
+            .ThenBy(e => e.CreatedAt)
+            .ToListAsync(cancellationToken);
+    }
 }

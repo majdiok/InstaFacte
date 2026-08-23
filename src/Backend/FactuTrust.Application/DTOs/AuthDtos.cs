@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 
@@ -109,6 +110,16 @@ public sealed record UserDto
 
     /// <summary>Effective permission strings (role ∩ modules).</summary>
     public IReadOnlyList<string> EffectivePermissions { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// First-login product tour status. Defaults to <see cref="ProductOnboardingStatus.Completed"/>
+    /// for older clients / users created before the feature existed.
+    /// </summary>
+    public ProductOnboardingStatus ProductOnboardingStatus { get; init; } = ProductOnboardingStatus.Completed;
+
+    public int ProductOnboardingVersion { get; init; }
+
+    public ProductOnboardingChecklistDto? ProductOnboardingChecklist { get; init; }
 }
 
 /// <summary>
@@ -183,4 +194,34 @@ public sealed record PlatformUserDto
     public IReadOnlyList<string> Roles { get; init; } = Array.Empty<string>();
     /// <summary>Liste des permissions effectives (union des rôles), au format <c>platform.&lt;cat&gt;:&lt;action&gt;</c>.</summary>
     public IReadOnlyList<string> Permissions { get; init; } = Array.Empty<string>();
+}
+
+/// <summary>Profil détaillé de l'admin courant (GET /api/platform/auth/me).</summary>
+public sealed record PlatformMeProfileDto
+{
+    public Guid Id { get; init; }
+    public string Email { get; init; } = null!;
+    public string FirstName { get; init; } = null!;
+    public string LastName { get; init; } = null!;
+    public IReadOnlyList<string> Roles { get; init; } = Array.Empty<string>();
+    public DateTime? LastLoginAt { get; init; }
+    public bool IsMfaEnabled { get; init; }
+}
+
+/// <summary>Mise à jour du profil courant (PUT /api/platform/auth/me).</summary>
+public sealed record UpdatePlatformMeProfileRequest
+{
+    [Required, StringLength(100, MinimumLength = 1)]
+    public string FirstName { get; init; } = null!;
+
+    [Required, StringLength(100, MinimumLength = 1)]
+    public string LastName { get; init; } = null!;
+
+    /// <summary>Si renseigné avec <see cref="NewPassword"/>, change le mot de passe.</summary>
+    public string? CurrentPassword { get; init; }
+
+    [StringLength(128, MinimumLength = 14)]
+    public string? NewPassword { get; init; }
+
+    public string? ConfirmNewPassword { get; init; }
 }

@@ -370,4 +370,44 @@ public sealed class EffectivePermissionsCalculatorTests
         Assert.Contains(Permissions.CustomData.ReportsView, set);
         Assert.Equal(6, set.Count);
     }
+
+    [Fact]
+    public void Projects_module_on_grants_administrator_project_keys()
+    {
+        var grants = Enum.GetValues<AppModule>().ToDictionary(m => m, _ => false);
+        grants[AppModule.Projects] = true;
+        var set = EffectivePermissionsCalculator.Compute(UserRole.Administrator, grants);
+        Assert.Contains(Permissions.Projects.Read, set);
+        Assert.Contains(Permissions.Projects.ManageTeam, set);
+        Assert.Contains(Permissions.ProjectTasks.Read, set);
+        Assert.Contains(Permissions.ProjectTime.Validate, set);
+        Assert.Contains(Permissions.ProjectBilling.Create, set);
+    }
+
+    [Fact]
+    public void Projects_module_off_strips_project_keys()
+    {
+        var grants = Enum.GetValues<AppModule>().ToDictionary(m => m, _ => true);
+        grants[AppModule.Projects] = false;
+        var set = EffectivePermissionsCalculator.Compute(UserRole.Administrator, grants);
+        Assert.DoesNotContain(Permissions.Projects.Read, set);
+        Assert.DoesNotContain(Permissions.ProjectTime.Validate, set);
+        Assert.DoesNotContain(Permissions.ProjectBilling.Create, set);
+    }
+
+    [Fact]
+    public void Projects_sub_features_time_only_excludes_billing()
+    {
+        var grants = Enum.GetValues<AppModule>().ToDictionary(m => m, _ => false);
+        grants[AppModule.Projects] = true;
+        var features = new Dictionary<AppModule, IReadOnlyList<string>>
+        {
+            [AppModule.Projects] = new[] { "time" }
+        };
+        var set = EffectivePermissionsCalculator.Compute(UserRole.Administrator, grants, features);
+        Assert.Contains(Permissions.ProjectTime.Read, set);
+        Assert.Contains(Permissions.ProjectTime.Validate, set);
+        Assert.DoesNotContain(Permissions.ProjectBilling.Create, set);
+        Assert.DoesNotContain(Permissions.Projects.ManageTeam, set);
+    }
 }

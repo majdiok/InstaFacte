@@ -1,5 +1,6 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Enums;
 using FluentValidation;
@@ -19,9 +20,6 @@ public sealed record RecordStockExitCommand(
     string? Reference,
     string? Notes) : IRequest<Result>;
 
-/// <summary>
-/// Validator for RecordStockExitCommand.
-/// </summary>
 public sealed class RecordStockExitCommandValidator : AbstractValidator<RecordStockExitCommand>
 {
     public RecordStockExitCommandValidator()
@@ -33,26 +31,23 @@ public sealed class RecordStockExitCommandValidator : AbstractValidator<RecordSt
     }
 }
 
-/// <summary>
-/// Handler for RecordStockExitCommand.
-/// </summary>
 public sealed class RecordStockExitCommandHandler : IRequestHandler<RecordStockExitCommand, Result>
 {
-    private readonly IStockItemRepository _stockItemRepository;
     private readonly IWarehouseRepository _warehouseRepository;
     private readonly IProductRepository _productRepository;
     private readonly ITenantContext _tenantContext;
+    private readonly IStockMutationService _mutation;
 
     public RecordStockExitCommandHandler(
-        IStockItemRepository stockItemRepository,
         IWarehouseRepository warehouseRepository,
         IProductRepository productRepository,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        IStockMutationService mutation)
     {
-        _stockItemRepository = stockItemRepository;
         _warehouseRepository = warehouseRepository;
         _productRepository = productRepository;
         _tenantContext = tenantContext;
+        _mutation = mutation;
     }
 
     public async Task<Result> Handle(RecordStockExitCommand request, CancellationToken cancellationToken)
@@ -60,7 +55,6 @@ public sealed class RecordStockExitCommandHandler : IRequestHandler<RecordStockE
         if (_tenantContext.TenantId is null)
             return Result.Failure(Error.Unauthorized("Aucun contexte d'entreprise disponible."));
 
-        // Validate product exists
         var product = await _productRepository.GetByIdAsync(request.ProductId, cancellationToken);
         if (product == null)
             return Result.Failure(Error.NotFound("Produit", request.ProductId));
@@ -68,7 +62,6 @@ public sealed class RecordStockExitCommandHandler : IRequestHandler<RecordStockE
         if (!product.IsStockManaged)
             return Result.Failure(Error.Validation("Product", "Ce produit n'a pas la gestion de stock activée."));
 
-        // Determine warehouse
         Guid warehouseId;
         if (request.WarehouseId.HasValue)
         {
@@ -82,18 +75,17 @@ public sealed class RecordStockExitCommandHandler : IRequestHandler<RecordStockE
             warehouseId = defaultWarehouse.Id;
         }
 
-        // Get stock item
-        var stockItem = await _stockItemRepository.GetByProductAndWarehouseAsync(request.ProductId, warehouseId, cancellationToken);
-        if (stockItem == null)
-            return Result.Failure(Error.Validation("StockItem", "Aucun stock trouvé pour ce produit dans cet entrepôt."));
+        var mutation = await _mutation.ApplyAsync(new StockMutationRequest
+        {
+            ProductId = request.ProductId,
+            WarehouseId = warehouseId,
+            Kind = StockMutationKind.Exit,
+            Quantity = request.Quantity,
+            Reason = request.Reason,
+            Reference = request.Reference,
+            Notes = request.Notes
+        }, cancellationToken);
 
-        // Record the exit
-        var exitResult = stockItem.RecordExit(request.Quantity, request.Reason, request.Reference, request.Notes);
-        if (exitResult.IsFailure)
-            return exitResult;
-
-        await _stockItemRepository.UpdateAsync(stockItem, cancellationToken);
-
-        return Result.Success();
+        return mutation.IsFailure ? Result.Failure(mutation.Error) : Result.Success();
     }
 }

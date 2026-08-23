@@ -21,11 +21,17 @@ public sealed class PlatformAiSettingsServiceTests
         {
             DefaultBaseUrl = "https://openrouter.ai/api/v1"
         });
+        var modal = Options.Create(new ModalSettings
+        {
+            DefaultBaseUrl = "https://example--ep-kimi-k3-server.us-west.modal.direct/v1",
+            DefaultModelId = "moonshotai/Kimi-K3"
+        });
         return new PlatformAiSettingsService(
             db,
             cache ?? new MemoryCache(new MemoryCacheOptions()),
             protection,
             openRouter,
+            modal,
             NullLogger<PlatformAiSettingsService>.Instance);
     }
 
@@ -354,5 +360,190 @@ public sealed class PlatformAiSettingsServiceTests
 
         Assert.False(ok);
         Assert.Contains("clé API", error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SetModalConfigAsync_EncryptsAndMasksKey()
+    {
+        var options = new DbContextOptionsBuilder<MasterDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var db = new MasterDbContext(options);
+        var service = CreateService(db);
+        var actorId = Guid.NewGuid();
+        const string token = "wk-testid.ws-testsecret";
+        const string baseUrl = "https://example--ep-kimi-k3-server.us-west.modal.direct/v1/";
+
+        var (ok, error) = await service.SetModalConfigAsync(
+            isEnabled: true,
+            displayName: "Kimi 3",
+            baseUrl: baseUrl,
+            apiKey: token,
+            actorId);
+
+        Assert.True(ok);
+        Assert.Null(error);
+
+        var masked = await service.GetModalSettingsAsync();
+        Assert.True(masked.IsEnabled);
+        Assert.Equal("Kimi 3", masked.DisplayName);
+        Assert.Equal("https://example--ep-kimi-k3-server.us-west.modal.direct/v1", masked.BaseUrl);
+        Assert.True(masked.IsApiKeyConfigured);
+        Assert.Equal("cret", masked.ApiKeyLast4);
+        Assert.DoesNotContain("ws-test", masked.ApiKeyLast4 ?? "");
+        Assert.Equal("moonshotai/Kimi-K3", masked.DefaultModelId);
+
+        var creds = await service.GetModalCredentialsAsync();
+        Assert.True(creds.IsEnabled);
+        Assert.Equal(token, creds.ApiKey);
+        Assert.Equal("https://example--ep-kimi-k3-server.us-west.modal.direct/v1", creds.BaseUrl);
+
+        var stored = await db.PlatformAiSettings.AsNoTracking().SingleAsync();
+        Assert.NotEqual(token, stored.ModalEncryptedApiKey);
+    }
+
+    [Fact]
+    public async Task SetModalConfigAsync_EmptyApiKey_KeepsExistingSecret()
+    {
+        var options = new DbContextOptionsBuilder<MasterDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var db = new MasterDbContext(options);
+        var service = CreateService(db);
+        var actorId = Guid.NewGuid();
+        const string token = "wk-testid.ws-secret-key12";
+        const string baseUrl = "https://example--ep-kimi-k3-server.us-west.modal.direct/v1";
+
+        await service.SetModalConfigAsync(true, "Modal", baseUrl, token, actorId);
+        var before = await service.GetModalSettingsAsync();
+
+        var (ok, error) = await service.SetModalConfigAsync(
+            isEnabled: true,
+            displayName: "Modal Updated",
+            baseUrl: baseUrl,
+            apiKey: null,
+            actorId);
+
+        Assert.True(ok);
+        Assert.Null(error);
+
+        var after = await service.GetModalSettingsAsync();
+        Assert.Equal("Modal Updated", after.DisplayName);
+        Assert.Equal(before.ApiKeyLast4, after.ApiKeyLast4);
+        Assert.True(after.IsApiKeyConfigured);
+
+        var creds = await service.GetModalCredentialsAsync();
+        Assert.Equal(token, creds.ApiKey);
+    }
+
+    [Fact]
+    public async Task SetModalConfigAsync_EnableWithoutKey_Fails()
+    {
+        var options = new DbContextOptionsBuilder<MasterDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var db = new MasterDbContext(options);
+        var service = CreateService(db);
+
+        var (ok, error) = await service.SetModalConfigAsync(
+            isEnabled: true,
+            displayName: "Modal",
+            baseUrl: "https://example--ep-kimi-k3-server.us-west.modal.direct/v1",
+            apiKey: null,
+            Guid.NewGuid());
+
+        Assert.False(ok);
+        Assert.Contains("clé API", error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SetModalConfigAsync_HttpUrl_Fails()
+    {
+        var options = new DbContextOptionsBuilder<MasterDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var db = new MasterDbContext(options);
+        var service = CreateService(db);
+
+        var (ok, error) = await service.SetModalConfigAsync(
+            isEnabled: true,
+            displayName: "Modal",
+            baseUrl: "http://example--ep-kimi-k3-server.us-west.modal.direct/v1",
+            apiKey: "wk-id.ws-secret",
+            Guid.NewGuid());
+
+        Assert.False(ok);
+        Assert.Contains("HTTPS", error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Sequential_GetDefault_Then_GetStudio_OnSameInstance_Succeeds()
+    {
+        var options = new DbContextOptionsBuilder<MasterDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var db = new MasterDbContext(options);
+        var row = PlatformAiSettings.CreateDefaults();
+        row.SetDefaultModel("qwen2.5:3b-instruct");
+        row.SetStudioAiModel("qwen2.5:7b-instruct");
+        db.PlatformAiSettings.Add(row);
+        await db.SaveChangesAsync();
+
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var service = CreateService(db, cache);
+
+        var defaultRef = await service.GetDefaultModelRefAsync();
+        var studioRef = await service.GetStudioAiModelRefAsync();
+
+        Assert.Equal("qwen2.5:3b-instruct", defaultRef);
+        Assert.Equal("qwen2.5:7b-instruct", studioRef);
+
+        db.PlatformAiSettings.Remove(row);
+        await db.SaveChangesAsync();
+
+        var defaultCached = await service.GetDefaultModelRefAsync();
+        var studioCached = await service.GetStudioAiModelRefAsync();
+        Assert.Equal(defaultRef, defaultCached);
+        Assert.Equal(studioRef, studioCached);
+    }
+
+    [Fact]
+    public async Task Parallel_GetDefault_And_GetStudio_OnSameInstance_DocumentsScopedContextConstraint()
+    {
+        // Invariant : les deux getters partagent le MasterDbContext scoped. Un Task.WhenAll
+        // sur cache miss déclenche « A second operation was started… » sur SQL Server.
+        // EF InMemory n'applique souvent pas cette contrainte — Skip dans ce cas ; le test
+        // séquentiel ci-dessus reste le contrat obligatoire.
+        var options = new DbContextOptionsBuilder<MasterDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var db = new MasterDbContext(options);
+        var row = PlatformAiSettings.CreateDefaults();
+        row.SetDefaultModel("qwen2.5:3b-instruct");
+        row.SetStudioAiModel("qwen2.5:7b-instruct");
+        db.PlatformAiSettings.Add(row);
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db, new MemoryCache(new MemoryCacheOptions()));
+
+        try
+        {
+            await Task.WhenAll(
+                service.GetDefaultModelRefAsync(),
+                service.GetStudioAiModelRefAsync());
+        }
+        catch (InvalidOperationException ex) when (
+            ex.Message.Contains("second operation", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        // EF InMemory : pas de throw. Documenté, pas un faux vert sur le provider de prod.
     }
 }

@@ -163,11 +163,17 @@ public interface IPdfService
     /// <summary>Génère le PDF individuel d'un bon de livraison avec un modèle visuel.</summary>
     Task<byte[]> GenerateDeliveryNotePdfAsync(DeliveryNote deliveryNote, Company? issuer, string? templateKey, CancellationToken cancellationToken = default);
 
+    /// <summary>Génère le PDF individuel d'un bon de retour client.</summary>
+    Task<byte[]> GenerateSalesReturnNotePdfAsync(SalesReturnNote note, Company? issuer, string? templateKey, CancellationToken cancellationToken = default);
+
     /// <summary>Génère le PDF d'une facture d'achat (fournisseur) avec un modèle visuel.</summary>
     Task<byte[]> GenerateSupplierInvoicePdfAsync(SupplierInvoice supplierInvoice, Company? issuer, string? templateKey, CancellationToken cancellationToken = default);
 
     /// <summary>Génère le PDF d'un bon de réception d'achat.</summary>
     Task<byte[]> GeneratePurchaseReceiptPdfAsync(PurchaseReceipt receipt, CancellationToken cancellationToken = default);
+
+    /// <summary>Génère le PDF d'un bon d'entrée ou de sortie de stock.</summary>
+    Task<byte[]> GenerateStockVoucherPdfAsync(StockVoucher voucher, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Generates a PDF for a stock transfer between warehouses.

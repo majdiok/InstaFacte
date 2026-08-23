@@ -371,6 +371,80 @@ public sealed class DeliveryNoteRepositoryTests : IDisposable
         Assert.Equal(2, verified.Lines.Count);
     }
 
+    [Fact]
+    public async Task UpdateAsync_AfterMarkAsInvoicedOnDetachedEntity_PersistsWithoutConcurrencyException()
+    {
+        var client = await CreateClientAsync(
+            name: "Client BL Facture",
+            email: "bl-invoice@test.com",
+            nifValue: "1234567/A/B/C/902");
+
+        Product product;
+        using (var context = _contextFactory.CreateContext())
+        {
+            var productResult = Product.Create(
+                code: "BLINV001",
+                name: "Article BL facture",
+                type: ProductType.Service,
+                unitPrice: Money.Create(100m, "TND"),
+                vatRate: VatRate.Standard,
+                categoryId: Guid.NewGuid());
+            Assert.True(productResult.IsSuccess, productResult.Error?.Description);
+            product = productResult.Value;
+            context.Products.Add(product);
+            await context.SaveChangesAsync();
+        }
+
+        var noteNumberResult = DeliveryNoteNumber.Generate(2026, 201);
+        Assert.True(noteNumberResult.IsSuccess, noteNumberResult.Error?.Description);
+
+        var deliveryNoteResult = DeliveryNote.Create(
+            number: noteNumberResult.Value,
+            client: client,
+            issueDate: DateTime.UtcNow.Date,
+            deliveryAddress: "10 rue de la Livraison",
+            deliveryCity: "Monastir");
+        Assert.True(deliveryNoteResult.IsSuccess, deliveryNoteResult.Error?.Description);
+
+        var deliveryNote = deliveryNoteResult.Value;
+        using (var context = _contextFactory.CreateContext())
+        {
+            product = await context.Products.FirstAsync(p => p.Id == product.Id);
+        }
+
+        Assert.True(deliveryNote.AddLine(product, 3m).IsSuccess);
+        Assert.True(deliveryNote.Confirm().IsSuccess);
+        var line = Assert.Single(deliveryNote.Lines);
+        Assert.True(line.RecordDelivery(3m).IsSuccess);
+        Assert.True(deliveryNote.RecordDelivery(DateTime.UtcNow.Date, "Réceptionnaire").IsSuccess);
+
+        await _repository.AddAsync(deliveryNote);
+        var versionBefore = deliveryNote.Version;
+
+        var detached = await _repository.GetByIdWithDetailsAsync(deliveryNote.Id);
+        Assert.NotNull(detached);
+
+        var invoiceNumber = InvoiceNumber.Create("FAC", 2026, 77);
+        var invoiceResult = Invoice.CreateFromDeliveryNote(
+            invoiceNumber,
+            detached!.Client!,
+            DateTime.UtcNow.Date,
+            detached.Id);
+        Assert.True(invoiceResult.IsSuccess, invoiceResult.Error?.Description);
+
+        Assert.True(detached.MarkAsInvoiced(invoiceResult.Value).IsSuccess);
+        Assert.Equal(versionBefore + 1, detached.Version);
+
+        var updateException = await Record.ExceptionAsync(() => _repository.UpdateAsync(detached));
+        Assert.Null(updateException);
+
+        using var verify = _contextFactory.CreateContext();
+        var reloaded = await verify.DeliveryNotes.FirstAsync(d => d.Id == deliveryNote.Id);
+        Assert.Equal(DeliveryNoteStatus.Invoiced, reloaded.Status);
+        Assert.Equal(invoiceResult.Value.Id, reloaded.InvoiceId);
+        Assert.Equal(versionBefore + 1, reloaded.Version);
+    }
+
     private async Task<Client> CreateClientAsync(string name, string email, string nifValue)
     {
         using var context = _contextFactory.CreateContext();

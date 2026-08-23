@@ -168,7 +168,7 @@ public sealed class PayrollReportExportTests
         [
             new PayrollJournalAccountingLineDto { AccountNumber = "640", AccountLabel = "Charges de personnel", Label = "Paie 03/2026", Debit = 2000m, Credit = 0m },
             new PayrollJournalAccountingLineDto { AccountNumber = "647", AccountLabel = "Charges sociales de l'employeur", Label = "Paie 03/2026", Debit = 409.400m, Credit = 0m },
-            new PayrollJournalAccountingLineDto { AccountNumber = "421", AccountLabel = "Personnel — rémunérations dues", Label = "Paie 03/2026", Debit = 0m, Credit = 1558.226m },
+            new PayrollJournalAccountingLineDto { AccountNumber = "425", AccountLabel = "Personnel — rémunérations dues", Label = "Paie 03/2026", Debit = 0m, Credit = 1558.226m },
             new PayrollJournalAccountingLineDto { AccountNumber = "432", AccountLabel = "État — retenues et taxes sur salaires", Label = "Paie 03/2026", Debit = 0m, Credit = 328.174m },
             new PayrollJournalAccountingLineDto { AccountNumber = "453", AccountLabel = "Organismes sociaux", Label = "Paie 03/2026", Debit = 0m, Credit = 523m }
         ]

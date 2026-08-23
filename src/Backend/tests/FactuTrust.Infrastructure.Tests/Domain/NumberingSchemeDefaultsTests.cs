@@ -45,6 +45,20 @@ public sealed class NumberingSchemeDefaultsTests
         Assert.Equal("FAC-2026-00042", render.Value);
     }
 
+    [Theory]
+    [InlineData(NumberingDocumentType.StockEntry, "BE")]
+    [InlineData(NumberingDocumentType.StockIssue, "BS")]
+    public void GetDefaultBlocks_StockVouchers_UseDedicatedPrefixes(
+        NumberingDocumentType documentType,
+        string prefix)
+    {
+        var blocks = NumberingSchemeDefaults.GetDefaultBlocks(documentType);
+        Assert.Equal(prefix, blocks[0].Value);
+        Assert.NotEqual("BR", prefix);
+        Assert.NotEqual("BL", prefix);
+        Assert.NotEqual("TR", prefix);
+    }
+
     [Fact]
     public void DeserializeBlocks_ReadsCamelCaseFormat_RoundTripsWithSerialize()
     {

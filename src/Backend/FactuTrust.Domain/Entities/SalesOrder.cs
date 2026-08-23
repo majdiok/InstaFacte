@@ -123,6 +123,10 @@ public sealed class SalesOrder : AggregateRoot
         if (!Status.CanBeEdited())
             return Result.Failure(Error.Validation("Status", "Cette commande ne peut plus être modifiée"));
 
+        var sellable = ProductCommercialGuards.EnsureCanAppearOnDocument(product);
+        if (sellable.IsFailure)
+            return sellable;
+
         var unitPrice = customUnitPrice ?? product.UnitPrice;
         var lineResult = SalesOrderLine.Create(
             this, _lines.Count + 1, product, quantity, unitPrice, discountPercent, fodecRatePercent, notes,
@@ -265,6 +269,30 @@ public sealed class SalesOrder : AggregateRoot
         }
 
         AdvanceStatus();
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Impute des retours pré-facture. Ne pas confondre avec <see cref="ReverseDeliveries"/>,
+    /// qui rouvre le reste à livrer.
+    /// </summary>
+    public Result RecordReturns(IEnumerable<(Guid LineId, decimal Quantity)> returns)
+    {
+        var items = returns?.ToList() ?? new List<(Guid, decimal)>();
+        if (items.Count == 0)
+            return Result.Failure(Error.Validation("Returns", "Aucune ligne à retourner"));
+
+        foreach (var (lineId, quantity) in items)
+        {
+            var line = _lines.FirstOrDefault(l => l.Id == lineId);
+            if (line is null)
+                return Result.Failure(Error.NotFound("SalesOrderLine", lineId));
+
+            var result = line.RecordReturn(quantity);
+            if (result.IsFailure)
+                return result;
+        }
+
         return Result.Success();
     }
 

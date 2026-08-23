@@ -1,6 +1,7 @@
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Events;
+using FactuTrust.Domain.Services;
 using FactuTrust.Domain.ValueObjects;
 
 namespace FactuTrust.Domain.Entities;
@@ -133,6 +134,10 @@ public sealed class DeliveryNote : AggregateRoot
         if (!Status.CanBeEdited())
             return Result.Failure(Error.Validation("Status", "Ce bon de livraison ne peut plus être modifié"));
 
+        var sellable = ProductCommercialGuards.EnsureCanAppearOnDocument(product);
+        if (sellable.IsFailure)
+            return sellable;
+
         if (orderedQuantity <= 0)
             return Result.Failure(Error.Validation("OrderedQuantity", "La quantité doit être supérieure à zéro"));
 
@@ -186,6 +191,9 @@ public sealed class DeliveryNote : AggregateRoot
     /// </summary>
     public Result Confirm()
     {
+        if (Status == DeliveryNoteStatus.Confirmed)
+            return Result.Failure(Error.Validation("Status", "Ce bon de livraison est déjà confirmé. Utilisez l'action « Démarrer livraison » pour passer à l'étape suivante."));
+
         if (!Status.CanBeConfirmed())
             return Result.Failure(Error.Validation("Status", "Ce bon de livraison ne peut pas être confirmé"));
 
@@ -312,8 +320,35 @@ public sealed class DeliveryNote : AggregateRoot
         InvoicedAt = DateTime.UtcNow;
         Status = DeliveryNoteStatus.Invoiced;
 
+        IncrementVersion();
         AddDomainEvent(new DeliveryNoteInvoicedEvent(Id, Number.Value, invoice.Id, invoice.Number.Value));
 
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Records a confirmed return against a line. Increments <see cref="Version"/> for concurrency
+    /// against a simultaneous invoice generation.
+    /// </summary>
+    public Result RecordReturn(Guid lineId, decimal quantity)
+    {
+        if (InvoiceId.HasValue)
+            return Result.Failure(Error.Validation("Invoice",
+                "Ce bon de livraison a déjà été facturé — utilisez un avoir"));
+
+        if (!Status.CanBeInvoiced())
+            return Result.Failure(Error.Validation("Status",
+                "Un retour n'est possible que sur un bon livré et non facturé"));
+
+        var line = _lines.FirstOrDefault(l => l.Id == lineId);
+        if (line is null)
+            return Result.Failure(Error.NotFound("DeliveryNoteLine", lineId));
+
+        var result = line.RecordReturn(quantity);
+        if (result.IsFailure)
+            return result;
+
+        IncrementVersion();
         return Result.Success();
     }
 
@@ -372,6 +407,15 @@ public sealed class DeliveryNote : AggregateRoot
     /// Returns total number of delivered items across all lines.
     /// </summary>
     public decimal TotalDeliveredQuantity => _lines.Sum(l => l.DeliveredQuantity);
+
+    /// <summary>Confirmed returned quantity across all lines.</summary>
+    public decimal TotalReturnedQuantity => _lines.Sum(l => l.ReturnedQuantity);
+
+    /// <summary>Delivered minus returned — the quantity a generated invoice may bill.</summary>
+    public decimal TotalInvoiceableQuantity => _lines.Sum(l => l.InvoiceableQuantity);
+
+    /// <summary>True when at least one line still has invoiceable quantity.</summary>
+    public bool HasInvoiceableQuantity => _lines.Any(l => l.InvoiceableQuantity > 0);
 
     /// <summary>
     /// Aggregate total HT (sum of all line TotalHT, remises déduites).

@@ -60,7 +60,7 @@ import { PAYMENTS_FR } from './payments.i18n.fr';
       </ng-container>
     </ft-page-header>
 
-    <section class="kpi-row">
+    <section class="kpi-row kpi-row--5col">
       <ft-kpi-card [label]="t('intents.kpi.total')" [value]="page()?.totalCount ?? null" tone="info" icon="pi pi-list" [loading]="loading()" />
       <ft-kpi-card [label]="t('intents.kpi.succeeded')" [value]="page()?.succeededCount ?? null" tone="success" icon="pi pi-check-circle" [loading]="loading()" />
       <ft-kpi-card [label]="t('intents.kpi.pending')" [value]="page()?.pendingCount ?? null" tone="warning" icon="pi pi-clock" [loading]="loading()" />
@@ -94,7 +94,7 @@ import { PAYMENTS_FR } from './payments.i18n.fr';
     } @else if ((page()?.items?.length ?? 0) === 0) {
       <ft-empty-state variant="table-empty" [title]="t('empty.title')" [description]="t('empty.desc')" />
     } @else {
-      <p-table [value]="page()!.items" styleClass="ft-table">
+      <p-table [value]="page()!.items" styleClass="p-datatable-sm ft-table">
         <ng-template pTemplate="header">
           <tr>
             <th>{{ t('intents.col.invoice') }}</th>
@@ -130,16 +130,6 @@ import { PAYMENTS_FR } from './payments.i18n.fr';
   `,
   styles: [
     `
-      .kpi-row {
-        display: grid;
-        grid-template-columns: repeat(5, minmax(0, 1fr));
-        gap: var(--gap-md);
-        margin-bottom: var(--gap-lg);
-      }
-      @media (max-width: 1100px) { .kpi-row { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-      @media (max-width: 720px) { .kpi-row { grid-template-columns: 1fr; } }
-
-      .num { text-align: right; font-variant-numeric: tabular-nums; }
       .ref { font-family: var(--font-mono, ui-monospace); font-size: 0.85rem; color: var(--ft-text-muted); }
       .provider-badge {
         display: inline-block;

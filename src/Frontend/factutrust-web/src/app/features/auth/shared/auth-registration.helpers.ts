@@ -153,6 +153,16 @@ export function scrollToFirstInvalidField(): void {
   }
 }
 
+/** After a wizard step change, bring the form header back into view (page scroll). */
+export function scrollAuthWizardStepIntoView(): void {
+  queueMicrotask(() => {
+    const target =
+      document.querySelector('.form-header-text') ??
+      document.querySelector('.auth-form-card');
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
 export function applyNifBlurCleanup(form: FormGroup, controlName = 'nif'): void {
   const nifControl = form.get(controlName);
   if (!nifControl) return;

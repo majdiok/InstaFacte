@@ -1,5 +1,6 @@
 import {
   ACCOUNTING_HOME_HIDDEN_MODULE_TITLES,
+  ACCOUNTING_MODULES,
   getFirmDelegatedAccountingModules,
   isAccountingModuleHiddenFromHome
 } from './accounting-modules.config';
@@ -29,6 +30,22 @@ describe('accounting-modules.config', () => {
       expect(titles).toContain('Budgétaire');
       expect(titles).toContain('Declarations');
       expect(titles).toContain('Gestion immobilisations');
+    });
+  });
+
+  describe('États icons', () => {
+    it('uses a Free Font Awesome glyph for Journaux auxiliaires and unique icons', () => {
+      const etatsModule = ACCOUNTING_MODULES.find(m => m.title === 'États');
+      expect(etatsModule).toBeDefined();
+      expect(etatsModule!.links.length).toBe(11);
+
+      const subJournals = etatsModule!.links.find(l => l.route === '/accounting/sub-journals');
+      expect(subJournals?.icon).toBe('fa-solid fa-book-bookmark');
+      expect(etatsModule!.links.every(l => !l.icon.includes('fa-books'))).toBe(true);
+
+      const icons = etatsModule!.links.map(l => l.icon);
+      expect(new Set(icons).size).toBe(icons.length);
+      expect(icons.every(icon => /^fa-solid fa-[a-z0-9-]+$/.test(icon))).toBe(true);
     });
   });
 });

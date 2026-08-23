@@ -822,6 +822,12 @@
     }
 }
 
+.not-counted-hint {
+    margin: 0 0 var(--spacing-3);
+    color: var(--color-text-secondary, #64748b);
+    font-size: 0.9rem;
+}
+
 .summary-items {
     display: flex;
     flex-direction: column;

@@ -1,7 +1,7 @@
 import { DOCUMENT } from '@angular/common';
-import { TestBed, fakeAsync, tick } from '@angular/core/testing';
+import { TestBed, fakeAsync, flushMicrotasks, tick } from '@angular/core/testing';
 import { signal, computed } from '@angular/core';
-import { Observable, of } from 'rxjs';
+import { Observable, of, throwError } from 'rxjs';
 import { AuthService, User } from '@core/services/auth.service';
 import { AiChatSessionService } from './ai-chat-session.service';
 import { AiChatService } from './ai-chat.service';
@@ -26,7 +26,7 @@ describe('AiChatSessionService', () => {
     twoFactorEnabled: false
   };
 
-  function setup(initialUser: User = mockUser): ReturnType<typeof signal<User | null>> {
+  function setup(initialUser: User | null = mockUser): ReturnType<typeof signal<User | null>> {
     const userSig = signal<User | null>(initialUser);
     const authMock = { user: computed(() => userSig()) };
 
@@ -197,6 +197,86 @@ describe('AiChatSessionService', () => {
     service.setAgentScope(AssistantAgentScope.Treasury);
     service.resetSessionForUserChange();
     expect(service.agentScope()).toBe(AssistantAgentScope.None);
+  });
+
+  it('initialize does not call AI APIs when the user is not authenticated', () => {
+    TestBed.resetTestingModule();
+    setup(null);
+
+    service.initialize();
+
+    expect(chatApi.getConfiguredStatus).not.toHaveBeenCalled();
+    expect(chatApi.getDailyBriefing).not.toHaveBeenCalled();
+    expect(chatApi.getActiveModel).not.toHaveBeenCalled();
+    expect(chatApi.getConversations).not.toHaveBeenCalled();
+    expect(service.aiAvailable()).toBe(false);
+  });
+
+  it('initialize after an unauthenticated skip still bootstraps once a user is present', () => {
+    TestBed.resetTestingModule();
+    const userSig = setup(null);
+
+    service.initialize();
+    expect(chatApi.getConfiguredStatus).not.toHaveBeenCalled();
+
+    userSig.set(mockUser);
+    service.initialize();
+
+    expect(chatApi.getConfiguredStatus).toHaveBeenCalled();
+    expect(chatApi.getDailyBriefing).toHaveBeenCalled();
+    expect(chatApi.getActiveModel).toHaveBeenCalled();
+    expect(chatApi.getConversations).toHaveBeenCalled();
+  });
+
+  it('logout resets the session without re-initializing AI APIs', fakeAsync(() => {
+    TestBed.resetTestingModule();
+    const userSig = setup();
+    TestBed.flushEffects();
+    service.initialize();
+    service.messages.set([
+      { id: '1', role: MessageRole.User, content: 'hi', createdAt: new Date() }
+    ]);
+    chatApi.getConfiguredStatus.calls.reset();
+    chatApi.getDailyBriefing.calls.reset();
+    chatApi.getActiveModel.calls.reset();
+    chatApi.getConversations.calls.reset();
+
+    userSig.set(null);
+    TestBed.flushEffects();
+    flushMicrotasks();
+
+    expect(service.messages()).toEqual([]);
+    expect(chatApi.getConfiguredStatus).not.toHaveBeenCalled();
+    expect(chatApi.getDailyBriefing).not.toHaveBeenCalled();
+    expect(chatApi.getActiveModel).not.toHaveBeenCalled();
+    expect(chatApi.getConversations).not.toHaveBeenCalled();
+  }));
+
+  it('account switch resets the session then re-initializes AI APIs', fakeAsync(() => {
+    TestBed.resetTestingModule();
+    const userSig = setup();
+    TestBed.flushEffects();
+    service.initialize();
+    chatApi.getConfiguredStatus.calls.reset();
+    chatApi.getDailyBriefing.calls.reset();
+    chatApi.getActiveModel.calls.reset();
+    chatApi.getConversations.calls.reset();
+
+    userSig.set({ ...mockUser, id: 'user-2', tenantId: 'tenant-2' });
+    TestBed.flushEffects();
+    flushMicrotasks();
+
+    expect(chatApi.getConfiguredStatus).toHaveBeenCalled();
+    expect(chatApi.getDailyBriefing).toHaveBeenCalled();
+    expect(chatApi.getActiveModel).toHaveBeenCalled();
+    expect(chatApi.getConversations).toHaveBeenCalled();
+  }));
+
+  it('getConversations error clears the list without throwing', () => {
+    chatApi.getConversations.and.returnValue(throwError(() => ({ status: 401 })));
+
+    expect(() => service.initialize()).not.toThrow();
+    expect(service.conversations()).toEqual([]);
   });
 
   it('sendMessage clears awaitingFirstToken after content and stores trace id', () => {

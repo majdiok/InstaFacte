@@ -74,7 +74,7 @@ import { EMAILS_FR } from './emails.i18n.fr';
       </ng-container>
     </ft-page-header>
 
-    <section class="kpi-row" role="region" aria-label="Statistiques emails">
+    <section class="kpi-row kpi-row--compact" role="region" aria-label="Statistiques emails">
       <ft-kpi-card
         [label]="t('kpi.total')"
         [value]="page()?.totalCount ?? null"
@@ -137,7 +137,7 @@ import { EMAILS_FR } from './emails.i18n.fr';
       [showCurrentPageReport]="true"
       [currentPageReportTemplate]="'{first}–{last} sur {totalRecords}'"
       responsiveLayout="scroll"
-      styleClass="p-datatable-sm ft-emails-table"
+      styleClass="p-datatable-sm ft-table"
       [tableStyle]="{ 'min-width': '60rem' }">
       <ng-template pTemplate="header">
         <tr>
@@ -318,13 +318,6 @@ import { EMAILS_FR } from './emails.i18n.fr';
         display: block;
       }
 
-      .kpi-row {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-        gap: var(--gap-md);
-        margin-bottom: var(--gap-md);
-      }
-
       .clickable {
         cursor: pointer;
       }
@@ -347,30 +340,6 @@ import { EMAILS_FR } from './emails.i18n.fr';
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-      }
-
-      .col-actions {
-        text-align: end;
-        white-space: nowrap;
-        width: 4rem;
-      }
-
-      :host ::ng-deep .ft-dd {
-        min-width: 11rem;
-      }
-
-      :host ::ng-deep .ft-emails-table.p-datatable .p-datatable-thead > tr > th {
-        font-size: 0.72rem;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: var(--ft-text-muted);
-        border-color: var(--ft-border);
-        background: var(--ft-surface-2);
-        font-weight: 600;
-      }
-
-      :host ::ng-deep .ft-emails-table.p-datatable .p-datatable-tbody > tr:hover {
-        background: var(--ft-surface-3);
       }
 
       h4 {
@@ -436,7 +405,7 @@ import { EMAILS_FR } from './emails.i18n.fr';
         height: 24rem;
         border: 1px solid var(--ft-border);
         border-radius: var(--ft-radius);
-        background: white;
+        background: var(--ft-content-light-bg);
       }
 
       .field {

@@ -220,5 +220,8 @@ public sealed class FirmManagedClientServiceTests
         Assert.Contains("provisioning", result.Error.Description, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(await db.FirmClientAssignments.ToListAsync());
         Assert.Empty(await db.PermanentFiles.ToListAsync());
+        tenantService.Verify(
+            s => s.TryDropDatabaseAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 }

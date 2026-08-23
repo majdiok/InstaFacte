@@ -365,7 +365,7 @@ import { PlanFormDialogComponent } from './plan-form-dialog.component';
       }
 
       .section {
-        margin-top: var(--gap-xs);
+        margin-top: var(--gap-sm);
       }
 
       .section h4 {
@@ -382,7 +382,7 @@ import { PlanFormDialogComponent } from './plan-form-dialog.component';
         padding: 0;
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 0.25rem 0.6rem;
+        gap: 0.35rem 0.8rem;
       }
 
       .kv > div {
@@ -390,7 +390,7 @@ import { PlanFormDialogComponent } from './plan-form-dialog.component';
         justify-content: space-between;
         align-items: baseline;
         gap: 0.4rem;
-        font-size: 0.78rem;
+        font-size: 0.8rem;
       }
 
       .kv dt {
@@ -406,7 +406,8 @@ import { PlanFormDialogComponent } from './plan-form-dialog.component';
       .kv code {
         font-family: ui-monospace, SFMono-Regular, monospace;
         font-size: 0.78rem;
-        color: var(--ft-accent);
+        color: var(--ft-text);
+        word-break: break-all;
       }
 
       .features {

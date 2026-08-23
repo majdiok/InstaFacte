@@ -45,8 +45,9 @@ public sealed class AbcXyzClassifier : IAbcXyzClassifier
         var rows = await ctx.InvoiceLines
             .Where(il => il.Invoice.IssueDate >= since
                          && il.Invoice.Status != InvoiceStatus.Draft
-                         && il.Invoice.Status != InvoiceStatus.Cancelled)
-            .GroupBy(il => new { il.ProductId, il.Invoice.IssueDate.Year, il.Invoice.IssueDate.Month })
+                         && il.Invoice.Status != InvoiceStatus.Cancelled
+                         && il.ProductId.HasValue)
+            .GroupBy(il => new { ProductId = il.ProductId!.Value, il.Invoice.IssueDate.Year, il.Invoice.IssueDate.Month })
             .Select(g => new
             {
                 ProductId = g.Key.ProductId,

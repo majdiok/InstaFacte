@@ -176,6 +176,21 @@ export const routes: Routes = [
         path: 'me/2fa',
         loadComponent: () =>
           import('./pages/me/me-2fa-page.component').then(m => m.Me2faPageComponent)
+      },
+      {
+        path: 'me',
+        loadComponent: () =>
+          import('./pages/me/me-profile-page.component').then(m => m.MeProfilePageComponent)
+      },
+      {
+        path: 'me/audit',
+        loadComponent: () =>
+          import('./pages/me/me-audit-page.component').then(m => m.MeAuditPageComponent)
+      },
+      {
+        path: 'preferences',
+        loadComponent: () =>
+          import('./pages/preferences/preferences-page.component').then(m => m.PreferencesPageComponent)
       }
     ]
   },

@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -49,97 +50,138 @@ public sealed class OpenAiChatCompletionsClient : IOpenAiChatCompletionsClient
         double temperature,
         int maxTokens,
         [EnumeratorCancellation] CancellationToken cancellationToken = default,
-        int? seed = null)
+        int? seed = null,
+        OpenAiCompatibleCallOptions? options = null)
     {
         var url = $"{baseUrl.TrimEnd('/')}/chat/completions";
+        var omitEmptyTools = options?.OmitEmptyTools == true;
         var body = new ChatCompletionRequest
         {
             Model = model,
             Messages = messages.ToList(),
-            Tools = tools.ToList(),
+            Tools = tools.Count == 0 && omitEmptyTools ? null : tools.ToList(),
             Stream = true,
             Temperature = temperature,
             MaxTokens = maxTokens,
-            Seed = seed
+            Seed = seed,
+            ReasoningEffort = string.IsNullOrWhiteSpace(options?.ReasoningEffort) ? null : options.ReasoningEffort
         };
 
-        var client = _httpClientFactory.CreateClient("OpenAiCompatible");
-        using var req = new HttpRequestMessage(HttpMethod.Post, url);
-        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-        AddOpenRouterHeaders(req);
-        req.Content = new StringContent(JsonSerializer.Serialize(body, JsonOptions), Encoding.UTF8, "application/json");
+        var json = JsonSerializer.Serialize(body, JsonOptions);
+        var extraRetries = options?.RetryOnServiceUnavailable == true
+            ? Math.Max(0, options.ColdStartRetries)
+            : 0;
+        var attempts = 1 + extraRetries;
+        HttpResponseMessage? response = null;
+        Exception? lastSendError = null;
 
-        using var response = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        if (!response.IsSuccessStatusCode)
+        for (var attempt = 0; attempt < attempts; attempt++)
         {
-            var errBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogWarning("OpenAI-compatible chat failed: {Status} {Body}", (int)response.StatusCode, errBody);
-            throw new OpenAiCompatibleRequestException(BuildUserError(response.StatusCode, errBody), errBody, (int)response.StatusCode);
-        }
+            response?.Dispose();
+            var client = _httpClientFactory.CreateClient(ResolveClientName(options));
+            using var req = new HttpRequestMessage(HttpMethod.Post, url);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+            ApplyCallHeaders(req, options);
+            req.Content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var reader = new StreamReader(stream);
-
-        var contentBuffer = new StringBuilder();
-        var toolAcc = new Dictionary<int, ToolCallAccumulator>();
-
-        while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
-        {
-            var line = await reader.ReadLineAsync(cancellationToken);
-            if (string.IsNullOrWhiteSpace(line))
-                continue;
-            if (!line.StartsWith("data:", StringComparison.Ordinal))
-                continue;
-            var payload = line["data:".Length..].Trim();
-            if (payload == "[DONE]")
-                break;
-
-            OpenAiSseChunk? chunk;
             try
             {
-                chunk = JsonSerializer.Deserialize<OpenAiSseChunk>(payload, JsonOptions);
+                response = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             }
-            catch (JsonException ex)
+            catch (Exception ex)
             {
-                _logger.LogDebug(ex, "OpenAI SSE parse skip: {Line}", line);
+                lastSendError = ex;
+                if (attempt >= attempts - 1)
+                    throw;
+                await DelayColdStartAsync(attempt, cancellationToken);
                 continue;
             }
 
-            if (chunk?.Choices is not { Count: > 0 } choices)
-                continue;
+            if (response.StatusCode != HttpStatusCode.ServiceUnavailable || attempt >= attempts - 1)
+                break;
 
-            var choice = choices[0];
-            var delta = choice.Delta;
-            if (delta?.Content is { Length: > 0 } t)
+            _logger.LogInformation(
+                "OpenAI-compatible chat 503 (attempt {Attempt}/{Attempts}), retrying cold start.",
+                attempt + 1,
+                attempts);
+            await DelayColdStartAsync(attempt, cancellationToken);
+        }
+
+        if (response is null)
+            throw lastSendError ?? new OpenAiCompatibleRequestException("Le fournisseur de modèles n'a pas répondu.");
+
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
             {
-                contentBuffer.Append(t);
-                yield return new OllamaChatChunk
-                {
-                    Message = new OllamaChatMessage { Role = "assistant", Content = t }
-                };
+                var errBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogWarning("OpenAI-compatible chat failed: {Status} {Body}", (int)response.StatusCode, errBody);
+                throw new OpenAiCompatibleRequestException(BuildUserError(response.StatusCode, errBody), errBody, (int)response.StatusCode);
             }
 
-            if (delta?.ToolCalls is { Count: > 0 } tcDeltas)
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var reader = new StreamReader(stream);
+
+            var contentBuffer = new StringBuilder();
+            var toolAcc = new Dictionary<int, ToolCallAccumulator>();
+
+            while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
             {
-                foreach (var d in tcDeltas)
+                var line = await reader.ReadLineAsync(cancellationToken);
+                if (string.IsNullOrWhiteSpace(line))
+                    continue;
+                if (!line.StartsWith("data:", StringComparison.Ordinal))
+                    continue;
+                var payload = line["data:".Length..].Trim();
+                if (payload == "[DONE]")
+                    break;
+
+                OpenAiSseChunk? chunk;
+                try
                 {
-                    var idx = d.Index ?? 0;
-                    if (!toolAcc.TryGetValue(idx, out var acc))
+                    chunk = JsonSerializer.Deserialize<OpenAiSseChunk>(payload, JsonOptions);
+                }
+                catch (JsonException ex)
+                {
+                    _logger.LogDebug(ex, "OpenAI SSE parse skip: {Line}", line);
+                    continue;
+                }
+
+                if (chunk?.Choices is not { Count: > 0 } choices)
+                    continue;
+
+                var choice = choices[0];
+                var delta = choice.Delta;
+                var text = ExtractDeltaText(delta?.Content ?? default);
+                if (text is { Length: > 0 })
+                {
+                    contentBuffer.Append(text);
+                    yield return new OllamaChatChunk
                     {
-                        acc = new ToolCallAccumulator();
-                        toolAcc[idx] = acc;
-                    }
+                        Message = new OllamaChatMessage { Role = "assistant", Content = text }
+                    };
+                }
 
-                    if (!string.IsNullOrEmpty(d.Id))
-                        acc.Id = d.Id;
-                    if (d.Function?.Name is { Length: > 0 } n)
-                        acc.Name = n;
-                    if (d.Function?.Arguments is { Length: > 0 } a)
-                        acc.Arguments.Append(a);
+                if (delta?.ToolCalls is { Count: > 0 } tcDeltas)
+                {
+                    foreach (var d in tcDeltas)
+                    {
+                        var idx = d.Index ?? 0;
+                        if (!toolAcc.TryGetValue(idx, out var acc))
+                        {
+                            acc = new ToolCallAccumulator();
+                            toolAcc[idx] = acc;
+                        }
+
+                        if (!string.IsNullOrEmpty(d.Id))
+                            acc.Id = d.Id;
+                        if (d.Function?.Name is { Length: > 0 } n)
+                            acc.Name = n;
+                        if (d.Function?.Arguments is { Length: > 0 } a)
+                            acc.Arguments.Append(a);
+                    }
                 }
             }
-
-        }
 
             if (toolAcc.Count > 0)
             {
@@ -174,23 +216,25 @@ public sealed class OpenAiChatCompletionsClient : IOpenAiChatCompletionsClient
                     });
                 }
 
-            yield return new OllamaChatChunk
-            {
-                Message = new OllamaChatMessage
+                yield return new OllamaChatChunk
                 {
-                    Role = "assistant",
-                    Content = string.Empty,
-                    ToolCalls = ollamaCalls
-                },
-                Done = true
-            };
+                    Message = new OllamaChatMessage
+                    {
+                        Role = "assistant",
+                        Content = string.Empty,
+                        ToolCalls = ollamaCalls
+                    },
+                    Done = true
+                };
+            }
         }
     }
 
     public async Task<IReadOnlyList<OpenAiRemoteModelInfo>> ListModelsAsync(
         string baseUrl,
         string apiKey,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        OpenAiCompatibleCallOptions? options = null)
     {
         var cacheKey = ModelListCacheKeyPrefix + baseUrl.TrimEnd('/');
         var ttl = TimeSpan.FromSeconds(Math.Clamp(_settings.ModelListCacheSeconds, 10, 600));
@@ -198,10 +242,10 @@ public sealed class OpenAiChatCompletionsClient : IOpenAiChatCompletionsClient
         {
             entry.AbsoluteExpirationRelativeToNow = ttl;
             var url = $"{baseUrl.TrimEnd('/')}/models";
-            var client = _httpClientFactory.CreateClient("OpenAiCompatible");
+            var client = _httpClientFactory.CreateClient(ResolveClientName(options));
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-            AddOpenRouterHeaders(req);
+            ApplyCallHeaders(req, options);
 
             using var response = await client.SendAsync(req, cancellationToken);
             if (!response.IsSuccessStatusCode)
@@ -227,6 +271,52 @@ public sealed class OpenAiChatCompletionsClient : IOpenAiChatCompletionsClient
 
             return (IReadOnlyList<OpenAiRemoteModelInfo>)list;
         }) ?? Array.Empty<OpenAiRemoteModelInfo>();
+    }
+
+    private void ApplyCallHeaders(HttpRequestMessage req, OpenAiCompatibleCallOptions? options)
+    {
+        if (options is null || options.AddOpenRouterHeaders)
+            AddOpenRouterHeaders(req);
+
+        if (!string.IsNullOrWhiteSpace(options?.SessionId))
+            req.Headers.TryAddWithoutValidation("Modal-Session-ID", options.SessionId);
+    }
+
+    private static string ResolveClientName(OpenAiCompatibleCallOptions? options) =>
+        string.IsNullOrWhiteSpace(options?.HttpClientName)
+            ? OpenAiCompatibleCallOptions.OpenAiCompatibleClientName
+            : options.HttpClientName;
+
+    private static async Task DelayColdStartAsync(int attempt, CancellationToken cancellationToken)
+    {
+        var ms = Math.Min(2000, 250 * (1 << Math.Max(0, attempt)));
+        await Task.Delay(ms, cancellationToken);
+    }
+
+    private static string? ExtractDeltaText(JsonElement content)
+    {
+        switch (content.ValueKind)
+        {
+            case JsonValueKind.String:
+                return content.GetString();
+            case JsonValueKind.Array:
+                var sb = new StringBuilder();
+                foreach (var part in content.EnumerateArray())
+                {
+                    if (part.ValueKind == JsonValueKind.String)
+                        sb.Append(part.GetString());
+                    else if (part.ValueKind == JsonValueKind.Object
+                             && part.TryGetProperty("text", out var textEl)
+                             && textEl.ValueKind == JsonValueKind.String)
+                    {
+                        sb.Append(textEl.GetString());
+                    }
+                }
+
+                return sb.Length == 0 ? null : sb.ToString();
+            default:
+                return null;
+        }
     }
 
     private void AddOpenRouterHeaders(HttpRequestMessage req)
@@ -289,7 +379,8 @@ public sealed class OpenAiChatCompletionsClient : IOpenAiChatCompletionsClient
         public required List<OpenAiChatMessagePayload> Messages { get; init; }
 
         [JsonPropertyName("tools")]
-        public required List<OllamaToolDefinition> Tools { get; init; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<OllamaToolDefinition>? Tools { get; init; }
 
         [JsonPropertyName("stream")]
         public bool Stream { get; init; }
@@ -303,6 +394,10 @@ public sealed class OpenAiChatCompletionsClient : IOpenAiChatCompletionsClient
         [JsonPropertyName("seed")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public int? Seed { get; init; }
+
+        [JsonPropertyName("reasoning_effort")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? ReasoningEffort { get; init; }
     }
 
     private sealed class OpenAiSseChunk
@@ -323,7 +418,7 @@ public sealed class OpenAiChatCompletionsClient : IOpenAiChatCompletionsClient
     private sealed class OpenAiDelta
     {
         [JsonPropertyName("content")]
-        public string? Content { get; set; }
+        public JsonElement Content { get; set; }
 
         [JsonPropertyName("tool_calls")]
         public List<OpenAiToolCallDelta>? ToolCalls { get; set; }

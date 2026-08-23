@@ -345,7 +345,7 @@ public sealed record CommercialProfitLineSourceDto
     public string InvoiceNumber { get; init; } = null!;
     public DateTime IssueDate { get; init; }
     public string? Reference { get; init; }
-    public Guid ProductId { get; init; }
+    public Guid? ProductId { get; init; }
     public string ProductName { get; init; } = null!;
     public string ProductCode { get; init; } = null!;
     public decimal Quantity { get; init; }

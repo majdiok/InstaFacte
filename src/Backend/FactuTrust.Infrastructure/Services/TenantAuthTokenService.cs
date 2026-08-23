@@ -105,6 +105,12 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
                     .Where(id => id != (int)AppModule.AI)
                     .ToList();
             }
+
+            if (!isFirmManaged)
+            {
+                enabledModuleIds = await AppendProjectsIfClientLicensedAsync(
+                    contextTenantId!.Value, enabledModuleIds, cancellationToken);
+            }
         }
         else if (homeTenant.Kind == TenantKind.AccountingFirm)
         {
@@ -241,6 +247,54 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
             (int)AppModule.AI
         };
 
+    /// <summary>
+    /// Adds <see cref="AppModule.Projects"/> only when the client tenant's plan or override includes it.
+    /// Firm-managed dossiers stay on the accounting/payroll dump (no Projects in V1).
+    /// </summary>
+    private async Task<IReadOnlyList<int>> AppendProjectsIfClientLicensedAsync(
+        Guid clientTenantId,
+        IReadOnlyList<int> moduleIds,
+        CancellationToken cancellationToken)
+    {
+        if (moduleIds.Contains((int)AppModule.Projects))
+            return moduleIds;
+
+        var now = DateTime.UtcNow;
+        var overrideRow = await _masterContext.TenantModuleOverrides.AsNoTracking()
+            .Where(o => o.TenantId == clientTenantId && o.Module == (int)AppModule.Projects)
+            .Where(o => o.ExpiresAt == null || o.ExpiresAt > now)
+            .OrderByDescending(o => o.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        bool licensed;
+        if (overrideRow is not null)
+        {
+            licensed = overrideRow.IsEnabled;
+        }
+        else
+        {
+            var planId = await _masterContext.Subscriptions.AsNoTracking()
+                .Where(s => s.TenantId == clientTenantId)
+                .Select(s => s.PlanId)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (planId is null || planId == Guid.Empty)
+                licensed = false;
+            else
+                licensed = await _masterContext.PlanModules.AsNoTracking()
+                    .AnyAsync(
+                        m => m.PlanId == planId.Value && m.Module == (int)AppModule.Projects && m.IsIncluded,
+                        cancellationToken);
+        }
+
+        if (!licensed)
+            return moduleIds;
+
+        var list = moduleIds.ToList();
+        list.Add((int)AppModule.Projects);
+        return list;
+    }
+
     private static UserDto CreateUserDto(
         ApplicationUser user,
         Tenant homeTenant,
@@ -271,7 +325,10 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
             ContextTenantId = isDelegated ? contextTenantId : null,
             ContextCompanyName = isDelegated ? contextCompanyName : null,
             IsFirmManaged = isDelegated && isFirmManaged,
-            IsPayrollFirmManaged = !isDelegated && isPayrollFirmManaged
+            IsPayrollFirmManaged = !isDelegated && isPayrollFirmManaged,
+            ProductOnboardingStatus = user.ProductOnboardingStatus,
+            ProductOnboardingVersion = user.ProductOnboardingVersion,
+            ProductOnboardingChecklist = ProductOnboardingUserDtoMapper.ChecklistOf(user)
         };
     }
 }

@@ -63,6 +63,12 @@ export const PERMISSIONS = {
     update: 'delivery_notes:update',
     delete: 'delivery_notes:delete'
   },
+  returnNotes: {
+    create: 'return_notes:create',
+    read: 'return_notes:read',
+    update: 'return_notes:update',
+    delete: 'return_notes:delete'
+  },
   pricing: {
     create: 'pricing:create',
     read: 'pricing:read',
@@ -104,6 +110,12 @@ export const PERMISSIONS = {
     read: 'stock:read',
     update: 'stock:update',
     delete: 'stock:delete'
+  },
+  stockVouchers: {
+    create: 'stock_vouchers:create',
+    read: 'stock_vouchers:read',
+    update: 'stock_vouchers:update',
+    delete: 'stock_vouchers:delete'
   },
   stockTransfers: {
     create: 'stock_transfers:create',
@@ -184,6 +196,16 @@ export const PERMISSIONS = {
     chat: 'firm:ai:chat',
     remind: 'firm:ai:remind'
   },
+  /**
+   * Réviseur de portefeuille. `view` est accordée au responsable ET au collaborateur (l'ACL
+   * dossier restreint ensuite chacun) ; `manage` au seul responsable. Le back ne les délivre que
+   * si `Features:AccountingFirms:FirmRevisionEnabled` est vrai : la permission porte donc à la
+   * fois le droit et l'état du module côté serveur.
+   */
+  firmRevision: {
+    view: 'firm:revision:view',
+    manage: 'firm:revision:manage'
+  },
   honorairesInvoices: {
     create: 'honoraires.invoices:create',
     read: 'honoraires.invoices:read',
@@ -202,5 +224,37 @@ export const PERMISSIONS = {
   honorairesPayments: {
     create: 'honoraires.payments:create',
     read: 'honoraires.payments:read'
+  },
+  projects: {
+    read: 'projects:read',
+    create: 'projects:create',
+    update: 'projects:update',
+    delete: 'projects:delete',
+    manageTeam: 'projects:manage_team'
+  },
+  projectTasks: {
+    create: 'project_tasks:create',
+    read: 'project_tasks:read',
+    update: 'project_tasks:update',
+    delete: 'project_tasks:delete'
+  },
+  projectTime: {
+    create: 'project_time:create',
+    read: 'project_time:read',
+    submit: 'project_time:submit',
+    validate: 'project_time:validate'
+  },
+  projectBilling: {
+    read: 'project_billing:read',
+    create: 'project_billing:create'
+  },
+  recurringContracts: {
+    read: 'recurring_contracts:read',
+    create: 'recurring_contracts:create',
+    update: 'recurring_contracts:update',
+    delete: 'recurring_contracts:delete',
+    manage: 'recurring_contracts:manage',
+    recordUsage: 'recurring_contracts:usage',
+    triggerBilling: 'recurring_contracts:billing'
   }
 } as const;

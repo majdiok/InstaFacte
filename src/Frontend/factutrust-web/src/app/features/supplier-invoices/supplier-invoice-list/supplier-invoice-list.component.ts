@@ -23,6 +23,8 @@ import {
 } from '@core/services/supplier-invoice.service';
 import { SupplierService, SupplierListItem } from '@core/services/supplier.service';
 import { ToastService } from '@core/services/toast.service';
+import { AuthService } from '@core/services/auth.service';
+import { PERMISSIONS } from '@core/config/permission-keys';
 import { applySupplierInvoiceListFiltersFromQuery } from '@core/utils/list-filter-from-query';
 
 interface StatusOption {
@@ -45,6 +47,15 @@ interface StatusOption {
     <app-page-header
       [title]="unpaidOnlyMode() ? 'Factures impayées fournisseurs' : 'Factures fournisseurs'"
       [subtitle]="unpaidOnlyMode() ? 'Factures fournisseurs non réglées ou partiellement réglées.' : 'Consultez et gérez les factures fournisseurs et leur statut de paiement.'">
+      @if (canCreateSupplierInvoice() && !unpaidOnlyMode()) {
+        <app-button
+          variant="primary"
+          icon="pi-plus"
+          iconPos="left"
+          routerLink="new">
+          Nouvelle facture
+        </app-button>
+      }
     </app-page-header>
 
     <div class="ft-filters">
@@ -132,6 +143,8 @@ interface StatusOption {
               <td>
                 @if (inv.hasFixedAssetLines) {
                   <p-tag value="Immo" severity="info" [rounded]="true"></p-tag>
+                } @else if (isStandalone(inv)) {
+                  <p-tag value="Directe" severity="secondary" [rounded]="true"></p-tag>
                 } @else {
                   <span class="type-muted">—</span>
                 }
@@ -166,7 +179,10 @@ interface StatusOption {
                 } @else {
                   <app-empty-state
                     title="Aucune facture fournisseur"
-                    description="Les factures créées à partir des bons de commande apparaîtront ici.">
+                    description="Créez une facture depuis un bon de commande, un bon de réception, ou directement."
+                    [showAction]="canCreateSupplierInvoice()"
+                    actionLabel="Nouvelle facture"
+                    actionRoute="/supplier-invoices/new">
                   </app-empty-state>
                 }
               </td>
@@ -189,6 +205,7 @@ export class SupplierInvoiceListComponent implements OnInit, OnDestroy {
     private service = inject(SupplierInvoiceService);
     private supplierService = inject(SupplierService);
     private toastService = inject(ToastService);
+    private auth = inject(AuthService);
     private route = inject(ActivatedRoute);
     private destroy$ = new Subject<void>();
     private searchSubject = new Subject<string>();
@@ -238,8 +255,16 @@ export class SupplierInvoiceListComponent implements OnInit, OnDestroy {
         return base;
     });
 
+    canCreateSupplierInvoice = computed(
+        () => !this.auth.isFirmDelegatedReadonly() && this.auth.hasPermission(PERMISSIONS.supplierInvoices.create)
+    );
+
+    isStandalone(inv: SupplierInvoiceListItem): boolean {
+        return !inv.purchaseOrderId && !inv.sourcePurchaseReceiptId;
+    }
+
     skeletonColumns: SkeletonColumn[] = [
-        { width: '140px' }, { width: '200px' }, { width: '120px' }, { width: '110px' }, { width: '110px' }, { width: '120px' }, { width: '120px' }, { width: '80px' }
+        { width: '140px' }, { width: '90px' }, { width: '200px' }, { width: '120px' }, { width: '110px' }, { width: '110px' }, { width: '120px' }, { width: '120px' }, { width: '80px' }
     ];
 
     statusOptions: StatusOption[] = [

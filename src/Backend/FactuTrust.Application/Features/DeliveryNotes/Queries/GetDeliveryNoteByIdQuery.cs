@@ -18,10 +18,14 @@ public sealed record GetDeliveryNoteByIdQuery(Guid DeliveryNoteId) : IRequest<Re
 public sealed class GetDeliveryNoteByIdQueryHandler : IRequestHandler<GetDeliveryNoteByIdQuery, Result<DeliveryNoteDetailDto>>
 {
     private readonly IDeliveryNoteRepository _deliveryNoteRepository;
+    private readonly ISalesReturnNoteRepository _salesReturnNoteRepository;
 
-    public GetDeliveryNoteByIdQueryHandler(IDeliveryNoteRepository deliveryNoteRepository)
+    public GetDeliveryNoteByIdQueryHandler(
+        IDeliveryNoteRepository deliveryNoteRepository,
+        ISalesReturnNoteRepository salesReturnNoteRepository)
     {
         _deliveryNoteRepository = deliveryNoteRepository;
+        _salesReturnNoteRepository = salesReturnNoteRepository;
     }
 
     public async Task<Result<DeliveryNoteDetailDto>> Handle(GetDeliveryNoteByIdQuery request, CancellationToken cancellationToken)
@@ -56,7 +60,20 @@ public sealed class GetDeliveryNoteByIdQueryHandler : IRequestHandler<GetDeliver
             l.DiscountAmount,
             l.IsFodecApplicable,
             l.FodecRatePercent,
-            l.FodecAmount)).ToList();
+            l.FodecAmount,
+            l.ReturnedQuantity,
+            l.InvoiceableQuantity)).ToList();
+
+        var returnNotes = (await _salesReturnNoteRepository.GetByDeliveryNoteIdAsync(
+                deliveryNote.Id, cancellationToken))
+            .Select(n => new LinkedSalesReturnNoteDto(
+                n.Id,
+                n.Number.Value,
+                n.Status,
+                n.Status.ToDisplayString(),
+                n.ReturnDate,
+                n.TotalReturnedQuantity))
+            .ToList();
 
         var dto = new DeliveryNoteDetailDto(
             deliveryNote.Id,
@@ -90,7 +107,11 @@ public sealed class GetDeliveryNoteByIdQueryHandler : IRequestHandler<GetDeliver
             deliveryNote.CreatedAt,
             deliveryNote.UpdatedAt,
             deliveryNote.WarehouseId,
-            deliveryNote.Warehouse?.Name);
+            deliveryNote.Warehouse?.Name,
+            deliveryNote.TotalReturnedQuantity,
+            deliveryNote.TotalInvoiceableQuantity,
+            deliveryNote.HasInvoiceableQuantity,
+            returnNotes);
 
         return Result.Success(dto);
     }

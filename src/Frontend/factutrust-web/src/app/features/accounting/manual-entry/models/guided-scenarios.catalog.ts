@@ -85,7 +85,7 @@ export const GUIDED_SCENARIOS: readonly GuidedScenario[] = [
     vatSide: null,
     lineTemplates: [
       { role: 'base', accountCandidates: ['5411'], side: 'debit', amountSource: 'ttc', labelTemplate: 'Caisse' },
-      { role: 'counterpart', accountCandidates: ['607', '606', '658'], side: 'credit', amountSource: 'ttc', labelTemplate: 'Contrepartie' }
+      { role: 'counterpart', accountCandidates: ['607', '606', '638'], side: 'credit', amountSource: 'ttc', labelTemplate: 'Contrepartie' }
     ]
   },
   {
@@ -97,7 +97,7 @@ export const GUIDED_SCENARIOS: readonly GuidedScenario[] = [
     thirdPartyKind: null,
     vatSide: null,
     lineTemplates: [
-      { role: 'base', accountCandidates: ['658', '758'], side: 'debit', amountSource: 'ttc', labelTemplate: 'Charge / produit' },
+      { role: 'base', accountCandidates: ['638', '758'], side: 'debit', amountSource: 'ttc', labelTemplate: 'Charge / produit' },
       { role: 'counterpart', accountCandidates: ['4011', '4111', '5321', '5411'], side: 'credit', amountSource: 'ttc', labelTemplate: 'Contrepartie' }
     ]
   },
@@ -110,7 +110,7 @@ export const GUIDED_SCENARIOS: readonly GuidedScenario[] = [
     thirdPartyKind: 2,
     vatSide: 'deductible',
     lineTemplates: [
-      { role: 'base', accountCandidates: ['211', '213', '218'], side: 'debit', amountSource: 'ht', labelTemplate: 'Immobilisation' },
+      { role: 'base', accountCandidates: ['221', '223', '228'], side: 'debit', amountSource: 'ht', labelTemplate: 'Immobilisation' },
       { role: 'vat', accountCandidates: ['43662', '43666'], side: 'debit', amountSource: 'tva', labelTemplate: 'TVA déductible immo' },
       { role: 'counterpart', accountCandidates: ['4011', '5321'], side: 'credit', amountSource: 'ttc', labelTemplate: 'Fournisseur / Banque' }
     ]
@@ -125,7 +125,7 @@ export const GUIDED_SCENARIOS: readonly GuidedScenario[] = [
     vatSide: null,
     lineTemplates: [
       { role: 'base', accountCandidates: ['640', '641', '645', '646'], side: 'debit', amountSource: 'ttc', labelTemplate: 'Charges de personnel' },
-      { role: 'counterpart', accountCandidates: ['421', '422', '423', '432'], side: 'credit', amountSource: 'ttc', labelTemplate: 'Dettes sociales / salariales' }
+      { role: 'counterpart', accountCandidates: ['425', '422', '423', '432'], side: 'credit', amountSource: 'ttc', labelTemplate: 'Dettes sociales / salariales' }
     ]
   },
   {

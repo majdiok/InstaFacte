@@ -81,6 +81,7 @@ export const TENANTS_FR = {
   'rowAction.viewDetails': 'Voir les détails',
   'rowAction.quickView': 'Aperçu rapide',
   'rowAction.editSubscription': 'Modifier l’abonnement',
+  'rowAction.aiConfig': 'Configuration IA',
   'rowAction.suspend': 'Suspendre',
   'rowAction.reactivate': 'Réactiver',
   'rowAction.sendEmail': 'Envoyer un email',
@@ -127,6 +128,7 @@ export const TENANTS_FR = {
   'drawer.migrations.applied': 'Appliquées',
   'drawer.migrations.missing': 'Manquantes',
   'drawer.action.openFullPage': 'Voir page complète',
+  'drawer.action.openAiConfig': 'Configuration IA',
   'drawer.placeholder.modules':
     'La gestion des modules par tenant arrive avec le Lot C1 (Plans configurables).',
   'drawer.placeholder.activity':

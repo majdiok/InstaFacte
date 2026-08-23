@@ -57,6 +57,7 @@ export interface InvoiceMetadata {
   internalReference: string | null;
   linkedInvoiceId: string | null;  // Pour factures d'avoir
   warehouseId: string | null;
+  cashRegisterSessionId: string | null;
 }
 
 // ============================================

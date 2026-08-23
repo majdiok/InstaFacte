@@ -6,8 +6,15 @@ import {
     isSupplierInvoicePaid,
     isSupplierInvoiceOpenForPayment,
     SupplierInvoiceDetail,
-    SupplierInvoiceListItem
+    SupplierInvoiceListItem,
+    SupplierInvoiceService,
+    CreateStandaloneSupplierInvoiceRequest
 } from './supplier-invoice.service';
+import { TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { environment } from '@environments/environment';
+import { CashDeskService } from './cash-desk.service';
 
 function buildMinimalListItem(
     status: SupplierInvoiceStatus | string | number
@@ -113,5 +120,46 @@ describe('supplier-invoice status mapping', () => {
         const dto = buildMinimalDetail(SupplierInvoiceStatus.Pending);
         const mapped = mapSupplierInvoiceDetailFromApi({ ...dto, status: 'bad' as unknown as SupplierInvoiceStatus });
         expect(mapped).toBeNull();
+    });
+});
+
+describe('SupplierInvoiceService.create', () => {
+    let service: SupplierInvoiceService;
+    let http: HttpTestingController;
+
+    beforeEach(() => {
+        TestBed.configureTestingModule({
+            providers: [
+                SupplierInvoiceService,
+                provideHttpClient(),
+                provideHttpClientTesting(),
+                { provide: CashDeskService, useValue: { invalidateCachesAfterCashLedgerMutation: () => undefined } }
+            ]
+        });
+        service = TestBed.inject(SupplierInvoiceService);
+        http = TestBed.inject(HttpTestingController);
+    });
+
+    afterEach(() => http.verify());
+
+    it('POSTs the standalone payload to the collection endpoint', () => {
+        const payload: CreateStandaloneSupplierInvoiceRequest = {
+            supplierId: 's1',
+            invoiceDate: '2026-08-17',
+            paymentTermDays: 30,
+            useSuggestedNumber: true,
+            lines: [{ productId: 'p1', quantity: 1, unitPriceHt: 100, discountPercent: 5 }]
+        };
+
+        service.create(payload).subscribe(res => {
+            expect(res.success).toBeTrue();
+            expect(res.data?.id).toBe('inv-1');
+            expect(res.data?.invoiceNumber).toBe('FS-2026-000001');
+        });
+
+        const req = http.expectOne(`${environment.apiUrl}/supplierinvoices`);
+        expect(req.request.method).toBe('POST');
+        expect(req.request.body).toEqual(payload);
+        req.flush({ success: true, data: { id: 'inv-1', invoiceNumber: 'FS-2026-000001' } });
     });
 });

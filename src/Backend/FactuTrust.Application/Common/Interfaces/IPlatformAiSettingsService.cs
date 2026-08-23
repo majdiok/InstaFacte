@@ -83,4 +83,24 @@ public interface IPlatformAiSettingsService
     /// Resolves runtime Cursor credentials. ApiKey is null when disabled or missing/invalid.
     /// </summary>
     Task<PlatformCursorCredentials> GetCursorCredentialsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Masked Modal settings for the back-office (never returns plaintext key).</summary>
+    Task<PlatformModalSettingsDto> GetModalSettingsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates Modal settings. Empty/null <paramref name="apiKey"/> keeps the existing secret.
+    /// Returns false when enabling without any configured key, or when the base URL is invalid.
+    /// </summary>
+    Task<(bool Success, string? Error)> SetModalConfigAsync(
+        bool isEnabled,
+        string? displayName,
+        string? baseUrl,
+        string? apiKey,
+        Guid actorUserId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resolves runtime Modal credentials. ApiKey is null when disabled or missing/invalid.
+    /// </summary>
+    Task<PlatformModalCredentials> GetModalCredentialsAsync(CancellationToken cancellationToken = default);
 }

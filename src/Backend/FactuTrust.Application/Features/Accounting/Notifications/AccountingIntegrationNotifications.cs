@@ -34,7 +34,7 @@ public sealed record SupplierInvoiceWithholdingAccountingNotification(Guid Suppl
 
 /// <summary>
 /// Published after a client effet (traite) is settled at maturity (encaissé ou impayé).
-/// Génère le 2ᵉ volet comptable (532/412 ou 4111/412).
+/// Génère le 2ᵉ volet comptable (532/413 ou 4111/413).
 /// </summary>
 public sealed record ClientEffetSettledNotification(Guid PaymentId) : INotification;
 
