@@ -1,7 +1,7 @@
 import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule, CurrencyPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { StockService, StockItem, Warehouse, MovementReason, RecordExitRequest, AdjustStockRequest, StockFeatures, StockLotBalance, ExpiryAlert } from '@core/services/stock.service';
+import { StockService, StockItem, Warehouse, MovementReason, RecordExitRequest, AdjustStockRequest, StockFeatures, StockLotBalance, StockValuationLayer, ExpiryAlert } from '@core/services/stock.service';
 import { ProductService, ProductListItem } from '@core/services/product.service';
 import { TableTotalsBarComponent, TotalMetric } from '@shared/components/table-totals-bar/table-totals-bar.component';
 
@@ -103,8 +103,10 @@ export class StockListComponent implements OnInit {
   adjustDialogVisible = false;
   selectedItemForAdjust: StockItem | null = null;
   lotTrackingEnabled = signal(false);
+  fifoLifoValuationEnabled = signal(false);
   expiryAlerts = signal<ExpiryAlert[]>([]);
   expandedLots = signal<Record<string, StockLotBalance[]>>({});
+  expandedLayers = signal<Record<string, StockValuationLayer[]>>({});
 
   // Filters
   searchTerm = '';
@@ -162,6 +164,7 @@ export class StockListComponent implements OnInit {
       next: res => {
         if (res.success && res.data) {
           this.lotTrackingEnabled.set(res.data.lotTrackingEnabled);
+          this.fifoLifoValuationEnabled.set(res.data.fifoLifoValuationEnabled);
           if (res.data.expiryTrackingEnabled) {
             this.stockService.getExpiryAlerts().subscribe({
               next: alerts => {
@@ -187,6 +190,27 @@ export class StockListComponent implements OnInit {
         this.expandedLots.set({ ...this.expandedLots(), [item.id]: res.data ?? [] });
       }
     });
+  }
+
+  toggleLayers(item: StockItem): void {
+    const current = this.expandedLayers();
+    if (current[item.id]) {
+      const next = { ...current };
+      delete next[item.id];
+      this.expandedLayers.set(next);
+      return;
+    }
+    this.stockService.getValuationLayers(item.id).subscribe({
+      next: res => {
+        this.expandedLayers.set({ ...this.expandedLayers(), [item.id]: res.data ?? [] });
+      }
+    });
+  }
+
+  costingLabel(method: number | undefined): string {
+    if (method === 1) return 'FIFO';
+    if (method === 2) return 'LIFO';
+    return 'CMUP';
   }
 
   loadData() {

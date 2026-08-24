@@ -3,6 +3,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using FactuTrust.API.Http;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
@@ -39,6 +40,7 @@ public class AuthController : ControllerBase
     private readonly FirmGovernanceOptions _firmGovernanceOptions;
     private readonly AccountingFirmsOptions _accountingFirmsOptions;
     private readonly IEmailService _emailService;
+    private readonly IClientPortalService _clientPortalService;
     private readonly ILogger<AuthController> _logger;
 
     public AuthController(
@@ -54,6 +56,7 @@ public class AuthController : ControllerBase
         IOptions<FirmGovernanceOptions> firmGovernanceOptions,
         IOptions<AccountingFirmsOptions> accountingFirmsOptions,
         IEmailService emailService,
+        IClientPortalService clientPortalService,
         ILogger<AuthController> logger)
     {
         _userManager = userManager;
@@ -68,6 +71,7 @@ public class AuthController : ControllerBase
         _firmGovernanceOptions = firmGovernanceOptions.Value;
         _accountingFirmsOptions = accountingFirmsOptions.Value;
         _emailService = emailService;
+        _clientPortalService = clientPortalService;
         _logger = logger;
     }
 
@@ -258,6 +262,10 @@ public class AuthController : ControllerBase
             return Unauthorized(ApiResponse<AuthResponseDto>.Fail("Email ou mot de passe incorrect"));
         }
 
+        var portalGate = await _clientPortalService.EnsurePortalLoginAllowedAsync(user.Id, cancellationToken);
+        if (portalGate.IsFailure)
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<AuthResponseDto>.Fail(portalGate.Error.Description));
+
         // Check 2FA
         if (result.RequiresTwoFactor)
         {
@@ -429,6 +437,10 @@ public class AuthController : ControllerBase
             return Unauthorized(ApiResponse<AuthResponseDto>.Fail("Entreprise introuvable"));
         }
 
+        var portalGate = await _clientPortalService.EnsurePortalLoginAllowedAsync(user.Id, cancellationToken);
+        if (portalGate.IsFailure)
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<AuthResponseDto>.Fail(portalGate.Error.Description));
+
         var tokens = await _tokenService.GenerateTokensAsync(user.Id, tenant.Id, cancellationToken: cancellationToken);
 
         return Ok(ApiResponse<AuthResponseDto>.Ok(tokens));
@@ -580,4 +592,22 @@ public class AuthController : ControllerBase
         };
     }
 
+    /// <summary>
+    /// Accept a client-portal invitation (anonymous). Sets password and issues a portal JWT.
+    /// </summary>
+    [HttpPost("portal/accept-invite")]
+    [AllowAnonymous]
+    [EnableRateLimiting("login")]
+    [ProducesResponseType(typeof(ApiResponse<AuthResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> AcceptPortalInvite(
+        [FromBody] AcceptPortalInviteRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _clientPortalService.AcceptInviteAsync(request, cancellationToken);
+        if (result.IsFailure)
+            return ResultHttp.ToError(this, result.Error);
+
+        return Ok(ApiResponse<AuthResponseDto>.Ok(result.Value, "Invitation acceptée"));
+    }
 }

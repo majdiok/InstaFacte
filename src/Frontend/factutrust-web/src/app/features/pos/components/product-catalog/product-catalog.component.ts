@@ -11,7 +11,11 @@ import { ProductCardComponent } from '../product-card/product-card.component';
 import { QuickAddModalComponent } from '../quick-add-modal/quick-add-modal.component';
 import { PosFavoritesService } from '../../services/pos-favorites.service';
 import { PosStockService } from '../../services/pos-stock.service';
+import { PosStateService } from '../../services/pos-state.service';
+import { canSellProduct } from '../../services/pos-stock-guard';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
+import { VariantProductPickerComponent } from '@shared/components/variant-product-picker/variant-product-picker.component';
+import { ProductSuggestion, suggestionToListItem } from '@shared/services/product-autocomplete.service';
 
 interface CategoryTab {
   id: string;
@@ -22,7 +26,7 @@ interface CategoryTab {
 @Component({
   selector: 'app-product-catalog',
   standalone: true,
-  imports: [CommonModule, FormsModule, ProductCardComponent, QuickAddModalComponent],
+  imports: [CommonModule, FormsModule, ProductCardComponent, QuickAddModalComponent, VariantProductPickerComponent],
   template: `
     <div class="catalog">
       <!-- Search -->
@@ -53,6 +57,13 @@ interface CategoryTab {
               <i class="pi" [class.pi-microphone]="!listening()" [class.pi-stop]="listening()"></i>
             </button>
           }
+          <button
+            type="button"
+            class="catalog__variant-btn"
+            (click)="variantPickerVisible = true"
+            title="Choisir une variante">
+            <i class="pi pi-th-large"></i>
+          </button>
         </div>
       </div>
 
@@ -168,13 +179,25 @@ interface CategoryTab {
           (confirm)="onQuickAddConfirmFromCatalog($event)"
           (cancel)="quickAddProduct.set(null)" />
       }
+
+      <app-variant-product-picker
+        [(visible)]="variantPickerVisible"
+        (selected)="onVariantPicked($event)">
+      </app-variant-product-picker>
     </div>
   `,
   styles: [`
+    :host {
+      flex: 1;
+      min-height: 0;
+      display: block;
+    }
+
     .catalog {
       display: flex;
       flex-direction: column;
       height: 100%;
+      min-height: 0;
       overflow: hidden;
     }
 
@@ -390,7 +413,9 @@ interface CategoryTab {
 
     .catalog__grid-container {
       flex: 1;
+      min-height: 0;
       overflow-y: auto;
+      scrollbar-gutter: stable;
       padding: var(--spacing-2) var(--spacing-5) var(--spacing-4);
       scrollbar-width: thin;
       scrollbar-color: var(--color-neutral-300) transparent;
@@ -590,6 +615,7 @@ export class ProductCatalogComponent implements OnInit, OnDestroy {
   private readonly productService = inject(ProductService);
   private readonly categoryService = inject(ProductCategoryService);
   private readonly warehouseContext = inject(WarehouseContextService);
+  private readonly posState = inject(PosStateService);
 
   products = signal<ProductListItem[]>([]);
   productCache = signal<Map<string, ProductListItem>>(new Map());
@@ -601,6 +627,7 @@ export class ProductCatalogComponent implements OnInit, OnDestroy {
   totalCount = signal(0);
   hasMore = signal(false);
   readonly listening = signal(false);
+  variantPickerVisible = false;
   quickAddProduct = signal<ProductListItem | null>(null);
   lastAddedProductId = signal<string | null>(null);
   private lastAddedTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -761,14 +788,17 @@ export class ProductCatalogComponent implements OnInit, OnDestroy {
   }
 
   handleProductAddWithQuantity(event: { product: ProductListItem; quantity: number }): void {
+    if (!this.guardCatalogAdd(event.product, event.quantity)) return;
     this.onProductAddWithQuantity.emit(event);
   }
 
   openQuickAddModal(product: ProductListItem): void {
+    if (!this.guardCatalogAdd(product, 1)) return;
     this.quickAddProduct.set(product);
   }
 
   onQuickAddConfirmFromCatalog(event: { product: ProductListItem; quantity: number }): void {
+    if (!this.guardCatalogAdd(event.product, event.quantity)) return;
     this.quickAddProduct.set(null);
     this.favoritesService.addRecent(event.product);
     this.lastAddedProductId.set(event.product.id);
@@ -781,12 +811,27 @@ export class ProductCatalogComponent implements OnInit, OnDestroy {
   }
 
   onProductAddToOrder(product: ProductListItem): void {
+    if (!this.guardCatalogAdd(product, 1)) return;
     this.productCache.update(cache => {
       const next = new Map(cache);
       next.set(product.id, product);
       return next;
     });
     this.onProductAdd.emit(product);
+  }
+
+  private guardCatalogAdd(product: ProductListItem, extraQty: number): boolean {
+    if (this.posState.isCreditNote()) return true;
+    const currentQty = this.posState.lines().find(l => l.productId === product.id)?.quantity ?? 0;
+    const check = canSellProduct(product, extraQty, currentQty);
+    if (check.ok) return true;
+    this.posState.setError(check.message);
+    return false;
+  }
+
+  onVariantPicked(suggestion: ProductSuggestion): void {
+    const product = suggestionToListItem(suggestion);
+    this.onProductAddToOrder(product);
   }
 
   searchWithCode(code: string): void {
@@ -876,6 +921,7 @@ export class ProductCatalogComponent implements OnInit, OnDestroy {
       search: this.searchQuery() || undefined,
       productCategoryId,
       isActive: true,
+      excludeVariantTemplates: true,
       page: this.currentPage,
       pageSize: this.pageSize,
       warehouseId: this.warehouseContext.selectedWarehouseId() ?? undefined

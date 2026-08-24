@@ -209,6 +209,23 @@ Avertissement : votre abonnement InstaFact sera suspendu dans 7 jours si la fact
 
 Faute de règlement, votre abonnement InstaFact est suspendu.
 Réactivez votre compte en réglant la facture en attente.
+"),
+
+        ["portal-invite"] = new(
+            Code: "portal-invite",
+            SubjectTemplate: "{{ companyName }} vous invite dans son espace client",
+            HtmlBodyTemplate: WrapHtml(
+                "Invitation espace client",
+                @"<p>Bonjour <strong>{{ recipientName }}</strong>,</p>
+<p><strong>{{ companyName }}</strong> vous invite à consulter les factures et paiements de <strong>{{ clientName }}</strong> dans l'espace client InstaFact.</p>
+<p><a href=""{{ inviteUrl }}"" style=""display:inline-block;padding:10px 20px;background:#2563eb;color:white;text-decoration:none;border-radius:6px;"">Activer mon accès</a></p>
+<p style=""color:#666;font-size:12px;"">Ce lien expire après 7 jours. Si vous n'êtes pas à l'origine de cette invitation, ignorez cet e-mail.</p>"),
+            TextBodyTemplate: @"Bonjour {{ recipientName }},
+
+{{ companyName }} vous invite à consulter les factures de {{ clientName }} dans l'espace client InstaFact.
+Activez votre accès : {{ inviteUrl }}
+
+Ce lien expire après 7 jours.
 ")
     };
 

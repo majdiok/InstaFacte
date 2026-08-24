@@ -90,7 +90,11 @@ public sealed class ProductRepository : IProductRepository
         Guid? categoryId,
         int page,
         int pageSize,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool excludeVariantTemplates = false,
+        Guid? parentProductId = null,
+        bool? isVariantTemplate = null,
+        bool? hasParentProduct = null)
     {
         await using var context = _contextFactory.CreateContext();
 
@@ -112,6 +116,21 @@ public sealed class ProductRepository : IProductRepository
         if (categoryId.HasValue)
             query = query.Where(p => p.CategoryId == categoryId.Value);
 
+        if (excludeVariantTemplates)
+            query = query.Where(p => !p.IsVariantTemplate);
+
+        if (parentProductId.HasValue)
+            query = query.Where(p => p.ParentProductId == parentProductId.Value);
+
+        if (isVariantTemplate.HasValue)
+            query = query.Where(p => p.IsVariantTemplate == isVariantTemplate.Value);
+
+        if (hasParentProduct == true)
+            query = query.Where(p => p.ParentProductId != null);
+
+        if (hasParentProduct == false)
+            query = query.Where(p => p.ParentProductId == null);
+
         var totalCount = await query.CountAsync(cancellationToken);
 
         var items = await query
@@ -122,6 +141,58 @@ public sealed class ProductRepository : IProductRepository
             .ToListAsync(cancellationToken);
 
         return (items, totalCount);
+    }
+
+    public async Task<(IReadOnlyList<Product> Items, int TotalCount)> GetChildrenByParentIdAsync(
+        Guid parentProductId,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+
+        var query = context.Products
+            .Where(p => p.ParentProductId == parentProductId);
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        var items = await query
+            .Include(p => p.Category)
+            .OrderBy(p => p.Code)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return (items, totalCount);
+    }
+
+    public async Task<IReadOnlyList<Product>> SearchTemplatesForSelectAsync(
+        string? searchTerm,
+        bool? isActive,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+
+        var query = context.Products.AsNoTracking()
+            .Where(p => p.IsVariantTemplate)
+            .AsQueryable();
+
+        if (isActive.HasValue)
+            query = query.Where(p => p.IsActive == isActive.Value);
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            var term = searchTerm.Trim();
+            query = query.Where(p =>
+                p.Code.StartsWith(term) ||
+                p.Name.Contains(term));
+        }
+
+        return await query
+            .OrderBy(p => p.Name)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<Product>> SearchForSelectAsync(

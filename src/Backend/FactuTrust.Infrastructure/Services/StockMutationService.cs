@@ -240,6 +240,11 @@ public sealed class StockMutationService : IStockMutationService
         {
             var remainingValue = store.ListOpenLayers(stockItem.Id).Sum(l => l.RemainingValue);
             stockItem.RecalculateDisplayAverageCost(remainingValue);
+            var layerInvariant = ValuationLayerInvariant.AssertMatchesOnHand(
+                stockItem.QuantityOnHand,
+                store.ListOpenLayers(stockItem.Id).Select(l => l.RemainingQuantity));
+            if (layerInvariant.IsFailure)
+                return layerInvariant;
         }
 
         if (product.TrackingMode == TrackingMode.Lot)
@@ -309,7 +314,16 @@ public sealed class StockMutationService : IStockMutationService
             }
 
             var unitCost = allocation.UnitCost ?? request.UnitCost;
-            var entry = ApplyLayeredEntry(stockItem, product, request, store, lotId, allocation.Quantity, unitCost);
+            var entry = ApplyLayeredEntry(
+                stockItem,
+                product,
+                request,
+                store,
+                lotId,
+                allocation.Quantity,
+                unitCost,
+                allocation.RestoreValuationLayerId,
+                allocation.ReceivedAt);
             if (entry.IsFailure)
                 return entry;
 
@@ -326,9 +340,27 @@ public sealed class StockMutationService : IStockMutationService
         IStockTraceabilityStore store,
         Guid? productLotId,
         decimal quantity,
-        decimal unitCost)
+        decimal unitCost,
+        Guid? restoreLayerId = null,
+        DateTime? receivedAtOverride = null)
     {
         var layered = RequiresLayeredCosting(product);
+        Guid? valuationLayerId = null;
+        DateTime? overflowReceivedAt = receivedAtOverride;
+
+        if (layered && restoreLayerId is { } layerId)
+        {
+            var existing = store.GetLayer(layerId);
+            if (existing is not null && existing.StockItemId == stockItem.Id)
+            {
+                var restore = existing.RestoreRemaining(quantity);
+                if (restore.IsSuccess)
+                    valuationLayerId = existing.Id;
+                else
+                    overflowReceivedAt = existing.ReceivedAt;
+            }
+        }
+
         var entry = stockItem.RecordEntry(
             quantity,
             unitCost,
@@ -337,12 +369,12 @@ public sealed class StockMutationService : IStockMutationService
             request.Notes,
             productLotId,
             serialId: null,
-            valuationLayerId: null,
+            valuationLayerId,
             updateWeightedAverage: !layered);
         if (entry.IsFailure)
             return entry;
 
-        if (!layered)
+        if (!layered || valuationLayerId.HasValue)
             return Result.Success();
 
         var lastMovement = stockItem.Movements.Last();
@@ -350,7 +382,7 @@ public sealed class StockMutationService : IStockMutationService
             stockItem.Id,
             quantity,
             unitCost,
-            lastMovement.OccurredAt,
+            overflowReceivedAt ?? lastMovement.OccurredAt,
             productLotId,
             request.Reference);
         if (layerResult.IsFailure)

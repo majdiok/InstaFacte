@@ -56,4 +56,18 @@ Vous pouvez changer de forfait selon vos besoins. Cliquez sur **Changer de forfa
 
 ---
 
+## Axes de variantes
+
+Cette page n’apparaît que si l’option **variantes** est activée pour votre entreprise, et uniquement pour un **Administrateur** ou un **Superviseur**.
+
+Les axes de variantes (taille, couleur, etc.) et leurs valeurs servent à générer les SKU depuis une fiche produit modèle.
+
+1. Ouvrez **Paramètres**.
+2. Cliquez sur **Axes de variantes**.
+3. Créez un axe (ex. Taille) puis ses valeurs (S, M, L).
+
+Sur la fiche d’un produit **modèle**, sélectionnez ensuite les valeurs et générez les SKU.
+
+---
+
 [Retour à l'index](README.md) | [Précédent : Rapports](08-rapports.md) | [Glossaire](glossaire.md)

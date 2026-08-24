@@ -58,6 +58,10 @@ public sealed class EfStockTraceabilityStore : IStockTraceabilityStore
         return fromDb;
     }
 
+    public StockValuationLayer? GetLayer(Guid layerId) =>
+        _context.StockValuationLayers.Local.FirstOrDefault(l => l.Id == layerId)
+        ?? _context.StockValuationLayers.FirstOrDefault(l => l.Id == layerId);
+
     public void AddLayer(StockValuationLayer layer) => _context.StockValuationLayers.Add(layer);
 
     public ProductSerial? FindSerial(Guid productId, string serialNumber)

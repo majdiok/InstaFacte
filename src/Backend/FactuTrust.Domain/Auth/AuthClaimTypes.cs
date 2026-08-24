@@ -33,4 +33,10 @@ public static class AuthClaimTypes
     /// Value: "true" / "false".
     /// </summary>
     public const string PayrollFirmManaged = "payroll_firm_managed";
+
+    /// <summary>CRM client id bound to a portal user. Present only for <c>UserRole.Client</c>.</summary>
+    public const string ClientId = "client_id";
+
+    /// <summary>Value <c>true</c> when the JWT belongs to a client-portal contact (not staff).</summary>
+    public const string IsPortal = "portal";
 }

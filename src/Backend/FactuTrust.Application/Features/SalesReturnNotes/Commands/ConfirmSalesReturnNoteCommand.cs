@@ -172,7 +172,8 @@ public sealed class ConfirmSalesReturnNoteCommandHandler : IRequestHandler<Confi
                             take,
                             movement.ProductLotId,
                             SerialId: movement.SerialId,
-                            UnitCost: movement.UnitCost));
+                            UnitCost: movement.UnitCost,
+                            RestoreValuationLayerId: movement.ValuationLayerId));
                         remaining -= take;
                     }
 

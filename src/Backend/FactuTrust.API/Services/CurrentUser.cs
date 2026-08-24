@@ -54,6 +54,19 @@ public sealed class CurrentUser : ICurrentUser
     public bool IsAccountingFirmDelegatedContext =>
         AccountingValidationAccess.IsAccountingFirmDelegatedContext(User);
 
+    public Guid? PortalClientId
+    {
+        get
+        {
+            var claim = User?.FindFirst(AuthClaimTypes.ClientId)?.Value;
+            return Guid.TryParse(claim, out var id) ? id : null;
+        }
+    }
+
+    public bool IsClientPortal =>
+        Role == UserRole.Client
+        || string.Equals(User?.FindFirst(AuthClaimTypes.IsPortal)?.Value, "true", StringComparison.OrdinalIgnoreCase);
+
     public bool HasPermission(string permission)
     {
         if (!IsAuthenticated || Role is null)

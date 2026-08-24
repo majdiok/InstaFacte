@@ -1,4 +1,5 @@
 using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Features.Stock.Services;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
@@ -204,9 +205,26 @@ public sealed class StockTransferCompletionService : IStockTransferCompletionSer
                 }
 
                 var destMovementIdsBefore = destStockItem.Movements.Select(m => m.Id).ToHashSet();
-                var destAllocations = store.ListAllocations(StockDocumentKind.Transfer, line.Id)
-                    .Select(a => new StockAllocationInput(a.Quantity, a.ProductLotId, SerialId: a.SerialId, UnitCost: sourceStockItem.AverageCost))
+                var newExits = sourceStockItem.Movements
+                    .Where(m => !sourceMovementIdsBefore.Contains(m.Id) && m.Type == MovementType.Exit)
+                    .OrderBy(m => m.OccurredAt)
+                    .ThenBy(m => m.Id)
                     .ToList();
+                var destAllocations = StockValuationRestore.FromExitMovements(
+                    newExits,
+                    line.RequestedQuantity,
+                    restoreSameWarehouse: false,
+                    receivedAtByLayerId: id => store.GetLayer(id)?.ReceivedAt).ToList();
+                if (destAllocations.Count == 0)
+                {
+                    destAllocations = store.ListAllocations(StockDocumentKind.Transfer, line.Id)
+                        .Select(a => new StockAllocationInput(a.Quantity, a.ProductLotId, SerialId: a.SerialId, UnitCost: sourceStockItem.AverageCost))
+                        .ToList();
+                }
+
+                var destUnitCost = destAllocations.Count > 0
+                    ? destAllocations.Sum(a => a.Quantity * (a.UnitCost ?? 0m)) / destAllocations.Sum(a => a.Quantity)
+                    : sourceStockItem.AverageCost;
 
                 var entryResult = _mutation.Apply(destStockItem, new StockMutationRequest
                 {
@@ -214,7 +232,7 @@ public sealed class StockTransferCompletionService : IStockTransferCompletionSer
                     WarehouseId = transfer.DestinationWarehouseId,
                     Kind = StockMutationKind.Entry,
                     Quantity = line.RequestedQuantity,
-                    UnitCost = sourceStockItem.AverageCost,
+                    UnitCost = destUnitCost,
                     Reason = MovementReason.Transfer,
                     Reference = reference,
                     Notes = "Transfert entrée depuis entrepôt source",

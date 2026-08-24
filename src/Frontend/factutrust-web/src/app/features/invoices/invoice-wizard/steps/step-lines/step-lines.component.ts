@@ -19,6 +19,7 @@ import { TagModule } from 'primeng/tag';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { ToastService } from '@core/services/toast.service';
 import { QuickCreateProductDialogComponent } from '@shared/components/quick-create-product-dialog/quick-create-product-dialog.component';
+import { VariantProductPickerComponent } from '@shared/components/variant-product-picker/variant-product-picker.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 
 // Services & Models
@@ -87,6 +88,7 @@ interface WizardProductSuggestion {
     TagModule,
     DecimalPipe,
     QuickCreateProductDialogComponent,
+    VariantProductPickerComponent,
     ButtonComponent
   ],
   template: `
@@ -226,6 +228,13 @@ interface WizardProductSuggestion {
                             </ng-template>
                           </p-autoComplete>
                         </div>
+                        <app-button
+                          variant="outline"
+                          size="sm"
+                          icon="pi-th-large"
+                          ariaLabel="Choisir une variante"
+                          (click)="variantPickerVisible = true; $event.stopPropagation()"
+                          title="Choisir une variante" />
                         <app-button
                           variant="primary"
                           size="sm"
@@ -580,6 +589,11 @@ interface WizardProductSuggestion {
         [(visible)]="quickCreateProductVisible"
         (productCreated)="onQuickProductCreated($event)">
       </app-quick-create-product-dialog>
+
+      <app-variant-product-picker
+        [(visible)]="variantPickerVisible"
+        (selected)="onVariantPicked($event)">
+      </app-variant-product-picker>
     </div>
 
   `,
@@ -1215,6 +1229,7 @@ export class StepLinesComponent implements OnInit, OnDestroy {
   editSelectedProduct: WizardProductSuggestion | string | null = null;
   productSuggestions = signal<any[]>([]);
   quickCreateProductVisible = false;
+  variantPickerVisible = false;
   isLoadingProducts = signal<boolean>(false);
   simpleMode = signal<boolean>(true);
 
@@ -1481,12 +1496,22 @@ export class StepLinesComponent implements OnInit, OnDestroy {
     // PrimeNG AutoComplete onSelect émet { originalEvent, value }; le produit est dans value
     const product = event?.value;
     if (!product || !this.editingLineId) return;
+    this.applyProductToEditingLine(product);
+  }
+
+  onVariantPicked(product: ProductSuggestion): void {
+    if (!this.editingLineId) return;
+    this.applyProductToEditingLine(product);
+  }
+
+  private applyProductToEditingLine(product: ProductSuggestion | WizardProductSuggestion): void {
+    const lineId = this.editingLineId;
+    if (!lineId) return;
 
     const mappedProduct = this.mapSuggestionForWizard(product);
     this.editSelectedProduct = mappedProduct;
 
-    // Mettre à jour immédiatement la ligne dans le service pour que les calculs soient effectués
-    this.wizardService.updateLine(this.editingLineId, {
+    this.wizardService.updateLine(lineId, {
       productId: product.id,
       designation: product.name,
       unitPriceHT: product.unitPrice,
@@ -1503,7 +1528,7 @@ export class StepLinesComponent implements OnInit, OnDestroy {
       discountValue: this.editLine.discountValue
     });
 
-    const updatedLine = this.lines().find(l => l.id === this.editingLineId);
+    const updatedLine = this.lines().find(l => l.id === lineId);
     if (updatedLine) {
       this.editLine = {
         ...updatedLine,
@@ -1511,7 +1536,7 @@ export class StepLinesComponent implements OnInit, OnDestroy {
       };
     }
 
-    this.resolveLinePrice(this.editingLineId, product.id, this.editLine.quantity || 1, true);
+    this.resolveLinePrice(lineId, product.id, this.editLine.quantity || 1, true);
   }
 
   openQuickCreateProduct(): void {

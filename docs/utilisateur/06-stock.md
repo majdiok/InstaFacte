@@ -115,12 +115,16 @@ Un **inventaire physique** consiste à compter réellement les produits en stock
 
 Certaines familles (textile, chaussure, etc.) se déclinent en **taille, couleur** ou autre axe. Dans FactuTrust, chaque combinaison est un **produit à part** (un SKU), avec son code, son code-barres et son stock.
 
-1. Ouvrez la fiche du produit **modèle** (matrice).
-2. Dans **Variantes**, choisissez les attributs (ex. Taille, Couleur) puis générez les SKU.
-3. Le modèle n'est **ni vendable ni stockable** : sur une facture, un BL ou au POS, sélectionnez toujours une **variante**.
-4. Le code d'une variante est du type `{CODE-PARENT}-{AXE1}-{AXE2}` (50 caractères max).
+1. Créez les **axes de variantes** (Paramètres > Axes de variantes) : ex. Taille (S, M, L) et Couleur (Bleu, Rouge).
+2. Créez un produit **modèle** et activez **Modèle de variantes**.
+3. Sélectionnez les valeurs d'axes puis **Générez les SKU**.
+4. Ajustez les **prix par SKU** dans le tableau des enfants (ou appliquez les prix du modèle).
+5. Le modèle n'est **ni vendable ni stockable** : sur une facture, un BL ou au POS, sélectionnez toujours une **variante** (SKU).
+6. Le code d'une variante est du type `{CODE-PARENT}-{AXE1}-{AXE2}` (50 caractères max).
 
-Les listes de produits et le POS n'affichent pas les modèles.
+**En vente** : utilisez la recherche SKU directe ou le sélecteur **Par modèle** (bouton variantes sur les lignes de document).
+
+Le **POS** et les listes de vente n'affichent pas les modèles ; seuls les SKU enfants sont vendables.
 
 > Cette fonction n'apparaît que si l'option **variantes** est activée pour votre entreprise.
 
@@ -149,6 +153,8 @@ Par défaut, le coût de stock est le **CMUP** (coût moyen unitaire pondéré).
 
 - FIFO / LIFO ne s'activent pas tant qu'il reste du stock valorisé en CMUP : créez d'abord une **couche d'ouverture** (bouton sur la fiche produit).
 - L'écran stock continue d'afficher un **coût unitaire** : pour FIFO/LIFO, c'est la valeur restante des couches / quantité.
+- Un **transfert** recopie les couches (quantité, coût, date de réception, lot) vers l'entrepôt destination. Un **avoir** ou une **annulation** restitue les couches d'origine, pas une nouvelle couche à la date du jour.
+- Une facture **mixte** (FIFO + CMUP) déduit toutes les lignes gérées en stock dans la même transaction.
 - **LIFO** est disponible opérationnellement mais souvent **non retenu** pour les comptes statutaires tunisiens / IFRS. Demandez à votre expert-comptable avant de l'utiliser.
 
 ---

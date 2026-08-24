@@ -96,7 +96,7 @@ internal static class ProductDetailMapper
         };
     }
 
-    public static ProductSelectDto ToSelectDto(Product product)
+    public static ProductSelectDto ToSelectDto(Product product, string? attributeSummary = null)
     {
         return new ProductSelectDto
         {
@@ -109,7 +109,13 @@ internal static class ProductDetailMapper
             Unit = product.Unit,
             IsFodecApplicable = product.IsFodecApplicable,
             IsDiscountEnabled = product.IsDiscountEnabled,
-            MaxDiscountPercent = product.MaxDiscountPercent
+            MaxDiscountPercent = product.MaxDiscountPercent,
+            AttributeSummary = attributeSummary,
+            IsVariantTemplate = product.IsVariantTemplate,
+            ParentProductId = product.ParentProductId
         };
     }
+
+    public static string FormatAttributeSummary(IReadOnlyList<ProductVariantAttributePairDto> attributes)
+        => string.Join(" / ", attributes.OrderBy(a => a.SortOrder).Select(a => a.ValueName));
 }

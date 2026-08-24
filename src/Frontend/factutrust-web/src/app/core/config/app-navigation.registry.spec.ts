@@ -9,6 +9,7 @@ import {
   getVisibleNavSearchEntries,
   NavItem
 } from './app-navigation.registry';
+import { VARIANT_AXES_PATH } from '@features/settings/variant-axes/variant-axes.paths';
 
 const companyUser: User = {
   id: 'u1',
@@ -242,6 +243,24 @@ describe('app-navigation.registry', () => {
       expect(ventesRoutes).not.toContain('/settings/promotions');
       expect(ventesRoutes).not.toContain('/pricing/promotions');
       expect(settingsRoutes).toContain('/settings/promotions');
+    });
+  });
+
+  describe('variant axes navigation placement', () => {
+    it('lists Axes de variantes under Paramètres and not under Fiches', () => {
+      const fiches = ALL_NAV_ITEMS.find(i => i.label === 'Fiches');
+      const settings = ALL_NAV_ITEMS.find(i => i.label === 'Paramètres');
+
+      const fichesRoutes = fiches?.children?.map(c => c.route) ?? [];
+      const settingsChildren = settings?.children ?? [];
+      const entry = settingsChildren.find(c => c.route === VARIANT_AXES_PATH);
+
+      expect(fichesRoutes).not.toContain('/product-attributes');
+      expect(fichesRoutes).not.toContain(VARIANT_AXES_PATH);
+      expect(entry).toBeDefined();
+      expect(entry!.label).toBe('Axes de variantes');
+      expect(entry!.platformSettingsOnly).toBeTrue();
+      expect(entry!.permissionsAll).toContain('products:read');
     });
   });
 

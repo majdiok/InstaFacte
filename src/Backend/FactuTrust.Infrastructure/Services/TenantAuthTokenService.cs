@@ -187,6 +187,12 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
                 claims.Add(new Claim(AuthClaimTypes.PayrollFirmManaged, "true"));
         }
 
+        if (user.PortalClientId is Guid portalClientId)
+        {
+            claims.Add(new Claim(AuthClaimTypes.ClientId, portalClientId.ToString()));
+            claims.Add(new Claim(AuthClaimTypes.IsPortal, "true"));
+        }
+
         var jwtSettings = _configuration.GetSection("JwtSettings");
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["SecretKey"]!));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);

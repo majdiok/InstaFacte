@@ -93,6 +93,11 @@ export class WarehouseContextService {
    */
   navigateAfterSuccessfulAuth(returnUrl: string): void {
     const user = this.authService.user();
+    if (this.authService.isClientPortal()) {
+      const safeUrl = returnUrl?.startsWith('/portal') ? returnUrl : '/portal';
+      this.router.navigateByUrl(safeUrl);
+      return;
+    }
     if (this.authService.isAccountingFirm()) {
       const safeUrl =
         returnUrl?.startsWith('/firm') ||

@@ -17,6 +17,7 @@ import {
 import { getEffectiveMaxDiscountPercent } from '@shared/utils/product-pricing.utils';
 import { POS_PASSENGER_CLIENT_EMAIL } from '../constants/pos-client.constants';
 import { LinkedInvoiceRef } from '@core/services/invoice-reference-resolver.service';
+import { buildInsufficientStockMessage } from './pos-stock-guard';
 
 export interface PosClient {
   id: string;
@@ -55,6 +56,11 @@ export interface PosOrderLine {
    * catalogue. Sert a le signaler a l'ecran : sans cela le caissier croirait a une erreur.
    */
   isNegotiatedPrice?: boolean;
+  /**
+   * Quantité disponible dans l'entrepôt POS au moment de l'ajout (catalogue).
+   * Null si le produit n'est pas géré en stock ou si la quantité n'était pas connue (scan).
+   */
+  quantityAvailable?: number | null;
 }
 
 export interface PosTotals {
@@ -284,6 +290,9 @@ export class PosStateService {
       if (product.imageUrl != null && existing.imageUrl == null) {
         existing.imageUrl = product.imageUrl;
       }
+      if (product.quantityAvailable != null) {
+        existing.quantityAvailable = product.quantityAvailable;
+      }
       this.recalculateLine(existing);
     } else {
       const newLine: PosOrderLine = {
@@ -307,7 +316,8 @@ export class PosStateService {
         discountType: null,
         discountValue: null,
         discountAmount: 0,
-        notes: ''
+        notes: '',
+        quantityAvailable: product.isStockManaged ? (product.quantityAvailable ?? null) : null
       };
       this.recalculateLine(newLine);
       lines.push(newLine);
@@ -325,6 +335,9 @@ export class PosStateService {
       existing.quantity += quantity;
       if (product.imageUrl != null && existing.imageUrl == null) {
         existing.imageUrl = product.imageUrl;
+      }
+      if (product.quantityAvailable != null) {
+        existing.quantityAvailable = product.quantityAvailable;
       }
       this.recalculateLine(existing);
     } else {
@@ -349,7 +362,8 @@ export class PosStateService {
         discountType: null,
         discountValue: null,
         discountAmount: 0,
-        notes: ''
+        notes: '',
+        quantityAvailable: product.isStockManaged ? (product.quantityAvailable ?? null) : null
       };
       this.recalculateLine(newLine);
       lines.push(newLine);
@@ -358,22 +372,32 @@ export class PosStateService {
     this.updateState({ lines, isDirty: true, lastError: null });
   }
 
-  updateQuantity(lineId: string, quantity: number): void {
-    if (quantity < 1) return;
-    const lines = this.state().lines.map(line => {
-      if (line.id === lineId) {
-        const updated = { ...line, quantity };
+  updateQuantity(lineId: string, quantity: number): boolean {
+    if (quantity < 1) return false;
+    const line = this.state().lines.find(l => l.id === lineId);
+    if (!line) return false;
+
+    if (!this.isCreditNote() && line.quantityAvailable != null && quantity > line.quantityAvailable) {
+      this.setError(buildInsufficientStockMessage(line.designation, quantity, line.quantityAvailable));
+      return false;
+    }
+
+    const lines = this.state().lines.map(l => {
+      if (l.id === lineId) {
+        const updated = { ...l, quantity };
         this.recalculateLine(updated);
         return updated;
       }
-      return line;
+      return l;
     });
-    this.updateState({ lines, isDirty: true });
+    this.updateState({ lines, isDirty: true, lastError: null });
+    return true;
   }
 
-  incrementQuantity(lineId: string): void {
+  incrementQuantity(lineId: string): boolean {
     const line = this.state().lines.find(l => l.id === lineId);
-    if (line) this.updateQuantity(lineId, line.quantity + 1);
+    if (!line) return false;
+    return this.updateQuantity(lineId, line.quantity + 1);
   }
 
   decrementQuantity(lineId: string): void {

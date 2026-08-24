@@ -19,6 +19,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   fiches: 'Rapports Fiches',
   settings: 'Paramètres',
   promotions: 'Promotions',
+  'variant-axes': 'Axes de variantes',
   warehouses: 'Entrepôts',
   profile: 'Mon profil',
   new: 'Nouveau',

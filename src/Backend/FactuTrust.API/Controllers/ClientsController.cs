@@ -1,4 +1,5 @@
 using FactuTrust.API.Authorization;
+using FactuTrust.API.Http;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Clients.Commands;
 using FactuTrust.Application.Common.Interfaces.Services;
@@ -19,11 +20,16 @@ namespace FactuTrust.API.Controllers;
 public class ClientsController : ControllerBase
 {
     private readonly IMediator _mediator;
+    private readonly IClientPortalService _clientPortalService;
     private readonly ILogger<ClientsController> _logger;
 
-    public ClientsController(IMediator mediator, ILogger<ClientsController> logger)
+    public ClientsController(
+        IMediator mediator,
+        IClientPortalService clientPortalService,
+        ILogger<ClientsController> logger)
     {
         _mediator = mediator;
+        _clientPortalService = clientPortalService;
         _logger = logger;
     }
 
@@ -222,4 +228,37 @@ public class ClientsController : ControllerBase
 
         return Ok(ApiResponse<ClientOutstandingDto>.Ok(result.Value));
     }
+
+    [HttpGet("{id:guid}/portal-contacts")]
+    [Authorize(Policy = PermissionPolicies.ClientsUpdate)]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<ClientPortalContactDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ListPortalContacts(Guid id, CancellationToken cancellationToken)
+        => this.ToActionResult(await _clientPortalService.ListContactsAsync(id, cancellationToken));
+
+    [HttpPost("{id:guid}/portal-contacts")]
+    [Authorize(Policy = PermissionPolicies.ClientsUpdate)]
+    [ProducesResponseType(typeof(ApiResponse<ClientPortalContactDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> InvitePortalContact(
+        Guid id,
+        [FromBody] InviteClientPortalContactRequest request,
+        CancellationToken cancellationToken)
+        => this.ToActionResult(await _clientPortalService.InviteAsync(id, request, cancellationToken));
+
+    [HttpPost("{id:guid}/portal-contacts/{contactId:guid}/resend")]
+    [Authorize(Policy = PermissionPolicies.ClientsUpdate)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ResendPortalInvite(
+        Guid id,
+        Guid contactId,
+        CancellationToken cancellationToken)
+        => this.ToActionResult(await _clientPortalService.ResendInviteAsync(id, contactId, cancellationToken));
+
+    [HttpPost("{id:guid}/portal-contacts/{contactId:guid}/revoke")]
+    [Authorize(Policy = PermissionPolicies.ClientsUpdate)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RevokePortalContact(
+        Guid id,
+        Guid contactId,
+        CancellationToken cancellationToken)
+        => this.ToActionResult(await _clientPortalService.RevokeAsync(id, contactId, cancellationToken));
 }

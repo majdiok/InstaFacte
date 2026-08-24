@@ -2,7 +2,8 @@ import { Component, Input, Output, EventEmitter, signal, computed, inject, OnIni
 import { CommonModule } from '@angular/common';
 import { ProductListItem, ProductService } from '@core/services/product.service';
 import { PosFavoritesService } from '../../services/pos-favorites.service';
-import { PosStockService, ProductStockAlert } from '../../services/pos-stock.service';
+import { ProductStockAlert } from '../../services/pos-stock.service';
+import { PosStateService } from '../../services/pos-state.service';
 
 @Component({
   selector: 'app-product-card',
@@ -12,6 +13,8 @@ import { PosStockService, ProductStockAlert } from '../../services/pos-stock.ser
     <button
       class="product-card"
       [class.product-card--added]="justAdded()"
+      [class.product-card--disabled]="isAddDisabled()"
+      [attr.aria-disabled]="isAddDisabled() ? 'true' : null"
       (click)="onCardClick()"
       (dblclick)="onCardDblClick()"
       [attr.aria-label]="cardAriaLabel()"
@@ -102,6 +105,26 @@ import { PosStockService, ProductStockAlert } from '../../services/pos-stock.ser
     .product-card--added {
       border-color: var(--color-success-500);
       box-shadow: 0 0 0 2px var(--color-success-200);
+    }
+
+    .product-card--disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+      filter: grayscale(0.25);
+    }
+
+    .product-card--disabled:hover {
+      transform: none;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+      border-color: var(--color-neutral-200);
+    }
+
+    .product-card--disabled:hover .product-card__image::before {
+      opacity: 0;
+    }
+
+    .product-card--disabled:active {
+      transform: none;
     }
 
     .product-card__image {
@@ -345,6 +368,7 @@ export class ProductCardComponent implements OnInit, OnChanges, OnDestroy, After
 
   private readonly productService = inject(ProductService);
   private readonly favoritesService = inject(PosFavoritesService);
+  private readonly posState = inject(PosStateService);
   private readonly elementRef = inject(ElementRef);
 
   private justAddedSignal = signal(false);
@@ -424,11 +448,13 @@ export class ProductCardComponent implements OnInit, OnChanges, OnDestroy, After
   }
 
   onCardClick(): void {
+    if (this.isAddDisabled()) return;
     if (this.addTimeout) clearTimeout(this.addTimeout);
     this.addTimeout = setTimeout(() => this.onAdd(), 250);
   }
 
   onCardDblClick(): void {
+    if (this.isAddDisabled()) return;
     if (this.addTimeout) {
       clearTimeout(this.addTimeout);
       this.addTimeout = undefined;
@@ -460,6 +486,9 @@ export class ProductCardComponent implements OnInit, OnChanges, OnDestroy, After
 
   cardAriaLabel(): string {
     const base = 'Ajouter ' + this.product.name + ' au panier';
+    if (this.isAddDisabled()) {
+      return `${this.product.name} indisponible, rupture de stock`;
+    }
     if (this.product.isStockManaged && this.product.quantityAvailable != null) {
       const n = this.product.quantityAvailable;
       const unitPart = this.product.unit ? ` ${this.product.unit}` : '';
@@ -473,6 +502,10 @@ export class ProductCardComponent implements OnInit, OnChanges, OnDestroy, After
       return label;
     }
     return base;
+  }
+
+  isAddDisabled(): boolean {
+    return this.showRuptureStockBadge() && !this.posState.isCreditNote();
   }
 
   /** Aligné sur la quantité affichée (entrepôt par défaut), pas sur les alertes multi-entrepôts. */

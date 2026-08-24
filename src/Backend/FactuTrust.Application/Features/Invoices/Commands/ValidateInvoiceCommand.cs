@@ -37,6 +37,8 @@ public sealed class ValidateInvoiceCommandHandler : IRequestHandler<ValidateInvo
     private readonly IWarehouseRepository _warehouseRepository;
     private readonly IProductRepository _productRepository;
     private readonly IStockAllocationValidator _allocationValidator;
+    private readonly IStockMovementRepository _stockMovementRepository;
+    private readonly IStockItemRepository _stockItemRepository;
 
     public ValidateInvoiceCommandHandler(
         IInvoiceRepository invoiceRepository,
@@ -48,7 +50,9 @@ public sealed class ValidateInvoiceCommandHandler : IRequestHandler<ValidateInvo
         ITrackedDocumentStockService trackedStock,
         IWarehouseRepository warehouseRepository,
         IProductRepository productRepository,
-        IStockAllocationValidator allocationValidator)
+        IStockAllocationValidator allocationValidator,
+        IStockMovementRepository stockMovementRepository,
+        IStockItemRepository stockItemRepository)
     {
         _invoiceRepository = invoiceRepository;
         _accountingService = accountingService;
@@ -60,6 +64,8 @@ public sealed class ValidateInvoiceCommandHandler : IRequestHandler<ValidateInvo
         _warehouseRepository = warehouseRepository;
         _productRepository = productRepository;
         _allocationValidator = allocationValidator;
+        _stockMovementRepository = stockMovementRepository;
+        _stockItemRepository = stockItemRepository;
     }
 
     public async Task<Result> Handle(ValidateInvoiceCommand request, CancellationToken cancellationToken)
@@ -89,7 +95,21 @@ public sealed class ValidateInvoiceCommandHandler : IRequestHandler<ValidateInvo
                         : "Facture non conforme"));
             }
 
-            if (invoice.Type != InvoiceType.CreditNote && !invoice.SourceDeliveryNoteId.HasValue)
+            if (invoice.Type == InvoiceType.CreditNote)
+            {
+                var restoreResult = await CreditNoteStockRestore.RestoreAsync(
+                    invoice,
+                    _invoiceRepository,
+                    _productRepository,
+                    _warehouseRepository,
+                    _stockMovementRepository,
+                    _stockItemRepository,
+                    _trackedStock,
+                    ct);
+                if (restoreResult.IsFailure)
+                    return restoreResult;
+            }
+            else if (!invoice.SourceDeliveryNoteId.HasValue)
             {
                 var stockResult = await DeductTrackedStockAsync(invoice, request.LineAllocations, ct);
                 if (stockResult.IsFailure)

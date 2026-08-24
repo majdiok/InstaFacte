@@ -28,6 +28,7 @@ public sealed record CompanyDto
     public string? InvoiceFooter { get; init; }
     public string? WarehouseName { get; init; }
     public string? CnssEmployerNumber { get; init; }
+    public bool ClientPortalEnabled { get; init; } = true;
 }
 
 /// <summary>
@@ -61,4 +62,5 @@ public sealed record UpdateCompanyDto
     public string? InvoiceFooter { get; init; }
     public string? WarehouseName { get; init; }
     public string? CnssEmployerNumber { get; init; }
+    public bool? ClientPortalEnabled { get; init; }
 }

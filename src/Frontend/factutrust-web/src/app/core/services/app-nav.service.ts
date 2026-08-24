@@ -34,6 +34,8 @@ import { AccountingFeatureFlagsService } from '@features/accounting/shared/accou
 import { AppModule } from '@core/models/app-module';
 import { PERMISSIONS } from '@core/config/permission-keys';
 import { StudioNavService } from '@features/studio/studio-nav.service';
+import { StockFeaturesStore } from '@core/services/stock-features-store.service';
+import { VARIANT_AXES_PATH } from '@features/settings/variant-axes/variant-axes.paths';
 import {
   ACCOUNTING_FIRM_SECONDARY_EXCLUDED_LABELS,
   SECONDARY_NAV_SECTION_ORDER
@@ -53,6 +55,7 @@ export class AppNavService {
   private readonly firmFeatureFlags = inject(FirmFeatureFlagsService);
   private readonly accountingFlags = inject(AccountingFeatureFlagsService);
   private readonly studioNav = inject(StudioNavService);
+  private readonly stockFeaturesStore = inject(StockFeaturesStore);
 
   private readonly activeClients = signal<FirmClientDossier[]>([]);
 
@@ -68,6 +71,9 @@ export class AppNavService {
     this.firmBadge.pendingInvitationsCount();
     this.exchangeBadge.unreadCount();
 
+    this.stockFeaturesStore.ensureLoaded();
+    this.stockFeaturesStore.features();
+
     if (this.auth.isAccountingFirm()) {
       if (this.auth.isDelegatedMode()) {
         return this.buildDelegatedNav();
@@ -77,6 +83,7 @@ export class AppNavService {
 
     const fixedAssetsEnabled = this.accountingFlags.flags().fixedAssetsEnabled;
     let items = filterNavItems(this.auth, ALL_NAV_ITEMS);
+    items = this.filterProductAttributesNav(items);
     items = this.filterCompanyExchangesNav(items);
     items = applyCompanyAccountingSidebar(items);
     items = filterNavItems(this.auth, items);
@@ -221,6 +228,20 @@ export class AppNavService {
     ];
 
     return filterNavItems(this.auth, items);
+  }
+
+  private filterProductAttributesNav(items: NavItem[]): NavItem[] {
+    if (this.stockFeaturesStore.productVariantsEnabled()) {
+      return items;
+    }
+    return items.map(item =>
+      item.children?.length
+        ? {
+            ...item,
+            children: item.children.filter(c => c.route !== VARIANT_AXES_PATH)
+          }
+        : item
+    );
   }
 
   private filterCompanyExchangesNav(items: NavItem[]): NavItem[] {

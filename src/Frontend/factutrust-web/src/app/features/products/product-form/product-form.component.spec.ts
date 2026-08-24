@@ -6,6 +6,7 @@ import { ProductFormComponent } from './product-form.component';
 import { ProductService } from '@core/services/product.service';
 import { ProductCategoryService } from '@core/services/product-category.service';
 import { SupplierService } from '@core/services/supplier.service';
+import { StockService } from '@core/services/stock.service';
 import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { ErrorMessageService } from '@core/services/error-message.service';
@@ -45,6 +46,12 @@ describe('ProductFormComponent — margin enablement', () => {
           provide: SupplierService,
           useValue: {
             getSuppliers: () => of({ data: { items: [] } })
+          }
+        },
+        {
+          provide: StockService,
+          useValue: {
+            getFeatures: () => of({ success: true, data: null })
           }
         },
         { provide: ToastService, useValue: { add: jasmine.createSpy('add') } },

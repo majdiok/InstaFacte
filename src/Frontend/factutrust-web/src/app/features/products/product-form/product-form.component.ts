@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { Component, OnInit, inject, signal, computed, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators, FormsModule } from '@angular/forms';
 import { Router, RouterModule, ActivatedRoute } from '@angular/router';
@@ -19,6 +19,7 @@ import { FormSectionComponent } from '@shared/components/form-section/form-secti
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { ErrorMessageService } from '@core/services/error-message.service';
 import { ProductService, CreateProductRequest, UpdateProductRequest, ProductAttributeDto } from '@core/services/product.service';
+import { VARIANT_AXES_PATH } from '@features/settings/variant-axes/variant-axes.paths';
 import { ProductCategoryService } from '@core/services/product-category.service';
 import { SupplierService } from '@core/services/supplier.service';
 import { StockService, StockFeatures } from '@core/services/stock.service';
@@ -34,6 +35,7 @@ import {
   recalculatePricing
 } from '@shared/utils/product-pricing.utils';
 import { ProductClientPricesComponent } from '../product-client-prices/product-client-prices.component';
+import { ProductVariantMatrixComponent } from '@shared/components/product-variant-matrix/product-variant-matrix.component';
 
 interface CategoryOption {
   label: string;
@@ -72,7 +74,8 @@ interface VatOption {
     BreadcrumbComponent,
     FormSectionComponent,
     ButtonComponent,
-    ProductClientPricesComponent
+    ProductClientPricesComponent,
+    ProductVariantMatrixComponent
   ],
   template: `
     <app-breadcrumb [items]="breadcrumbItems()"></app-breadcrumb>
@@ -90,10 +93,10 @@ interface VatOption {
     </app-page-header>
 
     <form [formGroup]="form" (ngSubmit)="onSubmit()">
-      <div class="form-grid">
+      <div class="form-grid" [class.form-grid--with-side]="hasSideSections()">
         <!-- General Information -->
-        <app-form-section title="Informations générales" icon="pi-box" [number]="1">
-          <div class="form-row">
+        <app-form-section class="section-identity" title="Informations générales" icon="pi-box" [number]="1">
+          <div class="form-row form-row-3">
             <div class="form-group">
               <label for="code">Code produit <span class="required">*</span></label>
               <input 
@@ -167,50 +170,52 @@ interface VatOption {
               id="description" 
               formControlName="description"
               placeholder="Description détaillée du produit ou service..."
-              [rows]="3"
+              [rows]="4"
               class="w-full">
             </textarea>
           </div>
 
           @if (showStockManagementSection()) {
-            <div class="form-group">
-              <label for="isStockManaged">Gestion de stock</label>
-              <div class="status-switch">
-                <p-inputSwitch 
-                  id="isStockManaged"
-                  formControlName="isStockManaged"
-                  [disabled]="!isProductCategory()">
-                </p-inputSwitch>
-                <span [class.active]="form.get('isStockManaged')?.value">
-                  {{ form.get('isStockManaged')?.value ? 'Activée' : 'Désactivée' }}
-                </span>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="isStockManaged">Gestion de stock</label>
+                <div class="status-switch">
+                  <p-inputSwitch 
+                    id="isStockManaged"
+                    formControlName="isStockManaged"
+                    [disabled]="!isProductCategory()">
+                  </p-inputSwitch>
+                  <span [class.active]="form.get('isStockManaged')?.value">
+                    {{ form.get('isStockManaged')?.value ? 'Activée' : 'Désactivée' }}
+                  </span>
+                </div>
+                @if (!isProductCategory()) {
+                  <small class="form-hint">Disponible uniquement pour les produits physiques.</small>
+                }
               </div>
-              @if (!isProductCategory()) {
-                <small class="form-hint">Disponible uniquement pour les produits physiques.</small>
+
+              @if (isProductCategory()) {
+                <div class="form-group">
+                  <label for="preferredSupplierId">Fournisseur préféré</label>
+                  <p-select
+                    id="preferredSupplierId"
+                    [options]="supplierOptions()"
+                    formControlName="preferredSupplierId"
+                    placeholder="Aucun (à choisir lors de la commande)"
+                    optionLabel="label"
+                    optionValue="value"
+                    [filter]="true"
+                    [showClear]="true"
+                    styleClass="w-full">
+                  </p-select>
+                  <small class="form-hint">
+                    Utilisé par Prévisions IA — Réapprovisionnement : les recommandations de ce produit
+                    seront pré-rattachées à ce fournisseur, ce qui permet de créer les bons de commande sans
+                    saisie manuelle.
+                  </small>
+                </div>
               }
             </div>
-
-            @if (isProductCategory()) {
-              <div class="form-group">
-                <label for="preferredSupplierId">Fournisseur préféré</label>
-                <p-select
-                  id="preferredSupplierId"
-                  [options]="supplierOptions()"
-                  formControlName="preferredSupplierId"
-                  placeholder="Aucun (à choisir lors de la commande)"
-                  optionLabel="label"
-                  optionValue="value"
-                  [filter]="true"
-                  [showClear]="true"
-                  styleClass="w-full">
-                </p-select>
-                <small class="form-hint">
-                  Utilisé par Prévisions IA — Réapprovisionnement : les recommandations de ce produit
-                  seront pré-rattachées à ce fournisseur, ce qui permet de créer les bons de commande sans
-                  saisie manuelle.
-                </small>
-              </div>
-            }
           }
 
           @if (isProductCategory() && canMutateProduct()) {
@@ -247,8 +252,8 @@ interface VatOption {
                       Supprimer l'image
                     </button>
                   }
+                  <small class="form-hint">JPEG, PNG ou WebP. Max 2 Mo.</small>
                 </div>
-                <small class="form-hint">JPEG, PNG ou WebP. Max 2 Mo.</small>
               </div>
             </div>
           }
@@ -269,14 +274,20 @@ interface VatOption {
           }
         </app-form-section>
 
+        @if (hasSideSections()) {
+          <div class="section-side">
         @if (showVariantsSection()) {
-          <app-form-section title="Variantes" icon="pi-th-large" [number]="1">
+          <app-form-section id="variantes" class="section-variants" title="Variantes" icon="pi-th-large" [number]="variantsSectionNumber()">
             <div class="form-group">
               <label for="isVariantTemplate">Modèle de variantes</label>
               <div class="status-switch">
                 <p-inputSwitch id="isVariantTemplate" formControlName="isVariantTemplate"></p-inputSwitch>
                 <span [class.active]="form.get('isVariantTemplate')?.value">
-                  {{ form.get('isVariantTemplate')?.value ? 'Oui — le parent n\'est pas vendable' : 'Non' }}
+                  @if (form.get('isVariantTemplate')?.value) {
+                    Oui — le parent n'est pas vendable
+                  } @else {
+                    Non
+                  }
                 </span>
               </div>
               <small class="form-hint">Génère des SKU enfants (taille, couleur…). Le modèle est exclu des factures, du POS et du stock.</small>
@@ -284,7 +295,7 @@ interface VatOption {
             @if (isEditMode() && form.get('isVariantTemplate')?.value) {
               <div class="form-group">
                 <label>Générer la matrice</label>
-                <p class="form-hint">Sélectionnez les valeurs pour chaque attribut — la combinaison crée les SKU enfants.</p>
+                <p class="form-hint">Sélectionnez les valeurs pour chaque axe — la combinaison crée les SKU enfants.</p>
                 @for (attr of attributes(); track attr.id) {
                   <div class="variant-axis">
                     <strong>{{ attr.name }}</strong>
@@ -301,17 +312,40 @@ interface VatOption {
                     </div>
                   </div>
                 }
+                @if (attributes().length === 0) {
+                  @if (canConfigureVariantAxes()) {
+                    <p class="form-hint">
+                      <a [routerLink]="variantAxesNewLink">Créer un axe de variantes</a> (ex. Taille, Couleur) avant de générer les SKU.
+                    </p>
+                  } @else {
+                    <p class="form-hint">
+                      Aucun axe de variantes n'est défini. Un administrateur peut les configurer dans Paramètres → Axes de variantes.
+                    </p>
+                  }
+                }
+                @if (previewCombinationCount() > 0) {
+                  <p class="form-hint">
+                    Aperçu : {{ previewCombinationCount() }} combinaison(s) seront créées.
+                    @if (previewCombinationCount() > 50) {
+                      <strong> Plus de 50 SKU — confirmez avant de générer.</strong>
+                    }
+                  </p>
+                }
                 <app-button type="button" variant="secondary" icon="pi-sitemap" iconPos="left"
                             (clicked)="generateVariants()" [disabled]="generatingVariants() || !hasVariantSelection()">
                   Générer les SKU
                 </app-button>
+              </div>
+              <div class="form-group">
+                <label>SKU enfants</label>
+                <app-product-variant-matrix [parentProductId]="productId()!" />
               </div>
             }
           </app-form-section>
         }
 
         @if (showTraceabilitySection()) {
-          <app-form-section title="Traçabilité et valorisation" icon="pi-qrcode" [number]="1">
+          <app-form-section class="section-trace" title="Traçabilité et valorisation" icon="pi-qrcode" [number]="traceSectionNumber()">
             <div class="form-row">
               <div class="form-group">
                 <label for="trackingMode">Suivi</label>
@@ -342,8 +376,8 @@ interface VatOption {
             @if (stockFeatures()?.fifoLifoValuationEnabled) {
               <div class="form-group">
                 <label for="costingMethod">Méthode de coût</label>
-                <p-select id="costingMethod" [options]="costingMethodOptions" formControlName="costingMethod"
-                          optionLabel="label" optionValue="value" styleClass="w-full"></p-select>
+                <p-select id="costingMethod" [options]="costingMethodSelectOptions()" formControlName="costingMethod"
+                          optionLabel="label" optionValue="value" optionDisabled="disabled" styleClass="w-full"></p-select>
                 <small class="form-hint">LIFO : souvent non retenu pour les comptes statutaires. Défaut recommandé : CMUP.</small>
                 @if (isEditMode() && (form.get('costingMethod')?.value === 1 || form.get('costingMethod')?.value === 2)) {
                   <app-button type="button" variant="outline" size="sm" class="mt-2"
@@ -355,12 +389,14 @@ interface VatOption {
             }
           </app-form-section>
         }
+          </div>
+        }
 
         <!-- Pricing -->
-        <app-form-section title="Tarification" icon="pi-dollar" [number]="2">
+        <app-form-section class="section-pricing" title="Tarification" icon="pi-dollar" [number]="pricingSectionNumber()">
           <div class="pricing-block">
             <h4 class="pricing-block-title">Coûts d'achat</h4>
-            <div class="form-row">
+            <div class="form-row form-row-3">
               <div class="form-group">
                 <label for="purchasePrice">Prix d'achat HT</label>
                 <p-inputNumber
@@ -394,22 +430,22 @@ interface VatOption {
                 </p-inputNumber>
                 <small class="form-hint">Mis à jour automatiquement à chaque réception BC.</small>
               </div>
-            </div>
 
-            <div class="form-group">
-              <label for="weightedAverageCost">Coût unitaire moyen pondéré (CMUP) HT</label>
-              <p-inputNumber
-                id="weightedAverageCost"
-                [ngModel]="weightedAverageCost()"
-                [ngModelOptions]="{ standalone: true }"
-                mode="decimal"
-                [minFractionDigits]="3"
-                [maxFractionDigits]="3"
-                suffix=" TND"
-                [disabled]="true"
-                styleClass="w-full readonly-field">
-              </p-inputNumber>
-              <small class="form-hint">Calculé depuis le stock (entrepôt par défaut).</small>
+              <div class="form-group">
+                <label for="weightedAverageCost">{{ (form.get('costingMethod')?.value === 1 || form.get('costingMethod')?.value === 2) ? 'Coût unitaire affiché HT' : 'Coût unitaire moyen pondéré (CMUP) HT' }}</label>
+                <p-inputNumber
+                  id="weightedAverageCost"
+                  [ngModel]="weightedAverageCost()"
+                  [ngModelOptions]="{ standalone: true }"
+                  mode="decimal"
+                  [minFractionDigits]="3"
+                  [maxFractionDigits]="3"
+                  suffix=" TND"
+                  [disabled]="true"
+                  styleClass="w-full readonly-field">
+                </p-inputNumber>
+                <small class="form-hint">Calculé depuis le stock (entrepôt par défaut).</small>
+              </div>
             </div>
           </div>
 
@@ -483,31 +519,34 @@ interface VatOption {
               </div>
             </div>
 
-            <div class="form-group fodec-group">
-              <div class="fodec-checkbox">
-                <p-checkbox
-                  inputId="isFodecApplicable"
-                  formControlName="isFodecApplicable"
-                  [binary]="true"
-                  (onChange)="onPricingChange('fodec')">
-                </p-checkbox>
-                <label for="isFodecApplicable">FODEC applicable (1%)</label>
+            <div class="form-row">
+              <div class="form-group fodec-group">
+                <label for="isFodecApplicable">FODEC</label>
+                <div class="fodec-checkbox">
+                  <p-checkbox
+                    inputId="isFodecApplicable"
+                    formControlName="isFodecApplicable"
+                    [binary]="true"
+                    (onChange)="onPricingChange('fodec')">
+                  </p-checkbox>
+                  <label for="isFodecApplicable">FODEC applicable (1%)</label>
+                </div>
               </div>
-            </div>
 
-            <div class="form-group">
-              <label for="salePriceTtc">Prix de vente TTC <span class="required">*</span></label>
-              <p-inputNumber
-                id="salePriceTtc"
-                formControlName="salePriceTtc"
-                mode="decimal"
-                [minFractionDigits]="3"
-                [maxFractionDigits]="3"
-                suffix=" TND"
-                placeholder="0.000"
-                styleClass="w-full"
-                (onInput)="onPricingChange('saleTtc')">
-              </p-inputNumber>
+              <div class="form-group">
+                <label for="salePriceTtc">Prix de vente TTC <span class="required">*</span></label>
+                <p-inputNumber
+                  id="salePriceTtc"
+                  formControlName="salePriceTtc"
+                  mode="decimal"
+                  [minFractionDigits]="3"
+                  [maxFractionDigits]="3"
+                  suffix=" TND"
+                  placeholder="0.000"
+                  styleClass="w-full"
+                  (onInput)="onPricingChange('saleTtc')">
+                </p-inputNumber>
+              </div>
             </div>
 
             <div class="price-preview">
@@ -524,30 +563,33 @@ interface VatOption {
 
           <div class="pricing-block">
             <h4 class="pricing-block-title">Remise produit</h4>
-            <div class="form-group">
-              <div class="fodec-checkbox">
-                <p-checkbox
-                  inputId="isDiscountEnabled"
-                  formControlName="isDiscountEnabled"
-                  [binary]="true">
-                </p-checkbox>
-                <label for="isDiscountEnabled">Activer la remise</label>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="isDiscountEnabled">Remise</label>
+                <div class="fodec-checkbox">
+                  <p-checkbox
+                    inputId="isDiscountEnabled"
+                    formControlName="isDiscountEnabled"
+                    [binary]="true">
+                  </p-checkbox>
+                  <label for="isDiscountEnabled">Activer la remise</label>
+                </div>
               </div>
-            </div>
-            <div class="form-group">
-              <label for="maxDiscountPercent">Remise maximale</label>
-              <p-inputNumber
-                id="maxDiscountPercent"
-                formControlName="maxDiscountPercent"
-                mode="decimal"
-                [minFractionDigits]="1"
-                [maxFractionDigits]="1"
-                suffix=" %"
-                placeholder="0.0"
-                styleClass="w-full"
-                [class.ng-invalid]="isInvalid('maxDiscountPercent')">
-              </p-inputNumber>
-              <small class="form-hint discount-hint">(Remise globale maximale : 100,0 %)</small>
+              <div class="form-group">
+                <label for="maxDiscountPercent">Remise maximale</label>
+                <p-inputNumber
+                  id="maxDiscountPercent"
+                  formControlName="maxDiscountPercent"
+                  mode="decimal"
+                  [minFractionDigits]="1"
+                  [maxFractionDigits]="1"
+                  suffix=" %"
+                  placeholder="0.0"
+                  styleClass="w-full"
+                  [class.ng-invalid]="isInvalid('maxDiscountPercent')">
+                </p-inputNumber>
+                <small class="form-hint discount-hint">(Remise globale maximale : 100,0 %)</small>
+              </div>
             </div>
           </div>
         </app-form-section>
@@ -555,7 +597,7 @@ interface VatOption {
 
       @if (isEditMode() && productId()) {
         <div class="form-grid-full">
-          <app-form-section title="Tarifs par client" icon="pi-users" [number]="3">
+          <app-form-section title="Tarifs par client" icon="pi-users" [number]="clientPricesSectionNumber()">
             <app-product-client-prices
               [productId]="productId()!"
               [catalogUnitPriceHT]="form.get('unitPrice')?.value ?? 0">
@@ -599,10 +641,58 @@ interface VatOption {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
       gap: var(--spacing-4);
+      align-items: stretch;
 
       @media (max-width: 1024px) {
         grid-template-columns: 1fr;
       }
+    }
+
+    .section-identity,
+    .section-pricing {
+      display: block;
+      min-width: 0;
+    }
+
+    .section-identity {
+      grid-column: 1;
+    }
+
+    .section-side {
+      grid-column: 2;
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-4);
+      min-width: 0;
+      align-self: stretch;
+    }
+
+    .section-side > *:last-child {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .form-grid--with-side .section-pricing {
+      grid-column: 1 / -1;
+    }
+
+    @media (max-width: 1024px) {
+      .section-identity,
+      .section-side,
+      .section-pricing,
+      .form-grid--with-side .section-pricing {
+        grid-column: 1;
+      }
+    }
+
+    :host ::ng-deep .form-grid .form-section {
+      margin-bottom: 0;
+    }
+
+    :host ::ng-deep .section-side > *:last-child .form-section {
+      flex: 1;
+      height: 100%;
     }
 
     .form-grid-full {
@@ -615,6 +705,21 @@ interface VatOption {
       gap: var(--spacing-4);
 
       @media (max-width: 640px) {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .form-row-3 {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+
+    .form-grid:not(.form-grid--with-side) .form-row-3 {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    @media (max-width: 640px) {
+      .form-row-3,
+      .form-grid:not(.form-grid--with-side) .form-row-3 {
         grid-template-columns: 1fr;
       }
     }
@@ -674,8 +779,20 @@ interface VatOption {
 
     .product-image-section {
       display: flex;
+      flex-direction: row;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      gap: var(--spacing-4);
+    }
+
+    .product-image-actions {
+      display: flex;
       flex-direction: column;
-      gap: var(--spacing-3);
+      flex-wrap: wrap;
+      gap: var(--spacing-2);
+      align-items: flex-start;
+      min-width: 0;
+      flex: 1;
     }
 
     .product-image-preview {
@@ -710,11 +827,11 @@ interface VatOption {
       font-size: 2rem;
     }
 
-    .product-image-actions {
+    .fodec-checkbox {
       display: flex;
-      flex-wrap: wrap;
-      gap: var(--spacing-2);
       align-items: center;
+      gap: var(--spacing-2);
+      min-height: 2.5rem;
     }
 
     .product-image-remove {
@@ -849,6 +966,8 @@ interface VatOption {
   `]
 })
 export class ProductFormComponent implements OnInit {
+  @ViewChild(ProductVariantMatrixComponent) variantMatrix?: ProductVariantMatrixComponent;
+
   private fb = inject(FormBuilder);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
@@ -860,6 +979,8 @@ export class ProductFormComponent implements OnInit {
   private errorHandler = inject(ErrorHandlerService);
   errorMessageService = inject(ErrorMessageService);
   private auth = inject(AuthService);
+  readonly canConfigureVariantAxes = this.auth.canAccessPlatformSettings;
+  readonly variantAxesNewLink = `${VARIANT_AXES_PATH}/new`;
 
   saving = signal(false);
   productCategoryOptions = signal<{ label: string; value: string }[]>([]);
@@ -902,6 +1023,29 @@ export class ProductFormComponent implements OnInit {
     return f.lotTrackingEnabled || f.serialTrackingEnabled || f.expiryTrackingEnabled || f.fifoLifoValuationEnabled;
   }
 
+  hasSideSections(): boolean {
+    return this.showVariantsSection() || this.showTraceabilitySection();
+  }
+
+  variantsSectionNumber(): number {
+    return 2;
+  }
+
+  traceSectionNumber(): number {
+    return this.showVariantsSection() ? 3 : 2;
+  }
+
+  pricingSectionNumber(): number {
+    let n = 2;
+    if (this.showVariantsSection()) n++;
+    if (this.showTraceabilitySection()) n++;
+    return n;
+  }
+
+  clientPricesSectionNumber(): number {
+    return this.pricingSectionNumber() + 1;
+  }
+
   hasVariantSelection = computed(() =>
     Object.values(this.variantAxesSelection()).some(ids => ids.length > 0)
   );
@@ -924,6 +1068,16 @@ export class ProductFormComponent implements OnInit {
     { label: 'FIFO', value: 1 },
     { label: 'LIFO (attention comptes statutaires)', value: 2 }
   ];
+
+  originalCostingMethod = signal(0);
+
+  costingMethodSelectOptions = computed(() => {
+    const lockAverage = this.isEditMode() && (this.originalCostingMethod() === 1 || this.originalCostingMethod() === 2);
+    return this.costingMethodOptions.map(option => ({
+      ...option,
+      disabled: lockAverage && option.value === 0
+    }));
+  });
 
   displayImageUrl = computed(() => {
     if (this.imageToRemove()) return null;
@@ -1198,6 +1352,7 @@ export class ProductFormComponent implements OnInit {
             costingMethod: product.costingMethod ?? 0,
             expiryAlertDays: product.expiryAlertDays ?? null
           });
+          this.originalCostingMethod.set(product.costingMethod ?? 0);
 
           this.syncDiscountControls(product.isDiscountEnabled ?? false);
           this.syncMarginControl();
@@ -1207,6 +1362,9 @@ export class ProductFormComponent implements OnInit {
           this.selectedImageFile.set(null);
           this.previewDataUrl.set(null);
           this.imageToRemove.set(false);
+          if (product.isVariantTemplate) {
+            this.loadVariantAxes(id);
+          }
         } else {
           this.toastService.add({
             severity: 'error',
@@ -1379,7 +1537,7 @@ export class ProductFormComponent implements OnInit {
                     });
                   }
                   this.saving.set(false);
-                  this.navigateToProducts();
+                  this.navigateAfterCreate(newId, createRequest.isVariantTemplate ?? false);
                 },
                 error: () => {
                   this.toastService.add({
@@ -1388,12 +1546,12 @@ export class ProductFormComponent implements OnInit {
                     detail: 'Produit créé ; l\'image n\'a pas pu être enregistrée.'
                   });
                   this.saving.set(false);
-                  this.navigateToProducts();
+                  this.navigateAfterCreate(newId, createRequest.isVariantTemplate ?? false);
                 }
               });
             } else {
               this.saving.set(false);
-              this.navigateToProducts();
+              this.navigateAfterCreate(newId, createRequest.isVariantTemplate ?? false);
             }
           } else {
             this.toastService.add({
@@ -1457,6 +1615,11 @@ export class ProductFormComponent implements OnInit {
     const productId = this.productId();
     if (!productId) return;
 
+    const count = this.previewCombinationCount();
+    if (count > 50 && !confirm(`Générer ${count} SKU ? Cette opération peut prendre un moment.`)) {
+      return;
+    }
+
     const axes = Object.entries(this.variantAxesSelection())
       .filter(([, valueIds]) => valueIds.length > 0)
       .map(([definitionId, valueIds]) => ({ definitionId, valueIds }));
@@ -1473,6 +1636,8 @@ export class ProductFormComponent implements OnInit {
             summary: 'Variantes',
             detail: `${res.data?.length ?? 0} SKU enfant(s) créé(s)`
           });
+          this.loadVariantAxes(productId);
+          this.variantMatrix?.load();
         }
       },
       error: err => {
@@ -1499,6 +1664,12 @@ export class ProductFormComponent implements OnInit {
             severity: 'success',
             summary: 'Valorisation',
             detail: 'Couche d\'ouverture créée. Vous pouvez enregistrer le produit.'
+          });
+        } else {
+          this.toastService.add({
+            severity: 'error',
+            summary: 'Valorisation',
+            detail: res.message || res.errors?.join(', ') || 'Impossible de créer la couche d\'ouverture.'
           });
         }
       },
@@ -1529,6 +1700,34 @@ export class ProductFormComponent implements OnInit {
 
     if (!preserveValue && !this.isEditMode()) {
       control.setValue(true, { emitEvent: false });
+    }
+  }
+
+  previewCombinationCount(): number {
+    const axes = Object.values(this.variantAxesSelection()).filter(ids => ids.length > 0);
+    if (axes.length === 0) return 0;
+    return axes.reduce((acc, ids) => acc * ids.length, 1);
+  }
+
+  private loadVariantAxes(parentId: string): void {
+    this.productService.getProductVariantAxes(parentId).subscribe(res => {
+      if (res.success && res.data) {
+        const selection: Record<string, string[]> = {};
+        for (const axis of res.data) {
+          if (axis.selectedValueIds.length > 0) {
+            selection[axis.definitionId] = [...axis.selectedValueIds];
+          }
+        }
+        this.variantAxesSelection.set(selection);
+      }
+    });
+  }
+
+  private navigateAfterCreate(id: string, isTemplate: boolean): void {
+    if (isTemplate) {
+      this.router.navigate(['/products', id, 'edit'], { fragment: 'variantes' });
+    } else {
+      this.navigateToProducts();
     }
   }
 }

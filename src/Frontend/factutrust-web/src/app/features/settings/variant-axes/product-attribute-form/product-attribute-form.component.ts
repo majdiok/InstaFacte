@@ -17,6 +17,7 @@ import {
 } from '@core/services/product.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
+import { VARIANT_AXES_PATH } from '../variant-axes.paths';
 
 interface NewValueRow {
   code: string;
@@ -43,9 +44,9 @@ interface NewValueRow {
     <app-breadcrumb [items]="breadcrumbItems()"></app-breadcrumb>
 
     <app-page-header
-      [title]="isEditMode() ? 'Modifier l attribut' : 'Nouvel attribut'"
-      [subtitle]="isEditMode() ? 'Modifiez le nom et les valeurs de l attribut.' : 'Créez un axe de variantes (ex. Taille, Couleur).'">
-      <app-button variant="outline" icon="pi-times" iconPos="left" routerLink="/product-attributes">
+      [title]="formTitle()"
+      [subtitle]="formSubtitle()">
+      <app-button variant="outline" icon="pi-times" iconPos="left" [routerLink]="variantAxesPath">
         Annuler
       </app-button>
     </app-page-header>
@@ -133,7 +134,7 @@ interface NewValueRow {
 
         <div class="form-actions">
           <app-button type="submit" variant="primary" icon="pi-check" [disabled]="saving() || form.invalid">
-            {{ isEditMode() ? 'Enregistrer' : 'Créer l attribut' }}
+            {{ isEditMode() ? 'Enregistrer' : "Créer l'axe" }}
           </app-button>
         </div>
       </form>
@@ -176,6 +177,7 @@ interface NewValueRow {
   `]
 })
 export class ProductAttributeFormComponent implements OnInit {
+  readonly variantAxesPath = VARIANT_AXES_PATH;
   private fb = inject(FormBuilder);
   private productService = inject(ProductService);
   private route = inject(ActivatedRoute);
@@ -201,10 +203,20 @@ export class ProductAttributeFormComponent implements OnInit {
 
   isEditMode = computed(() => this.attributeId() !== null);
 
+  formTitle = computed(() =>
+    this.isEditMode() ? "Modifier l'axe de variantes" : 'Nouvel axe de variantes'
+  );
+  formSubtitle = computed(() =>
+    this.isEditMode()
+      ? 'Modifiez le nom et les valeurs de cet axe.'
+      : 'Définissez un axe (taille, couleur, etc.) et ses valeurs pour générer les SKU.'
+  );
+
   breadcrumbItems = computed<BreadcrumbItem[]>(() => [
     { label: 'Tableau de bord', route: '/dashboard', icon: 'pi-home' },
-    { label: 'Attributs produits', route: '/product-attributes' },
-    { label: this.isEditMode() ? 'Modifier' : 'Nouvel attribut' }
+    { label: 'Paramètres', route: '/settings' },
+    { label: 'Axes de variantes', route: VARIANT_AXES_PATH },
+    { label: this.isEditMode() ? "Modifier l'axe de variantes" : 'Nouvel axe de variantes' }
   ]);
 
   ngOnInit(): void {
@@ -337,8 +349,8 @@ export class ProductAttributeFormComponent implements OnInit {
         next: res => {
           this.saving.set(false);
           if (res.success) {
-            this.toastService.add({ severity: 'success', summary: 'Enregistré', detail: 'Attribut mis à jour' });
-            this.router.navigate(['/product-attributes']);
+            this.toastService.add({ severity: 'success', summary: 'Enregistré', detail: 'Axe de variantes mis à jour' });
+            this.router.navigate([VARIANT_AXES_PATH]);
           }
         },
         error: err => {
@@ -357,6 +369,16 @@ export class ProductAttributeFormComponent implements OnInit {
       .map(v => ({ code: v.code.trim(), name: v.name.trim() }))
       .filter(v => v.code && v.name);
 
+    if (values.length === 0) {
+      this.saving.set(false);
+      this.toastService.add({
+        severity: 'warn',
+        summary: 'Valeurs requises',
+        detail: 'Ajoutez au moins une valeur (ex. S, M, L).'
+      });
+      return;
+    }
+
     const request: CreateProductAttributeRequest = {
       code: this.form.get('code')!.value.trim(),
       name: this.form.get('name')!.value.trim(),
@@ -367,8 +389,8 @@ export class ProductAttributeFormComponent implements OnInit {
       next: res => {
         this.saving.set(false);
         if (res.success) {
-          this.toastService.add({ severity: 'success', summary: 'Créé', detail: 'Attribut créé' });
-          this.router.navigate(['/product-attributes']);
+          this.toastService.add({ severity: 'success', summary: 'Créé', detail: 'Axe de variantes créé' });
+          this.router.navigate([VARIANT_AXES_PATH]);
         }
       },
       error: err => {

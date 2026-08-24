@@ -156,6 +156,8 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Property(u => u.ProductOnboardingVersion).HasDefaultValue(1);
             entity.Property(u => u.ProductOnboardingChecklistJson).HasMaxLength(2000);
             entity.HasIndex(u => u.Email).IsUnique();
+            entity.HasIndex(u => new { u.TenantId, u.PortalClientId });
+            entity.Property(u => u.PortalInviteTokenHash).HasMaxLength(64);
             entity.HasMany(u => u.ModuleGrants)
                 .WithOne()
                 .HasForeignKey(g => g.UserId)
@@ -1328,6 +1330,14 @@ public class ApplicationUser : IdentityUser<Guid>
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastLoginAt { get; set; }
     public bool IsActive { get; set; } = true;
+
+    /// <summary>CRM client this portal user is bound to. Null for staff accounts.</summary>
+    public Guid? PortalClientId { get; set; }
+
+    /// <summary>SHA-256 (hex) of the one-time portal invitation token.</summary>
+    public string? PortalInviteTokenHash { get; set; }
+
+    public DateTime? PortalInviteExpiresAt { get; set; }
     public string? RefreshToken { get; set; }
     public DateTime? RefreshTokenExpiryTime { get; set; }
 

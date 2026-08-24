@@ -19,6 +19,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { QuickCreateProductDialogComponent } from '@shared/components/quick-create-product-dialog/quick-create-product-dialog.component';
+import { VariantProductPickerComponent } from '@shared/components/variant-product-picker/variant-product-picker.component';
 import {
   QuickCreateClientDialogComponent,
   QuickCreatedClient,
@@ -37,6 +38,7 @@ import { PriceSource } from '@core/services/pricing.service';
 import { DocumentLinePricingService, EMPTY_LINE_PROMOTION, LinePromotionPreview, effectiveLineDiscountPercent, lineTotalWithPromotion, mapResolvedPricePromotion } from '@shared/utils/document-line-pricing.helper';
 import {
   ProductAutocompleteService,
+  ProductSuggestion,
   suggestionToListItem
 } from '@shared/services/product-autocomplete.service';
 import { CrmService } from '@features/crm/services/crm.service';
@@ -77,6 +79,7 @@ interface LineRow extends LinePromotionPreview {
     TooltipModule,
     BreadcrumbComponent,
     QuickCreateProductDialogComponent,
+    VariantProductPickerComponent,
     QuickCreateClientDialogComponent,
     FormSectionComponent,
     ButtonComponent,
@@ -219,6 +222,14 @@ interface LineRow extends LinePromotionPreview {
                             </ng-template>
                           </p-autoComplete>
                         </div>
+                        <app-button
+                          variant="outline"
+                          size="sm"
+                          icon="pi-th-large"
+                          [iconOnly]="true"
+                          ariaLabel="Choisir une variante"
+                          (click)="openVariantPicker($index)"
+                          title="Choisir une variante" />
                         <app-button
                           variant="primary"
                           size="sm"
@@ -429,6 +440,11 @@ interface LineRow extends LinePromotionPreview {
         [(visible)]="quickCreateClientVisible"
         (clientCreated)="onQuickClientCreated($event)">
       </app-quick-create-client-dialog>
+
+      <app-variant-product-picker
+        [(visible)]="variantPickerVisible"
+        (selected)="onVariantPicked($event)">
+      </app-variant-product-picker>
     </div>
 
   `,
@@ -709,6 +725,8 @@ export class QuoteFormComponent implements OnInit {
   submitting = signal(false);
   submitError = signal<string | null>(null);
   quickCreateProductVisible = false;
+  variantPickerVisible = false;
+  private variantPickerLineIndex: number | null = null;
   quickCreateClientVisible = false;
   lineIndexForNewProduct = 0;
 
@@ -869,6 +887,23 @@ export class QuoteFormComponent implements OnInit {
 
   onProductSelect(line: LineRow, event: AutoCompleteSelectEvent): void {
     const product = event.value as ProductListItem;
+    this.applyProductToLine(line, product);
+  }
+
+  openVariantPicker(lineIndex: number): void {
+    this.variantPickerLineIndex = lineIndex;
+    this.variantPickerVisible = true;
+  }
+
+  onVariantPicked(product: ProductSuggestion): void {
+    if (this.variantPickerLineIndex === null) return;
+    const line = this.lines[this.variantPickerLineIndex];
+    if (!line) return;
+    this.applyProductToLine(line, suggestionToListItem(product));
+    this.variantPickerLineIndex = null;
+  }
+
+  private applyProductToLine(line: LineRow, product: ProductListItem): void {
     line.product = product;
     line.designation = product.name;
     line.description = product.description || '';

@@ -43,6 +43,28 @@ public interface IProductRepository : IRepository<Product>
         Guid? categoryId,
         int page,
         int pageSize,
+        CancellationToken cancellationToken = default,
+        bool excludeVariantTemplates = false,
+        Guid? parentProductId = null,
+        bool? isVariantTemplate = null,
+        bool? hasParentProduct = null);
+
+    /// <summary>
+    /// Child SKU products for a variant template parent.
+    /// </summary>
+    Task<(IReadOnlyList<Product> Items, int TotalCount)> GetChildrenByParentIdAsync(
+        Guid parentProductId,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lightweight search for variant template products (grouped picker step 1).
+    /// </summary>
+    Task<IReadOnlyList<Product>> SearchTemplatesForSelectAsync(
+        string? searchTerm,
+        bool? isActive,
+        int pageSize,
         CancellationToken cancellationToken = default);
 
     /// <summary>

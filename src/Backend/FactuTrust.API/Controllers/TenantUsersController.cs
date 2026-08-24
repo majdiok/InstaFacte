@@ -2,6 +2,7 @@ using System.Text.Json;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Authorization;
+using FactuTrust.Domain.ClientPortal;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.Persistence;
@@ -53,7 +54,7 @@ public sealed class TenantUsersController : ControllerBase
             return Unauthorized(ApiResponse<IReadOnlyList<TenantUserListItemDto>>.Fail("Contexte entreprise introuvable"));
 
         var users = await _masterContext.Users.AsNoTracking()
-            .Where(u => u.TenantId == tenantId.Value)
+            .Where(u => u.TenantId == tenantId.Value && u.PortalClientId == null)
             .OrderBy(u => u.LastName)
             .ThenBy(u => u.FirstName)
             .ToListAsync(cancellationToken);
@@ -149,7 +150,7 @@ public sealed class TenantUsersController : ControllerBase
         var plan = await _subscriptionResolver.GetPlanForTenantAsync(tenantId.Value, cancellationToken);
         var maxUsers = SubscriptionLimits.GetMaxUsers(plan);
         var currentCount = await _masterContext.Users.CountAsync(
-            u => u.TenantId == tenantId.Value && u.IsActive, cancellationToken);
+            u => u.TenantId == tenantId.Value && u.IsActive && u.PortalClientId == null, cancellationToken);
         if (currentCount + requests.Count > maxUsers)
         {
             return BadRequest(ApiResponse<object>.Fail(
@@ -288,6 +289,9 @@ public sealed class TenantUsersController : ControllerBase
 
         if (request.Role.HasValue)
         {
+            if (!ClientPortalStaffRules.IsAssignableByStaff(request.Role.Value))
+                return BadRequest(ApiResponse<object>.Fail(ClientPortalStaffRules.InviteFromClientCardMessage));
+
             var previousRole = await GetUserRoleAsync(user);
             if (user.Id == _currentUser.UserId && request.Role.Value != previousRole)
                 return BadRequest(ApiResponse<object>.Fail("Vous ne pouvez pas modifier votre propre rôle"));
@@ -336,6 +340,8 @@ public sealed class TenantUsersController : ControllerBase
         if (string.IsNullOrWhiteSpace(req.LastName)) return "Le nom est requis";
         if (string.IsNullOrWhiteSpace(req.Password)) return "Le mot de passe est requis";
         if (!Enum.IsDefined(req.Role)) return "Rôle invalide";
+        if (!ClientPortalStaffRules.IsAssignableByStaff(req.Role))
+            return ClientPortalStaffRules.InviteFromClientCardMessage;
         return null;
     }
 

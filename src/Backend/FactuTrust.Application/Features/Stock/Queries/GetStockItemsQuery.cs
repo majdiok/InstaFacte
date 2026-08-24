@@ -1,6 +1,7 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Domain.Entities;
+using FactuTrust.Domain.Enums;
 using MediatR;
 
 namespace FactuTrust.Application.Features.Stock.Queries;
@@ -43,7 +44,8 @@ public sealed record StockItemDto(
     decimal AverageCost,
     decimal StockValue,
     bool IsLowStock,
-    bool IsOutOfStock);
+    bool IsOutOfStock,
+    CostingMethod CostingMethod);
 
 /// <summary>
 /// Handler for GetStockItemsQuery.
@@ -115,7 +117,8 @@ public sealed class GetStockItemsQueryHandler : IRequestHandler<GetStockItemsQue
                 item.AverageCost,
                 item.StockValue,
                 item.IsLowStock,
-                item.QuantityOnHand == 0);
+                item.QuantityOnHand == 0,
+                product?.CostingMethod ?? CostingMethod.Average);
         }).ToList();
 
         return new StockItemsResult(dtos, totalCount, request.Page, request.PageSize);

@@ -10,6 +10,7 @@ import { PosBarcodeService } from './services/pos-barcode.service';
 import { PosHeldOrdersService } from './services/pos-held-orders.service';
 import { PosDualScreenService } from './services/pos-dual-screen.service';
 import { PosStockService } from './services/pos-stock.service';
+import { buildInsufficientStockMessage } from './services/pos-stock-guard';
 import { PosUpsellService } from './services/pos-upsell.service';
 import { PosAudioService } from './services/pos-audio.service';
 import { PosVoiceCommandService } from './services/pos-voice-command.service';
@@ -121,7 +122,7 @@ import { toApiPaymentMethod } from './services/pos-payment.mapper';
       }
 
       @if (showBarcodeToast) {
-        <div class="pos-toast" [class.pos-toast--success]="barcodeToastType === 'added'" [class.pos-toast--warning]="barcodeToastType === 'not_found'">
+        <div class="pos-toast" [class.pos-toast--success]="barcodeToastType === 'added'" [class.pos-toast--warning]="barcodeToastType === 'not_found' || barcodeToastType === 'out_of_stock'">
           <div class="pos-toast__content">
             <div class="pos-toast__icon">
               @if (barcodeToastType === 'added') {
@@ -289,6 +290,7 @@ import { toApiPaymentMethod } from './services/pos-payment.mapper';
       display: flex;
       flex-direction: column;
       min-width: 0;
+      min-height: 0;
       background: var(--color-neutral-50);
       background-image: radial-gradient(circle at 1px 1px, rgba(148, 163, 184, 0.12) 1px, transparent 0);
       background-size: 24px 24px;
@@ -666,7 +668,7 @@ export class PosComponent implements OnInit, OnDestroy {
   successMessage = '';
   showBarcodeToast = false;
   barcodeToastMessage = '';
-  barcodeToastType: 'added' | 'not_found' | 'multiple' = 'added';
+  barcodeToastType: 'added' | 'not_found' | 'multiple' | 'out_of_stock' = 'added';
   showHeldPanel = false;
   showHistoryPanel = false;
   showChangeCalculator = false;
@@ -698,6 +700,9 @@ export class PosComponent implements OnInit, OnDestroy {
       } else if (result === 'not_found') {
         this.audioService.beepError();
         this.barcodeToastMessage = 'Produit non trouve';
+      } else if (result === 'out_of_stock') {
+        this.audioService.beepError();
+        this.barcodeToastMessage = 'Produit en rupture de stock';
       } else {
         this.barcodeToastMessage = 'Plusieurs produits correspondent - selectionnez dans le catalogue';
         const code = this.barcodeService.lastScannedCode();
@@ -940,6 +945,7 @@ export class PosComponent implements OnInit, OnDestroy {
   }
 
   addProductToOrder(product: ProductListItem): void {
+    if (!this.guardCanAddProduct(product, 1)) return;
     const orderIds = this.posState.lines().map(l => l.productId);
     this.upsellService.computeSuggestions(product, orderIds, this.catalogComponent?.productCache() ?? new Map());
     this.posState.addProduct(product);
@@ -948,11 +954,22 @@ export class PosComponent implements OnInit, OnDestroy {
   }
 
   addProductWithQuantity(event: { product: ProductListItem; quantity: number }): void {
+    if (!this.guardCanAddProduct(event.product, event.quantity)) return;
     const orderIds = this.posState.lines().map(l => l.productId);
     this.upsellService.computeSuggestions(event.product, orderIds, this.catalogComponent?.productCache() ?? new Map());
     this.posState.addProductWithQuantity(event.product, event.quantity);
     this.resolvePriceForAddedProduct(event.product.id);
     this.audioService.beepSuccess();
+  }
+
+  private guardCanAddProduct(product: ProductListItem, extraQty: number): boolean {
+    if (this.posState.isCreditNote()) return true;
+    const currentQty = this.posState.lines().find(l => l.productId === product.id)?.quantity ?? 0;
+    const check = this.posStockService.canSell(product, extraQty, currentQty);
+    if (check.ok) return true;
+    this.posState.setError(check.message);
+    this.audioService.beepError();
+    return false;
   }
 
   newOrder(): void {
@@ -1027,33 +1044,27 @@ export class PosComponent implements OnInit, OnDestroy {
     this.posState.setError(null);
 
     this.posStockService.checkOrderStock().subscribe(check => {
-      if (check && !check.allAvailable && check.details?.length) {
-        const msg = check.details
-          .filter(d => !d.isAvailable)
-          .map(d => `${d.productName}: demande ${d.requestedQuantity}, disponible ${d.availableQuantity}`)
-          .join('\n');
-        this.confirmationService.confirm({
-          header: 'Stock insuffisant',
-          message: `Stock insuffisant pour certains produits:\n\n${msg}\n\nVoulez-vous forcer la validation ?`,
-          icon: 'pi pi-exclamation-triangle',
-          acceptLabel: 'Forcer la validation',
-          rejectLabel: 'Annuler',
-          accept: () => {
-            if (this.posState.isCreditNote()) {
-              this.runCreditNoteValidationPipeline();
-            } else {
-              this.doValidateAndPrint(false);
-            }
-          },
-          reject: () => this.posState.setProcessing(false)
-        });
-        return;
-      }
       if (this.posState.isCreditNote()) {
         this.runCreditNoteValidationPipeline();
-      } else {
-        this.doValidateAndPrint(false);
+        return;
       }
+      if (!check) {
+        this.posState.setError('Impossible de vérifier le stock. Réessayez.');
+        this.audioService.beepError();
+        this.posState.setProcessing(false);
+        return;
+      }
+      if (!check.allAvailable) {
+        const msg = (check.details ?? [])
+          .filter(d => !d.isAvailable)
+          .map(d => buildInsufficientStockMessage(d.productName, d.requestedQuantity, d.availableQuantity))
+          .join('\n');
+        this.posState.setError(msg || 'Stock insuffisant pour certains produits.');
+        this.audioService.beepError();
+        this.posState.setProcessing(false);
+        return;
+      }
+      this.doValidateAndPrint(false);
     });
   }
 

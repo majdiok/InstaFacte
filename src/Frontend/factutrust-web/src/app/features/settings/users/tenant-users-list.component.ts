@@ -553,7 +553,6 @@ export class TenantUsersListComponent implements OnInit {
   readonly roleOptions = [
     { label: 'Administrateur', value: 'Administrator' as UserRole },
     { label: 'Comptable', value: 'Accountant' as UserRole },
-    { label: 'Client', value: 'Client' as UserRole },
     { label: 'Commercial', value: 'SalesRep' as UserRole },
     { label: 'Responsable Commercial', value: 'SalesManager' as UserRole },
     { label: 'Magasinier', value: 'Warehouse' as UserRole },

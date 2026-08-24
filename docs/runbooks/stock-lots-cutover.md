@@ -124,7 +124,31 @@ HAVING ABS(si.QuantityOnHand - ISNULL(SUM(b.QuantityOnHand), 0)) > 0.0001;
 
 Résultat vide = OK.
 
-Scénario bout-en-bout attendu : variante SKU → BR 2 lots DLUO différentes → BL FEFO → avoir restitue le lot sorti → valeur FIFO si activée.
+Invariant couches FIFO/LIFO (après activation du flag et pour les articles `CostingMethod` FIFO/LIFO) :
+
+```sql
+SELECT si.Id,
+       p.Code,
+       si.QuantityOnHand,
+       ISNULL(SUM(l.RemainingQuantity), 0) AS LayerSum
+FROM dbo.StockItems si
+INNER JOIN dbo.Products p ON p.Id = si.ProductId
+LEFT JOIN dbo.StockValuationLayers l ON l.StockItemId = si.Id
+WHERE p.CostingMethod IN (1, 2) -- Fifo, Lifo
+GROUP BY si.Id, p.Code, si.QuantityOnHand
+HAVING ABS(si.QuantityOnHand - ISNULL(SUM(l.RemainingQuantity), 0)) > 0.0001;
+```
+
+Résultat vide = OK.
+
+### Transfert, avoir, facture mixte
+
+- Transfert : les couches destination doivent reprendre qty / coût / `ReceivedAt` / lot de la source. Pas d'entrée destination au CMUP source.
+- Avoir / annulation / BR retour : restauration via `ValuationLayerId` (même entrepôt). `ReceivedAt` d'origine conservé.
+- Facture mixte FIFO + CMUP : si une ligne est suivie (lot/série/FIFO), toutes les lignes stock sont déduites dans la commande ; l'événement ne doit pas rejouer.
+- Concurrence : SQL Server `UPDLOCK` sur l'article. InMemory ne la simule pas ; recette SQL = deux sorties 6+6 sur 10, une doit échouer.
+
+Scénario bout-en-bout attendu : variante SKU → BR 2 lots DLUO différentes → BL FEFO → avoir restitue le lot sorti → valeur FIFO si activée. Transfert miroir des couches. Facture mixte. Inventaire +/- sans casser les lots.
 
 ---
 

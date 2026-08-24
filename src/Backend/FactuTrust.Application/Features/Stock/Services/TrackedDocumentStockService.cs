@@ -25,7 +25,8 @@ public interface ITrackedDocumentStockService
         string reference,
         MovementReason reason,
         IReadOnlyList<TrackedDocumentLine> lines,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        bool includeUntracked = false);
 
     Task<Result> ApplyExitsAsync(
         Guid warehouseId,
@@ -68,8 +69,9 @@ public sealed class TrackedDocumentStockService : ITrackedDocumentStockService
         string reference,
         MovementReason reason,
         IReadOnlyList<TrackedDocumentLine> lines,
-        CancellationToken cancellationToken = default) =>
-        ApplyAsync(warehouseId, reference, reason, lines, StockMutationKind.Entry, cancellationToken);
+        CancellationToken cancellationToken = default,
+        bool includeUntracked = false) =>
+        ApplyAsync(warehouseId, reference, reason, lines, StockMutationKind.Entry, cancellationToken, includeUntracked);
 
     public Task<Result> ApplyExitsAsync(
         Guid warehouseId,

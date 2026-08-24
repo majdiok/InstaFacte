@@ -12,9 +12,10 @@ namespace FactuTrust.Infrastructure.Tests.Application;
 public sealed class SearchProductsForSelectQueryTests
 {
     private readonly Mock<IProductRepository> _products = new();
+    private readonly Mock<IProductAttributeRepository> _attributes = new();
 
     private SearchProductsForSelectQueryHandler CreateHandler() =>
-        new(_products.Object, NullLogger<SearchProductsForSelectQueryHandler>.Instance);
+        new(_products.Object, _attributes.Object, NullLogger<SearchProductsForSelectQueryHandler>.Instance);
 
     private static Product NewProduct(string code, string name, bool isFodec = false) =>
         Product.Create(
@@ -38,6 +39,11 @@ public sealed class SearchProductsForSelectQueryTests
                 SearchProductsForSelectQueryHandler.MaxPageSize,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { product });
+        _attributes
+            .Setup(r => r.GetVariantAttributesByProductIdsAsync(
+                It.IsAny<IReadOnlyCollection<Guid>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, IReadOnlyList<FactuTrust.Application.DTOs.ProductVariantAttributePairDto>>());
 
         var result = await CreateHandler().Handle(
             new SearchProductsForSelectQuery(Search: null, IsActive: true, Page: 1, PageSize: 500),
@@ -62,6 +68,11 @@ public sealed class SearchProductsForSelectQueryTests
         _products
             .Setup(r => r.SearchForSelectAsync("tab", true, 50, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<Product>());
+        _attributes
+            .Setup(r => r.GetVariantAttributesByProductIdsAsync(
+                It.IsAny<IReadOnlyCollection<Guid>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, IReadOnlyList<FactuTrust.Application.DTOs.ProductVariantAttributePairDto>>());
 
         var result = await CreateHandler().Handle(
             new SearchProductsForSelectQuery(Search: "tab", IsActive: true, Page: 1, PageSize: 50),
@@ -80,6 +91,11 @@ public sealed class SearchProductsForSelectQueryTests
         _products
             .Setup(r => r.SearchForSelectAsync(It.IsAny<string?>(), It.IsAny<bool?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<Product>());
+        _attributes
+            .Setup(r => r.GetVariantAttributesByProductIdsAsync(
+                It.IsAny<IReadOnlyCollection<Guid>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, IReadOnlyList<FactuTrust.Application.DTOs.ProductVariantAttributePairDto>>());
 
         var result = await CreateHandler().Handle(
             new SearchProductsForSelectQuery(),
@@ -97,7 +113,11 @@ public sealed class SearchProductsForSelectQueryTests
                 It.IsAny<Guid?>(),
                 It.IsAny<int>(),
                 It.IsAny<int>(),
-                It.IsAny<CancellationToken>()),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<bool>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<bool?>(),
+                It.IsAny<bool?>()),
             Times.Never);
     }
 }

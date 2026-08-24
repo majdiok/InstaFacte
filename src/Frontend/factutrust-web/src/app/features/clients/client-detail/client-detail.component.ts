@@ -25,6 +25,9 @@ import { ClientOutstanding, ClientService, Client, ClientType, ClientStats } fro
 import { InvoiceService, InvoiceListItem, InvoiceSearchParams } from '@core/services/invoice.service';
 import { QuoteService, QuoteListItem } from '@core/services/quote.service';
 import { ClientOutstandingPanelComponent } from '../client-outstanding-panel/client-outstanding-panel.component';
+import { ClientPortalContactsPanelComponent } from '../client-portal-contacts-panel.component';
+import { AuthService } from '@core/services/auth.service';
+import { PERMISSIONS } from '@core/config/permission-keys';
 
 @Component({
   selector: 'app-client-detail',
@@ -49,7 +52,8 @@ import { ClientOutstandingPanelComponent } from '../client-outstanding-panel/cli
     EmptyStateComponent,
     ButtonComponent,
     StatusBadgeComponent,
-    ClientOutstandingPanelComponent
+    ClientOutstandingPanelComponent,
+    ClientPortalContactsPanelComponent
   ],
   template: `
     <app-breadcrumb [items]="breadcrumbItems()"></app-breadcrumb>
@@ -140,6 +144,9 @@ import { ClientOutstandingPanelComponent } from '../client-outstanding-panel/cli
               <p-tab [value]="0"><i class="pi pi-info-circle"></i><span>Informations</span></p-tab>
               <p-tab [value]="1"><i class="pi pi-file"></i><span>Devis</span></p-tab>
               <p-tab [value]="2"><i class="pi pi-receipt"></i><span>Factures</span></p-tab>
+              @if (canManagePortal()) {
+                <p-tab [value]="3"><i class="pi pi-users"></i><span>Espace client</span></p-tab>
+              }
             </p-tablist>
             <p-tabpanels>
             <!-- Informations Tab -->
@@ -376,6 +383,11 @@ import { ClientOutstandingPanelComponent } from '../client-outstanding-panel/cli
                 }
               </div>
             </p-tabpanel>
+            @if (canManagePortal() && client()) {
+              <p-tabpanel [value]="3">
+                <app-client-portal-contacts-panel [clientId]="client()!.id" />
+              </p-tabpanel>
+            }
             </p-tabpanels>
           </p-tabs>
         </div>
@@ -693,6 +705,9 @@ export class ClientDetailComponent implements OnInit {
   private confirmationService = inject(ConfirmationService);
   private toastService = inject(ToastService);
   private errorHandler = inject(ErrorHandlerService);
+  private auth = inject(AuthService);
+
+  readonly canManagePortal = computed(() => this.auth.hasPermission(PERMISSIONS.clients.update));
 
   loading = signal(true);
   initialLoad = signal(true);

@@ -11,6 +11,7 @@ import { CardModule } from 'primeng/card';
 import { DividerModule } from 'primeng/divider';
 import { FileUploadModule } from 'primeng/fileupload';
 import { TagModule } from 'primeng/tag';
+import { InputSwitchModule } from 'primeng/inputswitch';
 import { ToastService } from '@core/services/toast.service';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Subject } from 'rxjs';
@@ -39,6 +40,7 @@ import { TUNISIAN_GOVERNORATE_OPTIONS } from '@shared/validation/validation-rule
     DividerModule,
     FileUploadModule,
     TagModule,
+    InputSwitchModule,
     PageHeaderComponent,
     BreadcrumbComponent
   ],
@@ -339,6 +341,14 @@ import { TUNISIAN_GOVERNORATE_OPTIONS } from '@shared/validation/validation-rule
               [rows]="3"
               class="w-full">
             </textarea>
+          </div>
+        </p-card>
+
+        <p-card header="Espace client" styleClass="form-card">
+          <div class="form-group">
+            <label for="clientPortalEnabled">Activer l’espace client</label>
+            <p-inputSwitch inputId="clientPortalEnabled" formControlName="clientPortalEnabled"></p-inputSwitch>
+            <small class="form-hint">Permet d’inviter des contacts depuis la fiche client pour consulter leurs factures.</small>
           </div>
         </p-card>
 
@@ -667,7 +677,8 @@ export class CompanyComponent implements OnInit, OnDestroy {
     cnssEmployerNumber: [''],
     defaultPaymentTerms: ['Paiement à 30 jours'],
     invoiceFooter: [''],
-    warehouseName: ['']
+    warehouseName: [''],
+    clientPortalEnabled: [true]
   });
 
   ngOnInit(): void {
@@ -777,7 +788,8 @@ export class CompanyComponent implements OnInit, OnDestroy {
             iban: company.iban || '',
             cnssEmployerNumber: company.cnssEmployerNumber || '',
             defaultPaymentTerms: company.defaultPaymentTerms || 'Paiement à 30 jours',
-            invoiceFooter: company.invoiceFooter || ''
+            invoiceFooter: company.invoiceFooter || '',
+            clientPortalEnabled: company.clientPortalEnabled ?? true
           });
 
           const warehouseName = company.warehouseName?.trim();
@@ -896,7 +908,8 @@ export class CompanyComponent implements OnInit, OnDestroy {
       iban: formValue.iban?.trim() || null,
       cnssEmployerNumber: formValue.cnssEmployerNumber?.trim() || null,
       defaultPaymentTerms: formValue.defaultPaymentTerms?.trim() || null,
-      invoiceFooter: formValue.invoiceFooter?.trim() || null
+      invoiceFooter: formValue.invoiceFooter?.trim() || null,
+      clientPortalEnabled: !!formValue.clientPortalEnabled
     };
 
     this.companyService.updateCompany(request).pipe(

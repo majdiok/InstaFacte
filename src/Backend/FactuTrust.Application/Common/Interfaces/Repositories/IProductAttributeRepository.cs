@@ -1,4 +1,5 @@
 using FactuTrust.Domain.Entities;
+using FactuTrust.Application.DTOs;
 
 namespace FactuTrust.Application.Common.Interfaces.Repositories;
 
@@ -15,4 +16,11 @@ public interface IProductAttributeRepository
     Task AddAxisAsync(ProductVariantAxis axis, CancellationToken cancellationToken = default);
     Task AddVariantLinkAsync(ProductVariantAttributeValue link, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ProductVariantAxis>> ListAxesAsync(Guid parentProductId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Attribute/value pairs for variant child products.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, IReadOnlyList<ProductVariantAttributePairDto>>> GetVariantAttributesByProductIdsAsync(
+        IReadOnlyCollection<Guid> productIds,
+        CancellationToken cancellationToken = default);
 }

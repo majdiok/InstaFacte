@@ -226,4 +226,9 @@ public static class PermissionPolicies
     public const string RecurringContractsManage = "perm:" + Permissions.RecurringContracts.Manage;
     public const string RecurringContractsRecordUsage = "perm:" + Permissions.RecurringContracts.RecordUsage;
     public const string RecurringContractsTriggerBilling = "perm:" + Permissions.RecurringContracts.TriggerBilling;
+
+    public const string PortalAccess = "perm:" + Permissions.Portal.Access;
+    public const string PortalInvoicesRead = "perm:" + Permissions.Portal.InvoicesRead;
+    public const string PortalPaymentsRead = "perm:" + Permissions.Portal.PaymentsRead;
+    public const string PortalProfileRead = "perm:" + Permissions.Portal.ProfileRead;
 }

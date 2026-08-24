@@ -78,6 +78,7 @@ public partial class TenantDbContext : DbContext
     }
 
     public DbSet<Client> Clients => Set<Client>();
+    public DbSet<ClientPortalContact> ClientPortalContacts => Set<ClientPortalContact>();
     public DbSet<Company> Companies => Set<Company>();
     public DbSet<Tax> Taxes => Set<Tax>();
     public DbSet<ProductCategory> ProductCategories => Set<ProductCategory>();
@@ -359,6 +360,7 @@ public partial class TenantDbContext : DbContext
         builder.Ignore<PayrollRunClosedEvent>();
 
         ConfigureClient(builder);
+        ConfigureClientPortalContact(builder);
         ConfigureCompany(builder);
         ConfigureTax(builder);
         ConfigureProductCategory(builder);
@@ -873,6 +875,22 @@ public partial class TenantDbContext : DbContext
             entity.HasIndex(c => c.Name);
             entity.HasIndex(c => c.IsDefault);
             entity.HasIndex(c => c.IsActive);
+            entity.Property(c => c.ClientPortalEnabled).HasDefaultValue(true);
+        });
+    }
+
+    private static void ConfigureClientPortalContact(ModelBuilder builder)
+    {
+        builder.Entity<ClientPortalContact>(entity =>
+        {
+            entity.ToTable("ClientPortalContacts");
+            entity.HasKey(c => c.Id);
+            entity.Property(c => c.Email).HasMaxLength(256).IsRequired();
+            entity.Property(c => c.DisplayName).HasMaxLength(200).IsRequired();
+            entity.Property(c => c.Status).HasConversion<int>();
+            entity.HasIndex(c => c.ClientId);
+            entity.HasIndex(c => c.UserId);
+            entity.HasIndex(c => new { c.ClientId, c.Email });
         });
     }
 

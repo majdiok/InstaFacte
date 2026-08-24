@@ -108,6 +108,9 @@ public sealed record ProductSelectDto
     public bool IsFodecApplicable { get; init; }
     public bool IsDiscountEnabled { get; init; }
     public decimal? MaxDiscountPercent { get; init; }
+    public string? AttributeSummary { get; init; }
+    public bool IsVariantTemplate { get; init; }
+    public Guid? ParentProductId { get; init; }
 }
 
 /// <summary>
@@ -194,4 +197,66 @@ public sealed record UpdateProductDto
     public PickingPolicy? PickingPolicy { get; init; }
     public CostingMethod? CostingMethod { get; init; }
     public int? ExpiryAlertDays { get; init; }
+}
+
+/// <summary>Attribute/value pair for a variant child SKU.</summary>
+public sealed record ProductVariantAttributePairDto
+{
+    public Guid DefinitionId { get; init; }
+    public string DefinitionCode { get; init; } = null!;
+    public string DefinitionName { get; init; } = null!;
+    public Guid ValueId { get; init; }
+    public string ValueCode { get; init; } = null!;
+    public string ValueName { get; init; } = null!;
+    public int SortOrder { get; init; }
+}
+
+/// <summary>Child SKU row for variant matrix display.</summary>
+public sealed record ProductVariantChildDto
+{
+    public Guid Id { get; init; }
+    public string Code { get; init; } = null!;
+    public string Name { get; init; } = null!;
+    public decimal UnitPrice { get; init; }
+    public decimal? PurchasePrice { get; init; }
+    public decimal SalePriceTtc { get; init; }
+    public string? Barcode { get; init; }
+    public bool IsActive { get; init; }
+    public decimal? QuantityAvailable { get; init; }
+    public IReadOnlyList<ProductVariantAttributePairDto> Attributes { get; init; } = Array.Empty<ProductVariantAttributePairDto>();
+}
+
+/// <summary>Configured variant axis on a template product.</summary>
+public sealed record ProductVariantAxisDto
+{
+    public Guid DefinitionId { get; init; }
+    public string Code { get; init; } = null!;
+    public string Name { get; init; } = null!;
+    public int SortOrder { get; init; }
+    public IReadOnlyList<Guid> SelectedValueIds { get; init; } = Array.Empty<Guid>();
+}
+
+/// <summary>Variant profile for a child SKU (parent + attribute values).</summary>
+public sealed record ProductVariantProfileDto
+{
+    public Guid ProductId { get; init; }
+    public Guid ParentProductId { get; init; }
+    public string ParentCode { get; init; } = null!;
+    public string ParentName { get; init; } = null!;
+    public IReadOnlyList<ProductVariantAttributePairDto> Attributes { get; init; } = Array.Empty<ProductVariantAttributePairDto>();
+}
+
+/// <summary>Bulk price update for variant children.</summary>
+public sealed record BulkUpdateVariantPricesRequest
+{
+    public string Mode { get; init; } = "absolute";
+    public IReadOnlyList<BulkUpdateVariantPriceItem>? Items { get; init; }
+}
+
+public sealed record BulkUpdateVariantPriceItem
+{
+    public Guid ChildId { get; init; }
+    public decimal? UnitPrice { get; init; }
+    public decimal? PurchasePrice { get; init; }
+    public string? Barcode { get; init; }
 }

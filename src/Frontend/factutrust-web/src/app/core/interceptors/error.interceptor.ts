@@ -63,7 +63,9 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
             req.url.includes('/auth/register-firm') ||
             req.url.endsWith('/auth/register') ||
             req.url.includes('/auth/forgot-password') ||
-            req.url.includes('/auth/reset-password');
+            req.url.includes('/auth/reset-password') ||
+            req.url.includes('/auth/login') ||
+            req.url.includes('/auth/portal/accept-invite');
           const skipGlobalErrorUi = req.context.get(SKIP_ERROR_TOAST);
 
           const willShowValidationDialog =

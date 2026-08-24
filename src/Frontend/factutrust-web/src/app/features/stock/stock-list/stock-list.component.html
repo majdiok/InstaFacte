@@ -121,7 +121,7 @@
         <th pSortableColumn="warehouseName">Entrepôt <p-sortIcon field="warehouseName"></p-sortIcon></th>
         <th pSortableColumn="quantityOnHand" class="text-right">Quantité <p-sortIcon
             field="quantityOnHand"></p-sortIcon></th>
-        <th pSortableColumn="averageCost" class="text-right">Coût Moyen <p-sortIcon field="averageCost"></p-sortIcon>
+        <th pSortableColumn="averageCost" class="text-right">Coût unitaire <p-sortIcon field="averageCost"></p-sortIcon>
         </th>
         <th pSortableColumn="stockValue" class="text-right">Valeur <p-sortIcon field="stockValue"></p-sortIcon></th>
         <th class="text-center">Statut</th>
@@ -135,6 +135,9 @@
           <div class="product-info">
             <span class="product-name">{{ item.productName }}</span>
             <span class="product-code">{{ item.productCode }}</span>
+            @if (fifoLifoValuationEnabled()) {
+              <p-tag [value]="costingLabel(item.costingMethod)" severity="secondary" styleClass="ml-1"></p-tag>
+            }
           </div>
         </td>
         <td>
@@ -169,6 +172,11 @@
               tooltipPosition="top" (click)="toggleLots(item)" ariaLabel="Voir les lots">
             </app-button>
             }
+            @if (fifoLifoValuationEnabled() && (item.costingMethod === 1 || item.costingMethod === 2)) {
+            <app-button variant="ghost" size="sm" icon="pi-list" [iconOnly]="true" pTooltip="Couches FIFO/LIFO"
+              tooltipPosition="top" (click)="toggleLayers(item)" ariaLabel="Voir les couches de valorisation">
+            </app-button>
+            }
             <app-button variant="ghost" size="sm" icon="pi-sliders-h" [iconOnly]="true" pTooltip="Ajuster le stock"
               tooltipPosition="top" (click)="openAdjustDialog(item)" ariaLabel="Ajuster le stock">
             </app-button>
@@ -195,6 +203,42 @@
                     <td>{{ lot.lotNumber }}</td>
                     <td>{{ lot.expiryDate ? (lot.expiryDate | date:'shortDate') : '—' }}</td>
                     <td class="text-right">{{ lot.quantityOnHand }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+        </td>
+      </tr>
+      }
+      @if (expandedLayers()[item.id]; as layers) {
+      <tr>
+        <td colspan="7">
+          @if (layers.length === 0) {
+            <span class="text-xs text-gray-500">Aucune couche de valorisation restante.</span>
+          } @else {
+            <table class="w-full">
+              <thead>
+                <tr>
+                  <th>Reçu le</th>
+                  <th>Lot</th>
+                  <th class="text-right">Restant</th>
+                  <th class="text-right">Origine</th>
+                  <th class="text-right">Coût</th>
+                  <th class="text-right">Valeur</th>
+                  <th>Référence</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (layer of layers; track layer.receivedAt + layer.unitCost + layer.remainingQuantity) {
+                  <tr>
+                    <td>{{ layer.receivedAt | date:'shortDate' }}</td>
+                    <td>{{ layer.lotNumber || '—' }}</td>
+                    <td class="text-right">{{ layer.remainingQuantity }}</td>
+                    <td class="text-right">{{ layer.originalQuantity }}</td>
+                    <td class="text-right">{{ layer.unitCost | currency:'TND':'symbol':'1.3-3' }}</td>
+                    <td class="text-right">{{ layer.remainingValue | currency:'TND':'symbol':'1.3-3' }}</td>
+                    <td>{{ layer.sourceReference || '—' }}</td>
                   </tr>
                 }
               </tbody>

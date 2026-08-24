@@ -15,6 +15,10 @@
     <ProjectReference Include="..\FactuTrust.Infrastructure\FactuTrust.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="FactuTrust.API.Tests" />
+  </ItemGroup>
+
   <!-- Pont WhatsApp (Node) : copié à la sortie SANS node_modules ni la session persistée.
        On PURGE d'abord les items par défaut du SDK Web (qui capteraient node_modules/**/*.json —
        des milliers de fichiers) puis on ré-inclut une seule fois le pont avec copie.

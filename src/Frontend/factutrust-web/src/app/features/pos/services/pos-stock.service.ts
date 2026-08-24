@@ -8,11 +8,19 @@ import {
   StockAlertsResult
 } from '@core/services/stock.service';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
+import { ProductListItem } from '@core/services/product.service';
 import { PosStateService } from './pos-state.service';
+import {
+  buildOrderStockCacheKey,
+  canSellProduct,
+  SellCheckResult
+} from './pos-stock-guard';
 
 const CACHE_TTL_MS = 30000;
 
 export type ProductStockAlert = { alertLevel: 'warning' | 'insufficient'; message: string };
+export { buildInsufficientStockMessage, buildOrderStockCacheKey, canSellProduct } from './pos-stock-guard';
+export type { SellCheckResult } from './pos-stock-guard';
 
 @Injectable({
   providedIn: 'root'
@@ -25,16 +33,26 @@ export class PosStockService {
   private readonly alertsMap = signal<Map<string, ProductAvailabilityDetail>>(new Map());
   private readonly catalogAlertsMap = signal<Map<string, ProductStockAlert>>(new Map());
   private lastCheckTime = 0;
+  private lastCheckCacheKey = '';
 
   constructor() {
     effect(() => {
       const id = this.warehouseContext.selectedWarehouseId();
+      this.invalidateOrderStockCache();
       if (!id) {
         this.catalogAlertsMap.set(new Map());
         return;
       }
       this.loadCatalogAlertsForWarehouseId(id);
     });
+  }
+
+  canSell(
+    product: Pick<ProductListItem, 'name' | 'isStockManaged' | 'quantityAvailable'>,
+    extraQty: number,
+    currentLineQty: number
+  ): SellCheckResult {
+    return canSellProduct(product, extraQty, currentLineQty);
   }
 
   getProductAlert(productId: string): ProductAvailabilityDetail | null {
@@ -80,9 +98,16 @@ export class PosStockService {
     const lines = this.posState.lines();
     if (lines.length === 0) return of(null);
 
+    const warehouseId = this.warehouseContext.selectedWarehouseId() ?? undefined;
+    const cacheKey = buildOrderStockCacheKey(warehouseId, lines);
     const now = Date.now();
-    if (now - this.lastCheckTime < CACHE_TTL_MS) {
-      const details = Array.from(this.alertsMap().values());
+    const details = Array.from(this.alertsMap().values());
+    const cacheHit =
+      cacheKey === this.lastCheckCacheKey &&
+      now - this.lastCheckTime < CACHE_TTL_MS &&
+      (details.length > 0 || lines.length === 0);
+
+    if (cacheHit) {
       const allAvailable = details.every(d => d.isAvailable);
       return of({
         allAvailable,
@@ -97,17 +122,16 @@ export class PosStockService {
       requestedQuantity: l.quantity
     }));
 
-    const warehouseId = this.warehouseContext.selectedWarehouseId() ?? undefined;
-
     return this.stockService.checkAvailability(items, warehouseId).pipe(
       map(res => {
         const data = (res as { data?: StockAvailabilityCheck })?.data;
         if (!data || typeof data !== 'object') return null;
         const check = data as StockAvailabilityCheck;
         this.lastCheckTime = Date.now();
-        const map = new Map<string, ProductAvailabilityDetail>();
-        (check.details ?? []).forEach(d => map.set(d.productId, d));
-        this.alertsMap.set(map);
+        this.lastCheckCacheKey = cacheKey;
+        const next = new Map<string, ProductAvailabilityDetail>();
+        (check.details ?? []).forEach(d => next.set(d.productId, d));
+        this.alertsMap.set(next);
         return check;
       }),
       catchError(() => of(null))
@@ -129,6 +153,7 @@ export class PosStockService {
   /** Après une vente réussie : évite de réutiliser le cache 30s de `checkOrderStock` avec d'anciennes quantités. */
   invalidateOrderStockCache(): void {
     this.lastCheckTime = 0;
+    this.lastCheckCacheKey = '';
     this.alertsMap.set(new Map());
   }
 }

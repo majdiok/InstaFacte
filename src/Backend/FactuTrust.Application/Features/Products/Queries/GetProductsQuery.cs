@@ -20,7 +20,11 @@ public sealed record GetProductsQuery(
     Guid? CategoryId = null,
     int Page = 1,
     int PageSize = 20,
-    Guid? WarehouseId = null) : IRequest<Result<PagedResult<ProductListDto>>>;
+    Guid? WarehouseId = null,
+    bool ExcludeVariantTemplates = false,
+    Guid? ParentProductId = null,
+    bool? IsVariantTemplate = null,
+    bool? HasParentProduct = null) : IRequest<Result<PagedResult<ProductListDto>>>;
 
 /// <summary>
 /// Handler for GetProductsQuery.
@@ -56,7 +60,11 @@ public sealed class GetProductsQueryHandler : IRequestHandler<GetProductsQuery, 
             request.CategoryId,
             request.Page,
             request.PageSize,
-            cancellationToken);
+            cancellationToken,
+            request.ExcludeVariantTemplates,
+            request.ParentProductId,
+            request.IsVariantTemplate,
+            request.HasParentProduct);
         searchSw.Stop();
 
         var stockSw = Stopwatch.StartNew();

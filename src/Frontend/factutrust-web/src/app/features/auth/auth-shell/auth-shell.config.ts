@@ -177,3 +177,13 @@ export const RESET_PASSWORD_AUTH_SHELL_CONFIG: AuthShellConfig = {
   showAiHighlight: false,
   showTrustFooter: true,
 };
+
+export const PORTAL_INVITE_AUTH_SHELL_CONFIG: AuthShellConfig = {
+  badge: 'Espace client',
+  badgeVariant: 'secure',
+  title: 'Activez votre espace client',
+  description:
+    'Choisissez un mot de passe pour consulter vos factures, paiements et relevé auprès de votre fournisseur.',
+  showAiHighlight: false,
+  showTrustFooter: true,
+};

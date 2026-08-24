@@ -244,6 +244,8 @@ public sealed class SubmitInvoiceAccountingRoutingTests
             NullLogger<SubmitInvoiceCommandHandler>.Instance,
             new Mock<ICashRegisterSessionRepository>().Object,
             trackedStock.Object,
-            new Mock<IRecurringContractInvoiceLinker>().Object);
+            new Mock<IRecurringContractInvoiceLinker>().Object,
+            new Mock<IStockMovementRepository>().Object,
+            new Mock<IStockItemRepository>().Object);
     }
 }

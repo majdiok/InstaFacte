@@ -37,11 +37,14 @@ import { ConfirmationService } from '@core/services/confirmation.service';
     <app-breadcrumb [items]="breadcrumbItems"></app-breadcrumb>
 
     <app-page-header
-      title="Attributs produits"
-      subtitle="Gérez les axes de variantes (taille, couleur, etc.) et leurs valeurs.">
+      title="Axes de variantes"
+      subtitle="Définissez les axes (taille, couleur, etc.) et leurs valeurs pour générer les SKU.">
+      <app-button variant="outline" icon="pi-arrow-left" iconPos="left" routerLink="/settings">
+        Retour
+      </app-button>
       @if (canCreate()) {
         <app-button variant="primary" icon="pi-plus" iconPos="left" routerLink="new">
-          Nouvel attribut
+          Nouvel axe
         </app-button>
       }
     </app-page-header>
@@ -65,8 +68,8 @@ import { ConfirmationService } from '@core/services/confirmation.service';
       } @else if (filteredAttributes().length === 0) {
         <app-empty-state
           icon="pi-th-large"
-          title="Aucun attribut"
-          message="Créez des attributs pour générer des variantes de produits." />
+          title="Aucun axe de variantes"
+          description="Créez des axes (taille, couleur, etc.) pour générer des variantes de produits." />
       } @else {
         <p-table [value]="filteredAttributes()" [rowHover]="true" styleClass="p-datatable-sm">
           <ng-template pTemplate="header">
@@ -123,7 +126,8 @@ export class ProductAttributeListComponent implements OnInit {
 
   breadcrumbItems: BreadcrumbItem[] = [
     { label: 'Tableau de bord', route: '/dashboard', icon: 'pi-home' },
-    { label: 'Attributs produits' }
+    { label: 'Paramètres', route: '/settings' },
+    { label: 'Axes de variantes' }
   ];
 
   filteredAttributes = computed(() => {
@@ -163,8 +167,8 @@ export class ProductAttributeListComponent implements OnInit {
 
   confirmDelete(attr: ProductAttributeDto): void {
     this.confirmationService.confirm({
-      header: 'Supprimer l\'attribut',
-      message: `Supprimer l'attribut « ${attr.name} » ? Cette action est irréversible.`,
+      header: 'Supprimer l\'axe',
+      message: `Supprimer l'axe « ${attr.name} » ? Cette action est irréversible.`,
       icon: 'pi pi-exclamation-triangle',
       acceptLabel: 'Supprimer',
       rejectLabel: 'Annuler',
@@ -175,7 +179,7 @@ export class ProductAttributeListComponent implements OnInit {
               this.toastService.add({
                 severity: 'success',
                 summary: 'Supprimé',
-                detail: 'Attribut supprimé'
+                detail: 'Axe de variantes supprimé'
               });
               this.loadAttributes();
             }

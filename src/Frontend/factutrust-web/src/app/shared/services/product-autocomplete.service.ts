@@ -19,6 +19,7 @@ export interface ProductSuggestion {
   isFodecApplicable: boolean;
   isDiscountEnabled: boolean;
   maxDiscountPercent: number | null;
+  attributeSummary?: string | null;
 }
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -271,7 +272,8 @@ export class ProductAutocompleteService {
       unit: item.unit || 'Unité',
       isFodecApplicable: item.isFodecApplicable ?? false,
       isDiscountEnabled: item.isDiscountEnabled ?? false,
-      maxDiscountPercent: item.maxDiscountPercent ?? null
+      maxDiscountPercent: item.maxDiscountPercent ?? null,
+      attributeSummary: item.attributeSummary ?? null
     };
   }
 }

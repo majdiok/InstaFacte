@@ -111,6 +111,14 @@ interface CategoryOption {
           [showClear]="true"
           (onChange)="onSearch()">
         </p-select>
+
+        <p-select
+          [options]="variantFilterOptions"
+          [(ngModel)]="selectedVariantFilter"
+          placeholder="Tous les produits"
+          [showClear]="true"
+          (onChange)="onSearch()">
+        </p-select>
       </div>
     </div>
 
@@ -362,6 +370,7 @@ export class ProductListComponent implements OnInit {
   searchTerm = '';
   selectedCategory: string | null = null;
   selectedStatus: boolean | null = null;
+  selectedVariantFilter: string | null = null;
 
   breadcrumbItems: BreadcrumbItem[] = [
     { label: 'Tableau de bord', route: '/dashboard', icon: 'pi-home' },
@@ -392,8 +401,15 @@ export class ProductListComponent implements OnInit {
     { label: 'Inactifs', value: false }
   ];
 
+  variantFilterOptions = [
+    { label: 'Masquer les modèles', value: 'hideTemplates' },
+    { label: 'Modèles uniquement', value: 'templates' },
+    { label: 'Variantes (SKU)', value: 'variants' },
+    { label: 'Produits simples', value: 'simple' }
+  ];
+
   hasActiveFilters = computed(() => {
-    return !!(this.searchTerm || this.selectedCategory || this.selectedStatus !== null);
+    return !!(this.searchTerm || this.selectedCategory || this.selectedStatus !== null || this.selectedVariantFilter);
   });
 
   activeFiltersCount = computed(() => {
@@ -401,6 +417,7 @@ export class ProductListComponent implements OnInit {
     if (this.searchTerm) count++;
     if (this.selectedCategory) count++;
     if (this.selectedStatus !== null) count++;
+    if (this.selectedVariantFilter) count++;
     return count;
   });
 
@@ -438,6 +455,22 @@ export class ProductListComponent implements OnInit {
       page: 1,
       pageSize: 100 // Charger tous les produits pour l'instant
     };
+
+    switch (this.selectedVariantFilter) {
+      case 'hideTemplates':
+        params.excludeVariantTemplates = true;
+        break;
+      case 'templates':
+        params.isVariantTemplate = true;
+        break;
+      case 'variants':
+        params.hasParentProduct = true;
+        break;
+      case 'simple':
+        params.hasParentProduct = false;
+        params.isVariantTemplate = false;
+        break;
+    }
 
     this.productService.getProducts(params).subscribe({
       next: (response) => {
@@ -478,6 +511,7 @@ export class ProductListComponent implements OnInit {
     this.searchTerm = '';
     this.selectedCategory = null;
     this.selectedStatus = null;
+    this.selectedVariantFilter = null;
     this.loadProducts();
   }
 

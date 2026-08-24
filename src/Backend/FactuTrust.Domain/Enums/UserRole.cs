@@ -290,8 +290,10 @@ public static class UserRoleExtensions
         },
         UserRole.Client => new[]
         {
-            Permissions.Invoices.Read,
-            Permissions.Payments.Read
+            Permissions.Portal.Access,
+            Permissions.Portal.InvoicesRead,
+            Permissions.Portal.PaymentsRead,
+            Permissions.Portal.ProfileRead
         },
         UserRole.SalesRep => new[]
         {
@@ -890,6 +892,14 @@ public static class Permissions
     {
         public const string Read = "project_billing:read";
         public const string Create = "project_billing:create";
+    }
+
+    public static class Portal
+    {
+        public const string Access = "portal:access";
+        public const string InvoicesRead = "portal:invoices:read";
+        public const string PaymentsRead = "portal:payments:read";
+        public const string ProfileRead = "portal:profile:read";
     }
 
     public static class RecurringContracts

@@ -34,6 +34,10 @@ public sealed class ChannelAwareCurrentUser : ICurrentUser
     public bool IsAccountingFirmDelegatedContext =>
         Snapshot is null && _inner.IsAccountingFirmDelegatedContext;
 
+    public Guid? PortalClientId => Snapshot is not null ? null : _inner.PortalClientId;
+
+    public bool IsClientPortal => Snapshot is null && _inner.IsClientPortal;
+
     public bool HasPermission(string permission) =>
         Snapshot is { } s ? s.Permissions.Contains(permission) : _inner.HasPermission(permission);
 

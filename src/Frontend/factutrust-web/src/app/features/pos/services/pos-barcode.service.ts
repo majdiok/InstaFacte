@@ -2,8 +2,9 @@ import { Injectable, inject, OnDestroy, signal } from '@angular/core';
 import { ProductService, ProductListItem } from '@core/services/product.service';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
 import { PosStateService } from './pos-state.service';
+import { canSellProduct } from './pos-stock-guard';
 
-export type BarcodeScanResult = 'added' | 'not_found' | 'multiple';
+export type BarcodeScanResult = 'added' | 'not_found' | 'multiple' | 'out_of_stock';
 
 export interface BarcodeScanEvent {
   code: string;
@@ -109,8 +110,7 @@ export class PosBarcodeService implements OnDestroy {
     this.productService.getProductByBarcode(code).subscribe({
       next: response => {
         if (response.success && response.data) {
-          this.posState.addProduct(response.data);
-          this.lastScanResult.set('added');
+          this.tryAddScannedProduct(response.data);
           return;
         }
         this.fallbackToExactInternalCode(code);
@@ -144,8 +144,7 @@ export class PosBarcodeService implements OnDestroy {
         );
 
         if (matches.length === 1) {
-          this.posState.addProduct(matches[0]);
-          this.lastScanResult.set('added');
+          this.tryAddScannedProduct(matches[0]);
         } else if (matches.length > 1) {
           this.lastScanResult.set('multiple');
         } else {
@@ -162,5 +161,19 @@ export class PosBarcodeService implements OnDestroy {
   searchByCode(code: string): void {
     this.lastScannedCode.set(code);
     this.searchAndAdd(code);
+  }
+
+  private tryAddScannedProduct(product: ProductListItem): void {
+    if (!this.posState.isCreditNote()) {
+      const currentQty = this.posState.lines().find(l => l.productId === product.id)?.quantity ?? 0;
+      const check = canSellProduct(product, 1, currentQty);
+      if (!check.ok) {
+        this.posState.setError(check.message);
+        this.lastScanResult.set('out_of_stock');
+        return;
+      }
+    }
+    this.posState.addProduct(product);
+    this.lastScanResult.set('added');
   }
 }

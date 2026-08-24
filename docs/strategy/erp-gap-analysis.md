@@ -247,7 +247,7 @@ cf. [audit de couverture menu Éditions/Maintenance](../../src/Backend/FactuTrus
 | Picking / packing / expédition | ❌ | P2 | 70 | 2 |
 | Transport & tournées | ❌ | P3 | 50 | 3 |
 | Réservation avancée (commandes en attente) | ⚠️ | P2 | 20 | 1 |
-| Valorisation FIFO/LIFO (vs CMUP seul) | ❌ | P2 | 35 | 2 |
+| Valorisation FIFO/LIFO (vs CMUP seul) | ✅ flag tenant `Features:Stock:FifoLifoValuationEnabled` (défaut prod OFF, lab ON) | P2 | — | Livré |
 | WMS mobile (inventaire terrain) | ❌ | P2 | 40 | 2 |
 
 **Sous-total gaps stock : ~345 j/h**

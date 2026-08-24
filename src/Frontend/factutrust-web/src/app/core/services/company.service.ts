@@ -36,6 +36,7 @@ export interface Company {
   invoiceFooter: string | null;
   warehouseName: string | null;
   cnssEmployerNumber: string | null;
+  clientPortalEnabled: boolean;
 }
 
 export interface UpdateCompanyRequest {
@@ -60,6 +61,7 @@ export interface UpdateCompanyRequest {
   defaultPaymentTerms?: string | null;
   invoiceFooter?: string | null;
   cnssEmployerNumber?: string | null;
+  clientPortalEnabled?: boolean | null;
 }
 
 export interface ApiResponse<T> {

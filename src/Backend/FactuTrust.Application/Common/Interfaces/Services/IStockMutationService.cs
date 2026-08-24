@@ -12,7 +12,9 @@ public sealed record StockAllocationInput(
     DateTime? ManufacturedOn = null,
     Guid? SerialId = null,
     string? SerialNumber = null,
-    decimal? UnitCost = null);
+    decimal? UnitCost = null,
+    DateTime? ReceivedAt = null,
+    Guid? RestoreValuationLayerId = null);
 
 public sealed record StockMutationRequest
 {
@@ -68,6 +70,7 @@ public interface IStockTraceabilityStore
     IReadOnlyList<StockLotBalance> ListBalances(Guid stockItemId);
     void AddBalance(StockLotBalance balance);
     IReadOnlyList<StockValuationLayer> ListOpenLayers(Guid stockItemId);
+    StockValuationLayer? GetLayer(Guid layerId);
     void AddLayer(StockValuationLayer layer);
     ProductSerial? FindSerial(Guid productId, string serialNumber);
     ProductSerial? GetSerial(Guid serialId);

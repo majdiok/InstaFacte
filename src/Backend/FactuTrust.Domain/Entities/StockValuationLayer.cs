@@ -63,4 +63,23 @@ public sealed class StockValuationLayer : Entity
         OriginalQuantity += quantity;
         return Result.Success();
     }
+
+    /// <summary>
+    /// Restores quantity consumed from this layer without rewriting original receipt qty
+    /// when the restore still fits in <see cref="OriginalQuantity"/>.
+    /// </summary>
+    public Result RestoreRemaining(decimal quantity)
+    {
+        if (quantity <= 0)
+            return Result.Failure(Error.Validation("Quantity", "La quantité doit être positive"));
+        if (RemainingQuantity + quantity > OriginalQuantity)
+        {
+            return Result.Failure(Error.Validation(
+                "Quantity",
+                "La restauration dépasse la quantité d'origine de la couche."));
+        }
+
+        RemainingQuantity += quantity;
+        return Result.Success();
+    }
 }

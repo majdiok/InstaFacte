@@ -1,6 +1,7 @@
 import { AppModule } from '../models/app-module';
 import { AI_ASSISTANT_MARK_SRC } from '../constants/ai-assistant-brand';
 import { PERMISSIONS } from './permission-keys';
+import { VARIANT_AXES_PATH } from '@features/settings/variant-axes/variant-axes.paths';
 import { AuthService } from '../services/auth.service';
 import { canSeeNavEntry } from '../utils/nav-visibility';
 import { QUICK_ACCESS_ITEMS } from './quick-access.config';
@@ -316,13 +317,6 @@ export const ALL_NAV_ITEMS: NavItem[] = [
         label: 'Catégories',
         route: '/product-categories',
         icon: 'fa-solid fa-tags',
-        modules: [M.Products],
-        permissionsAll: ['products:read']
-      },
-      {
-        label: 'Attributs',
-        route: '/product-attributes',
-        icon: 'fa-solid fa-th-large',
         modules: [M.Products],
         permissionsAll: ['products:read']
       },
@@ -839,6 +833,14 @@ export const ALL_NAV_ITEMS: NavItem[] = [
         icon: 'fa-solid fa-bullhorn',
         modules: [M.Sales],
         permissionsAll: ['pricing:read']
+      },
+      {
+        label: 'Axes de variantes',
+        route: VARIANT_AXES_PATH,
+        icon: 'fa-solid fa-th-large',
+        modules: [M.Products],
+        permissionsAll: ['products:read'],
+        platformSettingsOnly: true
       }
     ]
   }
@@ -874,6 +876,7 @@ const ROUTE_KEYWORDS: Record<string, string[]> = {
   '/accounting/fiscal-schedule': ['echeancier', 'échéancier', 'fiscal', 'declaration', 'déclaration', 'rappel', 'echeance', 'échéance'],
   '/settings': ['paramètre', 'configuration', 'réglage'],
   '/settings/promotions': ['promotion', 'remise', 'réduction', 'offre', 'bullhorn'],
+  [VARIANT_AXES_PATH]: ['axe', 'variante', 'attribut', 'taille', 'couleur', 'déclinaison', 'sku'],
   '/settings/payment-terms': ['condition', 'règlement', 'échéance', 'escompte', 'paiement', 'délai'],
   '/exchanges': ['échange', 'echanges', 'messagerie', 'réclamation', 'reclamation', 'demande', 'cabinet'],
   '/firm/exchanges': ['échange', 'echanges', 'messagerie', 'réclamation', 'cabinet', 'société']
@@ -890,7 +893,8 @@ const ROUTE_SEARCH_GROUP: Record<string, NavSearchGroup> = {
   '/reports/purchases-analytics': 'report',
   '/reports/profit': 'report',
   '/settings': 'settings',
-  '/settings/promotions': 'settings'
+  '/settings/promotions': 'settings',
+  [VARIANT_AXES_PATH]: 'settings'
 };
 
 function inferSearchGroup(route: string, parentLabel?: string): NavSearchGroup {

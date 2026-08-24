@@ -1,13 +1,16 @@
+using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.ValueObjects;
 using FactuTrust.Infrastructure.MultiTenancy;
 using FactuTrust.Infrastructure.Persistence;
 using FactuTrust.Infrastructure.Services;
+using FactuTrust.Infrastructure.Tests.Stock;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
-using FactuTrust.Infrastructure.Tests.Stock;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace FactuTrust.Infrastructure.Tests.StockTransfers;
@@ -113,5 +116,87 @@ public sealed class StockTransferCompletionServiceTests
                 s.ProductId == product.Id && s.WarehouseId == destWh.Id);
             Assert.Equal(4m, dest.QuantityOnHand);
         }
+    }
+
+    [Fact]
+    public async Task CompleteTransferAsync_Fifo_MirrorsSourceLayersOnDestination()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var factory = new InMemoryTenantDbContextFactory(dbName);
+        var mutation = new StockMutationService(
+            factory,
+            Options.Create(new StockTraceabilityOptions { FifoLifoValuationEnabled = true }));
+
+        var category = ProductCategory.Create("FIFOCAT", "Fifo cat").Value;
+        var product = Product.Create(
+            "FIFO-P1",
+            "Produit FIFO",
+            ProductType.Product,
+            Money.Create(10m),
+            VatRate.Standard,
+            category.Id,
+            isStockManaged: true).Value;
+        Assert.True(product.ConfigureTraceability(
+            TrackingMode.None, false, PickingPolicy.None, CostingMethod.Fifo, null).IsSuccess);
+
+        var sourceWh = Warehouse.Create("SRC", "Source WH").Value;
+        var destWh = Warehouse.Create("DST", "Dest WH").Value;
+
+        await using (var ctx = factory.CreateContext())
+        {
+            ctx.ProductCategories.Add(category);
+            ctx.Products.Add(product);
+            ctx.Warehouses.AddRange(sourceWh, destWh);
+            await ctx.SaveChangesAsync();
+        }
+
+        Assert.True((await mutation.ApplyAsync(new StockMutationRequest
+        {
+            ProductId = product.Id,
+            WarehouseId = sourceWh.Id,
+            Kind = StockMutationKind.Entry,
+            Quantity = 10m,
+            UnitCost = 2m,
+            Reason = MovementReason.Purchase
+        })).IsSuccess);
+        Assert.True((await mutation.ApplyAsync(new StockMutationRequest
+        {
+            ProductId = product.Id,
+            WarehouseId = sourceWh.Id,
+            Kind = StockMutationKind.Entry,
+            Quantity = 10m,
+            UnitCost = 4m,
+            Reason = MovementReason.Purchase
+        })).IsSuccess);
+
+        var number = StockTransferNumber.Create("TR", 2026, 2);
+        var transfer = StockTransfer.Create(number, sourceWh.Id, destWh.Id, DateTime.UtcNow.Date).Value;
+        Assert.True(transfer.AddLine(product, 12m).IsSuccess);
+        Assert.True(transfer.Confirm().IsSuccess);
+
+        await using (var ctx = factory.CreateContext())
+        {
+            ctx.StockTransfers.Add(transfer);
+            await ctx.SaveChangesAsync();
+        }
+
+        var sut = new StockTransferCompletionService(factory, mutation, NullLogger<StockTransferCompletionService>.Instance);
+        var result = await sut.CompleteTransferAsync(transfer.Id);
+        Assert.True(result.IsSuccess, result.IsFailure ? $"{result.Error.Code}: {result.Error.Description}" : "");
+
+        await using var verify = factory.CreateContext();
+        var dest = await verify.StockItems.FirstAsync(s =>
+            s.ProductId == product.Id && s.WarehouseId == destWh.Id);
+        Assert.Equal(12m, dest.QuantityOnHand);
+        var destLayers = await verify.StockValuationLayers
+            .Where(l => l.StockItemId == dest.Id && l.RemainingQuantity > 0)
+            .OrderBy(l => l.ReceivedAt)
+            .ThenBy(l => l.UnitCost)
+            .ToListAsync();
+        Assert.Equal(2, destLayers.Count);
+        Assert.Equal(10m, destLayers[0].RemainingQuantity);
+        Assert.Equal(2m, destLayers[0].UnitCost);
+        Assert.Equal(2m, destLayers[1].RemainingQuantity);
+        Assert.Equal(4m, destLayers[1].UnitCost);
     }
 }

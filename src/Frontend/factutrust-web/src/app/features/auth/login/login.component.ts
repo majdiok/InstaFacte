@@ -2,6 +2,7 @@ import { Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterModule, ActivatedRoute } from '@angular/router';
+import { HttpErrorResponse } from '@angular/common/http';
 import { InputTextModule } from 'primeng/inputtext';
 import { PasswordModule } from 'primeng/password';
 import { ButtonModule } from 'primeng/button';
@@ -96,7 +97,11 @@ export class LoginComponent implements OnInit {
     this.authService.login(this.form.value).subscribe({
       next: (response) => {
         if (response.success) {
-          const defaultUrl = this.authService.isAccountingFirm() ? '/firm/dashboard' : '/dashboard';
+          const defaultUrl = this.authService.isClientPortal()
+            ? '/portal'
+            : this.authService.isAccountingFirm()
+              ? '/firm/dashboard'
+              : '/dashboard';
           const returnUrl = this.route.snapshot.queryParams['returnUrl'] || defaultUrl;
           this.warehouseContext.navigateAfterSuccessfulAuth(returnUrl);
         } else {
@@ -104,8 +109,9 @@ export class LoginComponent implements OnInit {
         }
         this.loading.set(false);
       },
-      error: () => {
+      error: (err: HttpErrorResponse) => {
         this.loading.set(false);
+        this.error.set(err.error?.errors?.[0] || err.error?.message || 'Connexion impossible');
       }
     });
   }

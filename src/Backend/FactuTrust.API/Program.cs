@@ -491,6 +491,7 @@ app.UseRateLimiter();
 
 // Tenant resolution middleware
 app.UseMiddleware<TenantMiddleware>();
+app.UseMiddleware<DenyStaffApiForPortalUsersMiddleware>();
 app.UseMiddleware<DelegatedAccessMiddleware>();
 
 // Health checks (Lot B5 — séparation live/ready)

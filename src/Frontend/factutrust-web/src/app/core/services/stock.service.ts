@@ -48,6 +48,7 @@ export interface StockItem {
     stockValue: number;
     isLowStock: boolean;
     isOutOfStock: boolean;
+    costingMethod?: number;
 }
 
 export interface StockMovement {
@@ -331,6 +332,10 @@ export class StockService {
         return this.http.get<ApiResponse<StockLotBalance[]>>(`${this.API_URL}/items/${stockItemId}/lots`);
     }
 
+    getValuationLayers(stockItemId: string): Observable<ApiResponse<StockValuationLayer[]>> {
+        return this.http.get<ApiResponse<StockValuationLayer[]>>(`${this.API_URL}/items/${stockItemId}/valuation-layers`);
+    }
+
     getExpiryAlerts(warehouseId?: string): Observable<ApiResponse<ExpiryAlert[]>> {
         let params = new HttpParams();
         if (warehouseId) params = params.set('warehouseId', warehouseId);
@@ -385,6 +390,16 @@ export interface StockLotBalance {
     quantityOnHand: number;
     quantityReserved: number;
     quantityAvailable: number;
+}
+
+export interface StockValuationLayer {
+    receivedAt: string;
+    remainingQuantity: number;
+    originalQuantity: number;
+    unitCost: number;
+    remainingValue: number;
+    lotNumber: string | null;
+    sourceReference: string | null;
 }
 
 export interface ExpiryAlert {

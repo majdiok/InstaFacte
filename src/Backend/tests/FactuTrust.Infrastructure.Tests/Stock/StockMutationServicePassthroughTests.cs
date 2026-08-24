@@ -261,6 +261,159 @@ public sealed class StockMutationServicePassthroughTests
         Assert.Equal(44m, exitValue);
     }
 
+    [Fact]
+    public async Task ApplyAsync_Fifo_WhenFlagOff_UsesCmupPassthrough()
+    {
+        var factory = CreateFactory();
+        var (productId, warehouseId) = await SeedProductAndWarehouse(factory, costing: CostingMethod.Fifo);
+        var sut = new StockMutationService(factory, Options.Create(new StockTraceabilityOptions()));
+
+        Assert.True((await sut.ApplyAsync(Entry(productId, warehouseId, 10m, 2m))).IsSuccess);
+        var second = await sut.ApplyAsync(Entry(productId, warehouseId, 10m, 4m));
+        Assert.True(second.IsSuccess);
+        Assert.Equal(3m, second.Value.AverageCost);
+        Assert.Equal(20m, second.Value.QuantityOnHand);
+
+        await using var ctx = factory.CreateContext();
+        Assert.Empty(ctx.StockValuationLayers);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_Fifo_RestoreValuationLayerId_RebuildsOriginalLayers()
+    {
+        var factory = CreateFactory();
+        var (productId, warehouseId) = await SeedProductAndWarehouse(factory, costing: CostingMethod.Fifo);
+        var sut = new StockMutationService(factory, Options.Create(new StockTraceabilityOptions
+        {
+            FifoLifoValuationEnabled = true
+        }));
+
+        Assert.True((await sut.ApplyAsync(Entry(productId, warehouseId, 10m, 2m))).IsSuccess);
+        Assert.True((await sut.ApplyAsync(Entry(productId, warehouseId, 10m, 4m))).IsSuccess);
+        Assert.True((await sut.ApplyAsync(new StockMutationRequest
+        {
+            ProductId = productId,
+            WarehouseId = warehouseId,
+            Kind = StockMutationKind.Exit,
+            Quantity = 12m,
+            Reason = MovementReason.Sale
+        })).IsSuccess);
+
+        await using (var ctx = factory.CreateContext())
+        {
+            var item = await ctx.StockItems.Include(s => s.Movements).FirstAsync(s => s.ProductId == productId);
+            var exits = item.Movements.Where(m => m.Type == MovementType.Exit).OrderBy(m => m.OccurredAt).ThenBy(m => m.Id).ToList();
+            Assert.NotEmpty(exits);
+
+            var restore = await sut.ApplyAsync(new StockMutationRequest
+            {
+                ProductId = productId,
+                WarehouseId = warehouseId,
+                Kind = StockMutationKind.Entry,
+                Quantity = 12m,
+                UnitCost = exits[0].UnitCost,
+                Reason = MovementReason.CustomerReturn,
+                Allocations = exits.Select(m => new StockAllocationInput(
+                    Math.Abs(m.Quantity),
+                    UnitCost: m.UnitCost,
+                    RestoreValuationLayerId: m.ValuationLayerId)).ToList()
+            });
+            Assert.True(restore.IsSuccess, restore.Error?.Description);
+        }
+
+        await using (var verify = factory.CreateContext())
+        {
+            var item = await verify.StockItems.FirstAsync(s => s.ProductId == productId);
+            Assert.Equal(20m, item.QuantityOnHand);
+            var layers = await verify.StockValuationLayers
+                .Where(l => l.StockItemId == item.Id)
+                .OrderBy(l => l.ReceivedAt)
+                .ThenBy(l => l.UnitCost)
+                .ToListAsync();
+            Assert.Equal(2, layers.Count);
+            Assert.Equal(10m, layers[0].RemainingQuantity);
+            Assert.Equal(2m, layers[0].UnitCost);
+            Assert.Equal(10m, layers[1].RemainingQuantity);
+            Assert.Equal(4m, layers[1].UnitCost);
+        }
+    }
+
+    [Fact]
+    public async Task ApplyAsync_Fifo_SequentialExits_SecondFailsWhenOnHandInsufficient()
+    {
+        var factory = CreateFactory();
+        var (productId, warehouseId) = await SeedProductAndWarehouse(factory, costing: CostingMethod.Fifo);
+        var sut = new StockMutationService(factory, Options.Create(new StockTraceabilityOptions
+        {
+            FifoLifoValuationEnabled = true
+        }));
+
+        Assert.True((await sut.ApplyAsync(Entry(productId, warehouseId, 10m, 2m))).IsSuccess);
+
+        var first = await sut.ApplyAsync(new StockMutationRequest
+        {
+            ProductId = productId,
+            WarehouseId = warehouseId,
+            Kind = StockMutationKind.Exit,
+            Quantity = 6m,
+            Reason = MovementReason.Sale
+        });
+        Assert.True(first.IsSuccess, first.Error?.Description);
+
+        var second = await sut.ApplyAsync(new StockMutationRequest
+        {
+            ProductId = productId,
+            WarehouseId = warehouseId,
+            Kind = StockMutationKind.Exit,
+            Quantity = 6m,
+            Reason = MovementReason.Sale
+        });
+        Assert.True(second.IsFailure);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_Fifo_AdjustSurplusCreatesLayer_DeficitConsumesFifo()
+    {
+        var factory = CreateFactory();
+        var (productId, warehouseId) = await SeedProductAndWarehouse(factory, costing: CostingMethod.Fifo);
+        var sut = new StockMutationService(factory, Options.Create(new StockTraceabilityOptions
+        {
+            FifoLifoValuationEnabled = true
+        }));
+
+        Assert.True((await sut.ApplyAsync(Entry(productId, warehouseId, 10m, 2m))).IsSuccess);
+        Assert.True((await sut.ApplyAsync(Entry(productId, warehouseId, 10m, 4m))).IsSuccess);
+
+        var surplus = await sut.ApplyAsync(new StockMutationRequest
+        {
+            ProductId = productId,
+            WarehouseId = warehouseId,
+            Kind = StockMutationKind.Adjust,
+            Quantity = 22m,
+            Reason = MovementReason.InventoryAdjustment
+        });
+        Assert.True(surplus.IsSuccess, surplus.Error?.Description);
+        Assert.Equal(22m, surplus.Value.QuantityOnHand);
+
+        var deficit = await sut.ApplyAsync(new StockMutationRequest
+        {
+            ProductId = productId,
+            WarehouseId = warehouseId,
+            Kind = StockMutationKind.Adjust,
+            Quantity = 8m,
+            Reason = MovementReason.InventoryAdjustment
+        });
+        Assert.True(deficit.IsSuccess, deficit.Error?.Description);
+        Assert.Equal(8m, deficit.Value.QuantityOnHand);
+
+        await using var ctx = factory.CreateContext();
+        var item = await ctx.StockItems.FirstAsync(s => s.ProductId == productId);
+        var remaining = await ctx.StockValuationLayers
+            .Where(l => l.StockItemId == item.Id && l.RemainingQuantity > 0)
+            .SumAsync(l => l.RemainingQuantity);
+        Assert.Equal(8m, remaining);
+    }
+
     private static StockMutationRequest Entry(Guid productId, Guid warehouseId, decimal qty, decimal cost) =>
         new()
         {

@@ -4,6 +4,7 @@ using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using MediatR;
+using Microsoft.Extensions.Configuration;
 
 namespace FactuTrust.Application.Features.Invoices.Commands;
 
@@ -25,6 +26,9 @@ public sealed class SendInvoiceEmailCommandHandler : IRequestHandler<SendInvoice
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUser _currentUser;
     private readonly IAuditService _auditService;
+    private readonly IClientPortalService _clientPortalService;
+    private readonly ICompanyRepository _companyRepository;
+    private readonly IConfiguration _configuration;
 
     public SendInvoiceEmailCommandHandler(
         IInvoiceRepository invoiceRepository,
@@ -33,7 +37,10 @@ public sealed class SendInvoiceEmailCommandHandler : IRequestHandler<SendInvoice
         IEmailService emailService,
         IUnitOfWork unitOfWork,
         ICurrentUser currentUser,
-        IAuditService auditService)
+        IAuditService auditService,
+        IClientPortalService clientPortalService,
+        ICompanyRepository companyRepository,
+        IConfiguration configuration)
     {
         _invoiceRepository = invoiceRepository;
         _pdfService = pdfService;
@@ -42,6 +49,9 @@ public sealed class SendInvoiceEmailCommandHandler : IRequestHandler<SendInvoice
         _unitOfWork = unitOfWork;
         _currentUser = currentUser;
         _auditService = auditService;
+        _clientPortalService = clientPortalService;
+        _companyRepository = companyRepository;
+        _configuration = configuration;
     }
 
     public async Task<Result> Handle(SendInvoiceEmailCommand request, CancellationToken cancellationToken)
@@ -68,6 +78,7 @@ public sealed class SendInvoiceEmailCommandHandler : IRequestHandler<SendInvoice
                en date du {invoice.IssueDate:dd/MM/yyyy}.</p>
             <p>Montant total TTC : <strong>{invoice.TotalAmount.Amount:N3} TND</strong></p>
             {(invoice.DueDate.HasValue ? $"<p>Date d'échéance : <strong>{invoice.DueDate:dd/MM/yyyy}</strong></p>" : "")}
+            {await BuildPortalCtaHtmlAsync(invoice.ClientId, invoice.Id, cancellationToken)}
             <p>Nous vous remercions pour votre confiance.</p>
             <p>Cordialement,</p>";
 
@@ -107,5 +118,25 @@ public sealed class SendInvoiceEmailCommandHandler : IRequestHandler<SendInvoice
             cancellationToken: cancellationToken);
 
         return Result.Success();
+    }
+
+    private async Task<string> BuildPortalCtaHtmlAsync(
+        Guid clientId,
+        Guid invoiceId,
+        CancellationToken cancellationToken)
+    {
+        var company = await _companyRepository.GetDefaultAsync(cancellationToken);
+        if (company is null || !company.ClientPortalEnabled)
+            return string.Empty;
+
+        if (!await _clientPortalService.HasActiveContactAsync(clientId, cancellationToken))
+            return string.Empty;
+
+        var baseUrl = (_configuration["App:FrontendBaseUrl"] ?? "http://localhost:4200").TrimEnd('/');
+        var portalUrl = $"{baseUrl}/portal/invoices/{invoiceId}";
+        var safeUrl = System.Net.WebUtility.HtmlEncode(portalUrl);
+        return $"""
+            <p><a href="{safeUrl}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:white;text-decoration:none;border-radius:6px;">Consulter dans l'espace client</a></p>
+            """;
     }
 }

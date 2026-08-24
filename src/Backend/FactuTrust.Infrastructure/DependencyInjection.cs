@@ -218,6 +218,7 @@ public static class DependencyInjection
 
         // Encours client (lot 6) — alerte seule, aucun blocage.
         services.AddScoped<IClientOutstandingService, ClientOutstandingService>();
+        services.AddScoped<IClientPortalService, ClientPortalService>();
         services.AddScoped<Application.Common.Interfaces.Pricing.IPromotionResolver,
             Services.Pricing.PromotionResolver>();
         services.AddScoped<Application.Common.Interfaces.Pricing.ILinePricingOrchestrator,

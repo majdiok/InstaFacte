@@ -7,6 +7,7 @@ import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcru
 import { AuthService } from '@core/services/auth.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
 import { environment } from '@environments/environment';
+import { StockFeaturesStore } from '@core/services/stock-features-store.service';
 
 interface SettingItem {
   title: string;
@@ -114,6 +115,11 @@ interface SettingItem {
 })
 export class SettingsComponent {
   private readonly auth = inject(AuthService);
+  private readonly stockFeaturesStore = inject(StockFeaturesStore);
+
+  constructor() {
+    this.stockFeaturesStore.ensureLoaded();
+  }
 
   breadcrumbItems = computed<BreadcrumbItem[]>(() => [
     { label: 'Tableau de bord', route: '/dashboard', icon: 'pi-home' },
@@ -121,6 +127,7 @@ export class SettingsComponent {
   ]);
 
   settingsItems = computed<SettingItem[]>(() => {
+    this.stockFeaturesStore.features();
     const items: SettingItem[] = [
       {
         title: 'Mon profil',
@@ -183,6 +190,16 @@ export class SettingsComponent {
         description: 'Remises temporaires appliquées après le prix sur vos documents de vente',
         icon: 'pi pi-megaphone',
         route: 'promotions',
+        color: 'var(--color-primary-500)'
+      });
+    }
+
+    if (this.auth.hasPermission(PERMISSIONS.products.read) && this.stockFeaturesStore.productVariantsEnabled()) {
+      items.push({
+        title: 'Axes de variantes',
+        description: 'Définissez les axes (taille, couleur, etc.) et leurs valeurs pour générer les SKU.',
+        icon: 'pi pi-th-large',
+        route: 'variant-axes',
         color: 'var(--color-primary-500)'
       });
     }

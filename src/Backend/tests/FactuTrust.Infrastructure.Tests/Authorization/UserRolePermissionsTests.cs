@@ -157,4 +157,20 @@ public sealed class UserRolePermissionsTests
         Assert.DoesNotContain(Permissions.Projects.Read, DelegatedPermissionCatalog.FirmManagerDelegated);
         Assert.DoesNotContain(Permissions.ProjectTime.Validate, DelegatedPermissionCatalog.FirmAccountantDelegated);
     }
+
+    [Fact]
+    public void Client_has_portal_access_without_staff_invoice_read()
+    {
+        var permissions = UserRole.Client.GetPermissions();
+        Assert.Contains(Permissions.Portal.Access, permissions);
+        Assert.Contains(Permissions.Portal.InvoicesRead, permissions);
+        Assert.DoesNotContain(Permissions.Invoices.Read, permissions);
+        Assert.DoesNotContain(Permissions.Payments.Read, permissions);
+    }
+
+    [Fact]
+    public void Accountant_still_has_staff_invoice_read()
+    {
+        Assert.Contains(Permissions.Invoices.Read, UserRole.Accountant.GetPermissions());
+    }
 }

@@ -20,6 +20,7 @@ import {
   calculateVatAmount
 } from '@shared/utils/product-pricing.utils';
 import { ProductClientPricesComponent } from '../product-client-prices/product-client-prices.component';
+import { ProductVariantMatrixComponent } from '@shared/components/product-variant-matrix/product-variant-matrix.component';
 
 const VAT_OPTIONS: { label: string; value: number }[] = [
   { label: '19% - Taux normal', value: 19 },
@@ -41,7 +42,8 @@ const VAT_OPTIONS: { label: string; value: number }[] = [
     BreadcrumbComponent,
     FormSectionComponent,
     ButtonComponent,
-    ProductClientPricesComponent
+    ProductClientPricesComponent,
+    ProductVariantMatrixComponent
   ],
   template: `
     <app-breadcrumb [items]="breadcrumbItems()"></app-breadcrumb>
@@ -122,6 +124,7 @@ const VAT_OPTIONS: { label: string; value: number }[] = [
               }
               @if (p.parentProductId) {
                 <p-tag value="Variante" severity="info"></p-tag>
+                <a class="parent-link" [routerLink]="['/products', p.parentProductId, 'view']">Voir le modèle</a>
               }
             </p>
           </div>
@@ -185,7 +188,7 @@ const VAT_OPTIONS: { label: string; value: number }[] = [
 
           <div class="form-row">
             <div class="form-group">
-              <span class="field-label">CMUP HT</span>
+              <span class="field-label">{{ (p.costingMethod === 1 || p.costingMethod === 2) ? 'Coût unitaire affiché HT' : 'CMUP HT' }}</span>
               <p class="field-value mono">{{ formatMoney(p.weightedAverageCost) }}</p>
             </div>
             <div class="form-group">
@@ -257,8 +260,16 @@ const VAT_OPTIONS: { label: string; value: number }[] = [
         </app-form-section>
       </div>
 
+      @if (p.isVariantTemplate) {
+        <div class="form-grid-full">
+          <app-form-section title="SKU enfants" icon="pi-th-large" [number]="3">
+            <app-product-variant-matrix [parentProductId]="p.id" />
+          </app-form-section>
+        </div>
+      }
+
       <div class="form-grid-full">
-        <app-form-section title="Tarifs par client" icon="pi-users" [number]="3">
+        <app-form-section title="Tarifs par client" icon="pi-users" [number]="4">
           <app-product-client-prices
             [productId]="p.id"
             [catalogUnitPriceHT]="p.unitPrice"
@@ -282,6 +293,11 @@ const VAT_OPTIONS: { label: string; value: number }[] = [
 
     .form-grid-full {
       margin-top: var(--spacing-4);
+    }
+
+    .parent-link {
+      margin-left: 0.5rem;
+      font-size: 0.875rem;
     }
 
     .form-row {

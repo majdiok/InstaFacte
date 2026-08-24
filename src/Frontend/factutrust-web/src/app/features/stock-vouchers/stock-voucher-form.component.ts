@@ -224,7 +224,7 @@ interface VoucherLine {
                   <th>Unité</th>
                   @if (!isEntry) {
                     <th>Dispo</th>
-                    <th>CMUP</th>
+                    <th>Coût unitaire</th>
                   }
                   <th>Qté</th>
                   @if (isEntry) {

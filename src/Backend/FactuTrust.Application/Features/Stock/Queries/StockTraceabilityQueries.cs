@@ -71,6 +71,44 @@ public sealed class GetStockItemLotsQueryHandler
     }
 }
 
+public sealed record StockValuationLayerDto(
+    DateTime ReceivedAt,
+    decimal RemainingQuantity,
+    decimal OriginalQuantity,
+    decimal UnitCost,
+    decimal RemainingValue,
+    string? LotNumber,
+    string? SourceReference);
+
+public sealed record GetStockItemValuationLayersQuery(Guid StockItemId)
+    : IRequest<IReadOnlyList<StockValuationLayerDto>>;
+
+public sealed class GetStockItemValuationLayersQueryHandler
+    : IRequestHandler<GetStockItemValuationLayersQuery, IReadOnlyList<StockValuationLayerDto>>
+{
+    private readonly IStockItemRepository _stockItems;
+    private readonly IStockTraceabilityQuery _traceability;
+
+    public GetStockItemValuationLayersQueryHandler(
+        IStockItemRepository stockItems,
+        IStockTraceabilityQuery traceability)
+    {
+        _stockItems = stockItems;
+        _traceability = traceability;
+    }
+
+    public async Task<IReadOnlyList<StockValuationLayerDto>> Handle(
+        GetStockItemValuationLayersQuery request,
+        CancellationToken cancellationToken)
+    {
+        var item = await _stockItems.GetByIdAsync(request.StockItemId, cancellationToken);
+        if (item is null)
+            return Array.Empty<StockValuationLayerDto>();
+
+        return await _traceability.ListValuationLayersAsync(item.Id, cancellationToken);
+    }
+}
+
 public sealed record ExpiryAlertDto(
     Guid ProductId,
     string ProductCode,
@@ -100,6 +138,7 @@ public sealed class GetExpiryAlertsQueryHandler : IRequestHandler<GetExpiryAlert
 public interface IStockTraceabilityQuery
 {
     Task<IReadOnlyList<StockLotBalanceDto>> ListLotsAsync(Guid stockItemId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<StockValuationLayerDto>> ListValuationLayersAsync(Guid stockItemId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ExpiryAlertDto>> ListExpiryAlertsAsync(Guid? warehouseId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ProductSerialDto>> ListInStockSerialsAsync(
         Guid productId,

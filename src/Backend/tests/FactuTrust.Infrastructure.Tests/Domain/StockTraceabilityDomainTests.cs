@@ -129,3 +129,38 @@ public sealed class ProductSerialTests
         Assert.Equal(a.Value.SerialNumber, b.Value.SerialNumber);
     }
 }
+
+public sealed class StockValuationLayerRestoreTests
+{
+    [Fact]
+    public void RestoreRemaining_SucceedsUntilOriginalQuantity()
+    {
+        var layer = StockValuationLayer.Create(Guid.NewGuid(), 10m, 2m, DateTime.UtcNow).Value;
+        Assert.True(layer.Consume(4m).IsSuccess);
+        Assert.True(layer.RestoreRemaining(4m).IsSuccess);
+        Assert.Equal(10m, layer.RemainingQuantity);
+        Assert.Equal(10m, layer.OriginalQuantity);
+    }
+
+    [Fact]
+    public void RestoreRemaining_FailsWhenOverflowingOriginalQuantity()
+    {
+        var layer = StockValuationLayer.Create(Guid.NewGuid(), 10m, 2m, DateTime.UtcNow).Value;
+        Assert.True(layer.RestoreRemaining(1m).IsFailure);
+    }
+}
+
+public sealed class ValuationLayerInvariantTests
+{
+    [Fact]
+    public void AssertMatchesOnHand_AcceptsEqualSum()
+    {
+        Assert.True(ValuationLayerInvariant.AssertMatchesOnHand(10m, new[] { 6m, 4m }).IsSuccess);
+    }
+
+    [Fact]
+    public void AssertMatchesOnHand_DetectsDrift()
+    {
+        Assert.True(ValuationLayerInvariant.AssertMatchesOnHand(10m, new[] { 6m, 3m }).IsFailure);
+    }
+}

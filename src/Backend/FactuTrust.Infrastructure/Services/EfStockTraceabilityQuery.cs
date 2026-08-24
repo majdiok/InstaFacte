@@ -37,6 +37,35 @@ public sealed class EfStockTraceabilityQuery : IStockTraceabilityQuery
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<StockValuationLayerDto>> ListValuationLayersAsync(
+        Guid stockItemId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = _factory.CreateContext();
+        var layers = await context.StockValuationLayers
+            .AsNoTracking()
+            .Where(l => l.StockItemId == stockItemId && l.RemainingQuantity > 0)
+            .OrderBy(l => l.ReceivedAt)
+            .ThenBy(l => l.Id)
+            .ToListAsync(cancellationToken);
+
+        var lotIds = layers.Where(l => l.ProductLotId.HasValue).Select(l => l.ProductLotId!.Value).Distinct().ToList();
+        var lotNumbers = lotIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await context.ProductLots.AsNoTracking()
+                .Where(l => lotIds.Contains(l.Id))
+                .ToDictionaryAsync(l => l.Id, l => l.LotNumber, cancellationToken);
+
+        return layers.Select(l => new StockValuationLayerDto(
+            l.ReceivedAt,
+            l.RemainingQuantity,
+            l.OriginalQuantity,
+            l.UnitCost,
+            l.RemainingValue,
+            l.ProductLotId is Guid lotId && lotNumbers.TryGetValue(lotId, out var number) ? number : null,
+            l.SourceReference)).ToList();
+    }
+
     public async Task<IReadOnlyList<ExpiryAlertDto>> ListExpiryAlertsAsync(
         Guid? warehouseId,
         CancellationToken cancellationToken = default)

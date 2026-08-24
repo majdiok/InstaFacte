@@ -256,5 +256,11 @@ export const PERMISSIONS = {
     manage: 'recurring_contracts:manage',
     recordUsage: 'recurring_contracts:usage',
     triggerBilling: 'recurring_contracts:billing'
+  },
+  portal: {
+    access: 'portal:access',
+    invoicesRead: 'portal:invoices:read',
+    paymentsRead: 'portal:payments:read',
+    profileRead: 'portal:profile:read'
   }
 } as const;

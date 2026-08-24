@@ -185,3 +185,42 @@ describe('PosStateService applyResolvedPrices', () => {
     expect(svc.totals().totalTTC).toBe(119);
   });
 });
+
+describe('PosStateService stock quantity cap', () => {
+  function stockProduct(available: number): ProductListItem {
+    return {
+      ...fodecProduct(),
+      id: 'prod-stock-1',
+      name: 'Chemise',
+      isFodecApplicable: false,
+      isStockManaged: true,
+      quantityAvailable: available
+    };
+  }
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({ providers: [PosStateService] });
+  });
+
+  it('stores quantityAvailable on the line', () => {
+    const svc = TestBed.inject(PosStateService);
+    svc.addProduct(stockProduct(3));
+    expect(svc.lines()[0].quantityAvailable).toBe(3);
+  });
+
+  it('refuses incrementQuantity beyond available stock', () => {
+    const svc = TestBed.inject(PosStateService);
+    svc.addProduct(stockProduct(1));
+    expect(svc.incrementQuantity(svc.lines()[0].id)).toBeFalse();
+    expect(svc.lines()[0].quantity).toBe(1);
+    expect(svc.lastError()).toContain('Chemise');
+  });
+
+  it('allows incrementQuantity in credit-note mode', () => {
+    const svc = TestBed.inject(PosStateService);
+    svc.enableCreditNoteMode(sampleLinkedInvoice());
+    svc.addProduct(stockProduct(1));
+    expect(svc.incrementQuantity(svc.lines()[0].id)).toBeTrue();
+    expect(svc.lines()[0].quantity).toBe(2);
+  });
+});

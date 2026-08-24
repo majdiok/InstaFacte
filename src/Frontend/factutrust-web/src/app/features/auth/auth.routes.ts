@@ -41,6 +41,14 @@ export const AUTH_ROUTES: Routes = [
     title: 'Inscription cabinet - InstaFact'
   },
   {
+    path: 'accept-portal-invite',
+    loadComponent: () =>
+      import('./accept-portal-invite/accept-portal-invite.component').then(
+        m => m.AcceptPortalInviteComponent
+      ),
+    title: 'Activer l’espace client - InstaFact'
+  },
+  {
     path: '',
     redirectTo: 'login',
     pathMatch: 'full'

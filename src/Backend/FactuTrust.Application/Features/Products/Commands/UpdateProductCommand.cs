@@ -174,6 +174,17 @@ public sealed class UpdateProductCommandHandler : IRequestHandler<UpdateProductC
                 }
             }
 
+            if (product.CostingMethod is CostingMethod.Fifo or CostingMethod.Lifo
+                && nextCosting == CostingMethod.Average)
+            {
+                var stocks = await _stockItemRepository.GetByProductAsync(product.Id, cancellationToken);
+                if (stocks.Any(s => s.QuantityOnHand > 0))
+                {
+                    return Result.Failure<ProductDetailDto>(Error.Validation("CostingMethod",
+                        "Le passage FIFO/LIFO → CMUP est interdit tant qu'un stock physique existe. Clôturez les couches ou soldez le stock."));
+                }
+            }
+
             var trace = product.ConfigureTraceability(
                 nextMode,
                 dto.HasExpiryTracking ?? product.HasExpiryTracking,

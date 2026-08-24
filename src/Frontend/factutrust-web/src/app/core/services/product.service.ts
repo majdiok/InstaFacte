@@ -91,6 +91,9 @@ export interface ProductSelectItem {
   isFodecApplicable: boolean;
   isDiscountEnabled: boolean;
   maxDiscountPercent: number | null;
+  attributeSummary?: string | null;
+  isVariantTemplate?: boolean;
+  parentProductId?: string | null;
 }
 
 export interface ProductFodecFlag {
@@ -111,6 +114,10 @@ export interface ProductSearchParams {
   sortOrder?: 'asc' | 'desc';
   /** When set, stock quantities reflect this warehouse (session context). */
   warehouseId?: string;
+  excludeVariantTemplates?: boolean;
+  parentProductId?: string;
+  isVariantTemplate?: boolean;
+  hasParentProduct?: boolean;
 }
 
 export interface CreateProductRequest {
@@ -189,6 +196,14 @@ export class ProductService {
     if (params.sortBy) httpParams = httpParams.set('sortBy', params.sortBy);
     if (params.sortOrder) httpParams = httpParams.set('sortOrder', params.sortOrder);
     if (params.warehouseId) httpParams = httpParams.set('warehouseId', params.warehouseId);
+    if (params.excludeVariantTemplates) httpParams = httpParams.set('excludeVariantTemplates', 'true');
+    if (params.parentProductId) httpParams = httpParams.set('parentProductId', params.parentProductId);
+    if (params.isVariantTemplate !== undefined) {
+      httpParams = httpParams.set('isVariantTemplate', params.isVariantTemplate.toString());
+    }
+    if (params.hasParentProduct !== undefined) {
+      httpParams = httpParams.set('hasParentProduct', params.hasParentProduct.toString());
+    }
 
     return this.http.get<ApiResponse<PagedResult<any>>>(this.API_URL, { params: httpParams }).pipe(
       map(response => {
@@ -581,6 +596,50 @@ export class ProductService {
     return this.http.post<ApiResponse<string[]>>(`${this.API_URL}/${productId}/variants`, axes);
   }
 
+  getProductVariants(
+    parentId: string,
+    page = 1,
+    pageSize = 100,
+    warehouseId?: string
+  ): Observable<ApiResponse<PagedResult<ProductVariantChildDto>>> {
+    let params = new HttpParams()
+      .set('page', page.toString())
+      .set('pageSize', pageSize.toString());
+    if (warehouseId) params = params.set('warehouseId', warehouseId);
+    return this.http.get<ApiResponse<PagedResult<ProductVariantChildDto>>>(
+      `${this.API_URL}/${parentId}/variants`,
+      { params }
+    );
+  }
+
+  getProductVariantAxes(parentId: string): Observable<ApiResponse<ProductVariantAxisDto[]>> {
+    return this.http.get<ApiResponse<ProductVariantAxisDto[]>>(
+      `${this.API_URL}/${parentId}/variant-axes`
+    );
+  }
+
+  getProductVariantProfile(productId: string): Observable<ApiResponse<ProductVariantProfileDto>> {
+    return this.http.get<ApiResponse<ProductVariantProfileDto>>(
+      `${this.API_URL}/${productId}/variant-profile`
+    );
+  }
+
+  searchTemplatesForSelect(search?: string, pageSize = 50): Observable<ApiResponse<ProductSelectItem[]>> {
+    let params = new HttpParams().set('pageSize', pageSize.toString());
+    if (search) params = params.set('search', search);
+    return this.http.get<ApiResponse<ProductSelectItem[]>>(`${this.API_URL}/templates/select`, { params });
+  }
+
+  bulkUpdateVariantPrices(
+    parentId: string,
+    request: BulkUpdateVariantPricesRequest
+  ): Observable<ApiResponse<number>> {
+    return this.http.patch<ApiResponse<number>>(
+      `${this.API_URL}/${parentId}/variants/prices`,
+      request
+    );
+  }
+
   createOpeningValuationLayer(productId: string, costingMethod: number): Observable<ApiResponse<object>> {
     return this.http.post<ApiResponse<object>>(`${this.API_URL}/${productId}/opening-valuation-layer`, {
       costingMethod
@@ -621,4 +680,48 @@ export interface AddProductAttributeValueRequest {
 export interface UpdateProductAttributeValueRequest {
   name: string;
   sortOrder?: number;
+}
+
+export interface ProductVariantAttributePairDto {
+  definitionId: string;
+  definitionCode: string;
+  definitionName: string;
+  valueId: string;
+  valueCode: string;
+  valueName: string;
+  sortOrder: number;
+}
+
+export interface ProductVariantChildDto {
+  id: string;
+  code: string;
+  name: string;
+  unitPrice: number;
+  purchasePrice?: number | null;
+  salePriceTtc: number;
+  barcode?: string | null;
+  isActive: boolean;
+  quantityAvailable?: number | null;
+  attributes: ProductVariantAttributePairDto[];
+}
+
+export interface ProductVariantAxisDto {
+  definitionId: string;
+  code: string;
+  name: string;
+  sortOrder: number;
+  selectedValueIds: string[];
+}
+
+export interface ProductVariantProfileDto {
+  productId: string;
+  parentProductId: string;
+  parentCode: string;
+  parentName: string;
+  attributes: ProductVariantAttributePairDto[];
+}
+
+export interface BulkUpdateVariantPricesRequest {
+  mode: 'absolute' | 'copyFromParent' | 'percentDelta';
+  items?: { childId: string; unitPrice?: number; purchasePrice?: number; barcode?: string | null }[];
 }

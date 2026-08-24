@@ -484,6 +484,19 @@ SELECT COL_LENGTH('dbo.Products', 'TrackingMode') AS TrackingMode,
 
 ---
 
+## Portail client (`20260824120000_AddClientPortal_Tenant`)
+
+Ajoute `Companies.ClientPortalEnabled` (bit, défaut 1) et la table `ClientPortalContacts`. Les comptes portail sont dans la base master (`Users.PortalClientId`).
+
+Scripts idempotents : [`AddClientPortal_Tenant.idempotent.sql`](runbooks/sql/AddClientPortal_Tenant.idempotent.sql), [`AddClientPortal_Master.idempotent.sql`](runbooks/sql/AddClientPortal_Master.idempotent.sql).
+
+```sql
+SELECT COL_LENGTH('dbo.Companies', 'ClientPortalEnabled');
+SELECT OBJECT_ID('dbo.ClientPortalContacts');
+```
+
+---
+
 ## En résumé
 
 - En **développement**, corriger l'erreur de migration puis redémarrer l'API.

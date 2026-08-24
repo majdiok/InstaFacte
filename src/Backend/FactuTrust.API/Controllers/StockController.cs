@@ -90,6 +90,20 @@ public class StockController : ControllerBase
         return Ok(ApiResponse<IReadOnlyList<StockLotBalanceDto>>.Ok(result));
     }
 
+    [HttpGet("items/{stockItemId:guid}/valuation-layers")]
+    [Authorize(Policy = PermissionPolicies.StockRead)]
+    public async Task<ActionResult<IReadOnlyList<StockValuationLayerDto>>> GetStockItemValuationLayers(
+        Guid stockItemId,
+        CancellationToken cancellationToken = default)
+    {
+        var guardResult = await EnsureStockSchemaAsync(cancellationToken);
+        if (guardResult != null)
+            return guardResult;
+
+        var result = await _mediator.Send(new GetStockItemValuationLayersQuery(stockItemId), cancellationToken);
+        return Ok(ApiResponse<IReadOnlyList<StockValuationLayerDto>>.Ok(result));
+    }
+
     [HttpGet("expiry-alerts")]
     [Authorize(Policy = PermissionPolicies.StockRead)]
     public async Task<ActionResult<IReadOnlyList<ExpiryAlertDto>>> GetExpiryAlerts(

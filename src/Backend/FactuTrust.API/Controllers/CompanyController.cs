@@ -1,4 +1,5 @@
 using FactuTrust.API.Authorization;
+using FactuTrust.API.Http;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
@@ -26,6 +27,7 @@ public class CompanyController : ControllerBase
     private readonly IEnsureDefaultCompanyService _ensureDefaultCompanyService;
     private readonly ITenantContext _tenantContext;
     private readonly IMediator _mediator;
+    private readonly IClientPortalService _clientPortalService;
     private readonly ILogger<CompanyController> _logger;
 
     public CompanyController(
@@ -34,6 +36,7 @@ public class CompanyController : ControllerBase
         IEnsureDefaultCompanyService ensureDefaultCompanyService,
         ITenantContext tenantContext,
         IMediator mediator,
+        IClientPortalService clientPortalService,
         ILogger<CompanyController> logger)
     {
         _masterContext = masterContext;
@@ -41,6 +44,7 @@ public class CompanyController : ControllerBase
         _ensureDefaultCompanyService = ensureDefaultCompanyService;
         _tenantContext = tenantContext;
         _mediator = mediator;
+        _clientPortalService = clientPortalService;
         _logger = logger;
     }
 
@@ -244,6 +248,8 @@ public class CompanyController : ControllerBase
                 }
 
                 company.SetCnssEmployerNumber(dto.CnssEmployerNumber);
+                if (dto.ClientPortalEnabled.HasValue)
+                    company.SetClientPortalEnabled(dto.ClientPortalEnabled.Value);
 
                 await _companyRepository.UpdateAsync(company, cancellationToken);
             }
@@ -331,7 +337,16 @@ public class CompanyController : ControllerBase
             DefaultPaymentTerms = null,
             InvoiceFooter = null,
             WarehouseName = warehouseName,
-            CnssEmployerNumber = company?.CnssEmployerNumber
+            CnssEmployerNumber = company?.CnssEmployerNumber,
+            ClientPortalEnabled = company?.ClientPortalEnabled ?? true
         };
     }
+
+    [HttpPatch("client-portal")]
+    [Authorize(Policy = PermissionPolicies.SettingsUpdate)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> PatchClientPortal(
+        [FromBody] UpdateClientPortalSettingsRequest request,
+        CancellationToken cancellationToken)
+        => this.ToActionResult(await _clientPortalService.SetPortalEnabledAsync(request.Enabled, cancellationToken));
 }

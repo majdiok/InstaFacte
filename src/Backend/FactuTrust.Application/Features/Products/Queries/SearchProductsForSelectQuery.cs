@@ -24,13 +24,16 @@ public sealed class SearchProductsForSelectQueryHandler
     public const int MaxPageSize = 100;
 
     private readonly IProductRepository _productRepository;
+    private readonly IProductAttributeRepository _attributeRepository;
     private readonly ILogger<SearchProductsForSelectQueryHandler> _logger;
 
     public SearchProductsForSelectQueryHandler(
         IProductRepository productRepository,
+        IProductAttributeRepository attributeRepository,
         ILogger<SearchProductsForSelectQueryHandler> logger)
     {
         _productRepository = productRepository;
+        _attributeRepository = attributeRepository;
         _logger = logger;
     }
 
@@ -51,7 +54,18 @@ public sealed class SearchProductsForSelectQueryHandler
             cancellationToken);
         sw.Stop();
 
-        var dtos = items.Select(ProductDetailMapper.ToSelectDto).ToList();
+        var productIds = items.Select(p => p.Id).ToList();
+        var attrsByProduct = await _attributeRepository.GetVariantAttributesByProductIdsAsync(
+            productIds, cancellationToken);
+
+        var dtos = items.Select(p =>
+        {
+            attrsByProduct.TryGetValue(p.Id, out var attrs);
+            var summary = attrs is { Count: > 0 }
+                ? ProductDetailMapper.FormatAttributeSummary(attrs)
+                : null;
+            return ProductDetailMapper.ToSelectDto(p, summary);
+        }).ToList();
         // Approximate total: avoid a second COUNT round-trip for autocomplete.
         var totalCount = dtos.Count == pageSize
             ? page * pageSize + 1

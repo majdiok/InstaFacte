@@ -53,6 +53,8 @@ public sealed class SubmitInvoiceCommandHandler
     private readonly ICashRegisterSessionRepository _cashRegisterSessions;
     private readonly ITrackedDocumentStockService _trackedStock;
     private readonly IRecurringContractInvoiceLinker _recurringContractLinker;
+    private readonly IStockMovementRepository _stockMovementRepository;
+    private readonly IStockItemRepository _stockItemRepository;
 
     public SubmitInvoiceCommandHandler(
         IInvoiceDraftRepository draftRepository,
@@ -73,7 +75,9 @@ public sealed class SubmitInvoiceCommandHandler
         ILogger<SubmitInvoiceCommandHandler> logger,
         ICashRegisterSessionRepository cashRegisterSessions,
         ITrackedDocumentStockService trackedStock,
-        IRecurringContractInvoiceLinker recurringContractLinker)
+        IRecurringContractInvoiceLinker recurringContractLinker,
+        IStockMovementRepository stockMovementRepository,
+        IStockItemRepository stockItemRepository)
     {
         _draftRepository = draftRepository;
         _invoiceRepository = invoiceRepository;
@@ -94,6 +98,8 @@ public sealed class SubmitInvoiceCommandHandler
         _cashRegisterSessions = cashRegisterSessions;
         _trackedStock = trackedStock;
         _recurringContractLinker = recurringContractLinker;
+        _stockMovementRepository = stockMovementRepository;
+        _stockItemRepository = stockItemRepository;
     }
 
     public async Task<Result<InvoiceCreatedResultDto>> Handle(
@@ -351,8 +357,22 @@ public sealed class SubmitInvoiceCommandHandler
                 }
             }
 
-            // 10. Déduction stock articles suivis (FEFO auto — pas d'allocations au checkout POS/wizard)
-            if (draft.Type != InvoiceType.CreditNote)
+            // 10. Déduction / restauration stock articles suivis (FEFO auto — pas d'allocations au checkout POS/wizard)
+            if (draft.Type == InvoiceType.CreditNote)
+            {
+                var restoreResult = await CreditNoteStockRestore.RestoreAsync(
+                    invoice,
+                    _invoiceRepository,
+                    _productRepository,
+                    _warehouseRepository,
+                    _stockMovementRepository,
+                    _stockItemRepository,
+                    _trackedStock,
+                    cancellationToken);
+                if (restoreResult.IsFailure)
+                    return await FailSubmissionAsync(draft, restoreResult.Error);
+            }
+            else
             {
                 var stockResult = await DeductTrackedStockAsync(invoice, cancellationToken);
                 if (stockResult.IsFailure)

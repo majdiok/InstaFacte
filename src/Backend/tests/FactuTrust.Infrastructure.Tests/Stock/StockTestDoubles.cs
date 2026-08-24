@@ -74,7 +74,8 @@ internal sealed class AlwaysUntrackedDocumentStockService : ITrackedDocumentStoc
         string reference,
         MovementReason reason,
         IReadOnlyList<TrackedDocumentLine> lines,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default,
+        bool includeUntracked = false) =>
         Task.FromResult(Result.Success());
 
     public Task<Result> ApplyExitsAsync(
@@ -91,6 +92,9 @@ internal sealed class EmptyStockTraceabilityQuery : IStockTraceabilityQuery
 {
     public Task<IReadOnlyList<StockLotBalanceDto>> ListLotsAsync(Guid stockItemId, CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<StockLotBalanceDto>>(Array.Empty<StockLotBalanceDto>());
+
+    public Task<IReadOnlyList<StockValuationLayerDto>> ListValuationLayersAsync(Guid stockItemId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<StockValuationLayerDto>>(Array.Empty<StockValuationLayerDto>());
 
     public Task<IReadOnlyList<ExpiryAlertDto>> ListExpiryAlertsAsync(Guid? warehouseId, CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<ExpiryAlertDto>>(Array.Empty<ExpiryAlertDto>());

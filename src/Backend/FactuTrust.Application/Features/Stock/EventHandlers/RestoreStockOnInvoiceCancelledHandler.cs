@@ -104,16 +104,15 @@ public sealed class RestoreStockOnInvoiceCancelledHandler : INotificationHandler
 
                 var quantityToRestore = -movement.Quantity;
                 var notes = $"Réintégration suite à annulation - Motif: {notification.Reason}";
-                var allocations = movement.ProductLotId.HasValue || movement.SerialId.HasValue
-                    ? new[]
-                    {
-                        new StockAllocationInput(
-                            quantityToRestore,
-                            movement.ProductLotId,
-                            SerialId: movement.SerialId,
-                            UnitCost: movement.UnitCost)
-                    }
-                    : null;
+                var allocations = new[]
+                {
+                    new StockAllocationInput(
+                        quantityToRestore,
+                        movement.ProductLotId,
+                        SerialId: movement.SerialId,
+                        UnitCost: movement.UnitCost,
+                        RestoreValuationLayerId: movement.ValuationLayerId)
+                };
 
                 var entryResult = await _mutation.ApplyAsync(new StockMutationRequest
                 {

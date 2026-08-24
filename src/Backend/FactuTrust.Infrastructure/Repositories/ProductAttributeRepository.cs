@@ -1,4 +1,5 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Infrastructure.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
@@ -95,5 +96,49 @@ public sealed class ProductAttributeRepository : IProductAttributeRepository
             .Where(a => a.ParentProductId == parentProductId)
             .OrderBy(a => a.SortOrder)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, IReadOnlyList<ProductVariantAttributePairDto>>> GetVariantAttributesByProductIdsAsync(
+        IReadOnlyCollection<Guid> productIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (productIds.Count == 0)
+            return new Dictionary<Guid, IReadOnlyList<ProductVariantAttributePairDto>>();
+
+        await using var context = _factory.CreateContext();
+
+        var rows = await (
+            from link in context.ProductVariantAttributeValues
+            join value in context.ProductAttributeValues on link.AttributeValueId equals value.Id
+            join definition in context.ProductAttributeDefinitions on value.DefinitionId equals definition.Id
+            where productIds.Contains(link.ProductId)
+            orderby definition.SortOrder, value.SortOrder
+            select new
+            {
+                link.ProductId,
+                DefinitionId = definition.Id,
+                DefinitionCode = definition.Code,
+                DefinitionName = definition.Name,
+                DefinitionSort = definition.SortOrder,
+                ValueId = value.Id,
+                ValueCode = value.Code,
+                ValueName = value.Name,
+                ValueSort = value.SortOrder
+            }).ToListAsync(cancellationToken);
+
+        return rows
+            .GroupBy(r => r.ProductId)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<ProductVariantAttributePairDto>)g.Select(r => new ProductVariantAttributePairDto
+                {
+                    DefinitionId = r.DefinitionId,
+                    DefinitionCode = r.DefinitionCode,
+                    DefinitionName = r.DefinitionName,
+                    ValueId = r.ValueId,
+                    ValueCode = r.ValueCode,
+                    ValueName = r.ValueName,
+                    SortOrder = r.DefinitionSort * 1000 + r.ValueSort
+                }).ToList());
     }
 }

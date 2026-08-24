@@ -264,6 +264,7 @@ export class AuthService {
   readonly user = this.userSignal.asReadonly();
   readonly isAuthenticated = computed(() => !!this.userSignal());
   readonly isAdmin = computed(() => this.userSignal()?.role === 'Administrator');
+  readonly isClientPortal = computed(() => this.userSignal()?.role === 'Client');
   /** Hub Paramètres plateforme (hors « Mon profil ») : Administrateur ou Superviseur uniquement. */
   readonly canAccessPlatformSettings = computed(() => {
     const r = this.userSignal()?.role;
@@ -301,7 +302,9 @@ export class AuthService {
   }
 
   login(credentials: LoginRequest): Observable<ApiResponse<AuthResponse>> {
-    return this.http.post<ApiResponse<AuthResponse>>(`${this.API_URL}/login`, credentials)
+    return this.http.post<ApiResponse<AuthResponse>>(`${this.API_URL}/login`, credentials, {
+      context: createHttpContextSkipGlobalErrorUi()
+    })
       .pipe(
         tap(response => {
           if (response.success && response.data && !response.data.requires2Fa) {

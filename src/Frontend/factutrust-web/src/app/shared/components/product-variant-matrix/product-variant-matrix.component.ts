@@ -1,0 +1,166 @@
+import { Component, Input, OnChanges, SimpleChanges, inject, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { RouterModule } from '@angular/router';
+import { InputNumberModule } from 'primeng/inputnumber';
+import { InputTextModule } from 'primeng/inputtext';
+import { TableModule } from 'primeng/table';
+import { TagModule } from 'primeng/tag';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import {
+  BulkUpdateVariantPricesRequest,
+  ProductService,
+  ProductVariantChildDto
+} from '@core/services/product.service';
+import { ToastService } from '@core/services/toast.service';
+
+@Component({
+  selector: 'app-product-variant-matrix',
+  standalone: true,
+  imports: [
+    CommonModule,
+    FormsModule,
+    RouterModule,
+    TableModule,
+    InputNumberModule,
+    InputTextModule,
+    TagModule,
+    ButtonComponent
+  ],
+  template: `
+    @if (loading()) {
+      <p class="form-hint"><i class="pi pi-spin pi-spinner"></i> Chargement des SKU…</p>
+    } @else if (variants().length === 0) {
+      <p class="form-hint">Aucun SKU enfant généré pour ce modèle.</p>
+    } @else {
+      <div class="matrix-toolbar">
+        <app-button type="button" variant="outline" size="sm" icon="pi-copy"
+                    (clicked)="copyPricesFromParent()" [disabled]="saving()">
+          Appliquer les prix du modèle
+        </app-button>
+        <app-button type="button" variant="secondary" size="sm" icon="pi-save"
+                    (clicked)="saveAllPrices()" [disabled]="saving()">
+          Enregistrer les prix
+        </app-button>
+      </div>
+      <p-table [value]="variants()" styleClass="variant-matrix-table" [scrollable]="true" scrollHeight="320px">
+        <ng-template pTemplate="header">
+          <tr>
+            <th>Code</th>
+            <th>Axes</th>
+            <th>Prix HT</th>
+            <th>Prix TTC</th>
+            <th>Stock</th>
+            <th>Code-barres</th>
+            <th></th>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="body" let-row>
+          <tr>
+            <td><code>{{ row.code }}</code></td>
+            <td>{{ formatAttributes(row) }}</td>
+            <td>
+              <p-inputNumber [(ngModel)]="row.unitPrice" [min]="0" mode="decimal" [minFractionDigits]="3"
+                             [maxFractionDigits]="3" styleClass="w-full" />
+            </td>
+            <td>{{ row.salePriceTtc | number:'1.3-3' }}</td>
+            <td>{{ row.quantityAvailable ?? '—' }}</td>
+            <td>
+              <input pInputText [(ngModel)]="row.barcode" class="w-full" placeholder="EAN" />
+            </td>
+            <td>
+              <app-button type="button" variant="ghost" size="sm" icon="pi-external-link"
+                          [routerLink]="['/products', row.id, 'edit']">
+                Fiche
+              </app-button>
+            </td>
+          </tr>
+        </ng-template>
+      </p-table>
+    }
+  `,
+  styles: [`
+    .matrix-toolbar {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+      flex-wrap: wrap;
+    }
+    :host ::ng-deep .variant-matrix-table .p-inputnumber,
+    :host ::ng-deep .variant-matrix-table input {
+      max-width: 8rem;
+    }
+  `]
+})
+export class ProductVariantMatrixComponent implements OnChanges {
+  @Input({ required: true }) parentProductId!: string;
+
+  private readonly productService = inject(ProductService);
+  private readonly toastService = inject(ToastService);
+
+  loading = signal(false);
+  saving = signal(false);
+  variants = signal<ProductVariantChildDto[]>([]);
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['parentProductId'] && this.parentProductId) {
+      this.load();
+    }
+  }
+
+  load(): void {
+    this.loading.set(true);
+    this.productService.getProductVariants(this.parentProductId).subscribe({
+      next: res => {
+        this.loading.set(false);
+        if (res.success && res.data) {
+          this.variants.set(res.data.items.map(v => ({ ...v })));
+        }
+      },
+      error: () => this.loading.set(false)
+    });
+  }
+
+  formatAttributes(row: ProductVariantChildDto): string {
+    return row.attributes.map(a => a.valueName).join(' / ') || '—';
+  }
+
+  copyPricesFromParent(): void {
+    this.saving.set(true);
+    const request: BulkUpdateVariantPricesRequest = { mode: 'copyFromParent' };
+    this.productService.bulkUpdateVariantPrices(this.parentProductId, request).subscribe({
+      next: res => {
+        this.saving.set(false);
+        if (res.success) {
+          this.toastService.add({ severity: 'success', summary: 'Prix', detail: 'Prix du modèle appliqués aux variantes.' });
+          this.load();
+        }
+      },
+      error: () => this.saving.set(false)
+    });
+  }
+
+  saveAllPrices(): void {
+    const items = this.variants().map(v => ({
+      childId: v.id,
+      unitPrice: v.unitPrice,
+      purchasePrice: v.purchasePrice ?? undefined,
+      barcode: v.barcode ?? null
+    }));
+    this.saving.set(true);
+    this.productService.bulkUpdateVariantPrices(this.parentProductId, { mode: 'absolute', items }).subscribe({
+      next: res => {
+        this.saving.set(false);
+        if (res.success) {
+          this.toastService.add({
+            severity: 'success',
+            summary: 'Prix',
+            detail: `${res.data ?? 0} variante(s) mise(s) à jour.`
+          });
+          this.load();
+        }
+      },
+      error: () => this.saving.set(false)
+    });
+  }
+}

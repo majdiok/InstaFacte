@@ -63,6 +63,12 @@ export const SETTINGS_ROUTES: Routes = [
     title: 'Promotions - InstaFact'
   },
   {
+    path: 'variant-axes',
+    canActivate: [platformSettingsGuard],
+    loadChildren: () =>
+      import('./variant-axes/variant-axes.routes').then(m => m.VARIANT_AXES_ROUTES)
+  },
+  {
     path: 'warehouses',
     canActivate: [platformSettingsGuard],
     loadComponent: () => import('./warehouses/warehouses.component').then(m => m.WarehousesComponent),

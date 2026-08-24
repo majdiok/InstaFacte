@@ -21,6 +21,12 @@ public sealed class Company : AggregateRoot
     public bool IsDefault { get; private set; }
     public bool IsActive { get; private set; }
 
+    /// <summary>
+    /// When false, portal contacts cannot sign in and staff cannot send new invitations.
+    /// Existing contacts remain in the directory until revoked.
+    /// </summary>
+    public bool ClientPortalEnabled { get; private set; } = true;
+
     // Bank information
     public string? BankName { get; private set; }
     public string? Iban { get; private set; }
@@ -65,7 +71,8 @@ public sealed class Company : AggregateRoot
             Phone = phone,
             LogoUrl = logoUrl,
             IsDefault = false,
-            IsActive = true
+            IsActive = true,
+            ClientPortalEnabled = true
         };
 
         return Result.Success(company);
@@ -124,6 +131,11 @@ public sealed class Company : AggregateRoot
         EstablishmentCode = establishmentCode?.Trim();
         TejAdherentSince = tejAdherentSince;
         TejCategory = tejCategory;
+    }
+
+    public void SetClientPortalEnabled(bool enabled)
+    {
+        ClientPortalEnabled = enabled;
     }
 
     public void SetCnssEmployerNumber(string? cnssEmployerNumber)

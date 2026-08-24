@@ -11,6 +11,8 @@ import { StudioNavService } from '@features/studio/studio-nav.service';
 import { AppModule } from '@core/models/app-module';
 import { SECONDARY_NAV_SECTION_ORDER } from '@core/config/secondary-nav.config';
 import { AppNavService } from './app-nav.service';
+import { StockFeaturesStore } from './stock-features-store.service';
+import { VARIANT_AXES_PATH } from '@features/settings/variant-axes/variant-axes.paths';
 
 const ALL_MODULES = Object.values(AppModule).filter((v): v is number => typeof v === 'number');
 
@@ -387,5 +389,39 @@ describe('AppNavService — secondary nav parity', () => {
     expect(labels).toContain('Ventes');
     expect(labels).not.toContain('Stock');
     expect(labels).not.toContain('RH & Paie');
+  });
+
+  function settingsChildRoutes(nav: AppNavService): string[] {
+    return (
+      nav
+        .navItems()
+        .find(i => i.label === 'Paramètres')
+        ?.children?.map(c => c.route)
+        .filter((r): r is string => !!r) ?? []
+    );
+  }
+
+  it('hides Axes de variantes under Paramètres when product variants are disabled', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, companyUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const store = TestBed.inject(StockFeaturesStore);
+    spyOn(store, 'productVariantsEnabled').and.returnValue(false);
+
+    const nav = TestBed.inject(AppNavService);
+    expect(settingsChildRoutes(nav)).not.toContain(VARIANT_AXES_PATH);
+  });
+
+  it('shows Axes de variantes under Paramètres when product variants are enabled', () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, companyUser);
+    TestBed.inject(FirmContextService).syncFromUser();
+
+    const store = TestBed.inject(StockFeaturesStore);
+    spyOn(store, 'productVariantsEnabled').and.returnValue(true);
+
+    const nav = TestBed.inject(AppNavService);
+    expect(settingsChildRoutes(nav)).toContain(VARIANT_AXES_PATH);
   });
 });

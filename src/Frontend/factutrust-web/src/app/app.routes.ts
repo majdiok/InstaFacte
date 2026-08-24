@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { authGuard } from './core/guards/auth.guard';
+import { VARIANT_AXES_PATH } from './features/settings/variant-axes/variant-axes.paths';
 import { warehouseSelectedGuard } from './core/guards/warehouse-selected.guard';
 import { moduleGuard, posModuleGuard } from './core/guards/module.guard';
 import { firmNativeRedirectGuard } from './core/guards/firm-native-redirect.guard';
@@ -7,6 +8,7 @@ import { delegatedReadonlyGuard } from './core/guards/delegated-readonly.guard';
 import { delegatedFirmNavGuard } from './core/guards/delegated-firm-nav.guard';
 import { companyAccountingNavGuard } from './core/guards/company-accounting-nav.guard';
 import { documentationAccessGuard } from './core/guards/documentation-access.guard';
+import { staffShellGuard } from './core/guards/staff-shell.guard';
 
 export const routes: Routes = [
   {
@@ -16,6 +18,10 @@ export const routes: Routes = [
   {
     path: 'auth',
     loadChildren: () => import('./features/auth/auth.routes').then(m => m.AUTH_ROUTES)
+  },
+  {
+    path: 'portal',
+    loadChildren: () => import('./features/portal/portal.routes').then(m => m.PORTAL_ROUTES)
   },
   {
     path: 'legal/terms',
@@ -32,13 +38,13 @@ export const routes: Routes = [
     path: 'pos',
     loadComponent: () => import('./features/pos/pos-shell.component').then(m => m.PosShellComponent),
     loadChildren: () => import('./features/pos/pos.routes').then(m => m.POS_ROUTES),
-    canActivate: [authGuard, warehouseSelectedGuard, posModuleGuard],
+    canActivate: [authGuard, staffShellGuard, warehouseSelectedGuard, posModuleGuard],
     data: { fullWidth: true, hideLayout: true }
   },
   {
     path: '',
     loadComponent: () => import('./core/layout/main-layout/main-layout.component').then(m => m.MainLayoutComponent),
-    canActivate: [authGuard, warehouseSelectedGuard, firmNativeRedirectGuard, delegatedFirmNavGuard, companyAccountingNavGuard, delegatedReadonlyGuard, moduleGuard],
+    canActivate: [authGuard, staffShellGuard, warehouseSelectedGuard, firmNativeRedirectGuard, delegatedFirmNavGuard, companyAccountingNavGuard, delegatedReadonlyGuard, moduleGuard],
     children: [
       {
         path: 'access-denied',
@@ -89,7 +95,11 @@ export const routes: Routes = [
       },
       {
         path: 'product-attributes',
-        loadChildren: () => import('./features/product-attributes/product-attributes.routes').then(m => m.PRODUCT_ATTRIBUTES_ROUTES)
+        children: [
+          { path: '', pathMatch: 'full', redirectTo: VARIANT_AXES_PATH },
+          { path: 'new', redirectTo: `${VARIANT_AXES_PATH}/new` },
+          { path: ':id/edit', redirectTo: `${VARIANT_AXES_PATH}/:id/edit` }
+        ]
       },
       {
         path: 'reports',

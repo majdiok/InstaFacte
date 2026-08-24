@@ -2,6 +2,7 @@ using FactuTrust.API.Authorization;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Products.Commands;
 using FactuTrust.Application.Features.Products.Queries;
@@ -12,6 +13,7 @@ using FactuTrust.Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace FactuTrust.API.Controllers;
 
@@ -34,6 +36,7 @@ public class ProductsController : ControllerBase
     private readonly IProductImageSearchService _imageSearchService;
     private readonly IProductImageStorageService _imageStorageService;
     private readonly ITenantContext _tenantContext;
+    private readonly StockTraceabilityOptions _stockOptions;
     private readonly ILogger<ProductsController> _logger;
 
     public ProductsController(
@@ -42,6 +45,7 @@ public class ProductsController : ControllerBase
         IProductImageSearchService imageSearchService,
         IProductImageStorageService imageStorageService,
         ITenantContext tenantContext,
+        IOptions<StockTraceabilityOptions> stockOptions,
         ILogger<ProductsController> logger)
     {
         _mediator = mediator;
@@ -49,7 +53,16 @@ public class ProductsController : ControllerBase
         _imageSearchService = imageSearchService;
         _imageStorageService = imageStorageService;
         _tenantContext = tenantContext;
+        _stockOptions = stockOptions.Value;
         _logger = logger;
+    }
+
+    private IActionResult? EnsureVariantsEnabled()
+    {
+        if (!_stockOptions.ProductVariantsEnabled)
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponse<object>.Fail("La fonctionnalité variantes produit est désactivée pour cette entreprise."));
+        return null;
     }
 
     /// <summary>
@@ -66,9 +79,15 @@ public class ProductsController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] Guid? warehouseId = null,
+        [FromQuery] bool excludeVariantTemplates = false,
+        [FromQuery] Guid? parentProductId = null,
+        [FromQuery] bool? isVariantTemplate = null,
+        [FromQuery] bool? hasParentProduct = null,
         CancellationToken cancellationToken = default)
     {
-        var query = new GetProductsQuery(search, type, isActive, categoryId, page, pageSize, warehouseId);
+        var query = new GetProductsQuery(
+            search, type, isActive, categoryId, page, pageSize, warehouseId,
+            excludeVariantTemplates, parentProductId, isVariantTemplate, hasParentProduct);
         var result = await _mediator.Send(query, cancellationToken);
         if (result.IsFailure)
             return BadRequest(ApiResponse<PagedResult<ProductListDto>>.Fail(result.Error.Description));
@@ -93,6 +112,29 @@ public class ProductsController : ControllerBase
         if (result.IsFailure)
             return BadRequest(ApiResponse<PagedResult<ProductSelectDto>>.Fail(result.Error.Description));
         return Ok(ApiResponse<PagedResult<ProductSelectDto>>.Ok(result.Value));
+    }
+
+    /// <summary>
+    /// Search variant template products for grouped picker (step 1).
+    /// </summary>
+    [HttpGet("templates/select")]
+    [Authorize(Policy = PermissionPolicies.ProductsRead)]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<ProductSelectDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> SearchProductTemplatesForSelect(
+        [FromQuery] string? search,
+        [FromQuery] bool? isActive = true,
+        [FromQuery] int pageSize = 50,
+        CancellationToken cancellationToken = default)
+    {
+        if (EnsureVariantsEnabled() is { } denied)
+            return denied;
+
+        var result = await _mediator.Send(
+            new SearchProductTemplatesForSelectQuery(search, isActive, pageSize),
+            cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<IReadOnlyList<ProductSelectDto>>.Fail(result.Error.Description));
+        return Ok(ApiResponse<IReadOnlyList<ProductSelectDto>>.Ok(result.Value));
     }
 
     /// <summary>
@@ -375,6 +417,9 @@ public class ProductsController : ControllerBase
     [Authorize(Policy = PermissionPolicies.ProductsRead)]
     public async Task<IActionResult> ListAttributes(CancellationToken cancellationToken)
     {
+        if (EnsureVariantsEnabled() is { } denied)
+            return denied;
+
         var result = await _mediator.Send(new ListProductAttributesQuery(), cancellationToken);
         return Ok(ApiResponse<IReadOnlyList<ProductAttributeDto>>.Ok(result));
     }
@@ -385,6 +430,9 @@ public class ProductsController : ControllerBase
         [FromBody] CreateProductAttributeCommand command,
         CancellationToken cancellationToken)
     {
+        if (EnsureVariantsEnabled() is { } denied)
+            return denied;
+
         var result = await _mediator.Send(command, cancellationToken);
         if (result.IsFailure)
             return BadRequest(ApiResponse<Guid>.Fail(result.Error.Description));
@@ -479,10 +527,81 @@ public class ProductsController : ControllerBase
         [FromBody] IReadOnlyList<GenerateProductVariantAxis> axes,
         CancellationToken cancellationToken)
     {
+        if (EnsureVariantsEnabled() is { } denied)
+            return denied;
+
         var result = await _mediator.Send(new GenerateProductVariantsCommand(id, axes), cancellationToken);
         if (result.IsFailure)
             return BadRequest(ApiResponse<IReadOnlyList<Guid>>.Fail(result.Error.Description));
         return Ok(ApiResponse<IReadOnlyList<Guid>>.Ok(result.Value, "Variantes générées"));
+    }
+
+    [HttpGet("{id:guid}/variants")]
+    [Authorize(Policy = PermissionPolicies.ProductsRead)]
+    [ProducesResponseType(typeof(ApiResponse<PagedResult<ProductVariantChildDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetProductVariants(
+        Guid id,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 100,
+        [FromQuery] Guid? warehouseId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (EnsureVariantsEnabled() is { } denied)
+            return denied;
+
+        var result = await _mediator.Send(
+            new GetProductVariantsQuery(id, page, pageSize, warehouseId),
+            cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<PagedResult<ProductVariantChildDto>>.Fail(result.Error.Description));
+        return Ok(ApiResponse<PagedResult<ProductVariantChildDto>>.Ok(result.Value));
+    }
+
+    [HttpGet("{id:guid}/variant-axes")]
+    [Authorize(Policy = PermissionPolicies.ProductsRead)]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<ProductVariantAxisDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetProductVariantAxes(Guid id, CancellationToken cancellationToken)
+    {
+        if (EnsureVariantsEnabled() is { } denied)
+            return denied;
+
+        var result = await _mediator.Send(new GetProductVariantAxesQuery(id), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<IReadOnlyList<ProductVariantAxisDto>>.Fail(result.Error.Description));
+        return Ok(ApiResponse<IReadOnlyList<ProductVariantAxisDto>>.Ok(result.Value));
+    }
+
+    [HttpGet("{id:guid}/variant-profile")]
+    [Authorize(Policy = PermissionPolicies.ProductsRead)]
+    [ProducesResponseType(typeof(ApiResponse<ProductVariantProfileDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetProductVariantProfile(Guid id, CancellationToken cancellationToken)
+    {
+        if (EnsureVariantsEnabled() is { } denied)
+            return denied;
+
+        var result = await _mediator.Send(new GetProductVariantProfileQuery(id), cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<ProductVariantProfileDto>.Fail(result.Error.Description));
+        return Ok(ApiResponse<ProductVariantProfileDto>.Ok(result.Value));
+    }
+
+    [HttpPatch("{id:guid}/variants/prices")]
+    [Authorize(Policy = PermissionPolicies.ProductsUpdate)]
+    [ProducesResponseType(typeof(ApiResponse<int>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> BulkUpdateVariantPrices(
+        Guid id,
+        [FromBody] BulkUpdateVariantPricesRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (EnsureVariantsEnabled() is { } denied)
+            return denied;
+
+        var result = await _mediator.Send(
+            new BulkUpdateVariantPricesCommand(id, request.Mode, request.Items ?? Array.Empty<BulkUpdateVariantPriceItem>()),
+            cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<int>.Fail(result.Error.Description));
+        return Ok(ApiResponse<int>.Ok(result.Value, $"{result.Value} variante(s) mise(s) à jour"));
     }
 
     [HttpPost("{id:guid}/opening-valuation-layer")]

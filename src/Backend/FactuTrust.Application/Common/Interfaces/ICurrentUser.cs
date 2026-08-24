@@ -41,6 +41,12 @@ public interface ICurrentUser
     /// True when an accounting firm user is operating on a delegated client dossier.
     /// </summary>
     bool IsAccountingFirmDelegatedContext { get; }
+
+    /// <summary>CRM client id when the caller is a portal contact; otherwise null.</summary>
+    Guid? PortalClientId { get; }
+
+    /// <summary>True when the JWT is a client-portal session (role Client + client_id claim).</summary>
+    bool IsClientPortal { get; }
     
     /// <summary>
     /// Gets the user's IP address.
