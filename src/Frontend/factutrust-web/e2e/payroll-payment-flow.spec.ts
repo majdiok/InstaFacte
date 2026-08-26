@@ -18,9 +18,18 @@ test.describe('Payroll treasury link', () => {
     }
     await firstRun.click();
     await expect(page).toHaveURL(/\/payroll\/runs\//);
-    const treasury = page.getByText('Trésorerie');
-    if (await treasury.isVisible()) {
-      await expect(treasury).toBeVisible();
+    const treasuryBanner = page.locator('.treasury-banner');
+    if (!(await treasuryBanner.isVisible())) {
+      test.skip();
+      return;
+    }
+    await expect(treasuryBanner).toBeVisible();
+    await expect(treasuryBanner.locator('.treasury-banner__item')).toHaveCount(3);
+    await expect(page.getByText('Payé', { exact: true })).toBeVisible();
+    await expect(page.getByText('Reste', { exact: true })).toBeVisible();
+    const netCard = page.locator('.stat-card').filter({ hasText: 'NET' });
+    if (await netCard.isVisible()) {
+      await expect(netCard.locator('.stat-value')).toHaveText(/\d[\d\s]*[,\.]\d{3}/);
     }
   });
 });

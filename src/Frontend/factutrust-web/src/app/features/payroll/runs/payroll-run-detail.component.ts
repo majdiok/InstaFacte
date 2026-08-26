@@ -75,14 +75,27 @@ import { FirmGovernanceService } from '@core/services/firm-governance.service';
         [message]="consultBannerMessage()" />
 
       @if (run()!.status === 'Validated' || run()!.status === 'Closed') {
-        <div class="treasury-banner mb-4">
-          <span>Trésorerie : <strong>{{ run()!.paymentStatusDisplay ?? 'Non payé' }}</strong></span>
-          <span>Payé : <strong>{{ (run()!.totalPaid ?? 0) | payrollAmount }}</strong></span>
-          <span>Reste : <strong>{{ (run()!.remainingToPay ?? run()!.totalNet) | payrollAmount }}</strong></span>
+        <div class="mb-4">
+          <div class="treasury-banner" role="region" aria-label="État de trésorerie de la paie">
+            <div class="treasury-banner__item">
+              <span class="treasury-banner__label">Trésorerie</span>
+              <strong [class]="'treasury-banner__value ' + treasuryStatusClass()">
+                {{ run()!.paymentStatusDisplay ?? 'Non payé' }}
+              </strong>
+            </div>
+            <div class="treasury-banner__item">
+              <span class="treasury-banner__label">Payé</span>
+              <strong class="treasury-banner__value">{{ (run()!.totalPaid ?? 0) | payrollAmount }}</strong>
+            </div>
+            <div class="treasury-banner__item">
+              <span class="treasury-banner__label">Reste</span>
+              <strong class="treasury-banner__value">{{ (run()!.remainingToPay ?? run()!.totalNet) | payrollAmount }}</strong>
+            </div>
+          </div>
         </div>
       }
 
-      <app-payroll-stat-grid [items]="totalsStats()" class="mb-4" />
+      <app-payroll-stat-grid [items]="totalsStats()" density="run-detail" class="mb-4" />
 
       @if (run()!.status === 'Draft' || run()!.status === 'Calculated') {
         <app-payroll-prorata-preview-panel [runId]="runId" class="mb-4" />
@@ -224,11 +237,37 @@ import { FirmGovernanceService } from '@core/services/firm-governance.service';
   `,
   styles: [`
     .treasury-banner {
-      display: flex; flex-wrap: wrap; gap: var(--spacing-4);
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: var(--spacing-4, 1rem);
       padding: var(--spacing-3) var(--spacing-4);
       background: var(--color-surface-secondary);
       border-radius: var(--radius-md);
       font-size: var(--font-size-sm);
+    }
+    .treasury-banner__item {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-1);
+      min-width: 0;
+    }
+    .treasury-banner__label {
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-semibold);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--color-text-secondary);
+    }
+    .treasury-banner__value {
+      font-family: var(--font-family-mono, 'JetBrains Mono', monospace);
+      font-variant-numeric: tabular-nums;
+      color: var(--color-text-primary);
+    }
+    .treasury-banner__value--unpaid { color: var(--color-text-secondary); }
+    .treasury-banner__value--partial { color: var(--color-warning-700, #b45309); }
+    .treasury-banner__value--paid { color: var(--color-success-700, #15803d); }
+    @media (max-width: 768px) {
+      .treasury-banner { grid-template-columns: 1fr; }
     }
     .mb-3 { margin-bottom: var(--spacing-4); }
     .mb-4 { margin-bottom: var(--spacing-6); display: block; }
@@ -293,7 +332,14 @@ export class PayrollRunDetailComponent implements OnInit {
     if (!r) return [];
     return [
       { label: 'Brut', value: formatPayrollAmount(r.totalGross, false), icon: 'pi-money-bill', variant: 'primary' },
-      { label: 'Net', value: formatPayrollAmount(r.totalNet, false), icon: 'pi-wallet', variant: 'success', featured: true },
+      {
+        label: 'Net',
+        value: formatPayrollAmount(r.totalNet, false),
+        valueTitle: formatPayrollAmount(r.totalNet, true),
+        icon: 'pi-wallet',
+        variant: 'success',
+        featured: true
+      },
       { label: 'IRPP', value: formatPayrollAmount(r.totalIrpp, false), icon: 'pi-percentage', variant: 'warning' },
       ...(r.totalIrppSmigExemption && r.totalIrppSmigExemption > 0
         ? [{ label: 'Exon. IRPP SMIG', value: formatPayrollAmount(r.totalIrppSmigExemption, false), icon: 'pi-shield', variant: 'success' as const }]
@@ -347,6 +393,13 @@ export class PayrollRunDetailComponent implements OnInit {
         })
     });
   }
+
+  treasuryStatusClass = computed(() => {
+    const status = this.run()?.paymentStatus;
+    if (status === 'FullyPaid') return 'treasury-banner__value--paid';
+    if (status === 'PartiallyPaid') return 'treasury-banner__value--partial';
+    return 'treasury-banner__value--unpaid';
+  });
 
   paymentTagSeverity(status?: string): 'success' | 'warning' | 'secondary' {
     if (status === 'Paid') return 'success';

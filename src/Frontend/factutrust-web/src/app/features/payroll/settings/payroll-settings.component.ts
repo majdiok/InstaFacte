@@ -9,8 +9,10 @@ import { ButtonModule } from 'primeng/button';
 import { TabsModule } from 'primeng/tabs';
 import { PayrollService, PayrollParameters, PayrollGarnishmentBracket } from '@core/services/payroll.service';
 import { ToastService } from '@core/services/toast.service';
+import { TooltipModule } from 'primeng/tooltip';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
+import { FormSectionComponent } from '@shared/components/form-section/form-section.component';
 import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-settings.component';
 
 @Component({
@@ -27,6 +29,8 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
     ButtonModule,
     PageHeaderComponent,
     ButtonComponent,
+    FormSectionComponent,
+    TooltipModule,
     PayrollSocialFundsSettingsComponent
   ],
   template: `
@@ -51,65 +55,88 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
           </p-tablist>
           <p-tabpanels>
           <p-tabpanel [value]="0">
-            <div class="payroll-form-row">
-              <div class="payroll-form-group">
-                <label>CNSS salarié (%)</label>
-                <p-inputNumber [(ngModel)]="params()!.cnssEmployeeRate" name="cnssEmployeeRate" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
+            <app-form-section title="CNSS" icon="pi-building" variant="compact">
+              <div class="payroll-form-row payroll-form-row--cols-4">
+                <div class="payroll-form-group">
+                  <label>CNSS salarié (%)</label>
+                  <p-inputNumber [(ngModel)]="params()!.cnssEmployeeRate" name="cnssEmployeeRate" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
+                </div>
+                <div class="payroll-form-group">
+                  <label>CNSS employeur (%)</label>
+                  <p-inputNumber [(ngModel)]="params()!.cnssEmployerRate" name="cnssEmployerRate" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
+                </div>
+                <div class="payroll-form-group">
+                  <label>CNSS salarié RSA (%)</label>
+                  <p-inputNumber [(ngModel)]="params()!.cnssEmployeeRateRsa" name="cnssEmployeeRateRsa" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
+                </div>
+                <div class="payroll-form-group">
+                  <label>CNSS employeur RSA (%)</label>
+                  <p-inputNumber [(ngModel)]="params()!.cnssEmployerRateRsa" name="cnssEmployerRateRsa" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
+                </div>
               </div>
-              <div class="payroll-form-group">
-                <label>CNSS employeur (%)</label>
-                <p-inputNumber [(ngModel)]="params()!.cnssEmployerRate" name="cnssEmployerRate" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
+            </app-form-section>
+
+            <app-form-section title="CSS" icon="pi-percentage" variant="compact">
+              <div class="payroll-form-row payroll-form-row--cols-3">
+                <div class="payroll-form-group">
+                  <label>CSS (%)</label>
+                  <p-inputNumber [(ngModel)]="params()!.cssRate" name="cssRate" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
+                </div>
+                <div class="payroll-form-group">
+                  <label pTooltip="Seuil d'exonération CSS annuel">Seuil exonération CSS (TND/an)</label>
+                  <p-inputNumber [(ngModel)]="params()!.cssAnnualExemptionThreshold" name="cssExemption" [minFractionDigits]="3" [min]="0" [locale]="'fr-TN'" styleClass="w-full" />
+                </div>
+                <div class="payroll-form-group">
+                  <label>CSS patronale (%)</label>
+                  <p-inputNumber [(ngModel)]="params()!.cssEmployerRate" name="cssEmployerRate" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
+                </div>
               </div>
-              <div class="payroll-form-group">
-                <label>CNSS salarié RSA (%)</label>
-                <p-inputNumber [(ngModel)]="params()!.cnssEmployeeRateRsa" name="cnssEmployeeRateRsa" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
+            </app-form-section>
+
+            <app-form-section title="TFP &amp; FOPROLOS" icon="pi-briefcase" variant="compact">
+              <div class="payroll-form-row payroll-form-row--cols-3">
+                <div class="payroll-form-group">
+                  <label>TFP industrie (%)</label>
+                  <p-inputNumber [(ngModel)]="params()!.tfpRateIndustry" name="tfpIndustry" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
+                </div>
+                <div class="payroll-form-group">
+                  <label>TFP autres (%)</label>
+                  <p-inputNumber [(ngModel)]="params()!.tfpRateOther" name="tfpOther" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
+                </div>
+                <div class="payroll-form-group">
+                  <label>FOPROLOS (%)</label>
+                  <p-inputNumber [(ngModel)]="params()!.foprolosRate" name="foprolos" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
+                </div>
               </div>
-              <div class="payroll-form-group">
-                <label>CNSS employeur RSA (%)</label>
-                <p-inputNumber [(ngModel)]="params()!.cnssEmployerRateRsa" name="cnssEmployerRateRsa" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
+            </app-form-section>
+
+            <app-form-section title="SMIG &amp; avantages" icon="pi-wallet" variant="compact">
+              <div class="payroll-form-row payroll-form-row--cols-2">
+                <div class="payroll-form-group">
+                  <label>SMIG mensuel (TND)</label>
+                  <p-inputNumber [(ngModel)]="params()!.monthlySmig" name="smig" [minFractionDigits]="3" [min]="0" [locale]="'fr-TN'" styleClass="w-full" />
+                </div>
+                <div class="payroll-form-group">
+                  <label pTooltip="Plafond exonération ticket restaurant / jour (TND)">Plafond ticket resto. / jour (TND)</label>
+                  <p-inputNumber [(ngModel)]="params()!.mealVoucherDailyExemptionCap" name="mealVoucherCap" [minFractionDigits]="3" [min]="0" [locale]="'fr-TN'" styleClass="w-full" />
+                </div>
               </div>
-              <div class="payroll-form-group">
-                <label>CSS (%)</label>
-                <p-inputNumber [(ngModel)]="params()!.cssRate" name="cssRate" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
+            </app-form-section>
+
+            <app-form-section title="Frais professionnels" icon="pi-calculator" variant="compact">
+              <div class="payroll-form-row payroll-form-row--cols-2">
+                <div class="payroll-form-group">
+                  <label>Frais pro. (%)</label>
+                  <p-inputNumber [(ngModel)]="params()!.professionalExpensesRate" name="proExpRate" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
+                </div>
+                <div class="payroll-form-group">
+                  <label>Plafond frais pro. (annuel)</label>
+                  <p-inputNumber [(ngModel)]="params()!.professionalExpensesAnnualCap" name="proExpCap" [minFractionDigits]="3" [min]="0" [locale]="'fr-TN'" styleClass="w-full" />
+                </div>
               </div>
-              <div class="payroll-form-group">
-                <label>Seuil exonération CSS (annuel)</label>
-                <p-inputNumber [(ngModel)]="params()!.cssAnnualExemptionThreshold" name="cssExemption" [minFractionDigits]="3" [min]="0" [locale]="'fr-TN'" styleClass="w-full" />
-              </div>
-              <div class="payroll-form-group">
-                <label>CSS patronale (%)</label>
-                <p-inputNumber [(ngModel)]="params()!.cssEmployerRate" name="cssEmployerRate" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
-              </div>
-              <div class="payroll-form-group">
-                <label>TFP industrie (%)</label>
-                <p-inputNumber [(ngModel)]="params()!.tfpRateIndustry" name="tfpIndustry" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
-              </div>
-              <div class="payroll-form-group">
-                <label>TFP autres (%)</label>
-                <p-inputNumber [(ngModel)]="params()!.tfpRateOther" name="tfpOther" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
-              </div>
-              <div class="payroll-form-group">
-                <label>FOPROLOS (%)</label>
-                <p-inputNumber [(ngModel)]="params()!.foprolosRate" name="foprolos" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
-              </div>
-              <div class="payroll-form-group">
-                <label>SMIG mensuel (TND)</label>
-                <p-inputNumber [(ngModel)]="params()!.monthlySmig" name="smig" [minFractionDigits]="3" [min]="0" [locale]="'fr-TN'" styleClass="w-full" />
-              </div>
-              <div class="payroll-form-group">
-                <label>Plafond exonération ticket restaurant / jour (TND)</label>
-                <p-inputNumber [(ngModel)]="params()!.mealVoucherDailyExemptionCap" name="mealVoucherCap" [minFractionDigits]="3" [min]="0" [locale]="'fr-TN'" styleClass="w-full" />
-              </div>
-              <div class="payroll-form-group">
-                <label>Frais pro. (%)</label>
-                <p-inputNumber [(ngModel)]="params()!.professionalExpensesRate" name="proExpRate" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
-              </div>
-              <div class="payroll-form-group">
-                <label>Plafond frais pro. (annuel)</label>
-                <p-inputNumber [(ngModel)]="params()!.professionalExpensesAnnualCap" name="proExpCap" [minFractionDigits]="3" [min]="0" [locale]="'fr-TN'" styleClass="w-full" />
-              </div>
-            </div>
-            <p class="payroll-info-text mt-2">Références légales tunisiennes : CNSS 9,18 % / 16,57 % — CSS 0,5 % (seuil 5 000 TND/an) — TFP 1 % industrie, 2 % autres — FOPROLOS 1 % — frais professionnels 10 % plafonnés à 2 000 TND/an.</p>
+            </app-form-section>
+
+            <p class="payroll-info-panel">Références légales tunisiennes : CNSS 9,18 % / 16,57 % — CSS 0,5 % (seuil 5 000 TND/an) — TFP 1 % industrie, 2 % autres — FOPROLOS 1 % — frais professionnels 10 % plafonnés à 2 000 TND/an.</p>
           </p-tabpanel>
 
           <p-tabpanel [value]="1">
@@ -140,99 +167,121 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
           </p-tabpanel>
 
           <p-tabpanel [value]="2">
-            <div class="payroll-form-row">
-              <div class="payroll-form-group">
-                <label>Chef de famille (annuel, TND)</label>
-                <p-inputNumber [(ngModel)]="params()!.headOfFamilyAnnualDeduction" name="headDeduction" [minFractionDigits]="3" [min]="0" [locale]="'fr-TN'" styleClass="w-full" />
+            <app-form-section title="Déductions de base" icon="pi-home" variant="compact">
+              <div class="payroll-form-row payroll-form-row--cols-3">
+                <div class="payroll-form-group">
+                  <label>Chef de famille (annuel, TND)</label>
+                  <p-inputNumber [(ngModel)]="params()!.headOfFamilyAnnualDeduction" name="headDeduction" [minFractionDigits]="3" [min]="0" [locale]="'fr-TN'" styleClass="w-full" />
+                </div>
+                <div class="payroll-form-group">
+                  <label>Enfant à charge (annuel, TND)</label>
+                  <p-inputNumber [(ngModel)]="params()!.childAnnualDeduction" name="childDeduction" [minFractionDigits]="3" [min]="0" [locale]="'fr-TN'" styleClass="w-full" />
+                </div>
+                <div class="payroll-form-group">
+                  <label>Enfants déductibles max.</label>
+                  <p-inputNumber [(ngModel)]="params()!.maxDeductibleChildren" name="maxChildren" [min]="0" [useGrouping]="false" [locale]="'fr-TN'" styleClass="w-full" />
+                </div>
               </div>
-              <div class="payroll-form-group">
-                <label>Enfant à charge (annuel, TND)</label>
-                <p-inputNumber [(ngModel)]="params()!.childAnnualDeduction" name="childDeduction" [minFractionDigits]="3" [min]="0" [locale]="'fr-TN'" styleClass="w-full" />
+            </app-form-section>
+
+            <app-form-section title="Enfants à cas particulier" icon="pi-user-plus" variant="compact">
+              <div class="payroll-form-row payroll-form-row--cols-2">
+                <div class="payroll-form-group">
+                  <label pTooltip="Non boursier, âge &lt; 25 ans">Enfant étudiant (annuel, TND)</label>
+                  <p-inputNumber [(ngModel)]="params()!.studentChildAnnualDeduction" name="studentDeduction" [minFractionDigits]="3" [min]="0" [locale]="'fr-TN'" styleClass="w-full" />
+                </div>
+                <div class="payroll-form-group">
+                  <label pTooltip="Hors plafond du nombre d'enfants déductibles">Enfant infirme (annuel, TND)</label>
+                  <p-inputNumber [(ngModel)]="params()!.disabledChildAnnualDeduction" name="disabledDeduction" [minFractionDigits]="3" [min]="0" [locale]="'fr-TN'" styleClass="w-full" />
+                </div>
               </div>
-              <div class="payroll-form-group">
-                <label>Enfants déductibles max.</label>
-                <p-inputNumber [(ngModel)]="params()!.maxDeductibleChildren" name="maxChildren" [min]="0" styleClass="w-full" />
+            </app-form-section>
+
+            <app-form-section title="Parents à charge" icon="pi-users" variant="compact">
+              <div class="payroll-form-row payroll-form-row--cols-2">
+                <div class="payroll-form-group">
+                  <label pTooltip="Pourcentage du revenu net imposable">Parent à charge — taux (%)</label>
+                  <p-inputNumber [(ngModel)]="params()!.parentDeductionRatePercent" name="parentRate" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
+                </div>
+                <div class="payroll-form-group">
+                  <label>Parent à charge — plafond annuel (TND)</label>
+                  <p-inputNumber [(ngModel)]="params()!.parentAnnualDeductionCap" name="parentCap" [minFractionDigits]="3" [min]="0" [locale]="'fr-TN'" styleClass="w-full" />
+                </div>
               </div>
-              <div class="payroll-form-group">
-                <label>Enfant étudiant non boursier &lt; 25 ans (annuel, TND)</label>
-                <p-inputNumber [(ngModel)]="params()!.studentChildAnnualDeduction" name="studentDeduction" [minFractionDigits]="3" [min]="0" [locale]="'fr-TN'" styleClass="w-full" />
-              </div>
-              <div class="payroll-form-group">
-                <label>Enfant infirme (annuel, TND — hors plafond)</label>
-                <p-inputNumber [(ngModel)]="params()!.disabledChildAnnualDeduction" name="disabledDeduction" [minFractionDigits]="3" [min]="0" [locale]="'fr-TN'" styleClass="w-full" />
-              </div>
-              <div class="payroll-form-group">
-                <label>Parent à charge — taux (% du revenu net)</label>
-                <p-inputNumber [(ngModel)]="params()!.parentDeductionRatePercent" name="parentRate" [minFractionDigits]="2" [maxFractionDigits]="4" [min]="0" [max]="100" [locale]="'fr-TN'" styleClass="w-full" />
-              </div>
-              <div class="payroll-form-group">
-                <label>Parent à charge — plafond annuel (TND)</label>
-                <p-inputNumber [(ngModel)]="params()!.parentAnnualDeductionCap" name="parentCap" [minFractionDigits]="3" [min]="0" [locale]="'fr-TN'" styleClass="w-full" />
-              </div>
-            </div>
+            </app-form-section>
+
+            <p class="payroll-info-panel">Déductions familiales annuelles (art. 40 code IRPP), mensualisées lors du calcul de paie. Les montants s'appliquent par exercice fiscal.</p>
           </p-tabpanel>
 
           <p-tabpanel [value]="3">
-            <div class="payroll-form-row">
-              <div class="payroll-form-group switch-row">
-                <label for="enforceSmig">Contrôle SMIG sur les contrats</label>
-                <p-inputSwitch inputId="enforceSmig" [(ngModel)]="params()!.enforceSmigOnContracts" name="enforceSmig" />
-              </div>
-              <div class="payroll-form-group switch-row">
-                <label for="extendedOvertime">Taux HS étendus (175 %, 200 %)</label>
-                <p-inputSwitch inputId="extendedOvertime" [(ngModel)]="params()!.enableExtendedOvertimeRates" name="extendedOvertime" />
-              </div>
-              <div class="payroll-form-group switch-row">
-                <label for="allowanceMatrix">Matrice primes (imposable × CNSS)</label>
-                <p-inputSwitch inputId="allowanceMatrix" [(ngModel)]="params()!.enableAllowanceQuadrantMatrix" name="allowanceMatrix" />
-              </div>
-              <div class="payroll-form-group switch-row">
-                <label for="industrialSector">Secteur industriel (TFP 1 % au lieu de 2 %)</label>
-                <p-inputSwitch inputId="industrialSector" [(ngModel)]="params()!.isIndustrialSector" name="industrialSector" />
-              </div>
-              <div class="payroll-form-group switch-row">
-                <label for="irppRegularization">Régularisation IRPP annuelle (solde de tout compte)</label>
-                <p-inputSwitch inputId="irppRegularization" [(ngModel)]="params()!.enableIrppRegularization" name="irppRegularization" />
-              </div>
-              <div class="payroll-form-group switch-row">
-                <label for="automaticProrata">Prorata automatique (absences, suspensions, départs)</label>
-                <p-inputSwitch inputId="automaticProrata" [(ngModel)]="params()!.enableAutomaticProrata" name="automaticProrata" />
-              </div>
-              <div class="payroll-form-group">
-                <label for="smigExemptionMode">Exonération IRPP SMIG (art. 21)</label>
-                <p-select
-                  inputId="smigExemptionMode"
-                  [(ngModel)]="params()!.smigIrppExemptionMode"
-                  name="smigExemptionMode"
-                  [options]="smigExemptionModeOptions"
-                  optionLabel="label"
-                  optionValue="value"
-                  styleClass="w-full" />
-              </div>
-              @if (params()!.smigIrppExemptionMode === 'SmigPortion') {
-                <div class="payroll-form-group">
-                  <label>Taux applicable à la portion SMIG (%)</label>
-                  <p-inputNumber
-                    [(ngModel)]="params()!.smigIrppExemptionRateOverride"
-                    name="smigExemptionRate"
-                    [minFractionDigits]="2"
-                    [maxFractionDigits]="2"
-                    [min]="0"
-                    [max]="100"
-                    [locale]="'fr-TN'"
-                    placeholder="15 (barème)"
-                    styleClass="w-full" />
-                  <small class="text-muted">Laisser vide pour utiliser le premier taux non nul du barème IRPP.</small>
+            <app-form-section title="Options de calcul" icon="pi-cog" variant="compact">
+              <div class="payroll-form-row payroll-form-row--cols-2">
+                <div class="payroll-form-group switch-row">
+                  <label for="enforceSmig">Contrôle SMIG sur les contrats</label>
+                  <p-inputSwitch inputId="enforceSmig" [(ngModel)]="params()!.enforceSmigOnContracts" name="enforceSmig" />
                 </div>
-              }
-            </div>
-            <p class="payroll-info-text mt-2">
+                <div class="payroll-form-group switch-row">
+                  <label for="extendedOvertime">Taux HS étendus (175 %, 200 %)</label>
+                  <p-inputSwitch inputId="extendedOvertime" [(ngModel)]="params()!.enableExtendedOvertimeRates" name="extendedOvertime" />
+                </div>
+                <div class="payroll-form-group switch-row">
+                  <label for="allowanceMatrix">Matrice primes (imposable × CNSS)</label>
+                  <p-inputSwitch inputId="allowanceMatrix" [(ngModel)]="params()!.enableAllowanceQuadrantMatrix" name="allowanceMatrix" />
+                </div>
+                <div class="payroll-form-group switch-row">
+                  <label for="industrialSector">Secteur industriel (TFP 1 % au lieu de 2 %)</label>
+                  <p-inputSwitch inputId="industrialSector" [(ngModel)]="params()!.isIndustrialSector" name="industrialSector" />
+                </div>
+                <div class="payroll-form-group switch-row">
+                  <label for="irppRegularization">Régularisation IRPP annuelle (solde de tout compte)</label>
+                  <p-inputSwitch inputId="irppRegularization" [(ngModel)]="params()!.enableIrppRegularization" name="irppRegularization" />
+                </div>
+                <div class="payroll-form-group switch-row">
+                  <label for="automaticProrata">Prorata automatique (absences, suspensions, départs)</label>
+                  <p-inputSwitch inputId="automaticProrata" [(ngModel)]="params()!.enableAutomaticProrata" name="automaticProrata" />
+                </div>
+              </div>
+            </app-form-section>
+
+            <app-form-section title="Exonération IRPP SMIG" icon="pi-shield" variant="compact">
+              <div class="payroll-form-row payroll-form-row--cols-2">
+                <div class="payroll-form-group">
+                  <label for="smigExemptionMode">Exonération IRPP SMIG (art. 21)</label>
+                  <p-select
+                    inputId="smigExemptionMode"
+                    [(ngModel)]="params()!.smigIrppExemptionMode"
+                    name="smigExemptionMode"
+                    [options]="smigExemptionModeOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    styleClass="w-full" />
+                </div>
+                @if (params()!.smigIrppExemptionMode === 'SmigPortion') {
+                  <div class="payroll-form-group">
+                    <label>Taux applicable à la portion SMIG (%)</label>
+                    <p-inputNumber
+                      [(ngModel)]="params()!.smigIrppExemptionRateOverride"
+                      name="smigExemptionRate"
+                      [minFractionDigits]="2"
+                      [maxFractionDigits]="2"
+                      [min]="0"
+                      [max]="100"
+                      [locale]="'fr-TN'"
+                      placeholder="15 (barème)"
+                      styleClass="w-full" />
+                    <small class="field-hint">Laisser vide pour utiliser le premier taux non nul du barème IRPP.</small>
+                  </div>
+                }
+              </div>
+            </app-form-section>
+
+            <p class="payroll-info-panel">
               L'article 21 du code de l'IRPP (LF 2019) exonère l'IRPP sur la part du salaire ne dépassant pas le SMIG.
               Le mode « Portion SMIG exonérée » s'applique à tous les salariés ; « Exonération totale » ne concerne que les salaires de base ≤ SMIG.
               La CSS n'est pas impactée. Voir la documentation paie pour le détail des formules.
             </p>
-            <p class="payroll-info-text mt-2">Le taux TFP appliqué aux cycles de paie de cet exercice suit ce paramètre ; recalculez les cycles en brouillon pour l'appliquer.</p>
-            <p class="payroll-info-text mt-2">
+            <p class="payroll-info-panel">Le taux TFP appliqué aux cycles de paie de cet exercice suit ce paramètre ; recalculez les cycles en brouillon pour l'appliquer.</p>
+            <p class="payroll-info-panel">
               La régularisation IRPP calcule l'écart annuel IRPP/CSS lors d'un départ ou en fin d'exercice.
               Le prorata automatique réduit le brut des jours non travaillés (congés sans solde, suspensions non rémunérées, sortie en cours de mois).
               Les deux options s'appliquent aux cycles recalculés après modification.
@@ -283,13 +332,11 @@ import { PayrollSocialFundsSettingsComponent } from './payroll-social-funds-sett
   `,
   styles: [`
     .mb-3 { margin-bottom: var(--spacing-4); }
-    .mb-3 { margin-bottom: var(--spacing-4); }
     .mt-2 { margin-top: var(--spacing-2); }
     .mt-4 { margin-top: var(--spacing-6); }
     .mr-2 { margin-right: var(--spacing-2); }
     .w-full { width: 100%; }
     .w-8rem { width: 8rem; }
-    .switch-row { flex-direction: row; align-items: center; justify-content: space-between; }
     .form-actions { display: flex; gap: var(--spacing-3); }
   `]
 })

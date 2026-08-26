@@ -300,6 +300,15 @@
   font-weight: var(--font-weight-semibold, 600);
 }
 
+.product-empty {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2, 0.5rem);
+  padding: var(--spacing-2, 0.5rem);
+  color: var(--color-text-tertiary, #64748b);
+  font-size: var(--font-size-sm, 0.875rem);
+}
+
 .badge-non-stock {
   background: var(--color-warning-100, #fef3c7);
   color: var(--color-warning-800, #92400e);

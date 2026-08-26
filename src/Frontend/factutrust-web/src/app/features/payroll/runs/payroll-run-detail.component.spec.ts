@@ -63,9 +63,15 @@ describe('PayrollRunDetailComponent', () => {
         { provide: AuthService, useValue: {
           hasPermission: (p: string) => perms.includes(p),
           isAccountingFirm: () => false,
-          isDelegatedMode: () => false
+          isDelegatedMode: () => false,
+          isPayrollFirmManaged: () => false
         } },
-        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => 'run-1' } } } }
+        { provide: ActivatedRoute, useValue: {
+          snapshot: {
+            paramMap: { get: () => 'run-1' },
+            data: {}
+          }
+        } }
       ]
     });
     fixture = TestBed.createComponent(PayrollRunDetailComponent);
@@ -100,5 +106,28 @@ describe('PayrollRunDetailComponent', () => {
   it('hides Export virement when Validated without payroll:export', () => {
     setup([PERMISSIONS.payroll.read], { status: 'Validated', statusDisplay: 'Validé' });
     expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('Export virement');
+  });
+
+  it('shows treasury banner with three separate items when Validated', () => {
+    setup([PERMISSIONS.payroll.read], {
+      status: 'Validated',
+      statusDisplay: 'Validé',
+      paymentStatus: 'NotPaid',
+      paymentStatusDisplay: 'Non payé',
+      totalPaid: 0,
+      remainingToPay: 1010.497,
+      totalNet: 1010.497
+    });
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('.treasury-banner')).toBeTruthy();
+    expect(root.querySelectorAll('.treasury-banner__item').length).toBe(3);
+    expect(root.textContent).toContain('Non payé');
+    expect(root.textContent).toContain('0,000 TND');
+    expect(root.textContent).not.toMatch(/Non payéPayé/);
+  });
+
+  it('hides treasury banner when status is Calculated', () => {
+    setup([PERMISSIONS.payroll.read], { status: 'Calculated' });
+    expect((fixture.nativeElement as HTMLElement).querySelector('.treasury-banner')).toBeNull();
   });
 });

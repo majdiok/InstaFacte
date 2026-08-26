@@ -87,4 +87,28 @@ describe('StatCardComponent', () => {
     const label = fixture.nativeElement.querySelector('.stat-label') as HTMLElement;
     expect(getComputedStyle(label).color).not.toBe('rgb(0, 0, 0)');
   });
+
+  it('should render a long monetary value in stat-value', () => {
+    component.value = '12 345 678,999';
+    fixture.detectChanges();
+    const valueEl = fixture.nativeElement.querySelector('.stat-value') as HTMLElement;
+    expect(valueEl.textContent?.trim()).toBe('12 345 678,999');
+  });
+
+  it('should apply featured class and clamp-friendly value styling', () => {
+    component.featured = true;
+    component.value = '1 010,497';
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.stat-card--featured')).toBeTruthy();
+    const valueEl = fixture.nativeElement.querySelector('.stat-value') as HTMLElement;
+    expect(valueEl.textContent?.trim()).toBe('1 010,497');
+  });
+
+  it('should set title attribute when valueTitle is provided', () => {
+    component.value = '1 010,497';
+    component.valueTitle = '1 010,497 TND';
+    fixture.detectChanges();
+    const valueEl = fixture.nativeElement.querySelector('.stat-value') as HTMLElement;
+    expect(valueEl.getAttribute('title')).toBe('1 010,497 TND');
+  });
 });

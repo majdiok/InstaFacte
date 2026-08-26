@@ -4,7 +4,7 @@ import { CommonModule, CurrencyPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { Subject, forkJoin, of } from 'rxjs';
-import { catchError, debounceTime, distinctUntilChanged, map, switchMap } from 'rxjs/operators';
+import { catchError, debounceTime, finalize, map, switchMap } from 'rxjs/operators';
 import { DatePickerModule } from 'primeng/datepicker';
 import { InputTextModule } from 'primeng/inputtext';
 import { Textarea } from 'primeng/textarea';
@@ -48,6 +48,12 @@ import {
   isStockVoucherDraft,
   movementReasonName
 } from '@core/services/stock-voucher.service';
+
+interface ProductSearchRequest {
+  query: string;
+  warehouseId: string | null;
+  seq: number;
+}
 
 interface VoucherLine {
   id: string | null;
@@ -101,7 +107,8 @@ export class StockVoucherFormComponent implements OnInit {
   private messageService = inject(MessageService);
   private errorHandler = inject(ErrorHandlerService);
   private destroyRef = inject(DestroyRef);
-  private readonly productSearch$ = new Subject<string>();
+  private productSearchSeq = 0;
+  private readonly productSearch$ = new Subject<ProductSearchRequest>();
 
   readonly isEntry = (this.route.snapshot.data['kind'] as StockVoucherKindName) !== 'Issue';
   readonly kind: StockVoucherKindName = this.isEntry ? 'Entry' : 'Issue';
@@ -125,6 +132,7 @@ export class StockVoucherFormComponent implements OnInit {
   selectedQuantity = 1;
   selectedUnitCost = 0;
   submitting = signal(false);
+  productsLoading = signal(false);
   productSuggestions = signal<ProductListItem[]>([]);
   stockByProductId = signal<Map<string, { qty: number; avgCost: number }>>(new Map());
   stockFeatures = signal<StockFeatures | null>(null);
@@ -170,21 +178,31 @@ export class StockVoucherFormComponent implements OnInit {
     this.productSearch$
       .pipe(
         debounceTime(300),
-        distinctUntilChanged(),
-        switchMap((query) =>
-          this.productService.getProducts({
+        switchMap(({ query, warehouseId }) => {
+          this.productsLoading.set(true);
+          return this.productService.getProducts({
             search: query.trim() || undefined,
             isActive: true,
             page: 1,
             pageSize: 50,
-            warehouseId: this.warehouseId ?? undefined
-          }).pipe(catchError(() => of({ success: false as const, data: undefined })))
-        ),
+            warehouseId: warehouseId ?? undefined
+          }).pipe(
+            catchError(() => {
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Produits',
+                detail: 'Impossible de charger les produits'
+              });
+              return of({ success: false as const, data: undefined });
+            }),
+            finalize(() => this.productsLoading.set(false))
+          );
+        }),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((res) => {
         const items = res.success && res.data?.items ? res.data.items.filter(p => p.isStockManaged) : [];
-        this.productSuggestions.set(items);
+        this.productSuggestions.set([...items]);
       });
 
     if (this.editId) {
@@ -197,6 +215,7 @@ export class StockVoucherFormComponent implements OnInit {
 
   onWarehouseChange(id: string | null): void {
     this.warehouseId = id;
+    this.productSuggestions.set([]);
     this.loadStock();
     this.loadTraceabilityContext();
   }
@@ -245,7 +264,11 @@ export class StockVoucherFormComponent implements OnInit {
   }
 
   onProductSearch(event: AutoCompleteCompleteEvent): void {
-    this.productSearch$.next(event.query ?? '');
+    this.productSearch$.next({
+      query: event.query ?? '',
+      warehouseId: this.warehouseId,
+      seq: ++this.productSearchSeq
+    });
   }
 
   addLine(): void {

@@ -56,7 +56,7 @@ type StatAppearance = 'default' | 'solid' | 'mini-sparkline';
             }
           </div>
           <span class="stat-label">{{ label }}</span>
-          <span class="stat-value">{{ value }}</span>
+          <span class="stat-value" [attr.title]="valueTitle || null">{{ value }}</span>
           <ng-content></ng-content>
           @if (sparklinePath) {
             <svg class="stat-sparkline" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true">
@@ -142,6 +142,7 @@ type StatAppearance = 'default' | 'solid' | 'mini-sparkline';
     .stat-body {
       position: relative;
       z-index: 1;
+      min-width: 0;
     }
 
     .stat-top {
@@ -186,12 +187,16 @@ type StatAppearance = 'default' | 'solid' | 'mini-sparkline';
       color: var(--color-text-secondary);
       text-transform: uppercase;
       letter-spacing: 0.06em;
+      line-height: 1.3;
+      overflow-wrap: break-word;
       margin-bottom: var(--spacing-1);
     }
 
     .stat-value {
       display: block;
-      font-size: var(--font-size-2xl);
+      min-width: 0;
+      overflow-wrap: anywhere;
+      font-size: clamp(var(--font-size-lg), 2.5vw, var(--font-size-2xl));
       font-weight: 700;
       color: var(--color-text-primary);
       line-height: 1.15;
@@ -201,7 +206,9 @@ type StatAppearance = 'default' | 'solid' | 'mini-sparkline';
     }
 
     .stat-card--featured { padding: var(--spacing-6); }
-    .stat-card--featured .stat-value { font-size: var(--font-size-3xl); }
+    .stat-card--featured .stat-value {
+      font-size: clamp(var(--font-size-xl), 3vw, var(--font-size-3xl));
+    }
 
     /* Superieur solid KPI — fond coloré plein + texte blanc */
     .stat-card--solid {
@@ -260,6 +267,8 @@ type StatAppearance = 'default' | 'solid' | 'mini-sparkline';
 export class StatCardComponent {
   @Input() label = '';
   @Input() value: string | number = '';
+  /** Optional native tooltip on the value (e.g. amount with currency suffix). */
+  @Input() valueTitle?: string;
   @Input() icon = 'pi-chart-line';
   @Input() variant: StatVariant = 'primary';
   @Input() change?: number;
