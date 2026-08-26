@@ -37,8 +37,10 @@ function snapshot(): PosState {
     linkedInvoice: null,
     printMode: 'receipt',
     isDemoMode: false,
-    paymentSchedule: 'full',
-    firstPurchaseDiscountPercent: null
+    paymentSchedule: 'immediate',
+    firstPurchaseDiscountPercent: null,
+    clientOutstanding: null,
+    overLimitAcknowledged: false
   };
 }
 

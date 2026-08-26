@@ -108,6 +108,9 @@
                         <thead>
                             <tr>
                                 <th scope="col">Désignation</th>
+                                @if (hasOpeningLotLines()) {
+                                    <th scope="col" class="col-lot">N° de lot</th>
+                                }
                                 <th scope="col" class="col-qty">Quantité disponible</th>
                                 <th scope="col" class="col-qty">Quantité comptée</th>
                             </tr>
@@ -120,10 +123,29 @@
                                         @if (line.productCode) {
                                             <span class="product-code">REF: {{ line.productCode }}</span>
                                         }
-                                        @if (line.lotNumber) {
+                                        @if (line.lotNumber && line.productLotId) {
                                             <span class="lot-label">Lot {{ line.lotNumber }}</span>
                                         }
                                     </td>
+                                    @if (hasOpeningLotLines()) {
+                                        <td class="col-lot">
+                                            @if (needsOpeningLotForLine(line)) {
+                                                <input
+                                                    type="text"
+                                                    pInputText
+                                                    class="lot-input"
+                                                    [ngModel]="line.lotNumberInput"
+                                                    (ngModelChange)="updateLineLotNumber(line, $event)"
+                                                    placeholder="N° de lot"
+                                                    [attr.aria-required]="requiresLotNumberForLine(line)"
+                                                    [attr.aria-label]="'Numéro de lot pour ' + line.productName" />
+                                            } @else if (line.lotNumber) {
+                                                <span class="lot-label">{{ line.lotNumber }}</span>
+                                            } @else {
+                                                <span class="lot-empty">—</span>
+                                            }
+                                        </td>
+                                    }
                                     <td class="col-qty theoretical">
                                         {{ line.theoreticalQuantity }}
                                     </td>

@@ -15,7 +15,8 @@ namespace FactuTrust.Application.Features.Inventory.Commands;
 public sealed record InventoryPendingCount(
     Guid ProductId,
     decimal CountedQuantity,
-    Guid? ProductLotId = null);
+    Guid? ProductLotId = null,
+    string? LotNumber = null);
 
 /// <summary>
 /// Valide l'inventaire et applique les ajustements de stock.
@@ -111,7 +112,11 @@ public sealed class ValidateInventoryCommandHandler : IRequestHandler<ValidateIn
         {
             foreach (var pending in request.PendingCounts)
             {
-                var recordResult = inventory.RecordCount(pending.ProductId, pending.CountedQuantity, pending.ProductLotId);
+                var recordResult = inventory.RecordCount(
+                    pending.ProductId,
+                    pending.CountedQuantity,
+                    pending.ProductLotId,
+                    pending.LotNumber);
                 if (recordResult.IsFailure)
                     return Result.Failure<ValidateInventoryResult>(recordResult.Error);
             }
@@ -124,6 +129,8 @@ public sealed class ValidateInventoryCommandHandler : IRequestHandler<ValidateIn
         // Apply stock adjustments for each product with difference
         var adjustments = new List<AdjustmentSummaryItem>();
         var linesWithDifference = inventory.CountLines.Where(l => l.Difference != 0).ToList();
+        var productIds = linesWithDifference.Select(l => l.ProductId).Distinct().ToList();
+        var trackingByProduct = await _productRepository.GetTrackingInfoByIdsAsync(productIds, cancellationToken);
 
         foreach (var line in linesWithDifference)
         {
@@ -133,56 +140,15 @@ public sealed class ValidateInventoryCommandHandler : IRequestHandler<ValidateIn
             var stockItem = await _stockItemRepository.GetByProductAndWarehouseAsync(
                 line.ProductId, inventory.WarehouseId, cancellationToken);
 
-            var difference = line.Difference;
-            Result mutationResult;
-            if (line.ProductLotId.HasValue)
-            {
-                var qty = Math.Abs(difference);
-                mutationResult = difference > 0
-                    ? ResultFrom(await _mutation.ApplyAsync(new StockMutationRequest
-                    {
-                        ProductId = line.ProductId,
-                        WarehouseId = inventory.WarehouseId,
-                        Kind = StockMutationKind.Entry,
-                        Quantity = qty,
-                        UnitCost = stockItem?.AverageCost ?? 0,
-                        Reason = MovementReason.InventoryAdjustment,
-                        Notes = $"Ajustement inventaire lot {line.LotNumber}",
-                        DocumentLineId = line.Id,
-                        DocumentKind = StockDocumentKind.Inventory,
-                        Allocations = new[]
-                        {
-                            new StockAllocationInput(qty, line.ProductLotId, LotNumber: line.LotNumber)
-                        }
-                    }, cancellationToken))
-                    : ResultFrom(await _mutation.ApplyAsync(new StockMutationRequest
-                    {
-                        ProductId = line.ProductId,
-                        WarehouseId = inventory.WarehouseId,
-                        Kind = StockMutationKind.Exit,
-                        Quantity = qty,
-                        Reason = MovementReason.InventoryAdjustment,
-                        Notes = $"Ajustement inventaire lot {line.LotNumber}",
-                        DocumentLineId = line.Id,
-                        DocumentKind = StockDocumentKind.Inventory,
-                        Allocations = new[]
-                        {
-                            new StockAllocationInput(qty, line.ProductLotId, LotNumber: line.LotNumber)
-                        }
-                    }, cancellationToken));
-            }
-            else
-            {
-                mutationResult = ResultFrom(await _mutation.ApplyAsync(new StockMutationRequest
-                {
-                    ProductId = line.ProductId,
-                    WarehouseId = inventory.WarehouseId,
-                    Kind = StockMutationKind.Adjust,
-                    Quantity = line.CountedQuantity.Value,
-                    Notes = $"Ajustement inventaire #{inventory.Id:N}",
-                    Reason = MovementReason.InventoryAdjustment
-                }, cancellationToken));
-            }
+            var tracking = trackingByProduct.GetValueOrDefault(line.ProductId);
+            var trackingMode = tracking?.TrackingMode ?? TrackingMode.None;
+
+            var mutationResult = await ApplyLineMutationAsync(
+                inventory,
+                line,
+                stockItem,
+                trackingMode,
+                cancellationToken);
 
             if (mutationResult.IsFailure)
                 return Result.Failure<ValidateInventoryResult>(mutationResult.Error);
@@ -213,6 +179,88 @@ public sealed class ValidateInventoryCommandHandler : IRequestHandler<ValidateIn
             HumanMessage = humanMessage,
             Adjustments = adjustments
         });
+    }
+
+    private async Task<Result> ApplyLineMutationAsync(
+        PhysicalInventory inventory,
+        InventoryCountLine line,
+        StockItem? stockItem,
+        TrackingMode trackingMode,
+        CancellationToken cancellationToken)
+    {
+        if (trackingMode == TrackingMode.Serial)
+        {
+            return Result.Failure(Error.Validation(
+                "TrackingMode",
+                $"L'article « {line.ProductName} » est suivi par numéro de série. Comptez par n° de série (inventaire)."));
+        }
+
+        if (trackingMode == TrackingMode.Lot)
+        {
+            if (!HasLotIdentity(line))
+            {
+                return Result.Failure(Error.Validation(
+                    "LotNumber",
+                    $"Le numéro de lot est obligatoire pour « {line.ProductName} » (article suivi par lot)."));
+            }
+
+            return ResultFrom(await ApplyLotAllocatedMutationAsync(inventory, line, stockItem, cancellationToken));
+        }
+
+        return ResultFrom(await _mutation.ApplyAsync(new StockMutationRequest
+        {
+            ProductId = line.ProductId,
+            WarehouseId = inventory.WarehouseId,
+            Kind = StockMutationKind.Adjust,
+            Quantity = line.CountedQuantity!.Value,
+            Notes = $"Ajustement inventaire #{inventory.Id:N}",
+            Reason = MovementReason.InventoryAdjustment
+        }, cancellationToken));
+    }
+
+    private static bool HasLotIdentity(InventoryCountLine line) =>
+        line.ProductLotId.HasValue || !string.IsNullOrWhiteSpace(line.LotNumber);
+
+    private async Task<Result<StockMutationResult>> ApplyLotAllocatedMutationAsync(
+        PhysicalInventory inventory,
+        InventoryCountLine line,
+        StockItem? stockItem,
+        CancellationToken cancellationToken)
+    {
+        var difference = line.Difference;
+        var qty = Math.Abs(difference);
+        var lotLabel = line.LotNumber ?? line.ProductLotId?.ToString("N");
+        var allocation = new StockAllocationInput(qty, line.ProductLotId, LotNumber: line.LotNumber);
+
+        if (difference > 0)
+        {
+            return await _mutation.ApplyAsync(new StockMutationRequest
+            {
+                ProductId = line.ProductId,
+                WarehouseId = inventory.WarehouseId,
+                Kind = StockMutationKind.Entry,
+                Quantity = qty,
+                UnitCost = stockItem?.AverageCost ?? 0,
+                Reason = MovementReason.InventoryAdjustment,
+                Notes = $"Ajustement inventaire lot {lotLabel}",
+                DocumentLineId = line.Id,
+                DocumentKind = StockDocumentKind.Inventory,
+                Allocations = new[] { allocation }
+            }, cancellationToken);
+        }
+
+        return await _mutation.ApplyAsync(new StockMutationRequest
+        {
+            ProductId = line.ProductId,
+            WarehouseId = inventory.WarehouseId,
+            Kind = StockMutationKind.Exit,
+            Quantity = qty,
+            Reason = MovementReason.InventoryAdjustment,
+            Notes = $"Ajustement inventaire lot {lotLabel}",
+            DocumentLineId = line.Id,
+            DocumentKind = StockDocumentKind.Inventory,
+            Allocations = new[] { allocation }
+        }, cancellationToken);
     }
 
     private static string GenerateSummaryMessage(int total, int withChanges, int ok)

@@ -38,7 +38,7 @@ import { formatPeriodLabel } from '../models/guided-scenarios.catalog';
 
           <select id="eh-journal" class="me-input"
                   [ngModel]="store.journalCode()" (ngModelChange)="store.journalCode.set($event)"
-                  [disabled]="lockJournal()">
+                  [disabled]="lockJournal() || store.editingLocked()">
 
             @for (opt of store.journalOptions(); track opt.code) {
 
@@ -58,7 +58,8 @@ import { formatPeriodLabel } from '../models/guided-scenarios.catalog';
 
           <input id="eh-date" type="date" class="me-input"
 
-                 [ngModel]="store.entryDate()" (ngModelChange)="store.setEntryDate($event)" />
+                 [ngModel]="store.entryDate()" (ngModelChange)="store.setEntryDate($event)"
+                 [disabled]="lockDate() || store.editingLocked()" />
 
           @if (store.periodsLoaded()) {
 
@@ -76,7 +77,8 @@ import { formatPeriodLabel } from '../models/guided-scenarios.catalog';
 
           <select id="eh-period" class="me-input"
 
-                  [ngModel]="store.periodId()" (ngModelChange)="store.setPeriodId($event || null)">
+                  [ngModel]="store.periodId()" (ngModelChange)="store.setPeriodId($event || null)"
+                  [disabled]="lockDate() || store.editingLocked()">
 
             <option [ngValue]="null">— Sélectionner —</option>
 
@@ -116,9 +118,13 @@ import { formatPeriodLabel } from '../models/guided-scenarios.catalog';
 
             <label class="field-label" for="eh-piece-num">N° pièce</label>
 
-            <input id="eh-piece-num" type="text" class="me-input me-input--locked" readonly
-
-                   value="Attribué à l'enregistrement" title="Le numéro de pièce est généré automatiquement" />
+            @if (store.editingEntryNumber() != null) {
+              <input id="eh-piece-num" type="text" class="me-input me-input--locked" readonly
+                     [value]="store.editingEntryNumber()" title="Numéro de pièce (figé)" />
+            } @else {
+              <input id="eh-piece-num" type="text" class="me-input me-input--locked" readonly
+                     value="Attribué à l'enregistrement" title="Le numéro de pièce est généré automatiquement" />
+            }
 
           </div>
 
@@ -200,6 +206,8 @@ export class EntryHeaderFormComponent {
   readonly compact = input(false);
 
   readonly lockJournal = input(false);
+
+  readonly lockDate = input(false);
 
 
 

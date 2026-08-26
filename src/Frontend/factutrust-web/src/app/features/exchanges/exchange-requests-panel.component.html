@@ -1,0 +1,364 @@
+<div class="panel req-panel" [class.req-panel--detail]="!!selectedRequest()">
+  <div class="panel__toolbar">
+    <h3>
+      Demandes & réclamations
+      <span class="req-count">{{ requests.length }}</span>
+    </h3>
+    @if (threadIsOpen) {
+      <app-button variant="primary" size="sm" icon="pi-plus" (clicked)="openCreate()">
+        Nouvelle demande
+      </app-button>
+    }
+  </div>
+
+  @if (openCreateForm) {
+    <div class="form-card">
+      <div class="ft-field">
+        <label for="req-title">Titre</label>
+        <input
+          id="req-title"
+          [ngModel]="newTitle()"
+          (ngModelChange)="newTitle.set($event); titleError.set(null)"
+          [attr.aria-invalid]="titleError() ? 'true' : null"
+        />
+        @if (titleError()) {
+          <p class="ft-field__error">{{ titleError() }}</p>
+        }
+      </div>
+      <div class="ft-field">
+        <label for="req-desc">Description</label>
+        <textarea
+          id="req-desc"
+          rows="3"
+          [ngModel]="newDescription()"
+          (ngModelChange)="newDescription.set($event)"
+        ></textarea>
+      </div>
+      <div class="form-card__row">
+        <div class="ft-field">
+          <label for="req-cat">Catégorie</label>
+          <select id="req-cat" [ngModel]="newCategory()" (ngModelChange)="setCategory($event)">
+            <option [ngValue]="0">Réclamation</option>
+            <option [ngValue]="1">Information</option>
+            <option [ngValue]="2">Document manquant</option>
+            <option [ngValue]="3">Autre</option>
+          </select>
+        </div>
+        <div class="ft-field">
+          <label for="req-prio">Priorité</label>
+          <select id="req-prio" [ngModel]="newPriority()" (ngModelChange)="setPriority($event)">
+            <option [ngValue]="0">Basse</option>
+            <option [ngValue]="1">Normale</option>
+            <option [ngValue]="2">Haute</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <app-button variant="primary" size="sm" [disabled]="creating()" (clicked)="createRequest()">
+          Créer
+        </app-button>
+        <app-button variant="ghost" size="sm" (clicked)="cancelCreate()">Annuler</app-button>
+      </div>
+    </div>
+  }
+
+  <div class="req-layout">
+    <div class="req-list-col">
+      @if (requests.length > 0) {
+        <div class="req-toolbar">
+          <input
+            type="search"
+            class="req-search"
+            placeholder="Rechercher une demande…"
+            [ngModel]="search()"
+            (ngModelChange)="search.set($event)"
+          />
+          <div class="req-chips" role="tablist" aria-label="Filtrer les demandes">
+            @for (chip of filters; track chip.id) {
+              <button
+                type="button"
+                class="req-chip"
+                [class.req-chip--active]="filter() === chip.id"
+                (click)="filter.set(chip.id)"
+              >
+                {{ chip.label }}
+                <span>{{ filterCount(chip.id) }}</span>
+              </button>
+            }
+          </div>
+        </div>
+      }
+
+      @if (requests.length === 0 && !openCreateForm) {
+        <app-empty-state
+          icon="pi-clipboard"
+          title="Aucune demande"
+          description="Créez une demande ou une réclamation pour suivre un besoin."
+          [showAction]="threadIsOpen"
+          actionLabel="Nouvelle demande"
+          (actionClick)="openCreate()"
+        />
+      } @else if (filteredRequests().length === 0 && requests.length > 0) {
+        <p class="req-filter-empty">Aucune demande ne correspond à ce filtre.</p>
+      } @else {
+        <ul class="req-list">
+          @for (r of filteredRequests(); track r.id) {
+            <li>
+              <button
+                type="button"
+                class="req-card"
+                [class.req-card--selected]="selectedRequestId === r.id"
+                [attr.aria-current]="selectedRequestId === r.id ? 'true' : null"
+                (click)="selectRequest(r.id)"
+              >
+                <div class="req-card__header">
+                  <strong>#{{ r.number }} — {{ r.title }}</strong>
+                  <app-status-badge [status]="badge(r.status)" [label]="statusLabel(r.status)" />
+                </div>
+                <div class="req-card__meta">
+                  <span>{{ catLabel(r.category) }}</span>
+                  <span>·</span>
+                  <span>{{ r.createdAt | date: 'dd/MM/yyyy' }}</span>
+                  <span>·</span>
+                  <span>{{ authorName(r.createdByUserId) }}</span>
+                  @if (isHigh(r.priority)) {
+                    <span class="req-prio">Priorité haute</span>
+                  }
+                  @if (requestDocs(r.id).length > 0) {
+                    <span class="req-docs-count">
+                      <i class="pi pi-paperclip" aria-hidden="true"></i>
+                      {{ requestDocs(r.id).length }}
+                    </span>
+                  }
+                </div>
+                @if (r.description) {
+                  <p class="req-card__desc">{{ r.description }}</p>
+                }
+              </button>
+            </li>
+          }
+        </ul>
+      }
+    </div>
+
+    @if (selectedRequest(); as req) {
+      <article class="req-detail" [attr.aria-label]="'Demande #' + req.number">
+        <button type="button" class="req-detail__back" (click)="selectRequest(null)">
+          <i class="pi pi-arrow-left" aria-hidden="true"></i>
+          Retour aux demandes
+        </button>
+        <header class="req-detail__head">
+          <div>
+            <h4>#{{ req.number }} — {{ req.title }}</h4>
+            <div class="req-detail__tags">
+              <app-status-badge [status]="badge(req.status)" [label]="statusLabel(req.status)" />
+              <span class="req-tag">{{ catLabel(req.category) }}</span>
+              @if (prioLabel(req.priority)) {
+                <span class="req-tag" [class.req-tag--high]="isHigh(req.priority)">
+                  {{ prioLabel(req.priority) }}
+                </span>
+              }
+            </div>
+          </div>
+        </header>
+
+        <dl class="req-meta-grid">
+          <div>
+            <dt>Créée le</dt>
+            <dd>{{ req.createdAt | date: 'dd/MM/yyyy HH:mm' }}</dd>
+          </div>
+          <div>
+            <dt>Auteur</dt>
+            <dd>{{ authorName(req.createdByUserId) }}</dd>
+          </div>
+          <div>
+            <dt>Assignée à</dt>
+            <dd>{{ assigneeName(req) }}</dd>
+          </div>
+          @if (req.resolvedAt) {
+            <div>
+              <dt>Résolue le</dt>
+              <dd>{{ req.resolvedAt | date: 'dd/MM/yyyy HH:mm' }}</dd>
+            </div>
+          }
+          @if (req.closedAt) {
+            <div>
+              <dt>Clôturée le</dt>
+              <dd>{{ req.closedAt | date: 'dd/MM/yyyy HH:mm' }}</dd>
+            </div>
+          }
+        </dl>
+
+        @if (req.description) {
+          <p class="req-detail__body">{{ req.description }}</p>
+        }
+
+        @if (canTakeCharge(req) || canResolve(req) || canClose(req) || canWait(req) || canResume(req) || canAssign(req)) {
+          <div class="req-actions">
+            @if (canTakeCharge(req)) {
+              <app-button
+                variant="primary"
+                size="sm"
+                [disabled]="statusBusyId() === req.id"
+                (clicked)="changeStatus(req, 'InProgress')"
+              >
+                Prendre en charge
+              </app-button>
+            }
+            @if (canResume(req)) {
+              <app-button
+                variant="secondary"
+                size="sm"
+                [disabled]="statusBusyId() === req.id"
+                (clicked)="changeStatus(req, 'InProgress')"
+              >
+                Reprendre
+              </app-button>
+            }
+            @if (canWait(req)) {
+              <app-button
+                variant="ghost"
+                size="sm"
+                [disabled]="statusBusyId() === req.id"
+                (clicked)="changeStatus(req, 'WaitingClient')"
+              >
+                Attente client
+              </app-button>
+              <app-button
+                variant="ghost"
+                size="sm"
+                [disabled]="statusBusyId() === req.id"
+                (clicked)="changeStatus(req, 'WaitingFirm')"
+              >
+                Attente cabinet
+              </app-button>
+            }
+            @if (canResolve(req)) {
+              <app-button
+                variant="secondary"
+                size="sm"
+                [disabled]="statusBusyId() === req.id"
+                (clicked)="changeStatus(req, 'Resolved')"
+              >
+                Résoudre
+              </app-button>
+            }
+            @if (canClose(req)) {
+              <app-button
+                variant="ghost"
+                size="sm"
+                [disabled]="statusBusyId() === req.id"
+                (clicked)="changeStatus(req, 'Closed')"
+              >
+                Clôturer
+              </app-button>
+            }
+          </div>
+        }
+
+        @if (canAssign(req)) {
+          <div class="req-assign">
+            <label for="req-assign">Assigner à</label>
+            @if (firmParticipants().length === 0) {
+              <p class="muted">Aucun collaborateur cabinet dans cet échange.</p>
+            } @else {
+              <select id="req-assign" [ngModel]="assignUserId()" (ngModelChange)="assignUserId.set($event)">
+                <option value="">Choisir un collaborateur…</option>
+                @for (p of firmParticipants(); track p.userId) {
+                  <option [value]="p.userId">{{ p.displayName }}</option>
+                }
+              </select>
+              <app-button
+                variant="secondary"
+                size="sm"
+                [disabled]="!assignUserId() || statusBusyId() === req.id"
+                (clicked)="assignToSelected(req)"
+              >
+                Assigner
+              </app-button>
+            }
+          </div>
+        }
+
+        <section class="req-section">
+          <h5>Pièces jointes</h5>
+          <ul class="req-docs">
+            @for (d of requestDocs(req.id); track d.id) {
+              <li>
+                <button type="button" class="req-docs__name" (click)="downloadDoc(d)">
+                  <i class="pi {{ fileIcon(d.fileName) }}" aria-hidden="true"></i>
+                  {{ d.fileName }}
+                </button>
+                <span>{{ fileSize(d.sizeBytes) }} · {{ d.uploadedAt | date: 'dd/MM/yyyy' }}</span>
+              </li>
+            } @empty {
+              <li class="muted">Aucun document lié</li>
+            }
+          </ul>
+          @if (threadIsOpen) {
+            <label class="req-upload">
+              <i class="pi pi-upload" aria-hidden="true"></i>
+              {{ uploading() ? 'Envoi…' : 'Joindre un fichier' }}
+              <input type="file" hidden [disabled]="uploading()" (change)="onAttachSelected(req, $event)" />
+            </label>
+          }
+        </section>
+
+        <section class="req-section">
+          <h5>Commentaires</h5>
+          @if (commentsLoading()) {
+            <p class="muted">Chargement…</p>
+          }
+          <ul class="req-comments">
+            @for (c of comments(); track c.id) {
+              <li>
+                <div class="req-comments__avatar" aria-hidden="true">{{ initials(c.authorDisplayName) }}</div>
+                <div>
+                  <strong>{{ c.authorDisplayName }}</strong>
+                  <span>{{ c.createdAt | date: 'dd/MM/yyyy HH:mm' }}</span>
+                  <p>{{ c.body }}</p>
+                </div>
+              </li>
+            } @empty {
+              @if (!commentsLoading()) {
+                <li class="muted">Aucun commentaire</li>
+              }
+            }
+          </ul>
+          @if (canComment(req)) {
+            <div class="req-comment-form">
+              <textarea
+                rows="3"
+                placeholder="Ajouter un commentaire…"
+                [ngModel]="commentBody()"
+                (ngModelChange)="commentBody.set($event)"
+              ></textarea>
+              <app-button
+                variant="primary"
+                size="sm"
+                [disabled]="!commentBody().trim() || postingComment()"
+                (clicked)="postComment(req)"
+              >
+                Envoyer
+              </app-button>
+            </div>
+          }
+        </section>
+
+        @if (requestActivity(req).length > 0) {
+          <section class="req-section">
+            <h5>Activité</h5>
+            <ul class="req-activity">
+              @for (h of requestActivity(req); track h.id) {
+                <li>
+                  <strong>{{ auditLabel(h.eventType) }}</strong>
+                  <span>{{ h.actorDisplayName }} · {{ h.occurredAt | date: 'dd/MM/yyyy HH:mm' }}</span>
+                </li>
+              }
+            </ul>
+          </section>
+        }
+      </article>
+    }
+  </div>
+</div>

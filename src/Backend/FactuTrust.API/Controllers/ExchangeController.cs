@@ -227,6 +227,34 @@ public sealed class ExchangeController : ControllerBase
         return Map(result);
     }
 
+    [HttpGet("{threadId:guid}/requests/{requestId:guid}/comments")]
+    [Authorize(Roles = $"{nameof(UserRole.Administrator)},{nameof(UserRole.FirmManager)},{nameof(UserRole.FirmAccountant)}")]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<ExchangeRequestCommentDto>>>> ListRequestComments(
+        Guid threadId, Guid requestId, CancellationToken cancellationToken)
+    {
+        var ctx = ResolveCaller();
+        if (ctx is null) return Unauthorized();
+
+        var result = await _exchange.ListRequestCommentsAsync(
+            threadId, requestId, ctx.Value.TenantId, ctx.Value.Kind, ctx.Value.UserId, ctx.Value.Role,
+            ctx.Value.FirmScope, cancellationToken);
+        return Map(result);
+    }
+
+    [HttpPost("{threadId:guid}/requests/{requestId:guid}/comments")]
+    [Authorize(Roles = $"{nameof(UserRole.Administrator)},{nameof(UserRole.FirmManager)},{nameof(UserRole.FirmAccountant)}")]
+    public async Task<ActionResult<ApiResponse<ExchangeRequestCommentDto>>> AddRequestComment(
+        Guid threadId, Guid requestId, [FromBody] CreateExchangeRequestCommentDto dto, CancellationToken cancellationToken)
+    {
+        var ctx = ResolveCaller();
+        if (ctx is null) return Unauthorized();
+
+        var result = await _exchange.AddRequestCommentAsync(
+            threadId, requestId, ctx.Value.TenantId, ctx.Value.Kind, ctx.Value.UserId, ctx.Value.DisplayName,
+            ctx.Value.Role, ctx.Value.FirmScope, dto, cancellationToken);
+        return Map(result);
+    }
+
     [HttpGet("{threadId:guid}/tasks")]
     [Authorize(Roles = $"{nameof(UserRole.Administrator)},{nameof(UserRole.FirmManager)},{nameof(UserRole.FirmAccountant)}")]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<ExchangeTaskDto>>>> ListTasks(

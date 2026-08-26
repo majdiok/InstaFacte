@@ -14,7 +14,14 @@ public sealed record StockAllocationInput(
     string? SerialNumber = null,
     decimal? UnitCost = null,
     DateTime? ReceivedAt = null,
-    Guid? RestoreValuationLayerId = null);
+    Guid? RestoreValuationLayerId = null)
+{
+    public bool HasTraceabilityIdentity() =>
+        ProductLotId is not null
+        || !string.IsNullOrWhiteSpace(LotNumber)
+        || SerialId is not null
+        || !string.IsNullOrWhiteSpace(SerialNumber);
+}
 
 public sealed record StockMutationRequest
 {

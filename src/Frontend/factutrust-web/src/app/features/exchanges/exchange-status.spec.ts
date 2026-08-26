@@ -1,7 +1,11 @@
 import {
+  auditEventBelongsToRequest,
   auditEventLabel,
+  canAssignRequest,
   canCompleteTask,
   canResolveRequest,
+  canResumeRequest,
+  canSetWaiting,
   documentIconClass,
   initialsFromName,
   isInternalNote,
@@ -15,6 +19,8 @@ import {
   parseExchangeRequestStatus,
   parseExchangeThreadStatus,
   participantRoleLabel,
+  requestMatchesFilter,
+  requestStatusBadge,
   requestStatusLabel,
   threadStatusLabel
 } from './exchange-status';
@@ -46,6 +52,7 @@ describe('exchange-status', () => {
     expect(isRequestActionable('Closed')).toBe(false);
     expect(canResolveRequest('WaitingClient')).toBe(true);
     expect(requestStatusLabel('WaitingFirm')).toBe('Attente cabinet');
+    expect(requestStatusLabel('Closed')).toBe('Clôturée');
   });
 
   it('parses task helpers', () => {
@@ -80,5 +87,43 @@ describe('exchange-status', () => {
     expect(documentIconClass('notes.docx')).toBe('pi-file-word');
     expect(documentIconClass('data.xlsx')).toBe('pi-file-excel');
     expect(documentIconClass('readme.txt')).toBe('pi-file');
+  });
+
+  it('maps request badges distinctly and forbids assign on resolved', () => {
+    expect(requestStatusBadge('Open')).toBe('overdue');
+    expect(requestStatusBadge('Resolved')).toBe('accepted');
+    expect(requestStatusBadge('Closed')).toBe('inactive');
+    expect(canAssignRequest('Open', true)).toBe(true);
+    expect(canAssignRequest('Open', false)).toBe(false);
+    expect(canAssignRequest('Resolved', true)).toBe(false);
+    expect(canSetWaiting('InProgress')).toBe(true);
+    expect(canResumeRequest('WaitingClient')).toBe(true);
+    expect(canResumeRequest('Open')).toBe(false);
+  });
+
+  it('filters requests by status, search and number', () => {
+    expect(requestMatchesFilter('Open', 'active', '', 'TVA', '', 1)).toBe(true);
+    expect(requestMatchesFilter('Resolved', 'active', '', 'TVA', '', 1)).toBe(false);
+    expect(requestMatchesFilter('Open', 'all', 'tva', 'Réclamation TVA', '', 2)).toBe(true);
+    expect(requestMatchesFilter('Open', 'all', '9', 'Autre', '', 2)).toBe(false);
+    expect(requestMatchesFilter('Open', 'all', '2', 'Autre', '', 2)).toBe(true);
+  });
+
+  it('matches audit events to a request via payload', () => {
+    expect(parseExchangeAuditEventType(12)).toBe('RequestCommented');
+    expect(parseExchangeAuditEventType(13)).toBe('RequestAssigned');
+    expect(auditEventLabel('RequestCommented')).toBe('Commentaire sur une demande');
+    expect(
+      auditEventBelongsToRequest('RequestStatusChanged', '{"requestId":"r1","status":"Resolved"}', {
+        id: 'r1',
+        number: 1
+      })
+    ).toBe(true);
+    expect(
+      auditEventBelongsToRequest('RequestCreated', '{"number":2}', { id: 'r9', number: 2 })
+    ).toBe(true);
+    expect(
+      auditEventBelongsToRequest('RequestCreated', '{"number":1}', { id: 'r9', number: 2 })
+    ).toBe(false);
   });
 });

@@ -49,6 +49,28 @@ public sealed class StockMutationServicePassthroughTests
     }
 
     [Fact]
+    public async Task ApplyAsync_Exit_MissingStockItem_FailsWithProductAndWarehouseNames()
+    {
+        var factory = CreateFactory();
+        var (productId, warehouseId) = await SeedProductAndWarehouse(factory);
+        var sut = new StockMutationService(factory, Options.Create(new StockTraceabilityOptions()));
+
+        var exit = await sut.ApplyAsync(new StockMutationRequest
+        {
+            ProductId = productId,
+            WarehouseId = warehouseId,
+            Kind = StockMutationKind.Exit,
+            Quantity = 1m,
+            Reason = MovementReason.Delivery
+        });
+
+        Assert.True(exit.IsFailure);
+        Assert.Contains("Article", exit.Error.Description);
+        Assert.Contains("Principal", exit.Error.Description);
+        Assert.Contains("Aucun stock trouvé", exit.Error.Description);
+    }
+
+    [Fact]
     public async Task ApplyAsync_Exit_InsufficientStock_Fails()
     {
         var factory = CreateFactory();
@@ -181,6 +203,157 @@ public sealed class StockMutationServicePassthroughTests
             Kind = StockMutationKind.Exit,
             Quantity = 6m,
             Reason = MovementReason.Sale
+        });
+        Assert.True(exit.IsSuccess, exit.Error?.Description);
+
+        await using var ctx = factory.CreateContext();
+        var lots = await ctx.ProductLots.ToListAsync();
+        var oldLot = lots.Single(l => l.LotNumber == "L-OLD");
+        var newLot = lots.Single(l => l.LotNumber == "L-NEW");
+        var item = await ctx.StockItems.FirstAsync(s => s.ProductId == productId);
+        var oldBal = await ctx.StockLotBalances.SingleAsync(b => b.ProductLotId == oldLot.Id);
+        var newBal = await ctx.StockLotBalances.SingleAsync(b => b.ProductLotId == newLot.Id);
+        Assert.Equal(4m, oldBal.QuantityOnHand);
+        Assert.Equal(10m, newBal.QuantityOnHand);
+        Assert.Equal(14m, item.QuantityOnHand);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_Exit_UnknownLotNumber_FailsWithSelectionHint()
+    {
+        var factory = CreateFactory();
+        var (productId, warehouseId) = await SeedProductAndWarehouse(
+            factory,
+            tracking: TrackingMode.Lot,
+            picking: PickingPolicy.Fefo);
+        var sut = new StockMutationService(factory, Options.Create(new StockTraceabilityOptions
+        {
+            LotTrackingEnabled = true
+        }));
+
+        Assert.True((await sut.ApplyAsync(new StockMutationRequest
+        {
+            ProductId = productId,
+            WarehouseId = warehouseId,
+            Kind = StockMutationKind.Entry,
+            Quantity = 10m,
+            UnitCost = 2m,
+            Reason = MovementReason.Purchase,
+            Allocations = new[] { new StockAllocationInput(10m, LotNumber: "455566") }
+        })).IsSuccess);
+
+        var exit = await sut.ApplyAsync(new StockMutationRequest
+        {
+            ProductId = productId,
+            WarehouseId = warehouseId,
+            Kind = StockMutationKind.Exit,
+            Quantity = 4m,
+            Reason = MovementReason.Sale,
+            Allocations = new[] { new StockAllocationInput(4m, LotNumber: "566") }
+        });
+
+        Assert.True(exit.IsFailure);
+        Assert.Contains("Lot '566' introuvable", exit.Error.Description);
+        Assert.Contains("lot existant dans l'entrepôt", exit.Error.Description);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_ExplicitExit_ExpiredLot_FailsWithProductName()
+    {
+        var factory = CreateFactory();
+        var (productId, warehouseId) = await SeedProductAndWarehouse(
+            factory,
+            tracking: TrackingMode.Lot,
+            picking: PickingPolicy.Fefo,
+            hasExpiry: true);
+        var sut = new StockMutationService(factory, Options.Create(new StockTraceabilityOptions
+        {
+            LotTrackingEnabled = true,
+            ExpiryTrackingEnabled = true,
+            BlockExpiredLotsOnExit = true
+        }));
+
+        Assert.True((await sut.ApplyAsync(new StockMutationRequest
+        {
+            ProductId = productId,
+            WarehouseId = warehouseId,
+            Kind = StockMutationKind.Entry,
+            Quantity = 10m,
+            UnitCost = 2m,
+            Reason = MovementReason.Purchase,
+            Allocations = new[]
+            {
+                new StockAllocationInput(10m, LotNumber: "555589", ExpiryDate: DateTime.UtcNow.AddDays(-5))
+            }
+        })).IsSuccess);
+
+        var exit = await sut.ApplyAsync(new StockMutationRequest
+        {
+            ProductId = productId,
+            WarehouseId = warehouseId,
+            Kind = StockMutationKind.Exit,
+            Quantity = 4m,
+            Reason = MovementReason.Sale,
+            Allocations = new[] { new StockAllocationInput(4m, LotNumber: "555589") }
+        });
+
+        Assert.True(exit.IsFailure);
+        Assert.Contains("périmé", exit.Error.Description);
+        Assert.Contains("555589", exit.Error.Description);
+        Assert.Contains("Article", exit.Error.Description);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_Fefo_QuantityOnlyExitAllocationsAutoPickSoonestExpiryLot()
+    {
+        var factory = CreateFactory();
+        var (productId, warehouseId) = await SeedProductAndWarehouse(
+            factory,
+            tracking: TrackingMode.Lot,
+            picking: PickingPolicy.Fefo,
+            hasExpiry: true);
+        var sut = new StockMutationService(factory, Options.Create(new StockTraceabilityOptions
+        {
+            LotTrackingEnabled = true,
+            ExpiryTrackingEnabled = true
+        }));
+
+        Assert.True((await sut.ApplyAsync(new StockMutationRequest
+        {
+            ProductId = productId,
+            WarehouseId = warehouseId,
+            Kind = StockMutationKind.Entry,
+            Quantity = 10m,
+            UnitCost = 2m,
+            Reason = MovementReason.Purchase,
+            Allocations = new[]
+            {
+                new StockAllocationInput(10m, LotNumber: "L-OLD", ExpiryDate: DateTime.UtcNow.AddDays(5))
+            }
+        })).IsSuccess);
+
+        Assert.True((await sut.ApplyAsync(new StockMutationRequest
+        {
+            ProductId = productId,
+            WarehouseId = warehouseId,
+            Kind = StockMutationKind.Entry,
+            Quantity = 10m,
+            UnitCost = 2m,
+            Reason = MovementReason.Purchase,
+            Allocations = new[]
+            {
+                new StockAllocationInput(10m, LotNumber: "L-NEW", ExpiryDate: DateTime.UtcNow.AddDays(40))
+            }
+        })).IsSuccess);
+
+        var exit = await sut.ApplyAsync(new StockMutationRequest
+        {
+            ProductId = productId,
+            WarehouseId = warehouseId,
+            Kind = StockMutationKind.Exit,
+            Quantity = 6m,
+            Reason = MovementReason.Sale,
+            Allocations = new[] { new StockAllocationInput(6m) }
         });
         Assert.True(exit.IsSuccess, exit.Error?.Description);
 

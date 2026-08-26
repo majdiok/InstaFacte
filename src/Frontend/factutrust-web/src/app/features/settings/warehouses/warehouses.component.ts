@@ -22,6 +22,7 @@ import {
   CreateWarehouseRequest,
   UpdateWarehouseRequest
 } from '@core/services/stock.service';
+import { CashRegisterDto, PosRegisterSessionService } from '../../pos/services/pos-register-session.service';
 
 @Component({
   selector: 'app-warehouses',
@@ -151,6 +152,13 @@ import {
                   </td>
                   <td class="col-actions">
                     <p-button
+                      icon="pi pi-inbox"
+                      [text]="true"
+                      [rounded]="true"
+                      (onClick)="openRegistersDialog(row)"
+                      [attr.aria-label]="'Caisses POS ' + row.name">
+                    </p-button>
+                    <p-button
                       icon="pi pi-pencil"
                       [text]="true"
                       [rounded]="true"
@@ -275,6 +283,51 @@ import {
             [loading]="saving()"
             [disabled]="form.invalid || saving()">
           </p-button>
+        </div>
+      </form>
+    </p-dialog>
+
+    <p-dialog
+      header="Caisses POS"
+      [(visible)]="registersDialogVisible"
+      [modal]="true"
+      [style]="{ width: 'min(560px, 95vw)' }"
+      [draggable]="false"
+      [dismissableMask]="true">
+      <p class="dialog-intro">
+        Caisses du magasin <strong>{{ registersWarehouse()?.name }}</strong>. Une seule caisse est
+        marquée défaut (utilisée si aucune caisse n'est choisie).
+      </p>
+      @if (registersLoading()) {
+        <p>Chargement…</p>
+      } @else {
+        <ul class="registers-list">
+          @for (reg of warehouseRegisters(); track reg.id) {
+            <li>
+              <strong>{{ reg.code }}</strong> — {{ reg.name }}
+              @if (reg.isDefault) {
+                <p-tag value="Défaut" severity="success"></p-tag>
+              }
+            </li>
+          }
+        </ul>
+      }
+      <form [formGroup]="registerForm" (ngSubmit)="submitCreateRegister()" class="wh-form">
+        <label class="form-field" for="reg-code">
+          <span class="label-text">Code</span>
+          <input pInputText id="reg-code" formControlName="code" class="w-full" maxlength="20" />
+        </label>
+        <label class="form-field" for="reg-name">
+          <span class="label-text">Nom</span>
+          <input pInputText id="reg-name" formControlName="name" class="w-full" maxlength="100" />
+        </label>
+        <div class="switch-field">
+          <span>Caisse par défaut</span>
+          <p-inputSwitch formControlName="isDefault"></p-inputSwitch>
+        </div>
+        <div class="dialog-actions">
+          <p-button type="button" label="Fermer" [outlined]="true" (onClick)="registersDialogVisible = false"></p-button>
+          <p-button type="submit" label="Ajouter une caisse" icon="pi pi-plus" [loading]="registerSaving()"></p-button>
         </div>
       </form>
     </p-dialog>
@@ -499,6 +552,18 @@ import {
       white-space: nowrap;
       text-align: right;
     }
+    .registers-list {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 var(--spacing-4);
+    }
+    .registers-list li {
+      display: flex;
+      gap: var(--spacing-2);
+      align-items: center;
+      padding: var(--spacing-2) 0;
+      border-bottom: 1px solid var(--color-neutral-200);
+    }
     .code-cell {
       font-family: ui-monospace, monospace;
       font-size: var(--font-size-sm);
@@ -515,6 +580,7 @@ export class WarehousesComponent implements OnInit, OnDestroy {
   private readonly toast = inject(ToastService);
   private readonly errorHandler = inject(ErrorHandlerService);
   private readonly fb = inject(FormBuilder);
+  private readonly posRegisters = inject(PosRegisterSessionService);
   private readonly destroy$ = new Subject<void>();
 
   breadcrumbItems: BreadcrumbItem[] = [
@@ -557,6 +623,68 @@ export class WarehousesComponent implements OnInit, OnDestroy {
     address: [''],
     isDefault: [false]
   });
+
+  registersDialogVisible = false;
+  registersWarehouse = signal<Warehouse | null>(null);
+  warehouseRegisters = signal<CashRegisterDto[]>([]);
+  registersLoading = signal(false);
+  registerSaving = signal(false);
+  registerForm = this.fb.nonNullable.group({
+    code: ['', [Validators.required, Validators.maxLength(20)]],
+    name: ['', [Validators.required, Validators.maxLength(100)]],
+    isDefault: [false]
+  });
+
+  openRegistersDialog(row: Warehouse): void {
+    this.registersWarehouse.set(row);
+    this.registersDialogVisible = true;
+    this.registerForm.reset({ code: '', name: '', isDefault: false });
+    this.registersLoading.set(true);
+    this.posRegisters.listRegisters(row.id).pipe(takeUntil(this.destroy$)).subscribe({
+      next: list => {
+        this.warehouseRegisters.set(list);
+        this.registersLoading.set(false);
+      },
+      error: () => {
+        this.warehouseRegisters.set([]);
+        this.registersLoading.set(false);
+      }
+    });
+  }
+
+  submitCreateRegister(): void {
+    const warehouse = this.registersWarehouse();
+    if (!warehouse || this.registerForm.invalid) {
+      this.registerForm.markAllAsTouched();
+      return;
+    }
+    const v = this.registerForm.getRawValue();
+    this.registerSaving.set(true);
+    this.posRegisters
+      .createRegister({
+        warehouseId: warehouse.id,
+        code: v.code.trim(),
+        name: v.name.trim(),
+        isDefault: v.isDefault
+      })
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: created => {
+          this.registerSaving.set(false);
+          this.warehouseRegisters.update(list => [...list, created]);
+          this.registerForm.reset({ code: '', name: '', isDefault: false });
+          this.toast.add({ severity: 'success', summary: 'Caisse créée', detail: created.code, life: 3000 });
+        },
+        error: (err: HttpErrorResponse) => {
+          this.registerSaving.set(false);
+          this.toast.add({
+            severity: 'error',
+            summary: 'Erreur',
+            detail: this.errorHandler.extractErrorMessage(err) || 'Création de caisse impossible'
+          });
+        }
+      });
+  }
 
   ngOnInit(): void {
     this.loadWarehouses();

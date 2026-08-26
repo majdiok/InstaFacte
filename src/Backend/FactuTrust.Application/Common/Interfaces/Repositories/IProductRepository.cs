@@ -1,4 +1,5 @@
 using FactuTrust.Domain.Entities;
+using FactuTrust.Domain.Enums;
 
 namespace FactuTrust.Application.Common.Interfaces.Repositories;
 
@@ -84,6 +85,13 @@ public interface IProductRepository : IRepository<Product>
     Task<IReadOnlyDictionary<Guid, bool>> GetFodecFlagsByIdsAsync(
         IReadOnlyCollection<Guid> productIds,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns traceability flags for the given product ids (missing ids are omitted).
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, ProductTrackingInfo>> GetTrackingInfoByIdsAsync(
+        IReadOnlyCollection<Guid> productIds,
+        CancellationToken cancellationToken = default);
     
     /// <summary>
     /// Checks if a product is used in any invoice.
@@ -112,3 +120,6 @@ public interface IProductRepository : IRepository<Product>
         IReadOnlyCollection<Guid> productIds,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>Lightweight traceability snapshot for inventory and stock flows.</summary>
+public sealed record ProductTrackingInfo(TrackingMode TrackingMode, bool HasExpiryTracking);

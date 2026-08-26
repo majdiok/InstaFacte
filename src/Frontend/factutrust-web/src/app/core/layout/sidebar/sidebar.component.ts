@@ -21,6 +21,8 @@ import { BRAND } from '@core/constants/brand';
 import { AppNavService } from '@core/services/app-nav.service';
 import { isNavChildActive } from '@core/utils/nav-path-match';
 import { getNavIconKey } from '@core/utils/nav-icon-key.util';
+import { AiAssistantShellService } from '@features/ai-assistant/services/ai-assistant-shell.service';
+import { canUseAiAssistant } from '@features/ai-assistant/utils/ai-access.util';
 
 @Component({
   selector: 'app-sidebar',
@@ -40,6 +42,7 @@ export class SidebarComponent implements OnInit {
   private readonly auth = inject(AuthService);
   private readonly firmContext = inject(FirmContextService);
   private readonly appNav = inject(AppNavService);
+  private readonly aiShell = inject(AiAssistantShellService);
 
   readonly dashboardHomeLink = this.appNav.dashboardHomeLink;
   readonly navItems = this.appNav.navItems;
@@ -215,5 +218,15 @@ export class SidebarComponent implements OnInit {
     if (child.action === 'changeDossier') {
       await this.firmContext.navigateToClientList();
     }
+  }
+
+  onRouteNavClick(route: string | undefined, event: Event): void {
+    if (!route || !canUseAiAssistant(this.auth) || !this.aiShell.isWorkspaceAiRoute(route)) {
+      return;
+    }
+    event.preventDefault();
+    this.aiShell.openAiGeneralTabFromRoute(route, {
+      firmDelegated: this.isFirmDelegatedSkin()
+    });
   }
 }

@@ -10,6 +10,8 @@ import { AccountingFeatureFlagsService } from '@features/accounting/shared/accou
 import { StudioNavService } from '@features/studio/studio-nav.service';
 import { AppModule } from '@core/models/app-module';
 import { SecondaryNavComponent } from './secondary-nav.component';
+import { AiAssistantShellService } from '@features/ai-assistant/services/ai-assistant-shell.service';
+import { NgbDropdown } from '@ng-bootstrap/ng-bootstrap';
 
 const ALL_MODULES = Object.values(AppModule).filter((v): v is number => typeof v === 'number');
 
@@ -320,4 +322,29 @@ describe('SecondaryNavComponent', () => {
     expect(fixture.componentInstance.getIconKey('fa-solid fa-sliders')).toBe('fa-sliders');
     expect(fixture.componentInstance.getIconKey(undefined)).toBeNull();
   });
+
+  it('opens workspace AI tab instead of navigating for /ai-assistant routes', fakeAsync(async () => {
+    const router = TestBed.inject(Router);
+    const navigateSpy = spyOn(router, 'navigateByUrl').and.returnValue(Promise.resolve(true));
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, {
+      ...companyUser,
+      effectivePermissions: [...(companyUser.effectivePermissions ?? []), 'ai:chat']
+    });
+    fixture.detectChanges();
+
+    const aiShell = TestBed.inject(AiAssistantShellService);
+    const mockDropdown = { close: jasmine.createSpy('close') } as unknown as NgbDropdown;
+
+    await fixture.componentInstance.onChildClick(
+      { label: 'Assistant IA Ventes', route: '/ai-assistant/ventes', icon: 'fa-solid fa-robot' },
+      mockDropdown,
+      new Event('click')
+    );
+    tick();
+
+    expect(navigateSpy).not.toHaveBeenCalled();
+    expect(aiShell.aiTabOpen()).toBeTrue();
+    expect(aiShell.activePane()).toBe('ai');
+  }));
 });

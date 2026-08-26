@@ -45,14 +45,17 @@ import { PERMISSIONS } from '@core/config/permission-keys';
                        (change)="store.propagateLabelToLines.set($any($event.target).checked)" />
                 Reporter le libellé sur les lignes vides
               </label>
-              <button type="button" class="dropdown-item" (click)="reset.emit()">Réinitialiser le formulaire</button>
+              <button type="button" class="dropdown-item" (click)="reset.emit()">
+                {{ store.editingLocked() ? 'Recharger depuis le serveur' : 'Réinitialiser le formulaire' }}
+              </button>
             </div>
           }
         </div>
 
         <div class="dropdown">
           <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle"
-                  (click)="toggleTemplate($event)" [attr.aria-expanded]="templateOpen">
+                  (click)="toggleTemplate($event)" [attr.aria-expanded]="templateOpen"
+                  [disabled]="store.editingLocked()">
             Modèle
           </button>
           @if (templateOpen) {
@@ -68,6 +71,7 @@ import { PERMISSIONS } from '@core/config/permission-keys';
           }
         </div>
 
+        @if (!store.editingLocked()) {
         <div class="dropdown">
           <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle"
                   (click)="toggleImport($event)" [attr.aria-expanded]="importOpen"
@@ -90,9 +94,21 @@ import { PERMISSIONS } from '@core/config/permission-keys';
             </div>
           }
         </div>
+        }
       </div>
 
       <div class="entry-toolbar__right">
+        @if (store.editingLocked()) {
+          <button type="button" class="btn btn-outline-secondary"
+                  (click)="cancelEdit.emit()">
+            Annuler
+          </button>
+          <button type="button" class="btn btn-primary"
+                  (click)="save.emit('navigate')"
+                  [disabled]="!canSave()">
+            {{ store.loading() ? 'Enregistrement…' : 'Enregistrer les modifications' }}
+          </button>
+        } @else {
         <div class="btn-group">
           <button type="button" class="btn btn-primary"
                   (click)="save.emit('navigate')"
@@ -116,6 +132,7 @@ import { PERMISSIONS } from '@core/config/permission-keys';
             </div>
           }
         </div>
+        }
       </div>
     </div>
   `,
@@ -146,6 +163,8 @@ export class EntryToolbarComponent {
   @Output() reset = new EventEmitter<void>();
   /** Ouvre la modale d'import d'une facture à comptabiliser. */
   @Output() importDocument = new EventEmitter<void>();
+  /** Quitte le mode édition sans enregistrer (retour journal). */
+  @Output() cancelEdit = new EventEmitter<void>();
 
   optionsOpen = false;
   templateOpen = false;

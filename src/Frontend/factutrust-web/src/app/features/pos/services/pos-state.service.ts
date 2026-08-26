@@ -2,7 +2,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { createClientUuid } from '@core/utils/safe-random-uuid.util';
 import { ProductListItem } from '@core/services/product.service';
 import { PosDualScreenService } from './pos-dual-screen.service';
-import { ClientListItem } from '@core/services/client.service';
+import { ClientListItem, ClientOutstanding } from '@core/services/client.service';
 import {
   Currency,
   PaymentMethod,
@@ -18,6 +18,7 @@ import { getEffectiveMaxDiscountPercent } from '@shared/utils/product-pricing.ut
 import { POS_PASSENGER_CLIENT_EMAIL } from '../constants/pos-client.constants';
 import { LinkedInvoiceRef } from '@core/services/invoice-reference-resolver.service';
 import { buildInsufficientStockMessage } from './pos-stock-guard';
+import { normalizePaymentSettlement, type PosPaymentSettlement } from './pos-checkout.mapper';
 
 export interface PosClient {
   id: string;
@@ -27,6 +28,8 @@ export interface PosClient {
   nif: string;
   isWalkIn: boolean;
   totalInvoices?: number;
+  defaultPaymentTermDays?: number | null;
+  creditLimit?: number | null;
 }
 
 export interface PosOrderLine {
@@ -56,6 +59,8 @@ export interface PosOrderLine {
    * catalogue. Sert a le signaler a l'ecran : sans cela le caissier croirait a une erreur.
    */
   isNegotiatedPrice?: boolean;
+  /** Vrai lorsque le caissier a saisi un prix unitaire différent du catalogue / grille. */
+  priceManuallyEdited?: boolean;
   /**
    * Quantité disponible dans l'entrepôt POS au moment de l'ajout (catalogue).
    * Null si le produit n'est pas géré en stock ou si la quantité n'était pas connue (scan).
@@ -101,8 +106,10 @@ export interface PosState {
   linkedInvoice: LinkedInvoiceRef | null;
   printMode: 'pdf' | 'receipt' | 'both';
   isDemoMode: boolean;
-  paymentSchedule: 'full' | '2x' | '3x';
+  paymentSchedule: PosPaymentSettlement;
   firstPurchaseDiscountPercent: number | null;
+  clientOutstanding: ClientOutstanding | null;
+  overLimitAcknowledged: boolean;
 }
 
 @Injectable({
@@ -132,8 +139,6 @@ export class PosStateService {
 
     const subTotalHT = lines.reduce((sum, l) => sum + l.totalHT, 0);
     const totalFodec = lines.reduce((sum, l) => sum + l.fodecAmount, 0);
-    const totalVat = lines.reduce((sum, l) => sum + l.vatAmount, 0);
-    const subTotalTTC = lines.reduce((sum, l) => sum + l.totalTTC, 0);
 
     let totalDiscount = 0;
     if (globalDiscountType === 'PERCENT' && globalDiscountValue != null) {
@@ -149,13 +154,13 @@ export class PosStateService {
     }
 
     const totalHT = afterGlobalHT - firstPurchaseDiscount;
-    const totalTTC = subTotalTTC - totalDiscount - firstPurchaseDiscount;
+    const discountRatio = subTotalHT > 0 ? totalHT / subTotalHT : 1;
 
     const vatGroups = new Map<TunisianVatRate, { base: number; vat: number }>();
     lines.forEach(line => {
       const existing = vatGroups.get(line.vatRate) || { base: 0, vat: 0 };
-      existing.base += line.totalHT + line.fodecAmount;
-      existing.vat += line.vatAmount;
+      existing.base += (line.totalHT + line.fodecAmount) * discountRatio;
+      existing.vat += line.vatAmount * discountRatio;
       vatGroups.set(line.vatRate, existing);
     });
 
@@ -163,16 +168,20 @@ export class PosStateService {
       .map(([rate, amounts]) => ({
         rate,
         rateDisplay: `${rate}%`,
-        baseAmount: amounts.base,
-        vatAmount: amounts.vat
+        baseAmount: roundTnd(amounts.base),
+        vatAmount: roundTnd(amounts.vat)
       }))
       .sort((a, b) => b.rate - a.rate);
+
+    const totalVatAfterDiscount = vatBreakdown.reduce((sum, v) => sum + v.vatAmount, 0);
+    const totalFodecAfterDiscount = roundTnd(totalFodec * discountRatio);
+    const totalTTC = roundTnd(totalHT + totalFodecAfterDiscount + totalVatAfterDiscount);
 
     return {
       subTotalHT,
       totalHT,
-      totalFodec,
-      totalVat,
+      totalFodec: totalFodecAfterDiscount,
+      totalVat: totalVatAfterDiscount,
       totalTTC,
       totalDiscount,
       firstPurchaseDiscount,
@@ -195,6 +204,7 @@ export class PosStateService {
       return !!this.state().linkedInvoice?.id && this.state().lines.length > 0;
     }
     if (this.state().lines.length === 0) return false;
+    if (this.state().paymentSchedule === 'onAccount' && !this.state().client) return false;
     if (this.state().isSplitPayment) return this.isSplitValid();
     return true;
   });
@@ -245,8 +255,10 @@ export class PosStateService {
       linkedInvoice: null,
       printMode: 'pdf',
       isDemoMode: false,
-      paymentSchedule: 'full',
-      firstPurchaseDiscountPercent: null
+      paymentSchedule: 'immediate',
+      firstPurchaseDiscountPercent: null,
+      clientOutstanding: null,
+      overLimitAcknowledged: false
     };
   }
 
@@ -269,6 +281,8 @@ export class PosStateService {
   readonly isDemoMode = computed(() => this.state().isDemoMode);
   readonly paymentSchedule = computed(() => this.state().paymentSchedule);
   readonly firstPurchaseDiscountPercent = computed(() => this.state().firstPurchaseDiscountPercent);
+  readonly clientOutstanding = computed(() => this.state().clientOutstanding);
+  readonly overLimitAcknowledged = computed(() => this.state().overLimitAcknowledged);
   readonly isFirstPurchaseDiscount = computed(() => {
     const c = this.state().client;
     const pct = this.state().firstPurchaseDiscountPercent;
@@ -373,7 +387,7 @@ export class PosStateService {
   }
 
   updateQuantity(lineId: string, quantity: number): boolean {
-    if (quantity < 1) return false;
+    if (quantity < 0.001) return false;
     const line = this.state().lines.find(l => l.id === lineId);
     if (!line) return false;
 
@@ -402,7 +416,10 @@ export class PosStateService {
 
   decrementQuantity(lineId: string): void {
     const line = this.state().lines.find(l => l.id === lineId);
-    if (line && line.quantity > 1) this.updateQuantity(lineId, line.quantity - 1);
+    if (line && line.quantity > 0.001) {
+      const next = roundTnd(line.quantity - 1);
+      this.updateQuantity(lineId, next >= 0.001 ? next : 0.001);
+    }
   }
 
   removeLine(lineId: string): void {
@@ -434,6 +451,7 @@ export class PosStateService {
     const lines = this.state().lines.map(line => {
       const resolved = byProduct.get(line.productId);
       if (!resolved) return line;
+      if (line.priceManuallyEdited) return line;
       if (line.unitPriceHT === resolved.unitPriceHT && !!line.isNegotiatedPrice === resolved.isNegotiated) {
         return line;
       }
@@ -461,13 +479,29 @@ export class PosStateService {
       phone: client.phone,
       nif: client.nif,
       isWalkIn: false,
-      totalInvoices: client.totalInvoices
+      totalInvoices: client.totalInvoices,
+      defaultPaymentTermDays: client.defaultPaymentTermDays ?? null,
+      creditLimit: client.creditLimit ?? null
     };
-    this.updateState({ client: posClient, isDirty: true });
+    this.updateState({ client: posClient, isDirty: true, clientOutstanding: null, overLimitAcknowledged: false });
   }
 
   setWalkInClient(): void {
-    this.updateState({ client: null, isDirty: true });
+    this.updateState({
+      client: null,
+      isDirty: true,
+      clientOutstanding: null,
+      overLimitAcknowledged: false,
+      paymentSchedule: this.state().paymentSchedule === 'onAccount' ? 'immediate' : this.state().paymentSchedule
+    });
+  }
+
+  setClientOutstanding(outstanding: ClientOutstanding | null): void {
+    this.updateState({ clientOutstanding: outstanding, overLimitAcknowledged: false });
+  }
+
+  acknowledgeOverLimit(): void {
+    this.updateState({ overLimitAcknowledged: true });
   }
 
   setPaymentMethod(method: PaymentMethod): void {
@@ -536,7 +570,7 @@ export class PosStateService {
     this.updateState({ isDemoMode: !this.state().isDemoMode });
   }
 
-  setPaymentSchedule(schedule: 'full' | '2x' | '3x'): void {
+  setPaymentSchedule(schedule: PosPaymentSettlement): void {
     this.updateState({ paymentSchedule: schedule });
   }
 
@@ -676,8 +710,10 @@ export class PosStateService {
       isProcessing: false,
       lastError: null,
       isDemoMode: state.isDemoMode ?? false,
-      paymentSchedule: state.paymentSchedule ?? 'full',
-      firstPurchaseDiscountPercent: state.firstPurchaseDiscountPercent ?? null
+      paymentSchedule: normalizePaymentSettlement(state.paymentSchedule),
+      firstPurchaseDiscountPercent: state.firstPurchaseDiscountPercent ?? null,
+      clientOutstanding: state.clientOutstanding ?? null,
+      overLimitAcknowledged: false
     });
   }
 

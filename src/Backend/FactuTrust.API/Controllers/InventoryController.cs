@@ -149,7 +149,12 @@ public class InventoryController : ControllerBase
         [FromRoute] Guid inventoryId,
         [FromBody] RecordCountRequest request)
     {
-        var command = new RecordCountCommand(inventoryId, request.ProductId, request.CountedQuantity, request.ProductLotId);
+        var command = new RecordCountCommand(
+            inventoryId,
+            request.ProductId,
+            request.CountedQuantity,
+            request.ProductLotId,
+            request.LotNumber);
         var result = await _mediator.Send(command);
 
         if (result.IsFailure)
@@ -189,7 +194,7 @@ public class InventoryController : ControllerBase
         ValidateInventoryRequest? request = null)
     {
         var pendingCounts = request?.PendingCounts?
-            .Select(c => new InventoryPendingCount(c.ProductId, c.CountedQuantity, c.ProductLotId))
+            .Select(c => new InventoryPendingCount(c.ProductId, c.CountedQuantity, c.ProductLotId, c.LotNumber))
             .ToList();
         var command = new ValidateInventoryCommand(inventoryId, pendingCounts);
         var result = await _mediator.Send(command);
@@ -238,6 +243,7 @@ public sealed record RecordCountRequest
     public Guid ProductId { get; init; }
     public decimal CountedQuantity { get; init; }
     public Guid? ProductLotId { get; init; }
+    public string? LotNumber { get; init; }
 }
 
 /// <summary>
@@ -253,6 +259,7 @@ public sealed record InventoryPendingCountRequest
     public Guid ProductId { get; init; }
     public decimal CountedQuantity { get; init; }
     public Guid? ProductLotId { get; init; }
+    public string? LotNumber { get; init; }
 }
 
 /// <summary>

@@ -48,14 +48,17 @@ public sealed class StockAllocationValidator : IStockAllocationValidator
 
         if (product.TrackingMode == TrackingMode.Lot)
         {
+            var identified = (allocations ?? Array.Empty<StockAllocationInput>())
+                .Where(a => a.HasTraceabilityIdentity())
+                .ToList();
             var needsManual = product.PickingPolicy is PickingPolicy.None or PickingPolicy.Manual;
-            if (needsManual && (allocations is null || allocations.Count == 0))
+            if (needsManual && identified.Count == 0)
                 return Result.Failure(Error.Validation("Allocations",
                     "La sortie d'un article suivi par lot exige une allocation (saisie ou FEFO)."));
 
-            if (allocations is { Count: > 0 })
+            if (identified.Count > 0)
             {
-                var sum = allocations.Sum(a => a.Quantity);
+                var sum = identified.Sum(a => a.Quantity);
                 if (Math.Abs(sum - quantity) > LotBalanceInvariant.Tolerance)
                     return Result.Failure(Error.Validation("Allocations",
                         "La somme des allocations doit être égale à la quantité de la ligne."));

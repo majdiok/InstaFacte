@@ -170,7 +170,7 @@ export function requestStatusLabel(raw: unknown): string {
     case 'Resolved':
       return 'Résolue';
     case 'Closed':
-      return 'Close';
+      return 'Clôturée';
     default:
       return '';
   }
@@ -250,7 +250,9 @@ export type ExchangeAuditEventTypeCode =
   | 'ThreadClosed'
   | 'ThreadReopened'
   | 'AppointmentSuggested'
-  | 'TaskStatusChanged';
+  | 'TaskStatusChanged'
+  | 'RequestCommented'
+  | 'RequestAssigned';
 
 const AUDIT_PASCAL: Record<string, ExchangeAuditEventTypeCode> = {
   ThreadOpened: 'ThreadOpened',
@@ -264,7 +266,9 @@ const AUDIT_PASCAL: Record<string, ExchangeAuditEventTypeCode> = {
   ThreadClosed: 'ThreadClosed',
   ThreadReopened: 'ThreadReopened',
   AppointmentSuggested: 'AppointmentSuggested',
-  TaskStatusChanged: 'TaskStatusChanged'
+  TaskStatusChanged: 'TaskStatusChanged',
+  RequestCommented: 'RequestCommented',
+  RequestAssigned: 'RequestAssigned'
 };
 
 const AUDIT_INT: Record<number, ExchangeAuditEventTypeCode> = {
@@ -279,7 +283,9 @@ const AUDIT_INT: Record<number, ExchangeAuditEventTypeCode> = {
   8: 'ThreadClosed',
   9: 'ThreadReopened',
   10: 'AppointmentSuggested',
-  11: 'TaskStatusChanged'
+  11: 'TaskStatusChanged',
+  12: 'RequestCommented',
+  13: 'RequestAssigned'
 };
 
 const AUDIT_LABELS: Record<ExchangeAuditEventTypeCode, string> = {
@@ -294,7 +300,9 @@ const AUDIT_LABELS: Record<ExchangeAuditEventTypeCode, string> = {
   ThreadClosed: 'Échange clos',
   ThreadReopened: 'Échange rouvert',
   AppointmentSuggested: 'Rendez-vous suggéré',
-  TaskStatusChanged: 'Statut de tâche modifié'
+  TaskStatusChanged: 'Statut de tâche modifié',
+  RequestCommented: 'Commentaire sur une demande',
+  RequestAssigned: 'Demande assignée'
 };
 
 export function parseExchangeAuditEventType(raw: unknown): ExchangeAuditEventTypeCode | null {
@@ -325,19 +333,22 @@ export function participantRoleLabel(role: string | null | undefined): string {
 }
 
 /** Map request status to a shared StatusBadgeStatus-compatible key. */
-export function requestStatusBadge(raw: unknown): 'pending' | 'active' | 'validated' | 'cancelled' | 'draft' {
+export function requestStatusBadge(
+  raw: unknown
+): 'pending' | 'active' | 'validated' | 'cancelled' | 'draft' | 'overdue' | 'accepted' | 'inactive' {
   const s = parseExchangeRequestStatus(raw);
   switch (s) {
     case 'Open':
-      return 'pending';
+      return 'overdue';
     case 'InProgress':
+      return 'active';
     case 'WaitingClient':
     case 'WaitingFirm':
-      return 'active';
+      return 'pending';
     case 'Resolved':
-      return 'validated';
+      return 'accepted';
     case 'Closed':
-      return 'cancelled';
+      return 'inactive';
     default:
       return 'draft';
   }
@@ -392,4 +403,152 @@ export function documentIconClass(fileName: string): string {
     default:
       return 'pi-file';
   }
+}
+
+export type ExchangeRequestPriorityCode = 'Low' | 'Normal' | 'High';
+export type RequestListFilter =
+  | 'all'
+  | 'active'
+  | 'open'
+  | 'inProgress'
+  | 'waiting'
+  | 'resolved'
+  | 'closed';
+
+const PRIORITY_PASCAL: Record<string, ExchangeRequestPriorityCode> = {
+  Low: 'Low',
+  Normal: 'Normal',
+  High: 'High'
+};
+const PRIORITY_INT: Record<number, ExchangeRequestPriorityCode> = {
+  0: 'Low',
+  1: 'Normal',
+  2: 'High'
+};
+
+export function parseExchangeRequestPriority(raw: unknown): ExchangeRequestPriorityCode | null {
+  return parseMapped(raw, PRIORITY_PASCAL, PRIORITY_INT);
+}
+
+export function priorityLabel(raw: unknown): string {
+  const p = parseExchangeRequestPriority(raw);
+  switch (p) {
+    case 'Low':
+      return 'Basse';
+    case 'Normal':
+      return 'Normale';
+    case 'High':
+      return 'Haute';
+    default:
+      return '';
+  }
+}
+
+export function isPriorityHigh(raw: unknown): boolean {
+  return parseExchangeRequestPriority(raw) === 'High';
+}
+
+export function isRequestWaiting(raw: unknown): boolean {
+  const s = parseExchangeRequestStatus(raw);
+  return s === 'WaitingClient' || s === 'WaitingFirm';
+}
+
+export function canSetWaiting(raw: unknown): boolean {
+  const s = parseExchangeRequestStatus(raw);
+  return s === 'InProgress' || s === 'WaitingClient' || s === 'WaitingFirm';
+}
+
+export function canResumeRequest(raw: unknown): boolean {
+  return isRequestWaiting(raw);
+}
+
+export function canAssignRequest(raw: unknown, isFirm: boolean): boolean {
+  if (!isFirm) return false;
+  const s = parseExchangeRequestStatus(raw);
+  return s !== null && s !== 'Resolved' && s !== 'Closed';
+}
+
+export function requestMatchesFilter(
+  status: unknown,
+  filter: RequestListFilter,
+  query: string,
+  title: string,
+  description: string,
+  number: number
+): boolean {
+  const s = parseExchangeRequestStatus(status);
+  switch (filter) {
+    case 'active':
+      if (s !== 'Open' && s !== 'InProgress' && s !== 'WaitingClient' && s !== 'WaitingFirm') return false;
+      break;
+    case 'open':
+      if (s !== 'Open') return false;
+      break;
+    case 'inProgress':
+      if (s !== 'InProgress') return false;
+      break;
+    case 'waiting':
+      if (s !== 'WaitingClient' && s !== 'WaitingFirm') return false;
+      break;
+    case 'resolved':
+      if (s !== 'Resolved') return false;
+      break;
+    case 'closed':
+      if (s !== 'Closed') return false;
+      break;
+    default:
+      break;
+  }
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return (
+    title.toLowerCase().includes(q) ||
+    (description ?? '').toLowerCase().includes(q) ||
+    String(number).includes(q)
+  );
+}
+
+export function assigneeDisplayName(
+  participants: { userId: string; displayName: string }[] | null | undefined,
+  assigneeUserId?: string | null
+): string {
+  if (!assigneeUserId) return 'Non assignée';
+  const name = participants?.find(p => p.userId === assigneeUserId)?.displayName?.trim();
+  return name || 'Participant';
+}
+
+export function formatFileSize(n: number): string {
+  if (n < 1024) return `${n} o`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} Ko`;
+  return `${(n / (1024 * 1024)).toFixed(1)} Mo`;
+}
+
+export interface RequestAuditPayload {
+  requestId?: string;
+  status?: string;
+  number?: number;
+  fileName?: string;
+  assigneeUserId?: string;
+}
+
+export function parseRequestAuditPayload(json?: string | null): RequestAuditPayload {
+  if (!json) return {};
+  try {
+    const parsed = JSON.parse(json) as RequestAuditPayload;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function auditEventBelongsToRequest(
+  eventType: unknown,
+  payloadJson: string | undefined,
+  request: { id: string; number: number }
+): boolean {
+  const code = parseExchangeAuditEventType(eventType);
+  const payload = parseRequestAuditPayload(payloadJson);
+  if (payload.requestId) return payload.requestId.toLowerCase() === request.id.toLowerCase();
+  if (code === 'RequestCreated' && payload.number != null) return payload.number === request.number;
+  return false;
 }

@@ -38,6 +38,7 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
     public DbSet<Domain.Entities.Exchange.ExchangeMessage> ExchangeMessages => Set<Domain.Entities.Exchange.ExchangeMessage>();
     public DbSet<Domain.Entities.Exchange.ExchangeMessageRead> ExchangeMessageReads => Set<Domain.Entities.Exchange.ExchangeMessageRead>();
     public DbSet<Domain.Entities.Exchange.ExchangeRequest> ExchangeRequests => Set<Domain.Entities.Exchange.ExchangeRequest>();
+    public DbSet<Domain.Entities.Exchange.ExchangeRequestComment> ExchangeRequestComments => Set<Domain.Entities.Exchange.ExchangeRequestComment>();
     public DbSet<Domain.Entities.Exchange.ExchangeTask> ExchangeTasks => Set<Domain.Entities.Exchange.ExchangeTask>();
     public DbSet<Domain.Entities.Exchange.ExchangeDocument> ExchangeDocuments => Set<Domain.Entities.Exchange.ExchangeDocument>();
     public DbSet<Domain.Entities.Exchange.ExchangeAuditEvent> ExchangeAuditEvents => Set<Domain.Entities.Exchange.ExchangeAuditEvent>();
@@ -346,6 +347,7 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Property(n => n.LinkUrl).HasMaxLength(UserNotification.LinkUrlMaxLength);
             entity.HasIndex(n => new { n.RecipientTenantId, n.ReadAt });
             entity.HasIndex(n => new { n.RecipientTenantId, n.CreatedAt }).IsDescending(false, true);
+            entity.HasIndex(n => new { n.RecipientTenantId, n.RecipientUserId, n.CreatedAt }).IsDescending(false, false, true);
         });
 
         ConfigureExchange(builder);
@@ -1284,6 +1286,15 @@ public class MasterDbContext : IdentityDbContext<ApplicationUser, ApplicationRol
             entity.Property(r => r.Category).HasConversion<int>();
             entity.Property(r => r.Priority).HasConversion<int>();
             entity.Property(r => r.Status).HasConversion<int>();
+        });
+
+        builder.Entity<Domain.Entities.Exchange.ExchangeRequestComment>(entity =>
+        {
+            entity.ToTable("ExchangeRequestComments");
+            entity.HasKey(c => c.Id);
+            entity.HasIndex(c => new { c.RequestId, c.CreatedAt });
+            entity.Property(c => c.Body).HasMaxLength(Domain.Entities.Exchange.ExchangeRequestComment.BodyMaxLength).IsRequired();
+            entity.Property(c => c.AuthorDisplayName).HasMaxLength(Domain.Entities.Exchange.ExchangeRequestComment.AuthorDisplayNameMaxLength).IsRequired();
         });
 
         builder.Entity<Domain.Entities.Exchange.ExchangeTask>(entity =>

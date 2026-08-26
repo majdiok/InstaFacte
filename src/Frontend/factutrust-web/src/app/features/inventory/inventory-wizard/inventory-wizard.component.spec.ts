@@ -8,6 +8,7 @@ import { InventoryService, InventoryType, ActiveInventoryDto, InventoryProductIt
 import { StockService } from '@core/services/stock.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { MessageService } from 'primeng/api';
+import { TRACKING_MODE_LOT } from '@shared/utils/stock-traceability.utils';
 
 function makeProduct(overrides: Partial<InventoryProductItem> = {}): InventoryProductItem {
   return {
@@ -232,6 +233,127 @@ describe('InventoryWizardComponent', () => {
     });
   });
 
+  describe('submitCount', () => {
+    it('sends lotNumber for opening inventory on lot-tracked product', () => {
+      inventoryService.recordCount.and.returnValue(of({
+        success: true,
+        data: {
+          productId: 'p-lot',
+          productName: 'Produit lot',
+          previousQuantity: 0,
+          countedQuantity: 7,
+          difference: 7,
+          humanMessage: 'ok'
+        },
+        message: null,
+        errors: []
+      } as any));
+      inventoryService.getActiveInventory.and.returnValue(of({
+        success: true,
+        data: makeInventory([
+          makeProduct({
+            productId: 'p-lot',
+            theoreticalQuantity: 0,
+            trackingMode: TRACKING_MODE_LOT
+          })
+        ]),
+        message: null,
+        errors: []
+      } as any));
+
+      component.activeInventory.set(makeInventory([
+        makeProduct({
+          productId: 'p-lot',
+          theoreticalQuantity: 0,
+          trackingMode: TRACKING_MODE_LOT
+        })
+      ]));
+      component.currentProductIndex.set(0);
+      component.countedQuantity.set(7);
+      component.lotNumber.set('LOT-OPEN-1');
+
+      component.submitCount();
+
+      expect(inventoryService.recordCount).toHaveBeenCalledWith('inv-1', {
+        productId: 'p-lot',
+        countedQuantity: 7,
+        lotNumber: 'LOT-OPEN-1'
+      });
+    });
+
+    it('blocks submit when lot-tracked opening line has variance but no lot number', () => {
+      component.activeInventory.set(makeInventory([
+        makeProduct({
+          productId: 'p-lot',
+          theoreticalQuantity: 0,
+          trackingMode: TRACKING_MODE_LOT
+        })
+      ]));
+      component.currentProductIndex.set(0);
+      component.countedQuantity.set(7);
+      component.lotNumber.set('');
+
+      component.submitCount();
+
+      expect(inventoryService.recordCount).not.toHaveBeenCalled();
+    });
+
+    it('treats API string trackingMode Lot as a lot-tracked opening line', () => {
+      inventoryService.recordCount.and.returnValue(of({
+        success: true,
+        data: {
+          productId: 'p-lot',
+          productName: 'cardoc',
+          previousQuantity: 0,
+          countedQuantity: 7,
+          difference: 7,
+          humanMessage: 'ok'
+        },
+        message: null,
+        errors: []
+      } as any));
+      inventoryService.getActiveInventory.and.returnValue(of({
+        success: true,
+        data: makeInventory([
+          makeProduct({
+            productId: 'p-lot',
+            productName: 'cardoc',
+            theoreticalQuantity: 0,
+            trackingMode: 'Lot'
+          })
+        ]),
+        message: null,
+        errors: []
+      } as any));
+
+      component.activeInventory.set(makeInventory([
+        makeProduct({
+          productId: 'p-lot',
+          productName: 'cardoc',
+          theoreticalQuantity: 0,
+          trackingMode: 'Lot'
+        })
+      ]));
+      component.currentProductIndex.set(0);
+      component.countedQuantity.set(7);
+      component.lotNumber.set('');
+
+      expect(component.needsOpeningLotForProduct(component.currentProduct()!)).toBeTrue();
+      expect(component.requiresLotNumberForCurrentCount()).toBeTrue();
+
+      component.submitCount();
+      expect(inventoryService.recordCount).not.toHaveBeenCalled();
+
+      component.lotNumber.set('LOT-OPEN-1');
+      component.submitCount();
+      expect(inventoryService.recordCount).toHaveBeenCalledWith('inv-1', {
+        productId: 'p-lot',
+        countedQuantity: 7,
+        lotNumber: 'LOT-OPEN-1'
+      });
+    });
+  });
+
   describe('goToSummary', () => {
     it('opens the summary while products remain uncounted', () => {
       inventoryService.getSummary.and.returnValue(of({
@@ -272,6 +394,75 @@ describe('InventoryWizardComponent', () => {
       expect(component.step()).toBe('summary');
       expect(component.inventorySummary()?.canValidate).toBeTrue();
       expect(component.inventorySummary()?.productsNotCounted).toBe(1);
+    });
+  });
+
+  describe('validateInventory', () => {
+    function makeSummary(overrides: Record<string, unknown> = {}) {
+      return {
+        inventoryId: 'inv-1',
+        totalProducts: 1,
+        countedProducts: 1,
+        productsOk: 0,
+        productsWithDifference: 1,
+        productsNotCounted: 0,
+        canValidate: false,
+        statusMessage: 'Impossible de valider. Le numéro de lot est obligatoire pour « cardoc » (article suivi par lot).',
+        productsOkList: [],
+        productsWithDifferenceList: [{
+          productId: 'cardoc',
+          productName: 'cardoc',
+          productCode: 'CARD',
+          theoreticalQuantity: 0,
+          countedQuantity: 5,
+          difference: 5,
+          humanMessage: '+5 unités trouvées',
+          differenceClass: 'positive' as const,
+          trackingMode: 'Lot'
+        }],
+        productsNotCountedList: [],
+        ...overrides
+      };
+    }
+
+    it('does not POST when a lot-tracked variance line has no lot number', () => {
+      component.activeInventory.set(makeInventory([
+        makeProduct({
+          productId: 'cardoc',
+          productName: 'cardoc',
+          theoreticalQuantity: 0,
+          isCounted: true,
+          countedQuantity: 5,
+          trackingMode: 'Lot'
+        })
+      ]));
+      component.inventorySummary.set(makeSummary() as any);
+
+      component.validateInventory();
+
+      expect(inventoryService.validateInventory).not.toHaveBeenCalled();
+    });
+
+    it('navigates to the first product missing a lot', () => {
+      component.activeInventory.set(makeInventory([
+        makeProduct({ productId: 'shirt', productName: 'Chemise', isCounted: true, countedQuantity: 4 }),
+        makeProduct({
+          productId: 'cardoc',
+          productName: 'cardoc',
+          theoreticalQuantity: 0,
+          isCounted: true,
+          countedQuantity: 5,
+          trackingMode: 'Lot'
+        })
+      ]));
+      component.inventorySummary.set(makeSummary() as any);
+      component.step.set('summary');
+
+      component.goToFirstMissingLot();
+
+      expect(component.step()).toBe('count');
+      expect(component.currentProduct()?.productId).toBe('cardoc');
+      expect(component.countedQuantity()).toBe(5);
     });
   });
 });

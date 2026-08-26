@@ -43,6 +43,34 @@ public sealed class StockAllocationValidatorTests
     }
 
     [Fact]
+    public async Task Lot_ManualPicking_RejectsQuantityOnlyAllocations()
+    {
+        var product = CreateLotProduct(PickingPolicy.Manual);
+        var validator = CreateValidator(product);
+
+        var result = await validator.ValidateExitAllocationsAsync(
+            product.Id,
+            5m,
+            new[] { new StockAllocationInput(5m) });
+
+        Assert.True(result.IsFailure);
+    }
+
+    [Fact]
+    public async Task Lot_Fefo_AllowsQuantityOnlyAllocations()
+    {
+        var product = CreateLotProduct(PickingPolicy.Fefo);
+        var validator = CreateValidator(product);
+
+        var result = await validator.ValidateExitAllocationsAsync(
+            product.Id,
+            5m,
+            new[] { new StockAllocationInput(5m) });
+
+        Assert.True(result.IsSuccess);
+    }
+
+    [Fact]
     public async Task Serial_EachAllocationMustBeQuantityOne()
     {
         var product = CreateSerialProduct();

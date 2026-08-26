@@ -1,10 +1,11 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, of } from 'rxjs';
-import { catchError, map } from 'rxjs/operators';
+import { catchError, finalize, map } from 'rxjs/operators';
 import { environment } from '@environments/environment';
 import { PosStateService, PosState } from './pos-state.service';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
+import { PosRegisterSessionService } from './pos-register-session.service';
 
 const STORAGE_KEY = 'factutrust_pos_cloud_draft';
 const LOCAL_DRAFT_KEY = 'factutrust_pos_draft';
@@ -16,9 +17,12 @@ export class PosSessionSyncService {
   private readonly http = inject(HttpClient);
   private readonly posState = inject(PosStateService);
   private readonly warehouseContext = inject(WarehouseContextService);
+  private readonly registerSession = inject(PosRegisterSessionService);
   private readonly apiUrl = `${environment.apiUrl}/pos`;
   private debounceHandle: ReturnType<typeof setTimeout> | null = null;
   private lastHadLines = false;
+  private saveInFlight = false;
+  private pendingFlush = false;
 
   scheduleSave(): void {
     if (this.debounceHandle) {
@@ -35,6 +39,10 @@ export class PosSessionSyncService {
     let params = new HttpParams();
     if (warehouseId) {
       params = params.set('warehouseId', warehouseId);
+    }
+    const registerId = this.registerSession.selectedRegisterId();
+    if (registerId) {
+      params = params.set('cashRegisterId', registerId);
     }
     return { url: `${this.apiUrl}/cart`, params };
   }
@@ -53,13 +61,37 @@ export class PosSessionSyncService {
     }
 
     this.lastHadLines = true;
+
+    if (this.saveInFlight) {
+      this.pendingFlush = true;
+      return;
+    }
+
+    this.putSnapshot(snapshot, warehouseId);
+  }
+
+  private putSnapshot(snapshot: PosState, warehouseId: string | null, isRetry = false): void {
     const { url, params } = this.cartUrl(warehouseId);
+    const cashRegisterId = this.registerSession.selectedRegisterId();
+    const body = { warehouseId, cashRegisterId, state: snapshot };
+
+    this.saveInFlight = true;
     this.http
-      .put<{ success: boolean }>(url, { warehouseId, state: snapshot }, { params })
+      .put<{ success: boolean }>(url, body, { params })
       .pipe(
-        catchError(() => {
+        catchError(err => {
+          if (!isRetry && err?.status === 409) {
+            return this.http.put<{ success: boolean }>(url, body, { params });
+          }
           this.writeLocal(snapshot);
           return of(null);
+        }),
+        finalize(() => {
+          this.saveInFlight = false;
+          if (this.pendingFlush) {
+            this.pendingFlush = false;
+            this.flush();
+          }
         })
       )
       .subscribe();

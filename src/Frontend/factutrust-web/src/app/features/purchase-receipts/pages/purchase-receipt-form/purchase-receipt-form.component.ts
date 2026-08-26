@@ -13,6 +13,7 @@ import { FileUploadModule } from 'primeng/fileupload';
 import { DialogModule } from 'primeng/dialog';
 import { ToastModule } from 'primeng/toast';
 import { ToastService } from '@core/services/toast.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
 import { FormSectionComponent } from '@shared/components/form-section/form-section.component';
@@ -25,6 +26,9 @@ import {
   showSerialSection,
   createDefaultLotRow,
   createDefaultSerialRow,
+  coercePickingPolicy,
+  coerceTrackingMode,
+  entryAllocationsValid,
   TRACKING_MODE_SERIAL
 } from '@shared/utils/stock-traceability.utils';
 import { StockFeatures } from '@core/services/stock.service';
@@ -61,6 +65,7 @@ import {
   Observable,
   debounceTime,
   distinctUntilChanged,
+  tap,
   catchError,
   takeUntil,
   map
@@ -307,7 +312,7 @@ interface ReceiptLineRow {
                           [minFractionDigits]="0"
                           [maxFractionDigits]="3"
                           mode="decimal"
-                          (onInput)="recalculateTotals()"
+                          (onInput)="onReceivedQuantityChange(line)"
                           styleClass="w-full"
                           inputStyleClass="text-center">
                         </p-inputNumber>
@@ -497,7 +502,7 @@ interface ReceiptLineRow {
           {{ submitting() && submitMode() === 'save' ? 'Enregistrement…' : 'Enregistrer' }}
         </app-button>
         <app-button variant="primary" icon="pi-verified" iconPos="left"
-          [disabled]="!canSave() || submitting()"
+          [disabled]="!canValidate() || submitting()"
           (clicked)="save('validate')">
           {{ submitting() && submitMode() === 'validate' ? 'Validation…' : 'Valider la réception' }}
         </app-button>
@@ -902,6 +907,7 @@ export class PurchaseReceiptFormComponent implements OnInit, OnDestroy {
   private stockService = inject(StockService);
   private readonly productAutocomplete = inject(ProductAutocompleteService);
   private toastService = inject(ToastService);
+  private errorHandler = inject(ErrorHandlerService);
   private warehouseContext = inject(WarehouseContextService);
   private readonly searchSubject$ = new Subject<string>();
   private readonly destroy$ = new Subject<void>();
@@ -1131,8 +1137,8 @@ export class PurchaseReceiptFormComponent implements OnInit, OnDestroy {
           discountPercent: l.discountPercent,
           vatRate: this.parseVatRate(l.vatRateDisplay),
           purchaseOrderLineId: l.purchaseOrderLineId,
-          trackingMode: 0,
-          pickingPolicy: 0,
+          trackingMode: coerceTrackingMode(l.trackingMode),
+          pickingPolicy: coercePickingPolicy(l.pickingPolicy),
           lotAllocations: [createDefaultLotRow(l.receivedQuantity)]
         }));
         this.loadTraceabilityContext();
@@ -1284,10 +1290,14 @@ export class PurchaseReceiptFormComponent implements OnInit, OnDestroy {
     line.lotAllocations.splice(allocIndex, 1);
   }
 
-  private buildLotAllocations(serverLineIds: string[]): PurchaseReceiptLineAllocations[] | undefined {
+  private buildLotAllocations(serverLines: { id: string; productId: string }[]): PurchaseReceiptLineAllocations[] | undefined {
     const payload: PurchaseReceiptLineAllocations[] = [];
     this.lines.forEach((line, i) => {
-      const lineId = line.id || serverLineIds[i];
+      const serverLine = serverLines[i];
+      const lineId = serverLine?.id ?? line.id;
+      if (serverLine?.id) {
+        line.id = serverLine.id;
+      }
       const allocations = buildAllocationPayload(line.lotAllocations ?? []);
       if (lineId && allocations.length > 0) {
         payload.push({ lineId, allocations });
@@ -1315,7 +1325,10 @@ export class PurchaseReceiptFormComponent implements OnInit, OnDestroy {
       if (!res.success || !res.data) return;
       const map = new Map(this.traceabilityByProduct());
       for (const ctx of res.data) {
-        map.set(ctx.productId, { trackingMode: ctx.trackingMode, pickingPolicy: ctx.pickingPolicy });
+        map.set(ctx.productId, {
+          trackingMode: coerceTrackingMode(ctx.trackingMode),
+          pickingPolicy: coercePickingPolicy(ctx.pickingPolicy)
+        });
       }
       this.traceabilityByProduct.set(map);
       for (const line of this.lines) {
@@ -1330,7 +1343,7 @@ export class PurchaseReceiptFormComponent implements OnInit, OnDestroy {
   }
 
   private defaultAllocationsForProduct(product: ProductListItem, quantity: number): AllocationRow[] {
-    const mode = product.trackingMode ?? 0;
+    const mode = coerceTrackingMode(product.trackingMode);
     if (mode === TRACKING_MODE_SERIAL) {
       const count = Math.max(1, Math.round(quantity));
       return Array.from({ length: count }, () => createDefaultSerialRow());
@@ -1379,7 +1392,7 @@ export class PurchaseReceiptFormComponent implements OnInit, OnDestroy {
     line.unit = product.unit ?? '';
     line.unitPriceHT = product.purchasePrice ?? product.unitPrice ?? 0;
     line.vatRate = product.vatRate ?? 19;
-    line.trackingMode = product.trackingMode ?? 0;
+    line.trackingMode = coerceTrackingMode(product.trackingMode);
     line.pickingPolicy = this.traceabilityByProduct().get(product.id)?.pickingPolicy ?? 0;
     line.lotAllocations = this.defaultAllocationsForProduct(product, line.receivedQuantity);
     if (!line.orderedQuantity) line.orderedQuantity = 0;
@@ -1424,8 +1437,37 @@ export class PurchaseReceiptFormComponent implements OnInit, OnDestroy {
       this.lines.every(l => !!l.productId && l.receivedQuantity > 0);
   }
 
+  canValidate(): boolean {
+    if (!this.canSave() || !this.stockFeatures()) return false;
+    return this.lines.every(line => {
+      if (!this.showLineTraceability(line)) return true;
+      return entryAllocationsValid(
+        line.trackingMode ?? 0,
+        line.receivedQuantity,
+        line.lotAllocations ?? [],
+        this.stockFeatures()
+      );
+    });
+  }
+
+  onReceivedQuantityChange(line: ReceiptLineRow): void {
+    if (line.lotAllocations?.length === 1) {
+      line.lotAllocations[0].quantity = line.receivedQuantity;
+    }
+    this.recalculateTotals();
+  }
+
   save(mode: 'draft' | 'save' | 'validate'): void {
     if (!this.canSave() || !this.selectedSupplierId || !this.selectedWarehouseId) return;
+
+    if (mode === 'validate' && this.hasTrackedLines() && !this.canValidate()) {
+      this.toastService.add({
+        severity: 'warn',
+        summary: 'Traçabilité incomplète',
+        detail: 'Renseignez les numéros de lot ou de série pour chaque article suivi.'
+      });
+      return;
+    }
 
     this.submitting.set(true);
     this.submitMode.set(mode);
@@ -1466,21 +1508,29 @@ export class PurchaseReceiptFormComponent implements OnInit, OnDestroy {
         );
 
     persist$.pipe(
+      tap(id => {
+        if (!id) return;
+        this.savedId.set(id);
+        this.isEdit.set(true);
+      }),
       switchMap(id => {
-        if (!id) return of({ id: null as string | null, validated: false });
-        if (mode !== 'validate') return of({ id, validated: false });
+        if (!id) return of({ id: null as string | null, validated: false, error: null as unknown });
+        if (mode !== 'validate') return of({ id, validated: false, error: null as unknown });
         const validate$ = this.hasTrackedLines()
           ? this.receiptService.getPurchaseReceipt(id).pipe(
-              map(res => this.buildLotAllocations(res.data?.lines?.map(l => l.id) ?? [])),
+              map(res => this.buildLotAllocations(
+                (res.data?.lines ?? []).map(l => ({ id: l.id, productId: l.productId }))
+              )),
               switchMap(alloc => this.receiptService.validatePurchaseReceipt(id, alloc))
             )
           : this.receiptService.validatePurchaseReceipt(id);
         return validate$.pipe(
-          switchMap(res => of({ id, validated: res.success }))
+          map(res => ({ id, validated: !!res.success, error: null as unknown })),
+          catchError(err => of({ id, validated: false, error: err }))
         );
       })
     ).subscribe({
-      next: ({ id, validated }) => {
+      next: ({ id, validated, error }) => {
         this.submitting.set(false);
         this.submitMode.set(null);
 
@@ -1497,14 +1547,24 @@ export class PurchaseReceiptFormComponent implements OnInit, OnDestroy {
         this.isEdit.set(true);
 
         if (mode === 'validate') {
+          if (validated) {
+            this.toastService.add({
+              severity: 'success',
+              summary: 'Validé',
+              detail: 'Bon de réception validé avec succès'
+            });
+            this.router.navigate(['/purchase-receipts', id]);
+            return;
+          }
+
           this.toastService.add({
-            severity: validated ? 'success' : 'warn',
-            summary: validated ? 'Validé' : 'Enregistré',
-            detail: validated
-              ? 'Bon de réception validé avec succès'
+            severity: 'warn',
+            summary: 'Enregistré',
+            detail: error
+              ? this.errorHandler.extractErrorMessage(error)
               : 'Enregistré, mais la validation a échoué'
           });
-          this.router.navigate(['/purchase-receipts', id]);
+          this.ensureEditUrl(id);
           return;
         }
 
@@ -1516,9 +1576,8 @@ export class PurchaseReceiptFormComponent implements OnInit, OnDestroy {
 
         if (mode === 'save') {
           this.router.navigate(['/purchase-receipts', id]);
-        } else if (!this.route.snapshot.paramMap.get('id')) {
-          this.router.navigate(['/purchase-receipts', id, 'edit'], { replaceUrl: true });
-          this.loadReceipt(id);
+        } else {
+          this.ensureEditUrl(id);
         }
       },
       error: (err) => {
@@ -1527,10 +1586,16 @@ export class PurchaseReceiptFormComponent implements OnInit, OnDestroy {
         this.toastService.add({
           severity: 'error',
           summary: 'Erreur',
-          detail: err?.error?.errors?.[0] || 'Erreur lors de l\'enregistrement'
+          detail: this.errorHandler.extractErrorMessage(err) || 'Erreur lors de l\'enregistrement'
         });
       }
     });
+  }
+
+  private ensureEditUrl(id: string): void {
+    const routeId = this.route.snapshot.paramMap.get('id');
+    if (routeId && routeId !== 'new') return;
+    this.router.navigate(['/purchase-receipts', id, 'edit'], { replaceUrl: true });
   }
 
   openBarcodeDialog(): void {

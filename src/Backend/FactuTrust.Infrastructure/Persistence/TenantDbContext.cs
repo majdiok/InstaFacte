@@ -1554,6 +1554,9 @@ public partial class TenantDbContext : DbContext
             entity.Property(e => e.IsActive)
                 .IsRequired();
 
+            entity.Property(e => e.IsDefault)
+                .IsRequired();
+
             entity.HasOne(e => e.Warehouse)
                 .WithMany()
                 .HasForeignKey(e => e.WarehouseId)
@@ -1562,6 +1565,8 @@ public partial class TenantDbContext : DbContext
             entity.HasIndex(e => e.Code).IsUnique();
             entity.HasIndex(e => e.WarehouseId);
             entity.HasIndex(e => e.IsActive);
+            // Unique filtered default is created in tenant SQL migration
+            // (InMemory tests cannot honor HASFILTER unique indexes).
         });
     }
 
@@ -1651,7 +1656,8 @@ public partial class TenantDbContext : DbContext
             entity.ToTable("PosCartDrafts");
             entity.HasKey(e => e.Id);
 
-            entity.Property(e => e.Version).IsConcurrencyToken();
+            // POS cart is an ephemeral autosave snapshot (last-write-wins), not a collaborative aggregate.
+            entity.Property(e => e.Version);
             entity.Property(e => e.StateJson).IsRequired();
             entity.Property(e => e.UserId).IsRequired();
             entity.Property(e => e.CashRegisterId).IsRequired();

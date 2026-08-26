@@ -12,6 +12,13 @@ public interface IAccountingReportingService
         DateTime from,
         DateTime to,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Charge une écriture par identifiant (lignes + nombre de PJ). Indépendant de la politique
+    /// brouillard des états : une pièce en brouillon reste accessible pour l'écran d'édition.
+    /// </summary>
+    Task<Result<JournalEntryDto>> GetJournalEntryByIdAsync(
+        Guid id, CancellationToken cancellationToken = default);
     Task<Result<IReadOnlyList<LedgerRowDto>>> GetLedgerAsync(
         string accountNumber,
         DateTime from,

@@ -44,6 +44,7 @@ public sealed class ExchangeService : IExchangeService
     private readonly FirmDossierAccessService _dossierAccess;
     private readonly FirmAssignmentService _assignments;
     private readonly INotificationService _notifications;
+    private readonly IExchangeOppositePartyNotifier _oppositeParty;
     private readonly ExchangeAttachmentsOptions _options;
     private readonly ILogger<ExchangeService> _logger;
 
@@ -60,6 +61,7 @@ public sealed class ExchangeService : IExchangeService
         FirmDossierAccessService dossierAccess,
         FirmAssignmentService assignments,
         INotificationService notifications,
+        IExchangeOppositePartyNotifier oppositeParty,
         IOptions<ExchangeAttachmentsOptions> options,
         ILogger<ExchangeService> logger)
     {
@@ -69,6 +71,7 @@ public sealed class ExchangeService : IExchangeService
         _dossierAccess = dossierAccess;
         _assignments = assignments;
         _notifications = notifications;
+        _oppositeParty = oppositeParty;
         _options = options.Value;
         _logger = logger;
     }
@@ -504,10 +507,9 @@ public sealed class ExchangeService : IExchangeService
             $"{{\"number\":{create.Value.Number}}}");
         await _db.SaveChangesAsync(cancellationToken);
 
-        var recipientTenantId = tenantKind == TenantKind.AccountingFirm ? thread.CompanyTenantId : thread.FirmTenantId;
-        var recipientRole = tenantKind == TenantKind.AccountingFirm ? nameof(UserRole.Administrator) : null;
-        await TryNotifyAsync(recipientTenantId, recipientRole, NotificationType.ExchangeRequestCreated,
-            "Nouvelle demande", create.Value.Title, BuildLink(recipientTenantId == thread.CompanyTenantId, thread.Id));
+        await _oppositeParty.NotifyAsync(
+            thread, homeTenantId, NotificationType.ExchangeRequestCreated,
+            "Nouvelle demande", create.Value.Title, "demandes", cancellationToken);
 
         return Result.Success(MapRequest(create.Value));
     }
@@ -569,8 +571,71 @@ public sealed class ExchangeService : IExchangeService
 
         request.SetAuditInfo(userId.ToString(), isUpdate: true);
         access.Value.TouchActivity();
+        await AddAuditAsync(threadId, userId, displayName, ExchangeAuditEventType.RequestAssigned,
+            $"{{\"requestId\":\"{requestId}\",\"assigneeUserId\":\"{dto.AssigneeUserId}\"}}");
         await _db.SaveChangesAsync(cancellationToken);
         return Result.Success(MapRequest(request));
+    }
+
+    public async Task<Result<IReadOnlyList<ExchangeRequestCommentDto>>> ListRequestCommentsAsync(
+        Guid threadId, Guid requestId, Guid homeTenantId, TenantKind tenantKind, Guid userId,
+        string? userRole, FirmDossierAccessScope? firmScope, CancellationToken cancellationToken = default)
+    {
+        var access = await ResolveAccessibleThreadAsync(threadId, homeTenantId, tenantKind, userRole, firmScope, cancellationToken);
+        if (access.IsFailure)
+            return Result.Failure<IReadOnlyList<ExchangeRequestCommentDto>>(access.Error);
+
+        var exists = await _db.ExchangeRequests.AsNoTracking()
+            .AnyAsync(r => r.Id == requestId && r.ThreadId == threadId, cancellationToken);
+        if (!exists)
+            return Result.Failure<IReadOnlyList<ExchangeRequestCommentDto>>(Error.Validation("Request", "Demande introuvable"));
+
+        var rows = await _db.ExchangeRequestComments.AsNoTracking()
+            .Where(c => c.RequestId == requestId && c.ThreadId == threadId)
+            .OrderBy(c => c.CreatedAt)
+            .ToListAsync(cancellationToken);
+        return Result.Success<IReadOnlyList<ExchangeRequestCommentDto>>(rows.Select(MapComment).ToList());
+    }
+
+    public async Task<Result<ExchangeRequestCommentDto>> AddRequestCommentAsync(
+        Guid threadId, Guid requestId, Guid homeTenantId, TenantKind tenantKind, Guid userId,
+        string displayName, string? userRole, FirmDossierAccessScope? firmScope,
+        CreateExchangeRequestCommentDto dto, CancellationToken cancellationToken = default)
+    {
+        var access = await ResolveAccessibleThreadTrackedAsync(threadId, homeTenantId, tenantKind, userRole, firmScope, cancellationToken);
+        if (access.IsFailure)
+            return Result.Failure<ExchangeRequestCommentDto>(access.Error);
+
+        if (tenantKind == TenantKind.Company && !IsCompanyAdmin(userRole))
+            return Result.Failure<ExchangeRequestCommentDto>(Error.Forbidden("Réservé à l'administrateur"));
+
+        var thread = access.Value;
+        if (thread.Status == ExchangeThreadStatus.Closed)
+            return Result.Failure<ExchangeRequestCommentDto>(Error.Validation("Status", "L'échange est clos"));
+
+        var request = await _db.ExchangeRequests.AsNoTracking()
+            .FirstOrDefaultAsync(r => r.Id == requestId && r.ThreadId == threadId, cancellationToken);
+        if (request is null)
+            return Result.Failure<ExchangeRequestCommentDto>(Error.Validation("Request", "Demande introuvable"));
+        if (request.Status == ExchangeRequestStatus.Closed)
+            return Result.Failure<ExchangeRequestCommentDto>(Error.Validation("Status", "Une demande close ne peut plus recevoir de commentaires"));
+
+        var create = ExchangeRequestComment.Create(threadId, requestId, userId, homeTenantId, displayName, dto.Body);
+        if (create.IsFailure)
+            return Result.Failure<ExchangeRequestCommentDto>(create.Error);
+
+        create.Value.SetAuditInfo(userId.ToString());
+        _db.ExchangeRequestComments.Add(create.Value);
+        thread.TouchActivity();
+        await AddAuditAsync(threadId, userId, displayName, ExchangeAuditEventType.RequestCommented,
+            $"{{\"requestId\":\"{requestId}\"}}");
+        await _db.SaveChangesAsync(cancellationToken);
+
+        await _oppositeParty.NotifyAsync(
+            thread, homeTenantId, NotificationType.ExchangeRequestCommented,
+            "Nouveau commentaire", request.Title, "demandes", cancellationToken);
+
+        return Result.Success(MapComment(create.Value));
     }
 
     public Task<Result<IReadOnlyList<ExchangeTaskDto>>> ListTasksAsync(
@@ -632,10 +697,16 @@ public sealed class ExchangeService : IExchangeService
         await AddAuditAsync(threadId, userId, displayName, eventType, null);
         await _db.SaveChangesAsync(cancellationToken);
 
-        if (dto.AssigneeUserId is { } aid && aid != Guid.Empty && assigneeTenantId is { } atid)
+        var opposite = await _oppositeParty.NotifyAsync(
+            thread, homeTenantId, NotificationType.ExchangeTaskCreated,
+            "Nouvelle tâche", create.Value.Title, "taches", cancellationToken);
+
+        if (dto.AssigneeUserId is { } aid && aid != Guid.Empty && aid != userId
+            && aid != opposite.RecipientUserId && assigneeTenantId is { } atid)
         {
-            await TryNotifyAsync(atid, null, NotificationType.ExchangeTaskAssigned,
-                "Tâche assignée", create.Value.Title, BuildLink(atid == thread.CompanyTenantId, thread.Id));
+            var assigneeLink = BuildLink(atid == thread.CompanyTenantId, thread.Id, "taches");
+            await TryNotifyUserAsync(atid, aid, NotificationType.ExchangeTaskAssigned,
+                "Tâche assignée", create.Value.Title, assigneeLink);
         }
 
         return Result.Success(MapTask(create.Value));
@@ -741,9 +812,19 @@ public sealed class ExchangeService : IExchangeService
         create.Value.SetAuditInfo(userId.ToString());
         _db.ExchangeDocuments.Add(create.Value);
         thread.TouchActivity();
-        await AddAuditAsync(threadId, userId, displayName, ExchangeAuditEventType.DocumentShared,
-            $"{{\"fileName\":{System.Text.Json.JsonSerializer.Serialize(safeName)}}}");
+        var documentPayload = requestId is { } rid
+            ? $"{{\"fileName\":{System.Text.Json.JsonSerializer.Serialize(safeName)},\"requestId\":\"{rid}\"}}"
+            : $"{{\"fileName\":{System.Text.Json.JsonSerializer.Serialize(safeName)}}}";
+        await AddAuditAsync(threadId, userId, displayName, ExchangeAuditEventType.DocumentShared, documentPayload);
         await _db.SaveChangesAsync(cancellationToken);
+
+        if (messageId is null)
+        {
+            await _oppositeParty.NotifyAsync(
+                thread, homeTenantId, NotificationType.ExchangeDocumentShared,
+                "Nouveau document", safeName, "documents", cancellationToken);
+        }
+
         return Result.Success(MapDocument(create.Value));
     }
 
@@ -1314,6 +1395,9 @@ public sealed class ExchangeService : IExchangeService
         r.Id, r.ThreadId, r.Number, r.Title, r.Description, r.Category, r.Priority, r.Status,
         r.CreatedByUserId, r.CreatedByTenantId, r.AssigneeUserId, r.CreatedAt, r.ResolvedAt, r.ClosedAt);
 
+    private static ExchangeRequestCommentDto MapComment(ExchangeRequestComment c) => new(
+        c.Id, c.ThreadId, c.RequestId, c.AuthorUserId, c.AuthorTenantId, c.AuthorDisplayName, c.Body, c.CreatedAt);
+
     private static ExchangeTaskDto MapTask(ExchangeTask t) => new(
         t.Id, t.ThreadId, t.Title, t.Description, t.DueDate, t.AssigneeUserId, t.AssigneeTenantId,
         t.Status, t.CreatedByUserId, t.CreatedAt, t.CompletedAt);
@@ -1360,8 +1444,26 @@ public sealed class ExchangeService : IExchangeService
         }
     }
 
-    private static string BuildLink(bool forCompany, Guid threadId) =>
-        forCompany ? $"/exchanges/{threadId}" : $"/firm/exchanges/{threadId}";
+    private async Task TryNotifyUserAsync(
+        Guid recipientTenantId, Guid recipientUserId, NotificationType type,
+        string title, string body, string? linkUrl)
+    {
+        try
+        {
+            await _notifications.CreateAsync(
+                recipientTenantId, null, type, title, body, linkUrl, recipientUserId, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Échec notification exchange {Type}", type);
+        }
+    }
+
+    private static string BuildLink(bool forCompany, Guid threadId, string? tab = null)
+    {
+        var path = forCompany ? $"/exchanges/{threadId}" : $"/firm/exchanges/{threadId}";
+        return string.IsNullOrWhiteSpace(tab) ? path : $"{path}?tab={tab.Trim()}";
+    }
 
     private static bool IsCompanyAdmin(string? role) =>
         string.Equals(role, nameof(UserRole.Administrator), StringComparison.OrdinalIgnoreCase);

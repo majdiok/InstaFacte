@@ -140,6 +140,28 @@ public interface IExchangeService
         AssignExchangeRequestDto dto,
         CancellationToken cancellationToken = default);
 
+    Task<Result<IReadOnlyList<ExchangeRequestCommentDto>>> ListRequestCommentsAsync(
+        Guid threadId,
+        Guid requestId,
+        Guid homeTenantId,
+        TenantKind tenantKind,
+        Guid userId,
+        string? userRole,
+        FirmDossierAccessScope? firmScope,
+        CancellationToken cancellationToken = default);
+
+    Task<Result<ExchangeRequestCommentDto>> AddRequestCommentAsync(
+        Guid threadId,
+        Guid requestId,
+        Guid homeTenantId,
+        TenantKind tenantKind,
+        Guid userId,
+        string displayName,
+        string? userRole,
+        FirmDossierAccessScope? firmScope,
+        CreateExchangeRequestCommentDto dto,
+        CancellationToken cancellationToken = default);
+
     Task<Result<IReadOnlyList<ExchangeTaskDto>>> ListTasksAsync(
         Guid threadId,
         Guid homeTenantId,

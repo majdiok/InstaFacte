@@ -42,4 +42,27 @@ describe('PurchaseReceiptService', () => {
     expect(req.request.context.get(SKIP_ERROR_TOAST)).toBe(false);
     req.flush({ success: true, data: null });
   });
+
+  it('validatePurchaseReceipt uses POST when lineAllocations are provided', () => {
+    const allocations = [{
+      lineId: 'line-1',
+      allocations: [{ quantity: 10, lotNumber: 'LOT-A' }]
+    }];
+
+    service.validatePurchaseReceipt('br-1', allocations).subscribe();
+
+    const req = httpMock.expectOne(`${baseUrl}/br-1/validate`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual(allocations);
+    req.flush({ success: true, data: null });
+  });
+
+  it('validatePurchaseReceipt uses PATCH when no lineAllocations', () => {
+    service.validatePurchaseReceipt('br-1').subscribe();
+
+    const req = httpMock.expectOne(`${baseUrl}/br-1/validate`);
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual({});
+    req.flush({ success: true, data: null });
+  });
 });

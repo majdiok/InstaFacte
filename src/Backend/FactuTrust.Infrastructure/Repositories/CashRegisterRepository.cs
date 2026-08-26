@@ -20,14 +20,37 @@ public sealed class CashRegisterRepository : ICashRegisterRepository
         return await context.CashRegisters.FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
     }
 
-    public async Task<CashRegister?> GetByWarehouseIdAsync(Guid warehouseId, CancellationToken cancellationToken = default)
+    public Task<CashRegister?> GetByWarehouseIdAsync(Guid warehouseId, CancellationToken cancellationToken = default)
+        => GetDefaultByWarehouseIdAsync(warehouseId, cancellationToken);
+
+    public async Task<CashRegister?> GetDefaultByWarehouseIdAsync(Guid warehouseId, CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();
+        var flagged = await context.CashRegisters
+            .Where(r => r.WarehouseId == warehouseId && r.IsDefault && r.IsActive)
+            .OrderBy(r => r.Code)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (flagged is not null)
+            return flagged;
+
         return await context.CashRegisters
             .Where(r => r.WarehouseId == warehouseId)
             .OrderByDescending(r => r.IsActive)
             .ThenBy(r => r.Code)
             .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<CashRegister>> ListByWarehouseIdAsync(
+        Guid warehouseId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.CashRegisters
+            .Where(r => r.WarehouseId == warehouseId)
+            .OrderByDescending(r => r.IsActive)
+            .ThenByDescending(r => r.IsDefault)
+            .ThenBy(r => r.Code)
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<CashRegister?> GetByCodeAsync(string code, CancellationToken cancellationToken = default)

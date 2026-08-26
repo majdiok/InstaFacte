@@ -55,9 +55,16 @@ public sealed class StockMutationService : IStockMutationService
         {
             if (request.Kind is StockMutationKind.Exit or StockMutationKind.ReleaseAndExit)
             {
+                var warehouse = await context.Warehouses
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(w => w.Id == request.WarehouseId, cancellationToken);
+                var productName = string.IsNullOrWhiteSpace(product?.Name) ? "ce produit" : product.Name;
+                var warehouseName = string.IsNullOrWhiteSpace(warehouse?.Name)
+                    ? "cet entrepôt"
+                    : warehouse.Name;
                 return Result.Failure<StockMutationResult>(Error.Validation(
                     "StockItem",
-                    "Aucun stock trouvé pour ce produit dans cet entrepôt."));
+                    $"Aucun stock trouvé pour '{productName}' dans l'entrepôt '{warehouseName}'."));
             }
 
             var created = StockItem.Create(request.ProductId, request.WarehouseId);
@@ -402,9 +409,12 @@ public sealed class StockMutationService : IStockMutationService
             return ApplySerialExit(stockItem, product, request, store);
 
         IReadOnlyList<StockAllocationInput> allocations;
-        if (request.Allocations is { Count: > 0 })
+        var identified = request.Allocations?
+            .Where(a => a.HasTraceabilityIdentity())
+            .ToList();
+        if (identified is { Count: > 0 })
         {
-            allocations = request.Allocations;
+            allocations = identified;
         }
         else if (product.TrackingMode == TrackingMode.Lot
                  && product.PickingPolicy is PickingPolicy.Fefo or PickingPolicy.FifoPhysical)
@@ -447,9 +457,10 @@ public sealed class StockMutationService : IStockMutationService
                     && _options.ExpiryTrackingEnabled
                     && resolved.Value.IsExpired(DateTime.UtcNow))
                 {
+                    var productName = string.IsNullOrWhiteSpace(product.Name) ? "ce produit" : product.Name;
                     return Result.Failure(Error.Validation(
                         "ExpiryDate",
-                        $"Le lot {resolved.Value.LotNumber} est périmé et ne peut pas sortir."));
+                        $"Le lot {resolved.Value.LotNumber} de « {productName} » est périmé et ne peut pas sortir."));
                 }
 
                 var balance = store.FindBalance(stockItem.Id, lotId.Value);
@@ -814,7 +825,9 @@ public sealed class StockMutationService : IStockMutationService
 
         var byNumber = store.FindLotByNumber(productId, allocation.LotNumber);
         return byNumber is null
-            ? Result.Failure<ProductLot>(Error.Validation("LotNumber", $"Lot '{allocation.LotNumber}' introuvable"))
+            ? Result.Failure<ProductLot>(Error.Validation(
+                "LotNumber",
+                $"Lot '{allocation.LotNumber}' introuvable. Sélectionnez un lot existant dans l'entrepôt."))
             : Result.Success(byNumber);
     }
 

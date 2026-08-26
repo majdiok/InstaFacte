@@ -8,11 +8,15 @@ import {
     ActiveInventoryDto,
     InventorySummaryDto,
     InventoryType,
+    InventoryProductItem,
+    RecordCountRequest,
     RecordCountResult,
     StartInventoryRequest
 } from '@core/services/inventory.service';
 import { StockService, SimpleStockItem, Warehouse } from '@core/services/stock.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
+import { TRACKING_MODE_LOT, coerceTrackingMode } from '@shared/utils/stock-traceability.utils';
 
 import { ButtonModule } from 'primeng/button';
 import { InputNumberModule } from 'primeng/inputnumber';
@@ -62,6 +66,7 @@ export class InventoryWizardComponent implements OnInit, AfterViewChecked {
     private stockService = inject(StockService);
     private messageService = inject(MessageService);
     private confirmationService = inject(ConfirmationService);
+    private errorHandler = inject(ErrorHandlerService);
     private router = inject(Router);
 
     readonly InventoryType = InventoryType;
@@ -89,6 +94,7 @@ export class InventoryWizardComponent implements OnInit, AfterViewChecked {
     // Count step
     currentProductIndex = signal(0);
     countedQuantity = signal(0);
+    lotNumber = signal('');
     lastCountResult = signal<RecordCountResult | null>(null);
     private focusCountInputPending = false;
 
@@ -112,6 +118,17 @@ export class InventoryWizardComponent implements OnInit, AfterViewChecked {
         return this.countedQuantity() - product.theoreticalQuantity;
     });
 
+    needsOpeningLotNumber = computed(() => {
+        const product = this.currentProduct();
+        if (!product) return false;
+        return this.needsOpeningLotForProduct(product);
+    });
+
+    requiresLotNumberForCurrentCount = computed(() => {
+        const diff = this.countDifference();
+        return this.needsOpeningLotNumber() && diff !== null && diff !== 0;
+    });
+
     filteredProducts = computed(() => {
         const products = this.availableProducts();
         const search = this.productSearchTerm().toLowerCase().trim();
@@ -130,6 +147,33 @@ export class InventoryWizardComponent implements OnInit, AfterViewChecked {
     lineKey(line: { productId: string; productLotId?: string | null }): string {
         return `${line.productId}::${line.productLotId ?? ''}`;
     }
+
+    needsOpeningLotForProduct(product: InventoryProductItem): boolean {
+        return coerceTrackingMode(product.trackingMode) === TRACKING_MODE_LOT && !product.productLotId;
+    }
+
+    productsMissingLot = computed(() => {
+        const summary = this.inventorySummary();
+        const inventory = this.activeInventory();
+        const fromSummary = summary?.productsWithDifferenceList ?? [];
+        if (fromSummary.length > 0) {
+            const byKey = new Map((inventory?.products ?? []).map(p => [this.lineKey(p), p]));
+            return fromSummary.filter(item => {
+                const live = byKey.get(this.lineKey(item));
+                const tracking = item.trackingMode ?? live?.trackingMode;
+                return coerceTrackingMode(tracking) === TRACKING_MODE_LOT
+                    && !item.productLotId
+                    && !item.lotNumber?.trim();
+            });
+        }
+        return (inventory?.products ?? []).filter(p =>
+            this.needsOpeningLotForProduct(p)
+            && p.isCounted
+            && p.countedQuantity != null
+            && p.countedQuantity !== p.theoreticalQuantity
+            && !p.lotNumber?.trim()
+        );
+    });
 
     showWarehousePicker = computed(() => this.warehouses.length > 1);
 
@@ -327,6 +371,7 @@ export class InventoryWizardComponent implements OnInit, AfterViewChecked {
             this.currentProductIndex.set(index);
             const product = inventory.products[index];
             this.countedQuantity.set(product.theoreticalQuantity);
+            this.lotNumber.set(product.lotNumber ?? '');
             this.focusCountInputPending = true;
         }
     }
@@ -338,6 +383,7 @@ export class InventoryWizardComponent implements OnInit, AfterViewChecked {
             this.countedQuantity.set(product.isCounted && product.countedQuantity !== null
                 ? product.countedQuantity
                 : product.theoreticalQuantity);
+            this.lotNumber.set(product.lotNumber ?? '');
             this.focusCountInputPending = true;
         }
     }
@@ -358,20 +404,27 @@ export class InventoryWizardComponent implements OnInit, AfterViewChecked {
         const product = this.currentProduct();
         if (!inventory || !product) return;
 
+        if (this.requiresLotNumberForCurrentCount() && !this.lotNumber().trim()) {
+            this.messageService.add({
+                severity: 'warn',
+                summary: 'N° de lot requis',
+                detail: 'Saisissez un numéro de lot pour cet article suivi (inventaire d\'ouverture).'
+            });
+            return;
+        }
+
         this.submitting.set(true);
-        this.inventoryService.recordCount(
-            inventory.inventoryId,
-            product.productLotId
-                ? {
-                    productId: product.productId,
-                    countedQuantity: this.countedQuantity(),
-                    productLotId: product.productLotId
-                }
-                : {
-                    productId: product.productId,
-                    countedQuantity: this.countedQuantity()
-                }
-        ).subscribe({
+        const payload: RecordCountRequest = {
+            productId: product.productId,
+            countedQuantity: this.countedQuantity()
+        };
+        if (product.productLotId) {
+            payload.productLotId = product.productLotId;
+        } else if (this.needsOpeningLotForProduct(product) && this.lotNumber().trim()) {
+            payload.lotNumber = this.lotNumber().trim();
+        }
+
+        this.inventoryService.recordCount(inventory.inventoryId, payload).subscribe({
             next: (response) => {
                 if (response.success && response.data) {
                     this.lastCountResult.set(response.data);
@@ -384,12 +437,12 @@ export class InventoryWizardComponent implements OnInit, AfterViewChecked {
                 }
                 this.submitting.set(false);
             },
-            error: () => {
+            error: (err) => {
                 this.submitting.set(false);
                 this.messageService.add({
                     severity: 'error',
                     summary: 'Erreur',
-                    detail: 'Impossible d\'enregistrer le comptage'
+                    detail: this.errorHandler.extractErrorMessage(err) ?? 'Impossible d\'enregistrer le comptage'
                 });
             }
         });
@@ -438,9 +491,34 @@ export class InventoryWizardComponent implements OnInit, AfterViewChecked {
         });
     }
 
+    goToFirstMissingLot(): void {
+        const first = this.productsMissingLot()[0];
+        this.step.set('count');
+        if (!first) return;
+
+        const index = this.activeInventory()?.products.findIndex(p => this.lineKey(p) === this.lineKey(first)) ?? -1;
+        if (index >= 0) {
+            this.navigateToProduct(index);
+        }
+    }
+
     validateInventory(): void {
         const inventory = this.activeInventory();
         if (!inventory) return;
+
+        const missing = this.productsMissingLot();
+        if (missing.length > 0 || this.inventorySummary()?.canValidate === false) {
+            const names = missing.map(item => `« ${item.productName} »`).join(', ');
+            this.messageService.add({
+                severity: 'warn',
+                summary: 'N° de lot requis',
+                detail: names
+                    ? `Saisissez un numéro de lot pour ${names} (article suivi par lot).`
+                    : (this.inventorySummary()?.statusMessage
+                        ?? 'Saisissez les numéros de lot manquants avant de valider.')
+            });
+            return;
+        }
 
         this.submitting.set(true);
         this.inventoryService.validateInventory(inventory.inventoryId).subscribe({
@@ -455,12 +533,12 @@ export class InventoryWizardComponent implements OnInit, AfterViewChecked {
                 }
                 this.submitting.set(false);
             },
-            error: () => {
+            error: (err) => {
                 this.submitting.set(false);
                 this.messageService.add({
                     severity: 'error',
                     summary: 'Erreur',
-                    detail: 'Impossible de valider l\'inventaire'
+                    detail: this.errorHandler.extractErrorMessage(err) ?? 'Impossible de valider l\'inventaire'
                 });
             }
         });

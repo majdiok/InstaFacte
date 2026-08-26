@@ -1,7 +1,10 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Features.Inventory.Commands;
+using FactuTrust.Application.Features.Inventory.Queries;
 using FactuTrust.Infrastructure.Tests.Stock;
+using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Services;
@@ -27,6 +30,33 @@ public sealed class InventoryCommandHandlerTests
 
         Assert.True(result.IsSuccess);
         return result.Value;
+    }
+
+    private static Product CreateLotTrackedProduct()
+    {
+        var product = CreateStockManagedProduct();
+        Assert.True(product.ConfigureTraceability(
+            TrackingMode.Lot,
+            false,
+            PickingPolicy.Fefo,
+            CostingMethod.Average,
+            null).IsSuccess);
+        return product;
+    }
+
+    private static Mock<IProductRepository> ProductRepoWithTracking(
+        params (Guid ProductId, TrackingMode Mode)[] modes)
+    {
+        var repo = new Mock<IProductRepository>();
+        repo
+            .Setup(p => p.GetTrackingInfoByIdsAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyCollection<Guid> ids, CancellationToken _) =>
+                ids.Distinct().ToDictionary(
+                    id => id,
+                    id => new ProductTrackingInfo(
+                        modes.FirstOrDefault(m => m.ProductId == id).Mode,
+                        false)));
+        return repo;
     }
 
     [Fact]
@@ -165,7 +195,7 @@ public sealed class InventoryCommandHandlerTests
         var handler = new ValidateInventoryCommandHandler(
             invRepo.Object,
             stockRepo.Object,
-            new Mock<IProductRepository>().Object,
+            ProductRepoWithTracking().Object,
             StockTestDoubles.Passthrough(stockRepo.Object),
             tenant.Object);
 
@@ -175,6 +205,109 @@ public sealed class InventoryCommandHandlerTests
         Assert.Equal(1, result.Value.ProductsWithChanges);
         stockRepo.Verify(s => s.AddAsync(It.IsAny<StockItem>(), It.IsAny<CancellationToken>()), Times.Once);
         stockRepo.Verify(s => s.UpdateAsync(It.IsAny<StockItem>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ValidateInventory_LotTrackedWithoutLotNumber_FailsBeforeMutation()
+    {
+        var tenantId = Guid.NewGuid();
+        var warehouseId = Guid.NewGuid();
+        var product = CreateLotTrackedProduct();
+
+        var start = PhysicalInventory.Start(
+            "INVE-LOT-001",
+            warehouseId,
+            InventoryType.Complete,
+            new[] { (product.Id, product.Name, (string?)product.Code, 0m) },
+            null);
+        Assert.True(start.IsSuccess);
+        var inventory = start.Value;
+        Assert.True(inventory.RecordCount(product.Id, 7m).IsSuccess);
+
+        var tenant = new Mock<ITenantContext>();
+        tenant.Setup(t => t.TenantId).Returns(tenantId);
+
+        var invRepo = new Mock<IPhysicalInventoryRepository>();
+        invRepo
+            .Setup(i => i.GetWithLinesAsync(inventory.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(inventory);
+
+        var mutation = new Mock<IStockMutationService>();
+        var handler = new ValidateInventoryCommandHandler(
+            invRepo.Object,
+            new Mock<IStockItemRepository>().Object,
+            ProductRepoWithTracking((product.Id, TrackingMode.Lot)).Object,
+            mutation.Object,
+            tenant.Object);
+
+        var result = await handler.Handle(new ValidateInventoryCommand(inventory.Id), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains("numéro de lot", result.Error.Description, StringComparison.OrdinalIgnoreCase);
+        invRepo.Verify(i => i.UpdateAsync(It.IsAny<PhysicalInventory>(), It.IsAny<CancellationToken>()), Times.Never);
+        mutation.Verify(
+            m => m.ApplyAsync(It.IsAny<StockMutationRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ValidateInventory_LotTrackedWithLotNumber_UsesAllocatedEntry()
+    {
+        var tenantId = Guid.NewGuid();
+        var warehouseId = Guid.NewGuid();
+        var product = CreateLotTrackedProduct();
+
+        var start = PhysicalInventory.Start(
+            "INVE-LOT-002",
+            warehouseId,
+            InventoryType.Complete,
+            new[] { (product.Id, product.Name, (string?)product.Code, 0m) },
+            null);
+        Assert.True(start.IsSuccess);
+        var inventory = start.Value;
+        Assert.True(inventory.RecordCount(product.Id, 7m, lotNumber: "LOT-OPEN-1").IsSuccess);
+        Assert.Equal("LOT-OPEN-1", inventory.CountLines.Single().LotNumber);
+
+        var tenant = new Mock<ITenantContext>();
+        tenant.Setup(t => t.TenantId).Returns(tenantId);
+
+        var invRepo = new Mock<IPhysicalInventoryRepository>();
+        invRepo
+            .Setup(i => i.GetWithLinesAsync(inventory.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(inventory);
+        invRepo.Setup(i => i.UpdateAsync(It.IsAny<PhysicalInventory>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var stockRepo = new Mock<IStockItemRepository>();
+        stockRepo
+            .Setup(s => s.GetByProductAndWarehouseAsync(product.Id, warehouseId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((StockItem?)null);
+
+        StockMutationRequest? captured = null;
+        var mutation = new Mock<IStockMutationService>();
+        mutation
+            .Setup(m => m.ApplyAsync(It.IsAny<StockMutationRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<StockMutationRequest, CancellationToken>((req, _) => captured = req)
+            .ReturnsAsync(Result.Success(new StockMutationResult(Guid.NewGuid(), 7m, 0m)));
+
+        var handler = new ValidateInventoryCommandHandler(
+            invRepo.Object,
+            stockRepo.Object,
+            ProductRepoWithTracking((product.Id, TrackingMode.Lot)).Object,
+            mutation.Object,
+            tenant.Object);
+
+        var result = await handler.Handle(new ValidateInventoryCommand(inventory.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(captured);
+        Assert.Equal(StockMutationKind.Entry, captured!.Kind);
+        Assert.Equal(7m, captured.Quantity);
+        Assert.NotNull(captured.Allocations);
+        Assert.Equal("LOT-OPEN-1", captured.Allocations![0].LotNumber);
+        mutation.Verify(
+            m => m.ApplyAsync(It.IsAny<StockMutationRequest>(), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
@@ -207,7 +340,7 @@ public sealed class InventoryCommandHandlerTests
         var handler = new ValidateInventoryCommandHandler(
             invRepo.Object,
             stockRepo.Object,
-            new Mock<IProductRepository>().Object,
+            ProductRepoWithTracking().Object,
             StockTestDoubles.Passthrough(stockRepo.Object),
             tenant.Object);
 
@@ -266,7 +399,7 @@ public sealed class InventoryCommandHandlerTests
         var handler = new ValidateInventoryCommandHandler(
             invRepo.Object,
             stockRepo.Object,
-            new Mock<IProductRepository>().Object,
+            ProductRepoWithTracking((counted.Id, TrackingMode.None), (confirmed.Id, TrackingMode.None)).Object,
             StockTestDoubles.Passthrough(stockRepo.Object),
             tenant.Object);
 
@@ -311,7 +444,7 @@ public sealed class InventoryCommandHandlerTests
         var handler = new ValidateInventoryCommandHandler(
             invRepo.Object,
             stockRepo.Object,
-            new Mock<IProductRepository>().Object,
+            ProductRepoWithTracking().Object,
             StockTestDoubles.Passthrough(stockRepo.Object),
             tenant.Object);
 
@@ -325,5 +458,208 @@ public sealed class InventoryCommandHandlerTests
         Assert.Equal(InventoryStatus.InProgress, inventory.Status);
         invRepo.Verify(i => i.UpdateAsync(It.IsAny<PhysicalInventory>(), It.IsAny<CancellationToken>()), Times.Never);
         stockRepo.Verify(s => s.AddAsync(It.IsAny<StockItem>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RecordCount_LotTrackedWithoutLotNumber_FailsWhenVariance()
+    {
+        var tenantId = Guid.NewGuid();
+        var warehouseId = Guid.NewGuid();
+        var product = CreateLotTrackedProduct();
+
+        var start = PhysicalInventory.Start(
+            "INVE-LOT-COUNT-001",
+            warehouseId,
+            InventoryType.Complete,
+            new[] { (product.Id, product.Name, (string?)product.Code, 0m) },
+            null);
+        Assert.True(start.IsSuccess);
+        var inventory = start.Value;
+
+        var tenant = new Mock<ITenantContext>();
+        tenant.Setup(t => t.TenantId).Returns(tenantId);
+
+        var invRepo = new Mock<IPhysicalInventoryRepository>();
+        invRepo
+            .Setup(i => i.GetWithLinesAsync(inventory.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(inventory);
+
+        var handler = new RecordCountCommandHandler(
+            invRepo.Object,
+            ProductRepoWithTracking((product.Id, TrackingMode.Lot)).Object,
+            tenant.Object);
+
+        var result = await handler.Handle(
+            new RecordCountCommand(inventory.Id, product.Id, 7m),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains("numéro de lot", result.Error.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(product.Name, result.Error.Description);
+        invRepo.Verify(i => i.UpdateAsync(It.IsAny<PhysicalInventory>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.False(inventory.CountLines.Single().IsCounted);
+    }
+
+    [Fact]
+    public async Task RecordCount_LotTrackedWithLotNumber_SucceedsWhenVariance()
+    {
+        var tenantId = Guid.NewGuid();
+        var warehouseId = Guid.NewGuid();
+        var product = CreateLotTrackedProduct();
+
+        var start = PhysicalInventory.Start(
+            "INVE-LOT-COUNT-002",
+            warehouseId,
+            InventoryType.Complete,
+            new[] { (product.Id, product.Name, (string?)product.Code, 0m) },
+            null);
+        Assert.True(start.IsSuccess);
+        var inventory = start.Value;
+
+        var tenant = new Mock<ITenantContext>();
+        tenant.Setup(t => t.TenantId).Returns(tenantId);
+
+        var invRepo = new Mock<IPhysicalInventoryRepository>();
+        invRepo
+            .Setup(i => i.GetWithLinesAsync(inventory.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(inventory);
+        invRepo.Setup(i => i.UpdateAsync(It.IsAny<PhysicalInventory>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var handler = new RecordCountCommandHandler(
+            invRepo.Object,
+            ProductRepoWithTracking((product.Id, TrackingMode.Lot)).Object,
+            tenant.Object);
+
+        var result = await handler.Handle(
+            new RecordCountCommand(inventory.Id, product.Id, 7m, LotNumber: "LOT-OPEN-1"),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("LOT-OPEN-1", inventory.CountLines.Single().LotNumber);
+        Assert.Equal(7m, inventory.CountLines.Single().CountedQuantity);
+        invRepo.Verify(i => i.UpdateAsync(inventory, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RecordCount_LotTrackedZeroVariance_SucceedsWithoutLot()
+    {
+        var tenantId = Guid.NewGuid();
+        var warehouseId = Guid.NewGuid();
+        var product = CreateLotTrackedProduct();
+
+        var start = PhysicalInventory.Start(
+            "INVE-LOT-COUNT-003",
+            warehouseId,
+            InventoryType.Complete,
+            new[] { (product.Id, product.Name, (string?)product.Code, 0m) },
+            null);
+        Assert.True(start.IsSuccess);
+        var inventory = start.Value;
+
+        var tenant = new Mock<ITenantContext>();
+        tenant.Setup(t => t.TenantId).Returns(tenantId);
+
+        var invRepo = new Mock<IPhysicalInventoryRepository>();
+        invRepo
+            .Setup(i => i.GetWithLinesAsync(inventory.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(inventory);
+        invRepo.Setup(i => i.UpdateAsync(It.IsAny<PhysicalInventory>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var productRepo = ProductRepoWithTracking((product.Id, TrackingMode.Lot));
+        var handler = new RecordCountCommandHandler(
+            invRepo.Object,
+            productRepo.Object,
+            tenant.Object);
+
+        var result = await handler.Handle(
+            new RecordCountCommand(inventory.Id, product.Id, 0m),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(inventory.CountLines.Single().IsCounted);
+        Assert.Null(inventory.CountLines.Single().LotNumber);
+        invRepo.Verify(i => i.UpdateAsync(inventory, It.IsAny<CancellationToken>()), Times.Once);
+        productRepo.Verify(
+            p => p.GetTrackingInfoByIdsAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task GetInventorySummary_LotTrackedVarianceWithoutLot_CannotValidate()
+    {
+        var tenantId = Guid.NewGuid();
+        var warehouseId = Guid.NewGuid();
+        var product = CreateLotTrackedProduct();
+
+        var start = PhysicalInventory.Start(
+            "INVE-SUM-001",
+            warehouseId,
+            InventoryType.Complete,
+            new[] { (product.Id, product.Name, (string?)product.Code, 0m) },
+            null);
+        Assert.True(start.IsSuccess);
+        var inventory = start.Value;
+        Assert.True(inventory.RecordCount(product.Id, 7m).IsSuccess);
+
+        var tenant = new Mock<ITenantContext>();
+        tenant.Setup(t => t.TenantId).Returns(tenantId);
+
+        var invRepo = new Mock<IPhysicalInventoryRepository>();
+        invRepo
+            .Setup(i => i.GetWithLinesAsync(inventory.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(inventory);
+
+        var handler = new GetInventorySummaryQueryHandler(
+            invRepo.Object,
+            ProductRepoWithTracking((product.Id, TrackingMode.Lot)).Object,
+            tenant.Object);
+
+        var result = await handler.Handle(new GetInventorySummaryQuery(inventory.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.False(result.Value.CanValidate);
+        Assert.Contains("numéro de lot", result.Value.StatusMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(product.Name, result.Value.StatusMessage);
+        Assert.Equal(TrackingMode.Lot, result.Value.ProductsWithDifferenceList.Single().TrackingMode);
+    }
+
+    [Fact]
+    public async Task GetInventorySummary_LotTrackedWithLotNumber_CanValidate()
+    {
+        var tenantId = Guid.NewGuid();
+        var warehouseId = Guid.NewGuid();
+        var product = CreateLotTrackedProduct();
+
+        var start = PhysicalInventory.Start(
+            "INVE-SUM-002",
+            warehouseId,
+            InventoryType.Complete,
+            new[] { (product.Id, product.Name, (string?)product.Code, 0m) },
+            null);
+        Assert.True(start.IsSuccess);
+        var inventory = start.Value;
+        Assert.True(inventory.RecordCount(product.Id, 7m, lotNumber: "LOT-OPEN-1").IsSuccess);
+
+        var tenant = new Mock<ITenantContext>();
+        tenant.Setup(t => t.TenantId).Returns(tenantId);
+
+        var invRepo = new Mock<IPhysicalInventoryRepository>();
+        invRepo
+            .Setup(i => i.GetWithLinesAsync(inventory.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(inventory);
+
+        var handler = new GetInventorySummaryQueryHandler(
+            invRepo.Object,
+            ProductRepoWithTracking((product.Id, TrackingMode.Lot)).Object,
+            tenant.Object);
+
+        var result = await handler.Handle(new GetInventorySummaryQuery(inventory.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Value.CanValidate);
+        Assert.Contains("Prêt à valider", result.Value.StatusMessage);
+        Assert.Equal("LOT-OPEN-1", result.Value.ProductsWithDifferenceList.Single().LotNumber);
     }
 }

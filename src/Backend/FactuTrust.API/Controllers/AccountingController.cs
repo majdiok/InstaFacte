@@ -94,6 +94,20 @@ public sealed class AccountingController : ControllerBase
         return Ok(ApiResponse<IReadOnlyList<JournalEntryDto>>.Ok(r.Value));
     }
 
+    [HttpGet("journal/{id:guid}")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> GetJournalEntry(Guid id, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new GetJournalEntryByIdQuery(id), cancellationToken);
+        if (r.IsFailure)
+        {
+            if (r.Error.Code.EndsWith(".NotFound", StringComparison.Ordinal))
+                return NotFound(ApiResponse<object>.Fail(r.Error.Description));
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        }
+        return Ok(ApiResponse<JournalEntryDto>.Ok(r.Value));
+    }
+
     /// <summary>
     /// Récapitulatifs de journaux : centralisateur (journaux × mois), récapitulation
     /// (journaux × comptes) ou totaux journaux, selon <paramref name="grouping"/>.

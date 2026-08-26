@@ -117,10 +117,17 @@ public sealed class ClientRepository : IClientRepository
             var term = searchTerm.Trim();
             var termLower = term.ToLowerInvariant();
             var termUpper = term.ToUpperInvariant();
+            var codeHex = term.StartsWith("CLI-", StringComparison.OrdinalIgnoreCase)
+                ? term[4..].Replace("-", "", StringComparison.Ordinal).ToUpperInvariant()
+                : null;
+
             query = query.Where(c =>
                 c.Name.Contains(term) ||
                 EF.Property<string>(c.Email, "Value").Contains(termLower) ||
-                (c.NIF != null && EF.Property<string>(c.NIF, "Value").Contains(termUpper)));
+                (c.NIF != null && EF.Property<string>(c.NIF, "Value").Contains(termUpper)) ||
+                (codeHex != null
+                    && codeHex.Length >= 4
+                    && c.Id.ToString().ToUpper().Replace("-", "").StartsWith(codeHex)));
         }
 
         if (type.HasValue)

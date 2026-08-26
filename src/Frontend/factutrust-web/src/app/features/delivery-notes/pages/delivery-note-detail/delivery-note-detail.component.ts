@@ -27,19 +27,37 @@ import { DocumentActionsMenuComponent } from '@shared/components/document-action
 import { StatusBadgeComponent, StatusBadgeStatus } from '@shared/components/status-badge/status-badge.component';
 import { AuthService } from '@core/services/auth.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
-import { StockService, StockFeatures } from '@core/services/stock.service';
+import { ProductService } from '@core/services/product.service';
+import {
+  StockService,
+  StockFeatures,
+  StockAvailabilityCheck,
+  ProductAvailabilityDetail
+} from '@core/services/stock.service';
 import { StockAllocationEditorComponent } from '@shared/components/stock-allocation-editor/stock-allocation-editor.component';
 import {
   AllocationRow,
-  buildAllocationPayload,
+  ExitLotAvailability,
+  LotStockValidity,
+  buildExitAllocationPayload,
   exitAllocationsValid,
+  exitTraceabilityReady,
+  lineMissingWarehouseLots,
+  lineMissingWarehouseSerials,
+  lineBlockedByExpiredLots,
   showLotSection,
   showSerialSection,
   createDefaultLotRow,
   createDefaultSerialRow,
-  TRACKING_MODE_SERIAL
+  coercePickingPolicy,
+  coerceTrackingMode,
+  TRACKING_MODE_SERIAL,
+  shouldBlockDocumentStockExit,
+  resolveEffectiveWarehouse
 } from '@shared/utils/stock-traceability.utils';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { EMPTY, forkJoin, of } from 'rxjs';
+import { catchError, map, switchMap } from 'rxjs/operators';
 import { DeliveryNoteService } from '../../services/delivery-note.service';
 import {
   DeliveryNoteDetailDto,
@@ -316,6 +334,12 @@ import {
             </div>
           </p-card>
 
+          <p-card header="Entrepôt" styleClass="status-card">
+            <div class="status-content">
+              <span>{{ deliveryNote()!.warehouseName || 'Entrepôt par défaut' }}</span>
+            </div>
+          </p-card>
+
           <!-- Signature Info -->
           @if (deliveryNote()!.signedAt) {
             <p-card header="Signature" styleClass="signature-card">
@@ -338,27 +362,69 @@ import {
       <p-dialog 
         header="Enregistrer la livraison" 
         [(visible)]="showDeliveryDialog" 
-        [modal]="true" 
-        [style]="{width: '750px', maxWidth: '95vw'}"
+        [modal]="true"
+        styleClass="ft-dialog-scrollable"
+        [style]="{width: '920px', maxWidth: '95vw'}"
         [draggable]="false"
-        [resizable]="false"
-        [contentStyle]="{ overflow: 'visible' }">
+        [resizable]="false">
         <div class="delivery-dialog-content">
-          <!-- Context banner -->
-          <div class="delivery-info-banner">
-            <div class="delivery-info-item">
-              <span class="label">Bon de livraison</span>
-              <span class="value">{{ deliveryNote()!.number }}</span>
-            </div>
+          <div class="delivery-context-banner">
+            <span class="delivery-context-number">{{ deliveryNote()!.number }}</span>
+            @if (deliveryWarehouseLabel()) {
+              <span class="delivery-context-warehouse">
+                Déduction depuis <strong>{{ deliveryWarehouseLabel() }}</strong>
+                @if (deliveryWarehouseIsDefault()) {
+                  <span class="delivery-default-badge">par défaut</span>
+                }
+              </span>
+            }
           </div>
+          @if (deliveryContextLoading()) {
+            <p class="delivery-loading muted">
+              <i class="pi pi-spin pi-spinner"></i>
+              Vérification du stock…
+            </p>
+          } @else if (deliveryContextError()) {
+            <div class="delivery-stock-alert delivery-stock-alert--error" role="alert">
+              <i class="pi pi-exclamation-circle"></i>
+              <span>{{ deliveryContextError() }}</span>
+            </div>
+          } @else {
+            @if (deliveryStockBlocked()) {
+              <div class="delivery-stock-alert delivery-stock-alert--error" role="alert">
+                <i class="pi pi-times-circle"></i>
+                <div>
+                  <p>{{ deliveryStockCheck()?.summaryMessage || 'Aucun stock trouvé pour un produit dans cet entrepôt.' }}</p>
+                  <p>Ajoutez du stock dans cet entrepôt avant de valider.</p>
+                  <a routerLink="/stock" (click)="showDeliveryDialog = false">Ajouter du stock</a>
+                </div>
+              </div>
+            } @else if (hasMissingWarehouseLots()) {
+              <div class="delivery-stock-alert delivery-stock-alert--error" role="alert">
+                <i class="pi pi-times-circle"></i>
+                <div>
+                  @if (hasOnlyExpiredWarehouseLots()) {
+                    <p>Tous les lots disponibles sont périmés pour au moins un article suivi. Ils ne peuvent pas sortir.</p>
+                    <p>Choisissez un lot non périmé, ou réceptionnez un lot valide avant de valider.</p>
+                  } @else {
+                    <p>Le stock de cet entrepôt n'a pas de lots (ou de n° de série) pour au moins un article suivi.</p>
+                    <p>Réceptionnez d'abord le stock avec un n° de lot, ou faites un inventaire d'ouverture.</p>
+                  }
+                </div>
+              </div>
+            } @else if ((deliveryStockCheck()?.insufficientCount ?? 0) > 0) {
+              <div class="delivery-stock-alert delivery-stock-alert--warning" role="status">
+                <i class="pi pi-exclamation-triangle"></i>
+                <span>{{ deliveryStockCheck()?.summaryMessage }}</span>
+              </div>
+            }
+          }
 
-          <!-- Form fields grid -->
           <div class="delivery-form-grid">
             <div class="delivery-form-group">
               <label for="recipientName">Nom du réceptionnaire <span class="required">*</span></label>
               <input pInputText id="recipientName" [(ngModel)]="deliveryForm.recipientName" 
-                placeholder="Nom et prénom du réceptionnaire" class="w-full" />
-              <small class="field-hint">Personne ayant signé la réception</small>
+                placeholder="Personne ayant signé la réception" class="w-full delivery-header-input" />
             </div>
             <div class="delivery-form-group">
               <label for="deliveryDate">Date de livraison <span class="required">*</span></label>
@@ -368,10 +434,10 @@ import {
                 name="deliveryDate"
                 dateFormat="dd/mm/yy"
                 [showIcon]="true"
-                placeholder="Sélectionnez la date"
-                styleClass="w-full">
+                placeholder="Date effective de réception"
+                styleClass="w-full delivery-header-datepicker"
+                appendTo="body">
               </p-datepicker>
-              <small class="field-hint">Date effective de la réception des marchandises</small>
             </div>
           </div>
           
@@ -392,38 +458,45 @@ import {
                   <tr>
                     <td>{{ lineForm.designation }}</td>
                     <td class="text-right mono">{{ lineForm.orderedQuantity }}</td>
-                    <td class="text-right">
+                    <td class="text-right qty-cell">
                       <p-inputNumber [(ngModel)]="lineForm.deliveredQuantity" 
                         [min]="0" [max]="lineForm.orderedQuantity" 
                         [minFractionDigits]="0" [maxFractionDigits]="3"
+                        styleClass="delivery-qty-input"
                         inputStyleClass="input-sm text-right"
                         (onInput)="onDeliveredQuantityChange(lineForm)" />
                     </td>
-                    <td class="text-right">
+                    <td class="text-right qty-cell">
                       <p-inputNumber [(ngModel)]="lineForm.rejectedQuantity" 
                         [min]="0" [max]="lineForm.orderedQuantity" 
                         [minFractionDigits]="0" [maxFractionDigits]="3"
+                        styleClass="delivery-qty-input"
                         inputStyleClass="input-sm text-right" />
                     </td>
                     <td class="motif-col">
                       @if (lineForm.rejectedQuantity > 0) {
                         <input pInputText [(ngModel)]="lineForm.rejectionReason" 
-                          placeholder="Motif du refus" class="input-sm w-full" />
+                          placeholder="Motif du refus" class="motif-input w-full" />
+                      } @else {
+                        <span class="motif-empty">—</span>
                       }
                     </td>
                   </tr>
-                  @if (showLineTraceability(lineForm) && lineForm.deliveredQuantity > 0 && deliveryWarehouseId()) {
+                  @if (showLineTraceability(lineForm) && lineForm.deliveredQuantity > 0 && deliveryEffectiveWarehouseId()) {
                     <tr class="delivery-alloc-row">
                       <td colspan="5">
                         <app-stock-allocation-editor
                           mode="exit"
                           [productId]="lineForm.productId"
-                          [warehouseId]="deliveryWarehouseId()!"
+                          [warehouseId]="deliveryEffectiveWarehouseId()!"
                           [lineQuantity]="lineForm.deliveredQuantity"
                           [trackingMode]="lineForm.trackingMode"
                           [pickingPolicy]="lineForm.pickingPolicy"
+                          [hasExpiryTracking]="lineForm.hasExpiryTracking"
                           [features]="stockFeatures()"
-                          [allocations]="lineForm.lotAllocations" />
+                          [allocations]="lineForm.lotAllocations"
+                          (availabilityChange)="onDeliveryAllocAvailability($event)"
+                          (lotStockValidChange)="onDeliveryLotStockValid($event)" />
                       </td>
                     </tr>
                   }
@@ -432,6 +505,12 @@ import {
             </table>
           </div>
         </div>
+        @if (deliverySubmitError()) {
+          <div class="delivery-stock-alert delivery-stock-alert--error" role="alert">
+            <i class="pi pi-exclamation-circle"></i>
+            <span>{{ deliverySubmitError() }}</span>
+          </div>
+        }
         <ng-template pTemplate="footer">
           <div class="dialog-footer">
             <app-button variant="outline" icon="pi-times" iconPos="left" (click)="showDeliveryDialog = false">Annuler</app-button>
@@ -710,40 +789,86 @@ import {
     }
 
     .delivery-dialog-content {
-      padding: var(--spacing-5) var(--spacing-6);
+      padding: var(--spacing-4) var(--spacing-6);
       display: flex;
       flex-direction: column;
-      gap: var(--spacing-5);
+      gap: var(--spacing-3);
     }
 
-    .delivery-info-banner {
-      background: var(--color-background-elevated, #fff);
-      border: 1px solid var(--color-border-subtle);
+    .delivery-context-banner {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--spacing-2) var(--spacing-4);
+      margin: 0;
+      padding: var(--spacing-2) var(--spacing-3);
+      background: var(--color-background-subtle, #f8fafc);
+      border: 1px solid var(--color-border-subtle, #e2e8f0);
       border-left: 4px solid var(--color-primary-500);
-      border-radius: var(--radius-xl);
-      padding: var(--spacing-4) var(--spacing-5);
-      box-shadow: var(--shadow-sm);
+      border-radius: var(--radius-md);
+      font-size: var(--font-size-sm);
+      color: var(--color-text-primary);
     }
 
-    .delivery-info-item .label {
+    .delivery-context-number {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: var(--font-weight-semibold);
+    }
+
+    .delivery-context-warehouse {
+      color: var(--color-text-secondary);
+    }
+
+    .delivery-default-badge {
+      display: inline-block;
+      margin-left: 0.5rem;
+      padding: 0.1rem 0.45rem;
+      border-radius: var(--radius-md);
       font-size: var(--font-size-xs);
-      color: var(--color-text-tertiary);
       font-weight: var(--font-weight-semibold);
       text-transform: uppercase;
-      letter-spacing: 0.05em;
+      background: var(--color-primary-50, #eff6ff);
+      color: var(--color-primary-700, #1d4ed8);
     }
 
-    .delivery-info-item .value {
-      font-size: var(--font-size-base);
-      font-weight: var(--font-weight-semibold);
-      color: var(--color-text-primary);
-      font-family: 'JetBrains Mono', monospace;
+    .delivery-loading {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin: 0;
+    }
+
+    .delivery-stock-alert {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      margin: 0;
+      padding: var(--spacing-3);
+      border-radius: var(--radius-md);
+      font-size: var(--font-size-sm);
+
+      p { margin: 0 0 0.35rem; }
+      p:last-of-type { margin-bottom: 0.5rem; }
+      a { font-weight: var(--font-weight-semibold); }
+
+      &--error {
+        background: var(--color-error-50, #fef2f2);
+        border: 1px solid var(--color-error-200, #fecaca);
+        color: var(--color-error-700, #b91c1c);
+      }
+
+      &--warning {
+        background: var(--color-warning-50, #fffbeb);
+        border: 1px solid var(--color-warning-200, #fde68a);
+        color: var(--color-warning-800, #92400e);
+      }
     }
 
     .delivery-form-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: var(--spacing-5);
+      gap: var(--spacing-4);
+      align-items: start;
     }
 
     @media (max-width: 600px) {
@@ -755,14 +880,12 @@ import {
     .delivery-form-group {
       display: flex;
       flex-direction: column;
-      gap: var(--spacing-2);
+      gap: 0.375rem;
 
       label {
-        font-size: var(--font-size-xs);
+        font-size: var(--font-size-sm);
         font-weight: var(--font-weight-semibold);
-        color: var(--color-text-secondary);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
+        color: var(--color-text-primary);
       }
     }
 
@@ -770,14 +893,8 @@ import {
       color: var(--color-error-600);
     }
 
-    .field-hint {
-      font-size: var(--font-size-xs);
-      color: var(--color-text-tertiary);
-      margin-top: 2px;
-    }
-
     .delivery-lines-title {
-      margin: var(--spacing-4) 0 var(--spacing-3);
+      margin: 0;
       font-size: var(--font-size-base);
       font-weight: var(--font-weight-semibold);
       color: var(--color-text-primary);
@@ -789,6 +906,7 @@ import {
 
     .delivery-lines-form {
       width: 100%;
+      table-layout: fixed;
       border-collapse: collapse;
 
       th {
@@ -803,8 +921,19 @@ import {
         font-weight: var(--font-weight-semibold);
       }
 
-      th.motif-col {
-        min-width: 140px;
+      th:nth-child(2),
+      th:nth-child(3),
+      th:nth-child(4),
+      td:nth-child(2),
+      td:nth-child(3),
+      td:nth-child(4) {
+        width: 7rem;
+        white-space: nowrap;
+      }
+
+      th.motif-col,
+      td.motif-col {
+        width: 12rem;
       }
 
       td {
@@ -814,13 +943,19 @@ import {
         vertical-align: middle;
       }
 
-      td.motif-col {
-        min-width: 140px;
+      .motif-empty {
+        color: var(--color-text-tertiary);
+      }
+
+      .motif-input {
+        width: 100%;
+        font-size: var(--font-size-sm);
       }
 
       tr.delivery-alloc-row td {
         background: var(--color-background-subtle);
-        padding: var(--spacing-2) var(--spacing-3);
+        padding: var(--spacing-2) var(--spacing-3) var(--spacing-2) var(--spacing-6);
+        vertical-align: top;
       }
     }
 
@@ -839,8 +974,34 @@ import {
       width: 100%;
     }
 
-    :host ::ng-deep .delivery-dialog-content .p-datepicker {
-      width: 100%;
+    :host ::ng-deep .delivery-dialog-content {
+      .p-datepicker,
+      .delivery-header-datepicker,
+      .delivery-header-datepicker.p-datepicker {
+        display: flex;
+        width: 100%;
+      }
+
+      .delivery-header-input,
+      .delivery-header-datepicker .p-datepicker-input,
+      .delivery-header-datepicker input {
+        height: 2.5rem;
+        box-sizing: border-box;
+      }
+    }
+
+    :host ::ng-deep .delivery-lines-form {
+      .delivery-qty-input.p-inputnumber,
+      .delivery-qty-input .p-inputnumber,
+      p-inputnumber.delivery-qty-input {
+        width: 5.5rem;
+        max-width: 100%;
+      }
+
+      .p-inputnumber-input {
+        width: 100%;
+        text-align: right;
+      }
     }
 
     :host ::ng-deep {
@@ -853,6 +1014,8 @@ import {
       .p-dialog-content {
         border-radius: 0;
         padding: 0;
+        max-height: 70vh;
+        overflow-y: auto;
       }
 
       .p-dialog-header {
@@ -917,17 +1080,30 @@ export class DeliveryNoteDetailComponent implements OnInit {
   private errorHandler = inject(ErrorHandlerService);
   private auth = inject(AuthService);
   private stockService = inject(StockService);
+  private productService = inject(ProductService);
   private destroyRef = inject(DestroyRef);
 
   loading = signal(true);
   workflowActionInProgress = signal(false);
   deliveryNote = signal<DeliveryNoteDetailDto | null>(null);
   stockFeatures = signal<StockFeatures | null>(null);
-  traceabilityByProduct = signal<Map<string, { trackingMode: number; pickingPolicy: number }>>(new Map());
+  traceabilityByProduct = signal<Map<string, { trackingMode: number; pickingPolicy: number; hasExpiryTracking: boolean }>>(new Map());
 
   menuItems: MenuItem[] = [];
 
-  deliveryWarehouseId = computed(() => this.deliveryNote()?.warehouseId ?? null);
+  deliveryEffectiveWarehouseId = signal<string | null>(null);
+  deliveryWarehouseLabel = signal<string | null>(null);
+  deliveryWarehouseIsDefault = signal(false);
+  deliveryContextLoading = signal(false);
+  deliveryContextError = signal<string | null>(null);
+  deliveryStockCheck = signal<StockAvailabilityCheck | null>(null);
+  deliveryStockBlocked = signal(false);
+  deliveryProductMeta = signal<Map<string, { isStockManaged: boolean; costingMethod: number; trackingMode: number }>>(new Map());
+  deliveryAvailabilityByProduct = signal<Map<string, ProductAvailabilityDetail>>(new Map());
+  deliveryAllocAvailability = signal<Map<string, ExitLotAvailability>>(new Map());
+  deliveryAllocLotStockValid = signal<Map<string, boolean>>(new Map());
+  deliverySubmitError = signal<string | null>(null);
+  private deliveryLoadSeq = 0;
 
   // Delivery dialog
   showDeliveryDialog = false;
@@ -942,6 +1118,7 @@ export class DeliveryNoteDetailComponent implements OnInit {
     rejectionReason: string;
     trackingMode: number;
     pickingPolicy: number;
+    hasExpiryTracking: boolean;
     lotAllocations: AllocationRow[];
   }> = [];
 
@@ -1171,18 +1348,12 @@ export class DeliveryNoteDetailComponent implements OnInit {
       rejectionReason: '',
       trackingMode: 0,
       pickingPolicy: 0,
+      hasExpiryTracking: false,
       lotAllocations: [createDefaultLotRow(line.orderedQuantity)]
     }));
 
-    if (!this.stockFeatures()) {
-      this.stockService.getFeatures()
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe(res => {
-          if (res.success && res.data) this.stockFeatures.set(res.data);
-        });
-    }
-
-    this.loadDeliveryTraceabilityContext(note);
+    this.resetDeliveryStockState();
+    this.loadDeliveryStockContext(note);
     this.showDeliveryDialog = true;
   }
 
@@ -1191,7 +1362,7 @@ export class DeliveryNoteDetailComponent implements OnInit {
     deliveredQuantity: number;
   }): boolean {
     const f = this.stockFeatures();
-    if (!f || !this.deliveryWarehouseId()) return false;
+    if (!f || !this.deliveryEffectiveWarehouseId()) return false;
     return line.deliveredQuantity > 0
       && (showLotSection(line.trackingMode, f) || showSerialSection(line.trackingMode, f));
   }
@@ -1211,40 +1382,248 @@ export class DeliveryNoteDetailComponent implements OnInit {
       row.quantity = line.deliveredQuantity;
       line.lotAllocations = [row];
     }
+    this.recomputeDeliveryStockBlock();
   }
 
-  private loadDeliveryTraceabilityContext(note: DeliveryNoteDetailDto): void {
-    const warehouseId = note.warehouseId;
-    if (!warehouseId || note.lines.length === 0) return;
+  private resetDeliveryStockState(): void {
+    this.deliveryLoadSeq++;
+    this.deliveryEffectiveWarehouseId.set(null);
+    this.deliveryWarehouseLabel.set(null);
+    this.deliveryWarehouseIsDefault.set(false);
+    this.deliveryContextLoading.set(true);
+    this.deliveryContextError.set(null);
+    this.deliveryStockCheck.set(null);
+    this.deliveryStockBlocked.set(false);
+    this.deliveryProductMeta.set(new Map());
+    this.deliveryAvailabilityByProduct.set(new Map());
+    this.deliveryAllocAvailability.set(new Map());
+    this.deliveryAllocLotStockValid.set(new Map());
+    this.deliverySubmitError.set(null);
+  }
 
-    const productIds = note.lines.map(l => l.productId);
-    this.stockService.getTraceabilityContext(productIds, warehouseId)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(res => {
-        if (!res.success || !res.data) return;
-        const map = new Map(this.traceabilityByProduct());
-        for (const ctx of res.data) {
-          map.set(ctx.productId, { trackingMode: ctx.trackingMode, pickingPolicy: ctx.pickingPolicy });
-        }
-        this.traceabilityByProduct.set(map);
-        for (const lineForm of this.deliveryLinesForms) {
-          const ctx = map.get(lineForm.productId);
-          if (ctx) {
-            lineForm.trackingMode = ctx.trackingMode;
-            lineForm.pickingPolicy = ctx.pickingPolicy;
-            if (ctx.trackingMode === TRACKING_MODE_SERIAL) {
-              lineForm.lotAllocations = Array.from(
-                { length: Math.max(1, Math.round(lineForm.deliveredQuantity)) },
-                () => createDefaultSerialRow()
+  private loadDeliveryStockContext(note: DeliveryNoteDetailDto): void {
+    const loadSeq = ++this.deliveryLoadSeq;
+    this.deliveryContextLoading.set(true);
+
+    this.stockService.getWarehouses()
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        catchError(() => of({ success: false, data: [] as { id: string; name: string; isDefault: boolean }[] })),
+        switchMap(res => {
+          if (loadSeq !== this.deliveryLoadSeq) return EMPTY;
+          const warehouses = (res.success ? res.data : null) ?? [];
+          const { warehouse, isDefaultFallback } = resolveEffectiveWarehouse(
+            warehouses,
+            note.warehouseId
+          );
+          this.deliveryEffectiveWarehouseId.set(warehouse?.id ?? null);
+          this.deliveryWarehouseLabel.set(warehouse?.name ?? null);
+          this.deliveryWarehouseIsDefault.set(isDefaultFallback);
+
+          if (!warehouse) {
+            this.deliveryContextError.set(
+              'Aucun entrepôt n\'est configuré. Impossible de vérifier le stock.'
+            );
+            this.deliveryContextLoading.set(false);
+            return EMPTY;
+          }
+
+          const productIds = [...new Set(note.lines.map(l => l.productId).filter(Boolean))];
+          const items = this.deliveryLinesForms
+            .filter(l => l.productId && l.deliveredQuantity > 0)
+            .map(l => ({ productId: l.productId, requestedQuantity: l.deliveredQuantity }));
+
+          const features$ = this.stockFeatures()
+            ? of(this.stockFeatures())
+            : this.stockService.getFeatures().pipe(
+                map(r => (r.success && r.data ? r.data : null)),
+                catchError(() => of(null))
               );
+
+          const traceability$ = productIds.length
+            ? this.stockService.getTraceabilityContext(productIds, warehouse.id).pipe(
+                map(r => (r.success && r.data ? r.data : [])),
+                catchError(() => of([] as { productId: string; trackingMode: number; pickingPolicy: number; hasExpiryTracking?: boolean }[]))
+              )
+            : of([] as { productId: string; trackingMode: number; pickingPolicy: number; hasExpiryTracking?: boolean }[]);
+
+          const products$ = productIds.length
+            ? forkJoin(productIds.map(id =>
+                this.productService.getProduct(id).pipe(
+                  map(r => r.data ?? null),
+                  catchError(() => of(null))
+                )
+              ))
+            : of([]);
+
+          const availability$ = items.length
+            ? this.stockService.checkAvailability(items, warehouse.id).pipe(
+                map(r => (r.success && r.data ? r.data : null)),
+                catchError(() => of(null))
+              )
+            : of(null);
+
+          return forkJoin({
+            features: features$,
+            traceability: traceability$,
+            products: products$,
+            availability: availability$
+          });
+        })
+      )
+      .subscribe({
+        next: ctx => {
+          if (loadSeq !== this.deliveryLoadSeq) return;
+          if (ctx.features) this.stockFeatures.set(ctx.features);
+
+          const traceMap = new Map(this.traceabilityByProduct());
+          for (const t of ctx.traceability) {
+            traceMap.set(t.productId, {
+              trackingMode: coerceTrackingMode(t.trackingMode),
+              pickingPolicy: coercePickingPolicy(t.pickingPolicy),
+              hasExpiryTracking: !!t.hasExpiryTracking
+            });
+          }
+          this.traceabilityByProduct.set(traceMap);
+
+          for (const lineForm of this.deliveryLinesForms) {
+            const t = traceMap.get(lineForm.productId);
+            if (t) {
+              lineForm.trackingMode = t.trackingMode;
+              lineForm.pickingPolicy = t.pickingPolicy;
+              lineForm.hasExpiryTracking = t.hasExpiryTracking;
+              if (t.trackingMode === TRACKING_MODE_SERIAL) {
+                lineForm.lotAllocations = Array.from(
+                  { length: Math.max(1, Math.round(lineForm.deliveredQuantity)) },
+                  () => createDefaultSerialRow()
+                );
+              }
             }
           }
+
+          const productMeta = new Map<string, { isStockManaged: boolean; costingMethod: number; trackingMode: number }>();
+          for (const product of ctx.products) {
+            if (!product) continue;
+            productMeta.set(product.id, {
+              isStockManaged: product.isStockManaged,
+              costingMethod: product.costingMethod ?? 0,
+              trackingMode: coerceTrackingMode(product.trackingMode)
+            });
+          }
+          this.deliveryProductMeta.set(productMeta);
+
+          const availMap = new Map<string, ProductAvailabilityDetail>();
+          for (const detail of ctx.availability?.details ?? []) {
+            availMap.set(detail.productId, detail);
+          }
+          this.deliveryAvailabilityByProduct.set(availMap);
+          this.deliveryStockCheck.set(ctx.availability);
+
+          this.recomputeDeliveryStockBlock();
+          this.deliveryContextLoading.set(false);
+        },
+        error: () => {
+          if (loadSeq !== this.deliveryLoadSeq) return;
+          this.deliveryContextError.set('Impossible de vérifier le stock.');
+          this.deliveryContextLoading.set(false);
         }
       });
   }
 
+  private recomputeDeliveryStockBlock(): void {
+    const features = this.stockFeatures();
+    const productMeta = this.deliveryProductMeta();
+    const availability = this.deliveryAvailabilityByProduct();
+    const lines = this.deliveryLinesForms
+      .filter(lf => lf.deliveredQuantity > 0)
+      .map(lf => {
+        const meta = productMeta.get(lf.productId);
+        const avail = availability.get(lf.productId);
+        const isAvailable = avail
+          ? avail.availableQuantity >= lf.deliveredQuantity
+          : null;
+        return {
+          isStockManaged: meta?.isStockManaged ?? avail?.isStockManaged ?? lf.trackingMode > 0,
+          trackingMode: lf.trackingMode || meta?.trackingMode || 0,
+          costingMethod: meta?.costingMethod ?? 0,
+          isAvailable
+        };
+      });
+    this.deliveryStockBlocked.set(shouldBlockDocumentStockExit(lines, features));
+  }
+
+  onDeliveryAllocAvailability(event: ExitLotAvailability): void {
+    const next = new Map(this.deliveryAllocAvailability());
+    next.set(`${event.kind}:${event.productId}`, event);
+    this.deliveryAllocAvailability.set(next);
+  }
+
+  onDeliveryLotStockValid(event: LotStockValidity): void {
+    const next = new Map(this.deliveryAllocLotStockValid());
+    next.set(`lot:${event.productId}`, event.valid);
+    this.deliveryAllocLotStockValid.set(next);
+  }
+
+  hasMissingWarehouseLots(): boolean {
+    const features = this.stockFeatures();
+    for (const line of this.deliveryLinesForms) {
+      if (!this.showLineTraceability(line)) continue;
+      const avail = this.deliveryAvailabilityByProduct().get(line.productId);
+      const stock = avail?.isStockManaged ? avail.availableQuantity : null;
+      if (lineMissingWarehouseLots({
+        trackingMode: line.trackingMode,
+        features,
+        quantity: line.deliveredQuantity,
+        availableStock: stock,
+        availability: this.deliveryAllocAvailability().get(`lot:${line.productId}`)
+      })) {
+        return true;
+      }
+      if (lineMissingWarehouseSerials({
+        trackingMode: line.trackingMode,
+        features,
+        quantity: line.deliveredQuantity,
+        availableStock: stock,
+        availability: this.deliveryAllocAvailability().get(`serial:${line.productId}`)
+      })) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  hasOnlyExpiredWarehouseLots(): boolean {
+    const features = this.stockFeatures();
+    for (const line of this.deliveryLinesForms) {
+      if (!this.showLineTraceability(line)) continue;
+      const avail = this.deliveryAvailabilityByProduct().get(line.productId);
+      const stock = avail?.isStockManaged ? avail.availableQuantity : null;
+      if (lineBlockedByExpiredLots({
+        trackingMode: line.trackingMode,
+        features,
+        quantity: line.deliveredQuantity,
+        availableStock: stock,
+        availability: this.deliveryAllocAvailability().get(`lot:${line.productId}`)
+      })) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private allocAvailabilityFor(line: { productId: string; trackingMode: number }): ExitLotAvailability | undefined {
+    const features = this.stockFeatures();
+    if (showSerialSection(line.trackingMode, features)) {
+      return this.deliveryAllocAvailability().get(`serial:${line.productId}`);
+    }
+    return this.deliveryAllocAvailability().get(`lot:${line.productId}`);
+  }
+
   isDeliveryFormValid(): boolean {
     if (!this.deliveryForm.recipientName.trim() || !this.deliveryForm.deliveryDate) return false;
+    if (this.deliveryContextLoading() || this.deliveryContextError()) return false;
+    if (this.deliveryStockBlocked()) return false;
+    if (this.hasMissingWarehouseLots()) return false;
     const features = this.stockFeatures();
     for (const line of this.deliveryLinesForms) {
       if (line.deliveredQuantity + line.rejectedQuantity > line.orderedQuantity) {
@@ -1254,6 +1633,14 @@ export class DeliveryNoteDetailComponent implements OnInit {
         return false;
       }
       if (this.showLineTraceability(line)) {
+        if (!exitTraceabilityReady(
+          line.trackingMode,
+          features,
+          line.deliveredQuantity,
+          this.allocAvailabilityFor(line)
+        )) {
+          return false;
+        }
         if (!exitAllocationsValid(
           line.trackingMode,
           line.pickingPolicy,
@@ -1261,6 +1648,9 @@ export class DeliveryNoteDetailComponent implements OnInit {
           line.lotAllocations,
           features
         )) {
+          return false;
+        }
+        if (this.deliveryAllocLotStockValid().get(`lot:${line.productId}`) === false) {
           return false;
         }
       }
@@ -1271,6 +1661,8 @@ export class DeliveryNoteDetailComponent implements OnInit {
   submitDelivery(): void {
     const note = this.deliveryNote();
     if (!note || !this.isDeliveryFormValid()) return;
+
+    this.deliverySubmitError.set(null);
 
     const lines: RecordDeliveryLineDto[] = this.deliveryLinesForms.map(lf => ({
       lineId: lf.lineId,
@@ -1283,7 +1675,7 @@ export class DeliveryNoteDetailComponent implements OnInit {
       .filter(lf => this.showLineTraceability(lf))
       .map(lf => ({
         lineId: lf.lineId,
-        allocations: buildAllocationPayload(lf.lotAllocations)
+        allocations: buildExitAllocationPayload(lf.lotAllocations)
       }))
       .filter(la => la.allocations.length > 0);
 
@@ -1305,14 +1697,19 @@ export class DeliveryNoteDetailComponent implements OnInit {
           });
           this.loadDeliveryNote(note.id);
         } else {
+          const message = (response as any).message || 'Impossible d\'enregistrer la livraison';
+          this.deliverySubmitError.set(message);
           this.toastService.add({
             severity: 'error',
             summary: 'Erreur',
-            detail: (response as any).message || 'Impossible d\'enregistrer la livraison'
+            detail: message
           });
         }
+      },
+      error: (err) => {
+        const message = this.errorHandler.extractErrorMessage(err);
+        this.deliverySubmitError.set(message);
       }
-      // No error handler: the global error interceptor already shows the API error toast.
     });
   }
 

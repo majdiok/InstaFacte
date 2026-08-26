@@ -86,6 +86,8 @@ export interface PurchaseReceiptLine {
   subTotal: number;
   vatAmount: number;
   total: number;
+  trackingMode?: number;
+  pickingPolicy?: number;
 }
 
 export interface PurchaseReceiptAttachment {

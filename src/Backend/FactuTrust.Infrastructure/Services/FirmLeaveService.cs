@@ -1,3 +1,4 @@
+using System.Globalization;
 using ClosedXML.Excel;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Forecasting;
@@ -8,23 +9,32 @@ using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.Services.FirmGovernance;
 using FactuTrust.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace FactuTrust.Infrastructure.Services;
 
 public sealed class FirmLeaveService : IFirmLeaveService
 {
+    private static readonly CultureInfo French = CultureInfo.GetCultureInfo("fr-FR");
+
     private readonly MasterDbContext _db;
     private readonly ITunisianCalendarService _calendar;
     private readonly IFirmLeavePayrollMirrorService _mirror;
+    private readonly INotificationService _notifications;
+    private readonly ILogger<FirmLeaveService> _logger;
 
     public FirmLeaveService(
         MasterDbContext db,
         ITunisianCalendarService calendar,
-        IFirmLeavePayrollMirrorService mirror)
+        IFirmLeavePayrollMirrorService mirror,
+        INotificationService notifications,
+        ILogger<FirmLeaveService> logger)
     {
         _db = db;
         _calendar = calendar;
         _mirror = mirror;
+        _notifications = notifications;
+        _logger = logger;
     }
 
     public async Task EnsureDefaultsAsync(Guid firmTenantId, int year, CancellationToken cancellationToken = default)
@@ -298,7 +308,10 @@ public sealed class FirmLeaveService : IFirmLeaveService
         await _db.SaveChangesAsync(cancellationToken);
 
         var user = await _db.Users.AsNoTracking().FirstAsync(u => u.Id == targetUserId, cancellationToken);
-        return Result.Success(MapRequest(entity, leaveType, DisplayName(user)));
+        var mapped = MapRequest(entity, leaveType, DisplayName(user));
+        if (!isManager && entity.Status == FirmLeaveRequestStatus.Submitted)
+            await TryNotifyLeaveSubmittedAsync(firmTenantId, mapped);
+        return Result.Success(mapped);
     }
 
     public async Task<Result<FirmLeaveRequestDto>> UpdateAsync(
@@ -367,7 +380,10 @@ public sealed class FirmLeaveService : IFirmLeaveService
 
         entity.SetAuditInfo(actorUserId.ToString(), isUpdate: true);
         await _db.SaveChangesAsync(cancellationToken);
-        return Result.Success(await MapRequestByIdAsync(entity.Id, cancellationToken));
+        var mapped = await MapRequestByIdAsync(entity.Id, cancellationToken);
+        if (!isManager)
+            await TryNotifyLeaveSubmittedAsync(firmTenantId, mapped);
+        return Result.Success(mapped);
     }
 
     public async Task<Result<FirmLeaveRequestDto>> CancelAsync(
@@ -909,4 +925,40 @@ public sealed class FirmLeaveService : IFirmLeaveService
         FirmLeaveRequestStatus.Cancelled => "Annulée",
         _ => s.ToString()
     };
+
+    private async Task TryNotifyLeaveSubmittedAsync(Guid firmTenantId, FirmLeaveRequestDto dto)
+    {
+        var body =
+            $"{dto.CollaboratorName} a demandé « {dto.LeaveTypeLabel} » du {dto.StartDate:dd/MM/yyyy} au {dto.EndDate:dd/MM/yyyy} ({dto.Days.ToString("0.##", French)} j.).";
+        await TryNotifyAsync(
+            firmTenantId,
+            nameof(UserRole.FirmManager),
+            NotificationType.FirmLeaveRequestSubmitted,
+            "Nouvelle demande de congé",
+            body,
+            "/firm/governance/leaves/validation");
+    }
+
+    /// <summary>
+    /// Émission best-effort d'une notification in-app : ne fait jamais échouer
+    /// l'opération métier qui vient d'être validée (log warning au pire).
+    /// </summary>
+    private async Task TryNotifyAsync(
+        Guid recipientTenantId,
+        string recipientRole,
+        NotificationType type,
+        string title,
+        string body,
+        string? linkUrl)
+    {
+        try
+        {
+            await _notifications.CreateAsync(
+                recipientTenantId, recipientRole, type, title, body, linkUrl, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Échec d'émission de la notification {Type} vers le tenant {TenantId}", type, recipientTenantId);
+        }
+    }
 }

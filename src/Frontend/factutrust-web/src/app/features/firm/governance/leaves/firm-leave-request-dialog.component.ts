@@ -7,8 +7,10 @@ import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
 import { DatePickerModule } from 'primeng/datepicker';
 import { CheckboxModule } from 'primeng/checkbox';
+import { MessageModule } from 'primeng/message';
 import { AuthService } from '@core/services/auth.service';
 import { ToastService } from '@core/services/toast.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { FirmCollaboratorsService } from '@core/services/firm-collaborators.service';
 import { FirmLeavesService } from './data-access/firm-leaves.service';
 import { FIRM_LEAVE_DAY_UNITS, FirmLeaveRequest, FirmLeaveType } from './data-access/firm-leaves.models';
@@ -18,7 +20,7 @@ import { FIRM_LEAVE_DAY_UNITS, FirmLeaveRequest, FirmLeaveType } from './data-ac
   standalone: true,
   imports: [
     CommonModule, ReactiveFormsModule, DialogModule, ButtonModule,
-    SelectModule, InputTextModule, DatePickerModule, CheckboxModule
+    SelectModule, InputTextModule, DatePickerModule, CheckboxModule, MessageModule
   ],
   template: `
     <p-dialog
@@ -29,30 +31,34 @@ import { FIRM_LEAVE_DAY_UNITS, FirmLeaveRequest, FirmLeaveType } from './data-ac
       [style]="{ width: '560px' }"
       appendTo="body">
       <form [formGroup]="form" class="dlg-form">
+        @if (saveError()) {
+          <p-message severity="error" [text]="saveError()!" role="alert" styleClass="w-full" />
+        }
         @if (isManager()) {
           <label>Collaborateur
             <p-select formControlName="userId" [options]="collaborators()" optionLabel="label" optionValue="value"
-              placeholder="Moi-même par défaut" [showClear]="true" [filter]="true" appendTo="body" />
+              placeholder="Moi-même par défaut" [showClear]="true" [filter]="true" appendTo="body"
+              (onChange)="clearSaveError()" />
           </label>
         }
         <label>Type d'absence *
           <p-select formControlName="leaveTypeId" [options]="types" optionLabel="label" optionValue="id"
-            placeholder="Sélectionner" appendTo="body" />
+            placeholder="Sélectionner" appendTo="body" (onChange)="clearSaveError()" />
         </label>
         <div class="row2">
           <label>Date début *
-            <p-datepicker formControlName="startDate" dateFormat="dd/mm/yy" [showIcon]="true" appendTo="body" (onSelect)="recomputeDays()" />
+            <p-datepicker formControlName="startDate" dateFormat="dd/mm/yy" [showIcon]="true" appendTo="body" (onSelect)="onDatesChanged()" />
           </label>
           <label>Fin de journée
-            <p-select formControlName="startUnit" [options]="units" optionLabel="label" optionValue="value" appendTo="body" (onChange)="recomputeDays()" />
+            <p-select formControlName="startUnit" [options]="units" optionLabel="label" optionValue="value" appendTo="body" (onChange)="onDatesChanged()" />
           </label>
         </div>
         <div class="row2">
           <label>Date fin *
-            <p-datepicker formControlName="endDate" dateFormat="dd/mm/yy" [showIcon]="true" appendTo="body" (onSelect)="recomputeDays()" />
+            <p-datepicker formControlName="endDate" dateFormat="dd/mm/yy" [showIcon]="true" appendTo="body" (onSelect)="onDatesChanged()" />
           </label>
           <label>Fin de journée
-            <p-select formControlName="endUnit" [options]="units" optionLabel="label" optionValue="value" appendTo="body" (onChange)="recomputeDays()" />
+            <p-select formControlName="endUnit" [options]="units" optionLabel="label" optionValue="value" appendTo="body" (onChange)="onDatesChanged()" />
           </label>
         </div>
         <label>Jours ouvrés
@@ -89,12 +95,14 @@ export class FirmLeaveRequestDialogComponent implements OnChanges {
   private readonly fb = inject(FormBuilder);
   private readonly api = inject(FirmLeavesService);
   private readonly toast = inject(ToastService);
+  private readonly errorHandler = inject(ErrorHandlerService);
   private readonly auth = inject(AuthService);
   private readonly collabApi = inject(FirmCollaboratorsService);
 
   readonly isManager = this.auth.isFirmManager;
   readonly units = FIRM_LEAVE_DAY_UNITS;
   readonly saving = signal(false);
+  readonly saveError = signal<string | null>(null);
   readonly computedDays = signal(0);
   readonly collaborators = signal<{ label: string; value: string }[]>([]);
 
@@ -111,6 +119,7 @@ export class FirmLeaveRequestDialogComponent implements OnChanges {
 
   ngOnChanges(): void {
     if (this.visible) {
+      this.saveError.set(null);
       this.loadCollaborators();
       if (this.editRequest) {
         this.form.patchValue({
@@ -140,6 +149,15 @@ export class FirmLeaveRequestDialogComponent implements OnChanges {
     }
   }
 
+  clearSaveError(): void {
+    this.saveError.set(null);
+  }
+
+  onDatesChanged(): void {
+    this.clearSaveError();
+    this.recomputeDays();
+  }
+
   recomputeDays(): void {
     const v = this.form.getRawValue();
     if (!v.startDate || !v.endDate) return;
@@ -160,6 +178,7 @@ export class FirmLeaveRequestDialogComponent implements OnChanges {
       return;
     }
     const v = this.form.getRawValue();
+    this.saveError.set(null);
     this.saving.set(true);
     const body = {
       leaveTypeId: v.leaveTypeId,
@@ -182,7 +201,7 @@ export class FirmLeaveRequestDialogComponent implements OnChanges {
       next: res => {
         this.saving.set(false);
         if (!res.success) {
-          this.toast.add({ severity: 'error', summary: 'Erreur', detail: res.message || 'Erreur' });
+          this.saveError.set(this.apiResponseError(res, 'Erreur lors de l’enregistrement'));
           return;
         }
         this.toast.add({
@@ -195,18 +214,21 @@ export class FirmLeaveRequestDialogComponent implements OnChanges {
       },
       error: err => {
         this.saving.set(false);
-        this.toast.add({
-          severity: 'error',
-          summary: 'Erreur',
-          detail: err?.error?.message || 'Erreur lors de l’enregistrement'
-        });
+        this.saveError.set(
+          this.errorHandler.extractErrorMessage(err) || 'Erreur lors de l’enregistrement'
+        );
       }
     });
   }
 
   close(): void {
+    this.saveError.set(null);
     this.visible = false;
     this.visibleChange.emit(false);
+  }
+
+  private apiResponseError(res: { message?: string | null; errors?: string[]; error?: string }, fallback: string): string {
+    return res.message || res.errors?.[0] || res.error || fallback;
   }
 
   private loadCollaborators(): void {

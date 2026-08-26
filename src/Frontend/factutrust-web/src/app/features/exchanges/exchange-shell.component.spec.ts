@@ -105,6 +105,11 @@ describe('ExchangeShellComponent messaging', () => {
       'uploadDocument',
       'markRead',
       'markReadBatch',
+      'createRequest',
+      'changeRequestStatus',
+      'assignRequest',
+      'listRequestComments',
+      'addRequestComment',
       'getBootstrap'
     ]);
     exchange.listThreads.and.returnValue(
@@ -118,6 +123,7 @@ describe('ExchangeShellComponent messaging', () => {
     );
     exchange.getMessages.and.returnValue(of({ success: true, data: emptyPage(), message: null, errors: [] }));
     exchange.listRequests.and.returnValue(of({ success: true, data: [], message: null, errors: [] }));
+    exchange.listRequestComments.and.returnValue(of({ success: true, data: [], message: null, errors: [] }));
     exchange.listTasks.and.returnValue(of({ success: true, data: [], message: null, errors: [] }));
     exchange.listDocuments.and.returnValue(of({ success: true, data: [], message: null, errors: [] }));
     exchange.getHistory.and.returnValue(of({ success: true, data: [], message: null, errors: [] }));
@@ -328,7 +334,7 @@ describe('ExchangeShellComponent messaging', () => {
     expect(navSpy).toHaveBeenCalledWith(
       jasmine.arrayContaining(['/exchanges']),
       jasmine.objectContaining({
-        queryParams: { tab: 'documents' },
+        queryParams: { tab: 'documents', requestId: null },
         queryParamsHandling: 'merge'
       })
     );
@@ -347,7 +353,7 @@ describe('ExchangeShellComponent messaging', () => {
     expect(navSpy).toHaveBeenCalledWith(
       jasmine.anything(),
       jasmine.objectContaining({
-        queryParams: { tab: null },
+        queryParams: { tab: null, requestId: null },
         queryParamsHandling: 'merge'
       })
     );
@@ -473,6 +479,58 @@ describe('ExchangeShellComponent messaging', () => {
 
     expect(cmp.error()).toBeNull();
     expect(exchange.getBootstrap).toHaveBeenCalled();
+  }));
+
+  it('selectRequest merges requestId without changing tab or re-bootstrapping', fakeAsync(() => {
+    setup({ current: assignment({ status: 'Active' }) });
+    tick();
+    const cmp = fixture.componentInstance;
+    cmp['activeThread'].set(threadDetail('Open') as never);
+    cmp.activeTab.set('demandes');
+    const bootCalls = exchange.getBootstrap.calls.count();
+    const router = TestBed.inject(Router);
+    const navSpy = spyOn(router, 'navigate').and.returnValue(Promise.resolve(true));
+    cmp.selectRequest('r1');
+    expect(cmp.activeTab()).toBe('demandes');
+    expect(navSpy).toHaveBeenCalledWith(
+      jasmine.arrayContaining(['/exchanges', 't1']),
+      jasmine.objectContaining({
+        queryParams: { requestId: 'r1' },
+        queryParamsHandling: 'merge'
+      })
+    );
+    expect(exchange.getBootstrap).toHaveBeenCalledTimes(bootCalls);
+  }));
+
+  it('setTab(demandes) loads requests documents and history without a second bootstrap', fakeAsync(() => {
+    setup({ current: assignment({ status: 'Active' }) });
+    tick();
+    const cmp = fixture.componentInstance;
+    cmp['activeThread'].set(threadDetail('Open') as never);
+    const router = TestBed.inject(Router);
+    spyOn(router, 'navigate').and.returnValue(Promise.resolve(true));
+    exchange.getBootstrap.calls.reset();
+    exchange.listRequests.calls.reset();
+    exchange.listDocuments.calls.reset();
+    exchange.getHistory.calls.reset();
+    cmp.setTab('demandes');
+    tick();
+    expect(cmp.activeTab()).toBe('demandes');
+    expect(exchange.getBootstrap).not.toHaveBeenCalled();
+    expect(exchange.listRequests).toHaveBeenCalledWith('t1');
+    expect(exchange.listDocuments).toHaveBeenCalledWith('t1');
+    expect(exchange.getHistory).toHaveBeenCalledWith('t1');
+  }));
+
+  it('sidebar new-request opens the demandes tab', fakeAsync(() => {
+    setup({ current: assignment({ status: 'Active' }) });
+    tick();
+    const cmp = fixture.componentInstance;
+    cmp['activeThread'].set(threadDetail('Open') as never);
+    cmp.showNewRequest.set(true);
+    cmp.setTab('demandes');
+    expect(cmp.showNewRequest()).toBe(true);
+    expect(cmp.activeTab()).toBe('demandes');
   }));
 });
 

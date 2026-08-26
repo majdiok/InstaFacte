@@ -111,6 +111,8 @@ public sealed record PurchaseReceiptLineDto
     public decimal SubTotal { get; init; }
     public decimal VatAmount { get; init; }
     public decimal Total { get; init; }
+    public TrackingMode TrackingMode { get; init; }
+    public PickingPolicy PickingPolicy { get; init; }
 }
 
 /// <summary>

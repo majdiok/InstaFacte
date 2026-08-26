@@ -56,7 +56,7 @@ import { PosOrderLine } from '../../services/pos-state.service';
           <button
             class="order-line__qty-btn"
             (click)="onDecrement.emit()"
-            [disabled]="line.quantity <= 1"
+            [disabled]="line.quantity <= 0.001"
             aria-label="Diminuer la quantite">
             <i class="pi pi-minus"></i>
           </button>
@@ -68,8 +68,8 @@ import { PosOrderLine } from '../../services/pos-state.service';
             (blur)="commitEdit()"
             (input)="onInput($event)"
             (keydown.enter)="blurInput($event)"
-            min="1"
-            step="1"
+            min="0.001"
+            step="any"
             aria-label="Quantite" />
           <button
             class="order-line__qty-btn"
@@ -251,6 +251,7 @@ import { PosOrderLine } from '../../services/pos-state.service';
       align-items: center;
       gap: var(--spacing-3);
       flex-shrink: 0;
+      flex-wrap: nowrap;
     }
 
     .order-line__quantity {
@@ -454,9 +455,9 @@ export class OrderLineComponent implements OnChanges {
 
   commitEdit(): void {
     if (this.editingValue === null) return;
-    const parsed = parseInt(this.editingValue, 10);
+    const parsed = Number(String(this.editingValue).replace(',', '.'));
     this.editingValue = null;
-    if (Number.isNaN(parsed) || parsed < 1) return;
+    if (!Number.isFinite(parsed) || parsed < 0.001) return;
     this.onQuantitySet.emit(parsed);
   }
 

@@ -1,7 +1,9 @@
 import {
   Component,
+  EventEmitter,
   Input,
   OnChanges,
+  Output,
   SimpleChanges,
   inject,
   signal,
@@ -28,10 +30,21 @@ import {
   allocationSum,
   createDefaultLotRow,
   createDefaultSerialRow,
+  coerceTrackingMode,
+  ExitLotAvailability,
+  LotStockValidity,
+  remainingLotAvailable,
+  capQuantityToRemaining,
+  exitAllocationsExceedLotStock,
+  lotStockExceedances,
+  isLotExpired,
+  shouldBlockExpiredLotsOnExit,
   TRACKING_MODE_LOT,
   TRACKING_MODE_SERIAL
 } from '@shared/utils/stock-traceability.utils';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { of } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 
 @Component({
   selector: 'app-stock-allocation-editor',
@@ -51,22 +64,63 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
         <span class="alloc-label">{{ labelText() }}</span>
 
         @if (lotMode()) {
-          @for (alloc of allocations; track $index; let ai = $index) {
-            <div class="alloc-row">
-              @if (mode === 'exit' && availableLots().length > 0) {
-                <p-select
-                  [options]="lotOptions()"
-                  [(ngModel)]="alloc.productLotId"
-                  [ngModelOptions]="{ standalone: true }"
-                  optionLabel="label"
-                  optionValue="value"
-                  placeholder="Lot"
-                  appendTo="body"
-                  (onChange)="onLotPicked(alloc, $event.value)">
-                </p-select>
-              } @else {
-                <input pInputText placeholder="N° lot" [(ngModel)]="alloc.lotNumber" [ngModelOptions]="{ standalone: true }" />
+          @if (mode === 'exit') {
+            @if (lotOptions().length > 0) {
+              @for (alloc of allocations; track $index; let ai = $index) {
+                <div class="alloc-row">
+                  <p-select
+                    styleClass="alloc-field-lot"
+                    class="alloc-field-lot"
+                    [options]="lotOptions()"
+                    [(ngModel)]="alloc.productLotId"
+                    [ngModelOptions]="{ standalone: true }"
+                    optionLabel="label"
+                    optionValue="value"
+                    placeholder="Lot"
+                    [filter]="true"
+                    filterBy="label"
+                    filterPlaceholder="Rechercher un lot…"
+                    [showClear]="true"
+                    appendTo="body"
+                    (onChange)="onLotPicked(alloc, $event.value)">
+                  </p-select>
+                  <p-inputNumber
+                    styleClass="alloc-field-qty"
+                    inputStyleClass="alloc-qty-input"
+                    [class.alloc-qty-over]="isLotQtyOverAvailable(alloc)"
+                    [(ngModel)]="alloc.quantity"
+                    [ngModelOptions]="{ standalone: true }"
+                    [min]="0"
+                    [max]="lotQtyMax(alloc, ai)"
+                    mode="decimal"
+                    [minFractionDigits]="0"
+                    [maxFractionDigits]="3"
+                    (ngModelChange)="onExitLotQtyChange(alloc, ai)">
+                  </p-inputNumber>
+                  <button type="button" class="btn-icon" (click)="removeRow(ai)" aria-label="Retirer">
+                    <i class="pi pi-times"></i>
+                  </button>
+                </div>
+              }
+              <app-button type="button" variant="ghost" size="sm" icon="pi-plus" iconPos="left" (clicked)="addLotRow()">
+                Ajouter un lot
+              </app-button>
+            } @else if (lotsLoaded()) {
+              <span class="alloc-empty">
+                @if (excludedExpiredCount() > 0) {
+                  Tous les lots de cet entrepôt sont périmés et ne peuvent pas sortir.
+                } @else {
+                  Aucun lot disponible dans cet entrepôt. Réceptionnez d'abord le stock avec un n° de lot.
+                }
+              </span>
+            }
+          } @else {
+            @for (alloc of allocations; track $index; let ai = $index) {
+              <div class="alloc-row alloc-row--entry">
+                <input pInputText class="alloc-field-lot" placeholder="N° lot" [(ngModel)]="alloc.lotNumber" [ngModelOptions]="{ standalone: true }" />
                 <p-datepicker
+                  styleClass="alloc-field-dluo"
+                  class="alloc-field-dluo"
                   [(ngModel)]="alloc.expiryDate"
                   [ngModelOptions]="{ standalone: true }"
                   dateFormat="dd/mm/yy"
@@ -74,54 +128,83 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
                   [showIcon]="true"
                   appendTo="body">
                 </p-datepicker>
-              }
-              <p-inputNumber
-                [(ngModel)]="alloc.quantity"
-                [ngModelOptions]="{ standalone: true }"
-                [min]="0"
-                mode="decimal"
-                [minFractionDigits]="0"
-                [maxFractionDigits]="3">
-              </p-inputNumber>
-              <button type="button" class="btn-icon" (click)="removeRow(ai)" aria-label="Retirer">
-                <i class="pi pi-times"></i>
-              </button>
-            </div>
+                <p-inputNumber
+                  styleClass="alloc-field-qty"
+                  inputStyleClass="alloc-qty-input"
+                  [(ngModel)]="alloc.quantity"
+                  [ngModelOptions]="{ standalone: true }"
+                  [min]="0"
+                  mode="decimal"
+                  [minFractionDigits]="0"
+                  [maxFractionDigits]="3">
+                </p-inputNumber>
+                <button type="button" class="btn-icon" (click)="removeRow(ai)" aria-label="Retirer">
+                  <i class="pi pi-times"></i>
+                </button>
+              </div>
+            }
+            <app-button type="button" variant="ghost" size="sm" icon="pi-plus" iconPos="left" (clicked)="addLotRow()">
+              Ajouter un lot
+            </app-button>
           }
-          <app-button type="button" variant="ghost" size="sm" icon="pi-plus" iconPos="left" (clicked)="addLotRow()">
-            Ajouter un lot
-          </app-button>
         }
 
         @if (serialMode()) {
-          @for (alloc of allocations; track $index; let ai = $index) {
-            <div class="alloc-row">
-              @if (mode === 'exit' && availableSerials().length > 0) {
-                <p-select
-                  [options]="serialOptions()"
-                  [(ngModel)]="alloc.serialId"
-                  [ngModelOptions]="{ standalone: true }"
-                  optionLabel="label"
-                  optionValue="value"
-                  placeholder="N° série"
-                  appendTo="body"
-                  (onChange)="onSerialPicked(alloc, $event.value)">
-                </p-select>
-              } @else {
-                <input pInputText placeholder="N° série" [(ngModel)]="alloc.serialNumber" [ngModelOptions]="{ standalone: true }" />
+          @if (mode === 'exit') {
+            @if (availableSerials().length > 0) {
+              @for (alloc of allocations; track $index; let ai = $index) {
+                <div class="alloc-row alloc-row--serial">
+                  <p-select
+                    styleClass="alloc-field-lot"
+                    class="alloc-field-lot"
+                    [options]="serialOptions()"
+                    [(ngModel)]="alloc.serialId"
+                    [ngModelOptions]="{ standalone: true }"
+                    optionLabel="label"
+                    optionValue="value"
+                    placeholder="N° série"
+                    [filter]="true"
+                    filterBy="label"
+                    filterPlaceholder="Rechercher un n° de série…"
+                    [showClear]="true"
+                    appendTo="body"
+                    (onChange)="onSerialPicked(alloc, $event.value)">
+                  </p-select>
+                  <button type="button" class="btn-icon" (click)="removeRow(ai)" aria-label="Retirer">
+                    <i class="pi pi-times"></i>
+                  </button>
+                </div>
               }
-              <button type="button" class="btn-icon" (click)="removeRow(ai)" aria-label="Retirer">
-                <i class="pi pi-times"></i>
-              </button>
-            </div>
-          }
-          @if (mode === 'entry') {
+            } @else if (serialsLoaded()) {
+              <span class="alloc-empty">
+                Aucun numéro de série disponible dans cet entrepôt.
+              </span>
+            }
+          } @else {
+            @for (alloc of allocations; track $index; let ai = $index) {
+              <div class="alloc-row alloc-row--serial">
+                <input pInputText class="alloc-field-lot" placeholder="N° série" [(ngModel)]="alloc.serialNumber" [ngModelOptions]="{ standalone: true }" />
+                <button type="button" class="btn-icon" (click)="removeRow(ai)" aria-label="Retirer">
+                  <i class="pi pi-times"></i>
+                </button>
+              </div>
+            }
             <app-button type="button" variant="ghost" size="sm" icon="pi-plus" iconPos="left" (clicked)="addSerialRow()">
               Ajouter un n° de série
             </app-button>
           }
         }
 
+        @if (excludedExpiredCount() > 0 && lotOptions().length > 0) {
+          <span class="alloc-hint">
+            {{ excludedExpiredCount() }} lot(s) périmé(s) exclus de la sortie
+          </span>
+        }
+        @if (lotStockWarning(); as warn) {
+          <span class="alloc-over">
+            Quantité supérieure au disponible du lot ({{ warn.available | number:'1.0-3' }})
+          </span>
+        }
         @if (showSumWarning()) {
           <span class="alloc-warning">
             Somme {{ allocationSum(allocations) | number:'1.0-3' }} ≠ quantité ligne {{ lineQuantity | number:'1.0-3' }}
@@ -133,34 +216,93 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
   styles: [`
     .alloc-editor {
       display: flex;
-      flex-wrap: wrap;
+      flex-direction: column;
+      align-items: stretch;
       gap: 0.5rem;
-      align-items: center;
-      padding: 0.5rem 0;
+      width: 100%;
+      max-width: 36rem;
+      padding: 0.25rem 0;
+    }
+    .alloc-editor:has(.alloc-row--entry) {
+      max-width: 42rem;
     }
     .alloc-label {
       font-size: 0.75rem;
       font-weight: 600;
       color: #64748b;
-      margin-right: 0.5rem;
     }
     .alloc-row {
-      display: flex;
-      flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: minmax(12rem, 22rem) 6rem auto;
       gap: 0.5rem;
       align-items: center;
+      width: 100%;
+      max-width: 36rem;
+    }
+    .alloc-row--entry {
+      grid-template-columns: minmax(8rem, 14rem) 9.5rem 6rem auto;
+      max-width: 42rem;
+    }
+    .alloc-row--serial {
+      grid-template-columns: minmax(12rem, 22rem) auto;
+    }
+    .alloc-field-lot {
+      min-width: 0;
+      width: 100%;
+    }
+    .alloc-field-dluo {
+      width: 100%;
+    }
+    .alloc-field-qty {
+      width: 100%;
     }
     .btn-icon {
+      justify-self: start;
       background: none;
       border: none;
       color: #64748b;
       cursor: pointer;
     }
-    .alloc-warning {
+    .alloc-warning,
+    .alloc-empty,
+    .alloc-hint {
       color: #b45309;
       font-size: 0.75rem;
     }
-    :host ::ng-deep .p-datepicker { display: flex; }
+    .alloc-over {
+      color: #b91c1c;
+      font-size: 0.75rem;
+    }
+    @media (max-width: 520px) {
+      .alloc-row,
+      .alloc-row--entry {
+        grid-template-columns: minmax(0, 1fr) 6rem auto;
+      }
+      .alloc-row--entry .alloc-field-dluo {
+        grid-column: 1 / -1;
+      }
+    }
+    :host ::ng-deep {
+      .p-datepicker { display: flex; width: 100%; }
+      .alloc-field-lot,
+      .alloc-field-lot .p-select,
+      .alloc-field-lot.p-select {
+        width: 100%;
+      }
+      .alloc-field-dluo .p-datepicker,
+      .alloc-field-dluo.p-datepicker {
+        width: 100%;
+      }
+      .alloc-field-qty.p-inputnumber,
+      .alloc-field-qty .p-inputnumber,
+      .alloc-qty-input {
+        width: 100%;
+      }
+      .alloc-qty-over .p-inputnumber-input,
+      .alloc-field-qty.alloc-qty-over .p-inputnumber-input {
+        border-color: #dc2626;
+      }
+    }
   `]
 })
 export class StockAllocationEditorComponent implements OnChanges {
@@ -168,11 +310,14 @@ export class StockAllocationEditorComponent implements OnChanges {
   @Input({ required: true }) productId!: string;
   @Input({ required: true }) warehouseId!: string;
   @Input({ required: true }) lineQuantity!: number;
-  @Input() trackingMode = 0;
-  @Input() pickingPolicy = 0;
+  @Input() trackingMode: number | string = 0;
+  @Input() pickingPolicy: number | string = 0;
   @Input() features: StockFeatures | null = null;
+  @Input() hasExpiryTracking = false;
   @Input() allocations: AllocationRow[] = [];
   @Input() optionalOverride = false;
+  @Output() availabilityChange = new EventEmitter<ExitLotAvailability>();
+  @Output() lotStockValidChange = new EventEmitter<LotStockValidity>();
 
   private stockService = inject(StockService);
   private destroyRef = inject(DestroyRef);
@@ -182,19 +327,26 @@ export class StockAllocationEditorComponent implements OnChanges {
   serialMode = signal(false);
   availableLots = signal<StockLotBalance[]>([]);
   availableSerials = signal<ProductSerial[]>([]);
+  lotsLoaded = signal(false);
+  serialsLoaded = signal(false);
 
   lotOptions = signal<{ label: string; value: string }[]>([]);
   serialOptions = signal<{ label: string; value: string }[]>([]);
+  excludedExpiredCount = signal(0);
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['trackingMode'] || changes['features'] || changes['productId'] || changes['warehouseId']) {
+    if (changes['trackingMode'] || changes['features'] || changes['productId']
+      || changes['warehouseId'] || changes['mode'] || changes['hasExpiryTracking']) {
       this.refreshVisibility();
       this.loadAvailability();
+    } else if (changes['lineQuantity'] || changes['allocations']) {
+      this.recapSelectedAllocations();
+      this.emitLotStockValidity();
     }
   }
 
   labelText(): string {
-    if (this.serialMode()) return this.mode === 'entry' ? 'N° de série' : 'N° de série';
+    if (this.serialMode()) return 'N° de série';
     if (this.mode === 'entry') return 'Lots';
     if (this.optionalOverride || !needsManualLotPicker(this.pickingPolicy)) {
       return 'Lots (optionnel — sinon FEFO)';
@@ -204,6 +356,8 @@ export class StockAllocationEditorComponent implements OnChanges {
 
   showSumWarning(): boolean {
     if (!this.visible()) return false;
+    if (this.mode === 'exit' && this.lotMode() && this.lotOptions().length === 0) return false;
+    if (this.mode === 'exit' && this.serialMode() && this.availableSerials().length === 0) return false;
     if (this.serialMode()) {
       return this.allocations.length !== Math.round(this.lineQuantity);
     }
@@ -217,6 +371,7 @@ export class StockAllocationEditorComponent implements OnChanges {
 
   addLotRow(): void {
     this.allocations.push(createDefaultLotRow(0));
+    this.emitLotStockValidity();
   }
 
   addSerialRow(): void {
@@ -226,20 +381,73 @@ export class StockAllocationEditorComponent implements OnChanges {
   removeRow(index: number): void {
     if (this.allocations.length <= 1) return;
     this.allocations.splice(index, 1);
+    this.recapSelectedAllocations();
+    this.emitLotStockValidity();
+  }
+
+  lotQtyMax(alloc: AllocationRow, index: number): number | undefined {
+    if (this.mode !== 'exit' || !this.lotMode() || !this.lotsLoaded() || !alloc.productLotId) {
+      return undefined;
+    }
+    return remainingLotAvailable(this.lotsForExitStock(), this.allocations, alloc.productLotId, index);
+  }
+
+  onExitLotQtyChange(alloc: AllocationRow, index: number): void {
+    if (this.lotsLoaded() && alloc.productLotId) {
+      const remaining = remainingLotAvailable(
+        this.lotsForExitStock(),
+        this.allocations,
+        alloc.productLotId,
+        index
+      );
+      alloc.quantity = capQuantityToRemaining(alloc.quantity ?? 0, remaining);
+    }
+    this.emitLotStockValidity();
+  }
+
+  lotStockWarning(): { lotNumber: string; available: number; requested: number } | null {
+    if (this.mode !== 'exit' || !this.lotMode() || !this.lotsLoaded()) return null;
+    const first = lotStockExceedances(this.allocations, this.lotsForExitStock())[0];
+    return first ?? null;
+  }
+
+  isLotQtyOverAvailable(alloc: AllocationRow): boolean {
+    if (!alloc.productLotId || this.mode !== 'exit' || !this.lotsLoaded()) return false;
+    return lotStockExceedances(this.allocations, this.lotsForExitStock())
+      .some(e => e.productLotId === alloc.productLotId);
   }
 
   onLotPicked(alloc: AllocationRow, lotId: string | null): void {
-    if (!lotId) return;
-    const lot = this.availableLots().find(l => l.productLotId === lotId);
+    if (!lotId) {
+      alloc.productLotId = null;
+      alloc.lotNumber = '';
+      alloc.expiryDate = null;
+      this.emitLotStockValidity();
+      return;
+    }
+    const lot = this.lotsForExitStock().find(l => l.productLotId === lotId);
     if (lot) {
       alloc.productLotId = lot.productLotId;
       alloc.lotNumber = lot.lotNumber;
       if (lot.expiryDate) alloc.expiryDate = new Date(lot.expiryDate);
     }
+    const index = this.allocations.indexOf(alloc);
+    const remaining = remainingLotAvailable(
+      this.lotsForExitStock(),
+      this.allocations,
+      alloc.productLotId ?? lotId,
+      index >= 0 ? index : undefined
+    );
+    alloc.quantity = capQuantityToRemaining(alloc.quantity ?? 0, remaining);
+    this.emitLotStockValidity();
   }
 
   onSerialPicked(alloc: AllocationRow, serialId: string | null): void {
-    if (!serialId) return;
+    if (!serialId) {
+      alloc.serialId = null;
+      alloc.serialNumber = '';
+      return;
+    }
     const serial = this.availableSerials().find(s => s.id === serialId);
     if (serial) {
       alloc.serialId = serial.id;
@@ -257,40 +465,150 @@ export class StockAllocationEditorComponent implements OnChanges {
   }
 
   private loadAvailability(): void {
-    if (!this.productId || !this.warehouseId || !this.visible()) return;
+    this.availableLots.set([]);
+    this.lotOptions.set([]);
+    this.availableSerials.set([]);
+    this.serialOptions.set([]);
+    this.excludedExpiredCount.set(0);
+    this.lotsLoaded.set(false);
+    this.serialsLoaded.set(false);
 
-    if (this.trackingMode === TRACKING_MODE_LOT && this.mode === 'exit') {
+    if (!this.productId || !this.warehouseId || !this.visible() || this.mode !== 'exit') return;
+
+    const tracking = coerceTrackingMode(this.trackingMode);
+
+    if (tracking === TRACKING_MODE_LOT) {
+      this.emitAvailability('lot', false, 0);
       this.stockService.getLotsByProduct(this.productId, this.warehouseId)
-        .pipe(takeUntilDestroyed(this.destroyRef))
+        .pipe(
+          catchError(() => of({ success: false, data: [] as StockLotBalance[], message: null, errors: [] })),
+          takeUntilDestroyed(this.destroyRef)
+        )
         .subscribe(res => {
-          if (res.success && res.data) {
-            this.availableLots.set(res.data);
-            this.lotOptions.set(
-              res.data
-                .filter(l => l.quantityAvailable > 0)
-                .map(l => ({
-                  value: l.productLotId,
-                  label: `${l.lotNumber} (${l.quantityAvailable})${l.expiryDate ? ' · ' + l.expiryDate.slice(0, 10) : ''}`
-                }))
-            );
-          }
+          const data = res.success && res.data ? res.data : [];
+          this.availableLots.set(data);
+          const inStock = data.filter(l => l.quantityAvailable > 0);
+          const blockExpired = shouldBlockExpiredLotsOnExit(this.features, this.hasExpiryTracking);
+          const expired = blockExpired ? inStock.filter(l => isLotExpired(l.expiryDate)) : [];
+          const pickable = blockExpired ? inStock.filter(l => !isLotExpired(l.expiryDate)) : inStock;
+          this.excludedExpiredCount.set(expired.length);
+          this.lotOptions.set(pickable.map(l => ({
+            value: l.productLotId,
+            label: `${l.lotNumber} (${l.quantityAvailable})${l.expiryDate ? ' · ' + l.expiryDate.slice(0, 10) : ''}`
+          })));
+          this.applyKnownLotsToAllocations();
+          this.clearBlockedExpiredAllocations();
+          this.lotsLoaded.set(true);
+          this.recapSelectedAllocations();
+          this.emitAvailability('lot', true, pickable.length, expired.length);
+          this.emitLotStockValidity();
         });
     }
 
-    if (this.trackingMode === TRACKING_MODE_SERIAL && this.mode === 'exit') {
+    if (tracking === TRACKING_MODE_SERIAL) {
+      this.emitAvailability('serial', false, 0);
       this.stockService.getSerialsByProduct(this.productId, this.warehouseId)
-        .pipe(takeUntilDestroyed(this.destroyRef))
+        .pipe(
+          catchError(() => of({ success: false, data: [] as ProductSerial[], message: null, errors: [] })),
+          takeUntilDestroyed(this.destroyRef)
+        )
         .subscribe(res => {
-          if (res.success && res.data) {
-            this.availableSerials.set(res.data);
-            this.serialOptions.set(
-              res.data.map(s => ({
-                value: s.id,
-                label: s.lotNumber ? `${s.serialNumber} (${s.lotNumber})` : s.serialNumber
-              }))
-            );
-          }
+          const data = res.success && res.data ? res.data : [];
+          this.availableSerials.set(data);
+          this.serialOptions.set(
+            data.map(s => ({
+              value: s.id,
+              label: s.lotNumber ? `${s.serialNumber} (${s.lotNumber})` : s.serialNumber
+            }))
+          );
+          this.serialsLoaded.set(true);
+          this.emitAvailability('serial', true, data.length);
         });
     }
+  }
+
+  private applyKnownLotsToAllocations(): void {
+    const lots = this.availableLots();
+    for (const alloc of this.allocations) {
+      if (alloc.productLotId) {
+        const byId = lots.find(l => l.productLotId === alloc.productLotId);
+        if (byId) alloc.lotNumber = byId.lotNumber;
+        continue;
+      }
+      const typed = alloc.lotNumber?.trim();
+      if (!typed) continue;
+      const needle = typed.toUpperCase();
+      const matches = lots.filter(l => l.lotNumber.trim().toUpperCase() === needle);
+      if (matches.length === 1) {
+        alloc.productLotId = matches[0].productLotId;
+        alloc.lotNumber = matches[0].lotNumber;
+        if (matches[0].expiryDate) alloc.expiryDate = new Date(matches[0].expiryDate);
+      }
+    }
+  }
+
+  private recapSelectedAllocations(): void {
+    if (this.mode !== 'exit' || !this.lotMode() || !this.lotsLoaded()) return;
+    this.allocations.forEach((alloc, index) => {
+      if (!alloc.productLotId) return;
+      const remaining = remainingLotAvailable(
+        this.lotsForExitStock(),
+        this.allocations,
+        alloc.productLotId,
+        index
+      );
+      alloc.quantity = capQuantityToRemaining(alloc.quantity ?? 0, remaining);
+    });
+  }
+
+  emitLotStockValidity(): void {
+    if (this.mode !== 'exit' || !this.lotMode()) {
+      this.lotStockValidChange.emit({ productId: this.productId, valid: true });
+      return;
+    }
+    if (!this.lotsLoaded()) {
+      this.lotStockValidChange.emit({ productId: this.productId, valid: true });
+      return;
+    }
+    this.lotStockValidChange.emit({
+      productId: this.productId,
+      valid: !exitAllocationsExceedLotStock(this.allocations, this.lotsForExitStock())
+    });
+  }
+
+  private lotsForExitStock(): StockLotBalance[] {
+    const lots = this.availableLots();
+    if (!shouldBlockExpiredLotsOnExit(this.features, this.hasExpiryTracking)) {
+      return lots;
+    }
+    return lots.filter(l => !isLotExpired(l.expiryDate));
+  }
+
+  private clearBlockedExpiredAllocations(): void {
+    if (!shouldBlockExpiredLotsOnExit(this.features, this.hasExpiryTracking)) return;
+    for (const alloc of this.allocations) {
+      if (!alloc.productLotId) continue;
+      const lot = this.availableLots().find(l => l.productLotId === alloc.productLotId);
+      if (lot && isLotExpired(lot.expiryDate)) {
+        alloc.productLotId = null;
+        alloc.lotNumber = '';
+        alloc.expiryDate = null;
+      }
+    }
+  }
+
+  private emitAvailability(
+    kind: ExitLotAvailability['kind'],
+    loaded: boolean,
+    availableCount: number,
+    expiredExcludedCount = 0
+  ): void {
+    this.availabilityChange.emit({
+      productId: this.productId,
+      kind,
+      loaded,
+      availableCount,
+      expiredExcludedCount: kind === 'lot' ? expiredExcludedCount : undefined
+    });
   }
 }

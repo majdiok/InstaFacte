@@ -811,6 +811,9 @@ public sealed class UpdateDraftJournalEntryCommandHandler : IRequestHandler<Upda
             if (entry.ReversesEntryId is not null)
                 return Result.Failure(Error.Validation("Extourne",
                     "Une extourne doit rester le miroir exact de l'écriture d'origine : validez-la ou supprimez-la."));
+            if (entry.Lines.Any(l => !string.IsNullOrEmpty(l.LetteringCode)))
+                return Result.Failure(Error.Validation("Lettering",
+                    "Délettrez cette écriture avant de la modifier."));
             return entry.UpdateDraftLines(
                 request.Request.Label,
                 lines,

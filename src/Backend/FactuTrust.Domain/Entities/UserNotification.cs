@@ -6,7 +6,8 @@ namespace FactuTrust.Domain.Entities;
 /// <summary>
 /// In-app notification stored in the master database (cross-tenant flows such as
 /// company ↔ accounting-firm assignments). Targeted at a tenant, optionally
-/// narrowed to a role within that tenant; read state is shared per notification.
+/// narrowed to a role within that tenant, or to a single user via
+/// <see cref="RecipientUserId"/>. Read state is per notification row.
 /// </summary>
 public sealed class UserNotification : AggregateRoot
 {
@@ -17,6 +18,7 @@ public sealed class UserNotification : AggregateRoot
 
     public Guid RecipientTenantId { get; private set; }
     public string? RecipientRole { get; private set; }
+    public Guid? RecipientUserId { get; private set; }
     public NotificationType Type { get; private set; }
     public string Title { get; private set; } = null!;
     public string Body { get; private set; } = null!;
@@ -31,7 +33,8 @@ public sealed class UserNotification : AggregateRoot
         NotificationType type,
         string title,
         string body,
-        string? linkUrl = null)
+        string? linkUrl = null,
+        Guid? recipientUserId = null)
     {
         if (recipientTenantId == Guid.Empty)
             return Result.Failure<UserNotification>(Error.Validation("Recipient", "Tenant destinataire invalide"));
@@ -44,6 +47,7 @@ public sealed class UserNotification : AggregateRoot
         {
             RecipientTenantId = recipientTenantId,
             RecipientRole = string.IsNullOrWhiteSpace(recipientRole) ? null : recipientRole.Trim(),
+            RecipientUserId = recipientUserId is { } uid && uid != Guid.Empty ? uid : null,
             Type = type,
             Title = Truncate(trimmedTitle, TitleMaxLength)!,
             Body = Truncate(body?.Trim(), BodyMaxLength) ?? string.Empty,

@@ -61,6 +61,18 @@ public sealed class PurchaseReceiptDomainTests
     }
 
     [Fact]
+    public void ReceiveGoods_WhenExceedsOrdered_ShouldReportAlreadyReceivedAndThisReceipt()
+    {
+        var (order, lineId) = BuildConfirmedPoWithReception();
+        var result = order.ReceiveGoods([(lineId, 4m)]);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains("déjà reçue : 2", result.Error.Description);
+        Assert.Contains("cette réception : 4", result.Error.Description);
+        Assert.Contains("commandée : 5", result.Error.Description);
+    }
+
+    [Fact]
     public void ReverseGoodsReception_ShouldRestoreConfirmedWhenNoRemaining()
     {
         var (order, lineId) = BuildConfirmedPoWithReception();

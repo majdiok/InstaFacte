@@ -82,7 +82,9 @@ public sealed class GetPurchaseReceiptByIdQueryHandler
                 VatRateDisplay = l.VatRate.ToDisplayString(),
                 SubTotal = l.SubTotal.Amount,
                 VatAmount = l.VatAmount.Amount,
-                Total = l.Total.Amount
+                Total = l.Total.Amount,
+                TrackingMode = l.Product.TrackingMode,
+                PickingPolicy = l.Product.PickingPolicy
             }).ToList(),
             Attachments = receipt.Attachments.OrderByDescending(a => a.UploadedAt).Select(a => new PurchaseReceiptAttachmentDto
             {

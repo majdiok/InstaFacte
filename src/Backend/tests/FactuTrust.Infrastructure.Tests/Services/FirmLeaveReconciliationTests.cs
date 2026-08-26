@@ -6,6 +6,7 @@ using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.Persistence;
 using FactuTrust.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
@@ -33,7 +34,12 @@ public sealed class FirmLeaveReconciliationTests
     {
         var calendar = new Mock<ITunisianCalendarService>();
         calendar.Setup(c => c.IsHoliday(It.IsAny<DateTime>())).Returns(false);
-        return new FirmLeaveService(db, calendar.Object, mirror ?? Mock.Of<IFirmLeavePayrollMirrorService>());
+        return new FirmLeaveService(
+            db,
+            calendar.Object,
+            mirror ?? Mock.Of<IFirmLeavePayrollMirrorService>(),
+            Mock.Of<INotificationService>(),
+            NullLogger<FirmLeaveService>.Instance);
     }
 
     private static async Task<FirmLeaveRequest> SeedApprovedAsync(

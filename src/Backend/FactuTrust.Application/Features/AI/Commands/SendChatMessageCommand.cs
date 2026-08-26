@@ -242,7 +242,7 @@ public sealed class SendChatMessageHandler
                         sw.ElapsedMilliseconds,
                         detail: modelRef.CanonicalModelRef);
                     yield return ChatStreamEvent.ErrorEvent(
-                        $"Le modèle « {modelRef.ProviderModelId} » n'est pas installé sur le moteur IA InstaFact. Contactez l'administrateur plateforme ou choisissez un autre modèle.");
+                        "Le modèle configuré pour l'assistant n'est pas installé sur le moteur IA InstaFact. Contactez l'administrateur plateforme.");
                     yield break;
                 }
 

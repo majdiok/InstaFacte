@@ -57,6 +57,8 @@ describe('FirmTimeSheetsComponent', () => {
           validateTimeSheet: jasmine.createSpy('validateTimeSheet').and.returnValue(of({ success: true, data: {} })),
           unvalidateTimeSheet: jasmine.createSpy('unvalidateTimeSheet').and.returnValue(of({ success: true, data: {} })),
           submitTimeSheet: jasmine.createSpy('submitTimeSheet').and.returnValue(of({ success: true, data: {} })),
+          submitTimeSheetsBulkDetailed: jasmine.createSpy('submitTimeSheetsBulkDetailed').and.returnValue(
+            of({ success: true, data: { submitted: 1, skipped: 0, failures: [] } })),
           startTimeSheetTimer: jasmine.createSpy('startTimeSheetTimer').and.returnValue(of({ success: true, data: {} })),
           stopTimeSheetTimer: jasmine.createSpy('stopTimeSheetTimer').and.returnValue(of({ success: true, data: {} })),
           duplicateTimeSheetWeek: jasmine.createSpy('duplicateTimeSheetWeek').and.returnValue(of({ success: true, data: [] })),
@@ -417,15 +419,15 @@ describe('FirmTimeSheetsComponent', () => {
   });
 
   it('soumet les brouillons filtrés (T21)', () => {
-    const api = TestBed.inject(FirmGovernanceService) as unknown as { submitTimeSheet: jasmine.Spy };
-    api.submitTimeSheet.calls.reset();
+    const api = TestBed.inject(FirmGovernanceService) as unknown as { submitTimeSheetsBulkDetailed: jasmine.Spy };
+    api.submitTimeSheetsBulkDetailed.calls.reset();
     facade.entries.set([
       { id: 'd1', hours: 1, isValidated: false, status: 0 } as never,
       { id: 's1', hours: 1, isValidated: false, status: 1 } as never,
       { id: 't1', hours: 0.25, isValidated: false, status: 0, timerStartedAtUtc: '2026-07-20T10:00:00Z' } as never
     ]);
     facade.submitDrafts();
-    expect(api.submitTimeSheet).toHaveBeenCalledOnceWith('d1');
+    expect(api.submitTimeSheetsBulkDetailed).toHaveBeenCalledOnceWith(['d1']);
   });
 
   it('clôture la période sélectionnée (T49)', () => {

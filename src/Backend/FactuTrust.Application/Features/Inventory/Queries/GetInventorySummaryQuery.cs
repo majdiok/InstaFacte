@@ -46,18 +46,22 @@ public sealed record InventorySummaryLineDto
     public string DifferenceClass { get; init; } = string.Empty; // "positive", "negative", "neutral"
     public Guid? ProductLotId { get; init; }
     public string? LotNumber { get; init; }
+    public TrackingMode TrackingMode { get; init; }
 }
 
 public sealed class GetInventorySummaryQueryHandler : IRequestHandler<GetInventorySummaryQuery, Result<InventorySummaryDto>>
 {
     private readonly IPhysicalInventoryRepository _inventoryRepository;
+    private readonly IProductRepository _productRepository;
     private readonly ITenantContext _tenantContext;
 
     public GetInventorySummaryQueryHandler(
         IPhysicalInventoryRepository inventoryRepository,
+        IProductRepository productRepository,
         ITenantContext tenantContext)
     {
         _inventoryRepository = inventoryRepository;
+        _productRepository = productRepository;
         _tenantContext = tenantContext;
     }
 
@@ -71,27 +75,36 @@ public sealed class GetInventorySummaryQueryHandler : IRequestHandler<GetInvento
             return Result.Failure<InventorySummaryDto>(Error.NotFound("Inventaire", request.InventoryId));
 
         var summary = inventory.GetSummary();
+        var productIds = inventory.CountLines.Select(l => l.ProductId).Distinct().ToList();
+        var trackingByProduct = productIds.Count == 0
+            ? new Dictionary<Guid, ProductTrackingInfo>()
+            : await _productRepository.GetTrackingInfoByIdsAsync(productIds, cancellationToken);
+
+        TrackingMode ModeOf(InventoryCountLine line) =>
+            trackingByProduct.GetValueOrDefault(line.ProductId)?.TrackingMode ?? TrackingMode.None;
 
         var productsOkList = inventory.CountLines
             .Where(l => l.IsCounted && l.Difference == 0)
-            .Select(l => MapSummaryLine(l, "neutral"))
+            .Select(l => MapSummaryLine(l, "neutral", ModeOf(l)))
             .ToList();
 
         var productsWithDiffList = inventory.CountLines
             .Where(l => l.IsCounted && l.Difference != 0)
-            .Select(l => MapSummaryLine(l, l.Difference > 0 ? "positive" : "negative"))
+            .Select(l => MapSummaryLine(l, l.Difference > 0 ? "positive" : "negative", ModeOf(l)))
             .ToList();
 
         var productsNotCountedList = inventory.CountLines
             .Where(l => !l.IsCounted)
-            .Select(l => MapSummaryLine(l, "neutral"))
+            .Select(l => MapSummaryLine(l, "neutral", ModeOf(l)))
             .ToList();
 
-        var canValidate = inventory.Status == InventoryStatus.InProgress;
-        var notCounted = summary.ProductsNotCounted.Count;
-        var statusMessage = notCounted == 0
-            ? "✅ Prêt à valider ! Tous les produits ont été comptés."
-            : $"Prêt à valider. {notCounted} article{(notCounted > 1 ? "s" : "")} non saisi{(notCounted > 1 ? "s" : "")} seront confirmés à la quantité système.";
+        var missingLotLines = inventory.CountLines
+            .Where(l => l.IsCounted && l.Difference != 0)
+            .Where(l => ModeOf(l) == TrackingMode.Lot && !HasLotIdentity(l))
+            .ToList();
+
+        var canValidate = inventory.Status == InventoryStatus.InProgress && missingLotLines.Count == 0;
+        var statusMessage = BuildStatusMessage(summary.ProductsNotCounted.Count, missingLotLines);
 
         return Result.Success(new InventorySummaryDto
         {
@@ -109,7 +122,33 @@ public sealed class GetInventorySummaryQueryHandler : IRequestHandler<GetInvento
         });
     }
 
-    private static InventorySummaryLineDto MapSummaryLine(InventoryCountLine line, string differenceClass) =>
+    private static bool HasLotIdentity(InventoryCountLine line) =>
+        line.ProductLotId.HasValue || !string.IsNullOrWhiteSpace(line.LotNumber);
+
+    private static string BuildStatusMessage(int notCounted, IReadOnlyList<InventoryCountLine> missingLotLines)
+    {
+        if (missingLotLines.Count > 0)
+        {
+            var names = missingLotLines
+                .Select(l => l.ProductName)
+                .Distinct()
+                .Select(n => $"« {n} »")
+                .ToList();
+            var joined = string.Join(", ", names);
+            return names.Count == 1
+                ? $"Impossible de valider. Le numéro de lot est obligatoire pour {joined} (article suivi par lot)."
+                : $"Impossible de valider. Le numéro de lot est obligatoire pour {joined} (articles suivis par lot).";
+        }
+
+        return notCounted == 0
+            ? "✅ Prêt à valider ! Tous les produits ont été comptés."
+            : $"Prêt à valider. {notCounted} article{(notCounted > 1 ? "s" : "")} non saisi{(notCounted > 1 ? "s" : "")} seront confirmés à la quantité système.";
+    }
+
+    private static InventorySummaryLineDto MapSummaryLine(
+        InventoryCountLine line,
+        string differenceClass,
+        TrackingMode trackingMode) =>
         new()
         {
             ProductId = line.ProductId,
@@ -121,6 +160,7 @@ public sealed class GetInventorySummaryQueryHandler : IRequestHandler<GetInvento
             HumanMessage = line.GetHumanMessage(),
             DifferenceClass = differenceClass,
             ProductLotId = line.ProductLotId,
-            LotNumber = line.LotNumber
+            LotNumber = line.LotNumber,
+            TrackingMode = trackingMode
         };
 }

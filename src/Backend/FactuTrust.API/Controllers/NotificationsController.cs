@@ -29,7 +29,8 @@ public sealed class NotificationsController : ControllerBase
         if (tenantId is null)
             return Unauthorized();
 
-        var list = await _notificationService.GetListAsync(tenantId.Value, GetRole(), unreadOnly, page, pageSize, cancellationToken);
+        var list = await _notificationService.GetListAsync(
+            tenantId.Value, GetRole(), unreadOnly, page, pageSize, GetUserId(), cancellationToken);
         return Ok(ApiResponse<NotificationListDto>.Ok(list));
     }
 
@@ -40,7 +41,8 @@ public sealed class NotificationsController : ControllerBase
         if (tenantId is null)
             return Unauthorized();
 
-        var count = await _notificationService.GetUnreadCountAsync(tenantId.Value, GetRole(), cancellationToken);
+        var count = await _notificationService.GetUnreadCountAsync(
+            tenantId.Value, GetRole(), GetUserId(), cancellationToken);
         return Ok(ApiResponse<int>.Ok(count));
     }
 
@@ -51,7 +53,8 @@ public sealed class NotificationsController : ControllerBase
         if (tenantId is null)
             return Unauthorized();
 
-        var result = await _notificationService.MarkReadAsync(tenantId.Value, GetRole(), notificationId, cancellationToken);
+        var result = await _notificationService.MarkReadAsync(
+            tenantId.Value, GetRole(), notificationId, GetUserId(), cancellationToken);
         if (result.IsFailure)
             return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
 
@@ -65,13 +68,19 @@ public sealed class NotificationsController : ControllerBase
         if (tenantId is null)
             return Unauthorized();
 
-        await _notificationService.MarkAllReadAsync(tenantId.Value, GetRole(), cancellationToken);
+        await _notificationService.MarkAllReadAsync(tenantId.Value, GetRole(), GetUserId(), cancellationToken);
         return Ok(ApiResponse<object>.Ok(null!));
     }
 
     private Guid? GetHomeTenantId()
     {
         var claim = User.FindFirstValue("tenant_id");
+        return Guid.TryParse(claim, out var id) ? id : null;
+    }
+
+    private Guid? GetUserId()
+    {
+        var claim = User.FindFirstValue(ClaimTypes.NameIdentifier);
         return Guid.TryParse(claim, out var id) ? id : null;
     }
 

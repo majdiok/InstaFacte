@@ -1,3 +1,4 @@
+using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Domain.Common;
@@ -15,6 +16,7 @@ public sealed record CancelPurchaseReceiptCommand(Guid Id, string Reason) : IReq
 
 /// <summary>
 /// Handler for CancelPurchaseReceiptCommand.
+/// PO reversal, stock reversal and receipt status are committed in one tenant transaction.
 /// </summary>
 public sealed class CancelPurchaseReceiptCommandHandler : IRequestHandler<CancelPurchaseReceiptCommand, Result>
 {
@@ -22,6 +24,7 @@ public sealed class CancelPurchaseReceiptCommandHandler : IRequestHandler<Cancel
     private readonly IPurchaseOrderRepository _purchaseOrderRepository;
     private readonly IWarehouseRepository _warehouseRepository;
     private readonly IPurchaseGoodsReceptionService _receptionService;
+    private readonly ITenantUnitOfWork _unitOfWork;
     private readonly IAuditService _auditService;
 
     public CancelPurchaseReceiptCommandHandler(
@@ -29,88 +32,109 @@ public sealed class CancelPurchaseReceiptCommandHandler : IRequestHandler<Cancel
         IPurchaseOrderRepository purchaseOrderRepository,
         IWarehouseRepository warehouseRepository,
         IPurchaseGoodsReceptionService receptionService,
+        ITenantUnitOfWork unitOfWork,
         IAuditService auditService)
     {
         _purchaseReceiptRepository = purchaseReceiptRepository;
         _purchaseOrderRepository = purchaseOrderRepository;
         _warehouseRepository = warehouseRepository;
         _receptionService = receptionService;
+        _unitOfWork = unitOfWork;
         _auditService = auditService;
     }
 
     public async Task<Result> Handle(CancelPurchaseReceiptCommand request, CancellationToken cancellationToken)
     {
-        var receipt = await _purchaseReceiptRepository.GetByIdWithLinesAsync(request.Id, cancellationToken);
-        if (receipt is null)
-            return Result.Failure(Error.NotFound("PurchaseReceipt", request.Id));
+        var wasValidated = false;
+        string? receiptNumber = null;
 
-        var wasValidated = receipt.Status == PurchaseReceiptStatus.Validated;
-
-        if (wasValidated)
+        var result = await _unitOfWork.ExecuteAsync(async ct =>
         {
-            var receivableLines = receipt.Lines.Where(l => l.ReceivedQuantity > 0).ToList();
+            var receipt = await _purchaseReceiptRepository.GetByIdWithLinesAsync(request.Id, ct);
+            if (receipt is null)
+                return Result.Failure(Error.NotFound("PurchaseReceipt", request.Id));
 
-            if (receipt.PurchaseOrderId is { } purchaseOrderId)
+            wasValidated = receipt.Status == PurchaseReceiptStatus.Validated;
+            receiptNumber = receipt.Number.Value;
+
+            if (wasValidated)
             {
-                var po = await _purchaseOrderRepository.GetByIdWithLinesAsync(purchaseOrderId, cancellationToken);
-                if (po is null)
-                    return Result.Failure(Error.NotFound("PurchaseOrder", purchaseOrderId));
+                var receivableLines = receipt.Lines.Where(l => l.ReceivedQuantity > 0).ToList();
 
-                var reversals = receivableLines
-                    .Where(l => l.PurchaseOrderLineId.HasValue)
-                    .Select(l => (l.PurchaseOrderLineId!.Value, l.ReceivedQuantity))
+                var warehouse = await _warehouseRepository.GetByIdAsync(receipt.WarehouseId, ct);
+                if (warehouse is null)
+                    return Result.Failure(Error.NotFound("Warehouse", receipt.WarehouseId));
+
+                var stockLines = receivableLines
+                    .Select(l => new PurchaseReceptionStockLine(
+                        l.ProductId,
+                        l.ReceivedQuantity,
+                        l.UnitPrice.Amount,
+                        l.UnitPrice.Currency))
                     .ToList();
 
-                if (reversals.Count > 0)
-                {
-                    var reversePoResult = po.ReverseGoodsReception(reversals);
-                    if (reversePoResult.IsFailure)
-                        return reversePoResult;
+                var reverseStockResult = await _receptionService.ReverseStockEntriesAsync(
+                    warehouse,
+                    stockLines,
+                    stockReference: $"BR {receipt.Number.Value}",
+                    notes: $"Annulation réception - {receipt.Number.Value}",
+                    ct);
 
-                    await _purchaseOrderRepository.UpdateAsync(po, cancellationToken);
+                if (reverseStockResult.IsFailure)
+                    return reverseStockResult;
+
+                if (receipt.PurchaseOrderId is { } purchaseOrderId)
+                {
+                    var po = await _purchaseOrderRepository.GetByIdWithLinesAsync(purchaseOrderId, ct);
+                    if (po is null)
+                        return Result.Failure(Error.NotFound("PurchaseOrder", purchaseOrderId));
+
+                    var reversals = receivableLines
+                        .Where(l => l.PurchaseOrderLineId.HasValue)
+                        .GroupBy(l => l.PurchaseOrderLineId!.Value)
+                        .Select(g => (g.Key, g.Sum(l => l.ReceivedQuantity)))
+                        .ToList();
+
+                    if (reversals.Count > 0)
+                    {
+                        var reversePoResult = po.ReverseGoodsReception(reversals);
+                        if (reversePoResult.IsFailure)
+                            return reversePoResult;
+
+                        await _purchaseOrderRepository.UpdateAsync(po, ct);
+                    }
                 }
             }
 
-            var warehouse = await _warehouseRepository.GetByIdAsync(receipt.WarehouseId, cancellationToken);
-            if (warehouse is null)
-                return Result.Failure(Error.NotFound("Warehouse", receipt.WarehouseId));
+            var cancelResult = receipt.Cancel(request.Reason);
+            if (cancelResult.IsFailure)
+                return cancelResult;
 
-            var stockLines = receivableLines
-                .Select(l => new PurchaseReceptionStockLine(
-                    l.ProductId,
-                    l.ReceivedQuantity,
-                    l.UnitPrice.Amount,
-                    l.UnitPrice.Currency))
-                .ToList();
+            await _purchaseReceiptRepository.UpdateAsync(receipt, ct);
+            return Result.Success();
+        }, cancellationToken);
 
-            var reverseStockResult = await _receptionService.ReverseStockEntriesAsync(
-                warehouse,
-                stockLines,
-                stockReference: $"BR {receipt.Number.Value}",
-                notes: $"Annulation réception - {receipt.Number.Value}",
-                cancellationToken);
+        if (result.IsFailure)
+            return result;
 
-            if (reverseStockResult.IsFailure)
-                return reverseStockResult;
+        try
+        {
+            await _auditService.LogAsync(
+                AuditActions.PurchaseReceipt.Cancelled,
+                "PurchaseReceipt",
+                request.Id,
+                newValues: new
+                {
+                    Number = receiptNumber,
+                    Reason = request.Reason,
+                    WasValidated = wasValidated
+                },
+                cancellationToken: cancellationToken);
         }
-
-        var cancelResult = receipt.Cancel(request.Reason);
-        if (cancelResult.IsFailure)
-            return cancelResult;
-
-        await _purchaseReceiptRepository.UpdateAsync(receipt, cancellationToken);
-
-        await _auditService.LogAsync(
-            AuditActions.PurchaseReceipt.Cancelled,
-            "PurchaseReceipt",
-            receipt.Id,
-            newValues: new
-            {
-                Number = receipt.Number.Value,
-                Reason = request.Reason,
-                WasValidated = wasValidated
-            },
-            cancellationToken: cancellationToken);
+        catch
+        {
+            // Audit is best-effort and lives outside the tenant transaction.
+        }
 
         return Result.Success();
     }

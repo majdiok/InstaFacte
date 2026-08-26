@@ -269,6 +269,52 @@ public sealed class PosCashRegisterHandlerTests : IDisposable
     }
 
     [Fact]
+    public void Totals_ExpectedCash_IgnoresBankTransferAndCard()
+    {
+        var register = CashRegister.Create("WH-MAIN", "Caisse Principal", Guid.NewGuid()).Value;
+        var session = CashRegisterSession.Open(register.Id, _userId, Money.Create(40m)).Value;
+        var address = Address.Create("1 rue", "Tunis", "Tunis").Value;
+        var email = Email.Create("c@example.com").Value;
+        var client = Client.Create("Client", ClientType.Individual, address, email).Value;
+        var fac = Invoice.Create(InvoiceNumber.Create("FAC", 2026, 2), client, new DateTime(2026, 8, 18)).Value;
+        fac.AssignCashRegisterSession(session.Id);
+
+        var cash = Payment.Create(fac, Money.Create(15m), DateTime.UtcNow, PaymentMethod.Cash).Value;
+        cash.AssignCashRegisterSession(session.Id);
+        var transfer = Payment.Create(fac, Money.Create(80m), DateTime.UtcNow, PaymentMethod.BankTransfer).Value;
+        transfer.AssignCashRegisterSession(session.Id);
+        var card = Payment.Create(fac, Money.Create(25m), DateTime.UtcNow, PaymentMethod.Card).Value;
+        card.AssignCashRegisterSession(session.Id);
+
+        var report = PosSessionTotalsCalculator.Build(session, [fac], [cash, transfer, card], [], heldTicketCount: 0);
+
+        Assert.Equal(55m, report.ExpectedCash);
+        Assert.Equal(80m, report.TotalsByMethod.Single(t => t.Method == PaymentMethod.BankTransfer).Amount);
+        Assert.Equal(25m, report.TotalsByMethod.Single(t => t.Method == PaymentMethod.Card).Amount);
+    }
+
+    [Fact]
+    public async Task GetByWarehouseId_AfterProvisioning_ReturnsSingleRegister()
+    {
+        var warehouse = await SeedWarehouseAsync();
+        var currentUser = CurrentUser();
+        var first = await new GetCashRegisterQueryHandler(
+                _warehouses,
+                _registers,
+                currentUser,
+                Options.Create(new CashDeskFeaturesOptions { PosRegisterSessions = true }))
+            .Handle(new GetCashRegisterQuery(warehouse.Id), CancellationToken.None);
+        Assert.True(first.IsSuccess, first.Error?.Description);
+
+        var again = await _registers.GetByWarehouseIdAsync(warehouse.Id);
+        Assert.NotNull(again);
+        Assert.Equal(first.Value.Id, again!.Id);
+
+        var all = await _registers.GetAllAsync();
+        Assert.Single(all.Where(r => r.WarehouseId == warehouse.Id));
+    }
+
+    [Fact]
     public async Task CloseSession_PersistsImmutableSnapshot_AndSecondCloseFails()
     {
         var warehouse = await SeedWarehouseAsync();
@@ -327,6 +373,227 @@ public sealed class PosCashRegisterHandlerTests : IDisposable
             CancellationToken.None);
         Assert.True(again.IsFailure);
         Assert.Equal("POS_SESSION_CLOSED", again.Error.Code);
+    }
+
+    [Fact]
+    public async Task TwoRegisters_CanHaveTwoOpenSessions()
+    {
+        var warehouse = await SeedWarehouseAsync();
+        var currentUser = CurrentUser();
+        var features = Options.Create(new CashDeskFeaturesOptions { PosRegisterSessions = true });
+
+        var first = await new GetCashRegisterQueryHandler(_warehouses, _registers, currentUser, features)
+            .Handle(new GetCashRegisterQuery(warehouse.Id), CancellationToken.None);
+        Assert.True(first.IsSuccess);
+
+        var second = await new CreateCashRegisterCommandHandler(_warehouses, _registers, currentUser, features)
+            .Handle(new CreateCashRegisterCommand(new CreateCashRegisterRequest
+            {
+                WarehouseId = warehouse.Id,
+                Code = "CAISSE-2",
+                Name = "Caisse 2",
+                IsDefault = false
+            }), CancellationToken.None);
+        Assert.True(second.IsSuccess, second.Error?.Description);
+        Assert.False(second.Value.IsDefault);
+        Assert.True(first.Value.IsDefault);
+
+        var opener = new OpenCashRegisterSessionCommandHandler(
+            currentUser, _warehouses, _registers, _sessions, _zReports, new Mock<IAuditService>().Object);
+
+        var s1 = await opener.Handle(new OpenCashRegisterSessionCommand(new OpenCashRegisterSessionRequest
+        {
+            WarehouseId = warehouse.Id,
+            OpeningFloat = 10m
+        }), CancellationToken.None);
+        var s2 = await opener.Handle(new OpenCashRegisterSessionCommand(new OpenCashRegisterSessionRequest
+        {
+            WarehouseId = warehouse.Id,
+            CashRegisterId = second.Value.Id,
+            OpeningFloat = 20m
+        }), CancellationToken.None);
+
+        Assert.True(s1.IsSuccess, s1.Error?.Description);
+        Assert.True(s2.IsSuccess, s2.Error?.Description);
+        Assert.NotEqual(s1.Value.Id, s2.Value.Id);
+        Assert.Equal(first.Value.Id, s1.Value.CashRegisterId);
+        Assert.Equal(second.Value.Id, s2.Value.CashRegisterId);
+        Assert.Equal(10m, s1.Value.OpeningFloat);
+        Assert.Equal(20m, s2.Value.OpeningFloat);
+    }
+
+    [Fact]
+    public async Task OpenWithoutCashRegisterId_UsesDefault_AndDoesNotChangeFloat()
+    {
+        var warehouse = await SeedWarehouseAsync();
+        var currentUser = CurrentUser();
+        var opener = new OpenCashRegisterSessionCommandHandler(
+            currentUser, _warehouses, _registers, _sessions, _zReports, new Mock<IAuditService>().Object);
+
+        var first = await opener.Handle(new OpenCashRegisterSessionCommand(new OpenCashRegisterSessionRequest
+        {
+            WarehouseId = warehouse.Id,
+            OpeningFloat = 15m
+        }), CancellationToken.None);
+        Assert.True(first.IsSuccess);
+
+        var second = await opener.Handle(new OpenCashRegisterSessionCommand(new OpenCashRegisterSessionRequest
+        {
+            WarehouseId = warehouse.Id,
+            OpeningFloat = 99m
+        }), CancellationToken.None);
+        Assert.True(second.IsSuccess);
+        Assert.Equal(first.Value.Id, second.Value.Id);
+        Assert.Equal(15m, second.Value.OpeningFloat);
+        Assert.True((await _registers.GetDefaultByWarehouseIdAsync(warehouse.Id))!.IsDefault);
+    }
+
+    [Fact]
+    public async Task SaveCart_TwoRapidSaves_LastWriteWins()
+    {
+        var warehouse = await SeedWarehouseAsync();
+        var currentUser = CurrentUser();
+        using var cartFirst = JsonDocument.Parse("""{"ticketId":"first","lines":[{"q":1}]}""");
+        using var cartSecond = JsonDocument.Parse("""{"ticketId":"second","lines":[{"q":2}]}""");
+
+        var saver = new SavePosCartDraftCommandHandler(currentUser, _warehouses, _registers, _carts);
+        var first = await saver.Handle(
+            new SavePosCartDraftCommand(warehouse.Id, cartFirst.RootElement.Clone()), CancellationToken.None);
+        var second = await saver.Handle(
+            new SavePosCartDraftCommand(warehouse.Id, cartSecond.RootElement.Clone()), CancellationToken.None);
+
+        Assert.True(first.IsSuccess, first.Error?.Description);
+        Assert.True(second.IsSuccess, second.Error?.Description);
+
+        var get = await new GetPosCartDraftQueryHandler(currentUser, _warehouses, _registers, _carts)
+            .Handle(new GetPosCartDraftQuery(warehouse.Id), CancellationToken.None);
+        Assert.True(get.IsSuccess);
+        var json = JsonSerializer.Serialize(get.Value.State);
+        Assert.Contains("second", json);
+        Assert.DoesNotContain("first", json);
+    }
+
+    [Fact]
+    public async Task Cart_IsIsolatedPerRegister()
+    {
+        var warehouse = await SeedWarehouseAsync();
+        var currentUser = CurrentUser();
+        var features = Options.Create(new CashDeskFeaturesOptions { PosRegisterSessions = true });
+        var defaultRegister = await new GetCashRegisterQueryHandler(_warehouses, _registers, currentUser, features)
+            .Handle(new GetCashRegisterQuery(warehouse.Id), CancellationToken.None);
+        var other = await new CreateCashRegisterCommandHandler(_warehouses, _registers, currentUser, features)
+            .Handle(new CreateCashRegisterCommand(new CreateCashRegisterRequest
+            {
+                WarehouseId = warehouse.Id,
+                Code = "CAISSE-B",
+                Name = "Caisse B",
+                IsDefault = false
+            }), CancellationToken.None);
+        Assert.True(other.IsSuccess, other.Error?.Description);
+
+        using var cartA = JsonDocument.Parse("""{"ticket":"A"}""");
+        using var cartB = JsonDocument.Parse("""{"ticket":"B"}""");
+
+        var saver = new SavePosCartDraftCommandHandler(currentUser, _warehouses, _registers, _carts);
+        Assert.True((await saver.Handle(
+            new SavePosCartDraftCommand(warehouse.Id, cartA.RootElement.Clone()), CancellationToken.None)).IsSuccess);
+        Assert.True((await saver.Handle(
+            new SavePosCartDraftCommand(warehouse.Id, cartB.RootElement.Clone(), other.Value.Id), CancellationToken.None)).IsSuccess);
+
+        var getter = new GetPosCartDraftQueryHandler(currentUser, _warehouses, _registers, _carts);
+        var a = await getter.Handle(new GetPosCartDraftQuery(warehouse.Id), CancellationToken.None);
+        var b = await getter.Handle(new GetPosCartDraftQuery(warehouse.Id, other.Value.Id), CancellationToken.None);
+
+        Assert.Contains("A", JsonSerializer.Serialize(a.Value.State));
+        Assert.Contains("B", JsonSerializer.Serialize(b.Value.State));
+        Assert.Equal(defaultRegister.Value.Id, (await _registers.GetDefaultByWarehouseIdAsync(warehouse.Id))!.Id);
+    }
+
+    [Fact]
+    public async Task XReport_DoesNotIncludeInvoicesFromOtherRegister()
+    {
+        var warehouse = await SeedWarehouseAsync();
+        var currentUser = CurrentUser();
+        var features = Options.Create(new CashDeskFeaturesOptions { PosRegisterSessions = true });
+        var first = await new GetCashRegisterQueryHandler(_warehouses, _registers, currentUser, features)
+            .Handle(new GetCashRegisterQuery(warehouse.Id), CancellationToken.None);
+        Assert.True(first.IsSuccess);
+        var second = await new CreateCashRegisterCommandHandler(_warehouses, _registers, currentUser, features)
+            .Handle(new CreateCashRegisterCommand(new CreateCashRegisterRequest
+            {
+                WarehouseId = warehouse.Id,
+                Code = "CAISSE-X",
+                Name = "Caisse X",
+                IsDefault = false
+            }), CancellationToken.None);
+        Assert.True(second.IsSuccess, second.Error?.Description);
+
+        var opener = new OpenCashRegisterSessionCommandHandler(
+            currentUser, _warehouses, _registers, _sessions, _zReports, new Mock<IAuditService>().Object);
+        var s1 = await opener.Handle(new OpenCashRegisterSessionCommand(new OpenCashRegisterSessionRequest
+        {
+            WarehouseId = warehouse.Id,
+            OpeningFloat = 0m
+        }), CancellationToken.None);
+        var s2 = await opener.Handle(new OpenCashRegisterSessionCommand(new OpenCashRegisterSessionRequest
+        {
+            WarehouseId = warehouse.Id,
+            CashRegisterId = second.Value.Id,
+            OpeningFloat = 0m
+        }), CancellationToken.None);
+        Assert.True(s1.IsSuccess && s2.IsSuccess);
+        Assert.NotEqual(s1.Value.Id, s2.Value.Id);
+        Assert.Equal(first.Value.Id, s1.Value.CashRegisterId);
+
+        var address = Address.Create("1 rue", "Tunis", "Tunis").Value;
+        var email = Email.Create("z@example.com").Value;
+        var client = Client.Create("Client", ClientType.Individual, address, email).Value;
+        var fac = Invoice.Create(InvoiceNumber.Create("FAC", 2026, 9), client, new DateTime(2026, 8, 18)).Value;
+        fac.AssignCashRegisterSession(s2.Value.Id);
+
+        var invoices = new Mock<IInvoiceRepository>();
+        invoices.Setup(i => i.GetByCashRegisterSessionIdAsync(s1.Value.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Invoice>());
+        invoices.Setup(i => i.GetByCashRegisterSessionIdAsync(s2.Value.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { fac });
+        var payments = new Mock<IPaymentRepository>();
+        payments.Setup(p => p.GetByCashRegisterSessionIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Payment>());
+        var cashOps = new Mock<ICashOperationRepository>();
+        cashOps.Setup(c => c.GetByCashRegisterSessionIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<CashOperation>());
+
+        var xHandler = new GetPosSessionXReportQueryHandler(
+            _warehouses, _registers, _sessions, invoices.Object, payments.Object, cashOps.Object, _held, currentUser);
+
+        var x1 = await xHandler.Handle(new GetPosSessionXReportQuery(warehouse.Id), CancellationToken.None);
+        var x2 = await xHandler.Handle(
+            new GetPosSessionXReportQuery(warehouse.Id, second.Value.Id), CancellationToken.None);
+
+        Assert.True(x1.IsSuccess, x1.Error?.Description);
+        Assert.True(x2.IsSuccess, x2.Error?.Description);
+        Assert.Equal(0, x1.Value.InvoiceCount);
+        Assert.Equal(1, x2.Value.InvoiceCount);
+    }
+
+    [Fact]
+    public async Task Provisioning_SecondCall_DoesNotInsertSecondDefault()
+    {
+        var warehouse = await SeedWarehouseAsync();
+        var currentUser = CurrentUser();
+        var features = Options.Create(new CashDeskFeaturesOptions { PosRegisterSessions = true });
+        var handler = new GetCashRegisterQueryHandler(_warehouses, _registers, currentUser, features);
+
+        var first = await handler.Handle(new GetCashRegisterQuery(warehouse.Id), CancellationToken.None);
+        var second = await handler.Handle(new GetCashRegisterQuery(warehouse.Id), CancellationToken.None);
+        Assert.True(first.IsSuccess && second.IsSuccess);
+        Assert.Equal(first.Value.Id, second.Value.Id);
+
+        var listed = await new ListCashRegistersQueryHandler(_warehouses, _registers, currentUser, features)
+            .Handle(new ListCashRegistersQuery(warehouse.Id), CancellationToken.None);
+        Assert.True(listed.IsSuccess);
+        Assert.Single(listed.Value);
+        Assert.True(listed.Value[0].IsDefault);
     }
 
     private sealed class PassthroughTenantUnitOfWork : ITenantUnitOfWork

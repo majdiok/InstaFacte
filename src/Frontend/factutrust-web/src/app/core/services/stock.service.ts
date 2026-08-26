@@ -5,6 +5,7 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { environment } from '@environments/environment';
 import { ApiResponse } from './auth.service';
+import { coercePickingPolicy, coerceTrackingMode } from '@shared/utils/stock-traceability.utils';
 
 // --- Models ---
 
@@ -325,7 +326,10 @@ export class StockService {
     }
 
     getFeatures(): Observable<ApiResponse<StockFeatures>> {
-        return this.http.get<ApiResponse<StockFeatures>>(`${this.API_URL}/features`);
+        return this.http.get<ApiResponse<StockFeatures>>(
+            `${this.API_URL}/features`,
+            { context: createHttpContextSkipGlobalErrorUi() }
+        );
     }
 
     getLots(stockItemId: string): Observable<ApiResponse<StockLotBalance[]>> {
@@ -369,7 +373,23 @@ export class StockService {
         return this.http.get<ApiResponse<ProductTraceabilityContext[]>>(
             `${this.API_URL}/traceability/context`,
             { params }
+        ).pipe(
+            map(res => this.normalizeTraceabilityContext(res))
         );
+    }
+
+    private normalizeTraceabilityContext(
+        res: ApiResponse<ProductTraceabilityContext[]>
+    ): ApiResponse<ProductTraceabilityContext[]> {
+        if (!res.data) return res;
+        return {
+            ...res,
+            data: res.data.map(ctx => ({
+                ...ctx,
+                trackingMode: coerceTrackingMode(ctx.trackingMode),
+                pickingPolicy: coercePickingPolicy(ctx.pickingPolicy)
+            }))
+        };
     }
 }
 

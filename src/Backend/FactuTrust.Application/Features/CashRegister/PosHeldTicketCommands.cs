@@ -8,7 +8,8 @@ using MediatR;
 
 namespace FactuTrust.Application.Features.CashRegister;
 
-public sealed record ListPosHeldTicketsQuery(Guid WarehouseId) : IRequest<Result<IReadOnlyList<PosHeldTicketDto>>>;
+public sealed record ListPosHeldTicketsQuery(Guid WarehouseId, Guid? CashRegisterId = null)
+    : IRequest<Result<IReadOnlyList<PosHeldTicketDto>>>;
 
 public sealed record SavePosHeldTicketCommand(SavePosHeldTicketRequest Request) : IRequest<Result<PosHeldTicketDto>>;
 
@@ -42,8 +43,8 @@ public sealed class ListPosHeldTicketsQueryHandler
         ListPosHeldTicketsQuery request,
         CancellationToken cancellationToken)
     {
-        var ensured = await CashRegisterProvisioning.EnsureForWarehouseAsync(
-            _warehouses, _registers, request.WarehouseId, _currentUser.UserId?.ToString(), cancellationToken);
+        var ensured = await CashRegisterResolver.ResolveAsync(
+            _warehouses, _registers, request.WarehouseId, request.CashRegisterId, _currentUser.UserId?.ToString(), cancellationToken);
         if (ensured.IsFailure)
             return Result.Failure<IReadOnlyList<PosHeldTicketDto>>(ensured.Error);
 
@@ -110,8 +111,8 @@ public sealed class SavePosHeldTicketCommandHandler : IRequestHandler<SavePosHel
         if (request.State.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
             return Result.Failure<PosHeldTicketDto>(Error.Validation("State", "L'état du ticket est obligatoire"));
 
-        var ensured = await CashRegisterProvisioning.EnsureForWarehouseAsync(
-            _warehouses, _registers, warehouseId, userId.ToString(), cancellationToken);
+        var ensured = await CashRegisterResolver.ResolveAsync(
+            _warehouses, _registers, warehouseId, request.CashRegisterId, userId.ToString(), cancellationToken);
         if (ensured.IsFailure)
             return Result.Failure<PosHeldTicketDto>(ensured.Error);
 

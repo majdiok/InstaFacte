@@ -137,6 +137,12 @@ export interface FirmTimeSheetBulkValidationResult {
   failures: { entryId: string; error: string }[];
 }
 
+export interface FirmTimeSheetBulkSubmitResult {
+  submitted: number;
+  skipped: number;
+  failures: { entryId: string; error: string }[];
+}
+
 /** Code de la nomenclature des diligences du cabinet. */
 export interface FirmActivityCode {
   id: string;
@@ -579,6 +585,11 @@ export class FirmGovernanceService {
 
   submitTimeSheet(id: string): Observable<ApiResponse<FirmTimeSheetEntry>> {
     return this.http.post<ApiResponse<FirmTimeSheetEntry>>(`${this.base}/time-sheets/${id}/submit`, {});
+  }
+
+  submitTimeSheetsBulkDetailed(ids: string[]): Observable<ApiResponse<FirmTimeSheetBulkSubmitResult>> {
+    return this.http.post<ApiResponse<FirmTimeSheetBulkSubmitResult>>(
+      `${this.base}/time-sheets/submit-bulk/detailed`, { ids });
   }
 
   startTimeSheetTimer(body: {

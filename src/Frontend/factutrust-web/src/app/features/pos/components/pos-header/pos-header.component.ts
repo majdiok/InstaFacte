@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, OnDestroy, signal, Input, Output, EventEmitter } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy, signal, Input, Output, EventEmitter, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { PosOfflineService } from '../../services/pos-offline.service';
@@ -26,7 +26,7 @@ import { PosRegisterSessionService } from '../../services/pos-register-session.s
           </div>
           <h1 class="pos-header__title">Point de Vente</h1>
         </div>
-          <button class="pos-header__pill" type="button" (click)="onOpenHistory.emit()" title="Historique des transactions" aria-label="Historique">
+          <button class="pos-header__pill pos-header__pill--overflow" type="button" (click)="onOpenHistory.emit()" title="Historique des transactions" aria-label="Historique">
           <i class="pi pi-folder-open"></i>
           <span>Historiques</span>
         </button>
@@ -46,6 +46,12 @@ import { PosRegisterSessionService } from '../../services/pos-register-session.s
               <span class="pos-header__warehouse-name">{{ wh.name }}</span>
             </div>
           }
+          @if (registerSession.currentRegister(); as cr) {
+            <div class="pos-header__warehouse pos-header__warehouse--register" [attr.title]="'Caisse : ' + cr.code">
+              <i class="pi pi-inbox" aria-hidden="true"></i>
+              <span class="pos-header__warehouse-name">{{ cr.code }}</span>
+            </div>
+          }
           @if (registerSession.requireOpenSession()) {
             <button
               type="button"
@@ -60,7 +66,7 @@ import { PosRegisterSessionService } from '../../services/pos-register-session.s
             </button>
           }
           @if (registerSession.currentSession()) {
-            <button type="button" class="pos-header__pill" (click)="onXReport.emit()" title="Rapport X" aria-label="Rapport X">
+            <button type="button" class="pos-header__pill pos-header__pill--overflow" (click)="onXReport.emit()" title="Rapport X" aria-label="Rapport X">
               <i class="pi pi-eye"></i>
               <span>X</span>
             </button>
@@ -75,10 +81,6 @@ import { PosRegisterSessionService } from '../../services/pos-register-session.s
               <span>Ouvrir</span>
             </button>
           }
-          <div class="pos-header__clock" aria-live="off">
-            <i class="pi pi-clock" aria-hidden="true"></i>
-            <span>{{ currentTime() }}</span>
-          </div>
         </div>
       </div>
 
@@ -97,7 +99,7 @@ import { PosRegisterSessionService } from '../../services/pos-register-session.s
         }
        
         <button
-          class="pos-header__pill"
+          class="pos-header__pill pos-header__pill--overflow"
           [class.pos-header__pill--active]="audioService.isSoundEnabled()"
           type="button"
           (click)="audioService.toggleSound()"
@@ -107,7 +109,17 @@ import { PosRegisterSessionService } from '../../services/pos-register-session.s
           <span>Son</span>
         </button>
         <button
-          class="pos-header__pill"
+          class="pos-header__pill pos-header__pill--compact-label"
+          [class.pos-header__pill--active]="isDualScreenOpen"
+          type="button"
+          (click)="onDualScreenToggle.emit()"
+          title="Ecran client"
+          aria-label="Ecran client">
+          <i class="pi pi-desktop"></i>
+          <span>Ecran client</span>
+        </button>
+        <button
+          class="pos-header__pill pos-header__pill--compact-label"
           [class.pos-header__pill--active]="isQuickMode"
           type="button"
           (click)="onQuickModeToggle.emit()"
@@ -117,13 +129,13 @@ import { PosRegisterSessionService } from '../../services/pos-register-session.s
           <span>Mode rapide</span>
         </button>
 
-        <div class="pos-header__theme" (click)="showThemeMenu = !showThemeMenu">
-          <button type="button" class="pos-header__pill" title="Theme" aria-label="Changer le theme">
+        <div class="pos-header__theme pos-header__pill--overflow" (click)="$event.stopPropagation()">
+          <button type="button" class="pos-header__pill" title="Theme" aria-label="Changer le theme" (click)="toggleThemeMenu($event)">
             <i class="pi pi-palette"></i>
             <span>Theme</span>
           </button>
           @if (showThemeMenu) {
-            <div class="pos-header__theme-menu">
+            <div class="pos-header__theme-menu" (click)="$event.stopPropagation()">
               @for (t of themeOptions; track t.id) {
                 <button type="button" class="pos-header__theme-option" [class.pos-header__theme-option--active]="themeService.currentTheme() === t.id" (click)="setTheme(t.id); showThemeMenu = false">
                   {{ t.label }}
@@ -132,10 +144,65 @@ import { PosRegisterSessionService } from '../../services/pos-register-session.s
             </div>
           }
         </div>
-        <button class="pos-header__pill" type="button" (click)="showShortcuts = !showShortcuts" title="Raccourcis clavier" aria-label="Shortcuts">
+        <button class="pos-header__pill pos-header__pill--overflow" type="button" (click)="openShortcuts()" title="Raccourcis clavier" aria-label="Shortcuts">
           <i class="pi pi-th-large"></i>
           <span>Raccourcis</span>
         </button>
+
+        <div class="pos-header__clock" aria-live="off" [attr.title]="currentTime()">
+          <i class="pi pi-clock" aria-hidden="true"></i>
+          <span>{{ currentTime() }}</span>
+        </div>
+
+        <div class="pos-header__plus-wrap" (click)="$event.stopPropagation()">
+          <button
+            type="button"
+            class="pos-header__pill pos-header__plus-trigger"
+            (click)="togglePlusMenu($event)"
+            title="Plus d'actions"
+            aria-label="Plus d'actions"
+            [attr.aria-expanded]="showPlusMenu">
+            <i class="pi pi-ellipsis-h"></i>
+          </button>
+          @if (showPlusMenu) {
+            <div class="pos-header__plus-menu" (click)="$event.stopPropagation()">
+              <button type="button" class="pos-header__plus-item" (click)="onOpenHistory.emit(); closeMenus()">
+                <i class="pi pi-folder-open"></i>
+                <span>Historiques</span>
+              </button>
+              @if (registerSession.currentSession()) {
+                <button type="button" class="pos-header__plus-item" (click)="onXReport.emit(); closeMenus()">
+                  <i class="pi pi-eye"></i>
+                  <span>Rapport X</span>
+                </button>
+              }
+              <button
+                type="button"
+                class="pos-header__plus-item"
+                (click)="audioService.toggleSound(); closeMenus()">
+                <i class="pi" [class.pi-volume-up]="audioService.isSoundEnabled()" [class.pi-volume-off]="!audioService.isSoundEnabled()"></i>
+                <span>{{ audioService.isSoundEnabled() ? 'Desactiver le son' : 'Activer le son' }}</span>
+              </button>
+              <div class="pos-header__plus-divider"></div>
+              @for (t of themeOptions; track t.id) {
+                <button
+                  type="button"
+                  class="pos-header__plus-item"
+                  [class.pos-header__plus-item--active]="themeService.currentTheme() === t.id"
+                  (click)="setTheme(t.id); closeMenus()">
+                  <i class="pi pi-palette"></i>
+                  <span>Theme : {{ t.label }}</span>
+                </button>
+              }
+              <div class="pos-header__plus-divider"></div>
+              <button type="button" class="pos-header__plus-item" (click)="openShortcuts(); closeMenus()">
+                <i class="pi pi-th-large"></i>
+                <span>Raccourcis clavier</span>
+              </button>
+            </div>
+          }
+        </div>
+
         <button class="pos-header__new-order" (click)="onNewOrder.emit()" title="Nouvelle commande (F9)">
           <i class="pi pi-plus"></i>
           <span>Nouveau</span>
@@ -185,21 +252,26 @@ import { PosRegisterSessionService } from '../../services/pos-register-session.s
   `,
   styles: [`
     .pos-header {
+      --pos-header-height: 64px;
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      height: 64px;
+      gap: var(--spacing-3);
+      height: var(--pos-header-height);
       padding: 0 var(--spacing-5);
       background: linear-gradient(135deg, #1a5c4c 0%, #0f4c3d 50%, #0d3d32 100%);
       position: relative;
       z-index: var(--z-sticky);
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+      overflow: visible;
     }
 
     .pos-header__left {
       display: flex;
       align-items: center;
-      gap: var(--spacing-4);
+      gap: var(--spacing-3);
+      min-width: 0;
+      flex: 1 1 0;
+      overflow: hidden;
     }
 
     .pos-header__back {
@@ -244,25 +316,42 @@ import { PosRegisterSessionService } from '../../services/pos-register-session.s
     }
 
     .pos-header__title {
-      font-size: var(--font-size-xl);
+      font-size: var(--font-size-lg);
       font-weight: var(--font-weight-bold);
       color: var(--color-white);
       line-height: 1.2;
       margin: 0;
       letter-spacing: -0.02em;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 1280px) {
+      .pos-header__title {
+        display: none;
+      }
     }
 
     .pos-header__center {
-      position: absolute;
-      left: 50%;
-      transform: translateX(-50%);
-      max-width: min(42vw, 420px);
+      min-width: 0;
+      flex: 1 1 0;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
     }
 
     .pos-header__center-group {
       display: flex;
       align-items: center;
-      gap: var(--spacing-3);
+      gap: var(--spacing-2);
+      flex-wrap: nowrap;
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+    }
+
+    .pos-header__center-group .pos-header__pill--z,
+    .pos-header__center-group > .pos-header__pill:not(.pos-header__pill--overflow) {
+      flex-shrink: 0;
     }
 
     .pos-header__warehouse {
@@ -271,7 +360,8 @@ import { PosRegisterSessionService } from '../../services/pos-register-session.s
       gap: var(--spacing-2);
       padding: 6px 14px;
       min-width: 0;
-      max-width: 220px;
+      max-width: 140px;
+      flex-shrink: 1;
       background: linear-gradient(135deg, #1e3a5f 0%, #0f2744 100%);
       border: 1px solid rgba(96, 165, 250, 0.35);
       border-radius: var(--radius-full);
@@ -287,6 +377,10 @@ import { PosRegisterSessionService } from '../../services/pos-register-session.s
       overflow: hidden;
       text-overflow: ellipsis;
       min-width: 0;
+    }
+
+    .pos-header__warehouse--register {
+      max-width: 110px;
     }
 
     .pos-header__warehouse i {
@@ -307,6 +401,7 @@ import { PosRegisterSessionService } from '../../services/pos-register-session.s
       font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
       color: var(--color-white);
       font-variant-numeric: tabular-nums;
+      flex-shrink: 0;
     }
 
     .pos-header__clock i {
@@ -318,7 +413,101 @@ import { PosRegisterSessionService } from '../../services/pos-register-session.s
     .pos-header__right {
       display: flex;
       align-items: center;
+      gap: var(--spacing-2);
+      flex: 0 0 auto;
+      flex-wrap: nowrap;
+    }
+
+    .pos-header__pill--overflow {
+      display: flex;
+    }
+
+    .pos-header__plus-wrap {
+      position: relative;
+      display: none;
+      flex-shrink: 0;
+    }
+
+    .pos-header__plus-trigger {
+      min-width: 36px;
+      justify-content: center;
+      padding: var(--spacing-2) var(--spacing-3);
+    }
+
+    .pos-header__plus-menu {
+      position: absolute;
+      top: calc(100% + var(--spacing-2));
+      right: 0;
+      min-width: 220px;
+      background: var(--color-white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-2xl);
+      padding: var(--spacing-2);
+      z-index: 120;
+      border: 1px solid var(--color-border-subtle);
+    }
+
+    .pos-header__plus-item {
+      display: flex;
+      align-items: center;
       gap: var(--spacing-3);
+      width: 100%;
+      padding: var(--spacing-2) var(--spacing-3);
+      border: none;
+      border-radius: var(--radius-md);
+      background: transparent;
+      color: var(--color-text-primary);
+      font-size: var(--font-size-sm);
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .pos-header__plus-item:hover {
+      background: var(--color-neutral-100);
+    }
+
+    .pos-header__plus-item--active {
+      background: var(--color-primary-50);
+      color: var(--color-primary-700);
+    }
+
+    .pos-header__plus-item i {
+      color: var(--color-text-secondary);
+      flex-shrink: 0;
+    }
+
+    .pos-header__plus-divider {
+      height: 1px;
+      background: var(--color-border-subtle);
+      margin: var(--spacing-1) 0;
+    }
+
+    @media (max-width: 1919px) {
+      .pos-header__pill--overflow {
+        display: none;
+      }
+
+      .pos-header__plus-wrap {
+        display: block;
+      }
+
+      .pos-header__pill--compact-label span {
+        display: none;
+      }
+
+      .pos-header__pill--compact-label {
+        min-width: 36px;
+        justify-content: center;
+        padding: var(--spacing-2) var(--spacing-3);
+      }
+
+      .pos-header__clock span {
+        display: none;
+      }
+
+      .pos-header__clock {
+        padding: 6px 10px;
+      }
     }
 
     .pos-header__pill {
@@ -431,6 +620,7 @@ import { PosRegisterSessionService } from '../../services/pos-register-session.s
       cursor: pointer;
       transition: all var(--transition-fast);
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      flex-shrink: 0;
     }
 
     .pos-header__new-order:hover {
@@ -568,14 +758,16 @@ import { PosRegisterSessionService } from '../../services/pos-register-session.s
 
     @media (max-width: 1024px) {
       .pos-header {
-        height: 56px;
+        --pos-header-height: 56px;
+        height: var(--pos-header-height);
         padding: 0 var(--spacing-4);
       }
     }
 
     @media (max-width: 768px) {
       .pos-header {
-        height: 56px;
+        --pos-header-height: 56px;
+        height: var(--pos-header-height);
       }
 
       .pos-header__back {
@@ -598,7 +790,7 @@ import { PosRegisterSessionService } from '../../services/pos-register-session.s
       }
 
       .pos-header__center {
-        max-width: min(36vw, 160px);
+        max-width: none;
       }
 
       .pos-header__clock {
@@ -606,7 +798,7 @@ import { PosRegisterSessionService } from '../../services/pos-register-session.s
       }
 
       .pos-header__warehouse {
-        max-width: 120px;
+        max-width: 100px;
         padding: 6px 10px;
       }
     }
@@ -641,13 +833,47 @@ export class PosHeaderComponent implements OnInit, OnDestroy {
     { id: 'sales', label: 'Soldes' }
   ];
   showThemeMenu = false;
+  showPlusMenu = false;
 
   currentTime = signal(this.getFormattedTime());
   showShortcuts = false;
   private clockInterval?: ReturnType<typeof setInterval>;
 
+  @HostListener('document:keydown.escape')
+  onEscape(): void {
+    this.closeMenus();
+  }
+
+  @HostListener('document:click')
+  onDocumentClick(): void {
+    this.showThemeMenu = false;
+    this.showPlusMenu = false;
+  }
+
   setTheme(id: PosThemeId): void {
     this.themeService.setTheme(id);
+  }
+
+  toggleThemeMenu(event: Event): void {
+    event.stopPropagation();
+    this.showThemeMenu = !this.showThemeMenu;
+    this.showPlusMenu = false;
+  }
+
+  togglePlusMenu(event: Event): void {
+    event.stopPropagation();
+    this.showPlusMenu = !this.showPlusMenu;
+    this.showThemeMenu = false;
+  }
+
+  openShortcuts(): void {
+    this.showShortcuts = true;
+    this.closeMenus();
+  }
+
+  closeMenus(): void {
+    this.showThemeMenu = false;
+    this.showPlusMenu = false;
   }
 
   toggleVoiceUndo(): void {
@@ -676,7 +902,8 @@ export class PosHeaderComponent implements OnInit, OnDestroy {
     return new Date().toLocaleTimeString('fr-TN', {
       hour: '2-digit',
       minute: '2-digit',
-      second: '2-digit'
+      second: '2-digit',
+      hour12: false
     });
   }
 }

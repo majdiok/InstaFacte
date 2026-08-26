@@ -1,6 +1,7 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Domain.Common;
+using FactuTrust.Domain.Enums;
 using FluentValidation;
 using MediatR;
 
@@ -14,7 +15,8 @@ public sealed record RecordCountCommand(
     Guid InventoryId,
     Guid ProductId,
     decimal CountedQuantity,
-    Guid? ProductLotId = null) : IRequest<Result<RecordCountResult>>;
+    Guid? ProductLotId = null,
+    string? LotNumber = null) : IRequest<Result<RecordCountResult>>;
 
 /// <summary>
 /// Résultat du comptage avec message pédagogique.
@@ -53,13 +55,16 @@ public sealed class RecordCountCommandValidator : AbstractValidator<RecordCountC
 public sealed class RecordCountCommandHandler : IRequestHandler<RecordCountCommand, Result<RecordCountResult>>
 {
     private readonly IPhysicalInventoryRepository _inventoryRepository;
+    private readonly IProductRepository _productRepository;
     private readonly ITenantContext _tenantContext;
 
     public RecordCountCommandHandler(
         IPhysicalInventoryRepository inventoryRepository,
+        IProductRepository productRepository,
         ITenantContext tenantContext)
     {
         _inventoryRepository = inventoryRepository;
+        _productRepository = productRepository;
         _tenantContext = tenantContext;
     }
 
@@ -80,14 +85,36 @@ public sealed class RecordCountCommandHandler : IRequestHandler<RecordCountComma
         if (line == null)
             return Result.Failure<RecordCountResult>(Error.NotFound("Produit dans l'inventaire", request.ProductId));
 
-        var recordResult = inventory.RecordCount(request.ProductId, request.CountedQuantity, request.ProductLotId);
+        var difference = request.CountedQuantity - line.TheoreticalQuantity;
+        if (difference != 0)
+        {
+            var trackingByProduct = await _productRepository.GetTrackingInfoByIdsAsync(
+                new[] { line.ProductId },
+                cancellationToken);
+            var trackingMode = trackingByProduct.GetValueOrDefault(line.ProductId)?.TrackingMode ?? TrackingMode.None;
+            if (trackingMode == TrackingMode.Lot)
+            {
+                var lotNumber = string.IsNullOrWhiteSpace(request.LotNumber) ? line.LotNumber : request.LotNumber;
+                var hasLotIdentity = line.ProductLotId.HasValue || !string.IsNullOrWhiteSpace(lotNumber);
+                if (!hasLotIdentity)
+                {
+                    return Result.Failure<RecordCountResult>(Error.Validation(
+                        "LotNumber",
+                        $"Le numéro de lot est obligatoire pour « {line.ProductName} » (article suivi par lot)."));
+                }
+            }
+        }
+
+        var recordResult = inventory.RecordCount(
+            request.ProductId,
+            request.CountedQuantity,
+            request.ProductLotId,
+            request.LotNumber);
         if (recordResult.IsFailure)
             return Result.Failure<RecordCountResult>(recordResult.Error);
 
         await _inventoryRepository.UpdateAsync(inventory, cancellationToken);
 
-        // Generate pedagogical message
-        var difference = request.CountedQuantity - line.TheoreticalQuantity;
         var humanMessage = GenerateHumanMessage(line.TheoreticalQuantity, request.CountedQuantity, difference);
 
         return Result.Success(new RecordCountResult

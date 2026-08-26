@@ -45,7 +45,7 @@ export const REFUND_INVOICE_DIALOG_OPTIONS: NgbModalOptions = {
     </div>
     <div class="refund-dialog-body">
       <p class="refund-dialog-message">
-        Recherchez la facture d'origine par numéro ou nom de client.
+        Recherchez la facture d'origine par numéro, nom de client ou référence POS (POS-…).
       </p>
       <label for="refundInvoiceSearch" class="refund-dialog-label">
         Facture à rembourser
@@ -63,7 +63,7 @@ export const REFUND_INVOICE_DIALOG_OPTIONS: NgbModalOptions = {
           field="number"
           [dropdown]="false"
           [minLength]="1"
-          placeholder="Ex. FAC-2026-000042"
+          placeholder="Ex. FAC-2026-000042 ou POS-…"
           appendTo="body"
           panelStyleClass="refund-invoice-autocomplete-panel"
           scrollHeight="200px"

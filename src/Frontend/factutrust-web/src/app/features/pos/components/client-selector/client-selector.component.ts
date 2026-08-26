@@ -33,6 +33,17 @@ import { POS_PASSENGER_CLIENT_EMAIL } from '../../constants/pos-client.constants
             @if (client.nif) {
               <span class="client-selector__client-nif">{{ client.nif }}</span>
             }
+            @if (posState.clientOutstanding(); as out) {
+              <span class="client-selector__outstanding" [class.client-selector__outstanding--over]="out.isOverLimit">
+                Encours {{ posState.formatAmount(out.totalOutstanding) }} TND
+                @if (out.creditLimit != null) {
+                  / plafond {{ posState.formatAmount(out.creditLimit) }}
+                }
+                @if (out.isOverLimit) {
+                  — plafond dépassé
+                }
+              </span>
+            }
           </div>
           <button class="client-selector__edit" (click)="openSearch()" title="Changer de client">
             <i class="pi pi-pencil"></i>
@@ -59,7 +70,7 @@ import { POS_PASSENGER_CLIENT_EMAIL } from '../../constants/pos-client.constants
               <input
                 #clientSearchInput
                 type="text"
-                placeholder="Rechercher un client par nom, email, code..."
+                placeholder="Rechercher par nom, NIF, email ou code CLI-..."
                 [ngModel]="searchQuery()"
                 (ngModelChange)="onSearchChange($event)"
                 (keydown.escape)="closeSearch()"
@@ -180,6 +191,16 @@ import { POS_PASSENGER_CLIENT_EMAIL } from '../../constants/pos-client.constants
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+
+    .client-selector__outstanding {
+      font-size: var(--font-size-xs);
+      color: var(--color-text-tertiary);
+    }
+
+    .client-selector__outstanding--over {
+      color: var(--color-danger);
+      font-weight: var(--font-weight-medium);
     }
 
     .client-selector__client-nif {
@@ -504,6 +525,14 @@ export class ClientSelectorComponent implements OnDestroy {
   selectClient(client: ClientListItem): void {
     this.posState.selectClient(client);
     this.posState.applyFirstPurchaseDiscountIfEligible(10);
+    this.clientService.getClientOutstanding(client.id).subscribe({
+      next: res => {
+        if (res.success && res.data) {
+          this.posState.setClientOutstanding(res.data);
+        }
+      },
+      error: () => this.posState.setClientOutstanding(null)
+    });
     this.closeSearch();
   }
 

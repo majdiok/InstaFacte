@@ -40,14 +40,38 @@ public sealed class PosSessionController : ControllerBase
         return ToPosResult(result);
     }
 
+    [HttpGet("registers")]
+    [Authorize(Policy = PermissionPolicies.InvoicesCreate)]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<CashRegisterDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ListRegisters(
+        [FromQuery] Guid warehouseId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new ListCashRegistersQuery(warehouseId), cancellationToken);
+        return ToPosResult(result);
+    }
+
+    [HttpPost("registers")]
+    [Authorize(Policy = PermissionPolicies.PaymentsCreate)]
+    [ProducesResponseType(typeof(ApiResponse<CashRegisterDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> CreateRegister(
+        [FromBody] CreateCashRegisterRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new CreateCashRegisterCommand(request), cancellationToken);
+        return ToPosResult(result);
+    }
+
     [HttpGet("open-session")]
     [Authorize(Policy = PermissionPolicies.InvoicesCreate)]
     [ProducesResponseType(typeof(ApiResponse<CashRegisterSessionDto?>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetOpenSession(
         [FromQuery] Guid warehouseId,
+        [FromQuery] Guid? cashRegisterId,
         CancellationToken cancellationToken)
     {
-        var result = await _mediator.Send(new GetOpenCashRegisterSessionQuery(warehouseId), cancellationToken);
+        var result = await _mediator.Send(
+            new GetOpenCashRegisterSessionQuery(warehouseId, cashRegisterId), cancellationToken);
         return ToPosResult(result);
     }
 
@@ -68,9 +92,11 @@ public sealed class PosSessionController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<PosSessionReportDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetXReport(
         [FromQuery] Guid warehouseId,
+        [FromQuery] Guid? cashRegisterId,
         CancellationToken cancellationToken)
     {
-        var result = await _mediator.Send(new GetPosSessionXReportQuery(warehouseId), cancellationToken);
+        var result = await _mediator.Send(
+            new GetPosSessionXReportQuery(warehouseId, cashRegisterId), cancellationToken);
         return ToPosResult(result);
     }
 
@@ -80,11 +106,12 @@ public sealed class PosSessionController : ControllerBase
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> CloseSession(
         [FromQuery] Guid warehouseId,
+        [FromQuery] Guid? cashRegisterId,
         [FromBody] CloseCashRegisterSessionRequest request,
         CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
-            new CloseCashRegisterSessionCommand(warehouseId, request), cancellationToken);
+            new CloseCashRegisterSessionCommand(warehouseId, request, cashRegisterId), cancellationToken);
         return ToPosResult(result);
     }
 
@@ -115,9 +142,10 @@ public sealed class PosSessionController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<PosCartStateDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetCart(
         [FromQuery] Guid? warehouseId,
+        [FromQuery] Guid? cashRegisterId,
         CancellationToken cancellationToken)
     {
-        var result = await _mediator.Send(new GetPosCartDraftQuery(warehouseId), cancellationToken);
+        var result = await _mediator.Send(new GetPosCartDraftQuery(warehouseId, cashRegisterId), cancellationToken);
         return ToPosResult(result);
     }
 
@@ -129,7 +157,7 @@ public sealed class PosSessionController : ControllerBase
         CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
-            new SavePosCartDraftCommand(body.WarehouseId, body.State), cancellationToken);
+            new SavePosCartDraftCommand(body.WarehouseId, body.State, body.CashRegisterId), cancellationToken);
         return ToPosResult(result);
     }
 
@@ -138,9 +166,11 @@ public sealed class PosSessionController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<object?>), StatusCodes.Status200OK)]
     public async Task<IActionResult> ClearCart(
         [FromQuery] Guid? warehouseId,
+        [FromQuery] Guid? cashRegisterId,
         CancellationToken cancellationToken)
     {
-        var result = await _mediator.Send(new ClearPosCartDraftCommand(warehouseId), cancellationToken);
+        var result = await _mediator.Send(
+            new ClearPosCartDraftCommand(warehouseId, cashRegisterId), cancellationToken);
         return ToPosResult(result);
     }
 
@@ -173,7 +203,7 @@ public sealed class PosSessionController : ControllerBase
 
         var resolvedWarehouse = body.WarehouseId ?? warehouseId;
         var result = await _mediator.Send(
-            new SavePosCartDraftCommand(resolvedWarehouse, body.State), cancellationToken);
+            new SavePosCartDraftCommand(resolvedWarehouse, body.State, body.CashRegisterId), cancellationToken);
         return ToPosResult(result);
     }
 
@@ -193,9 +223,11 @@ public sealed class PosSessionController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<PosHeldTicketDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> ListHeldTickets(
         [FromQuery] Guid warehouseId,
+        [FromQuery] Guid? cashRegisterId,
         CancellationToken cancellationToken)
     {
-        var result = await _mediator.Send(new ListPosHeldTicketsQuery(warehouseId), cancellationToken);
+        var result = await _mediator.Send(
+            new ListPosHeldTicketsQuery(warehouseId, cashRegisterId), cancellationToken);
         return ToPosResult(result);
     }
 

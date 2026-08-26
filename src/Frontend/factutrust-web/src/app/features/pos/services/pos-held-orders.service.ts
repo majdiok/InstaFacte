@@ -7,6 +7,7 @@ import { environment } from '@environments/environment';
 import { createClientUuid } from '@core/utils/safe-random-uuid.util';
 import { PosStateService, PosState } from './pos-state.service';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
+import { PosRegisterSessionService } from './pos-register-session.service';
 import { ApiResponse } from '@core/services/auth.service';
 
 const DB_NAME = 'pos-held-orders';
@@ -37,6 +38,7 @@ interface HeldTicketDto {
 export class PosHeldOrdersService {
   private readonly http = inject(HttpClient);
   private readonly warehouseContext = inject(WarehouseContextService);
+  private readonly registerSession = inject(PosRegisterSessionService);
   private readonly apiUrl = `${environment.apiUrl}/pos`;
   private readonly heldOrders = signal<HeldOrder[]>([]);
   private db: IDBDatabase | null = null;
@@ -78,12 +80,17 @@ export class PosHeldOrdersService {
 
   private warehouseParams(): HttpParams {
     const warehouseId = this.warehouseContext.selectedWarehouseId();
-    return warehouseId ? new HttpParams().set('warehouseId', warehouseId) : new HttpParams();
+    let params = warehouseId ? new HttpParams().set('warehouseId', warehouseId) : new HttpParams();
+    const registerId = this.registerSession.selectedRegisterId();
+    if (registerId) {
+      params = params.set('cashRegisterId', registerId);
+    }
+    return params;
   }
 
   private async fetchRemote(warehouseId: string): Promise<HeldOrder[]> {
     try {
-      const params = new HttpParams().set('warehouseId', warehouseId);
+      const params = this.warehouseParams().set('warehouseId', warehouseId);
       const res = await firstValueFrom(
         this.http.get<ApiResponse<HeldTicketDto[]>>(`${this.apiUrl}/held-tickets`, { params })
       );
@@ -138,6 +145,7 @@ export class PosHeldOrdersService {
       const res = await firstValueFrom(
         this.http.post<ApiResponse<HeldTicketDto>>(`${this.apiUrl}/held-tickets`, {
           warehouseId,
+          cashRegisterId: this.registerSession.selectedRegisterId(),
           id,
           label,
           totalTtc: totalTTC,

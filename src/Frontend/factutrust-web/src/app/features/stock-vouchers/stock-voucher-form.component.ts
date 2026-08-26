@@ -22,10 +22,13 @@ import { StockAllocationEditorComponent } from '@shared/components/stock-allocat
 import {
   AllocationRow,
   buildAllocationPayload,
+  buildExitAllocationPayload,
   showLotSection,
   showSerialSection,
   createDefaultLotRow,
   createDefaultSerialRow,
+  coercePickingPolicy,
+  coerceTrackingMode,
   TRACKING_MODE_SERIAL
 } from '@shared/utils/stock-traceability.utils';
 import { StockFeatures } from '@core/services/stock.service';
@@ -57,6 +60,7 @@ interface VoucherLine {
   lotAllocations: AllocationRow[];
   trackingMode?: number;
   pickingPolicy?: number;
+  hasExpiryTracking?: boolean;
 }
 
 @Component({
@@ -284,6 +288,7 @@ interface VoucherLine {
                           [lineQuantity]="line.quantity"
                           [trackingMode]="line.trackingMode ?? 0"
                           [pickingPolicy]="line.pickingPolicy ?? 0"
+                          [hasExpiryTracking]="!!line.hasExpiryTracking"
                           [features]="stockFeatures()"
                           [allocations]="line.lotAllocations"
                           [optionalOverride]="!isEntry">
@@ -391,7 +396,7 @@ export class StockVoucherFormComponent implements OnInit {
   productSuggestions = signal<ProductListItem[]>([]);
   stockByProductId = signal<Map<string, { qty: number; avgCost: number }>>(new Map());
   stockFeatures = signal<StockFeatures | null>(null);
-  traceabilityByProduct = signal<Map<string, { trackingMode: number; pickingPolicy: number }>>(new Map());
+  traceabilityByProduct = signal<Map<string, { trackingMode: number; pickingPolicy: number; hasExpiryTracking: boolean }>>(new Map());
 
   readonly reasonOptions = this.isEntry
     ? [
@@ -480,7 +485,11 @@ export class StockVoucherFormComponent implements OnInit {
         if (!res.success || !res.data) return;
         const map = new Map(this.traceabilityByProduct());
         for (const ctx of res.data) {
-          map.set(ctx.productId, { trackingMode: ctx.trackingMode, pickingPolicy: ctx.pickingPolicy });
+          map.set(ctx.productId, {
+            trackingMode: coerceTrackingMode(ctx.trackingMode),
+            pickingPolicy: coercePickingPolicy(ctx.pickingPolicy),
+            hasExpiryTracking: !!ctx.hasExpiryTracking
+          });
         }
         this.traceabilityByProduct.set(map);
         for (const line of this.lines) {
@@ -488,13 +497,14 @@ export class StockVoucherFormComponent implements OnInit {
           if (ctx) {
             line.trackingMode = ctx.trackingMode;
             line.pickingPolicy = ctx.pickingPolicy;
+            line.hasExpiryTracking = ctx.hasExpiryTracking;
           }
         }
       });
   }
 
   private defaultAllocationsForLine(product: ProductListItem, quantity: number): AllocationRow[] {
-    const mode = product.trackingMode ?? 0;
+    const mode = coerceTrackingMode(product.trackingMode);
     if (mode === TRACKING_MODE_SERIAL) {
       const count = Math.max(1, Math.round(quantity));
       return Array.from({ length: count }, () => createDefaultSerialRow());
@@ -530,8 +540,9 @@ export class StockVoucherFormComponent implements OnInit {
       quantity: this.selectedQuantity,
       unitCost,
       notes: '',
-      trackingMode: product.trackingMode ?? 0,
+      trackingMode: coerceTrackingMode(product.trackingMode),
       pickingPolicy: this.traceabilityByProduct().get(product.id)?.pickingPolicy ?? 0,
+      hasExpiryTracking: this.traceabilityByProduct().get(product.id)?.hasExpiryTracking ?? false,
       lotAllocations: this.defaultAllocationsForLine(product, this.selectedQuantity)
     });
     this.loadTraceabilityContext();
@@ -558,7 +569,9 @@ export class StockVoucherFormComponent implements OnInit {
     const payload: StockVoucherLineAllocations[] = [];
     this.lines.forEach((line, i) => {
       const lineId = line.id || serverLines[i]?.id;
-      const allocations = buildAllocationPayload(line.lotAllocations ?? []);
+      const allocations = this.isEntry
+        ? buildAllocationPayload(line.lotAllocations ?? [])
+        : buildExitAllocationPayload(line.lotAllocations ?? []);
       if (lineId && allocations.length > 0) {
         payload.push({ lineId, allocations });
       }
@@ -717,6 +730,7 @@ export class StockVoucherFormComponent implements OnInit {
           lotAllocations: [{ lotNumber: '', expiryDate: null, quantity: l.quantity }]
         }));
         this.loadStock();
+        this.loadTraceabilityContext();
       },
       error: (err) => {
         this.messageService.add({

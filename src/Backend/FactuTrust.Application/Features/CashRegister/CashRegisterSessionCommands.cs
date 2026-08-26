@@ -17,7 +17,7 @@ namespace FactuTrust.Application.Features.CashRegister;
 
 public sealed record GetCashRegisterQuery(Guid WarehouseId) : IRequest<Result<CashRegisterDto>>;
 
-public sealed record GetOpenCashRegisterSessionQuery(Guid WarehouseId)
+public sealed record GetOpenCashRegisterSessionQuery(Guid WarehouseId, Guid? CashRegisterId = null)
     : IRequest<Result<CashRegisterSessionDto?>>;
 
 public sealed record OpenCashRegisterSessionCommand(OpenCashRegisterSessionRequest Request)
@@ -59,6 +59,7 @@ public sealed class GetCashRegisterQueryHandler : IRequestHandler<GetCashRegiste
         Name = register.Name,
         WarehouseId = register.WarehouseId,
         IsActive = register.IsActive,
+        IsDefault = register.IsDefault,
         RequireOpenSession = requireOpenSession
     };
 }
@@ -90,8 +91,8 @@ public sealed class GetOpenCashRegisterSessionQueryHandler
         GetOpenCashRegisterSessionQuery request,
         CancellationToken cancellationToken)
     {
-        var ensured = await CashRegisterProvisioning.EnsureForWarehouseAsync(
-            _warehouses, _registers, request.WarehouseId, _currentUser.UserId?.ToString(), cancellationToken);
+        var ensured = await CashRegisterResolver.ResolveAsync(
+            _warehouses, _registers, request.WarehouseId, request.CashRegisterId, _currentUser.UserId?.ToString(), cancellationToken);
         if (ensured.IsFailure)
             return Result.Failure<CashRegisterSessionDto?>(ensured.Error);
 
@@ -137,8 +138,13 @@ public sealed class OpenCashRegisterSessionCommandHandler
             return Result.Failure<CashRegisterSessionDto>(Error.Unauthorized("Utilisateur non identifié"));
 
         var warehouseId = command.Request.WarehouseId;
-        var ensured = await CashRegisterProvisioning.EnsureForWarehouseAsync(
-            _warehouses, _registers, warehouseId, userId.ToString(), cancellationToken);
+        var ensured = await CashRegisterResolver.ResolveAsync(
+            _warehouses,
+            _registers,
+            warehouseId,
+            command.Request.CashRegisterId,
+            userId.ToString(),
+            cancellationToken);
         if (ensured.IsFailure)
             return Result.Failure<CashRegisterSessionDto>(ensured.Error);
 

@@ -79,7 +79,8 @@ import { LinkedInvoiceRef } from '@core/services/invoice-reference-resolver.serv
         [class.payment-actions__primary--quick]="posState.isQuickMode()"
         [class.payment-actions__primary--credit]="posState.isCreditNote()"
         [disabled]="!posState.canValidate() || posState.isProcessing()"
-
+        [attr.aria-busy]="posState.isProcessing()"
+        aria-live="polite"
         (click)="onValidate.emit()"
         type="button">
         @if (posState.isProcessing()) {
@@ -462,15 +463,23 @@ import { LinkedInvoiceRef } from '@core/services/invoice-reference-resolver.serv
     }
 
     .payment-actions__secondary {
-      display: flex;
-      flex-wrap: wrap;
-      gap: var(--spacing-3);
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+      gap: var(--spacing-2);
     }
 
     .payment-actions__secondary .payment-actions__btn-secondary,
     .payment-actions__secondary .payment-actions__btn-danger,
     .payment-actions__secondary .payment-actions__btn-warning {
-      min-width: 120px;
+      min-width: 0;
+    }
+
+    .payment-actions__secondary .payment-actions__btn-secondary span,
+    .payment-actions__secondary .payment-actions__btn-danger span,
+    .payment-actions__secondary .payment-actions__btn-warning span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .payment-actions__btn-secondary {
@@ -668,7 +677,8 @@ export class PaymentActionsComponent {
     { value: PaymentMethod.Cash, label: 'Espèces', shortLabel: 'Espèces', icon: 'pi pi-money-bill' },
     { value: PaymentMethod.Card, label: 'Carte bancaire', shortLabel: 'Carte', icon: 'pi pi-credit-card' },
     { value: PaymentMethod.BankTransfer, label: 'Virement', shortLabel: 'Virement', icon: 'pi pi-building' },
-    { value: PaymentMethod.Check, label: 'Chèque', shortLabel: 'Chèque', icon: 'pi pi-file' }
+    { value: PaymentMethod.Check, label: 'Chèque', shortLabel: 'Chèque', icon: 'pi pi-file' },
+    { value: PaymentMethod.Effect, label: 'Effet', shortLabel: 'Effet', icon: 'pi pi-book' }
   ];
 
   openRefundInvoiceIdDialog(): void {

@@ -38,11 +38,29 @@ export class EntrySubmitService {
     store.successMsg.set(null);
     store.loading.set(true);
 
-    const { request, journalCode, entryDate } = store.buildCreateRequest();
+    const editingId = store.editingEntryId();
+    const journalCode = store.journalCode();
+    const entryDate = store.entryDate();
 
-    return this.api.createManualJournalEntry(request).pipe(
+    const save$ = editingId
+      ? this.api.updateDraftJournalEntry(editingId, store.buildUpdateRequest().request).pipe(
+          map(res => ({
+            ok: !!res.success,
+            error: res.error,
+            entryId: editingId as string | undefined
+          }))
+        )
+      : this.api.createManualJournalEntry(store.buildCreateRequest().request).pipe(
+          map(res => ({
+            ok: !!res.success && !!res.data,
+            error: res.error,
+            entryId: res.data
+          }))
+        );
+
+    return save$.pipe(
       concatMap(res => {
-        if (!res.success || !res.data) {
+        if (!res.ok || !res.entryId) {
           store.loading.set(false);
           store.error.set(res.error ?? "Erreur lors de l'enregistrement.");
           return of({
@@ -52,8 +70,8 @@ export class EntrySubmitService {
           } satisfies SubmitResult);
         }
 
-        const entryId = res.data;
-        if (pendingFiles.length === 0) {
+        const entryId = res.entryId;
+        if (editingId || pendingFiles.length === 0) {
           return of({
             success: true,
             entryId,
@@ -102,7 +120,10 @@ export class EntrySubmitService {
     store.loading.set(false);
     if (!result.success) return;
 
-    store.successMsg.set('Écriture enregistrée avec succès.');
+    const wasEdit = !!store.editingEntryId();
+    store.successMsg.set(wasEdit
+      ? 'Écriture mise à jour avec succès.'
+      : 'Écriture enregistrée avec succès.');
     const detailSuffix = afterSuccess === 'reset'
       ? ' Le formulaire est prêt pour une nouvelle saisie.'
       : afterSuccess === 'duplicate'
@@ -111,8 +132,10 @@ export class EntrySubmitService {
 
     this.toast.add({
       severity: 'success',
-      summary: 'Écriture enregistrée',
-      detail: `L'écriture du journal ${result.journalCode} a été enregistrée.${detailSuffix}`,
+      summary: wasEdit ? 'Écriture mise à jour' : 'Écriture enregistrée',
+      detail: wasEdit
+        ? `L'écriture du journal ${result.journalCode} a été mise à jour.${detailSuffix}`
+        : `L'écriture du journal ${result.journalCode} a été enregistrée.${detailSuffix}`,
       life: 5000
     });
 

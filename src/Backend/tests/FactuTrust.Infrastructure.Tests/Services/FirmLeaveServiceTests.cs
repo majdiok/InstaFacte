@@ -5,6 +5,7 @@ using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.Persistence;
 using FactuTrust.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
@@ -34,7 +35,12 @@ public sealed class FirmLeaveServiceTests
 
         // Par défaut, un report neutre : ces tests portent sur le circuit RH, pas sur la paie.
         var mirrorService = mirror ?? BuildNoOpMirror();
-        return new FirmLeaveService(db, calendar.Object, mirrorService);
+        return new FirmLeaveService(
+            db,
+            calendar.Object,
+            mirrorService,
+            Mock.Of<INotificationService>(),
+            NullLogger<FirmLeaveService>.Instance);
     }
 
     private static IFirmLeavePayrollMirrorService BuildNoOpMirror()

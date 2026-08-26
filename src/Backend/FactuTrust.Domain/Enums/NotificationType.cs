@@ -14,5 +14,10 @@ public enum NotificationType
     ExchangeRequestCreated = 6,
     ExchangeRequestStatusChanged = 7,
     ExchangeTaskAssigned = 8,
-    ExchangeThreadClosed = 9
+    ExchangeThreadClosed = 9,
+    ExchangeRequestCommented = 10,
+    ExchangeDocumentShared = 11,
+    ExchangeTaskCreated = 12,
+    FirmLeaveRequestSubmitted = 13,
+    FirmTimeSheetSubmitted = 14
 }

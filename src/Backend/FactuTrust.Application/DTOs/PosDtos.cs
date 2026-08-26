@@ -9,6 +9,7 @@ public sealed record CashRegisterDto
     public string Name { get; init; } = null!;
     public Guid WarehouseId { get; init; }
     public bool IsActive { get; init; }
+    public bool IsDefault { get; init; }
     public bool RequireOpenSession { get; init; }
 }
 
@@ -32,6 +33,15 @@ public sealed record OpenCashRegisterSessionRequest
 {
     public Guid WarehouseId { get; init; }
     public decimal OpeningFloat { get; init; }
+    public Guid? CashRegisterId { get; init; }
+}
+
+public sealed record CreateCashRegisterRequest
+{
+    public Guid WarehouseId { get; init; }
+    public string Code { get; init; } = null!;
+    public string Name { get; init; } = null!;
+    public bool IsDefault { get; init; }
 }
 
 public sealed record CloseCashRegisterSessionRequest
@@ -48,6 +58,7 @@ public sealed record PosCartStateDto
 public sealed record SavePosCartRequest
 {
     public Guid? WarehouseId { get; init; }
+    public Guid? CashRegisterId { get; init; }
     public System.Text.Json.JsonElement State { get; init; }
 }
 
@@ -64,6 +75,7 @@ public sealed record PosHeldTicketDto
 public sealed record SavePosHeldTicketRequest
 {
     public Guid? WarehouseId { get; init; }
+    public Guid? CashRegisterId { get; init; }
     public Guid? Id { get; init; }
     public string Label { get; init; } = null!;
     public decimal TotalTtc { get; init; }

@@ -160,7 +160,7 @@ public sealed class PhysicalInventory : AggregateRoot
     /// <summary>
     /// Enregistre le comptage d'un produit.
     /// </summary>
-    public Result RecordCount(Guid productId, decimal countedQuantity, Guid? productLotId = null)
+    public Result RecordCount(Guid productId, decimal countedQuantity, Guid? productLotId = null, string? lotNumber = null)
     {
         if (Status != InventoryStatus.InProgress)
             return Result.Failure(Error.Validation("Status", "Cet inventaire n'est plus en cours."));
@@ -172,7 +172,7 @@ public sealed class PhysicalInventory : AggregateRoot
         if (line == null)
             return Result.Failure(Error.NotFound("Produit", productId));
 
-        return line.RecordCount(countedQuantity);
+        return line.RecordCount(countedQuantity, lotNumber);
     }
 
     /// <summary>

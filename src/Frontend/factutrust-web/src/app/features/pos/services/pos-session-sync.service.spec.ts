@@ -3,6 +3,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
 import { PosState, PosStateService } from './pos-state.service';
+import { PosRegisterSessionService } from './pos-register-session.service';
 import { PosSessionSyncService } from './pos-session-sync.service';
 
 const warehouseId = '11111111-1111-1111-1111-111111111111';
@@ -28,8 +29,10 @@ function snapshot(lines: number): PosState {
     linkedInvoice: null,
     printMode: 'receipt',
     isDemoMode: false,
-    paymentSchedule: 'full',
-    firstPurchaseDiscountPercent: null
+    paymentSchedule: 'immediate',
+    firstPurchaseDiscountPercent: null,
+    clientOutstanding: null,
+    overLimitAcknowledged: false
   };
 }
 
@@ -49,7 +52,8 @@ describe('PosSessionSyncService', () => {
         provideHttpClientTesting(),
         PosSessionSyncService,
         { provide: PosStateService, useValue: posState },
-        { provide: WarehouseContextService, useValue: { selectedWarehouseId: () => warehouseId } }
+        { provide: WarehouseContextService, useValue: { selectedWarehouseId: () => warehouseId } },
+        { provide: PosRegisterSessionService, useValue: { selectedRegisterId: () => null } }
       ]
     });
     service = TestBed.inject(PosSessionSyncService);
@@ -78,6 +82,25 @@ describe('PosSessionSyncService', () => {
     expect(req.request.body.warehouseId).toBe(warehouseId);
     expect(req.request.body.state.sessionId).toBe('ticket-1');
     req.flush({ success: true });
+  }));
+
+  it('serializes overlapping cart PUTs instead of sending them in parallel', fakeAsync(() => {
+    service.scheduleSave();
+    tick(1000);
+
+    const first = cartRequest('PUT');
+    expect(first.request.body.state.sessionId).toBe('ticket-1');
+
+    posState.getSnapshot.and.returnValue(snapshot(2));
+    service.scheduleSave();
+    tick(1000);
+    http.expectNone(r => r.method === 'PUT' && r.url.includes('/pos/cart'));
+
+    first.flush({ success: true });
+
+    const second = cartRequest('PUT');
+    expect(second.request.body.state.lines.length).toBe(2);
+    second.flush({ success: true });
   }));
 
     it('prefers the server cart when it has lines', () => {

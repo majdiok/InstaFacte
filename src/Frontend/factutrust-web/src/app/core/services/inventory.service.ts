@@ -26,6 +26,9 @@ export interface InventoryProductItem {
     countedQuantity: number | null;
     productLotId?: string | null;
     lotNumber?: string | null;
+    /** Numeric enum or API string (`Lot` / `Serial` / `None`). */
+    trackingMode?: number | string;
+    hasExpiryTracking?: boolean;
 }
 
 export interface ActiveInventoryDto {
@@ -54,6 +57,7 @@ export interface InventorySummaryLineDto {
     differenceClass: 'positive' | 'negative' | 'neutral';
     productLotId?: string | null;
     lotNumber?: string | null;
+    trackingMode?: number | string;
 }
 
 export interface InventorySummaryDto {
@@ -87,6 +91,7 @@ export interface RecordCountRequest {
     productId: string;
     countedQuantity: number;
     productLotId?: string | null;
+    lotNumber?: string | null;
 }
 
 export interface RecordCountResult {
@@ -102,6 +107,7 @@ export interface InventoryPendingCount {
     productId: string;
     countedQuantity: number;
     productLotId?: string | null;
+    lotNumber?: string | null;
 }
 
 export interface ValidateInventoryRequest {

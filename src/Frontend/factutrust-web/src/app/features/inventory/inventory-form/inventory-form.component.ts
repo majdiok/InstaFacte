@@ -14,14 +14,17 @@ import {
     InventoryType,
     ActiveInventoryDto,
     InventoryProductItem,
+    RecordCountRequest,
 } from '@core/services/inventory.service';
 import { StockService, Warehouse } from '@core/services/stock.service';
 import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
+import { TRACKING_MODE_LOT, coerceTrackingMode } from '@shared/utils/stock-traceability.utils';
 
 import { SelectModule } from 'primeng/select';
 import { InputNumberModule } from 'primeng/inputnumber';
+import { InputTextModule } from 'primeng/inputtext';
 import { Textarea } from 'primeng/textarea';
 import { ButtonModule } from 'primeng/button';
 import { RippleModule } from 'primeng/ripple';
@@ -37,6 +40,8 @@ export interface InventoryFormLine extends InventoryProductItem {
     countedInput: number;
     /** Last value successfully saved to API */
     lastSavedCount: number | null;
+    /** Lot number for opening inventory on lot-tracked products */
+    lotNumberInput: string;
 }
 
 @Component({
@@ -48,6 +53,7 @@ export interface InventoryFormLine extends InventoryProductItem {
         RouterModule,
         SelectModule,
         InputNumberModule,
+        InputTextModule,
         Textarea,
         ButtonModule,
         RippleModule,
@@ -183,6 +189,7 @@ export class InventoryFormComponent implements OnInit {
             countedInput:
                 p.countedQuantity !== null ? p.countedQuantity : p.theoreticalQuantity,
             lastSavedCount: p.countedQuantity,
+            lotNumberInput: p.lotNumber ?? '',
         }));
         this.lines.set(newLines);
     }
@@ -251,11 +258,35 @@ export class InventoryFormComponent implements OnInit {
         return `${line.productId}::${line.productLotId ?? ''}`;
     }
 
-    private countPayload(line: InventoryFormLine): { productId: string; countedQuantity: number; productLotId?: string } {
+    needsOpeningLotForLine(line: InventoryFormLine): boolean {
+        return coerceTrackingMode(line.trackingMode) === TRACKING_MODE_LOT && !line.productLotId;
+    }
+
+    requiresLotNumberForLine(line: InventoryFormLine): boolean {
+        return this.needsOpeningLotForLine(line)
+            && this.resolveCountedInput(line) !== line.theoreticalQuantity;
+    }
+
+    hasOpeningLotLines = computed(() => this.lines().some((line) => this.needsOpeningLotForLine(line)));
+
+    updateLineLotNumber(line: InventoryFormLine, value: string): void {
+        const key = this.lineKey(line);
+        this.lines.update((list) =>
+            list.map((item) =>
+                this.lineKey(item) === key ? { ...item, lotNumberInput: value ?? '' } : item
+            )
+        );
+    }
+
+    private countPayload(line: InventoryFormLine): RecordCountRequest {
         const countedQuantity = this.resolveCountedInput(line);
-        return line.productLotId
-            ? { productId: line.productId, countedQuantity, productLotId: line.productLotId }
-            : { productId: line.productId, countedQuantity };
+        const payload: RecordCountRequest = { productId: line.productId, countedQuantity };
+        if (line.productLotId) {
+            payload.productLotId = line.productLotId;
+        } else if (this.needsOpeningLotForLine(line) && line.lotNumberInput.trim()) {
+            payload.lotNumber = line.lotNumberInput.trim();
+        }
+        return payload;
     }
 
     isDirtyLine(line: InventoryFormLine): boolean {
@@ -288,6 +319,12 @@ export class InventoryFormComponent implements OnInit {
                 summary: 'Rien à enregistrer',
                 detail: 'Aucune modification à sauvegarder',
             });
+            return;
+        }
+
+        const missingLot = this.findMissingLotLine(toSave);
+        if (missingLot) {
+            this.warnMissingLot(missingLot);
             return;
         }
 
@@ -333,9 +370,29 @@ export class InventoryFormComponent implements OnInit {
         runNext();
     }
 
+    private findMissingLotLine(lines: InventoryFormLine[] = this.lines()): InventoryFormLine | undefined {
+        return lines.find(
+            (line) => this.requiresLotNumberForLine(line) && !line.lotNumberInput.trim()
+        );
+    }
+
+    private warnMissingLot(line: InventoryFormLine): void {
+        this.toastService.add({
+            severity: 'warn',
+            summary: 'N° de lot requis',
+            detail: `Saisissez un numéro de lot pour « ${line.productName} » (article suivi avec écart).`,
+        });
+    }
+
     validateInventory(): void {
         const inv = this.activeInventory();
         if (!inv || !this.canValidate()) return;
+
+        const missingLot = this.findMissingLotLine();
+        if (missingLot) {
+            this.warnMissingLot(missingLot);
+            return;
+        }
 
         const implicitCount = this.lines().filter((l) => !l.isCounted && !this.isDirtyLine(l)).length;
         const varianceCount = this.lines().filter(
@@ -363,6 +420,12 @@ export class InventoryFormComponent implements OnInit {
     private executeValidate(): void {
         const inv = this.activeInventory();
         if (!inv || !this.canValidate()) return;
+
+        const missingLot = this.findMissingLotLine();
+        if (missingLot) {
+            this.warnMissingLot(missingLot);
+            return;
+        }
 
         const pendingCounts = this.getDirtyLines().map((line) => this.countPayload(line));
 

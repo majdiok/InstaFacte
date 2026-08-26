@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '@environments/environment';
+import { createHttpContextSkipGlobalErrorUi } from '@core/http-context';
 import { ApiResponse } from '@core/services/auth.service';
 import {
   FirmLeaveBalance,
@@ -71,7 +72,8 @@ export class FirmLeavesService {
     reason?: string;
     submitImmediately?: boolean;
   }): Observable<ApiResponse<FirmLeaveRequest>> {
-    return this.http.post<ApiResponse<FirmLeaveRequest>>(`${this.base}/leaves`, body);
+    return this.http.post<ApiResponse<FirmLeaveRequest>>(
+      `${this.base}/leaves`, body, { context: createHttpContextSkipGlobalErrorUi() });
   }
 
   update(id: string, body: {
@@ -82,7 +84,8 @@ export class FirmLeavesService {
     endUnit: number;
     reason?: string;
   }): Observable<ApiResponse<FirmLeaveRequest>> {
-    return this.http.put<ApiResponse<FirmLeaveRequest>>(`${this.base}/leaves/${id}`, body);
+    return this.http.put<ApiResponse<FirmLeaveRequest>>(
+      `${this.base}/leaves/${id}`, body, { context: createHttpContextSkipGlobalErrorUi() });
   }
 
   submit(id: string): Observable<ApiResponse<FirmLeaveRequest>> {

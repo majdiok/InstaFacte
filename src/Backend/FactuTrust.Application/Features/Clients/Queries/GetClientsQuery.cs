@@ -69,7 +69,9 @@ public sealed class GetClientsQueryHandler : IRequestHandler<GetClientsQuery, Pa
                 Country = c.Address.Country,
                 IsActive = c.IsActive,
                 TotalInvoices = invoices.Count,
-                TotalRevenue = totalRevenue
+                TotalRevenue = totalRevenue,
+                CreditLimit = c.CreditLimit,
+                DefaultPaymentTermDays = c.DefaultPaymentTermDays
             });
         }
 

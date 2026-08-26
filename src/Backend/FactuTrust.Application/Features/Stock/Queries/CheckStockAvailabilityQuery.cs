@@ -1,3 +1,4 @@
+using System.Globalization;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Domain.Common;
@@ -245,8 +246,8 @@ public sealed class CheckStockAvailabilityQueryHandler
         {
             // Stock insuffisant (warning uniquement, pas de blocage)
             return (
-                $"⚠️ Stock insuffisant : vous n'avez que {available} {unitText} de {productName}. " +
-                $"Il vous manque {Math.Abs(remaining)} {remainingUnitText}.",
+                $"⚠️ Stock insuffisant : vous n'avez que {FormatQty(available)} {unitText} de {productName}. " +
+                $"Il vous manque {FormatQty(Math.Abs(remaining))} {remainingUnitText}.",
                 "warning"
             );
         }
@@ -255,8 +256,8 @@ public sealed class CheckStockAvailabilityQueryHandler
         {
             // Le stock sera bas après cette vente
             return (
-                $"Cette vente va retirer {requested} {unitText}. " +
-                $"Attention : il ne restera que {remaining} {remainingUnitText} (stock bas).",
+                $"Cette vente va retirer {FormatQty(requested)} {unitText}. " +
+                $"Attention : il ne restera que {FormatQty(remaining)} {remainingUnitText} (stock bas).",
                 "warning"
             );
         }
@@ -265,7 +266,7 @@ public sealed class CheckStockAvailabilityQueryHandler
         {
             // Rupture après cette vente
             return (
-                $"Cette vente va retirer les {requested} dernières {unitText}. " +
+                $"Cette vente va retirer les {FormatQty(requested)} dernières {unitText}. " +
                 $"Le produit sera en rupture de stock.",
                 "warning"
             );
@@ -273,10 +274,16 @@ public sealed class CheckStockAvailabilityQueryHandler
 
         // Tout va bien
         return (
-            $"Cette vente va retirer {requested} {unitText}. Il restera {remaining} {remainingUnitText}.",
+            $"Cette vente va retirer {FormatQty(requested)} {unitText}. Il restera {FormatQty(remaining)} {remainingUnitText}.",
             "ok"
         );
     }
+
+    /// <summary>
+    /// Formats stock quantities for user-facing messages (no trailing zeros, fr-FR separators).
+    /// </summary>
+    internal static string FormatQty(decimal value) =>
+        value.ToString("0.###", CultureInfo.GetCultureInfo("fr-FR"));
 
     /// <summary>
     /// Génère un message résumé global.

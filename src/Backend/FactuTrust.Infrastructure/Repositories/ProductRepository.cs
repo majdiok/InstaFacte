@@ -238,6 +238,24 @@ public sealed class ProductRepository : IProductRepository
             .ToDictionaryAsync(p => p.Id, p => p.IsFodecApplicable, cancellationToken);
     }
 
+    public async Task<IReadOnlyDictionary<Guid, ProductTrackingInfo>> GetTrackingInfoByIdsAsync(
+        IReadOnlyCollection<Guid> productIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (productIds.Count == 0)
+            return new Dictionary<Guid, ProductTrackingInfo>();
+
+        await using var context = _contextFactory.CreateContext();
+        var distinct = productIds.Distinct().ToList();
+        return await context.Products
+            .AsNoTracking()
+            .Where(p => distinct.Contains(p.Id))
+            .ToDictionaryAsync(
+                p => p.Id,
+                p => new ProductTrackingInfo(p.TrackingMode, p.HasExpiryTracking),
+                cancellationToken);
+    }
+
     public async Task<bool> IsUsedInInvoicesAsync(Guid productId, CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();

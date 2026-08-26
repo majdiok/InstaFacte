@@ -173,9 +173,10 @@ import { LinkedInvoiceRef } from '@core/services/invoice-reference-resolver.serv
           }
         }
       </div>
+      </div>
 
-      <!-- Totals -->
       @if (posState.lines().length > 0) {
+        <div class="order-panel__footer">
         <div class="order-panel__totals-section">
           <div class="order-panel__divider"></div>
 
@@ -251,10 +252,12 @@ import { LinkedInvoiceRef } from '@core/services/invoice-reference-resolver.serv
               </div>
             }
 
-            @if (posState.paymentSchedule() !== 'full') {
+            @if (posState.paymentSchedule() === 'onAccount') {
               <div class="order-panel__schedule">
-                <span class="order-panel__schedule-label">Paiement en {{ posState.paymentSchedule() }}</span>
-                <span class="order-panel__schedule-value">{{ getScheduleInstallments() }} x {{ posState.formatAmountWithCurrency(getScheduleAmount()) }}</span>
+                <span class="order-panel__schedule-label">Paiement a terme</span>
+                <span class="order-panel__schedule-value">
+                  Echeance {{ posState.client()?.defaultPaymentTermDays || 30 }} j
+                </span>
               </div>
             }
 
@@ -269,22 +272,23 @@ import { LinkedInvoiceRef } from '@core/services/invoice-reference-resolver.serv
             @if (!posState.isQuickMode()) {
             <div class="order-panel__schedule-btns">
               <span class="order-panel__schedule-btns-label">Paiement :</span>
-              <button type="button" class="order-panel__schedule-btn" [class.order-panel__schedule-btn--active]="posState.paymentSchedule() === 'full'" (click)="posState.setPaymentSchedule('full')">
+              <button type="button" class="order-panel__schedule-btn" [class.order-panel__schedule-btn--active]="posState.paymentSchedule() === 'immediate'" (click)="posState.setPaymentSchedule('immediate')">
                 <i class="pi pi-wallet order-panel__schedule-btn-icon"></i> Comptant
               </button>
-              <button type="button" class="order-panel__schedule-btn" [class.order-panel__schedule-btn--active]="posState.paymentSchedule() === '2x'" (click)="posState.setPaymentSchedule('2x')">
-                <i class="pi pi-calendar order-panel__schedule-btn-icon"></i> 2x sans frais
-              </button>
-              <button type="button" class="order-panel__schedule-btn" [class.order-panel__schedule-btn--active]="posState.paymentSchedule() === '3x'" (click)="posState.setPaymentSchedule('3x')">
-                <i class="pi pi-calendar order-panel__schedule-btn-icon"></i> 3x sans frais
+              <button
+                type="button"
+                class="order-panel__schedule-btn"
+                [class.order-panel__schedule-btn--active]="posState.paymentSchedule() === 'onAccount'"
+                [disabled]="!posState.client()"
+                (click)="posState.client() && posState.setPaymentSchedule('onAccount')"
+                title="Facture a terme — client identifie obligatoire">
+                <i class="pi pi-calendar order-panel__schedule-btn-icon"></i> A terme
               </button>
             </div>
             }
           </div>
         </div>
-      }
 
-      <!-- Actions -->
       <div class="order-panel__actions">
         <app-payment-actions
           (onValidate)="onValidate.emit()"
@@ -294,7 +298,8 @@ import { LinkedInvoiceRef } from '@core/services/invoice-reference-resolver.serv
           (onCancel)="onCancel.emit()"
           (creditNoteInvoiceSelected)="creditNoteInvoiceSelected.emit($event)" />
       </div>
-      </div>
+        </div>
+      }
     </div>
   `,
   styles: [`
@@ -334,6 +339,17 @@ import { LinkedInvoiceRef } from '@core/services/invoice-reference-resolver.serv
 
     .order-panel__scroll::-webkit-scrollbar-thumb:hover {
       background: var(--color-neutral-400);
+    }
+
+    .order-panel__footer {
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      background: #faf8f5;
+      border-top: 1px solid var(--color-border-subtle);
+      box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.04);
+      max-height: min(52vh, 420px);
+      overflow-y: auto;
     }
 
     .order-panel__header {
@@ -1023,40 +1039,38 @@ import { LinkedInvoiceRef } from '@core/services/invoice-reference-resolver.serv
     }
 
     .order-panel__total-row--net {
-      padding: var(--spacing-5);
-      margin: var(--spacing-4) calc(var(--spacing-5) * -1);
-      margin-bottom: 0;
-      padding-left: var(--spacing-5);
-      padding-right: var(--spacing-5);
-      background: linear-gradient(135deg, #1a5c4c 0%, #0f4c3d 50%, #0d3d32 100%);
-      border-radius: var(--radius-xl);
-      border: none;
-      box-shadow: 0 4px 16px rgba(26, 92, 76, 0.2);
+      padding: var(--spacing-4);
+      margin: var(--spacing-3) 0 0;
+      background: var(--color-primary-50);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--color-primary-200);
+      box-shadow: none;
     }
 
     .order-panel__total-row--net .order-panel__total-label {
       display: flex;
       align-items: center;
       gap: var(--spacing-2);
-      font-size: var(--font-size-base);
-      font-weight: var(--font-weight-bold);
-      color: var(--color-white);
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-primary-800);
     }
 
     .order-panel__total-net-icon {
-      font-size: 1.1rem;
-      color: rgba(255, 255, 255, 0.9);
+      font-size: 1rem;
+      color: var(--color-primary-600);
     }
 
     .order-panel__total-value--net {
-      font-size: 1.75rem !important;
+      font-size: 1.35rem !important;
       font-weight: var(--font-weight-bold) !important;
-      color: var(--color-white) !important;
+      color: var(--color-primary-900) !important;
     }
 
     .order-panel__actions {
-      padding: var(--spacing-4) var(--spacing-5);
+      padding: var(--spacing-3) var(--spacing-5);
       border-top: 1px solid var(--color-border-subtle);
+      flex-shrink: 0;
     }
 
     @media (max-width: 768px) {
@@ -1117,16 +1131,6 @@ export class OrderPanelComponent {
 
   cancelGlobalDiscountForm(): void {
     this.showGlobalDiscountForm = false;
-  }
-
-  getScheduleInstallments(): number {
-    return this.posState.paymentSchedule() === '2x' ? 2 : 3;
-  }
-
-  getScheduleAmount(): number {
-    const total = this.posState.totals().totalTTC;
-    const n = this.getScheduleInstallments();
-    return n > 0 ? total / n : 0;
   }
 
   resolveCartLineImageUrl(url: string | null | undefined): string | null {

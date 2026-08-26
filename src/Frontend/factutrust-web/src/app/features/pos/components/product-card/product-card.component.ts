@@ -10,22 +10,7 @@ import { PosStateService } from '../../services/pos-state.service';
   standalone: true,
   imports: [CommonModule],
   template: `
-    <button
-      class="product-card"
-      [class.product-card--added]="justAdded()"
-      [class.product-card--disabled]="isAddDisabled()"
-      [attr.aria-disabled]="isAddDisabled() ? 'true' : null"
-      (click)="onCardClick()"
-      (dblclick)="onCardDblClick()"
-      [attr.aria-label]="cardAriaLabel()"
-      type="button">
-
-      @if (showRuptureStockBadge()) {
-        <span class="product-card__stock-badge product-card__stock-badge--insufficient">Rupture</span>
-      }
-      @if (showLowStockBadge()) {
-        <span class="product-card__stock-badge product-card__stock-badge--warning">Stock faible</span>
-      }
+    <div class="product-card-wrap">
       <button
         class="product-card__favorite"
         (click)="toggleFavorite($event)"
@@ -34,6 +19,23 @@ import { PosStateService } from '../../services/pos-state.service';
         type="button">
         <i [class]="isFavorite() ? 'pi pi-star-fill' : 'pi pi-star'"></i>
       </button>
+
+      <button
+        class="product-card"
+        [class.product-card--added]="justAdded()"
+        [class.product-card--disabled]="isAddDisabled()"
+        [attr.aria-disabled]="isAddDisabled() ? 'true' : null"
+        (click)="onCardClick()"
+        (dblclick)="onCardDblClick()"
+        [attr.aria-label]="cardAriaLabel()"
+        type="button">
+
+      @if (showRuptureStockBadge()) {
+        <span class="product-card__stock-badge product-card__stock-badge--insufficient">Rupture</span>
+      }
+      @if (showLowStockBadge()) {
+        <span class="product-card__stock-badge product-card__stock-badge--warning">Stock faible</span>
+      }
 
       <div class="product-card__image">
         @if (displayImageUrl() && !imageError()) {
@@ -71,8 +73,14 @@ import { PosStateService } from '../../services/pos-state.service';
         <span class="product-card__price">{{ formatPrice(product.unitPrice) }}</span>
       </div>
     </button>
+    </div>
   `,
   styles: [`
+    .product-card-wrap {
+      position: relative;
+      width: 100%;
+    }
+
     .product-card {
       display: flex;
       flex-direction: column;
@@ -130,7 +138,7 @@ import { PosStateService } from '../../services/pos-state.service';
     .product-card__image {
       position: relative;
       width: 100%;
-      aspect-ratio: 4 / 3;
+      aspect-ratio: 5 / 4;
       border-radius: 16px;
       overflow: hidden;
       margin-bottom: var(--spacing-2);
@@ -144,7 +152,7 @@ import { PosStateService } from '../../services/pos-state.service';
       display: flex;
       align-items: center;
       justify-content: center;
-      background: rgba(37, 99, 235, 0.15);
+      background: rgba(37, 99, 235, 0.1);
       font-size: 2rem;
       font-weight: var(--font-weight-bold);
       color: var(--color-primary-600);
@@ -316,7 +324,7 @@ import { PosStateService } from '../../services/pos-state.service';
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      z-index: 10;
+      z-index: 11;
       transition: all 200ms ease;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }

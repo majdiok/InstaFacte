@@ -58,6 +58,8 @@ export interface ClientListItem {
   isActive: boolean;
   totalInvoices: number;
   totalRevenue: number;
+  creditLimit?: number | null;
+  defaultPaymentTermDays?: number | null;
 }
 
 export interface ClientSearchParams {

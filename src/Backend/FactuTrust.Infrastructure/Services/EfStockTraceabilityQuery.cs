@@ -19,22 +19,30 @@ public sealed class EfStockTraceabilityQuery : IStockTraceabilityQuery
         CancellationToken cancellationToken = default)
     {
         await using var context = _factory.CreateContext();
-        return await context.StockLotBalances
-            .AsNoTracking()
-            .Where(b => b.StockItemId == stockItemId)
-            .Join(context.ProductLots.AsNoTracking(),
-                b => b.ProductLotId,
-                l => l.Id,
-                (b, l) => new StockLotBalanceDto(
-                    l.Id,
-                    l.LotNumber,
-                    l.ExpiryDate,
-                    b.QuantityOnHand,
-                    b.QuantityReserved,
-                    b.QuantityOnHand - b.QuantityReserved))
+        var rows = await (
+            from balance in context.StockLotBalances.AsNoTracking()
+            join lot in context.ProductLots.AsNoTracking() on balance.ProductLotId equals lot.Id
+            where balance.StockItemId == stockItemId
+            select new
+            {
+                lot.Id,
+                lot.LotNumber,
+                lot.ExpiryDate,
+                balance.QuantityOnHand,
+                balance.QuantityReserved
+            }).ToListAsync(cancellationToken);
+
+        return rows
             .OrderBy(x => x.ExpiryDate ?? DateTime.MaxValue)
             .ThenBy(x => x.LotNumber)
-            .ToListAsync(cancellationToken);
+            .Select(x => new StockLotBalanceDto(
+                x.Id,
+                x.LotNumber,
+                x.ExpiryDate,
+                x.QuantityOnHand,
+                x.QuantityReserved,
+                x.QuantityOnHand - x.QuantityReserved))
+            .ToList();
     }
 
     public async Task<IReadOnlyList<StockValuationLayerDto>> ListValuationLayersAsync(

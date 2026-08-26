@@ -1,4 +1,5 @@
 using System.Text.Json;
+using CashRegisterEntity = FactuTrust.Domain.Entities.CashRegister;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.DTOs;
@@ -8,11 +9,14 @@ using MediatR;
 
 namespace FactuTrust.Application.Features.CashRegister;
 
-public sealed record GetPosCartDraftQuery(Guid? WarehouseId) : IRequest<Result<PosCartStateDto>>;
+public sealed record GetPosCartDraftQuery(Guid? WarehouseId, Guid? CashRegisterId = null)
+    : IRequest<Result<PosCartStateDto>>;
 
-public sealed record SavePosCartDraftCommand(Guid? WarehouseId, JsonElement State) : IRequest<Result>;
+public sealed record SavePosCartDraftCommand(Guid? WarehouseId, JsonElement State, Guid? CashRegisterId = null)
+    : IRequest<Result>;
 
-public sealed record ClearPosCartDraftCommand(Guid? WarehouseId) : IRequest<Result>;
+public sealed record ClearPosCartDraftCommand(Guid? WarehouseId, Guid? CashRegisterId = null)
+    : IRequest<Result>;
 
 public sealed class GetPosCartDraftQueryHandler : IRequestHandler<GetPosCartDraftQuery, Result<PosCartStateDto>>
 {
@@ -41,15 +45,16 @@ public sealed class GetPosCartDraftQueryHandler : IRequestHandler<GetPosCartDraf
         PosCartDraft? draft;
         if (request.WarehouseId is { } warehouseId && warehouseId != Guid.Empty)
         {
-            var register = await _registers.GetByWarehouseIdAsync(warehouseId, cancellationToken);
-            if (register is null)
-            {
-                var ensured = await CashRegisterProvisioning.EnsureForWarehouseAsync(
-                    _warehouses, _registers, warehouseId, userId.ToString(), cancellationToken);
-                if (ensured.IsFailure)
-                    return Result.Failure<PosCartStateDto>(ensured.Error);
-                register = ensured.Value;
-            }
+            var registerResult = await CashRegisterResolver.ResolveAsync(
+                _warehouses,
+                _registers,
+                warehouseId,
+                request.CashRegisterId,
+                userId.ToString(),
+                cancellationToken);
+            if (registerResult.IsFailure)
+                return Result.Failure<PosCartStateDto>(registerResult.Error);
+            var register = registerResult.Value;
 
             draft = await _drafts.GetByUserAndRegisterAsync(userId, register.Id, cancellationToken);
         }
@@ -101,8 +106,8 @@ public sealed class SavePosCartDraftCommandHandler : IRequestHandler<SavePosCart
             warehouseId = fallback.Id;
         }
 
-        var ensured = await CashRegisterProvisioning.EnsureForWarehouseAsync(
-            _warehouses, _registers, warehouseId, userId.ToString(), cancellationToken);
+        var ensured = await CashRegisterResolver.ResolveAsync(
+            _warehouses, _registers, warehouseId, request.CashRegisterId, userId.ToString(), cancellationToken);
         if (ensured.IsFailure)
             return Result.Failure(ensured.Error);
 
@@ -150,7 +155,18 @@ public sealed class ClearPosCartDraftCommandHandler : IRequestHandler<ClearPosCa
 
         if (request.WarehouseId is { } warehouseId && warehouseId != Guid.Empty)
         {
-            var register = await _registers.GetByWarehouseIdAsync(warehouseId, cancellationToken);
+            CashRegisterEntity? register = null;
+            if (request.CashRegisterId is { } rid && rid != Guid.Empty)
+            {
+                register = await _registers.GetByIdAsync(rid, cancellationToken);
+                if (register is not null && register.WarehouseId != warehouseId)
+                    register = null;
+            }
+            else
+            {
+                register = await _registers.GetByWarehouseIdAsync(warehouseId, cancellationToken);
+            }
+
             if (register is not null)
                 await _drafts.DeleteByUserAndRegisterAsync(userId, register.Id, cancellationToken);
             return Result.Success();

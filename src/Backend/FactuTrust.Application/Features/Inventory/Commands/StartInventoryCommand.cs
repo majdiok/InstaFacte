@@ -45,6 +45,8 @@ public sealed record InventoryProductItem
     public decimal? CountedQuantity { get; init; }
     public Guid? ProductLotId { get; init; }
     public string? LotNumber { get; init; }
+    public TrackingMode TrackingMode { get; init; }
+    public bool HasExpiryTracking { get; init; }
 }
 
 public sealed class StartInventoryCommandValidator : AbstractValidator<StartInventoryCommand>
@@ -220,23 +222,48 @@ public sealed class StartInventoryCommandHandler : IRequestHandler<StartInventor
         var typeLabel = request.Type == InventoryType.Complete ? "complet" : "partiel";
         var humanMessage = $"📋 Inventaire {typeLabel} démarré ! Vous avez {productsToInventory.Count} produit{(productsToInventory.Count > 1 ? "s" : "")} à compter.";
 
+        var trackingByProduct = await BuildTrackingLookupAsync(productsToInventory.Select(p => p.ProductId), cancellationToken);
+
         return Result.Success(new StartInventoryResult
         {
             InventoryId = inventory.Id,
             TotalProducts = productsToInventory.Count,
             HumanMessage = humanMessage,
-            Products = inventory.CountLines.Select(l => new InventoryProductItem
-            {
-                ProductId = l.ProductId,
-                ProductName = l.ProductName,
-                ProductCode = l.ProductCode,
-                TheoreticalQuantity = l.TheoreticalQuantity,
-                IsCounted = l.IsCounted,
-                CountedQuantity = l.CountedQuantity,
-                ProductLotId = l.ProductLotId,
-                LotNumber = l.LotNumber
-            }).ToList()
+            Products = inventory.CountLines.Select(l => MapProductItem(l, trackingByProduct)).ToList()
         });
+    }
+
+    private async Task<IReadOnlyDictionary<Guid, ProductTrackingInfo>> BuildTrackingLookupAsync(
+        IEnumerable<Guid> productIds,
+        CancellationToken cancellationToken)
+    {
+        var ids = productIds.Distinct().ToList();
+        return ids.Count == 0
+            ? new Dictionary<Guid, ProductTrackingInfo>()
+            : await _productRepository.GetTrackingInfoByIdsAsync(ids, cancellationToken);
+    }
+
+    private static InventoryProductItem MapProductItem(
+        InventoryCountLine line,
+        IReadOnlyDictionary<Guid, ProductTrackingInfo>? trackingByProduct)
+    {
+        ProductTrackingInfo? tracking = null;
+        if (trackingByProduct is not null)
+            trackingByProduct.TryGetValue(line.ProductId, out tracking);
+
+        return new InventoryProductItem
+        {
+            ProductId = line.ProductId,
+            ProductName = line.ProductName,
+            ProductCode = line.ProductCode,
+            TheoreticalQuantity = line.TheoreticalQuantity,
+            IsCounted = line.IsCounted,
+            CountedQuantity = line.CountedQuantity,
+            ProductLotId = line.ProductLotId,
+            LotNumber = line.LotNumber,
+            TrackingMode = tracking?.TrackingMode ?? TrackingMode.None,
+            HasExpiryTracking = tracking?.HasExpiryTracking ?? false
+        };
     }
 
     private async Task<List<Product>> GetProductsAsync(List<Guid> productIds, CancellationToken cancellationToken)

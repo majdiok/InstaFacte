@@ -118,8 +118,11 @@ public class StockController : ControllerBase
         return Ok(ApiResponse<IReadOnlyList<ExpiryAlertDto>>.Ok(result));
     }
 
+    /// <summary>
+    /// Deployment capability flags (IOptions), not tenant stock data.
+    /// Authenticated callers only — class-level [Authorize]; no StockRead.
+    /// </summary>
     [HttpGet("features")]
-    [Authorize(Policy = PermissionPolicies.StockRead)]
     public async Task<ActionResult<StockFeaturesDto>> GetStockFeatures(CancellationToken cancellationToken = default)
     {
         var result = await _mediator.Send(new GetStockFeaturesQuery(), cancellationToken);

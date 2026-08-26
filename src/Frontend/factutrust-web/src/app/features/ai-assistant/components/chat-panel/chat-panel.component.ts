@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  HostBinding,
   inject,
   ViewChild,
   ElementRef,
@@ -45,7 +46,11 @@ import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
     SuggestionCatalogComponent
   ],
   template: `
-    <div class="chat-panel" [class.open]="isOpen || embedded" [class.embedded]="embedded">
+    <div
+      class="chat-panel"
+      [class.open]="isOpen || embedded"
+      [class.embedded]="embedded"
+      [class.embedded-workspace]="embedded && workspaceTab">
       <div class="panel-backdrop" (click)="onBackdropClose()"></div>
       <div class="panel-container">
         <!-- Header -->
@@ -64,12 +69,11 @@ import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
             </div>
             <div class="header-titles">
               <h3>{{ headerTitle() }}</h3>
+              <!-- Statut prêt/hors ligne uniquement — le nom technique (displayLabel/modelRef) n'est pas exposé à l'utilisateur.
+                   activeModel reste chargé côté session pour vision et warm-up Ollama. -->
               <div class="ai-status" [class.offline]="session.aiAvailable() === false">
                 <span class="ai-status-dot"></span>
                 <span class="ai-status-text">{{ session.aiAvailable() === false ? 'Hors ligne' : 'Modèle prêt' }}</span>
-                @if (session.activeModel(); as model) {
-                  <span class="ai-status-model" [attr.title]="model.modelRef">{{ model.displayLabel }}</span>
-                }
                 @if (scopeConfig(); as sc) {
                   <span class="scope-badge" [attr.title]="'Assistant expert du module — catalogue et persona ' + sc.expertName">
                     <i [class]="sc.icon" aria-hidden="true"></i>
@@ -285,6 +289,16 @@ import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
     </div>
   `,
   styles: [`
+    :host.chat-panel-host--fill {
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      align-self: stretch;
+      min-height: 0;
+      height: 100%;
+      overflow: hidden;
+    }
+
     .chat-panel {
       position: fixed;
       top: 0;
@@ -304,11 +318,25 @@ import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
 
     .chat-panel.embedded {
       position: relative;
+      display: flex;
+      flex-direction: column;
       height: calc(100vh - 220px);
       min-height: 320px;
       z-index: 1;
       opacity: 1;
       pointer-events: auto;
+    }
+
+    .chat-panel.embedded.embedded-workspace {
+      height: 100%;
+      min-height: 0;
+      flex: 1;
+    }
+
+    .chat-panel.embedded .panel-container {
+      flex: 1;
+      min-height: 0;
+      height: 100%;
     }
 
     .chat-panel.embedded.open {
@@ -357,6 +385,9 @@ import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 8px;
+      flex-shrink: 0;
+      min-width: 0;
       padding: 12px 16px;
       border-bottom: 1px solid var(--color-neutral-200, #e5e7eb);
       background: #fff;
@@ -366,6 +397,8 @@ import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
       display: flex;
       align-items: center;
       gap: 10px;
+      flex: 1;
+      min-width: 0;
     }
 
     .header-left h3 {
@@ -429,15 +462,6 @@ import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
       box-shadow: none;
     }
 
-    .ai-status-model {
-      font-size: 11px;
-      color: var(--color-neutral-400, #9ca3af);
-      max-width: 180px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
     .scope-badge {
       display: inline-flex;
       align-items: center;
@@ -466,7 +490,13 @@ import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
     .header-actions {
       display: flex;
       align-items: center;
+      flex-wrap: wrap;
+      flex-shrink: 0;
       gap: 8px;
+    }
+
+    .header-actions > .icon-btn:last-child {
+      flex-shrink: 0;
     }
 
     .icon-btn {
@@ -491,6 +521,7 @@ import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
     .panel-body {
       flex: 1;
       display: flex;
+      min-height: 0;
       overflow: hidden;
     }
 
@@ -506,10 +537,16 @@ import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
       display: flex;
       flex-direction: column;
       min-width: 0;
+      min-height: 0;
+    }
+
+    .chat-area > app-chat-input {
+      flex-shrink: 0;
     }
 
     .messages-container {
       flex: 1;
+      min-height: 0;
       overflow-y: auto;
       padding: 8px 0;
     }
@@ -737,6 +774,7 @@ import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
       display: flex;
       align-items: center;
       justify-content: space-between;
+      flex-shrink: 0;
       gap: 12px;
       padding: 8px 16px;
       border-bottom: 1px solid var(--color-primary-200, #bfdbfe);
@@ -803,9 +841,16 @@ import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
   `]
 })
 export class ChatPanelComponent implements AfterViewInit, OnInit, OnChanges, OnDestroy {
+  @HostBinding('class.chat-panel-host--fill')
+  get hostFillClass(): boolean {
+    return this.embedded;
+  }
+
   @Input() isOpen = false;
   /** When true, panel is inline in the main layout (route /ai-assistant) instead of a slide-over overlay. */
   @Input() embedded = false;
+  /** When true with embedded, panel fills the workspace tab pane (not a dedicated /ai-assistant route). */
+  @Input() workspaceTab = false;
   /**
    * Expert de module de cette surface (None = assistant global, comportement historique).
    * Appliqué à la session à l'init, à chaque changement d'input et à chaque (ré)ouverture.
@@ -928,7 +973,7 @@ export class ChatPanelComponent implements AfterViewInit, OnInit, OnChanges, OnD
    * ré-appliqué à la prochaine ouverture de la bulle).
    */
   switchToGlobalAssistant(): void {
-    if (this.embedded) {
+    if (this.embedded && !this.workspaceTab) {
       void this.router.navigate(['/ai-assistant']);
       return;
     }

@@ -1,7 +1,7 @@
 import { Component, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { Table, TableModule } from 'primeng/table';
 import { InputTextModule } from 'primeng/inputtext';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
@@ -25,7 +25,7 @@ import { AccountingCorrectionBannerComponent } from '../shared/accounting-correc
 import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
 import { AuthService } from '@core/services/auth.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
-import { canDeleteDraftAccountingEntries, canValidateAccountingEntries } from '@core/utils/accounting-access';
+import { canDeleteDraftAccountingEntries, canEditDraftAccountingEntries, canValidateAccountingEntries } from '@core/utils/accounting-access';
 import { AccountingJournalCatalogService } from '../shared/accounting-journal-catalog.service';
 import { AccountingJournalTab } from '../shared/accounting-journal-tabs.model';
 
@@ -41,6 +41,7 @@ type JournalFlatRow = {
   status: number;
   isDraft: boolean;
   isReversed: boolean;
+  isReversal: boolean;
   /** Référence de la pièce externe de l'écriture (facultative). */
   pieceRef: string | null;
   /** Nombre de pièces jointes (GED) de l'écriture. */
@@ -233,6 +234,18 @@ type JournalFlatRow = {
             </td>
             <td class="journal-col-narrow" data-label="Actions">
               <app-accounting-table-actions>
+              @if (r.firstOfEntry && r.isDraft && !r.isReversal && canEdit()) {
+                <app-button
+                  variant="secondary"
+                  size="sm"
+                  icon="pi-pencil"
+                  [iconOnly]="true"
+                  [iconAlwaysVisible]="true"
+                  type="button"
+                  (click)="editEntry(r)"
+                  [attr.aria-label]="'Modifier l\\'écriture ' + r.journal + ' n° ' + r.piece"
+                  title="Modifier" />
+              }
               @if (r.firstOfEntry && r.isDraft && canValidate()) {
                 <app-button
                   variant="success"
@@ -697,10 +710,12 @@ export class JournalComponent implements OnInit {
   private readonly auth = inject(AuthService);
   private readonly journalCatalog = inject(AccountingJournalCatalogService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly confirmationService = inject(ConfirmationService);
 
   readonly canValidate = computed(() => canValidateAccountingEntries(this.auth));
   readonly canDelete = computed(() => canDeleteDraftAccountingEntries(this.auth));
+  readonly canEdit = computed(() => canEditDraftAccountingEntries(this.auth));
 
   @ViewChild('dt') dt?: Table;
 
@@ -822,6 +837,7 @@ export class JournalComponent implements OnInit {
               status: e.status,
               isDraft: e.isDraft,
               isReversed: e.isReversed,
+              isReversal: !!e.reversesEntryId,
               pieceRef: e.pieceRef ?? null,
               attachmentCount: e.attachmentCount ?? 0,
               firstOfEntry: first
@@ -872,6 +888,18 @@ export class JournalComponent implements OnInit {
         }))
       } as Record<string, unknown>
     );
+
+  editEntry(row: JournalFlatRow): void {
+    if (!this.canEdit() || !row.isDraft || row.isReversal) return;
+    this.router.navigate(['/accounting/manual-entry'], {
+      queryParams: {
+        entryId: row.entryId,
+        returnFrom: this.fromStr || undefined,
+        returnTo: this.toStr || undefined,
+        returnJournal: this.journalCode || undefined
+      }
+    });
+  }
 
   /** Valide une écriture en brouillard (la rend définitive), puis recharge le journal. */
   validateEntry(entryId: string): void {

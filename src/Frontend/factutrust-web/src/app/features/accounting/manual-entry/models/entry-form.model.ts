@@ -1,4 +1,4 @@
-import { CreateManualJournalEntryRequest } from '../../services/accounting.service';
+import { CreateManualJournalEntryRequest, UpdateDraftJournalEntryRequest } from '../../services/accounting.service';
 
 /** Tiers auxiliaire (kind : 1 = client, 2 = fournisseur). */
 export interface ThirdPartyRef {
@@ -87,6 +87,12 @@ export interface EntryValidationResult {
 
 export interface BuildRequestResult {
   request: CreateManualJournalEntryRequest;
+  journalCode: string;
+  entryDate: string;
+}
+
+export interface BuildUpdateRequestResult {
+  request: UpdateDraftJournalEntryRequest;
   journalCode: string;
   entryDate: string;
 }

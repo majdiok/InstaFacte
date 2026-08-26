@@ -9,6 +9,7 @@ import { DatePickerModule } from 'primeng/datepicker';
 import { DialogModule } from 'primeng/dialog';
 import { AuthService } from '@core/services/auth.service';
 import { ToastService } from '@core/services/toast.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { FirmCollaboratorsService } from '@core/services/firm-collaborators.service';
 import { downloadBlob } from '@features/accounting/shared/accounting-download.util';
@@ -117,6 +118,7 @@ export class FirmLeavesRequestsComponent implements OnInit {
   private readonly api = inject(FirmLeavesService);
   private readonly auth = inject(AuthService);
   private readonly toast = inject(ToastService);
+  private readonly errorHandler = inject(ErrorHandlerService);
   private readonly confirm = inject(ConfirmationService);
   private readonly collabApi = inject(FirmCollaboratorsService);
 
@@ -215,14 +217,18 @@ export class FirmLeavesRequestsComponent implements OnInit {
               this.toast.add({ severity: 'success', summary: 'Congés', detail: 'Demande soumise' });
               this.reload();
             } else {
-              this.toast.add({ severity: 'error', summary: 'Erreur', detail: r.message ?? '' });
+              this.toast.add({
+                severity: 'error',
+                summary: 'Erreur',
+                detail: this.apiResponseError(r, 'Soumission impossible.')
+              });
             }
           },
           error: err => {
             this.toast.add({
               severity: 'error',
               summary: 'Erreur',
-              detail: err?.error?.message ?? 'Soumission impossible.'
+              detail: this.errorHandler.extractErrorMessage(err) || 'Soumission impossible.'
             });
           }
         });
@@ -244,7 +250,20 @@ export class FirmLeavesRequestsComponent implements OnInit {
             if (r.success) {
               this.toast.add({ severity: 'success', summary: 'Congés', detail: 'Demande annulée' });
               this.reload();
-            } else this.toast.add({ severity: 'error', summary: 'Erreur', detail: r.message ?? '' });
+            } else {
+              this.toast.add({
+                severity: 'error',
+                summary: 'Erreur',
+                detail: this.apiResponseError(r, 'Annulation impossible.')
+              });
+            }
+          },
+          error: err => {
+            this.toast.add({
+              severity: 'error',
+              summary: 'Erreur',
+              detail: this.errorHandler.extractErrorMessage(err) || 'Annulation impossible.'
+            });
           }
         });
       }
@@ -271,5 +290,9 @@ export class FirmLeavesRequestsComponent implements OnInit {
       case 4: return 'secondary';
       default: return 'warn';
     }
+  }
+
+  private apiResponseError(res: { message?: string | null; errors?: string[]; error?: string }, fallback: string): string {
+    return res.message || res.errors?.[0] || res.error || fallback;
   }
 }

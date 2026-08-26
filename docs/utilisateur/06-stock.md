@@ -161,7 +161,9 @@ Par défaut, le coût de stock est le **CMUP** (coût moyen unitaire pondéré).
 
 ## Inventaire par lot
 
-Si un produit est suivi par lot, l'inventaire **éclate une ligne par lot**. Comptez chaque lot séparément. Le comptage rapide (ajustement global) est **refusé** sur ces articles.
+Si un produit est suivi par lot, l'inventaire **éclate une ligne par lot** lorsque des lots existent déjà en stock. Comptez chaque lot séparément. Le comptage rapide (ajustement global) est **refusé** sur ces articles.
+
+Pour un **inventaire d'ouverture** (produit suivi par lot, stock théorique à 0, aucun lot enregistré), saisissez le **n° de lot** en même temps que la quantité comptée. Ce lot sera créé à la validation de l'inventaire.
 
 ---
 

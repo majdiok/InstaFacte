@@ -1,9 +1,8 @@
-import { Component, inject, OnDestroy, OnInit, HostListener, ViewChild, effect } from '@angular/core';
+import { Component, inject, OnDestroy, OnInit, HostListener, ViewChild, effect, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { HttpClient } from '@angular/common/http';
-import { switchMap, map, catchError, tap } from 'rxjs/operators';
-import { throwError, of } from 'rxjs';
+import { switchMap, catchError, tap } from 'rxjs/operators';
+import { throwError } from 'rxjs';
 import { PosStateService } from './services/pos-state.service';
 import { PosOrderLine, PaymentSplit } from './services/pos-state.service';
 import { PosBarcodeService } from './services/pos-barcode.service';
@@ -33,12 +32,9 @@ import { OrderPanelComponent } from './components/order-panel/order-panel.compon
 import { ProductListItem } from '@core/services/product.service';
 import { InvoiceService } from '@core/services/invoice.service';
 import { PrintPreviewService } from '@core/services/print-preview.service';
-import { ApiResponse } from '@core/services/auth.service';
+import { AuthService } from '@core/services/auth.service';
 import { InvoiceWizardService } from '../invoices/invoice-wizard/services/invoice-wizard.service';
 import {
-  InvoiceType,
-  Currency,
-  ClientTaxType,
   PaymentMethod,
   PAYMENT_METHOD_OPTIONS,
   AddressInfo,
@@ -49,7 +45,8 @@ import { environment } from '@environments/environment';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
 import { PricingService } from '@core/services/pricing.service';
-import { PosRegisterSessionService, PosSessionReportDto } from './services/pos-register-session.service';
+import { PosRegisterSessionService, CashRegisterDto, PosSessionReportDto } from './services/pos-register-session.service';
+import { PosCheckoutService } from './services/pos-checkout.service';
 import { toApiPaymentMethod } from './services/pos-payment.mapper';
 
 @Component({
@@ -67,7 +64,7 @@ import { toApiPaymentMethod } from './services/pos-payment.mapper';
         (onOpenHistory)="showHistoryPanel = true"
         (onDualScreenToggle)="toggleDualScreen()"
         (onQuickModeToggle)="posState.toggleQuickMode()"
-        (onOpenRegister)="showOpenSessionModal = true"
+        (onOpenRegister)="openRegisterModal()"
         (onXReport)="openXReport()"
         (onCloseZ)="openCloseZModal()" />
 
@@ -84,7 +81,7 @@ import { toApiPaymentMethod } from './services/pos-payment.mapper';
             [frequentProducts]="getFrequentProducts()"
             (onValidate)="validateAndPrint()"
             (onSaveDraft)="saveDraft()"
-            (onSendEmail)="validateAndPrint()"
+            (onSendEmail)="sendEmailAfterSale()"
             (onHold)="holdOrder()"
             (onCancel)="newOrder()"
             (creditNoteInvoiceSelected)="onCreditNoteInvoiceSelected($event)"
@@ -99,7 +96,7 @@ import { toApiPaymentMethod } from './services/pos-payment.mapper';
             <i class="pi pi-lock"></i>
             <h2>Ouvrir la caisse</h2>
             <p>Une session de caisse doit être ouverte pour vendre.</p>
-            <button type="button" class="pos-idle-btn" (click)="showOpenSessionModal = true">Ouvrir la caisse</button>
+            <button type="button" class="pos-idle-btn" (click)="openRegisterModal()">Ouvrir la caisse</button>
           </div>
         </div>
       }
@@ -161,16 +158,17 @@ import { toApiPaymentMethod } from './services/pos-payment.mapper';
           <div class="pos-idle-box">
             <i class="pi pi-lock"></i>
             <h2>Session verrouillee</h2>
-            <p>Inactivite de {{ idleService.idleMinutes() }} min. Entrez le code pour reprendre.</p>
+            <p>Inactivite de {{ idleService.idleMinutes() }} min. Saisissez votre mot de passe pour reprendre.</p>
             <input
               type="password"
-              inputmode="numeric"
-              maxlength="4"
-              [(ngModel)]="idleUnlockCode"
+              [(ngModel)]="idleUnlockPassword"
               (keydown.enter)="unlockIdle()"
-              placeholder="Code"
+              placeholder="Mot de passe"
               class="pos-idle-input"
-              aria-label="Code de deverrouillage" />
+              aria-label="Mot de passe" />
+            @if (idleUnlockError) {
+              <p class="pos-idle-error">{{ idleUnlockError }}</p>
+            }
             <button type="button" class="pos-idle-btn" (click)="unlockIdle()">Reprendre</button>
           </div>
         </div>
@@ -207,6 +205,14 @@ import { toApiPaymentMethod } from './services/pos-payment.mapper';
           <div class="pos-modal" (click)="$event.stopPropagation()">
             <h3>Ouvrir la caisse</h3>
             <p>Saisissez le fond de caisse déclaré (espèces). Ce montant n'écrit pas d'opération de trésorerie.</p>
+            @if (availableRegisters.length > 1) {
+              <label class="pos-modal-label" for="pos-register-select">Caisse</label>
+              <select id="pos-register-select" class="pos-idle-input" [(ngModel)]="selectedRegisterIdForOpen">
+                @for (reg of availableRegisters; track reg.id) {
+                  <option [value]="reg.id">{{ reg.code }} — {{ reg.name }}{{ reg.isDefault ? ' (défaut)' : '' }}</option>
+                }
+              </select>
+            }
             <label class="pos-modal-label" for="pos-opening-float">Fond de caisse (TND)</label>
             <input id="pos-opening-float" type="number" min="0" step="0.001" class="pos-idle-input" [(ngModel)]="openingFloatInput" />
             <div class="pos-modal-actions">
@@ -268,6 +274,7 @@ import { toApiPaymentMethod } from './services/pos-payment.mapper';
   `,
   styles: [`
     .pos-layout {
+      --pos-header-height: 64px;
       display: flex;
       flex-direction: column;
       height: 100vh;
@@ -310,7 +317,7 @@ import { toApiPaymentMethod } from './services/pos-payment.mapper';
 
     .pos-toast {
       position: fixed;
-      top: 80px;
+      top: calc(var(--pos-header-height, 64px) + 16px);
       right: 24px;
       z-index: 600;
       min-width: 360px;
@@ -435,6 +442,10 @@ import { toApiPaymentMethod } from './services/pos-payment.mapper';
     }
 
     @media (max-width: 1024px) {
+      .pos-layout {
+        --pos-header-height: 56px;
+      }
+
       .pos-content {
         flex-direction: column;
       }
@@ -510,14 +521,21 @@ import { toApiPaymentMethod } from './services/pos-payment.mapper';
     }
 
     .pos-idle-input {
-      width: 120px;
+      width: 100%;
+      max-width: 280px;
       padding: var(--spacing-3) var(--spacing-4);
-      font-size: 1.25rem;
-      text-align: center;
-      letter-spacing: 0.5em;
+      font-size: 1rem;
+      text-align: left;
+      letter-spacing: normal;
       border: 1px solid var(--color-border-default);
       border-radius: var(--radius-lg);
       margin-bottom: var(--spacing-4);
+    }
+
+    .pos-idle-error {
+      color: var(--color-danger, #b91c1c);
+      font-size: var(--font-size-sm);
+      margin: 0 0 var(--spacing-3);
     }
 
     .pos-idle-btn {
@@ -585,7 +603,7 @@ import { toApiPaymentMethod } from './services/pos-payment.mapper';
 
     .pos-session-gate {
       position: fixed;
-      inset: 64px 0 0 0;
+      inset: var(--pos-header-height, 64px) 0 0 0;
       z-index: 500;
       display: flex;
       align-items: center;
@@ -640,8 +658,6 @@ export class PosComponent implements OnInit, OnDestroy {
   private readonly invoiceService = inject(InvoiceService);
   private readonly printPreviewService = inject(PrintPreviewService);
   private readonly wizardService = inject(InvoiceWizardService);
-  private readonly http = inject(HttpClient);
-  private readonly WIZARD_API_URL = `${environment.apiUrl}/invoices/wizard`;
   private readonly voiceCommandService = inject(PosVoiceCommandService);
   readonly ttsService = inject(PosTtsService);
   private readonly clientFavoritesService = inject(PosClientFavoritesService);
@@ -654,6 +670,8 @@ export class PosComponent implements OnInit, OnDestroy {
   private readonly warehouseContext = inject(WarehouseContextService);
   private readonly pricingService = inject(PricingService);
   readonly registerSession = inject(PosRegisterSessionService);
+  private readonly checkoutService = inject(PosCheckoutService);
+  private readonly authService = inject(AuthService);
 
   showSuccessToast = false;
   showRestoreDraftModal = false;
@@ -664,7 +682,13 @@ export class PosComponent implements OnInit, OnDestroy {
   countedCashInput = 0;
   closePreview: PosSessionReportDto | null = null;
   sessionReport: PosSessionReportDto | null = null;
-  idleUnlockCode = '';
+  idleUnlockPassword = '';
+  idleUnlockError = '';
+  availableRegisters: CashRegisterDto[] = [];
+  selectedRegisterIdForOpen = '';
+  private sendEmailAfterSubmit = false;
+  private lastHydratedWarehouseId: string | null = null;
+  private skipFirstWarehouseEffect = true;
   successMessage = '';
   showBarcodeToast = false;
   barcodeToastMessage = '';
@@ -717,12 +741,11 @@ export class PosComponent implements OnInit, OnDestroy {
       }, 2500);
     });
 
-    // Retarification au changement de client : une grille ou un accord client peut donner un
-    // prix different du catalogue. L'effet ne surveille QUE l'identifiant du client — surveiller
-    // les lignes bouclerait, puisqu'il les modifie. Le client de passage (sans identifiant)
-    // ramene au catalogue, soit le comportement d'avant le lot 5.
+    // Retarification au changement de client ou de quantite (paliers tarifaires).
     effect(() => {
       const clientId = this.posState.client()?.id ?? null;
+      const qtyKey = this.posState.lines().map(l => `${l.productId}:${l.quantity}`).join('|');
+      void qtyKey;
       this.repriceOrderForClient(clientId);
     });
 
@@ -730,6 +753,11 @@ export class PosComponent implements OnInit, OnDestroy {
       this.posState.lines();
       this.posState.isDirty();
       this.sessionSyncService.scheduleSave();
+    });
+
+    effect(() => {
+      const warehouseId = this.warehouseContext.selectedWarehouseId();
+      untracked(() => this.onWarehouseChanged(warehouseId));
     });
   }
 
@@ -813,9 +841,13 @@ export class PosComponent implements OnInit, OnDestroy {
     this.themeService.init();
     this.idleService.startWatching();
     this.draftAutosaveService.start();
+    if (this.draftAutosaveService.hasStoredDraft()) {
+      this.showRestoreDraftModal = true;
+    }
     this.registerSession.hydrate(this.warehouseContext.selectedWarehouseId()).subscribe(session => {
       if (!session && this.registerSession.requireOpenSession()) {
         this.showOpenSessionModal = true;
+        this.loadRegistersForOpen();
       }
     });
     void this.heldService.initialize();
@@ -864,11 +896,36 @@ export class PosComponent implements OnInit, OnDestroy {
   }
 
   unlockIdle(): void {
-    const code = '1234';
-    if (this.idleUnlockCode === code) {
-      this.idleService.unlock();
-      this.idleUnlockCode = '';
+    const email = this.authService.user()?.email?.trim();
+    const password = this.idleUnlockPassword;
+    if (!email || !password) {
+      this.idleUnlockError = 'Saisissez votre mot de passe.';
+      return;
     }
+    this.idleUnlockError = '';
+    this.authService.login({ email, password, rememberMe: true }).subscribe({
+      next: res => {
+        if (res.success) {
+          this.idleService.unlock();
+          this.idleUnlockPassword = '';
+          return;
+        }
+        this.idleUnlockError = res.message || 'Mot de passe incorrect.';
+      },
+      error: () => {
+        this.idleUnlockError = 'Mot de passe incorrect.';
+      }
+    });
+  }
+
+  sendEmailAfterSale(): void {
+    this.sendEmailAfterSubmit = true;
+    this.validateAndPrint();
+  }
+
+  openRegisterModal(): void {
+    this.showOpenSessionModal = true;
+    this.loadRegistersForOpen();
   }
 
   restoreDraft(): void {
@@ -899,40 +956,6 @@ export class PosComponent implements OnInit, OnDestroy {
     const clientId = this.posState.client()?.id ?? null;
     const cache = this.catalogComponent?.productCache() ?? new Map();
     return this.clientFavoritesService.getFrequentProducts(clientId, cache);
-  }
-
-  generateProforma(): void {
-    if (!this.posState.canValidate()) return;
-    this.posState.setProcessing(true);
-    this.posState.setError(null);
-    this.prepareWizardState();
-    this.wizardService.saveDraft().subscribe({
-      next: draftId => {
-        const url = `${this.WIZARD_API_URL}/drafts/${draftId}/pdf`;
-        this.http.get(url, { responseType: 'blob' }).pipe(
-          catchError(() => throwError(() => new Error('Proforma non disponible')))
-        ).subscribe({
-          next: blob => {
-            this.posState.setProcessing(false);
-            const u = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = u;
-            a.download = `proforma-${draftId}.pdf`;
-            a.click();
-            URL.revokeObjectURL(u);
-            this.showToast('Proforma telechargee');
-          },
-          error: () => {
-            this.posState.setProcessing(false);
-            this.showToast('Brouillon enregistre - ouvrez le brouillon pour imprimer');
-          }
-        });
-      },
-      error: err => {
-        this.posState.setProcessing(false);
-        this.showToast(this.extractErrorMessage(err, 'Erreur proforma'));
-      }
-    });
   }
 
   ngOnDestroy(): void {
@@ -1022,8 +1045,31 @@ export class PosComponent implements OnInit, OnDestroy {
 
     if (!this.registerSession.canSell()) {
       this.showOpenSessionModal = true;
+      this.loadRegistersForOpen();
       this.posState.setError('Ouvrez la caisse avant de vendre.');
       this.audioService.beepError();
+      return;
+    }
+
+    if (this.posState.paymentSchedule() === 'onAccount' && !this.posState.client()) {
+      this.posState.setError('Le paiement a terme exige un client identifie.');
+      this.audioService.beepError();
+      return;
+    }
+
+    const outstanding = this.posState.clientOutstanding();
+    if (outstanding?.isOverLimit && !this.posState.overLimitAcknowledged()) {
+      this.confirmationService.confirm({
+        header: 'Plafond d\'encours depasse',
+        message: 'Le plafond client est depasse. Continuer quand meme ? (avertissement, la vente n\'est pas bloquee)',
+        icon: 'pi pi-exclamation-triangle',
+        acceptLabel: 'Continuer quand meme',
+        rejectLabel: 'Annuler',
+        accept: () => {
+          this.posState.acknowledgeOverLimit();
+          this.validateAndPrint();
+        }
+      });
       return;
     }
 
@@ -1043,28 +1089,35 @@ export class PosComponent implements OnInit, OnDestroy {
     this.posState.setProcessing(true);
     this.posState.setError(null);
 
-    this.posStockService.checkOrderStock().subscribe(check => {
-      if (this.posState.isCreditNote()) {
-        this.runCreditNoteValidationPipeline();
-        return;
-      }
-      if (!check) {
+    this.posStockService.checkOrderStock().subscribe({
+      next: check => {
+        if (this.posState.isCreditNote()) {
+          this.runCreditNoteValidationPipeline();
+          return;
+        }
+        if (!check) {
+          this.posState.setError('Impossible de vérifier le stock. Réessayez.');
+          this.audioService.beepError();
+          this.posState.setProcessing(false);
+          return;
+        }
+        if (!check.allAvailable) {
+          const msg = (check.details ?? [])
+            .filter(d => !d.isAvailable)
+            .map(d => buildInsufficientStockMessage(d.productName, d.requestedQuantity, d.availableQuantity))
+            .join('\n');
+          this.posState.setError(msg || 'Stock insuffisant pour certains produits.');
+          this.audioService.beepError();
+          this.posState.setProcessing(false);
+          return;
+        }
+        this.doValidateAndPrint(false);
+      },
+      error: () => {
         this.posState.setError('Impossible de vérifier le stock. Réessayez.');
         this.audioService.beepError();
         this.posState.setProcessing(false);
-        return;
       }
-      if (!check.allAvailable) {
-        const msg = (check.details ?? [])
-          .filter(d => !d.isAvailable)
-          .map(d => buildInsufficientStockMessage(d.productName, d.requestedQuantity, d.availableQuantity))
-          .join('\n');
-        this.posState.setError(msg || 'Stock insuffisant pour certains produits.');
-        this.audioService.beepError();
-        this.posState.setProcessing(false);
-        return;
-      }
-      this.doValidateAndPrint(false);
     });
   }
 
@@ -1124,23 +1177,8 @@ export class PosComponent implements OnInit, OnDestroy {
     }
 
     this.wizardService.initForCreditNote(linked.id).pipe(
-      tap(() => this.prepareCreditNoteWizardState()),
-      switchMap(() => this.wizardService.saveDraft()),
-      switchMap(draftId => {
-        const idempotencyKey = `pos-${Date.now()}-${createClientUuid()}`.slice(0, 64);
-        return this.http.post<
-          ApiResponse<{ invoiceId: string; invoiceNumber: string }>
-        >(`${this.WIZARD_API_URL}/drafts/${draftId}/submit`, { idempotencyKey }).pipe(
-          map(res => {
-            const data = res?.data as Record<string, unknown> | undefined;
-            const rawId = data?.['invoiceId'] ?? data?.['InvoiceId'];
-            const rawNum = data?.['invoiceNumber'] ?? data?.['InvoiceNumber'];
-            const invoiceId = typeof rawId === 'string' ? rawId : String(rawId ?? '');
-            const invoiceNumber = typeof rawNum === 'string' ? rawNum : String(rawNum ?? '');
-            return { invoiceId, invoiceNumber };
-          })
-        );
-      }),
+      tap(() => this.checkoutService.applyCreditNoteToWizard()),
+      switchMap(() => this.checkoutService.submitCurrentDraft()),
       catchError(err => {
         this.posState.setProcessing(false);
         const message = this.extractErrorMessage(err, 'Erreur lors de la création de l\'avoir');
@@ -1182,129 +1220,116 @@ export class PosComponent implements OnInit, OnDestroy {
     }));
   }
 
-  private prepareCreditNoteWizardState(): void {
-    const linked = this.posState.linkedInvoice();
-    if (!linked?.id) {
-      return;
-    }
-
-    if (!this.wizardService.seller() && this.sellerLoaded) {
-      this.loadSeller();
-    }
-
-    this.wizardService.updateMetadata({
-      type: InvoiceType.CreditNote,
-      linkedInvoiceId: linked.id,
-      issueDate: new Date(),
-      dueDate: new Date(),
-      currency: Currency.TND,
-      internalReference: `POS-AVO-${this.posState.sessionId()}`,
-      warehouseId: this.warehouseContext.selectedWarehouseId(),
-      cashRegisterSessionId: this.registerSession.currentSession()?.id ?? null
-    });
-
-    const posClient = this.posState.client();
-    if (posClient && !posClient.isWalkIn) {
-      this.wizardService.selectClient({
-        id: posClient.id,
-        isNewClient: false,
-        name: posClient.name,
-        taxType: posClient.nif ? ClientTaxType.TaxSubject : ClientTaxType.NonTaxSubject,
-        address: {
-          street: '',
-          streetLine2: null,
-          postalCode: null,
-          city: '',
-          governorate: '',
-          country: 'Tunisie'
-        },
-        nif: posClient.nif || null,
-        email: posClient.email,
-        phone: posClient.phone || null,
-        contactPerson: null
-      });
-    }
-
-    for (const line of [...this.wizardService.lines()]) {
-      this.wizardService.removeLine(line.id);
-    }
-
-    const posLines = this.posState.lines();
-    const totals = this.posState.totals();
-    const subTotalHT = totals.subTotalHT;
-    const globalDiscount = totals.totalDiscount;
-
-    posLines.forEach(line => {
-      let discountType = line.discountType;
-      let discountValue = line.discountValue;
-      if (globalDiscount > 0 && subTotalHT > 0) {
-        const lineShare = (line.totalHT / subTotalHT) * globalDiscount;
-        const effectiveDiscount = line.discountAmount + lineShare;
-        discountType = 'AMOUNT';
-        discountValue = effectiveDiscount;
+  private doValidateAndPrint(skipPrepare = false): void {
+    this.repriceThen(() => {
+      if (!skipPrepare) {
+        this.checkoutService.applySaleToWizard();
       }
-      this.wizardService.addLine({
-        productId: line.productId,
-        designation: line.designation,
-        description: (line.description?.trim()) || null,
-        quantity: line.quantity,
-        unit: line.unit,
-        unitPriceHT: line.unitPriceHT,
-        vatRate: line.vatRate,
-        isFodecApplicable: line.isFodecApplicable ?? false,
-        discountType: discountType ?? null,
-        discountValue: discountValue ?? null
+
+      this.checkoutService.submitCurrentDraft().pipe(
+        catchError(err => {
+          this.posState.setProcessing(false);
+          const message = this.extractErrorMessage(err, 'Erreur lors de la creation de la facture');
+          this.posState.setError(message);
+          this.audioService.beepError();
+          return throwError(() => err);
+        })
+      ).subscribe({
+        next: payload => this.onInvoiceCreated(payload),
+        error: () => {}
       });
-    });
-
-    let paymentMethod = this.posState.paymentMethod();
-    let paymentTerms = 'Remboursement comptant';
-    if (this.posState.isSplitPayment() && this.posState.paymentSplits().length > 0) {
-      paymentMethod = this.posState.paymentSplits()[0].method;
-      const parts = this.posState.paymentSplits().map(s =>
-        `${s.method}: ${this.posState.formatAmount(s.amount)} TND`
-      );
-      paymentTerms = `Remboursement fractionné : ${parts.join(', ')}`;
-    }
-
-    this.wizardService.updatePayment({
-      method: paymentMethod,
-      terms: paymentTerms,
-      daysUntilDue: 0
     });
   }
 
-  private doValidateAndPrint(skipPrepare = false): void {
-    if (!skipPrepare) {
-      this.prepareWizardState();
+  private prepareWizardState(): void {
+    this.checkoutService.applySaleToWizard();
+  }
+
+  private onWarehouseChanged(warehouseId: string | null): void {
+    if (this.skipFirstWarehouseEffect) {
+      this.skipFirstWarehouseEffect = false;
+      this.lastHydratedWarehouseId = warehouseId;
+      return;
+    }
+    if (warehouseId === this.lastHydratedWarehouseId) {
+      return;
     }
 
-    this.wizardService.saveDraft().pipe(
-      switchMap(draftId => {
-        const idempotencyKey = `pos-${Date.now()}-${createClientUuid()}`.slice(0, 64);
-        return this.http.post<
-          ApiResponse<{ invoiceId: string; invoiceNumber: string }>
-        >(`${this.WIZARD_API_URL}/drafts/${draftId}/submit`, { idempotencyKey }).pipe(
-          map(res => {
-            const data = res?.data as Record<string, unknown> | undefined;
-            const rawId = data?.['invoiceId'] ?? data?.['InvoiceId'];
-            const rawNum = data?.['invoiceNumber'] ?? data?.['InvoiceNumber'];
-            const invoiceId = typeof rawId === 'string' ? rawId : String(rawId ?? '');
-            const invoiceNumber = typeof rawNum === 'string' ? rawNum : String(rawNum ?? '');
-            return { invoiceId, invoiceNumber };
-          })
-        );
-      }),
-      catchError(err => {
-        this.posState.setProcessing(false);
-        const message = this.extractErrorMessage(err, 'Erreur lors de la creation de la facture');
-        this.posState.setError(message);
-        this.audioService.beepError();
-        return throwError(() => err);
-      })
-    ).subscribe({
-      next: payload => this.onInvoiceCreated(payload),
-      error: () => {}
+    const previous = this.lastHydratedWarehouseId;
+    const apply = () => {
+      this.lastHydratedWarehouseId = warehouseId;
+      this.posStockService.invalidateOrderStockCache();
+      this.posStockService.loadCatalogAlerts();
+      this.registerSession.hydrate(warehouseId).subscribe(session => {
+        if (!session && this.registerSession.requireOpenSession()) {
+          this.showOpenSessionModal = true;
+          this.loadRegistersForOpen();
+        }
+      });
+      void this.heldService.initialize();
+    };
+
+    if (this.posState.lines().length > 0) {
+      this.confirmationService.confirm({
+        header: 'Changer de magasin ?',
+        message: 'Le panier est lie au magasin precedent. Continuer videra le panier.',
+        icon: 'pi pi-exclamation-triangle',
+        acceptLabel: 'Vider et continuer',
+        rejectLabel: 'Annuler',
+        accept: () => {
+          this.posState.resetOrder();
+          apply();
+        },
+        reject: () => {
+          if (previous) {
+            this.warehouseContext.setSelectedWarehouse(previous);
+          }
+        }
+      });
+      return;
+    }
+
+    apply();
+  }
+
+  private repriceThen(action: () => void): void {
+    const lines = this.posState.lines().filter(l => !l.priceManuallyEdited);
+    if (lines.length === 0 || this.posState.isCreditNote()) {
+      action();
+      return;
+    }
+    const clientId = this.posState.client()?.id ?? null;
+    const items = lines.map(l => ({ productId: l.productId, quantity: l.quantity }));
+    this.pricingService.resolveBatch(items, clientId).subscribe({
+      next: response => {
+        const resolved = response?.data;
+        if (resolved?.length) {
+          this.posState.applyResolvedPrices(resolved);
+        }
+        action();
+      },
+      error: () => action()
+    });
+  }
+
+  private loadRegistersForOpen(): void {
+    const warehouseId = this.warehouseContext.selectedWarehouseId();
+    if (!warehouseId) {
+      this.availableRegisters = [];
+      return;
+    }
+    this.registerSession.listRegisters(warehouseId).subscribe({
+      next: list => {
+        this.availableRegisters = list;
+        this.selectedRegisterIdForOpen =
+          this.registerSession.selectedRegisterId()
+          ?? list.find(r => r.isDefault)?.id
+          ?? list[0]?.id
+          ?? '';
+      },
+      error: () => {
+        this.availableRegisters = [];
+      }
     });
   }
 
@@ -1335,127 +1360,6 @@ export class PosComponent implements OnInit, OnDestroy {
         this.wizardService.selectSeller(sellers[0]);
         this.sellerLoaded = true;
       }
-    });
-  }
-
-  private prepareWizardState(): void {
-    const lines = this.posState.lines();
-    const client = this.posState.client();
-    let paymentMethod = this.posState.paymentMethod();
-    let paymentTerms = 'Paiement comptant';
-
-    if (this.posState.isSplitPayment() && this.posState.paymentSplits().length > 0) {
-      // La ventilation n'est plus concaténée dans PaymentTerms : chaque mode donne lieu à
-      // sa propre ligne Payment, enregistrée via recordPayments (cf. recordSplitPayments).
-      // Le mode retenu ici n'est qu'un libellé d'en-tête de facture.
-      paymentMethod = this.posState.paymentSplits()[0].method;
-      paymentTerms = 'Paiement fractionne';
-    }
-    const orderNotes = this.posState.orderNotes()?.trim();
-    if (orderNotes) {
-      paymentTerms = paymentTerms ? `${paymentTerms} | ${orderNotes}` : orderNotes;
-    }
-
-    const schedule = this.posState.paymentSchedule();
-    const dueDate = new Date();
-    if (schedule === '2x' || schedule === '3x') {
-      const months = schedule === '2x' ? 1 : 2;
-      dueDate.setMonth(dueDate.getMonth() + months);
-      paymentTerms = paymentTerms
-        ? `${paymentTerms} | Paiement en ${schedule} sans frais. 2e echeance: ${dueDate.toLocaleDateString('fr-FR')}`
-        : `Paiement en ${schedule} sans frais. 2e echeance: ${dueDate.toLocaleDateString('fr-FR')}`;
-    }
-
-    const currentSeller = this.wizardService.seller();
-
-    this.wizardService.reset();
-
-    if (currentSeller) {
-      this.wizardService.selectSeller(currentSeller);
-    }
-
-    this.wizardService.updateMetadata({
-      type: InvoiceType.Invoice,
-      issueDate: new Date(),
-      dueDate,
-      currency: Currency.TND,
-      internalReference: `POS-${this.posState.sessionId()}`,
-      warehouseId: this.warehouseContext.selectedWarehouseId(),
-      cashRegisterSessionId: this.registerSession.currentSession()?.id ?? null
-    });
-
-    if (client) {
-      this.wizardService.selectClient({
-        id: client.id,
-        isNewClient: false,
-        name: client.name,
-        taxType: client.nif ? ClientTaxType.TaxSubject : ClientTaxType.NonTaxSubject,
-        address: {
-          street: '',
-          streetLine2: null,
-          postalCode: null,
-          city: '',
-          governorate: '',
-          country: 'Tunisie'
-        },
-        nif: client.nif || null,
-        email: client.email,
-        phone: client.phone || null,
-        contactPerson: null
-      });
-    } else {
-      this.wizardService.selectClient({
-        id: null,
-        isNewClient: true,
-        name: 'Client passager',
-        taxType: ClientTaxType.NonTaxSubject,
-        address: {
-          street: 'Non spécifié',
-          streetLine2: null,
-          postalCode: null,
-          city: 'Non spécifié',
-          governorate: 'Non spécifié',
-          country: 'Tunisie'
-        },
-        nif: null,
-        email: 'passager@factutrust.local',
-        phone: null,
-        contactPerson: null
-      });
-    }
-
-    const totals = this.posState.totals();
-    const subTotalHT = totals.subTotalHT;
-    const globalDiscount = totals.totalDiscount;
-
-    lines.forEach(line => {
-      let discountType = line.discountType;
-      let discountValue = line.discountValue;
-      if (globalDiscount > 0 && subTotalHT > 0) {
-        const lineShare = (line.totalHT / subTotalHT) * globalDiscount;
-        const effectiveDiscount = line.discountAmount + lineShare;
-        discountType = 'AMOUNT';
-        discountValue = effectiveDiscount;
-      }
-      const description = (line.description?.trim()) || null;
-      this.wizardService.addLine({
-        productId: line.productId,
-        designation: line.designation,
-        description,
-        quantity: line.quantity,
-        unit: line.unit,
-        unitPriceHT: line.unitPriceHT,
-        vatRate: line.vatRate,
-        isFodecApplicable: line.isFodecApplicable ?? false,
-        discountType: discountType ?? null,
-        discountValue: discountValue ?? null
-      });
-    });
-
-    this.wizardService.updatePayment({
-      method: paymentMethod,
-      terms: paymentTerms,
-      daysUntilDue: 0
     });
   }
 
@@ -1491,13 +1395,16 @@ export class PosComponent implements OnInit, OnDestroy {
     this.posStockService.loadCatalogAlerts();
     this.catalogComponent?.refreshStockAfterSale(soldProductIds);
 
+    const sendEmail = this.sendEmailAfterSubmit;
+    this.sendEmailAfterSubmit = false;
+
     if (splits.length > 0) {
-      // Encaissement fractionné : une ligne Payment par mode, en une seule transaction.
       this.recordSplitPayments(invoiceId, splits);
+      this.maybeSendInvoiceEmail(sendEmail, invoiceId);
       return;
     }
 
-    if (paymentMethod === PaymentMethod.Cash && paymentSchedule === 'full') {
+    if (paymentMethod === PaymentMethod.Cash && paymentSchedule === 'immediate') {
       this.lastCreatedInvoiceIdForCash = invoiceId;
       this.invoiceService.getInvoice(invoiceId).subscribe({
         next: res => {
@@ -1513,11 +1420,14 @@ export class PosComponent implements OnInit, OnDestroy {
           this.showChangeCalculator = true;
         }
       });
-    } else if (paymentSchedule === 'full') {
+      this.maybeSendInvoiceEmail(sendEmail, invoiceId);
+    } else if (paymentSchedule === 'immediate') {
       this.recordImmediatePayment(invoiceId, paymentMethod);
+      this.maybeSendInvoiceEmail(sendEmail, invoiceId);
     } else {
       const label = invoiceNumber?.trim() || invoiceId.substring(0, 8);
-      this.showToast(`Facture N° ${label}`);
+      this.showToast(`Facture a terme N° ${label}`);
+      this.maybeSendInvoiceEmail(sendEmail, invoiceId);
     }
   }
 
@@ -1624,11 +1534,7 @@ export class PosComponent implements OnInit, OnDestroy {
     if (this.lastCreatedInvoiceIdForCash) {
       this.isRecordingPayment = true;
       const invoiceId = this.lastCreatedInvoiceIdForCash;
-      this.invoiceService.recordPayment(invoiceId, {
-        paymentDate: formatLocalDate(new Date()),
-        method: 0,
-        cashRegisterSessionId: this.registerSession.currentSession()?.id ?? undefined
-      }).subscribe({
+      this.checkoutService.recordCashPayment(invoiceId).subscribe({
         next: () => {
           this.lastCreatedInvoiceIdForCash = null;
           this.showChangeCalculator = false;
@@ -1685,7 +1591,25 @@ export class PosComponent implements OnInit, OnDestroy {
   private downloadPdf(invoiceId: string): void {
     this.invoiceService.downloadPdf(invoiceId).subscribe({
       next: blob => this.printPreviewService.openPdfForPrintPreview(blob, `facture-${invoiceId}.pdf`),
-      error: () => {}
+      error: err => {
+        const message = this.extractErrorMessage(err, 'Impossible de telecharger le PDF');
+        this.posState.setError(message);
+        this.audioService.beepError();
+      }
+    });
+  }
+
+  private maybeSendInvoiceEmail(send: boolean, invoiceId: string): void {
+    if (!send || !invoiceId) {
+      return;
+    }
+    this.checkoutService.sendInvoiceEmail(invoiceId).subscribe({
+      next: () => this.showToast('Facture envoyee par e-mail'),
+      error: err => {
+        const message = this.extractErrorMessage(err, "Impossible d'envoyer la facture par e-mail");
+        this.posState.setError(message);
+        this.audioService.beepError();
+      }
     });
   }
 
@@ -1737,7 +1661,8 @@ export class PosComponent implements OnInit, OnDestroy {
       return;
     }
     const floatValue = Number(this.openingFloatInput) || 0;
-    this.registerSession.open(warehouseId, floatValue).subscribe({
+    const registerId = this.availableRegisters.length > 1 ? this.selectedRegisterIdForOpen : undefined;
+    this.registerSession.open(warehouseId, floatValue, registerId).subscribe({
       next: () => {
         this.showOpenSessionModal = false;
         this.showToast('Caisse ouverte');

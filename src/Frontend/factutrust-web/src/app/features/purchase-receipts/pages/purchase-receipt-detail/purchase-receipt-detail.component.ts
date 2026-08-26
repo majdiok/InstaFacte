@@ -8,6 +8,7 @@ import { ToastModule } from 'primeng/toast';
 import { DialogModule } from 'primeng/dialog';
 import { Textarea } from 'primeng/textarea';
 import { ToastService } from '@core/services/toast.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
@@ -22,6 +23,7 @@ import {
   mapPurchaseReceiptDetailFromApi
 } from '@core/services/purchase-receipt.service';
 import { CreateSupplierInvoiceModalComponent } from '@features/purchase-orders/components/create-supplier-invoice-modal/create-supplier-invoice-modal.component';
+import { TRACKING_MODE_LOT, TRACKING_MODE_SERIAL } from '@shared/utils/stock-traceability.utils';
 
 @Component({
   selector: 'app-purchase-receipt-detail',
@@ -499,6 +501,7 @@ export class PurchaseReceiptDetailComponent implements OnInit {
   private router = inject(Router);
   private receiptService = inject(PurchaseReceiptService);
   private toastService = inject(ToastService);
+  private errorHandler = inject(ErrorHandlerService);
   private confirmationService = inject(ConfirmationService);
   private auth = inject(AuthService);
 
@@ -647,6 +650,16 @@ export class PurchaseReceiptDetailComponent implements OnInit {
     const r = this.receipt();
     if (!r) return;
 
+    if (this.hasTrackedLines(r)) {
+      this.toastService.add({
+        severity: 'info',
+        summary: 'Traçabilité requise',
+        detail: 'Renseignez les numéros de lot ou de série sur la page de modification avant validation.'
+      });
+      void this.router.navigate(['/purchase-receipts', r.id, 'edit']);
+      return;
+    }
+
     this.confirmationService.confirm({
       message: 'Valider cette réception ? Le stock sera mis à jour et les quantités du bon de commande seront imputées.',
       header: 'Valider la réception',
@@ -672,11 +685,18 @@ export class PurchaseReceiptDetailComponent implements OnInit {
             this.toastService.add({
               severity: 'error',
               summary: 'Erreur',
-              detail: err?.error?.errors?.[0] || 'Échec de la validation'
+              detail: this.errorHandler.extractErrorMessage(err) || 'Échec de la validation'
             });
           }
         });
       }
+    });
+  }
+
+  private hasTrackedLines(receipt: PurchaseReceiptDetail): boolean {
+    return receipt.lines.some(l => {
+      const mode = l.trackingMode ?? 0;
+      return mode === TRACKING_MODE_LOT || mode === TRACKING_MODE_SERIAL;
     });
   }
 

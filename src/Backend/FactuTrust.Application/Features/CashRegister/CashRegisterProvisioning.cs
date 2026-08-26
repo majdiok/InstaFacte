@@ -20,9 +20,14 @@ internal static class CashRegisterProvisioning
             return Result.Failure<CashRegisterEntity>(
                 Error.Validation("Warehouse", "Cet entrepôt est désactivé"));
 
-        var existing = await registers.GetByWarehouseIdAsync(warehouseId, cancellationToken);
-        if (existing is not null)
-            return Result.Success(existing);
+        var existing = await registers.ListByWarehouseIdAsync(warehouseId, cancellationToken);
+        if (existing.Count > 0)
+        {
+            var chosen = existing.FirstOrDefault(r => r.IsDefault && r.IsActive)
+                ?? existing.FirstOrDefault(r => r.IsActive)
+                ?? existing[0];
+            return Result.Success(chosen);
+        }
 
         var code = CashRegisterEntity.DefaultCodeForWarehouse(warehouse.Code);
         if (await registers.CodeExistsAsync(code, null, cancellationToken))
@@ -31,12 +36,32 @@ internal static class CashRegisterProvisioning
             code = CashRegisterEntity.DefaultCodeForWarehouse($"{warehouse.Code}{suffix}");
         }
 
-        var created = CashRegisterEntity.Create(code, CashRegisterEntity.DefaultNameForWarehouse(warehouse.Name), warehouseId);
+        var created = CashRegisterEntity.Create(
+            code,
+            CashRegisterEntity.DefaultNameForWarehouse(warehouse.Name),
+            warehouseId,
+            isDefault: true);
         if (created.IsFailure)
             return created;
 
         created.Value.SetAuditInfo(userId ?? "system");
         var saved = await registers.AddAsync(created.Value, cancellationToken);
         return Result.Success(saved);
+    }
+
+    public static async Task ClearOtherDefaultsAsync(
+        ICashRegisterRepository registers,
+        Guid warehouseId,
+        Guid keepDefaultId,
+        CancellationToken cancellationToken)
+    {
+        var list = await registers.ListByWarehouseIdAsync(warehouseId, cancellationToken);
+        foreach (var register in list)
+        {
+            if (register.Id == keepDefaultId || !register.IsDefault)
+                continue;
+            register.ClearDefault();
+            await registers.UpdateAsync(register, cancellationToken);
+        }
     }
 }

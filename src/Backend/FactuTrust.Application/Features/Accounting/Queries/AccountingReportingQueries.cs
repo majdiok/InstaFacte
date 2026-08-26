@@ -38,6 +38,22 @@ public sealed class GetJournalEntriesQueryHandler
         => _reporting.GetJournalEntriesAsync(request.JournalCode, request.From, request.To, cancellationToken);
 }
 
+public sealed record GetJournalEntryByIdQuery(Guid Id) : IRequest<Result<JournalEntryDto>>;
+
+public sealed class GetJournalEntryByIdQueryHandler
+    : IRequestHandler<GetJournalEntryByIdQuery, Result<JournalEntryDto>>
+{
+    private readonly IAccountingReportingService _reporting;
+
+    public GetJournalEntryByIdQueryHandler(IAccountingReportingService reporting)
+    {
+        _reporting = reporting;
+    }
+
+    public Task<Result<JournalEntryDto>> Handle(GetJournalEntryByIdQuery request, CancellationToken cancellationToken)
+        => _reporting.GetJournalEntryByIdAsync(request.Id, cancellationToken);
+}
+
 public sealed record GetJournalSummaryQuery(
     DateTime From,
     DateTime To,

@@ -17,7 +17,7 @@ public sealed class NotificationService : INotificationService
         _masterContext = masterContext;
     }
 
-    public async Task<Result> CreateAsync(
+    public Task<Result> CreateAsync(
         Guid recipientTenantId,
         string? recipientRole,
         NotificationType type,
@@ -25,8 +25,20 @@ public sealed class NotificationService : INotificationService
         string body,
         string? linkUrl = null,
         CancellationToken cancellationToken = default)
+        => CreateAsync(recipientTenantId, recipientRole, type, title, body, linkUrl, recipientUserId: null, cancellationToken);
+
+    public async Task<Result> CreateAsync(
+        Guid recipientTenantId,
+        string? recipientRole,
+        NotificationType type,
+        string title,
+        string body,
+        string? linkUrl,
+        Guid? recipientUserId,
+        CancellationToken cancellationToken)
     {
-        var createResult = UserNotification.Create(recipientTenantId, recipientRole, type, title, body, linkUrl);
+        var createResult = UserNotification.Create(
+            recipientTenantId, recipientRole, type, title, body, linkUrl, recipientUserId);
         if (createResult.IsFailure)
             return Result.Failure(createResult.Error);
 
@@ -37,17 +49,19 @@ public sealed class NotificationService : INotificationService
 
     public async Task<NotificationListDto> GetListAsync(
         Guid tenantId, string? role, bool unreadOnly, int page, int pageSize,
+        Guid? currentUserId = null,
         CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 50);
 
-        var query = VisibleTo(tenantId, role);
+        var query = VisibleTo(_masterContext.UserNotifications.AsNoTracking(), tenantId, role, currentUserId);
         if (unreadOnly)
             query = query.Where(n => n.ReadAt == null);
 
         var totalCount = await query.CountAsync(cancellationToken);
-        var unreadCount = await VisibleTo(tenantId, role).CountAsync(n => n.ReadAt == null, cancellationToken);
+        var unreadCount = await VisibleTo(_masterContext.UserNotifications.AsNoTracking(), tenantId, role, currentUserId)
+            .CountAsync(n => n.ReadAt == null, cancellationToken);
 
         var items = await query
             .OrderByDescending(n => n.CreatedAt)
@@ -75,16 +89,20 @@ public sealed class NotificationService : INotificationService
         };
     }
 
-    public async Task<int> GetUnreadCountAsync(Guid tenantId, string? role, CancellationToken cancellationToken = default)
+    public async Task<int> GetUnreadCountAsync(
+        Guid tenantId, string? role, Guid? currentUserId = null,
+        CancellationToken cancellationToken = default)
     {
-        return await VisibleTo(tenantId, role).CountAsync(n => n.ReadAt == null, cancellationToken);
+        return await VisibleTo(_masterContext.UserNotifications.AsNoTracking(), tenantId, role, currentUserId)
+            .CountAsync(n => n.ReadAt == null, cancellationToken);
     }
 
-    public async Task<Result> MarkReadAsync(Guid tenantId, string? role, Guid notificationId, CancellationToken cancellationToken = default)
+    public async Task<Result> MarkReadAsync(
+        Guid tenantId, string? role, Guid notificationId, Guid? currentUserId = null,
+        CancellationToken cancellationToken = default)
     {
-        var notification = await _masterContext.UserNotifications
-            .FirstOrDefaultAsync(n => n.Id == notificationId && n.RecipientTenantId == tenantId &&
-                (n.RecipientRole == null || n.RecipientRole == role), cancellationToken);
+        var notification = await VisibleTo(_masterContext.UserNotifications, tenantId, role, currentUserId)
+            .FirstOrDefaultAsync(n => n.Id == notificationId, cancellationToken);
 
         if (notification is null)
             return Result.Failure(Error.NotFound("Notification", notificationId));
@@ -94,12 +112,12 @@ public sealed class NotificationService : INotificationService
         return Result.Success();
     }
 
-    public async Task<Result> MarkAllReadAsync(Guid tenantId, string? role, CancellationToken cancellationToken = default)
+    public async Task<Result> MarkAllReadAsync(
+        Guid tenantId, string? role, Guid? currentUserId = null,
+        CancellationToken cancellationToken = default)
     {
-        var unread = await _masterContext.UserNotifications
-            .Where(n => n.RecipientTenantId == tenantId &&
-                (n.RecipientRole == null || n.RecipientRole == role) &&
-                n.ReadAt == null)
+        var unread = await VisibleTo(_masterContext.UserNotifications, tenantId, role, currentUserId)
+            .Where(n => n.ReadAt == null)
             .ToListAsync(cancellationToken);
 
         foreach (var notification in unread)
@@ -111,8 +129,9 @@ public sealed class NotificationService : INotificationService
         return Result.Success();
     }
 
-    private IQueryable<UserNotification> VisibleTo(Guid tenantId, string? role) =>
-        _masterContext.UserNotifications.AsNoTracking()
-            .Where(n => n.RecipientTenantId == tenantId &&
-                (n.RecipientRole == null || n.RecipientRole == role));
+    private static IQueryable<UserNotification> VisibleTo(
+        IQueryable<UserNotification> source, Guid tenantId, string? role, Guid? currentUserId) =>
+        source.Where(n => n.RecipientTenantId == tenantId && (
+            (n.RecipientUserId != null && currentUserId != null && n.RecipientUserId == currentUserId)
+            || (n.RecipientUserId == null && (n.RecipientRole == null || n.RecipientRole == role))));
 }

@@ -18,6 +18,7 @@ function register(overrides?: Partial<CashRegisterDto>): CashRegisterDto {
     name: 'Caisse Principal',
     warehouseId,
     isActive: true,
+    isDefault: true,
     requireOpenSession: true,
     ...overrides
   };
@@ -73,22 +74,19 @@ describe('PosRegisterSessionService', () => {
     expect(service.canSell()).toBeFalse();
 
     service.hydrate(warehouseId).subscribe();
-    const reqs = http.match(r => r.url.includes('/pos/register') || r.url.includes('/pos/open-session'));
-    expect(reqs.length).toBe(2);
-    reqs.find(r => r.request.url.includes('/pos/register'))!
-      .flush({ success: true, data: register({ requireOpenSession: true }) });
-    reqs.find(r => r.request.url.includes('/pos/open-session'))!
-      .flush({ success: true, data: null });
+    const list = http.expectOne(r => r.url.includes('/pos/registers'));
+    list.flush({ success: true, data: [register({ requireOpenSession: true })] });
+    const open = http.expectOne(r => r.url.includes('/pos/open-session'));
+    open.flush({ success: true, data: null });
 
     expect(service.canSell()).toBeFalse();
   });
 
   it('allows selling without a session when the flag is off', () => {
     service.hydrate(warehouseId).subscribe();
-    const reqs = http.match(r => r.url.includes('/pos/register') || r.url.includes('/pos/open-session'));
-    reqs.find(r => r.request.url.includes('/pos/register'))!
-      .flush({ success: true, data: register({ requireOpenSession: false }) });
-    reqs.find(r => r.request.url.includes('/pos/open-session'))!
+    http.expectOne(r => r.url.includes('/pos/registers'))
+      .flush({ success: true, data: [register({ requireOpenSession: false })] });
+    http.expectOne(r => r.url.includes('/pos/open-session'))
       .flush({ success: true, data: null });
 
     expect(service.canSell()).toBeTrue();

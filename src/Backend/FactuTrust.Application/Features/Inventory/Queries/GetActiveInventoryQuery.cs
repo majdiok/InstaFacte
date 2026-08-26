@@ -36,15 +36,18 @@ public sealed class GetActiveInventoryQueryHandler : IRequestHandler<GetActiveIn
 {
     private readonly IPhysicalInventoryRepository _inventoryRepository;
     private readonly IWarehouseRepository _warehouseRepository;
+    private readonly IProductRepository _productRepository;
     private readonly ITenantContext _tenantContext;
 
     public GetActiveInventoryQueryHandler(
         IPhysicalInventoryRepository inventoryRepository,
         IWarehouseRepository warehouseRepository,
+        IProductRepository productRepository,
         ITenantContext tenantContext)
     {
         _inventoryRepository = inventoryRepository;
         _warehouseRepository = warehouseRepository;
+        _productRepository = productRepository;
         _tenantContext = tenantContext;
     }
 
@@ -76,17 +79,31 @@ public sealed class GetActiveInventoryQueryHandler : IRequestHandler<GetActiveIn
         var warehouse = await _warehouseRepository.GetByIdAsync(warehouseId, cancellationToken);
         var warehouseName = warehouse?.Name ?? "Entrepôt";
 
+        var productIds = inventory.CountLines.Select(l => l.ProductId).Distinct().ToList();
+        var trackingByProduct = productIds.Count == 0
+            ? new Dictionary<Guid, ProductTrackingInfo>()
+            : await _productRepository.GetTrackingInfoByIdsAsync(productIds, cancellationToken);
+
         // Build product list with count status
-        var products = inventory.CountLines.Select(line => new InventoryProductItem
+        var products = inventory.CountLines.Select(line =>
         {
-            ProductId = line.ProductId,
-            ProductName = line.ProductName,
-            ProductCode = line.ProductCode,
-            TheoreticalQuantity = line.TheoreticalQuantity,
-            IsCounted = line.IsCounted,
-            CountedQuantity = line.CountedQuantity,
-            ProductLotId = line.ProductLotId,
-            LotNumber = line.LotNumber
+            ProductTrackingInfo? tracking = null;
+            if (trackingByProduct is not null)
+                trackingByProduct.TryGetValue(line.ProductId, out tracking);
+
+            return new InventoryProductItem
+            {
+                ProductId = line.ProductId,
+                ProductName = line.ProductName,
+                ProductCode = line.ProductCode,
+                TheoreticalQuantity = line.TheoreticalQuantity,
+                IsCounted = line.IsCounted,
+                CountedQuantity = line.CountedQuantity,
+                ProductLotId = line.ProductLotId,
+                LotNumber = line.LotNumber,
+                TrackingMode = tracking?.TrackingMode ?? TrackingMode.None,
+                HasExpiryTracking = tracking?.HasExpiryTracking ?? false
+            };
         }).ToList();
 
         // Progress message

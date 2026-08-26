@@ -880,29 +880,28 @@ export class TimeSheetsFacade {
   submitDrafts(): void {
     const drafts = this.filteredEntries().filter(e => !e.isValidated && (e.status ?? 0) === 0 && !e.timerStartedAtUtc);
     if (!drafts.length) return;
-    let done = 0;
-    let failed = 0;
-    drafts.forEach(d => {
-      this.api.submitTimeSheet(d.id).subscribe({
-        next: () => {
-          done++;
-          if (done + failed === drafts.length) {
-            this.load();
-            this.toast.add({
-              severity: failed ? 'warn' : 'success',
-              summary: 'Soumission',
-              detail: `${done} soumise(s)${failed ? `, ${failed} échec(s)` : ''}.`
-            });
-          }
-        },
-        error: () => {
-          failed++;
-          if (done + failed === drafts.length) {
-            this.load();
-            this.toast.add({ severity: 'warn', summary: 'Soumission partielle', detail: `${done} ok, ${failed} échec(s).` });
-          }
+    this.api.submitTimeSheetsBulkDetailed(drafts.map(d => d.id)).subscribe({
+      next: res => {
+        this.load();
+        const submitted = res.data?.submitted ?? 0;
+        const skipped = res.data?.skipped ?? 0;
+        if (skipped > 0) {
+          this.toast.add({
+            severity: 'warn',
+            summary: 'Soumission partielle',
+            detail: `${submitted} ok, ${skipped} échec(s).`
+          });
+        } else {
+          this.toast.add({
+            severity: 'success',
+            summary: 'Soumission',
+            detail: `${submitted} soumise(s).`
+          });
         }
-      });
+      },
+      error: () => {
+        this.toast.add({ severity: 'warn', summary: 'Soumission partielle', detail: `0 ok, ${drafts.length} échec(s).` });
+      }
     });
   }
 

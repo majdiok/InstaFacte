@@ -163,6 +163,7 @@ public static class DependencyInjection
             services.AddScoped<INotificationService, NotificationService>();
             services.Configure<ExchangeAttachmentsOptions>(
                 configuration.GetSection(ExchangeAttachmentsOptions.SectionName));
+            services.AddScoped<IExchangeOppositePartyNotifier, ExchangeOppositePartyNotifier>();
             services.AddScoped<IExchangeService, ExchangeService>();
             services.AddSingleton<IAccountingFirmsFeature, AccountingFirmsFeature>();
             services.AddSingleton<IFirmGovernanceFeature, FirmGovernanceFeature>();

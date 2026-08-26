@@ -280,8 +280,32 @@
                         @if (currentProduct()?.productCode) {
                         <span class="product-sku">REF: {{ currentProduct()?.productCode }}</span>
                         }
-                        @if (currentProduct()?.lotNumber) {
+                        @if (currentProduct()?.lotNumber && currentProduct()?.productLotId) {
                         <span class="product-sku">Lot {{ currentProduct()?.lotNumber }}</span>
+                        }
+
+                        @if (needsOpeningLotNumber()) {
+                        <div class="lot-input-zone">
+                            <label class="count-question" for="opening-lot-number">
+                                N° de lot
+                                @if (requiresLotNumberForCurrentCount()) {
+                                <span class="required">*</span>
+                                }
+                            </label>
+                            <input
+                                type="text"
+                                pInputText
+                                id="opening-lot-number"
+                                class="lot-input"
+                                [ngModel]="lotNumber()"
+                                (ngModelChange)="lotNumber.set($event ?? '')"
+                                placeholder="Ex. LOT-2026-001"
+                                [attr.aria-required]="requiresLotNumberForCurrentCount()"
+                                [attr.aria-label]="'Numéro de lot pour ' + (currentProduct()?.productName ?? '')" />
+                            @if (requiresLotNumberForCurrentCount()) {
+                            <p class="lot-hint">Obligatoire pour un article suivi par lot avec écart de stock.</p>
+                            }
+                        </div>
                         }
 
                         <div class="count-input-zone">
@@ -374,6 +398,40 @@
             <div class="summary-header">
                 <h2>{{ inventorySummary()?.statusMessage }}</h2>
             </div>
+
+            @if (productsMissingLot().length) {
+            <div class="summary-group missing-lot-group" role="alert">
+                <h3>
+                    <i class="pi pi-exclamation-circle" aria-hidden="true"></i>
+                    N° de lot manquant
+                </h3>
+                <p class="not-counted-hint">
+                    Saisissez un numéro de lot pour
+                    @if (productsMissingLot().length === 1) {
+                    cet article suivi par lot
+                    } @else {
+                    ces articles suivis par lot
+                    }
+                    avant de valider.
+                </p>
+                <div class="summary-items">
+                    @for (item of productsMissingLot(); track lineKey(item)) {
+                    <div class="summary-item">
+                        <span class="item-name">{{ item.productName }}</span>
+                    </div>
+                    }
+                </div>
+                <div class="missing-lot-actions">
+                    <app-button
+                        variant="primary"
+                        icon="pi-pencil"
+                        iconPos="left"
+                        (click)="goToFirstMissingLot()">
+                        Saisir le n° de lot
+                    </app-button>
+                </div>
+            </div>
+            }
 
             @if (inventorySummary()?.productsOkList?.length) {
             <div class="summary-group ok-group">

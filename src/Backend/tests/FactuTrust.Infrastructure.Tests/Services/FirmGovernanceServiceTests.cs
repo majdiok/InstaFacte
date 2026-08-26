@@ -42,7 +42,10 @@ public sealed class FirmGovernanceServiceTests
 
     private static readonly DateTimeOffset FixedNow = new(2026, 7, 21, 10, 0, 0, TimeSpan.Zero);
 
-    private static FirmGovernanceService BuildService(MasterDbContext db, ICompanyProfileSnapshotProvider? snapshotProvider = null)
+    private static FirmGovernanceService BuildService(
+        MasterDbContext db,
+        ICompanyProfileSnapshotProvider? snapshotProvider = null,
+        INotificationService? notifications = null)
     {
         var fiscalOps = new Mock<IFirmFiscalOpsAggregator>();
         fiscalOps
@@ -64,7 +67,8 @@ public sealed class FirmGovernanceServiceTests
             dossierAccess,
             currentUser.Object,
             new FakeTimeProvider(FixedNow),
-            NullLogger<FirmGovernanceService>.Instance);
+            NullLogger<FirmGovernanceService>.Instance,
+            notifications ?? Mock.Of<INotificationService>());
     }
 
     private static Mock<UserManager<ApplicationUser>> CreateUserManagerMock(MasterDbContext db)

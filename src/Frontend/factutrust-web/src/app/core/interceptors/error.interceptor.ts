@@ -167,6 +167,15 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
             return throwError(() => processedError);
           }
 
+          // POS cart autosave: PosSessionSyncService handles conflicts silently.
+          if (
+            processedError.status === 409 &&
+            (req.method === 'PUT' || req.method === 'DELETE') &&
+            /\/pos\/cart(?:\?|$)/i.test(req.url)
+          ) {
+            return throwError(() => processedError);
+          }
+
           if (errorHandler.isTenantMigrationFailure(processedError)) {
             tenantSystemStatus.reportTenantMigrationFailure();
             if (!isRegistrationEndpoint && !skipGlobalErrorUi) {

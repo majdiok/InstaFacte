@@ -129,7 +129,7 @@ export const COMPANY_TOUR_STEPS: readonly ProductTourStepDef[] = [
   {
     id: 'ai-fab',
     title: 'Assistant IA',
-    description: 'Le bouton en bas à droite ouvre le chat sans quitter la page.',
+    description: 'Le bouton en bas à droite ouvre l’assistant dans un onglet de travail, sans quitter votre écran.',
     selector: '[data-tour="ai-fab"]'
   },
   {

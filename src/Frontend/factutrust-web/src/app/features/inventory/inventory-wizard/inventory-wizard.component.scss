@@ -684,6 +684,33 @@
     }
 }
 
+.lot-input-zone {
+    margin-bottom: var(--spacing-4);
+
+    .count-question {
+        display: block;
+        font-size: var(--font-size-sm);
+        font-weight: var(--font-weight-semibold);
+        color: var(--color-text-primary);
+        margin-bottom: var(--spacing-2);
+
+        .required {
+            color: var(--color-danger-500);
+        }
+    }
+
+    .lot-input {
+        width: 100%;
+        max-width: 280px;
+    }
+
+    .lot-hint {
+        margin: var(--spacing-2) 0 0;
+        font-size: var(--font-size-sm);
+        color: var(--color-text-secondary);
+    }
+}
+
 .count-input-zone {
     margin-bottom: var(--spacing-5);
 
@@ -820,12 +847,25 @@
             color: var(--color-warning-600, #ea580c);
         }
     }
+
+    &.missing-lot-group {
+        border-color: var(--color-danger-200, #fecaca);
+        background: var(--color-danger-50, #fef2f2);
+
+        h3 i {
+            color: var(--color-danger-600, #dc2626);
+        }
+    }
 }
 
 .not-counted-hint {
     margin: 0 0 var(--spacing-3);
     color: var(--color-text-secondary, #64748b);
     font-size: 0.9rem;
+}
+
+.missing-lot-actions {
+    margin-top: var(--spacing-3);
 }
 
 .summary-items {

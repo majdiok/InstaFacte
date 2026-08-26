@@ -16,6 +16,9 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { GlobalSearchResult, GlobalSearchService } from '../../services/global-search.service';
+import { AuthService } from '../../services/auth.service';
+import { AiAssistantShellService } from '@features/ai-assistant/services/ai-assistant-shell.service';
+import { canUseAiAssistant } from '@features/ai-assistant/utils/ai-access.util';
 
 export interface GlobalSearchDropdownPosition {
   top: number;
@@ -264,6 +267,8 @@ export class GlobalSearchComponent implements OnInit, OnDestroy {
 
   readonly searchService = inject(GlobalSearchService);
   private readonly router = inject(Router);
+  private readonly auth = inject(AuthService);
+  private readonly aiShell = inject(AiAssistantShellService);
   private readonly renderer = inject(Renderer2);
   private sub?: Subscription;
   private dropdownEl: HTMLElement | null = null;
@@ -419,6 +424,19 @@ export class GlobalSearchComponent implements OnInit, OnDestroy {
     this.searchService.recordSelection(result);
     const nav = this.searchService.parseRouteSelection(result);
     this.closeAll();
+    const normalizedRoute =
+      nav.route.filter(Boolean).length === 0
+        ? '/'
+        : `/${nav.route.filter(Boolean).join('/')}`;
+    if (
+      canUseAiAssistant(this.auth) &&
+      this.aiShell.isWorkspaceAiRoute(normalizedRoute)
+    ) {
+      this.aiShell.openAiGeneralTabFromRoute(normalizedRoute, {
+        firmDelegated: this.auth.isAccountingFirm() && this.auth.isDelegatedMode()
+      });
+      return;
+    }
     this.router.navigate(nav.route, { queryParams: nav.queryParams });
   }
 

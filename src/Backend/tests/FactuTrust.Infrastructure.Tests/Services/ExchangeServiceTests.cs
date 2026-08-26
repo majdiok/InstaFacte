@@ -3,6 +3,7 @@ using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Entities.Exchange;
+using FactuTrust.Domain.Entities.FirmGovernance;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.ValueObjects;
 using FactuTrust.Infrastructure.Persistence;
@@ -24,6 +25,7 @@ public sealed class ExchangeServiceTests
     private static readonly Guid FirmUserId = Guid.Parse("33333333-3333-3333-3333-333333333333");
     private static readonly Guid CompanyUserId = Guid.Parse("44444444-4444-4444-4444-444444444444");
     private static readonly Guid OtherUserId = Guid.Parse("55555555-5555-5555-5555-555555555555");
+    private static readonly Guid AccountantUserId = Guid.Parse("66666666-6666-6666-6666-666666666666");
 
     // Chaque MasterDbContext produit par BuildDb pointe sur une base InMemory nommée.
     // On mémorise l'association contexte→nom pour que BuildService puisse reconstruire
@@ -125,13 +127,17 @@ public sealed class ExchangeServiceTests
         MasterDbContext db,
         IDbContextFactory<MasterDbContext>? dbFactory = null,
         Mock<ICurrentUser>? currentUserOverride = null)
+        => BuildServiceWithNotifications(db, dbFactory, currentUserOverride).Svc;
+
+    private static (ExchangeService Svc, Mock<INotificationService> Notifications) BuildServiceWithNotifications(
+        MasterDbContext db,
+        IDbContextFactory<MasterDbContext>? dbFactory = null,
+        Mock<ICurrentUser>? currentUserOverride = null)
     {
         var userManager = new Mock<UserManager<ApplicationUser>>(
             Mock.Of<IUserStore<ApplicationUser>>(), null!, null!, null!, null!, null!, null!, null!, null!);
         userManager.Setup(m => m.Users).Returns(db.Users);
 
-        // La factory par défaut pointe sur la même base InMemory que le contexte scoped —
-        // c'est ce que produit le vrai DI en runtime (mêmes options, base réelle partagée).
         var factory = dbFactory ?? BuildFactoryForScoped(db);
 
         var dossier = new FirmDossierAccessService(db);
@@ -139,9 +145,6 @@ public sealed class ExchangeServiceTests
         var snapshot = new Mock<ICompanyProfileSnapshotProvider>();
         var currentUser = currentUserOverride ?? new Mock<ICurrentUser>();
 
-        // Vraie instance de FirmAssignmentService (au lieu du mock de l'interface) pour que
-        // le bootstrap emprunte les surcharges internes GetActiveClientsAsync/GetCompanyCurrentAssignmentAsync
-        // qui acceptent un MasterDbContext explicite — cœur du fix concurrence.
         var assignments = new FirmAssignmentService(
             db,
             notifications.Object,
@@ -150,15 +153,23 @@ public sealed class ExchangeServiceTests
             currentUser.Object,
             NullLogger<FirmAssignmentService>.Instance);
 
-        return new ExchangeService(
+        var opposite = new ExchangeOppositePartyNotifier(
+            db, notifications.Object, NullLogger<ExchangeOppositePartyNotifier>.Instance);
+
+        var svc = new ExchangeService(
             db,
             factory,
             userManager.Object,
             dossier,
             assignments,
             notifications.Object,
-            Options.Create(new ExchangeAttachmentsOptions()),
+            opposite,
+            Options.Create(new ExchangeAttachmentsOptions
+            {
+                BasePath = Path.Combine(Path.GetTempPath(), "ft-exchange-tests")
+            }),
             NullLogger<ExchangeService>.Instance);
+        return (svc, notifications);
     }
 
     private static IDbContextFactory<MasterDbContext> BuildFactoryForScoped(MasterDbContext scopedDb)
@@ -181,6 +192,47 @@ public sealed class ExchangeServiceTests
         await db.SaveChangesAsync();
         return msg.Id;
     }
+
+    private static async Task SeedAssignedAccountantAsync(
+        MasterDbContext db, Guid? accountantId = null, bool isActive = true)
+    {
+        var id = accountantId ?? AccountantUserId;
+        if (!await db.Users.AnyAsync(u => u.Id == id))
+        {
+            db.Users.Add(new ApplicationUser
+            {
+                Id = id,
+                UserName = "collab@test.com",
+                NormalizedUserName = "COLLAB@TEST.COM",
+                Email = "collab@test.com",
+                NormalizedEmail = "COLLAB@TEST.COM",
+                FirstName = "Sami",
+                LastName = "Mansour",
+                TenantId = FirmId,
+                IsActive = isActive,
+                EmailConfirmed = true
+            });
+        }
+
+        var existing = await db.PermanentFiles.FirstOrDefaultAsync(p => p.FirmClientAssignmentId == AssignmentId);
+        if (existing is null)
+        {
+            var file = PermanentFile.Create(AssignmentId, FirmId, CompanyId, "Société A").Value;
+            file.AssignAccountant(id, "Sami Mansour");
+            db.PermanentFiles.Add(file);
+        }
+        else
+        {
+            existing.AssignAccountant(id, "Sami Mansour");
+        }
+
+        await db.SaveChangesAsync();
+    }
+
+    private static CreateExchangeRequestDto SampleRequest() =>
+        new("Liasse fiscale", "merci", ExchangeRequestCategory.Information);
+
+    private static MemoryStream TinyPdf() => new(new byte[] { 0x25, 0x50, 0x44, 0x46, 0x2D, 0x31 });
 
     [Fact]
     public async Task ListThreads_unread_counts_exclude_own_and_already_read_and_internal_for_company()
@@ -526,5 +578,302 @@ public sealed class ExchangeServiceTests
         Assert.Equal(seededThreadId, boot.Value.ActiveThread!.Id);
         // Preuve additionnelle : le contexte scoped n'a JAMAIS été utilisé pour lire des threads.
         Assert.Empty(await scopedDb.ExchangeThreads.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task AddRequestComment_company_non_admin_is_forbidden()
+    {
+        await using var db = BuildDb();
+        var (_, threadId) = await SeedThreadAsync(db);
+        var req = ExchangeRequest.Create(threadId, 1, "Titre", "desc",
+            ExchangeRequestCategory.Information, ExchangeRequestPriority.Normal, CompanyUserId, CompanyId).Value;
+        db.ExchangeRequests.Add(req);
+        await db.SaveChangesAsync();
+        var svc = BuildService(db);
+
+        var result = await svc.AddRequestCommentAsync(
+            threadId, req.Id, CompanyId, TenantKind.Company, CompanyUserId, "Admin",
+            nameof(UserRole.SalesManager), null, new CreateExchangeRequestCommentDto("Hello"));
+
+        Assert.True(result.IsFailure);
+    }
+
+    [Fact]
+    public async Task AddRequestComment_and_list_succeed_for_firm()
+    {
+        await using var db = BuildDb();
+        var (_, threadId) = await SeedThreadAsync(db);
+        var req = ExchangeRequest.Create(threadId, 1, "Titre", "desc",
+            ExchangeRequestCategory.Information, ExchangeRequestPriority.Normal, CompanyUserId, CompanyId).Value;
+        db.ExchangeRequests.Add(req);
+        await db.SaveChangesAsync();
+        var svc = BuildService(db);
+
+        var added = await svc.AddRequestCommentAsync(
+            threadId, req.Id, FirmId, TenantKind.AccountingFirm, FirmUserId, "Firm Manager",
+            nameof(UserRole.FirmManager), null, new CreateExchangeRequestCommentDto("Merci"));
+        var second = await svc.AddRequestCommentAsync(
+            threadId, req.Id, FirmId, TenantKind.AccountingFirm, FirmUserId, "Firm Manager",
+            nameof(UserRole.FirmManager), null, new CreateExchangeRequestCommentDto("Vu"));
+
+        Assert.True(added.IsSuccess);
+        Assert.True(second.IsSuccess);
+
+        var list = await svc.ListRequestCommentsAsync(
+            threadId, req.Id, FirmId, TenantKind.AccountingFirm, FirmUserId,
+            nameof(UserRole.FirmManager), null);
+        Assert.True(list.IsSuccess);
+        Assert.Equal(2, list.Value.Count);
+        Assert.Equal("Merci", list.Value[0].Body);
+        Assert.Equal("Vu", list.Value[1].Body);
+        Assert.True(list.Value[0].CreatedAt <= list.Value[1].CreatedAt);
+    }
+
+    [Fact]
+    public async Task AddRequestComment_closed_thread_is_rejected()
+    {
+        await using var db = BuildDb();
+        var (_, threadId) = await SeedThreadAsync(db);
+        var thread = await db.ExchangeThreads.FirstAsync(t => t.Id == threadId);
+        Assert.True(thread.Close(FirmUserId).IsSuccess);
+        await db.SaveChangesAsync();
+        var req = ExchangeRequest.Create(threadId, 1, "Titre", "desc",
+            ExchangeRequestCategory.Information, ExchangeRequestPriority.Normal, CompanyUserId, CompanyId).Value;
+        db.ExchangeRequests.Add(req);
+        await db.SaveChangesAsync();
+        var svc = BuildService(db);
+
+        var result = await svc.AddRequestCommentAsync(
+            threadId, req.Id, FirmId, TenantKind.AccountingFirm, FirmUserId, "Firm Manager",
+            nameof(UserRole.FirmManager), null, new CreateExchangeRequestCommentDto("Trop tard"));
+
+        Assert.True(result.IsFailure);
+    }
+
+    [Fact]
+    public async Task CreateRequest_from_company_notifies_assigned_collaborator()
+    {
+        await using var db = BuildDb();
+        var (_, threadId) = await SeedThreadAsync(db);
+        await SeedAssignedAccountantAsync(db);
+        var (svc, notifications) = BuildServiceWithNotifications(db);
+
+        var result = await svc.CreateRequestAsync(
+            threadId, CompanyId, TenantKind.Company, CompanyUserId, "Admin",
+            nameof(UserRole.Administrator), null, SampleRequest());
+
+        Assert.True(result.IsSuccess);
+        notifications.Verify(n => n.CreateAsync(
+            FirmId, null, NotificationType.ExchangeRequestCreated,
+            "Nouvelle demande", "Liasse fiscale",
+            It.Is<string>(l => l.Contains("/firm/exchanges/") && l.Contains("tab=demandes")),
+            AccountantUserId, It.IsAny<CancellationToken>()), Times.Once);
+        notifications.Verify(n => n.CreateAsync(
+            It.IsAny<Guid>(), It.IsAny<string?>(), It.IsAny<NotificationType>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateRequest_from_company_without_collaborator_notifies_firm_managers()
+    {
+        await using var db = BuildDb();
+        var (_, threadId) = await SeedThreadAsync(db);
+        var (svc, notifications) = BuildServiceWithNotifications(db);
+
+        var result = await svc.CreateRequestAsync(
+            threadId, CompanyId, TenantKind.Company, CompanyUserId, "Admin",
+            nameof(UserRole.Administrator), null, SampleRequest());
+
+        Assert.True(result.IsSuccess);
+        notifications.Verify(n => n.CreateAsync(
+            FirmId, nameof(UserRole.FirmManager), NotificationType.ExchangeRequestCreated,
+            "Nouvelle demande", "Liasse fiscale",
+            It.Is<string>(l => l.Contains("tab=demandes")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateRequest_from_firm_notifies_company_administrators()
+    {
+        await using var db = BuildDb();
+        var (_, threadId) = await SeedThreadAsync(db);
+        await SeedAssignedAccountantAsync(db);
+        var (svc, notifications) = BuildServiceWithNotifications(db);
+
+        var result = await svc.CreateRequestAsync(
+            threadId, FirmId, TenantKind.AccountingFirm, FirmUserId, "Manager",
+            nameof(UserRole.FirmManager), null, SampleRequest());
+
+        Assert.True(result.IsSuccess);
+        notifications.Verify(n => n.CreateAsync(
+            CompanyId, nameof(UserRole.Administrator), NotificationType.ExchangeRequestCreated,
+            "Nouvelle demande", "Liasse fiscale",
+            It.Is<string>(l => l.StartsWith("/exchanges/") && l.Contains("tab=demandes")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UploadDocument_from_company_notifies_collaborator_with_documents_tab()
+    {
+        await using var db = BuildDb();
+        var (_, threadId) = await SeedThreadAsync(db);
+        await SeedAssignedAccountantAsync(db);
+        var (svc, notifications) = BuildServiceWithNotifications(db);
+
+        await using var content = TinyPdf();
+        var result = await svc.UploadDocumentAsync(
+            threadId, CompanyId, TenantKind.Company, CompanyUserId, "Admin",
+            nameof(UserRole.Administrator), null, "bilan.pdf", "application/pdf",
+            content, messageId: null, requestId: null, taskId: null);
+
+        Assert.True(result.IsSuccess);
+        notifications.Verify(n => n.CreateAsync(
+            FirmId, null, NotificationType.ExchangeDocumentShared,
+            "Nouveau document", "bilan.pdf",
+            It.Is<string>(l => l.Contains("tab=documents")),
+            AccountantUserId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UploadDocument_with_messageId_does_not_emit_document_notification()
+    {
+        await using var db = BuildDb();
+        var (_, threadId) = await SeedThreadAsync(db);
+        await SeedAssignedAccountantAsync(db);
+        var (svc, notifications) = BuildServiceWithNotifications(db);
+
+        await using var content = TinyPdf();
+        var result = await svc.UploadDocumentAsync(
+            threadId, CompanyId, TenantKind.Company, CompanyUserId, "Admin",
+            nameof(UserRole.Administrator), null, "pj.pdf", "application/pdf",
+            content, messageId: Guid.NewGuid(), requestId: null, taskId: null);
+
+        Assert.True(result.IsSuccess);
+        notifications.Verify(n => n.CreateAsync(
+            It.IsAny<Guid>(), It.IsAny<string?>(), NotificationType.ExchangeDocumentShared,
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(),
+            It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never);
+        notifications.Verify(n => n.CreateAsync(
+            It.IsAny<Guid>(), It.IsAny<string?>(), NotificationType.ExchangeDocumentShared,
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateTask_from_company_notifies_collaborator()
+    {
+        await using var db = BuildDb();
+        var (_, threadId) = await SeedThreadAsync(db);
+        await SeedAssignedAccountantAsync(db);
+        var (svc, notifications) = BuildServiceWithNotifications(db);
+
+        var result = await svc.CreateTaskAsync(
+            threadId, CompanyId, TenantKind.Company, CompanyUserId, "Admin",
+            nameof(UserRole.Administrator), null, new CreateExchangeTaskDto("Relance TVA", null, null, null));
+
+        Assert.True(result.IsSuccess);
+        notifications.Verify(n => n.CreateAsync(
+            FirmId, null, NotificationType.ExchangeTaskCreated,
+            "Nouvelle tâche", "Relance TVA",
+            It.Is<string>(l => l.Contains("tab=taches")),
+            AccountantUserId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateTask_from_firm_notifies_company_administrators()
+    {
+        await using var db = BuildDb();
+        var (_, threadId) = await SeedThreadAsync(db);
+        var (svc, notifications) = BuildServiceWithNotifications(db);
+
+        var result = await svc.CreateTaskAsync(
+            threadId, FirmId, TenantKind.AccountingFirm, FirmUserId, "Manager",
+            nameof(UserRole.FirmManager), null, new CreateExchangeTaskDto("Pièces manquantes", null, null, null));
+
+        Assert.True(result.IsSuccess);
+        notifications.Verify(n => n.CreateAsync(
+            CompanyId, nameof(UserRole.Administrator), NotificationType.ExchangeTaskCreated,
+            "Nouvelle tâche", "Pièces manquantes",
+            It.Is<string>(l => l.StartsWith("/exchanges/") && l.Contains("tab=taches")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateRequest_succeeds_when_notification_throws()
+    {
+        await using var db = BuildDb();
+        var (_, threadId) = await SeedThreadAsync(db);
+        var (svc, notifications) = BuildServiceWithNotifications(db);
+        notifications
+            .Setup(n => n.CreateAsync(It.IsAny<Guid>(), It.IsAny<string?>(), It.IsAny<NotificationType>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("panne notification"));
+
+        var result = await svc.CreateRequestAsync(
+            threadId, CompanyId, TenantKind.Company, CompanyUserId, "Admin",
+            nameof(UserRole.Administrator), null, SampleRequest());
+
+        Assert.True(result.IsSuccess);
+        Assert.Single(await db.ExchangeRequests.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task UploadDocument_succeeds_when_notification_throws()
+    {
+        await using var db = BuildDb();
+        var (_, threadId) = await SeedThreadAsync(db);
+        var (svc, notifications) = BuildServiceWithNotifications(db);
+        notifications
+            .Setup(n => n.CreateAsync(It.IsAny<Guid>(), It.IsAny<string?>(), It.IsAny<NotificationType>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("panne notification"));
+
+        await using var content = TinyPdf();
+        var result = await svc.UploadDocumentAsync(
+            threadId, CompanyId, TenantKind.Company, CompanyUserId, "Admin",
+            nameof(UserRole.Administrator), null, "bilan.pdf", "application/pdf",
+            content, null, null, null);
+
+        Assert.True(result.IsSuccess);
+    }
+
+    [Fact]
+    public async Task SendMessage_from_company_still_broadcasts_to_firm_without_role()
+    {
+        await using var db = BuildDb();
+        var (_, threadId) = await SeedThreadAsync(db);
+        await SeedAssignedAccountantAsync(db);
+        var (svc, notifications) = BuildServiceWithNotifications(db);
+
+        var result = await svc.SendMessageAsync(
+            threadId, CompanyId, TenantKind.Company, CompanyUserId, "Admin",
+            nameof(UserRole.Administrator), null, new SendExchangeMessageDto("bonjour"));
+
+        Assert.True(result.IsSuccess);
+        notifications.Verify(n => n.CreateAsync(
+            FirmId, null, NotificationType.ExchangeMessageReceived,
+            "Nouveau message", It.IsAny<string>(),
+            It.Is<string>(l => l.Contains($"/firm/exchanges/{threadId}") && !l.Contains("tab=")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SendMessage_from_firm_still_notifies_company_administrators()
+    {
+        await using var db = BuildDb();
+        var (_, threadId) = await SeedThreadAsync(db);
+        var (svc, notifications) = BuildServiceWithNotifications(db);
+
+        var result = await svc.SendMessageAsync(
+            threadId, FirmId, TenantKind.AccountingFirm, FirmUserId, "Manager",
+            nameof(UserRole.FirmManager), null, new SendExchangeMessageDto("reçu"));
+
+        Assert.True(result.IsSuccess);
+        notifications.Verify(n => n.CreateAsync(
+            CompanyId, nameof(UserRole.Administrator), NotificationType.ExchangeMessageReceived,
+            "Nouveau message", It.IsAny<string>(),
+            It.Is<string>(l => l.StartsWith("/exchanges/") && !l.Contains("tab=")),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 }

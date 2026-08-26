@@ -221,6 +221,15 @@ public sealed record FirmTimeSheetBulkValidationFailureDto
     public string Error { get; init; } = null!;
 }
 
+/// <summary>Résultat détaillé d'une soumission en lot : ce qui est passé, et pourquoi le reste ne l'est pas.</summary>
+public sealed record FirmTimeSheetBulkSubmitResultDto
+{
+    public int Submitted { get; init; }
+    public int Skipped { get; init; }
+    public IReadOnlyList<FirmTimeSheetBulkValidationFailureDto> Failures { get; init; } =
+        Array.Empty<FirmTimeSheetBulkValidationFailureDto>();
+}
+
 /// <summary>Code de la nomenclature des diligences du cabinet.</summary>
 public sealed record FirmActivityCodeDto
 {

@@ -19,8 +19,6 @@ import {
   ExchangeDocument,
   ExchangeMessage,
   ExchangeRequest,
-  ExchangeRequestCategory,
-  ExchangeRequestStatus,
   ExchangeService,
   ExchangeTask,
   ExchangeTaskStatus,
@@ -37,24 +35,20 @@ import {
 import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { StatusBadgeComponent } from '@shared/components/status-badge/status-badge.component';
+import { ToastService } from '@core/services/toast.service';
 import { environment } from '@environments/environment';
+import { ExchangeRequestsPanelComponent } from './exchange-requests-panel.component';
 import {
   auditEventLabel,
   canCompleteTask,
-  canResolveRequest,
-  categoryLabel as categoryLabelFn,
   documentIconClass,
   initialsFromName,
   isInternalNote,
-  isRequestActionable,
-  isRequestOpen,
   isThreadClosed,
   isThreadOpen,
   messageDayKey,
   messageDayLabel,
   participantRoleLabel,
-  requestStatusBadge,
-  requestStatusLabel as requestStatusLabelFn,
   taskStatusBadge,
   taskStatusLabel as taskStatusLabelFn,
   threadStatusBadge,
@@ -90,7 +84,8 @@ export interface MessageFeedItem {
     FormsModule,
     EmptyStateComponent,
     ButtonComponent,
-    StatusBadgeComponent
+    StatusBadgeComponent,
+    ExchangeRequestsPanelComponent
   ],
   templateUrl: './exchange-shell.component.html',
   styleUrl: './exchange-shell.component.scss'
@@ -98,6 +93,7 @@ export interface MessageFeedItem {
 export class ExchangeShellComponent implements OnInit, OnDestroy {
   private readonly exchange = inject(ExchangeService);
   private readonly badge = inject(ExchangeBadgeService);
+  private readonly toast = inject(ToastService);
   readonly auth = inject(AuthService);
   private readonly assignments = inject(FirmAssignmentService);
   private readonly route = inject(ActivatedRoute);
@@ -131,9 +127,7 @@ export class ExchangeShellComponent implements OnInit, OnDestroy {
   readonly search = signal('');
   readonly showNewRequest = signal(false);
   readonly showNewTask = signal(false);
-  readonly newRequestTitle = signal('');
-  readonly newRequestDescription = signal('');
-  readonly newRequestCategory = signal<ExchangeRequestCategory>(0);
+  readonly selectedRequestId = signal<string | null>(null);
   readonly newTaskTitle = signal('');
   readonly newTaskDue = signal('');
   readonly messagesHasMore = signal(false);
@@ -164,6 +158,7 @@ export class ExchangeShellComponent implements OnInit, OnDestroy {
 
   private pollSub: Subscription | null = null;
   private navigationSub: Subscription | null = null;
+  private requestQuerySub: Subscription | null = null;
   private inFlightBootstrapSub: Subscription | null = null;
   private badgeRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   private lastBootstrappedThreadId: string | null | undefined = undefined;
@@ -196,6 +191,7 @@ export class ExchangeShellComponent implements OnInit, OnDestroy {
 
         const threadChanged = threadId !== this.lastBootstrappedThreadId;
         if (threadChanged) {
+          this.selectedRequestId.set(null);
           this.bootstrap(threadId);
           return;
         }
@@ -207,11 +203,19 @@ export class ExchangeShellComponent implements OnInit, OnDestroy {
           this.loadTabData(resolvedThreadId, tab);
         }
       });
+
+    this.requestQuerySub = this.route.queryParamMap
+      .pipe(
+        map(query => query.get('requestId')),
+        distinctUntilChanged()
+      )
+      .subscribe(id => this.selectedRequestId.set(id));
   }
 
   ngOnDestroy(): void {
     this.pollSub?.unsubscribe();
     this.navigationSub?.unsubscribe();
+    this.requestQuerySub?.unsubscribe();
     this.inFlightBootstrapSub?.unsubscribe();
     if (this.badgeRefreshTimer) clearTimeout(this.badgeRefreshTimer);
   }
@@ -219,15 +223,11 @@ export class ExchangeShellComponent implements OnInit, OnDestroy {
   isOpen = isThreadOpen;
   isClosed = isThreadClosed;
   isNote = isInternalNote;
-  isReqOpen = isRequestOpen;
-  isReqActionable = isRequestActionable;
-  canResolveReq = canResolveRequest;
   canFinishTask = canCompleteTask;
   statusLabel = threadStatusLabel;
   initials = initialsFromName;
   auditEventLabel = auditEventLabel;
   roleLabel = participantRoleLabel;
-  requestBadge = requestStatusBadge;
   taskBadge = taskStatusBadge;
   threadBadge = threadStatusBadge;
   docIcon = documentIconClass;
@@ -275,12 +275,17 @@ export class ExchangeShellComponent implements OnInit, OnDestroy {
 
     if (tab === 'conversation') {
       void this.router.navigate(commands, {
-        queryParams: { tab: null },
+        queryParams: { tab: null, requestId: null },
+        queryParamsHandling: 'merge'
+      });
+    } else if (tab === 'demandes') {
+      void this.router.navigate(commands, {
+        queryParams: { tab },
         queryParamsHandling: 'merge'
       });
     } else {
       void this.router.navigate(commands, {
-        queryParams: { tab },
+        queryParams: { tab, requestId: null },
         queryParamsHandling: 'merge'
       });
     }
@@ -405,41 +410,27 @@ export class ExchangeShellComponent implements OnInit, OnDestroy {
     });
   }
 
-  createRequest(): void {
-    const thread = this.activeThread();
-    const title = this.newRequestTitle().trim();
-    if (!thread || !title) return;
-    this.exchange
-      .createRequest(thread.id, {
-        title,
-        description: this.newRequestDescription().trim() || undefined,
-        category: this.newRequestCategory(),
-        priority: 1
-      })
-      .subscribe({
-        next: r => {
-          if (r.success) {
-            this.requests.update(list => [r.data, ...list]);
-            this.showNewRequest.set(false);
-            this.newRequestTitle.set('');
-            this.newRequestDescription.set('');
-            this.setTab('demandes');
-            this.badge.invalidate();
-          }
-        }
-      });
+  onRequestCreated(req: ExchangeRequest): void {
+    this.requests.update(list => [req, ...list]);
+    this.badge.invalidate();
   }
 
-  changeRequestStatus(req: ExchangeRequest, status: ExchangeRequestStatus): void {
-    const thread = this.activeThread();
-    if (!thread) return;
-    this.exchange.changeRequestStatus(thread.id, req.id, status).subscribe({
-      next: r => {
-        if (r.success) {
-          this.requests.update(list => list.map(x => (x.id === req.id ? r.data : x)));
-          this.badge.invalidate();
-        }
-      }
+  onRequestUpdated(req: ExchangeRequest): void {
+    this.requests.update(list => list.map(x => (x.id === req.id ? req : x)));
+    this.badge.invalidate();
+  }
+
+  onRequestDocumentUploaded(doc: ExchangeDocument): void {
+    this.documents.update(list => [doc, ...list]);
+  }
+
+  selectRequest(id: string | null): void {
+    const base = this.isFirm() ? '/firm/exchanges' : '/exchanges';
+    const threadId = this.activeThread()?.id;
+    const commands = threadId ? [base, threadId] : [base];
+    void this.router.navigate(commands, {
+      queryParams: { requestId: id },
+      queryParamsHandling: 'merge'
     });
   }
 
@@ -501,18 +492,6 @@ export class ExchangeShellComponent implements OnInit, OnDestroy {
     if (n < 1024) return `${n} o`;
     if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} Ko`;
     return `${(n / (1024 * 1024)).toFixed(1)} Mo`;
-  }
-
-  requestStatusLabel(s: ExchangeRequestStatus): string {
-    return requestStatusLabelFn(s);
-  }
-
-  setNewRequestCategory(value: number | string): void {
-    this.newRequestCategory.set(+value as ExchangeRequestCategory);
-  }
-
-  categoryLabel(c: ExchangeRequestCategory): string {
-    return categoryLabelFn(c);
   }
 
   taskStatusLabel(s: ExchangeTaskStatus): string {
@@ -878,8 +857,28 @@ export class ExchangeShellComponent implements OnInit, OnDestroy {
 
   private loadTabData(threadId: string, tab: ExchangeTabKey): void {
     if (tab === 'demandes') {
-      this.exchange.listRequests(threadId).subscribe(r => {
-        if (r.success) this.requests.set(r.data);
+      forkJoin({
+        requests: this.exchange.listRequests(threadId),
+        documents: this.exchange.listDocuments(threadId),
+        history: this.exchange.getHistory(threadId)
+      }).subscribe({
+        next: ({ requests, documents, history }) => {
+          if (requests.success) this.requests.set(requests.data);
+          else
+            this.toast.add({
+              severity: 'error',
+              summary: 'Demandes',
+              detail: requests.message || 'Impossible de charger les demandes'
+            });
+          if (documents.success) this.documents.set(documents.data);
+          if (history.success) this.history.set(history.data);
+        },
+        error: () =>
+          this.toast.add({
+            severity: 'error',
+            summary: 'Demandes',
+            detail: 'Impossible de charger les demandes'
+          })
       });
     } else if (tab === 'taches') {
       this.exchange.listTasks(threadId).subscribe(r => {

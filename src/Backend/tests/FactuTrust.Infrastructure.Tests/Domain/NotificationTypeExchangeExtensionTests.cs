@@ -23,5 +23,15 @@ public sealed class NotificationTypeExchangeExtensionTests
         Assert.Equal(7, (int)NotificationType.ExchangeRequestStatusChanged);
         Assert.Equal(8, (int)NotificationType.ExchangeTaskAssigned);
         Assert.Equal(9, (int)NotificationType.ExchangeThreadClosed);
+        Assert.Equal(10, (int)NotificationType.ExchangeRequestCommented);
+        Assert.Equal(11, (int)NotificationType.ExchangeDocumentShared);
+        Assert.Equal(12, (int)NotificationType.ExchangeTaskCreated);
+    }
+
+    [Fact]
+    public void Firm_governance_notification_types_appended_after_exchange_types()
+    {
+        Assert.Equal(13, (int)NotificationType.FirmLeaveRequestSubmitted);
+        Assert.Equal(14, (int)NotificationType.FirmTimeSheetSubmitted);
     }
 }

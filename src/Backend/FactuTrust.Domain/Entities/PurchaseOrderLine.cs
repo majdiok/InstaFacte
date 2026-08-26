@@ -108,7 +108,7 @@ public sealed class PurchaseOrderLine : Entity
 
         if (ReceivedQuantity + receivedQuantity > Quantity)
             return Result.Failure(Error.Validation("ReceivedQuantity",
-                $"La quantité reçue ({ReceivedQuantity + receivedQuantity}) dépasse la quantité commandée ({Quantity})"));
+                $"La quantité reçue dépasse la quantité commandée (déjà reçue : {ReceivedQuantity}, cette réception : {receivedQuantity}, commandée : {Quantity})"));
 
         ReceivedQuantity += receivedQuantity;
 

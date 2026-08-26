@@ -1,7 +1,7 @@
 import { Component, inject, OnInit, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { PosHistoryService } from '../../services/pos-history.service';
-import { PosRegisterSessionService } from '../../services/pos-register-session.service';
+import { PosRegisterSessionService, ZReportListItemDto } from '../../services/pos-register-session.service';
 import { InvoiceService } from '@core/services/invoice.service';
 import { PrintPreviewService } from '@core/services/print-preview.service';
 import { WarehouseContextService } from '@core/services/warehouse-context.service';
@@ -60,6 +60,19 @@ import { WarehouseContextService } from '@core/services/warehouse-context.servic
         <button type="button" class="history-panel__refresh" (click)="historyService.refreshHistory()">
           <i class="pi pi-refresh"></i> Actualiser
         </button>
+
+        <div class="history-panel__z">
+          <h4>Clôtures Z (30 jours)</h4>
+          @if (zReports.length === 0) {
+            <p class="history-panel__z-empty">Aucune clôture sur la période.</p>
+          } @else {
+            <ul>
+              @for (z of zReports; track z.id) {
+                <li>{{ z.number }} — {{ z.cashRegisterName }} — {{ z.generatedAt | date:'short' }}</li>
+              }
+            </ul>
+          }
+        </div>
       </div>
     </div>
   `,
@@ -242,6 +255,23 @@ import { WarehouseContextService } from '@core/services/warehouse-context.servic
       background: var(--color-neutral-100);
     }
 
+    .history-panel__z {
+      padding: var(--spacing-4);
+      border-top: 1px solid var(--color-border-subtle);
+      font-size: var(--font-size-sm);
+    }
+    .history-panel__z h4 {
+      margin: 0 0 var(--spacing-2);
+    }
+    .history-panel__z ul {
+      margin: 0;
+      padding-left: 1.1rem;
+    }
+    .history-panel__z-empty {
+      color: var(--color-text-tertiary);
+      margin: 0;
+    }
+
     @keyframes fadeIn {
       from { opacity: 0; }
       to { opacity: 1; }
@@ -261,9 +291,22 @@ export class PosHistoryPanelComponent implements OnInit {
   private readonly printPreviewService = inject(PrintPreviewService);
   private readonly warehouseContext = inject(WarehouseContextService);
   private readonly registerSession = inject(PosRegisterSessionService);
+  zReports: ZReportListItemDto[] = [];
 
   ngOnInit(): void {
     this.historyService.loadHistory();
+    this.loadZReports();
+  }
+
+  private loadZReports(): void {
+    const to = new Date();
+    const from = new Date();
+    from.setDate(from.getDate() - 30);
+    this.registerSession.listZReports(from, to, this.registerSession.selectedRegisterId()).subscribe({
+      next: list => {
+        this.zReports = list;
+      }
+    });
   }
 
   showThisSession(): void {

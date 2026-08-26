@@ -13,7 +13,11 @@ describe('EntrySubmitService', () => {
   let api: jasmine.SpyObj<AccountingService>;
 
   beforeEach(() => {
-    api = jasmine.createSpyObj('AccountingService', ['createManualJournalEntry', 'uploadEntryAttachment']);
+    api = jasmine.createSpyObj('AccountingService', [
+      'createManualJournalEntry',
+      'updateDraftJournalEntry',
+      'uploadEntryAttachment'
+    ]);
     TestBed.configureTestingModule({
       providers: [
         EntrySubmitService,
@@ -52,6 +56,24 @@ describe('EntrySubmitService', () => {
 
     service.submit(store, [], 'navigate').subscribe(result => {
       expect(result.success).toBe(false);
+      expect(api.createManualJournalEntry).not.toHaveBeenCalled();
+      done();
+    });
+  });
+
+  it('updates existing draft via PUT and does not create', (done) => {
+    store.entryLabel.set('Modifié');
+    store.editingEntryId.set('entry-42');
+    store.lines.set([
+      { ...createEmptyLine(), accountNumber: '607', debit: 100 },
+      { ...createEmptyLine(), accountNumber: '4011', credit: 100 }
+    ]);
+    api.updateDraftJournalEntry.and.returnValue(of({ success: true, data: true }));
+
+    service.submit(store, [], 'navigate').subscribe(result => {
+      expect(result.success).toBe(true);
+      expect(result.entryId).toBe('entry-42');
+      expect(api.updateDraftJournalEntry).toHaveBeenCalled();
       expect(api.createManualJournalEntry).not.toHaveBeenCalled();
       done();
     });

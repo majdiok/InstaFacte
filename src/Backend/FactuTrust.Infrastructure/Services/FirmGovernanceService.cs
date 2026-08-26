@@ -12,12 +12,15 @@ using FactuTrust.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Globalization;
 using TaxRegime = FactuTrust.Domain.Entities.TaxRegime;
 
 namespace FactuTrust.Infrastructure.Services;
 
 public sealed class FirmGovernanceService : IFirmGovernanceService
 {
+    private static readonly CultureInfo French = CultureInfo.GetCultureInfo("fr-FR");
+
     private readonly MasterDbContext _master;
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly ITenantService _tenantService;
@@ -27,6 +30,7 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
     private readonly ICurrentUser _currentUser;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<FirmGovernanceService> _logger;
+    private readonly INotificationService _notifications;
 
     public FirmGovernanceService(
         MasterDbContext master,
@@ -37,7 +41,8 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
         IFirmDossierAccessService dossierAccess,
         ICurrentUser currentUser,
         TimeProvider timeProvider,
-        ILogger<FirmGovernanceService> logger)
+        ILogger<FirmGovernanceService> logger,
+        INotificationService notifications)
     {
         _master = master;
         _userManager = userManager;
@@ -48,6 +53,7 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
         _currentUser = currentUser;
         _timeProvider = timeProvider;
         _logger = logger;
+        _notifications = notifications;
     }
 
     public async Task<IReadOnlyList<PermanentFileDto>> ListPermanentFilesAsync(Guid firmTenantId, CancellationToken cancellationToken = default)
@@ -787,27 +793,71 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
         if (entry is null)
             return Result.Failure<FirmTimeSheetEntryDto>(Error.NotFound("TimeSheet", entryId));
 
-        if (!isManager && entry.UserId != actorUserId)
-            return Result.Failure<FirmTimeSheetEntryDto>(Error.Forbidden("Vous ne pouvez soumettre que vos propres saisies."));
-
-        var periodError = await EnsurePeriodOpenAsync(firmTenantId, entry.WorkDate, cancellationToken);
-        if (periodError is not null)
-            return Result.Failure<FirmTimeSheetEntryDto>(periodError);
-
-        if (entry.FirmClientAssignmentId.HasValue)
-        {
-            var accessDenied = await EnsureCanAccessAssignmentAsync(
-                firmTenantId, entry.FirmClientAssignmentId.Value, cancellationToken);
-            if (accessDenied is not null)
-                return Result.Failure<FirmTimeSheetEntryDto>(accessDenied);
-        }
-
-        var submit = entry.Submit();
-        if (submit.IsFailure)
-            return Result.Failure<FirmTimeSheetEntryDto>(submit.Error);
+        var prepared = await TryPrepareSubmitAsync(firmTenantId, actorUserId, isManager, entry, cancellationToken);
+        if (prepared.IsFailure)
+            return Result.Failure<FirmTimeSheetEntryDto>(prepared.Error);
 
         await _master.SaveChangesAsync(cancellationToken);
+        await TryNotifyTimeSheetsSubmittedAsync(firmTenantId, isManager, [entry]);
         return Result.Success(MapTimeSheet(entry));
+    }
+
+    public async Task<Result<FirmTimeSheetBulkSubmitResultDto>> SubmitTimeSheetsBulkAsync(
+        Guid firmTenantId,
+        Guid actorUserId,
+        bool isManager,
+        IReadOnlyList<Guid> entryIds,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = entryIds.Distinct().ToList();
+        if (ids.Count == 0)
+            return Result.Success(new FirmTimeSheetBulkSubmitResultDto());
+
+        var entries = await _master.FirmTimeSheetEntries
+            .Where(t => t.FirmTenantId == firmTenantId && ids.Contains(t.Id))
+            .ToListAsync(cancellationToken);
+
+        var submitted = new List<FirmTimeSheetEntry>();
+        var failures = new List<FirmTimeSheetBulkValidationFailureDto>();
+
+        foreach (var id in ids)
+        {
+            var entry = entries.FirstOrDefault(e => e.Id == id);
+            if (entry is null)
+            {
+                failures.Add(new FirmTimeSheetBulkValidationFailureDto
+                {
+                    EntryId = id,
+                    Error = "Feuille de temps introuvable."
+                });
+                continue;
+            }
+
+            var prepared = await TryPrepareSubmitAsync(firmTenantId, actorUserId, isManager, entry, cancellationToken);
+            if (prepared.IsFailure)
+            {
+                failures.Add(new FirmTimeSheetBulkValidationFailureDto
+                {
+                    EntryId = id,
+                    Error = prepared.Error.Description
+                });
+                continue;
+            }
+
+            submitted.Add(entry);
+        }
+
+        if (submitted.Count > 0)
+            await _master.SaveChangesAsync(cancellationToken);
+
+        await TryNotifyTimeSheetsSubmittedAsync(firmTenantId, isManager, submitted);
+
+        return Result.Success(new FirmTimeSheetBulkSubmitResultDto
+        {
+            Submitted = submitted.Count,
+            Skipped = failures.Count,
+            Failures = failures
+        });
     }
 
     public async Task<Result<FirmTimeSheetEntryDto>> StartTimeSheetTimerAsync(
@@ -1532,6 +1582,95 @@ public sealed class FirmGovernanceService : IFirmGovernanceService
                 "Period",
                 $"Période {workDate:MM/yyyy} clôturée — déverrouillage manager requis.")
             : null;
+    }
+
+    /// <summary>
+    /// Gardes communes à la soumission unitaire et en lot (propriété, période, dossier, timer).
+    /// Mutates <paramref name="entry"/> via <see cref="FirmTimeSheetEntry.Submit"/> on success.
+    /// </summary>
+    private async Task<Result> TryPrepareSubmitAsync(
+        Guid firmTenantId,
+        Guid actorUserId,
+        bool isManager,
+        FirmTimeSheetEntry entry,
+        CancellationToken cancellationToken)
+    {
+        if (!isManager && entry.UserId != actorUserId)
+            return Result.Failure(Error.Forbidden("Vous ne pouvez soumettre que vos propres saisies."));
+
+        var periodError = await EnsurePeriodOpenAsync(firmTenantId, entry.WorkDate, cancellationToken);
+        if (periodError is not null)
+            return Result.Failure(periodError);
+
+        if (entry.FirmClientAssignmentId.HasValue)
+        {
+            var accessDenied = await EnsureCanAccessAssignmentAsync(
+                firmTenantId, entry.FirmClientAssignmentId.Value, cancellationToken);
+            if (accessDenied is not null)
+                return Result.Failure(accessDenied);
+        }
+
+        var submit = entry.Submit();
+        if (submit.IsFailure)
+            return Result.Failure(submit.Error);
+
+        return Result.Success();
+    }
+
+    private async Task TryNotifyTimeSheetsSubmittedAsync(
+        Guid firmTenantId,
+        bool isManager,
+        IReadOnlyList<FirmTimeSheetEntry> entries)
+    {
+        if (isManager || entries.Count == 0)
+            return;
+
+        var first = entries[0];
+        var totalHours = entries.Sum(e => e.Hours);
+        var link = $"/firm/governance/time-sheets?userId={first.UserId}";
+        string title;
+        string body;
+        if (entries.Count == 1)
+        {
+            title = "Feuille de temps soumise";
+            body = $"{first.UserDisplayName} a soumis une feuille de temps ({first.WorkDate:dd/MM/yyyy}, {first.Hours.ToString("0.##", French)} h).";
+        }
+        else
+        {
+            title = "Feuilles de temps soumises";
+            body = $"{first.UserDisplayName} a soumis {entries.Count} feuille(s) de temps ({totalHours.ToString("0.##", French)} h).";
+        }
+
+        await TryNotifyAsync(
+            firmTenantId,
+            nameof(UserRole.FirmManager),
+            NotificationType.FirmTimeSheetSubmitted,
+            title,
+            body,
+            link);
+    }
+
+    /// <summary>
+    /// Émission best-effort d'une notification in-app : ne fait jamais échouer
+    /// l'opération métier qui vient d'être validée (log warning au pire).
+    /// </summary>
+    private async Task TryNotifyAsync(
+        Guid recipientTenantId,
+        string recipientRole,
+        NotificationType type,
+        string title,
+        string body,
+        string? linkUrl)
+    {
+        try
+        {
+            await _notifications.CreateAsync(
+                recipientTenantId, recipientRole, type, title, body, linkUrl, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Échec d'émission de la notification {Type} vers le tenant {TenantId}", type, recipientTenantId);
+        }
     }
 
     /// <summary>Contrôles communs à la validation et à la dévalidation : périmètre puis clôture.</summary>

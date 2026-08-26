@@ -186,6 +186,43 @@ describe('PosStateService applyResolvedPrices', () => {
   });
 });
 
+describe('PosStateService decimal quantity and VAT after discount', () => {
+  beforeEach(() => {
+    TestBed.configureTestingModule({ providers: [PosStateService] });
+  });
+
+  it('accepts quantities down to 0.001', () => {
+    const svc = TestBed.inject(PosStateService);
+    svc.addProductWithQuantity({ ...fodecProduct(), isFodecApplicable: false }, 0.5);
+    expect(svc.lines()[0].quantity).toBe(0.5);
+    expect(svc.updateQuantity(svc.lines()[0].id, 0.001)).toBeTrue();
+    expect(svc.lines()[0].quantity).toBe(0.001);
+    expect(svc.updateQuantity(svc.lines()[0].id, 0)).toBeFalse();
+  });
+
+  it('scales VAT after a global discount', () => {
+    const svc = TestBed.inject(PosStateService);
+    svc.addProduct({ ...fodecProduct(), isFodecApplicable: false });
+    svc.setGlobalDiscount('PERCENT', 10);
+
+    const totals = svc.totals();
+    expect(totals.totalHT).toBe(90);
+    expect(totals.totalVat).toBe(17.1);
+    expect(totals.totalTTC).toBe(107.1);
+  });
+
+  it('does not overwrite a manually edited price', () => {
+    const svc = TestBed.inject(PosStateService);
+    svc.addProduct({ ...fodecProduct(), isFodecApplicable: false });
+    const lines = svc.lines().map(l => ({ ...l, priceManuallyEdited: true, unitPriceHT: 50 }));
+    svc.setLines(lines);
+    expect(svc.lines()[0].unitPriceHT).toBe(50);
+
+    svc.applyResolvedPrices([{ productId: 'prod-fodec-1', unitPriceHT: 80, isNegotiated: true }]);
+    expect(svc.lines()[0].unitPriceHT).toBe(50);
+  });
+});
+
 describe('PosStateService stock quantity cap', () => {
   function stockProduct(available: number): ProductListItem {
     return {

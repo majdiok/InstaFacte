@@ -265,6 +265,25 @@ public sealed class FirmGovernanceController : ControllerBase
         return Ok(ApiResponse<FirmTimeSheetEntryDto>.Ok(result.Value, "Feuille de temps soumise."));
     }
 
+    [HttpPost("time-sheets/submit-bulk/detailed")]
+    public async Task<ActionResult<ApiResponse<FirmTimeSheetBulkSubmitResultDto>>> SubmitTimeSheetsBulkDetailed(
+        [FromBody] ValidateTimeSheetsBulkDto dto, CancellationToken cancellationToken)
+    {
+        if (!EnsureEnabled(out var disabled)) return disabled!;
+        var tenantId = GetHomeTenantId();
+        var userId = GetUserId();
+        if (tenantId is null || userId is null) return Unauthorized();
+        var result = await _governance.SubmitTimeSheetsBulkAsync(
+            tenantId.Value, userId.Value, IsFirmManager(), dto.Ids, cancellationToken);
+        if (result.IsFailure)
+            return BadRequest(ApiResponse<FirmTimeSheetBulkSubmitResultDto>.Fail(result.Error.Description));
+
+        var message = result.Value.Skipped == 0
+            ? $"{result.Value.Submitted} feuille(s) soumise(s)."
+            : $"{result.Value.Submitted} feuille(s) soumise(s), {result.Value.Skipped} ignorée(s).";
+        return Ok(ApiResponse<FirmTimeSheetBulkSubmitResultDto>.Ok(result.Value, message));
+    }
+
     [HttpPost("time-sheets/timer/start")]
     public async Task<ActionResult<ApiResponse<FirmTimeSheetEntryDto>>> StartTimeSheetTimer(
         [FromBody] StartTimeSheetTimerDto dto, CancellationToken cancellationToken)

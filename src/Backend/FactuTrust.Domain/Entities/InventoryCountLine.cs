@@ -73,10 +73,16 @@ public sealed class InventoryCountLine : Entity
     /// <summary>
     /// Enregistre le comptage pour ce produit.
     /// </summary>
-    internal Result RecordCount(decimal countedQuantity)
+    /// <param name="lotNumber">
+    /// Numéro de lot saisi à l'inventaire d'ouverture (ligne sans <see cref="ProductLotId"/>).
+    /// </param>
+    internal Result RecordCount(decimal countedQuantity, string? lotNumber = null)
     {
         if (countedQuantity < 0)
             return Result.Failure(Error.Validation("CountedQuantity", "La quantité comptée ne peut pas être négative."));
+
+        if (ProductLotId is null && !string.IsNullOrWhiteSpace(lotNumber))
+            LotNumber = lotNumber.Trim().ToUpperInvariant();
 
         CountedQuantity = countedQuantity;
         CountedAt = DateTime.UtcNow;

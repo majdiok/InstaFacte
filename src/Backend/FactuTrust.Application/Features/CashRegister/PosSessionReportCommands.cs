@@ -14,9 +14,13 @@ using AuditActions = FactuTrust.Domain.Entities.AuditActions;
 
 namespace FactuTrust.Application.Features.CashRegister;
 
-public sealed record GetPosSessionXReportQuery(Guid WarehouseId) : IRequest<Result<PosSessionReportDto>>;
+public sealed record GetPosSessionXReportQuery(Guid WarehouseId, Guid? CashRegisterId = null)
+    : IRequest<Result<PosSessionReportDto>>;
 
-public sealed record CloseCashRegisterSessionCommand(Guid WarehouseId, CloseCashRegisterSessionRequest Request)
+public sealed record CloseCashRegisterSessionCommand(
+    Guid WarehouseId,
+    CloseCashRegisterSessionRequest Request,
+    Guid? CashRegisterId = null)
     : IRequest<Result<PosSessionReportDto>>;
 
 public sealed record GetZReportQuery(Guid Id) : IRequest<Result<PosSessionReportDto>>;
@@ -137,8 +141,8 @@ public sealed class GetPosSessionXReportQueryHandler
         GetPosSessionXReportQuery request,
         CancellationToken cancellationToken)
     {
-        var ensured = await CashRegisterProvisioning.EnsureForWarehouseAsync(
-            _warehouses, _registers, request.WarehouseId, _currentUser.UserId?.ToString(), cancellationToken);
+        var ensured = await CashRegisterResolver.ResolveAsync(
+            _warehouses, _registers, request.WarehouseId, request.CashRegisterId, _currentUser.UserId?.ToString(), cancellationToken);
         if (ensured.IsFailure)
             return Result.Failure<PosSessionReportDto>(ensured.Error);
 
@@ -220,8 +224,8 @@ public sealed class CloseCashRegisterSessionCommandHandler
 
         var result = await _unitOfWork.ExecuteAsync(async ct =>
         {
-            var ensured = await CashRegisterProvisioning.EnsureForWarehouseAsync(
-                _warehouses, _registers, command.WarehouseId, userId.ToString(), ct);
+            var ensured = await CashRegisterResolver.ResolveAsync(
+                _warehouses, _registers, command.WarehouseId, command.CashRegisterId, userId.ToString(), ct);
             if (ensured.IsFailure)
                 return Result.Failure(ensured.Error);
 

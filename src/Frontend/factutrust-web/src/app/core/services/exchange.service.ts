@@ -96,6 +96,17 @@ export interface ExchangeRequest {
   closedAt?: string;
 }
 
+export interface ExchangeRequestComment {
+  id: string;
+  threadId: string;
+  requestId: string;
+  authorUserId: string;
+  authorTenantId: string;
+  authorDisplayName: string;
+  body: string;
+  createdAt: string;
+}
+
 export interface ExchangeTask {
   id: string;
   threadId: string;
@@ -270,6 +281,37 @@ export class ExchangeService {
     );
   }
 
+  assignRequest(
+    threadId: string,
+    requestId: string,
+    assigneeUserId: string
+  ): Observable<ApiResponse<ExchangeRequest>> {
+    return this.http.post<ApiResponse<ExchangeRequest>>(
+      `${this.baseUrl}/${threadId}/requests/${requestId}/assign`,
+      { assigneeUserId }
+    );
+  }
+
+  listRequestComments(
+    threadId: string,
+    requestId: string
+  ): Observable<ApiResponse<ExchangeRequestComment[]>> {
+    return this.http.get<ApiResponse<ExchangeRequestComment[]>>(
+      `${this.baseUrl}/${threadId}/requests/${requestId}/comments`
+    );
+  }
+
+  addRequestComment(
+    threadId: string,
+    requestId: string,
+    body: string
+  ): Observable<ApiResponse<ExchangeRequestComment>> {
+    return this.http.post<ApiResponse<ExchangeRequestComment>>(
+      `${this.baseUrl}/${threadId}/requests/${requestId}/comments`,
+      { body }
+    );
+  }
+
   listTasks(threadId: string): Observable<ApiResponse<ExchangeTask[]>> {
     return this.http.get<ApiResponse<ExchangeTask[]>>(`${this.baseUrl}/${threadId}/tasks`);
   }
@@ -296,11 +338,17 @@ export class ExchangeService {
     return this.http.get<ApiResponse<ExchangeDocument[]>>(`${this.baseUrl}/${threadId}/documents`);
   }
 
-  uploadDocument(threadId: string, file: File, messageId?: string): Observable<ApiResponse<ExchangeDocument>> {
+  uploadDocument(
+    threadId: string,
+    file: File,
+    messageId?: string,
+    requestId?: string
+  ): Observable<ApiResponse<ExchangeDocument>> {
     const form = new FormData();
     form.append('file', file, file.name);
     let params = new HttpParams();
     if (messageId) params = params.set('messageId', messageId);
+    if (requestId) params = params.set('requestId', requestId);
     return this.http.post<ApiResponse<ExchangeDocument>>(
       `${this.baseUrl}/${threadId}/documents`,
       form,

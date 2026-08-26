@@ -16,5 +16,8 @@ public sealed class ExchangeEnumContractTests
         Assert.Equal(1, (int)ExchangeThreadStatus.Closed);
         Assert.Equal(0, (int)ExchangeMessageVisibility.ClientVisible);
         Assert.Equal(1, (int)ExchangeMessageVisibility.InternalNote);
+        Assert.Equal(12, (int)ExchangeAuditEventType.RequestCommented);
+        Assert.Equal(13, (int)ExchangeAuditEventType.RequestAssigned);
+        Assert.Equal(10, (int)NotificationType.ExchangeRequestCommented);
     }
 }

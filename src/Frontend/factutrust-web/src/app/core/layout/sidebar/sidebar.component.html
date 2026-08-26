@@ -102,7 +102,9 @@
 
               [attr.data-tour]="item.tourId ? 'nav-' + item.tourId : null"
 
-              [attr.title]="item.label">
+              [attr.title]="item.label"
+
+              (click)="onRouteNavClick(item.route, $event)">
 
               @if (item.railIconAsset) {
 
@@ -290,7 +292,9 @@
 
                   class="delegated-footer-link"
 
-                  [attr.title]="item.label">
+                  [attr.title]="item.label"
+
+                  (click)="onRouteNavClick(item.route, $event)">
 
                   @if (item.icon) {
 
@@ -370,7 +374,9 @@
 
                           [routerLinkActiveOptions]="{ exact: false }"
 
-                          class="delegated-footer-sublink">
+                          class="delegated-footer-sublink"
+
+                          (click)="onRouteNavClick(child.route, $event)">
 
                           <span>{{ child.label }}</span>
 
@@ -476,7 +482,9 @@
 
                       [routerLinkActiveOptions]="{ exact: false }"
 
-                      class="submenu-link">
+                      class="submenu-link"
+
+                      (click)="onRouteNavClick(child.route, $event)">
 
                       @if (child.icon) {
 

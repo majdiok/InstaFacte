@@ -25,6 +25,7 @@ Ce guide est conçu pour les **utilisateurs novices** et les **personnes non-inf
 | [09 - Paramètres](09-parametres.md) | Profil, entreprise, abonnement |
 | [10 - Projets](10-projets.md) | Affaires, tâches, temps, régie ESN, situations BTP |
 | [11 - Contrats récurrents](11-contrats-recurrents.md) | Abonnements B2B, facturation périodique, usage, prorata |
+| [12 - Point de vente](12-pos.md) | Caisse POS, à terme, avoir, clôture Z, multi-caisse |
 | [Glossaire](glossaire.md) | Définitions des termes utilisés |
 
 ---

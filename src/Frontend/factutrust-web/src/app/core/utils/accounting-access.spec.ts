@@ -1,4 +1,4 @@
-import { canDeleteDraftAccountingEntries, canValidateAccountingEntries } from './accounting-access';
+import { canDeleteDraftAccountingEntries, canEditDraftAccountingEntries, canValidateAccountingEntries } from './accounting-access';
 import { PERMISSIONS } from '@core/config/permission-keys';
 import type { AuthService } from '@core/services/auth.service';
 
@@ -103,5 +103,37 @@ describe('accounting-access', () => {
       isAccountingFirm: true,
       isDelegatedMode: true
     }))).toBe(false);
+  });
+
+  it('canEditDraftAccountingEntries returns false for company users', () => {
+    expect(canEditDraftAccountingEntries(mockAuth({
+      perms: [PERMISSIONS.accounting.create],
+      isAccountingFirm: false,
+      isDelegatedMode: false
+    }))).toBe(false);
+  });
+
+  it('canEditDraftAccountingEntries returns false for accounting firm in native mode', () => {
+    expect(canEditDraftAccountingEntries(mockAuth({
+      perms: [PERMISSIONS.accounting.create],
+      isAccountingFirm: true,
+      isDelegatedMode: false
+    }))).toBe(false);
+  });
+
+  it('canEditDraftAccountingEntries returns false for delegated firm without accounting:create', () => {
+    expect(canEditDraftAccountingEntries(mockAuth({
+      perms: [PERMISSIONS.accounting.read],
+      isAccountingFirm: true,
+      isDelegatedMode: true
+    }))).toBe(false);
+  });
+
+  it('canEditDraftAccountingEntries returns true for delegated firm with accounting:create', () => {
+    expect(canEditDraftAccountingEntries(mockAuth({
+      perms: [PERMISSIONS.accounting.create],
+      isAccountingFirm: true,
+      isDelegatedMode: true
+    }))).toBe(true);
   });
 });

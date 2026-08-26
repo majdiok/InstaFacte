@@ -35,6 +35,8 @@ public sealed record ClientListDto
     public bool IsActive { get; init; }
     public int TotalInvoices { get; init; }
     public decimal TotalRevenue { get; init; }
+    public decimal? CreditLimit { get; init; }
+    public int? DefaultPaymentTermDays { get; init; }
 }
 
 /// <summary>

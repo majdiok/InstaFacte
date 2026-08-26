@@ -96,4 +96,79 @@ public sealed class NotificationServiceTests
         Assert.Equal(1, await service.GetUnreadCountAsync(TenantA, "FirmAccountant"));
         Assert.Equal(1, await service.GetUnreadCountAsync(TenantB, "Administrator"));
     }
+
+    [Fact]
+    public async Task User_targeted_notification_is_visible_only_to_that_user()
+    {
+        await using var db = BuildMaster();
+        var service = new NotificationService(db);
+        var collabA = Guid.Parse("aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa");
+        var collabB = Guid.Parse("bbbbbbbb-1111-1111-1111-bbbbbbbbbbbb");
+
+        await service.CreateAsync(
+            TenantA, null, NotificationType.ExchangeRequestCreated, "Demande", "Corps",
+            "/firm/exchanges/x?tab=demandes", collabA, CancellationToken.None);
+
+        Assert.Equal(1, await service.GetUnreadCountAsync(TenantA, "FirmAccountant", collabA));
+        Assert.Equal(0, await service.GetUnreadCountAsync(TenantA, "FirmAccountant", collabB));
+        Assert.Equal(0, await service.GetUnreadCountAsync(TenantA, "FirmManager", currentUserId: null));
+        Assert.Equal(0, await service.GetUnreadCountAsync(TenantA, "FirmManager", collabB));
+
+        var listA = await service.GetListAsync(TenantA, "FirmAccountant", false, 1, 10, collabA);
+        Assert.Single(listA.Items);
+        var listB = await service.GetListAsync(TenantA, "FirmAccountant", false, 1, 10, collabB);
+        Assert.Empty(listB.Items);
+    }
+
+    [Fact]
+    public async Task MarkRead_of_user_targeted_notification_is_fail_closed_for_other_user()
+    {
+        await using var db = BuildMaster();
+        var service = new NotificationService(db);
+        var collabA = Guid.Parse("aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa");
+        var collabB = Guid.Parse("bbbbbbbb-1111-1111-1111-bbbbbbbbbbbb");
+
+        await service.CreateAsync(
+            TenantA, null, NotificationType.ExchangeDocumentShared, "Doc", "fichier.pdf",
+            "/firm/exchanges/x?tab=documents", collabA, CancellationToken.None);
+        var id = (await service.GetListAsync(TenantA, "FirmAccountant", false, 1, 10, collabA)).Items[0].Id;
+
+        Assert.True((await service.MarkReadAsync(TenantA, "FirmAccountant", id, collabB)).IsFailure);
+        Assert.True((await service.MarkReadAsync(TenantA, "FirmAccountant", id, currentUserId: null)).IsFailure);
+        Assert.True((await service.MarkReadAsync(TenantA, "FirmAccountant", id, collabA)).IsSuccess);
+        Assert.Equal(0, await service.GetUnreadCountAsync(TenantA, "FirmAccountant", collabA));
+    }
+
+    [Fact]
+    public async Task MarkAllRead_does_not_mark_another_users_targeted_notification()
+    {
+        await using var db = BuildMaster();
+        var service = new NotificationService(db);
+        var collabA = Guid.Parse("aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa");
+        var collabB = Guid.Parse("bbbbbbbb-1111-1111-1111-bbbbbbbbbbbb");
+
+        await service.CreateAsync(
+            TenantA, null, NotificationType.ExchangeTaskCreated, "Tâche", "Corps",
+            "/firm/exchanges/x?tab=taches", collabA, CancellationToken.None);
+        await service.CreateAsync(
+            TenantA, "FirmAccountant", NotificationType.FirmAssignmentRequested, "Rôle accountant", "Corps");
+
+        await service.MarkAllReadAsync(TenantA, "FirmAccountant", collabB);
+
+        Assert.Equal(1, await service.GetUnreadCountAsync(TenantA, "FirmAccountant", collabA));
+        Assert.Equal(0, await service.GetUnreadCountAsync(TenantA, "FirmAccountant", collabB));
+    }
+
+    [Fact]
+    public async Task Role_targeted_notification_without_user_id_still_scopes_by_role()
+    {
+        await using var db = BuildMaster();
+        var service = new NotificationService(db);
+        var managerId = Guid.Parse("cccccccc-1111-1111-1111-cccccccccccc");
+
+        await service.CreateAsync(TenantA, "FirmManager", NotificationType.FirmAssignmentRequested, "Liaison", "Corps");
+
+        Assert.Equal(1, await service.GetUnreadCountAsync(TenantA, "FirmManager", managerId));
+        Assert.Equal(0, await service.GetUnreadCountAsync(TenantA, "FirmAccountant", managerId));
+    }
 }

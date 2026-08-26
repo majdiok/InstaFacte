@@ -31,39 +31,44 @@ interface CategoryTab {
     <div class="catalog">
       <!-- Search -->
       <div class="catalog__search">
-        <div class="catalog__search-input-wrapper">
-          <i class="pi pi-search catalog__search-icon"></i>
-          <input
-            #searchInput
-            type="text"
-            class="catalog__search-input"
-            placeholder="Rechercher un produit (F2)"
-            [ngModel]="searchQuery()"
-            (ngModelChange)="onSearchChange($event)"
-            (keydown.enter)="onSearchEnter($event)"
-            aria-label="Rechercher un produit" />
-          @if (searchQuery()) {
-            <button class="catalog__search-clear" (click)="clearSearch()" [attr.aria-label]="'Effacer la recherche'">
-              <i class="pi pi-times"></i>
-            </button>
-          }
-          @if (isSpeechSupported()) {
+        <div class="catalog__search-row">
+          <div class="catalog__search-input-wrapper">
+            <i class="pi pi-search catalog__search-icon"></i>
+            <input
+              #searchInput
+              type="text"
+              class="catalog__search-input"
+              placeholder="Rechercher un produit (F2)"
+              [ngModel]="searchQuery()"
+              (ngModelChange)="onSearchChange($event)"
+              (keydown.enter)="onSearchEnter($event)"
+              aria-label="Rechercher un produit" />
+            @if (searchQuery()) {
+              <button class="catalog__search-clear" (click)="clearSearch()" [attr.aria-label]="'Effacer la recherche'">
+                <i class="pi pi-times"></i>
+              </button>
+            }
+          </div>
+          <div class="catalog__search-actions">
+            @if (isSpeechSupported()) {
+              <button
+                type="button"
+                class="catalog__search-voice"
+                [class.catalog__search-voice--listening]="listening()"
+                (click)="toggleVoiceSearch()"
+                [attr.aria-label]="listening() ? 'Arreter la recherche vocale' : 'Recherche vocale'">
+                <i class="pi" [class.pi-microphone]="!listening()" [class.pi-stop]="listening()"></i>
+              </button>
+            }
             <button
               type="button"
-              class="catalog__search-voice"
-              [class.catalog__search-voice--listening]="listening()"
-              (click)="toggleVoiceSearch()"
-              [attr.aria-label]="listening() ? 'Arreter la recherche vocale' : 'Recherche vocale'">
-              <i class="pi" [class.pi-microphone]="!listening()" [class.pi-stop]="listening()"></i>
+              class="catalog__variant-btn"
+              (click)="variantPickerVisible = true"
+              title="Choisir une variante"
+              aria-label="Choisir une variante">
+              <i class="pi pi-th-large"></i>
             </button>
-          }
-          <button
-            type="button"
-            class="catalog__variant-btn"
-            (click)="variantPickerVisible = true"
-            title="Choisir une variante">
-            <i class="pi pi-th-large"></i>
-          </button>
+          </div>
         </div>
       </div>
 
@@ -207,15 +212,30 @@ interface CategoryTab {
       flex-shrink: 0;
     }
 
+    .catalog__search-row {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-2);
+    }
+
     .catalog__search-input-wrapper {
       position: relative;
       display: flex;
       align-items: center;
+      flex: 1;
+      min-width: 0;
       background: var(--color-white);
       border-radius: 24px;
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(0, 0, 0, 0.04);
       padding: 0 var(--spacing-2);
       transition: box-shadow 300ms ease;
+    }
+
+    .catalog__search-actions {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-2);
+      flex-shrink: 0;
     }
 
     .catalog__search-input-wrapper:focus-within {
@@ -234,7 +254,7 @@ interface CategoryTab {
     .catalog__search-input {
       width: 100%;
       height: 52px;
-      padding: 0 var(--spacing-12) 0 3.5rem;
+      padding: 0 var(--spacing-10) 0 3.5rem;
       border: none;
       border-radius: 20px;
       font-size: var(--font-size-base);
@@ -260,7 +280,7 @@ interface CategoryTab {
 
     .catalog__search-clear {
       position: absolute;
-      right: var(--spacing-2);
+      right: var(--spacing-3);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -284,15 +304,15 @@ interface CategoryTab {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 36px;
-      height: 36px;
-      margin-left: var(--spacing-1);
+      width: 40px;
+      height: 40px;
       border: none;
       border-radius: var(--radius-lg);
       background: var(--color-neutral-100);
       color: var(--color-text-secondary);
       cursor: pointer;
       transition: all 200ms ease;
+      flex-shrink: 0;
     }
 
     .catalog__search-voice:hover {
@@ -320,6 +340,30 @@ interface CategoryTab {
         opacity: 1;
         transform: rotate(0);
       }
+    }
+
+    .catalog__variant-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      border: none;
+      border-radius: var(--radius-lg);
+      background: var(--color-neutral-100);
+      color: var(--color-text-secondary);
+      cursor: pointer;
+      transition: all 200ms ease;
+      flex-shrink: 0;
+    }
+
+    .catalog__variant-btn:hover {
+      background: var(--color-primary-100);
+      color: var(--color-primary-600);
+    }
+
+    .catalog__variant-btn i {
+      font-size: 1rem;
     }
 
     @media (max-width: 1024px) {
@@ -359,7 +403,8 @@ interface CategoryTab {
       display: flex;
       align-items: center;
       gap: var(--spacing-2);
-      height: 38px;
+      min-height: 40px;
+      height: 40px;
       padding: 0 var(--spacing-4);
       border: 1px solid var(--color-border-default);
       border-radius: var(--radius-full);
@@ -440,7 +485,7 @@ interface CategoryTab {
 
     .catalog__grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
       gap: var(--spacing-5);
     }
 

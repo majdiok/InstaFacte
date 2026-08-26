@@ -1,4 +1,4 @@
-import { Component, signal, inject, computed, effect, OnInit, viewChild } from '@angular/core';
+import { Component, signal, inject, computed, effect, untracked, OnInit, viewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterModule, NavigationEnd } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -6,11 +6,12 @@ import { filter, map, startWith } from 'rxjs';
 import { SidebarComponent } from '../sidebar/sidebar.component';
 import { HeaderComponent } from '../header/header.component';
 import { SecondaryNavComponent } from '../secondary-nav/secondary-nav.component';
+import { WorkspaceTabBarComponent } from '../workspace-tab-bar/workspace-tab-bar.component';
 import { ChatPanelComponent } from '../../../features/ai-assistant/components/chat-panel/chat-panel.component';
 import { AuthService } from '../../services/auth.service';
+import { BreadcrumbService } from '../../services/breadcrumb.service';
 import { AiChatSessionService } from '../../../features/ai-assistant/services/ai-chat-session.service';
 import { AiAssistantShellService } from '../../../features/ai-assistant/services/ai-assistant-shell.service';
-import { AssistantAgentScope } from '../../../features/ai-assistant/models/ai-chat.models';
 import { resolveScopeFromUrl } from '../../../features/ai-assistant/config/agent-scopes.config';
 import { canUseAiAssistant } from '../../../features/ai-assistant/utils/ai-access.util';
 import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
@@ -31,6 +32,7 @@ import { ProductOnboardingApiService } from '../../onboarding/product-onboarding
     SidebarComponent,
     HeaderComponent,
     SecondaryNavComponent,
+    WorkspaceTabBarComponent,
     ChatPanelComponent,
     ProductTourHostComponent
   ],
@@ -55,57 +57,88 @@ import { ProductOnboardingApiService } from '../../onboarding/product-onboarding
               <app-secondary-nav />
             }
           }
+          @if (showWorkspaceTabBar()) {
+            <app-workspace-tab-bar
+              [workTitle]="aiAssistantShell.workTabTitle()"
+              [activePane]="aiAssistantShell.activePane()"
+              (selectPane)="onWorkspacePaneSelected($event)"
+              (closeAi)="onWorkspaceAiTabClose()" />
+          }
           <div
             class="midde_cont"
             [class.layout-full-width]="layoutFlags().fullWidth"
-            [class.layout-distraction-free]="layoutFlags().hideLayout">
-            <main
-              id="main-content"
-              [class.layout-full-width]="layoutFlags().fullWidth">
-              <router-outlet></router-outlet>
-            </main>
-            @if (hasAiAccess() && isAiAssistantRoute()) {
-              <app-chat-panel
-                [isOpen]="true"
-                [embedded]="true"
-                [agentScope]="routeAgentScope()"
-                (close)="onAiPanelClose()"
-              />
+            [class.layout-distraction-free]="layoutFlags().hideLayout"
+            [class.midde_cont--workspace]="showWorkspaceTabBar()">
+            @if (isAiAssistantRoute()) {
+              <main
+                id="main-content"
+                [class.layout-full-width]="layoutFlags().fullWidth">
+                <router-outlet></router-outlet>
+              </main>
+              @if (hasAiAccess()) {
+                <app-chat-panel
+                  [isOpen]="true"
+                  [embedded]="true"
+                  [workspaceTab]="false"
+                  [agentScope]="routeAgentScope()"
+                  (close)="onAiPanelClose()"
+                />
+              }
+            } @else {
+              <div
+                #workPane
+                id="workspace-panel-work"
+                class="workspace-pane workspace-pane--work"
+                role="tabpanel"
+                aria-labelledby="workspace-tab-work"
+                [hidden]="aiAssistantShell.activePane() === 'ai' && aiAssistantShell.aiTabOpen()"
+                [attr.inert]="aiAssistantShell.activePane() === 'ai' && aiAssistantShell.aiTabOpen() ? '' : null">
+                <main
+                  id="main-content"
+                  [class.layout-full-width]="layoutFlags().fullWidth">
+                  <router-outlet></router-outlet>
+                </main>
+              </div>
+              @if (hasAiAccess() && aiAssistantShell.aiTabOpen()) {
+                <div
+                  id="workspace-panel-ai"
+                  class="workspace-pane workspace-pane--ai"
+                  role="tabpanel"
+                  aria-labelledby="workspace-tab-ai"
+                  [hidden]="aiAssistantShell.activePane() !== 'ai'"
+                  [attr.inert]="aiAssistantShell.activePane() !== 'ai' ? '' : null">
+                  <app-chat-panel
+                    [isOpen]="true"
+                    [embedded]="true"
+                    [workspaceTab]="true"
+                    [agentScope]="aiAssistantShell.workspaceTabScope()"
+                    (close)="onWorkspaceAiTabClose()"
+                  />
+                </div>
+              }
             }
+          </div>
         </div>
       </div>
       <app-product-tour-host />
     </div>
 
-      @if (hasAiAccess() && !isAiAssistantRoute() && !layoutFlags().hideLayout && !drawerOverlay.isOpen()) {
-        <button
-          class="ai-fab"
-          data-tour="ai-fab"
-          type="button"
-          (click)="toggleAiPanel()"
-          [hidden]="tourRunning()"
-          [attr.inert]="tourRunning() ? '' : null"
-          [class.active]="aiPanelOpen()"
-          title="Assistant IA">
-          @if (aiPanelOpen()) {
-            <i class="fa-solid fa-xmark"></i>
-          } @else {
-            <img
-              [src]="aiMarkSrc"
-              alt=""
-              class="ai-fab-mark"
-              aria-hidden="true" />
-          }
-        </button>
-
-        <app-chat-panel
-          [isOpen]="aiPanelOpen()"
-          [embedded]="false"
-          [agentScope]="floatingPanelScope()"
-          (close)="onAiPanelClose()"
-        />
-      }
-    </div>
+    @if (showAiFab()) {
+      <button
+        class="ai-fab"
+        data-tour="ai-fab"
+        type="button"
+        (click)="openAiWorkspaceTab()"
+        [hidden]="tourRunning()"
+        [attr.inert]="tourRunning() ? '' : null"
+        title="Assistant IA">
+        <img
+          [src]="aiMarkSrc"
+          alt=""
+          class="ai-fab-mark"
+          aria-hidden="true" />
+      </button>
+    }
   `,
   styles: [`
     .full_container {
@@ -140,6 +173,40 @@ import { ProductOnboardingApiService } from '../../onboarding/product-onboarding
       background-color: #fff;
       border-top-left-radius: 16px;
       box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
+    }
+
+    .midde_cont--workspace {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding-bottom: 0;
+    }
+
+    .workspace-pane {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .workspace-pane--work {
+      overflow-y: auto;
+      padding-bottom: var(--spacing-6);
+    }
+
+    .workspace-pane--ai {
+      overflow: hidden;
+      padding: 0 var(--shell-content-padding-inline) var(--spacing-4);
+    }
+
+    .workspace-pane--ai > app-chat-panel {
+      flex: 1 1 auto;
+      min-height: 0;
+      height: 100%;
+    }
+
+    .workspace-pane[hidden] {
+      display: none !important;
     }
 
     main#main-content {
@@ -210,6 +277,11 @@ import { ProductOnboardingApiService } from '../../onboarding/product-onboarding
       .midde_cont.layout-full-width {
         padding: 0;
       }
+
+      .workspace-pane--ai {
+        padding: 0 var(--spacing-4) var(--spacing-4);
+      }
+
       .ai-fab {
         bottom: 16px;
         right: 16px;
@@ -227,12 +299,14 @@ import { ProductOnboardingApiService } from '../../onboarding/product-onboarding
 export class MainLayoutComponent implements OnInit {
   readonly aiMarkSrc = AI_ASSISTANT_MARK_SRC;
   private readonly sidebar = viewChild(SidebarComponent);
+  private readonly workPane = viewChild<ElementRef<HTMLElement>>('workPane');
   private readonly tourLayout = inject(ProductTourLayoutBridge);
 
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly aiSession = inject(AiChatSessionService);
-  private readonly aiAssistantShell = inject(AiAssistantShellService);
+  readonly aiAssistantShell = inject(AiAssistantShellService);
+  private readonly breadcrumb = inject(BreadcrumbService);
   private readonly layoutRoute = inject(LayoutRouteService);
   private readonly firmContext = inject(FirmContextService);
   readonly appNav = inject(AppNavService);
@@ -255,46 +329,81 @@ export class MainLayoutComponent implements OnInit {
     { initialValue: this.router.url }
   );
 
-  readonly isAiAssistantRoute = computed(() => this.routerUrl().includes('/ai-assistant'));
+  readonly isAiAssistantRoute = computed(() => this.aiAssistantShell.isAiAssistantRoute(this.routerUrl()));
 
-  /** Scope expert dérivé de la route (pages dédiées /ai-assistant/<slug> et modules). */
   readonly routeAgentScope = computed(() =>
     resolveScopeFromUrl(this.routerUrl(), {
       firmDelegated: this.auth.isAccountingFirm() && this.auth.isDelegatedMode()
     })
   );
 
-  /**
-   * Scope de la bulle flottante : suit la route uniquement quand la bulle est FERMÉE — le scope
-   * d'une conversation en cours ne change jamais sous les pieds de l'utilisateur.
-   */
-  readonly floatingPanelScope = signal<AssistantAgentScope>(AssistantAgentScope.None);
+  readonly showWorkspaceTabBar = computed(
+    () =>
+      this.hasAiAccess() &&
+      this.aiAssistantShell.aiTabOpen() &&
+      !this.isAiAssistantRoute() &&
+      !this.layoutFlags().hideLayout
+  );
+
+  readonly showAiFab = computed(
+    () =>
+      this.hasAiAccess() &&
+      !this.isAiAssistantRoute() &&
+      !this.layoutFlags().hideLayout &&
+      !this.drawerOverlay.isOpen() &&
+      (!this.aiAssistantShell.aiTabOpen() || this.aiAssistantShell.activePane() !== 'ai')
+  );
 
   sidebarCollapsed = signal(false);
-  aiPanelOpen = signal(false);
 
   constructor() {
     this.tourLayout.expandSidebar = () => this.expandSidebar();
-    this.tourLayout.closeAiPanel = () => this.aiPanelOpen.set(false);
+    this.tourLayout.closeAiPanel = () => {
+      this.aiAssistantShell.closeAiTab();
+    };
     this.tourLayout.expandNavSection = tourId => this.sidebar()?.expandSectionForTour(tourId) ?? null;
     this.tourLayout.restoreNavSection = label => this.sidebar()?.restoreSectionAfterTour(label);
     this.tourLayout.hasNavItems = () => this.appNav.navItems().length > 0;
 
     effect(() => {
       if (this.isAiAssistantRoute()) {
-        this.aiPanelOpen.set(false);
+        this.aiAssistantShell.resetWorkspaceTabForDedicatedRoute();
       }
     });
+
+    // Sync layout context only when openPanelTick increments (not on navigation after close).
     effect(() => {
       const tick = this.aiAssistantShell.openPanelTick();
-      if (tick > 0 && this.hasAiAccess()) {
-        this.aiPanelOpen.set(true);
+      if (tick <= 0) {
+        return;
+      }
+      untracked(() => {
+        if (!this.hasAiAccess() || this.isAiAssistantRoute()) {
+          return;
+        }
+        this.aiAssistantShell.openAiGeneralTab({
+          url: this.routerUrl(),
+          firmDelegated: this.isFirmDelegatedLayout()
+        });
+      });
+    });
+
+    effect(() => {
+      const url = this.routerUrl();
+      if (this.isAiAssistantRoute()) {
+        return;
+      }
+      this.aiAssistantShell.syncSuggestedScopeFromUrl(url, this.isFirmDelegatedLayout());
+      this.updateWorkTabTitle();
+      if (!this.isAiAssistantRoute()) {
+        this.aiAssistantShell.activateWorkPane();
       }
     });
+
     effect(() => {
-      const suggested = this.routeAgentScope();
-      if (!this.aiPanelOpen()) {
-        this.floatingPanelScope.set(suggested);
+      const pane = this.aiAssistantShell.activePane();
+      if (pane === 'work' && this.aiAssistantShell.aiTabOpen()) {
+        queueMicrotask(() => this.notifyWorkPaneResize());
       }
     });
   }
@@ -304,6 +413,7 @@ export class MainLayoutComponent implements OnInit {
     if (this.hasAiAccess()) {
       this.aiSession.initialize();
     }
+    this.updateWorkTabTitle();
   }
 
   toggleSidebar(): void {
@@ -314,19 +424,46 @@ export class MainLayoutComponent implements OnInit {
     this.sidebarCollapsed.set(false);
   }
 
-  toggleAiPanel(): void {
-    this.aiPanelOpen.update(v => !v);
+  openAiWorkspaceTab(): void {
+    this.aiAssistantShell.requestOpenPanel({
+      url: this.routerUrl(),
+      firmDelegated: this.isFirmDelegatedLayout()
+    });
+  }
+
+  onWorkspacePaneSelected(pane: 'work' | 'ai'): void {
+    if (pane === 'work') {
+      this.aiAssistantShell.activateWorkPane();
+    } else {
+      this.aiAssistantShell.activateAiPane();
+    }
+  }
+
+  onWorkspaceAiTabClose(): void {
+    this.aiAssistantShell.closeAiTab();
   }
 
   onAiPanelClose(): void {
     if (this.isAiAssistantRoute()) {
       void this.router.navigate(['/dashboard']);
     } else {
-      this.aiPanelOpen.set(false);
+      this.onWorkspaceAiTabClose();
     }
   }
 
   hasAiAccess(): boolean {
     return canUseAiAssistant(this.auth);
+  }
+
+  private updateWorkTabTitle(): void {
+    const items = this.breadcrumb.items();
+    const last = items.length > 0 ? items[items.length - 1]?.label : 'Accueil';
+    this.aiAssistantShell.setWorkTabTitle(last ?? 'Accueil');
+  }
+
+  private notifyWorkPaneResize(): void {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('resize'));
+    }
   }
 }

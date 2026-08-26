@@ -346,118 +346,23 @@
             }
 
             @if (activeTab() === 'demandes') {
-              <div class="panel">
-                <div class="panel__toolbar">
-                  <h3>Demandes & réclamations</h3>
-                  @if (isOpen(thread.status)) {
-                    <app-button
-                      variant="primary"
-                      size="sm"
-                      icon="pi-plus"
-                      (clicked)="showNewRequest.set(true)"
-                    >
-                      Nouvelle demande
-                    </app-button>
-                  }
-                </div>
-                @if (showNewRequest()) {
-                  <div class="form-card">
-                    <div class="ft-field">
-                      <label for="req-title">Titre</label>
-                      <input
-                        id="req-title"
-                        [ngModel]="newRequestTitle()"
-                        (ngModelChange)="newRequestTitle.set($event)"
-                      />
-                    </div>
-                    <div class="ft-field">
-                      <label for="req-desc">Description</label>
-                      <textarea
-                        id="req-desc"
-                        rows="3"
-                        [ngModel]="newRequestDescription()"
-                        (ngModelChange)="newRequestDescription.set($event)"
-                      ></textarea>
-                    </div>
-                    <div class="ft-field">
-                      <label for="req-cat">Catégorie</label>
-                      <select
-                        id="req-cat"
-                        [ngModel]="newRequestCategory()"
-                        (ngModelChange)="setNewRequestCategory($event)"
-                      >
-                        <option [ngValue]="0">Réclamation</option>
-                        <option [ngValue]="1">Information</option>
-                        <option [ngValue]="2">Document manquant</option>
-                        <option [ngValue]="3">Autre</option>
-                      </select>
-                    </div>
-                    <div class="row">
-                      <app-button variant="primary" size="sm" (clicked)="createRequest()">Créer</app-button>
-                      <app-button variant="ghost" size="sm" (clicked)="showNewRequest.set(false)">
-                        Annuler
-                      </app-button>
-                    </div>
-                  </div>
-                }
-                @if (requests().length === 0 && !showNewRequest()) {
-                  <app-empty-state
-                    icon="pi-clipboard"
-                    title="Aucune demande"
-                    description="Créez une demande ou une réclamation pour suivre un besoin."
-                    [showAction]="isOpen(thread.status)"
-                    actionLabel="Nouvelle demande"
-                    (actionClick)="showNewRequest.set(true)"
-                  />
-                } @else {
-                  <ul class="req-list">
-                    @for (r of requests(); track r.id) {
-                      <li class="req-item">
-                        <div class="req-item__header">
-                          <strong>#{{ r.number }} — {{ r.title }}</strong>
-                          <app-status-badge
-                            [status]="requestBadge(r.status)"
-                            [label]="requestStatusLabel(r.status)"
-                          />
-                        </div>
-                        <div class="meta">{{ categoryLabel(r.category) }}</div>
-                        @if (r.description) {
-                          <p class="req-item__desc">{{ r.description }}</p>
-                        }
-                        @if (isOpen(thread.status) && isReqActionable(r.status)) {
-                          <div class="row req-item__actions">
-                            @if (isReqOpen(r.status)) {
-                              <app-button
-                                variant="primary"
-                                size="sm"
-                                (clicked)="changeRequestStatus(r, 'InProgress')"
-                              >
-                                Prendre en charge
-                              </app-button>
-                            }
-                            @if (canResolveReq(r.status)) {
-                              <app-button
-                                variant="secondary"
-                                size="sm"
-                                (clicked)="changeRequestStatus(r, 'Resolved')"
-                              >
-                                Résoudre
-                              </app-button>
-                            }
-                            <app-button
-                              variant="ghost"
-                              size="sm"
-                              (clicked)="changeRequestStatus(r, 'Closed')"
-                            >
-                              Clore
-                            </app-button>
-                          </div>
-                        }
-                      </li>
-                    }
-                  </ul>
-                }
-              </div>
+              <app-exchange-requests-panel
+                [thread]="thread"
+                [threadOpen]="isOpen(thread.status)"
+                [isFirm]="isFirm()"
+                [requests]="requests()"
+                [documents]="documents()"
+                [history]="history()"
+                [participants]="thread.participants"
+                [openCreateForm]="showNewRequest()"
+                [selectedRequestId]="selectedRequestId()"
+                (openCreateFormChange)="showNewRequest.set($event)"
+                (selectedChange)="selectRequest($event)"
+                (created)="onRequestCreated($event)"
+                (statusChanged)="onRequestUpdated($event)"
+                (assigned)="onRequestUpdated($event)"
+                (uploaded)="onRequestDocumentUploaded($event)"
+              />
             }
 
             @if (activeTab() === 'taches') {

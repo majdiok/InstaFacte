@@ -3,7 +3,7 @@ using FactuTrust.Domain.Common;
 namespace FactuTrust.Domain.Entities;
 
 /// <summary>
-/// Physical or logical cash drawer, typically one per warehouse in Lot 1.
+/// Physical or logical cash drawer. Several per warehouse, one default.
 /// </summary>
 public sealed class CashRegister : AggregateRoot
 {
@@ -15,10 +15,11 @@ public sealed class CashRegister : AggregateRoot
     public Guid WarehouseId { get; private set; }
     public Warehouse Warehouse { get; private set; } = null!;
     public bool IsActive { get; private set; }
+    public bool IsDefault { get; private set; }
 
     private CashRegister() { }
 
-    public static Result<CashRegister> Create(string code, string name, Guid warehouseId)
+    public static Result<CashRegister> Create(string code, string name, Guid warehouseId, bool isDefault = true)
     {
         if (warehouseId == Guid.Empty)
             return Result.Failure<CashRegister>(
@@ -47,7 +48,8 @@ public sealed class CashRegister : AggregateRoot
             Code = codeTrimmed,
             Name = nameTrimmed,
             WarehouseId = warehouseId,
-            IsActive = true
+            IsActive = true,
+            IsDefault = isDefault
         };
 
         return Result.Success(register);
@@ -73,4 +75,8 @@ public sealed class CashRegister : AggregateRoot
     public void Deactivate() => IsActive = false;
 
     public void Activate() => IsActive = true;
+
+    public void MarkDefault() => IsDefault = true;
+
+    public void ClearDefault() => IsDefault = false;
 }

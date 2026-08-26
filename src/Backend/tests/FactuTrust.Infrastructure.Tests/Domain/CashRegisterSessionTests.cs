@@ -19,6 +19,7 @@ public sealed class CashRegisterTests
         Assert.Equal("Caisse principal", result.Value.Name);
         Assert.Equal(warehouseId, result.Value.WarehouseId);
         Assert.True(result.Value.IsActive);
+        Assert.True(result.Value.IsDefault);
     }
 
     [Fact]
@@ -61,6 +62,19 @@ public sealed class CashRegisterTests
     public void DefaultCodeForWarehouse_ShortCode_KeepsPrefix()
     {
         Assert.Equal("WH-PRIN", CashRegister.DefaultCodeForWarehouse("prin"));
+    }
+
+    [Fact]
+    public void MarkDefault_AndClearDefault_ToggleFlag()
+    {
+        var register = CashRegister.Create("WH-B", "Caisse B", Guid.NewGuid(), isDefault: false).Value;
+        Assert.False(register.IsDefault);
+
+        register.MarkDefault();
+        Assert.True(register.IsDefault);
+
+        register.ClearDefault();
+        Assert.False(register.IsDefault);
     }
 }
 

@@ -17,6 +17,8 @@ import { AppNavService } from '@core/services/app-nav.service';
 import { AuthService } from '@core/services/auth.service';
 import { FirmContextService } from '@core/services/firm-context.service';
 import { getNavIconKey } from '@core/utils/nav-icon-key.util';
+import { AiAssistantShellService } from '@features/ai-assistant/services/ai-assistant-shell.service';
+import { canUseAiAssistant } from '@features/ai-assistant/utils/ai-access.util';
 import {
   isNavChildActive,
   isNavRouteActive,
@@ -38,6 +40,7 @@ export class SecondaryNavComponent {
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly firmContext = inject(FirmContextService);
+  private readonly aiShell = inject(AiAssistantShellService);
 
   @ViewChildren(NgbDropdown) private readonly dropdowns!: QueryList<NgbDropdown>;
 
@@ -205,6 +208,9 @@ export class SecondaryNavComponent {
       return;
     }
     if (child.route) {
+      if (this.tryOpenWorkspaceAiRoute(child.route)) {
+        return;
+      }
       await this.router.navigateByUrl(child.route);
     }
   }
@@ -214,8 +220,21 @@ export class SecondaryNavComponent {
     this.closeAllDropdowns();
     this.closeSubmenu();
     if (section.route) {
+      if (this.tryOpenWorkspaceAiRoute(section.route)) {
+        return;
+      }
       await this.router.navigateByUrl(section.route);
     }
+  }
+
+  private tryOpenWorkspaceAiRoute(route: string): boolean {
+    if (!canUseAiAssistant(this.auth) || !this.aiShell.isWorkspaceAiRoute(route)) {
+      return false;
+    }
+    this.aiShell.openAiGeneralTabFromRoute(route, {
+      firmDelegated: this.isFirmDelegatedSkin()
+    });
+    return true;
   }
 
   private closeAllDropdowns(): void {

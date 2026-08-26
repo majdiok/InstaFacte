@@ -23,7 +23,7 @@ We persist a tenant cash-register model next to the existing invoice/payment/cas
 
 | Aggregate | Role |
 |---|---|
-| `CashRegister` | One default register per warehouse (`WH-{code}`, truncated to 20). |
+| `CashRegister` | One **default** register per warehouse (`WH-{code}`), plus optional extra registers. |
 | `CashRegisterSession` | Cashier shift (vacation). At most one **Open** session per register (filtered unique index). A second open is **idempotent** (return existing, do not change float). |
 | `ZReport` | Immutable JSON snapshot of the close (numbering `NumberingDocumentType.ZReport = 17`, appended, never reindexed). |
 | `PosCartDraft` | Server cart for the user + register. |
@@ -64,7 +64,7 @@ Positives:
 
 Trade-offs:
 
-- Lot 1 shares one register (and therefore one session) per warehouse;
+- N caisses par entrepôt, une seule défaut (`IsDefault`) ; l’API sans `cashRegisterId` vise la caisse défaut ;
 - `CashRegisterSession.Version` is **not** an EF concurrency token: double-close is prevented by the filtered unique Open index, unique `ZReport.CashRegisterSessionId`, and `GetOpen` returning null;
 - history chip « Cette session » intersects today's invoice list with X-report ids (cross-midnight approximation);
 - held tickets warn on close but do not block it.

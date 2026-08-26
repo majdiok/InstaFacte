@@ -25,19 +25,43 @@ import { StatusBadgeComponent, StatusBadgeStatus } from '@shared/components/stat
 import { RecordPaymentDialogComponent } from '@shared/components/record-payment-dialog/record-payment-dialog.component';
 import { InvoiceService, InvoiceDetail } from '@core/services/invoice.service';
 import { formatLocalDate } from '@core/utils/date.util';
-import { StockService, StockFeatures } from '@core/services/stock.service';
+import { ProductService } from '@core/services/product.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
+import {
+  StockService,
+  StockFeatures,
+  StockAvailabilityCheck,
+  ProductAvailabilityDetail
+} from '@core/services/stock.service';
 import { StockAllocationEditorComponent } from '@shared/components/stock-allocation-editor/stock-allocation-editor.component';
 import {
   AllocationRow,
-  buildAllocationPayload,
+  ExitLotAvailability,
+  LotStockValidity,
+  buildExitAllocationPayload,
   exitAllocationsValid,
+  exitTraceabilityReady,
+  lineMissingWarehouseLots,
+  lineMissingWarehouseSerials,
+  lineBlockedByExpiredLots,
   showLotSection,
   showSerialSection,
   createDefaultLotRow,
   createDefaultSerialRow,
-  TRACKING_MODE_SERIAL
+  coercePickingPolicy,
+  coerceTrackingMode,
+  TRACKING_MODE_SERIAL,
+  shouldBlockInvoiceValidateForStock
 } from '@shared/utils/stock-traceability.utils';
+import {
+  isValidateLineInsufficient as isValidateLineInsufficientFn,
+  isValidateLineWarning as isValidateLineWarningFn,
+  lineImpactDisplay,
+  LineImpactDisplay
+} from '@shared/utils/invoice-validate-display.utils';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { EMPTY, forkJoin, of } from 'rxjs';
+import { catchError, map, switchMap } from 'rxjs/operators';
 
 interface TimelineEvent {
   status: string;
@@ -405,46 +429,129 @@ interface TimelineEvent {
         header="Valider la facture"
         [(visible)]="showValidateDialog"
         [modal]="true"
-        [style]="{ width: '750px', maxWidth: '95vw' }"
+        styleClass="ft-dialog-scrollable"
+        [style]="{ width: '920px', maxWidth: '95vw' }"
         [draggable]="false"
-        [resizable]="false"
-        [contentStyle]="{ overflow: 'visible' }">
+        [resizable]="false">
         <p class="validate-dialog-hint">
           Confirmez la validation de {{ invoice()!.number }}. Sélectionnez les lots ou numéros de série si nécessaire.
         </p>
-        @if (needsStockAllocationOnValidate()) {
-          <table class="validate-lines-table">
-            <thead>
-              <tr>
-                <th>Produit</th>
-                <th class="text-right">Quantité</th>
-                <th>Traçabilité</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (lineForm of validateLineForms; track lineForm.lineId) {
-                <tr>
-                  <td>{{ lineForm.designation }}</td>
-                  <td class="text-right mono">{{ lineForm.quantity | number:'1.0-3' }}</td>
-                  <td>
-                    @if (showValidateLineTraceability(lineForm) && validateWarehouseId()) {
-                      <app-stock-allocation-editor
-                        mode="exit"
-                        [productId]="lineForm.productId"
-                        [warehouseId]="validateWarehouseId()!"
-                        [lineQuantity]="lineForm.quantity"
-                        [trackingMode]="lineForm.trackingMode"
-                        [pickingPolicy]="lineForm.pickingPolicy"
-                        [features]="stockFeatures()"
-                        [allocations]="lineForm.lotAllocations" />
-                    } @else {
-                      <span class="muted">—</span>
-                    }
-                  </td>
-                </tr>
+        @if (!invoice()!.isCreditNote) {
+          @if (validateWarehouseLabel()) {
+            <p class="validate-warehouse-banner">
+              Déduction de stock depuis : <strong>{{ validateWarehouseLabel() }}</strong>
+              @if (validateWarehouseIsDefault()) {
+                <span class="validate-default-badge">par défaut</span>
               }
-            </tbody>
-          </table>
+            </p>
+          }
+          @if (validateContextLoading()) {
+            <p class="validate-loading muted">
+              <i class="pi pi-spin pi-spinner"></i>
+              Vérification du stock…
+            </p>
+          } @else if (validateContextError()) {
+            <div class="validate-stock-alert validate-stock-alert--error" role="alert">
+              <i class="pi pi-exclamation-circle"></i>
+              <span>{{ validateContextError() }}</span>
+            </div>
+          } @else {
+            @if (validateStockBlocked()) {
+              <div class="validate-stock-alert validate-stock-alert--error" role="alert">
+                <i class="pi pi-times-circle"></i>
+                <div>
+                  <p>{{ validateStockCheck()?.summaryMessage || 'Aucun stock trouvé pour un produit dans cet entrepôt.' }}</p>
+                  <p>Ajoutez du stock dans cet entrepôt avant de valider.</p>
+                  <a routerLink="/stock" (click)="showValidateDialog = false">Ajouter du stock</a>
+                </div>
+              </div>
+            } @else if (hasMissingWarehouseLots()) {
+              <div class="validate-stock-alert validate-stock-alert--error" role="alert">
+                <i class="pi pi-times-circle"></i>
+                <div>
+                  @if (hasOnlyExpiredWarehouseLots()) {
+                    <p>Tous les lots disponibles sont périmés pour au moins un article suivi. Ils ne peuvent pas sortir.</p>
+                    <p>Choisissez un lot non périmé, ou réceptionnez un lot valide avant de valider.</p>
+                  } @else {
+                    <p>Le stock de cet entrepôt n'a pas de lots (ou de n° de série) pour au moins un article suivi.</p>
+                    <p>Réceptionnez d'abord le stock avec un n° de lot, ou faites un inventaire d'ouverture.</p>
+                  }
+                </div>
+              </div>
+            } @else if ((validateStockCheck()?.insufficientCount ?? 0) > 0) {
+              <div class="validate-stock-alert validate-stock-alert--warning" role="status">
+                <i class="pi pi-exclamation-triangle"></i>
+                <span>{{ validateStockCheck()?.summaryMessage }}</span>
+              </div>
+            }
+            @if (needsStockAllocationOnValidate()) {
+              <div class="validate-lines-table-wrap">
+                <table class="validate-lines-table" aria-label="Lignes à déduire du stock">
+                  <thead>
+                    <tr>
+                      <th>Produit</th>
+                      <th class="text-right">Quantité</th>
+                      <th class="text-right">Stock disponible</th>
+                      <th>Impact</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (lineForm of validateLineForms; track lineForm.lineId) {
+                      @let avail = lineAvailability(lineForm.productId);
+                      @let impact = lineImpact(lineForm.productId);
+                      <tr [class.validate-row-insufficient]="isValidateLineInsufficient(lineForm.productId)"
+                          [class.validate-row-warning]="isValidateLineWarning(lineForm.productId)">
+                        <td>{{ lineForm.designation }}</td>
+                        <td class="text-right mono">{{ lineForm.quantity | number:'1.0-3' }}</td>
+                        <td class="text-right mono">
+                          @if (avail && avail.isStockManaged) {
+                            {{ avail.availableQuantity | number:'1.0-3' }}
+                          } @else {
+                            —
+                          }
+                        </td>
+                        <td class="validate-line-impact"
+                            [class.validate-impact-error]="impact.tone === 'error'"
+                            [class.validate-impact-warning]="impact.tone === 'warning'">
+                          @if (impact.quantityKind === 'remaining') {
+                            Restera {{ impact.quantity | number:'1.0-3' }}
+                          } @else if (impact.quantityKind === 'available') {
+                            Stock insuffisant ({{ impact.quantity | number:'1.0-3' }} dispo)
+                          } @else {
+                            {{ impact.text }}
+                          }
+                        </td>
+                      </tr>
+                      @if (showValidateLineTraceability(lineForm) && validateEffectiveWarehouseId()) {
+                        <tr class="validate-alloc-row">
+                          <td colspan="4">
+                            <app-stock-allocation-editor
+                              mode="exit"
+                              [productId]="lineForm.productId"
+                              [warehouseId]="validateEffectiveWarehouseId()!"
+                              [lineQuantity]="lineForm.quantity"
+                              [trackingMode]="lineForm.trackingMode"
+                              [pickingPolicy]="lineForm.pickingPolicy"
+                              [hasExpiryTracking]="lineForm.hasExpiryTracking"
+                              [features]="stockFeatures()"
+                              [allocations]="lineForm.lotAllocations"
+                              (availabilityChange)="onValidateAllocAvailability($event)"
+                              (lotStockValidChange)="onValidateLotStockValid($event)" />
+                          </td>
+                        </tr>
+                      }
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+            @if (validateSubmitError()) {
+              <div class="validate-stock-alert validate-stock-alert--error" role="alert">
+                <i class="pi pi-exclamation-circle"></i>
+                <span>{{ validateSubmitError() }}</span>
+              </div>
+            }
+          }
         }
         <ng-template pTemplate="footer">
           <div class="dialog-footer">
@@ -969,6 +1076,65 @@ interface TimelineEvent {
       font-size: var(--font-size-sm);
     }
 
+    .validate-warehouse-banner {
+      margin: 0 0 0.75rem;
+      padding: var(--spacing-2) var(--spacing-3);
+      background: var(--color-background-subtle, #f8fafc);
+      border: 1px solid var(--color-border-subtle, #e2e8f0);
+      border-radius: var(--radius-md);
+      font-size: var(--font-size-sm);
+      color: var(--color-text-primary);
+    }
+
+    .validate-default-badge {
+      display: inline-block;
+      margin-left: 0.5rem;
+      padding: 0.1rem 0.45rem;
+      border-radius: var(--radius-md);
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-semibold);
+      text-transform: uppercase;
+      background: var(--color-primary-50, #eff6ff);
+      color: var(--color-primary-700, #1d4ed8);
+    }
+
+    .validate-loading {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin: 0 0 0.75rem;
+    }
+
+    .validate-stock-alert {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      margin: 0 0 0.75rem;
+      padding: var(--spacing-3);
+      border-radius: var(--radius-md);
+      font-size: var(--font-size-sm);
+
+      p { margin: 0 0 0.35rem; }
+      p:last-of-type { margin-bottom: 0.5rem; }
+      a { font-weight: var(--font-weight-semibold); }
+
+      &--error {
+        background: var(--color-error-50, #fef2f2);
+        border: 1px solid var(--color-error-200, #fecaca);
+        color: var(--color-error-700, #b91c1c);
+      }
+
+      &--warning {
+        background: var(--color-warning-50, #fffbeb);
+        border: 1px solid var(--color-warning-200, #fde68a);
+        color: var(--color-warning-800, #92400e);
+      }
+    }
+
+    .validate-lines-table-wrap {
+      overflow-x: auto;
+    }
+
     .validate-lines-table {
       width: 100%;
       border-collapse: collapse;
@@ -977,13 +1143,65 @@ interface TimelineEvent {
         padding: var(--spacing-3);
         border-bottom: 1px solid var(--color-border-subtle);
         font-size: var(--font-size-sm);
+        vertical-align: middle;
       }
 
       th {
         text-transform: uppercase;
         font-size: var(--font-size-xs);
+        letter-spacing: 0.05em;
         color: var(--color-text-secondary);
+        font-weight: var(--font-weight-semibold);
+        background: var(--color-background-subtle);
+        border-bottom: 2px solid var(--color-border-default, var(--color-border-subtle));
       }
+
+      th.text-right, td.text-right { text-align: right; }
+      .mono { font-family: 'JetBrains Mono', monospace; }
+
+      td:nth-child(2),
+      td:nth-child(3),
+      th:nth-child(2),
+      th:nth-child(3) {
+        width: 7rem;
+        white-space: nowrap;
+      }
+
+      td:nth-child(4),
+      th:nth-child(4) {
+        min-width: 8rem;
+      }
+
+      tr.validate-alloc-row td {
+        background: var(--color-background-subtle);
+        padding: var(--spacing-2) var(--spacing-3);
+        vertical-align: top;
+      }
+
+      @media (max-width: 640px) {
+        min-width: 32rem;
+      }
+    }
+
+    .validate-line-impact {
+      color: var(--color-text-secondary);
+    }
+
+    .validate-impact-error {
+      color: var(--color-error-700, #b91c1c);
+      font-weight: var(--font-weight-semibold);
+    }
+
+    .validate-impact-warning {
+      color: var(--color-warning-800, #92400e);
+    }
+
+    .validate-row-insufficient td {
+      background: var(--color-error-50, #fef2f2);
+    }
+
+    .validate-row-warning td {
+      background: var(--color-warning-50, #fffbeb);
     }
 
     .dialog-footer {
@@ -1060,12 +1278,14 @@ export class InvoiceDetailComponent implements OnInit {
   private toastService = inject(ToastService);
   private readonly auth = inject(AuthService);
   private stockService = inject(StockService);
+  private productService = inject(ProductService);
+  private errorHandler = inject(ErrorHandlerService);
   private destroyRef = inject(DestroyRef);
 
   loading = signal(true);
   invoice = signal<InvoiceDetail | null>(null);
   stockFeatures = signal<StockFeatures | null>(null);
-  traceabilityByProduct = signal<Map<string, { trackingMode: number; pickingPolicy: number }>>(new Map());
+  traceabilityByProduct = signal<Map<string, { trackingMode: number; pickingPolicy: number; hasExpiryTracking: boolean }>>(new Map());
 
   showValidateDialog = false;
   validateLineForms: Array<{
@@ -1075,10 +1295,23 @@ export class InvoiceDetailComponent implements OnInit {
     quantity: number;
     trackingMode: number;
     pickingPolicy: number;
+    hasExpiryTracking: boolean;
     lotAllocations: AllocationRow[];
   }> = [];
 
-  validateWarehouseId = computed(() => this.invoice()?.warehouseId ?? null);
+  validateEffectiveWarehouseId = signal<string | null>(null);
+  validateWarehouseLabel = signal<string | null>(null);
+  validateWarehouseIsDefault = signal(false);
+  validateContextLoading = signal(false);
+  validateContextError = signal<string | null>(null);
+  validateStockCheck = signal<StockAvailabilityCheck | null>(null);
+  validateStockBlocked = signal(false);
+  validateProductMeta = signal<Map<string, { isStockManaged: boolean; costingMethod: number; trackingMode: number }>>(new Map());
+  validateAvailabilityByProduct = signal<Map<string, ProductAvailabilityDetail>>(new Map());
+  validateAllocAvailability = signal<Map<string, ExitLotAvailability>>(new Map());
+  validateAllocLotStockValid = signal<Map<string, boolean>>(new Map());
+  validateSubmitError = signal<string | null>(null);
+  private validateLoadSeq = 0;
 
   menuItems: MenuItem[] = [];
   timeline: TimelineEvent[] = [];
@@ -1346,41 +1579,52 @@ export class InvoiceDetailComponent implements OnInit {
       quantity: line.quantity,
       trackingMode: 0,
       pickingPolicy: 0,
+      hasExpiryTracking: false,
       lotAllocations: [createDefaultLotRow(line.quantity)]
     }));
 
-    if (!this.stockFeatures()) {
-      this.stockService.getFeatures()
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe(res => {
-          if (res.success && res.data) this.stockFeatures.set(res.data);
-        });
-    }
-
-    if (this.needsStockAllocationOnValidate() && invoice.warehouseId) {
-      this.loadValidateTraceabilityContext(invoice);
-    }
-
+    this.resetValidateStockState();
     this.showValidateDialog = true;
+
+    if (invoice.isCreditNote) {
+      return;
+    }
+
+    this.validateContextLoading.set(true);
+    this.loadValidateStockContext(invoice);
   }
 
   needsStockAllocationOnValidate(): boolean {
     const inv = this.invoice();
-    return !!inv && !inv.isCreditNote && !!inv.warehouseId;
+    return !!inv && !inv.isCreditNote && !!this.validateEffectiveWarehouseId();
   }
 
   showValidateLineTraceability(line: { trackingMode: number; quantity: number }): boolean {
     const f = this.stockFeatures();
-    if (!f || !this.validateWarehouseId()) return false;
+    if (!f || !this.validateEffectiveWarehouseId()) return false;
     return line.quantity > 0
       && (showLotSection(line.trackingMode, f) || showSerialSection(line.trackingMode, f));
   }
 
   isValidateFormValid(): boolean {
+    const inv = this.invoice();
+    if (!inv) return false;
+    if (inv.isCreditNote) return true;
+    if (this.validateContextLoading() || this.validateContextError()) return false;
+    if (this.validateStockBlocked()) return false;
+    if (this.hasMissingWarehouseLots()) return false;
     if (!this.needsStockAllocationOnValidate()) return true;
     const features = this.stockFeatures();
     for (const line of this.validateLineForms) {
       if (this.showValidateLineTraceability(line)) {
+        if (!exitTraceabilityReady(
+          line.trackingMode,
+          features,
+          line.quantity,
+          this.allocAvailabilityFor(line)
+        )) {
+          return false;
+        }
         if (!exitAllocationsValid(
           line.trackingMode,
           line.pickingPolicy,
@@ -1388,6 +1632,9 @@ export class InvoiceDetailComponent implements OnInit {
           line.lotAllocations,
           features
         )) {
+          return false;
+        }
+        if (this.validateAllocLotStockValid().get(`lot:${line.productId}`) === false) {
           return false;
         }
       }
@@ -1399,12 +1646,14 @@ export class InvoiceDetailComponent implements OnInit {
     const invoice = this.invoice();
     if (!invoice || !this.isValidateFormValid()) return;
 
+    this.validateSubmitError.set(null);
+
     const lineAllocations = this.needsStockAllocationOnValidate()
       ? this.validateLineForms
           .filter(lf => this.showValidateLineTraceability(lf))
           .map(lf => ({
             lineId: lf.lineId,
-            allocations: buildAllocationPayload(lf.lotAllocations)
+            allocations: buildExitAllocationPayload(lf.lotAllocations)
           }))
           .filter(la => la.allocations.length > 0)
       : undefined;
@@ -1428,39 +1677,264 @@ export class InvoiceDetailComponent implements OnInit {
             summary: 'Erreur',
             detail: (response as any).message || 'Impossible de valider la facture'
           });
+          this.validateSubmitError.set((response as any).message || 'Impossible de valider la facture');
         }
+      },
+      error: (err) => {
+        const message = this.errorHandler.extractErrorMessage(err);
+        this.validateSubmitError.set(message);
+        this.toastService.add({
+          severity: 'error',
+          summary: 'Erreur',
+          detail: message
+        });
       }
     });
   }
 
-  private loadValidateTraceabilityContext(invoice: InvoiceDetail): void {
-    const warehouseId = invoice.warehouseId;
-    if (!warehouseId || invoice.lines.length === 0) return;
+  lineAvailability(productId: string): ProductAvailabilityDetail | undefined {
+    return this.validateAvailabilityByProduct().get(productId);
+  }
 
-    const productIds = invoice.lines.map(l => l.productId);
-    this.stockService.getTraceabilityContext(productIds, warehouseId)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(res => {
-        if (!res.success || !res.data) return;
-        const map = new Map(this.traceabilityByProduct());
-        for (const ctx of res.data) {
-          map.set(ctx.productId, { trackingMode: ctx.trackingMode, pickingPolicy: ctx.pickingPolicy });
-        }
-        this.traceabilityByProduct.set(map);
-        for (const lineForm of this.validateLineForms) {
-          const ctx = map.get(lineForm.productId);
-          if (ctx) {
-            lineForm.trackingMode = ctx.trackingMode;
-            lineForm.pickingPolicy = ctx.pickingPolicy;
-            if (ctx.trackingMode === TRACKING_MODE_SERIAL) {
-              lineForm.lotAllocations = Array.from(
-                { length: Math.max(1, Math.round(lineForm.quantity)) },
-                () => createDefaultSerialRow()
+  lineImpact(productId: string): LineImpactDisplay {
+    return lineImpactDisplay(this.lineAvailability(productId));
+  }
+
+  isValidateLineInsufficient(productId: string): boolean {
+    return isValidateLineInsufficientFn(this.lineAvailability(productId));
+  }
+
+  isValidateLineWarning(productId: string): boolean {
+    return isValidateLineWarningFn(this.lineAvailability(productId));
+  }
+
+  onValidateAllocAvailability(event: ExitLotAvailability): void {
+    const next = new Map(this.validateAllocAvailability());
+    next.set(`${event.kind}:${event.productId}`, event);
+    this.validateAllocAvailability.set(next);
+  }
+
+  onValidateLotStockValid(event: LotStockValidity): void {
+    const next = new Map(this.validateAllocLotStockValid());
+    next.set(`lot:${event.productId}`, event.valid);
+    this.validateAllocLotStockValid.set(next);
+  }
+
+  hasMissingWarehouseLots(): boolean {
+    const features = this.stockFeatures();
+    for (const line of this.validateLineForms) {
+      if (!this.showValidateLineTraceability(line)) continue;
+      const avail = this.lineAvailability(line.productId);
+      const stock = avail?.isStockManaged ? avail.availableQuantity : null;
+      if (lineMissingWarehouseLots({
+        trackingMode: line.trackingMode,
+        features,
+        quantity: line.quantity,
+        availableStock: stock,
+        availability: this.validateAllocAvailability().get(`lot:${line.productId}`)
+      })) {
+        return true;
+      }
+      if (lineMissingWarehouseSerials({
+        trackingMode: line.trackingMode,
+        features,
+        quantity: line.quantity,
+        availableStock: stock,
+        availability: this.validateAllocAvailability().get(`serial:${line.productId}`)
+      })) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  hasOnlyExpiredWarehouseLots(): boolean {
+    const features = this.stockFeatures();
+    for (const line of this.validateLineForms) {
+      if (!this.showValidateLineTraceability(line)) continue;
+      const avail = this.lineAvailability(line.productId);
+      const stock = avail?.isStockManaged ? avail.availableQuantity : null;
+      if (lineBlockedByExpiredLots({
+        trackingMode: line.trackingMode,
+        features,
+        quantity: line.quantity,
+        availableStock: stock,
+        availability: this.validateAllocAvailability().get(`lot:${line.productId}`)
+      })) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private allocAvailabilityFor(line: { productId: string; trackingMode: number }): ExitLotAvailability | undefined {
+    const features = this.stockFeatures();
+    if (showSerialSection(line.trackingMode, features)) {
+      return this.validateAllocAvailability().get(`serial:${line.productId}`);
+    }
+    return this.validateAllocAvailability().get(`lot:${line.productId}`);
+  }
+
+  private resetValidateStockState(): void {
+    this.validateLoadSeq++;
+    this.validateEffectiveWarehouseId.set(null);
+    this.validateWarehouseLabel.set(null);
+    this.validateWarehouseIsDefault.set(false);
+    this.validateContextLoading.set(false);
+    this.validateContextError.set(null);
+    this.validateStockCheck.set(null);
+    this.validateStockBlocked.set(false);
+    this.validateProductMeta.set(new Map());
+    this.validateAvailabilityByProduct.set(new Map());
+    this.validateAllocAvailability.set(new Map());
+    this.validateAllocLotStockValid.set(new Map());
+    this.validateSubmitError.set(null);
+  }
+
+  private loadValidateStockContext(invoice: InvoiceDetail): void {
+    const loadSeq = ++this.validateLoadSeq;
+    this.stockService.getWarehouses()
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        catchError(() => of({ success: false, data: [] as { id: string; name: string; isDefault: boolean }[] })),
+        switchMap(res => {
+          if (loadSeq !== this.validateLoadSeq) return EMPTY;
+          const warehouses = (res.success ? res.data : null) ?? [];
+          const byId = invoice.warehouseId
+            ? warehouses.find(w => w.id === invoice.warehouseId) ?? null
+            : null;
+          const fallback = warehouses.find(w => w.isDefault) ?? null;
+          const warehouse = byId ?? fallback;
+          this.validateEffectiveWarehouseId.set(warehouse?.id ?? null);
+          this.validateWarehouseLabel.set(warehouse?.name ?? null);
+          this.validateWarehouseIsDefault.set(!byId && !!warehouse);
+
+          if (!warehouse) {
+            if (loadSeq !== this.validateLoadSeq) return EMPTY;
+            this.validateContextError.set(
+              'Aucun entrepôt n\'est configuré. Impossible de vérifier le stock.'
+            );
+            this.validateContextLoading.set(false);
+            return EMPTY;
+          }
+
+          const productIds = [...new Set(invoice.lines.map(l => l.productId).filter(Boolean))];
+          const items = invoice.lines
+            .filter(l => l.productId)
+            .map(l => ({ productId: l.productId, requestedQuantity: l.quantity }));
+
+          const features$ = this.stockFeatures()
+            ? of(this.stockFeatures())
+            : this.stockService.getFeatures().pipe(
+                map(r => (r.success && r.data ? r.data : null)),
+                catchError(() => of(null))
               );
+
+          const traceability$ = productIds.length
+            ? this.stockService.getTraceabilityContext(productIds, warehouse.id).pipe(
+                map(r => (r.success && r.data ? r.data : [])),
+                catchError(() => of([] as { productId: string; trackingMode: number; pickingPolicy: number; hasExpiryTracking?: boolean }[]))
+              )
+            : of([] as { productId: string; trackingMode: number; pickingPolicy: number; hasExpiryTracking?: boolean }[]);
+
+          const products$ = productIds.length
+            ? forkJoin(productIds.map(id =>
+                this.productService.getProduct(id).pipe(
+                  map(r => r.data ?? null),
+                  catchError(() => of(null))
+                )
+              ))
+            : of([]);
+
+          const availability$ = items.length
+            ? this.stockService.checkAvailability(items, warehouse.id).pipe(
+                map(r => (r.success && r.data ? r.data : null)),
+                catchError(() => of(null))
+              )
+            : of(null);
+
+          return forkJoin({
+            features: features$,
+            traceability: traceability$,
+            products: products$,
+            availability: availability$
+          });
+        })
+      )
+      .subscribe({
+        next: ctx => {
+          if (loadSeq !== this.validateLoadSeq) return;
+          if (ctx.features) this.stockFeatures.set(ctx.features);
+
+          const traceMap = new Map(this.traceabilityByProduct());
+          for (const t of ctx.traceability) {
+            traceMap.set(t.productId, {
+              trackingMode: coerceTrackingMode(t.trackingMode),
+              pickingPolicy: coercePickingPolicy(t.pickingPolicy),
+              hasExpiryTracking: !!t.hasExpiryTracking
+            });
+          }
+          this.traceabilityByProduct.set(traceMap);
+
+          for (const lineForm of this.validateLineForms) {
+            const t = traceMap.get(lineForm.productId);
+            if (t) {
+              lineForm.trackingMode = t.trackingMode;
+              lineForm.pickingPolicy = t.pickingPolicy;
+              lineForm.hasExpiryTracking = t.hasExpiryTracking;
+              if (t.trackingMode === TRACKING_MODE_SERIAL) {
+                lineForm.lotAllocations = Array.from(
+                  { length: Math.max(1, Math.round(lineForm.quantity)) },
+                  () => createDefaultSerialRow()
+                );
+              }
             }
           }
+
+          const productMeta = new Map<string, { isStockManaged: boolean; costingMethod: number; trackingMode: number }>();
+          for (const product of ctx.products) {
+            if (!product) continue;
+            productMeta.set(product.id, {
+              isStockManaged: product.isStockManaged,
+              costingMethod: product.costingMethod ?? 0,
+              trackingMode: coerceTrackingMode(product.trackingMode)
+            });
+          }
+          this.validateProductMeta.set(productMeta);
+
+          const availMap = new Map<string, ProductAvailabilityDetail>();
+          for (const detail of ctx.availability?.details ?? []) {
+            availMap.set(detail.productId, detail);
+          }
+          this.validateAvailabilityByProduct.set(availMap);
+          this.validateStockCheck.set(ctx.availability);
+
+          this.recomputeValidateStockBlock();
+          this.validateContextLoading.set(false);
+        },
+        error: () => {
+          if (loadSeq !== this.validateLoadSeq) return;
+          this.validateContextError.set('Impossible de vérifier le stock.');
+          this.validateContextLoading.set(false);
         }
       });
+  }
+
+  private recomputeValidateStockBlock(): void {
+    const features = this.stockFeatures();
+    const productMeta = this.validateProductMeta();
+    const availability = this.validateAvailabilityByProduct();
+    const lines = this.validateLineForms.map(lf => {
+      const meta = productMeta.get(lf.productId);
+      const avail = availability.get(lf.productId);
+      return {
+        isStockManaged: meta?.isStockManaged ?? avail?.isStockManaged ?? lf.trackingMode > 0,
+        trackingMode: lf.trackingMode || meta?.trackingMode || 0,
+        costingMethod: meta?.costingMethod ?? 0,
+        isAvailable: avail ? avail.isAvailable : null
+      };
+    });
+    this.validateStockBlocked.set(shouldBlockInvoiceValidateForStock(lines, features));
   }
 
   signInvoice(): void {

@@ -51,7 +51,12 @@ function makeLine(
     countedInput: number,
     lastSavedCount: number | null
 ): InventoryFormLine {
-    return { ...product, countedInput, lastSavedCount };
+    return {
+        ...product,
+        countedInput,
+        lastSavedCount,
+        lotNumberInput: product.lotNumber ?? ''
+    };
 }
 
 describe('InventoryFormComponent', () => {
@@ -157,6 +162,28 @@ describe('InventoryFormComponent', () => {
             expect(inventoryService.validateInventory).toHaveBeenCalledWith('inv-1', {
                 pendingCounts: [{ productId: 'b', countedQuantity: 8 }]
             });
+        });
+
+        it('blocks validate when a lot-tracked variance line has no lot number', () => {
+            const products = [
+                makeProduct({
+                    productId: 'cardoc',
+                    productName: 'cardoc',
+                    theoreticalQuantity: 0,
+                    isCounted: true,
+                    countedQuantity: 5,
+                    trackingMode: 'Lot'
+                })
+            ];
+            component.activeInventory.set(makeInventory(products));
+            component.lines.set([
+                { ...makeLine(products[0], 5, 5), lotNumberInput: '' }
+            ]);
+
+            component.validateInventory();
+
+            expect(confirmationService.confirm).not.toHaveBeenCalled();
+            expect(inventoryService.validateInventory).not.toHaveBeenCalled();
         });
     });
 

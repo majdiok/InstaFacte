@@ -79,6 +79,18 @@ public sealed record ChangeExchangeRequestStatusDto(ExchangeRequestStatus Status
 
 public sealed record AssignExchangeRequestDto(Guid AssigneeUserId);
 
+public sealed record ExchangeRequestCommentDto(
+    Guid Id,
+    Guid ThreadId,
+    Guid RequestId,
+    Guid AuthorUserId,
+    Guid AuthorTenantId,
+    string AuthorDisplayName,
+    string Body,
+    DateTime CreatedAt);
+
+public sealed record CreateExchangeRequestCommentDto(string Body);
+
 public sealed record ExchangeTaskDto(
     Guid Id,
     Guid ThreadId,

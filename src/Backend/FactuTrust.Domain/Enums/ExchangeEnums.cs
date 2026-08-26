@@ -58,5 +58,7 @@ public enum ExchangeAuditEventType
     ThreadClosed = 8,
     ThreadReopened = 9,
     AppointmentSuggested = 10,
-    TaskStatusChanged = 11
+    TaskStatusChanged = 11,
+    RequestCommented = 12,
+    RequestAssigned = 13
 }

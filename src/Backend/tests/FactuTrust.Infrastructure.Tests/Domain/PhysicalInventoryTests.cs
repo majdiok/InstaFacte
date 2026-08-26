@@ -85,6 +85,20 @@ public sealed class PhysicalInventoryTests
         Assert.False(inventory.CountLines.Single().IsCounted);
     }
 
+    [Fact]
+    public void RecordCount_OpeningLotNumber_IsPersistedOnLine()
+    {
+        var productId = Guid.NewGuid();
+        var inventory = StartInventory((productId, "Produit A", "A", 0m));
+
+        var result = inventory.RecordCount(productId, 7m, lotNumber: "lot-abc");
+
+        Assert.True(result.IsSuccess);
+        var line = inventory.CountLines.Single();
+        Assert.Equal("LOT-ABC", line.LotNumber);
+        Assert.Equal(7m, line.CountedQuantity);
+    }
+
     private static PhysicalInventory StartInventory(
         params (Guid ProductId, string ProductName, string? ProductCode, decimal TheoreticalQuantity)[] products)
     {

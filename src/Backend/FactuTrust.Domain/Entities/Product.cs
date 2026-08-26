@@ -379,8 +379,13 @@ public sealed class Product : AggregateRoot
 
     /// <summary>
     /// Returns the effective purchase price. If PurchasePrice is set, returns it; otherwise returns UnitPrice.
+    /// Always a new instance so document lines do not share Product's tracked owned Money.
     /// </summary>
-    public Money GetPurchasePrice() => PurchasePrice ?? UnitPrice;
+    public Money GetPurchasePrice()
+    {
+        var source = PurchasePrice ?? UnitPrice;
+        return Money.Create(source.Amount, source.Currency);
+    }
 
     /// <summary>
     /// Updates the purchase price. Pass null to clear it.
