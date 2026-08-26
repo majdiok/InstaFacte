@@ -140,6 +140,127 @@ public sealed class RecurringContractsController : ControllerBase
         return Ok(ApiResponse<object>.Ok(null!, "Avenant enregistré."));
     }
 
+    [HttpPost("{id:guid}/clone")]
+    [Authorize(Policy = PermissionPolicies.RecurringContractsCreate)]
+    public async Task<ActionResult<ApiResponse<Guid>>> Clone(
+        Guid id, [FromBody] CloneRecurringContractDto? dto, CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var result = await _service.CloneAsync(id, dto ?? new CloneRecurringContractDto(), cancellationToken);
+        if (result.IsFailure) return BadRequest(ApiResponse<Guid>.Fail(result.Error.Description));
+        return Ok(ApiResponse<Guid>.Ok(result.Value, "Contrat cloné en brouillon."));
+    }
+
+    [HttpPost("{id:guid}/renew")]
+    [Authorize(Policy = PermissionPolicies.RecurringContractsManage)]
+    public async Task<ActionResult<ApiResponse<object>>> Renew(
+        Guid id, [FromBody] RenewRecurringContractDto? dto, CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var result = await _service.RenewAsync(id, dto ?? new RenewRecurringContractDto(), cancellationToken);
+        if (result.IsFailure) return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+        return Ok(ApiResponse<object>.Ok(new { newEndDate = result.Value },
+            $"Contrat renouvelé jusqu'au {result.Value:dd/MM/yyyy}."));
+    }
+
+    [HttpPatch("{id:guid}/notes")]
+    [Authorize(Policy = PermissionPolicies.RecurringContractsUpdate)]
+    public async Task<ActionResult<ApiResponse<object>>> UpdateNotes(
+        Guid id, [FromBody] UpdateRecurringContractNotesDto dto, CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var result = await _service.UpdateNotesAsync(id, dto.Notes, cancellationToken);
+        if (result.IsFailure) return BadRequest(ApiResponse<object>.Fail(result.Error.Description));
+        return Ok(ApiResponse<object>.Ok(null!, "Notes mises à jour."));
+    }
+
+    [HttpGet("{id:guid}/amendments")]
+    [Authorize(Policy = PermissionPolicies.RecurringContractsRead)]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<RecurringContractAmendmentDto>>>> ListAmendments(
+        Guid id, CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var items = await _service.ListAmendmentsAsync(id, cancellationToken);
+        if (items is null) return NotFound(ApiResponse<object>.Fail("Contrat introuvable"));
+        return Ok(ApiResponse<IReadOnlyList<RecurringContractAmendmentDto>>.Ok(items));
+    }
+
+    [HttpGet("{id:guid}/amendments/{amendmentId:guid}")]
+    [Authorize(Policy = PermissionPolicies.RecurringContractsRead)]
+    public async Task<ActionResult<ApiResponse<RecurringContractAmendmentDetailDto>>> GetAmendment(
+        Guid id, Guid amendmentId, CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var dto = await _service.GetAmendmentAsync(id, amendmentId, cancellationToken);
+        if (dto is null) return NotFound(ApiResponse<RecurringContractAmendmentDetailDto>.Fail("Avenant introuvable"));
+        return Ok(ApiResponse<RecurringContractAmendmentDetailDto>.Ok(dto));
+    }
+
+    [HttpGet("{id:guid}/schedule")]
+    [Authorize(Policy = PermissionPolicies.RecurringContractsRead)]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<RecurringContractScheduleItemDto>>>> GetSchedule(
+        Guid id, [FromQuery] int count = 12, CancellationToken cancellationToken = default)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var items = await _service.GetScheduleAsync(id, count, cancellationToken);
+        if (items is null) return NotFound(ApiResponse<object>.Fail("Contrat introuvable"));
+        return Ok(ApiResponse<IReadOnlyList<RecurringContractScheduleItemDto>>.Ok(items));
+    }
+
+    [HttpGet("{id:guid}/financial-summary")]
+    [Authorize(Policy = PermissionPolicies.RecurringContractsRead)]
+    public async Task<ActionResult<ApiResponse<RecurringContractFinancialSummaryDto>>> GetFinancialSummary(
+        Guid id, CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var dto = await _service.GetFinancialSummaryAsync(id, cancellationToken);
+        if (dto is null) return NotFound(ApiResponse<object>.Fail("Contrat introuvable"));
+        return Ok(ApiResponse<RecurringContractFinancialSummaryDto>.Ok(dto));
+    }
+
+    [HttpGet("{id:guid}/linked-invoices")]
+    [Authorize(Policy = PermissionPolicies.RecurringContractsRead)]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<RecurringContractLinkedInvoiceDto>>>> GetLinkedInvoices(
+        Guid id, CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var items = await _service.GetLinkedInvoicesAsync(id, cancellationToken);
+        if (items is null) return NotFound(ApiResponse<object>.Fail("Contrat introuvable"));
+        return Ok(ApiResponse<IReadOnlyList<RecurringContractLinkedInvoiceDto>>.Ok(items));
+    }
+
+    [HttpGet("{id:guid}/evolution")]
+    [Authorize(Policy = PermissionPolicies.RecurringContractsRead)]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<RecurringContractEvolutionPointDto>>>> GetEvolution(
+        Guid id, [FromQuery] int months = 6, CancellationToken cancellationToken = default)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var items = await _service.GetEvolutionAsync(id, months, cancellationToken);
+        if (items is null) return NotFound(ApiResponse<object>.Fail("Contrat introuvable"));
+        return Ok(ApiResponse<IReadOnlyList<RecurringContractEvolutionPointDto>>.Ok(items));
+    }
+
+    [HttpGet("{id:guid}/detail")]
+    [Authorize(Policy = PermissionPolicies.RecurringContractsRead)]
+    public async Task<ActionResult<ApiResponse<RecurringContractDetailDto>>> GetDetail(
+        Guid id, CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var dto = await _service.GetDetailAsync(id, cancellationToken);
+        if (dto is null) return NotFound(ApiResponse<object>.Fail("Contrat introuvable"));
+        return Ok(ApiResponse<RecurringContractDetailDto>.Ok(dto));
+    }
+
+    [HttpGet("stats")]
+    [Authorize(Policy = PermissionPolicies.RecurringContractsRead)]
+    public async Task<ActionResult<ApiResponse<RecurringContractStatsDto>>> GetStats(
+        CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var stats = await _service.GetStatsAsync(cancellationToken);
+        return Ok(ApiResponse<RecurringContractStatsDto>.Ok(stats));
+    }
+
     [HttpPost("convert-from-quote/{quoteId:guid}")]
     [Authorize(Policy = PermissionPolicies.RecurringContractsCreate)]
     public async Task<ActionResult<ApiResponse<Guid>>> ConvertFromQuote(

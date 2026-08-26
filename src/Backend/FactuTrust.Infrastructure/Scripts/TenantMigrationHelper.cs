@@ -1,5 +1,6 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Infrastructure.Persistence;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -55,6 +56,11 @@ public static class TenantMigrationHelper
 
                 await tenantService.ApplyMigrationsAsync(tenant.Id, cancellationToken);
 
+                // Durcissement numérotation contrats récurrents (D11) : la migration
+                // 20260827120000_AddRecurringContractNumberUnique_Tenant saute la création de
+                // l'index unique si des doublons préexistent — on le signale ici (jamais silencieux).
+                await WarnIfRecurringContractNumberDuplicatesAsync(tenantService, tenant.Id, logger, cancellationToken);
+
                 logger.LogInformation("✓ Migrations applied successfully for tenant {TenantId}", tenant.Id);
                 successCount++;
             }
@@ -71,6 +77,53 @@ public static class TenantMigrationHelper
             successCount, failureCount);
 
         return successCount;
+    }
+
+    /// <summary>
+    /// Détection best-effort des numéros de contrats récurrents en doublon (garde défensive de
+    /// la migration 20260827120000_AddRecurringContractNumberUnique_Tenant). Ne fait jamais
+    /// échouer le processus de migration : table absente / tenant injoignable → aucun bruit.
+    /// </summary>
+    private static async Task WarnIfRecurringContractNumberDuplicatesAsync(
+        ITenantService tenantService,
+        Guid tenantId,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        const string duplicatesSql = """
+IF OBJECT_ID(N'[dbo].[RecurringContracts]', N'U') IS NULL
+    SELECT 0;
+ELSE IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_RecurringContracts_Number' AND object_id = OBJECT_ID(N'dbo.RecurringContracts'))
+    SELECT 0;
+ELSE
+    SELECT COUNT(*) FROM (
+        SELECT [Number] FROM [dbo].[RecurringContracts]
+        WHERE [Number] IS NOT NULL
+        GROUP BY [Number] HAVING COUNT(*) > 1) AS duplicates;
+""";
+        try
+        {
+            var connectionString = await tenantService.GetConnectionStringAsync(tenantId, cancellationToken);
+            if (string.IsNullOrEmpty(connectionString))
+                return;
+
+            await using var connection = new SqlConnection(connectionString);
+            await connection.OpenAsync(cancellationToken);
+            await using var command = new SqlCommand(duplicatesSql, connection);
+            var duplicateNumbers = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken) ?? 0);
+            if (duplicateNumbers > 0)
+            {
+                logger.LogWarning(
+                    "Tenant {TenantId} : {Count} numéro(s) de contrat récurrent en doublon — " +
+                    "l'index unique UX_RecurringContracts_Number n'a PAS été créé, " +
+                    "l'unicité des numéros n'est pas garantie sur ce tenant. Corrigez les doublons puis rejouez les migrations.",
+                    tenantId, duplicateNumbers);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Duplicate recurring-contract number scan skipped for tenant {TenantId}", tenantId);
+        }
     }
 
     /// <summary>

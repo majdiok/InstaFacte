@@ -157,32 +157,18 @@ public sealed class RecurringContractBillingService
         return new BillingAmounts(fixedAmount, usageAmount, prorationAmount, hasOneTime);
     }
 
+    // Délègue au domaine partagé (comportement strictement identique — voir RecurringContractLineProrationTests).
     private static decimal ProrateLineAmount(
         RecurringContract contract,
         RecurringContractLine line,
         DateTime periodFrom,
         DateTime periodTo,
-        decimal fullAmount)
-    {
-        var effectiveFrom = line.EffectiveFrom > periodFrom ? line.EffectiveFrom : periodFrom;
-        var effectiveTo = line.EffectiveTo.HasValue && line.EffectiveTo.Value < periodTo
-            ? line.EffectiveTo.Value
-            : periodTo;
-
-        if (contract.StartDate > periodFrom || contract.EndDate.HasValue && contract.EndDate.Value < periodTo)
-        {
-            var start = contract.StartDate > periodFrom ? contract.StartDate : periodFrom;
-            var end = contract.EndDate.HasValue && contract.EndDate.Value < periodTo
-                ? contract.EndDate.Value
-                : periodTo;
-            return ProrationCalculator.ProrateAmount(fullAmount, periodFrom, periodTo, start, end);
-        }
-
-        if (effectiveFrom > periodFrom || effectiveTo < periodTo)
-            return ProrationCalculator.ProrateAmount(fullAmount, periodFrom, periodTo, effectiveFrom, effectiveTo);
-
-        return fullAmount;
-    }
+        decimal fullAmount) =>
+        RecurringContractLineProration.Prorate(
+            periodFrom, periodTo,
+            contract.StartDate, contract.EndDate,
+            line.EffectiveFrom, line.EffectiveTo,
+            fullAmount);
 
     private static async Task<decimal> ComputeUsageAmountAsync(
         TenantDbContext db,
