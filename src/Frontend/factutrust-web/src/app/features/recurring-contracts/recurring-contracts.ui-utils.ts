@@ -1,5 +1,6 @@
 import { StatusBadgeStatus } from '@shared/components/status-badge/status-badge.component';
 import {
+  BillingFrequency,
   BillingRunStatus,
   ImportUsageRecordRow,
   RecurringContractDetail,
@@ -114,6 +115,20 @@ export function toLinePayloads(lines: ContractLinePayloadSource[]): RecurringCon
     overageUnitPriceHT: l.lineType === 'UsageMetered' ? (l.overageUnitPriceHT ?? null) : null,
     sortOrder: i
   }));
+}
+
+/**
+ * Σ des lignes « récurrent fixe » ramenée au mois selon la périodicité (÷3 trimestriel,
+ * ÷12 annuel). Partagée entre le formulaire (estimation live) et la VM de détail (repli local).
+ */
+export function fixedLinesMonthlyEstimate(
+  lines: ReadonlyArray<Pick<ContractLinePayloadSource, 'lineType' | 'quantity' | 'unitPriceHT'>>,
+  frequency: BillingFrequency
+): number {
+  const divisor = frequency === 'Quarterly' ? 3 : frequency === 'Annual' ? 12 : 1;
+  return lines
+    .filter(l => l.lineType === 'FixedRecurring')
+    .reduce((sum, l) => sum + (l.quantity || 0) * (l.unitPriceHT || 0), 0) / divisor;
 }
 
 /**

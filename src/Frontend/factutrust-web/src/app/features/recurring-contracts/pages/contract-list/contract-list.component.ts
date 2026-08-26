@@ -265,7 +265,6 @@ export class ContractListComponent implements OnInit, OnDestroy {
       .subscribe(() => { this.page.set(1); this.load(); });
     this.loadClients();
     this.load();
-    this.loadStats();
   }
 
   ngOnDestroy(): void {
@@ -289,6 +288,7 @@ export class ContractListComponent implements OnInit, OnDestroy {
 
   load(): void {
     this.loading.set(true);
+    this.loadStats();
     this.service.list({
       search: this.search || undefined,
       status: this.statusFilter ?? undefined,

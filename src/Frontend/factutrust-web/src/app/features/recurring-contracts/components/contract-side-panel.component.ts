@@ -28,7 +28,7 @@ export type ContractSideAction = 'invoice' | 'reminder' | 'download' | 'clone' |
         <div class="donut-wrap">
           <p-chart
             type="doughnut"
-            [data]="donutData(s)"
+            [data]="donutChartData(s)"
             [options]="donutOptions"
             [style]="{ height: '180px' }">
           </p-chart>
@@ -68,16 +68,19 @@ export type ContractSideAction = 'invoice' | 'reminder' | 'download' | 'clone' |
       <div class="info-row"><span class="label">Préavis</span><span class="value">{{ contract.noticePeriodDays }} jours</span></div>
       <div class="info-row">
         <span class="label">Date limite</span>
-        <span class="value">{{ renewalDeadline ? (renewalDeadline | date:'dd/MM/yyyy') : '—' }}</span>
+        @let deadline = renewalDeadlineOf(contract);
+        <span class="value">{{ deadline ? (deadline | date:'dd/MM/yyyy') : '—' }}</span>
       </div>
     </section>
 
     <section class="ft-card-block">
       <h3 class="block-title"><i class="pi pi-bolt"></i> Actions rapides</h3>
       <div class="quick-actions">
-        <app-button variant="outline" size="sm" icon="pi-file-edit" (clicked)="actionTriggered.emit('invoice')">
-          Générer une facture
-        </app-button>
+        @if (canTriggerBilling && contract.status === 'Active') {
+          <app-button variant="outline" size="sm" icon="pi-file-edit" [disabled]="actionInProgress" (clicked)="actionTriggered.emit('invoice')">
+            Générer une facture
+          </app-button>
+        }
         <app-button
           variant="outline"
           size="sm"
@@ -96,12 +99,16 @@ export type ContractSideAction = 'invoice' | 'reminder' | 'download' | 'clone' |
           tooltipPosition="left">
           Télécharger le contrat
         </app-button>
-        <app-button variant="outline" size="sm" icon="pi-copy" (clicked)="actionTriggered.emit('clone')">
-          Cloner le contrat
-        </app-button>
-        <app-button variant="danger" size="sm" icon="pi-times" (clicked)="actionTriggered.emit('cancel')">
-          Résilier le contrat
-        </app-button>
+        @if (canCreate) {
+          <app-button variant="outline" size="sm" icon="pi-copy" [disabled]="actionInProgress" (clicked)="actionTriggered.emit('clone')">
+            Cloner le contrat
+          </app-button>
+        }
+        @if (canManage && (contract.status === 'Active' || contract.status === 'Suspended')) {
+          <app-button variant="danger" size="sm" icon="pi-times" [disabled]="actionInProgress" (clicked)="actionTriggered.emit('cancel')">
+            Résilier le contrat
+          </app-button>
+        }
       </div>
     </section>
   `,
@@ -211,6 +218,12 @@ export type ContractSideAction = 'invoice' | 'reminder' | 'download' | 'clone' |
 export class ContractSidePanelComponent {
   @Input({ required: true }) contract!: RecurringContractDetail;
   @Input() summary: ContractFinancialSummary | null = null;
+  /** Gardes de permission (miroir de l'en-tête de page) — sans elles, aucun bouton d'action. */
+  @Input() canManage = false;
+  @Input() canTriggerBilling = false;
+  @Input() canCreate = false;
+  /** Désactive les actions pendant un appel API en cours. */
+  @Input() actionInProgress = false;
   @Output() actionTriggered = new EventEmitter<ContractSideAction>();
 
   protected readonly formatContractAmount = formatContractAmount;
@@ -223,11 +236,6 @@ export class ContractSidePanelComponent {
     }
   };
 
-  get renewalDeadline(): string | null {
-    return renewalDeadlineOf(this.contract);
-  }
-
-  donutData(s: ContractFinancialSummary): { labels: string[]; datasets: unknown[] } {
-    return donutChartData(s);
-  }
+  protected readonly donutChartData = donutChartData;
+  protected readonly renewalDeadlineOf = renewalDeadlineOf;
 }

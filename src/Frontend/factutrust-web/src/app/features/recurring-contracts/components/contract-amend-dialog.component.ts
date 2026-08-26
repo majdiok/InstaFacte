@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, OnChanges, Output, inject } from '@angular/core';
+import { Component, EventEmitter, Input, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
@@ -8,26 +8,16 @@ import {
   AmendmentType,
   ProrationPolicy,
   RecurringContractDetail,
-  RecurringContractLineType,
   RecurringContractService,
   UsageMetric
 } from '@core/services/recurring-contract.service';
 import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
-import { toLinePayloads, toUpsertPayload } from '../recurring-contracts.ui-utils';
+import { ContractLinePayloadSource, toLinePayloads, toUpsertPayload } from '../recurring-contracts.ui-utils';
 
-interface AmendLineForm {
-  id?: string | null;
-  lineType: RecurringContractLineType;
-  productId?: string | null;
-  description: string;
-  quantity: number;
-  unitPriceHT: number;
-  vatRate: number;
-  usageMetricId?: string | null;
-  includedQuantity?: number | null;
-  overageUnitPriceHT?: number | null;
-}
+// Une ligne d'avenant est exactement la forme partagée d'une ligne éditable (ui-utils) :
+// tout champ divergent ici serait un vecteur de perte de données de la même classe que B3.
+type AmendLineForm = ContractLinePayloadSource;
 
 interface AmendmentTypeOption {
   label: string;
@@ -225,7 +215,7 @@ interface ProrationOption {
     }
   `]
 })
-export class ContractAmendDialogComponent implements OnChanges {
+export class ContractAmendDialogComponent {
   @Input() visible = false;
   @Output() visibleChange = new EventEmitter<boolean>();
   @Input({ required: true }) contract!: RecurringContractDetail;
@@ -258,10 +248,8 @@ export class ContractAmendDialogComponent implements OnChanges {
     { label: 'Aucun', value: 'None' }
   ];
 
-  ngOnChanges(): void {
-    if (this.visible) this.onShow();
-  }
-
+  // Initialisation uniquement via (onShow) de p-dialog : après un avenant réussi le parent
+  // ferme le dialog, donc `contract` ne change jamais pendant que le dialog est ouvert.
   onShow(): void {
     this.resetFromContract();
     if (this.usageMetrics.length === 0) {

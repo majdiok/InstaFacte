@@ -40,7 +40,7 @@ public sealed partial class RecurringContractService
         var usageEstimate = ComputeUsageEstimate(runs);
 
         var projected = contract.Status is RecurringContractStatus.Cancelled or RecurringContractStatus.Expired
-            ? (IReadOnlyList<ProjectedBillingOccurrence>)Array.Empty<ProjectedBillingOccurrence>()
+            ? Array.Empty<ProjectedBillingOccurrence>()
             : RecurringContractScheduleProjector.Project(
                 contract.NextBillingDate, contract.StartDate, contract.EndDate, contract.AutoRenew,
                 contract.BillingFrequency, contract.BillingDayOfMonth, count);
@@ -126,10 +126,7 @@ public sealed partial class RecurringContractService
 
         var today = DateTime.UtcNow.Date;
         var isOpenEnded = !contract.EndDate.HasValue;
-        var windowFrom = contract.EndDate.HasValue
-            ? contract.StartDate
-            : (contract.StartDate > today ? contract.StartDate : today);
-        var windowTo = contract.EndDate ?? windowFrom.AddMonths(12).AddDays(-1);
+        var (windowFrom, windowTo) = ComputeContractWindow(contract, today);
 
         var occurrences = RecurringContractScheduleProjector.Project(
                 nextBillingDate: null,
@@ -311,10 +308,7 @@ public sealed partial class RecurringContractService
         var estimatedMonthly = NormalizeMonthlyEstimate(activeFixedTotal, contract.BillingFrequency);
 
         // Occurrences à venir dans la fenêtre D4 (EndDate, sinon 12 mois glissants).
-        var windowFrom = contract.EndDate.HasValue
-            ? contract.StartDate
-            : (contract.StartDate > today ? contract.StartDate : today);
-        var windowTo = contract.EndDate ?? windowFrom.AddMonths(12).AddDays(-1);
+        var (windowFrom, windowTo) = ComputeContractWindow(contract, today);
         var upcomingCount = contract.Status is RecurringContractStatus.Cancelled or RecurringContractStatus.Expired
             ? 0
             : RecurringContractScheduleProjector.Project(
@@ -420,6 +414,15 @@ public sealed partial class RecurringContractService
     /// TTC = Σ HT ligne × (1 + VatRate/100) ; taux usage = première ligne UsageMetered active,
     /// 19 % à défaut. Arrondis 3 décimales AwayFromZero.
     /// </summary>
+    /// <summary>Fenêtre d'analyse D4 : StartDate→EndDate, sinon 12 mois glissants depuis max(StartDate, aujourd'hui).</summary>
+    private static (DateTime From, DateTime To) ComputeContractWindow(RecurringContract contract, DateTime today)
+    {
+        var from = contract.EndDate.HasValue
+            ? contract.StartDate
+            : (contract.StartDate > today ? contract.StartDate : today);
+        return (from, contract.EndDate ?? from.AddMonths(12).AddDays(-1));
+    }
+
     private static (decimal HT, decimal TTC) EstimateOccurrenceAmounts(
         RecurringContract contract,
         ProjectedBillingOccurrence occurrence,

@@ -564,14 +564,14 @@ public sealed partial class RecurringContractService : IRecurringContractService
     {
         var year = DateTime.UtcNow.Year;
         var count = await _db.RecurringContracts.CountAsync(c => c.CreatedAt.Year == year, cancellationToken);
-        var candidate = $"CTR-{year}-{(count + 1 + attempt):D4}";
         for (var i = 0; i < 5; i++)
         {
-            candidate = $"CTR-{year}-{(count + 1 + attempt + i):D4}";
+            var candidate = $"CTR-{year}-{(count + 1 + attempt + i):D4}";
             if (!await _db.RecurringContracts.AnyAsync(c => c.Number == candidate, cancellationToken))
                 return candidate;
         }
-        return candidate;
+        // Tous les candidats sont pris : on retourne le dernier — l'index unique déclenchera le retry externe.
+        return $"CTR-{year}-{(count + 1 + attempt + 4):D4}";
     }
 
     /// <summary>

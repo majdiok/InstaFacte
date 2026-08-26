@@ -129,7 +129,7 @@ import { formatContractAmount } from '../recurring-contracts.ui-utils';
             [showAction]="false">
           </app-empty-state>
         } @else {
-          <p-chart type="line" [data]="evolutionData" [options]="evolutionOptions" [style]="{ height: '260px' }"></p-chart>
+          <p-chart type="line" [data]="evolutionChartData(evolution ?? [])" [options]="evolutionOptions" [style]="{ height: '260px' }"></p-chart>
         }
       </app-chart-card>
 
@@ -327,15 +327,14 @@ export class ContractOverviewTabComponent {
     }
   };
 
-  /** Top 3 des échéances à partir d'aujourd'hui. */
+  /** Top 3 des échéances à partir d'aujourd'hui (le backend renvoie l'échéancier par date décroissante). */
   get upcoming(): ContractScheduleEntry[] {
     const today = new Date().toISOString().slice(0, 10);
     return (this.schedule ?? [])
       .filter(e => (e.date ?? '').slice(0, 10) >= today)
+      .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''))
       .slice(0, 3);
   }
 
-  get evolutionData(): { labels: string[]; datasets: unknown[] } {
-    return evolutionChartData(this.evolution ?? []);
-  }
+  protected readonly evolutionChartData = evolutionChartData;
 }

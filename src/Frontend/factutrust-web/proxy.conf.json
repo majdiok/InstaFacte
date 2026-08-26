@@ -1,4 +1,14 @@
 {
+  "/api": {
+    "target": "https://localhost:7001",
+    "secure": false,
+    "changeOrigin": true
+  },
+  "/health": {
+    "target": "https://localhost:7001",
+    "secure": false,
+    "changeOrigin": true
+  },
   "/assets/powerpoint": {
     "target": "https://localhost:7001",
     "secure": false,

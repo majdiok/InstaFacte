@@ -3,6 +3,7 @@ import {
   ContractFinancialSummary,
   RecurringContractDetail
 } from '@core/services/recurring-contract.service';
+import { fixedLinesMonthlyEstimate } from './recurring-contracts.ui-utils';
 
 /**
  * Calculs purs de la page détail contrat (pattern cash-forecast.view-model.ts) :
@@ -68,12 +69,10 @@ export function renewalDeadlineOf(c: RecurringContractDetail): string | null {
   return d.toISOString().slice(0, 10);
 }
 
-/** Σ des lignes « récurrent fixe » ramenée au mois selon la périodicité (repli local). */
+/** Σ des lignes « récurrent fixe » ramenée au mois selon la périodicité (repli local), null si aucune ligne fixe. */
 export function fixedMonthlyEstimate(c: RecurringContractDetail): number | null {
-  const fixed = (c.lines ?? []).filter(l => l.lineType === 'FixedRecurring');
-  if (fixed.length === 0) return null;
-  const divisor = c.billingFrequency === 'Quarterly' ? 3 : c.billingFrequency === 'Annual' ? 12 : 1;
-  return fixed.reduce((sum, l) => sum + (l.quantity || 0) * (l.unitPriceHT || 0), 0) / divisor;
+  if (!(c.lines ?? []).some(l => l.lineType === 'FixedRecurring')) return null;
+  return fixedLinesMonthlyEstimate(c.lines ?? [], c.billingFrequency);
 }
 
 export function buildKpiVm(c: RecurringContractDetail, s: ContractFinancialSummary | null): ContractKpiVm {
@@ -110,7 +109,8 @@ export function donutChartData(s: ContractFinancialSummary): { labels: string[];
     labels: ['Déjà facturé', 'Reste à facturer'],
     datasets: [
       {
-        data: [s.totalInvoicedAmount, s.remainingAmount],
+        // remainingAmount peut être négatif en cas de surfacturation (D4) — chart.js exige ≥ 0.
+        data: [s.totalInvoicedAmount, Math.max(0, s.remainingAmount)],
         backgroundColor: ['#3862f5', '#e2e8f0'],
         hoverBackgroundColor: ['#2a4fd1', '#cbd5e1'],
         borderWidth: 0

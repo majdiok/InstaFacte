@@ -218,13 +218,7 @@ public sealed class RecurringContract : AggregateRoot
             Status = RecurringContractStatus.Active;
             if (!NextBillingDate.HasValue || NextBillingDate.Value.Date < asOfDate.Date)
             {
-                var candidate = ProrationCalculator.ClampBillingDay(asOfDate.Year, asOfDate.Month, BillingDayOfMonth);
-                if (candidate < asOfDate.Date)
-                {
-                    var next = asOfDate.AddMonths(1);
-                    candidate = ProrationCalculator.ClampBillingDay(next.Year, next.Month, BillingDayOfMonth);
-                }
-                NextBillingDate = candidate;
+                NextBillingDate = RecurringContractScheduleProjector.ComputeInitialBillingDate(asOfDate, BillingDayOfMonth);
             }
         }
         else // Active
@@ -406,6 +400,7 @@ public sealed class RecurringContract : AggregateRoot
     }
 
     private static bool HasLineChanged(RecurringContractLine existing, RecurringContractLine target) =>
+        existing.Description != target.Description ||
         existing.Quantity != target.Quantity ||
         existing.UnitPriceHT != target.UnitPriceHT ||
         existing.VatRate != target.VatRate ||

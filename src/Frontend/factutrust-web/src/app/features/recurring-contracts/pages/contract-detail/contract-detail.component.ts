@@ -202,6 +202,10 @@ type ContractAction = 'activate' | 'suspend' | 'resume' | 'cancel' | 'renew' | '
           <app-contract-side-panel
             [contract]="c"
             [summary]="summary()"
+            [canManage]="canManage()"
+            [canTriggerBilling]="canTriggerBilling()"
+            [canCreate]="canCreate()"
+            [actionInProgress]="!!actionInProgress()"
             (actionTriggered)="onSideAction($event)">
           </app-contract-side-panel>
         </div>

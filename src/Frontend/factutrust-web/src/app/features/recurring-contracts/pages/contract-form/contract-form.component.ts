@@ -11,7 +11,6 @@ import { TableTotalsBarComponent, TotalMetric } from '@shared/components/table-t
 import {
   BillingFrequency,
   RecurringContractDetail,
-  RecurringContractLineType,
   RecurringContractService,
   UsageMetric,
   UpsertRecurringContractPayload
@@ -22,19 +21,9 @@ import { ProductService, ProductListItem } from '@core/services/product.service'
 import { QuoteService } from '@core/services/quote.service';
 import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
-import { toLinePayloads } from '../../recurring-contracts.ui-utils';
+import { ContractLinePayloadSource, fixedLinesMonthlyEstimate, toLinePayloads } from '../../recurring-contracts.ui-utils';
 
-interface ContractLineForm {
-  id?: string | null;
-  lineType: RecurringContractLineType;
-  productId?: string | null;
-  description: string;
-  quantity: number;
-  unitPriceHT: number;
-  vatRate: number;
-  usageMetricId?: string | null;
-  includedQuantity?: number | null;
-  overageUnitPriceHT?: number | null;
+interface ContractLineForm extends ContractLinePayloadSource {
   sortOrder: number;
 }
 
@@ -338,11 +327,7 @@ export class ContractFormComponent implements OnInit {
 
   /** Estimation mensuelle : lignes fixes ramenées au mois selon la périodicité. */
   get monthlyEstimate(): number {
-    const divisor = this.billingFrequency === 'Quarterly' ? 3 : this.billingFrequency === 'Annual' ? 12 : 1;
-    const fixed = this.lines
-      .filter(l => l.lineType === 'FixedRecurring')
-      .reduce((sum, l) => sum + (l.quantity || 0) * (l.unitPriceHT || 0), 0);
-    return fixed / divisor;
+    return fixedLinesMonthlyEstimate(this.lines, this.billingFrequency);
   }
 
   totalsMetrics(): TotalMetric[] {
