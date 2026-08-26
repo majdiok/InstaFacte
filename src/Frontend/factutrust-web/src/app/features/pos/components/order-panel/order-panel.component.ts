@@ -173,7 +173,6 @@ import { LinkedInvoiceRef } from '@core/services/invoice-reference-resolver.serv
           }
         }
       </div>
-      </div>
 
       @if (posState.lines().length > 0) {
         <div class="order-panel__footer">
@@ -300,6 +299,7 @@ import { LinkedInvoiceRef } from '@core/services/invoice-reference-resolver.serv
       </div>
         </div>
       }
+      </div>
     </div>
   `,
   styles: [`
@@ -348,8 +348,7 @@ import { LinkedInvoiceRef } from '@core/services/invoice-reference-resolver.serv
       background: #faf8f5;
       border-top: 1px solid var(--color-border-subtle);
       box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.04);
-      max-height: min(52vh, 420px);
-      overflow-y: auto;
+      padding-bottom: var(--spacing-4);
     }
 
     .order-panel__header {
