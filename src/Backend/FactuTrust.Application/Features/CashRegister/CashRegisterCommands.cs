@@ -97,13 +97,14 @@ public sealed class CreateCashRegisterCommandHandler
             return Result.Failure<CashRegisterDto>(created.Error);
 
         created.Value.SetAuditInfo(_currentUser.UserId?.ToString() ?? "system");
-        var saved = await _registers.AddAsync(created.Value, cancellationToken);
 
         if (makeDefault)
         {
             await CashRegisterProvisioning.ClearOtherDefaultsAsync(
-                _registers, request.WarehouseId, saved.Id, cancellationToken);
+                _registers, request.WarehouseId, Guid.Empty, cancellationToken);
         }
+
+        var saved = await _registers.AddAsync(created.Value, cancellationToken);
 
         return Result.Success(GetCashRegisterQueryHandler.Map(saved, _requireOpenSession));
     }

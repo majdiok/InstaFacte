@@ -12,6 +12,7 @@ import { InputNumberModule } from 'primeng/inputnumber';
 import { SelectModule } from 'primeng/select';
 import { AutoCompleteCompleteEvent, AutoCompleteModule } from 'primeng/autocomplete';
 import { ToastModule } from 'primeng/toast';
+import { TooltipModule } from 'primeng/tooltip';
 import { MessageService } from 'primeng/api';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { FormSectionComponent } from '@shared/components/form-section/form-section.component';
@@ -78,6 +79,7 @@ interface VoucherLine {
     SelectModule,
     AutoCompleteModule,
     ToastModule,
+    TooltipModule,
     PageHeaderComponent,
     FormSectionComponent,
     ButtonComponent,
@@ -86,278 +88,8 @@ interface VoucherLine {
     StockAllocationEditorComponent
   ],
   providers: [MessageService],
-  template: `
-    <p-toast></p-toast>
-    <app-breadcrumb [items]="breadcrumbItems"></app-breadcrumb>
-    <div class="page-container">
-      <app-page-header [title]="pageTitle" [subtitle]="pageSubtitle">
-        <app-button variant="outline" icon="pi-times" iconPos="left" [routerLink]="listRoute">
-          Retour
-        </app-button>
-      </app-page-header>
-
-      <app-form-section title="En-tête" icon="pi-info-circle" [number]="1">
-        <div class="form-row">
-          <div class="form-group">
-            <app-warehouse-selector
-              inputId="voucher-warehouse"
-              label="Dépôt"
-              [required]="true"
-              [activeOnly]="true"
-              [value]="warehouseId"
-              (valueChange)="onWarehouseChange($event)">
-            </app-warehouse-selector>
-          </div>
-          <div class="form-group">
-            <label for="voucher-date">Date <span class="required">*</span></label>
-            <p-datepicker
-              inputId="voucher-date"
-              [(ngModel)]="voucherDate"
-              dateFormat="dd/mm/yy"
-              [showIcon]="true"
-              styleClass="w-full">
-            </p-datepicker>
-          </div>
-          <div class="form-group">
-            <label for="voucher-reason">Motif <span class="required">*</span></label>
-            <p-select
-              inputId="voucher-reason"
-              [options]="reasonOptions"
-              [(ngModel)]="reason"
-              optionLabel="label"
-              optionValue="value"
-              [style]="{ width: '100%' }"
-              appendTo="body">
-            </p-select>
-          </div>
-        </div>
-        @if (isEntry && reason === 'Purchase') {
-          <div class="alert-banner" role="note">
-            <i class="pi pi-info-circle"></i>
-            <p>
-              Pour un achat fournisseur, utilisez <strong>Achats &gt; Bons de réception</strong>.
-              Ce motif enregistre une entrée de stock sans BR, sans commande et sans facture.
-            </p>
-          </div>
-        }
-        <div class="form-row">
-          <div class="form-group">
-            <label for="voucher-ref">Référence externe</label>
-            <input id="voucher-ref" type="text" pInputText [(ngModel)]="externalReference" maxlength="100" class="w-full" />
-          </div>
-        </div>
-        <div class="form-group">
-          <label for="voucher-notes">Notes</label>
-          <textarea id="voucher-notes" pTextarea [(ngModel)]="notes" [rows]="3" class="w-full"></textarea>
-        </div>
-      </app-form-section>
-
-      <app-form-section title="Lignes" icon="pi-list" [number]="2">
-        <div class="line-add">
-          <div class="form-group product-search-wrap">
-            <label for="voucher-product">Produit (géré en stock)</label>
-            <p-autoComplete
-              inputId="voucher-product"
-              [(ngModel)]="selectedProduct"
-              [suggestions]="productSuggestions()"
-              (completeMethod)="onProductSearch($event)"
-              field="name"
-              [dropdown]="true"
-              [forceSelection]="true"
-              [minLength]="0"
-              placeholder="Rechercher par nom ou code…"
-              appendTo="body"
-              [style]="{ width: '100%' }">
-              <ng-template let-product pTemplate="item">
-                <div class="product-suggestion">
-                  <span class="product-code">{{ product.code }}</span>
-                  <span>{{ product.name }}</span>
-                  @if (!product.isStockManaged) {
-                    <span class="badge-non-stock">Non géré en stock</span>
-                  }
-                </div>
-              </ng-template>
-            </p-autoComplete>
-          </div>
-          <div class="form-group">
-            <label for="voucher-qty">Quantité</label>
-            <p-inputNumber
-              inputId="voucher-qty"
-              [(ngModel)]="selectedQuantity"
-              [min]="0.001"
-              [minFractionDigits]="0"
-              [maxFractionDigits]="3"
-              mode="decimal"
-              [style]="{ width: '120px' }">
-            </p-inputNumber>
-          </div>
-          @if (isEntry) {
-            <div class="form-group">
-              <label for="voucher-cost">Coût unitaire</label>
-              <p-inputNumber
-                inputId="voucher-cost"
-                [(ngModel)]="selectedUnitCost"
-                [min]="0"
-                mode="decimal"
-                [minFractionDigits]="3"
-                [maxFractionDigits]="3"
-                [style]="{ width: '140px' }">
-              </p-inputNumber>
-            </div>
-          }
-          <div class="btn-add-wrap">
-            <app-button type="button" variant="primary" icon="pi-plus" iconPos="left"
-                        (click)="addLine()" [disabled]="!selectedProduct || selectedQuantity <= 0">
-              Ajouter
-            </app-button>
-          </div>
-        </div>
-
-        @if (lines.length === 0) {
-          <div class="empty-lines">
-            <i class="pi pi-box"></i>
-            <p>Ajoutez au moins un produit géré en stock.</p>
-          </div>
-        } @else {
-          <div class="lines-table-wrap">
-            <table class="lines-table">
-              <thead>
-                <tr>
-                  <th>Code</th>
-                  <th>Produit</th>
-                  <th>Unité</th>
-                  @if (!isEntry) {
-                    <th>Dispo</th>
-                    <th>Coût unitaire</th>
-                  }
-                  <th>Qté</th>
-                  @if (isEntry) {
-                    <th>Coût</th>
-                  }
-                  <th>Valorisation</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (line of lines; track line.productId; let i = $index) {
-                  <tr>
-                    <td>{{ line.productCode }}</td>
-                    <td>{{ line.productName }}</td>
-                    <td>{{ line.unit }}</td>
-                    @if (!isEntry) {
-                      <td>{{ formatAvailability(line.productId) }}</td>
-                      <td>{{ formatAverageCost(line.productId) | currency:'TND':'symbol':'1.3-3' }}</td>
-                    }
-                    <td>
-                      <p-inputNumber
-                        [(ngModel)]="line.quantity"
-                        [min]="0.001"
-                        [minFractionDigits]="0"
-                        [maxFractionDigits]="3"
-                        mode="decimal">
-                      </p-inputNumber>
-                      @if (!isEntry && qtyExceedsAvailable(line)) {
-                        <span class="qty-warning"><i class="pi pi-exclamation-triangle"></i> Supérieur au disponible</span>
-                      }
-                    </td>
-                    @if (isEntry) {
-                      <td>
-                        <p-inputNumber
-                          [(ngModel)]="line.unitCost"
-                          [min]="0"
-                          mode="decimal"
-                          [minFractionDigits]="3"
-                          [maxFractionDigits]="3">
-                        </p-inputNumber>
-                      </td>
-                    }
-                    <td>{{ (line.quantity * line.unitCost) | currency:'TND':'symbol':'1.3-3' }}</td>
-                    <td>
-                      <button type="button" class="btn-icon" (click)="removeLine(i)" aria-label="Retirer la ligne">
-                        <i class="pi pi-trash"></i>
-                      </button>
-                    </td>
-                  </tr>
-                  @if (showLineTraceability(line)) {
-                    <tr>
-                      <td [attr.colspan]="isEntry ? 7 : 8">
-                        <app-stock-allocation-editor
-                          [mode]="isEntry ? 'entry' : 'exit'"
-                          [productId]="line.productId"
-                          [warehouseId]="warehouseId!"
-                          [lineQuantity]="line.quantity"
-                          [trackingMode]="line.trackingMode ?? 0"
-                          [pickingPolicy]="line.pickingPolicy ?? 0"
-                          [hasExpiryTracking]="!!line.hasExpiryTracking"
-                          [features]="stockFeatures()"
-                          [allocations]="line.lotAllocations"
-                          [optionalOverride]="!isEntry">
-                        </app-stock-allocation-editor>
-                      </td>
-                    </tr>
-                  }
-                }
-              </tbody>
-            </table>
-          </div>
-        }
-
-        <div class="totals">
-          <span>Quantité : <strong>{{ totalQuantity | number:'1.0-3' }}</strong></span>
-          <span>Valorisation : <strong>{{ totalValue | currency:'TND':'symbol':'1.3-3' }}</strong></span>
-        </div>
-      </app-form-section>
-
-      <div class="form-actions">
-        <app-button type="button" variant="outline" (click)="cancel()">Annuler</app-button>
-        <app-button type="button" variant="secondary" icon="pi-save" iconPos="left"
-                    (click)="save(false)" [disabled]="!canSubmit()">
-          Enregistrer brouillon
-        </app-button>
-        <app-button type="button" variant="primary" icon="pi-check" iconPos="left"
-                    (click)="save(true)" [disabled]="!canSubmit()">
-          Enregistrer et valider
-        </app-button>
-      </div>
-    </div>
-  `,
-  styles: [`
-    .page-container { padding: 0 0 2rem; }
-    .form-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
-    @media (max-width: 768px) { .form-row { grid-template-columns: 1fr; } }
-    .form-group { margin-bottom: 1rem; }
-    .form-group label { display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 0.375rem; }
-    .required { color: #dc2626; }
-    .alert-banner {
-      display: flex; gap: 0.75rem; padding: 0.75rem 1rem; background: #eff6ff;
-      border: 1px solid #bfdbfe; border-radius: 0.5rem; margin-bottom: 1rem; color: #1e3a8a;
-    }
-    .alert-banner p { margin: 0; font-size: 0.875rem; }
-    .line-add { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: end; margin-bottom: 1rem; }
-    .product-search-wrap { flex: 1; min-width: 240px; }
-    .btn-add-wrap { padding-bottom: 0.25rem; }
-    .lines-table-wrap { overflow-x: auto; }
-    .lines-table { width: 100%; border-collapse: collapse; min-width: 720px; }
-    .lines-table th, .lines-table td { padding: 0.625rem; border-bottom: 1px solid #e2e8f0; text-align: left; vertical-align: middle; }
-    .lines-table th { font-size: 0.75rem; text-transform: uppercase; color: #64748b; }
-    .empty-lines { text-align: center; padding: 2rem; color: #64748b; }
-    .product-suggestion { display: flex; gap: 0.5rem; align-items: center; }
-    .product-code { font-weight: 600; }
-    .badge-non-stock { background: #fef3c7; color: #92400e; padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-size: 0.75rem; }
-    .qty-warning { display: block; color: #b45309; font-size: 0.75rem; margin-top: 0.25rem; }
-    .btn-icon { background: none; border: none; color: #64748b; cursor: pointer; }
-    .lot-alloc {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-      align-items: center;
-      padding: 0.5rem 0;
-    }
-    .lot-alloc-label { font-size: 0.75rem; font-weight: 600; color: #64748b; margin-right: 0.5rem; }
-    .totals { display: flex; gap: 1.5rem; justify-content: flex-end; margin-top: 1rem; font-size: 0.95rem; }
-    .form-actions { display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem; flex-wrap: wrap; }
-    :host ::ng-deep .p-datepicker { display: flex; width: 100%; }
-  `]
+  templateUrl: './stock-voucher-form.component.html',
+  styleUrls: ['./stock-voucher-form.component.scss']
 })
 export class StockVoucherFormComponent implements OnInit {
   private voucherService = inject(StockVoucherService);
@@ -597,6 +329,41 @@ export class StockVoucherFormComponent implements OnInit {
   qtyExceedsAvailable(line: VoucherLine): boolean {
     const avail = this.stockByProductId().get(line.productId)?.qty;
     return avail != null && line.quantity > avail;
+  }
+
+  hasWarehouse(): boolean {
+    return !!this.warehouseId;
+  }
+
+  hasDate(): boolean {
+    return !!this.voucherDate;
+  }
+
+  hasReason(): boolean {
+    return !!this.reason;
+  }
+
+  hasLines(): boolean {
+    return this.lines.length > 0;
+  }
+
+  scrollToLines(): void {
+    document.getElementById('section-lignes')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  submitBlockers(): string[] {
+    const blockers: string[] = [];
+    if (!this.hasWarehouse()) blockers.push('Sélectionnez un dépôt');
+    if (!this.hasDate()) blockers.push('Indiquez la date');
+    if (!this.hasReason()) blockers.push('Sélectionnez un motif');
+    if (!this.hasLines()) blockers.push('Ajoutez au moins une ligne produit');
+    if (this.submitting()) blockers.push('Enregistrement en cours');
+    return blockers;
+  }
+
+  submitBlockersTooltip(): string {
+    const blockers = this.submitBlockers();
+    return blockers.length > 0 ? blockers.join(' · ') : '';
   }
 
   canSubmit(): boolean {

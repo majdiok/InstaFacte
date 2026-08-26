@@ -1318,6 +1318,18 @@ export class PosComponent implements OnInit, OnDestroy {
       this.availableRegisters = [];
       return;
     }
+
+    const cached = this.registerSession.availableRegisters();
+    if (cached.length > 0) {
+      this.availableRegisters = cached;
+      this.selectedRegisterIdForOpen =
+        this.registerSession.selectedRegisterId()
+        ?? cached.find(r => r.isDefault)?.id
+        ?? cached[0]?.id
+        ?? '';
+      return;
+    }
+
     this.registerSession.listRegisters(warehouseId).subscribe({
       next: list => {
         this.availableRegisters = list;

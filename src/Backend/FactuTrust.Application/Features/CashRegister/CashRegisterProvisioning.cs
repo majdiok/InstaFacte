@@ -1,6 +1,7 @@
 using CashRegisterEntity = FactuTrust.Domain.Entities.CashRegister;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Domain.Common;
+using Microsoft.EntityFrameworkCore;
 
 namespace FactuTrust.Application.Features.CashRegister;
 
@@ -22,12 +23,7 @@ internal static class CashRegisterProvisioning
 
         var existing = await registers.ListByWarehouseIdAsync(warehouseId, cancellationToken);
         if (existing.Count > 0)
-        {
-            var chosen = existing.FirstOrDefault(r => r.IsDefault && r.IsActive)
-                ?? existing.FirstOrDefault(r => r.IsActive)
-                ?? existing[0];
-            return Result.Success(chosen);
-        }
+            return Result.Success(ChooseRegister(existing));
 
         var code = CashRegisterEntity.DefaultCodeForWarehouse(warehouse.Code);
         if (await registers.CodeExistsAsync(code, null, cancellationToken))
@@ -45,9 +41,24 @@ internal static class CashRegisterProvisioning
             return created;
 
         created.Value.SetAuditInfo(userId ?? "system");
-        var saved = await registers.AddAsync(created.Value, cancellationToken);
-        return Result.Success(saved);
+        try
+        {
+            var saved = await registers.AddAsync(created.Value, cancellationToken);
+            return Result.Success(saved);
+        }
+        catch (DbUpdateException)
+        {
+            var raced = await registers.ListByWarehouseIdAsync(warehouseId, cancellationToken);
+            if (raced.Count > 0)
+                return Result.Success(ChooseRegister(raced));
+            throw;
+        }
     }
+
+    private static CashRegisterEntity ChooseRegister(IReadOnlyList<CashRegisterEntity> registers) =>
+        registers.FirstOrDefault(r => r.IsDefault && r.IsActive)
+        ?? registers.FirstOrDefault(r => r.IsActive)
+        ?? registers[0];
 
     public static async Task ClearOtherDefaultsAsync(
         ICashRegisterRepository registers,

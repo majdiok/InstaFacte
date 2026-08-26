@@ -596,6 +596,81 @@ public sealed class PosCashRegisterHandlerTests : IDisposable
         Assert.True(listed.Value[0].IsDefault);
     }
 
+    [Fact]
+    public async Task Provisioning_AfterUniqueViolation_ReturnsExistingRegister()
+    {
+        var warehouse = await SeedWarehouseAsync();
+        var existing = CashRegister.Create(
+            CashRegister.DefaultCodeForWarehouse(warehouse.Code),
+            CashRegister.DefaultNameForWarehouse(warehouse.Name),
+            warehouse.Id,
+            isDefault: true).Value;
+
+        var warehousesMock = new Mock<IWarehouseRepository>();
+        warehousesMock
+            .Setup(w => w.GetByIdAsync(warehouse.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(warehouse);
+
+        var listCall = 0;
+        var registersMock = new Mock<ICashRegisterRepository>();
+        registersMock
+            .Setup(r => r.ListByWarehouseIdAsync(warehouse.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                listCall++;
+                return listCall == 1
+                    ? Array.Empty<CashRegister>()
+                    : new[] { existing };
+            });
+        registersMock
+            .Setup(r => r.CodeExistsAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        registersMock
+            .Setup(r => r.AddAsync(It.IsAny<CashRegister>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new DbUpdateException("duplicate key"));
+
+        var result = await CashRegisterProvisioning.EnsureForWarehouseAsync(
+            warehousesMock.Object,
+            registersMock.Object,
+            warehouse.Id,
+            _userId.ToString(),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(existing.Id, result.Value.Id);
+        Assert.True(result.Value.IsDefault);
+    }
+
+    [Fact]
+    public async Task CreateRegister_AsDefault_ClearsPreviousDefault()
+    {
+        var warehouse = await SeedWarehouseAsync();
+        var currentUser = CurrentUser();
+        var features = Options.Create(new CashDeskFeaturesOptions { PosRegisterSessions = true });
+
+        var first = await new GetCashRegisterQueryHandler(_warehouses, _registers, currentUser, features)
+            .Handle(new GetCashRegisterQuery(warehouse.Id), CancellationToken.None);
+        Assert.True(first.IsSuccess);
+        Assert.True(first.Value.IsDefault);
+
+        var second = await new CreateCashRegisterCommandHandler(_warehouses, _registers, currentUser, features)
+            .Handle(new CreateCashRegisterCommand(new CreateCashRegisterRequest
+            {
+                WarehouseId = warehouse.Id,
+                Code = "CAISSE-2",
+                Name = "Caisse 2",
+                IsDefault = true
+            }), CancellationToken.None);
+        Assert.True(second.IsSuccess, second.Error?.Description);
+        Assert.True(second.Value.IsDefault);
+
+        var list = await _registers.ListByWarehouseIdAsync(warehouse.Id, CancellationToken.None);
+        Assert.Equal(2, list.Count);
+        Assert.Single(list, r => r.IsDefault);
+        Assert.Equal(second.Value.Id, list.Single(r => r.IsDefault).Id);
+        Assert.False(list.First(r => r.Id == first.Value.Id).IsDefault);
+    }
+
     private sealed class PassthroughTenantUnitOfWork : ITenantUnitOfWork
     {
         public Task<Result> ExecuteAsync(
