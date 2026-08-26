@@ -18,7 +18,7 @@ import {
 import { ClientService, ClientListItem } from '@core/services/client.service';
 import { PricingService, PaymentTermTemplate, PriceListListItem } from '@core/services/pricing.service';
 import { ProductService, ProductListItem } from '@core/services/product.service';
-import { QuoteService } from '@core/services/quote.service';
+import { QuoteDetail, QuoteService } from '@core/services/quote.service';
 import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { ContractLinePayloadSource, fixedLinesMonthlyEstimate, toLinePayloads } from '../../recurring-contracts.ui-utils';
@@ -61,7 +61,7 @@ interface ContractLineForm extends ContractLinePayloadSource {
               }
             </select>
             @if (quoteId) {
-              <span class="field-hint">Client repris du devis d'origine.</span>
+              <span class="field-hint">Client et lignes repris du devis d'origine (ajustables avant enregistrement).</span>
             }
           </label>
           <label>Référence
@@ -360,10 +360,12 @@ export class ContractFormComponent implements OnInit {
         }
       });
     } else if (this.quoteId) {
-      // Pré-remplissage depuis un devis : client repris, lignes reprises côté serveur.
+      // Pré-remplissage depuis un devis : client ET lignes repris (ajustables avant soumission —
+      // le payload envoyé porte toujours les lignes affichées, la reprise côté serveur ne
+      // sert que de secours au flux direct depuis la fiche devis).
       this.quoteService.getQuote(this.quoteId).subscribe({
         next: res => {
-          if (res.success && res.data) this.clientId = res.data.clientId;
+          if (res.success && res.data) this.prefillFromQuote(res.data);
         },
         error: () => { /* le select client reste éditable en secours */ }
       });
@@ -493,6 +495,29 @@ export class ContractFormComponent implements OnInit {
       next: m => this.usageMetrics.set(m),
       error: () => this.usageMetrics.set([])
     });
+  }
+
+  /** Pré-remplit client, référence et lignes depuis le devis d'origine (flux ?quoteId=). */
+  private prefillFromQuote(q: QuoteDetail): void {
+    this.clientId = q.clientId;
+    if (q.reference && !this.reference) this.reference = q.reference;
+    if (!q.lines?.length) return;
+    this.lines = q.lines.map((ql, i) => ({
+      id: null,
+      lineType: 'FixedRecurring' as const,
+      productId: ql.productId ?? null,
+      description: ql.productDescription?.trim()
+        ? `${ql.productName} — ${ql.productDescription.trim()}`
+        : ql.productName,
+      quantity: ql.quantity,
+      // Prix unitaire HT net de remise éventuelle (les lignes de contrat n'ont pas de remise).
+      unitPriceHT: +(ql.unitPrice * (1 - (ql.discountPercent ?? 0) / 100)).toFixed(3),
+      vatRate: ql.vatRatePercent,
+      usageMetricId: null,
+      includedQuantity: null,
+      overageUnitPriceHT: null,
+      sortOrder: i
+    }));
   }
 
   private newLine(sortOrder: number): ContractLineForm {
