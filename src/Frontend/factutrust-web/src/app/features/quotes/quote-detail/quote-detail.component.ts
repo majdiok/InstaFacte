@@ -852,7 +852,7 @@ export class QuoteDetailComponent implements OnInit {
     const today = new Date().toISOString().slice(0, 10);
     this.recurringContractService.convertFromQuote(q.id, {
       clientId: q.clientId,
-      billingFrequency: 0,
+      billingFrequency: 'Monthly',
       billingDayOfMonth: new Date().getDate(),
       startDate: today,
       autoRenew: true,

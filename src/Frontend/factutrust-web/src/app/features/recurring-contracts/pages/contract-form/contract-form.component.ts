@@ -3,134 +3,390 @@ import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
+import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
+import { FormSectionComponent } from '@shared/components/form-section/form-section.component';
+import { SkeletonComponent } from '@shared/components/skeleton/skeleton.component';
+import { TableTotalsBarComponent, TotalMetric } from '@shared/components/table-totals-bar/table-totals-bar.component';
 import {
+  BillingFrequency,
   RecurringContractDetail,
+  RecurringContractLineType,
   RecurringContractService,
+  UsageMetric,
   UpsertRecurringContractPayload
 } from '@core/services/recurring-contract.service';
 import { ClientService, ClientListItem } from '@core/services/client.service';
+import { PricingService, PaymentTermTemplate, PriceListListItem } from '@core/services/pricing.service';
+import { ProductService, ProductListItem } from '@core/services/product.service';
+import { QuoteService } from '@core/services/quote.service';
+import { ToastService } from '@core/services/toast.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
+import { toLinePayloads } from '../../recurring-contracts.ui-utils';
+
+interface ContractLineForm {
+  id?: string | null;
+  lineType: RecurringContractLineType;
+  productId?: string | null;
+  description: string;
+  quantity: number;
+  unitPriceHT: number;
+  vatRate: number;
+  usageMetricId?: string | null;
+  includedQuantity?: number | null;
+  overageUnitPriceHT?: number | null;
+  sortOrder: number;
+}
 
 @Component({
   selector: 'app-contract-form',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, PageHeaderComponent, ButtonComponent],
+  imports: [
+    CommonModule, RouterModule, FormsModule,
+    PageHeaderComponent, BreadcrumbComponent, ButtonComponent,
+    FormSectionComponent, SkeletonComponent, TableTotalsBarComponent
+  ],
   template: `
+    <app-breadcrumb [items]="breadcrumbItems"></app-breadcrumb>
+
     <app-page-header
       [title]="isEdit() ? 'Modifier le contrat' : 'Nouveau contrat récurrent'"
       subtitle="Définissez la périodicité, les lignes et les conditions de facturation">
     </app-page-header>
 
-    <form class="ft-card form" (ngSubmit)="save()">
-      <div class="grid">
-        <label>Client
-          <select class="ft-input" [(ngModel)]="clientId" name="clientId" required>
-            <option value="">— Sélectionner —</option>
-            @for (c of clients(); track c.id) {
-              <option [value]="c.id">{{ c.name }}</option>
-            }
-          </select>
-        </label>
-        <label>Périodicité
-          <select class="ft-input" [(ngModel)]="billingFrequency" name="billingFrequency">
-            <option [ngValue]="0">Mensuel</option>
-            <option [ngValue]="1">Trimestriel</option>
-            <option [ngValue]="2">Annuel</option>
-          </select>
-        </label>
-        <label>Jour de facturation
-          <input class="ft-input" type="number" min="1" max="31" [(ngModel)]="billingDayOfMonth" name="billingDay" />
-        </label>
-        <label>Date de début
-          <input class="ft-input" type="date" [(ngModel)]="startDate" name="startDate" required />
-        </label>
-        <label>Date de fin
-          <input class="ft-input" type="date" [(ngModel)]="endDate" name="endDate" />
-        </label>
-        <label>Référence
-          <input class="ft-input" [(ngModel)]="reference" name="reference" />
-        </label>
+    @if (pageLoading()) {
+      <div class="loading-stack">
+        <app-skeleton height="6rem" shape="rounded"></app-skeleton>
+        <app-skeleton height="6rem" shape="rounded"></app-skeleton>
+        <app-skeleton height="10rem" shape="rounded"></app-skeleton>
       </div>
-
-      <h3>Lignes du contrat</h3>
-      @for (line of lines; track $index; let i = $index) {
-        <div class="line-row">
-          <select class="ft-input" [(ngModel)]="line.lineType" [name]="'lineType' + i">
-            <option [ngValue]="0">Récurrent fixe</option>
-            <option [ngValue]="1">À la consommation</option>
-            <option [ngValue]="2">Frais d'installation</option>
-          </select>
-          <input class="ft-input" placeholder="Description" [(ngModel)]="line.description" [name]="'desc' + i" required />
-          <input class="ft-input" type="number" placeholder="Qté" [(ngModel)]="line.quantity" [name]="'qty' + i" />
-          <input class="ft-input" type="number" placeholder="Prix HT" [(ngModel)]="line.unitPriceHT" [name]="'price' + i" />
-          <input class="ft-input" type="number" placeholder="TVA %" [(ngModel)]="line.vatRate" [name]="'vat' + i" />
-          <button type="button" class="link-btn" (click)="removeLine(i)">Supprimer</button>
+    } @else {
+    <form (ngSubmit)="save()">
+      <app-form-section [number]="1" title="Client et référence" icon="pi-user">
+        <div class="grid">
+          <label>Client *
+            <select class="ft-input" [(ngModel)]="clientId" name="clientId" required [disabled]="!!quoteId">
+              <option value="">— Sélectionner —</option>
+              @for (c of clients(); track c.id) {
+                <option [value]="c.id">{{ c.name }}</option>
+              }
+            </select>
+            @if (quoteId) {
+              <span class="field-hint">Client repris du devis d'origine.</span>
+            }
+          </label>
+          <label>Référence
+            <input class="ft-input" [(ngModel)]="reference" name="reference" placeholder="Référence interne ou client" />
+          </label>
         </div>
-      }
-      <app-button type="button" variant="outline" (clicked)="addLine()">Ajouter une ligne</app-button>
+      </app-form-section>
 
-      <label>Notes
-        <textarea class="ft-input" rows="3" [(ngModel)]="notes" name="notes"></textarea>
-      </label>
+      <app-form-section [number]="2" title="Facturation" icon="pi-calendar">
+        <div class="grid">
+          <label>Périodicité
+            <select class="ft-input" [(ngModel)]="billingFrequency" name="billingFrequency">
+              <option [ngValue]="'Monthly'">Mensuel</option>
+              <option [ngValue]="'Quarterly'">Trimestriel</option>
+              <option [ngValue]="'Annual'">Annuel</option>
+            </select>
+          </label>
+          <label>Jour de facturation
+            <input class="ft-input" type="number" min="1" max="31" [(ngModel)]="billingDayOfMonth" name="billingDay" />
+          </label>
+          <label>Date de début *
+            <input class="ft-input" type="date" [(ngModel)]="startDate" name="startDate" required />
+          </label>
+          <label>Date de fin
+            <input class="ft-input" type="date" [(ngModel)]="endDate" name="endDate" />
+          </label>
+          <label>Condition de règlement
+            <select class="ft-input" [(ngModel)]="paymentTermTemplateId" name="paymentTermTemplateId">
+              <option [ngValue]="null">— Par défaut —</option>
+              @for (pt of paymentTerms(); track pt.id) {
+                <option [ngValue]="pt.id">{{ pt.name }}</option>
+              }
+            </select>
+          </label>
+          <label>Grille tarifaire
+            <select class="ft-input" [(ngModel)]="priceListId" name="priceListId">
+              <option [ngValue]="null">— Aucune —</option>
+              @for (pl of priceLists(); track pl.id) {
+                <option [ngValue]="pl.id">{{ pl.name }}</option>
+              }
+            </select>
+          </label>
+        </div>
+      </app-form-section>
+
+      <app-form-section [number]="3" title="Renouvellement" icon="pi-refresh">
+        <div class="grid">
+          <label class="checkbox-label">
+            <input type="checkbox" [(ngModel)]="autoRenew" name="autoRenew" />
+            Renouvellement automatique
+          </label>
+          <label>Préavis (jours)
+            <input class="ft-input" type="number" min="0" [(ngModel)]="noticePeriodDays" name="noticePeriodDays" />
+          </label>
+        </div>
+      </app-form-section>
+
+      <app-form-section [number]="4" title="Lignes du contrat" icon="pi-list">
+        @for (line of lines; track $index; let i = $index) {
+          <div class="line-card">
+            <div class="line-card__head">
+              <label>Type
+                <select class="ft-input" [(ngModel)]="line.lineType" [name]="'lineType' + i">
+                  <option [ngValue]="'FixedRecurring'">Récurrent fixe</option>
+                  <option [ngValue]="'UsageMetered'">À la consommation</option>
+                  <option [ngValue]="'OneTimeSetup'">Frais d'installation</option>
+                </select>
+              </label>
+              <app-button type="button" variant="ghost" size="sm" icon="pi-trash" (clicked)="removeLine(i)">
+                Supprimer
+              </app-button>
+            </div>
+            <div class="grid">
+              <label class="span-2">Description *
+                <input class="ft-input" placeholder="Description" [(ngModel)]="line.description" [name]="'desc' + i" required />
+              </label>
+              @if (line.lineType !== 'OneTimeSetup') {
+                <label>Produit
+                  <select class="ft-input" [(ngModel)]="line.productId" [name]="'product' + i">
+                    <option [ngValue]="null">— Aucun —</option>
+                    @for (p of products(); track p.id) {
+                      <option [ngValue]="p.id">{{ p.code }} — {{ p.name }}</option>
+                    }
+                  </select>
+                </label>
+              }
+              <label>Qté
+                <input class="ft-input" type="number" placeholder="Qté" [(ngModel)]="line.quantity" [name]="'qty' + i" />
+              </label>
+              <label>Prix unitaire HT
+                <input class="ft-input" type="number" step="0.001" min="0" placeholder="Prix HT" [(ngModel)]="line.unitPriceHT" [name]="'price' + i" />
+              </label>
+              <label>TVA %
+                <input class="ft-input" type="number" step="0.001" min="0" placeholder="TVA %" [(ngModel)]="line.vatRate" [name]="'vat' + i" />
+              </label>
+              @if (line.lineType === 'UsageMetered') {
+                <label>Métrique *
+                  <select class="ft-input" [(ngModel)]="line.usageMetricId" [name]="'metric' + i">
+                    <option [ngValue]="null">— Sélectionner —</option>
+                    @for (m of usageMetrics(); track m.id) {
+                      <option [ngValue]="m.id">{{ m.name }} ({{ m.unit }})</option>
+                    }
+                  </select>
+                </label>
+                <label>Quantité incluse
+                  <input class="ft-input" type="number" min="0" [(ngModel)]="line.includedQuantity" [name]="'includedQty' + i" />
+                </label>
+                <label>Prix unitaire dépassement HT
+                  <input class="ft-input" type="number" step="0.001" min="0" [(ngModel)]="line.overageUnitPriceHT" [name]="'overagePrice' + i" />
+                </label>
+              }
+            </div>
+          </div>
+        }
+        <app-button type="button" variant="outline" icon="pi-plus" (clicked)="addLine()">Ajouter une ligne</app-button>
+
+        <app-table-totals-bar [metrics]="totalsMetrics()"></app-table-totals-bar>
+      </app-form-section>
+
+      <app-form-section [number]="5" title="Notes" icon="pi-comment">
+        <label>Notes internes
+          <textarea class="ft-input" rows="3" [(ngModel)]="notes" name="notes"></textarea>
+        </label>
+      </app-form-section>
 
       <div class="actions">
-        <app-button type="button" variant="outline" routerLink="/recurring-contracts">Annuler</app-button>
-        <app-button type="submit" variant="primary" [disabled]="saving()">Enregistrer</app-button>
+        <app-button type="button" variant="outline" [routerLink]="cancelRoute">Annuler</app-button>
+        <app-button type="submit" variant="primary" icon="pi-check" [disabled]="saving()">
+          {{ saving() ? 'Enregistrement…' : 'Enregistrer' }}
+        </app-button>
       </div>
     </form>
+    }
   `,
   styles: [`
-    .form { padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
-    label { display: flex; flex-direction: column; gap: .35rem; font-size: .9rem; }
-    .line-row { display: grid; grid-template-columns: 140px 1fr 80px 100px 80px auto; gap: .5rem; align-items: center; }
-    .actions { display: flex; gap: .75rem; justify-content: flex-end; margin-top: 1rem; }
-    .link-btn { background: none; border: none; color: var(--primary-color); cursor: pointer; }
+    .loading-stack { display: flex; flex-direction: column; gap: var(--spacing-4); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: var(--spacing-4);
+    }
+
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-1);
+      font-size: var(--font-size-sm);
+      color: var(--color-text-secondary);
+    }
+
+    .span-2 { grid-column: span 2; }
+
+    .checkbox-label {
+      flex-direction: row;
+      align-items: center;
+      gap: var(--spacing-2);
+      color: var(--color-text-primary);
+    }
+
+    .field-hint {
+      font-size: var(--font-size-xs);
+      color: var(--color-text-tertiary);
+    }
+
+    .ft-input {
+      padding: var(--spacing-2) var(--spacing-3);
+      border: 1px solid var(--color-border-default);
+      border-radius: var(--radius-lg);
+      font-size: var(--font-size-sm);
+      font-family: inherit;
+      background: var(--color-background-elevated);
+      color: var(--color-text-primary);
+    }
+
+    .ft-input:focus-visible {
+      outline: 2px solid var(--color-primary-500);
+      outline-offset: 1px;
+    }
+
+    .line-card {
+      border: 1px solid var(--color-border-subtle);
+      border-radius: var(--radius-xl);
+      padding: var(--spacing-4);
+      margin-bottom: var(--spacing-4);
+      background: var(--color-background-subtle);
+    }
+
+    .line-card__head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: var(--spacing-3);
+      margin-bottom: var(--spacing-3);
+    }
+
+    app-table-totals-bar { display: block; margin-top: var(--spacing-4); }
+
+    .actions {
+      display: flex;
+      gap: var(--spacing-3);
+      justify-content: flex-end;
+      margin-top: var(--spacing-4);
+    }
   `]
 })
 export class ContractFormComponent implements OnInit {
   private readonly service = inject(RecurringContractService);
   private readonly clientService = inject(ClientService);
+  private readonly pricingService = inject(PricingService);
+  private readonly productService = inject(ProductService);
+  private readonly quoteService = inject(QuoteService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly toast = inject(ToastService);
+  private readonly errorHandler = inject(ErrorHandlerService);
 
   readonly clients = signal<ClientListItem[]>([]);
+  readonly paymentTerms = signal<PaymentTermTemplate[]>([]);
+  readonly priceLists = signal<PriceListListItem[]>([]);
+  readonly products = signal<ProductListItem[]>([]);
+  readonly usageMetrics = signal<UsageMetric[]>([]);
   readonly isEdit = signal(false);
   readonly saving = signal(false);
+  readonly pageLoading = signal(false);
   contractId: string | null = null;
+  quoteId: string | null = null;
 
   clientId = '';
-  billingFrequency = 0;
+  billingFrequency: BillingFrequency = 'Monthly';
   billingDayOfMonth = 1;
   startDate = new Date().toISOString().slice(0, 10);
   endDate = '';
+  autoRenew = true;
+  noticePeriodDays = 30;
+  paymentTermTemplateId: string | null = null;
+  priceListId: string | null = null;
   reference = '';
   notes = '';
-  lines: Array<{
-    lineType: number;
-    description: string;
-    quantity: number;
-    unitPriceHT: number;
-    vatRate: number;
-    sortOrder: number;
-  }> = [{ lineType: 0, description: '', quantity: 1, unitPriceHT: 0, vatRate: 19, sortOrder: 0 }];
+  lines: ContractLineForm[] = [this.newLine(0)];
+
+  get breadcrumbItems(): BreadcrumbItem[] {
+    return [
+      { label: 'Accueil', route: '/', icon: 'pi-home' },
+      { label: 'Contrats récurrents', route: '/recurring-contracts' },
+      { label: this.isEdit() ? 'Modifier le contrat' : 'Nouveau contrat' }
+    ];
+  }
+
+  get cancelRoute(): string {
+    return this.isEdit() && this.contractId
+      ? `/recurring-contracts/${this.contractId}`
+      : '/recurring-contracts';
+  }
+
+  get totalHT(): number {
+    return this.lines.reduce((sum, l) => sum + (l.quantity || 0) * (l.unitPriceHT || 0), 0);
+  }
+
+  get totalVAT(): number {
+    return this.lines.reduce((sum, l) => sum + (l.quantity || 0) * (l.unitPriceHT || 0) * (l.vatRate || 0) / 100, 0);
+  }
+
+  /** Estimation mensuelle : lignes fixes ramenées au mois selon la périodicité. */
+  get monthlyEstimate(): number {
+    const divisor = this.billingFrequency === 'Quarterly' ? 3 : this.billingFrequency === 'Annual' ? 12 : 1;
+    const fixed = this.lines
+      .filter(l => l.lineType === 'FixedRecurring')
+      .reduce((sum, l) => sum + (l.quantity || 0) * (l.unitPriceHT || 0), 0);
+    return fixed / divisor;
+  }
+
+  totalsMetrics(): TotalMetric[] {
+    return [
+      { label: 'Total HT', value: this.totalHT, format: 'currency', currency: 'TND', icon: 'pi-calculator', tone: 'primary' },
+      { label: 'TVA', value: this.totalVAT, format: 'currency', currency: 'TND', icon: 'pi-percentage', tone: 'cyan' },
+      { label: 'Total TTC', value: this.totalHT + this.totalVAT, format: 'currency', currency: 'TND', icon: 'pi-wallet', tone: 'emerald' },
+      { label: 'Estimation mensuelle', value: this.monthlyEstimate, format: 'currency', currency: 'TND', icon: 'pi-sync', tone: 'violet', hint: 'Lignes fixes ramenées au mois' }
+    ];
+  }
 
   ngOnInit(): void {
-    this.clientService.getClients({ page: 1, pageSize: 200 }).subscribe({
-      next: (res) => {
-        if (res.success) this.clients.set(res.data.items);
-      }
-    });
+    this.loadReferentials();
+    this.quoteId = this.route.snapshot.queryParamMap.get('quoteId');
     const id = this.route.snapshot.paramMap.get('id');
     if (id && this.route.snapshot.url.some(s => s.path === 'edit')) {
       this.isEdit.set(true);
       this.contractId = id;
-      this.service.get(id).subscribe(c => this.patchForm(c));
+      this.pageLoading.set(true);
+      this.service.get(id).subscribe({
+        next: c => {
+          this.patchForm(c);
+          this.pageLoading.set(false);
+        },
+        error: err => {
+          this.pageLoading.set(false);
+          this.errorHandler.logError('RecurringContracts: form load', err);
+          this.toast.add({ severity: 'error', summary: 'Erreur', detail: this.errorHandler.extractErrorMessage(err) });
+          void this.router.navigate(['/recurring-contracts']);
+        }
+      });
+    } else if (this.quoteId) {
+      // Pré-remplissage depuis un devis : client repris, lignes reprises côté serveur.
+      this.quoteService.getQuote(this.quoteId).subscribe({
+        next: res => {
+          if (res.success && res.data) this.clientId = res.data.clientId;
+        },
+        error: () => { /* le select client reste éditable en secours */ }
+      });
     }
   }
 
   addLine(): void {
-    this.lines.push({ lineType: 0, description: '', quantity: 1, unitPriceHT: 0, vatRate: 19, sortOrder: this.lines.length });
+    this.lines.push(this.newLine(this.lines.length));
   }
 
   removeLine(index: number): void {
@@ -138,52 +394,162 @@ export class ContractFormComponent implements OnInit {
   }
 
   save(): void {
+    if (!this.validate()) return;
+
     const payload: UpsertRecurringContractPayload = {
       clientId: this.clientId,
       billingFrequency: this.billingFrequency,
       billingDayOfMonth: this.billingDayOfMonth,
       startDate: this.startDate,
       endDate: this.endDate || null,
-      autoRenew: true,
-      noticePeriodDays: 30,
+      autoRenew: this.autoRenew,
+      noticePeriodDays: this.noticePeriodDays,
+      paymentTermTemplateId: this.paymentTermTemplateId,
+      priceListId: this.priceListId,
       reference: this.reference || null,
       notes: this.notes || null,
-      lines: this.lines.map((l, i) => ({ ...l, sortOrder: i }))
+      lines: toLinePayloads(this.lines)
     };
     this.saving.set(true);
+
     if (this.isEdit() && this.contractId) {
       this.service.update(this.contractId, payload).subscribe({
         next: () => {
           this.saving.set(false);
+          this.toast.add({ severity: 'success', summary: 'Contrat enregistré', detail: 'Les modifications ont été enregistrées.' });
           void this.router.navigate(['/recurring-contracts', this.contractId!]);
         },
-        error: () => this.saving.set(false)
+        error: err => {
+          this.saving.set(false);
+          this.errorHandler.logError('RecurringContracts: update', err);
+          this.toast.add({ severity: 'error', summary: 'Erreur', detail: this.errorHandler.extractErrorMessage(err) });
+        }
       });
       return;
     }
+
+    if (this.quoteId) {
+      this.service.convertFromQuote(this.quoteId, payload).subscribe({
+        next: id => {
+          this.saving.set(false);
+          this.toast.add({ severity: 'success', summary: 'Contrat créé', detail: 'Contrat créé depuis le devis.' });
+          void this.router.navigate(['/recurring-contracts', id]);
+        },
+        error: err => {
+          this.saving.set(false);
+          this.errorHandler.logError('RecurringContracts: convertFromQuote', err);
+          this.toast.add({ severity: 'error', summary: 'Erreur', detail: this.errorHandler.extractErrorMessage(err) });
+        }
+      });
+      return;
+    }
+
     this.service.create(payload).subscribe({
-      next: (id) => {
+      next: id => {
         this.saving.set(false);
+        this.toast.add({ severity: 'success', summary: 'Contrat créé', detail: 'Le brouillon de contrat a été créé.' });
         void this.router.navigate(['/recurring-contracts', id]);
       },
-      error: () => this.saving.set(false)
+      error: err => {
+        this.saving.set(false);
+        this.errorHandler.logError('RecurringContracts: create', err);
+        this.toast.add({ severity: 'error', summary: 'Erreur', detail: this.errorHandler.extractErrorMessage(err) });
+      }
     });
   }
 
+  /** Validation client : toast warn et aucune requête en cas d'invalidité. */
+  private validate(): boolean {
+    const warn = (detail: string) => this.toast.add({ severity: 'warn', summary: 'Formulaire incomplet', detail });
+
+    if (!this.clientId) { warn('Sélectionnez un client.'); return false; }
+    if (this.billingDayOfMonth < 1 || this.billingDayOfMonth > 31) {
+      warn('Le jour de facturation doit être compris entre 1 et 31.');
+      return false;
+    }
+    if (!this.startDate) { warn('La date de début est obligatoire.'); return false; }
+    if (this.endDate && this.endDate < this.startDate) {
+      warn('La date de fin doit être postérieure ou égale à la date de début.');
+      return false;
+    }
+    if (this.lines.length === 0) { warn('Ajoutez au moins une ligne au contrat.'); return false; }
+    for (const line of this.lines) {
+      if (!line.description?.trim()) {
+        warn('Chaque ligne doit avoir une description.');
+        return false;
+      }
+      if (line.lineType === 'UsageMetered' && !line.usageMetricId) {
+        warn('La métrique est obligatoire pour une ligne à la consommation.');
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private loadReferentials(): void {
+    this.clientService.getClients({ page: 1, pageSize: 200 }).subscribe({
+      next: res => { if (res.success) this.clients.set(res.data.items); },
+      error: () => this.clients.set([])
+    });
+    this.pricingService.getPaymentTerms(true).subscribe({
+      next: res => this.paymentTerms.set(res.data ?? []),
+      error: () => this.paymentTerms.set([])
+    });
+    this.pricingService.getPriceLists().subscribe({
+      next: res => this.priceLists.set(res.data ?? []),
+      error: () => this.priceLists.set([])
+    });
+    // Catalogue non critique : une 403 (pas de permission produits) laisse le select vide.
+    this.productService.getProducts({ pageSize: 200 }).subscribe({
+      next: res => this.products.set(res.data?.items ?? []),
+      error: () => this.products.set([])
+    });
+    this.service.listUsageMetrics().subscribe({
+      next: m => this.usageMetrics.set(m),
+      error: () => this.usageMetrics.set([])
+    });
+  }
+
+  private newLine(sortOrder: number): ContractLineForm {
+    return {
+      id: null,
+      lineType: 'FixedRecurring',
+      productId: null,
+      description: '',
+      quantity: 1,
+      unitPriceHT: 0,
+      vatRate: 19,
+      usageMetricId: null,
+      includedQuantity: null,
+      overageUnitPriceHT: null,
+      sortOrder
+    };
+  }
+
+  /** Reprend TOUTES les valeurs du contrat (correction B3 : plus aucun champ écrasé). */
   private patchForm(c: RecurringContractDetail): void {
     this.clientId = c.clientId;
-    this.billingFrequency = c.billingFrequency;
+    this.billingFrequency = c.billingFrequency === 'OneOff' ? 'Monthly' : c.billingFrequency;
     this.billingDayOfMonth = c.billingDayOfMonth;
     this.startDate = c.startDate.slice(0, 10);
     this.endDate = c.endDate?.slice(0, 10) ?? '';
+    this.autoRenew = c.autoRenew;
+    this.noticePeriodDays = c.noticePeriodDays;
+    this.paymentTermTemplateId = c.paymentTermTemplateId ?? null;
+    this.priceListId = c.priceListId ?? null;
     this.reference = c.reference ?? '';
     this.notes = c.notes ?? '';
     this.lines = c.lines.map((l, i) => ({
+      id: l.id ?? null,
       lineType: l.lineType,
+      productId: l.productId ?? null,
       description: l.description,
       quantity: l.quantity,
       unitPriceHT: l.unitPriceHT,
       vatRate: l.vatRate,
+      usageMetricId: l.usageMetricId ?? null,
+      includedQuantity: l.includedQuantity ?? null,
+      overageUnitPriceHT: l.overageUnitPriceHT ?? null,
       sortOrder: i
     }));
   }

@@ -1,18 +1,41 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
+import { Subject, debounceTime, distinctUntilChanged, takeUntil } from 'rxjs';
+import { TableModule } from 'primeng/table';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
-import { RecurringContractListItem, RecurringContractService } from '@core/services/recurring-contract.service';
+import { SkeletonTableComponent, SkeletonColumn } from '@shared/components/skeleton/skeleton-table.component';
+import { StatCardComponent } from '@shared/components/stat-card/stat-card.component';
+import { StatusBadgeComponent } from '@shared/components/status-badge/status-badge.component';
+import {
+  ContractStats,
+  RecurringContractListItem,
+  RecurringContractService,
+  RecurringContractStatus
+} from '@core/services/recurring-contract.service';
+import { ClientListItem, ClientService } from '@core/services/client.service';
 import { AuthService } from '@core/services/auth.service';
+import { ToastService } from '@core/services/toast.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
+import { contractBadgeStatus, formatContractAmount } from '../../recurring-contracts.ui-utils';
+
+interface StatusFilterOption {
+  label: string;
+  value: RecurringContractStatus | null;
+}
 
 @Component({
   selector: 'app-contract-list',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, PageHeaderComponent, ButtonComponent, EmptyStateComponent],
+  imports: [
+    CommonModule, RouterModule, FormsModule, TableModule,
+    PageHeaderComponent, ButtonComponent, EmptyStateComponent,
+    SkeletonTableComponent, StatCardComponent, StatusBadgeComponent
+  ],
   template: `
     <app-page-header
       title="Contrats récurrents"
@@ -27,73 +50,241 @@ import { PERMISSIONS } from '@core/config/permission-keys';
       </div>
     </app-page-header>
 
-    <div class="ft-card filters">
-      <input class="ft-input" [(ngModel)]="search" (ngModelChange)="load()" placeholder="Rechercher..." />
-      <select class="ft-input" [(ngModel)]="statusFilter" (ngModelChange)="load()">
-        <option [ngValue]="null">Tous les statuts</option>
-        <option [ngValue]="0">Brouillon</option>
-        <option [ngValue]="1">Actif</option>
-        <option [ngValue]="2">Suspendu</option>
-        <option [ngValue]="3">Résilié</option>
-      </select>
+    @if (stats(); as s) {
+      <div class="kpi-grid">
+        <app-stat-card
+          label="Contrats actifs"
+          [value]="s.activeCount"
+          icon="pi-check-circle"
+          tone="teal">
+        </app-stat-card>
+        <app-stat-card
+          label="MRR estimé"
+          [value]="formatContractAmount(s.estimatedMonthlyRecurringTotal, s.currency)"
+          icon="pi-wallet"
+          tone="primary">
+        </app-stat-card>
+        <app-stat-card
+          label="Échéances ≤ 7 j"
+          [value]="s.dueSoonCount"
+          icon="pi-calendar"
+          tone="orange">
+        </app-stat-card>
+        <app-stat-card
+          label="Brouillons en attente"
+          [value]="s.pendingDraftsCount"
+          icon="pi-file-edit"
+          tone="violet"
+          routerLink="/recurring-contracts/pending-drafts"
+          navigationAriaLabel="Voir les brouillons à valider">
+        </app-stat-card>
+      </div>
+    }
+
+    <div class="ft-filters">
+      <div class="ft-filters__row">
+        <input
+          class="ft-input filters__search"
+          [(ngModel)]="search"
+          (ngModelChange)="onSearchInput()"
+          placeholder="Rechercher (numéro, référence, client)…" />
+        <select class="ft-input" [(ngModel)]="statusFilter" (ngModelChange)="onFilterChange()">
+          @for (opt of statusOptions; track opt.label) {
+            <option [ngValue]="opt.value">{{ opt.label }}</option>
+          }
+        </select>
+        <select class="ft-input" [(ngModel)]="clientFilter" (ngModelChange)="onFilterChange()">
+          <option [ngValue]="null">Tous les clients</option>
+          @for (c of clients(); track c.id) {
+            <option [ngValue]="c.id">{{ c.name }}</option>
+          }
+        </select>
+      </div>
     </div>
 
-    @if (loading()) {
-      <p>Chargement...</p>
-    } @else if (items().length === 0) {
-      <app-empty-state title="Aucun contrat" message="Créez votre premier contrat récurrent."></app-empty-state>
+    @if (loading() && items().length === 0) {
+      <app-skeleton-table [rows]="8" [columns]="skeletonColumns"></app-skeleton-table>
+    } @else if (!loading() && items().length === 0) {
+      <app-empty-state
+        icon="pi-inbox"
+        title="Aucun contrat"
+        description="Créez votre premier contrat récurrent ou ajustez vos filtres."
+        actionLabel="Nouveau contrat"
+        actionRoute="/recurring-contracts/new"
+        [showAction]="canCreate()">
+      </app-empty-state>
     } @else {
-      <div class="ft-card table-wrap">
-        <table class="ft-table">
-          <thead>
+      <div class="ft-table-card">
+        <p-table
+          [value]="items()"
+          [paginator]="true"
+          [rows]="pageSize"
+          [totalRecords]="totalRecords()"
+          [lazy]="true"
+          (onLazyLoad)="onPageChange($event)"
+          [loading]="loading()"
+          [first]="(page() - 1) * pageSize"
+          [showCurrentPageReport]="true"
+          currentPageReportTemplate="Affichage de {first} à {last} sur {totalRecords} contrats"
+          [rowHover]="true"
+          styleClass="p-datatable-sm">
+          <ng-template pTemplate="header">
             <tr>
-              <th>Numéro</th>
+              <th style="width: 150px">Numéro</th>
               <th>Client</th>
-              <th>Statut</th>
-              <th>Périodicité</th>
-              <th>Prochaine facturation</th>
-              <th>Montant estimé/mois</th>
-              <th></th>
+              <th style="width: 130px">Statut</th>
+              <th style="width: 120px">Périodicité</th>
+              <th style="width: 150px">Prochaine facturation</th>
+              <th style="width: 140px">Montant / mois</th>
+              <th style="width: 90px">Actions</th>
             </tr>
-          </thead>
-          <tbody>
-            @for (item of items(); track item.id) {
-              <tr>
-                <td>{{ item.number || '—' }}</td>
-                <td>{{ item.clientName }}</td>
-                <td><span class="badge">{{ item.statusDisplay }}</span></td>
-                <td>{{ item.billingFrequencyDisplay }}</td>
-                <td>{{ item.nextBillingDate ? (item.nextBillingDate | date:'dd/MM/yyyy') : '—' }}</td>
-                <td>{{ item.estimatedMonthlyAmount | number:'1.3-3' }} {{ item.currency }}</td>
-                <td><a [routerLink]="[item.id]">Voir</a></td>
-              </tr>
-            }
-          </tbody>
-        </table>
+          </ng-template>
+          <ng-template pTemplate="body" let-item>
+            <tr>
+              <td>
+                <a [routerLink]="[item.id]" class="contract-number">{{ item.number || '—' }}</a>
+              </td>
+              <td>{{ item.clientName }}</td>
+              <td>
+                <app-status-badge
+                  [status]="contractBadgeStatus(item.status)"
+                  [label]="item.statusDisplay">
+                </app-status-badge>
+              </td>
+              <td>{{ item.billingFrequencyDisplay }}</td>
+              <td>{{ item.nextBillingDate ? (item.nextBillingDate | date:'dd/MM/yyyy') : '—' }}</td>
+              <td class="amount">{{ item.estimatedMonthlyAmount | currency:item.currency:'symbol':'1.3-3' }}</td>
+              <td>
+                <app-button
+                  variant="ghost"
+                  size="sm"
+                  icon="pi-eye"
+                  [routerLink]="[item.id]"
+                  ariaLabel="Voir le contrat">
+                  Voir
+                </app-button>
+              </td>
+            </tr>
+          </ng-template>
+        </p-table>
       </div>
     }
   `,
   styles: [`
-    .actions { display: flex; gap: .5rem; flex-wrap: wrap; }
-    .filters { display: flex; gap: 1rem; margin-bottom: 1rem; padding: 1rem; }
-    .filters .ft-input { flex: 1; min-width: 200px; }
-    .table-wrap { overflow-x: auto; }
-    .badge { padding: .2rem .5rem; border-radius: 4px; background: var(--surface-100); font-size: .85rem; }
+    .actions { display: flex; gap: var(--spacing-2); flex-wrap: wrap; }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: var(--spacing-4);
+      margin-bottom: var(--spacing-5);
+    }
+
+    .ft-input {
+      padding: var(--spacing-2) var(--spacing-3);
+      border: 1px solid var(--color-border-default);
+      border-radius: var(--radius-lg);
+      font-size: var(--font-size-sm);
+      font-family: inherit;
+      background: var(--color-background-elevated);
+      color: var(--color-text-primary);
+    }
+
+    .ft-input:focus-visible {
+      outline: 2px solid var(--color-primary-500);
+      outline-offset: 1px;
+    }
+
+    .filters__search { flex: 1; min-width: 220px; }
+
+    .contract-number {
+      font-family: var(--font-family-mono, 'JetBrains Mono', monospace);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-primary-600);
+      font-size: var(--font-size-sm);
+      text-decoration: none;
+    }
+
+    .contract-number:hover { text-decoration: underline; }
+
+    .amount {
+      font-family: var(--font-family-mono, 'JetBrains Mono', monospace);
+      font-weight: var(--font-weight-medium);
+      white-space: nowrap;
+    }
   `]
 })
-export class ContractListComponent implements OnInit {
+export class ContractListComponent implements OnInit, OnDestroy {
   private readonly service = inject(RecurringContractService);
+  private readonly clientService = inject(ClientService);
   private readonly auth = inject(AuthService);
+  private readonly toast = inject(ToastService);
+  private readonly errorHandler = inject(ErrorHandlerService);
 
   readonly items = signal<RecurringContractListItem[]>([]);
   readonly loading = signal(true);
+  readonly totalRecords = signal(0);
+  readonly page = signal(1);
+  readonly pageSize = 20;
+  readonly clients = signal<ClientListItem[]>([]);
+  readonly stats = signal<ContractStats | null>(null);
+
   search = '';
-  statusFilter: number | null = null;
+  statusFilter: RecurringContractStatus | null = null;
+  clientFilter: string | null = null;
 
-  ngOnInit(): void { this.load(); }
+  readonly canCreate = computed(() => this.auth.hasPermission(PERMISSIONS.recurringContracts.create));
 
-  canCreate(): boolean {
-    return this.auth.hasPermission(PERMISSIONS.recurringContracts.create);
+  readonly statusOptions: StatusFilterOption[] = [
+    { label: 'Tous les statuts', value: null },
+    { label: 'Brouillon', value: 'Draft' },
+    { label: 'Actif', value: 'Active' },
+    { label: 'Suspendu', value: 'Suspended' },
+    { label: 'Résilié', value: 'Cancelled' },
+    { label: 'Expiré', value: 'Expired' }
+  ];
+
+  readonly skeletonColumns: SkeletonColumn[] = [
+    { width: '150px' },
+    { width: '200px' },
+    { width: '130px' },
+    { width: '120px' },
+    { width: '150px' },
+    { width: '140px' },
+    { width: '90px' }
+  ];
+
+  protected readonly contractBadgeStatus = contractBadgeStatus;
+  protected readonly formatContractAmount = formatContractAmount;
+
+  private readonly destroy$ = new Subject<void>();
+  private readonly search$ = new Subject<void>();
+
+  ngOnInit(): void {
+    this.search$.pipe(debounceTime(300), distinctUntilChanged(), takeUntil(this.destroy$))
+      .subscribe(() => { this.page.set(1); this.load(); });
+    this.loadClients();
+    this.load();
+    this.loadStats();
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+    this.search$.complete();
+  }
+
+  onSearchInput(): void { this.search$.next(); }
+
+  onFilterChange(): void {
+    this.page.set(1);
+    this.load();
+  }
+
+  onPageChange(event: { first?: number | null; rows?: number | null }): void {
+    const rows = event.rows ?? this.pageSize;
+    this.page.set(Math.floor((event.first ?? 0) / rows) + 1);
+    this.load();
   }
 
   load(): void {
@@ -101,14 +292,47 @@ export class ContractListComponent implements OnInit {
     this.service.list({
       search: this.search || undefined,
       status: this.statusFilter ?? undefined,
-      page: 1,
-      pageSize: 50
+      clientId: this.clientFilter ?? undefined,
+      page: this.page(),
+      pageSize: this.pageSize
     }).subscribe({
       next: res => {
         this.items.set(res.items);
+        this.totalRecords.set(res.totalCount);
         this.loading.set(false);
       },
-      error: () => this.loading.set(false)
+      error: err => {
+        this.loading.set(false);
+        this.errorHandler.logError('RecurringContracts: list', err);
+        this.toast.add({
+          severity: 'error',
+          summary: 'Erreur',
+          detail: this.errorHandler.extractErrorMessage(err)
+        });
+      }
+    });
+  }
+
+  /** Bande KPI : masquée silencieusement quand GET /stats n'existe pas encore (404 → null). */
+  private loadStats(): void {
+    this.service.getStats().subscribe({
+      next: s => this.stats.set(s),
+      error: err => {
+        this.stats.set(null);
+        this.errorHandler.logError('RecurringContracts: stats', err);
+        this.toast.add({
+          severity: 'error',
+          summary: 'Erreur',
+          detail: this.errorHandler.extractErrorMessage(err)
+        });
+      }
+    });
+  }
+
+  private loadClients(): void {
+    this.clientService.getClients({ page: 1, pageSize: 200 }).subscribe({
+      next: res => { if (res.success) this.clients.set(res.data.items); },
+      error: () => this.clients.set([])
     });
   }
 }
