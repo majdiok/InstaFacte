@@ -301,7 +301,19 @@ public class FirmAiChatController : ControllerBase
         if (!result.Success)
             return BadRequest(ApiResponse<object>.Fail(result.ErrorMessage ?? "Confirmation refusée."));
 
-        var payload = JsonSerializer.Deserialize<JsonElement>(result.Data);
+        if (string.IsNullOrWhiteSpace(result.Data))
+            return BadRequest(ApiResponse<object>.Fail("Données de confirmation manquantes."));
+
+        JsonElement payload;
+        try
+        {
+            payload = JsonSerializer.Deserialize<JsonElement>(result.Data);
+        }
+        catch (JsonException)
+        {
+            return BadRequest(ApiResponse<object>.Fail("Format JSON invalide renvoyé par le service."));
+        }
+
         return Ok(ApiResponse<JsonElement>.Ok(payload));
     }
 
