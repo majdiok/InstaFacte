@@ -15,7 +15,7 @@ import {
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { Router } from '@angular/router';
 import { MarkdownModule } from 'ngx-markdown';
-import { ChatMessage, ClientNavAction, MessageRole } from '../../models/ai-chat.models';
+import { ChatMessage, ClientNavAction, ConfirmFirmReminderAction, MessageRole } from '../../models/ai-chat.models';
 import { TypingIndicatorComponent } from '../typing-indicator/typing-indicator.component';
 import { AiDashboardRendererComponent } from '../ai-dashboard-renderer/ai-dashboard-renderer.component';
 import { AssistantProgressTimelineComponent } from '../assistant-progress-timeline/assistant-progress-timeline.component';
@@ -33,6 +33,14 @@ import { writeTextToClipboard } from '../../utils/clipboard.util';
 import { downloadCsv } from '../../utils/dashboard-table-csv';
 import { htmlTablesToCsv } from '../../utils/markdown-html-tables-csv';
 import { exportDashboardToXlsx, exportElementToPdf } from '../../utils/ai-assistant-export';
+
+/**
+ * Préfixe du repli honnête émis par la gate d'ancrage FirmMission (Lot 1.3,
+ * `FirmUngroundedFallbackMessage` côté backend). Détecté sur le contenu final de la réponse pour
+ * rendre la carte info « Je n'ai pas pu consulter les données… » (maquette
+ * `grounding-repli-honnete-carte-info.html`) plutôt que le badge ambre générique.
+ */
+const FIRM_UNGROUNDED_FALLBACK_PREFIX = "Je n'ai pas pu consulter les données du cabinet";
 
 @Component({
   selector: 'app-chat-message',
@@ -193,7 +201,7 @@ import { exportDashboardToXlsx, exportElementToPdf } from '../../utils/ai-assist
                   aria-label="Copier le lien de la conversation">
                   Lien
                 </button>
-                @if (markdownForDisplay.trim() || message.parsedDashboard) {
+                @if (!hideChartFollowUp && (markdownForDisplay.trim() || message.parsedDashboard)) {
                   <button
                     type="button"
                     class="toolbar-btn"
@@ -205,7 +213,30 @@ import { exportDashboardToXlsx, exportElementToPdf } from '../../utils/ai-assist
               </div>
             }
 
-            @if (message.isStreaming && message.content.trim()) {
+            @if (isHonestFallback && warnWhenUngrounded) {
+              <div class="assistant-bubble-wrap">
+                <div class="fallback-card" role="status" aria-live="polite">
+                  <div class="fallback-icon" aria-hidden="true">
+                    <i class="fa-solid fa-circle-info"></i>
+                  </div>
+                  <div class="fallback-body">
+                    <p class="fallback-title">Je n'ai pas pu consulter les donn&#233;es du cabinet</p>
+                    <p class="fallback-text">{{ message.content }}</p>
+                    <div class="fallback-actions">
+                      <button
+                        type="button"
+                        class="retry-btn"
+                        (click)="resendOriginalQuestion()"
+                        aria-label="R&#233;essayer la consultation des donn&#233;es du cabinet">
+                        <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+                        R&#233;essayer la consultation
+                      </button>
+                    </div>
+                    <p class="fallback-hint">Aucune donn&#233;e du cabinet n'a &#233;t&#233; utilis&#233;e dans ce message.</p>
+                  </div>
+                </div>
+              </div>
+            } @else if (message.isStreaming && message.content.trim()) {
               <div class="assistant-bubble-wrap">
                 <div class="message-content assistant-markdown streaming">
                   <markdown [data]="streamingMarkdown"></markdown>
@@ -223,6 +254,94 @@ import { exportDashboardToXlsx, exportElementToPdf } from '../../utils/ai-assist
               </div>
             }
           </div>
+
+          @if (message.firmReminderAction) {
+            <section
+              class="confirm-card"
+              [class.confirmed]="message.firmReminderConfirmed"
+              aria-labelledby="reminder-confirm-title">
+              @if (message.firmReminderConfirmed) {
+                <div class="confirm-header">
+                  <div class="confirm-header-icon" aria-hidden="true">
+                    <i class="fa-solid fa-check"></i>
+                  </div>
+                  <div>
+                    <div class="confirm-title" id="reminder-confirm-title">Relance envoy&#233;e</div>
+                    <div class="confirm-subtitle">Rappel &#8212; {{ message.firmReminderAction.preview.dossier }}</div>
+                  </div>
+                </div>
+                <div class="confirmed-status" role="status" aria-live="polite">
+                  <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                  E-mail envoy&#233; &#224; {{ message.firmReminderAction.preview.responsable }}
+                  <span class="meta">&#183; consign&#233; dans l'historique du dossier</span>
+                </div>
+              } @else {
+                <div class="confirm-header">
+                  <div class="confirm-header-icon" aria-hidden="true">
+                    <i class="fa-solid fa-envelope"></i>
+                  </div>
+                  <div>
+                    <div class="confirm-title" id="reminder-confirm-title">Confirmation requise &#8212; relance d'&#233;ch&#233;ance</div>
+                    <div class="confirm-subtitle">
+                      Rappel &#224; {{ message.firmReminderAction.preview.responsable }} &#183; {{ message.firmReminderAction.preview.dossier }}
+                    </div>
+                  </div>
+                </div>
+
+                <div class="confirm-fields">
+                  <span class="field-label">Destinataire</span>
+                  <span class="field-value"><strong>{{ message.firmReminderAction.preview.responsable }}</strong></span>
+
+                  <span class="field-label">Dossier</span>
+                  <span class="field-value">{{ message.firmReminderAction.preview.dossier }}</span>
+
+                  <span class="field-label">&#201;ch&#233;ance</span>
+                  <span class="field-value">{{ message.firmReminderAction.preview.echeance }}</span>
+
+                  <span class="field-label">Aper&#231;u du message</span>
+                  <div class="message-preview" aria-label="Aper&#231;u de l'e-mail de relance">
+                    <p class="subject">{{ message.firmReminderAction.preview.objet }}</p>
+                  </div>
+                </div>
+
+                @if (message.firmReminderError) {
+                  <div class="confirm-error" role="alert">
+                    <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
+                    {{ message.firmReminderError }}
+                  </div>
+                }
+
+                <div class="confirm-actions">
+                  <button
+                    type="button"
+                    class="confirm-btn"
+                    (click)="confirmReminder()"
+                    [disabled]="message.firmReminderConfirming"
+                    aria-label="Confirmer l'envoi de la relance">
+                    <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
+                    @if (message.firmReminderConfirming) { Envoi&#8230; } @else { Confirmer l'envoi }
+                  </button>
+                  <button
+                    type="button"
+                    class="cancel-btn"
+                    (click)="cancelReminder()"
+                    [disabled]="message.firmReminderConfirming"
+                    aria-label="Annuler la relance, aucun e-mail ne sera envoy&#233;">
+                    Annuler
+                  </button>
+                  <span class="confirm-expiry" aria-label="D&#233;lai avant expiration de la confirmation">
+                    <i class="fa-regular fa-clock" aria-hidden="true"></i>
+                    {{ reminderExpiryLabel }}
+                  </span>
+                </div>
+
+                <div class="confirm-security-note">
+                  L'envoi n'est d&#233;clench&#233; que par votre clic &#8212; jamais automatiquement par l'assistant.
+                  Un rappel d&#233;j&#224; envoy&#233; aujourd'hui pour cette &#233;ch&#233;ance ne sera pas dupliqu&#233;.
+                </div>
+              }
+            </section>
+          }
 
           @if (message.suggestedPrompts?.length) {
             <div class="suggested-prompts" role="group" aria-label="Suggestions de suite">
@@ -245,11 +364,29 @@ import { exportDashboardToXlsx, exportElementToPdf } from '../../utils/ai-assist
           }
 
           @if (message.sources?.length) {
-            <div class="sources-line" role="note">
+            <div class="sources-line" role="note" aria-label="Sources consult&#233;es pour cette r&#233;ponse">
               <span class="sources-label">Sources (outils)</span>
               @for (s of dedupedSources; track s.toolName) {
-                <span class="src-tag">{{ s.label }}@if (s.count > 1) { ×{{ s.count }}}</span>
+                <span class="src-tag" [attr.aria-label]="sourceChipAriaLabel(s)">{{ s.label }}@if (s.count > 1) { ×{{ s.count }}}</span>
               }
+            </div>
+          } @else if (showUngroundedWarning()) {
+            <div class="sources-line unverified-line" role="note" aria-label="Statut de v&#233;rification de la r&#233;ponse">
+              <span
+                class="unverified-badge"
+                role="status"
+                aria-label="R&#233;ponse non v&#233;rifi&#233;e &#8212; les donn&#233;es du cabinet n'ont pas &#233;t&#233; consult&#233;es">
+                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                <span>R&#233;ponse non v&#233;rifi&#233;e &#8212; donn&#233;es non consult&#233;es</span>
+              </span>
+              <button
+                type="button"
+                class="regenerate-btn"
+                (click)="resendOriginalQuestion()"
+                aria-label="Relancer la question avec consultation des donn&#233;es du cabinet">
+                <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+                Relancer avec consultation des donn&#233;es
+              </button>
             </div>
           }
 
@@ -607,6 +744,393 @@ import { exportDashboardToXlsx, exportElementToPdf } from '../../utils/ai-assist
       color: var(--color-neutral-700, #374151);
     }
 
+    /* ── Lot 5 : badge ambre « réponse non vérifiée » (0 consultation) ─────────────────── */
+    .unverified-line {
+      gap: 8px;
+    }
+
+    .unverified-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-warning-700, #b45309);
+      background: var(--color-warning-50, #fffbeb);
+      border: 1px solid var(--color-warning-200, #fde68a);
+    }
+
+    .unverified-badge i {
+      font-size: 11px;
+      color: var(--color-warning-600, #d97706);
+    }
+
+    .regenerate-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--ai-accent-600, #7c3aed);
+      background: var(--ai-accent-50, #f5f3ff);
+      border: 1px solid var(--ai-accent-200, #ddd6fe);
+      border-radius: 999px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .regenerate-btn:hover {
+      background: var(--ai-accent-100, #ede9fe);
+    }
+
+    .regenerate-btn:focus-visible {
+      outline: 2px solid var(--ai-accent-500, #8b5cf6);
+      outline-offset: 2px;
+    }
+
+    .regenerate-btn i {
+      font-size: 11px;
+    }
+
+    /* ── Lot 5 : carte repli honnête (gate d'ancrage FirmMission) ─────────────────────── */
+    .fallback-card {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border-bottom-left-radius: 4px;
+      background: var(--color-info-50, #f0f9ff);
+      border: 1px solid var(--color-info-200, #bae6fd);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .fallback-icon {
+      width: 28px;
+      height: 28px;
+      flex-shrink: 0;
+      border-radius: 999px;
+      background: var(--color-info-100, #e0f2fe);
+      color: var(--color-info-600, #0284c7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .fallback-icon i {
+      font-size: 13px;
+    }
+
+    .fallback-body {
+      min-width: 0;
+    }
+
+    .fallback-title {
+      margin: 0 0 4px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--color-info-800, #075985);
+    }
+
+    .fallback-text {
+      margin: 0;
+      color: var(--color-neutral-700, #374151);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .fallback-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .retry-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+      background: var(--color-info-600, #0284c7);
+      border: 1px solid var(--color-info-600, #0284c7);
+      border-radius: 999px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .retry-btn:hover {
+      background: var(--color-info-700, #0369a1);
+      border-color: var(--color-info-700, #0369a1);
+    }
+
+    .retry-btn:focus-visible {
+      outline: 2px solid var(--color-info-500, #0ea5e9);
+      outline-offset: 2px;
+    }
+
+    .retry-btn i {
+      font-size: 11px;
+    }
+
+    .fallback-hint {
+      margin: 8px 0 0;
+      font-size: 12px;
+      color: var(--color-neutral-500, #6b7280);
+    }
+
+    /* ── Lot 5 : carte de confirmation de relance (action en attente côté serveur) ────── */
+    .confirm-card {
+      margin-top: 10px;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--ai-accent-200, #ddd6fe);
+      background: #fff;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 10px 24px rgba(124, 58, 237, 0.06);
+    }
+
+    .confirm-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      background: var(--ai-accent-50, #f5f3ff);
+      border-bottom: 1px solid var(--ai-accent-200, #ddd6fe);
+    }
+
+    .confirm-header-icon {
+      width: 28px;
+      height: 28px;
+      flex-shrink: 0;
+      border-radius: 999px;
+      background: var(--ai-accent-100, #ede9fe);
+      color: var(--ai-accent-600, #7c3aed);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .confirm-header-icon i {
+      font-size: 13px;
+    }
+
+    .confirm-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--color-neutral-900, #111827);
+    }
+
+    .confirm-subtitle {
+      margin-top: 1px;
+      font-size: 11px;
+      color: var(--color-neutral-500, #6b7280);
+    }
+
+    .confirm-fields {
+      padding: 12px 14px 4px;
+      display: grid;
+      grid-template-columns: 130px 1fr;
+      row-gap: 8px;
+      column-gap: 12px;
+      font-size: 13px;
+    }
+
+    .field-label {
+      color: var(--color-neutral-500, #6b7280);
+      font-size: 12px;
+      font-weight: 600;
+      padding-top: 1px;
+    }
+
+    .field-value {
+      color: var(--color-neutral-800, #1f2937);
+      min-width: 0;
+    }
+
+    .field-value strong {
+      font-weight: 600;
+    }
+
+    .message-preview {
+      grid-column: 1 / -1;
+      margin-top: 2px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: var(--color-neutral-50, #f9fafb);
+      border: 1px solid var(--color-neutral-200, #e5e7eb);
+      font-size: 12.5px;
+      line-height: 1.5;
+      color: var(--color-neutral-700, #374151);
+    }
+
+    .message-preview .subject {
+      font-weight: 600;
+      color: var(--color-neutral-800, #1f2937);
+      margin: 0;
+    }
+
+    .confirm-error {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin: 8px 14px 0;
+      padding: 8px 10px;
+      border-radius: 8px;
+      font-size: 12.5px;
+      line-height: 1.45;
+      color: var(--color-danger-700, #b91c1c);
+      background: var(--color-warning-50, #fffbeb);
+      border: 1px solid var(--color-warning-200, #fde68a);
+    }
+
+    .confirm-error i {
+      margin-top: 2px;
+      flex-shrink: 0;
+      color: var(--color-warning-600, #d97706);
+    }
+
+    .confirm-actions {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 12px 14px;
+    }
+
+    .confirm-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 16px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #fff;
+      background: var(--ai-accent-600, #7c3aed);
+      border: 1px solid var(--ai-accent-600, #7c3aed);
+      border-radius: 999px;
+      cursor: pointer;
+      font-family: inherit;
+      box-shadow: 0 2px 6px rgba(124, 58, 237, 0.25);
+    }
+
+    .confirm-btn:hover:not(:disabled) {
+      background: var(--ai-accent-500, #8b5cf6);
+      border-color: var(--ai-accent-500, #8b5cf6);
+    }
+
+    .confirm-btn:focus-visible {
+      outline: 2px solid var(--ai-accent-500, #8b5cf6);
+      outline-offset: 2px;
+    }
+
+    .confirm-btn:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+
+    .confirm-btn i {
+      font-size: 12px;
+    }
+
+    .cancel-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--color-neutral-600, #4b5563);
+      background: #fff;
+      border: 1px solid var(--color-neutral-200, #e5e7eb);
+      border-radius: 999px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .cancel-btn:hover:not(:disabled) {
+      background: var(--color-neutral-50, #f9fafb);
+    }
+
+    .cancel-btn:focus-visible {
+      outline: 2px solid var(--color-primary-500, #3b82f6);
+      outline-offset: 2px;
+    }
+
+    .cancel-btn:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+
+    .confirm-expiry {
+      margin-left: auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: var(--color-neutral-500, #6b7280);
+    }
+
+    .confirm-expiry i {
+      font-size: 11px;
+    }
+
+    .confirm-security-note {
+      padding: 8px 14px;
+      font-size: 11px;
+      color: var(--color-neutral-500, #6b7280);
+      border-top: 1px dashed var(--color-neutral-200, #e5e7eb);
+      background: var(--color-neutral-50, #f9fafb);
+    }
+
+    /* ── État après confirmation (« Relance envoyée ») ────────────────────────────────── */
+    .confirm-card.confirmed {
+      border-color: var(--color-success-200, #bbf7d0);
+      box-shadow: none;
+    }
+
+    .confirm-card.confirmed .confirm-header {
+      background: var(--color-success-50, #f0fdf4);
+      border-bottom-color: var(--color-success-200, #bbf7d0);
+    }
+
+    .confirm-card.confirmed .confirm-header-icon {
+      background: var(--color-success-100, #dcfce7);
+      color: var(--color-success-600, #16a34a);
+    }
+
+    .confirmed-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--color-success-700, #15803d);
+    }
+
+    .confirmed-status i {
+      font-size: 13px;
+      color: var(--color-success-600, #16a34a);
+      flex-shrink: 0;
+    }
+
+    .confirmed-status .meta {
+      font-weight: 400;
+      color: var(--color-neutral-500, #6b7280);
+    }
+
+    @media (max-width: 480px) {
+      .confirm-fields {
+        grid-template-columns: 110px 1fr;
+      }
+    }
+
     .message-select {
       display: inline-flex;
       align-items: flex-start;
@@ -641,6 +1165,10 @@ import { exportDashboardToXlsx, exportElementToPdf } from '../../utils/ai-assist
 export class ChatMessageComponent implements OnChanges {
   @Input({ required: true }) message!: ChatMessage;
   @Input() connectingToModel = false;
+  /** Active l'avertissement « réponse non ancrée » (badge ambre / carte repli honnête) — scope FirmMission. */
+  @Input() warnWhenUngrounded = false;
+  /** Masque le bouton « Graphique » (pas d'outil chart firm) — scope FirmMission. */
+  @Input() hideChartFollowUp = false;
 
   /** Emitted when the user clicks the PPT toolbar button for this single message. */
   @Output() exportSingleAsPowerPoint = new EventEmitter<ChatMessage>();
@@ -758,6 +1286,10 @@ export class ChatMessageComponent implements OnChanges {
 
   showAssistantActions(): boolean {
     if (this.message.isStreaming) {
+      return false;
+    }
+    // Le repli honnête est rendu en carte info dédiée : pas de barre d'export (Copier/PDF/…).
+    if (this.isHonestFallback) {
       return false;
     }
     return !!(
@@ -960,6 +1492,103 @@ export class ChatMessageComponent implements OnChanges {
       url += url.includes('?') ? `&${q}` : `?${q}`;
     }
     void this.router.navigateByUrl(url);
+  }
+
+  // ── Lot 5 : ancrage visible (badge « non vérifiée », repli honnête, relance en attente) ──────
+
+  /** Repli honnête de la gate d'ancrage FirmMission : contenu final commençant par le préfixe dédié. */
+  get isHonestFallback(): boolean {
+    return (
+      this.message.role === MessageRole.Assistant &&
+      !this.message.isStreaming &&
+      this.message.content.trim().startsWith(FIRM_UNGROUNDED_FALLBACK_PREFIX)
+    );
+  }
+
+  /**
+   * Voyant ambre « réponse non vérifiée » : réponse assistant terminée, avec du contenu mais sans
+   * sources ni aucun appel d'outil abouti. Non affiché pour le repli honnête (carte dédiée) ni
+   * hors scope FirmMission (warnWhenUngrounded).
+   */
+  showUngroundedWarning(): boolean {
+    if (!this.warnWhenUngrounded || this.message.role !== MessageRole.Assistant) {
+      return false;
+    }
+    if (this.message.isStreaming || this.isHonestFallback) {
+      return false;
+    }
+    // Une relance en attente de confirmation est issue de l'outil send_fiscal_deadline_reminder :
+    // la carte de confirmation est le rendu pertinent, pas le badge « non vérifiée ».
+    if (this.message.firmReminderAction) {
+      return false;
+    }
+    if (!this.message.content.trim()) {
+      return false;
+    }
+    if (this.message.sources && this.message.sources.length > 0) {
+      return false;
+    }
+    if ((this.message.toolCalls || []).some(tc => tc.status === 'completed')) {
+      return false;
+    }
+    return true;
+  }
+
+  /** Libellé accessible du délai d'expiration (calculé depuis expiresAtUtc ; non réactif en v1). */
+  get reminderExpiryLabel(): string {
+    const action = this.message.firmReminderAction;
+    if (!action?.expiresAtUtc) {
+      return 'Expire dans 5 min';
+    }
+    const t = Date.parse(action.expiresAtUtc);
+    if (Number.isNaN(t)) {
+      return 'Expire dans 5 min';
+    }
+    const mins = Math.round((t - Date.now()) / 60000);
+    return mins > 0 ? `Expire dans ${mins} min` : 'Expirée';
+  }
+
+  sourceChipAriaLabel(s: DedupedToolSource): string {
+    return `Source : ${s.label}${s.count > 1 ? ` (${s.count} consultations)` : ''}`;
+  }
+
+  /** Relance la question utilisateur à l'origine de cette réponse (force la consultation des données). */
+  resendOriginalQuestion(): void {
+    const question = this.findOriginalQuestion();
+    if (question) {
+      this.session.sendMessage(question);
+    }
+  }
+
+  private findOriginalQuestion(): string | null {
+    const msgs = this.session.messages();
+    const idx = msgs.findIndex(m => m.id === this.message.id);
+    if (idx < 0) {
+      return null;
+    }
+    for (let i = idx - 1; i >= 0; i--) {
+      if (msgs[i].role === MessageRole.User) {
+        return msgs[i].content;
+      }
+    }
+    return null;
+  }
+
+  /** Confirme l'envoi de la relance (POST /api/firm/ai/reminders/confirm avec le nonce, usage unique). */
+  confirmReminder(): void {
+    const action = this.message.firmReminderAction;
+    if (!action || this.message.firmReminderConfirming || this.message.firmReminderConfirmed) {
+      return;
+    }
+    this.session.confirmFirmReminder(this.message.id, action.nonce);
+  }
+
+  /** Annule la relance en attente (aucun envoi ; le nonce expire de lui-même côté serveur). */
+  cancelReminder(): void {
+    if (this.message.firmReminderConfirming || this.message.firmReminderConfirmed) {
+      return;
+    }
+    this.session.dismissFirmReminder(this.message.id);
   }
 }
 
