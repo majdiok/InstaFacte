@@ -40,6 +40,13 @@ public sealed class JournalEntryRepository : IJournalEntryRepository
             .FirstOrDefaultAsync(cancellationToken);
     }
 
+    public async Task<bool> ExistsActiveBySourceTypeAsync(string sourceEntityType, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.JournalEntries
+            .AnyAsync(j => j.SourceEntityType == sourceEntityType && !j.IsReversed, cancellationToken);
+    }
+
     public async Task<JournalEntry?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();

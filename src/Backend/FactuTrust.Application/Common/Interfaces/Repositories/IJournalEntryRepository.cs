@@ -21,6 +21,15 @@ public interface IJournalEntryRepository
     /// <c>FirstOrDefault</c> sans tri et deviendrait alors non déterministe.
     /// </summary>
     Task<JournalEntry?> GetActiveBySourceAsync(string sourceEntityType, Guid sourceEntityId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Vrai s'il existe au moins une écriture NON extournée (<c>!IsReversed</c>) portant ce
+    /// <paramref name="sourceEntityType"/>, quel que soit le <c>SourceEntityId</c>. Utilisé pour
+    /// détecter l'existence d'un cycle de paie comptabilisé (dossier, pas mois précis) et router
+    /// le décaissement « Salaires nets » vers 425 (dette déjà constatée) plutôt que 640.
+    /// </summary>
+    Task<bool> ExistsActiveBySourceTypeAsync(string sourceEntityType, CancellationToken cancellationToken = default);
+
     Task<JournalEntry?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<JournalEntry>> GetDraftsByPeriodAsync(Guid periodId, string? journalCode, CancellationToken cancellationToken = default);
     Task<int> CountDraftsAsync(CancellationToken cancellationToken = default);
