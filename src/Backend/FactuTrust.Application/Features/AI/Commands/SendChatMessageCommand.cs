@@ -652,7 +652,7 @@ public sealed class SendChatMessageHandler
         // ── Lot 1.2 : raccourci déterministe FirmMission ──────────────────────────────────────────
         // Compteur de lectures firm ancrées ce tour (Lot 1.3) : distinct de toolsExecutedThisRequest
         // (qui compte les outils TENTÉS, même en erreur) — n'augmente que pour une lecture get_firm_*
-        // réussie ET exploitable (result.Success && result.GroundedData). Lu par le grounding gate
+        // réussie ET exploitable (result.IsGrounded). Lu par le grounding gate
         // avant chaque site de persistance, et journalisé dans total_request.
         var firmGroundedReads = 0;
         // Détection « le tour demande des données » calculée une fois, réutilisée par le raccourci,
@@ -702,7 +702,7 @@ public sealed class SendChatMessageHandler
                 toolSourcesForClient.Add(new SourceEntryDto(planned.ToolName, firmCallId));
                 // Grounding gate (Lot 1.3) : seules les lectures firm réussies ET exploitables
                 // ancrent le tour — un échec d'outil ou un Ok au fan-out totalement en échec ne compte pas.
-                if (firmResult.Success && firmResult.GroundedData)
+                if (firmResult.IsGrounded)
                     firmGroundedReads++;
                 yield return ChatStreamEvent.ToolCallEnd(planned.ToolName, firmCallId, firmSw.ElapsedMilliseconds);
                 firmPreExecutedToolNames.Add(planned.ToolName);
@@ -1471,7 +1471,7 @@ public sealed class SendChatMessageHandler
                     toolsExecutedThisRequest++;
                     // Lot 1.3 : une lecture get_firm_* réussie et exploitable ancre le tour (y compris
                     // via la boucle normale, pas seulement le raccourci). Compteur lu par le gate.
-                    if (FirmAgentTools.Contains(toolCall.Function.Name) && toolResult.Success && toolResult.GroundedData)
+                    if (AiParallelDbToolPolicy.IsFirmReadOnly(toolCall.Function.Name) && toolResult.IsGrounded)
                         firmGroundedReads++;
                     yield return ChatStreamEvent.ToolCallEnd(toolCall.Function.Name, callId, toolElapsedMs);
                     toolSourcesForClient.Add(new SourceEntryDto(toolCall.Function.Name, callId));
@@ -1646,7 +1646,7 @@ public sealed class SendChatMessageHandler
             // dans le budget de générations LLM (seul l'est l'appel de synthèse qui suit, via
             // IsFirmTurnGenerationBudgetExhausted). Si le secours échoue aussi, la synthèse est sautée et
             // le repli honnête déterministe est persisté (plus bas).
-            if (firmUngroundedNeedsSynthesis && firmGroundedReads <= 0)
+            if (firmUngroundedNeedsSynthesis)
             {
                 var rescueToolName = FirmAgentTools.PortfolioOverview;
                 var rescueCallId = Guid.NewGuid().ToString("N")[..12];
@@ -1673,7 +1673,7 @@ public sealed class SendChatMessageHandler
                 conversation.AddMessage(MessageRole.Tool, rescueContent, rescueToolName, rescueCallId);
                 toolsExecutedThisRequest++;
                 toolSourcesForClient.Add(new SourceEntryDto(rescueToolName, rescueCallId));
-                if (rescueResult.Success && rescueResult.GroundedData)
+                if (rescueResult.IsGrounded)
                     firmGroundedReads++;
                 yield return ChatStreamEvent.ToolCallEnd(rescueToolName, rescueCallId, rescueSw.ElapsedMilliseconds);
             }

@@ -36,6 +36,13 @@ public sealed record AiToolResult
     /// </summary>
     public bool GroundedData { get; init; }
 
+    /// <summary>
+    /// Vrai si la réponse est ancrée sur une lecture de données réussie ET exploitable
+    /// (<see cref="Success"/> &amp;&amp; <see cref="GroundedData"/>). Raccourci pour le grounding gate
+    /// firm (Lot 1.3) et les sites de comptage <c>firmGroundedReads</c>.
+    /// </summary>
+    public bool IsGrounded => Success && GroundedData;
+
     public static AiToolResult Ok(string data) => new() { Success = true, Data = data };
 
     public static AiToolResult Ok(string data, bool groundedData) =>

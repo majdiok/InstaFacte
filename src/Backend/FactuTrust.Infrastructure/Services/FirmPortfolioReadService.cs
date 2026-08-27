@@ -13,7 +13,7 @@ using Microsoft.Extensions.Options;
 namespace FactuTrust.Infrastructure.Services;
 
 /// <inheritdoc cref="IFirmPortfolioReadService"/>
-public sealed class FirmPortfolioReadService : IFirmPortfolioReadService
+public sealed class FirmPortfolioReadService : IFirmPortfolioReadService, IDisposable
 {
     /// <summary>Fenêtre « à venir » par défaut, en jours.</summary>
     private const int DefaultHorizonDays = 30;
@@ -516,4 +516,7 @@ public sealed class FirmPortfolioReadService : IFirmPortfolioReadService
         public DateTime? LastReminderAt { get; init; }
         public FiscalScheduleStatus Status { get; set; }
     }
+
+    /// <inheritdoc />
+    public void Dispose() => _collectMemoLock.Dispose();
 }

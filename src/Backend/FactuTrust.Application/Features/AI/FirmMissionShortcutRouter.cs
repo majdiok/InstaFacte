@@ -192,7 +192,13 @@ public static class FirmMissionShortcutRouter
     // ── Helpers de normalisation exposés en internal (réutilisés par le grounding gate du handler,
     // SendChatMessageCommand.FirmTurnNeedsData) pour une détection cohérente des mots isolés. ──
 
-    internal static bool ContainsWholeWord(string text, string word)
+    /// <summary>
+    /// Vrai si <paramref name="word"/> apparaît dans <paramref name="text"/> comme mot isolé, c.-à-d.
+    /// borné par des caractères non alphanumériques (ou le début/la fin de la chaîne). Exposé en
+    /// <c>public static</c> pour réutilisation par <see cref="AiToolIntentRouter"/> (détection de « ca »)
+    /// et <c>SendChatMessageHandler.FirmTurnNeedsData</c> — source unique de vérité.
+    /// </summary>
+    public static bool ContainsWholeWord(string text, string word)
     {
         if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(word))
             return false;

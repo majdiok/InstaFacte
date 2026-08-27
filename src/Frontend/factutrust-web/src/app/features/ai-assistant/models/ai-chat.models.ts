@@ -148,8 +148,7 @@ export interface ConfirmFirmReminderAction {
   };
 }
 
-/** Union discriminée par `kind` (absent = navigation, pour rester rétro-compatible). */
-export type ClientAction = ClientNavAction | ConfirmFirmReminderAction;
+/** La discrimination par `kind` est gérée via les types individuels (plutôt qu'une union exportée). */
 
 /** In-app link for a dashboard table cell (server-sanitized). */
 export interface DashboardCellLink {

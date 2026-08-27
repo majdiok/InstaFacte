@@ -62,7 +62,7 @@ public sealed class CursorToolCallbackService
         // Grounding gate (Lot 1.3 du plan v3) : distinct de ToolsExecuted (incrémenté même en
         // erreur, ci-dessus, comportement conservé) — FirmGroundedReads ne compte que les lectures
         // firm réellement exploitables. Couverture Cursor garantie : aucune option d'exclusion.
-        if (FirmAgentTools.Contains(toolName) && result.Success && result.GroundedData)
+        if (AiParallelDbToolPolicy.IsFirmReadOnly(toolName) && result.IsGrounded)
             ctx.FirmGroundedReads++;
         ctx.ExtraEvents.Enqueue(ChatStreamEvent.ToolCallEnd(toolName, callId, sw.ElapsedMilliseconds));
 

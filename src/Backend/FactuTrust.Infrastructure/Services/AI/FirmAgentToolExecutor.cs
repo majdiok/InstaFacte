@@ -310,7 +310,12 @@ public sealed class FirmAgentToolExecutor : IFirmAgentToolExecutor
         FiscalScheduleEntry Entry,
         string CompanyName,
         string ResponsibleEmail,
-        string ResponsibleName);
+        string ResponsibleName)
+    {
+        /// <summary>Nom affichable du responsable : le nom s'il est renseigné, sinon l'e-mail.</summary>
+        public string ResponsibleDisplayName =>
+            string.IsNullOrWhiteSpace(ResponsibleName) ? ResponsibleEmail : ResponsibleName;
+    }
 
     /// <summary>
     /// Seule mutation du scope. Gardes avant tout envoi : le drapeau dédié (appelant), l'ACL du
@@ -424,7 +429,7 @@ public sealed class FirmAgentToolExecutor : IFirmAgentToolExecutor
         var daysUntil = (int)(target.Entry.DueDate.Date - GetTunisToday()).TotalDays;
         var echeance = target.Entry.DueDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         var objet = BuildSubject(target.Entry, daysUntil);
-        var displayName = string.IsNullOrWhiteSpace(target.ResponsibleName) ? target.ResponsibleEmail : target.ResponsibleName;
+        var displayName = target.ResponsibleDisplayName;
 
         return AiToolResult.Ok(Serialize(new
         {
@@ -480,7 +485,7 @@ public sealed class FirmAgentToolExecutor : IFirmAgentToolExecutor
 
         await target.Context.SaveChangesAsync(cancellationToken);
 
-        var displayName = string.IsNullOrWhiteSpace(target.ResponsibleName) ? target.ResponsibleEmail : target.ResponsibleName;
+        var displayName = target.ResponsibleDisplayName;
         return AiToolResult.Ok(Serialize(new
         {
             envoye = true,
@@ -571,11 +576,7 @@ public sealed class FirmAgentToolExecutor : IFirmAgentToolExecutor
         {
             return TimeZoneInfo.FindSystemTimeZoneById("Africa/Tunis");
         }
-        catch (TimeZoneNotFoundException)
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById("W. Central Africa Standard Time");
-        }
-        catch (InvalidTimeZoneException)
+        catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException)
         {
             return TimeZoneInfo.FindSystemTimeZoneById("W. Central Africa Standard Time");
         }

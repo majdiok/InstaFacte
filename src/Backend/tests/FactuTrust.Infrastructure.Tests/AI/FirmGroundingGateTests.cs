@@ -89,14 +89,4 @@ public sealed class FirmGroundingGateTests
     public void Non_firm_scopes_are_never_rejected(AssistantAgentScope scope)
         => Assert.False(SendChatMessageHandler.ShouldRejectUngroundedFirmAnswer(
             scope, firmGroundedReads: 0, turnNeedsData: true, gateEnabled: true));
-
-    [Fact]
-    public void Tool_in_error_yields_zero_grounded_reads_so_gate_rejects()
-    {
-        // Un outil firm tenté mais en échec (Success=false) n'incrémente pas firmGroundedReads : la
-        // décision du gate est donc « rejeter » (firmGroundedReads == 0). Le comptage lui-même est
-        // testé au niveau exécuteur (FirmAgentToolExecutorTests) et intégration.
-        Assert.True(SendChatMessageHandler.ShouldRejectUngroundedFirmAnswer(
-            AssistantAgentScope.FirmMission, firmGroundedReads: 0, turnNeedsData: true, gateEnabled: true));
-    }
 }
