@@ -30,6 +30,14 @@ public sealed class CursorToolRunContext
     public required IReadOnlySet<string> Permissions { get; init; }
     public ConcurrentQueue<ChatStreamEvent> ExtraEvents { get; } = new();
     public int ToolsExecuted;
+    /// <summary>
+    /// Compteur de lectures firm ANCRÉES (Lot 1.3 du plan v3) : incrémenté par
+    /// <c>CursorToolCallbackService</c> uniquement quand un outil <c>get_firm_*</c> retourne
+    /// <c>Success == true &amp;&amp; GroundedData == true</c> — distinct de <see cref="ToolsExecuted"/>
+    /// (incrémenté même en erreur). Relu par le handler avant la persistance du chemin Cursor pour
+    /// appliquer le même grounding gate que la boucle normale (couverture garantie, aucune exclusion).
+    /// </summary>
+    public int FirmGroundedReads;
     public string? StudioBuilderToolError;
     public string? AccumulatedDashboardJson;
     public List<string> AccumulatedSuggestedPrompts { get; } = new();

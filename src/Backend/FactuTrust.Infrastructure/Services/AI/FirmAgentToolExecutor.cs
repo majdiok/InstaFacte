@@ -184,12 +184,13 @@ public sealed class FirmAgentToolExecutor : IFirmAgentToolExecutor
             echeancesSous7Jours = overview.UpcomingWithin7DaysCount,
             montantSous7Jours = Amount(overview.UpcomingWithin7DaysEstimatedAmount),
             montantSous7JoursAffichage = AmountDisplay(overview.UpcomingWithin7DaysEstimatedAmount, overview.Currency),
+            dossiersEcheanceSous7Jours = overview.DossiersEcheanceSous7JoursCount,
             echeancesAuDela7Jours = overview.UpcomingAfter7DaysCount,
             dossiersInactifs30Jours = overview.InactiveDossiers30DaysCount,
             declarationsTvaBrouillon = overview.VatDraftsCount,
             devise = overview.Currency,
             lectureIncomplete = FanOutNote(overview.FanOut)
-        }));
+        }), GroundedData(overview.FanOut));
     }
 
     private async Task<AiToolResult> HandleDeadlinesAsync(
@@ -238,7 +239,7 @@ public sealed class FirmAgentToolExecutor : IFirmAgentToolExecutor
             listeTronquee = list.TotalMatching > rows.Count,
             devise = list.Currency,
             lectureIncomplete = FanOutNote(list.FanOut)
-        }));
+        }), GroundedData(list.FanOut));
     }
 
     private async Task<AiToolResult> HandleDossierHealthAsync(
@@ -272,7 +273,7 @@ public sealed class FirmAgentToolExecutor : IFirmAgentToolExecutor
             totalDossiers = health.TotalDossiers,
             devise = health.Currency,
             lectureIncomplete = FanOutNote(health.FanOut)
-        }));
+        }), GroundedData(health.FanOut));
     }
 
     private async Task<AiToolResult> HandleWorkloadAsync(
@@ -298,7 +299,7 @@ public sealed class FirmAgentToolExecutor : IFirmAgentToolExecutor
             echeancesSansResponsable = workload.UnassignedDeadlinesCount,
             devise = workload.Currency,
             lectureIncomplete = FanOutNote(workload.FanOut)
-        }));
+        }), GroundedData(workload.FanOut));
     }
 
     // ────────────────────────────── Relance ──────────────────────────────
@@ -525,6 +526,16 @@ public sealed class FirmAgentToolExecutor : IFirmAgentToolExecutor
         fanOut.IsPartial
             ? $"{fanOut.DossiersFailed} dossier(s) sur {fanOut.DossiersFailed + fanOut.DossiersRead} n'ont pas pu être lus : les compteurs sont incomplets."
             : null;
+
+    /// <summary>
+    /// Drapeau structuré posé mécaniquement (Lot 1.3 du plan v3) : ancré dès qu'au moins un
+    /// dossier a pu être lu, OU quand le fan-out n'a rencontré aucun échec (portefeuille
+    /// légitimement vide compte comme une vraie donnée). Fan-out totalement en échec
+    /// (<c>DossiersRead == 0 &amp;&amp; DossiersFailed &gt; 0</c>) ⇒ non ancré, même si l'outil retourne
+    /// <c>Success == true</c> avec un JSON non vide.
+    /// </summary>
+    private static bool GroundedData(FirmFanOutHealthDto fanOut) =>
+        fanOut.DossiersRead > 0 || fanOut.DossiersFailed == 0;
 
     private static decimal Amount(decimal value) => Math.Round(value, 3, MidpointRounding.AwayFromZero);
 

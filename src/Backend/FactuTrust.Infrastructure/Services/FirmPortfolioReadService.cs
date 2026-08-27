@@ -98,6 +98,7 @@ public sealed class FirmPortfolioReadService : IFirmPortfolioReadService
             OverdueEstimatedAmount = overdue.Sum(d => d.EstimatedAmount),
             UpcomingWithin7DaysEstimatedAmount = within7.Sum(d => d.EstimatedAmount),
             DossiersWithOverdueCount = snapshots.Count(s => s.Deadlines.Any(d => d.Status == FiscalScheduleStatus.Overdue)),
+            DossiersEcheanceSous7JoursCount = snapshots.Count(s => s.Deadlines.Any(d => d.Status == FiscalScheduleStatus.UpcomingWithin7Days)),
             InactiveDossiers30DaysCount = snapshots.Count(s => !s.ReadFailed && s.IsInactive30Days(today)),
             VatDraftsCount = snapshots.Sum(s => s.VatDraftsCount),
             GeneratedAt = today,

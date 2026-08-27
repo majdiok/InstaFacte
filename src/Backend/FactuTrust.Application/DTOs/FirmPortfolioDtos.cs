@@ -25,6 +25,12 @@ public sealed record FirmPortfolioOverviewDto
     public decimal UpcomingWithin7DaysEstimatedAmount { get; init; }
     /// <summary>Nombre de dossiers portant au moins une échéance en retard.</summary>
     public int DossiersWithOverdueCount { get; init; }
+    /// <summary>
+    /// Nombre de dossiers distincts ayant au moins une échéance À VENIR sous 7 jours (retards
+    /// exclus — déjà comptés par <see cref="DossiersWithOverdueCount"/>). Calculé depuis les
+    /// snapshots complets, jamais depuis une liste plafonnée à <c>top_n</c> (Lot 1.2bis du plan v3).
+    /// </summary>
+    public int DossiersEcheanceSous7JoursCount { get; init; }
     public int InactiveDossiers30DaysCount { get; init; }
     public int VatDraftsCount { get; init; }
     public string Currency { get; init; } = "TND";

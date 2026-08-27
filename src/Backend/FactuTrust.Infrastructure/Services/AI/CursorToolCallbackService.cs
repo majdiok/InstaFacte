@@ -59,6 +59,11 @@ public sealed class CursorToolCallbackService
         ctx.Conversation.AddMessage(MessageRole.Tool, content, toolName, callId);
         ctx.ToolsExecuted++;
         ctx.ToolSources.Add((toolName, callId));
+        // Grounding gate (Lot 1.3 du plan v3) : distinct de ToolsExecuted (incrémenté même en
+        // erreur, ci-dessus, comportement conservé) — FirmGroundedReads ne compte que les lectures
+        // firm réellement exploitables. Couverture Cursor garantie : aucune option d'exclusion.
+        if (FirmAgentTools.Contains(toolName) && result.Success && result.GroundedData)
+            ctx.FirmGroundedReads++;
         ctx.ExtraEvents.Enqueue(ChatStreamEvent.ToolCallEnd(toolName, callId, sw.ElapsedMilliseconds));
 
         if (result.Success && !string.IsNullOrWhiteSpace(result.Data))

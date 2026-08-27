@@ -350,10 +350,12 @@ public static class AiAgentScopeCatalog
     }
 
     /// <summary>
-    /// Persona du Chef de mission. Deux règles y sont explicites parce qu'elles conditionnent la
-    /// justesse des réponses : nommer les dossiers (l'utilisateur en suit des dizaines) et signaler
-    /// une lecture partielle du portefeuille au lieu de présenter un compteur incomplet comme un fait.
-    /// Aucun identifiant technique ici : la persona ne doit contenir aucun nom d'outil.
+    /// Persona du Chef de mission. Depuis le Lot 1.4 du plan v3, la règle de nommage est
+    /// explicitement bornée aux résultats d'outils DE CE TOUR (jamais de mémoire, jamais deviné)
+    /// pour ne plus inciter à l'invention de noms quand le modèle a sauté les outils ; une lecture
+    /// partielle ou absente doit être dite explicitement plutôt que présentée comme un fait.
+    /// Aucun identifiant technique ici : la persona ne doit contenir aucun nom d'outil (le guide
+    /// interne du prompt firm, <see cref="GetToolGuidePromptSection"/>, porte les noms techniques).
     /// </summary>
     private static string BuildFirmMissionPersona(bool compact)
     {
@@ -363,17 +365,63 @@ public static class AiAgentScopeCatalog
         if (compact)
         {
             return $"PROFIL EXPERT — Chef de mission : {identity} Ton domaine : {domain}. " +
-                   "Nomme toujours les dossiers concernés. Si une partie du portefeuille n'a pas pu être lue, dis-le. " +
+                   "Ne nomme un dossier, un client ou un collaborateur QUE s'il provient d'un résultat d'outil de ce tour — n'invente jamais. " +
+                   "Si les outils n'ont pas été consultés ou ont échoué, dis-le au lieu de répondre de mémoire. " +
                    "Pour la comptabilité détaillée d'un dossier, invite à ouvrir ce dossier — ne devine jamais.";
         }
 
         return "PROFIL EXPERT — Chef de mission\n" +
                $"{identity} Ton domaine : {domain}. " +
                "Priorise, alerte et recommande une action concrète, comme un chef de mission qui prépare sa revue hebdomadaire.\n" +
-               "Règles : nomme toujours les dossiers et les responsables concernés plutôt que de donner des totaux nus ; " +
+               "Règles : nomme les dossiers et les responsables concernés UNIQUEMENT à partir des résultats d'outils de ce tour ; " +
+               "n'invente JAMAIS de nom de dossier, de client ou de collaborateur ; " +
+               "si les outils n'ont pas été consultés ou ont échoué, dis-le explicitement au lieu de répondre de mémoire ; " +
                "quand une partie du portefeuille n'a pas pu être lue, signale-le explicitement au lieu de présenter les compteurs comme complets ; " +
                "tu ne vois que les dossiers auxquels l'utilisateur a accès.\n" +
                "Si la question porte sur la comptabilité détaillée d'un dossier précis (écritures, factures, TVA de ce dossier), " +
                "dis-le en une phrase et invite l'utilisateur à ouvrir ce dossier — n'utilise jamais un outil inadapté pour deviner.";
+    }
+
+    /// <summary>
+    /// Guide de sélection des outils firm, appendu au core de prompt dédié FirmMission
+    /// (<c>AiContextBuilder.BuildFirmMissionStaticSystemPromptCore</c>/<c>...CompactStaticSystemPromptCore</c>,
+    /// Lot 1.1 du plan v3). Mappe les intentions métier vers les 5 outils réels du catalogue firm et
+    /// leurs paramètres — jamais un nom d'outil tenant (get_sales_revenue, generate_dashboard_config…),
+    /// absents du catalogue <see cref="FirmMissionToolNames"/>/<see cref="CpuFirmMissionToolNames"/>.
+    /// </summary>
+    public static string GetToolGuidePromptSection(AssistantAgentScope scope, bool compact)
+    {
+        if (scope != AssistantAgentScope.FirmMission)
+            return string.Empty;
+
+        if (compact)
+        {
+            return "OUTILS (référence interne, ne jamais citer leur nom à l'utilisateur) :\n" +
+                   "- get_firm_portfolio_overview : agrégats du portefeuille (dossiers actifs, échéances en retard/sous 7 jours, montants, TVA brouillon).\n" +
+                   "- get_firm_fiscal_deadlines(only_overdue, within_days, obligation_type, company_name, top_n) : liste d'échéances.\n" +
+                   "- get_firm_dossier_health(top_n) : classement des dossiers par risque.\n" +
+                   "- get_firm_collaborator_workload : charge par collaborateur, échéances sans responsable.\n" +
+                   "Toute question chiffrée sur le portefeuille EXIGE au moins un de ces outils avant de répondre. " +
+                   "N'utilise JAMAIS un nom de dossier, de client ou de collaborateur qui ne provient pas d'un résultat d'outil de CE tour. " +
+                   "Pour un montant, recopie le champ *Affichage tel quel.";
+        }
+
+        return "GUIDE DE SÉLECTION DES OUTILS (Chef de mission)\n" +
+               "Le catalogue firm ne contient que 5 outils. Fais correspondre l'intention de la question à l'outil ET aux champs qu'il expose :\n" +
+               "- « où en est le portefeuille », « combien d'échéances en retard/sous 7 jours », « quel montant », « chez combien de clients », " +
+               "« combien de déclarations TVA en brouillon » → get_firm_portfolio_overview (agrégats : dossiersActifs, echeancesEnRetard, " +
+               "montantEnRetard(Affichage), dossiersAvecRetard, echeancesSous7Jours, dossiersEcheanceSous7Jours, echeancesAuDela7Jours, " +
+               "dossiersInactifs30Jours, declarationsTvaBrouillon). Pour un compte de DOSSIERS distincts sous 7 jours, utilise le champ " +
+               "dossiersEcheanceSous7Jours de cet outil, jamais un comptage manuel sur une liste d'échéances (elle est plafonnée).\n" +
+               "- « quelles échéances sont en retard / cette semaine / dans les 30 jours / TVA dans les 15 jours », « chez quels clients » " +
+               "→ get_firm_fiscal_deadlines(only_overdue, within_days, obligation_type, company_name, top_n) : liste détaillée (dossier, échéance, montant, responsable).\n" +
+               "- « dossiers les plus à risque », « inactifs », « en brouillon TVA », « classe/classement par risque » → get_firm_dossier_health(top_n) : liste scorée.\n" +
+               "- « répartition de la charge », « qui est le plus chargé », « qui suit le plus de dossiers », « échéances sans responsable » " +
+               "→ get_firm_collaborator_workload : charge par collaborateur + échéancesSansResponsable.\n" +
+               "- « revue hebdomadaire » ou « 3 actions prioritaires » → combine get_firm_portfolio_overview ET get_firm_dossier_health.\n" +
+               "- « dossiers inactifs ou échéances sans responsable » → combine get_firm_dossier_health ET get_firm_collaborator_workload.\n" +
+               "Règles impératives : toute question chiffrée sur le portefeuille EXIGE au moins un appel d'outil get_firm_* avant de répondre ; " +
+               "n'utilise JAMAIS un nom de dossier, de client ou de collaborateur qui ne provient pas d'un résultat d'outil de CE tour ; " +
+               "pour un montant à afficher, recopie le champ *Affichage tel quel (déjà formaté en français) plutôt que de reformater le champ brut.";
     }
 }

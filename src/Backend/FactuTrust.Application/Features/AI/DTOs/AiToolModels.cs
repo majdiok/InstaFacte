@@ -27,6 +27,19 @@ public sealed record AiToolResult
     public string Data { get; init; } = string.Empty;
     public string? ErrorMessage { get; init; }
 
+    /// <summary>
+    /// Vrai si <see cref="Data"/> provient d'une lecture réellement exploitable (pas seulement
+    /// tentée). Posé mécaniquement par les exécuteurs qui savent qualifier leurs données (ex.
+    /// <c>FirmAgentToolExecutor</c> depuis <c>DossiersRead</c>/<c>DossiersFailed</c>) — jamais par
+    /// analyse du texte. Par défaut <c>false</c> : les 83 outils tenant existants qui n'appellent
+    /// que <see cref="Ok(string)"/> ne sont pas affectés (Lot 1.3 du plan v3).
+    /// </summary>
+    public bool GroundedData { get; init; }
+
     public static AiToolResult Ok(string data) => new() { Success = true, Data = data };
+
+    public static AiToolResult Ok(string data, bool groundedData) =>
+        new() { Success = true, Data = data, GroundedData = groundedData };
+
     public static AiToolResult Error(string message) => new() { Success = false, ErrorMessage = message };
 }
