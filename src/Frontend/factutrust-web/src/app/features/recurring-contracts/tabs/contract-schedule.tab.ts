@@ -14,6 +14,7 @@ import {
 import { AuthService } from '@core/services/auth.service';
 import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
+import { ConfirmationService } from '@core/services/confirmation.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
 import { scheduleBadgeStatus } from '../recurring-contracts.ui-utils';
 
@@ -65,7 +66,7 @@ import { scheduleBadgeStatus } from '../recurring-contracts.ui-utils';
               <th>Période</th>
               <th style="width: 140px">Montant estimé HT</th>
               <th style="width: 140px">Statut</th>
-              <th style="width: 170px">Action</th>
+              <th style="width: 240px">Action</th>
             </tr>
           </ng-template>
           <ng-template pTemplate="body" let-e>
@@ -82,10 +83,26 @@ import { scheduleBadgeStatus } from '../recurring-contracts.ui-utils';
                   <app-button variant="ghost" size="sm" icon="pi-receipt" [routerLink]="['/invoices', e.invoiceId]">
                     Voir la facture
                   </app-button>
-                } @else if (e.invoiceDraftId) {
-                  <app-button variant="ghost" size="sm" icon="pi-file-edit" [routerLink]="['/invoices/new/draft', e.invoiceDraftId]">
-                    Voir le brouillon
-                  </app-button>
+                } @else if (e.billingRunId && e.invoiceDraftId) {
+                  <div class="row-actions">
+                    @if (canIssue()) {
+                      <app-button
+                        variant="primary"
+                        size="sm"
+                        icon="pi-check"
+                        [disabled]="issuingId() === e.billingRunId"
+                        (clicked)="confirmIssue(e)">
+                        {{ issuingId() === e.billingRunId ? 'Émission…' : 'Émettre' }}
+                      </app-button>
+                      <app-button
+                        variant="ghost"
+                        size="sm"
+                        icon="pi-file-edit"
+                        [routerLink]="['/invoices/new/draft', e.invoiceDraftId]">
+                        Ajuster
+                      </app-button>
+                    }
+                  </div>
                 } @else {
                   <span class="muted">—</span>
                 }
@@ -113,6 +130,8 @@ import { scheduleBadgeStatus } from '../recurring-contracts.ui-utils';
     }
 
     .muted { color: var(--color-neutral-400); }
+
+    .row-actions { display: flex; gap: var(--spacing-2); flex-wrap: wrap; }
   `]
 })
 export class ContractScheduleTabComponent implements OnInit, OnChanges {
@@ -124,14 +143,17 @@ export class ContractScheduleTabComponent implements OnInit, OnChanges {
   private readonly auth = inject(AuthService);
   private readonly toast = inject(ToastService);
   private readonly errorHandler = inject(ErrorHandlerService);
+  private readonly confirmation = inject(ConfirmationService);
 
   readonly entries = signal<ContractScheduleEntry[] | null>([]);
   readonly loading = signal(true);
   readonly generating = signal(false);
+  readonly issuingId = signal<string | null>(null);
   private initialized = false;
 
   readonly canGenerate = computed(() =>
     this.contract.status === 'Active' && this.auth.hasPermission(PERMISSIONS.recurringContracts.triggerBilling));
+  readonly canIssue = computed(() => this.auth.hasPermission(PERMISSIONS.invoices.create));
 
   readonly skeletonColumns: SkeletonColumn[] = [
     { width: '120px' }, { width: '260px' }, { width: '140px' }, { width: '140px' }, { width: '170px' }
@@ -182,6 +204,44 @@ export class ContractScheduleTabComponent implements OnInit, OnChanges {
         this.generating.set(false);
         this.errorHandler.logError('RecurringContracts: trigger billing', err);
         this.toast.add({ severity: 'error', summary: 'Erreur', detail: this.errorHandler.extractErrorMessage(err) });
+      }
+    });
+  }
+
+  confirmIssue(entry: ContractScheduleEntry): void {
+    if (!entry.billingRunId) return;
+    this.confirmation.confirm({
+      header: 'Confirmer l\'émission',
+      message: 'Une fois validée, cette facture ne pourra plus être modifiée. Confirmer l\'émission ?',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Émettre la facture',
+      rejectLabel: 'Annuler',
+      acceptButtonStyleClass: 'p-button-success',
+      size: 'md',
+      accept: () => this.issue(entry.billingRunId!)
+    });
+  }
+
+  private issue(billingRunId: string): void {
+    this.issuingId.set(billingRunId);
+    this.service.issueBillingRun(billingRunId).subscribe({
+      next: issued => {
+        this.issuingId.set(null);
+        this.toast.add({
+          severity: 'success',
+          summary: 'Facture émise',
+          detail: `Facture ${issued.invoiceNumber} émise.`
+        });
+        this.load();
+      },
+      error: err => {
+        this.issuingId.set(null);
+        this.errorHandler.logError('RecurringContracts: issue from schedule', err);
+        this.toast.add({
+          severity: 'error',
+          summary: 'Émission impossible',
+          detail: this.errorHandler.extractErrorMessage(err)
+        });
       }
     });
   }

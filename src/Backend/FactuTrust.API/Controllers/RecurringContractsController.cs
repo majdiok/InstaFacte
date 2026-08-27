@@ -366,4 +366,30 @@ public sealed class RecurringContractsController : ControllerBase
         if (result.IsFailure) return BadRequest(ApiResponse<int>.Fail(result.Error.Description));
         return Ok(ApiResponse<int>.Ok(result.Value, $"{result.Value} brouillon(s) généré(s)."));
     }
+
+    /// <summary>
+    /// Émet la facture validée d'un run en brouillon, sans passer par le wizard.
+    /// </summary>
+    [HttpPost("billing-runs/{billingRunId:guid}/issue")]
+    [Authorize(Policy = PermissionPolicies.InvoicesCreate)]
+    [ProducesResponseType(typeof(ApiResponse<InvoiceCreatedResultDto>), StatusCodes.Status201Created)]
+    public async Task<ActionResult<ApiResponse<InvoiceCreatedResultDto>>> IssueBillingRun(
+        Guid billingRunId, CancellationToken cancellationToken)
+    {
+        if (GuardEnabled() is { } guard) return guard;
+        var result = await _service.IssueBillingRunAsync(billingRunId, cancellationToken);
+        if (result.IsFailure)
+        {
+            if (result.Error.Code.Contains("NotFound"))
+                return NotFound(ApiResponse<InvoiceCreatedResultDto>.Fail(result.Error.Description));
+            if (result.Error.Code == "Conflict")
+                return Conflict(ApiResponse<InvoiceCreatedResultDto>.Fail(result.Error.Description));
+            return BadRequest(ApiResponse<InvoiceCreatedResultDto>.Fail(result.Error.Description));
+        }
+
+        return CreatedAtRoute(
+            "GetInvoice",
+            new { id = result.Value.InvoiceId },
+            ApiResponse<InvoiceCreatedResultDto>.Ok(result.Value, "Facture émise avec succès"));
+    }
 }

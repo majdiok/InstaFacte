@@ -135,6 +135,8 @@ export class InvoiceWizardService {
   };
 
   private state = signal<InvoiceWizardState>({ ...this.initialState });
+  /** True only after loadDraft() (route /invoices/new/draft/:id), jamais pour /invoices/new. */
+  private openedFromExistingDraft = false;
 
   // Exposed computed signals
   readonly wizardState = this.state.asReadonly();
@@ -1894,7 +1896,7 @@ export class InvoiceWizardService {
     );
   }
 
-  private submitCreditNoteViaDraft(): Observable<string> {
+  private submitViaDraftEndpoint(): Observable<string> {
     return this.http.post<ApiResponse<{ id: string }>>(`${this.WIZARD_API_URL}/drafts`, this.buildSaveDraftRequest()).pipe(
       map(res => {
         const id = res?.data?.id ?? (res?.data as any)?.Id ?? (res?.data as any);
@@ -1903,7 +1905,8 @@ export class InvoiceWizardService {
         return draftId;
       }),
       switchMap(draftId => {
-        const idempotencyKey = `credit-note-${Date.now()}-${createClientUuid()}`.slice(0, 64);
+        const prefix = this.state().metadata.type === InvoiceType.CreditNote ? 'credit-note' : 'invoice-draft';
+        const idempotencyKey = `${prefix}-${Date.now()}-${createClientUuid()}`.slice(0, 64);
         return this.http.post<ApiResponse<{ invoiceId: string }>>(
           `${this.WIZARD_API_URL}/drafts/${draftId}/submit`,
           { idempotencyKey }
@@ -2055,7 +2058,11 @@ export class InvoiceWizardService {
     }
 
     if (state.metadata.type === InvoiceType.CreditNote) {
-      return this.submitCreditNoteViaDraft();
+      return this.submitViaDraftEndpoint();
+    }
+
+    if (this.openedFromExistingDraft && state.draftId) {
+      return this.submitViaDraftEndpoint();
     }
 
     if (state.client.isNewClient) {
@@ -2485,6 +2492,7 @@ export class InvoiceWizardService {
           draftId,
           isDirty: false
         });
+        this.openedFromExistingDraft = true;
         this.syncFodecFromProducts();
       }),
       switchMap(() => this.fetchNextInvoiceNumber().pipe(map(() => void 0))),
@@ -2499,6 +2507,7 @@ export class InvoiceWizardService {
   reset(): void {
     this.invalidateSubscriptionCache();
     this._submissionErrorCode.set(null);
+    this.openedFromExistingDraft = false;
     this.state.set({ ...this.initialState, steps: this.initializeSteps() });
   }
 

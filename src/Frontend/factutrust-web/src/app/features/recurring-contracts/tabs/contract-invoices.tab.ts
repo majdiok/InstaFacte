@@ -53,7 +53,7 @@ import { invoiceBadgeStatus } from '../recurring-contracts.ui-utils';
       <app-empty-state
         icon="pi-receipt"
         title="Aucune facture"
-        description="Aucune facture n'a encore été émise depuis ce contrat."
+        description="Aucune facture n'a encore été émise depuis ce contrat. Les factures de période s'émettent depuis Brouillons à valider."
         [showAction]="false">
       </app-empty-state>
     } @else {

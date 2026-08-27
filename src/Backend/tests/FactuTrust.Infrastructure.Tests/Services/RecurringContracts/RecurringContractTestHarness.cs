@@ -28,16 +28,23 @@ internal sealed class RecurringContractTestHarness
     public TestCurrentUser CurrentUser { get; } = new();
     public StubTenantMemberDirectory Members { get; } = new();
 
-    public RecurringContractService CreateService() => new(
-        Factory,
-        CurrentUser,
-        new ThrowingMediator(),
-        new RecurringContractBillingService(
-            new ThrowingMediator(),
-            Options.Create(new RecurringContractsOptions()),
-            NullLogger<RecurringContractBillingService>.Instance),
-        Options.Create(new RecurringContractsOptions()),
-        Members);
+    public RecurringContractService CreateService(
+        IMediator? mediator = null,
+        IPlanQuotaService? planQuota = null)
+    {
+        var med = mediator ?? new ThrowingMediator();
+        return new RecurringContractService(
+            Factory,
+            CurrentUser,
+            med,
+            new RecurringContractBillingService(
+                med,
+                Options.Create(new RecurringContractsOptions { Enabled = true, BillingJobEnabled = true }),
+                NullLogger<RecurringContractBillingService>.Instance),
+            Options.Create(new RecurringContractsOptions { Enabled = true, BillingJobEnabled = true }),
+            Members,
+            planQuota ?? new AllowAllPlanQuota());
+    }
 
     public async Task<Client> SeedClientAsync(string name)
     {
@@ -64,12 +71,13 @@ internal sealed class RecurringContractTestHarness
         string? reference = null,
         string? notes = null,
         Guid? sourceQuoteId = null,
+        Guid? paymentTermTemplateId = null,
         Action<RecurringContract>? lines = null)
     {
         var contract = RecurringContract.CreateDraft(
             clientId, frequency, billingDay, startDate ?? DateTime.UtcNow.Date,
             endDate, autoRenew, noticePeriodDays, "TND",
-            paymentTermTemplateId: null, priceListId: null, sourceQuoteId, reference, notes).Value;
+            paymentTermTemplateId, priceListId: null, sourceQuoteId, reference, notes).Value;
         contract.AssignNumber(number ?? $"CTR-T-{Guid.NewGuid():N}"[..12]);
 
         lines?.Invoke(contract);
@@ -185,6 +193,76 @@ internal sealed class RecurringContractTestHarness
         invoice.SetRecurringContractSource(contractId, runId);
         await ctx.SaveChangesAsync();
     }
+
+    public async Task<Company> SeedCompanyAsync(
+        string name = "Société Test",
+        string? bankName = "BIAT",
+        string? iban = "TN5904018104004942712345",
+        string? rib = "04018104004942712345")
+    {
+        await using var ctx = Factory.CreateContext();
+        var address = Address.Create("1 rue de la République", "Tunis", "Tunis").Value;
+        var email = Email.Create($"{Guid.NewGuid():N}@example.com").Value;
+        var nif = NIF.Create("1234567/A/B/C/000").Value;
+        var company = Company.Create(name, address, nif, email).Value;
+        company.SetBankInfo(bankName, iban, rib);
+        ctx.Companies.Add(company);
+        await ctx.SaveChangesAsync();
+        return company;
+    }
+}
+
+internal sealed class AllowAllPlanQuota : IPlanQuotaService
+{
+    public Task<Result> EnsureCanCreateInvoiceAsync(Guid tenantId, CancellationToken cancellationToken = default)
+        => Task.FromResult(Result.Success());
+
+    public Task OnInvoiceCreatedAsync(Guid tenantId, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+}
+
+internal sealed class DenyingPlanQuota : IPlanQuotaService
+{
+    public Task<Result> EnsureCanCreateInvoiceAsync(Guid tenantId, CancellationToken cancellationToken = default)
+        => Task.FromResult(Result.Failure(Error.Validation("Quota", "Limite mensuelle de factures atteinte.")));
+
+    public Task OnInvoiceCreatedAsync(Guid tenantId, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+}
+
+/// <summary>Enregistre les commandes MediatR et renvoie des succès configurables.</summary>
+internal sealed class RecordingMediator : IMediator
+{
+    public List<object> Sent { get; } = [];
+    public Func<object, object?>? OnSend { get; set; }
+
+    public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+    {
+        Sent.Add(request);
+        if (OnSend is not null)
+        {
+            var result = OnSend(request);
+            if (result is TResponse typed)
+                return Task.FromResult(typed);
+        }
+
+        throw new InvalidOperationException($"Aucune réponse configurée pour {request.GetType().Name}.");
+    }
+
+    public Task<object?> Send(object request, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException();
+    public Task Publish(object notification, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+    public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
+        where TNotification : INotification
+        => Task.CompletedTask;
+    public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException();
+    public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException();
+    public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+        where TRequest : IRequest
+        => throw new NotSupportedException();
 }
 
 internal sealed class TestTenantDbContextFactory : ITenantDbContextFactory

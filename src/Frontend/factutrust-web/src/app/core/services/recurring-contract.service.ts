@@ -159,6 +159,14 @@ export interface PendingRecurringDraft {
   totalAmount: number;
 }
 
+/** POST /billing-runs/{id}/issue */
+export interface IssuedRecurringInvoice {
+  invoiceId: string;
+  invoiceNumber: string;
+  status: string;
+  createdAt: string;
+}
+
 /** GET /{id}/billing-runs — historique des passages de facturation. */
 export interface RecurringContractBillingRun {
   id: string;
@@ -331,6 +339,13 @@ export class RecurringContractService {
   listPendingDrafts(): Observable<PendingRecurringDraft[]> {
     return this.http.get<ApiResponse<PendingRecurringDraft[]>>(`${this.base}/pending-drafts`)
       .pipe(map(r => r.data ?? []));
+  }
+
+  issueBillingRun(billingRunId: string): Observable<IssuedRecurringInvoice> {
+    return this.http.post<ApiResponse<IssuedRecurringInvoice>>(
+      `${this.base}/billing-runs/${billingRunId}/issue`,
+      {}
+    ).pipe(map(r => r.data!));
   }
 
   triggerBilling(contractId?: string): Observable<number> {

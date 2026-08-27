@@ -74,7 +74,7 @@ public sealed class RecurringContractBillingService
         DateTime asOfDate,
         CancellationToken cancellationToken)
     {
-        if (!contract.CanBillForPeriod(asOfDate))
+        if (!contract.CanBillForPeriod())
             return false;
 
         var (periodFrom, periodTo) = contract.GetCurrentBillingPeriod();
@@ -223,22 +223,38 @@ public sealed class RecurringContractBillingService
         var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
         var lines = BuildDraftLines(contract, billingRun, amounts);
 
-        var paymentTerms = contract.PaymentTermTemplateId.HasValue
-            ? await db.PaymentTermTemplates.AsNoTracking()
-                .Where(p => p.Id == contract.PaymentTermTemplateId.Value)
-                .Select(p => p.Name)
-                .FirstOrDefaultAsync(cancellationToken)
-            : null;
+        var issueDate = DateTime.UtcNow.Date;
+        DateTime dueDate = issueDate.AddDays(30);
+        int? daysUntilDue = 30;
+        string? paymentTerms = null;
+
+        if (contract.PaymentTermTemplateId.HasValue)
+        {
+            var template = await db.PaymentTermTemplates.AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Id == contract.PaymentTermTemplateId.Value, cancellationToken);
+            if (template is not null)
+            {
+                dueDate = template.ComputeDueDate(issueDate);
+                daysUntilDue = Math.Max(0, (dueDate.Date - issueDate).Days);
+                paymentTerms = template.ToDocumentLabel();
+            }
+        }
+
+        Guid? warehouseId = await db.Warehouses.AsNoTracking()
+            .Where(w => w.IsDefault && w.IsActive)
+            .Select(w => (Guid?)w.Id)
+            .FirstOrDefaultAsync(cancellationToken);
 
         var request = new SaveDraftRequest
         {
             Metadata = new WizardStepMetadataDto
             {
                 Type = "INVOICE",
-                IssueDate = DateTime.UtcNow.Date,
-                DueDate = DateTime.UtcNow.Date.AddDays(30),
+                IssueDate = issueDate,
+                DueDate = dueDate,
                 Currency = contract.Currency,
-                InternalReference = $"Contrat {contract.Number} — {billingRun.PeriodFrom:dd/MM/yyyy} au {billingRun.PeriodTo:dd/MM/yyyy}"
+                InternalReference = $"Contrat {contract.Number} — {billingRun.PeriodFrom:dd/MM/yyyy} au {billingRun.PeriodTo:dd/MM/yyyy}",
+                WarehouseId = warehouseId
             },
             SellerId = company?.Id,
             Client = new WizardStepClientDto
@@ -250,7 +266,14 @@ public sealed class RecurringContractBillingService
             PaymentLegal = new WizardStepPaymentLegalDto
             {
                 PaymentMethod = "BANK_TRANSFER",
-                PaymentTerms = paymentTerms
+                PaymentTerms = paymentTerms,
+                DaysUntilDue = daysUntilDue,
+                BankInfo = company is null ? null : new WizardBankInfoDto
+                {
+                    BankName = company.BankName,
+                    Iban = company.Iban,
+                    Rib = company.Rib
+                }
             },
             CurrentStep = 4
         };

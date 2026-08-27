@@ -42,4 +42,41 @@ public sealed class RecurringContractDomainTests
         Assert.Equal(run1.PeriodFrom, run2.PeriodFrom);
         Assert.Equal(run1.PeriodTo, run2.PeriodTo);
     }
+
+    [Fact]
+    public void CanBillForPeriod_ActiveWithNextDate_IgnoresHardcodedThreeDayWindow()
+    {
+        var start = new DateTime(2026, 1, 1);
+        var contract = RecurringContract.CreateDraft(
+            Guid.NewGuid(), BillingFrequency.Monthly, 1, start,
+            endDate: new DateTime(2027, 1, 1)).Value;
+        contract.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m);
+        Assert.True(contract.Activate().IsSuccess);
+
+        // NextBillingDate est le 1er du mois de début ; même 7 jours avant, le domaine
+        // reste éligible — c'est le scan (BillingWindowDays) qui borne la fenêtre.
+        Assert.True(contract.CanBillForPeriod());
+    }
+
+    [Fact]
+    public void CanBillForPeriod_NextDatePastEndDate_Fails()
+    {
+        // Jour de facturation le 1er, départ le 20 → première échéance = 1er du mois suivant.
+        var contract = RecurringContract.CreateDraft(
+            Guid.NewGuid(), BillingFrequency.Monthly, 1, new DateTime(2026, 1, 20),
+            endDate: new DateTime(2026, 1, 31)).Value;
+        contract.AddLine(RecurringContractLineType.FixedRecurring, "Abonnement", 1, 100m, 19m);
+        Assert.True(contract.Activate().IsSuccess);
+        Assert.True(contract.NextBillingDate!.Value.Date > contract.EndDate!.Value.Date);
+
+        Assert.False(contract.CanBillForPeriod());
+    }
+
+    [Fact]
+    public void CanBillForPeriod_Draft_Fails()
+    {
+        var contract = RecurringContract.CreateDraft(
+            Guid.NewGuid(), BillingFrequency.Monthly, 1, DateTime.UtcNow.Date).Value;
+        Assert.False(contract.CanBillForPeriod());
+    }
 }

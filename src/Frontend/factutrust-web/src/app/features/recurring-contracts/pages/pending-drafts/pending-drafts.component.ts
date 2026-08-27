@@ -11,6 +11,7 @@ import { PendingRecurringDraft, RecurringContractService } from '@core/services/
 import { AuthService } from '@core/services/auth.service';
 import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
+import { ConfirmationService } from '@core/services/confirmation.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
 
 @Component({
@@ -25,7 +26,7 @@ import { PERMISSIONS } from '@core/config/permission-keys';
 
     <app-page-header
       title="Brouillons récurrents à valider"
-      subtitle="Factures générées automatiquement en attente de validation">
+      subtitle="Factures générées automatiquement en attente d'émission">
       <div class="actions">
         <app-button variant="outline" icon="pi-arrow-left" routerLink="/recurring-contracts">
           Retour aux contrats
@@ -68,7 +69,7 @@ import { PERMISSIONS } from '@core/config/permission-keys';
               <th>Client</th>
               <th>Période</th>
               <th style="width: 140px">Montant</th>
-              <th style="width: 220px">Actions</th>
+              <th style="width: 280px">Actions</th>
             </tr>
           </ng-template>
           <ng-template pTemplate="body" let-d>
@@ -88,8 +89,16 @@ import { PERMISSIONS } from '@core/config/permission-keys';
                       variant="primary"
                       size="sm"
                       icon="pi-check"
+                      [disabled]="issuingId() === d.billingRunId"
+                      (clicked)="confirmIssue(d)">
+                      {{ issuingId() === d.billingRunId ? 'Émission…' : 'Valider' }}
+                    </app-button>
+                    <app-button
+                      variant="ghost"
+                      size="sm"
+                      icon="pi-file-edit"
                       [routerLink]="['/invoices/new/draft', d.invoiceDraftId]">
-                      Valider
+                      Ajuster
                     </app-button>
                   }
                   <app-button
@@ -133,11 +142,13 @@ export class PendingDraftsComponent implements OnInit {
   private readonly auth = inject(AuthService);
   private readonly toast = inject(ToastService);
   private readonly errorHandler = inject(ErrorHandlerService);
+  private readonly confirmation = inject(ConfirmationService);
 
   readonly drafts = signal<PendingRecurringDraft[]>([]);
   readonly loading = signal(true);
   readonly loadError = signal(false);
   readonly generating = signal(false);
+  readonly issuingId = signal<string | null>(null);
 
   readonly canTriggerBilling = computed(() => this.auth.hasPermission(PERMISSIONS.recurringContracts.triggerBilling));
   readonly canValidateInvoice = computed(() => this.auth.hasPermission(PERMISSIONS.invoices.create));
@@ -153,7 +164,7 @@ export class PendingDraftsComponent implements OnInit {
     { width: '200px' },
     { width: '220px' },
     { width: '140px' },
-    { width: '220px' }
+    { width: '280px' }
   ];
 
   ngOnInit(): void {
@@ -181,6 +192,19 @@ export class PendingDraftsComponent implements OnInit {
     });
   }
 
+  confirmIssue(draft: PendingRecurringDraft): void {
+    this.confirmation.confirm({
+      header: 'Confirmer l\'émission',
+      message: 'Une fois validée, cette facture ne pourra plus être modifiée. Confirmer l\'émission ?',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Émettre la facture',
+      rejectLabel: 'Annuler',
+      acceptButtonStyleClass: 'p-button-success',
+      size: 'md',
+      accept: () => this.issue(draft)
+    });
+  }
+
   generateDrafts(): void {
     this.generating.set(true);
     this.service.triggerBilling().subscribe({
@@ -199,6 +223,30 @@ export class PendingDraftsComponent implements OnInit {
         this.toast.add({
           severity: 'error',
           summary: 'Erreur',
+          detail: this.errorHandler.extractErrorMessage(err)
+        });
+      }
+    });
+  }
+
+  private issue(draft: PendingRecurringDraft): void {
+    this.issuingId.set(draft.billingRunId);
+    this.service.issueBillingRun(draft.billingRunId).subscribe({
+      next: issued => {
+        this.issuingId.set(null);
+        this.toast.add({
+          severity: 'success',
+          summary: 'Facture émise',
+          detail: `Facture ${issued.invoiceNumber} émise.`
+        });
+        this.reload();
+      },
+      error: err => {
+        this.issuingId.set(null);
+        this.errorHandler.logError('RecurringContracts: issue billing run', err);
+        this.toast.add({
+          severity: 'error',
+          summary: 'Émission impossible',
           detail: this.errorHandler.extractErrorMessage(err)
         });
       }

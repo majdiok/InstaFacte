@@ -28,6 +28,11 @@ public interface IRecurringContractService
     Task<IReadOnlyList<RecurringContractBillingRunDto>> ListBillingRunsAsync(Guid contractId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<PendingRecurringDraftDto>> ListPendingDraftsAsync(CancellationToken cancellationToken = default);
     Task<Result<int>> TriggerBillingAsync(Guid? contractId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Émet la facture FAC validée d'un run <c>DraftCreated</c> via <c>SubmitInvoiceCommand</c>
+    /// (sans wizard). En cas d'échec, le run reste <c>DraftCreated</c> pour retry.
+    /// </summary>
+    Task<Result<InvoiceCreatedResultDto>> IssueBillingRunAsync(Guid billingRunId, CancellationToken cancellationToken = default);
 
     // ── Extensions v1 (ajouts — aucune signature existante modifiée) ──
 

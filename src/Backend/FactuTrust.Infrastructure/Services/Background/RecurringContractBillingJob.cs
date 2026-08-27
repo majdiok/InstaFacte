@@ -4,6 +4,7 @@ using FactuTrust.Infrastructure.MultiTenancy;
 using FactuTrust.Infrastructure.Persistence;
 using FactuTrust.Infrastructure.Services.RecurringContracts;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -16,20 +17,20 @@ public sealed class RecurringContractBillingJob
 {
     private readonly MasterDbContext _master;
     private readonly ITenantService _tenantService;
-    private readonly RecurringContractBillingService _billing;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly RecurringContractsOptions _options;
     private readonly ILogger<RecurringContractBillingJob> _logger;
 
     public RecurringContractBillingJob(
         MasterDbContext master,
         ITenantService tenantService,
-        RecurringContractBillingService billing,
+        IServiceScopeFactory scopeFactory,
         IOptions<RecurringContractsOptions> options,
         ILogger<RecurringContractBillingJob> logger)
     {
         _master = master;
         _tenantService = tenantService;
-        _billing = billing;
+        _scopeFactory = scopeFactory;
         _options = options.Value;
         _logger = logger;
     }
@@ -57,12 +58,14 @@ public sealed class RecurringContractBillingJob
                 if (string.IsNullOrEmpty(connectionString))
                     continue;
 
-                var options = new DbContextOptionsBuilder<TenantDbContext>()
-                    .UseSqlServer(connectionString, b => b.MigrationsAssembly(typeof(TenantDbContext).Assembly.FullName))
-                    .Options;
+                using var scope = _scopeFactory.CreateScope();
+                var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
+                tenantContext.SetTenant(tenantId, connectionString);
 
-                await using var tenantDb = new TenantDbContext(options);
-                var result = await _billing.ScanAndCreateDraftsAsync(
+                var factory = scope.ServiceProvider.GetRequiredService<ITenantDbContextFactory>();
+                await using var tenantDb = factory.CreateContext();
+                var billing = scope.ServiceProvider.GetRequiredService<RecurringContractBillingService>();
+                var result = await billing.ScanAndCreateDraftsAsync(
                     tenantDb, null, DateTime.UtcNow, cancellationToken);
                 if (result.IsSuccess)
                     totalCreated += result.Value;

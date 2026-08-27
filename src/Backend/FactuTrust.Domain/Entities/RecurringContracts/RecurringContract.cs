@@ -311,13 +311,16 @@ public sealed class RecurringContract : AggregateRoot
         IncrementVersion();
     }
 
-    public bool CanBillForPeriod(DateTime asOfDate)
+    /// <summary>
+    /// Éligibilité métier (actif, échéance connue, pas au-delà de la fin de contrat).
+    /// La fenêtre « N jours avant l'échéance » est appliquée par le scan
+    /// (<c>BillingWindowDays</c>), pas ici — sinon un changement de config serait ignoré.
+    /// </summary>
+    public bool CanBillForPeriod()
     {
         if (!Status.CanBill())
             return false;
         if (!NextBillingDate.HasValue)
-            return false;
-        if (NextBillingDate.Value.Date > asOfDate.Date.AddDays(3))
             return false;
         if (EndDate.HasValue && NextBillingDate.Value.Date > EndDate.Value.Date)
             return false;

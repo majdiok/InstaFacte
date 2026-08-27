@@ -16,6 +16,7 @@ import {
 import { AuthService } from '@core/services/auth.service';
 import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
+import { ConfirmationService } from '@core/services/confirmation.service';
 import { PERMISSIONS } from '@core/config/permission-keys';
 import { runBadgeStatus } from '../recurring-contracts.ui-utils';
 
@@ -48,7 +49,7 @@ import { runBadgeStatus } from '../recurring-contracts.ui-utils';
               <th style="width: 110px">Prorata</th>
               <th style="width: 120px">Total</th>
               <th style="width: 130px">Créé le</th>
-              <th style="width: 90px">Lien</th>
+              <th style="width: 140px">Lien</th>
             </tr>
           </ng-template>
           <ng-template pTemplate="body" let-r>
@@ -73,11 +74,22 @@ import { runBadgeStatus } from '../recurring-contracts.ui-utils';
                     variant="ghost" size="sm" icon="pi-receipt" [iconOnly]="true"
                     [routerLink]="['/invoices', r.invoiceId]" ariaLabel="Voir la facture">
                   </app-button>
-                } @else if (r.invoiceDraftId) {
-                  <app-button
-                    variant="ghost" size="sm" icon="pi-file-edit" [iconOnly]="true"
-                    [routerLink]="['/invoices/new/draft', r.invoiceDraftId]" ariaLabel="Voir le brouillon">
-                  </app-button>
+                } @else if (r.status === 'DraftCreated' && r.invoiceDraftId) {
+                  <div class="row-actions">
+                    @if (canIssue()) {
+                      <app-button
+                        variant="primary" size="sm" icon="pi-check" [iconOnly]="true"
+                        [disabled]="issuingId() === r.id"
+                        (clicked)="confirmIssue(r)"
+                        ariaLabel="Émettre la facture">
+                      </app-button>
+                      <app-button
+                        variant="ghost" size="sm" icon="pi-file-edit" [iconOnly]="true"
+                        [routerLink]="['/invoices/new/draft', r.invoiceDraftId]"
+                        ariaLabel="Ajuster le brouillon">
+                      </app-button>
+                    }
+                  </div>
                 } @else {
                   <span class="muted">—</span>
                 }
@@ -169,6 +181,8 @@ import { runBadgeStatus } from '../recurring-contracts.ui-utils';
 
     .muted { color: var(--color-neutral-400); }
 
+    .row-actions { display: flex; gap: var(--spacing-1); flex-wrap: wrap; align-items: center; }
+
     .run-error {
       margin-top: var(--spacing-1);
       font-size: var(--font-size-xs);
@@ -245,16 +259,19 @@ export class ContractHistoryTabComponent implements OnInit, OnChanges {
   private readonly auth = inject(AuthService);
   private readonly toast = inject(ToastService);
   private readonly errorHandler = inject(ErrorHandlerService);
+  private readonly confirmation = inject(ConfirmationService);
 
   readonly runs = signal<RecurringContractBillingRun[]>([]);
   readonly amendments = signal<ContractAmendment[] | null>([]);
   readonly loadingRuns = signal(true);
   readonly loadingAmendments = signal(true);
+  readonly issuingId = signal<string | null>(null);
   private initialized = false;
 
   /** Avenant de lignes : réservé aux contrats actifs (backend AmendLines) + permission manage. */
   readonly canAmend = computed(() =>
     this.contract.status === 'Active' && this.auth.hasPermission(PERMISSIONS.recurringContracts.manage));
+  readonly canIssue = computed(() => this.auth.hasPermission(PERMISSIONS.invoices.create));
 
   readonly runsSkeletonColumns: SkeletonColumn[] = [
     { width: '200px' }, { width: '150px' }, { width: '110px' }, { width: '130px' }, { width: '110px' }, { width: '120px' }, { width: '130px' }, { width: '90px' }
@@ -302,6 +319,43 @@ export class ContractHistoryTabComponent implements OnInit, OnChanges {
         this.loadingAmendments.set(false);
         this.errorHandler.logError('RecurringContracts: amendments', err);
         this.toast.add({ severity: 'error', summary: 'Erreur', detail: this.errorHandler.extractErrorMessage(err) });
+      }
+    });
+  }
+
+  confirmIssue(run: RecurringContractBillingRun): void {
+    this.confirmation.confirm({
+      header: 'Confirmer l\'émission',
+      message: 'Une fois validée, cette facture ne pourra plus être modifiée. Confirmer l\'émission ?',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Émettre la facture',
+      rejectLabel: 'Annuler',
+      acceptButtonStyleClass: 'p-button-success',
+      size: 'md',
+      accept: () => this.issue(run.id)
+    });
+  }
+
+  private issue(billingRunId: string): void {
+    this.issuingId.set(billingRunId);
+    this.service.issueBillingRun(billingRunId).subscribe({
+      next: issued => {
+        this.issuingId.set(null);
+        this.toast.add({
+          severity: 'success',
+          summary: 'Facture émise',
+          detail: `Facture ${issued.invoiceNumber} émise.`
+        });
+        this.loadRuns();
+      },
+      error: err => {
+        this.issuingId.set(null);
+        this.errorHandler.logError('RecurringContracts: issue from history', err);
+        this.toast.add({
+          severity: 'error',
+          summary: 'Émission impossible',
+          detail: this.errorHandler.extractErrorMessage(err)
+        });
       }
     });
   }

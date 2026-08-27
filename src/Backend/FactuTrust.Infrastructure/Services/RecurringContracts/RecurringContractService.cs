@@ -3,6 +3,7 @@ using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.InvoiceWizard.Commands;
+using FactuTrust.Application.Features.RecurringContracts;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Entities.RecurringContracts;
@@ -25,6 +26,7 @@ public sealed partial class RecurringContractService : IRecurringContractService
     private readonly RecurringContractBillingService _billing;
     private readonly RecurringContractsOptions _options;
     private readonly ITenantMemberDirectory _members;
+    private readonly IPlanQuotaService _planQuota;
 
     public RecurringContractService(
         ITenantDbContextFactory tenantFactory,
@@ -32,7 +34,8 @@ public sealed partial class RecurringContractService : IRecurringContractService
         IMediator mediator,
         RecurringContractBillingService billing,
         IOptions<RecurringContractsOptions> options,
-        ITenantMemberDirectory tenantMemberDirectory)
+        ITenantMemberDirectory tenantMemberDirectory,
+        IPlanQuotaService planQuota)
     {
         _db = tenantFactory.CreateIsolatedContext();
         _currentUser = currentUser;
@@ -40,6 +43,7 @@ public sealed partial class RecurringContractService : IRecurringContractService
         _billing = billing;
         _options = options.Value;
         _members = tenantMemberDirectory;
+        _planQuota = planQuota;
     }
 
     public ValueTask DisposeAsync() => _db.DisposeAsync();
@@ -554,6 +558,46 @@ public sealed partial class RecurringContractService : IRecurringContractService
 
     public Task<Result<int>> TriggerBillingAsync(Guid? contractId, CancellationToken cancellationToken = default)
         => _billing.ScanAndCreateDraftsAsync(_db, contractId, DateTime.UtcNow, cancellationToken);
+
+    public async Task<Result<InvoiceCreatedResultDto>> IssueBillingRunAsync(
+        Guid billingRunId, CancellationToken cancellationToken = default)
+    {
+        var run = await _db.RecurringContractBillingRuns
+            .FirstOrDefaultAsync(r => r.Id == billingRunId, cancellationToken);
+        if (run is null)
+            return Result.Failure<InvoiceCreatedResultDto>(Error.NotFound("BillingRun", billingRunId));
+
+        if (run.Status != RecurringContractBillingRunStatus.DraftCreated || !run.InvoiceDraftId.HasValue)
+            return Result.Failure<InvoiceCreatedResultDto>(Error.Validation(
+                "BillingRun",
+                "Ce brouillon n'est pas émissible. Il a déjà été facturé, a échoué, ou n'est pas encore prêt."));
+
+        var tenantId = _currentUser.TenantId ?? Guid.Empty;
+        if (tenantId != Guid.Empty)
+        {
+            var quota = await _planQuota.EnsureCanCreateInvoiceAsync(tenantId, cancellationToken);
+            if (quota.IsFailure)
+                return Result.Failure<InvoiceCreatedResultDto>(quota.Error);
+        }
+
+        var result = await _mediator.Send(
+            new SubmitInvoiceCommand(run.InvoiceDraftId.Value, RecurringBillingIssueKeys.ForRun(run.Id)),
+            cancellationToken);
+
+        if (result.IsSuccess && tenantId != Guid.Empty)
+        {
+            try
+            {
+                await _planQuota.OnInvoiceCreatedAsync(tenantId, cancellationToken);
+            }
+            catch
+            {
+                // Best-effort, identique à CreateInvoiceCommand : la facture est déjà émise.
+            }
+        }
+
+        return result;
+    }
 
     /// <summary>
     /// Génère un numéro CTR-{année}-{seq:D4} en sautant les candidats déjà pris (D11).

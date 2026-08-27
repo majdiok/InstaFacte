@@ -394,6 +394,98 @@ describe('InvoiceWizardService saveDraft (autosave)', () => {
   });
 });
 
+describe('InvoiceWizardService submit from existing draft', () => {
+  let httpMock: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: defaultWizardProviders
+    });
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+  });
+
+  it('submitInvoice after loadDraft posts wizard draft submit, not POST /invoices', (done) => {
+    const svc = TestBed.inject(InvoiceWizardService);
+    const draftId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+
+    svc.loadDraft(draftId).subscribe();
+
+    const getDraft = httpMock.expectOne(`${environment.apiUrl}/invoices/wizard/drafts/${draftId}`);
+    getDraft.flush({
+      success: true,
+      data: {
+        id: draftId,
+        currentStep: 3,
+        metadata: {
+          type: 'INVOICE',
+          issueDate: '2026-08-27',
+          dueDate: '2026-09-26',
+          currency: 'TND',
+          internalReference: 'Contrat CTR-2026-0001'
+        },
+        seller: null,
+        client: { clientId: VALID_CLIENT_ID, isNewClient: false },
+        lines: [],
+        paymentLegal: { paymentMethod: 'BANK_TRANSFER', paymentTerms: '30 jours' }
+      }
+    });
+
+    const nextNumber = httpMock.expectOne(req =>
+      req.method === 'GET' && req.url.includes('/invoices/wizard/next-number'));
+    nextNumber.flush({
+      success: true,
+      data: { number: 'FAC-2026-000001', prefix: 'FAC', year: 2026, sequence: 1 }
+    });
+
+    setupMinimalValidWizardState(svc);
+    addValidLinkedLine(svc);
+    svc.updateMetadata({ invoiceNumber: 'FAC-2026-000001' });
+
+    svc.submitInvoice().subscribe({
+      next: invoiceId => {
+        expect(invoiceId).toBe('inv-recurring-1');
+        done();
+      },
+      error: err => done.fail(err)
+    });
+
+    const save = httpMock.expectOne(`${environment.apiUrl}/invoices/wizard/drafts`);
+    expect(save.request.method).toBe('POST');
+    save.flush({ success: true, data: { id: draftId } });
+
+    const submit = httpMock.expectOne(`${environment.apiUrl}/invoices/wizard/drafts/${draftId}/submit`);
+    expect(submit.request.method).toBe('POST');
+    expect(submit.request.body.idempotencyKey.length).toBeGreaterThanOrEqual(32);
+    submit.flush({ success: true, data: { invoiceId: 'inv-recurring-1' } });
+
+    httpMock.expectNone(`${environment.apiUrl}/invoices`);
+  });
+
+  it('submitInvoice from blank wizard still posts POST /invoices', (done) => {
+    const svc = TestBed.inject(InvoiceWizardService);
+    setupMinimalValidWizardState(svc);
+    addValidLinkedLine(svc);
+    svc.updateMetadata({ invoiceNumber: 'FAC-2026-000001' });
+
+    svc.submitInvoice().subscribe({
+      next: invoiceId => {
+        expect(invoiceId).toBe('inv-manual-1');
+        done();
+      },
+      error: err => done.fail(err)
+    });
+
+    const create = httpMock.expectOne(`${environment.apiUrl}/invoices`);
+    expect(create.request.method).toBe('POST');
+    create.flush({ success: true, data: 'inv-manual-1' });
+  });
+});
+
+
 describe('InvoiceWizardService line validation', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
