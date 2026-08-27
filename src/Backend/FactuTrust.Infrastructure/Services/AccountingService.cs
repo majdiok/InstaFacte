@@ -3,6 +3,7 @@ using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.Accounting;
 using FactuTrust.Application.Features.Accounting.Services;
+using FactuTrust.Application.Features.CashDesk.Services;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Entities.Payroll;
@@ -1048,17 +1049,36 @@ public sealed class AccountingService : IAccountingService
         var journalLabel = CashOperationJournalLabelBuilder.BuildJournalLabel(operation);
         var lines = new List<JournalLineInput>();
 
+        var treasuryAccount = CashDeskPostingAccounts.TreasuryAccount(operation.Method);
+
         if (operation.OperationType == CashOperationType.Debit)
         {
-            var expense = ExpenseAccount(operation.Category!.Value);
+            var payrollCycleExists = operation.Category == CashExpenseCategory.NetSalaries
+                && await _journalEntries.ExistsActiveBySourceTypeAsync(SourcePayrollRun, cancellationToken);
+            var expense = CashDeskPostingAccounts.ExpenseAccount(operation.Category!.Value, payrollCycleExists);
             lines.Add(new JournalLineInput(expense, journalLabel, amount, 0, null, ThirdPartyKind.None));
-            lines.Add(new JournalLineInput("5411", journalLabel, 0, amount, null, ThirdPartyKind.None));
+            lines.Add(new JournalLineInput(treasuryAccount, journalLabel, 0, amount, null, ThirdPartyKind.None));
         }
         else
         {
-            var revenue = RevenueAccount(operation.RevenueCategory!.Value);
-            lines.Add(new JournalLineInput("5411", journalLabel, amount, 0, null, ThirdPartyKind.None));
-            lines.Add(new JournalLineInput(revenue, journalLabel, 0, amount, null, ThirdPartyKind.None));
+            var revenue = CashDeskPostingAccounts.RevenueAccount(operation.RevenueCategory!.Value);
+            var vatSplit = ResolveCashSalesVatSplit(operation, amount);
+
+            lines.Add(new JournalLineInput(treasuryAccount, journalLabel, amount, 0, null, ThirdPartyKind.None));
+
+            if (vatSplit is { } split)
+            {
+                var revenueLabel = CashOperationJournalLabelBuilder.BuildLineLabel(journalLabel, " — HT");
+                var vatLabel = CashOperationJournalLabelBuilder.BuildLineLabel(
+                    journalLabel, $" — TVA {(int)operation.VatRate!.Value}%");
+
+                lines.Add(new JournalLineInput(revenue, revenueLabel, 0, split.Ht, null, ThirdPartyKind.None));
+                lines.Add(new JournalLineInput(TunisianPostingAccounts.VatCollected, vatLabel, 0, split.Vat, null, ThirdPartyKind.None));
+            }
+            else
+            {
+                lines.Add(new JournalLineInput(revenue, journalLabel, 0, amount, null, ThirdPartyKind.None));
+            }
         }
 
         var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
@@ -1422,6 +1442,28 @@ public sealed class AccountingService : IAccountingService
     private static string TreasuryAccount(PaymentMethod method) =>
         method == PaymentMethod.Cash ? "5411" : "5321";
 
+    /// <summary>
+    /// Décompose la TVA d'un encaissement « ventes au comptant » quand la décomposition à 3 lignes
+    /// s'applique : flag <see cref="AccountingSettings.CashDeskVatEnabled"/> actif, taux renseigné,
+    /// non exonéré, et TVA calculée strictement positive (une TVA nulle par arrondi ne produit
+    /// jamais de ligne 436711 — <c>JournalEntry</c> rejette les lignes débit = crédit = 0).
+    /// Retourne <c>null</c> sinon : l'écriture reste à 2 lignes (C 707 TTC intégral).
+    /// </summary>
+    private (decimal Ht, decimal Vat)? ResolveCashSalesVatSplit(CashOperation operation, decimal amount)
+    {
+        if (!_settings.CashDeskVatEnabled)
+            return null;
+
+        if (operation.RevenueCategory != CashRevenueCategory.CashSalesReceipt)
+            return null;
+
+        if (operation.VatRate is not { } rate || rate == VatRate.Exempt)
+            return null;
+
+        var split = CashOperationVatCalculator.SplitTtc(amount, rate);
+        return split.Vat > 0 ? split : null;
+    }
+
     private static string RevenueAccountForLine(InvoiceLine line)
     {
         if (!line.ProductId.HasValue || line.Product is null)
@@ -1430,24 +1472,6 @@ public sealed class AccountingService : IAccountingService
             ? TunisianPostingAccounts.SalesOfServices
             : TunisianPostingAccounts.SalesOfGoods;
     }
-
-    private static string ExpenseAccount(CashExpenseCategory category) => category switch
-    {
-        CashExpenseCategory.SuppliesAndConsumables => "607",
-        CashExpenseCategory.SupplierInvoicePayment => "607",
-        CashExpenseCategory.TaxesAndDuties => "6654",
-        // Dépense non catégorisée : charges diverses de gestion courante.
-        _ => "658"
-    };
-
-    private static string RevenueAccount(CashRevenueCategory category) => category switch
-    {
-        CashRevenueCategory.CashSalesReceipt => "707",
-        CashRevenueCategory.ClientReceivablesReceipt => "4111",
-        CashRevenueCategory.PartnerContributionsReceipt => "101",
-        CashRevenueCategory.BankCreditReceipt => "5321",
-        _ => "707"
-    };
 
     public async Task<Result> GenerateFixedAssetAcquisitionEntryAsync(FixedAsset asset, CancellationToken cancellationToken = default)
     {

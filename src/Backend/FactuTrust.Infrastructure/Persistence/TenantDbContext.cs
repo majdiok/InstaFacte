@@ -1461,6 +1461,8 @@ public partial class TenantDbContext : DbContext
 
             entity.Property(e => e.RevenueCategory);
 
+            entity.Property(e => e.VatRate);
+
             entity.Property(e => e.Reference)
                 .HasMaxLength(100);
 

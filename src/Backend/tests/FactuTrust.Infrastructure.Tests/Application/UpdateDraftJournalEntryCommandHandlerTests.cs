@@ -138,4 +138,78 @@ public sealed class UpdateDraftJournalEntryCommandHandlerTests
         Assert.Equal("Client — FAC-2026-000019 (reclassé)", reloaded.Label);
         Assert.Contains(reloaded.Lines, l => l.AccountNumber == "706");
     }
+
+    /// <summary>
+    /// §6.7/§9.7 : un brouillon TVA caisse (SourceEntityType="CashOperation") ne peut pas être
+    /// réécrit manuellement — sinon les lignes 707/436711 divergeraient du VatRate de l'opération
+    /// jointe (déclaration TVA « Brouillon inclus »). Seule l'extourne / l'annulation de
+    /// l'opération est permise.
+    /// </summary>
+    [Fact]
+    public async Task Update_CashOperationSourcedDraft_FailsWithValidationError()
+    {
+        var factory = new TestTenantDbContextFactory($"UpdateDraft_{Guid.NewGuid()}");
+        var period = SeedPeriod(factory);
+        var sourceOperationId = Guid.NewGuid();
+        var draft = JournalEntry.Create(31, "JC", new DateTime(2026, 8, 14), "Vente comptoir — Espèces", period.Id,
+            true, "CashOperation", sourceOperationId, SaleLines(119m),
+            initialStatus: JournalEntryStatus.Brouillon).Value;
+        draft.SetAuditInfo("test", false);
+
+        using (var seed = factory.CreateContext())
+        {
+            seed.JournalEntries.Add(draft);
+            seed.SaveChanges();
+        }
+
+        var handler = new UpdateDraftJournalEntryCommandHandler(
+            new JournalEntryRepository(factory), ChartMock().Object, new Mock<IAuditService>().Object);
+
+        var result = await handler.Handle(
+            new UpdateDraftJournalEntryCommand(draft.Id, BalancedRequest(200m, "Modifié")),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains("générée automatiquement depuis une opération de caisse", result.Error.Description);
+
+        using var ctx = factory.CreateContext();
+        var reloaded = await ctx.JournalEntries.Include(e => e.Lines).SingleAsync(e => e.Id == draft.Id);
+        Assert.Equal("Vente comptoir — Espèces", reloaded.Label);
+        Assert.Equal(119m, reloaded.Lines.OrderBy(l => l.LineNumber).First().DebitAmount.Amount);
+    }
+
+    /// <summary>
+    /// Non-régression : un brouillon sans source (saisie manuelle, <c>SourceEntityType</c> null)
+    /// reste modifiable — la garde §6.7 ne s'applique qu'à <c>SourceEntityType = "CashOperation"</c>.
+    /// </summary>
+    [Fact]
+    public async Task Update_DraftWithoutSource_RemainsEditable()
+    {
+        var factory = new TestTenantDbContextFactory($"UpdateDraft_{Guid.NewGuid()}");
+        var period = SeedPeriod(factory);
+        var draft = JournalEntry.Create(41, "JV", new DateTime(2026, 8, 14), "Saisie manuelle", period.Id,
+            false, null, null, SaleLines(80m),
+            initialStatus: JournalEntryStatus.Brouillon).Value;
+        draft.SetAuditInfo("test", false);
+
+        using (var seed = factory.CreateContext())
+        {
+            seed.JournalEntries.Add(draft);
+            seed.SaveChanges();
+        }
+
+        var handler = new UpdateDraftJournalEntryCommandHandler(
+            new JournalEntryRepository(factory), ChartMock().Object, new Mock<IAuditService>().Object);
+
+        var result = await handler.Handle(
+            new UpdateDraftJournalEntryCommand(draft.Id, BalancedRequest(80m, "Saisie manuelle (corrigée)")),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+
+        using var ctx = factory.CreateContext();
+        var reloaded = await ctx.JournalEntries.Include(e => e.Lines).SingleAsync(e => e.Id == draft.Id);
+        Assert.Equal("Saisie manuelle (corrigée)", reloaded.Label);
+        Assert.Null(reloaded.SourceEntityType);
+    }
 }

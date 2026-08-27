@@ -253,6 +253,9 @@ const MONTH_OPTIONS: { label: string; value: number }[] = [
                       @if (op.origin === CashOperationOrigin.SupplierPayment) {
                         <span class="origin-badge">Paiement fournisseur</span>
                       }
+                      @if (op.vatRatePercent !== null && op.vatRatePercent !== undefined) {
+                        <span class="vat-badge">TVA {{ op.vatRatePercent }} %</span>
+                      }
                       @if (op.sourceInvoiceId) {
                         <a
                           [routerLink]="['/invoices', op.sourceInvoiceId]"
@@ -441,6 +444,17 @@ const MONTH_OPTIONS: { label: string; value: number }[] = [
       color: var(--color-info-700);
       background: color-mix(in srgb, var(--color-info-500) 10%, transparent);
       border: 1px solid color-mix(in srgb, var(--color-info-500) 25%, transparent);
+    }
+    .vat-badge {
+      display: inline-flex;
+      width: fit-content;
+      padding: 0.1rem 0.45rem;
+      border-radius: var(--radius-md);
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-secondary);
+      background: var(--color-background-subtle);
+      border: 1px solid var(--color-border-subtle);
     }
     .source-link {
       font-size: var(--font-size-xs);

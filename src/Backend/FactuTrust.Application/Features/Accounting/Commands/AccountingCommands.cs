@@ -394,9 +394,12 @@ public sealed class SaveVatDeclarationCommandHandler : IRequestHandler<SaveVatDe
             if (existing.Status == VatDeclarationStatus.Draft)
             {
                 var upd = existing.UpdateDraft(
-                    Money.Create(dto.CollectedVat19, currency),
-                    Money.Create(dto.CollectedVat13, currency),
-                    Money.Create(dto.CollectedVat7, currency),
+                    // Mouvements signés caisse (plan §6.7 / v2.1) : le DTO recalculé peut porter une
+                    // TVA collectée négative (extourne sans TVA facturière compensatrice) — Money.Create
+                    // rejetterait ce cas, FromSignedAmount le préserve tel que recalculé.
+                    Money.FromSignedAmount(dto.CollectedVat19, currency),
+                    Money.FromSignedAmount(dto.CollectedVat13, currency),
+                    Money.FromSignedAmount(dto.CollectedVat7, currency),
                     Money.Create(dto.DeductibleVatGoods, currency),
                     Money.Create(dto.DeductibleVatAssets, currency),
                     Money.Create(dto.PreviousCredit, currency));
@@ -428,9 +431,10 @@ public sealed class SaveVatDeclarationCommandHandler : IRequestHandler<SaveVatDe
                     "La déclaration de cette période est déjà soumise. Utilisez « Rectificative » pour la corriger."));
 
             existing.ApplyRevision(
-                Money.Create(dto.CollectedVat19, currency),
-                Money.Create(dto.CollectedVat13, currency),
-                Money.Create(dto.CollectedVat7, currency),
+                // Mouvements signés caisse (plan §6.7 / v2.1) : cf. commentaire UpdateDraft ci-dessus.
+                Money.FromSignedAmount(dto.CollectedVat19, currency),
+                Money.FromSignedAmount(dto.CollectedVat13, currency),
+                Money.FromSignedAmount(dto.CollectedVat7, currency),
                 Money.Create(dto.DeductibleVatGoods, currency),
                 Money.Create(dto.DeductibleVatAssets, currency),
                 Money.Create(dto.PreviousCredit, currency),
@@ -455,9 +459,10 @@ public sealed class SaveVatDeclarationCommandHandler : IRequestHandler<SaveVatDe
         var draft = VatDeclaration.CreateDraft(
             r.Year,
             r.Month,
-            Money.Create(dto.CollectedVat19, currency),
-            Money.Create(dto.CollectedVat13, currency),
-            Money.Create(dto.CollectedVat7, currency),
+            // Mouvements signés caisse (plan §6.7 / v2.1) : cf. commentaire UpdateDraft ci-dessus.
+            Money.FromSignedAmount(dto.CollectedVat19, currency),
+            Money.FromSignedAmount(dto.CollectedVat13, currency),
+            Money.FromSignedAmount(dto.CollectedVat7, currency),
             Money.Create(dto.DeductibleVatGoods, currency),
             Money.Create(dto.DeductibleVatAssets, currency),
             Money.Create(dto.PreviousCredit, currency),
@@ -811,6 +816,14 @@ public sealed class UpdateDraftJournalEntryCommandHandler : IRequestHandler<Upda
             if (entry.ReversesEntryId is not null)
                 return Result.Failure(Error.Validation("Extourne",
                     "Une extourne doit rester le miroir exact de l'écriture d'origine : validez-la ou supprimez-la."));
+            // §6.7 : la déclaration TVA (Brouillon inclus) regroupe les lignes postées par le
+            // VatRate de l'opération de caisse source — réécrire les lignes 707/436711 d'un
+            // brouillon caisse ferait diverger la déclaration de cette saisie. Portée volontairement
+            // limitée à CashOperation (autres sources auto-générées : hors périmètre, plan §10). La
+            // suppression du brouillon reste permise (plus d'écriture → plus de TVA déclarée).
+            if (entry.SourceEntityType == "CashOperation")
+                return Result.Failure(Error.Validation("Source",
+                    "Cette écriture a été générée automatiquement depuis une opération de caisse ; elle ne peut pas être modifiée manuellement. Extournez-la ou annulez l'opération."));
             if (entry.Lines.Any(l => !string.IsNullOrEmpty(l.LetteringCode)))
                 return Result.Failure(Error.Validation("Lettering",
                     "Délettrez cette écriture avant de la modifier."));

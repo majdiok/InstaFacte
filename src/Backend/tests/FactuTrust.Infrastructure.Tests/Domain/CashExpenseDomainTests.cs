@@ -131,6 +131,213 @@ public sealed class CashOperationDomainTests
         Assert.Null(result.Value.Category);
     }
 
+    [Theory]
+    [InlineData(CashOperationType.Debit)]
+    [InlineData(CashOperationType.Credit)]
+    public void Create_WithTraite_ShouldFail(CashOperationType operationType)
+    {
+        var prefix = operationType == CashOperationType.Debit
+            ? CashOperationNumber.DebitPrefix
+            : CashOperationNumber.CreditPrefix;
+        var numberResult = CashOperationNumber.Create(prefix, DateTime.UtcNow.Year, 1);
+        Assert.True(numberResult.IsSuccess, numberResult.Error?.Description);
+
+        var result = CashOperation.Create(
+            number: numberResult.Value,
+            operationType: operationType,
+            operationDate: DateTime.UtcNow.Date,
+            method: PaymentMethod.Traite,
+            amount: Money.Create(100m, Money.DefaultCurrency),
+            label: "Test",
+            category: operationType == CashOperationType.Debit ? CashExpenseCategory.Other : null,
+            revenueCategory: operationType == CashOperationType.Credit ? CashRevenueCategory.Other : null);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.Method", result.Error.Code);
+    }
+
+    [Theory]
+    [InlineData(PaymentMethod.Cash)]
+    [InlineData(PaymentMethod.BankTransfer)]
+    [InlineData(PaymentMethod.Check)]
+    [InlineData(PaymentMethod.Card)]
+    [InlineData(PaymentMethod.MobilePayment)]
+    [InlineData(PaymentMethod.Other)]
+    public void Create_WithNonTraiteMethod_ShouldSucceed(PaymentMethod method)
+    {
+        var numberResult = CashOperationNumber.Create(CashOperationNumber.DebitPrefix, DateTime.UtcNow.Year, 1);
+        Assert.True(numberResult.IsSuccess, numberResult.Error?.Description);
+
+        var result = CashOperation.Create(
+            number: numberResult.Value,
+            operationType: CashOperationType.Debit,
+            operationDate: DateTime.UtcNow.Date,
+            method: method,
+            amount: Money.Create(100m, Money.DefaultCurrency),
+            label: "Test",
+            category: CashExpenseCategory.Other);
+
+        Assert.True(result.IsSuccess, result.Error?.Description);
+        Assert.Equal(method, result.Value.Method);
+    }
+
+    // ─────────────── Volet TVA (§9.4) ───────────────
+
+    [Fact]
+    public void Create_VatRateOnDebit_ShouldFail()
+    {
+        var numberResult = CashOperationNumber.Create(CashOperationNumber.DebitPrefix, DateTime.UtcNow.Year, 1);
+        Assert.True(numberResult.IsSuccess, numberResult.Error?.Description);
+
+        var result = CashOperation.Create(
+            number: numberResult.Value,
+            operationType: CashOperationType.Debit,
+            operationDate: DateTime.UtcNow.Date,
+            method: PaymentMethod.Cash,
+            amount: Money.Create(100m, Money.DefaultCurrency),
+            label: "Test",
+            category: CashExpenseCategory.Other,
+            vatRate: VatRate.Standard);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.VatRate", result.Error.Code);
+    }
+
+    [Theory]
+    [InlineData(CashRevenueCategory.ClientReceivablesReceipt)]
+    [InlineData(CashRevenueCategory.PartnerContributionsReceipt)]
+    [InlineData(CashRevenueCategory.BankCreditReceipt)]
+    [InlineData(CashRevenueCategory.Other)]
+    public void Create_VatRateOnCreditWithNonCashSalesCategory_ShouldFail(CashRevenueCategory category)
+    {
+        var numberResult = CashOperationNumber.Create(CashOperationNumber.CreditPrefix, DateTime.UtcNow.Year, 1);
+        Assert.True(numberResult.IsSuccess, numberResult.Error?.Description);
+
+        var result = CashOperation.Create(
+            number: numberResult.Value,
+            operationType: CashOperationType.Credit,
+            operationDate: DateTime.UtcNow.Date,
+            method: PaymentMethod.Cash,
+            amount: Money.Create(100m, Money.DefaultCurrency),
+            label: "Test",
+            revenueCategory: category,
+            vatRate: VatRate.Standard);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.VatRate", result.Error.Code);
+    }
+
+    [Theory]
+    [InlineData(VatRate.Exempt)]
+    [InlineData(VatRate.Reduced)]
+    [InlineData(VatRate.Intermediate)]
+    [InlineData(VatRate.Standard)]
+    public void Create_VatRateOnCreditCashSalesReceipt_ShouldSucceed(VatRate rate)
+    {
+        var numberResult = CashOperationNumber.Create(CashOperationNumber.CreditPrefix, DateTime.UtcNow.Year, 1);
+        Assert.True(numberResult.IsSuccess, numberResult.Error?.Description);
+
+        var result = CashOperation.Create(
+            number: numberResult.Value,
+            operationType: CashOperationType.Credit,
+            operationDate: DateTime.UtcNow.Date,
+            method: PaymentMethod.Cash,
+            amount: Money.Create(100m, Money.DefaultCurrency),
+            label: "Test",
+            revenueCategory: CashRevenueCategory.CashSalesReceipt,
+            vatRate: rate);
+
+        Assert.True(result.IsSuccess, result.Error?.Description);
+        Assert.Equal(rate, result.Value.VatRate);
+    }
+
+    [Fact]
+    public void Create_VatRateNull_ShouldSucceedRegardlessOfCategory()
+    {
+        var numberResult = CashOperationNumber.Create(CashOperationNumber.DebitPrefix, DateTime.UtcNow.Year, 1);
+        Assert.True(numberResult.IsSuccess, numberResult.Error?.Description);
+
+        var result = CashOperation.Create(
+            number: numberResult.Value,
+            operationType: CashOperationType.Debit,
+            operationDate: DateTime.UtcNow.Date,
+            method: PaymentMethod.Cash,
+            amount: Money.Create(100m, Money.DefaultCurrency),
+            label: "Test",
+            category: CashExpenseCategory.Other,
+            vatRate: null);
+
+        Assert.True(result.IsSuccess, result.Error?.Description);
+        Assert.Null(result.Value.VatRate);
+    }
+
+    [Fact]
+    public void Create_InvalidVatRateEnumValue_ShouldFail()
+    {
+        var numberResult = CashOperationNumber.Create(CashOperationNumber.CreditPrefix, DateTime.UtcNow.Year, 1);
+        Assert.True(numberResult.IsSuccess, numberResult.Error?.Description);
+
+        var invalidRate = (VatRate)55;
+
+        var result = CashOperation.Create(
+            number: numberResult.Value,
+            operationType: CashOperationType.Credit,
+            operationDate: DateTime.UtcNow.Date,
+            method: PaymentMethod.Cash,
+            amount: Money.Create(100m, Money.DefaultCurrency),
+            label: "Test",
+            revenueCategory: CashRevenueCategory.CashSalesReceipt,
+            vatRate: invalidRate);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.VatRate", result.Error.Code);
+    }
+
+    [Fact]
+    public void CreateFromInvoicePayment_NeverSetsVatRate()
+    {
+        var number = CashOperationNumber.Create(CashOperationNumber.CreditPrefix, DateTime.UtcNow.Year, 1).Value;
+        var result = CashOperation.CreateFromInvoicePayment(
+            number: number,
+            paymentId: Guid.NewGuid(),
+            invoiceNumber: "FAC-1",
+            amount: Money.Create(100m, Money.DefaultCurrency),
+            paymentDate: DateTime.UtcNow.Date);
+
+        Assert.True(result.IsSuccess, result.Error?.Description);
+        Assert.Null(result.Value.VatRate);
+    }
+
+    [Fact]
+    public void CreateFromSupplierPayment_NeverSetsVatRate()
+    {
+        var number = CashOperationNumber.Create(CashOperationNumber.DebitPrefix, DateTime.UtcNow.Year, 1).Value;
+        var result = CashOperation.CreateFromSupplierPayment(
+            number: number,
+            supplierPaymentId: Guid.NewGuid(),
+            supplierInvoiceNumber: "FS-1",
+            amount: Money.Create(100m, Money.DefaultCurrency),
+            paymentDate: DateTime.UtcNow.Date);
+
+        Assert.True(result.IsSuccess, result.Error?.Description);
+        Assert.Null(result.Value.VatRate);
+    }
+
+    [Fact]
+    public void CreateFromInvoiceRefund_NeverSetsVatRate()
+    {
+        var number = CashOperationNumber.Create(CashOperationNumber.DebitPrefix, DateTime.UtcNow.Year, 1).Value;
+        var result = CashOperation.CreateFromInvoiceRefund(
+            number: number,
+            paymentId: Guid.NewGuid(),
+            invoiceNumber: "FAC-2",
+            amount: Money.Create(100m, Money.DefaultCurrency),
+            paymentDate: DateTime.UtcNow.Date);
+
+        Assert.True(result.IsSuccess, result.Error?.Description);
+        Assert.Null(result.Value.VatRate);
+    }
+
     [Fact]
     public void Cancel_Twice_ShouldSecondCancellationFail()
     {

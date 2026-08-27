@@ -107,6 +107,29 @@ public static class CashOperationJournalLabelBuilder
         }
     }
 
+    /// <summary>
+    /// Suffixe une ligne de ventilation (707 « — HT », 436711 « — TVA {taux}% ») dérivée du libellé
+    /// d'entête d'une écriture caisse à 3 lignes, en respectant la limite de
+    /// <see cref="MaxJournalLabelLength"/> caractères : c'est la BASE qui est tronquée si nécessaire,
+    /// jamais le suffixe (sinon le suffixe — seule information distinguant les lignes — disparaîtrait
+    /// en priorité sur les libellés les plus longs).
+    /// </summary>
+    public static string BuildLineLabel(string baseLabel, string suffix)
+    {
+        ArgumentNullException.ThrowIfNull(baseLabel);
+        ArgumentNullException.ThrowIfNull(suffix);
+
+        var combined = baseLabel + suffix;
+        if (combined.Length <= MaxJournalLabelLength)
+            return combined;
+
+        var maxBaseLength = MaxJournalLabelLength - suffix.Length;
+        if (maxBaseLength <= 0)
+            return suffix[..MaxJournalLabelLength];
+
+        return baseLabel[..maxBaseLength] + suffix;
+    }
+
     private static string TruncateToFit(string value, int maxLength)
     {
         const string ellipsis = "…";
