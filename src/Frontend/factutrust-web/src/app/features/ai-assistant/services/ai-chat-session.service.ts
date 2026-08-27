@@ -25,6 +25,7 @@ import {
   ChatStreamEvent,
   ChatRequestOptions,
   ClientNavAction,
+  ConfirmFirmReminderAction,
   DashboardConfig,
   SourceRef,
   AiActiveModelDto,
@@ -373,6 +374,50 @@ export class AiChatSessionService {
     this.sendMessage({ text: prompt, conversationalFollowUp: true });
   }
 
+  /**
+   * Confirme une relance d'échéance en attente (carte « action en attente ») : POST
+   * `/api/firm/ai/reminders/confirm` avec le nonce, puis bascule le message sur l'état confirmé.
+   * Le nonce est à usage unique côté serveur (consommation atomique) : un deuxième clic ne renvoie
+   * pas l'e-mail. Un échec transitoire laisse le nonce valide tant qu'il n'a pas expiré.
+   */
+  confirmFirmReminder(messageId: string, nonce: string): void {
+    if (!nonce) {
+      return;
+    }
+    this.updateAssistantMessage(messageId, {
+      firmReminderConfirming: true,
+      firmReminderError: undefined
+    });
+    this.chatService.confirmFirmReminder(nonce).subscribe({
+      next: () => {
+        this.updateAssistantMessage(messageId, {
+          firmReminderConfirming: false,
+          firmReminderConfirmed: true,
+          firmReminderError: undefined
+        });
+      },
+      error: (err: unknown) => {
+        this.updateAssistantMessage(messageId, {
+          firmReminderConfirming: false,
+          firmReminderError: this.resolveConfirmReminderErrorMessage(err)
+        });
+      }
+    });
+  }
+
+  /** Annule localement une relance en attente : aucun appel serveur, le nonce expire de lui-même. */
+  dismissFirmReminder(messageId: string): void {
+    this.updateAssistantMessage(messageId, {
+      firmReminderAction: undefined,
+      firmReminderError: undefined
+    });
+  }
+
+  private resolveConfirmReminderErrorMessage(err: unknown): string {
+    const e = err as { error?: { message?: string }; message?: string } | null;
+    return e?.error?.message || e?.message || 'La confirmation de la relance a échoué.';
+  }
+
   sendMessage(
     input: string | SendMessageInput,
     attachments?: ChatAttachment[],
@@ -687,28 +732,50 @@ export class AiChatSessionService {
         break;
 
       case 'client_actions': {
-        let actions: ClientNavAction[] = [];
+        let navActions: ClientNavAction[] = [];
+        let reminderAction: ConfirmFirmReminderAction | undefined;
         try {
           const raw = event.clientActions;
           if (raw) {
             const parsed = JSON.parse(raw) as unknown;
             if (Array.isArray(parsed)) {
-              actions = parsed.filter(
-                (a): a is ClientNavAction =>
-                  !!a &&
-                  typeof a === 'object' &&
+              for (const a of parsed) {
+                if (!a || typeof a !== 'object') {
+                  continue;
+                }
+                // Action de relance en attente de confirmation (Lot 4.3 / 5.3) : discriminée par
+                // `kind`, jamais par `route` (qu'elle ne porte pas). On ne conserve que la première.
+                if (
+                  (a as ConfirmFirmReminderAction).kind === 'confirm_firm_reminder' &&
+                  typeof (a as ConfirmFirmReminderAction).nonce === 'string' &&
+                  !!(a as ConfirmFirmReminderAction).preview
+                ) {
+                  reminderAction ??= a as ConfirmFirmReminderAction;
+                  continue;
+                }
+                if (
                   typeof (a as ClientNavAction).label === 'string' &&
                   typeof (a as ClientNavAction).route === 'string'
-              );
+                ) {
+                  navActions.push(a as ClientNavAction);
+                }
+              }
             }
           }
         } catch {
-          actions = [];
+          navActions = [];
+          reminderAction = undefined;
         }
-        if (actions.length > 0) {
+        if (navActions.length > 0 || reminderAction) {
           this.messages.update(msgs =>
             msgs.map(m =>
-              m.id === assistantMsgId ? { ...m, clientActions: actions } : m
+              m.id === assistantMsgId
+                ? {
+                    ...m,
+                    ...(navActions.length > 0 ? { clientActions: navActions } : {}),
+                    ...(reminderAction ? { firmReminderAction: reminderAction } : {})
+                  }
+                : m
             )
           );
         }

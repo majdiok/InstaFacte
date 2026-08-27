@@ -31,9 +31,16 @@ public static class AiToolIntentRouter
         "instafact"
     ];
 
+    /// <summary>
+    /// Marqueur interne consommé par <see cref="MatchesKeyword"/> : force la détection en mot isolé
+    /// du fragment « ca » (au lieu des anciens fragments bruts « ca »/" ca" qui matchaient "cabinet",
+    /// "cadeau", "caisse", "occasion"…). Ne JAMAIS matcher via <see cref="string.Contains(string)"/> direct.
+    /// </summary>
+    private const string WholeWordCaMarker = "\u0000ca-whole-word\u0000";
+
     private static readonly string[] SalesKeywords =
     [
-        "chiffre d'affaires", "chiffre d affaires", "ca ", " ca", "mon ca", "ca du", "ca ce", "ca mois",
+        "chiffre d'affaires", "chiffre d affaires", WholeWordCaMarker, "mon ca", "ca du", "ca ce", "ca mois",
         "revenu", "vente", "ventes", "facture", "factures", "client", "clients", "encaisse", "encaissement",
         "paiement", "paiements", "marge", "panier", "commercial", "meilleur client", "top client",
         "impaye", "creance", "gagne", "gagné", "gagnes", "combien", "aujourd'hui", "aujourdhui", "du jour", "ce jour"
@@ -509,8 +516,7 @@ public static class AiToolIntentRouter
     private static void ApplyColloquialSalesBoost(string normalized, Dictionary<AiToolIntent, int> scores)
     {
         var hasRevenueHint = normalized.Contains("gagn", StringComparison.Ordinal)
-            || normalized.Contains("ca ", StringComparison.Ordinal)
-            || normalized.Contains(" ca", StringComparison.Ordinal)
+            || FirmMissionShortcutRouter.ContainsWholeWord(normalized, "ca")
             || normalized.Contains("vente", StringComparison.Ordinal)
             || normalized.Contains("combien", StringComparison.Ordinal);
         var hasTodayHint = normalized.Contains("aujourd", StringComparison.Ordinal)
@@ -525,11 +531,23 @@ public static class AiToolIntentRouter
         var score = 0;
         foreach (var kw in keywords)
         {
-            if (normalized.Contains(kw, StringComparison.Ordinal))
+            if (MatchesKeyword(normalized, kw))
                 score++;
         }
         return score;
     }
+
+    /// <summary>
+    /// Matche un mot-clé de scoring. Cas spécial <see cref="WholeWordCaMarker"/> : détection de « ca »
+    /// en mot isolé (frontières non alphanumériques) pour éviter les faux positifs « cabinet », « cadeau »,
+    /// « caisse », « occasion »… tout en conservant les tournures colloquiales « mon ca aujourd'hui »,
+    /// « ca du mois », « CA ce mois-ci ». Les autres mots-clés gardent le simple <see cref="string.Contains(string, StringComparison)"/>
+    /// existant (comportement inchangé).
+    /// </summary>
+    private static bool MatchesKeyword(string normalized, string keyword)
+        => keyword == WholeWordCaMarker
+            ? FirmMissionShortcutRouter.ContainsWholeWord(normalized, "ca")
+            : normalized.Contains(keyword, StringComparison.Ordinal);
 
     private static string RemoveDiacritics(string text)
     {

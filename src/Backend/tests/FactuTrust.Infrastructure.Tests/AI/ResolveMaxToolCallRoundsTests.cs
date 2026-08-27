@@ -74,4 +74,45 @@ public sealed class ResolveMaxToolCallRoundsTests
 
         Assert.Equal(3, rounds);
     }
+
+    // ── Lot 2.2 : budget explicite de rounds pour les tours du scope FirmMission ──
+    // Un tour cabinet ne doit jamais dépasser 2 générations LLM (1 round outil + 1 synthèse) :
+    // sur CPU, le scope FirmMission force donc systématiquement 1 round, quel que soit l'intent
+    // brut détecté par le routeur (y compris une éventuelle mauvaise classification Sales).
+    [Theory]
+    [InlineData(AiToolIntentRouter.AiToolIntent.Sales)]
+    [InlineData(AiToolIntentRouter.AiToolIntent.Fallback)]
+    [InlineData(AiToolIntentRouter.AiToolIntent.Stock)]
+    [InlineData(AiToolIntentRouter.AiToolIntent.Accounting)]
+    [InlineData(AiToolIntentRouter.AiToolIntent.Forecasting)]
+    public void FirmMission_Cpu_AlwaysOneRound_RegardlessOfIntent(AiToolIntentRouter.AiToolIntent toolIntent)
+    {
+        var rounds = SendChatMessageHandler.ResolveMaxToolCallRounds(
+            isScreenAnalysis: false,
+            screenAnalysisMaxRounds: 3,
+            defaultMaxRounds: 2,
+            cpuMaxToolCallRounds: 1,
+            AssistantMode.Default,
+            toolIntent,
+            CpuProfile,
+            agentScope: AssistantAgentScope.FirmMission);
+
+        Assert.Equal(1, rounds);
+    }
+
+    [Fact]
+    public void FirmMission_Gpu_KeepsDefaultRounds()
+    {
+        var rounds = SendChatMessageHandler.ResolveMaxToolCallRounds(
+            isScreenAnalysis: false,
+            screenAnalysisMaxRounds: 3,
+            defaultMaxRounds: 2,
+            cpuMaxToolCallRounds: 1,
+            AssistantMode.Default,
+            AiToolIntentRouter.AiToolIntent.Sales,
+            new OllamaInferenceProfile(OllamaInferenceDevice.Gpu, null, null, 256, false),
+            agentScope: AssistantAgentScope.FirmMission);
+
+        Assert.Equal(2, rounds);
+    }
 }

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FactuTrust.Application.Features.AI;
 using FactuTrust.Application.Features.AI.DTOs;
+using FactuTrust.Application.Features.AI.Tools;
 using FactuTrust.Domain.Enums;
 using Microsoft.Extensions.Logging;
 
@@ -58,12 +59,20 @@ public sealed class CursorToolCallbackService
         ctx.Conversation.AddMessage(MessageRole.Tool, content, toolName, callId);
         ctx.ToolsExecuted++;
         ctx.ToolSources.Add((toolName, callId));
+        // Grounding gate (Lot 1.3 du plan v3) : distinct de ToolsExecuted (incrémenté même en
+        // erreur, ci-dessus, comportement conservé) — FirmGroundedReads ne compte que les lectures
+        // firm réellement exploitables. Couverture Cursor garantie : aucune option d'exclusion.
+        if (AiParallelDbToolPolicy.IsFirmReadOnly(toolName) && result.IsGrounded)
+            ctx.FirmGroundedReads++;
         ctx.ExtraEvents.Enqueue(ChatStreamEvent.ToolCallEnd(toolName, callId, sw.ElapsedMilliseconds));
 
         if (result.Success && !string.IsNullOrWhiteSpace(result.Data))
         {
             if (toolName == "propose_client_actions")
                 ctx.ExtraEvents.Enqueue(ChatStreamEvent.ClientActionsEvent(result.Data));
+            if (toolName == FirmAgentTools.SendReminder &&
+                FirmReminderClientActionExtractor.TryBuildClientActionsJson(result.Data, out var firmReminderActionsJson))
+                ctx.ExtraEvents.Enqueue(ChatStreamEvent.ClientActionsEvent(firmReminderActionsJson!));
             if (toolName == "propose_follow_up_prompts")
             {
                 ctx.ExtraEvents.Enqueue(ChatStreamEvent.SuggestedPromptsEvent(result.Data));

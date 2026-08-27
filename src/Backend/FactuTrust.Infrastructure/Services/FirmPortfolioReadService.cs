@@ -13,7 +13,7 @@ using Microsoft.Extensions.Options;
 namespace FactuTrust.Infrastructure.Services;
 
 /// <inheritdoc cref="IFirmPortfolioReadService"/>
-public sealed class FirmPortfolioReadService : IFirmPortfolioReadService
+public sealed class FirmPortfolioReadService : IFirmPortfolioReadService, IDisposable
 {
     /// <summary>Fenêtre « à venir » par défaut, en jours.</summary>
     private const int DefaultHorizonDays = 30;
@@ -36,6 +36,28 @@ public sealed class FirmPortfolioReadService : IFirmPortfolioReadService
     private readonly AccountingFirmsOptions _options;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<FirmPortfolioReadService> _logger;
+
+    // ────────────────────────── Mémoïsation par requête (Lot 2.3) ──────────────────────────
+    // Service Scoped (DependencyInjection.cs) : la mémoïsation ci-dessous vit UNIQUEMENT pour la
+    // durée du scope DI (une requête / un job), jamais entre requêtes. Elle évite que 3 outils
+    // firm d'un même tour (overview + health + workload, tous DefaultHorizonDays) ne relancent
+    // chacun le fan-out complet CollectAsync — source d'incohérences (données différentes vues par
+    // 3 outils du même tour) et de coût ×3. La clé mémoïse la Task (pas seulement le résultat) pour
+    // que des appels concurrents dans le même scope PARTAGENT la même exécution en vol.
+    //
+    // scopeKey = "system" quand scope est null (FirmMissionBriefingJob : lecture cabinet complète,
+    // une fois par tour de brief, AUCUN utilisateur) — sinon "{UserId}:{Role}". "system" est une
+    // chaîne, jamais un Guid : elle ne peut jamais coïncider avec une clé utilisateur par
+    // construction, donc une entrée "system" n'est jamais servie à un scope utilisateur (ni l'inverse).
+    //
+    // L'ACL effective (GetAccessibleCompanyTenantIdsAsync) est résolue au premier appel pour la clé
+    // et reste figée pour le reste du tour : une mutation d'affectation pendant le tour ne sera vue
+    // qu'au tour suivant (cohérence intra-tour privilégiée sur la fraîcheur intra-tour).
+    private readonly Dictionary<(Guid FirmTenantId, string ScopeKey, int HorizonDays), Task<IReadOnlyList<DossierSnapshot>>> _collectMemo = new();
+    private readonly SemaphoreSlim _collectMemoLock = new(1, 1);
+
+    private static string BuildScopeKey(FirmDossierAccessScope? scope)
+        => scope is { } effectiveScope ? $"{effectiveScope.UserId}:{effectiveScope.Role}" : "system";
 
     public FirmPortfolioReadService(
         MasterDbContext masterContext,
@@ -76,6 +98,7 @@ public sealed class FirmPortfolioReadService : IFirmPortfolioReadService
             OverdueEstimatedAmount = overdue.Sum(d => d.EstimatedAmount),
             UpcomingWithin7DaysEstimatedAmount = within7.Sum(d => d.EstimatedAmount),
             DossiersWithOverdueCount = snapshots.Count(s => s.Deadlines.Any(d => d.Status == FiscalScheduleStatus.Overdue)),
+            DossiersEcheanceSous7JoursCount = snapshots.Count(s => s.Deadlines.Any(d => d.Status == FiscalScheduleStatus.UpcomingWithin7Days)),
             InactiveDossiers30DaysCount = snapshots.Count(s => !s.ReadFailed && s.IsInactive30Days(today)),
             VatDraftsCount = snapshots.Sum(s => s.VatDraftsCount),
             GeneratedAt = today,
@@ -205,6 +228,39 @@ public sealed class FirmPortfolioReadService : IFirmPortfolioReadService
     // ────────────────────────────── Collecte ──────────────────────────────
 
     /// <summary>
+    /// Point d'entrée mémoïsé par requête (Lot 2.3) de <see cref="CollectCoreAsync"/> : partage le
+    /// fan-out entre outils d'un même tour (même dossier tenant + même scope + même horizon). Ne
+    /// verrouille que la lecture/écriture de la table de mémoïsation — le fan-out lui-même s'exécute
+    /// sans verrou, et les appelants concurrents attendent la MÊME <see cref="Task"/> (pas seulement
+    /// le même résultat), ce qui garantit une exécution unique même sous concurrence.
+    /// </summary>
+    private async Task<IReadOnlyList<DossierSnapshot>> CollectAsync(
+        Guid firmTenantId,
+        FirmDossierAccessScope? scope,
+        int horizonDays,
+        CancellationToken cancellationToken)
+    {
+        var key = (firmTenantId, BuildScopeKey(scope), horizonDays);
+
+        Task<IReadOnlyList<DossierSnapshot>> task;
+        await _collectMemoLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (!_collectMemo.TryGetValue(key, out task!))
+            {
+                task = CollectCoreAsync(firmTenantId, scope, horizonDays, cancellationToken);
+                _collectMemo[key] = task;
+            }
+        }
+        finally
+        {
+            _collectMemoLock.Release();
+        }
+
+        return await task;
+    }
+
+    /// <summary>
     /// Fan-out en trois temps, dans cet ordre impérativement :
     /// <list type="number">
     ///   <item>lectures master SÉQUENTIELLES (dossiers autorisés, gestionnaire affecté) ;</item>
@@ -214,7 +270,7 @@ public sealed class FirmPortfolioReadService : IFirmPortfolioReadService
     ///   <item>lectures dossiers EN PARALLÈLE borné, chacune sur son propre contexte isolé.</item>
     /// </list>
     /// </summary>
-    private async Task<IReadOnlyList<DossierSnapshot>> CollectAsync(
+    private async Task<IReadOnlyList<DossierSnapshot>> CollectCoreAsync(
         Guid firmTenantId,
         FirmDossierAccessScope? scope,
         int horizonDays,
@@ -460,4 +516,7 @@ public sealed class FirmPortfolioReadService : IFirmPortfolioReadService
         public DateTime? LastReminderAt { get; init; }
         public FiscalScheduleStatus Status { get; set; }
     }
+
+    /// <inheritdoc />
+    public void Dispose() => _collectMemoLock.Dispose();
 }

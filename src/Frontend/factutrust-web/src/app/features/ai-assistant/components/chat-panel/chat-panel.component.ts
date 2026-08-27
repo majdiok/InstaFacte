@@ -264,6 +264,8 @@ import { AI_ASSISTANT_MARK_SRC } from '@core/constants/ai-assistant-brand';
                     msg.role === MessageRole.Assistant &&
                     msg.isStreaming === true
                   "
+                  [warnWhenUngrounded]="isFirmScope()"
+                  [hideChartFollowUp]="isFirmScope()"
                   (exportSingleAsPowerPoint)="onExportSingleAsPowerPoint($event)"
                 />
               }
@@ -871,6 +873,11 @@ export class ChatPanelComponent implements AfterViewInit, OnInit, OnChanges, OnD
   /** Config UI de l'expert actif (undefined = assistant global). Dérivée de la session, pas de l'input. */
   readonly scopeConfig = computed(() => getAgentScopeConfig(this.session.agentScope()));
 
+  /** Vrai quand la session pilote l'agent cabinet Chef de mission (badge « non ancré » + pas de Graphique). */
+  readonly isFirmScope = computed(
+    () => this.session.agentScope() === AssistantAgentScope.FirmMission
+  );
+
   readonly headerTitle = computed(() => this.scopeConfig()?.title ?? 'Assistant IA InstaFact');
 
   readonly welcomeTitle = computed(() => {
@@ -1007,7 +1014,7 @@ export class ChatPanelComponent implements AfterViewInit, OnInit, OnChanges, OnD
     if (m.toolCalls?.length) {
       return false;
     }
-    if (m.clientActions?.length || m.sources?.length) {
+    if (m.clientActions?.length || m.sources?.length || m.firmReminderAction) {
       return false;
     }
     if (m.progress?.steps?.length) {

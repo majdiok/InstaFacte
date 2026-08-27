@@ -23,6 +23,15 @@ export interface AiDocumentExtractPage {
   height?: number;
   ocrApplied: boolean;
 }
+
+/** Réponse de `POST /api/firm/ai/reminders/confirm` (corps `data` de l'ApiResponse serveur). */
+export interface ConfirmFirmReminderResult {
+  envoye: boolean;
+  dossier: string;
+  obligation: string;
+  echeance: string;
+  destinataire: string;
+}
 import { environment } from '@environments/environment';
 import {
   ConversationDto,
@@ -124,6 +133,17 @@ export class AiChatService {
   getActiveModel(): Observable<AiActiveModelDto> {
     return this.http
       .get<ApiResponse<AiActiveModelDto>>(`${this.baseUrl}/active-model`)
+      .pipe(map(res => res.data!));
+  }
+
+  /**
+   * Consomme le nonce d'une relance d'échéance en attente (carte « action en attente » du chat
+   * cabinet) et déclenche l'envoi réel côté serveur. Le nonce ne circule que dans ce corps —
+   * jamais en URL/queryParam. Surface cabinet uniquement (`/firm/ai`).
+   */
+  confirmFirmReminder(nonce: string): Observable<ConfirmFirmReminderResult> {
+    return this.http
+      .post<ApiResponse<ConfirmFirmReminderResult>>(`${this.firmBaseUrl}/reminders/confirm`, { nonce })
       .pipe(map(res => res.data!));
   }
 }

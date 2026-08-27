@@ -125,6 +125,31 @@ export interface ClientNavAction {
   queryParams?: Record<string, string>;
 }
 
+/**
+ * Action de relance en attente de confirmation, émise par l'outil cabinet
+ * `send_fiscal_deadline_reminder` (PREVIEW) sous la clé `actionEnAttente` du payload d'outil, puis
+ * relayée telle quelle dans l'événement SSE `client_actions`. Confirmée via
+ * `POST /api/firm/ai/reminders/confirm` avec `{ nonce }`.
+ *
+ * Consommé par `ai-chat-session.service.ts` (discrimination par `kind` dans le handler
+ * `client_actions`) et rendu par `chat-message.component.ts` (carte de confirmation Lot 5).
+ * La discrimination par `kind` reste rétro-compatible avec `ClientNavAction`, qui n'a pas de `kind`.
+ */
+export interface ConfirmFirmReminderAction {
+  kind: 'confirm_firm_reminder';
+  label: string;
+  nonce: string;
+  expiresAtUtc: string;
+  preview: {
+    responsable: string;
+    dossier: string;
+    echeance: string;
+    objet: string;
+  };
+}
+
+/** La discrimination par `kind` est gérée via les types individuels (plutôt qu'une union exportée). */
+
 /** In-app link for a dashboard table cell (server-sanitized). */
 export interface DashboardCellLink {
   route: string;
@@ -229,6 +254,17 @@ export interface ChatMessage {
   hideInlineDashboard?: boolean;
   /** Validated navigation chips from SSE `client_actions`. */
   clientActions?: ClientNavAction[];
+  /**
+   * Relance d'échéance en attente de confirmation (SSE `client_actions`, discriminator
+   * `confirm_firm_reminder`). Confirmée via `POST /api/firm/ai/reminders/confirm` avec le nonce.
+   */
+  firmReminderAction?: ConfirmFirmReminderAction;
+  /** True après confirmation serveur réussie — la carte bascule sur l'état « Relance envoyée ». */
+  firmReminderConfirmed?: boolean;
+  /** True pendant l'appel de confirmation (bouton désactivé, état chargement). */
+  firmReminderConfirming?: boolean;
+  /** Message d'erreur après un échec de confirmation (le nonce peut rester valide tant qu'il n'a pas expiré). */
+  firmReminderError?: string;
   /** Follow-up question chips from SSE `suggested_prompts` or persisted `ft-meta`. */
   suggestedPrompts?: string[];
   /** Tool names used for this reply (SSE `sources`). */
