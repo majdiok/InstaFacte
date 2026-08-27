@@ -19,6 +19,9 @@ public partial class TenantDbContext
             entity.Property(c => c.Notes).HasMaxLength(2000);
             entity.HasIndex(c => c.ClientId);
             entity.HasIndex(c => c.Status);
+            // Garde-fou anti-collision de numérotation (D11) — créé par la migration manuelle
+            // idempotente 20260827120000_AddRecurringContractNumberUnique_Tenant (hors snapshot).
+            entity.HasIndex(c => c.Number).IsUnique().HasFilter("[Number] IS NOT NULL");
             entity.HasIndex(c => c.NextBillingDate)
                 .HasFilter("[NextBillingDate] IS NOT NULL");
             entity.Property(c => c.Version).IsConcurrencyToken();

@@ -11,31 +11,35 @@ using FactuTrust.Domain.Services;
 using FactuTrust.Infrastructure.MultiTenancy;
 using FactuTrust.Infrastructure.Persistence;
 using MediatR;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace FactuTrust.Infrastructure.Services.RecurringContracts;
 
-public sealed class RecurringContractService : IRecurringContractService, IAsyncDisposable
+public sealed partial class RecurringContractService : IRecurringContractService, IAsyncDisposable
 {
     private readonly TenantDbContext _db;
     private readonly ICurrentUser _currentUser;
     private readonly IMediator _mediator;
     private readonly RecurringContractBillingService _billing;
     private readonly RecurringContractsOptions _options;
+    private readonly ITenantMemberDirectory _members;
 
     public RecurringContractService(
         ITenantDbContextFactory tenantFactory,
         ICurrentUser currentUser,
         IMediator mediator,
         RecurringContractBillingService billing,
-        IOptions<RecurringContractsOptions> options)
+        IOptions<RecurringContractsOptions> options,
+        ITenantMemberDirectory tenantMemberDirectory)
     {
         _db = tenantFactory.CreateIsolatedContext();
         _currentUser = currentUser;
         _mediator = mediator;
         _billing = billing;
         _options = options.Value;
+        _members = tenantMemberDirectory;
     }
 
     public ValueTask DisposeAsync() => _db.DisposeAsync();
@@ -54,9 +58,15 @@ public sealed class RecurringContractService : IRecurringContractService, IAsync
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
             var term = query.Search.Trim();
+            // Recherche étendue au nom du client (D10) : sous-requête traduite en IN (SELECT …),
+            // un seul aller-retour SQL. Sans terme de recherche, comportement inchangé.
+            var matchingClientIds = _db.Clients
+                .Where(cl => cl.Name.Contains(term))
+                .Select(cl => cl.Id);
             q = q.Where(c =>
                 (c.Number != null && c.Number.Contains(term)) ||
-                (c.Reference != null && c.Reference.Contains(term)));
+                (c.Reference != null && c.Reference.Contains(term)) ||
+                matchingClientIds.Contains(c.ClientId));
         }
 
         var total = await q.CountAsync(cancellationToken);
@@ -130,7 +140,7 @@ public sealed class RecurringContractService : IRecurringContractService, IAsync
         if (created.IsFailure) return Result.Failure<Guid>(created.Error);
 
         var contract = created.Value;
-        var number = await GenerateContractNumberAsync(cancellationToken);
+        var number = await GenerateContractNumberAsync(0, cancellationToken);
         contract.AssignNumber(number);
 
         foreach (var lineDto in dto.Lines.OrderBy(l => l.SortOrder))
@@ -145,7 +155,8 @@ public sealed class RecurringContractService : IRecurringContractService, IAsync
 
         contract.SetAuditInfo(_currentUser.UserId?.ToString() ?? "system");
         await _db.RecurringContracts.AddAsync(contract, cancellationToken);
-        await _db.SaveChangesAsync(cancellationToken);
+        var save = await SaveWithNumberRetryAsync(contract, cancellationToken);
+        if (save.IsFailure) return Result.Failure<Guid>(save.Error);
         return Result.Success(contract.Id);
     }
 
@@ -194,8 +205,11 @@ public sealed class RecurringContractService : IRecurringContractService, IAsync
     {
         var contract = await _db.RecurringContracts.FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
         if (contract is null) return Result.Failure(Error.NotFound("RecurringContract", id));
+        var beforeJson = SerializeHeaderSnapshot(contract);
         var result = contract.Suspend();
         if (result.IsFailure) return result;
+        // D17 : la suspension est tracée comme avenant pour l'historique (additif).
+        await TraceLifecycleAmendmentAsync(id, RecurringContractAmendmentType.Suspend, beforeJson, contract, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
         return Result.Success();
     }
@@ -204,11 +218,37 @@ public sealed class RecurringContractService : IRecurringContractService, IAsync
     {
         var contract = await _db.RecurringContracts.FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
         if (contract is null) return Result.Failure(Error.NotFound("RecurringContract", id));
+        var beforeJson = SerializeHeaderSnapshot(contract);
         var result = contract.Resume();
         if (result.IsFailure) return result;
+        // D17 : la reprise est tracée comme avenant pour l'historique (additif).
+        await TraceLifecycleAmendmentAsync(id, RecurringContractAmendmentType.Resume, beforeJson, contract, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
         return Result.Success();
     }
+
+    private async Task TraceLifecycleAmendmentAsync(
+        Guid contractId,
+        RecurringContractAmendmentType type,
+        string beforeJson,
+        RecurringContract contract,
+        CancellationToken cancellationToken)
+    {
+        var amendment = RecurringContractAmendment.Create(
+            contractId, type, DateTime.UtcNow.Date, ProrationPolicy.None,
+            notes: null, beforeJson, SerializeHeaderSnapshot(contract), _currentUser.UserId);
+        await _db.RecurringContractAmendments.AddAsync(amendment, cancellationToken);
+    }
+
+    private static string SerializeHeaderSnapshot(RecurringContract contract) =>
+        JsonSerializer.Serialize(new
+        {
+            contract.StartDate,
+            contract.EndDate,
+            contract.Status,
+            contract.AutoRenew,
+            contract.NextBillingDate
+        });
 
     public async Task<Result> CancelAsync(Guid id, DateTime? cancellationDate = null, CancellationToken cancellationToken = default)
     {
@@ -226,13 +266,42 @@ public sealed class RecurringContractService : IRecurringContractService, IAsync
             .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
         if (contract is null) return Result.Failure(Error.NotFound("RecurringContract", id));
 
-        var beforeJson = JsonSerializer.Serialize(contract.Lines.Select(l => new
-        {
-            l.Id, l.LineType, l.Description, l.Quantity, l.UnitPriceHT, l.IsActive
-        }));
+        var beforeJson = SerializeLinesSnapshot(contract);
 
-        if (dto.UpdatedContract is not null)
+        var isLifecycleType = dto.AmendmentType is RecurringContractAmendmentType.Suspend
+            or RecurringContractAmendmentType.Resume;
+
+        if (contract.Status == RecurringContractStatus.Active && !isLifecycleType)
         {
+            // D14 : avenant de lignes sur contrat actif par fenêtres d'effet (effet immédiat).
+            // Seules les lignes de UpdatedContract sont lues — l'en-tête est ignoré (phase 1).
+            if (dto.UpdatedContract is null)
+                return Result.Failure(Error.Validation("UpdatedContract",
+                    "Les lignes cibles sont obligatoires pour un avenant sur contrat actif"));
+
+            var targets = new List<RecurringContractAmendLineTarget>();
+            foreach (var lineDto in dto.UpdatedContract.Lines.OrderBy(l => l.SortOrder))
+            {
+                var lineResult = RecurringContractLine.Create(
+                    id, lineDto.LineType, lineDto.Description, lineDto.Quantity,
+                    lineDto.UnitPriceHT, lineDto.VatRate, dto.EffectiveDate,
+                    lineDto.ProductId, lineDto.UsageMetricId, lineDto.IncludedQuantity,
+                    lineDto.OverageUnitPriceHT, lineDto.SortOrder);
+                if (lineResult.IsFailure) return Result.Failure(lineResult.Error);
+                targets.Add(new RecurringContractAmendLineTarget(lineDto.Id, lineResult.Value));
+            }
+
+            var amend = contract.AmendLines(dto.EffectiveDate, targets, DateTime.UtcNow);
+            if (amend.IsFailure) return amend;
+        }
+        else if (!isLifecycleType && contract.Status != RecurringContractStatus.Draft)
+        {
+            return Result.Failure(Error.Validation("Status",
+                "Avenant impossible sur ce statut — si le contrat est suspendu, reprenez-le d'abord"));
+        }
+        else if (dto.UpdatedContract is not null)
+        {
+            // Chemin brouillon inchangé (remplacement complet, gardé par CanBeEdited).
             var update = await UpdateAsync(id, dto.UpdatedContract, cancellationToken);
             if (update.IsFailure) return update;
             contract = await _db.RecurringContracts.Include(c => c.Lines)
@@ -244,10 +313,7 @@ public sealed class RecurringContractService : IRecurringContractService, IAsync
         else if (dto.AmendmentType == RecurringContractAmendmentType.Resume)
             contract.Resume();
 
-        var afterJson = JsonSerializer.Serialize(contract.Lines.Select(l => new
-        {
-            l.Id, l.LineType, l.Description, l.Quantity, l.UnitPriceHT, l.IsActive
-        }));
+        var afterJson = SerializeLinesSnapshot(contract);
 
         var amendment = RecurringContractAmendment.Create(
             id, dto.AmendmentType, dto.EffectiveDate, dto.ProrationPolicy,
@@ -256,6 +322,14 @@ public sealed class RecurringContractService : IRecurringContractService, IAsync
         await _db.SaveChangesAsync(cancellationToken);
         return Result.Success();
     }
+
+    // Snapshot des lignes pour l'historique des avenants (étendu des fenêtres d'effet — additif).
+    private static string SerializeLinesSnapshot(RecurringContract contract) =>
+        JsonSerializer.Serialize(contract.Lines.Select(l => new
+        {
+            l.Id, l.LineType, l.Description, l.Quantity, l.UnitPriceHT, l.IsActive,
+            l.EffectiveFrom, l.EffectiveTo
+        }));
 
     public async Task<Result<Guid>> ConvertFromQuoteAsync(
         Guid quoteId, UpsertRecurringContractDto dto, CancellationToken cancellationToken = default)
@@ -481,14 +555,58 @@ public sealed class RecurringContractService : IRecurringContractService, IAsync
     public Task<Result<int>> TriggerBillingAsync(Guid? contractId, CancellationToken cancellationToken = default)
         => _billing.ScanAndCreateDraftsAsync(_db, contractId, DateTime.UtcNow, cancellationToken);
 
-    private async Task<string> GenerateContractNumberAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Génère un numéro CTR-{année}-{seq:D4} en sautant les candidats déjà pris (D11).
+    /// <paramref name="attempt"/> décale la séquence à chaque retry externe (collision en concurrence).
+    /// Boucle interne de 5 candidats max avant de laisser le retry externe agir.
+    /// </summary>
+    private async Task<string> GenerateContractNumberAsync(int attempt, CancellationToken cancellationToken)
     {
         var year = DateTime.UtcNow.Year;
         var count = await _db.RecurringContracts.CountAsync(c => c.CreatedAt.Year == year, cancellationToken);
-        return $"CTR-{year}-{(count + 1):D4}";
+        for (var i = 0; i < 5; i++)
+        {
+            var candidate = $"CTR-{year}-{(count + 1 + attempt + i):D4}";
+            if (!await _db.RecurringContracts.AnyAsync(c => c.Number == candidate, cancellationToken))
+                return candidate;
+        }
+        // Tous les candidats sont pris : on retourne le dernier — l'index unique déclenchera le retry externe.
+        return $"CTR-{year}-{(count + 1 + attempt + 4):D4}";
+    }
+
+    /// <summary>
+    /// Persiste un contrat (création/clone) en absorbant une course sur l'unicité du numéro :
+    /// sur violation d'index unique (SQL 2601/2627), régénère le numéro et réessaie (max 3).
+    /// L'index unique UX_RecurringContracts_Number reste le garde-fou ultime.
+    /// </summary>
+    private async Task<Result> SaveWithNumberRetryAsync(RecurringContract contract, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                await _db.SaveChangesAsync(cancellationToken);
+                return Result.Success();
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 })
+            {
+                if (attempt == 2)
+                    return Result.Failure(Error.Conflict("Impossible d'attribuer un numéro de contrat unique, veuillez réessayer"));
+                var number = await GenerateContractNumberAsync(attempt + 1, cancellationToken);
+                contract.AssignNumber(number);
+            }
+        }
+        return Result.Failure(Error.Conflict("Impossible d'attribuer un numéro de contrat unique, veuillez réessayer"));
     }
 
     private static RecurringContractDto MapContract(
+        RecurringContract contract, string clientName, IReadOnlyDictionary<Guid, string> metrics) =>
+        MapContractCore(contract, clientName, metrics);
+
+    /// <summary>
+    /// Mapping de base partagé entre GetAsync (sortie strictement inchangée) et GetDetailAsync (T10).
+    /// </summary>
+    private static RecurringContractDto MapContractCore(
         RecurringContract contract, string clientName, IReadOnlyDictionary<Guid, string> metrics) =>
         new()
         {

@@ -47,13 +47,27 @@ public enum RecurringContractAmendmentType
     RemoveLine = 3,
     PriceChange = 4,
     Suspend = 5,
-    Resume = 6
+    Resume = 6,
+    Renewal = 7
 }
 
 public enum ProrationPolicy
 {
     None = 0,
     DailyProration = 1
+}
+
+/// <summary>
+/// Statut d'une occurrence d'échéancier prévisionnel (DTO uniquement — jamais persisté).
+/// </summary>
+public enum RecurringContractScheduleOccurrenceStatus
+{
+    Upcoming = 0,
+    Invoiced = 1,
+    DraftGenerated = 2,
+    Overdue = 3,
+    Failed = 4,
+    Skipped = 5
 }
 
 public static class RecurringContractStatusExtensions
@@ -84,6 +98,46 @@ public static class RecurringContractBillingRunStatusExtensions
         RecurringContractBillingRunStatus.Invoiced => "Facturé",
         RecurringContractBillingRunStatus.Failed => "Échec",
         RecurringContractBillingRunStatus.Skipped => "Ignoré",
+        _ => status.ToString()
+    };
+}
+
+public static class RecurringContractAmendmentTypeExtensions
+{
+    public static string ToDisplayString(this RecurringContractAmendmentType type) => type switch
+    {
+        RecurringContractAmendmentType.Upgrade => "Surclassement",
+        RecurringContractAmendmentType.Downgrade => "Réduction",
+        RecurringContractAmendmentType.AddLine => "Ajout de ligne",
+        RecurringContractAmendmentType.RemoveLine => "Suppression de ligne",
+        RecurringContractAmendmentType.PriceChange => "Changement de prix",
+        RecurringContractAmendmentType.Suspend => "Suspension",
+        RecurringContractAmendmentType.Resume => "Reprise",
+        RecurringContractAmendmentType.Renewal => "Renouvellement",
+        _ => type.ToString()
+    };
+}
+
+public static class ProrationPolicyExtensions
+{
+    public static string ToDisplayString(this ProrationPolicy policy) => policy switch
+    {
+        ProrationPolicy.None => "Aucun prorata",
+        ProrationPolicy.DailyProration => "Prorata journalier",
+        _ => policy.ToString()
+    };
+}
+
+public static class RecurringContractScheduleOccurrenceStatusExtensions
+{
+    public static string ToDisplayString(this RecurringContractScheduleOccurrenceStatus status) => status switch
+    {
+        RecurringContractScheduleOccurrenceStatus.Upcoming => "À venir",
+        RecurringContractScheduleOccurrenceStatus.Invoiced => "Facturée",
+        RecurringContractScheduleOccurrenceStatus.DraftGenerated => "Brouillon",
+        RecurringContractScheduleOccurrenceStatus.Overdue => "En retard",
+        RecurringContractScheduleOccurrenceStatus.Failed => "Échouée",
+        RecurringContractScheduleOccurrenceStatus.Skipped => "Ignorée",
         _ => status.ToString()
     };
 }

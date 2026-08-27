@@ -22,7 +22,13 @@ public sealed class LinkRecurringContractBillingRunOnInvoiceValidatedHandler
 
     public async Task Handle(InvoiceValidatedEvent notification, CancellationToken cancellationToken)
     {
-        await using var db = _tenantFactory.CreateIsolatedContext();
+        // CreateContext (et non CreateIsolatedContext) : l'événement est dispatché depuis
+        // SaveChangesAsync alors que la transaction du UnitOfWork est encore ouverte. Un
+        // contexte isolé utiliserait une AUTRE connexion, bloquée par les verrous de cette
+        // transaction (timeout SQL), et la liaison serait perdue silencieusement. Le
+        // contexte ambiant s'enrôle dans la transaction en cours : même connexion, pas de
+        // blocage, et le marquage Invoiced est commité atomiquement avec la validation.
+        await using var db = _tenantFactory.CreateContext();
         var invoice = await db.Invoices.AsNoTracking()
             .FirstOrDefaultAsync(i => i.Id == notification.InvoiceId, cancellationToken);
         if (invoice?.SourceRecurringContractBillingRunId is null)

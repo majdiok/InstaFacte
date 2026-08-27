@@ -1,6 +1,6 @@
 export const environment = {
   production: false,
-  apiUrl: 'https://localhost:7001/api',
+  apiUrl: '/api',
   /** Global search bar + Ctrl+K palette. Set false to disable without code revert. */
   globalSearchEnabled: true,
   appName: 'InstaFact',
