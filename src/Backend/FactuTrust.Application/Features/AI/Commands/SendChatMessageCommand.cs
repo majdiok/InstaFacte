@@ -489,9 +489,14 @@ public sealed class SendChatMessageHandler
             _ollamaSettings.CpuMaxToolCallRounds,
             assistantMode,
             toolIntent,
-            inferenceProfile) + 1;
+            inferenceProfile,
+            agentScope) + 1;
         var toolCallRound = 0;
         var continueLoop = true;
+        // Compteur unique de générations LLM du tour (Lot 2.2) : incrémenté à CHAQUE génération —
+        // boucle d'outils (ci-dessous), synthèse forcée et synthèse de secours (hook Lot 1). Pour
+        // agentScope == FirmMission, budget ≤ 2 : voir AtLlmGenerationBudgetExhaustedForFirmTurn.
+        var llmGenerationsThisTurn = 0;
         var minMeaningfulTextChars = ResolveMinMeaningfulTextChars(toolIntent, _ollamaSettings);
         // Raccourci déterministe CONFORMITÉ : « vérifie la conformité de ma dernière facture » résout
         // l'intent Sales (mot « facture ») et exigerait d'enchaîner recherche + contrôle — impossible
@@ -886,6 +891,9 @@ public sealed class SendChatMessageHandler
         while (continueLoop && toolCallRound < maxRounds)
         {
             continueLoop = false;
+            // Chaque itération de cette boucle appelle le provider LLM une fois (Lot 2.2 — compteur
+            // unique de générations, budget ≤ 2 pour le tour firm).
+            llmGenerationsThisTurn++;
             var phaseRound = toolCallRound + 1;
             sw.Restart();
             yield return ChatStreamEvent.PhaseEvent(
@@ -1376,6 +1384,9 @@ public sealed class SendChatMessageHandler
                     if (toolCall.Function.Name == "propose_client_actions" && toolResult.Success &&
                         !string.IsNullOrWhiteSpace(toolResult.Data))
                         yield return ChatStreamEvent.ClientActionsEvent(toolResult.Data);
+                    if (toolCall.Function.Name == FirmAgentTools.SendReminder && toolResult.Success &&
+                        FirmReminderClientActionExtractor.TryBuildClientActionsJson(toolResult.Data, out var firmReminderActionsJson))
+                        yield return ChatStreamEvent.ClientActionsEvent(firmReminderActionsJson!);
                     if (toolCall.Function.Name == "propose_follow_up_prompts" && toolResult.Success &&
                         !string.IsNullOrWhiteSpace(toolResult.Data))
                     {
@@ -1518,7 +1529,26 @@ public sealed class SendChatMessageHandler
         {
             forcedSynthesisTriggered = true;
             sw.Restart();
-            yield return ChatStreamEvent.PhaseEvent("llm_forced_synthesis", "running");
+            // Budget de générations explicite (Lot 2.2) : pour le tour firm, au plus 2 générations
+            // LLM au total (round outils + rédaction). Si le budget est déjà épuisé, on NE lance PAS
+            // cette synthèse forcée — synthContent reste vide et le mécanisme de repli déterministe
+            // existant (AssistantDeterministicFallback.TryBuild + ContentReplace, ci-dessous) prend le
+            // relais sans 3ᵉ génération. Autres scopes : compteur journalisé seulement, comportement
+            // inchangé (jamais bloqué ici).
+            var firmGenerationBudgetExhausted = IsFirmTurnGenerationBudgetExhausted(agentScope, llmGenerationsThisTurn);
+            if (firmGenerationBudgetExhausted)
+            {
+                _logger.LogInformation(
+                    "AI chat {CorrelationId} firm_llm_generation_budget_exhausted generations={Generations} forced_synthesis_skipped=true",
+                    correlationId ?? "-",
+                    llmGenerationsThisTurn);
+            }
+            else
+            {
+                llmGenerationsThisTurn++;
+            }
+            if (!firmGenerationBudgetExhausted)
+                yield return ChatStreamEvent.PhaseEvent("llm_forced_synthesis", "running");
             var synthContent = new System.Text.StringBuilder();
             // Streaming live de la synthèse : aucun outil attaché à cet appel → pas de reset possible ;
             // le ContentReplace(synthBody) final réconcilie comme pour le round principal.
@@ -1537,6 +1567,7 @@ public sealed class SendChatMessageHandler
                       + "Ne redemande pas la période si l'utilisateur a dit « aujourd'hui »."
                     : systemPrompt;
 
+            if (!firmGenerationBudgetExhausted)
             switch (modelRef.Kind)
             {
             case LlmProviderKind.Ollama:
@@ -1701,7 +1732,8 @@ public sealed class SendChatMessageHandler
                 break;
             }
 
-            yield return ChatStreamEvent.PhaseEvent("llm_forced_synthesis", "completed", sw.ElapsedMilliseconds);
+            if (!firmGenerationBudgetExhausted)
+                yield return ChatStreamEvent.PhaseEvent("llm_forced_synthesis", "completed", sw.ElapsedMilliseconds);
 
             var synthBody = synthContent.Length > 0
                 ? BuildFinalAssistantBodyWithAppendices(
@@ -1857,7 +1889,7 @@ public sealed class SendChatMessageHandler
             sw.ElapsedMilliseconds);
 
         _logger.LogInformation(
-            "AI chat {CorrelationId} phase=total_request elapsed_ms={ElapsedMs} conversation_id={ConversationId} model={Model} tool_intent={ToolIntent} conversational_fast_path={ConversationalFastPath} tool_rounds_executed={ToolRounds} tools_executed_this_request={ToolsExecutedThisRequest} forced_synthesis_triggered={ForcedSynthesisTriggered} deterministic_fallback_used={DeterministicFallbackUsed} final_response_meaningful={FinalResponseMeaningful} content_chars_streamed={ContentCharsStreamed} content_chars_persisted={ContentCharsPersisted}",
+            "AI chat {CorrelationId} phase=total_request elapsed_ms={ElapsedMs} conversation_id={ConversationId} model={Model} tool_intent={ToolIntent} conversational_fast_path={ConversationalFastPath} tool_rounds_executed={ToolRounds} tools_executed_this_request={ToolsExecutedThisRequest} forced_synthesis_triggered={ForcedSynthesisTriggered} deterministic_fallback_used={DeterministicFallbackUsed} final_response_meaningful={FinalResponseMeaningful} content_chars_streamed={ContentCharsStreamed} content_chars_persisted={ContentCharsPersisted} llm_generations_this_turn={LlmGenerationsThisTurn} agent_scope={AgentScope}",
             correlationId ?? "-",
             total.ElapsedMilliseconds,
             conversation.Id,
@@ -1870,7 +1902,9 @@ public sealed class SendChatMessageHandler
             deterministicFallbackUsed,
             meaningfulResponseDelivered,
             totalContentCharsStreamed,
-            contentCharsPersisted);
+            contentCharsPersisted,
+            llmGenerationsThisTurn,
+            agentScope);
         yield return ChatStreamEvent.PhaseEvent(
             "total_request",
             "completed",
@@ -2371,6 +2405,16 @@ public sealed class SendChatMessageHandler
     /// Limite les tours agent en CPU pour les intentions simples (Sales, Stock, etc.) sans réduire
     /// les cas ambigus (Fallback, Forecasting) ni l'analyse écran.
     /// </summary>
+    /// <param name="agentScope">
+    /// Scope de l'agent (Lot 2.2 — budget explicite ≤ 2 générations LLM par tour firm). Pour
+    /// <see cref="AssistantAgentScope.FirmMission"/> sur CPU, retourne toujours 1 round outils
+    /// QUEL QUE SOIT l'intent mot-clé (Sales, Fallback, Accounting…) : le raccourci déterministe
+    /// firm (Lot 1.2) garantit les données sans round supplémentaire, et la mauvaise classification
+    /// « Sales » du routeur (2.1) devient ainsi sans effet sur le budget firm — elle était déjà sans
+    /// effet sur le catalogue (voir <see cref="BuildOllamaTools"/>, neutralisation d'intent). Sur GPU,
+    /// comportement par défaut inchangé. Défaut <see cref="AssistantAgentScope.None"/> : comportement
+    /// identique à avant (aucun changement de signature publique sans paramètre par défaut).
+    /// </param>
     public static int ResolveMaxToolCallRounds(
         bool isScreenAnalysis,
         int screenAnalysisMaxRounds,
@@ -2378,7 +2422,8 @@ public sealed class SendChatMessageHandler
         int cpuMaxToolCallRounds,
         AssistantMode assistantMode,
         AiToolIntentRouter.AiToolIntent toolIntent,
-        OllamaInferenceProfile? inferenceProfile)
+        OllamaInferenceProfile? inferenceProfile,
+        AssistantAgentScope agentScope = AssistantAgentScope.None)
     {
         if (isScreenAnalysis)
             return Math.Clamp(screenAnalysisMaxRounds, 1, 20);
@@ -2393,12 +2438,39 @@ public sealed class SendChatMessageHandler
         if (assistantMode is AssistantMode.Compliance or AssistantMode.ScreenAnalysis)
             return defaultRounds;
 
+        // Budget de générations explicite (Lot 2.2) : sur CPU, le tour firm reste à 1 round outils
+        // quel que soit l'intent — voir la documentation du paramètre ci-dessus.
+        if (agentScope == AssistantAgentScope.FirmMission)
+            return 1;
+
         if (toolIntent is AiToolIntentRouter.AiToolIntent.Fallback
             or AiToolIntentRouter.AiToolIntent.Forecasting)
             return defaultRounds;
 
         return Math.Clamp(cpuMaxToolCallRounds, 1, defaultRounds);
     }
+
+    /// <summary>
+    /// Budget explicite de générations LLM pour un tour firm (Lot 2.2) : au plus
+    /// <see cref="FirmTurnMaxLlmGenerations"/> générations complètes (1 round outils + 1 round
+    /// rédaction — la synthèse forcée/de secours remplace le round de rédaction raté). Point d'entrée
+    /// UNIQUE pour toute décision « peut-on encore générer ? » côté tour firm.
+    /// </summary>
+    /// <remarks>
+    /// Hook Lot 1 (rescue synthesis, gate 1.3) : le compteur <c>llmGenerationsThisTurn</c> est une
+    /// variable locale de <see cref="Handle"/>, partagée par la boucle d'outils et la synthèse forcée.
+    /// La synthèse de secours du Lot 1 doit : (a) appeler cette méthode AVANT de générer — si elle
+    /// retourne <c>true</c>, ne pas générer et laisser le repli déterministe existant s'appliquer ;
+    /// (b) sinon, incrémenter <c>llmGenerationsThisTurn</c> immédiatement avant l'appel provider (même
+    /// motif que la boucle et la synthèse forcée ci-dessus). Autres scopes que
+    /// <see cref="AssistantAgentScope.FirmMission"/> : toujours <c>false</c> (aucun changement de
+    /// comportement, compteur journalisé seulement).
+    /// </remarks>
+    public const int FirmTurnMaxLlmGenerations = 2;
+
+    public static bool IsFirmTurnGenerationBudgetExhausted(AssistantAgentScope agentScope, int llmGenerationsThisTurn)
+        => agentScope == AssistantAgentScope.FirmMission
+            && llmGenerationsThisTurn >= FirmTurnMaxLlmGenerations;
 
     private OllamaOptions BuildChatOllamaOptions(
         double temperature,
@@ -2448,14 +2520,18 @@ public sealed class SendChatMessageHandler
         bool studioModifyTools = false,
         bool studioViewTools = false,
         bool studioReportTools = false,
-        StudioToolFocus studioFocus = StudioToolFocus.None)
+        StudioToolFocus studioFocus = StudioToolFocus.None,
+        IReadOnlyCollection<string>? preExecutedToolNamesToExclude = null)
     {
         var isCpuOnly = inferenceProfile?.Device == OllamaInferenceDevice.CpuOnly;
         var isScoped = mode == AssistantMode.Default && agentScope != AssistantAgentScope.None;
         // Assistant expert : le catalogue scopé est déjà restreint — le filtrage par intent mot-clé est
         // neutralisé (Fallback), sauf Greeting (aucun outil) et Synthesis (réponse depuis l'historique).
-        // toolIntent lui-même n'est PAS modifié en amont : ResolveMaxToolCallRounds garde ainsi la même
-        // limite CPU (1 round) que l'assistant global pour les mêmes questions.
+        // toolIntent lui-même n'est PAS modifié en amont : ceci garde le catalogue insensible à l'intent
+        // mot-clé (donc à une éventuelle mauvaise classification « Sales », cf. AiToolIntentRouter 2.1).
+        // Le budget de rounds (ResolveMaxToolCallRounds) ne dépend PLUS de cet intent pour FirmMission
+        // depuis le Lot 2.2 : il reçoit `agentScope` et force 1 round CPU quel que soit toolIntent —
+        // la neutralisation ci-dessous et celle du budget sont donc désormais alignées pour ce scope.
         var effectiveIntent = isScoped
             && toolIntent is not (AiToolIntentRouter.AiToolIntent.Greeting or AiToolIntentRouter.AiToolIntent.Synthesis)
             ? AiToolIntentRouter.AiToolIntent.Fallback
@@ -2490,6 +2566,19 @@ public sealed class SendChatMessageHandler
                     .Where(t => cpuScopeTools.Contains(t.Name))
                     .ToList();
             }
+        }
+
+        // Hook Lot 2.2 pour le Lot 1 (raccourci firm) : retire du catalogue exposé au modèle les outils
+        // déjà pré-exécutés par le raccourci déterministe firm (ex. get_firm_portfolio_overview), pour
+        // que l'unique round outils CPU du tour firm ne soit pas gaspillé à rappeler une lecture déjà
+        // obtenue. No-op tant qu'aucun appelant ne renseigne `preExecutedToolNamesToExclude` (le
+        // raccourci n'existe pas encore). Garde-fou : ne JAMAIS vider complètement le catalogue — si le
+        // filtrage ne laisserait plus aucun outil, on conserve la liste non filtrée.
+        if (preExecutedToolNamesToExclude is { Count: > 0 })
+        {
+            var filtered = definitions.Where(t => !preExecutedToolNamesToExclude.Contains(t.Name)).ToList();
+            if (filtered.Count > 0)
+                definitions = filtered;
         }
 
         return definitions

@@ -177,7 +177,7 @@ public sealed partial class AiToolExecutor : IAiToolExecutor
                 return AiToolResult.Error("L'agent Chef de mission n'est pas disponible dans cet espace.");
             }
 
-            return await _firmAgent.ExecuteAsync(toolName, arguments, cancellationToken);
+            return await _firmAgent.ExecuteAsync(toolName, arguments, context, cancellationToken);
         }
 
         try

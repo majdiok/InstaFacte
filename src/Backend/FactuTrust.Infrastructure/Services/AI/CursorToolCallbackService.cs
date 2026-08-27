@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FactuTrust.Application.Features.AI;
 using FactuTrust.Application.Features.AI.DTOs;
+using FactuTrust.Application.Features.AI.Tools;
 using FactuTrust.Domain.Enums;
 using Microsoft.Extensions.Logging;
 
@@ -64,6 +65,9 @@ public sealed class CursorToolCallbackService
         {
             if (toolName == "propose_client_actions")
                 ctx.ExtraEvents.Enqueue(ChatStreamEvent.ClientActionsEvent(result.Data));
+            if (toolName == FirmAgentTools.SendReminder &&
+                FirmReminderClientActionExtractor.TryBuildClientActionsJson(result.Data, out var firmReminderActionsJson))
+                ctx.ExtraEvents.Enqueue(ChatStreamEvent.ClientActionsEvent(firmReminderActionsJson!));
             if (toolName == "propose_follow_up_prompts")
             {
                 ctx.ExtraEvents.Enqueue(ChatStreamEvent.SuggestedPromptsEvent(result.Data));

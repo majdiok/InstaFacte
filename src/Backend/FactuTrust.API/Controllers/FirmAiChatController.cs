@@ -8,6 +8,7 @@ using FactuTrust.Application.Features.AI;
 using FactuTrust.Application.Features.AI.Commands;
 using FactuTrust.Application.Features.AI.DTOs;
 using FactuTrust.Application.Features.AI.Queries;
+using FactuTrust.Application.Features.AI.Tools;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.Services.AI;
 using MediatR;
@@ -58,6 +59,7 @@ public class FirmAiChatController : ControllerBase
     private readonly IMediator _mediator;
     private readonly SendChatMessageHandler _chatHandler;
     private readonly IPlatformAiSettingsService _platformAiSettings;
+    private readonly IFirmAgentToolExecutor _firmAgent;
     private readonly AccountingFirmsOptions _accountingFirmsOptions;
     private readonly OllamaSettings _ollamaSettings;
     private readonly IHostEnvironment _environment;
@@ -67,6 +69,7 @@ public class FirmAiChatController : ControllerBase
         IMediator mediator,
         SendChatMessageHandler chatHandler,
         IPlatformAiSettingsService platformAiSettings,
+        IFirmAgentToolExecutor firmAgent,
         IOptions<AccountingFirmsOptions> accountingFirmsOptions,
         IOptions<OllamaSettings> ollamaSettings,
         IHostEnvironment environment,
@@ -75,6 +78,7 @@ public class FirmAiChatController : ControllerBase
         _mediator = mediator;
         _chatHandler = chatHandler;
         _platformAiSettings = platformAiSettings;
+        _firmAgent = firmAgent;
         _accountingFirmsOptions = accountingFirmsOptions.Value;
         _ollamaSettings = ollamaSettings.Value;
         _environment = environment;
@@ -270,6 +274,35 @@ public class FirmAiChatController : ControllerBase
 
         return Ok(ApiResponse<AiActiveModelDto>.Ok(
             new AiActiveModelDto(parsed.CanonicalModelRef, parsed.ProviderModelId, supportsVision)));
+    }
+
+    /// <summary>
+    /// Consomme le nonce d'une relance en attente (carte « action en attente » du chat) et
+    /// déclenche l'envoi réel. Le nonce est produit par l'outil <c>send_fiscal_deadline_reminder</c>
+    /// (PREVIEW, cf. <see cref="FirmAgentToolExecutor"/>) et ne circule jamais ailleurs que dans
+    /// l'événement SSE <c>client_actions</c> puis ce corps de requête — jamais en URL/queryParam.
+    /// L'autorisation <c>firm:ai:remind</c> est vérifiée à l'intérieur de
+    /// <see cref="IFirmAgentToolExecutor.ConfirmReminderAsync"/>, pas ici.
+    /// </summary>
+    [HttpPost("reminders/confirm")]
+    [ProducesResponseType(typeof(ApiResponse<JsonElement>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ConfirmReminder(
+        [FromBody] ConfirmFirmReminderRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        if (!IsAgentEnabled)
+            return NotFound();
+
+        if (string.IsNullOrWhiteSpace(request.Nonce))
+            return BadRequest(ApiResponse<object>.Fail("Nonce requis."));
+
+        var result = await _firmAgent.ConfirmReminderAsync(request.Nonce, cancellationToken);
+        if (!result.Success)
+            return BadRequest(ApiResponse<object>.Fail(result.ErrorMessage ?? "Confirmation refusée."));
+
+        var payload = JsonSerializer.Deserialize<JsonElement>(result.Data);
+        return Ok(ApiResponse<JsonElement>.Ok(payload));
     }
 
     private async Task HeartbeatLoopAsync(int intervalSeconds, SemaphoreSlim writeLock, CancellationToken cancellationToken)

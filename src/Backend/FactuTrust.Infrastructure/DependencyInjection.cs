@@ -552,6 +552,10 @@ public static class DependencyInjection
         // Outils au périmètre cabinet (agent Chef de mission) : injecté comme paramètre optionnel
         // d'AiToolExecutor. Son absence dégrade en erreur explicite, jamais en exception.
         services.AddScoped<IFirmAgentToolExecutor, FirmAgentToolExecutor>();
+        // Actions de relance en attente de confirmation : singleton en mémoire (pas de persistance,
+        // TTL de 5 min) — partagé par toutes les requêtes du processus, y compris l'endpoint de
+        // confirmation qui vit dans une requête HTTP distincte de la PREVIEW.
+        services.AddSingleton<IFirmReminderPendingActionStore, FirmReminderPendingActionStore>();
         services.AddSingleton<IAiToolExecutorScopeFactory, AiToolExecutorScopeFactory>();
         services.AddSingleton<IAiPdfRenderer, PdfToImagePdfRenderer>();
         services.AddSingleton<IAiOcrService, TesseractOcrService>();

@@ -125,6 +125,32 @@ export interface ClientNavAction {
   queryParams?: Record<string, string>;
 }
 
+/**
+ * Action de relance en attente de confirmation, émise par l'outil cabinet
+ * `send_fiscal_deadline_reminder` (PREVIEW) sous la clé `actionEnAttente` du payload d'outil, puis
+ * relayée telle quelle dans l'événement SSE `client_actions`. Confirmée via
+ * `POST /api/firm/ai/reminders/confirm` avec `{ nonce }`.
+ *
+ * Groundwork Lot 5 uniquement : ce type n'est pas encore consommé par
+ * `ai-chat-session.service.ts` ni `chat-message.component.ts` (garde-fou de discrimination par
+ * `kind` déjà prévu pour rester rétro-compatible avec `ClientNavAction`, qui n'a pas de `kind`).
+ */
+export interface ConfirmFirmReminderAction {
+  kind: 'confirm_firm_reminder';
+  label: string;
+  nonce: string;
+  expiresAtUtc: string;
+  preview: {
+    responsable: string;
+    dossier: string;
+    echeance: string;
+    objet: string;
+  };
+}
+
+/** Union discriminée par `kind` (absent = navigation, pour rester rétro-compatible). */
+export type ClientAction = ClientNavAction | ConfirmFirmReminderAction;
+
 /** In-app link for a dashboard table cell (server-sanitized). */
 export interface DashboardCellLink {
   route: string;
