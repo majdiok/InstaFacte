@@ -41,6 +41,15 @@ public sealed class OfficialFormStamperTests
 
         // L'index par clé impose déjà l'unicité ; on vérifie qu'il couvre bien tout.
         Assert.Equal(map.Fields.Count, map.ByKey.Count);
+
+        Assert.True(map.ByKey.ContainsKey("Withholding.Line3.Base"));
+        Assert.True(map.ByKey.ContainsKey("Withholding.Line3.Amount"));
+        var line3 = map.ByKey["Withholding.Line3.Amount"];
+        Assert.Equal(1, line3.Page);
+        Assert.Equal(91.0, line3.X);
+        Assert.InRange(line3.Y, 459.1, 459.3);
+        Assert.Equal(map.ByKey["Withholding.Line1.Base"].X, map.ByKey["Withholding.Line3.Base"].X);
+        Assert.NotEqual(map.ByKey["Withholding.Line4Individuals.Amount"].Y, line3.Y);
     }
 
     [Fact]
@@ -100,6 +109,40 @@ public sealed class OfficialFormStamperTests
         // Alignement à droite : la valeur se termine sur le X de la case.
         var right = stamped.Max(l => l.EndBaseLine.X);
         Assert.InRange(right, field.X - 2d, field.X + 2d);
+    }
+
+    [Fact]
+    public void Stamp_PlacesCssOnArticleThreeNotOnCommissionsLine()
+    {
+        var map = OfficialFormFieldMap.Load(MapName);
+        var line3 = map.ByKey["Withholding.Line3.Amount"];
+        var line4 = map.ByKey["Withholding.Line4Individuals.Amount"];
+
+        var bytes = BuildStamper().Stamp(map, new Dictionary<string, string?>
+        {
+            [line3.Key] = "5,926"
+        });
+
+        using var document = PdfDocument.Open(bytes);
+        var page = document.GetPage(line3.Page);
+        var expectedBaseline = page.Height - line3.Y;
+
+        var stamped = page.Letters
+            .Where(l => Math.Abs(l.StartBaseLine.Y - expectedBaseline) < 2d
+                        && l.Value.Length == 1
+                        && (char.IsDigit(l.Value[0]) || l.Value[0] == ','))
+            .OrderBy(l => l.StartBaseLine.X)
+            .ToList();
+
+        Assert.NotEmpty(stamped);
+        Assert.Contains("5,926", string.Concat(stamped.Select(l => l.Value)));
+
+        var line4Baseline = page.Height - line4.Y;
+        var leakedOnLine4 = page.Letters
+            .Where(l => Math.Abs(l.StartBaseLine.Y - line4Baseline) < 2d)
+            .OrderBy(l => l.StartBaseLine.X)
+            .Select(l => l.Value);
+        Assert.DoesNotContain("5,926", string.Concat(leakedOnLine4));
     }
 
     [Fact]

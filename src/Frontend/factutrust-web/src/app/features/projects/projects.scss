@@ -1776,6 +1776,79 @@
   }
 }
 
+.proj-team-panel {
+  min-width: 0;
+}
+
+.proj-team-add-grid {
+  display: grid;
+  grid-template-columns:
+    minmax(11rem, 2.2fr)
+    minmax(7rem, 1fr)
+    minmax(5.5rem, 0.75fr)
+    minmax(5.5rem, 0.75fr)
+    minmax(6.5rem, 0.85fr)
+    auto;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.proj-team-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.proj-team-field__label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-color-secondary, #64748b);
+}
+
+.proj-team-add-actions {
+  display: flex;
+  align-items: flex-end;
+  padding-bottom: 0.1rem;
+}
+
+.proj-team-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.proj-team-col-name { width: 28%; }
+.proj-team-col-role { width: 14%; }
+.proj-team-col-rate { width: 12%; }
+.proj-team-col-cost { width: 12%; }
+.proj-team-col-capacity { width: 12%; }
+.proj-team-col-actions { width: 22%; }
+
+.proj-team-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.proj-team-edit-form {
+  padding-top: 0.25rem;
+}
+
+@media (max-width: 768px) {
+  .proj-team-add-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .proj-team-add-grid .proj-team-field--user {
+    grid-column: 1 / -1;
+  }
+
+  .proj-team-add-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+}
+
 .proj-detail-deadlines {
   list-style: none;
   margin: 0;

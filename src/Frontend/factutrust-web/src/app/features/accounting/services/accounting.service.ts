@@ -306,7 +306,7 @@ export interface VatDeclarationDto {
   tfpRatePercent?: number;
   /** Taux de FOPROLOS appliqué par le cycle de paie. 0 si inconnu. */
   foprolosRatePercent?: number;
-  /** Masse salariale brute — assiette de la retenue à la source sur salaires. */
+  /** Masse salariale brute du mois. Conservée pour le contrat API ; l'assiette RS officielle (articles 1 et 3) est le net imposable. */
   payrollSalariesGrossBase?: number;
   /**
    * Recalcul temps réel de la période depuis les modules. Les champs de premier niveau portent ce

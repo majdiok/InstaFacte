@@ -16,6 +16,8 @@ import { DialogModule } from 'primeng/dialog';
 
 import { ButtonComponent } from '@shared/components/button/button.component';
 
+import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
+
 import {
 
   ProjectAssignableUser,
@@ -56,146 +58,371 @@ import { ProjectDetail } from '../project-api.service';
 
     DialogModule,
 
-    ButtonComponent
+    ButtonComponent,
+
+    EmptyStateComponent
 
   ],
 
   template: `
 
-    @if (missingRate) {
+    <div class="proj-team-panel">
 
-      <p-message severity="warn" styleClass="w-full mb-3"
+      @if (missingRate) {
 
-        text="Sans TJM ni coût horaire, la facturation régie est impossible." />
+        <p-message severity="warn" styleClass="w-full mb-3"
 
-    }
+          text="Sans TJM ni coût horaire, la facturation régie est impossible." />
 
-    @if (canManage) {
+      }
 
-      <div class="proj-field-row mb-3">
+      @if (canManage) {
 
-        <label>Utilisateur
+        <section class="proj-detail-card proj-team-add-card mb-3">
 
-          <p-select [options]="availableUsers" [(ngModel)]="userId" optionLabel="displayName" optionValue="id" placeholder="Utilisateur" />
+          <h3 class="proj-detail-card__title">Ajouter un membre</h3>
 
-        </label>
+          <div class="proj-team-add-grid">
 
-        <label>Rôle
+            <div class="proj-team-field proj-team-field--user">
 
-          <p-select [options]="roleOptions" [(ngModel)]="role" optionLabel="label" optionValue="value" />
+              <span class="proj-team-field__label">Utilisateur</span>
 
-        </label>
+              <p-select
 
-        <label>TJM
+                styleClass="w-full"
 
-          <p-inputNumber [(ngModel)]="dailyRate" [min]="0" />
+                [options]="availableUsers"
 
-        </label>
+                [(ngModel)]="userId"
 
-        <label>Coût h
+                optionLabel="displayName"
 
-          <p-inputNumber [(ngModel)]="hourlyCost" [min]="0" />
+                optionValue="id"
 
-        </label>
+                placeholder="Utilisateur" />
 
-        <label>Capacité h/sem
+            </div>
 
-          <p-inputNumber [(ngModel)]="capacity" [min]="0" />
+            <div class="proj-team-field">
 
-        </label>
+              <span class="proj-team-field__label">Rôle</span>
 
-        <app-button (click)="add()">Ajouter</app-button>
+              <p-select
 
-      </div>
+                styleClass="w-full"
 
-    }
+                [options]="roleOptions"
 
-    <p-table [value]="members" styleClass="p-datatable-sm">
+                [(ngModel)]="role"
 
-      <ng-template pTemplate="header">
+                optionLabel="label"
 
-        <tr><th>Nom</th><th>Rôle</th><th>TJM</th><th>Coût h</th><th>Capacité</th>@if (canManage) { <th></th> }</tr>
+                optionValue="value" />
 
-      </ng-template>
+            </div>
 
-      <ng-template pTemplate="body" let-m>
+            <div class="proj-team-field">
 
-        <tr>
+              <span class="proj-team-field__label">TJM</span>
 
-          <td>{{ m.userName }}</td>
+              <p-inputNumber
 
-          <td>{{ m.roleDisplay }}</td>
+                styleClass="w-full"
 
-          <td>{{ m.dailyRate ?? '—' }}</td>
+                [(ngModel)]="dailyRate"
 
-          <td>{{ m.hourlyCost ?? '—' }}</td>
+                mode="decimal"
 
-          <td>{{ m.weeklyCapacityHours }}</td>
+                [min]="0"
 
-          @if (canManage) {
+                [minFractionDigits]="0"
 
-            <td>
+                [maxFractionDigits]="3" />
 
-              <app-button size="sm" variant="outline" (click)="openEdit(m)">Modifier</app-button>
+            </div>
 
-              <app-button size="sm" variant="danger" (click)="remove.emit(m.id)">Retirer</app-button>
+            <div class="proj-team-field">
+
+              <span class="proj-team-field__label">Coût h</span>
+
+              <p-inputNumber
+
+                styleClass="w-full"
+
+                [(ngModel)]="hourlyCost"
+
+                mode="decimal"
+
+                [min]="0"
+
+                [minFractionDigits]="0"
+
+                [maxFractionDigits]="3" />
+
+            </div>
+
+            <div class="proj-team-field">
+
+              <span class="proj-team-field__label">Capacité h/sem</span>
+
+              <p-inputNumber
+
+                styleClass="w-full"
+
+                [(ngModel)]="capacity"
+
+                [min]="0"
+
+                [max]="168" />
+
+            </div>
+
+            <div class="proj-team-add-actions">
+
+              <app-button (click)="add()">Ajouter</app-button>
+
+            </div>
+
+          </div>
+
+        </section>
+
+      }
+
+      <p-table [value]="members" styleClass="p-datatable-sm proj-team-table">
+
+        <ng-template pTemplate="colgroup">
+
+          <colgroup>
+
+            <col class="proj-team-col-name" />
+
+            <col class="proj-team-col-role" />
+
+            <col class="proj-team-col-rate" />
+
+            <col class="proj-team-col-cost" />
+
+            <col class="proj-team-col-capacity" />
+
+            @if (canManage) {
+
+              <col class="proj-team-col-actions" />
+
+            }
+
+          </colgroup>
+
+        </ng-template>
+
+        <ng-template pTemplate="header">
+
+          <tr>
+
+            <th>Nom</th>
+
+            <th>Rôle</th>
+
+            <th>TJM</th>
+
+            <th>Coût h</th>
+
+            <th>Capacité</th>
+
+            @if (canManage) { <th></th> }
+
+          </tr>
+
+        </ng-template>
+
+        <ng-template pTemplate="body" let-m>
+
+          <tr>
+
+            <td>{{ m.userName }}</td>
+
+            <td>{{ m.roleDisplay }}</td>
+
+            <td>{{ m.dailyRate != null ? (m.dailyRate | number:'1.0-3') : '—' }}</td>
+
+            <td>{{ m.hourlyCost != null ? (m.hourlyCost | number:'1.0-3') : '—' }}</td>
+
+            <td>{{ m.weeklyCapacityHours }} h/sem</td>
+
+            @if (canManage) {
+
+              <td>
+
+                <div class="proj-team-row-actions">
+
+                  <app-button size="sm" variant="outline" (click)="openEdit(m)">Modifier</app-button>
+
+                  <app-button size="sm" variant="danger" (click)="remove.emit(m.id)">Retirer</app-button>
+
+                </div>
+
+              </td>
+
+            }
+
+          </tr>
+
+        </ng-template>
+
+        <ng-template pTemplate="emptymessage">
+
+          <tr>
+
+            <td [attr.colspan]="canManage ? 6 : 5">
+
+              <app-empty-state
+
+                icon="pi-users"
+
+                title="Aucun membre"
+
+                description="Ajoutez des collaborateurs pour constituer l'équipe du projet."
+
+                [showAction]="false" />
 
             </td>
 
-          }
-
-        </tr>
-
-      </ng-template>
-
-    </p-table>
-
-    @if (project && showWorkload(project.kind, project.billingMode) && workload.length) {
-
-      <h3>Charge</h3>
-
-      <p-table [value]="workload" styleClass="p-datatable-sm">
-
-        <ng-template pTemplate="header"><tr><th>Personne</th><th>Capacité</th><th>Planifié</th><th>Saisi</th></tr></ng-template>
-
-        <ng-template pTemplate="body" let-w>
-
-          <tr><td>{{ w.userName }}</td><td>{{ w.weeklyCapacityHours }}</td><td>{{ w.estimatedHours }}</td><td>{{ w.loggedHours }}</td></tr>
+          </tr>
 
         </ng-template>
 
       </p-table>
 
-    }
+      @if (project && showWorkload(project.kind, project.billingMode) && workload.length) {
 
+        <section class="proj-detail-card mt-3">
 
+          <h3 class="proj-detail-card__title">Charge</h3>
 
-    <p-dialog [(visible)]="editVisible" header="Modifier le membre" [modal]="true" [style]="{ width: '28rem' }">
+          <p-table [value]="workload" styleClass="p-datatable-sm">
 
-      <div class="flex flex-column gap-2">
+            <ng-template pTemplate="header">
 
-        <p-select [options]="roleOptions" [(ngModel)]="editRole" optionLabel="label" optionValue="value" />
+              <tr><th>Personne</th><th>Capacité</th><th>Planifié</th><th>Saisi</th></tr>
 
-        <p-inputNumber [(ngModel)]="editDaily" placeholder="TJM" />
+            </ng-template>
 
-        <p-inputNumber [(ngModel)]="editHourly" placeholder="Coût h" />
+            <ng-template pTemplate="body" let-w>
 
-        <p-inputNumber [(ngModel)]="editCapacity" placeholder="Capacité" />
+              <tr>
 
-      </div>
+                <td>{{ w.userName }}</td>
 
-      <ng-template pTemplate="footer">
+                <td>{{ w.weeklyCapacityHours }}</td>
 
-        <app-button variant="secondary" (click)="editVisible = false">Annuler</app-button>
+                <td>{{ w.estimatedHours }}</td>
 
-        <app-button variant="primary" (click)="saveEdit()">Enregistrer</app-button>
+                <td>{{ w.loggedHours }}</td>
 
-      </ng-template>
+              </tr>
 
-    </p-dialog>
+            </ng-template>
+
+          </p-table>
+
+        </section>
+
+      }
+
+      <p-dialog [(visible)]="editVisible" header="Modifier le membre" [modal]="true" [style]="{ width: '32rem' }">
+
+        <div class="proj-team-edit-form flex flex-column gap-3">
+
+          <div class="proj-team-field">
+
+            <span class="proj-team-field__label">Rôle</span>
+
+            <p-select
+
+              styleClass="w-full"
+
+              [options]="roleOptions"
+
+              [(ngModel)]="editRole"
+
+              optionLabel="label"
+
+              optionValue="value" />
+
+          </div>
+
+          <div class="proj-team-field">
+
+            <span class="proj-team-field__label">TJM</span>
+
+            <p-inputNumber
+
+              styleClass="w-full"
+
+              [(ngModel)]="editDaily"
+
+              mode="decimal"
+
+              [min]="0"
+
+              [minFractionDigits]="0"
+
+              [maxFractionDigits]="3" />
+
+          </div>
+
+          <div class="proj-team-field">
+
+            <span class="proj-team-field__label">Coût h</span>
+
+            <p-inputNumber
+
+              styleClass="w-full"
+
+              [(ngModel)]="editHourly"
+
+              mode="decimal"
+
+              [min]="0"
+
+              [minFractionDigits]="0"
+
+              [maxFractionDigits]="3" />
+
+          </div>
+
+          <div class="proj-team-field">
+
+            <span class="proj-team-field__label">Capacité h/sem</span>
+
+            <p-inputNumber
+
+              styleClass="w-full"
+
+              [(ngModel)]="editCapacity"
+
+              [min]="0"
+
+              [max]="168" />
+
+          </div>
+
+        </div>
+
+        <ng-template pTemplate="footer">
+
+          <app-button variant="secondary" (click)="editVisible = false">Annuler</app-button>
+
+          <app-button variant="primary" (click)="saveEdit()">Enregistrer</app-button>
+
+        </ng-template>
+
+      </p-dialog>
+
+    </div>
 
   `,
-
 
 })
 
@@ -340,4 +567,3 @@ export class ProjectTeamTabComponent {
   }
 
 }
-

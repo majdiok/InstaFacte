@@ -56,7 +56,8 @@ public sealed class PayrollDeclarationContributionProvider
             // incluses : elles sont bien retenues (ou restituées) sur le mois concerné.
             WithholdingIrpp = run.TotalIrpp + run.TotalIrppRegularization,
             WithholdingCss = run.TotalCss + run.TotalCssRegularization,
-            SalariesGrossBase = run.TotalGross
+            SalariesGrossBase = run.TotalGross,
+            SalariesNetTaxableBase = run.TotalNetTaxable
         };
     }
 
@@ -133,8 +134,14 @@ public sealed record PayrollMonthlyContribution
     /// <summary>CSS retenue sur les traitements du mois, régularisations annuelles comprises.</summary>
     public decimal WithholdingCss { get; init; }
 
-    /// <summary>Masse salariale brute — assiette portée en regard de la retenue sur salaires.</summary>
+    /// <summary>Masse salariale brute — conservée pour le contrat API, plus utilisée comme assiette RS officielle.</summary>
     public decimal SalariesGrossBase { get; init; }
+
+    /// <summary>
+    /// Net imposable cumulé des salariés du mois — assiette des articles 1 (IRPP) et 3 (CSS)
+    /// du formulaire officiel.
+    /// </summary>
+    public decimal SalariesNetTaxableBase { get; init; }
 
     /// <summary>Retenue à la source totale sur traitements et salaires.</summary>
     public decimal WithholdingTotal => WithholdingIrpp + WithholdingCss;

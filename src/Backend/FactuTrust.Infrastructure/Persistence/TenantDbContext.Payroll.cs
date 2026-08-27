@@ -172,6 +172,7 @@ public partial class TenantDbContext
             entity.Property(r => r.TotalIrpp).HasPrecision(18, 3);
             entity.Property(r => r.TotalCss).HasPrecision(18, 3);
             entity.Property(r => r.TotalNet).HasPrecision(18, 3);
+            entity.Property(r => r.TotalNetTaxable).HasPrecision(18, 3).HasDefaultValue(0m);
             entity.Property(r => r.TotalCnssEmployer).HasPrecision(18, 3);
             entity.Property(r => r.TotalTfp).HasPrecision(18, 3);
             entity.Property(r => r.TotalFoprolos).HasPrecision(18, 3);

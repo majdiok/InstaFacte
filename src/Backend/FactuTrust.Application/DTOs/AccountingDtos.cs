@@ -519,10 +519,22 @@ public sealed record VatDeclarationDto
     public decimal FoprolosRatePercent { get; init; }
 
     /// <summary>
-    /// Masse salariale brute du mois — assiette portée en regard de la retenue à la source sur
-    /// traitements et salaires (article 1 du formulaire officiel). 0 sans cycle de paie exploitable.
+    /// Masse salariale brute du mois. Conservée pour le contrat API ; l'assiette des articles 1 et 3
+    /// du formulaire officiel est <see cref="PayrollSalariesNetTaxableBase"/>.
     /// </summary>
     public decimal PayrollSalariesGrossBase { get; init; }
+
+    /// <summary>
+    /// Net imposable cumulé des salariés du mois — assiette des articles 1 (IRPP) et 3 (CSS)
+    /// du formulaire officiel. 0 sans cycle de paie exploitable.
+    /// </summary>
+    public decimal PayrollSalariesNetTaxableBase { get; init; }
+
+    /// <summary>IRPP salarial du mois, régularisations comprises. 0 sans cycle exploitable.</summary>
+    public decimal PayrollWithholdingIrpp { get; init; }
+
+    /// <summary>CSS salariale du mois, régularisations comprises. 0 sans cycle exploitable.</summary>
+    public decimal PayrollWithholdingCss { get; init; }
 
     /// <summary>
     /// Recalcul temps réel de la période depuis les modules (ventes, achats, retenue à la source,

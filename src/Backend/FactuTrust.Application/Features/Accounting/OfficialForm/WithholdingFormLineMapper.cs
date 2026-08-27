@@ -26,7 +26,10 @@ namespace FactuTrust.Application.Features.Accounting.OfficialForm;
 public static class WithholdingFormLineMapper
 {
     /// <summary>Tolérance d'arrondi au millime.</summary>
-    private const decimal Epsilon = 0.001m;
+    internal const decimal Epsilon = 0.001m;
+
+    internal static readonly IReadOnlyDictionary<string, decimal> Empty =
+        new Dictionary<string, decimal>(StringComparer.Ordinal);
 
     /// <summary>
     /// Construit la ventilation « suffixe de ligne → montant » consommée par
@@ -42,12 +45,23 @@ public static class WithholdingFormLineMapper
         IReadOnlyList<WithholdingReportByCategoryDto>? categories,
         decimal declaredTotal)
     {
-        var empty = new Dictionary<string, decimal>(StringComparer.Ordinal);
+        if (declaredTotal <= 0m)
+            return Empty;
 
-        if (categories is null || categories.Count == 0 || declaredTotal <= 0m)
-            return empty;
+        return EnsureWithinDeclaredTotal(Accumulate(categories), declaredTotal);
+    }
 
+    /// <summary>
+    /// Ventile les catégories factures sans garde-fou de total. Permet d'y fusionner ensuite
+    /// la RS salariale, puis d'appliquer <see cref="EnsureWithinDeclaredTotal"/> une seule fois
+    /// sur l'ensemble — sinon un dépassement factures abandonnerait aussi l'IRPP et la CSS.
+    /// </summary>
+    public static IReadOnlyDictionary<string, decimal> Accumulate(
+        IReadOnlyList<WithholdingReportByCategoryDto>? categories)
+    {
         var lines = new Dictionary<string, decimal>(StringComparer.Ordinal);
+        if (categories is null || categories.Count == 0)
+            return lines;
 
         foreach (var category in categories)
         {
@@ -66,14 +80,23 @@ public static class WithholdingFormLineMapper
                 lines[$"{line}.Base"] = lines.GetValueOrDefault($"{line}.Base") + category.TotalHT;
         }
 
-        if (lines.Count == 0)
-            return empty;
+        return lines;
+    }
 
-        // Règle de sûreté : la somme ventilée ne peut jamais excéder le montant déclaré.
+    /// <summary>
+    /// Règle de sûreté : la somme ventilée ne peut jamais excéder le montant déclaré.
+    /// </summary>
+    public static IReadOnlyDictionary<string, decimal> EnsureWithinDeclaredTotal(
+        IReadOnlyDictionary<string, decimal> lines,
+        decimal declaredTotal)
+    {
+        if (lines.Count == 0)
+            return Empty;
+
         var ventilated = lines.Where(kv => kv.Key.EndsWith(".Amount", StringComparison.Ordinal))
                               .Sum(kv => kv.Value);
 
-        return ventilated > declaredTotal + Epsilon ? empty : lines;
+        return ventilated > declaredTotal + Epsilon ? Empty : lines;
     }
 
     /// <summary>

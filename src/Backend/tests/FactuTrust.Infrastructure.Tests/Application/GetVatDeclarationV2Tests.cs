@@ -67,7 +67,8 @@ public sealed class GetVatDeclarationV2Tests
         decimal foprolos = 1.680m,
         decimal irpp = 0m,
         decimal css = 0m,
-        decimal gross = 168.000m)
+        decimal gross = 168.000m,
+        decimal netTaxable = 0m)
     {
         var run = PayrollRun.Create(2026, 7, 2026).Value;
         Set(run, nameof(PayrollRun.Status), status);
@@ -76,6 +77,7 @@ public sealed class GetVatDeclarationV2Tests
         Set(run, nameof(PayrollRun.TotalIrpp), irpp);
         Set(run, nameof(PayrollRun.TotalCss), css);
         Set(run, nameof(PayrollRun.TotalGross), gross);
+        Set(run, nameof(PayrollRun.TotalNetTaxable), netTaxable);
         return run;
 
         static void Set(PayrollRun target, string property, object value) =>
@@ -495,7 +497,7 @@ public sealed class GetVatDeclarationV2Tests
         // La RS de la déclaration couvre les factures fournisseurs ET les traitements et salaires.
         // Ici : 0 sur factures (mock) + IRPP 25,500 + CSS 4,500 = 30,000.
         var handler = BuildPayrollHandler(
-            PayrollRunWith(PayrollRunStatus.Closed, irpp: 25.500m, css: 4.500m));
+            PayrollRunWith(PayrollRunStatus.Closed, irpp: 25.500m, css: 4.500m, netTaxable: 1_185.201m));
 
         var result = await handler.Handle(new GetVatDeclarationQuery(2026, 7), CancellationToken.None);
 
@@ -504,5 +506,9 @@ public sealed class GetVatDeclarationV2Tests
         Assert.Equal(0m, suggested.WithholdingFromInvoices);
         Assert.Equal(30.000m, suggested.WithholdingFromSalaries);
         Assert.Equal(30.000m, suggested.WithholdingTax);
+        Assert.Equal(1_185.201m, result.Value.PayrollSalariesNetTaxableBase);
+        Assert.Equal(25.500m, result.Value.PayrollWithholdingIrpp);
+        Assert.Equal(4.500m, result.Value.PayrollWithholdingCss);
+        Assert.Equal(168.000m, result.Value.PayrollSalariesGrossBase);
     }
 }

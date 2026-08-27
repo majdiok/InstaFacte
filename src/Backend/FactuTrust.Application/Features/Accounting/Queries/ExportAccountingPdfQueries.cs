@@ -96,56 +96,32 @@ public sealed class ExportMonthlyDeclarationOfficialFormQueryHandler
         // indisponibilité du rapport RS ne doit jamais empêcher l'édition de la déclaration, le
         // montant total restant porté par la page 4 et le récapitulatif.
         IReadOnlyDictionary<string, decimal>? withholdingLines = null;
+        IReadOnlyDictionary<string, decimal> invoiceLines = WithholdingFormLineMapper.Empty;
         try
         {
             var report = await _mediator.Send(
                 new GetWithholdingMonthlyReportQuery(request.Year, request.Month), cancellationToken);
 
-            withholdingLines = WithholdingFormLineMapper.Map(
-                WithCategories(report.ByCategory, declaration.Value),
-                declaration.Value.WithholdingTax);
+            invoiceLines = WithholdingFormLineMapper.Accumulate(report.ByCategory);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex,
-                "Formulaire officiel {Year}-{Month:D2} : ventilation de la retenue à la source indisponible, " +
-                "seul le total sera reporté.", request.Year, request.Month);
+                "Formulaire officiel {Year}-{Month:D2} : ventilation de la retenue à la source factures indisponible, " +
+                "la RS salariale sera tout de même reportée.", request.Year, request.Month);
         }
+
+        withholdingLines = PayrollWithholdingFormLines.Merge(
+            invoiceLines,
+            declaration.Value.WithholdingTax,
+            declaration.Value.PayrollSalariesNetTaxableBase,
+            declaration.Value.PayrollWithholdingIrpp,
+            declaration.Value.PayrollWithholdingCss);
 
         var bytes = await _pdf.GenerateMonthlyDeclarationOfficialFormPdfAsync(
             declaration.Value, withholdingLines, cancellationToken);
 
         return Result.Success(bytes);
-    }
-
-    /// <summary>
-    /// Complète la ventilation issue des factures fournisseurs par la retenue opérée sur les
-    /// traitements et salaires (article 1 du formulaire), que le rapport RS ne couvre pas.
-    ///
-    /// <para>
-    /// <b>Réserve fiscale.</b> Comme le reste de la table de correspondance, l'affectation à
-    /// l'article 1 et le choix de la masse salariale brute comme assiette doivent être validés par
-    /// un fiscaliste avant dépôt réel.
-    /// </para>
-    /// </summary>
-    private static IReadOnlyList<WithholdingReportByCategoryDto> WithCategories(
-        IReadOnlyList<WithholdingReportByCategoryDto> invoiceCategories,
-        VatDeclarationDto declaration)
-    {
-        var salaries = declaration.Suggested?.WithholdingFromSalaries ?? 0m;
-        if (salaries <= 0m)
-            return invoiceCategories;
-
-        var categories = new List<WithholdingReportByCategoryDto>(invoiceCategories)
-        {
-            new(WithholdingCategory.Salaires,
-                WithholdingCategory.Salaires.ToDisplayString(),
-                declaration.PayrollSalariesGrossBase,
-                salaries,
-                1)
-        };
-
-        return categories;
     }
 }
 

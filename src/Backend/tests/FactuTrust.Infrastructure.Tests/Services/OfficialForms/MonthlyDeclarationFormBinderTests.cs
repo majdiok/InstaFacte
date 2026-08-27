@@ -282,6 +282,29 @@ public sealed class MonthlyDeclarationFormBinderTests
         // Le total reste systématiquement reporté : il fait foi.
         Assert.Equal("150,500", values["Withholding.Total"]);
     }
+
+    [Fact]
+    public void Bind_PlacesPayrollIrppAndCssOnOfficialLinesOneAndThree()
+    {
+        // Cas ste nour 08/2026 : net imposable / IRPP sur l'article 1, même assiette / CSS sur l'article 3.
+        var lines = new Dictionary<string, decimal>
+        {
+            ["Line1.Base"] = 1_185.201m,
+            ["Line1.Amount"] = 150.467m,
+            ["Line3.Base"] = 1_185.201m,
+            ["Line3.Amount"] = 5.926m
+        };
+
+        var values = MonthlyDeclarationFormBinder.Bind(
+            Declaration(d => d.WithholdingTax = 166.693m), lines);
+
+        Assert.Equal("1 185,201", values["Withholding.Line1.Base"]);
+        Assert.Equal("150,467", values["Withholding.Line1.Amount"]);
+        Assert.Equal("1 185,201", values["Withholding.Line3.Base"]);
+        Assert.Equal("5,926", values["Withholding.Line3.Amount"]);
+        Assert.Equal("166,693", values["Withholding.Total"]);
+        Assert.Null(values.GetValueOrDefault("Withholding.Line4Individuals.Amount"));
+    }
 }
 
 /// <summary>
@@ -369,5 +392,100 @@ public sealed class WithholdingFormLineMapperTests
     {
         Assert.Empty(WithholdingFormLineMapper.Map(null, 100m));
         Assert.Empty(WithholdingFormLineMapper.Map(new List<WithholdingReportByCategoryDto>(), 100m));
+    }
+}
+
+/// <summary>
+/// Fusion IRPP (article 1) / CSS (article 3) sur le formulaire officiel, à partir du net imposable.
+/// </summary>
+public sealed class PayrollWithholdingFormLinesTests
+{
+    [Fact]
+    public void Merge_SteNour_MapsNetTaxableIrppAndCssToLinesOneAndThree()
+    {
+        var lines = PayrollWithholdingFormLines.Merge(
+            invoiceLines: null,
+            declaredTotal: 156.393m,
+            netTaxable: 1_185.201m,
+            irpp: 150.467m,
+            css: 5.926m);
+
+        Assert.Equal(1_185.201m, lines["Line1.Base"]);
+        Assert.Equal(150.467m, lines["Line1.Amount"]);
+        Assert.Equal(1_185.201m, lines["Line3.Base"]);
+        Assert.Equal(5.926m, lines["Line3.Amount"]);
+        Assert.False(lines.ContainsKey("Line4Individuals.Amount"));
+    }
+
+    [Fact]
+    public void Merge_DoesNotUseGrossSalaryAsWithholdingBase()
+    {
+        var lines = PayrollWithholdingFormLines.Merge(
+            null, 156.393m, netTaxable: 1_185.201m, irpp: 150.467m, css: 5.926m);
+
+        Assert.DoesNotContain(1_450.000m, lines.Values);
+        Assert.Equal(1_185.201m, lines["Line1.Base"]);
+    }
+
+    [Fact]
+    public void Merge_AggregatesPayrollIrppOntoExistingInvoiceSalaryLine()
+    {
+        var invoices = WithholdingFormLineMapper.Accumulate(
+            new List<WithholdingReportByCategoryDto>
+            {
+                new(WithholdingCategory.Salaires, "Salaires", 2_000m, 100m, 1)
+            });
+
+        var lines = PayrollWithholdingFormLines.Merge(
+            invoices, declaredTotal: 256.393m, netTaxable: 1_185.201m, irpp: 150.467m, css: 5.926m);
+
+        Assert.Equal(2_000m + 1_185.201m, lines["Line1.Base"]);
+        Assert.Equal(250.467m, lines["Line1.Amount"]);
+        Assert.Equal(1_185.201m, lines["Line3.Base"]);
+        Assert.Equal(5.926m, lines["Line3.Amount"]);
+    }
+
+    [Fact]
+    public void Merge_OmitsLine3WhenCssIsZero()
+    {
+        var lines = PayrollWithholdingFormLines.Merge(
+            null, declaredTotal: 150.467m, netTaxable: 1_185.201m, irpp: 150.467m, css: 0m);
+
+        Assert.Equal(150.467m, lines["Line1.Amount"]);
+        Assert.Equal(1_185.201m, lines["Line1.Base"]);
+        Assert.False(lines.ContainsKey("Line3.Amount"));
+        Assert.False(lines.ContainsKey("Line3.Base"));
+    }
+
+    [Fact]
+    public void Merge_OmitsLine1WhenIrppIsZero()
+    {
+        var lines = PayrollWithholdingFormLines.Merge(
+            null, declaredTotal: 5.926m, netTaxable: 1_185.201m, irpp: 0m, css: 5.926m);
+
+        Assert.False(lines.ContainsKey("Line1.Amount"));
+        Assert.Equal(5.926m, lines["Line3.Amount"]);
+        Assert.Equal(1_185.201m, lines["Line3.Base"]);
+    }
+
+    [Fact]
+    public void Merge_AbandonsBreakdownWhenVentilatedTotalExceedsDeclared()
+    {
+        var invoices = WithholdingFormLineMapper.Accumulate(
+            new List<WithholdingReportByCategoryDto>
+            {
+                new(WithholdingCategory.Honoraires, "Honoraires", 1_000m, 30m, 1)
+            });
+
+        // IRPP + CSS + honoraires = 186,393 > 150 déclaré.
+        Assert.Empty(PayrollWithholdingFormLines.Merge(
+            invoices, declaredTotal: 150m, netTaxable: 1_185.201m, irpp: 150.467m, css: 5.926m));
+    }
+
+    [Fact]
+    public void Merge_ReturnsEmptyWhenDeclaredTotalIsZero()
+    {
+        Assert.Empty(PayrollWithholdingFormLines.Merge(
+            null, declaredTotal: 0m, netTaxable: 1_185.201m, irpp: 150.467m, css: 5.926m));
     }
 }

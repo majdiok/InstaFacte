@@ -4868,6 +4868,12 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<decimal>("TotalNetTaxable")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)")
+                        .HasDefaultValue(0m);
+
                     b.Property<decimal>("TotalCssRegularization")
                         .ValueGeneratedOnAdd()
                         .HasPrecision(18, 3)

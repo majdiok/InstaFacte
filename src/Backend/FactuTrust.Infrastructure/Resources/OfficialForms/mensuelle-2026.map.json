@@ -302,6 +302,24 @@
       "label": "الخصم من المورد — 1- المرتبات والأجور (القانون العام) — Amount"
     },
     {
+      "key": "Withholding.Line3.Base",
+      "page": 1,
+      "x": 306.0,
+      "y": 459.2,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 3- المساهمة الاجتماعية التضامنية على المرتبات والأجور — Base"
+    },
+    {
+      "key": "Withholding.Line3.Amount",
+      "page": 1,
+      "x": 91.0,
+      "y": 459.2,
+      "align": "right",
+      "fontSize": 8.0,
+      "label": "الخصم من المورد — 3- المساهمة الاجتماعية التضامنية على المرتبات والأجور — Amount"
+    },
+    {
       "key": "Withholding.Line4Individuals.Base",
       "page": 1,
       "x": 306.0,

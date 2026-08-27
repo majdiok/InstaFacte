@@ -2,6 +2,7 @@ using System.Net.Http;
 using FactuTrust.Application.Accounting;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.Accounting.OfficialForm;
 using FactuTrust.Infrastructure.Services;
 using Moq;
 using Xunit;
@@ -43,6 +44,29 @@ public sealed class AccountingPdfExportTests
         // En-tête PDF « %PDF ».
         Assert.Equal((byte)'%', bytes[0]);
         Assert.Equal((byte)'P', bytes[1]);
+    }
+
+    [Fact]
+    public async Task GenerateMonthlyDeclarationOfficialFormPdf_StampsIrppAndCssLines()
+    {
+        var dto = new VatDeclarationDto
+        {
+            Year = 2026,
+            Month = 8,
+            Currency = "TND",
+            MonthlyDeclarationV2Enabled = true,
+            WithholdingTax = 156.393m,
+            CompanyName = "ste nour",
+            Nif = "7855555/H/O/0/000"
+        };
+
+        var lines = PayrollWithholdingFormLines.Merge(
+            null, 156.393m, netTaxable: 1_185.201m, irpp: 150.467m, css: 5.926m);
+
+        var bytes = await BuildPdfService().GenerateMonthlyDeclarationOfficialFormPdfAsync(
+            dto, lines, CancellationToken.None);
+
+        AssertIsPdf(bytes);
     }
 
     private static void AssertIsPdf(byte[] bytes)

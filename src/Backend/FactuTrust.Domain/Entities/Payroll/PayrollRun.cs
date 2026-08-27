@@ -28,6 +28,12 @@ public sealed class PayrollRun : AggregateRoot
     public decimal TotalIrpp { get; private set; }
     public decimal TotalCss { get; private set; }
     public decimal TotalNet { get; private set; }
+    /// <summary>
+    /// Somme des nets imposables mensuels (<see cref="Payslip.MonthlyNetTaxable"/>). Assiette
+    /// des articles 1 et 3 du formulaire officiel (IRPP et CSS salariale). Distincte de
+    /// <see cref="TotalGross"/> et de <see cref="TotalPayrollTaxBase"/>.
+    /// </summary>
+    public decimal TotalNetTaxable { get; private set; }
     public decimal TotalCnssEmployer { get; private set; }
     public decimal TotalTfp { get; private set; }
     public decimal TotalFoprolos { get; private set; }
@@ -163,6 +169,7 @@ public sealed class PayrollRun : AggregateRoot
         TotalIrpp = R(_payslips.Sum(p => p.Irpp));
         TotalCss = R(_payslips.Sum(p => p.Css));
         TotalNet = R(_payslips.Sum(p => p.NetSalary));
+        TotalNetTaxable = R(_payslips.Sum(p => p.MonthlyNetTaxable));
         TotalCnssEmployer = R(_payslips.Sum(p => p.CnssEmployer));
         TotalTfp = R(_payslips.Sum(p => p.Tfp));
         TotalFoprolos = R(_payslips.Sum(p => p.Foprolos));
