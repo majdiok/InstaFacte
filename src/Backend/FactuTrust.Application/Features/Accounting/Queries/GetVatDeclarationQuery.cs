@@ -215,6 +215,23 @@ public sealed class GetVatDeclarationQueryHandler : IRequestHandler<GetVatDeclar
         decimal c13 = salesByRate.TryGetValue(13, out var r13) ? r13.TotalVatAmount : 0;
         decimal c7 = salesByRate.TryGetValue(7, out var r7) ? r7.TotalVatAmount : 0;
 
+        // TVA collectée assise sur le JOURNAL (plan §6.7) : jamais gardée par le flag
+        // CashDeskVatEnabled — seule la CRÉATION des écritures TVA caisse l'est. Garde défensive
+        // `?? []` : les mocks Moq « loose » des tests existants rendent null pour cette méthode.
+        var cashVat = await _journalEntries.GetPostedCashSaleVatByRateAsync(start, end, cancellationToken) ?? [];
+        var cashVatByRate = cashVat
+            .GroupBy(p => p.RatePercent)
+            .ToDictionary(g => g.Key, g => (HtBase: g.Sum(p => p.HtBase), VatAmount: g.Sum(p => p.VatAmount)));
+
+        decimal CashVatFor(int rate) => cashVatByRate.TryGetValue(rate, out var v) ? v.VatAmount : 0m;
+        decimal CashHtFor(int rate) => cashVatByRate.TryGetValue(rate, out var v) ? v.HtBase : 0m;
+
+        // Contribution caisse potentiellement NÉGATIVE (période d'extourne, mouvements signés) :
+        // aucun écrêtage à zéro — elle se compense avec la TVA collectée facturière de la période.
+        c19 += CashVatFor(19);
+        c13 += CashVatFor(13);
+        c7 += CashVatFor(7);
+
         var totalPurchaseVat = purchases.Value.Sum(p => p.TotalVatAmount);
         // TVA immobilisations : dérivée de la MÊME source que la TVA achats (lignes de facture
         // fournisseur marquées immobilisation), ce qui garantit qu'elle est un sous-ensemble du total
@@ -240,11 +257,19 @@ public sealed class GetVatDeclarationQueryHandler : IRequestHandler<GetVatDeclar
             DeductibleVatGoods = dedGoods,
             DeductibleVatAssets = dedAssets,
             PreviousCredit = prev?.CreditToCarry.Amount ?? 0,
+            // SalesTaxableBase/SalesGrossBase restent STRICTEMENT facturières (plan §6.7) : la
+            // caisse n'alimente que la TVA collectée et sa ventilation (CollectedVatBreakdown
+            // ci-dessous), jamais les bases CA. Conséquence assumée : Σ breakdown.TaxableBase peut
+            // dépasser SalesTaxableBase. La TCL (calculée sur SalesGrossBase, cf. ComputeLiveAsync)
+            // et le repli FODEC du binder (MonthlyDeclarationFormBinder) restent donc inchangés.
             SalesTaxableBase = sales.Value.Sum(r => r.TotalTaxableAmount),
             SalesGrossBase = sales.Value.Sum(r => r.TotalTaxableAmount + r.TotalVatAmount),
             DeductiblePurchasesTaxableBase = purchases.Value.Sum(p => p.TotalTaxableAmount),
             FodecTaxableBase = v2 ? await _invoices.SumFodecTaxableBaseAsync(start, end, cancellationToken) : 0m,
             Payroll = v2 ? await _payroll.GetAsync(request.Year, request.Month, cancellationToken) : PayrollMonthlyContribution.None,
+            // Base + TVA par taux, caisse incluse : requis par MonthlyDeclarationFormBinder
+            // (case Vat.Rate{r}.Base lue depuis breakdown.TaxableBase, Vat.Rate{r}.Due depuis
+            // CollectedVat{r}) — ne pas alimenter la base ferait diverger Base × taux de Due.
             CollectedVatBreakdown = TunisiaVatRates
                 .Select(rate =>
                 {
@@ -252,8 +277,8 @@ public sealed class GetVatDeclarationQueryHandler : IRequestHandler<GetVatDeclar
                     return new VatRateBreakdownDto
                     {
                         RatePercent = rate,
-                        TaxableBase = row?.TotalTaxableAmount ?? 0,
-                        VatAmount = row?.TotalVatAmount ?? 0
+                        TaxableBase = (row?.TotalTaxableAmount ?? 0) + CashHtFor(rate),
+                        VatAmount = (row?.TotalVatAmount ?? 0) + CashVatFor(rate)
                     };
                 })
                 .ToList()

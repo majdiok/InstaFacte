@@ -39,4 +39,21 @@ public interface IJournalEntryRepository
     Task RemoveAsync(JournalEntry entity, CancellationToken cancellationToken = default);
     Task<int> ReserveNextEntryNumberAsync(string journalCode, int fiscalYear, CancellationToken cancellationToken = default);
     Task<decimal> SumDebitsByAccountAsync(string accountNumber, DateTime from, DateTime to, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Mouvements de TVA caisse comptabilisés sur la période, en montants SIGNÉS :
+    /// écritures SourceEntityType="CashOperation" (Y COMPRIS extournées) portant du 436711,
+    /// PLUS leurs extournes manuelles (SourceEntityType="ManualReversal" dont ReversesEntryId
+    /// référence une écriture caisse). Par taux : Σ(crédits − débits) sur 436711 et 707.
+    /// Peut être NÉGATIF sur la période où une extourne est passée.
+    /// </summary>
+    Task<IReadOnlyList<CashSaleVatPosting>> GetPostedCashSaleVatByRateAsync(
+        DateTime from, DateTime to, CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Mouvement de TVA caisse agrégé par taux, tel que réellement comptabilisé (cf.
+/// <see cref="IJournalEntryRepository.GetPostedCashSaleVatByRateAsync"/>). <see cref="HtBase"/> et
+/// <see cref="VatAmount"/> peuvent être négatifs (période portant une extourne).
+/// </summary>
+public sealed record CashSaleVatPosting(int RatePercent, decimal HtBase, decimal VatAmount);

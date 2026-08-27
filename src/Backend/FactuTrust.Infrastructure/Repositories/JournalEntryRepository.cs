@@ -1,19 +1,27 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Features.Accounting;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FactuTrust.Infrastructure.Repositories;
 
 public sealed class JournalEntryRepository : IJournalEntryRepository
 {
-    private readonly ITenantDbContextFactory _contextFactory;
+    private const string SourceCashOperation = "CashOperation";
+    private const string SourceManualReversal = "ManualReversal";
 
-    public JournalEntryRepository(ITenantDbContextFactory contextFactory)
+    private readonly ITenantDbContextFactory _contextFactory;
+    private readonly ILogger<JournalEntryRepository> _logger;
+
+    public JournalEntryRepository(ITenantDbContextFactory contextFactory, ILogger<JournalEntryRepository>? logger = null)
     {
         _contextFactory = contextFactory;
+        _logger = logger ?? NullLogger<JournalEntryRepository>.Instance;
     }
 
     public async Task<JournalEntry?> GetBySourceAsync(string sourceEntityType, Guid sourceEntityId, CancellationToken cancellationToken = default)
@@ -185,5 +193,151 @@ public sealed class JournalEntryRepository : IJournalEntryRepository
             // Consommé par la déclaration TVA (sortie légale) : jamais de brouillons.
             .Where(l => l.JournalEntry!.Status != Domain.Enums.JournalEntryStatus.Brouillon)
             .SumAsync(l => l.DebitAmount.Amount, cancellationToken);
+    }
+
+    /// <summary>
+    /// Déclaration TVA assise sur le JOURNAL (plan §6.7) : on somme ce qui a été réellement
+    /// comptabilisé sur 436711/707, pas les opérations de caisse elles-mêmes (l'opération est
+    /// sauvegardée avant la publication comptable, un échec de génération est seulement journalisé,
+    /// l'annulation ne reverse jamais l'écriture, et le flag TVA peut basculer entre la sauvegarde et
+    /// la génération — compter les opérations casserait « compta = déclaration »).
+    ///
+    /// Aucun filtre de statut : le Brouillon est INCLUS volontairement (cf. plan §6.7) — la TVA
+    /// collectée facturière ne filtre jamais sur le statut de l'écriture (seulement sur celui de la
+    /// facture) ; exclure la caisse en brouillon créerait une asymétrie entre les deux sources du
+    /// même total collecté, et avec BrouillardEnabled actif TOUTES les écritures JC naissent en
+    /// brouillon jusqu'à validation par l'expert — les filtrer ferait disparaître silencieusement
+    /// la TVA caisse de la déclaration.
+    ///
+    /// Mouvements SIGNÉS (v2.1) : une écriture caisse extournée reste comptée dans SA période
+    /// (positif, malgré IsReversed=true) et son extourne manuelle (SourceEntityType="ManualReversal")
+    /// est comptée en négatif dans SA propre période (potentiellement ultérieure) — net nul une fois
+    /// les deux périodes déclarées. Un filtre `!IsReversed` ferait disparaître rétroactivement la TVA
+    /// de la période d'origine sans mouvement négatif en face (bug corrigé en v2.1).
+    /// </summary>
+    public async Task<IReadOnlyList<CashSaleVatPosting>> GetPostedCashSaleVatByRateAsync(
+        DateTime from, DateTime to, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        var fromDate = from.Date;
+        var toDate = to.Date;
+
+        // Candidats bruts : toutes les écritures de la période portant du 436711, qu'elles soient
+        // d'origine caisse ou des extournes manuelles (le filtre "l'origine est bien une écriture
+        // caisse" pour les extournes est appliqué ci-dessous, une fois les origines chargées).
+        var candidates = await context.JournalEntries
+            .Include(j => j.Lines)
+            .Where(j => j.EntryDate >= fromDate && j.EntryDate <= toDate)
+            .Where(j => j.SourceEntityType == SourceCashOperation || j.SourceEntityType == SourceManualReversal)
+            .Where(j => j.Lines.Any(l => l.AccountNumber == TunisianPostingAccounts.VatCollected))
+            .ToListAsync(cancellationToken);
+
+        if (candidates.Count == 0)
+            return Array.Empty<CashSaleVatPosting>();
+
+        var cashEntries = candidates.Where(j => j.SourceEntityType == SourceCashOperation).ToList();
+        var reversalCandidates = candidates.Where(j => j.SourceEntityType == SourceManualReversal).ToList();
+
+        // Résolution des origines des extournes : un seul niveau de chaîne est supporté (v2.1, §6.7).
+        var originIds = reversalCandidates
+            .Where(r => r.ReversesEntryId.HasValue)
+            .Select(r => r.ReversesEntryId!.Value)
+            .Distinct()
+            .ToList();
+
+        var origins = originIds.Count == 0
+            ? new List<JournalEntry>()
+            : await context.JournalEntries
+                .Where(j => originIds.Contains(j.Id))
+                .ToListAsync(cancellationToken);
+        var originsById = origins.ToDictionary(o => o.Id);
+
+        // Chaque paire (écriture porteuse de 436711, identifiant de l'opération de caisse source à
+        // utiliser pour résoudre le taux). Les écritures d'origine se résolvent directement ; les
+        // extournes suivent ReversesEntryId → écriture d'origine → SourceEntityId.
+        var resolvedEntries = new List<(JournalEntry Entry, Guid? CashOperationId)>();
+
+        foreach (var entry in cashEntries)
+            resolvedEntries.Add((entry, entry.SourceEntityId));
+
+        foreach (var reversal in reversalCandidates)
+        {
+            if (reversal.ReversesEntryId is not { } originId || !originsById.TryGetValue(originId, out var origin))
+            {
+                // (d) Extourne dont l'origine n'a pas été trouvée (cas limite) → exclue.
+                _logger.LogWarning(
+                    "GetPostedCashSaleVatByRateAsync : extourne {EntryId} ignorée (écriture d'origine introuvable).",
+                    reversal.Id);
+                continue;
+            }
+
+            if (origin.SourceEntityType == SourceManualReversal)
+            {
+                // Extourne-d'extourne : un seul niveau de chaîne est supporté (limitation documentée
+                // au plan §6.7/§10). Ignorée avec warning.
+                _logger.LogWarning(
+                    "GetPostedCashSaleVatByRateAsync : extourne {EntryId} ignorée (extourne-d'extourne, un seul niveau de chaîne est supporté).",
+                    reversal.Id);
+                continue;
+            }
+
+            if (origin.SourceEntityType != SourceCashOperation)
+            {
+                // (d) Extourne d'une écriture qui n'est pas d'origine caisse → hors périmètre.
+                continue;
+            }
+
+            resolvedEntries.Add((reversal, origin.SourceEntityId));
+        }
+
+        if (resolvedEntries.Count == 0)
+            return Array.Empty<CashSaleVatPosting>();
+
+        var cashOperationIds = resolvedEntries
+            .Where(r => r.CashOperationId.HasValue)
+            .Select(r => r.CashOperationId!.Value)
+            .Distinct()
+            .ToList();
+
+        var operations = cashOperationIds.Count == 0
+            ? new List<CashOperation>()
+            : await context.CashOperations
+                .Where(o => cashOperationIds.Contains(o.Id))
+                .ToListAsync(cancellationToken);
+        var operationsById = operations.ToDictionary(o => o.Id);
+
+        var totalsByRate = new Dictionary<int, (decimal HtBase, decimal VatAmount)>();
+
+        foreach (var (entry, cashOperationId) in resolvedEntries)
+        {
+            CashOperation? op = null;
+            if (cashOperationId is { } opId)
+                operationsById.TryGetValue(opId, out op);
+
+            if (op is null || op.VatRate is null)
+            {
+                // Cas défensif (ne devrait pas exister) : une écriture 436711 d'origine caisse dont
+                // l'opération source est introuvable ou sans VatRate. Ignorée + warning (plan §6.7).
+                _logger.LogWarning(
+                    "GetPostedCashSaleVatByRateAsync : écriture {EntryId} ignorée (opération de caisse source introuvable ou sans VatRate).",
+                    entry.Id);
+                continue;
+            }
+
+            var rate = (int)op.VatRate.Value;
+            var vatDelta = entry.Lines
+                .Where(l => l.AccountNumber == TunisianPostingAccounts.VatCollected)
+                .Sum(l => l.CreditAmount.Amount - l.DebitAmount.Amount);
+            var htDelta = entry.Lines
+                .Where(l => l.AccountNumber == TunisianPostingAccounts.SalesOfGoods)
+                .Sum(l => l.CreditAmount.Amount - l.DebitAmount.Amount);
+
+            totalsByRate.TryGetValue(rate, out var current);
+            totalsByRate[rate] = (current.HtBase + htDelta, current.VatAmount + vatDelta);
+        }
+
+        return totalsByRate
+            .Select(kv => new CashSaleVatPosting(kv.Key, kv.Value.HtBase, kv.Value.VatAmount))
+            .ToList();
     }
 }

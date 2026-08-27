@@ -27,6 +27,15 @@ public class CashDeskController : ControllerBase
         _logger = logger;
     }
 
+    [HttpGet("feature-flags")]
+    [Authorize(Policy = PermissionPolicies.PaymentsRead)]
+    [ProducesResponseType(typeof(ApiResponse<CashDeskFeatureFlagsDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetFeatureFlags(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetCashDeskFeatureFlagsQuery(), cancellationToken);
+        return Ok(ApiResponse<CashDeskFeatureFlagsDto>.Ok(result));
+    }
+
     [HttpPost("operations")]
     [Authorize(Policy = PermissionPolicies.PaymentsCreate)]
     [ProducesResponseType(typeof(ApiResponse<CashOperationListItemDto>), StatusCodes.Status200OK)]

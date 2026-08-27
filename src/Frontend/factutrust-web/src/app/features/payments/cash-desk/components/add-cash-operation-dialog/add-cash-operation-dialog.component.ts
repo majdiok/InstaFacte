@@ -13,10 +13,12 @@ import { formatLocalDate } from '@core/utils/date.util';
 import {
   CashDeskService,
   CashOperationType,
+  CashRevenueCategory,
   CreateCashOperationPayload,
   CashOperationListItem,
   CASH_EXPENSE_CATEGORY_GROUPS,
-  CASH_REVENUE_CATEGORY_GROUPS
+  CASH_REVENUE_CATEGORY_GROUPS,
+  VAT_RATE_OPTIONS
 } from '@core/services/cash-desk.service';
 
 const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] = [
@@ -27,6 +29,18 @@ const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] 
   { label: 'Paiement mobile', value: 4, icon: 'pi pi-mobile' },
   { label: 'Autre', value: 99, icon: 'pi pi-question' }
 ];
+
+/** Arrondi comptable à 3 décimales (millimes), aligné sur l'arrondi backend (MidpointRounding.AwayFromZero). */
+function round3(value: number): number {
+  return Math.round((value + Number.EPSILON) * 1000) / 1000;
+}
+
+/** Réplique en TS la formule backend (`CashOperationVatCalculator.SplitTtc`) : HT calculé, TVA en reste. */
+function splitTtcVat(ttcAmount: number, ratePercent: number): { ht: number; vat: number } {
+  const ht = round3(ttcAmount / (1 + ratePercent / 100));
+  const vat = round3(ttcAmount - ht);
+  return { ht, vat };
+}
 
 @Component({
   selector: 'app-add-cash-operation-dialog',
@@ -211,6 +225,30 @@ const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] 
           </div>
         </div>
 
+        <!-- VAT rate (cash sales receipts only, behind feature flag) -->
+        @if (vatSelectorVisible) {
+          <div class="form-group">
+            <label for="vatRate">Taux de TVA</label>
+            <p-select
+              inputId="vatRate"
+              [options]="vatRateOptions"
+              [(ngModel)]="selectedVatRate"
+              optionLabel="label"
+              optionValue="value"
+              placeholder="Sélectionnez un taux"
+              [showClear]="false"
+              appendTo="body"
+              styleClass="w-full">
+            </p-select>
+            @if (vatPreview) {
+              <div class="vat-preview" role="note" aria-label="Détail HT / TVA">
+                <span>HT : {{ vatPreview.ht | number:'1.3-3' }} TND</span>
+                <span>TVA : {{ vatPreview.vat | number:'1.3-3' }} TND</span>
+              </div>
+            }
+          </div>
+        }
+
         <!-- Label -->
         <div class="form-group">
           <label for="label">Libellé <span class="required">*</span></label>
@@ -326,6 +364,17 @@ const PAYMENT_METHOD_OPTIONS: { label: string; value: number; icon?: string }[] 
       color: var(--color-text-secondary);
       font-family: 'JetBrains Mono', monospace;
       flex-shrink: 0;
+    }
+
+    .vat-preview {
+      display: flex;
+      gap: var(--spacing-4);
+      padding: var(--spacing-2) var(--spacing-3);
+      background: var(--color-background-subtle);
+      border-radius: var(--radius-md);
+      font-size: var(--font-size-sm);
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--color-text-secondary);
     }
 
     /* Type toggle */
@@ -528,24 +577,65 @@ export class AddCashOperationDialogComponent implements OnChanges, OnInit {
   readonly paymentMethodOptions = PAYMENT_METHOD_OPTIONS;
   readonly expenseCategoryGroups = CASH_EXPENSE_CATEGORY_GROUPS;
   readonly revenueCategoryGroups = CASH_REVENUE_CATEGORY_GROUPS;
+  readonly vatRateOptions = VAT_RATE_OPTIONS;
   readonly maxDate = new Date();
 
   operationType: CashOperationType = CashOperationType.Credit;
   selectedExpenseCategory: number | null = null;
-  selectedRevenueCategory: number | null = null;
   selectedMethod: number | null = 0;
   amount = 0;
   operationDate: Date = new Date();
   label = '';
   reference = '';
   notes = '';
+  /** Non renseignée par défaut — jamais de pré-sélection à 19 % (cf. plan §Tâche 6). */
+  selectedVatRate: number | null = null;
+
+  private _selectedRevenueCategory: number | null = null;
+  get selectedRevenueCategory(): number | null {
+    return this._selectedRevenueCategory;
+  }
+  set selectedRevenueCategory(value: number | null) {
+    this._selectedRevenueCategory = value;
+    this.selectedVatRate = null;
+  }
 
   submitting = signal(false);
   errorMessage = signal('');
+  vatEnabled = signal(false);
   dialogPosition: 'right' | 'center' = 'right';
+
+  /** Sélecteur « Taux de TVA » : flag actif + Encaissement + ventes au comptant uniquement. */
+  get vatSelectorVisible(): boolean {
+    return (
+      this.vatEnabled() &&
+      this.operationType === CashOperationType.Credit &&
+      this.selectedRevenueCategory === CashRevenueCategory.CashSalesReceipt
+    );
+  }
+
+  /** Récapitulatif HT/TVA en lecture seule, affiché uniquement pour un taux renseigné > 0. */
+  get vatPreview(): { ht: number; vat: number } | null {
+    if (this.selectedVatRate === null || this.selectedVatRate === undefined || this.selectedVatRate <= 0) {
+      return null;
+    }
+    return splitTtcVat(this.amount || 0, this.selectedVatRate);
+  }
 
   ngOnInit(): void {
     this.updateDialogPosition();
+    this.loadFeatureFlags();
+  }
+
+  private loadFeatureFlags(): void {
+    this.cashDeskService.getFeatureFlags().subscribe({
+      next: (res) => {
+        this.vatEnabled.set(res.data?.vatEnabled === true);
+      },
+      error: () => {
+        this.vatEnabled.set(false);
+      }
+    });
   }
 
   @HostListener('window:resize')
@@ -566,6 +656,7 @@ export class AddCashOperationDialogComponent implements OnChanges, OnInit {
 
   onTypeChange(type: CashOperationType): void {
     this.operationType = type;
+    this.selectedVatRate = null;
     this.errorMessage.set('');
   }
 
@@ -587,6 +678,7 @@ export class AddCashOperationDialogComponent implements OnChanges, OnInit {
     this.label = '';
     this.reference = '';
     this.notes = '';
+    this.selectedVatRate = null;
     this.errorMessage.set('');
     this.submitting.set(false);
   }
@@ -643,7 +735,8 @@ export class AddCashOperationDialogComponent implements OnChanges, OnInit {
       category: this.operationType === CashOperationType.Debit ? this.selectedExpenseCategory : null,
       revenueCategory: this.operationType === CashOperationType.Credit ? this.selectedRevenueCategory : null,
       reference: this.reference?.trim() ? this.reference.trim() : null,
-      notes: this.notes?.trim() ? this.notes.trim() : null
+      notes: this.notes?.trim() ? this.notes.trim() : null,
+      vatRate: this.vatSelectorVisible ? this.selectedVatRate : null
     };
 
     this.cashDeskService.createOperation(payload).subscribe({

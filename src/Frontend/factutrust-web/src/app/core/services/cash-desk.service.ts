@@ -276,6 +276,27 @@ export interface CashOperationListItem {
   sourceInvoiceNumber: string | null;
   sourceSupplierInvoiceId: string | null;
   sourceSupplierInvoiceNumber: string | null;
+  vatRatePercent?: number | null;
+  htAmount?: number | null;
+  vatAmount?: number | null;
+}
+
+/** Taux de TVA proposés pour les encaissements « ventes au comptant » (cf. VatRate backend : Exempt=0, Reduced=7, Intermediate=13, Standard=19). */
+export interface VatRateOption {
+  label: string;
+  value: number | null;
+}
+
+export const VAT_RATE_OPTIONS: VatRateOption[] = [
+  { label: 'Non renseignée', value: null },
+  { label: '0 % Exonéré', value: 0 },
+  { label: '7 %', value: 7 },
+  { label: '13 %', value: 13 },
+  { label: '19 %', value: 19 }
+];
+
+export interface CashDeskFeatureFlags {
+  vatEnabled: boolean;
 }
 
 export interface CashDeskBalanceRow {
@@ -335,6 +356,7 @@ export interface CreateCashOperationPayload {
   revenueCategory?: number | null;
   reference?: string | null;
   notes?: string | null;
+  vatRate?: number | null;
 }
 
 @Injectable({
@@ -414,6 +436,10 @@ export class CashDeskService {
 
   createOperation(payload: CreateCashOperationPayload): Observable<ApiResponse<CashOperationListItem>> {
     return this.http.post<ApiResponse<CashOperationListItem>>(`${this.API_URL}/operations`, payload);
+  }
+
+  getFeatureFlags(): Observable<ApiResponse<CashDeskFeatureFlags>> {
+    return this.http.get<ApiResponse<CashDeskFeatureFlags>>(`${this.API_URL}/feature-flags`);
   }
 
   cancelOperation(operationId: string, reason: string): Observable<ApiResponse<object>> {
