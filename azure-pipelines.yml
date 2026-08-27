@@ -5,8 +5,28 @@ trigger:
 pool:
   vmImage: ubuntu-latest
 
+# Conteneur de service SQL Server pour les tests backend (tâche 5, plan §Câblage CI) : les tests
+# d'atomicité/concurrence de FactuTrust.Infrastructure.Tests (SqlTestDatabase + 6 classes SQL
+# existantes) ont besoin d'un vrai moteur SQL Server (LocalDB n'existe pas sous Linux). Mappé sur
+# localhost:1433 par Azure Pipelines (mécanisme "service container" standard).
+resources:
+  containers:
+    - container: mssql
+      image: mcr.microsoft.com/mssql/server:2022-latest
+      env:
+        ACCEPT_EULA: 'Y'
+        MSSQL_SA_PASSWORD: $(SqlSaPassword)
+      ports:
+        - 1433:1433
+
+services:
+  mssql: mssql
+
 variables:
   TRUNK_ORG_URL_SLUG: instafact
+  # SqlSaPassword : variable secrète à définir dans les paramètres du pipeline Azure DevOps
+  # (jamais en clair ici) — mot de passe SA du conteneur mssql ci-dessus, doit respecter la
+  # politique de complexité SQL Server par défaut.
 
 steps:
   - task: NodeTool@0
@@ -37,3 +57,35 @@ steps:
     env:
       TRUNK_API_TOKEN: $(TRUNK_API_TOKEN)
       TRUNK_ORG_URL_SLUG: $(TRUNK_ORG_URL_SLUG)
+
+  # --- Backend .NET : build + tests SQL réels (tâche 5) ---------------------------------------
+  - task: UseDotNet@2
+    inputs:
+      packageType: sdk
+      version: 8.0.x
+    displayName: Install .NET 8 SDK
+
+  - script: dotnet build src/Backend/FactuTrust.sln --configuration Release
+    displayName: Backend build
+
+  - script: |
+      # mssql-tools18 n'est pas préinstallé sur l'image ubuntu-latest : on l'ajoute ici (dépôt
+      # Microsoft officiel) plutôt que de dépendre d'un binaire déjà présent sur l'agent.
+      if ! command -v sqlcmd >/dev/null 2>&1 && [ ! -x /opt/mssql-tools18/bin/sqlcmd ]; then
+        curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+        curl -fsSL https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
+        sudo apt-get update
+        ACCEPT_EULA=Y sudo apt-get install -y mssql-tools18 unixodbc-dev
+      fi
+      SQLCMD=$(command -v sqlcmd || echo /opt/mssql-tools18/bin/sqlcmd)
+      for i in $(seq 1 30); do
+        "$SQLCMD" -S localhost,1433 -U sa -P "$(SqlSaPassword)" -C -Q "SELECT 1" -b -l 2 && exit 0
+        sleep 2
+      done
+      echo "SQL Server indisponible après 60 s" && exit 1
+    displayName: Attendre la disponibilité de SQL Server
+
+  - script: dotnet test src/Backend/tests/FactuTrust.Infrastructure.Tests/FactuTrust.Infrastructure.Tests.csproj --configuration Release --no-build --verbosity minimal
+    displayName: Backend tests (SQL réel)
+    env:
+      FACTUTRUST_TEST_SQL_CONNECTION: 'Server=localhost,1433;User Id=sa;Password=$(SqlSaPassword);TrustServerCertificate=True;'

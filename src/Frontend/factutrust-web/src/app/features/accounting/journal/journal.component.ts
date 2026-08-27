@@ -234,7 +234,7 @@ type JournalFlatRow = {
             </td>
             <td class="journal-col-narrow" data-label="Actions">
               <app-accounting-table-actions>
-              @if (r.firstOfEntry && r.isDraft && !r.isReversal && canEdit()) {
+              @if (r.firstOfEntry && r.isDraft && canEdit()) {
                 <app-button
                   variant="secondary"
                   size="sm"
@@ -890,7 +890,7 @@ export class JournalComponent implements OnInit {
     );
 
   editEntry(row: JournalFlatRow): void {
-    if (!this.canEdit() || !row.isDraft || row.isReversal) return;
+    if (!this.canEdit() || !row.isDraft) return;
     this.router.navigate(['/accounting/manual-entry'], {
       queryParams: {
         entryId: row.entryId,

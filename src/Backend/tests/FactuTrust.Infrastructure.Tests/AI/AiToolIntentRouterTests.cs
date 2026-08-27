@@ -1,5 +1,7 @@
 using FactuTrust.Application.Features.AI;
+using FactuTrust.Application.Features.AI.Commands;
 using FactuTrust.Application.Features.AI.DTOs;
+using FactuTrust.Domain.Enums;
 using Xunit;
 
 namespace FactuTrust.Infrastructure.Tests.AI;
@@ -144,6 +146,65 @@ public sealed class AiToolIntentRouterTests
     {
         var intent = AiToolIntentRouter.Resolve(message, AssistantMode.Default);
         Assert.Equal(expected, intent);
+    }
+
+    // ── Lot 2.1 : le fragment "ca" ne doit matcher que comme mot entier ──
+    // (régression : "cabinet", "cadeau", "caisse", "occasion" contiennent "ca" mais ne sont
+    // pas des questions de chiffre d'affaires ; aucun autre mot-clé Sales n'est présent dans
+    // ces phrases, ce qui isole précisément le comportement du fragment "ca").
+    [Theory]
+    [InlineData("Le cabinet est ouvert")]
+    [InlineData("J'ai achete un cadeau")]
+    [InlineData("Ouvre la caisse")]
+    [InlineData("C'est une occasion")]
+    public void Does_Not_Resolve_Sales_On_Ca_Substring_Inside_Other_Words(string message)
+    {
+        var intent = AiToolIntentRouter.Resolve(message, AssistantMode.Default);
+        Assert.NotEqual(AiToolIntentRouter.AiToolIntent.Sales, intent);
+    }
+
+    [Theory]
+    [InlineData("mon ca aujourd'hui")]
+    [InlineData("ca du mois")]
+    [InlineData("CA ce mois-ci")]
+    public void Resolves_Sales_On_Ca_As_Whole_Word(string message)
+    {
+        var intent = AiToolIntentRouter.Resolve(message, AssistantMode.Default);
+        Assert.Equal(AiToolIntentRouter.AiToolIntent.Sales, intent);
+    }
+
+    // ── Lot 2 : le scope FirmMission n'est jamais affecté par une éventuelle
+    // classification Sales (catalogue, raccourcis, budget de rounds neutralisent l'effet). ──
+    [Fact]
+    public void FirmMission_Scope_Does_Not_Expose_Sales_Tools_Even_If_Intent_Is_Sales()
+    {
+        var toolNames = AiAgentScopeCatalog.GetToolNames(AssistantAgentScope.FirmMission);
+        Assert.DoesNotContain("get_sales_revenue", toolNames);
+    }
+
+    [Theory]
+    [InlineData("Où en est le portefeuille du cabinet aujourd'hui ?")]
+    [InlineData("Combien d'échéances sont en retard et chez combien de clients ?")]
+    [InlineData("Combien de dossiers ont une échéance dans les 7 prochains jours ?")]
+    [InlineData("Quelles échéances sont en retard et chez quels clients ?")]
+    public void FirmMission_RoundBudget_Is_One_Regardless_Of_Raw_Intent_Misclassification(string message)
+    {
+        // Ces 4 questions du cabinet peuvent encore être classées Sales par le routeur générique
+        // (via les mots-clés indépendants "client"/"combien", hors périmètre du correctif 2.1),
+        // mais c'est sans effet observable pour le scope FirmMission : le budget de rounds est
+        // forcé à 1 quel que soit l'intent (cf. Lot 2.2), et le catalogue FirmMission n'expose pas
+        // get_sales_revenue (cf. test ci-dessus), donc aucun raccourci Sales ne peut se déclencher.
+        var intent = AiToolIntentRouter.Resolve(message, AssistantMode.Default);
+        var rounds = SendChatMessageHandler.ResolveMaxToolCallRounds(
+            isScreenAnalysis: false,
+            screenAnalysisMaxRounds: 3,
+            defaultMaxRounds: 2,
+            cpuMaxToolCallRounds: 1,
+            assistantMode: AssistantMode.Default,
+            toolIntent: intent,
+            inferenceProfile: new OllamaInferenceProfile(OllamaInferenceDevice.CpuOnly, NumGpu: 0, NumThread: 8, NumBatch: 128, PreferAdaptiveChatNumCtx: false),
+            agentScope: AssistantAgentScope.FirmMission);
+        Assert.Equal(1, rounds);
     }
 
     [Fact]

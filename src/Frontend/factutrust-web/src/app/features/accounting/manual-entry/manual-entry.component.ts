@@ -80,6 +80,21 @@ import { EntryTabId } from './models/entry-form.model';
       </p>
     }
 
+    @if (store.editingLocked() && store.isReversal()) {
+      <p class="me-warning-banner" role="alert">
+        Cette écriture est une extourne : vos modifications rompent la symétrie miroir avec l'écriture d'origine.
+      </p>
+    }
+
+    @if (store.editingLocked() && store.sourceEntityType() === 'CashOperation') {
+      <p class="me-warning-banner" role="alert">
+        Cette modification impacte le calcul de la TVA sur encaissements : elle sera prise en compte au prochain
+        recalcul (enregistrement de la déclaration en brouillon, ou rectificative si la déclaration du mois est déjà
+        soumise). Une déclaration déjà enregistrée n'est pas modifiée automatiquement. La ventilation par taux reste
+        celle de l'opération de caisse d'origine.
+      </p>
+    }
+
     @if (refs.vatRatesFromFallback()) {
       <p class="me-vat-fallback-banner" role="status">
         Taux TVA par défaut utilisés (0 %, 7 %, 13 %, 19 %). La configuration personnalisée n'est pas accessible avec vos droits actuels.
@@ -208,7 +223,8 @@ import { EntryTabId } from './models/entry-form.model';
     .text-danger { color:var(--color-error-600); }
     .text-success { color:var(--color-success-600); }
     .me-period-warning { color:var(--color-error-700); font-size:var(--font-size-sm); font-weight:var(--font-weight-medium); margin:var(--spacing-3) 0; }
-    .me-vat-fallback-banner { margin:var(--spacing-3) 0; padding:var(--spacing-2) var(--spacing-3); background:var(--color-warning-50); color:var(--color-warning-800); border-radius:var(--radius-md); font-size:var(--font-size-sm); border:1px solid var(--color-warning-200); }
+    .me-vat-fallback-banner, .me-warning-banner { margin:var(--spacing-3) 0; padding:var(--spacing-2) var(--spacing-3); background:var(--color-warning-50); color:var(--color-warning-800); border-radius:var(--radius-md); font-size:var(--font-size-sm); border:1px solid var(--color-warning-200); }
+    .me-warning-banner { border-left:3px solid var(--color-warning-500, #f59e0b); }
     .me-source-banner { margin:var(--spacing-3) 0; padding:var(--spacing-2) var(--spacing-3); background:var(--color-info-50, #eff6ff); color:var(--color-info-800, #1e40af); border-radius:var(--radius-md); font-size:var(--font-size-sm); border:1px solid var(--color-info-200, #bfdbfe); }
     .me-shortcuts { margin-top:var(--spacing-4); padding-top:var(--spacing-3); border-top:1px dashed var(--color-border-subtle); font-size:var(--font-size-xs); color:var(--color-text-tertiary); }
     .me-shortcuts summary { cursor:pointer; font-weight:var(--font-weight-semibold); }
@@ -341,6 +357,23 @@ export class ManualEntryComponent implements OnInit {
     if (this.store.editingLocked()) {
       afterSuccess = 'navigate';
     }
+    const letteredCodes = this.store.letteredGroupCodes();
+    if (letteredCodes.length > 0) {
+      this.confirmationService.confirm({
+        message:
+          `Enregistrer délettrera le(s) groupe(s) ${letteredCodes.join(', ')} : toutes leurs lignes ` +
+          'redeviendront lettrables, y compris celles d\'autres écritures. Continuer ?',
+        header: 'Écriture lettrée',
+        acceptLabel: 'Délettrer et enregistrer',
+        rejectLabel: 'Annuler',
+        accept: () => this.confirmWorkNotesThenSubmit(afterSuccess)
+      });
+      return;
+    }
+    this.confirmWorkNotesThenSubmit(afterSuccess);
+  }
+
+  private confirmWorkNotesThenSubmit(afterSuccess: 'navigate' | 'reset' | 'duplicate'): void {
     if (this.store.workNotes().trim() && afterSuccess !== 'duplicate') {
       this.confirmationService.confirm({
         message: 'La note de travail ne sera pas enregistrée en comptabilité. Continuer ?',
@@ -362,6 +395,7 @@ export class ManualEntryComponent implements OnInit {
       .subscribe(result => {
         if (result.success) {
           this.pendingFiles.set([]);
+          this.store.letteredGroupCodes.set([]);
           this.submitService.handleSubmitSuccess(
             this.store,
             result,
@@ -424,12 +458,6 @@ export class ManualEntryComponent implements OnInit {
           const entry = res.data;
           if (!entry.isDraft) {
             this.leaveEditWithError("Seule une écriture en brouillon peut être modifiée.");
-            return;
-          }
-          if (entry.reversesEntryId) {
-            this.leaveEditWithError(
-              "Une extourne doit rester le miroir exact de l'écriture d'origine : validez-la ou supprimez-la."
-            );
             return;
           }
           this.store.loadFromEntry(entry);

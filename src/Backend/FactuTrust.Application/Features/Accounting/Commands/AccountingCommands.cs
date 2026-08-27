@@ -767,20 +767,33 @@ public sealed class UpdateDraftJournalEntryCommandHandler : IRequestHandler<Upda
     private readonly IJournalEntryRepository _journalEntries;
     private readonly IChartOfAccountRepository _chartOfAccounts;
     private readonly IAuditService _auditService;
+    private readonly ICurrentUser _currentUser;
+    private readonly ILetteringService _lettering;
+    private readonly ITenantUnitOfWork _unitOfWork;
+    private readonly ILogger<UpdateDraftJournalEntryCommandHandler> _logger;
 
     public UpdateDraftJournalEntryCommandHandler(
         IJournalEntryRepository journalEntries,
         IChartOfAccountRepository chartOfAccounts,
-        IAuditService auditService)
+        IAuditService auditService,
+        ICurrentUser currentUser,
+        ILetteringService lettering,
+        ITenantUnitOfWork unitOfWork,
+        ILogger<UpdateDraftJournalEntryCommandHandler> logger)
     {
         _journalEntries = journalEntries;
         _chartOfAccounts = chartOfAccounts;
         _auditService = auditService;
+        _currentUser = currentUser;
+        _lettering = lettering;
+        _unitOfWork = unitOfWork;
+        _logger = logger;
     }
 
     public async Task<Result> Handle(UpdateDraftJournalEntryCommand request, CancellationToken cancellationToken)
     {
         // Contrôle des comptes (asynchrone) AVANT la mutation suivie — même contrôle que la saisie manuelle.
+        // Toujours exécuté, quel que soit le contexte (cabinet ou client) : hors transaction, avant tout verrou.
         var checkedAccounts = new HashSet<string>(StringComparer.Ordinal);
         foreach (var line in request.Request.Lines)
         {
@@ -801,50 +814,175 @@ public sealed class UpdateDraftJournalEntryCommandHandler : IRequestHandler<Upda
             return Result.Failure(mappedLines.Error);
         var lines = mappedLines.Value;
 
-        // Mutation sur l'entité SUIVIE : le remplacement des lignes est reconcilié proprement
-        // (anciennes lignes supprimées, nouvelles insérées) — pas de lignes orphelines.
-        var result = await _journalEntries.MutateAsync(request.Id, entry =>
+        // D1 (plan) : le cabinet comptable en contexte délégué peut modifier TOUT brouillon
+        // (caisse, extourne, lettré, natures combinées) ; un utilisateur hors cabinet reste
+        // soumis aux garde-fous G3/G4/G5 à l'identique (mêmes messages, même ordre, aucun effet
+        // de bord en cas de refus). G1/G2 restent absolus pour tout le monde.
+        var isFirm = _currentUser.IsAccountingFirmDelegatedContext;
+
+        // Sortie de la lecture de décision, capturée pour l'audit best-effort après commit (D6).
+        decimal oldTotalDebit = 0m;
+        string? sourceEntityType = null;
+        var isReversal = false;
+        var wasLettered = false;
+        var letteringCodes = new List<string>();
+
+        // D7 : toute la séquence (lecture de décision → délettrage automatique → remplacement des
+        // lignes) s'exécute dans UNE unité de travail, sous le verrou EXCLUSIF (XLOCK/HOLDLOCK) pris
+        // par GetByIdForUpdateAsync — voir la doc XML de cette méthode pour la justification détaillée
+        // (UPDLOCK laisserait passer les lectures de décision ordinaires de la validation et du
+        // lettrage concurrents ; XLOCK les force à attendre notre commit puis à relire l'état
+        // commité). Le verrou est tenu jusqu'au commit/rollback de cette unité de travail.
+        var result = await _unitOfWork.ExecuteAsync(async ct =>
         {
-            if (!entry.IsDraft)
-                return Result.Failure(Error.Validation("Status", "Seule une écriture en brouillon peut être modifiée."));
-            // C4 : un brouillon résiduel d'une période close (données antérieures au garde-fou
-            // de clôture) ne doit plus pouvoir modifier les chiffres de la période.
-            if (entry.AccountingPeriod?.IsClosed == true)
-                return Result.Failure(Error.Validation("Period", "La période de cette écriture est clôturée."));
-            // C5 : une extourne est générée comme miroir exact de l'écriture d'origine — l'éditer
-            // casserait silencieusement cette symétrie. Elle se valide ou se supprime.
-            if (entry.ReversesEntryId is not null)
-                return Result.Failure(Error.Validation("Extourne",
-                    "Une extourne doit rester le miroir exact de l'écriture d'origine : validez-la ou supprimez-la."));
-            // §6.7 : la déclaration TVA (Brouillon inclus) regroupe les lignes postées par le
-            // VatRate de l'opération de caisse source — réécrire les lignes 707/436711 d'un
-            // brouillon caisse ferait diverger la déclaration de cette saisie. Portée volontairement
-            // limitée à CashOperation (autres sources auto-générées : hors périmètre, plan §10). La
-            // suppression du brouillon reste permise (plus d'écriture → plus de TVA déclarée).
-            if (entry.SourceEntityType == "CashOperation")
-                return Result.Failure(Error.Validation("Source",
-                    "Cette écriture a été générée automatiquement depuis une opération de caisse ; elle ne peut pas être modifiée manuellement. Extournez-la ou annulez l'opération."));
-            if (entry.Lines.Any(l => !string.IsNullOrEmpty(l.LetteringCode)))
-                return Result.Failure(Error.Validation("Lettering",
-                    "Délettrez cette écriture avant de la modifier."));
-            return entry.UpdateDraftLines(
-                request.Request.Label,
-                lines,
-                pieceRef: request.Request.PieceRef,
-                pieceDate: request.Request.PieceDate);
+            // (a) Lecture de décision VERROUILLÉE : G1/G2 (absolus) puis, si non-cabinet, G3→G4→G5
+            // dans cet ordre, avec les messages actuels à l'identique — retour immédiat sans AUCUN
+            // effet de bord (pas de délettrage) dès le premier garde-fou déclenché.
+            var entry = await _journalEntries.GetByIdForUpdateAsync(request.Id, ct);
+            if (entry is null)
+                return Result.Failure(Error.NotFound("JournalEntry", request.Id));
+
+            var guardResult = CheckEditGuards(entry, isFirm);
+            if (guardResult is not null)
+                return guardResult;
+
+            sourceEntityType = entry.SourceEntityType;
+            isReversal = entry.ReversesEntryId is not null;
+            oldTotalDebit = entry.Lines.Sum(l => l.DebitAmount.Amount);
+            letteringCodes = entry.Lines
+                .Select(l => l.LetteringCode)
+                .Where(code => !string.IsNullOrEmpty(code))
+                .Select(code => code!)
+                .Distinct()
+                .ToList();
+            wasLettered = letteringCodes.Count > 0;
+
+            // (b) Délettrage automatique (cabinet uniquement, D3) : chaque groupe référencé par les
+            // lignes du brouillon est délettré via le contexte AMBIANT (CreateContext() de
+            // LetteringService rejoint la même transaction/connexion) — un échec ici fait échouer
+            // toute l'unité de travail (rollback global, y compris de rien s'il n'y a encore rien eu
+            // d'autre) avant même la mutation des lignes.
+            if (isFirm)
+            {
+                foreach (var code in letteringCodes)
+                {
+                    var unletter = await _lettering.UnletterAsync(code, ct);
+                    if (unletter.IsFailure)
+                        return unletter;
+                }
+            }
+
+            // (c) Mutation sur l'entité SUIVIE : le remplacement des lignes est reconcilié proprement
+            // (anciennes lignes supprimées, nouvelles insérées) — pas de lignes orphelines. Les
+            // garde-fous sont RELUS ici en défense en profondeur (le contexte de MutateAsync voit,
+            // sur la même connexion/transaction, l'état déjà délettré et les verrous déjà tenus).
+            return await _journalEntries.MutateAsync(request.Id, e =>
+            {
+                var guardResult = CheckEditGuards(e, isFirm);
+                if (guardResult is not null)
+                    return guardResult;
+                return e.UpdateDraftLines(
+                    request.Request.Label,
+                    lines,
+                    pieceRef: request.Request.PieceRef,
+                    pieceDate: request.Request.PieceDate);
+            }, ct);
         }, cancellationToken);
 
         if (result.IsFailure)
             return result;
 
+        // Audit après commit (D6), best-effort mais AUTO-SUFFISANT : ce seul enregistrement porte
+        // toute la trace utile (natures combinées, override cabinet, groupes délettrés, totaux)
+        // même si l'audit complémentaire ci-dessous échoue. Comme tous les handlers de ce fichier,
+        // l'exception de LogAsync (chaîne hash-chaînée) REMONTE : la modification métier est déjà
+        // commitée (transaction ambiante refermée ci-dessus), donc l'API répond en erreur alors que
+        // le changement a bien eu lieu — trade-off documenté (D6), cohérent avec l'existant, plutôt
+        // que de casser l'intégrité de la chaîne d'audit ou d'élargir la transaction métier.
+        var newTotalDebit = lines.Sum(l => l.Debit);
         await _auditService.LogAsync(
             AuditActions.Accounting.DraftUpdated,
             "JournalEntry",
             request.Id,
-            newValues: new { LineCount = lines.Count },
+            newValues: new
+            {
+                LineCount = lines.Count,
+                SourceEntityType = sourceEntityType,
+                IsReversal = isReversal,
+                WasLettered = wasLettered,
+                UnletteredGroups = letteringCodes,
+                OldTotalDebit = oldTotalDebit,
+                NewTotalDebit = newTotalDebit,
+                FirmDelegatedOverride = isFirm && (isReversal || sourceEntityType == "CashOperation" || wasLettered)
+            },
             cancellationToken: cancellationToken);
 
+        // Audits complémentaires par groupe délettré : doublons de confort pour les consommateurs
+        // de l'écran lettrage. NON bloquants (try/catch + LogWarning) — le seul enregistrement qui
+        // fait foi est DraftUpdated ci-dessus (UnletteredGroups).
+        foreach (var code in letteringCodes)
+        {
+            try
+            {
+                await _auditService.LogAsync(
+                    AuditActions.Accounting.Unlettered,
+                    "LetteringGroup",
+                    newValues: new { Code = code, TriggeredBy = "DraftUpdate", JournalEntryId = request.Id },
+                    cancellationToken: cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Audit Accounting.Unlettered (délettrage automatique) échoué pour le groupe {Code} de l'écriture {JournalEntryId} — non bloquant, DraftUpdated fait foi.",
+                    code, request.Id);
+            }
+        }
+
         return Result.Success();
+    }
+
+    /// <summary>
+    /// Évalue les garde-fous G1→G5 dans l'ordre défini par le plan. G1 (brouillon) et G2 (période close)
+    /// sont absolus ; G3 (extourne), G4 (caisse) et G5 (lettré) ne s'appliquent qu'aux utilisateurs
+    /// non-cabinet. Retourne null si tous les garde-fous passent, ou le Result d'erreur du premier
+    /// garde-fou déclenché — sans aucun effet de bord. Les messages sont les textes exacts de la v1,
+    /// conservés à l'octet près pour les utilisateurs hors cabinet.
+    /// </summary>
+    private static Result? CheckEditGuards(
+        JournalEntry entry,
+        bool isAccountingFirm)
+    {
+        // G1 : absolu
+        if (!entry.IsDraft)
+            return Result.Failure(Error.Validation("Status",
+                "Seule une écriture en brouillon peut être modifiée."));
+
+        // G2 : absolu — un brouillon résiduel d'une période close ne doit plus pouvoir modifier
+        // les chiffres de la période.
+        if (entry.AccountingPeriod?.IsClosed == true)
+            return Result.Failure(Error.Validation("Period",
+                "La période de cette écriture est clôturée."));
+
+        if (isAccountingFirm)
+            return null;
+
+        // G3 : une extourne est générée comme miroir exact de l'écriture d'origine — l'éditer
+        // casserait silencieusement cette symétrie. Levé pour le cabinet délégué (D4).
+        if (entry.ReversesEntryId is not null)
+            return Result.Failure(Error.Validation("Extourne",
+                "Une extourne doit rester le miroir exact de l'écriture d'origine : validez-la ou supprimez-la."));
+
+        // G4 : écriture générée depuis une opération de caisse — levé pour le cabinet (D2).
+        if (entry.SourceEntityType == "CashOperation")
+            return Result.Failure(Error.Validation("Source",
+                "Cette écriture a été générée automatiquement depuis une opération de caisse ; elle ne peut pas être modifiée manuellement. Extournez-la ou annulez l'opération."));
+
+        // G5 : écriture lettrée — levé pour le cabinet (D3, délettrage automatique transactionnel).
+        if (entry.Lines.Any(l => !string.IsNullOrEmpty(l.LetteringCode)))
+            return Result.Failure(Error.Validation("Lettering",
+                "Délettrez cette écriture avant de la modifier."));
+
+        return null;
     }
 }
 

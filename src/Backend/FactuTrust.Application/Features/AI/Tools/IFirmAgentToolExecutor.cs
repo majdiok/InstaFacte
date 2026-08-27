@@ -9,10 +9,24 @@ namespace FactuTrust.Application.Features.AI.Tools;
 /// </summary>
 public interface IFirmAgentToolExecutor
 {
+    /// <summary>
+    /// <paramref name="context"/> est optionnel (défaut <c>null</c>) pour que les appels et tests
+    /// existants continuent de compiler sans changement. Il porte la corrélation
+    /// (<c>ConversationId</c>) nécessaire pour lier une action en attente (relance) à la
+    /// conversation qui l'a produite.
+    /// </summary>
     Task<AiToolResult> ExecuteAsync(
         string toolName,
         Dictionary<string, object?> arguments,
+        AiToolExecutionContext? context = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Consomme atomiquement le nonce d'une action de relance en attente et, si valide, déclenche
+    /// l'envoi réel (mêmes gardes que la PREVIEW, anti-doublon quotidien réappliqué). Utilisé par
+    /// l'endpoint de confirmation — jamais par la boucle LLM.
+    /// </summary>
+    Task<AiToolResult> ConfirmReminderAsync(string nonce, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Noms des outils au périmètre cabinet. Source unique pour le routage du dispatch.</summary>

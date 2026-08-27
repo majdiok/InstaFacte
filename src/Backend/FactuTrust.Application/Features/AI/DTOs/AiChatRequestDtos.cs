@@ -94,6 +94,16 @@ public sealed record AiChatHttpRequestDto
     public IReadOnlyList<ChatAttachmentInput>? Attachments { get; init; }
 }
 
+/// <summary>
+/// Corps de POST /api/firm/ai/reminders/confirm. Le nonce n'est jamais transporté ailleurs que
+/// dans l'événement SSE <c>client_actions</c> (côté serveur → client) et ce corps de requête
+/// (côté client → serveur) — jamais en URL ni en queryParam.
+/// </summary>
+public sealed record ConfirmFirmReminderRequestDto
+{
+    public required string Nonce { get; init; }
+}
+
 public sealed record AiDocumentExtractResponseDto
 {
     public string Text { get; init; } = "";

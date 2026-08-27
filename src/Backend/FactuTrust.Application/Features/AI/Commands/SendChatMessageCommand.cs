@@ -481,7 +481,13 @@ public sealed class SendChatMessageHandler
         var accumulatedSuggestedPrompts = new List<string>();
         string? accumulatedDashboardJson = null;
         var temperature = isScreenAnalysis ? _screenAnalysisOptions.Temperature : _ollamaSettings.Temperature;
-        var maxTokens = isScreenAnalysis ? _screenAnalysisOptions.MaxTokens : _ollamaSettings.MaxTokens;
+        // Lot 3.2 — budget de tokens réduit et scope-guardé pour FirmMission : les synthèses de revue
+        // de portefeuille sont courtes, 1536 borne le pire cas de génération CPU. 0 = hérite du global.
+        var maxTokens = isScreenAnalysis
+            ? _screenAnalysisOptions.MaxTokens
+            : (agentScope == AssistantAgentScope.FirmMission && _ollamaSettings.FirmMissionMaxTokens > 0
+                ? _ollamaSettings.FirmMissionMaxTokens
+                : _ollamaSettings.MaxTokens);
         var maxRounds = ResolveMaxToolCallRounds(
             isScreenAnalysis,
             _screenAnalysisOptions.MaxToolCallRounds,
@@ -489,9 +495,14 @@ public sealed class SendChatMessageHandler
             _ollamaSettings.CpuMaxToolCallRounds,
             assistantMode,
             toolIntent,
-            inferenceProfile) + 1;
+            inferenceProfile,
+            agentScope) + 1;
         var toolCallRound = 0;
         var continueLoop = true;
+        // Compteur unique de générations LLM du tour (Lot 2.2) : incrémenté à CHAQUE génération —
+        // boucle d'outils (ci-dessous), synthèse forcée et synthèse de secours (hook Lot 1). Pour
+        // agentScope == FirmMission, budget ≤ 2 : voir AtLlmGenerationBudgetExhaustedForFirmTurn.
+        var llmGenerationsThisTurn = 0;
         var minMeaningfulTextChars = ResolveMinMeaningfulTextChars(toolIntent, _ollamaSettings);
         // Raccourci déterministe CONFORMITÉ : « vérifie la conformité de ma dernière facture » résout
         // l'intent Sales (mot « facture ») et exigerait d'enchaîner recherche + contrôle — impossible
@@ -636,6 +647,81 @@ public sealed class SendChatMessageHandler
             toolsExecutedThisRequest++;
             toolSourcesForClient.Add(new SourceEntryDto("get_sales_revenue", shortcutCallId));
             yield return ChatStreamEvent.ToolCallEnd("get_sales_revenue", shortcutCallId, shortcutSw.ElapsedMilliseconds);
+        }
+
+        // ── Lot 1.2 : raccourci déterministe FirmMission ──────────────────────────────────────────
+        // Compteur de lectures firm ancrées ce tour (Lot 1.3) : distinct de toolsExecutedThisRequest
+        // (qui compte les outils TENTÉS, même en erreur) — n'augmente que pour une lecture get_firm_*
+        // réussie ET exploitable (result.IsGrounded). Lu par le grounding gate
+        // avant chaque site de persistance, et journalisé dans total_request.
+        var firmGroundedReads = 0;
+        // Détection « le tour demande des données » calculée une fois, réutilisée par le raccourci,
+        // le gate de persistance et l'éligibilité de la synthèse de secours.
+        var firmTurnNeedsData = FirmTurnNeedsData(command.Message);
+        var firmPreExecutedToolNames = new HashSet<string>(StringComparer.Ordinal);
+        if (agentScope == AssistantAgentScope.FirmMission
+            && !conversationalFastPath
+            && !isScreenAnalysis
+            && _ollamaSettings.FirmMissionShortcutEnabled
+            && firmTurnNeedsData)
+        {
+            // Le routeur résout ≤ 2 appels get_firm_* réels avec les BONS paramètres (un routage naïf
+            // par mot-clé serait sémantiquement faux — ex. « pour quel montant, chez combien de
+            // clients ? » exige les agrégats de l'overview, pas la liste plafonnée à top_n). La
+            // mémoïsation du fan-out (Lot 2.3) rend le 2ᵉ outil quasi gratuit à horizon égal.
+            var plannedCalls = FirmMissionShortcutRouter.Resolve(command.Message);
+            foreach (var planned in plannedCalls)
+            {
+                var firmCallId = Guid.NewGuid().ToString("N")[..12];
+                yield return ChatStreamEvent.ToolCallStart(planned.ToolName, firmCallId);
+                var firmSw = Stopwatch.StartNew();
+                AiToolResult firmResult;
+                try
+                {
+                    firmResult = await _toolExecutor.ExecuteAsync(
+                        planned.ToolName,
+                        planned.Arguments,
+                        new AiToolExecutionContext(correlationId, conversation.Id),
+                        cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Firm shortcut failed for {ToolName} (args={Args})",
+                        planned.ToolName,
+                        JsonSerializer.Serialize(planned.Arguments));
+                    firmResult = AiToolResult.Error($"Erreur lors de l'exécution: {ex.Message}");
+                }
+
+                var firmContent = firmResult.Success
+                    ? firmResult.Data ?? string.Empty
+                    : $"Erreur: {firmResult.ErrorMessage}";
+                conversation.AddMessage(MessageRole.Tool, firmContent, planned.ToolName, firmCallId);
+                toolsExecutedThisRequest++;
+                toolSourcesForClient.Add(new SourceEntryDto(planned.ToolName, firmCallId));
+                // Grounding gate (Lot 1.3) : seules les lectures firm réussies ET exploitables
+                // ancrent le tour — un échec d'outil ou un Ok au fan-out totalement en échec ne compte pas.
+                if (firmResult.IsGrounded)
+                    firmGroundedReads++;
+                yield return ChatStreamEvent.ToolCallEnd(planned.ToolName, firmCallId, firmSw.ElapsedMilliseconds);
+                firmPreExecutedToolNames.Add(planned.ToolName);
+            }
+
+            // Recalcul du catalogue exposé au modèle : on retire les outils déjà pré-exécutés pour que
+            // l'unique round CPU firm ne soit pas gaspillé à rappeler une lecture déjà obtenue. Garde-fou
+            // dans BuildOllamaTools : ne JAMAIS vider complètement le catalogue (si le filtrage ne laisse
+            // rien, la liste non filtrée est conservée).
+            if (firmPreExecutedToolNames.Count > 0)
+            {
+                tools = BuildOllamaTools(assistantMode, effectiveMutationTools, toolIntent, inferenceProfile, agentScope,
+                    _ollamaSettings.EnableStudioAiPlanPreview, _ollamaSettings.EnableStudioAiModifyTools,
+                    _ollamaSettings.EnableStudioAiViewTools,
+                    _ollamaSettings.EnableStudioAiReportTools && _ollamaSettings.EnableStudioSqlReportEngine,
+                    studioToolFocus,
+                    preExecutedToolNamesToExclude: firmPreExecutedToolNames);
+                toolsApproxChars = tools.Count > 0 ? JsonSerializer.Serialize(tools).Length : 0;
+            }
         }
 
         // Pré-exécution du contrôle de conformité (même patron que le raccourci ventes ci-dessus) :
@@ -845,6 +931,9 @@ public sealed class SendChatMessageHandler
                     yield break;
 
                 toolsExecutedThisRequest += cursorCtx.ToolsExecuted;
+                // Lot 1.3 : agrège les lectures firm ancrées exécutées via le callback Cursor (le
+                // compteur ctx.FirmGroundedReads est alimenté dans CursorToolCallbackService).
+                firmGroundedReads += cursorCtx.FirmGroundedReads;
                 if (!string.IsNullOrEmpty(cursorCtx.AccumulatedDashboardJson))
                     accumulatedDashboardJson = cursorCtx.AccumulatedDashboardJson;
                 foreach (var prompt in cursorCtx.AccumulatedSuggestedPrompts)
@@ -874,10 +963,16 @@ public sealed class SendChatMessageHandler
                         accumulatedSuggestedPrompts);
                     if (AssistantVisibleContentFormatter.HasMeaningfulAssistantText(assistantBody, minMeaningfulTextChars))
                     {
-                        contentCharsPersisted = assistantBody.Length;
-                        conversation.AddMessage(MessageRole.Assistant, assistantBody);
-                        meaningfulResponseDelivered = true;
-                        yield return ChatStreamEvent.ContentReplace(assistantBody);
+                        // Lot 1.3 : grounding gate — une réponse firm non ancrée n'est PAS persistée
+                        // (le bloc de synthèse de secours plus bas tente une lecture puis une synthèse,
+                        // sinon persiste le repli honnête). Gate désactivé ou autre scope ⇒ inchangé.
+                        if (!ShouldRejectUngroundedFirmAnswer(agentScope, firmGroundedReads, firmTurnNeedsData, _ollamaSettings.FirmMissionGroundingGateEnabled))
+                        {
+                            contentCharsPersisted = assistantBody.Length;
+                            conversation.AddMessage(MessageRole.Assistant, assistantBody);
+                            meaningfulResponseDelivered = true;
+                            yield return ChatStreamEvent.ContentReplace(assistantBody);
+                        }
                     }
                 }
             }
@@ -886,6 +981,9 @@ public sealed class SendChatMessageHandler
         while (continueLoop && toolCallRound < maxRounds)
         {
             continueLoop = false;
+            // Chaque itération de cette boucle appelle le provider LLM une fois (Lot 2.2 — compteur
+            // unique de générations, budget ≤ 2 pour le tour firm).
+            llmGenerationsThisTurn++;
             var phaseRound = toolCallRound + 1;
             sw.Restart();
             yield return ChatStreamEvent.PhaseEvent(
@@ -1371,11 +1469,18 @@ public sealed class SendChatMessageHandler
 
                     conversation.AddMessage(MessageRole.Tool, resultContent, toolCall.Function.Name, callId);
                     toolsExecutedThisRequest++;
+                    // Lot 1.3 : une lecture get_firm_* réussie et exploitable ancre le tour (y compris
+                    // via la boucle normale, pas seulement le raccourci). Compteur lu par le gate.
+                    if (AiParallelDbToolPolicy.IsFirmReadOnly(toolCall.Function.Name) && toolResult.IsGrounded)
+                        firmGroundedReads++;
                     yield return ChatStreamEvent.ToolCallEnd(toolCall.Function.Name, callId, toolElapsedMs);
                     toolSourcesForClient.Add(new SourceEntryDto(toolCall.Function.Name, callId));
                     if (toolCall.Function.Name == "propose_client_actions" && toolResult.Success &&
                         !string.IsNullOrWhiteSpace(toolResult.Data))
                         yield return ChatStreamEvent.ClientActionsEvent(toolResult.Data);
+                    if (toolCall.Function.Name == FirmAgentTools.SendReminder && toolResult.Success &&
+                        FirmReminderClientActionExtractor.TryBuildClientActionsJson(toolResult.Data, out var firmReminderActionsJson))
+                        yield return ChatStreamEvent.ClientActionsEvent(firmReminderActionsJson!);
                     if (toolCall.Function.Name == "propose_follow_up_prompts" && toolResult.Success &&
                         !string.IsNullOrWhiteSpace(toolResult.Data))
                     {
@@ -1482,14 +1587,21 @@ public sealed class SendChatMessageHandler
                 }
                 if (AssistantVisibleContentFormatter.HasMeaningfulAssistantText(assistantBody, minMeaningfulTextChars))
                 {
-                    contentCharsPersisted = assistantBody.Length;
-                    conversation.AddMessage(MessageRole.Assistant, assistantBody);
-                    meaningfulResponseDelivered = true;
-                    // Réconciliation du streaming live : le corps final post-traité (appendices,
-                    // humanisation, assainissement complet) remplace les segments streamés. Sans
-                    // streaming live, l'unique ContentChunk du round a déjà livré ce contenu.
-                    if (liveStreaming && liveStreamedAny && leakClean is null)
-                        yield return ChatStreamEvent.ContentReplace(assistantBody);
+                    // Lot 1.3 : grounding gate — une réponse firm non ancrée n'est PAS persistée (le bloc
+                    // de synthèse de secours plus bas tente une lecture puis une synthèse, sinon persiste
+                    // le repli honnête et ContentReplace écrase la prose déjà streamée). Gate désactivé ou
+                    // autre scope ⇒ comportement strictement identique à aujourd'hui.
+                    if (!ShouldRejectUngroundedFirmAnswer(agentScope, firmGroundedReads, firmTurnNeedsData, _ollamaSettings.FirmMissionGroundingGateEnabled))
+                    {
+                        contentCharsPersisted = assistantBody.Length;
+                        conversation.AddMessage(MessageRole.Assistant, assistantBody);
+                        meaningfulResponseDelivered = true;
+                        // Réconciliation du streaming live : le corps final post-traité (appendices,
+                        // humanisation, assainissement complet) remplace les segments streamés. Sans
+                        // streaming live, l'unique ContentChunk du round a déjà livré ce contenu.
+                        if (liveStreaming && liveStreamedAny && leakClean is null)
+                            yield return ChatStreamEvent.ContentReplace(assistantBody);
+                    }
                 }
             }
         }
@@ -1507,18 +1619,97 @@ public sealed class SendChatMessageHandler
         }
 
         // ── Filet de synthèse finale : aucune réponse visible complète après exécution d'outils ───────
+        // Lot 1.3 : éligibilité étendue au cas firm non ancré — une réponse firm a été rejetée par le
+        // gate (non persistée) alors que la question demande des données : on déclenche la synthèse de
+        // secours (lecture de secours + génération) SANS changer le défaut global ForceFinalSynthesisOnlyAfterTools
+        // ni la signature/valeur par défaut de ShouldForceFinalSynthesis.
+        var firmUngroundedNeedsSynthesis = ShouldRejectUngroundedFirmAnswer(
+            agentScope, firmGroundedReads, firmTurnNeedsData, _ollamaSettings.FirmMissionGroundingGateEnabled)
+            && !meaningfulResponseDelivered;
         if (!conversationalFastPath
-            && ShouldForceFinalSynthesis(
+            && (ShouldForceFinalSynthesis(
                 isScreenAnalysis,
                 _ollamaSettings.ForceFinalSynthesis,
                 meaningfulResponseDelivered,
                 toolsExecutedThisRequest > 0,
                 _ollamaSettings.ForceFinalSynthesisOnlyAfterTools,
-                _screenAnalysisOptions.ForceFinalSynthesisEnabled))
+                _screenAnalysisOptions.ForceFinalSynthesisEnabled)
+                || firmUngroundedNeedsSynthesis))
         {
             forcedSynthesisTriggered = true;
             sw.Restart();
-            yield return ChatStreamEvent.PhaseEvent("llm_forced_synthesis", "running");
+
+            // ── Lot 1.3 : secours firm — aucune lecture ancrée ce tour ────────────────────────────
+            // Une seule tentative, jamais de boucle : on pré-appelle get_firm_portfolio_overview (lecture
+            // la plus large) ; si elle réussit et est exploitable, firmGroundedReads passe à ≥ 1 et la
+            // synthèse de secours peut s'appuyer sur une vraie donnée. L'appel d'outil N'est PAS compté
+            // dans le budget de générations LLM (seul l'est l'appel de synthèse qui suit, via
+            // IsFirmTurnGenerationBudgetExhausted). Si le secours échoue aussi, la synthèse est sautée et
+            // le repli honnête déterministe est persisté (plus bas).
+            if (firmUngroundedNeedsSynthesis)
+            {
+                var rescueToolName = FirmAgentTools.PortfolioOverview;
+                var rescueCallId = Guid.NewGuid().ToString("N")[..12];
+                yield return ChatStreamEvent.ToolCallStart(rescueToolName, rescueCallId);
+                var rescueSw = Stopwatch.StartNew();
+                AiToolResult rescueResult;
+                try
+                {
+                    rescueResult = await _toolExecutor.ExecuteAsync(
+                        rescueToolName,
+                        new Dictionary<string, object?>(),
+                        new AiToolExecutionContext(correlationId, conversation.Id),
+                        cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Firm rescue tool failed for {ToolName}", rescueToolName);
+                    rescueResult = AiToolResult.Error($"Erreur lors de l'exécution: {ex.Message}");
+                }
+
+                var rescueContent = rescueResult.Success
+                    ? rescueResult.Data ?? string.Empty
+                    : $"Erreur: {rescueResult.ErrorMessage}";
+                conversation.AddMessage(MessageRole.Tool, rescueContent, rescueToolName, rescueCallId);
+                toolsExecutedThisRequest++;
+                toolSourcesForClient.Add(new SourceEntryDto(rescueToolName, rescueCallId));
+                if (rescueResult.IsGrounded)
+                    firmGroundedReads++;
+                yield return ChatStreamEvent.ToolCallEnd(rescueToolName, rescueCallId, rescueSw.ElapsedMilliseconds);
+            }
+
+            // Budget de générations explicite (Lot 2.2) : pour le tour firm, au plus 2 générations
+            // LLM au total (round outils + rédaction). Si le budget est déjà épuisé, on NE lance PAS
+            // cette synthèse forcée — synthContent reste vide et le mécanisme de repli déterministe
+            // existant (AssistantDeterministicFallback.TryBuild + ContentReplace, ci-dessous) prend le
+            // relais sans 3ᵉ génération. Autres scopes : compteur journalisé seulement, comportement
+            // inchangé (jamais bloqué ici).
+            var firmGenerationBudgetExhausted = IsFirmTurnGenerationBudgetExhausted(agentScope, llmGenerationsThisTurn);
+            // Lot 1.3 : si le secours firm a échoué (firmGroundedReads toujours à 0 après la lecture de
+            // secours), on ne tente PAS une synthèse non ancrée — le repli honnête déterministe (plus
+            // bas) est persisté directement. L'appel d'outil de secours n'a pas épuisé le budget LLM.
+            var firmRescueFailed = firmUngroundedNeedsSynthesis && firmGroundedReads <= 0;
+            var firmSynthesisBlocked = firmGenerationBudgetExhausted || firmRescueFailed;
+            if (firmGenerationBudgetExhausted)
+            {
+                _logger.LogInformation(
+                    "AI chat {CorrelationId} firm_llm_generation_budget_exhausted generations={Generations} forced_synthesis_skipped=true",
+                    correlationId ?? "-",
+                    llmGenerationsThisTurn);
+            }
+            else if (firmRescueFailed)
+            {
+                _logger.LogInformation(
+                    "AI chat {CorrelationId} firm_rescue_failed grounded_reads={GroundedReads} forced_synthesis_skipped=true",
+                    correlationId ?? "-",
+                    firmGroundedReads);
+            }
+            else
+            {
+                llmGenerationsThisTurn++;
+            }
+            if (!firmSynthesisBlocked)
+                yield return ChatStreamEvent.PhaseEvent("llm_forced_synthesis", "running");
             var synthContent = new System.Text.StringBuilder();
             // Streaming live de la synthèse : aucun outil attaché à cet appel → pas de reset possible ;
             // le ContentReplace(synthBody) final réconcilie comme pour le round principal.
@@ -1537,6 +1728,7 @@ public sealed class SendChatMessageHandler
                       + "Ne redemande pas la période si l'utilisateur a dit « aujourd'hui »."
                     : systemPrompt;
 
+            if (!firmSynthesisBlocked)
             switch (modelRef.Kind)
             {
             case LlmProviderKind.Ollama:
@@ -1701,7 +1893,13 @@ public sealed class SendChatMessageHandler
                 break;
             }
 
-            yield return ChatStreamEvent.PhaseEvent("llm_forced_synthesis", "completed", sw.ElapsedMilliseconds);
+            if (!firmSynthesisBlocked)
+            {
+                // Lot 3.1 — mesure READ-ONLY : borne la phase llm_forced_synthesis dans le journal serveur
+                // (l'événement SSE ci-dessous la porte aussi au client). sw a été redémarré avant le secours.
+                LogPhase("llm_forced_synthesis", sw.ElapsedMilliseconds);
+                yield return ChatStreamEvent.PhaseEvent("llm_forced_synthesis", "completed", sw.ElapsedMilliseconds);
+            }
 
             var synthBody = synthContent.Length > 0
                 ? BuildFinalAssistantBodyWithAppendices(
@@ -1746,6 +1944,20 @@ public sealed class SendChatMessageHandler
             if (synthLeakClean is not null)
             {
                 synthBody = synthLeakClean;
+                deterministicFallbackUsed = true;
+            }
+
+            // Lot 1.3 : repli honnête firm — si après la lecture de secours aucune lecture n'est ancrée
+            // (firmRescueFailed), la prose — initiale ou de synthèse — ne doit PAS être persistée : on la
+            // remplace par un message honnête explicite plutôt que de laisser le modèle répondre de
+            // mémoire. Prend le pas sur le repli générique (TryBuild) et l'assainissement ci-dessus.
+            if (firmRescueFailed)
+            {
+                synthBody = BuildFinalAssistantBodyWithAppendices(
+                    FirmUngroundedFallbackMessage,
+                    minMeaningfulTextChars,
+                    accumulatedDashboardJson,
+                    accumulatedSuggestedPrompts);
                 deterministicFallbackUsed = true;
             }
 
@@ -1857,7 +2069,7 @@ public sealed class SendChatMessageHandler
             sw.ElapsedMilliseconds);
 
         _logger.LogInformation(
-            "AI chat {CorrelationId} phase=total_request elapsed_ms={ElapsedMs} conversation_id={ConversationId} model={Model} tool_intent={ToolIntent} conversational_fast_path={ConversationalFastPath} tool_rounds_executed={ToolRounds} tools_executed_this_request={ToolsExecutedThisRequest} forced_synthesis_triggered={ForcedSynthesisTriggered} deterministic_fallback_used={DeterministicFallbackUsed} final_response_meaningful={FinalResponseMeaningful} content_chars_streamed={ContentCharsStreamed} content_chars_persisted={ContentCharsPersisted}",
+            "AI chat {CorrelationId} phase=total_request elapsed_ms={ElapsedMs} conversation_id={ConversationId} model={Model} tool_intent={ToolIntent} conversational_fast_path={ConversationalFastPath} tool_rounds_executed={ToolRounds} tools_executed_this_request={ToolsExecutedThisRequest} forced_synthesis_triggered={ForcedSynthesisTriggered} deterministic_fallback_used={DeterministicFallbackUsed} final_response_meaningful={FinalResponseMeaningful} content_chars_streamed={ContentCharsStreamed} content_chars_persisted={ContentCharsPersisted} llm_generations_this_turn={LlmGenerationsThisTurn} agent_scope={AgentScope} firm_grounded_reads={FirmGroundedReads}",
             correlationId ?? "-",
             total.ElapsedMilliseconds,
             conversation.Id,
@@ -1870,7 +2082,10 @@ public sealed class SendChatMessageHandler
             deterministicFallbackUsed,
             meaningfulResponseDelivered,
             totalContentCharsStreamed,
-            contentCharsPersisted);
+            contentCharsPersisted,
+            llmGenerationsThisTurn,
+            agentScope,
+            firmGroundedReads);
         yield return ChatStreamEvent.PhaseEvent(
             "total_request",
             "completed",
@@ -1905,6 +2120,61 @@ public sealed class SendChatMessageHandler
            && forceEnabled
            && !meaningfulResponseDelivered
            && (!onlyAfterTools || toolsWereExecuted);
+
+    /// <summary>
+    /// Détection « le tour firm demande des données » (Lot 1.3 du plan v3) : vraie si le raccourci
+    /// déterministe reconnaît la question (au moins un outil <c>get_firm_*</c> planifié) OU si une
+    /// heuristique chiffres/listes est présente (« combien », « quel(s)/quelle(s) », « montant »,
+    /// « liste », « classe », « qui », « top »). Méthode statique pure, testable isolément.
+    /// Ne se substitue pas au gate : un faux positif ne déclenche au pire qu'une consultation
+    /// superflue ; un faux négatif laisse le badge frontend (Lot 5) comme voyant résiduel. Exempte
+    /// de facto <c>Greeting</c>/<c>conversationalFastPath</c> (traités en amont du handler), mais
+    /// PAS l'intent <c>Synthesis</c> : un follow-up cliqué demandant de nouvelles données passe le
+    /// gate comme un message tapé.
+    /// </summary>
+    public static bool FirmTurnNeedsData(string? message)
+    {
+        if (FirmMissionShortcutRouter.Resolve(message).Count > 0)
+            return true;
+        if (string.IsNullOrWhiteSpace(message))
+            return false;
+        var normalized = FirmMissionShortcutRouter.RemoveDiacritics(message).ToLowerInvariant();
+        return normalized.Contains("combien", StringComparison.Ordinal)
+            || normalized.Contains("quel", StringComparison.Ordinal)
+            || normalized.Contains("montant", StringComparison.Ordinal)
+            || normalized.Contains("liste", StringComparison.Ordinal)
+            || normalized.Contains("classe", StringComparison.Ordinal)
+            || FirmMissionShortcutRouter.ContainsWholeWord(normalized, "qui")
+            || FirmMissionShortcutRouter.ContainsWholeWord(normalized, "top");
+    }
+
+    /// <summary>
+    /// Fonction commune de décision du grounding gate firm (Lot 1.3 du plan v3), appelée avant chaque
+    /// site de persistance du corps assistant (chemin Cursor et boucle principale). Rejette (retourne
+    /// <c>true</c>) uniquement pour un tour <see cref="AssistantAgentScope.FirmMission"/> dont la
+    /// question demande des données, alors qu'aucune lecture firm réussie et exploitable
+    /// (<paramref name="firmGroundedReads"/>) n'a eu lieu ce tour, et le gate est activé. Tout autre
+    /// scope, ou gate désactivé ⇒ <c>false</c> (comportement strictement identique à aujourd'hui).
+    /// </summary>
+    public static bool ShouldRejectUngroundedFirmAnswer(
+        AssistantAgentScope agentScope,
+        int firmGroundedReads,
+        bool turnNeedsData,
+        bool gateEnabled)
+        => gateEnabled
+           && agentScope == AssistantAgentScope.FirmMission
+           && turnNeedsData
+           && firmGroundedReads <= 0;
+
+    /// <summary>
+    /// Repli honnête déterministe du grounding gate firm (Lot 1.3 du plan v3) : persisté à la place
+    /// de la prose non ancrée quand la lecture de secours elle-même a échoué. Texte stable figé par
+    /// test — le frontend (Lot 5) peut s'y appuyer comme voyant « réponse non fiable ».
+    /// </summary>
+    private const string FirmUngroundedFallbackMessage =
+        "Je n'ai pas pu consulter les données du cabinet pour répondre de façon fiable. " +
+        "Aucune lecture du portefeuille n'a abouti ce tour — réessayez dans un instant ; si le problème " +
+        "persiste, vérifiez que les dossiers du cabinet sont accessibles puis reformulez votre question.";
 
     public static int ResolveMinMeaningfulTextChars(
         AiToolIntentRouter.AiToolIntent toolIntent,
@@ -2371,6 +2641,16 @@ public sealed class SendChatMessageHandler
     /// Limite les tours agent en CPU pour les intentions simples (Sales, Stock, etc.) sans réduire
     /// les cas ambigus (Fallback, Forecasting) ni l'analyse écran.
     /// </summary>
+    /// <param name="agentScope">
+    /// Scope de l'agent (Lot 2.2 — budget explicite ≤ 2 générations LLM par tour firm). Pour
+    /// <see cref="AssistantAgentScope.FirmMission"/> sur CPU, retourne toujours 1 round outils
+    /// QUEL QUE SOIT l'intent mot-clé (Sales, Fallback, Accounting…) : le raccourci déterministe
+    /// firm (Lot 1.2) garantit les données sans round supplémentaire, et la mauvaise classification
+    /// « Sales » du routeur (2.1) devient ainsi sans effet sur le budget firm — elle était déjà sans
+    /// effet sur le catalogue (voir <see cref="BuildOllamaTools"/>, neutralisation d'intent). Sur GPU,
+    /// comportement par défaut inchangé. Défaut <see cref="AssistantAgentScope.None"/> : comportement
+    /// identique à avant (aucun changement de signature publique sans paramètre par défaut).
+    /// </param>
     public static int ResolveMaxToolCallRounds(
         bool isScreenAnalysis,
         int screenAnalysisMaxRounds,
@@ -2378,7 +2658,8 @@ public sealed class SendChatMessageHandler
         int cpuMaxToolCallRounds,
         AssistantMode assistantMode,
         AiToolIntentRouter.AiToolIntent toolIntent,
-        OllamaInferenceProfile? inferenceProfile)
+        OllamaInferenceProfile? inferenceProfile,
+        AssistantAgentScope agentScope = AssistantAgentScope.None)
     {
         if (isScreenAnalysis)
             return Math.Clamp(screenAnalysisMaxRounds, 1, 20);
@@ -2393,12 +2674,39 @@ public sealed class SendChatMessageHandler
         if (assistantMode is AssistantMode.Compliance or AssistantMode.ScreenAnalysis)
             return defaultRounds;
 
+        // Budget de générations explicite (Lot 2.2) : sur CPU, le tour firm reste à 1 round outils
+        // quel que soit l'intent — voir la documentation du paramètre ci-dessus.
+        if (agentScope == AssistantAgentScope.FirmMission)
+            return 1;
+
         if (toolIntent is AiToolIntentRouter.AiToolIntent.Fallback
             or AiToolIntentRouter.AiToolIntent.Forecasting)
             return defaultRounds;
 
         return Math.Clamp(cpuMaxToolCallRounds, 1, defaultRounds);
     }
+
+    /// <summary>
+    /// Budget explicite de générations LLM pour un tour firm (Lot 2.2) : au plus
+    /// <see cref="FirmTurnMaxLlmGenerations"/> générations complètes (1 round outils + 1 round
+    /// rédaction — la synthèse forcée/de secours remplace le round de rédaction raté). Point d'entrée
+    /// UNIQUE pour toute décision « peut-on encore générer ? » côté tour firm.
+    /// </summary>
+    /// <remarks>
+    /// Hook Lot 1 (rescue synthesis, gate 1.3) : le compteur <c>llmGenerationsThisTurn</c> est une
+    /// variable locale de <see cref="Handle"/>, partagée par la boucle d'outils et la synthèse forcée.
+    /// La synthèse de secours du Lot 1 doit : (a) appeler cette méthode AVANT de générer — si elle
+    /// retourne <c>true</c>, ne pas générer et laisser le repli déterministe existant s'appliquer ;
+    /// (b) sinon, incrémenter <c>llmGenerationsThisTurn</c> immédiatement avant l'appel provider (même
+    /// motif que la boucle et la synthèse forcée ci-dessus). Autres scopes que
+    /// <see cref="AssistantAgentScope.FirmMission"/> : toujours <c>false</c> (aucun changement de
+    /// comportement, compteur journalisé seulement).
+    /// </remarks>
+    public const int FirmTurnMaxLlmGenerations = 2;
+
+    public static bool IsFirmTurnGenerationBudgetExhausted(AssistantAgentScope agentScope, int llmGenerationsThisTurn)
+        => agentScope == AssistantAgentScope.FirmMission
+            && llmGenerationsThisTurn >= FirmTurnMaxLlmGenerations;
 
     private OllamaOptions BuildChatOllamaOptions(
         double temperature,
@@ -2448,14 +2756,18 @@ public sealed class SendChatMessageHandler
         bool studioModifyTools = false,
         bool studioViewTools = false,
         bool studioReportTools = false,
-        StudioToolFocus studioFocus = StudioToolFocus.None)
+        StudioToolFocus studioFocus = StudioToolFocus.None,
+        IReadOnlyCollection<string>? preExecutedToolNamesToExclude = null)
     {
         var isCpuOnly = inferenceProfile?.Device == OllamaInferenceDevice.CpuOnly;
         var isScoped = mode == AssistantMode.Default && agentScope != AssistantAgentScope.None;
         // Assistant expert : le catalogue scopé est déjà restreint — le filtrage par intent mot-clé est
         // neutralisé (Fallback), sauf Greeting (aucun outil) et Synthesis (réponse depuis l'historique).
-        // toolIntent lui-même n'est PAS modifié en amont : ResolveMaxToolCallRounds garde ainsi la même
-        // limite CPU (1 round) que l'assistant global pour les mêmes questions.
+        // toolIntent lui-même n'est PAS modifié en amont : ceci garde le catalogue insensible à l'intent
+        // mot-clé (donc à une éventuelle mauvaise classification « Sales », cf. AiToolIntentRouter 2.1).
+        // Le budget de rounds (ResolveMaxToolCallRounds) ne dépend PLUS de cet intent pour FirmMission
+        // depuis le Lot 2.2 : il reçoit `agentScope` et force 1 round CPU quel que soit toolIntent —
+        // la neutralisation ci-dessous et celle du budget sont donc désormais alignées pour ce scope.
         var effectiveIntent = isScoped
             && toolIntent is not (AiToolIntentRouter.AiToolIntent.Greeting or AiToolIntentRouter.AiToolIntent.Synthesis)
             ? AiToolIntentRouter.AiToolIntent.Fallback
@@ -2490,6 +2802,19 @@ public sealed class SendChatMessageHandler
                     .Where(t => cpuScopeTools.Contains(t.Name))
                     .ToList();
             }
+        }
+
+        // Hook Lot 2.2 pour le Lot 1 (raccourci firm) : retire du catalogue exposé au modèle les outils
+        // déjà pré-exécutés par le raccourci déterministe firm (ex. get_firm_portfolio_overview), pour
+        // que l'unique round outils CPU du tour firm ne soit pas gaspillé à rappeler une lecture déjà
+        // obtenue. No-op tant qu'aucun appelant ne renseigne `preExecutedToolNamesToExclude` (le
+        // raccourci n'existe pas encore). Garde-fou : ne JAMAIS vider complètement le catalogue — si le
+        // filtrage ne laisserait plus aucun outil, on conserve la liste non filtrée.
+        if (preExecutedToolNamesToExclude is { Count: > 0 })
+        {
+            var filtered = definitions.Where(t => !preExecutedToolNamesToExclude.Contains(t.Name)).ToList();
+            if (filtered.Count > 0)
+                definitions = filtered;
         }
 
         return definitions

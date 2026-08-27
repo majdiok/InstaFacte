@@ -30,6 +30,20 @@ public static class AiParallelDbToolPolicy
         "compliance_check_invoice"
     };
 
+    /// <summary>
+    /// Outils firm en LECTURE SEULE, dédiés au cache inter-requêtes (Lot 3.3). Les 4 <c>get_firm_*</c>
+    /// uniquement — JAMAIS <c>send_fiscal_deadline_reminder</c> (mutation). Liste DISTINCTE de
+    /// <see cref="ReadOnlyDbToolNames"/> : elle ne pilote PAS le parallélisme tenant, et un rollback
+    /// firm n'affecte pas la liste tenant (et réciproquement).
+    /// </summary>
+    private static readonly HashSet<string> FirmReadOnlyDbToolNames = new(StringComparer.Ordinal)
+    {
+        FirmAgentTools.PortfolioOverview,
+        FirmAgentTools.FiscalDeadlines,
+        FirmAgentTools.DossierHealth,
+        FirmAgentTools.CollaboratorWorkload
+    };
+
     public static bool IsSafe(string toolName)
     {
         if (!ReadOnlyDbToolNames.Contains(toolName))
@@ -38,4 +52,11 @@ public static class AiParallelDbToolPolicy
         var def = AiToolRegistry.GetToolDefinition(toolName);
         return def is not null && !def.IsMutating;
     }
+
+    /// <summary>
+    /// Indique si <paramref name="toolName"/> est un outil firm en lecture seule (<c>get_firm_*</c>),
+    /// donc éligible au cache inter-requêtes firm (sous flag + scope dédiés, cf. <c>AiReadOnlyToolCache</c>).
+    /// <c>send_fiscal_deadline_reminder</c> renvoie <c>false</c>.
+    /// </summary>
+    public static bool IsFirmReadOnly(string toolName) => FirmReadOnlyDbToolNames.Contains(toolName);
 }

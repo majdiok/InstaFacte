@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using FactuTrust.Application.Common;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Forecasting;
 using FactuTrust.Application.Common.Interfaces.Repositories;
@@ -177,7 +178,26 @@ public sealed partial class AiToolExecutor : IAiToolExecutor
                 return AiToolResult.Error("L'agent Chef de mission n'est pas disponible dans cet espace.");
             }
 
-            return await _firmAgent.ExecuteAsync(toolName, arguments, cancellationToken);
+            // Lot 3.3 — cache inter-requêtes des outils firm (réservé FirmManager, clé user-scopée
+            // TenantId:UserId:Role). TryGet AVANT le dispatch ; Set APRÈS succès. L'ancien early-return
+            // (return direct) sautait le Set — corrigé ici. FirmAccountant : IsCacheable renvoie false
+            // (scope filtré) ⇒ TryGet sans hit et Set no-op (jamais de cache inter-requêtes, par décision 3.3).
+            // send_fiscal_deadline_reminder n'est pas un outil firm read-only ⇒ jamais caché.
+            if (_readOnlyCache is not null && _currentUser.TryGetAccessScope(out var firmScope))
+            {
+                if (_readOnlyCache.TryGet(tenantCacheKey, toolName, arguments, out var firmCached, firmScope))
+                {
+                    _logger.LogDebug("AI read-only tool cache HIT {ToolName}", toolName);
+                    return firmCached;
+                }
+
+                var firmResult = await _firmAgent.ExecuteAsync(toolName, arguments, context, cancellationToken);
+                if (firmResult.Success)
+                    _readOnlyCache.Set(tenantCacheKey, toolName, arguments, firmResult, firmScope);
+                return firmResult;
+            }
+
+            return await _firmAgent.ExecuteAsync(toolName, arguments, context, cancellationToken);
         }
 
         try

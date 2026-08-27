@@ -6,7 +6,7 @@ import { AuthService, User } from '@core/services/auth.service';
 import { AiChatSessionService } from './ai-chat-session.service';
 import { AiChatService } from './ai-chat.service';
 import { AiStreamService } from './ai-stream.service';
-import { AssistantAgentScope, ChatRequest, ChatStreamEvent, MessageRole } from '../models/ai-chat.models';
+import { AssistantAgentScope, ChatRequest, ChatStreamEvent, ConfirmFirmReminderAction, MessageRole } from '../models/ai-chat.models';
 
 describe('AiChatSessionService', () => {
   let service: AiChatSessionService;
@@ -37,7 +37,8 @@ describe('AiChatSessionService', () => {
       'getConversation',
       'deleteConversation',
       'getDailyBriefing',
-      'warmUp'
+      'warmUp',
+      'confirmFirmReminder'
     ]);
     chatApi.getConfiguredStatus.and.returnValue(
       of({
@@ -75,6 +76,9 @@ describe('AiChatSessionService', () => {
       })
     );
     chatApi.warmUp.and.returnValue(of({ warmed: true }));
+    chatApi.confirmFirmReminder.and.returnValue(
+      of({ envoye: true, dossier: 'D', obligation: 'TVA', echeance: '2026-08-24', destinataire: 'S' })
+    );
 
     streamMock = jasmine.createSpyObj<AiStreamService>('AiStreamService', ['streamChat']);
     streamMock.streamChat.and.returnValue(of());
@@ -794,4 +798,146 @@ describe('AiChatSessionService', () => {
     expect(service.activeConversationId()).toBeUndefined();
     expect(service.messages().length).toBe(0);
   }));
+
+  // ── Lot 5 : routage client_actions confirm_firm_reminder + confirmation serveur ──────
+
+  function confirmFirmReminderAction(nonce = 'n-1'): ConfirmFirmReminderAction {
+    return {
+      kind: 'confirm_firm_reminder',
+      label: "Confirmer l'envoi de la relance",
+      nonce,
+      expiresAtUtc: new Date(Date.now() + 5 * 60_000).toISOString(),
+      preview: { responsable: 'Sonia', dossier: 'D1', echeance: '2026-08-24', objet: '[Rappel] TVA CA3' }
+    };
+  }
+
+  it('client_actions route l\'action confirm_firm_reminder vers firmReminderAction', () => {
+    streamMock.streamChat.and.returnValue(
+      of(
+        {
+          type: 'client_actions',
+          clientActions: JSON.stringify([confirmFirmReminderAction('n-7')])
+        } as ChatStreamEvent,
+        { type: 'done', conversationId: 'c1' } as ChatStreamEvent
+      )
+    );
+    service.initialize();
+    service.sendMessage('relance Sonia pour la CA3');
+
+    const assistant = service.messages().find(m => m.role === MessageRole.Assistant);
+    expect(assistant?.firmReminderAction).toEqual(
+      jasmine.objectContaining({ kind: 'confirm_firm_reminder', nonce: 'n-7' })
+    );
+  });
+
+  it('client_actions sépare navigation (label+route) et confirm_firm_reminder', () => {
+    streamMock.streamChat.and.returnValue(
+      of(
+        {
+          type: 'client_actions',
+          clientActions: JSON.stringify([
+            { label: 'Ouvrir le dossier', route: '/firm/dossiers/1' },
+            confirmFirmReminderAction('n-1')
+          ])
+        } as ChatStreamEvent,
+        { type: 'done', conversationId: 'c1' } as ChatStreamEvent
+      )
+    );
+    service.initialize();
+    service.sendMessage('relance');
+
+    const assistant = service.messages().find(m => m.role === MessageRole.Assistant);
+    expect(assistant?.clientActions?.length).toBe(1);
+    expect(assistant?.clientActions?.[0]?.route).toBe('/firm/dossiers/1');
+    expect(assistant?.firmReminderAction?.nonce).toBe('n-1');
+  });
+
+  it('client_actions ignore une action confirm_firm_reminder sans nonce', () => {
+    streamMock.streamChat.and.returnValue(
+      of(
+        {
+          type: 'client_actions',
+          clientActions: JSON.stringify([
+            { kind: 'confirm_firm_reminder', label: 'x', preview: { responsable: 's', dossier: 'd', echeance: 'e', objet: 'o' } }
+          ])
+        } as ChatStreamEvent,
+        { type: 'done', conversationId: 'c1' } as ChatStreamEvent
+      )
+    );
+    service.initialize();
+    service.sendMessage('relance');
+
+    const assistant = service.messages().find(m => m.role === MessageRole.Assistant);
+    expect(assistant?.firmReminderAction).toBeUndefined();
+  });
+
+  it('confirmFirmReminder bascule l\'état confirmé après succès serveur', () => {
+    streamMock.streamChat.and.returnValue(
+      of(
+        {
+          type: 'client_actions',
+          clientActions: JSON.stringify([confirmFirmReminderAction('n-1')])
+        } as ChatStreamEvent,
+        { type: 'done', conversationId: 'c1' } as ChatStreamEvent
+      )
+    );
+    service.initialize();
+    service.sendMessage('relance');
+    const id = service.messages().find(m => m.role === MessageRole.Assistant)!.id;
+
+    chatApi.confirmFirmReminder.and.returnValue(
+      of({ envoye: true, dossier: 'D1', obligation: 'TVA', echeance: '2026-08-24', destinataire: 'Sonia' })
+    );
+    service.confirmFirmReminder(id, 'n-1');
+
+    const updated = service.messages().find(m => m.id === id);
+    expect(updated?.firmReminderConfirmed).toBe(true);
+    expect(updated?.firmReminderConfirming).toBe(false);
+    expect(updated?.firmReminderError).toBeUndefined();
+    expect(chatApi.confirmFirmReminder).toHaveBeenCalledWith('n-1');
+  });
+
+  it('confirmFirmReminder consigne l\'erreur sans marquer confirmé après échec serveur', () => {
+    streamMock.streamChat.and.returnValue(
+      of(
+        {
+          type: 'client_actions',
+          clientActions: JSON.stringify([confirmFirmReminderAction('n-1')])
+        } as ChatStreamEvent,
+        { type: 'done', conversationId: 'c1' } as ChatStreamEvent
+      )
+    );
+    service.initialize();
+    service.sendMessage('relance');
+    const id = service.messages().find(m => m.role === MessageRole.Assistant)!.id;
+
+    chatApi.confirmFirmReminder.and.returnValue(
+      throwError(() => ({ error: { message: 'Cette confirmation n\'est plus valide.' } }))
+    );
+    service.confirmFirmReminder(id, 'n-1');
+
+    const updated = service.messages().find(m => m.id === id);
+    expect(updated?.firmReminderConfirmed).toBeFalsy();
+    expect(updated?.firmReminderConfirming).toBe(false);
+    expect(updated?.firmReminderError).toContain('plus valide');
+  });
+
+  it('dismissFirmReminder retire l\'action en attente (le nonce expire côté serveur)', () => {
+    streamMock.streamChat.and.returnValue(
+      of(
+        {
+          type: 'client_actions',
+          clientActions: JSON.stringify([confirmFirmReminderAction('n-1')])
+        } as ChatStreamEvent,
+        { type: 'done', conversationId: 'c1' } as ChatStreamEvent
+      )
+    );
+    service.initialize();
+    service.sendMessage('relance');
+    const id = service.messages().find(m => m.role === MessageRole.Assistant)!.id;
+
+    service.dismissFirmReminder(id);
+    expect(service.messages().find(m => m.id === id)?.firmReminderAction).toBeUndefined();
+    expect(chatApi.confirmFirmReminder).not.toHaveBeenCalled();
+  });
 });

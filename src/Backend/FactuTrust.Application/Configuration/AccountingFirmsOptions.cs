@@ -25,6 +25,14 @@ public sealed class AccountingFirmsOptions
     /// </summary>
     public bool FirmAgentReminderToolEnabled { get; set; }
 
+    /// <summary>
+    /// Quand vrai (défaut), l'outil de relance de l'agent ne fait plus qu'une PREVIEW : il valide
+    /// tous les gardes-fous puis retourne une action en attente qu'un endpoint de confirmation
+    /// dédié doit consommer pour déclencher l'envoi réel. À faux, comportement historique : l'outil
+    /// envoie directement (réversibilité explicite).
+    /// </summary>
+    public bool FirmAgentReminderRequiresConfirmation { get; set; } = true;
+
     /// <summary>Active le brief quotidien poussé au responsable de cabinet (job Hangfire).</summary>
     public bool FirmAgentDailyBriefingEnabled { get; set; }
 
