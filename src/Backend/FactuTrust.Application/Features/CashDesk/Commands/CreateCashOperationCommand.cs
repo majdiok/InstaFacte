@@ -114,17 +114,7 @@ public sealed class CreateCashOperationCommandHandler
 
     private static CashOperationListItemDto MapToDto(CashOperation op)
     {
-        int? vatRatePercent = null;
-        decimal? htAmount = null;
-        decimal? vatAmount = null;
-
-        if (op.VatRate is not null)
-        {
-            var (ht, vat) = CashOperationVatCalculator.SplitTtc(op.Amount.Amount, op.VatRate.Value);
-            vatRatePercent = (int)op.VatRate.Value;
-            htAmount = ht;
-            vatAmount = vat;
-        }
+        var vatSplit = CashOperationVatCalculator.TrySplitTtc(op.Amount.Amount, op.VatRate);
 
         return new()
         {
@@ -152,9 +142,9 @@ public sealed class CreateCashOperationCommandHandler
             SourceInvoiceNumber = null,
             SourceSupplierInvoiceId = null,
             SourceSupplierInvoiceNumber = null,
-            VatRatePercent = vatRatePercent,
-            HtAmount = htAmount,
-            VatAmount = vatAmount
+            VatRatePercent = vatSplit?.RatePercent,
+            HtAmount = vatSplit?.Ht,
+            VatAmount = vatSplit?.Vat
         };
     }
 }

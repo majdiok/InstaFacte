@@ -57,13 +57,16 @@ public sealed class GetVatDeclarationCashVatTests
     /// </summary>
     private static GetVatDeclarationQueryHandler BuildHandler(
         IReadOnlyList<CashSaleVatPosting>? cashVat,
-        bool cashVatSetup = true)
+        bool cashVatSetup = true,
+        decimal invoiceVat19 = 190m,
+        decimal invoiceHt19 = 1000m)
     {
         var mediator = new Mock<IMediator>();
-        var salesRows = new List<SalesVatReportRowDto>
+        var salesRows = new List<SalesVatReportRowDto>();
+        if (invoiceVat19 != 0m || invoiceHt19 != 0m)
         {
-            new() { VatRatePercent = 19, VatRateDisplay = "19 %", TotalVatAmount = 190m, TotalTaxableAmount = 1000m, Currency = "TND" }
-        };
+            salesRows.Add(new() { VatRatePercent = 19, VatRateDisplay = "19 %", TotalVatAmount = invoiceVat19, TotalTaxableAmount = invoiceHt19, Currency = "TND" });
+        }
         mediator.Setup(m => m.Send(It.IsAny<GetSalesVatReportQuery>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success<IReadOnlyList<SalesVatReportRowDto>>(salesRows));
         mediator.Setup(m => m.Send(It.IsAny<GetPurchasesVatReportQuery>(), It.IsAny<CancellationToken>()))
@@ -177,6 +180,30 @@ public sealed class GetVatDeclarationCashVatTests
         var b19 = result.Value.CollectedVatBreakdown.Single(b => b.RatePercent == 19);
         b19.TaxableBase.Should().Be(900.000m);
         b19.VatAmount.Should().Be(171.000m);
+    }
+
+    /// <summary>
+    /// Bug corrigé (revue de code) : sans TVA facturière pour compenser une extourne caisse, le
+    /// NET recalculé (<c>ComputeLiveAsync</c>) est négatif. <c>Money.Create</c> rejetterait ce
+    /// montant à la construction — le calcul doit rester en <c>Money.FromSignedAmount</c> pour ce
+    /// mouvement et ne pas lever d'exception.
+    /// </summary>
+    [Fact]
+    public async Task Handle_NoInvoiceVatAndNegativeCashContribution_ReturnsNegativeCollectedVatWithoutThrowing()
+    {
+        var cashVat = new List<CashSaleVatPosting> { new(19, -100.000m, -19.000m) };
+        var handler = BuildHandler(cashVat, invoiceVat19: 0m, invoiceHt19: 0m);
+
+        var result = await handler.Handle(new GetVatDeclarationQuery(2026, 7), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.CollectedVat19.Should().Be(-19.000m);
+        result.Value.CollectedVat13.Should().Be(0m);
+        result.Value.CollectedVat7.Should().Be(0m);
+
+        var b19 = result.Value.CollectedVatBreakdown.Single(b => b.RatePercent == 19);
+        b19.TaxableBase.Should().Be(-100.000m);
+        b19.VatAmount.Should().Be(-19.000m);
     }
 
     [Fact]

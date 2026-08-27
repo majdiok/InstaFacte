@@ -296,9 +296,13 @@ public sealed class GetVatDeclarationQueryHandler : IRequestHandler<GetVatDeclar
         var draft = VatDeclaration.CreateDraft(
             request.Year,
             request.Month,
-            Money.Create(context.CollectedVat19, context.Currency),
-            Money.Create(context.CollectedVat13, context.Currency),
-            Money.Create(context.CollectedVat7, context.Currency),
+            // Mouvements signés (plan §6.7 / v2.1) : la contribution caisse peut être négative
+            // (extourne d'une période antérieure) sans TVA facturière suffisante pour compenser.
+            // Money.Create rejetterait ce cas ; FromSignedAmount préserve le montant tel que
+            // recalculé — seul le NET (ComputeNet dans VatDeclaration) doit rester non négatif.
+            Money.FromSignedAmount(context.CollectedVat19, context.Currency),
+            Money.FromSignedAmount(context.CollectedVat13, context.Currency),
+            Money.FromSignedAmount(context.CollectedVat7, context.Currency),
             Money.Create(context.DeductibleVatGoods, context.Currency),
             Money.Create(context.DeductibleVatAssets, context.Currency),
             Money.Create(context.PreviousCredit, context.Currency),

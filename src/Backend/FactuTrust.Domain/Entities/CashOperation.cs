@@ -121,7 +121,8 @@ public sealed class CashOperation : AggregateRoot
             if (operationType == CashOperationType.Debit)
                 return Result.Failure<CashOperation>(Error.Validation("VatRate", "Le taux de TVA ne s'applique qu'aux encaissements"));
 
-            if (operationType == CashOperationType.Credit && revenueCategory != CashRevenueCategory.CashSalesReceipt)
+            // Le type est forcément Credit ici (le cas Debit a déjà retourné ci-dessus).
+            if (revenueCategory != CashRevenueCategory.CashSalesReceipt)
                 return Result.Failure<CashOperation>(Error.Validation("VatRate", "Le taux de TVA ne s'applique qu'aux encaissements « ventes au comptant »"));
         }
 

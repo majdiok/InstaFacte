@@ -119,9 +119,6 @@ public static class CashOperationJournalLabelBuilder
         ArgumentNullException.ThrowIfNull(baseLabel);
         ArgumentNullException.ThrowIfNull(suffix);
 
-        if (suffix.Length == 0)
-            return baseLabel.Length <= MaxJournalLabelLength ? baseLabel : baseLabel[..MaxJournalLabelLength];
-
         var combined = baseLabel + suffix;
         if (combined.Length <= MaxJournalLabelLength)
             return combined;

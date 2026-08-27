@@ -21,4 +21,17 @@ public static class CashOperationVatCalculator
         var vat = ttcAmount - ht;
         return (ht, vat);
     }
+
+    /// <summary>
+    /// Variante nullable pour le mapping DTO (<c>VatRatePercent</c>/<c>HtAmount</c>/<c>VatAmount</c>) :
+    /// retourne <c>null</c> quand le taux n'est pas renseigné sur l'opération.
+    /// </summary>
+    public static (int RatePercent, decimal Ht, decimal Vat)? TrySplitTtc(decimal ttcAmount, VatRate? rate)
+    {
+        if (rate is not { } r)
+            return null;
+
+        var (ht, vat) = SplitTtc(ttcAmount, r);
+        return ((int)r, ht, vat);
+    }
 }

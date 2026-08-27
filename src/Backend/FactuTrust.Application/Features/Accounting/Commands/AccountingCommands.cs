@@ -394,9 +394,12 @@ public sealed class SaveVatDeclarationCommandHandler : IRequestHandler<SaveVatDe
             if (existing.Status == VatDeclarationStatus.Draft)
             {
                 var upd = existing.UpdateDraft(
-                    Money.Create(dto.CollectedVat19, currency),
-                    Money.Create(dto.CollectedVat13, currency),
-                    Money.Create(dto.CollectedVat7, currency),
+                    // Mouvements signés caisse (plan §6.7 / v2.1) : le DTO recalculé peut porter une
+                    // TVA collectée négative (extourne sans TVA facturière compensatrice) — Money.Create
+                    // rejetterait ce cas, FromSignedAmount le préserve tel que recalculé.
+                    Money.FromSignedAmount(dto.CollectedVat19, currency),
+                    Money.FromSignedAmount(dto.CollectedVat13, currency),
+                    Money.FromSignedAmount(dto.CollectedVat7, currency),
                     Money.Create(dto.DeductibleVatGoods, currency),
                     Money.Create(dto.DeductibleVatAssets, currency),
                     Money.Create(dto.PreviousCredit, currency));
@@ -428,9 +431,10 @@ public sealed class SaveVatDeclarationCommandHandler : IRequestHandler<SaveVatDe
                     "La déclaration de cette période est déjà soumise. Utilisez « Rectificative » pour la corriger."));
 
             existing.ApplyRevision(
-                Money.Create(dto.CollectedVat19, currency),
-                Money.Create(dto.CollectedVat13, currency),
-                Money.Create(dto.CollectedVat7, currency),
+                // Mouvements signés caisse (plan §6.7 / v2.1) : cf. commentaire UpdateDraft ci-dessus.
+                Money.FromSignedAmount(dto.CollectedVat19, currency),
+                Money.FromSignedAmount(dto.CollectedVat13, currency),
+                Money.FromSignedAmount(dto.CollectedVat7, currency),
                 Money.Create(dto.DeductibleVatGoods, currency),
                 Money.Create(dto.DeductibleVatAssets, currency),
                 Money.Create(dto.PreviousCredit, currency),
@@ -455,9 +459,10 @@ public sealed class SaveVatDeclarationCommandHandler : IRequestHandler<SaveVatDe
         var draft = VatDeclaration.CreateDraft(
             r.Year,
             r.Month,
-            Money.Create(dto.CollectedVat19, currency),
-            Money.Create(dto.CollectedVat13, currency),
-            Money.Create(dto.CollectedVat7, currency),
+            // Mouvements signés caisse (plan §6.7 / v2.1) : cf. commentaire UpdateDraft ci-dessus.
+            Money.FromSignedAmount(dto.CollectedVat19, currency),
+            Money.FromSignedAmount(dto.CollectedVat13, currency),
+            Money.FromSignedAmount(dto.CollectedVat7, currency),
             Money.Create(dto.DeductibleVatGoods, currency),
             Money.Create(dto.DeductibleVatAssets, currency),
             Money.Create(dto.PreviousCredit, currency),
