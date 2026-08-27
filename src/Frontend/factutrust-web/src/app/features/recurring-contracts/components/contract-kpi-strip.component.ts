@@ -67,7 +67,9 @@ import { formatContractAmount } from '../recurring-contracts.ui-utils';
   styles: [`
     .kpi-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      // 200px minimum : en dessous, les montants longs (« 4 748,387 TND ») et les intitulés
+      // (« RENOUVELLEMENT ») se coupent au milieu d'un mot/nombre.
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
       gap: var(--spacing-4);
       margin-bottom: var(--spacing-5);
     }

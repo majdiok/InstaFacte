@@ -1,4 +1,5 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { TabsModule } from 'primeng/tabs';
@@ -80,6 +81,7 @@ type ContractAction = 'activate' | 'suspend' | 'resume' | 'cancel' | 'renew' | '
         [title]="c.number ? 'Contrat ' + c.number : 'Contrat récurrent'"
         [subtitle]="c.clientName">
         <app-status-badge
+          title-addon
           [status]="contractBadgeStatus(c.status)"
           [label]="contractStatusLabel(c.status, c.statusDisplay)">
         </app-status-badge>
@@ -137,7 +139,7 @@ type ContractAction = 'activate' | 'suspend' | 'resume' | 'cancel' | 'renew' | '
               Modifier
             </app-button>
           }
-          <app-document-actions-menu [items]="actionsMenuItems(c)"></app-document-actions-menu>
+          <app-document-actions-menu [items]="actionsMenuItems()"></app-document-actions-menu>
         </div>
       </app-page-header>
 
@@ -239,12 +241,23 @@ type ContractAction = 'activate' | 'suspend' | 'resume' | 'cancel' | 'renew' | '
       grid-template-columns: 1fr 320px;
       gap: var(--spacing-6);
 
-      @media (max-width: 1024px) {
+      // Sous 1400px la colonne principale (~700px à 1280px viewport avec le shell) est trop
+      // étroite : la barre d'onglets déborde et chevauche le panneau latéral, et les cartes
+      // KPI tronquent leurs valeurs. Le panneau passe alors sous le contenu, pleine largeur.
+      @media (max-width: 1400px) {
         grid-template-columns: 1fr;
       }
     }
 
     .main-content { min-width: 0; }
+
+    // L'en-tête partagé laisse la zone titre se comprimer (flex-basis 0% + min-width: 0) :
+    // avec 4+ boutons d'action (~930 px) le titre passait à ~40 px de large et se coupait
+    // sur 4 lignes au lieu de laisser les actions passer à la ligne. On impose une largeur
+    // minimale lisible à la zone titre pour cette page uniquement (override scopé).
+    :host ::ng-deep app-page-header .page-header-content {
+      min-width: 280px;
+    }
   `]
 })
 export class ContractDetailComponent implements OnInit {
@@ -252,6 +265,7 @@ export class ContractDetailComponent implements OnInit {
   private readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly toast = inject(ToastService);
   private readonly errorHandler = inject(ErrorHandlerService);
   private readonly confirmationService = inject(ConfirmationService);
@@ -296,6 +310,17 @@ export class ContractDetailComponent implements OnInit {
   protected readonly contractStatusLabel = contractStatusLabel;
 
   ngOnInit(): void {
+    // Souscription (et non snapshot) : cloner un contrat navigue vers /recurring-contracts/<newId>
+    // — même route, même composant réutilisé, ngOnInit non rappelé. Sans cela, la fiche
+    // continue d'afficher l'ancien contrat sous la nouvelle URL.
+    this.route.paramMap
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(params => {
+        const id = params.get('id');
+        if (!id || id === this.contractId) return;
+        this.contractId = id;
+        this.reload();
+      });
     this.contractId = this.route.snapshot.paramMap.get('id')!;
     this.reload();
   }
@@ -327,7 +352,12 @@ export class ContractDetailComponent implements OnInit {
     return (c.status === 'Active' && !!c.endDate) || c.status === 'Expired';
   }
 
-  actionsMenuItems(c: RecurringContractDetail): MenuItem[] {
+  // computed (et non méthode de template) : une méthode renverrait un NOUVEAU tableau à
+  // chaque cycle de détection, ce qui réinitialise le p-menu en boucle et fige l'onglet
+  // dès l'ouverture du menu « Actions ».
+  readonly actionsMenuItems = computed<MenuItem[]>(() => {
+    const c = this.contract();
+    if (!c) return [];
     return [
       {
         label: 'Créer un avenant',
@@ -348,7 +378,7 @@ export class ContractDetailComponent implements OnInit {
         routerLink: '/recurring-contracts/pending-drafts'
       }
     ];
-  }
+  });
 
   onSideAction(action: ContractSideAction): void {
     switch (action) {

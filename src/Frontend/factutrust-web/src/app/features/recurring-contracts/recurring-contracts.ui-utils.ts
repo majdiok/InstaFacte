@@ -122,12 +122,14 @@ export function toLinePayloads(lines: ContractLinePayloadSource[]): RecurringCon
  * ÷12 annuel). Partagée entre le formulaire (estimation live) et la VM de détail (repli local).
  */
 export function fixedLinesMonthlyEstimate(
-  lines: ReadonlyArray<Pick<ContractLinePayloadSource, 'lineType' | 'quantity' | 'unitPriceHT'>>,
+  lines: ReadonlyArray<Pick<ContractLinePayloadSource, 'lineType' | 'quantity' | 'unitPriceHT'> & { isActive?: boolean | null }>,
   frequency: BillingFrequency
 ): number {
   const divisor = frequency === 'Quarterly' ? 3 : frequency === 'Annual' ? 12 : 1;
+  // isActive !== false : les lignes clôturées par un avenant (fenêtre d'effet terminée)
+  // ne doivent pas entrer dans l'estimation ; les lignes de formulaire n'ont pas ce champ.
   return lines
-    .filter(l => l.lineType === 'FixedRecurring')
+    .filter(l => l.lineType === 'FixedRecurring' && l.isActive !== false)
     .reduce((sum, l) => sum + (l.quantity || 0) * (l.unitPriceHT || 0), 0) / divisor;
 }
 

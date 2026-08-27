@@ -134,7 +134,7 @@ interface ProrationOption {
       <ng-template pTemplate="footer">
         <app-button variant="secondary" (clicked)="close()">Annuler</app-button>
         <app-button variant="primary" icon="pi-check" [disabled]="saving" (clicked)="submit()">
-          {{ saving ? 'Enregistrement…' : 'Enregistrer l\'avenant' }}
+          {{ saving ? 'Enregistrement…' : "Enregistrer l'avenant" }}
         </app-button>
       </ng-template>
     </p-dialog>

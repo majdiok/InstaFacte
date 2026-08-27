@@ -19,6 +19,7 @@ import { TooltipModule } from 'primeng/tooltip';
         </div>
         <h1 class="page-title">
           {{ title }}
+          <ng-content select="[title-addon]"></ng-content>
           @if (hint) {
             <button
               type="button"

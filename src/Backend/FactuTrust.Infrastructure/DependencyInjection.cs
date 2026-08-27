@@ -384,6 +384,11 @@ public static class DependencyInjection
         services.AddScoped<IInvoiceComplianceValidator, InvoiceComplianceValidator>();
         // Enregistré inconditionnellement : requis par SubmitInvoiceCommandHandler (MediatR + ValidateOnBuild).
         services.AddScoped<IRecurringContractInvoiceLinker, FactuTrust.Infrastructure.Services.RecurringContracts.RecurringContractInvoiceLinker>();
+        // Ce handler de notification vit dans Infrastructure, que le balayage MediatR ne
+        // couvre pas (seule l'assembly Application est scannée) : sans cet enregistrement
+        // explicite, InvoiceValidatedEvent n'atteint jamais le handler et le billing run
+        // lié n'est jamais marqué Invoiced.
+        services.AddTransient<MediatR.INotificationHandler<FactuTrust.Domain.Events.InvoiceValidatedEvent>, FactuTrust.Infrastructure.Services.RecurringContracts.LinkRecurringContractBillingRunOnInvoiceValidatedHandler>();
         services.AddScoped<IInvoiceNumberGenerator, InvoiceNumberGenerator>();
         services.AddScoped<IQuoteNumberGenerator, QuoteNumberGenerator>();
         services.AddScoped<ICashOperationNumberGenerator, CashOperationNumberGenerator>();

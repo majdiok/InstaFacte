@@ -5,6 +5,7 @@ import {
   runBadgeStatus,
   scheduleBadgeStatus,
   formatContractAmount,
+  fixedLinesMonthlyEstimate,
   toLinePayloads,
   toUpsertPayload,
   parseUsageRecordsCsv
@@ -81,6 +82,28 @@ describe('recurring-contracts.ui-utils', () => {
       expect(formatContractAmount(null)).toBe('—');
       expect(formatContractAmount(undefined)).toBe('—');
       expect(formatContractAmount(NaN)).toBe('—');
+    });
+  });
+
+  describe('fixedLinesMonthlyEstimate', () => {
+    it('exclut les lignes clôturées par un avenant (isActive === false)', () => {
+      // Après un avenant de prix, l'ancienne ligne (clôturée) et la nouvelle coexistent :
+      // l'estimation mensuelle ne doit compter que la ligne active.
+      expect(
+        fixedLinesMonthlyEstimate([
+          { lineType: 'FixedRecurring', quantity: 1, unitPriceHT: 350, isActive: false },
+          { lineType: 'FixedRecurring', quantity: 1, unitPriceHT: 400, isActive: true }
+        ], 'Monthly')
+      ).toBe(400);
+    });
+
+    it('inclut les lignes sans champ isActive (lignes de formulaire)', () => {
+      expect(
+        fixedLinesMonthlyEstimate([
+          { lineType: 'FixedRecurring', quantity: 2, unitPriceHT: 100 },
+          { lineType: 'UsageMetered', quantity: 1, unitPriceHT: 0 }
+        ], 'Monthly')
+      ).toBe(200);
     });
   });
 

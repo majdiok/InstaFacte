@@ -152,7 +152,10 @@ export class ContractScheduleTabComponent implements OnInit, OnChanges {
     this.loading.set(true);
     this.service.getSchedule(this.contract.id, 12).subscribe({
       next: entries => {
-        this.entries.set(entries);
+        // L'API renvoie l'échéancier en décroissant ; l'onglet présente la prochaine
+        // échéance en premier (ordre chronologique, comme le mockup et le top-3 Aperçu).
+        this.entries.set(
+          [...(entries ?? [])].sort((a, b) => (a.date ?? '').localeCompare(b.date ?? '')));
         this.loading.set(false);
       },
       error: err => {
