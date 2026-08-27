@@ -4,7 +4,6 @@ import { RouterModule } from '@angular/router';
 import { TableModule } from 'primeng/table';
 import { TooltipModule } from 'primeng/tooltip';
 import { ButtonComponent } from '@shared/components/button/button.component';
-import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
 import { StatusBadgeComponent } from '@shared/components/status-badge/status-badge.component';
 import { SkeletonTableComponent, SkeletonColumn } from '@shared/components/skeleton/skeleton-table.component';
 import {
@@ -29,7 +28,7 @@ import { runBadgeStatus } from '../recurring-contracts.ui-utils';
   standalone: true,
   imports: [
     CommonModule, RouterModule, TableModule, TooltipModule,
-    ButtonComponent, EmptyStateComponent, StatusBadgeComponent, SkeletonTableComponent
+    ButtonComponent, StatusBadgeComponent, SkeletonTableComponent
   ],
   template: `
     <section class="ft-card-block">

@@ -129,7 +129,7 @@ import { formatContractAmount } from '../recurring-contracts.ui-utils';
             [showAction]="false">
           </app-empty-state>
         } @else {
-          <p-chart type="line" [data]="evolutionChartData(evolution ?? [])" [options]="evolutionOptions" [style]="{ height: '260px' }"></p-chart>
+          <p-chart type="line" [data]="evolutionChartData(evolution)" [options]="evolutionOptions" [style]="{ height: '260px' }"></p-chart>
         }
       </app-chart-card>
 

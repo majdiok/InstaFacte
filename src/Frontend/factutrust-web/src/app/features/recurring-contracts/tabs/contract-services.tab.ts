@@ -3,7 +3,6 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { ButtonComponent } from '@shared/components/button/button.component';
-import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
 import { SkeletonTableComponent, SkeletonColumn } from '@shared/components/skeleton/skeleton-table.component';
 import {
   RecurringContractDetail,
@@ -29,7 +28,7 @@ import { UsageMetricDialogComponent } from '../components/usage-metric-dialog.co
   standalone: true,
   imports: [
     CommonModule, FormsModule, TableModule,
-    ButtonComponent, EmptyStateComponent, SkeletonTableComponent, UsageMetricDialogComponent
+    ButtonComponent, SkeletonTableComponent, UsageMetricDialogComponent
   ],
   template: `
     <section class="ft-card-block">
