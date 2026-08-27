@@ -481,7 +481,13 @@ public sealed class SendChatMessageHandler
         var accumulatedSuggestedPrompts = new List<string>();
         string? accumulatedDashboardJson = null;
         var temperature = isScreenAnalysis ? _screenAnalysisOptions.Temperature : _ollamaSettings.Temperature;
-        var maxTokens = isScreenAnalysis ? _screenAnalysisOptions.MaxTokens : _ollamaSettings.MaxTokens;
+        // Lot 3.2 — budget de tokens réduit et scope-guardé pour FirmMission : les synthèses de revue
+        // de portefeuille sont courtes, 1536 borne le pire cas de génération CPU. 0 = hérite du global.
+        var maxTokens = isScreenAnalysis
+            ? _screenAnalysisOptions.MaxTokens
+            : (agentScope == AssistantAgentScope.FirmMission && _ollamaSettings.FirmMissionMaxTokens > 0
+                ? _ollamaSettings.FirmMissionMaxTokens
+                : _ollamaSettings.MaxTokens);
         var maxRounds = ResolveMaxToolCallRounds(
             isScreenAnalysis,
             _screenAnalysisOptions.MaxToolCallRounds,
@@ -1888,7 +1894,12 @@ public sealed class SendChatMessageHandler
             }
 
             if (!firmSynthesisBlocked)
+            {
+                // Lot 3.1 — mesure READ-ONLY : borne la phase llm_forced_synthesis dans le journal serveur
+                // (l'événement SSE ci-dessous la porte aussi au client). sw a été redémarré avant le secours.
+                LogPhase("llm_forced_synthesis", sw.ElapsedMilliseconds);
                 yield return ChatStreamEvent.PhaseEvent("llm_forced_synthesis", "completed", sw.ElapsedMilliseconds);
+            }
 
             var synthBody = synthContent.Length > 0
                 ? BuildFinalAssistantBodyWithAppendices(

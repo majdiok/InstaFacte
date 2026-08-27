@@ -42,6 +42,14 @@ public sealed class OllamaSettings
 
     public int MaxTokens { get; set; } = 4096;
 
+    /// <summary>
+    /// Plafond de tokens générés DÉDIÉ au scope <c>FirmMission</c> (Assistant Chef de mission). Les
+    /// synthèses de revue de portefeuille sont courtes : 1536 borne le pire cas de génération CPU
+    /// (Lot 3.2). <c>0</c> = hérite du <see cref="MaxTokens"/> global (comportement historique).
+    /// Scope-guardé : aucun impact sur les autres scopes.
+    /// </summary>
+    public int FirmMissionMaxTokens { get; set; } = 1536;
+
     /// <summary>Context window size passed to Ollama (num_ctx). 0 = let Ollama use model default.</summary>
     public int NumCtx { get; set; } = 16384;
 
@@ -380,6 +388,17 @@ public sealed class OllamaSettings
 
     /// <summary>TTL in seconds for <see cref="EnableReadOnlyToolCache"/> entries (clamped 5–300).</summary>
     public int ReadOnlyToolCacheSeconds { get; set; } = 45;
+
+    /// <summary>
+    /// Flag DÉDIÉ au cache inter-requêtes des outils firm <c>get_firm_*</c> (Lot 3.3). Indépendant de
+    /// <see cref="EnableReadOnlyToolCache"/> : un rollback firm ne désactive pas le cache tenant, et
+    /// réciproquement. Réservé au scope <c>FirmManager</c> (clé user-scopée <c>TenantId:UserId:Role</c>) ;
+    /// <c>FirmAccountant</c> n'est JAMAIS caché inter-requêtes (ACL par affectation — une révocation
+    /// resterait visible jusqu'au TTL, fenêtre d'autorisation périmée). La TTL partagée est
+    /// <see cref="ReadOnlyToolCacheSeconds"/>. <c>false</c> = pas de cache firm (la mémoïsation
+    /// intra-requête du Lot 2.3 reste active). <c>send_fiscal_deadline_reminder</c> n'est jamais cacheable.
+    /// </summary>
+    public bool FirmMissionReadOnlyToolCacheEnabled { get; set; } = true;
 
     /// <summary>When true, the host background service pings Ollama periodically to keep the model loaded.</summary>
     public bool KeepAliveEnabled { get; set; }
