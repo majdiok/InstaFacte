@@ -128,6 +128,34 @@ public sealed class FirmPortfolioReadServiceTests
     private static FirmDossierAccessScope Accountant(Guid userId) =>
         FirmDossierAccessScope.ForUser(userId, UserRole.FirmAccountant);
 
+    /// <summary>Variante de <see cref="BuildService"/> exposant le mock de <c>ITenantService</c> comme espion d'appels.</summary>
+    private static (FirmPortfolioReadService Service, Mock<ITenantService> TenantServiceMock) BuildServiceWithSpy(
+        MasterDbContext master,
+        string? connectionString = null,
+        int parallelism = 4)
+    {
+        var tenantService = new Mock<ITenantService>();
+        tenantService
+            .Setup(s => s.GetConnectionStringAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(connectionString);
+
+        var service = new FirmPortfolioReadService(
+            master,
+            tenantService.Object,
+            Mock.Of<ITenantDbContextFactory>(),
+            new FirmDossierAccessService(master),
+            Options.Create(new AccountingFirmsOptions
+            {
+                Enabled = true,
+                FirmAgentEnabled = true,
+                FirmAgentMaxParallelDossiers = parallelism
+            }),
+            new FixedTimeProvider(),
+            NullLogger<FirmPortfolioReadService>.Instance);
+
+        return (service, tenantService);
+    }
+
     [Fact]
     public async Task Null_scope_sees_every_active_dossier_but_not_revoked_ones()
     {
@@ -272,5 +300,144 @@ public sealed class FirmPortfolioReadServiceTests
         var ctor = Assert.Single(typeof(FirmPortfolioReadService).GetConstructors());
 
         Assert.DoesNotContain(ctor.GetParameters(), p => p.ParameterType == typeof(ICurrentUser));
+    }
+
+    // ────────────────────── Mémoïsation par requête (Lot 2.3) ──────────────────────
+
+    /// <summary>
+    /// overview + health + workload partagent tous DefaultHorizonDays = 30 : un seul fan-out attendu
+    /// (espion sur <c>ITenantService.GetConnectionStringAsync</c>, appelé une fois par dossier lu —
+    /// 2 dossiers actifs dans le seed — jamais 3× ce total).
+    /// </summary>
+    [Fact]
+    public async Task Overview_Health_Workload_ShareOneFanOut_OnSameInstance()
+    {
+        await using var db = BuildMaster();
+        await SeedAsync(db);
+        var (service, tenantServiceMock) = BuildServiceWithSpy(db);
+
+        await service.GetOverviewAsync(FirmId, scope: null);
+        await service.GetDossierHealthAsync(FirmId, scope: null, topN: 50);
+        await service.GetCollaboratorWorkloadAsync(FirmId, scope: null);
+
+        tenantServiceMock.Verify(
+            s => s.GetConnectionStringAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(2)); // 2 dossiers actifs, lus UNE seule fois au total.
+    }
+
+    /// <summary>
+    /// <c>GetDeadlinesAsync</c> avec un <c>within_days</c> distinct de l'horizon par défaut (30) doit
+    /// déclencher sa propre entrée de mémoïsation — c'est une lecture légitimement différente.
+    /// </summary>
+    [Fact]
+    public async Task WithinDays_Distinct_Horizon_TriggersSeparateFanOut()
+    {
+        await using var db = BuildMaster();
+        await SeedAsync(db);
+        var (service, tenantServiceMock) = BuildServiceWithSpy(db);
+
+        await service.GetOverviewAsync(FirmId, scope: null); // horizon 30
+        await service.GetDeadlinesAsync(FirmId, scope: null, new FirmDeadlineQuery { WithinDays = 7 });
+
+        tenantServiceMock.Verify(
+            s => s.GetConnectionStringAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(4)); // 2 dossiers × 2 horizons distincts (30 puis 7) = 2 fan-out séparés.
+    }
+
+    /// <summary>
+    /// Deux scopes utilisateur distincts (rôle et/ou UserId différents) ne partagent jamais d'entrée
+    /// de mémoïsation, même au même horizon : chacun déclenche son propre fan-out.
+    /// </summary>
+    [Fact]
+    public async Task Distinct_User_Scopes_Produce_Distinct_Memo_Entries()
+    {
+        await using var db = BuildMaster();
+        await SeedAsync(db);
+        var (service, tenantServiceMock) = BuildServiceWithSpy(db);
+
+        await service.GetOverviewAsync(FirmId, Accountant(AccountantA)); // 1 dossier assigné
+        await service.GetOverviewAsync(FirmId, FirmDossierAccessScope.ForUser(ManagerId, UserRole.FirmManager)); // 2 dossiers
+
+        tenantServiceMock.Verify(
+            s => s.GetConnectionStringAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(3)); // 1 (accountant) + 2 (manager), jamais partagé.
+    }
+
+    /// <summary>
+    /// Le consommateur système (<c>FirmMissionBriefingJob</c>, <c>scope: null</c>) appelant overview
+    /// trois fois au même horizon sur la même instance ne déclenche qu'UN SEUL fan-out — la lecture
+    /// unique partagée du job de brief est préservée par la clé "system".
+    /// </summary>
+    [Fact]
+    public async Task System_Scope_Three_Calls_Share_One_FanOut()
+    {
+        await using var db = BuildMaster();
+        await SeedAsync(db);
+        var (service, tenantServiceMock) = BuildServiceWithSpy(db);
+
+        await service.GetOverviewAsync(FirmId, scope: null);
+        await service.GetOverviewAsync(FirmId, scope: null);
+        await service.GetOverviewAsync(FirmId, scope: null);
+
+        tenantServiceMock.Verify(
+            s => s.GetConnectionStringAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(2)); // 2 dossiers, UN seul fan-out malgré 3 appels.
+    }
+
+    /// <summary>
+    /// Une entrée "system" (scope null) n'est jamais servie à un scope utilisateur : l'accountant
+    /// affecté à un seul dossier ne doit JAMAIS voir les 2 dossiers du cabinet entier, même après un
+    /// appel système au même horizon sur la même instance.
+    /// </summary>
+    [Fact]
+    public async Task System_Entry_Is_Never_Served_To_A_User_Scope()
+    {
+        await using var db = BuildMaster();
+        await SeedAsync(db);
+        var (service, _) = BuildServiceWithSpy(db);
+
+        var systemHealth = await service.GetDossierHealthAsync(FirmId, scope: null, topN: 50);
+        var accountantHealth = await service.GetDossierHealthAsync(FirmId, Accountant(AccountantA), topN: 50);
+
+        Assert.Equal(2, systemHealth.Items.Count);
+        Assert.Single(accountantHealth.Items);
+        Assert.Equal(CompanyA, accountantHealth.Items[0].CompanyTenantId);
+    }
+
+    /// <summary>
+    /// Appels concurrents (même clé) sur la même instance : la Task est mémoïsée (pas seulement le
+    /// résultat), donc les appelants concurrents partagent la MÊME exécution en vol — un seul
+    /// fan-out, même sous concurrence stricte.
+    /// </summary>
+    [Fact]
+    public async Task Concurrent_Calls_With_Same_Key_Share_The_Inflight_Task()
+    {
+        await using var db = BuildMaster();
+        await SeedAsync(db);
+        var tenantService = new Mock<ITenantService>();
+        tenantService
+            .Setup(s => s.GetConnectionStringAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                await Task.Delay(50);
+                return (string?)null;
+            });
+        var service = new FirmPortfolioReadService(
+            db,
+            tenantService.Object,
+            Mock.Of<ITenantDbContextFactory>(),
+            new FirmDossierAccessService(db),
+            Options.Create(new AccountingFirmsOptions { Enabled = true, FirmAgentEnabled = true, FirmAgentMaxParallelDossiers = 4 }),
+            new FixedTimeProvider(),
+            NullLogger<FirmPortfolioReadService>.Instance);
+
+        var overviewTask = service.GetOverviewAsync(FirmId, scope: null);
+        var healthTask = service.GetDossierHealthAsync(FirmId, scope: null, topN: 50);
+        var workloadTask = service.GetCollaboratorWorkloadAsync(FirmId, scope: null);
+        await Task.WhenAll(overviewTask, healthTask, workloadTask);
+
+        tenantService.Verify(
+            s => s.GetConnectionStringAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(2)); // 2 dossiers, un seul fan-out malgré 3 appels concurrents.
     }
 }
