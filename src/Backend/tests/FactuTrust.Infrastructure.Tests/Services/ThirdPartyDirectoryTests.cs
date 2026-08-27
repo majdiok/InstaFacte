@@ -1,13 +1,19 @@
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.Accounting.Commands;
+using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.ValueObjects;
 using FactuTrust.Infrastructure.MultiTenancy;
 using FactuTrust.Infrastructure.Persistence;
+using FactuTrust.Infrastructure.Repositories;
 using FactuTrust.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
@@ -75,9 +81,17 @@ public sealed class ThirdPartyDirectoryTests
     private void SeedEntry(Guid thirdPartyId, ThirdPartyKind kind, decimal debit, decimal credit,
         JournalEntryStatus status = JournalEntryStatus.Validee)
     {
+        SeedEntryReturning(thirdPartyId, kind, debit, credit, status);
+    }
+
+    /// <summary>Comme <see cref="SeedEntry"/>, mais retourne l'écriture créée (utile pour l'éditer
+    /// ensuite via le handler cabinet, plan v3 tâche 7).</summary>
+    private JournalEntry SeedEntryReturning(Guid thirdPartyId, ThirdPartyKind kind, decimal debit, decimal credit,
+        JournalEntryStatus status = JournalEntryStatus.Validee, Guid? accountingPeriodId = null)
+    {
         var account = kind == ThirdPartyKind.Client ? "4111" : "4011";
         var entry = JournalEntry.Create(Random.Shared.Next(1, 99999), "JOD", new DateTime(2026, 6, 15),
-            "Test tiers", Guid.NewGuid(), false, "Manual", null, new[]
+            "Test tiers", accountingPeriodId ?? Guid.NewGuid(), false, "Manual", null, new[]
             {
                 new JournalLineInput(account, "Tiers", debit, credit, thirdPartyId, kind),
                 new JournalLineInput("5320000", "Contrepartie", credit, debit, null, ThirdPartyKind.None)
@@ -86,6 +100,7 @@ public sealed class ThirdPartyDirectoryTests
         using var ctx = _factory.CreateContext();
         ctx.JournalEntries.Add(entry);
         ctx.SaveChanges();
+        return entry;
     }
 
     // ── Répertoire ──────────────────────────────────────────────────────────
@@ -244,5 +259,104 @@ public sealed class ThirdPartyDirectoryTests
             ThirdPartyKind.Client, Guid.NewGuid(), "C0001", "41-11").IsFailure);
         Assert.True(ThirdPartyAccountingProfile.Create(
             ThirdPartyKind.Client, Guid.NewGuid(), "C0001", "4111", paymentTermDays: 999).IsFailure);
+    }
+
+    // ── Non-régression : édition cabinet d'un brouillon (plan v3, tâche 7) ──────────────────
+    // « Mêmes règles brouillard que la balance auxiliaire » (§1.4) : une édition cabinet d'un
+    // brouillon impliquant un tiers doit se répercuter immédiatement sur son solde.
+
+    /// <summary>Mock <see cref="ICurrentUser"/> minimal : seul <see cref="IsAccountingFirmDelegatedContext"/> est paramétrable.</summary>
+    private sealed class FakeCurrentUser : ICurrentUser
+    {
+        public bool IsAccountingFirmDelegatedContext { get; set; }
+        public Guid? UserId => null;
+        public string? Email => "comptable@cabinet.tn";
+        public Guid? TenantId => null;
+        public UserRole? Role => null;
+        public bool IsAuthenticated => true;
+        public bool HasPermission(string permission) => true;
+        public Guid? PortalClientId => null;
+        public bool IsClientPortal => false;
+        public string? IpAddress => null;
+        public string? UserAgent => null;
+    }
+
+    /// <summary>Modèle : <c>ValidatePurchaseReceiptCommandHandlerTests.cs</c> — pas de transaction,
+    /// l'atomicité réelle est prouvée par les tests SQL (tâche 5, hors périmètre ici).</summary>
+    private sealed class PassthroughTenantUnitOfWork : ITenantUnitOfWork
+    {
+        public Task<Result> ExecuteAsync(
+            Func<CancellationToken, Task<Result>> action,
+            CancellationToken cancellationToken = default)
+            => action(cancellationToken);
+
+        public Task<Result<T>> ExecuteAsync<T>(
+            Func<CancellationToken, Task<Result<T>>> action,
+            CancellationToken cancellationToken = default)
+            => action(cancellationToken);
+    }
+
+    /// <summary>Période comptable réelle requise par <c>GetByIdForUpdateAsync</c> (Include AccountingPeriod).</summary>
+    private async Task<AccountingPeriod> SeedPeriodAsync(int year, int month)
+    {
+        var start = new DateTime(year, month, 1);
+        var period = AccountingPeriod.Create(year, month, start, start.AddMonths(1).AddDays(-1));
+        period.SetAuditInfo("test", false);
+        await using var ctx = _factory.CreateContext();
+        ctx.AccountingPeriods.Add(period);
+        await ctx.SaveChangesAsync();
+        return period;
+    }
+
+    private UpdateDraftJournalEntryCommandHandler BuildUpdateHandler(
+        IJournalEntryRepository repository, bool isFirm = true)
+    {
+        var lettering = new LetteringService(_factory, new TenantAmbientTransaction());
+        var chart = new Mock<IChartOfAccountRepository>();
+        chart.Setup(x => x.GetByAccountNumberAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string acc, CancellationToken _) =>
+                ChartOfAccount.Create(acc, $"Compte {acc}", int.Parse(acc[..1]), null, AccountNatureType.Debit).Value);
+        return new UpdateDraftJournalEntryCommandHandler(
+            repository, chart.Object, new Mock<IAuditService>().Object,
+            new FakeCurrentUser { IsAccountingFirmDelegatedContext = isFirm },
+            lettering,
+            new PassthroughTenantUnitOfWork(),
+            NullLogger<UpdateDraftJournalEntryCommandHandler>.Instance);
+    }
+
+    private static UpdateDraftJournalEntryRequest ClientLineRequest(Guid clientId, decimal debit, string label) => new()
+    {
+        Label = label,
+        Lines = new[]
+        {
+            new ManualJournalLineRequest
+            {
+                AccountNumber = "4111", LineLabel = "Tiers", Debit = debit, Credit = 0m,
+                ThirdPartyId = clientId, ThirdPartyKind = (int)ThirdPartyKind.Client
+            },
+            new ManualJournalLineRequest { AccountNumber = "5320000", LineLabel = "Contrepartie", Debit = 0m, Credit = debit }
+        }
+    };
+
+    [Fact]
+    public async Task ThirdPartyBalances_AfterFirmEditOfDraft_FollowEditedLines()
+    {
+        var clientId = SeedClient("Delta");
+        var period = await SeedPeriodAsync(2026, 6);
+        var draft = SeedEntryReturning(clientId, ThirdPartyKind.Client, debit: 300m, credit: 0m,
+            status: JournalEntryStatus.Brouillon, accountingPeriodId: period.Id);
+
+        var repository = new JournalEntryRepository(_factory);
+        var editResult = await BuildUpdateHandler(repository).Handle(
+            new UpdateDraftJournalEntryCommand(draft.Id, ClientLineRequest(clientId, 800m, "Correction cabinet")),
+            CancellationToken.None);
+        Assert.True(editResult.IsSuccess, editResult.Error?.Description);
+
+        var result = await _service.GetDirectoryAsync(null, null, includeInactive: false, 1, 50);
+
+        // Solde tiers = mêmes règles brouillard que la balance auxiliaire (§1.4) : le montant
+        // édité par le cabinet (800, et non plus 300) est reflété immédiatement.
+        var client = result.Value.Items.Single(i => i.ThirdPartyId == clientId);
+        Assert.Equal(800m, client.BalanceDebit);
     }
 }

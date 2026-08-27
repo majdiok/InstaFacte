@@ -4,6 +4,7 @@ using FactuTrust.Domain.Entities.Payroll;
 using FactuTrust.Infrastructure.MultiTenancy;
 using FactuTrust.Infrastructure.Persistence;
 using FactuTrust.Infrastructure.Repositories;
+using FactuTrust.Infrastructure.Tests.Fixtures;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -22,6 +23,7 @@ namespace FactuTrust.Infrastructure.Tests.MultiTenancy;
 /// </summary>
 public sealed class TenantUnitOfWorkTests : IDisposable
 {
+    private readonly SqlTestDatabase _sqlDb = new(nameof(TenantUnitOfWorkTests));
     private readonly string? _connectionString;
     private readonly bool _canRun;
     private readonly TenantAmbientTransaction _ambient = new();
@@ -30,14 +32,8 @@ public sealed class TenantUnitOfWorkTests : IDisposable
 
     public TenantUnitOfWorkTests()
     {
-        _connectionString = Environment.GetEnvironmentVariable("FACTUTRUST_TEST_SQL_CONNECTION");
-        if (string.IsNullOrWhiteSpace(_connectionString))
-        {
-            var dbName = $"FactuTrust_UoW_{Guid.NewGuid():N}";
-            _connectionString = $"Server=(localdb)\\mssqllocaldb;Database={dbName};Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true";
-        }
-
-        _canRun = CanConnectAndCreate(_connectionString);
+        _connectionString = _sqlDb.ConnectionString;
+        _canRun = _sqlDb.CanRun;
         if (!_canRun)
             return;
 
@@ -183,38 +179,5 @@ public sealed class TenantUnitOfWorkTests : IDisposable
         Assert.Equal(0, await verify.EmployeeAdvances.CountAsync(a => a.EmployeeId == employeeId));
     }
 
-    private bool CanConnectAndCreate(string connectionString)
-    {
-        try
-        {
-            using var context = NewRawContext(connectionString);
-            context.Database.EnsureCreated();
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static TenantDbContext NewRawContext(string connectionString)
-        => new(new DbContextOptionsBuilder<TenantDbContext>()
-            .UseSqlServer(connectionString)
-            .Options);
-
-    public void Dispose()
-    {
-        if (!_canRun || string.IsNullOrWhiteSpace(_connectionString))
-            return;
-
-        try
-        {
-            using var context = NewRawContext(_connectionString);
-            context.Database.EnsureDeleted();
-        }
-        catch
-        {
-            // Nettoyage best-effort (base éphémère de test).
-        }
-    }
+    public void Dispose() => _sqlDb.Dispose();
 }

@@ -1,4 +1,10 @@
+using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
+using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.Accounting.Commands;
+using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.MultiTenancy;
@@ -6,7 +12,9 @@ using FactuTrust.Infrastructure.Persistence;
 using FactuTrust.Infrastructure.Repositories;
 using FactuTrust.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Moq;
 using Xunit;
 
 namespace FactuTrust.Infrastructure.Tests.Services;
@@ -42,7 +50,8 @@ public sealed class AccountingReportingDraftPolicyTests
         }
     }
 
-    private static JournalEntry MakeEntry(int number, decimal amount, JournalEntryStatus status)
+    private static JournalEntry MakeEntry(
+        int number, decimal amount, JournalEntryStatus status, Guid? accountingPeriodId = null)
     {
         var lines = new[]
         {
@@ -50,7 +59,7 @@ public sealed class AccountingReportingDraftPolicyTests
             new JournalLineInput("707", "Vente", 0m, amount, null, ThirdPartyKind.None)
         };
         var entry = JournalEntry.Create(
-            number, "JV", new DateTime(2026, 5, 15), $"Vente {number}", Guid.NewGuid(),
+            number, "JV", new DateTime(2026, 5, 15), $"Vente {number}", accountingPeriodId ?? Guid.NewGuid(),
             false, "Manual", null, lines, initialStatus: status).Value;
         entry.SetAuditInfo("test", false);
         return entry;
@@ -141,5 +150,157 @@ public sealed class AccountingReportingDraftPolicyTests
         var sum = await repo.SumDebitsByAccountAsync("4111", From, To);
 
         Assert.Equal(100m, sum);
+    }
+
+    // ── Non-régression : édition cabinet d'un brouillon (plan v3, tâche 7) ──────────────────
+    // Le brouillard est par nature provisoire : une édition cabinet d'un brouillon doit se
+    // refléter IMMÉDIATEMENT dans les écrans de consultation (brouillard inclus) — comportement
+    // voulu (plan §1.4/§5), couvert ici en non-régression.
+
+    /// <summary>Mock <see cref="ICurrentUser"/> minimal : seul <see cref="IsAccountingFirmDelegatedContext"/> est paramétrable.</summary>
+    private sealed class FakeCurrentUser : ICurrentUser
+    {
+        public bool IsAccountingFirmDelegatedContext { get; set; }
+        public Guid? UserId => null;
+        public string? Email => "comptable@cabinet.tn";
+        public Guid? TenantId => null;
+        public UserRole? Role => null;
+        public bool IsAuthenticated => true;
+        public bool HasPermission(string permission) => true;
+        public Guid? PortalClientId => null;
+        public bool IsClientPortal => false;
+        public string? IpAddress => null;
+        public string? UserAgent => null;
+    }
+
+    /// <summary>Modèle : <c>ValidatePurchaseReceiptCommandHandlerTests.cs</c> — pas de transaction,
+    /// l'atomicité réelle est prouvée par les tests SQL (tâche 5, hors périmètre ici).</summary>
+    private sealed class PassthroughTenantUnitOfWork : ITenantUnitOfWork
+    {
+        public Task<Result> ExecuteAsync(
+            Func<CancellationToken, Task<Result>> action,
+            CancellationToken cancellationToken = default)
+            => action(cancellationToken);
+
+        public Task<Result<T>> ExecuteAsync<T>(
+            Func<CancellationToken, Task<Result<T>>> action,
+            CancellationToken cancellationToken = default)
+            => action(cancellationToken);
+    }
+
+    /// <summary>Période comptable réelle requise par <c>GetByIdForUpdateAsync</c> (Include AccountingPeriod).</summary>
+    private async Task<AccountingPeriod> SeedPeriodAsync(int year, int month)
+    {
+        var start = new DateTime(year, month, 1);
+        var period = AccountingPeriod.Create(year, month, start, start.AddMonths(1).AddDays(-1));
+        period.SetAuditInfo("test", false);
+        await using var ctx = _factory.CreateContext();
+        ctx.AccountingPeriods.Add(period);
+        await ctx.SaveChangesAsync();
+        return period;
+    }
+
+    private UpdateDraftJournalEntryCommandHandler BuildUpdateHandler(
+        IJournalEntryRepository repository, bool isFirm = true)
+    {
+        var lettering = new LetteringService(_factory, new TenantAmbientTransaction());
+        var chart = new Mock<IChartOfAccountRepository>();
+        chart.Setup(x => x.GetByAccountNumberAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string acc, CancellationToken _) =>
+                ChartOfAccount.Create(acc, $"Compte {acc}", int.Parse(acc[..1]), null, AccountNatureType.Debit).Value);
+        return new UpdateDraftJournalEntryCommandHandler(
+            repository, chart.Object, new Mock<IAuditService>().Object,
+            new FakeCurrentUser { IsAccountingFirmDelegatedContext = isFirm },
+            lettering,
+            new PassthroughTenantUnitOfWork(),
+            NullLogger<UpdateDraftJournalEntryCommandHandler>.Instance);
+    }
+
+    private static UpdateDraftJournalEntryRequest ManualRequest(decimal amount, string label) => new()
+    {
+        Label = label,
+        Lines = new[]
+        {
+            new ManualJournalLineRequest { AccountNumber = "4111", LineLabel = "Client", Debit = amount, Credit = 0m },
+            new ManualJournalLineRequest { AccountNumber = "707", LineLabel = "Vente", Debit = 0m, Credit = amount }
+        }
+    };
+
+    private static UpdateDraftJournalEntryRequest CashRequest(decimal ht, decimal vat, string label) => new()
+    {
+        Label = label,
+        Lines = new[]
+        {
+            new ManualJournalLineRequest { AccountNumber = "5411", LineLabel = "Caisse", Debit = ht + vat, Credit = 0m },
+            new ManualJournalLineRequest { AccountNumber = "707", LineLabel = "Ventes HT", Debit = 0m, Credit = ht },
+            new ManualJournalLineRequest { AccountNumber = "436711", LineLabel = "TVA collectée", Debit = 0m, Credit = vat }
+        }
+    };
+
+    [Fact]
+    public async Task Balance_AfterFirmEditOfDraft_ReflectsEditedLines_WhenBrouillardIncluded()
+    {
+        var period = await SeedPeriodAsync(2026, 5);
+        var draft = MakeEntry(3, 50m, JournalEntryStatus.Brouillon, period.Id);
+        await using (var ctx = _factory.CreateContext())
+        {
+            ctx.JournalEntries.Add(draft);
+            await ctx.SaveChangesAsync();
+        }
+
+        var repository = new JournalEntryRepository(_factory);
+        var editResult = await BuildUpdateHandler(repository).Handle(
+            new UpdateDraftJournalEntryCommand(draft.Id, ManualRequest(200m, "Vente corrigée par le cabinet")),
+            CancellationToken.None);
+        Assert.True(editResult.IsSuccess, editResult.Error?.Description);
+
+        var on = await BuildService(includeDrafts: true).GetBalanceAsync(From, To);
+        var off = await BuildService(includeDrafts: false).GetBalanceAsync(From, To);
+
+        // 100 (validée) + 50 (brouillon initial, non touché) + 200 (brouillon édité par le
+        // cabinet) = 350 quand le brouillard est inclus.
+        Assert.Equal(350m, on.Value.Single(r => r.AccountNumber == "4111").MovementDebit);
+        // Hors brouillard : seule l'écriture validée reste — le brouillon édité disparaît toujours.
+        Assert.Equal(100m, off.Value.Single(r => r.AccountNumber == "4111").MovementDebit);
+    }
+
+    [Fact]
+    public async Task Dashboard_AfterFirmEditOfCashDraft_VatAndRevenueFollowEditedLines()
+    {
+        var now = DateTime.UtcNow;
+        var period = await SeedPeriodAsync(now.Year, now.Month);
+        var lines = new[]
+        {
+            new JournalLineInput("5411", "Caisse", 119m, 0m, null, ThirdPartyKind.None),
+            new JournalLineInput("707", "Ventes HT", 0m, 100m, null, ThirdPartyKind.None),
+            new JournalLineInput("436711", "TVA collectée", 0m, 19m, null, ThirdPartyKind.None)
+        };
+        var draft = JournalEntry.Create(
+            10, "JC", new DateTime(now.Year, now.Month, 10), "Encaissement ventes au comptant", period.Id,
+            isAutoGenerated: true, sourceEntityType: "CashOperation", sourceEntityId: Guid.NewGuid(),
+            lineInputs: lines, initialStatus: JournalEntryStatus.Brouillon).Value;
+        draft.SetAuditInfo("test", false);
+        await using (var ctx = _factory.CreateContext())
+        {
+            ctx.JournalEntries.Add(draft);
+            await ctx.SaveChangesAsync();
+        }
+
+        var before = await BuildService(includeDrafts: true).GetDashboardAsync();
+        Assert.True(before.IsSuccess);
+        Assert.Equal(19m, before.Value.VatDueEstimate);
+        Assert.Equal(100m, before.Value.MonthlyRevenue);
+
+        var repository = new JournalEntryRepository(_factory);
+        var editResult = await BuildUpdateHandler(repository).Handle(
+            new UpdateDraftJournalEntryCommand(draft.Id, CashRequest(200m, 38m, "Corrigé par le cabinet")),
+            CancellationToken.None);
+        Assert.True(editResult.IsSuccess, editResult.Error?.Description);
+
+        var after = await BuildService(includeDrafts: true).GetDashboardAsync();
+        Assert.True(after.IsSuccess);
+        // TVA et CA estimés suivent immédiatement les lignes ÉDITÉES par le cabinet (§1.4/§5).
+        Assert.Equal(38m, after.Value.VatDueEstimate);
+        Assert.Equal(200m, after.Value.MonthlyRevenue);
     }
 }

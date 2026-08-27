@@ -1,8 +1,10 @@
+using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Accounting.Commands;
+using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.MultiTenancy;
@@ -10,6 +12,7 @@ using FactuTrust.Infrastructure.Persistence;
 using FactuTrust.Infrastructure.Repositories;
 using FactuTrust.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
@@ -42,6 +45,53 @@ public sealed class AccountingPeriodClosingTests
                 .Options;
             return new TenantDbContext(options);
         }
+    }
+
+    /// <summary>Mock <see cref="ICurrentUser"/> minimal : seul <see cref="IsAccountingFirmDelegatedContext"/> est paramétrable.</summary>
+    private sealed class FakeCurrentUser : ICurrentUser
+    {
+        public bool IsAccountingFirmDelegatedContext { get; set; }
+        public Guid? UserId => null;
+        public string? Email => "test@example.com";
+        public Guid? TenantId => null;
+        public UserRole? Role => null;
+        public bool IsAuthenticated => true;
+        public bool HasPermission(string permission) => true;
+        public Guid? PortalClientId => null;
+        public bool IsClientPortal => false;
+        public string? IpAddress => null;
+        public string? UserAgent => null;
+    }
+
+    /// <summary>Modèle : <c>ValidatePurchaseReceiptCommandHandlerTests.cs</c> — pas de transaction,
+    /// l'atomicité réelle est prouvée par les tests SQL (tâche 5, hors périmètre ici).</summary>
+    private sealed class PassthroughTenantUnitOfWork : ITenantUnitOfWork
+    {
+        public Task<Result> ExecuteAsync(
+            Func<CancellationToken, Task<Result>> action,
+            CancellationToken cancellationToken = default)
+            => action(cancellationToken);
+
+        public Task<Result<T>> ExecuteAsync<T>(
+            Func<CancellationToken, Task<Result<T>>> action,
+            CancellationToken cancellationToken = default)
+            => action(cancellationToken);
+    }
+
+    private UpdateDraftJournalEntryCommandHandler BuildUpdateHandler(bool isFirm = false)
+    {
+        var repo = new JournalEntryRepository(_factory);
+        var lettering = new LetteringService(_factory, new TenantAmbientTransaction());
+        var chart = new Mock<IChartOfAccountRepository>();
+        chart.Setup(x => x.GetByAccountNumberAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string acc, CancellationToken _) =>
+                ChartOfAccount.Create(acc, $"Compte {acc}", int.Parse(acc[..1]), null, AccountNatureType.Debit).Value);
+        return new UpdateDraftJournalEntryCommandHandler(
+            repo, chart.Object, new Mock<IAuditService>().Object,
+            new FakeCurrentUser { IsAccountingFirmDelegatedContext = isFirm },
+            lettering,
+            new PassthroughTenantUnitOfWork(),
+            NullLogger<UpdateDraftJournalEntryCommandHandler>.Instance);
     }
 
     private AccountingPeriodService BuildService()
@@ -180,12 +230,7 @@ public sealed class AccountingPeriodClosingTests
     {
         var period = SeedPeriod(closed: true);
         var entry = SeedEntry(period.Id, JournalEntryStatus.Brouillon);
-        var repo = new JournalEntryRepository(_factory);
-        var chart = new Mock<IChartOfAccountRepository>();
-        chart.Setup(x => x.GetByAccountNumberAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string acc, CancellationToken _) =>
-                ChartOfAccount.Create(acc, $"Compte {acc}", int.Parse(acc[..1]), null, AccountNatureType.Debit).Value);
-        var handler = new UpdateDraftJournalEntryCommandHandler(repo, chart.Object, new Mock<IAuditService>().Object);
+        var handler = BuildUpdateHandler();
 
         var request = new UpdateDraftJournalEntryRequest
         {
@@ -201,5 +246,33 @@ public sealed class AccountingPeriodClosingTests
 
         Assert.True(result.IsFailure);
         Assert.Contains("clôturée", result.Error.Description);
+    }
+
+    /// <summary>
+    /// G2 (période clôturée) est un garde-fou absolu (D1) : même en contexte cabinet délégué,
+    /// un brouillon d'une période close reste figé.
+    /// </summary>
+    [Fact]
+    public async Task Update_ClosedPeriodDraft_FirmContext_StillBlocked()
+    {
+        var period = SeedPeriod(closed: true);
+        var entry = SeedEntry(period.Id, JournalEntryStatus.Brouillon);
+        var handler = BuildUpdateHandler(isFirm: true);
+
+        var request = new UpdateDraftJournalEntryRequest
+        {
+            Label = "Modifié par le cabinet",
+            Lines = new[]
+            {
+                new ManualJournalLineRequest { AccountNumber = "4111", LineLabel = "Client", Debit = 200m, Credit = 0m },
+                new ManualJournalLineRequest { AccountNumber = "707", LineLabel = "Vente", Debit = 0m, Credit = 200m }
+            }
+        };
+
+        var result = await handler.Handle(new UpdateDraftJournalEntryCommand(entry.Id, request), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains("clôturée", result.Error.Description);
+        Assert.Equal(JournalEntryStatus.Brouillon, EntryStatus(entry.Id));
     }
 }

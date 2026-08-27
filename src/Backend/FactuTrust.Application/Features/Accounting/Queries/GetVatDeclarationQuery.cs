@@ -221,6 +221,22 @@ public sealed class GetVatDeclarationQueryHandler : IRequestHandler<GetVatDeclar
         // TVA collectée assise sur le JOURNAL (plan §6.7) : jamais gardée par le flag
         // CashDeskVatEnabled — seule la CRÉATION des écritures TVA caisse l'est. Garde défensive
         // `?? []` : les mocks Moq « loose » des tests existants rendent null pour cette méthode.
+        //
+        // Modification des brouillons caisse par le cabinet (plan v3 §1.3/§6.7, D2) : les brouillons
+        // caisse sont désormais éditables par le cabinet en contexte délégué
+        // (UpdateDraftJournalEntryCommandHandler). Cette méthode fait un RECALCUL LIVE : les
+        // montants suivent donc immédiatement les lignes éditées (comme n'importe quelle autre
+        // modification de brouillon), et la ventilation par taux reste résolue depuis
+        // CashOperation.VatRate de l'opération source — pas depuis les lignes (D2, cf. doc XML de
+        // GetPostedCashSaleVatByRateAsync). Cet appel n'affecte QUE ce recalcul en direct :
+        // - en mode `Declared` (écran de saisie, PDF), une déclaration déjà ENREGISTRÉE fait foi et
+        //   n'est jamais réécrite par une édition de brouillon caisse ultérieure ;
+        // - une déclaration en BROUILLON déjà enregistrée n'est rafraîchie qu'au PROCHAIN
+        //   enregistrement (SaveVatDeclarationCommand, mise à jour en place — pas une rectificative) ;
+        // - une déclaration SOUMISE ne change que par rectificative.
+        // Si l'édition supprime la ligne 436711 du brouillon, l'écriture sort simplement des
+        // candidats de GetPostedCashSaleVatByRateAsync — assumé, cohérent avec la suppression déjà
+        // permise du même brouillon.
         var cashVat = await _journalEntries.GetPostedCashSaleVatByRateAsync(start, end, cancellationToken) ?? [];
         var cashVatByRate = cashVat
             .GroupBy(p => p.RatePercent)

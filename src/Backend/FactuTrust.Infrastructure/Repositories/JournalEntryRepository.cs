@@ -64,6 +64,50 @@ public sealed class JournalEntryRepository : IJournalEntryRepository
             .FirstOrDefaultAsync(j => j.Id == id, cancellationToken);
     }
 
+    /// <summary>
+    /// Voir doc XML de l'interface (plan §D7). Contexte via <c>CreateContext()</c> pour s'enrôler
+    /// dans la transaction ambiante de l'appelant (<c>ITenantUnitOfWork</c>) — indispensable pour
+    /// que le verrou soit tenu jusqu'au commit/rollback de l'unité de travail globale.
+    /// </summary>
+    public async Task<JournalEntry?> GetByIdForUpdateAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+
+        if (!context.Database.IsRelational())
+        {
+            // Repli InMemory (tests) : ni FromSqlRaw ni verrous ne sont supportés par ce provider ;
+            // comportement identique à GetByIdAsync.
+            return await context.JournalEntries
+                .Include(j => j.Lines)
+                .Include(j => j.AccountingPeriod)
+                .FirstOrDefaultAsync(j => j.Id == id, cancellationToken);
+        }
+
+        // Verrou exclusif sur la ligne JournalEntries : bloque toute lecture ordinaire concurrente
+        // (lecture de décision de la validation) jusqu'à notre commit/rollback (plan §D7/§1.2).
+        var entity = await context.JournalEntries
+            .FromSqlRaw("SELECT * FROM JournalEntries WITH (XLOCK, HOLDLOCK) WHERE Id = {0}", id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (entity is null)
+            return null;
+
+        // Verrou exclusif sur les lignes existantes : bloque ValidateLinesAsync (lettrage) le temps
+        // de notre transaction. Requête séparée (le hint ne porte que sur JournalEntryLines) ; les
+        // lignes chargées se rattachent automatiquement à entity.Lines via le suivi de modifications
+        // d'EF Core (entité déjà suivie dans le même contexte, clé étrangère JournalEntryId connue).
+        await context.JournalEntryLines
+            .FromSqlRaw("SELECT * FROM JournalEntryLines WITH (XLOCK, HOLDLOCK) WHERE JournalEntryId = {0}", id)
+            .ToListAsync(cancellationToken);
+
+        // La période comptable est lue sans verrou spécifique : la clôture de période refuse de
+        // toute façon toute période contenant encore des brouillons, sous son propre verrou
+        // Serializable (AccountingPeriodService.ClosePeriodWithLockAsync).
+        await context.Entry(entity).Reference(j => j.AccountingPeriod).LoadAsync(cancellationToken);
+
+        return entity;
+    }
+
     public async Task<IReadOnlyList<JournalEntry>> GetDraftsByPeriodAsync(Guid periodId, string? journalCode, CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();
@@ -214,6 +258,23 @@ public sealed class JournalEntryRepository : IJournalEntryRepository
     /// est comptée en négatif dans SA propre période (potentiellement ultérieure) — net nul une fois
     /// les deux périodes déclarées. Un filtre `!IsReversed` ferait disparaître rétroactivement la TVA
     /// de la période d'origine sans mouvement négatif en face (bug corrigé en v2.1).
+    ///
+    /// Modification des brouillons par le cabinet (plan v3 §1.3/§6.7, D2) : les brouillons
+    /// CashOperation/ManualReversal sont désormais éditables par le cabinet en contexte délégué
+    /// (UpdateDraftJournalEntryCommandHandler, y compris sous verrou XLOCK/HOLDLOCK pendant
+    /// l'édition — GetByIdForUpdateAsync). Cette méthode reste inchangée en comportement : les
+    /// montants sont TOUJOURS sommés depuis les lignes RÉELLEMENT présentes sur l'écriture au
+    /// moment de l'appel — une édition cabinet se reflète donc immédiatement ici, au même titre que
+    /// n'importe quelle autre modification de brouillon (le brouillard est par nature provisoire).
+    /// La ventilation par taux continue de se résoudre depuis CashOperation.VatRate de l'opération
+    /// source (pas depuis les lignes éditées) : dériver le taux des lignes serait ambigu (agrégat
+    /// 707/436711 unique, arrondis, multi-taux non inférable) — décision D2, alternative écartée.
+    /// Portée de l'impact d'une édition : elle affecte le recalcul LIVE consommé ICI (tableau de
+    /// bord, GetVatDeclarationQuery en mode Live, prochaine SaveVatDeclarationCommand) — jamais une
+    /// déclaration déjà ENREGISTRÉE et affichée en mode Declared, qui n'est jamais réécrite en
+    /// dehors d'un enregistrement explicite (brouillon rafraîchi en place) ou d'une rectificative
+    /// (soumise). Si l'édition retire la ligne 436711, l'écriture sort des candidats ci-dessous —
+    /// assumé, cohérent avec la suppression déjà permise du même brouillon.
     /// </summary>
     public async Task<IReadOnlyList<CashSaleVatPosting>> GetPostedCashSaleVatByRateAsync(
         DateTime from, DateTime to, CancellationToken cancellationToken = default)
