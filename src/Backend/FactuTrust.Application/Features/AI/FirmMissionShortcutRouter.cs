@@ -189,10 +189,10 @@ public static class FirmMissionShortcutRouter
         return new PlannedToolCall(FirmAgentTools.FiscalDeadlines, args);
     }
 
-    // ── Helpers dupliqués depuis AiToolIntentRouter.cs (privés dans cette classe) : même
-    // normalisation, pour que la détection de mots isolés se comporte de façon identique. ──
+    // ── Helpers de normalisation exposés en internal (réutilisés par le grounding gate du handler,
+    // SendChatMessageCommand.FirmTurnNeedsData) pour une détection cohérente des mots isolés. ──
 
-    private static bool ContainsWholeWord(string text, string word)
+    internal static bool ContainsWholeWord(string text, string word)
     {
         if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(word))
             return false;
@@ -214,7 +214,7 @@ public static class FirmMissionShortcutRouter
         }
     }
 
-    private static string RemoveDiacritics(string text)
+    internal static string RemoveDiacritics(string text)
     {
         var decomposed = text.Normalize(NormalizationForm.FormD);
         var sb = new StringBuilder(decomposed.Length);
