@@ -16,6 +16,14 @@ public sealed record CreateCashOperationRequest
     public CashRevenueCategory? RevenueCategory { get; init; }
     public string? Reference { get; init; }
     public string? Notes { get; init; }
+
+    /// <summary>
+    /// Taux de TVA optionnel sur un encaissement « ventes au comptant » (Credit + CashSalesReceipt
+    /// uniquement). Le frontend envoie la valeur numérique du taux (0/7/13/19) — acceptée telle
+    /// quelle par <c>JsonStringEnumConverter</c> (AllowIntegerValues par défaut). Rejeté si le flag
+    /// <c>CashDeskVatEnabled</c> est désactivé (cf. <c>CreateCashOperationCommandHandler</c>).
+    /// </summary>
+    public VatRate? VatRate { get; init; }
 }
 
 /// <summary>
@@ -58,6 +66,18 @@ public sealed record CashOperationListItemDto
     public Guid? SourceSupplierInvoiceId { get; init; }
 
     public string? SourceSupplierInvoiceNumber { get; init; }
+
+    /// <summary>
+    /// Taux de TVA en pourcentage entier (0/7/13/19), jamais l'enum brut (qui serait sérialisé en
+    /// nom PascalCase). <c>null</c> quand <c>VatRate</c> n'a pas été renseigné sur l'opération.
+    /// </summary>
+    public int? VatRatePercent { get; init; }
+
+    /// <summary>Montant HT dérivé via <c>CashOperationVatCalculator</c>. <c>null</c> si <see cref="VatRatePercent"/> est <c>null</c>.</summary>
+    public decimal? HtAmount { get; init; }
+
+    /// <summary>Montant de TVA dérivé via <c>CashOperationVatCalculator</c>. <c>null</c> si <see cref="VatRatePercent"/> est <c>null</c>.</summary>
+    public decimal? VatAmount { get; init; }
 }
 
 /// <summary>

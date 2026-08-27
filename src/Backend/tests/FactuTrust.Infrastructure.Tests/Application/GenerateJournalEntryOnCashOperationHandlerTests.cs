@@ -74,4 +74,69 @@ public sealed class GenerateJournalEntryOnCashOperationHandlerTests
             x => x.GenerateCashOperationEntryAsync(It.IsAny<CashOperation>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
+
+    [Fact]
+    public async Task Handle_WhenCategoryIsBankDeposit_ShouldSkipAccountingEntry()
+    {
+        var operationResult = CashOperation.Create(
+            number: CashOperationNumber.Create(CashOperationNumber.DebitPrefix, 2026, 55).Value,
+            operationType: CashOperationType.Debit,
+            operationDate: new DateTime(2026, 4, 22),
+            method: PaymentMethod.Cash,
+            amount: Money.Create(300m, Money.DefaultCurrency),
+            label: "Remise en banque",
+            category: CashExpenseCategory.BankDeposit);
+
+        Assert.True(operationResult.IsSuccess, operationResult.Error?.Description);
+
+        var repository = new Mock<ICashOperationRepository>();
+        repository
+            .Setup(x => x.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(operationResult.Value);
+
+        var accountingService = new Mock<IAccountingService>();
+
+        var handler = new GenerateJournalEntryOnCashOperationHandler(
+            repository.Object,
+            accountingService.Object,
+            NullLogger<GenerateJournalEntryOnCashOperationHandler>.Instance);
+
+        await handler.Handle(new CashOperationCreatedForAccountingNotification(operationResult.Value.Id), CancellationToken.None);
+
+        accountingService.Verify(
+            x => x.GenerateCashOperationEntryAsync(It.IsAny<CashOperation>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_WhenOperationIsInvoiceRefund_ShouldSkipAccountingEntry()
+    {
+        var operationResult = CashOperation.CreateFromInvoiceRefund(
+            number: CashOperationNumber.Create(CashOperationNumber.DebitPrefix, 2026, 66).Value,
+            paymentId: Guid.NewGuid(),
+            invoiceNumber: "FAV-2026-000066",
+            amount: Money.Create(75m, Money.DefaultCurrency),
+            paymentDate: new DateTime(2026, 4, 23));
+
+        Assert.True(operationResult.IsSuccess, operationResult.Error?.Description);
+        Assert.Equal(CashOperationOrigin.InvoicePayment, operationResult.Value.Origin);
+
+        var repository = new Mock<ICashOperationRepository>();
+        repository
+            .Setup(x => x.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(operationResult.Value);
+
+        var accountingService = new Mock<IAccountingService>();
+
+        var handler = new GenerateJournalEntryOnCashOperationHandler(
+            repository.Object,
+            accountingService.Object,
+            NullLogger<GenerateJournalEntryOnCashOperationHandler>.Instance);
+
+        await handler.Handle(new CashOperationCreatedForAccountingNotification(operationResult.Value.Id), CancellationToken.None);
+
+        accountingService.Verify(
+            x => x.GenerateCashOperationEntryAsync(It.IsAny<CashOperation>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
 }

@@ -38,11 +38,11 @@ public sealed class SaveVatDeclarationCommandTests
         _currentUser.SetupGet(u => u.IsAccountingFirmDelegatedContext).Returns(true);
     }
 
-    private static VatDeclarationDto Dto(decimal vatDue = 800m) => new()
+    private static VatDeclarationDto Dto(decimal vatDue = 800m, decimal collectedVat19 = 1000m) => new()
     {
         Year = 2026,
         Month = 7,
-        CollectedVat19 = 1000m,
+        CollectedVat19 = collectedVat19,
         CollectedVat13 = 0m,
         CollectedVat7 = 0m,
         DeductibleVatGoods = 200m,
@@ -57,11 +57,11 @@ public sealed class SaveVatDeclarationCommandTests
         Money.Create(1000m, Tnd), Money.Zero(Tnd), Money.Zero(Tnd),
         Money.Create(200m, Tnd), Money.Zero(Tnd), Money.Zero(Tnd), Tnd);
 
-    private SaveVatDeclarationCommandHandler BuildHandler(bool v2 = true)
+    private SaveVatDeclarationCommandHandler BuildHandler(bool v2 = true, VatDeclarationDto? dto = null)
     {
         _mediator
             .Setup(m => m.Send(It.IsAny<GetVatDeclarationQuery>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success(Dto()));
+            .ReturnsAsync(Result.Success(dto ?? Dto()));
 
         var settings = Options.Create(new AccountingSettings
         {
@@ -124,7 +124,45 @@ public sealed class SaveVatDeclarationCommandTests
             Times.Once);
     }
 
+    /// <summary>
+    /// Mouvements signés caisse (plan §6.7 / v2.1) : une extourne sans TVA facturière compensatrice
+    /// peut rendre le CollectedVat19 recalculé NÉGATIF pour la période. Money.Create rejetterait ce
+    /// montant à la construction — la sauvegarde doit persister le NET signé sans lever d'exception
+    /// (seul VatDue/CreditToCarry, dérivés du net global, reste garanti non négatif).
+    /// </summary>
+    [Fact]
+    public async Task NoExisting_NegativeCollectedVat19_CreatesDraftWithoutThrowing()
+    {
+        _repo.Setup(r => r.GetByYearMonthAsync(2026, 7, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((VatDeclaration?)null);
+        VatDeclaration? added = null;
+        _repo.Setup(r => r.AddAsync(It.IsAny<VatDeclaration>(), It.IsAny<CancellationToken>()))
+            .Callback<VatDeclaration, CancellationToken>((d, _) => added = d)
+            .ReturnsAsync((VatDeclaration d, CancellationToken _) => d);
+
+        var negativeDto = Dto(vatDue: 0m, collectedVat19: -19.000m);
+        var result = await BuildHandler(dto: negativeDto).Handle(Command(submit: false), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(added);
+        Assert.Equal(-19.000m, added!.CollectedVat19.Amount);
+    }
+
     // ── Brouillon existant : le bug de départ ──────────────────────────────
+
+    [Fact]
+    public async Task ExistingDraft_NegativeCollectedVat19_UpdatesInPlaceWithoutThrowing()
+    {
+        var existing = Draft();
+        _repo.Setup(r => r.GetByYearMonthAsync(2026, 7, It.IsAny<CancellationToken>())).ReturnsAsync(existing);
+
+        var negativeDto = Dto(vatDue: 0m, collectedVat19: -19.000m);
+        var result = await BuildHandler(dto: negativeDto).Handle(Command(submit: false), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(-19.000m, existing.CollectedVat19.Amount);
+        _repo.Verify(r => r.UpdateAsync(existing, It.IsAny<CancellationToken>()), Times.Once);
+    }
 
     [Fact]
     public async Task ExistingDraft_ReSave_Succeeds_UpdatesInPlace_NoRectificative()
@@ -198,6 +236,23 @@ public sealed class SaveVatDeclarationCommandTests
         Assert.True(existing.IsRectificative);
         Assert.Equal(VatDeclarationStatus.Submitted, existing.Status); // ApplyRevision → Draft puis Submit
         _repo.Verify(r => r.UpdateAsync(existing, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExistingSubmitted_Rectificative_NegativeCollectedVat19_AppliesWithoutThrowing()
+    {
+        var existing = Draft();
+        existing.Submit();
+        _repo.Setup(r => r.GetByYearMonthAsync(2026, 7, It.IsAny<CancellationToken>())).ReturnsAsync(existing);
+
+        var negativeDto = Dto(vatDue: 0m, collectedVat19: -19.000m);
+        var result = await BuildHandler(dto: negativeDto)
+            .Handle(Command(submit: true, rectificative: true), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(-19.000m, existing.CollectedVat19.Amount);
+        Assert.Equal(2, existing.RevisionNumber);
+        Assert.True(existing.IsRectificative);
     }
 
     [Fact]

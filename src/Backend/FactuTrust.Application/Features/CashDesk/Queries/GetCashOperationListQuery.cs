@@ -1,5 +1,6 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.DTOs;
+using FactuTrust.Application.Features.CashDesk.Services;
 using FactuTrust.Domain.Enums;
 using MediatR;
 
@@ -101,6 +102,8 @@ public sealed class GetCashOperationListQueryHandler
                 sourceSupplierInvoiceNumber = supplierSrc.InvoiceNumber;
             }
 
+            var vatSplit = CashOperationVatCalculator.TrySplitTtc(op.Amount.Amount, op.VatRate);
+
             return new CashOperationListItemDto
         {
             Id = op.Id,
@@ -126,7 +129,10 @@ public sealed class GetCashOperationListQueryHandler
             SourceInvoiceId = sourceInvoiceId,
             SourceInvoiceNumber = sourceInvoiceNumber,
             SourceSupplierInvoiceId = sourceSupplierInvoiceId,
-            SourceSupplierInvoiceNumber = sourceSupplierInvoiceNumber
+            SourceSupplierInvoiceNumber = sourceSupplierInvoiceNumber,
+            VatRatePercent = vatSplit?.RatePercent,
+            HtAmount = vatSplit?.Ht,
+            VatAmount = vatSplit?.Vat
         };
         }).ToList();
 

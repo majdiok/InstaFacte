@@ -9,6 +9,7 @@ describe('AddCashOperationDialogComponent', () => {
   let fixture: ComponentFixture<AddCashOperationDialogComponent>;
   let component: AddCashOperationDialogComponent;
   let createOperation: jasmine.Spy;
+  let getFeatureFlags: jasmine.Spy;
   let toastAdd: jasmine.Spy;
 
   const createdOperation: CashOperationListItem = {
@@ -38,13 +39,16 @@ describe('AddCashOperationDialogComponent', () => {
     createOperation = jasmine.createSpy('createOperation').and.returnValue(
       of({ success: true, data: createdOperation })
     );
+    getFeatureFlags = jasmine.createSpy('getFeatureFlags').and.returnValue(
+      of({ success: true, data: { vatEnabled: false } })
+    );
     toastAdd = jasmine.createSpy('add');
 
     await TestBed.configureTestingModule({
       imports: [AddCashOperationDialogComponent],
       providers: [
         provideNoopAnimations(),
-        { provide: CashDeskService, useValue: { createOperation } },
+        { provide: CashDeskService, useValue: { createOperation, getFeatureFlags } },
         { provide: ToastService, useValue: { add: toastAdd } }
       ]
     }).compileComponents();
@@ -229,5 +233,145 @@ describe('AddCashOperationDialogComponent', () => {
 
     expect(component.errorMessage()).toBe('Solde insuffisant');
     expect(component.submitting()).toBeFalse();
+  });
+
+  describe('Taux de TVA (encaissements ventes au comptant)', () => {
+    it('is absent when the feature flag is off', () => {
+      openDialog();
+      component.operationType = CashOperationType.Credit;
+      component.selectedRevenueCategory = 0;
+      fixture.detectChanges();
+
+      expect(getFeatureFlags).toHaveBeenCalled();
+      expect(component.vatSelectorVisible).toBeFalse();
+      expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('Taux de TVA');
+    });
+
+    it('is absent for Décaissement even when the flag is on', () => {
+      getFeatureFlags.and.returnValue(of({ success: true, data: { vatEnabled: true } }));
+      openDialog();
+      component.operationType = CashOperationType.Debit;
+      component.selectedExpenseCategory = 0;
+      fixture.detectChanges();
+
+      expect(component.vatSelectorVisible).toBeFalse();
+      expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('Taux de TVA');
+    });
+
+    it('is absent for Encaissement with a category other than ventes au comptant', () => {
+      getFeatureFlags.and.returnValue(of({ success: true, data: { vatEnabled: true } }));
+      openDialog();
+      component.operationType = CashOperationType.Credit;
+      component.selectedRevenueCategory = 1; // ClientReceivablesReceipt
+      fixture.detectChanges();
+
+      expect(component.vatSelectorVisible).toBeFalse();
+      expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('Taux de TVA');
+    });
+
+    it('is present for Encaissement + ventes au comptant + flag on, defaulting to Non renseignée', () => {
+      getFeatureFlags.and.returnValue(of({ success: true, data: { vatEnabled: true } }));
+      openDialog();
+      component.operationType = CashOperationType.Credit;
+      component.selectedRevenueCategory = 0;
+      fixture.detectChanges();
+
+      expect(component.vatSelectorVisible).toBeTrue();
+      expect(component.selectedVatRate).toBeNull();
+      const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+      expect(text).toContain('Taux de TVA');
+      expect(text).toContain('Non renseignée');
+    });
+
+    it('shows the HT / TVA recap when selecting 19% on 1.000 TND', () => {
+      getFeatureFlags.and.returnValue(of({ success: true, data: { vatEnabled: true } }));
+      openDialog();
+      component.operationType = CashOperationType.Credit;
+      component.selectedRevenueCategory = 0;
+      component.amount = 1;
+      component.selectedVatRate = 19;
+      fixture.detectChanges();
+
+      expect(component.vatPreview).toEqual({ ht: 0.84, vat: 0.16 });
+      const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+      expect(text).toContain('840');
+      expect(text).toContain('160');
+    });
+
+    it('hides the recap when no rate or Exempt (0%) is selected', () => {
+      getFeatureFlags.and.returnValue(of({ success: true, data: { vatEnabled: true } }));
+      openDialog();
+      component.operationType = CashOperationType.Credit;
+      component.selectedRevenueCategory = 0;
+      component.amount = 1;
+
+      expect(component.vatPreview).toBeNull();
+
+      component.selectedVatRate = 0;
+      expect(component.vatPreview).toBeNull();
+    });
+
+    it('sends the numeric vatRate in the payload for a cash sales receipt', () => {
+      getFeatureFlags.and.returnValue(of({ success: true, data: { vatEnabled: true } }));
+      openDialog();
+      component.operationType = CashOperationType.Credit;
+      component.selectedRevenueCategory = 0;
+      component.selectedMethod = 0;
+      component.amount = 1;
+      component.operationDate = new Date(2026, 6, 15);
+      component.label = 'Vente comptant';
+      component.selectedVatRate = 19;
+
+      component.submit();
+
+      expect(createOperation).toHaveBeenCalledWith(
+        jasmine.objectContaining({ vatRate: 19 })
+      );
+    });
+
+    it('resets the selected rate to null when the revenue category changes', () => {
+      getFeatureFlags.and.returnValue(of({ success: true, data: { vatEnabled: true } }));
+      openDialog();
+      component.operationType = CashOperationType.Credit;
+      component.selectedRevenueCategory = 0;
+      component.selectedVatRate = 19;
+      expect(component.selectedVatRate).toBe(19);
+
+      component.selectedRevenueCategory = 1;
+
+      expect(component.selectedVatRate).toBeNull();
+    });
+
+    it('resets the selected rate to null when the operation type changes', () => {
+      getFeatureFlags.and.returnValue(of({ success: true, data: { vatEnabled: true } }));
+      openDialog();
+      component.operationType = CashOperationType.Credit;
+      component.selectedRevenueCategory = 0;
+      component.selectedVatRate = 19;
+
+      component.onTypeChange(CashOperationType.Debit);
+
+      expect(component.selectedVatRate).toBeNull();
+    });
+
+    it('never sends vatRate when the selector is not applicable, even if a stale value remains', () => {
+      getFeatureFlags.and.returnValue(of({ success: true, data: { vatEnabled: true } }));
+      openDialog();
+      component.operationType = CashOperationType.Debit;
+      component.selectedExpenseCategory = 1;
+      component.selectedMethod = 1;
+      component.amount = 40;
+      component.operationDate = new Date(2026, 6, 20);
+      component.label = 'Loyer';
+      // Simulates a value that lingered from a previous Credit/CashSalesReceipt selection
+      // without going through onTypeChange/the revenueCategory setter.
+      component.selectedVatRate = 19;
+
+      component.submit();
+
+      expect(createOperation).toHaveBeenCalledWith(
+        jasmine.objectContaining({ vatRate: null })
+      );
+    });
   });
 });

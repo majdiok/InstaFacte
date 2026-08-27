@@ -265,4 +265,11 @@ public sealed class AccountingSettings
     /// Safe par défaut : lecture seule, pas d'impact sur le calcul.
     /// </summary>
     public bool PayrollLegalPresetsHistoryEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Active la saisie du taux de TVA sur les encaissements manuels « ventes au comptant »
+    /// et la génération d'écritures à 3 lignes (TTC / HT 707 / TVA 436711). Ne garde QUE la
+    /// création : la déclaration mensuelle restitue toujours la TVA caisse déjà comptabilisée (436711).
+    /// </summary>
+    public bool CashDeskVatEnabled { get; set; }
 }

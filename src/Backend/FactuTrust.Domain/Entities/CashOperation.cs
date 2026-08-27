@@ -36,6 +36,14 @@ public sealed class CashOperation : AggregateRoot
 
     public string? Notes { get; private set; }
 
+    /// <summary>
+    /// Taux de TVA optionnel sur un encaissement « ventes au comptant » (Credit + CashSalesReceipt
+    /// uniquement). <c>null</c> = TVA non renseignée ; <see cref="Enums.VatRate.Exempt"/> = exonération
+    /// explicite. Les deux produisent une écriture à 2 lignes (cf. <c>CashOperationVatCalculator</c>
+    /// et <c>AccountingService.GenerateCashOperationEntryAsync</c>).
+    /// </summary>
+    public VatRate? VatRate { get; private set; }
+
     public CashOperationStatus Status { get; private set; }
     public CashOperationOrigin Origin { get; private set; }
     public string? SourceType { get; private set; }
@@ -59,7 +67,8 @@ public sealed class CashOperation : AggregateRoot
         CashExpenseCategory? category = null,
         CashRevenueCategory? revenueCategory = null,
         string? reference = null,
-        string? notes = null)
+        string? notes = null,
+        VatRate? vatRate = null)
     {
         if (amount.Amount <= 0)
             return Result.Failure<CashOperation>(Error.Validation("Amount", "Le montant doit être positif"));
@@ -76,6 +85,11 @@ public sealed class CashOperation : AggregateRoot
         var methodIsDefined = Enum.IsDefined(typeof(PaymentMethod), method);
         if (!methodIsDefined)
             return Result.Failure<CashOperation>(Error.Validation("Method", "Le mode de paiement est invalide"));
+
+        if (method == PaymentMethod.Traite)
+            return Result.Failure<CashOperation>(Error.Validation(
+                "Method",
+                "Le mode de paiement « traite » n'est pas autorisé pour une opération de caisse : utilisez le règlement d'effet (413/403)."));
 
         var operationTypeIsDefined = Enum.IsDefined(typeof(CashOperationType), operationType);
         if (!operationTypeIsDefined)
@@ -97,6 +111,19 @@ public sealed class CashOperation : AggregateRoot
 
             if (!Enum.IsDefined(typeof(CashRevenueCategory), revenueCategory.Value))
                 return Result.Failure<CashOperation>(Error.Validation("RevenueCategory", "La catégorie de revenu est invalide"));
+        }
+
+        if (vatRate is not null)
+        {
+            if (!Enum.IsDefined(typeof(VatRate), vatRate.Value))
+                return Result.Failure<CashOperation>(Error.Validation("VatRate", "Le taux de TVA est invalide"));
+
+            if (operationType == CashOperationType.Debit)
+                return Result.Failure<CashOperation>(Error.Validation("VatRate", "Le taux de TVA ne s'applique qu'aux encaissements"));
+
+            // Le type est forcément Credit ici (le cas Debit a déjà retourné ci-dessus).
+            if (revenueCategory != CashRevenueCategory.CashSalesReceipt)
+                return Result.Failure<CashOperation>(Error.Validation("VatRate", "Le taux de TVA ne s'applique qu'aux encaissements « ventes au comptant »"));
         }
 
         var referenceTrimmed = reference?.Trim();
@@ -126,7 +153,8 @@ public sealed class CashOperation : AggregateRoot
             Reference = referenceTrimmed,
             Notes = notesTrimmed,
             Status = CashOperationStatus.Terminee,
-            Origin = CashOperationOrigin.Manual
+            Origin = CashOperationOrigin.Manual,
+            VatRate = vatRate
         };
 
         return Result.Success(operation);

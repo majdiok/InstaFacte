@@ -93,4 +93,41 @@ public sealed class CashOperationJournalLabelBuilderTests
         Assert.True(label.Length <= CashOperationJournalLabelBuilder.MaxJournalLabelLength);
         Assert.Contains("ENC-2026-000099", label);
     }
+
+    [Fact]
+    public void BuildLineLabel_AppendsSuffix()
+    {
+        var result = CashOperationJournalLabelBuilder.BuildLineLabel("Encaissement · Espèces · doc", " — HT");
+        Assert.Equal("Encaissement · Espèces · doc — HT", result);
+    }
+
+    [Fact]
+    public void BuildLineLabel_EmptySuffix_ReturnsBaseUnchanged()
+    {
+        var result = CashOperationJournalLabelBuilder.BuildLineLabel("Encaissement · Espèces · doc", string.Empty);
+        Assert.Equal("Encaissement · Espèces · doc", result);
+    }
+
+    [Fact]
+    public void BuildLineLabel_LongBase_TruncatesBaseButPreservesSuffix()
+    {
+        var longBase = new string('x', 495);
+        var suffix = " — TVA 19%";
+
+        var result = CashOperationJournalLabelBuilder.BuildLineLabel(longBase, suffix);
+
+        Assert.True(result.Length <= CashOperationJournalLabelBuilder.MaxJournalLabelLength);
+        Assert.EndsWith(suffix, result);
+        Assert.True(result.Length == CashOperationJournalLabelBuilder.MaxJournalLabelLength);
+    }
+
+    [Fact]
+    public void BuildLineLabel_SuffixLongerThanMax_TruncatesSuffixAsLastResort()
+    {
+        var suffix = new string('y', CashOperationJournalLabelBuilder.MaxJournalLabelLength + 10);
+
+        var result = CashOperationJournalLabelBuilder.BuildLineLabel("base", suffix);
+
+        Assert.Equal(CashOperationJournalLabelBuilder.MaxJournalLabelLength, result.Length);
+    }
 }
