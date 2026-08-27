@@ -120,7 +120,17 @@ public sealed class SendChatMessageHandlerFirmGenerationBudgetTests
             conversations.Object,
             currentUser.Object,
             NullLogger<SendChatMessageHandler>.Instance,
-            Options.Create(new OllamaSettings { DefaultModel = "mistral", ConversationalFastPathEnabled = false }),
+            Options.Create(new OllamaSettings
+            {
+                DefaultModel = "mistral",
+                ConversationalFastPathEnabled = false,
+                // Lot 1 (raccourci + grounding gate) désactivé : ce test isole le budget de générations
+                // du Lot 2.2 (round outils + rédaction ≤ 2 générations) du comportement Lot 1 — le gate
+                // et le raccourci firm ont leurs propres tests d'intégration. Flags off ⇒ comportement
+                // strictement identique à avant le Lot 1 (garantie de non-régression du plan v3).
+                FirmMissionShortcutEnabled = false,
+                FirmMissionGroundingGateEnabled = false
+            }),
             Options.Create(new ScreenAnalysisOptions()),
             Options.Create(new CursorSdkSettings { Enabled = false }));
 

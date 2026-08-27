@@ -574,4 +574,83 @@ public sealed class FirmAgentToolExecutorTests
                 It.IsAny<IEnumerable<EmailAttachment>?>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
+
+    // ───────────────────── 1.3 : drapeau GroundedData du grounding gate ─────────────────────
+    // Posé mécaniquement depuis le fan-out (DossiersRead/DossiersFailed) : fan-out totalement en échec
+    // ⇒ non ancré même si l'outil retourne Ok avec un JSON non vide ; lecture partielle ou portefeuille
+    // légitimement vide ⇒ ancré. Distinct de Success (toujours vrai ici) — le gate compte les lectures
+    // ancrées, pas les outils tentés.
+
+    private static FirmPortfolioOverviewDto OverviewWithFanOut(int dossiersRead, int dossiersFailed) => new()
+    {
+        ActiveDossiersCount = dossiersRead,
+        FanOut = new FirmFanOutHealthDto { DossiersRead = dossiersRead, DossiersFailed = dossiersFailed }
+    };
+
+    [Fact]
+    public async Task Overview_with_totally_failed_fanout_is_not_grounded()
+    {
+        await using var master = BuildMaster();
+        var overview = new Mock<IFirmPortfolioReadService>();
+        overview.Setup(p => p.GetOverviewAsync(FirmId, It.IsAny<FirmDossierAccessScope?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OverviewWithFanOut(dossiersRead: 0, dossiersFailed: 3));
+
+        var executor = Build(master, FirmManager(), Enabled(), portfolio: overview.Object);
+        var result = await executor.ExecuteAsync(FirmAgentTools.PortfolioOverview, new Dictionary<string, object?>());
+
+        // L'outil réussit (Success=true) avec un JSON non vide, mais aucune lecture n'a abouti ⇒ non ancré.
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.False(result.GroundedData);
+    }
+
+    [Fact]
+    public async Task Overview_with_partial_fanout_is_grounded()
+    {
+        await using var master = BuildMaster();
+        var overview = new Mock<IFirmPortfolioReadService>();
+        overview.Setup(p => p.GetOverviewAsync(FirmId, It.IsAny<FirmDossierAccessScope?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OverviewWithFanOut(dossiersRead: 2, dossiersFailed: 1));
+
+        var executor = Build(master, FirmManager(), Enabled(), portfolio: overview.Object);
+        var result = await executor.ExecuteAsync(FirmAgentTools.PortfolioOverview, new Dictionary<string, object?>());
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.True(result.GroundedData); // au moins un dossier lu ⇒ ancré (l'incomplétude est signalée par lectureIncomplete)
+    }
+
+    [Fact]
+    public async Task Overview_with_legitimately_empty_portfolio_is_grounded()
+    {
+        await using var master = BuildMaster();
+        var overview = new Mock<IFirmPortfolioReadService>();
+        overview.Setup(p => p.GetOverviewAsync(FirmId, It.IsAny<FirmDossierAccessScope?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OverviewWithFanOut(dossiersRead: 0, dossiersFailed: 0)); // aucun dossier, aucun échec
+
+        var executor = Build(master, FirmManager(), Enabled(), portfolio: overview.Object);
+        var result = await executor.ExecuteAsync(FirmAgentTools.PortfolioOverview, new Dictionary<string, object?>());
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.True(result.GroundedData); // « aucun dossier » est une vraie donnée ⇒ ancré
+    }
+
+    [Fact]
+    public async Task Overview_payload_exposes_dossiersEcheanceSous7Jours_aggregate()
+    {
+        await using var master = BuildMaster();
+        var overview = new Mock<IFirmPortfolioReadService>();
+        overview.Setup(p => p.GetOverviewAsync(FirmId, It.IsAny<FirmDossierAccessScope?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FirmPortfolioOverviewDto
+            {
+                ActiveDossiersCount = 5,
+                DossiersEcheanceSous7JoursCount = 3,
+                FanOut = new FirmFanOutHealthDto { DossiersRead = 5, DossiersFailed = 0 }
+            });
+
+        var executor = Build(master, FirmManager(), Enabled(), portfolio: overview.Object);
+        var result = await executor.ExecuteAsync(FirmAgentTools.PortfolioOverview, new Dictionary<string, object?>());
+
+        Assert.True(result.Success, result.ErrorMessage);
+        using var doc = System.Text.Json.JsonDocument.Parse(result.Data);
+        Assert.Equal(3, doc.RootElement.GetProperty("dossiersEcheanceSous7Jours").GetInt32());
+    }
 }
