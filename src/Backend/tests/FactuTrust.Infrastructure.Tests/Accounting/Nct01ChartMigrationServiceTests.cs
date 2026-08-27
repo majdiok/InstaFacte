@@ -3,6 +3,7 @@ using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.Accounting;
 using FactuTrust.Infrastructure.Persistence;
+using FactuTrust.Infrastructure.Tests.Fixtures;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
@@ -14,20 +15,14 @@ namespace FactuTrust.Infrastructure.Tests.Accounting;
 /// </summary>
 public sealed class Nct01ChartMigrationServiceTests : IDisposable
 {
+    private readonly SqlTestDatabase _sqlDb = new(nameof(Nct01ChartMigrationServiceTests));
     private readonly string? _connectionString;
     private readonly bool _canRun;
 
     public Nct01ChartMigrationServiceTests()
     {
-        _connectionString = Environment.GetEnvironmentVariable("FACTUTRUST_TEST_SQL_CONNECTION");
-        if (string.IsNullOrWhiteSpace(_connectionString))
-        {
-            var dbName = $"FactuTrust_Nct01Coa_{Guid.NewGuid():N}";
-            _connectionString =
-                $"Server=(localdb)\\mssqllocaldb;Database={dbName};Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true";
-        }
-
-        _canRun = CanConnectAndCreate(_connectionString);
+        _connectionString = _sqlDb.ConnectionString;
+        _canRun = _sqlDb.CanRun;
     }
 
     [Fact]
@@ -161,34 +156,5 @@ public sealed class Nct01ChartMigrationServiceTests : IDisposable
             .UseSqlServer(_connectionString)
             .Options);
 
-    private static bool CanConnectAndCreate(string connectionString)
-    {
-        try
-        {
-            using var context = new TenantDbContext(
-                new DbContextOptionsBuilder<TenantDbContext>().UseSqlServer(connectionString).Options);
-            context.Database.EnsureCreated();
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    public void Dispose()
-    {
-        if (!_canRun || string.IsNullOrWhiteSpace(_connectionString))
-            return;
-
-        try
-        {
-            using var context = CreateContext();
-            context.Database.EnsureDeleted();
-        }
-        catch
-        {
-            // Nettoyage best-effort.
-        }
-    }
+    public void Dispose() => _sqlDb.Dispose();
 }

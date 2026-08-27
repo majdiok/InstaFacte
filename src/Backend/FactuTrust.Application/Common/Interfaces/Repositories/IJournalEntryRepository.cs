@@ -31,6 +31,34 @@ public interface IJournalEntryRepository
     Task<bool> ExistsActiveBySourceTypeAsync(string sourceEntityType, CancellationToken cancellationToken = default);
 
     Task<JournalEntry?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// À appeler UNIQUEMENT dans une transaction ambiante (<see cref="FactuTrust.Application.Common.Interfaces.ITenantUnitOfWork"/>) :
+    /// verrouille la ligne d'écriture ET ses lignes jusqu'au commit avec <c>XLOCK, HOLDLOCK</c>
+    /// (verrou exclusif). Les décisions prises sur le résultat (garde-fous, codes de lettrage,
+    /// totaux avant modification) doivent l'être sur cette lecture verrouillée, jamais sur
+    /// <see cref="GetByIdAsync"/>.
+    ///
+    /// Pourquoi XLOCK et pas UPDLOCK : UPDLOCK (verrou U) est compatible avec les verrous partagés
+    /// (S). Or les concurrents à sérialiser (la lecture de décision de
+    /// <c>ValidateJournalEntryCommandHandler</c>, la validation des lignes de
+    /// <c>LetteringService.ManualLetterAsync</c>) exécutent des LECTURES ORDINAIRES avant d'écrire.
+    /// Sous UPDLOCK, ces lectures passeraient pendant notre transaction : la validation sauverait
+    /// ensuite un graphe périmé (exception de concurrence EF sur des lignes supprimées, ou
+    /// réécriture de scalaires périmés), et le lettrage pourrait deadlocker sur escalade de verrou
+    /// après avoir lu les anciennes lignes sous S. XLOCK (verrou X, incompatible avec S) force ces
+    /// lectures concurrentes à ATTENDRE notre commit/rollback, puis à relire l'état commité pour
+    /// décider sur des données fraîches.
+    ///
+    /// Suppose un niveau d'isolation ReadCommitted VERROUILLANT (pas de
+    /// <c>READ_COMMITTED_SNAPSHOT</c>) : c'est le réglage par défaut de SQL Server / du conteneur
+    /// mssql utilisé ; avec le mode snapshot activé, les lecteurs ne seraient plus bloqués par le
+    /// verrou (ils liraient leur propre version antérieure au lieu d'attendre).
+    ///
+    /// Repli sans verrou sur provider non relationnel (InMemory des tests) : comportement
+    /// identique à <see cref="GetByIdAsync"/>.
+    /// </summary>
+    Task<JournalEntry?> GetByIdForUpdateAsync(Guid id, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<JournalEntry>> GetDraftsByPeriodAsync(Guid periodId, string? journalCode, CancellationToken cancellationToken = default);
     Task<int> CountDraftsAsync(CancellationToken cancellationToken = default);
     Task<int> CountDraftsByFiscalYearAsync(int fiscalYear, CancellationToken cancellationToken = default);

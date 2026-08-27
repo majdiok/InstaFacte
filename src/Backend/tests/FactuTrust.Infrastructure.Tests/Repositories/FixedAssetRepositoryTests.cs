@@ -4,6 +4,7 @@ using FactuTrust.Application.DTOs;
 using FactuTrust.Infrastructure.MultiTenancy;
 using FactuTrust.Infrastructure.Persistence;
 using FactuTrust.Infrastructure.Repositories;
+using FactuTrust.Infrastructure.Tests.Fixtures;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Xunit;
@@ -318,18 +319,14 @@ public sealed class FixedAssetRepositoryTests : IDisposable
 /// </summary>
 public sealed class FixedAssetRepositorySqlRetryTests : IDisposable
 {
+    private readonly SqlTestDatabase _sqlDb = new(nameof(FixedAssetRepositorySqlRetryTests));
     private readonly string? _connectionString;
     private readonly bool _canRun;
 
     public FixedAssetRepositorySqlRetryTests()
     {
-        _connectionString = Environment.GetEnvironmentVariable("FACTUTRUST_TEST_SQL_CONNECTION");
-        if (string.IsNullOrWhiteSpace(_connectionString))
-        {
-            _connectionString = TryBuildLocalDbConnectionString();
-        }
-
-        _canRun = CanConnect(_connectionString);
+        _connectionString = _sqlDb.ConnectionString;
+        _canRun = _sqlDb.CanRun;
     }
 
     [Fact]
@@ -432,46 +429,7 @@ public sealed class FixedAssetRepositorySqlRetryTests : IDisposable
         return new TenantDbContext(options);
     }
 
-    private static bool CanConnect(string? connectionString)
-    {
-        if (string.IsNullOrWhiteSpace(connectionString))
-            return false;
-
-        try
-        {
-            var options = new DbContextOptionsBuilder<TenantDbContext>()
-                .UseSqlServer(connectionString)
-                .Options;
-            using var context = new TenantDbContext(options);
-            return context.Database.CanConnect();
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static string? TryBuildLocalDbConnectionString()
-    {
-        var dbName = $"FactuTrust_FixedAssetRetry_{Guid.NewGuid():N}";
-        return $"Server=(localdb)\\mssqllocaldb;Database={dbName};Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true";
-    }
-
-    public void Dispose()
-    {
-        if (!_canRun || string.IsNullOrWhiteSpace(_connectionString))
-            return;
-
-        try
-        {
-            using var context = CreateContext();
-            context.Database.EnsureDeleted();
-        }
-        catch
-        {
-            // Best-effort cleanup for optional integration tests.
-        }
-    }
+    public void Dispose() => _sqlDb.Dispose();
 
     private sealed class SqlRetryTenantDbContextFactory : ITenantDbContextFactory
     {
