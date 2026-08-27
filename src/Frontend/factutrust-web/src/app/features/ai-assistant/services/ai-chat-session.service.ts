@@ -390,44 +390,27 @@ export class AiChatSessionService {
     });
     this.chatService.confirmFirmReminder(nonce).subscribe({
       next: () => {
-        this.messages.update(msgs =>
-          msgs.map(m =>
-            m.id === messageId
-              ? {
-                  ...m,
-                  firmReminderConfirming: false,
-                  firmReminderConfirmed: true,
-                  firmReminderError: undefined
-                }
-              : m
-          )
-        );
+        this.updateAssistantMessage(messageId, {
+          firmReminderConfirming: false,
+          firmReminderConfirmed: true,
+          firmReminderError: undefined
+        });
       },
       error: (err: unknown) => {
-        this.messages.update(msgs =>
-          msgs.map(m =>
-            m.id === messageId
-              ? {
-                  ...m,
-                  firmReminderConfirming: false,
-                  firmReminderError: this.resolveConfirmReminderErrorMessage(err)
-                }
-              : m
-          )
-        );
+        this.updateAssistantMessage(messageId, {
+          firmReminderConfirming: false,
+          firmReminderError: this.resolveConfirmReminderErrorMessage(err)
+        });
       }
     });
   }
 
   /** Annule localement une relance en attente : aucun appel serveur, le nonce expire de lui-même. */
   dismissFirmReminder(messageId: string): void {
-    this.messages.update(msgs =>
-      msgs.map(m =>
-        m.id === messageId
-          ? { ...m, firmReminderAction: undefined, firmReminderError: undefined }
-          : m
-      )
-    );
+    this.updateAssistantMessage(messageId, {
+      firmReminderAction: undefined,
+      firmReminderError: undefined
+    });
   }
 
   private resolveConfirmReminderErrorMessage(err: unknown): string {
