@@ -83,20 +83,6 @@ Mot de passe initial : {{ initialPassword }}
 URL : {{ inviteUrl }}
 "),
 
-        ["password-reset"] = new(
-            Code: "password-reset",
-            SubjectTemplate: "Votre nouveau mot de passe InstaFact",
-            HtmlBodyTemplate: WrapHtml(
-                "Mot de passe réinitialisé",
-                @"<p>Bonjour <strong>{{ recipientName }}</strong>,</p>
-<p>Un super-administrateur a réinitialisé votre mot de passe. Voici le nouveau mot de passe à usage unique :</p>
-<p style=""font-family:monospace;background:#f4f4f4;padding:10px;border-radius:4px;font-size:14px;"">{{ newPassword }}</p>
-<p>Connectez-vous puis changez-le immédiatement depuis vos préférences.</p>"),
-            TextBodyTemplate: @"Bonjour {{ recipientName }},
-
-Votre mot de passe a été réinitialisé. Nouveau mot de passe à usage unique : {{ newPassword }}
-"),
-
         ["trial-ending-7d"] = new(
             Code: "trial-ending-7d",
             SubjectTemplate: "Votre essai InstaFact se termine dans 7 jours",

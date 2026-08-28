@@ -60,12 +60,6 @@ public sealed class DunningStateQueryService : IDunningStateQueryService
             .Select(t => new { t.Id, t.CompanyName })
             .ToDictionaryAsync(t => t.Id, t => t.CompanyName, cancellationToken);
 
-        var campaignIds = rows.Select(r => r.CampaignId).Distinct().ToList();
-        var campaigns = await _db.DunningCampaigns.AsNoTracking()
-            .Where(c => campaignIds.Contains(c.Id))
-            .Select(c => new { c.Id, c.Name })
-            .ToDictionaryAsync(c => c.Id, c => c.Name, cancellationToken);
-
         var invoiceIds = rows.Where(r => r.RelatedInvoiceId.HasValue).Select(r => r.RelatedInvoiceId!.Value).ToList();
         var invoices = await _db.PlatformInvoices.AsNoTracking()
             .Where(i => invoiceIds.Contains(i.Id))
@@ -79,7 +73,6 @@ public sealed class DunningStateQueryService : IDunningStateQueryService
             TenantId = s.TenantId,
             TenantName = tenants.GetValueOrDefault(s.TenantId, "—"),
             CampaignId = s.CampaignId,
-            CampaignName = campaigns.GetValueOrDefault(s.CampaignId, "—"),
             DueDate = s.DueDate,
             CurrentStepIndex = s.CurrentStepIndex,
             NextActionAt = s.NextActionAt,
@@ -88,7 +81,6 @@ public sealed class DunningStateQueryService : IDunningStateQueryService
             Outcome = s.Outcome,
             OutcomeDisplay = s.Outcome.ToDisplayString(),
             CompletedAt = s.CompletedAt,
-            LastError = s.LastError,
             RelatedInvoiceId = s.RelatedInvoiceId,
             RelatedInvoiceNumber = s.RelatedInvoiceId.HasValue ? invoices.GetValueOrDefault(s.RelatedInvoiceId.Value) : null,
             CreatedAt = s.CreatedAt

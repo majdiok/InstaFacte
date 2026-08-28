@@ -84,7 +84,6 @@ public sealed record DunningStateDto
     public Guid TenantId { get; init; }
     public string TenantName { get; init; } = null!;
     public Guid CampaignId { get; init; }
-    public string CampaignName { get; init; } = null!;
     public DateTime DueDate { get; init; }
     public int CurrentStepIndex { get; init; }
     public DateTime NextActionAt { get; init; }
@@ -93,7 +92,6 @@ public sealed record DunningStateDto
     public DunningOutcome Outcome { get; init; }
     public string OutcomeDisplay { get; init; } = null!;
     public DateTime? CompletedAt { get; init; }
-    public string? LastError { get; init; }
     public Guid? RelatedInvoiceId { get; init; }
     public string? RelatedInvoiceNumber { get; init; }
     public DateTime CreatedAt { get; init; }
