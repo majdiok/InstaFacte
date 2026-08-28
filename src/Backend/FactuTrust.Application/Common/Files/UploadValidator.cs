@@ -111,6 +111,15 @@ public static class UploadValidator
         return span[2] is 0x03 or 0x05 or 0x07; // local file header / empty archive / spanned archive
     }
 
+    /// <summary>
+    /// True only if <paramref name="extension"/> has a known magic-byte signature and
+    /// <paramref name="header"/> matches it — fails closed for unknown extensions. Shared by
+    /// callers (e.g. Studio file storage) that do their own extension/MIME allow-listing but
+    /// still need the signature check.
+    /// </summary>
+    public static bool MatchesMagicBytes(string extension, ReadOnlyMemory<byte> header) =>
+        MagicByteCheckers.TryGetValue(extension, out var checker) && checker(header);
+
     private static bool StartsWith(ReadOnlyMemory<byte> header, params byte[] signature)
     {
         if (header.Length < signature.Length) return false;

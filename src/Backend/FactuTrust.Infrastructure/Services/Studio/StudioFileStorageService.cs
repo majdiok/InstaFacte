@@ -1,5 +1,6 @@
 using System.Collections.Frozen;
 using System.Text.RegularExpressions;
+using FactuTrust.Application.Common.Files;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Features.Studio.Common;
 using Microsoft.Extensions.Logging;
@@ -82,7 +83,7 @@ public sealed partial class StudioFileStorageService : IStudioFileStorageService
         // MIME-derived extension before committing anything to disk.
         var header = new byte[MagicByteHeaderLength];
         var headerRead = await content.ReadAsync(header.AsMemory(0, header.Length), cancellationToken);
-        if (!MatchesMagicBytes(ext, header.AsSpan(0, headerRead)))
+        if (!UploadValidator.MatchesMagicBytes(ext, header.AsMemory(0, headerRead)))
         {
             throw new ArgumentException(
                 "Le contenu du fichier ne correspond pas au type déclaré.", nameof(content));
@@ -121,7 +122,6 @@ public sealed partial class StudioFileStorageService : IStudioFileStorageService
         return relativeUrl;
     }
 
-
     public StudioStoredFile? Resolve(Guid tenantId, string entityKey, string fileName)
     {
         if (!StudioKey.IsValidShape(entityKey)) return null;
@@ -157,24 +157,6 @@ public sealed partial class StudioFileStorageService : IStudioFileStorageService
         TryDeleteFile(candidate);
         return Task.CompletedTask;
     }
-
-    /// <summary>
-    /// Verifies the leading bytes of an upload match the signature expected for the extension derived
-    /// from the (client-supplied, therefore untrusted) Content-Type header.
-    /// </summary>
-    internal static bool MatchesMagicBytes(string extension, ReadOnlySpan<byte> header) => extension switch
-    {
-        ".pdf" => header.Length >= 4 && header[0] == 0x25 && header[1] == 0x50 && header[2] == 0x44 && header[3] == 0x46, // %PDF
-        ".png" => header.Length >= 8
-            && header[0] == 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47
-            && header[4] == 0x0D && header[5] == 0x0A && header[6] == 0x1A && header[7] == 0x0A,
-        ".jpg" => header.Length >= 3 && header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF,
-        ".gif" => header.Length >= 4 && header[0] == (byte)'G' && header[1] == (byte)'I' && header[2] == (byte)'F' && header[3] == (byte)'8',
-        ".webp" => header.Length >= 12
-            && header[0] == (byte)'R' && header[1] == (byte)'I' && header[2] == (byte)'F' && header[3] == (byte)'F'
-            && header[8] == (byte)'W' && header[9] == (byte)'E' && header[10] == (byte)'B' && header[11] == (byte)'P',
-        _ => false,
-    };
 
     private void TryDeleteFile(string fullPath)
     {

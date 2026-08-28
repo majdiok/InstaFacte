@@ -943,9 +943,9 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
             "projects",
             projectId.ToString("N"),
             $"{Guid.NewGuid():N}_{safeName}");
-        var full = Path.GetFullPath(Path.Combine(basePath, relative));
         var root = Path.GetFullPath(basePath);
-        if (!full.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+        var full = Path.GetFullPath(Path.Combine(root, relative));
+        if (!PathContainment.IsContained(root, full))
             return Result.Failure<Guid>(Error.Validation("FileName", "Chemin de fichier invalide"));
 
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
