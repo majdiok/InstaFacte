@@ -93,6 +93,35 @@ public sealed class ConversationRepositoryTests : IDisposable
         Assert.Equal("Réponse 14", partial.Messages[3].Content);
     }
 
+    /// <summary>Bucket B (IDOR) : le filtre userId est appliqué dans la requête EF, pas en post-chargement.</summary>
+    [Fact]
+    public async Task GetByIdForUserAsync_returns_null_when_conversation_belongs_to_another_user()
+    {
+        var ownerId = Guid.NewGuid();
+        var otherUserId = Guid.NewGuid();
+        var conversation = Conversation.Create(ownerId, "Confidentiel", "mistral");
+        await _repository.AddAsync(conversation);
+
+        var result = await _repository.GetByIdForUserAsync(conversation.Id, otherUserId);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GetByIdForUserAsync_returns_conversation_for_its_owner()
+    {
+        var ownerId = Guid.NewGuid();
+        var conversation = Conversation.Create(ownerId, "Analyse ventes", "mistral");
+        conversation.AddMessage(MessageRole.User, "Question test");
+        await _repository.AddAsync(conversation);
+
+        var result = await _repository.GetByIdForUserAsync(conversation.Id, ownerId);
+
+        Assert.NotNull(result);
+        Assert.Equal(conversation.Id, result!.Id);
+        Assert.Single(result.Messages);
+    }
+
     public void Dispose()
     {
     }

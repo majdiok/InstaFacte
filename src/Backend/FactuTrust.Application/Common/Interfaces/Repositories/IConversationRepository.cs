@@ -6,6 +6,14 @@ public interface IConversationRepository
 {
     Task<Conversation?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Charge la conversation uniquement si elle appartient à <paramref name="userId"/> — filtre
+    /// appliqué dans la requête (pas de vérification post-chargement) pour éviter toute fuite
+    /// d'existence : une conversation d'un autre utilisateur du même tenant retourne null,
+    /// identique à un identifiant inexistant.
+    /// </summary>
+    Task<Conversation?> GetByIdForUserAsync(Guid id, Guid userId, CancellationToken cancellationToken = default);
+
     /// <summary>Loads conversation metadata plus the most recent messages (for chat LLM context).</summary>
     Task<Conversation?> GetByIdForChatAsync(Guid id, int maxMessages, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Conversation>> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
