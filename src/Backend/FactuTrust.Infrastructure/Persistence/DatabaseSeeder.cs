@@ -1,6 +1,7 @@
 using FactuTrust.Domain.Auth;
 using FactuTrust.Domain.Entities.FirmGovernance;
 using FactuTrust.Domain.Enums;
+using FactuTrust.Application.Common.Logging;
 using FactuTrust.Infrastructure.Persistence;
 using FactuTrust.Infrastructure.Services;
 using Microsoft.AspNetCore.Identity;
@@ -124,13 +125,13 @@ public static class DatabaseSeeder
             {
                 logger.LogError(
                     "Bootstrap platform admin skipped: email {Email} is already used by a tenant user (TenantId {TenantId}).",
-                    email, existing.TenantId);
+                    LogSanitizer.MaskEmail(email), existing.TenantId);
                 return;
             }
 
             if (await userManager.IsInRoleAsync(existing, PlatformRoles.PlatformAdmin))
             {
-                logger.LogInformation("Bootstrap platform admin skipped: user {Email} already exists with PlatformAdmin role.", email);
+                logger.LogInformation("Bootstrap platform admin skipped: user {Email} already exists with PlatformAdmin role.", LogSanitizer.MaskEmail(email));
                 return;
             }
 
@@ -138,11 +139,11 @@ public static class DatabaseSeeder
             if (!addRole.Succeeded)
             {
                 logger.LogError("Bootstrap platform admin: failed to add PlatformAdmin role to {Email}: {Errors}",
-                    email, IdentityErrorTranslator.TranslateToFrench(addRole.Errors));
+                    LogSanitizer.MaskEmail(email), IdentityErrorTranslator.TranslateToFrench(addRole.Errors));
                 return;
             }
 
-            logger.LogInformation("Bootstrap platform admin: added PlatformAdmin role to existing user {Email}.", email);
+            logger.LogInformation("Bootstrap platform admin: added PlatformAdmin role to existing user {Email}.", LogSanitizer.MaskEmail(email));
             return;
         }
 
@@ -161,7 +162,7 @@ public static class DatabaseSeeder
         if (!createResult.Succeeded)
         {
             logger.LogError("Bootstrap platform admin: failed to create user {Email}: {Errors}",
-                email, IdentityErrorTranslator.TranslateToFrench(createResult.Errors));
+                LogSanitizer.MaskEmail(email), IdentityErrorTranslator.TranslateToFrench(createResult.Errors));
             return;
         }
 
@@ -169,11 +170,11 @@ public static class DatabaseSeeder
         if (!roleResult.Succeeded)
         {
             logger.LogError("Bootstrap platform admin: user {Email} created but role assignment failed: {Errors}",
-                email, IdentityErrorTranslator.TranslateToFrench(roleResult.Errors));
+                LogSanitizer.MaskEmail(email), IdentityErrorTranslator.TranslateToFrench(roleResult.Errors));
             return;
         }
 
-        logger.LogInformation("Bootstrap platform admin: user {Email} created with PlatformAdmin role.", email);
+        logger.LogInformation("Bootstrap platform admin: user {Email} created with PlatformAdmin role.", LogSanitizer.MaskEmail(email));
     }
 
     /// <summary>

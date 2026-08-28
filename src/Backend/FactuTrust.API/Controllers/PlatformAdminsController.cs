@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using FactuTrust.API.Authorization;
+using FactuTrust.Application.Common.Logging;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Auth;
 using FactuTrust.Infrastructure.Persistence;
@@ -157,7 +158,7 @@ public sealed class PlatformAdminsController : ControllerBase
 
         _logger.LogInformation(
             "Platform admin {ActorId} created new admin {NewAdminEmail} with role {Role}",
-            CurrentUserId(), user.Email, request.Role);
+            CurrentUserId(), LogSanitizer.MaskEmail(user.Email), request.Role);
 
         return CreatedAtAction(nameof(List), null, ApiResponse<PlatformAdminListItemDto>.Ok(
             new PlatformAdminListItemDto
@@ -236,7 +237,7 @@ public sealed class PlatformAdminsController : ControllerBase
 
         _logger.LogInformation(
             "Platform admin {ActorId} changed role of {TargetEmail} to {Role}",
-            CurrentUserId(), user.Email, request.Role);
+            CurrentUserId(), LogSanitizer.MaskEmail(user.Email), request.Role);
 
         return Ok(ApiResponse<object>.Ok(null!, "Rôle mis à jour. L'utilisateur devra se reconnecter."));
     }
@@ -272,7 +273,7 @@ public sealed class PlatformAdminsController : ControllerBase
 
         _logger.LogInformation(
             "Platform admin {ActorId} disabled {TargetEmail}",
-            CurrentUserId(), user.Email);
+            CurrentUserId(), LogSanitizer.MaskEmail(user.Email));
 
         return Ok(ApiResponse<object>.Ok(null!, "Administrateur désactivé."));
     }
@@ -293,7 +294,7 @@ public sealed class PlatformAdminsController : ControllerBase
 
         _logger.LogInformation(
             "Platform admin {ActorId} enabled {TargetEmail}",
-            CurrentUserId(), user.Email);
+            CurrentUserId(), LogSanitizer.MaskEmail(user.Email));
 
         return Ok(ApiResponse<object>.Ok(null!, "Administrateur réactivé."));
     }
@@ -333,7 +334,7 @@ public sealed class PlatformAdminsController : ControllerBase
 
         _logger.LogInformation(
             "Platform admin {ActorId} reset password for {TargetEmail}",
-            CurrentUserId(), user.Email);
+            CurrentUserId(), LogSanitizer.MaskEmail(user.Email));
 
         return Ok(ApiResponse<object>.Ok(null!, "Mot de passe réinitialisé. L'utilisateur devra se reconnecter."));
     }

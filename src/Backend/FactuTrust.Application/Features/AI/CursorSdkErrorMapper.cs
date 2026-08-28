@@ -31,6 +31,10 @@ public static class CursorSdkErrorMapper
             return "Clé API Cursor invalide ou expirée.";
         }
 
-        return rawError;
+        // Erreur non reconnue : ne jamais renvoyer le message brut du SDK à l'utilisateur
+        // (CWE-209 — il peut contenir des détails internes : chemins, config, stack). Le détail
+        // est loggé côté serveur par l'appelant lorsque shouldLogAsError est vrai.
+        shouldLogAsError = true;
+        return "L'inférence Cursor a échoué. Contactez l'administrateur si le problème persiste.";
     }
 }

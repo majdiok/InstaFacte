@@ -5,6 +5,7 @@ using System.Text.Json;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Common.Logging;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.AI;
 using FactuTrust.Application.Features.AI.DTOs;
@@ -1292,7 +1293,7 @@ public sealed class SendChatMessageHandler
 
             _logger.LogInformation(
                 "AI chat {CorrelationId} phase=llm_stream_round elapsed_ms={ElapsedMs} round={Round} first_token_ms={FirstTokenMs} had_tool_calls={HadToolCalls} num_ctx_effective={NumCtxEffective} prompt_chars={PromptChars} inference_device={InferenceDevice} num_gpu_effective={NumGpuEffective} prefer_adaptive_ctx={PreferAdaptiveCtx}",
-                correlationId ?? "-",
+                LogSanitizer.Sanitize(correlationId ?? "-"),
                 sw.ElapsedMilliseconds,
                 phaseRound,
                 firstTokenMs,
@@ -1458,7 +1459,7 @@ public sealed class SendChatMessageHandler
 
                     _logger.LogInformation(
                         "AI chat {CorrelationId} phase=ai_tool_execute elapsed_ms={ElapsedMs} tool={Tool} call_id={CallId} parallel={Parallel} dedup={Dedup}",
-                        correlationId ?? "-",
+                        LogSanitizer.Sanitize(correlationId ?? "-"),
                         toolElapsedMs,
                         toolCall.Function.Name,
                         callId,
@@ -2072,7 +2073,7 @@ public sealed class SendChatMessageHandler
 
         _logger.LogInformation(
             "AI chat {CorrelationId} phase=total_request elapsed_ms={ElapsedMs} conversation_id={ConversationId} model={Model} tool_intent={ToolIntent} conversational_fast_path={ConversationalFastPath} tool_rounds_executed={ToolRounds} tools_executed_this_request={ToolsExecutedThisRequest} forced_synthesis_triggered={ForcedSynthesisTriggered} deterministic_fallback_used={DeterministicFallbackUsed} final_response_meaningful={FinalResponseMeaningful} content_chars_streamed={ContentCharsStreamed} content_chars_persisted={ContentCharsPersisted} llm_generations_this_turn={LlmGenerationsThisTurn} agent_scope={AgentScope} firm_grounded_reads={FirmGroundedReads}",
-            correlationId ?? "-",
+            LogSanitizer.Sanitize(correlationId ?? "-"),
             total.ElapsedMilliseconds,
             conversation.Id,
             modelRef.CanonicalModelRef,
