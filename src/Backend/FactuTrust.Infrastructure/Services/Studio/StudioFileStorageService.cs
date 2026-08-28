@@ -80,9 +80,10 @@ public sealed partial class StudioFileStorageService : IStudioFileStorageService
 
         // Magic-byte check (CWE-434 defense-in-depth): the declared Content-Type is client-supplied and
         // can be forged, so we peek the first bytes and verify they match the signature expected for the
-        // MIME-derived extension before committing anything to disk.
-        var header = new byte[MagicByteHeaderLength];
-        var headerRead = await content.ReadAsync(header.AsMemory(0, header.Length), cancellationToken);
+        // MIME-derived extension before committing anything to disk. ReadHeaderAsync loops until the full
+        // header is read or EOF rather than trusting a single ReadAsync call to fill the buffer (not
+        // guaranteed by Stream semantics), avoiding a false-negative magic-byte mismatch on chunked streams.
+        var (header, headerRead) = await UploadValidator.ReadHeaderAsync(content, MagicByteHeaderLength, cancellationToken);
         if (!UploadValidator.MatchesMagicBytes(ext, header.AsMemory(0, headerRead)))
         {
             throw new ArgumentException(

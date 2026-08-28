@@ -132,6 +132,36 @@ public static class UploadValidator
     }
 
     /// <summary>
+    /// Reads up to <paramref name="requiredLength"/> bytes from the start of <paramref name="stream"/>,
+    /// looping until either that many bytes have been read or the stream reaches EOF (a
+    /// <see cref="Stream.ReadAsync(Memory{byte}, CancellationToken)"/> call returns 0).
+    ///
+    /// A single <c>ReadAsync</c> call is NOT guaranteed to fill the requested buffer — it may return
+    /// fewer bytes than asked for before EOF, which is standard .NET stream semantics and especially
+    /// relevant for chunked/network streams. Callers that used only the byte count from one call as
+    /// "the header" could incorrectly reject a valid upload (magic-byte mismatch) simply because a
+    /// slow/chunked stream happened to deliver the signature bytes across more than one read.
+    /// </summary>
+    /// <returns>
+    /// The buffer (always exactly <paramref name="requiredLength"/> bytes long) and the number of
+    /// bytes actually populated at its start (fewer than <paramref name="requiredLength"/> only if
+    /// the stream reached EOF first, e.g. for a file smaller than the header size).
+    /// </returns>
+    public static async Task<(byte[] Buffer, int BytesRead)> ReadHeaderAsync(
+        Stream stream, int requiredLength, CancellationToken cancellationToken = default)
+    {
+        var buffer = new byte[requiredLength];
+        var totalRead = 0;
+        while (totalRead < requiredLength)
+        {
+            var read = await stream.ReadAsync(buffer.AsMemory(totalRead, requiredLength - totalRead), cancellationToken);
+            if (read == 0) break; // EOF
+            totalRead += read;
+        }
+        return (buffer, totalRead);
+    }
+
+    /// <summary>
     /// Validates an upload's name, declared extension/Content-Type pair, size, and (where a reliable
     /// signature exists) magic bytes. Does not read the whole stream — callers should pass at least
     /// <see cref="RequiredHeaderBytes"/> bytes read from the START of the stream in <paramref name="header"/>

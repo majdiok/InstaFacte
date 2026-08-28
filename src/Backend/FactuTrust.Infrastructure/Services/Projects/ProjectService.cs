@@ -927,8 +927,10 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         if (tenantId is null || tenantId == Guid.Empty)
             return Result.Failure<Guid>(Error.Unauthorized("Aucun contexte d'entreprise disponible."));
 
-        var header = new byte[UploadValidator.RequiredHeaderBytes];
-        var headerRead = await content.ReadAsync(header.AsMemory(0, header.Length), cancellationToken);
+        // ReadHeaderAsync loops until the full header is read or EOF, rather than trusting a single
+        // ReadAsync call to fill the buffer (not guaranteed by Stream semantics — a chunked/network
+        // stream could otherwise cause a valid upload to be wrongly rejected as a magic-byte mismatch).
+        var (header, headerRead) = await UploadValidator.ReadHeaderAsync(content, UploadValidator.RequiredHeaderBytes, cancellationToken);
 
         var validation = UploadValidator.Validate(fileName, contentType, sizeBytes, header.AsMemory(0, headerRead));
         if (!validation.IsValid)
