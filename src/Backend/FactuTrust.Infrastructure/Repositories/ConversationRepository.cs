@@ -23,18 +23,27 @@ public sealed class ConversationRepository : IConversationRepository
             .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
     }
 
+    public async Task<Conversation?> GetByIdForUserAsync(Guid id, Guid userId, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.Conversations
+            .Include(c => c.Messages.OrderBy(m => m.SortOrder))
+            .FirstOrDefaultAsync(c => c.Id == id && c.UserId == userId, cancellationToken);
+    }
+
     public async Task<Conversation?> GetByIdForChatAsync(
         Guid id,
+        Guid userId,
         int maxMessages,
         CancellationToken cancellationToken = default)
     {
         if (maxMessages <= 0)
-            return await GetByIdAsync(id, cancellationToken);
+            return await GetByIdForUserAsync(id, userId, cancellationToken);
 
         await using var context = _contextFactory.CreateContext();
         var conversation = await context.Conversations
             .AsNoTracking()
-            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(c => c.Id == id && c.UserId == userId, cancellationToken);
         if (conversation is null)
             return null;
 

@@ -1,3 +1,4 @@
+using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Features.AI.DTOs;
 using FactuTrust.Domain.Common;
@@ -10,17 +11,23 @@ public sealed record GetConversationQuery(Guid ConversationId) : IRequest<Result
 public sealed class GetConversationQueryHandler : IRequestHandler<GetConversationQuery, Result<ConversationDetailDto>>
 {
     private readonly IConversationRepository _repository;
+    private readonly ICurrentUser _currentUser;
 
-    public GetConversationQueryHandler(IConversationRepository repository)
+    public GetConversationQueryHandler(IConversationRepository repository, ICurrentUser currentUser)
     {
         _repository = repository;
+        _currentUser = currentUser;
     }
 
     public async Task<Result<ConversationDetailDto>> Handle(
         GetConversationQuery request,
         CancellationToken cancellationToken)
     {
-        var conversation = await _repository.GetByIdAsync(request.ConversationId, cancellationToken);
+        // Filtre appliqué dans la requête (userId + id) : une conversation d'un autre
+        // utilisateur du même tenant retourne le même NotFound qu'un id inexistant (pas de
+        // fuite d'existence via un check post-chargement).
+        var userId = _currentUser.UserId ?? Guid.Empty;
+        var conversation = await _repository.GetByIdForUserAsync(request.ConversationId, userId, cancellationToken);
         if (conversation is null)
             return Result.Failure<ConversationDetailDto>(new Error("Conversation.NotFound", "Conversation introuvable."));
 
