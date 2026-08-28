@@ -9,6 +9,7 @@ import {
   CURSOR_RUN_DISALLOWED_TOOLS,
   CURSOR_RUN_TOOLS
 } from "./bridge-agent-options.js";
+import { isAllowedCallbackUrl } from "./callback-url-guard.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const requestedPort = Number.parseInt(process.env.CURSOR_SDK_BRIDGE_PORT || "0", 10) || 0;
@@ -70,7 +71,15 @@ function ensureScratch(dir) {
   return scratch;
 }
 
+// CWE-918 (SSRF) hardening: validate callbackUrl is loopback + http(s) before ever calling
+// fetch() (see callback-url-guard.js for the check itself, kept isolated for unit tests).
 async function callToolCallback(callbackUrl, token, name, args) {
+  if (!isAllowedCallbackUrl(callbackUrl)) {
+    return {
+      isError: true,
+      content: [{ type: "text", text: "callbackUrl invalide : seul un rappel en boucle locale (127.0.0.1/localhost) est autorisé." }]
+    };
+  }
   const response = await fetch(callbackUrl, {
     method: "POST",
     headers: {
