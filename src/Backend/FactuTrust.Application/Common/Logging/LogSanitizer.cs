@@ -23,25 +23,34 @@ public static class LogSanitizer
     /// <summary>
     /// Masque une adresse e-mail pour le logging : "john@x.com" → "j***@x.com".
     /// Retourne une valeur sûre (jamais l'e-mail en clair) même pour les entrées invalides.
+    ///
+    /// L'entrée n'est pas fiabilisée (les DTO d'auth ne valident pas le format de l'e-mail) :
+    /// elle est donc d'abord passée par <see cref="Sanitize"/> pour retirer tout CR/LF avant
+    /// d'être découpée/masquée, et la valeur retournée est elle-même sanitizée, afin d'éviter
+    /// qu'un e-mail malveillant du type "a@example.com\r\nFAKE LOG" n'injecte de fausses lignes
+    /// de log (CWE-117) via le domaine conservé après masquage.
     /// </summary>
     public static string MaskEmail(string? email)
     {
         if (string.IsNullOrWhiteSpace(email))
             return "(empty)";
 
-        var trimmed = email.Trim();
-        var atIndex = trimmed.IndexOf('@');
+        var sanitized = Sanitize(email).Trim();
+        if (sanitized.Length == 0)
+            return "***";
+
+        var atIndex = sanitized.IndexOf('@');
 
         // Pas de '@' (ou en première position) : on ne peut pas séparer local-part/domaine de
         // façon fiable, on masque entièrement plutôt que de risquer une fuite partielle.
         if (atIndex <= 0)
             return "***";
 
-        var localPart = trimmed[..atIndex];
-        var domainPart = trimmed[(atIndex + 1)..];
+        var localPart = sanitized[..atIndex];
+        var domainPart = sanitized[(atIndex + 1)..];
 
         var firstChar = localPart[0];
-        return $"{firstChar}***@{domainPart}";
+        return Sanitize($"{firstChar}***@{domainPart}");
     }
 
     /// <summary>

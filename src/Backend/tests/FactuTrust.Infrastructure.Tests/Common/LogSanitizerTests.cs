@@ -53,6 +53,27 @@ public sealed class LogSanitizerTests
         Assert.EndsWith("tenant.example.com", result, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("a@example.com\r\nFAKE LOG line injected")]
+    [InlineData("a@example.com\nFAKE LOG line injected")]
+    [InlineData("a@example.com\rFAKE LOG line injected")]
+    [InlineData("attacker\r\n2026-08-28 00:00:00 [ERR] fake@evil.com\r\n@example.com")]
+    public void MaskEmail_strips_crlf_and_never_lets_attacker_inject_fake_log_lines(string maliciousEmail)
+    {
+        var result = LogSanitizer.MaskEmail(maliciousEmail);
+
+        Assert.DoesNotContain("\r", result, StringComparison.Ordinal);
+        Assert.DoesNotContain("\n", result, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MaskEmail_masks_crlf_email_but_keeps_sanitized_domain_for_diagnostics()
+    {
+        var result = LogSanitizer.MaskEmail("a@example.com\r\nFAKE LOG line injected");
+
+        Assert.Equal("a***@example.comFAKE LOG line injected", result);
+    }
+
     [Fact]
     public void Sanitize_strips_carriage_returns_and_newlines()
     {
