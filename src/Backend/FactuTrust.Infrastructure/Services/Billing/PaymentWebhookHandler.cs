@@ -1,4 +1,5 @@
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Logging;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Billing;
 using FactuTrust.Domain.Common;
@@ -85,7 +86,7 @@ public sealed class PaymentWebhookHandler : IPaymentWebhookHandler
                 cancellationToken);
         if (alreadyReceived is not null)
         {
-            _logger.LogInformation("Webhook {Provider} {EventId} déjà reçu — ignored", providerCode, providerEvent.EventId);
+            _logger.LogInformation("Webhook {Provider} {EventId} déjà reçu — ignored", LogSanitizer.Sanitize(providerCode), LogSanitizer.Sanitize(providerEvent.EventId));
             return Result.Success();
         }
 
@@ -96,7 +97,7 @@ public sealed class PaymentWebhookHandler : IPaymentWebhookHandler
         {
             webhookEvent.MarkFailedProcessing("Signature HMAC invalide ou secret manquant");
             await _db.SaveChangesAsync(cancellationToken);
-            _logger.LogWarning("Webhook {Provider} signature invalid for ref {Ref}", providerCode, providerEvent.ProviderRef);
+            _logger.LogWarning("Webhook {Provider} signature invalid for ref {Ref}", LogSanitizer.Sanitize(providerCode), LogSanitizer.Sanitize(providerEvent.ProviderRef));
             return Result.Failure(Error.Unauthorized("Signature webhook invalide"));
         }
 
@@ -167,7 +168,7 @@ public sealed class PaymentWebhookHandler : IPaymentWebhookHandler
                 break;
 
             default:
-                _logger.LogWarning("Webhook {Provider} outcome unknown for ref {Ref}", providerCode, providerEvent.ProviderRef);
+                _logger.LogWarning("Webhook {Provider} outcome unknown for ref {Ref}", LogSanitizer.Sanitize(providerCode), LogSanitizer.Sanitize(providerEvent.ProviderRef));
                 break;
         }
 

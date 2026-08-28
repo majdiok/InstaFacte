@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FactuTrust.Application.Common.Interfaces.Services;
+using FactuTrust.Application.Common.Logging;
 using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -107,7 +108,7 @@ public sealed class ProductImageSearchService : IProductImageSearchService
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogWarning(ex, "Unsplash API request failed for query: {Query}", query);
+            _logger.LogWarning(ex, "Unsplash API request failed for query: {Query}", LogSanitizer.Sanitize(query));
             return null;
         }
         catch (TaskCanceledException)
@@ -116,7 +117,7 @@ public sealed class ProductImageSearchService : IProductImageSearchService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Unsplash image search failed for query: {Query}", query);
+            _logger.LogWarning(ex, "Unsplash image search failed for query: {Query}", LogSanitizer.Sanitize(query));
             return null;
         }
     }
@@ -154,7 +155,7 @@ public sealed class ProductImageSearchService : IProductImageSearchService
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogWarning(ex, "Google Custom Search API request failed for query: {Query}", query);
+            _logger.LogWarning(ex, "Google Custom Search API request failed for query: {Query}", LogSanitizer.Sanitize(query));
             return null;
         }
         catch (TaskCanceledException)
@@ -163,7 +164,7 @@ public sealed class ProductImageSearchService : IProductImageSearchService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Google Custom Search image search failed for query: {Query}", query);
+            _logger.LogWarning(ex, "Google Custom Search image search failed for query: {Query}", LogSanitizer.Sanitize(query));
             return null;
         }
     }

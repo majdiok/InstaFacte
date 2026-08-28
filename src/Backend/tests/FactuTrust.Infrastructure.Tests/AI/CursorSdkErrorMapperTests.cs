@@ -39,13 +39,14 @@ public sealed class CursorSdkErrorMapperTests
     }
 
     [Fact]
-    public void ToUserMessage_preserves_unknown_errors()
+    public void ToUserMessage_never_echoes_unknown_errors_and_flags_server_side_logging()
     {
-        const string raw = "Upstream timeout";
+        const string raw = "Upstream timeout: connection refused at internal-host:9443";
         var message = CursorSdkErrorMapper.ToUserMessage(raw, out var shouldLog);
 
-        Assert.Equal(raw, message);
-        Assert.False(shouldLog);
+        Assert.NotEqual(raw, message);
+        Assert.DoesNotContain("internal-host", message, StringComparison.Ordinal);
+        Assert.True(shouldLog);
     }
 
     [Fact]

@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using FactuTrust.API.Authorization;
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Logging;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Auth;
 using Microsoft.AspNetCore.Authorization;
@@ -83,7 +84,7 @@ public sealed class PlatformSessionsController : ControllerBase
             return NotFound(ApiResponse<object>.Fail("Session introuvable."));
 
         _logger.LogInformation("Platform admin {ActorId} revoked session {SessionId}: {Reason}",
-            actorId, id, reason);
+            actorId, id, LogSanitizer.Sanitize(reason));
         return Ok(ApiResponse<object>.Ok(null!, "Session révoquée."));
     }
 
@@ -102,7 +103,7 @@ public sealed class PlatformSessionsController : ControllerBase
         var count = await _sessions.RevokeAllByUserAsync(userId, actorId, reason, cancellationToken);
 
         _logger.LogInformation("Platform admin {ActorId} revoked {Count} sessions of user {UserId}: {Reason}",
-            actorId, count, userId, reason);
+            actorId, count, userId, LogSanitizer.Sanitize(reason));
 
         return Ok(ApiResponse<object>.Ok(null!, $"{count} session(s) révoquée(s)."));
     }

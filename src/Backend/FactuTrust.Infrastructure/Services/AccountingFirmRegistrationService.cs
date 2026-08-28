@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Logging;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
@@ -159,7 +160,7 @@ public sealed class AccountingFirmRegistrationService : IAccountingFirmRegistrat
             _logger.LogInformation(
                 "Accounting firm {FirmName} registered by {Email}. CorrelationId={CorrelationId} DurationMs={DurationMs}",
                 dto.FirmName,
-                dto.Email,
+                LogSanitizer.MaskEmail(dto.Email),
                 correlationId,
                 totalSw.ElapsedMilliseconds);
 
@@ -175,7 +176,7 @@ public sealed class AccountingFirmRegistrationService : IAccountingFirmRegistrat
             _logger.LogError(
                 ex,
                 "Firm registration failed for {Email}. CorrelationId={CorrelationId}",
-                dto.Email,
+                LogSanitizer.MaskEmail(dto.Email),
                 correlationId);
 
             return AccountingFirmRegistrationResult.InternalFailure(correlationId);

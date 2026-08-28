@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using FactuTrust.API.Http;
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Logging;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.DTOs;
@@ -191,7 +192,7 @@ public class AuthController : ControllerBase
 
             _logger.LogInformation(
                 "User {Email} registered with tenant {TenantId}. CorrelationId={CorrelationId} DurationMs={DurationMs}",
-                dto.Email,
+                LogSanitizer.MaskEmail(dto.Email),
                 tenant.Id,
                 correlationId,
                 totalSw.ElapsedMilliseconds);
@@ -208,7 +209,7 @@ public class AuthController : ControllerBase
             _logger.LogError(
                 ex,
                 "Registration failed for {Email}. CorrelationId: {CorrelationId}. TenantId: {TenantId}. Detail: {Detail}",
-                dto.Email,
+                LogSanitizer.MaskEmail(dto.Email),
                 correlationId,
                 tenantId,
                 ex.InnerException?.Message ?? ex.Message);
@@ -244,7 +245,7 @@ public class AuthController : ControllerBase
         var user = await _userManager.FindByEmailAsync(dto.Email);
         if (user is null || !user.IsActive)
         {
-            _logger.LogWarning("Login failed for {Email}: user not found or inactive", dto.Email);
+            _logger.LogWarning("Login failed for {Email}: user not found or inactive", LogSanitizer.MaskEmail(dto.Email));
             return Unauthorized(ApiResponse<AuthResponseDto>.Fail("Email ou mot de passe incorrect"));
         }
 
@@ -252,13 +253,13 @@ public class AuthController : ControllerBase
 
         if (result.IsLockedOut)
         {
-            _logger.LogWarning("User {Email} is locked out", dto.Email);
+            _logger.LogWarning("User {Email} is locked out", LogSanitizer.MaskEmail(dto.Email));
             return Unauthorized(ApiResponse<AuthResponseDto>.Fail("Compte verrouillé. Réessayez dans 15 minutes."));
         }
 
         if (!result.Succeeded)
         {
-            _logger.LogWarning("Login failed for {Email}: invalid password", dto.Email);
+            _logger.LogWarning("Login failed for {Email}: invalid password", LogSanitizer.MaskEmail(dto.Email));
             return Unauthorized(ApiResponse<AuthResponseDto>.Fail("Email ou mot de passe incorrect"));
         }
 
@@ -278,7 +279,7 @@ public class AuthController : ControllerBase
 
         if (user.TenantId == Guid.Empty)
         {
-            _logger.LogWarning("User {Email} has no company (TenantId empty)", user.Email);
+            _logger.LogWarning("User {Email} has no company (TenantId empty)", LogSanitizer.MaskEmail(user.Email));
             return Unauthorized(ApiResponse<AuthResponseDto>.Fail("Aucune entreprise associée à ce compte. Veuillez contacter l'administrateur."));
         }
 
@@ -294,7 +295,7 @@ public class AuthController : ControllerBase
 
         var tokens = await _tokenService.GenerateTokensAsync(user.Id, tenant.Id, cancellationToken: cancellationToken);
 
-        _logger.LogInformation("User {Email} logged in successfully", dto.Email);
+        _logger.LogInformation("User {Email} logged in successfully", LogSanitizer.MaskEmail(dto.Email));
 
         return Ok(ApiResponse<AuthResponseDto>.Ok(tokens, "Connexion réussie"));
     }
@@ -350,11 +351,11 @@ public class AuthController : ControllerBase
                         htmlBody,
                         cancellationToken: cancellationToken);
 
-                    _logger.LogInformation("Password reset email queued for {Email}", email);
+                    _logger.LogInformation("Password reset email queued for {Email}", LogSanitizer.MaskEmail(email));
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to send password reset email for {Email}", email);
+                    _logger.LogError(ex, "Failed to send password reset email for {Email}", LogSanitizer.MaskEmail(email));
                 }
             }
         }
@@ -398,7 +399,7 @@ public class AuthController : ControllerBase
         user.RefreshTokenExpiryTime = null;
         await _userManager.UpdateAsync(user);
 
-        _logger.LogInformation("Password reset successful for {Email}", dto.Email);
+        _logger.LogInformation("Password reset successful for {Email}", LogSanitizer.MaskEmail(dto.Email));
 
         return Ok(ApiResponse<object>.Ok(null!, "Votre mot de passe a été réinitialisé avec succès."));
     }
