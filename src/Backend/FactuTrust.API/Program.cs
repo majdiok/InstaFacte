@@ -106,6 +106,20 @@ if (compromisedLegacyJwtKeySha256Values.Contains(secretKeySha256))
 if (Encoding.UTF8.GetByteCount(secretKey) < 32)
     throw new InvalidOperationException("JwtSettings:SecretKey doit faire au moins 32 octets (256 bits).");
 
+// Electronic signature key (SignatureService, CWE-327 remediation): validated here — eagerly,
+// at startup — rather than relying solely on the SignatureService constructor check, because
+// SignatureService is registered as Scoped and its constructor would otherwise only run (and
+// only fail) lazily, the first time something in a request scope resolves it (i.e. the first
+// invoice signature). Mirrors the JwtSettings fail-fast pattern above so a missing/too-short
+// signature key is caught before the app starts serving traffic, not at first use.
+var signatureSecretKey = builder.Configuration["SignatureSettings:SecretKey"];
+if (string.IsNullOrWhiteSpace(signatureSecretKey))
+    throw new InvalidOperationException(
+        "La clé secrète de signature n'est pas configurée. Renseignez SignatureSettings:SecretKey " +
+        "(dotnet user-secrets en développement, variable d'environnement SignatureSettings__SecretKey en production).");
+if (Encoding.UTF8.GetByteCount(signatureSecretKey) < 32)
+    throw new InvalidOperationException("SignatureSettings:SecretKey doit faire au moins 32 octets (256 bits).");
+
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
