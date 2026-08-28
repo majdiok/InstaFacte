@@ -1,5 +1,6 @@
 using System.Collections.Frozen;
 using System.Text.RegularExpressions;
+using FactuTrust.Application.Common.Files;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Features.Studio.Common;
 using Microsoft.Extensions.Logging;
@@ -22,6 +23,7 @@ public sealed partial class StudioFileStorageService : IStudioFileStorageService
 {
     private const int MaxFileSizeBytes = 5 * 1024 * 1024; // 5 MB
     private const string StudioSegment = "studio";
+    private const int MagicByteHeaderLength = 12; // enough for the WEBP signature (RIFF....WEBP)
 
     private static readonly FrozenDictionary<string, string> AllowedContentTypes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
@@ -76,10 +78,25 @@ public sealed partial class StudioFileStorageService : IStudioFileStorageService
 
         Directory.CreateDirectory(fullDir);
 
+        // Magic-byte check (CWE-434 defense-in-depth): the declared Content-Type is client-supplied and
+        // can be forged, so we peek the first bytes and verify they match the signature expected for the
+        // MIME-derived extension before committing anything to disk. ReadHeaderAsync loops until the full
+        // header is read or EOF rather than trusting a single ReadAsync call to fill the buffer (not
+        // guaranteed by Stream semantics), avoiding a false-negative magic-byte mismatch on chunked streams.
+        var (header, headerRead) = await UploadValidator.ReadHeaderAsync(content, MagicByteHeaderLength, cancellationToken);
+        if (!UploadValidator.MatchesMagicBytes(ext, header.AsMemory(0, headerRead)))
+        {
+            throw new ArgumentException(
+                "Le contenu du fichier ne correspond pas au type déclaré.", nameof(content));
+        }
+
         await using (var fileStream = new FileStream(fullPath, FileMode.Create, FileAccess.Write, FileShare.None, 4096, useAsync: true))
         {
             var buffer = new byte[81920];
-            long totalRead = 0;
+            long totalRead = headerRead;
+            if (headerRead > 0)
+                await fileStream.WriteAsync(header.AsMemory(0, headerRead), cancellationToken);
+
             int read;
             while ((read = await content.ReadAsync(buffer, cancellationToken)) > 0)
             {

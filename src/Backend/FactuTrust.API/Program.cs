@@ -87,19 +87,38 @@ builder.Services.AddIdentity<ApplicationUser, ApplicationRole>(options =>
 // JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
 var secretKey = jwtSettings["SecretKey"];
-// Empreinte SHA-256 de l'ancienne clé versionnée dans le dépôt : considérée compromise,
-// refusée dans tous les environnements (comparaison par hash pour ne pas réintroduire sa valeur ici).
-const string compromisedLegacyJwtKeySha256 = "11372469839bb660ecbdd20f1afa9106fcf54fc79cfb8706b77acf48f475a13b";
+// Empreintes SHA-256 des anciennes clés versionnées dans le dépôt (appsettings.Development.json,
+// à différentes dates) : considérées compromises, refusées dans tous les environnements
+// (comparaison par hash pour ne pas réintroduire leur valeur ici).
+var compromisedLegacyJwtKeySha256Values = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+{
+    "11372469839bb660ecbdd20f1afa9106fcf54fc79cfb8706b77acf48f475a13b",
+    "4babc7b4720f1122c95768126fce4f3dcd413f3f99684fe13d6bfe32ec1269a5",
+};
 if (string.IsNullOrWhiteSpace(secretKey))
     throw new InvalidOperationException(
         "La clé secrète JWT n'est pas configurée. Renseignez JwtSettings:SecretKey " +
         "(dotnet user-secrets en développement, variable d'environnement JwtSettings__SecretKey en production).");
 var secretKeySha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(secretKey)));
-if (string.Equals(secretKeySha256, compromisedLegacyJwtKeySha256, StringComparison.OrdinalIgnoreCase))
+if (compromisedLegacyJwtKeySha256Values.Contains(secretKeySha256))
     throw new InvalidOperationException(
         "La clé JWT historique (exposée dans le dépôt) est refusée. Générez une nouvelle clé aléatoire d'au moins 32 octets.");
 if (Encoding.UTF8.GetByteCount(secretKey) < 32)
     throw new InvalidOperationException("JwtSettings:SecretKey doit faire au moins 32 octets (256 bits).");
+
+// Electronic signature key (SignatureService, CWE-327 remediation): validated here — eagerly,
+// at startup — rather than relying solely on the SignatureService constructor check, because
+// SignatureService is registered as Scoped and its constructor would otherwise only run (and
+// only fail) lazily, the first time something in a request scope resolves it (i.e. the first
+// invoice signature). Mirrors the JwtSettings fail-fast pattern above so a missing/too-short
+// signature key is caught before the app starts serving traffic, not at first use.
+var signatureSecretKey = builder.Configuration["SignatureSettings:SecretKey"];
+if (string.IsNullOrWhiteSpace(signatureSecretKey))
+    throw new InvalidOperationException(
+        "La clé secrète de signature n'est pas configurée. Renseignez SignatureSettings:SecretKey " +
+        "(dotnet user-secrets en développement, variable d'environnement SignatureSettings__SecretKey en production).");
+if (Encoding.UTF8.GetByteCount(signatureSecretKey) < 32)
+    throw new InvalidOperationException("SignatureSettings:SecretKey doit faire au moins 32 octets (256 bits).");
 
 builder.Services.AddAuthentication(options =>
 {

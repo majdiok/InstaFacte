@@ -348,15 +348,56 @@ public static class Nct01ChartMigrationService
         TenantDbContext db, string sql, IReadOnlyList<object> args, CancellationToken ct) =>
         db.Database.ExecuteSqlRawAsync(sql, args, ct);
 
-    private static async Task<List<string?>> DistinctValuesAsync(
+    /// <summary>
+    /// Allow-list of (table, column) pairs that <see cref="DistinctValuesAsync"/> is permitted to read.
+    /// Both values are interpolated into raw SQL below (bracket-quoted identifiers, no query params for
+    /// identifiers); restricting them to constants known at call sites in this file prevents SQL injection
+    /// even if a future caller accidentally threads untrusted input through.
+    /// </summary>
+    internal static readonly IReadOnlySet<(string Table, string Column)> DistinctValuesAllowList =
+        new HashSet<(string Table, string Column)>
+        {
+            ("JournalEntryLines", "AccountNumber"),
+            ("LetteringGroups", "AccountNumber"),
+            ("JournalEntryTemplateLines", "AccountNumber"),
+            ("ThirdPartyAccountingProfiles", "CollectiveAccountNumber"),
+            ("BankAccounts", "ChartOfAccountNumber"),
+            ("BankStatements", "ChartOfAccountNumber"),
+            ("FixedAssets", "AssetAccountNumber"),
+            ("FixedAssets", "DepreciationAccountNumber"),
+            ("FixedAssets", "ExpenseAccountNumber"),
+            ("FixedAssets", "CreditAccountNumber"),
+            ("FixedAssets", "DisposalTreasuryAccount"),
+            ("DepreciationRateCategories", "DefaultAssetAccount"),
+            ("DepreciationRateCategories", "DefaultDepreciationAccount"),
+            ("DepreciationRateCategories", "DefaultExpenseAccount"),
+            ("SupplierInvoiceLines", "AssetAccountNumber"),
+            ("Loans", "LoanAccountNumber"),
+            ("Loans", "InterestAccountNumber"),
+            ("Loans", "BankAccountNumber"),
+            ("Payslips", "EmployeeAuxiliaryAccount"),
+            ("PayrollPaymentLines", "EmployeeAuxiliaryAccount"),
+            ("AccountingAnomalies", "AccountRef"),
+            ("AccountingAnomalyLines", "AccountNumber"),
+            ("BudgetPosts", "AccountPrefixes"),
+        };
+
+    internal static async Task<List<string?>> DistinctValuesAsync(
         TenantDbContext db, string table, string column, CancellationToken ct)
     {
+        if (!DistinctValuesAllowList.Contains((table, column)))
+            throw new InvalidOperationException(
+                $"Nct01ChartMigrationService: table/column pair not allow-listed for DistinctValuesAsync: [{table}].[{column}].");
+
         var conn = db.Database.GetDbConnection();
         if (conn.State != ConnectionState.Open)
             await db.Database.OpenConnectionAsync(ct);
 
+        var safeTable = table.Replace("]", "]]");
+        var safeColumn = column.Replace("]", "]]");
+
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = $"SELECT DISTINCT [{column}] FROM [{table}] WHERE [{column}] IS NOT NULL AND [{column}] <> N''";
+        cmd.CommandText = $"SELECT DISTINCT [{safeColumn}] FROM [{safeTable}] WHERE [{safeColumn}] IS NOT NULL AND [{safeColumn}] <> N''";
         if (db.Database.CurrentTransaction is not null)
             cmd.Transaction = db.Database.CurrentTransaction.GetDbTransaction();
 

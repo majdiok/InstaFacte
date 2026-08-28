@@ -18,12 +18,19 @@ public class ChannelsDisabledWebApplicationFactory : WebApplicationFactory<Progr
     /// </summary>
     public const string TestJwtSecretKey = "FactuTrust-Tests-Only-Signing-Key-Not-A-Production-Secret-0123456789";
 
+    /// <summary>
+    /// Clé de signature électronique (HMAC) réservée aux tests (les appsettings ne contiennent
+    /// plus de clé). Voir <see cref="Infrastructure.Services.SignatureService"/>.
+    /// </summary>
+    public const string TestSignatureSecretKey = "FactuTrust-Tests-Only-Signature-Key-Not-A-Production-Secret-0123456789";
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         // UseSetting est injecté dans la configuration initiale du WebApplicationBuilder :
         // indispensable pour les valeurs lues par Program.cs pendant la construction de l'hôte
         // (la clé JWT est capturée dans TokenValidationParameters à ce moment-là).
         builder.UseSetting("JwtSettings:SecretKey", TestJwtSecretKey);
+        builder.UseSetting("SignatureSettings:SecretKey", TestSignatureSecretKey);
 
         builder.ConfigureAppConfiguration((_, config) =>
         {
@@ -32,7 +39,8 @@ public class ChannelsDisabledWebApplicationFactory : WebApplicationFactory<Progr
                 ["Channels:Enabled"] = "false",
                 ["Channels:WhatsAppEnabled"] = "false",
                 ["Channels:AutoStart"] = "false",
-                ["JwtSettings:SecretKey"] = TestJwtSecretKey
+                ["JwtSettings:SecretKey"] = TestJwtSecretKey,
+                ["SignatureSettings:SecretKey"] = TestSignatureSecretKey
             });
         });
     }

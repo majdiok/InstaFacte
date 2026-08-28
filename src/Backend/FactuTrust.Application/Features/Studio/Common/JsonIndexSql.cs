@@ -17,6 +17,9 @@ public static class JsonIndexSql
     /// <summary>Idempotent ALTER ADD of a non-persisted computed column. Caller MUST have validated the key.</summary>
     public static string AddColumnSql(string key)
     {
+        if (!StudioKey.IsValidShape(key))
+            throw new ArgumentException($"Invalid Studio key shape: '{key}'.", nameof(key));
+
         var col = SqlSchemaGuard.Quote(ColumnName(key));
         return
             $"IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE [object_id] = OBJECT_ID(N'[dbo].[CustomRecords]') AND [name] = N'{ColumnName(key)}') " +
@@ -26,6 +29,9 @@ public static class JsonIndexSql
     /// <summary>Idempotent filtered nonclustered index on the computed column. Caller MUST have validated the key.</summary>
     public static string CreateIndexSql(string key)
     {
+        if (!StudioKey.IsValidShape(key))
+            throw new ArgumentException($"Invalid Studio key shape: '{key}'.", nameof(key));
+
         var idx = SqlSchemaGuard.Quote(IndexName(key));
         var col = SqlSchemaGuard.Quote(ColumnName(key));
         return
@@ -33,6 +39,11 @@ public static class JsonIndexSql
             $"CREATE NONCLUSTERED INDEX {idx} ON [dbo].[CustomRecords] ([TenantId], [EntityDefinitionId], {col}) WHERE [IsDeleted] = 0;";
     }
 
-    public static string ColumnExistsSql(string key) =>
-        $"SELECT 1 FROM sys.columns WHERE [object_id] = OBJECT_ID(N'[dbo].[CustomRecords]') AND [name] = N'{ColumnName(key)}'";
+    public static string ColumnExistsSql(string key)
+    {
+        if (!StudioKey.IsValidShape(key))
+            throw new ArgumentException($"Invalid Studio key shape: '{key}'.", nameof(key));
+
+        return $"SELECT 1 FROM sys.columns WHERE [object_id] = OBJECT_ID(N'[dbo].[CustomRecords]') AND [name] = N'{ColumnName(key)}'";
+    }
 }

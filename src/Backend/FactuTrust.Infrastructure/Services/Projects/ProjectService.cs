@@ -1,5 +1,6 @@
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
+using FactuTrust.Application.Common.Files;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Stock.Commands;
 using FactuTrust.Domain.Common;
@@ -914,11 +915,8 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         Guid projectId, Stream content, string fileName, string contentType, long sizeBytes, Guid? taskId,
         CancellationToken cancellationToken = default)
     {
-        const long maxBytes = 10 * 1024 * 1024;
         if (content is null || sizeBytes <= 0)
             return Result.Failure<Guid>(Error.Validation("File", "Fichier requis."));
-        if (sizeBytes > maxBytes)
-            return Result.Failure<Guid>(Error.Validation("Size", "Fichier invalide (max 10 Mo)"));
         if (!await _db.Projects.AnyAsync(p => p.Id == projectId, cancellationToken))
             return Result.Failure<Guid>(Error.NotFound("Project", projectId));
 
@@ -929,9 +927,15 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
         if (tenantId is null || tenantId == Guid.Empty)
             return Result.Failure<Guid>(Error.Unauthorized("Aucun contexte d'entreprise disponible."));
 
-        var safeName = Path.GetFileName(fileName);
-        if (string.IsNullOrWhiteSpace(safeName))
-            return Result.Failure<Guid>(Error.Validation("FileName", "Le nom du fichier est obligatoire"));
+        // ReadHeaderAsync loops until the full header is read or EOF, rather than trusting a single
+        // ReadAsync call to fill the buffer (not guaranteed by Stream semantics — a chunked/network
+        // stream could otherwise cause a valid upload to be wrongly rejected as a magic-byte mismatch).
+        var (header, headerRead) = await UploadValidator.ReadHeaderAsync(content, UploadValidator.RequiredHeaderBytes, cancellationToken);
+
+        var validation = UploadValidator.Validate(fileName, contentType, sizeBytes, header.AsMemory(0, headerRead));
+        if (!validation.IsValid)
+            return Result.Failure<Guid>(Error.Validation("File", validation.ErrorMessage!));
+        var safeName = validation.SafeFileName!;
 
         var basePath = _configuration["AccountingAttachments:BasePath"]
             ?? Path.Combine(AppContext.BaseDirectory, "App_Data", "attachments");
@@ -941,14 +945,18 @@ public sealed class ProjectService : IProjectService, IAsyncDisposable
             "projects",
             projectId.ToString("N"),
             $"{Guid.NewGuid():N}_{safeName}");
-        var full = Path.GetFullPath(Path.Combine(basePath, relative));
         var root = Path.GetFullPath(basePath);
-        if (!full.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+        var full = Path.GetFullPath(Path.Combine(root, relative));
+        if (!PathContainment.IsContained(root, full))
             return Result.Failure<Guid>(Error.Validation("FileName", "Chemin de fichier invalide"));
 
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         await using (var fs = File.Create(full))
+        {
+            if (headerRead > 0)
+                await fs.WriteAsync(header.AsMemory(0, headerRead), cancellationToken);
             await content.CopyToAsync(fs, cancellationToken);
+        }
 
         var stored = relative.Replace('\\', '/');
         var created = ProjectAttachment.Create(projectId, userId.Value, safeName, stored, contentType, sizeBytes, taskId);

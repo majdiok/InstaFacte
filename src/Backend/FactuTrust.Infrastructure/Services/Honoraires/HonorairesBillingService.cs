@@ -1,4 +1,5 @@
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Files;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities.FirmGovernance;
@@ -619,18 +620,39 @@ public sealed class HonorairesBillingService : IHonorairesBillingService
     {
         var tenant = await EnsureFirmTenantAsync(cancellationToken);
         if (tenant.IsFailure) return Result.Failure<Guid>(tenant.Error);
-        if (sizeBytes <= 0 || sizeBytes > 10 * 1024 * 1024)
-            return Result.Failure<Guid>(Error.Validation("Size", "Fichier invalide (max 10 Mo)"));
+
+        // ReadHeaderAsync loops until the full header is read or EOF, rather than trusting a single
+        // ReadAsync call to fill the buffer (not guaranteed by Stream semantics — a chunked/network
+        // stream could otherwise cause a valid upload to be wrongly rejected as a magic-byte mismatch).
+        var (header, headerRead) = await UploadValidator.ReadHeaderAsync(content, UploadValidator.RequiredHeaderBytes, cancellationToken);
+
+        var validation = UploadValidator.Validate(fileName, contentType, sizeBytes, header.AsMemory(0, headerRead));
+        if (!validation.IsValid)
+            return Result.Failure<Guid>(Error.Validation("File", validation.ErrorMessage!));
+        var safeName = validation.SafeFileName!;
 
         var basePath = _configuration["AccountingAttachments:BasePath"]
             ?? Path.Combine(AppContext.BaseDirectory, "App_Data", "attachments");
-        var relative = Path.Combine("tenants", tenant.Value.ToString("N"), "honoraires", kind.ToString().ToLowerInvariant(), documentId.ToString("N"), $"{Guid.NewGuid():N}_{fileName}");
-        var full = Path.GetFullPath(Path.Combine(basePath, relative));
+        var baseFullPath = Path.GetFullPath(basePath);
+        var relative = Path.Combine("tenants", tenant.Value.ToString("N"), "honoraires", kind.ToString().ToLowerInvariant(), documentId.ToString("N"), $"{Guid.NewGuid():N}_{safeName}");
+        var full = Path.GetFullPath(Path.Combine(baseFullPath, relative));
+
+        // Containment check via Path.GetRelativePath: a simple StartsWith(basePath) would wrongly accept
+        // a sibling directory that happens to share the same string prefix (e.g. "/data/safe-other" starts
+        // with "/data/safe"). GetRelativePath is only safe/contained if it does not escape upward ("..")
+        // and is not itself rooted (which would mean full and baseFullPath share no common root).
+        if (!PathContainment.IsContained(baseFullPath, full))
+            return Result.Failure<Guid>(Error.Validation("FileName", "Chemin de fichier invalide"));
+
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         await using (var fs = File.Create(full))
+        {
+            if (headerRead > 0)
+                await fs.WriteAsync(header.AsMemory(0, headerRead), cancellationToken);
             await content.CopyToAsync(fs, cancellationToken);
+        }
 
-        var create = HonorairesAttachment.Create(kind, documentId, fileName, contentType, sizeBytes, relative.Replace('\\', '/'), null);
+        var create = HonorairesAttachment.Create(kind, documentId, safeName, contentType, sizeBytes, relative.Replace('\\', '/'), null);
         if (create.IsFailure) return Result.Failure<Guid>(create.Error);
 
         await using var db = _tenantFactory.CreateIsolatedContext();

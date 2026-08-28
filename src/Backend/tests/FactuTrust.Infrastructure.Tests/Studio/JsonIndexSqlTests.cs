@@ -47,4 +47,45 @@ public sealed class JsonIndexSqlTests
         Assert.Contains("sys.columns", sql);
         Assert.Contains("N'jx_ref_no'", sql);
     }
+
+    // --- CWE-89 hardening: keys are interpolated into raw SQL identifiers/literals, so every
+    // entry point must reject a key that does not match StudioKey.IsValidShape before building SQL. ---
+
+    [Theory]
+    [InlineData("email'; DROP TABLE CustomRecords; --")]
+    [InlineData("email]")]
+    [InlineData("Email")] // uppercase not allowed by StudioKey shape
+    [InlineData("1email")] // must start with a letter
+    [InlineData("")]
+    [InlineData(" ")]
+    public void AddColumnSql_rejects_invalid_key_shape(string key)
+    {
+        Assert.Throws<ArgumentException>(() => JsonIndexSql.AddColumnSql(key));
+    }
+
+    [Theory]
+    [InlineData("email'; DROP TABLE CustomRecords; --")]
+    [InlineData("email]")]
+    [InlineData("Email")]
+    public void CreateIndexSql_rejects_invalid_key_shape(string key)
+    {
+        Assert.Throws<ArgumentException>(() => JsonIndexSql.CreateIndexSql(key));
+    }
+
+    [Theory]
+    [InlineData("email'; DROP TABLE CustomRecords; --")]
+    [InlineData("email]")]
+    [InlineData("Email")]
+    public void ColumnExistsSql_rejects_invalid_key_shape(string key)
+    {
+        Assert.Throws<ArgumentException>(() => JsonIndexSql.ColumnExistsSql(key));
+    }
+
+    [Fact]
+    public void Valid_keys_still_produce_expected_sql()
+    {
+        Assert.NotNull(JsonIndexSql.AddColumnSql("valid_key_1"));
+        Assert.NotNull(JsonIndexSql.CreateIndexSql("valid_key_1"));
+        Assert.NotNull(JsonIndexSql.ColumnExistsSql("valid_key_1"));
+    }
 }

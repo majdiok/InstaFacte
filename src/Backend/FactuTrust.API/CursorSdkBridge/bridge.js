@@ -9,6 +9,7 @@ import {
   CURSOR_RUN_DISALLOWED_TOOLS,
   CURSOR_RUN_TOOLS
 } from "./bridge-agent-options.js";
+import { isAllowedCallbackUrl } from "./callback-url-guard.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const requestedPort = Number.parseInt(process.env.CURSOR_SDK_BRIDGE_PORT || "0", 10) || 0;
@@ -70,15 +71,35 @@ function ensureScratch(dir) {
   return scratch;
 }
 
+// CWE-918 (SSRF) hardening: validate callbackUrl is loopback + http(s) before ever calling
+// fetch() (see callback-url-guard.js for the check itself, kept isolated for unit tests).
 async function callToolCallback(callbackUrl, token, name, args) {
+  if (!isAllowedCallbackUrl(callbackUrl)) {
+    return {
+      isError: true,
+      content: [{ type: "text", text: "callbackUrl invalide : seul un rappel en boucle locale (127.0.0.1/localhost) est autorisé." }]
+    };
+  }
+  // redirect: "manual" is required here: the default fetch() behavior transparently follows
+  // redirects, which would let an allowed loopback URL 302 to an arbitrary target (e.g. the
+  // cloud metadata endpoint) and completely bypass the isAllowedCallbackUrl check above, since
+  // that check only ever sees the initial URL. With "manual", Node's fetch returns the redirect
+  // response itself (status 3xx, response.ok === false) instead of following it.
   const response = await fetch(callbackUrl, {
     method: "POST",
+    redirect: "manual",
     headers: {
       "Content-Type": "application/json",
       "X-Cursor-Run-Token": token || ""
     },
     body: JSON.stringify({ name, arguments: args ?? {} })
   });
+  if (response.status >= 300 && response.status < 400) {
+    return {
+      isError: true,
+      content: [{ type: "text", text: "callbackUrl a renvoyé une redirection ; les redirections ne sont pas suivies (protection SSRF)." }]
+    };
+  }
   const text = await response.text();
   if (!response.ok) {
     return { isError: true, content: [{ type: "text", text: text || `HTTP ${response.status}` }] };

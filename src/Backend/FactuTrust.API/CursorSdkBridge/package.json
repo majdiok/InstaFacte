@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "node bridge.js",
-    "test": "node --test bridge-agent-options.test.js"
+    "test": "node --test bridge-agent-options.test.js callback-url-guard.test.js"
   },
   "dependencies": {
     "@cursor/sdk": "1.0.27"
