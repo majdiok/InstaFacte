@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Infrastructure.Accounting;
 using FactuTrust.Infrastructure.Persistence;
@@ -15,6 +16,20 @@ namespace FactuTrust.Infrastructure.MultiTenancy;
 public sealed class TenantDatabaseProvisioner
 {
     private static readonly SemaphoreSlim TemplateLock = new(1, 1);
+
+    /// <summary>
+    /// Tenant/template database names are generated internally as <c>FactuTrust_Tenant_&lt;8-hex-uppercase&gt;</c>
+    /// (see <c>Tenant.GenerateDatabaseName</c>) or come from configuration (template name). Since these names are
+    /// interpolated into raw DDL (bracket-quoted identifiers and <c>N'...'</c> literals), we still validate the
+    /// shape defensively before building any SQL text, rather than trusting the caller.
+    /// </summary>
+    internal static readonly Regex DatabaseNamePattern = new(@"^[A-Za-z0-9_]{1,128}$", RegexOptions.Compiled);
+
+    internal static void ValidateDatabaseName(string databaseName)
+    {
+        if (string.IsNullOrWhiteSpace(databaseName) || !DatabaseNamePattern.IsMatch(databaseName))
+            throw new ArgumentException($"Invalid tenant database name shape: '{databaseName}'.", nameof(databaseName));
+    }
 
     private readonly IOptions<TenantProvisioningOptions> _options;
     private readonly ILogger<TenantDatabaseProvisioner> _logger;
@@ -33,6 +48,8 @@ public sealed class TenantDatabaseProvisioner
         Guid? tenantId,
         CancellationToken cancellationToken)
     {
+        ValidateDatabaseName(databaseName);
+
         var opts = _options.Value;
         if (opts.Strategy == TenantProvisioningStrategy.TemplateClone)
         {
@@ -104,6 +121,8 @@ public sealed class TenantDatabaseProvisioner
 
         try
         {
+            ValidateDatabaseName(databaseName);
+
             var sql = $@"
 IF EXISTS (SELECT * FROM sys.databases WHERE name = N'{EscapeSqlIdentifier(databaseName)}')
 BEGIN
@@ -129,6 +148,8 @@ END";
         Guid? tenantId,
         CancellationToken cancellationToken)
     {
+        ValidateDatabaseName(databaseName);
+
         var backupPath = ResolveBackupPath(masterConnectionString);
         var templateName = _options.Value.TemplateDatabaseName;
 
@@ -289,6 +310,8 @@ WITH
         string databaseName,
         CancellationToken cancellationToken)
     {
+        ValidateDatabaseName(databaseName);
+
         if (await DatabaseExistsAsync(masterConnectionString, databaseName, cancellationToken))
             return;
 
@@ -325,6 +348,8 @@ END";
         string backupPath,
         CancellationToken cancellationToken)
     {
+        ValidateDatabaseName(databaseName);
+
         var compressionPref = _options.Value.UseBackupCompression;
         if (compressionPref == true)
         {
@@ -432,7 +457,13 @@ END";
         return builder.ConnectionString;
     }
 
-    private static string EscapeSqlIdentifier(string name) => name.Replace("]", "]]");
+    /// <summary>
+    /// Escapes a validated database/identifier name for use both as a bracket-quoted SQL identifier
+    /// (<c>]</c> → <c>]]</c>) and inside <c>N'...'</c> string literals (<c>'</c> → <c>''</c>) — this method
+    /// is used in both contexts in this file. Callers MUST have validated the name shape first
+    /// (see <see cref="ValidateDatabaseName"/>); this escaping is defense-in-depth, not the primary control.
+    /// </summary>
+    internal static string EscapeSqlIdentifier(string name) => name.Replace("]", "]]").Replace("'", "''");
 
     private void LogStep(string step, long durationMs, Guid? tenantId, string? databaseName = null)
     {
