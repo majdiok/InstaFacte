@@ -56,8 +56,20 @@ public sealed class RejectStorefrontCommandHandler : IRequestHandler<RejectStore
 
         _logger.LogInformation(
             "Platform admin {ActorId} rejected storefront {ProfileId} for tenant {TenantId}: {Reason}",
-            _currentUser.UserId, profile.Id, profile.TenantId, request.Reason);
+            _currentUser.UserId, profile.Id, profile.TenantId, SanitizeForLog(request.Reason));
 
         return Result.Success(StorefrontProfileMapper.ToDto(profile));
+    }
+
+    /// <summary>
+    /// Motif de rejet contrôlé par l'appelant (PlatformAdmin) : supprime les retours à la ligne
+    /// avant de logguer, pour empêcher l'injection de fausses lignes de log (CWE-117), et tronque
+    /// pour éviter un log démesuré.
+    /// </summary>
+    private static string SanitizeForLog(string value)
+    {
+        const int maxLength = 200;
+        var sanitized = value.Replace("\r", " ").Replace("\n", " ");
+        return sanitized.Length > maxLength ? sanitized[..maxLength] : sanitized;
     }
 }
