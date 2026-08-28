@@ -8,6 +8,13 @@ namespace FactuTrust.Infrastructure.Tests.Studio;
 public sealed class StudioFileStorageServiceTests : IDisposable
 {
     private static readonly Guid Tid = Guid.NewGuid();
+
+    // Real PNG magic bytes (89 50 4E 47 0D 0A 1A 0A) + a couple of harmless trailing bytes: the
+    // magic-byte check added alongside the shared UploadValidator now inspects the leading bytes
+    // regardless of the declared Content-Type, so tests that exercise a successful PNG save must
+    // supply a genuine signature.
+    private static readonly byte[] ValidPngBytes = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4 };
+
     private readonly string _base;
     private readonly StudioFileStorageService _svc;
 
@@ -25,7 +32,7 @@ public sealed class StudioFileStorageServiceTests : IDisposable
     [Fact]
     public async Task Saves_png_under_tenant_entity_scoped_path()
     {
-        using var ms = new MemoryStream(new byte[] { 1, 2, 3, 4 });
+        using var ms = new MemoryStream(ValidPngBytes);
         var url = await _svc.SaveAsync(Tid, "contacts", ms, "image/png");
 
         Assert.StartsWith($"/uploads/tenants/{Tid}/studio/contacts/", url);
@@ -55,9 +62,18 @@ public sealed class StudioFileStorageServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Rejects_content_whose_magic_bytes_do_not_match_declared_type()
+    {
+        // Declares "image/png" but the bytes are an arbitrary (non-PNG) payload — the declared
+        // Content-Type is client-supplied and must not be trusted on its own (CWE-434).
+        using var ms = new MemoryStream(new byte[] { 0x4D, 0x5A, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00 }); // "MZ..." (PE header)
+        await Assert.ThrowsAsync<ArgumentException>(() => _svc.SaveAsync(Tid, "contacts", ms, "image/png"));
+    }
+
+    [Fact]
     public async Task Resolve_returns_saved_file_with_content_type()
     {
-        using var ms = new MemoryStream(new byte[] { 1, 2, 3 });
+        using var ms = new MemoryStream(ValidPngBytes);
         var url = await _svc.SaveAsync(Tid, "contacts", ms, "image/png");
         var fileName = url[(url.LastIndexOf('/') + 1)..];
 
@@ -71,7 +87,7 @@ public sealed class StudioFileStorageServiceTests : IDisposable
     [Fact]
     public async Task Resolve_is_tenant_and_entity_scoped()
     {
-        using var ms = new MemoryStream(new byte[] { 1, 2, 3 });
+        using var ms = new MemoryStream(ValidPngBytes);
         var url = await _svc.SaveAsync(Tid, "contacts", ms, "image/png");
         var fileName = url[(url.LastIndexOf('/') + 1)..];
 
@@ -94,7 +110,7 @@ public sealed class StudioFileStorageServiceTests : IDisposable
     [Fact]
     public async Task Delete_removes_own_file_but_ignores_foreign_paths()
     {
-        using var ms = new MemoryStream(new byte[] { 1, 2, 3 });
+        using var ms = new MemoryStream(ValidPngBytes);
         var url = await _svc.SaveAsync(Tid, "contacts", ms, "image/png");
         var path = ToFullPath(url);
 
