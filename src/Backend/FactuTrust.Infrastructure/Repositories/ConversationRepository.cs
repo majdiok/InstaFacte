@@ -58,6 +58,34 @@ public sealed class ConversationRepository : IConversationRepository
         return conversation;
     }
 
+    public async Task<Conversation?> GetByIdForChatAsync(
+        Guid id,
+        Guid userId,
+        int maxMessages,
+        CancellationToken cancellationToken = default)
+    {
+        if (maxMessages <= 0)
+            return await GetByIdForUserAsync(id, userId, cancellationToken);
+
+        await using var context = _contextFactory.CreateContext();
+        var conversation = await context.Conversations
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == id && c.UserId == userId, cancellationToken);
+        if (conversation is null)
+            return null;
+
+        var messages = await context.ConversationMessages
+            .AsNoTracking()
+            .Where(m => m.ConversationId == id)
+            .OrderByDescending(m => m.SortOrder)
+            .Take(maxMessages)
+            .OrderBy(m => m.SortOrder)
+            .ToListAsync(cancellationToken);
+
+        conversation.ReplaceMessagesForChatContext(messages);
+        return conversation;
+    }
+
     public async Task<IReadOnlyList<Conversation>> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();

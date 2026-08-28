@@ -175,9 +175,11 @@ public sealed class SendChatMessageHandler
             var loadLimit = _ollamaSettings.LoadPartialConversationMessages
                 ? Math.Max(1, _ollamaSettings.MaxContextMessages + Math.Max(0, _ollamaSettings.ConversationLoadMessageSlack))
                 : 0;
+            // Filtre par propriétaire dans la requête (IDOR) : une conversation d'un autre utilisateur
+            // retourne null, identique à un identifiant inexistant (même exception ci-dessous).
             conversationLoadTask = loadLimit > 0
-                ? _conversationRepository.GetByIdForChatAsync(command.ConversationId.Value, loadLimit, cancellationToken)
-                : _conversationRepository.GetByIdAsync(command.ConversationId.Value, cancellationToken);
+                ? _conversationRepository.GetByIdForChatAsync(command.ConversationId.Value, userId, loadLimit, cancellationToken)
+                : _conversationRepository.GetByIdForUserAsync(command.ConversationId.Value, userId, cancellationToken);
         }
 
         await Task.WhenAll(
