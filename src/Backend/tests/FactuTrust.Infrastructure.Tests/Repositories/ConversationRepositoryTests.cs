@@ -86,7 +86,7 @@ public sealed class ConversationRepositoryTests : IDisposable
         }
         await _repository.UpdateAsync(conversation);
 
-        var partial = await _repository.GetByIdForChatAsync(conversation.Id, 4);
+        var partial = await _repository.GetByIdForChatAsync(conversation.Id, userId, 4);
         Assert.NotNull(partial);
         Assert.Equal(4, partial!.Messages.Count);
         Assert.Equal("Message 13", partial.Messages[0].Content);

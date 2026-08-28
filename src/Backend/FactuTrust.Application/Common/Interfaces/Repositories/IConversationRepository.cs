@@ -14,12 +14,9 @@ public interface IConversationRepository
     /// </summary>
     Task<Conversation?> GetByIdForUserAsync(Guid id, Guid userId, CancellationToken cancellationToken = default);
 
-    /// <summary>Loads conversation metadata plus the most recent messages (for chat LLM context).</summary>
-    Task<Conversation?> GetByIdForChatAsync(Guid id, int maxMessages, CancellationToken cancellationToken = default);
-
     /// <summary>
-    /// Comme <see cref="GetByIdForChatAsync(Guid, int, CancellationToken)"/>, mais filtre en plus par
-    /// <paramref name="userId"/> dans la requête (même contrat que <see cref="GetByIdForUserAsync"/> :
+    /// Loads conversation metadata plus the most recent messages (for chat LLM context), filtré
+    /// par <paramref name="userId"/> dans la requête (même contrat que <see cref="GetByIdForUserAsync"/> :
     /// pas de fuite d'existence, une conversation d'un autre utilisateur retourne null).
     /// </summary>
     Task<Conversation?> GetByIdForChatAsync(Guid id, Guid userId, int maxMessages, CancellationToken cancellationToken = default);

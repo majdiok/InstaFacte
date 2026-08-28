@@ -19,48 +19,6 @@ namespace FactuTrust.Infrastructure.Tests.Storefront;
 /// </summary>
 public sealed class ApproveStorefrontCommandAuthorizationTests
 {
-    private const string ConsentVersion = "1.0.0";
-
-    private static StorefrontProfile CreateProfile(StorefrontStatus status)
-    {
-        var result = StorefrontProfile.Create(
-            tenantId: Guid.NewGuid(),
-            slug: "acme-widgets",
-            displayName: "Acme Widgets",
-            publicContactEmail: "contact@acme.example",
-            category: StorefrontCategory.Retail,
-            facadeTheme: FacadeTheme.Modern,
-            consentVersion: ConsentVersion,
-            consentAcceptedByUserId: Guid.NewGuid());
-
-        Assert.True(result.IsSuccess, result.Error?.Description);
-        var profile = result.Value;
-
-        if (status == StorefrontStatus.PendingReview)
-        {
-            var update = profile.UpdateProfile(
-                displayName: "Acme Widgets",
-                tagline: null,
-                descriptionMarkdown: "Catalogue complet.",
-                brandPrimaryColorHex: "#2563EB",
-                brandSecondaryColorHex: "#0EA5E9",
-                category: StorefrontCategory.Retail,
-                facadeTheme: FacadeTheme.Modern,
-                publicContactEmail: "contact@acme.example",
-                publicContactPhone: null,
-                publicContactWhatsApp: null,
-                publicLogoUrl: "https://cdn.factutrust.test/acme/logo.webp",
-                publicCoverImageUrl: null,
-                orderSubmissionEnabled: true);
-            Assert.True(update.IsSuccess, update.Error?.Description);
-
-            var submit = profile.SubmitForReview();
-            Assert.True(submit.IsSuccess, submit.Error?.Description);
-        }
-
-        return profile;
-    }
-
     private static ApproveStorefrontCommandHandler CreateHandler(
         IStorefrontProfileRepository repository,
         Guid actorId,
@@ -80,7 +38,7 @@ public sealed class ApproveStorefrontCommandAuthorizationTests
     [Fact]
     public async Task Handle_fails_and_logs_warning_when_profile_status_forbids_approval()
     {
-        var profile = CreateProfile(StorefrontStatus.Draft);
+        var profile = StorefrontProfileTestData.CreateProfile(StorefrontStatus.Draft);
         var actorId = Guid.NewGuid();
 
         var repo = new Mock<IStorefrontProfileRepository>(MockBehavior.Strict);
@@ -108,7 +66,7 @@ public sealed class ApproveStorefrontCommandAuthorizationTests
     [Fact]
     public async Task Handle_approves_pending_profile_and_logs_actor_information()
     {
-        var profile = CreateProfile(StorefrontStatus.PendingReview);
+        var profile = StorefrontProfileTestData.CreateProfile(StorefrontStatus.PendingReview);
         var actorId = Guid.NewGuid();
 
         var repo = new Mock<IStorefrontProfileRepository>(MockBehavior.Strict);
