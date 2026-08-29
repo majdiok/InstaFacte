@@ -33,11 +33,16 @@ internal static class FiscalAnchorHelper
         var fiscalYearStart = new DateTime(from.Year, 1, 1);
         var fiscalYearEnd = new DateTime(from.Year, 12, 31);
 
-        // L'à-nouveau est unique par exercice (idempotence garantie à la génération).
+        // L'à-nouveau actif est unique par exercice (idempotence garantie à la génération). On ignore
+        // les écritures extournées (IsReversed) et on détermine l'ordre de préférence par CreatedAt
+        // décroissant — même contrat que GetActiveBySourceAsync — afin qu'une réparation d'à-nouveaux
+        // (T8 : extourne + régénération) ne laisse jamais l'ancrage retomber sur l'écriture contaminée.
         var openingEntryId = await ctx.JournalEntries.AsNoTracking()
             .Where(e => e.SourceEntityType == AccountingService.SourceOpeningBalance
+                        && !e.IsReversed
                         && e.EntryDate >= fiscalYearStart
                         && e.EntryDate <= fiscalYearEnd)
+            .OrderByDescending(e => e.CreatedAt)
             .Select(e => (Guid?)e.Id)
             .FirstOrDefaultAsync(ct);
 

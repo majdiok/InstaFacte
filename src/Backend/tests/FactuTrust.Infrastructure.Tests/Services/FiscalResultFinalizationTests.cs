@@ -37,14 +37,25 @@ public sealed class FiscalResultFinalizationTests
     private static FiscalCarryForwardItem Deficit(int originYear, decimal initial, decimal imputed, int? expiry = null) =>
         FiscalCarryForwardItem.Create(FiscalCarryForwardKind.Deficit, originYear, initial, imputed, expiry);
 
-    /// <summary>État de résultat NCT factice : ResultBeforeTax (avant impôt) et NetResult (après impôt).</summary>
-    private static NctFinancialStatementsDto Nct(decimal resultBeforeTax, decimal netResult) => new()
+    /// <summary>
+    /// État de résultat NCT factice : ResultBeforeTax (avant impôt) et NetResult (après impôt).
+    /// <paramref name="class69Charges"/> est la charge d'impôt de classe 69 (IMP + IEX) telle que lue
+    /// par <see cref="FiscalResultCommands"/> via les lignes du compte de résultat — sans éléments
+    /// extraordinaires, elle vaut RAI − RN.
+    /// </summary>
+    private static NctFinancialStatementsDto Nct(
+        decimal resultBeforeTax, decimal netResult, decimal class69Charges, decimal extraordinaryTax = 0m) => new()
     {
         FiscalYear = Year,
         IncomeStatement = new NctIncomeStatementDto
         {
             ResultBeforeTax = resultBeforeTax,
-            NetResult = netResult
+            NetResult = netResult,
+            Lines = new[]
+            {
+                new NctLineDto { Code = "IMP", Amount = class69Charges - extraordinaryTax },
+                new NctLineDto { Code = "IEX", Amount = extraordinaryTax }
+            }
         }
     };
 
@@ -128,7 +139,7 @@ public sealed class FiscalResultFinalizationTests
         harness.Declarations.Setup(x => x.GetByYearAsync(Year, It.IsAny<CancellationToken>()))
             .ReturnsAsync(declaration);
         harness.Reporting.Setup(x => x.GetNctStatementsAsync(Year, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success(Nct(resultBeforeTax: 10_000m, netResult: 8_400m)));
+            .ReturnsAsync(Result.Success(Nct(resultBeforeTax: 10_000m, netResult: 8_400m, class69Charges: 1_600m)));
         harness.Declarations.Setup(x => x.FinalizeAsync(Year, It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(FiscalFinalizeOutcome.Finalized);
         var handler = harness.BuildHandler();
@@ -168,7 +179,7 @@ public sealed class FiscalResultFinalizationTests
         harness.Declarations.Setup(x => x.GetByYearAsync(Year, It.IsAny<CancellationToken>()))
             .ReturnsAsync(declaration);
         harness.Reporting.Setup(x => x.GetNctStatementsAsync(Year, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success(Nct(resultBeforeTax: 10_000m, netResult: 8_400m)));
+            .ReturnsAsync(Result.Success(Nct(resultBeforeTax: 10_000m, netResult: 8_400m, class69Charges: 1_600m)));
         harness.Declarations.Setup(x => x.FinalizeAsync(Year, It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(FiscalFinalizeOutcome.Finalized);
         var handler = harness.BuildHandler();
@@ -181,6 +192,45 @@ public sealed class FiscalResultFinalizationTests
         Assert.Equal(10_000m, harness.Upserted!.AccountingResult + harness.AlignedAdjustments
             .Where(a => a.CatalogCode == FiscalFinalizationCatalogCodes.IncomeTaxReintegration)
             .Sum(a => a.Amount));
+    }
+
+    [Fact]
+    public async Task Finalize_WithExtraordinaryItems_ReintegratesClass69Tax_DoesNotConflict()
+    {
+        // Revue : R-IS doit réintégrer la charge de classe 69 (IMP + IEX), pas « RAI − RN ».
+        // Avec des éléments extraordinaires (67/77), RN inclut le solde extraordinaire hors impôt,
+        // donc RAI − RN (10 000 − 9 900 = 100) sous-valorise l'impôt réel (1 600 = IMP).
+        // Books : RAI = 10 000, IMP = 1 600, gains extraordinaires nets = +1 500 → RN = 9 900.
+        var declaration = DraftDeclaration(accountingResult: 9_900m);
+        declaration.ReplaceAdjustments(new[]
+        {
+            FiscalAdjustmentLine.Create(
+                FiscalAdjustmentKind.Reintegration,
+                FiscalFinalizationCatalogCodes.IncomeTaxReintegration,
+                "Impôt sur les sociétés (compte 69)",
+                1_600m,
+                isAutoSuggested: false)
+        });
+
+        var harness = new Harness();
+        harness.Declarations.Setup(x => x.GetByYearAsync(Year, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(declaration);
+        harness.Reporting.Setup(x => x.GetNctStatementsAsync(Year, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(Nct(resultBeforeTax: 10_000m, netResult: 9_900m, class69Charges: 1_600m)));
+        harness.Declarations.Setup(x => x.FinalizeAsync(Year, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(FiscalFinalizeOutcome.Finalized);
+        var handler = harness.BuildHandler();
+
+        var result = await handler.Handle(new FinalizeFiscalResultDeclarationCommand(Year), CancellationToken.None);
+
+        // La réconciliation en deux passes passe : pas de 409 malgré les éléments extraordinaires.
+        Assert.True(result.IsSuccess, result.IsFailure ? result.Error.Description : null);
+        // La ligne R-IS est alignée sur la charge de classe 69 (IMP + IEX), pas sur RAI − RN.
+        var ris = Assert.Single(harness.AlignedAdjustments,
+            a => a.CatalogCode == FiscalFinalizationCatalogCodes.IncomeTaxReintegration);
+        Assert.Equal(1_600m, ris.Amount);
+        harness.Declarations.Verify(
+            x => x.FinalizeAsync(Year, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -199,7 +249,7 @@ public sealed class FiscalResultFinalizationTests
         // Les livres : résultat avant impôt 12 000, net après impôt 8 000 (charge 69 = 4 000).
         // 12 000 ≠ 10 000 (feuille) → l'alignement déplace la base imposable (passe 1 ≠ passe 2).
         harness.Reporting.Setup(x => x.GetNctStatementsAsync(Year, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success(Nct(resultBeforeTax: 12_000m, netResult: 8_000m)));
+            .ReturnsAsync(Result.Success(Nct(resultBeforeTax: 12_000m, netResult: 8_000m, class69Charges: 4_000m)));
         harness.Declarations.Setup(x => x.FinalizeAsync(Year, It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(FiscalFinalizeOutcome.Finalized);
         var handler = harness.BuildHandler();
@@ -223,7 +273,7 @@ public sealed class FiscalResultFinalizationTests
         harness.Declarations.Setup(x => x.GetByYearAsync(Year, It.IsAny<CancellationToken>()))
             .ReturnsAsync(declaration);
         harness.Reporting.Setup(x => x.GetNctStatementsAsync(Year, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success(Nct(resultBeforeTax: 10_000m, netResult: 8_400m)));
+            .ReturnsAsync(Result.Success(Nct(resultBeforeTax: 10_000m, netResult: 8_400m, class69Charges: 1_600m)));
         // La porte de concurrence : un autre a finalisé entre l'alignement et la finalisation.
         harness.Declarations.Setup(x => x.FinalizeAsync(Year, It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(FiscalFinalizeOutcome.AlreadyFinalized);
@@ -404,7 +454,7 @@ public sealed class FiscalResultFinalizationTests
         harness.Declarations.Setup(x => x.GetByYearAsync(Year, It.IsAny<CancellationToken>()))
             .ReturnsAsync(declaration);
         harness.Reporting.Setup(x => x.GetNctStatementsAsync(Year, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success(Nct(resultBeforeTax: 10_000m, netResult: 8_400m)));
+            .ReturnsAsync(Result.Success(Nct(resultBeforeTax: 10_000m, netResult: 8_400m, class69Charges: 1_600m)));
         harness.Declarations.Setup(x => x.FinalizeAsync(Year, It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(FiscalFinalizeOutcome.Finalized);
         // L'écriture d'impôt existe déjà (rejeu) : l'IAccountingService factice rend quand même un Guid

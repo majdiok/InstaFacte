@@ -394,7 +394,9 @@ public sealed class FinalizeFiscalResultDeclarationCommandHandler
                         FiscalFinalizationCatalogCodes.IncomeTaxReintegration,
                         "Impôt sur les sociétés (compte 69)",
                         tax69,
-                        isAutoSuggested: true));
+                        // Préserve l'indicateur « saisi à la main » d'une ligne R-IS préexistante ;
+                        // on ne marque « auto » que si la valeur a réellement changé (revue).
+                        isAutoSuggested: a.Amount == tax69 ? a.IsAutoSuggested : true));
                 // tax69 == 0 : la ligne R-IS disparaît (aucun impôt comptabilisé).
                 continue;
             }
@@ -420,11 +422,12 @@ public sealed class FinalizeFiscalResultDeclarationCommandHandler
     /// </summary>
     private static decimal SumClass69Charges(NctIncomeStatementDto income)
     {
-        // Le compte de résultat NCT présente le résultat avant impôt (RAI) et le résultat net (RN) ;
-        // la charge d'impôt de l'exercice = RAI − RN (lorsqu'elle est positive, i.e. une charge d'impôt).
-        // On retient ce delta plutôt qu'une somme de lignes brutes : il couvre l'impôt ordinaire (69)
-        // et l'impôt extraordinaire (697) portés par l'écriture de finalisation.
-        var delta = income.ResultBeforeTax - income.NetResult;
-        return delta > 0m ? delta : 0m;
+        // La charge d'impôt = impôt ordinaire (IMP) + impôt sur éléments extraordinaires (IEX).
+        // On somme ces deux lignes directement : RAI − RN inclurait aussi le solde extraordinaire
+        // hors impôt (67/77), ce qui fausserait la réintégration R-IS en présence d'éléments
+        // extraordinaires (revue : RAI est le résultat ordinaire avant impôt, RN inclut l'extraordinaire).
+        decimal LineAmount(string code) => income.Lines.FirstOrDefault(l => l.Code == code)?.Amount ?? 0m;
+        var tax = LineAmount("IMP") + LineAmount("IEX");
+        return tax > 0m ? tax : 0m;
     }
 }

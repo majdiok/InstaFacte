@@ -929,7 +929,12 @@ public sealed class AccountingController : ControllerBase
     {
         var r = await _mediator.Send(new RepairOpeningEntriesCommand(fiscalYear), cancellationToken);
         if (r.IsFailure)
-            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        {
+            // T27 — exercice verrouillé → Error.Conflict → 409, cohérent avec finalisation/upsert.
+            if (string.Equals(r.Error.Code, "Conflict", StringComparison.OrdinalIgnoreCase))
+                return Conflict(ApiResponse<object>.Fail(r.Error.Description, r.Error.Code));
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description, r.Error.Code));
+        }
         return Ok(ApiResponse<bool>.Ok(true));
     }
 

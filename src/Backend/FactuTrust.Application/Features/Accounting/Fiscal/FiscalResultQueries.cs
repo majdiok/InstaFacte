@@ -65,13 +65,17 @@ public sealed class GetFiscalResultDeclarationQueryHandler
         // CA local TTC repris de la comptabilité : assiette du minimum d'impôt, proposé en aide à la
         // saisie (la valeur retenue par le comptable prime — ex. exclusion du chiffre d'affaires export).
         var suggestedTurnover = await TryComputeLocalTurnoverTtcAsync(request.FiscalYear, cancellationToken);
-        // T11 — résultat comptable net (après impôt) repris de l'état de résultat, proposé à côté du
-        // champ saisi (la valeur saisie n'est jamais écrasée). Calculé aussi pour les feuilles existantes.
-        var suggestedAccountingResult = await TryComputeSuggestedAccountingResultAsync(request.FiscalYear, cancellationToken);
 
         if (existing is not null)
+        {
+            // T11 — résultat comptable net (après impôt) repris de l'état de résultat, proposé à côté
+            // du champ saisi (la valeur saisie n'est jamais écrasée). Calculé uniquement ici : le
+            // chemin « sans feuille » ci-dessous refait déjà GetNctStatementsAsync et construit son
+            // propre aperçu, donc cet appel serait un second parcours d'agrégation inutile.
+            var suggestedAccountingResult = await TryComputeSuggestedAccountingResultAsync(request.FiscalYear, cancellationToken);
             return Result.Success(FiscalResultAssembler.Assemble(
                 existing, parameters, _settings.FiscalLiasseEnabled, suggestedTurnover, suggestedAccountingResult));
+        }
 
         // Aucune feuille : aperçu initial à partir du résultat comptable net + suggestions auto certaines.
         var nct = await _reporting.GetNctStatementsAsync(request.FiscalYear, cancellationToken);
@@ -79,7 +83,11 @@ public sealed class GetFiscalResultDeclarationQueryHandler
             return Result.Failure<FiscalResultDeclarationDto>(nct.Error);
 
         var netResult = nct.Value.IncomeStatement.NetResult;
-        var isCharge = Math.Max(nct.Value.IncomeStatement.ResultBeforeTax - netResult, 0m);
+        // Charge d'impôt = impôt ordinaire (IMP) + impôt sur éléments extraordinaires (IEX).
+        // Ne pas dériver de RAI − RN : RN inclut aussi le solde extraordinaire hors impôt (67/77),
+        // ce qui fausserait la suggestion R-IS en présence d'éléments extraordinaires.
+        decimal LineAmount(string code) => nct.Value.IncomeStatement.Lines.FirstOrDefault(l => l.Code == code)?.Amount ?? 0m;
+        var isCharge = Math.Max(LineAmount("IMP") + LineAmount("IEX"), 0m);
 
         var suggestions = new List<FiscalAdjustmentLineDto>();
         if (isCharge > 0m)
