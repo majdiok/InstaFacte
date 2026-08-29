@@ -14,6 +14,13 @@ namespace FactuTrust.Application.Features.Accounting.Fiscal;
 // ── Requête d'upsert (payload API) ───────────────────────────────────────────────────────
 
 public sealed record FiscalAdjustmentLineInput(int Kind, string? CatalogCode, string Label, decimal Amount, bool IsAutoSuggested);
+
+/// <summary>
+/// Élément reportable saisi (déficit ou amortissement différé).
+/// ATTENTION (T12) : <see cref="ExpiryYear"/> est IGNORE du client — l'échéance est DÉRIVÉE côté
+/// serveur (déficit → OriginYear + DeficitCarryForwardYears ; amortissement différé → null, illimité).
+/// Le champ n'est conservé que pour la compatibilité du modèle d'entrée ; sa valeur n'est jamais persistée.
+/// </summary>
 public sealed record FiscalCarryForwardInput(int Kind, int OriginYear, decimal InitialAmount, decimal ImputedThisYear, int? ExpiryYear);
 
 public sealed record UpsertFiscalResultRequest(
@@ -63,14 +70,55 @@ public sealed class UpsertFiscalResultDeclarationCommandHandler
         // déduire l'échéance d'imputation des déficits non datés.
         var parameters = await _parameters.GetOrDefaultAsync(command.FiscalYear, cancellationToken);
 
+        // ── T12 — validations des reports AVANT persistance (Error.Validation → 400, sans écriture) ──
+        var carryInputs = r.CarryForwards ?? Array.Empty<FiscalCarryForwardInput>();
+        foreach (var c in carryInputs)
+        {
+            if (!Enum.IsDefined(typeof(FiscalCarryForwardKind), c.Kind))
+                return Result.Failure<FiscalResultDeclarationDto>(
+                    Error.Validation("CarryForwards", "Type de report invalide (déficit ou amortissement différé)."));
+
+            if (c.OriginYear >= command.FiscalYear || c.OriginYear < command.FiscalYear - 100)
+                return Result.Failure<FiscalResultDeclarationDto>(
+                    Error.Validation("CarryForwards",
+                        $"L'année d'origine du report ({c.OriginYear}) doit être antérieure à l'exercice {command.FiscalYear} et postérieure à {command.FiscalYear - 100}."));
+
+            if (c.InitialAmount < 0m)
+                return Result.Failure<FiscalResultDeclarationDto>(
+                    Error.Validation("CarryForwards", "Le montant initial reportable ne peut pas être négatif."));
+
+            if (c.ImputedThisYear < 0m)
+                return Result.Failure<FiscalResultDeclarationDto>(
+                    Error.Validation("CarryForwards", "Le montant imputé sur l'exercice ne peut pas être négatif."));
+
+            if (c.ImputedThisYear > c.InitialAmount)
+                return Result.Failure<FiscalResultDeclarationDto>(
+                    Error.Validation("CarryForwards",
+                        $"Report d'origine {c.OriginYear} : l'imputation ({c.ImputedThisYear:N3}) ne peut pas dépasser le stock reportable ({c.InitialAmount:N3})."));
+
+            // ExpiryYear DÉRIVÉ côté serveur, jamais lu du client (documenté dans FiscalCarryForwardInput).
+            // Déficit ordinaire périmé imputé → rejet (ExpiryYear dérivé < exercice et imputation > 0).
+            var isDeficit = c.Kind == (int)FiscalCarryForwardKind.Deficit;
+            if (isDeficit && c.ImputedThisYear > 0m)
+            {
+                var derivedExpiry = c.OriginYear + parameters.DeficitCarryForwardYears;
+                if (derivedExpiry < command.FiscalYear)
+                    return Result.Failure<FiscalResultDeclarationDto>(
+                        Error.Validation("CarryForwards",
+                            $"Déficit ordinaire d'origine {c.OriginYear} prescrit (imputable jusqu'à {derivedExpiry}) : non imputable sur l'exercice {command.FiscalYear}."));
+            }
+        }
+
         var adjustments = (r.Adjustments ?? Array.Empty<FiscalAdjustmentLineInput>())
             .Select(a => FiscalAdjustmentLine.Create(
                 (FiscalAdjustmentKind)a.Kind, a.CatalogCode, string.IsNullOrWhiteSpace(a.Label) ? "(sans libellé)" : a.Label, a.Amount, a.IsAutoSuggested))
             .ToList();
 
-        var carryForwards = (r.CarryForwards ?? Array.Empty<FiscalCarryForwardInput>())
+        // ExpiryYear ignoré du client (null) : dérivation serveur dans FiscalCarryForwardItem.Create
+        // (déficit → OriginYear + DeficitCarryForwardYears ; amortissement différé → null, illimité).
+        var carryForwards = carryInputs
             .Select(c => FiscalCarryForwardItem.Create(
-                (FiscalCarryForwardKind)c.Kind, c.OriginYear, c.InitialAmount, c.ImputedThisYear, c.ExpiryYear,
+                (FiscalCarryForwardKind)c.Kind, c.OriginYear, c.InitialAmount, c.ImputedThisYear, expiryYear: null,
                 parameters.DeficitCarryForwardYears))
             .ToList();
 
