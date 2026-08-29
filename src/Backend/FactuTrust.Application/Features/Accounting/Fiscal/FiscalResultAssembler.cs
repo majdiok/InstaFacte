@@ -17,7 +17,8 @@ namespace FactuTrust.Application.Features.Accounting.Fiscal;
 public static class FiscalResultAssembler
 {
     public static FiscalResultDeclarationDto Assemble(
-        FiscalResultDeclaration d, IncomeTaxYearParameter p, bool enabled, decimal suggestedLocalTurnoverTtc = 0m)
+        FiscalResultDeclaration d, IncomeTaxYearParameter p, bool enabled, decimal suggestedLocalTurnoverTtc = 0m,
+        decimal? suggestedAccountingResult = null)
     {
         var adjustments = d.Adjustments
             .Select(a => new FiscalAdjustmentLineDto
@@ -56,6 +57,7 @@ public static class FiscalResultAssembler
             LocalTurnoverTtc = d.LocalTurnoverTtc,
             MinimumTaxRegime = (int)d.MinimumTaxRegime,
             SuggestedLocalTurnoverTtc = suggestedLocalTurnoverTtc,
+            SuggestedAccountingResult = suggestedAccountingResult,
             AcomptesPaid = d.AcomptesPaid,
             WithholdingSuffered = d.WithholdingSuffered,
             PriorTaxCredit = d.PriorTaxCredit,
@@ -96,6 +98,7 @@ public static class FiscalResultAssembler
             LocalTurnoverTtc = suggestedLocalTurnoverTtc,
             MinimumTaxRegime = (int)MinimumTaxRegime.Standard,
             SuggestedLocalTurnoverTtc = suggestedLocalTurnoverTtc,
+            SuggestedAccountingResult = accountingNetResult,
             Adjustments = suggestions,
             CarryForwards = carry,
             Computation = computation,
@@ -190,6 +193,71 @@ public static class FiscalResultAssembler
                 deferred += eligible;
         }
 
+        // ── T12 / Option 2 (art. 8 code IRPP/IS) : avertissements non bloquants au brouillon ──
+        // Ces mêmes règles deviennent BLOQUANTES à la finalisation (T10 étape 5). Au stade brouillon,
+        // elles sont simplement signalées pour que le comptable corrige l'ordre d'imputation.
+        AddCarryForwardOrderingWarnings(fiscalYear, carry, warnings);
+
         return (deficits, deferred);
+    }
+
+    /// <summary>
+    /// Avertissements d'ordre d'imputation des reports (T12, Option 2) — non bloquants au brouillon :
+    /// (a) ordre FIFO non respecté : un déficit ordinaire d'origine plus récente est imputé alors qu'un
+    /// plus ancien imputable (montant restant > 0, non périmé) n'est pas intégralement imputé ;
+    /// (b) amortissement différé imputé alors qu'un déficit ordinaire imputable subsiste.
+    /// </summary>
+    private static void AddCarryForwardOrderingWarnings(
+        int fiscalYear, IReadOnlyList<FiscalCarryForwardDto> carry, List<string> warnings)
+    {
+        var deficits = carry
+            .Where(c => c.Kind == (int)FiscalCarryForwardKind.Deficit)
+            .OrderBy(c => c.OriginYear)
+            .ToList();
+
+        // (a) FIFO : pour chaque déficit ordinaire imputé, vérifier qu'aucun déficit plus ancien
+        // et encore imputable n'a été laissé en stock.
+        foreach (var imputed in deficits.Where(c => c.ImputedThisYear > 0m))
+        {
+            foreach (var older in deficits.Where(o => o.OriginYear < imputed.OriginYear))
+            {
+                var expired = older.ExpiryYear.HasValue && older.ExpiryYear.Value < fiscalYear;
+                if (expired)
+                    continue;
+                var remaining = Math.Max(older.InitialAmount, 0m) - Math.Max(older.ImputedThisYear, 0m);
+                if (remaining > 0.005m)
+                {
+                    warnings.Add(string.Format(CultureInfo.InvariantCulture,
+                        "Ordre d'imputation FIFO non respecté : le déficit d'origine {0} est imputé " +
+                        "alors que le déficit plus ancien d'origine {1} dispose encore d'un stock imputable " +
+                        "de {2:N3} TND (imputer en priorité les déficits les plus anciens).",
+                        imputed.OriginYear, older.OriginYear, remaining));
+                    break; // un avertissement par déficit imputé hors-ordre suffit
+                }
+            }
+        }
+
+        // (b) Amortissement différé imputé avant épuisement des déficits ordinaires imputables.
+        var hasDeferredImputed = carry.Any(c =>
+            c.Kind == (int)FiscalCarryForwardKind.DeferredDepreciation && c.ImputedThisYear > 0m);
+        if (hasDeferredImputed)
+        {
+            foreach (var d in deficits)
+            {
+                var expired = d.ExpiryYear.HasValue && d.ExpiryYear.Value < fiscalYear;
+                if (expired)
+                    continue;
+                var remaining = Math.Max(d.InitialAmount, 0m) - Math.Max(d.ImputedThisYear, 0m);
+                if (remaining > 0.005m)
+                {
+                    warnings.Add(string.Format(CultureInfo.InvariantCulture,
+                        "Amortissement différé imputé alors que le déficit ordinaire d'origine {0} dispose " +
+                        "encore d'un stock imputable de {1:N3} TND (imputer les déficits ordinaires avant les " +
+                        "amortissements réputés différés).",
+                        d.OriginYear, remaining));
+                    break;
+                }
+            }
+        }
     }
 }

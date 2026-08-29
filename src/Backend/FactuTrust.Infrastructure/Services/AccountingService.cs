@@ -1,6 +1,7 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
+using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Accounting;
 using FactuTrust.Application.Features.Accounting.Services;
 using FactuTrust.Application.Features.CashDesk.Services;
@@ -30,6 +31,13 @@ public sealed class AccountingService : IAccountingService
     public const string SourceBankDeposit = "BankDeposit";
     public const string SourceCashOperation = "CashOperation";
     public const string SourceOpeningBalance = "OpeningBalance";
+
+    /// <summary>
+    /// Extourne interne d'un à-nouveau contaminé (T8, réparation) — DISTINCT de
+    /// <see cref="SourceOpeningBalance"/> pour ne jamais être confondu avec l'à-nouveau lui-même
+    /// par <see cref="Application.Common.Interfaces.Repositories.IJournalEntryRepository.GetActiveBySourceAsync"/>.
+    /// </summary>
+    public const string SourceOpeningBalanceReversal = "OpeningBalanceReversal";
     public const string SourceFixedAssetAcquisition = "FixedAssetAcquisition";
     public const string SourceFixedAssetDepreciation = "FixedAssetDepreciation";
     public const string SourceFixedAssetDisposal = "FixedAssetDisposal";
@@ -45,6 +53,23 @@ public sealed class AccountingService : IAccountingService
     public const string SourceEffetSettlement = "EffetSettlement";
 
     public const string FixedAssetJournalCode = "JIM";
+
+    /// <summary>
+    /// T10 — clé d'idempotence de l'écriture d'impôt de la finalisation de la liasse fiscale, sur
+    /// l'id de la feuille de détermination du résultat fiscal. Une seule finalisation possible par
+    /// exercice + idempotence par <see cref="IJournalEntryRepository.GetBySourceAsync"/> dans la même
+    /// transaction : l'unicité découle du flux, pas d'un index global (cf. IFiscalResultDeclarationRepository).
+    /// </summary>
+    public const string SourceFiscalTax = "FiscalTaxDeclaration";
+    /// <summary>Charge d'impôt sur les sociétés (classe 69) — débit du montant d'IS dû.</summary>
+    public const string IncomeTaxExpenseAccountNumber = "691";
+    /// <summary>
+    /// Charge de contribution sociale de solidarité (sous-compte de 691 — aucun compte CSS dédié au
+    /// catalogue livré §1.4 ; auto-créé via <see cref="TryAutoCreateSubAccountAsync"/> le cas échéant).
+    /// </summary>
+    public const string CssExpenseAccountNumber = "6912";
+    /// <summary>État — impôt à liquider (crédit du montant total d'impôt dû, jamais le net à payer).</summary>
+    public const string IncomeTaxLiabilityAccountNumber = "4343";
 
     /// <summary>Comptes d'effets de commerce (traites) — alignés sur le seed du plan comptable tenant.</summary>
     public const string ClientEffetAccountNumber = "413";   // Clients - effets à recevoir (NCT 01)
@@ -75,6 +100,14 @@ public sealed class AccountingService : IAccountingService
     private readonly ILogger<AccountingService> _logger;
     private readonly AccountingSettings _settings;
 
+    /// <summary>
+    /// Piste d'audit persistée de l'auto-création de sous-comptes (T16, DÉFAUT #3). Vit dans sa propre
+    /// transaction isolée (cf. <see cref="ITenantUnitOfWork"/>) : l'événement survit au rollback de
+    /// l'écriture mère — comportement souhaité (un compte créé reste créé même si l'écriture échoue).
+    /// Optionnel en construction (null = tests sans audit) ; toujours injecté par la DI en production.
+    /// </summary>
+    private readonly IAuditService? _audit;
+
     public AccountingService(
         IChartOfAccountRepository chartOfAccounts,
         IAccountingPeriodService periodService,
@@ -83,7 +116,8 @@ public sealed class AccountingService : IAccountingService
         IDepreciationRateCategoryRepository depreciationRateCategories,
         ITenantDbContextFactory contextFactory,
         ILogger<AccountingService> logger,
-        IOptions<AccountingSettings> settings)
+        IOptions<AccountingSettings> settings,
+        IAuditService? audit = null)
     {
         _chartOfAccounts = chartOfAccounts;
         _periodService = periodService;
@@ -93,6 +127,7 @@ public sealed class AccountingService : IAccountingService
         _contextFactory = contextFactory;
         _logger = logger;
         _settings = settings.Value;
+        _audit = audit;
     }
 
     /// <summary>
@@ -108,8 +143,14 @@ public sealed class AccountingService : IAccountingService
     /// auto-created to prevent data loss from a single missing configuration entry.
     /// Returns a failure result with the first missing account, or success if all accounts exist.
     /// </summary>
+    /// <param name="sourceContext">
+    /// T16 — provenance de l'écriture (ex. « OpeningEntries », « FixedAssetDisposal »,
+    /// « FiscalTaxEntry ») tracée dans la piste d'audit lors d'une auto-création de sous-compte.
+    /// Oblligatoire : aucun site d'appel sans contexte.
+    /// </param>
     private async Task<Result> ValidateAccountsExistAsync(
         IEnumerable<JournalLineInput> lines,
+        string sourceContext,
         CancellationToken cancellationToken)
     {
         var checkedAccounts = new HashSet<string>(StringComparer.Ordinal);
@@ -123,7 +164,7 @@ public sealed class AccountingService : IAccountingService
             if (account is null)
             {
                 // Attempt auto-creation: find nearest parent account in the chart
-                var created = await TryAutoCreateSubAccountAsync(acc, cancellationToken);
+                var created = await TryAutoCreateSubAccountAsync(acc, sourceContext, cancellationToken);
                 if (!created)
                 {
                     _logger.LogError(
@@ -150,8 +191,9 @@ public sealed class AccountingService : IAccountingService
     /// in the chart of accounts hierarchy. This follows standard ERP practice for
     /// Tunisian SCE where sub-accounts are created as needed.
     /// </summary>
+    /// <param name="sourceContext">T16 — provenance de l'écriture, tracée dans la piste d'audit.</param>
     /// <returns>True if the sub-account was successfully created, false otherwise.</returns>
-    private async Task<bool> TryAutoCreateSubAccountAsync(string accountNumber, CancellationToken cancellationToken)
+    private async Task<bool> TryAutoCreateSubAccountAsync(string accountNumber, string sourceContext, CancellationToken cancellationToken)
     {
         // Try progressively shorter prefixes to find a parent account
         // e.g., for "4371": try "437", then "43", then "4"
@@ -188,6 +230,28 @@ public sealed class AccountingService : IAccountingService
             _logger.LogInformation(
                 "Auto-created missing sub-account {AccountNumber} under parent {ParentNumber} (class {AccountClass})",
                 accountNumber, parentNumber, accountClass);
+
+            // T16 — piste d'audit persistée de l'auto-création avec la provenance de l'écriture.
+            // Transaction isolée (cf. IAuditService / ITenantUnitOfWork) : survit au rollback mère.
+            if (_audit is not null)
+            {
+                try
+                {
+                    await _audit.LogAsync(
+                        action: "AccountAutoCreated",
+                        entityType: "ChartOfAccount",
+                        entityId: newAccount.Id,
+                        oldValues: null,
+                        newValues: new { accountNumber, parentNumber, label, sourceContext },
+                        cancellationToken: cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    // L'audit ne doit jamais faire échouer l'écriture comptable.
+                    _logger.LogError(ex,
+                        "Failed to log audit event for auto-created sub-account {AccountNumber}", accountNumber);
+                }
+            }
 
             return true;
         }
@@ -309,7 +373,7 @@ public sealed class AccountingService : IAccountingService
             }
         }
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "InvoiceSale", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -460,7 +524,7 @@ public sealed class AccountingService : IAccountingService
             }
         }
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "InvoiceCreditNote", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -526,7 +590,7 @@ public sealed class AccountingService : IAccountingService
 
         lines.Add(new JournalLineInput(TunisianPostingAccounts.Client, $"Client — {invoice.Number.Value}", 0, totalApplied, invoice.ClientId, ThirdPartyKind.Client));
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "ClientPayment", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -737,7 +801,7 @@ public sealed class AccountingService : IAccountingService
         var fixedAssetClassifications = await BuildFixedAssetClassificationsAsync(invoice, cancellationToken);
         var (lines, _) = SupplierInvoiceJournalLineBuilder.Build(invoice, productTypes, fixedAssetClassifications);
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "SupplierInvoice", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -854,7 +918,7 @@ public sealed class AccountingService : IAccountingService
             new(creditAccount, creditLabel, 0, amount, null, ThirdPartyKind.None)
         };
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "SupplierPayment", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -937,7 +1001,7 @@ public sealed class AccountingService : IAccountingService
             description = $"Effet impayé facture {invoice.Number.Value}";
         }
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "ClientEffetSettlement", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -993,7 +1057,7 @@ public sealed class AccountingService : IAccountingService
             new("5321", $"Paiement effet — {inv.InvoiceNumber}", 0, amount, null, ThirdPartyKind.None)
         };
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "SupplierEffetSettlement", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -1043,7 +1107,7 @@ public sealed class AccountingService : IAccountingService
             new("5411", $"Sortie caisse — remise {deposit.Number.Value}", 0, amount, null, ThirdPartyKind.None)
         };
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "BankDeposit", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -1124,7 +1188,7 @@ public sealed class AccountingService : IAccountingService
             }
         }
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "CashOperation", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -1209,7 +1273,7 @@ public sealed class AccountingService : IAccountingService
                 ThirdPartyKind.None)
         };
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "SupplierInvoiceWithholding", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -1312,9 +1376,12 @@ public sealed class AccountingService : IAccountingService
 
         var newYear = closedFiscalYear + 1;
 
-        // Idempotency: check if opening entries already exist for this year
+        // Idempotency: check if opening entries already exist for this year. GetActiveBySourceAsync
+        // (et non GetBySourceAsync) : ignore les à-nouveaux EXTOURNÉS — indispensable pour que la
+        // réparation (RepairOpeningEntriesAsync, T8) puisse régénérer après avoir extourné un
+        // à-nouveau contaminé, sans se heurter à un faux conflit sur l'écriture désormais inactive.
         var existingSourceId = GuidFromFiscalYear(closedFiscalYear);
-        var existing = await _journalEntries.GetBySourceAsync(SourceOpeningBalance, existingSourceId, cancellationToken);
+        var existing = await _journalEntries.GetActiveBySourceAsync(SourceOpeningBalance, existingSourceId, cancellationToken);
         if (existing is not null)
             return Result.Failure<Guid>(Error.Conflict($"Les écritures d'à-nouveau pour l'exercice {closedFiscalYear} ont déjà été générées."));
 
@@ -1334,85 +1401,13 @@ public sealed class AccountingService : IAccountingService
 
         var period = periodResult.Value;
 
-        // Compute closing balances for ALL accounts up to end of closed fiscal year.
-        // Sortie légale : seules les écritures définitives entrent dans les soldes — un brouillon
-        // (y compris antérieur à l'exercice clôturé) ne doit jamais alimenter l'à-nouveau.
+        // Soldes de clôture ancrés sur l'à-nouveau de l'exercice s'il existe (T8) : corrige le
+        // double comptage historique (Bug D-bis) qui cumulait tout l'historique antérieur SANS
+        // exclure les à-nouveaux déjà posés — à partir du 2ᵉ exercice clôturé, les soldes reportés
+        // étaient doublés. Voir FiscalAnchorHelper.ComputeAnchoredClosingBalancesAsync.
         await using var ctx = _contextFactory.CreateContext();
-        var endDate = new DateTime(closedFiscalYear, 12, 31);
-
-        // Agrégation par compte ET par tiers : un à-nouveau qui perd le tiers n'est plus justifiable
-        // dans la balance auxiliaire ni dans le grand livre tiers. Les lignes sans tiers (la très
-        // grande majorité des comptes) forment un groupe unique par compte — comportement inchangé.
-        var accountBalances = await ctx.JournalEntryLines
-            .AsNoTracking()
-            .Include(l => l.JournalEntry)
-            .Where(l => l.JournalEntry.EntryDate <= endDate
-                        && l.JournalEntry.Status != JournalEntryStatus.Brouillon)
-            .GroupBy(l => new { l.AccountNumber, l.ThirdPartyId, l.ThirdPartyKind })
-            .Select(g => new
-            {
-                g.Key.AccountNumber,
-                g.Key.ThirdPartyId,
-                g.Key.ThirdPartyKind,
-                TotalDebit = g.Sum(l => l.DebitAmount.Amount),
-                TotalCredit = g.Sum(l => l.CreditAmount.Amount)
-            })
-            .ToListAsync(cancellationToken);
-
-        var lines = new List<JournalLineInput>();
-
-        // Carry forward balance sheet accounts (classes 1-5)
-        foreach (var ab in accountBalances
-            .Where(a => a.AccountNumber.Length > 0 &&
-                        a.AccountNumber[0] >= '1' && a.AccountNumber[0] <= '5')
-            .OrderBy(a => a.AccountNumber, StringComparer.Ordinal)
-            .ThenBy(a => a.ThirdPartyId))
-        {
-            var balance = Math.Round(ab.TotalDebit - ab.TotalCredit, 3);
-            if (balance == 0) continue;
-
-            var lineLabel = $"À-nouveau {closedFiscalYear} — {ab.AccountNumber}";
-            if (balance > 0)
-            {
-                lines.Add(new JournalLineInput(
-                    ab.AccountNumber, lineLabel,
-                    balance, 0, ab.ThirdPartyId, ab.ThirdPartyKind));
-            }
-            else
-            {
-                lines.Add(new JournalLineInput(
-                    ab.AccountNumber, lineLabel,
-                    0, Math.Abs(balance), ab.ThirdPartyId, ab.ThirdPartyKind));
-            }
-        }
-
-        // Compute net result from P&L accounts (classes 6 and 7)
-        // Class 6 = expenses (debit nature), Class 7 = revenues (credit nature)
-        var pnlBalance = accountBalances
-            .Where(a => a.AccountNumber.Length > 0 &&
-                        (a.AccountNumber[0] == '6' || a.AccountNumber[0] == '7'))
-            .Sum(a => a.TotalCredit - a.TotalDebit);
-
-        var netResult = Math.Round(pnlBalance, 3);
-
-        if (netResult != 0)
-        {
-            var resultAccount = netResult > 0 ? OpeningBalanceProfitAccountNumber : OpeningBalanceLossAccountNumber;
-            if (netResult > 0)
-            {
-                lines.Add(new JournalLineInput(
-                    resultAccount,
-                    $"Résultat net exercice {closedFiscalYear}",
-                    0, netResult, null, ThirdPartyKind.None));
-            }
-            else
-            {
-                lines.Add(new JournalLineInput(
-                    resultAccount,
-                    $"Résultat net exercice {closedFiscalYear}",
-                    Math.Abs(netResult), 0, null, ThirdPartyKind.None));
-            }
-        }
+        var balances = await FiscalAnchorHelper.ComputeAnchoredClosingBalancesAsync(ctx, closedFiscalYear, cancellationToken);
+        var lines = BuildOpeningLines(balances, closedFiscalYear);
 
         if (lines.Count < 2)
         {
@@ -1422,7 +1417,7 @@ public sealed class AccountingService : IAccountingService
         }
 
         // Validate all accounts exist
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "OpeningEntries", cancellationToken);
         if (accountValidation.IsFailure)
             return Result.Failure<Guid>(accountValidation.Error);
 
@@ -1450,6 +1445,192 @@ public sealed class AccountingService : IAccountingService
             lines.Count, newYear, closedFiscalYear);
 
         return Result.Success(entry.Id);
+    }
+
+    /// <summary>
+    /// Construit les lignes d'à-nouveau attendues à partir des soldes ancrés (T8) : report des
+    /// comptes de bilan (classes 1-5, un par compte + tiers, montants non nuls) puis transfert du
+    /// résultat net de l'exercice (classes 6-7, mouvements seuls) vers 131 (bénéfice) ou 135
+    /// (perte). Factorisée pour être exploitée à l'identique par la génération
+    /// (<see cref="GenerateOpeningEntriesAsync"/>) et le diagnostic (<see cref="DiagnoseOpeningEntriesAsync"/>).
+    /// </summary>
+    private static List<JournalLineInput> BuildOpeningLines(
+        IReadOnlyList<FiscalAnchorHelper.AnchoredBalance> balances, int closedFiscalYear)
+    {
+        var lines = new List<JournalLineInput>();
+
+        foreach (var ab in balances
+            .Where(a => a.AccountNumber.Length > 0 &&
+                        a.AccountNumber[0] >= '1' && a.AccountNumber[0] <= '5')
+            .OrderBy(a => a.AccountNumber, StringComparer.Ordinal)
+            .ThenBy(a => a.ThirdPartyId))
+        {
+            var balance = Math.Round(ab.TotalDebit - ab.TotalCredit, 3);
+            if (balance == 0) continue;
+
+            var lineLabel = $"À-nouveau {closedFiscalYear} — {ab.AccountNumber}";
+            lines.Add(balance > 0
+                ? new JournalLineInput(ab.AccountNumber, lineLabel, balance, 0, ab.ThirdPartyId, ab.ThirdPartyKind)
+                : new JournalLineInput(ab.AccountNumber, lineLabel, 0, Math.Abs(balance), ab.ThirdPartyId, ab.ThirdPartyKind));
+        }
+
+        // Classes 6 (charges, nature débit) et 7 (produits, nature crédit) : le résultat net de
+        // l'exercice — les mouvements seuls, jamais d'ouverture, cf. ComputeAnchoredClosingBalancesAsync.
+        var pnlBalance = balances
+            .Where(a => a.AccountNumber.Length > 0 && (a.AccountNumber[0] == '6' || a.AccountNumber[0] == '7'))
+            .Sum(a => a.TotalCredit - a.TotalDebit);
+        var netResult = Math.Round(pnlBalance, 3);
+
+        if (netResult != 0)
+        {
+            var resultAccount = netResult > 0 ? OpeningBalanceProfitAccountNumber : OpeningBalanceLossAccountNumber;
+            var label = $"Résultat net exercice {closedFiscalYear}";
+            lines.Add(netResult > 0
+                ? new JournalLineInput(resultAccount, label, 0, netResult, null, ThirdPartyKind.None)
+                : new JournalLineInput(resultAccount, label, Math.Abs(netResult), 0, null, ThirdPartyKind.None));
+        }
+
+        return lines;
+    }
+
+    /// <summary>Solde signé (débit − crédit) attendu par compte + tiers, agrégeant les lignes attendues.</summary>
+    private static Dictionary<(string AccountNumber, Guid? ThirdPartyId), decimal> ExpectedSignedBalances(
+        IEnumerable<JournalLineInput> lines)
+    {
+        var dict = new Dictionary<(string, Guid?), decimal>();
+        foreach (var l in lines)
+        {
+            var key = (l.AccountNumber, l.ThirdPartyId);
+            dict.TryGetValue(key, out var cur);
+            dict[key] = cur + l.Debit - l.Credit;
+        }
+        return dict;
+    }
+
+    /// <summary>
+    /// Diagnostique une écriture d'à-nouveau active donnée : recalcule les soldes attendus pour
+    /// son exercice clôturé et rend les écarts ligne à ligne avec les montants réellement portés.
+    /// </summary>
+    private static async Task<OpeningEntryDiagnosticDto> DiagnoseOneAsync(
+        Persistence.TenantDbContext ctx, JournalEntry openingEntry, int closedFiscalYear, CancellationToken ct)
+    {
+        var balances = await FiscalAnchorHelper.ComputeAnchoredClosingBalancesAsync(ctx, closedFiscalYear, ct);
+        var expected = ExpectedSignedBalances(BuildOpeningLines(balances, closedFiscalYear));
+
+        var actual = ExpectedSignedBalances(openingEntry.Lines.Select(l =>
+            new JournalLineInput(l.AccountNumber, l.Label, l.DebitAmount.Amount, l.CreditAmount.Amount, l.ThirdPartyId, l.ThirdPartyKind)));
+
+        var keys = new HashSet<(string, Guid?)>(expected.Keys);
+        keys.UnionWith(actual.Keys);
+
+        var discrepancies = new List<OpeningEntryLineDiscrepancyDto>();
+        foreach (var key in keys.OrderBy(k => k.Item1, StringComparer.Ordinal))
+        {
+            var exp = expected.TryGetValue(key, out var e) ? e : 0m;
+            var act = actual.TryGetValue(key, out var a) ? a : 0m;
+            if (Math.Abs(exp - act) >= 0.01m)
+                discrepancies.Add(new OpeningEntryLineDiscrepancyDto(key.Item1, key.Item2, exp, act, exp - act));
+        }
+
+        return new OpeningEntryDiagnosticDto(closedFiscalYear, openingEntry.Id, discrepancies.Count > 0, discrepancies);
+    }
+
+    public async Task<Result<IReadOnlyList<OpeningEntryDiagnosticDto>>> DiagnoseOpeningEntriesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using var ctx = _contextFactory.CreateContext();
+
+        var activeEntries = await ctx.JournalEntries.AsNoTracking()
+            .Include(e => e.Lines)
+            .Where(e => e.SourceEntityType == SourceOpeningBalance && !e.IsReversed)
+            .OrderBy(e => e.EntryDate)
+            .ToListAsync(cancellationToken);
+
+        var diagnostics = new List<OpeningEntryDiagnosticDto>();
+        foreach (var entry in activeEntries)
+        {
+            // L'à-nouveau de l'exercice clôturé N est daté du 1er janvier de N+1.
+            var closedFiscalYear = entry.EntryDate.Year - 1;
+            diagnostics.Add(await DiagnoseOneAsync(ctx, entry, closedFiscalYear, cancellationToken));
+        }
+
+        return Result.Success<IReadOnlyList<OpeningEntryDiagnosticDto>>(diagnostics);
+    }
+
+    public async Task<Result> RepairOpeningEntriesAsync(int closedFiscalYear, CancellationToken cancellationToken = default)
+    {
+        var existing = await _journalEntries.GetActiveBySourceAsync(
+            SourceOpeningBalance, GuidFromFiscalYear(closedFiscalYear), cancellationToken);
+        if (existing is null)
+            return Result.Success(); // Rien à réparer : aucun à-nouveau actif pour cet exercice.
+
+        await using var ctx = _contextFactory.CreateContext();
+        var diagnostic = await DiagnoseOneAsync(ctx, existing, closedFiscalYear, cancellationToken);
+        if (!diagnostic.HasDiscrepancy)
+            return Result.Success(); // Idempotence : aucun écart, no-op succès.
+
+        if (existing.Status == JournalEntryStatus.Brouillon)
+        {
+            await _journalEntries.RemoveAsync(existing, cancellationToken);
+        }
+        else
+        {
+            // Extourne interne (patron ReverseSupplierInvoiceEntryAsync) : NE PAS utiliser
+            // ReverseJournalEntryAsync (parcours utilisateur conditionné au réglage d'extourne
+            // manuelle) — la réparation doit fonctionner quel que soit ce réglage (T8, point 4).
+            var reversalDate = existing.EntryDate;
+            var periodResult = await _periodService.EnsureOpenPeriodAsync(reversalDate, cancellationToken);
+            if (periodResult.IsFailure)
+            {
+                reversalDate = DateTime.UtcNow.Date;
+                periodResult = await _periodService.EnsureOpenPeriodAsync(reversalDate, cancellationToken);
+            }
+            if (periodResult.IsFailure)
+                return Result.Failure(periodResult.Error);
+
+            var period = periodResult.Value;
+            var currency = existing.Lines.First().DebitAmount.Amount > 0
+                ? existing.Lines.First().DebitAmount.Currency
+                : existing.Lines.First().CreditAmount.Currency;
+
+            var revLines = existing.Lines
+                .OrderBy(l => l.LineNumber)
+                .Select(l => new JournalLineInput(
+                    l.AccountNumber, l.Label, l.CreditAmount.Amount, l.DebitAmount.Amount, l.ThirdPartyId, l.ThirdPartyKind))
+                .ToList();
+
+            var n = await _journalEntries.ReserveNextEntryNumberAsync(existing.JournalCode, reversalDate.Year, cancellationToken);
+            var create = JournalEntry.Create(
+                n,
+                existing.JournalCode,
+                reversalDate,
+                $"Extourne (réparation à-nouveau contaminé) — Exercice {closedFiscalYear}",
+                period.Id,
+                true,
+                SourceOpeningBalanceReversal,
+                existing.Id,
+                revLines,
+                currency,
+                existing.Id);
+
+            if (create.IsFailure)
+                return Result.Failure(create.Error);
+
+            var reversal = create.Value;
+            // Statut forcé Validee (jamais NewEntryStatus) : la réparation figure les soldes ;
+            // un brouillon serait invisible des états NCT et laisserait l'écart en place.
+            reversal.MarkInitialStatus(JournalEntryStatus.Validee);
+            reversal.SetAuditInfo("system", false);
+            await _journalEntries.AddAsync(reversal, cancellationToken);
+
+            existing.MarkReversedBy(reversal.Id);
+            await _journalEntries.UpdateAsync(existing, cancellationToken);
+        }
+
+        // Régénère : GetActiveBySourceAsync (T8, point 2) ne voit plus l'écriture d'origine
+        // (supprimée, ou extournée) — la génération ne court-circuite plus en conflit.
+        var regenerate = await GenerateOpeningEntriesAsync(closedFiscalYear, cancellationToken);
+        return regenerate.IsSuccess ? Result.Success() : Result.Failure(regenerate.Error);
     }
 
     /// <summary>
@@ -1545,6 +1726,7 @@ public sealed class AccountingService : IAccountingService
             new(asset.AssetAccountNumber, $"Acquisition — {asset.InventoryNumber}", debitAssetAmount, 0, null, ThirdPartyKind.None)
         };
 
+        var accountValidation = await ValidateAccountsExistAsync(lines, "FixedAssetAcquisition", cancellationToken);
         if (asset.VatAmount > 0 && !asset.VatCapitalized)
         {
             lines.Add(new(TunisianPostingAccounts.VatDeductibleFixedAssets, $"TVA déductible immo — {asset.InventoryNumber}", asset.VatAmount, 0, null, ThirdPartyKind.None));
@@ -1615,7 +1797,7 @@ public sealed class AccountingService : IAccountingService
             new(asset.DepreciationAccountNumber, $"Amort. {scheduleLine.FiscalYear} — {asset.InventoryNumber}", 0, amount, null, ThirdPartyKind.None)
         };
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "FixedAssetDepreciation", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -1732,7 +1914,7 @@ public sealed class AccountingService : IAccountingService
                 ThirdPartyKind.None));
         }
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "FixedAssetDisposal", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -1756,6 +1938,77 @@ public sealed class AccountingService : IAccountingService
         entry.SetAuditInfo("system", false);
         await _journalEntries.AddAsync(entry, cancellationToken);
         return Result.Success();
+    }
+
+    // ── T10 : écriture d'impôt de la finalisation de la liasse fiscale (Bug E) ───────────────
+
+    public async Task<Result<Guid>> GenerateFiscalTaxEntryAsync(
+        int fiscalYear, decimal taxDue, decimal cssDue, Guid declarationId, CancellationToken cancellationToken = default)
+    {
+        // Garde-fous : montants négatifs refusés.
+        if (taxDue < 0m)
+            return Result.Failure<Guid>(Error.Validation("TaxDue", "Le montant d'impôt dû ne peut pas être négatif."));
+        if (cssDue < 0m)
+            return Result.Failure<Guid>(Error.Validation("CssDue", "Le montant de CSS ne peut pas être négatif."));
+
+        // Impôt total nul → rien à comptabiliser (no-op succès sûr pour la finalisation).
+        if (taxDue + cssDue == 0m)
+            return Result.Success(Guid.Empty);
+
+        if (declarationId == Guid.Empty)
+            return Result.Failure<Guid>(Error.Validation("DeclarationId", "L'identifiant de la déclaration est obligatoire."));
+
+        // Idempotence : un rejeu rend l'Id de l'écriture existante (jamais de doublon).
+        var existing = await _journalEntries.GetBySourceAsync(SourceFiscalTax, declarationId, cancellationToken);
+        if (existing is not null)
+            return Result.Success(existing.Id);
+
+        var entryDate = new DateTime(fiscalYear, 12, 31);
+        var periodResult = await _periodService.EnsureOpenPeriodAsync(entryDate, cancellationToken);
+        if (periodResult.IsFailure)
+            return Result.Failure<Guid>(periodResult.Error);
+
+        var totalDue = taxDue + cssDue;
+        var lines = new List<JournalLineInput>();
+
+        // Débit 691 = impôt dû (charge d'IS).
+        if (taxDue > 0m)
+            lines.Add(new JournalLineInput(IncomeTaxExpenseAccountNumber, "Impôt sur les sociétés — exercice", taxDue, 0m, null, ThirdPartyKind.None));
+
+        // Débit 6912 = CSS (omise si 0 ; sous-compte auto-créé le cas échéant).
+        if (cssDue > 0m)
+            lines.Add(new JournalLineInput(CssExpenseAccountNumber, "Contribution sociale de solidarité — exercice", cssDue, 0m, null, ThirdPartyKind.None));
+
+        // Crédit 4343 = impôt total dû (jamais le net à payer — acomptes/RAS restent en 4341/4342).
+        lines.Add(new JournalLineInput(IncomeTaxLiabilityAccountNumber, "Impôt à liquider — exercice", 0m, totalDue, null, ThirdPartyKind.None));
+
+        var accountValidation = await ValidateAccountsExistAsync(lines, "FiscalTaxEntry", cancellationToken);
+        if (accountValidation.IsFailure)
+            return Result.Failure<Guid>(accountValidation.Error);
+
+        var n = await _journalEntries.ReserveNextEntryNumberAsync(MiscJournalCode, entryDate.Year, cancellationToken);
+        var create = JournalEntry.Create(
+            n,
+            MiscJournalCode,
+            entryDate,
+            $"Comptabilisation de l'impôt sur le résultat — exercice {fiscalYear}",
+            periodResult.Value.Id,
+            true,
+            SourceFiscalTax,
+            declarationId,
+            lines);
+
+        if (create.IsFailure)
+            return Result.Failure<Guid>(create.Error);
+
+        var entry = create.Value;
+        // T10 — statut Validee FORCÉ explicitement (NE PAS utiliser NewEntryStatus) : avec
+        // BrouillardEnabled, un brouillon resterait invisible des états NCT (Status != Brouillon),
+        // cassant la réconciliation feuille/livres de la finalisation et laissant l'impôt hors bilan.
+        entry.MarkInitialStatus(JournalEntryStatus.Validee);
+        entry.SetAuditInfo("system", false);
+        await _journalEntries.AddAsync(entry, cancellationToken);
+        return Result.Success(entry.Id);
     }
 
     public async Task<int> CountReplaceableLinesAsync(string accountNumber, CancellationToken cancellationToken = default)
@@ -1888,7 +2141,7 @@ public sealed class AccountingService : IAccountingService
 
         var lines = linesResult.Value;
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "PayrollRun", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -2064,7 +2317,7 @@ public sealed class AccountingService : IAccountingService
             null,
             ThirdPartyKind.None));
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "PayrollPayment", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -2199,7 +2452,7 @@ public sealed class AccountingService : IAccountingService
         if (linesResult.IsFailure)
             return Result.Failure(linesResult.Error);
 
-        var accountValidation = await ValidateAccountsExistAsync(linesResult.Value, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(linesResult.Value, "CnssContributionPayment", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 

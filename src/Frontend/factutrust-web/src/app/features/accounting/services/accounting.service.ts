@@ -1021,6 +1021,10 @@ export interface NctBalanceSheetDto {
   previousTotalAssets: number;
   previousTotalEquityAndLiabilities: number;
   isBalanced: boolean;
+  /** Écart Actif − Passif (0 si équilibré) — T21. */
+  difference: number;
+  /** Avertissements qualité (rubriques négatives, à-nouveaux absents/manuels) — T21. */
+  warnings: string[];
 }
 export interface NctIncomeStatementDto {
   lines: NctLineDto[];
@@ -1218,6 +1222,8 @@ export interface FiscalResultDeclarationDto {
   minimumTaxRegime: number;
   /** CA local TTC calculé depuis la comptabilité, proposé en aide à la saisie. */
   suggestedLocalTurnoverTtc: number;
+  /** Résultat comptable net (après impôt) recalculé depuis les états NCT, proposé en aide à la saisie — T24. */
+  suggestedAccountingResult: number | null;
   acomptesPaid: number;
   withholdingSuffered: number;
   priorTaxCredit: number;

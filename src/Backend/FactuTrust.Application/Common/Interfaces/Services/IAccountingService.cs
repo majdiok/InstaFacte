@@ -1,3 +1,4 @@
+using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Entities.Payroll;
@@ -65,6 +66,24 @@ public interface IAccountingService
     /// </summary>
     Task<Result<Guid>> GenerateOpeningEntriesAsync(int closedFiscalYear, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Diagnostic (lecture seule) de toutes les écritures d'à-nouveau ACTIVES (non extournées) :
+    /// recalcule pour chacune les soldes attendus (ancrés, T7/T8) et rend les écarts ligne à
+    /// ligne. Aucune mutation. T8, point 3.
+    /// </summary>
+    Task<Result<IReadOnlyList<OpeningEntryDiagnosticDto>>> DiagnoseOpeningEntriesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Répare l'à-nouveau contaminé de l'exercice clôturé <paramref name="closedFiscalYear"/> : si
+    /// l'écriture active est en écart avec les soldes attendus, la supprime (si brouillon) ou
+    /// l'extourne (<c>SourceOpeningBalanceReversal</c>, statut <c>Validee</c>, patron
+    /// <see cref="ReverseSupplierInvoiceEntryAsync"/>) puis régénère via
+    /// <see cref="GenerateOpeningEntriesAsync"/>. Idempotente : aucun écart détecté → no-op succès.
+    /// À exécuter dans une transaction (<c>ITenantUnitOfWork</c>) —
+    /// voir <c>RepairOpeningEntriesCommandHandler</c>. T8, point 4.
+    /// </summary>
+    Task<Result> RepairOpeningEntriesAsync(int closedFiscalYear, CancellationToken cancellationToken = default);
+
     Task<Result> GenerateFixedAssetAcquisitionEntryAsync(FixedAsset asset, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -82,6 +101,21 @@ public interface IAccountingService
         CancellationToken cancellationToken = default);
 
     Task<Result> GenerateFixedAssetDisposalEntryAsync(FixedAsset asset, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Écriture d'impôt sur le résultat de la finalisation de la liasse fiscale (T10, Bug E) :
+    /// débit 691 = impôt dû, débit 6912 = CSS (omise si 0), crédit 4343 = impôt total dû — au journal
+    /// JOD, date 31/12/N, statut <c>Validee</c> forcé (jamais <c>NewEntryStatus</c>, sinon l'impôt
+    /// resterait invisible des états NCT en brouillard). Idempotente par <c>SourceFiscalTax</c> +
+    /// <paramref name="declarationId"/>. Montants négatifs refusés ; impôt total nul → no-op succès.
+    /// À exécuter dans une transaction (<c>ITenantUnitOfWork</c>) couvrant l'alignement de la feuille.
+    /// </summary>
+    Task<Result<Guid>> GenerateFiscalTaxEntryAsync(
+        int fiscalYear,
+        decimal taxDue,
+        decimal cssDue,
+        Guid declarationId,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Écriture comptable de paie sur validation d'un cycle (640/647, 421, 432, 453).

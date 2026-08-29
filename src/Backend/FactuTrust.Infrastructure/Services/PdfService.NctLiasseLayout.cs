@@ -45,6 +45,7 @@ public partial class PdfService
 
                     NctSectionTitle(col, "VARIATION DES CAPITAUX PROPRES");
                     NctTable(col, dto.EquityChanges.Lines);
+                    NctEquityComponentsTable(col, dto.EquityChanges.Components);
 
                     foreach (var note in dto.Notes)
                     {
@@ -118,6 +119,7 @@ public partial class PdfService
 
                         NctSectionTitle(col, "VARIATION DES CAPITAUX PROPRES");
                         NctTable(col, dto.EquityChanges.Lines, nLabel, n1Label);
+                        NctEquityComponentsTable(col, dto.EquityChanges.Components);
                     }
 
                     if (exportView.IncludeIncomeStatement)
@@ -267,6 +269,50 @@ public partial class PdfService
 
                 table.Cell().Background(bg).PaddingVertical(2).AlignRight()
                     .Text(line.PreviousAmount.ToString("N3", CultureInfo.InvariantCulture)).FontSize(9).FontColor(Colors.Grey.Darken1);
+            }
+        });
+    }
+
+    // T6 — Tableau des cinq composantes de la variation des capitaux propres (CAP/RES/REP/AUT/RSX).
+    // NctLineDto ne peut pas représenter ouverture/résultat/autres mouvements/clôture séparément par
+    // composante : tableau dédié à quatre colonnes numériques (NCT 01 — rapprochement par composante).
+    private static void NctEquityComponentsTable(ColumnDescriptor col, IReadOnlyList<NctEquityComponentDto> components)
+    {
+        if (components.Count == 0)
+            return;
+
+        col.Item().PaddingTop(4).Text("Détail par composante").FontSize(9).Bold().FontColor(Colors.Grey.Darken2);
+        col.Item().Table(table =>
+        {
+            table.ColumnsDefinition(c =>
+            {
+                c.RelativeColumn(3);
+                c.RelativeColumn(1.4f);
+                c.RelativeColumn(1.4f);
+                c.RelativeColumn(1.6f);
+                c.RelativeColumn(1.4f);
+            });
+
+            table.Header(h =>
+            {
+                h.Cell().Text("Composante").FontSize(8).Bold().FontColor(Colors.Grey.Darken1);
+                h.Cell().AlignRight().Text("Ouverture").FontSize(8).Bold().FontColor(Colors.Grey.Darken1);
+                h.Cell().AlignRight().Text("Résultat").FontSize(8).Bold().FontColor(Colors.Grey.Darken1);
+                h.Cell().AlignRight().Text("Autres mouvements").FontSize(8).Bold().FontColor(Colors.Grey.Darken1);
+                h.Cell().AlignRight().Text("Clôture").FontSize(8).Bold().FontColor(Colors.Grey.Darken1);
+            });
+
+            foreach (var c in components)
+            {
+                table.Cell().PaddingVertical(2).PaddingLeft(6).Text(c.Label).FontSize(9);
+                table.Cell().PaddingVertical(2).AlignRight()
+                    .Text(c.Opening.ToString("N3", CultureInfo.InvariantCulture)).FontSize(9);
+                table.Cell().PaddingVertical(2).AlignRight()
+                    .Text(c.PeriodResult.ToString("N3", CultureInfo.InvariantCulture)).FontSize(9);
+                table.Cell().PaddingVertical(2).AlignRight()
+                    .Text(c.OtherMovements.ToString("N3", CultureInfo.InvariantCulture)).FontSize(9);
+                table.Cell().PaddingVertical(2).AlignRight()
+                    .Text(c.Closing.ToString("N3", CultureInfo.InvariantCulture)).FontSize(9);
             }
         });
     }

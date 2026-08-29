@@ -32,77 +32,19 @@ public sealed class AccountingReportingService : IAccountingReportingService
     private bool ShowDrafts => _settings.IncludeBrouillardInReports;
 
     // ── Ancrage d'exercice (à-nouveaux) ────────────────────────────────────────────────────
+    // Logique extraite dans FiscalAnchorHelper (partagée avec AccountingService — T7/T8).
 
-    /// <summary>
-    /// Ancrage de l'ouverture sur l'exercice contenant la date de début demandée.
-    /// <para>
-    /// Quand l'exercice porte une écriture d'à-nouveau, celle-ci RÉSUME les soldes des exercices
-    /// antérieurs. L'ouverture doit alors partir de cette écriture, et non de tout l'historique :
-    /// sinon les soldes reportés sont comptés deux fois — une fois par l'historique conservé en
-    /// base, une fois par l'à-nouveau lui-même.
-    /// </para>
-    /// <para>
-    /// Sans à-nouveau sur l'exercice, l'ancrage est NEUTRE (<see cref="OpeningEntryId"/> nul) et
-    /// les états conservent exactement le comportement cumulatif historique — aucun chiffre ne
-    /// bouge sur un dossier qui n'a jamais reporté d'à-nouveaux.
-    /// </para>
-    /// L'exercice est l'année civile : c'est la seule notion d'exercice du modèle
-    /// (cf. <c>AccountingPeriod.FiscalYear</c> et le filtre annuel des états de synthèse).
-    /// </summary>
-    private readonly record struct FiscalAnchor(DateTime FiscalYearStart, Guid? OpeningEntryId)
-    {
-        /// <summary>Vrai quand l'exercice porte un à-nouveau : l'ouverture s'ancre sur lui.</summary>
-        public bool IsAnchored => OpeningEntryId.HasValue;
-    }
+    private static Task<FiscalAnchorHelper.FiscalAnchor> ResolveFiscalAnchorAsync(
+        Persistence.TenantDbContext ctx, DateTime from, CancellationToken ct) =>
+        FiscalAnchorHelper.ResolveFiscalAnchorAsync(ctx, from, ct);
 
-    private static async Task<FiscalAnchor> ResolveFiscalAnchorAsync(
-        Persistence.TenantDbContext ctx, DateTime from, CancellationToken ct)
-    {
-        var fiscalYearStart = new DateTime(from.Year, 1, 1);
-        var fiscalYearEnd = new DateTime(from.Year, 12, 31);
-
-        // L'à-nouveau est unique par exercice (idempotence garantie à la génération).
-        var openingEntryId = await ctx.JournalEntries.AsNoTracking()
-            .Where(e => e.SourceEntityType == AccountingService.SourceOpeningBalance
-                        && e.EntryDate >= fiscalYearStart
-                        && e.EntryDate <= fiscalYearEnd)
-            .Select(e => (Guid?)e.Id)
-            .FirstOrDefaultAsync(ct);
-
-        return new FiscalAnchor(fiscalYearStart, openingEntryId);
-    }
-
-    /// <summary>
-    /// Lignes constituant l'ouverture : l'à-nouveau de l'exercice plus les mouvements de l'exercice
-    /// antérieurs à la période (ancrage actif), ou tout l'historique antérieur (comportement
-    /// historique, ancrage neutre).
-    /// </summary>
     private static IQueryable<JournalEntryLine> OpeningLines(
-        IQueryable<JournalEntryLine> source, FiscalAnchor anchor, DateTime from)
-    {
-        if (!anchor.IsAnchored)
-            return source.Where(l => l.JournalEntry.EntryDate < from);
+        IQueryable<JournalEntryLine> source, FiscalAnchorHelper.FiscalAnchor anchor, DateTime from) =>
+        FiscalAnchorHelper.OpeningLines(source, anchor, from);
 
-        var openingEntryId = anchor.OpeningEntryId!.Value;
-        var fiscalYearStart = anchor.FiscalYearStart;
-        return source.Where(l => l.JournalEntryId == openingEntryId
-                                 || (l.JournalEntry.EntryDate >= fiscalYearStart
-                                     && l.JournalEntry.EntryDate < from));
-    }
-
-    /// <summary>
-    /// Lignes de mouvement de la période. Quand l'ancrage est actif, les écritures d'à-nouveau en
-    /// sont exclues : celle de l'exercice est déjà comptée dans l'ouverture, et celles des exercices
-    /// suivants (période à cheval sur plusieurs exercices) ne sont que des reports.
-    /// </summary>
     private static IQueryable<JournalEntryLine> MovementLines(
-        IQueryable<JournalEntryLine> source, FiscalAnchor anchor, DateTime from, DateTime to)
-    {
-        var movements = source.Where(l => l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to);
-        return anchor.IsAnchored
-            ? movements.Where(l => l.JournalEntry.SourceEntityType != AccountingService.SourceOpeningBalance)
-            : movements;
-    }
+        IQueryable<JournalEntryLine> source, FiscalAnchorHelper.FiscalAnchor anchor, DateTime from, DateTime to) =>
+        FiscalAnchorHelper.MovementLines(source, anchor, from, to);
 
     public async Task<Result<IReadOnlyList<ChartOfAccountDto>>> GetChartOfAccountsAsync(CancellationToken cancellationToken = default)
     {
@@ -1058,13 +1000,18 @@ public sealed class AccountingReportingService : IAccountingReportingService
     {
         await using var ctx = _contextFactory.CreateContext();
 
-        var current = await LoadYearNetAsync(ctx, fiscalYear, cancellationToken);
-        var previous = await LoadYearNetAsync(ctx, fiscalYear - 1, cancellationToken);
+        var (current, currentWarnings) = await LoadYearNetAsync(ctx, fiscalYear, cancellationToken);
+        var (previous, _) = await LoadYearNetAsync(ctx, fiscalYear - 1, cancellationToken);
 
         var labels = await ctx.ChartOfAccounts.AsNoTracking()
             .ToDictionaryAsync(c => c.AccountNumber, c => c.Label, cancellationToken);
 
-        var dto = NctStatementBuilder.Build(fiscalYear, current, previous, _settings.NctStatementsEnabled);
+        // Agrégats de cession (T5) : le builder ne voit que des soldes nets, il ne peut donc pas
+        // distinguer une dotation d'un amortissement sorti lors d'une cession — calculés ici à partir
+        // des lignes d'écritures marquées SourceEntityType == FixedAssetDisposal (statut ≠ Brouillon).
+        var disposals = await LoadDisposalAggregatesAsync(ctx, fiscalYear, cancellationToken);
+
+        var dto = NctStatementBuilder.Build(fiscalYear, current, previous, _settings.NctStatementsEnabled, disposals, currentWarnings);
         var detailed = NctDetailedNotesBuilder.Build(current, previous, labels);
 
         // Personnalisation des annexes par le comptable : superposition NEUTRE en l'absence de
@@ -1306,23 +1253,146 @@ public sealed class AccountingReportingService : IAccountingReportingService
         return Result.Success<IReadOnlyList<JournalSearchRowDto>>(rows);
     }
 
-    /// <summary>Solde net (débit − crédit) par compte pour un exercice, sur écritures VALIDÉES (hors brouillard).</summary>
-    private static async Task<Dictionary<string, decimal>> LoadYearNetAsync(
+    /// <summary>
+    /// Solde net (débit − crédit) par compte pour un exercice, sur écritures VALIDÉES (hors brouillard) —
+    /// sensible aux à-nouveaux (T7). Trois régimes, selon <see cref="FiscalAnchorHelper.ResolveFiscalAnchorAsync"/> :
+    /// <list type="bullet">
+    /// <item><b>Ancré</b> (à-nouveau généré présent) : ouverture (l'à-nouveau lui-même) + mouvements de
+    /// l'année — mathématiquement identique à l'ancien comportement cumulé sur la seule année.</item>
+    /// <item><b>À-nouveau manuel/importé détecté</b> (journal « JAN » ou date 01/01, comptes 131/135,
+    /// sans <c>SourceEntityType</c>) : traité comme ancré manuellement — mouvements de l'année SEULS
+    /// (aucune injection synthétique, l'écriture manuelle porte déjà le cumul) ; avertissement.</item>
+    /// <item><b>Non ancré, sans à-nouveau</b> : cumul historique complet (classes 1-5) + mouvements de
+    /// l'année (classes 6-7 uniquement — jamais l'historique, qui n'a pas de solde d'ouverture légitime)
+    /// + injection synthétique en 121 « Résultats reportés » du résultat net historique (jamais 128,
+    /// réservé aux modifications comptables) pour que l'identité de la partie double (Σ tous comptes = 0)
+    /// reste vérifiée malgré l'exclusion des comptes 6/7 historiques ; avertissement.</item>
+    /// </list>
+    /// Dans tous les cas, les comptes de résultat (classes 6/7) ne reçoivent jamais de solde d'ouverture.
+    /// </summary>
+    private static async Task<(Dictionary<string, decimal> Net, IReadOnlyList<string> Warnings)> LoadYearNetAsync(
         Persistence.TenantDbContext ctx, int fiscalYear, CancellationToken ct)
     {
-        var rows = await ctx.JournalEntryLines.AsNoTracking()
-            .Include(l => l.JournalEntry)
-            .Where(l => l.JournalEntry.EntryDate.Year == fiscalYear && l.JournalEntry.Status != JournalEntryStatus.Brouillon)
-            .GroupBy(l => l.AccountNumber)
-            .Select(g => new
+        var jan1 = new DateTime(fiscalYear, 1, 1);
+        var periodEnd = new DateTime(fiscalYear, 12, 31);
+
+        IQueryable<JournalEntryLine> Scope() =>
+            ctx.JournalEntryLines.AsNoTracking()
+                .Include(l => l.JournalEntry)
+                .Where(l => l.JournalEntry.Status != JournalEntryStatus.Brouillon);
+
+        async Task<Dictionary<string, decimal>> NetByAccountAsync(IQueryable<JournalEntryLine> q)
+        {
+            var rows = await q
+                .GroupBy(l => l.AccountNumber)
+                .Select(g => new { Account = g.Key, Debit = g.Sum(l => l.DebitAmount.Amount), Credit = g.Sum(l => l.CreditAmount.Amount) })
+                .ToListAsync(ct);
+            return rows.ToDictionary(r => r.Account, r => r.Debit - r.Credit, StringComparer.Ordinal);
+        }
+
+        var anchor = await ResolveFiscalAnchorAsync(ctx, jan1, ct);
+        var openingComp = await NetByAccountAsync(OpeningLines(Scope(), anchor, jan1));
+        var movementComp = await NetByAccountAsync(MovementLines(Scope(), anchor, jan1, periodEnd));
+
+        var warnings = new List<string>();
+        var manualOpeningDetected = false;
+        if (!anchor.IsAnchored)
+        {
+            manualOpeningDetected = await ctx.JournalEntryLines.AsNoTracking()
+                .Include(l => l.JournalEntry)
+                .Where(l => l.JournalEntry.Status != JournalEntryStatus.Brouillon
+                            && l.JournalEntry.EntryDate.Year == fiscalYear
+                            && string.IsNullOrEmpty(l.JournalEntry.SourceEntityType)
+                            && (l.JournalEntry.JournalCode == "JAN" || l.JournalEntry.EntryDate == jan1)
+                            && (l.AccountNumber.StartsWith("131") || l.AccountNumber.StartsWith("135")))
+                .AnyAsync(ct);
+
+            if (manualOpeningDetected)
+                warnings.Add("À-nouveaux manuels détectés : vérifier leur exhaustivité.");
+        }
+
+        var net = new Dictionary<string, decimal>(StringComparer.Ordinal);
+        void Add(string account, decimal amount)
+        {
+            if (amount == 0) return;
+            net[account] = net.TryGetValue(account, out var existing) ? existing + amount : amount;
+        }
+
+        var accounts = new HashSet<string>(openingComp.Keys, StringComparer.Ordinal);
+        foreach (var a in movementComp.Keys) accounts.Add(a);
+
+        foreach (var account in accounts)
+        {
+            openingComp.TryGetValue(account, out var op);
+            movementComp.TryGetValue(account, out var mv);
+            var cls = !string.IsNullOrEmpty(account) && char.IsDigit(account[0]) ? account[0] - '0' : 0;
+
+            if (cls == 6 || cls == 7)
             {
-                Account = g.Key,
-                Debit = g.Sum(l => l.DebitAmount.Amount),
-                Credit = g.Sum(l => l.CreditAmount.Amount)
-            })
+                // Comptes de résultat : jamais de solde d'ouverture légitime.
+                Add(account, mv);
+                continue;
+            }
+
+            // Classes 1-5 : ancré ou manuel → mouvements seuls suffisent déjà (l'ouverture porte le
+            // cumul via l'à-nouveau) ; non ancré sans AN → cumul historique complet + mouvements.
+            Add(account, manualOpeningDetected ? mv : op + mv);
+        }
+
+        if (!anchor.IsAnchored && !manualOpeningDetected)
+        {
+            // Injection synthétique en 121 : sans à-nouveau, les comptes 6/7 historiques (exclus
+            // ci-dessus) restent dans openingComp sans jamais avoir été comptés — l'identité de la
+            // partie double (Σ tous comptes = 0) exige de reporter ce résultat net historique sur un
+            // compte de bilan. 121 « Résultats reportés » (jamais 128, réservé aux modifications
+            // comptables) reçoit exactement Σnet(classes 6,7 des années < N), ce qui compense
+            // l'exclusion et restitue l'équilibre du bilan.
+            decimal histPnl = 0;
+            foreach (var kv in openingComp)
+            {
+                var cls = !string.IsNullOrEmpty(kv.Key) && char.IsDigit(kv.Key[0]) ? kv.Key[0] - '0' : 0;
+                if (cls == 6 || cls == 7) histPnl += kv.Value;
+            }
+            Add("121", histPnl);
+
+            if (histPnl != 0)
+                warnings.Add("À-nouveaux absents pour l'exercice " + fiscalYear + ".");
+        }
+
+        return (net, warnings);
+    }
+
+    /// <summary>
+    /// Agrégats de cession d'immobilisations de l'exercice N (T5), calculés à partir des lignes
+    /// d'écritures marquées <c>SourceEntityType == FixedAssetDisposal</c> (statut ≠ Brouillon) :
+    /// <c>DepreciationRemoved</c> = Σ débits sur comptes 28x/29x (amortissements/provisions repris) ;
+    /// <c>Proceeds</c> = Σ débits sur comptes des classes 4 et 5 (créance de cession/encaissement).
+    /// Le builder ne voit que des soldes nets — il ne peut pas distinguer une dotation ordinaire d'un
+    /// amortissement sorti lors d'une cession sans cet agrégat calculé en amont.
+    /// </summary>
+    private static async Task<NctDisposalAggregates> LoadDisposalAggregatesAsync(
+        Persistence.TenantDbContext ctx, int fiscalYear, CancellationToken ct)
+    {
+        var lines = await ctx.JournalEntryLines.AsNoTracking()
+            .Include(l => l.JournalEntry)
+            .Where(l => l.JournalEntry.SourceEntityType == AccountingService.SourceFixedAssetDisposal
+                        && l.JournalEntry.EntryDate.Year == fiscalYear
+                        && l.JournalEntry.Status != JournalEntryStatus.Brouillon)
+            .Select(l => new { l.AccountNumber, Debit = l.DebitAmount.Amount })
             .ToListAsync(ct);
 
-        return rows.ToDictionary(r => r.Account, r => r.Debit - r.Credit);
+        decimal depreciationRemoved = 0, proceeds = 0;
+        foreach (var l in lines)
+        {
+            var root2 = l.AccountNumber.Length >= 2 ? l.AccountNumber[..2] : l.AccountNumber;
+            var cls = !string.IsNullOrEmpty(l.AccountNumber) && char.IsDigit(l.AccountNumber[0]) ? l.AccountNumber[0] - '0' : 0;
+            if (root2 is "28" or "29")
+                depreciationRemoved += l.Debit;
+            else if (cls is 4 or 5)
+                proceeds += l.Debit;
+        }
+
+        return new NctDisposalAggregates(depreciationRemoved, proceeds);
     }
 
     private static async Task<decimal> ComputeOverdueClientsAsync(Persistence.TenantDbContext ctx, CancellationToken ct)

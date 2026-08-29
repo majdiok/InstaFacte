@@ -67,6 +67,13 @@ public sealed record FiscalResultDeclarationDto
     public decimal AccountingResult { get; init; }
     public decimal AppliedIsRate { get; init; }
     public decimal LocalTurnoverTtc { get; init; }
+    /// <summary>
+    /// Résultat comptable <b>net (après impôt)</b> recalculé depuis l'état de résultat (NCT), proposé
+    /// comme aide à la saisie du champ <see cref="AccountingResult"/>. Miroir du patron
+    /// <see cref="SuggestedLocalTurnoverTtc"/> : le montant saisi par le comptable prime et n'est jamais
+    /// écrasé. Exposé aussi pour les feuilles existantes (T11) — l'aperçu initial l'alimente également.
+    /// </summary>
+    public decimal? SuggestedAccountingResult { get; init; }
     /// <summary>Régime de minimum d'impôt (0 = droit commun, 1 = réduit, 2 = exonéré).</summary>
     public int MinimumTaxRegime { get; init; }
     /// <summary>

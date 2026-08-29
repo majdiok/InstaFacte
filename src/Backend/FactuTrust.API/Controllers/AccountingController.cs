@@ -904,6 +904,40 @@ public sealed class AccountingController : ControllerBase
         return Ok(ApiResponse<Guid>.Ok(r.Value));
     }
 
+    /// <summary>
+    /// Diagnostic des écritures d'à-nouveaux (« JAN ») actives : écarts ligne à ligne entre les
+    /// soldes de clôture ancrés attendus et les lignes effectivement portées par l'à-nouveau.
+    /// Lecture seule, aucune mutation.
+    /// </summary>
+    [HttpGet("periods/opening-entries/diagnose")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> DiagnoseOpeningEntries(CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new DiagnoseOpeningEntriesQuery(), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<IReadOnlyList<OpeningEntryDiagnosticDto>>.Ok(r.Value));
+    }
+
+    /// <summary>
+    /// Répare l'à-nouveau contaminé de l'exercice clôturé <paramref name="fiscalYear"/> (extourne
+    /// interne + régénération). Idempotente : aucun écart détecté → succès sans effet.
+    /// </summary>
+    [HttpPost("periods/opening-entries/{fiscalYear:int}/repair")]
+    [Authorize(Policy = PermissionPolicies.AccountingCreate)]
+    public async Task<IActionResult> RepairOpeningEntries(int fiscalYear, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new RepairOpeningEntriesCommand(fiscalYear), cancellationToken);
+        if (r.IsFailure)
+        {
+            // T27 — exercice verrouillé → Error.Conflict → 409, cohérent avec finalisation/upsert.
+            if (string.Equals(r.Error.Code, "Conflict", StringComparison.OrdinalIgnoreCase))
+                return Conflict(ApiResponse<object>.Fail(r.Error.Description, r.Error.Code));
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description, r.Error.Code));
+        }
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
+
     [HttpGet("pre-closing-checklist")]
     [Authorize(Policy = PermissionPolicies.AccountingRead)]
     public async Task<IActionResult> GetPreClosingChecklist([FromQuery] int fiscalYear, CancellationToken cancellationToken)
@@ -1052,7 +1086,14 @@ public sealed class AccountingController : ControllerBase
     {
         var r = await _mediator.Send(new UpsertFiscalResultDeclarationCommand(fiscalYear, request), cancellationToken);
         if (r.IsFailure)
-            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        {
+            // T27 — sémantique 409 sur feuille finalisée (Error.Conflict, levée par UpsertAsync) ;
+            // 400 sur les autres validations de contenu (TaxpayerKind, reports…). Mapping local par
+            // code "Conflict" (patron FinalizeFiscalResult ci-dessous / StorefrontTenantController).
+            if (string.Equals(r.Error.Code, "Conflict", StringComparison.OrdinalIgnoreCase))
+                return Conflict(ApiResponse<object>.Fail(r.Error.Description, r.Error.Code));
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description, r.Error.Code));
+        }
         return Ok(ApiResponse<FiscalResultDeclarationDto>.Ok(r.Value));
     }
 
@@ -1062,7 +1103,13 @@ public sealed class AccountingController : ControllerBase
     {
         var r = await _mediator.Send(new FinalizeFiscalResultDeclarationCommand(fiscalYear), cancellationToken);
         if (r.IsFailure)
-            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        {
+            // T10 — sémantique 409 sur les états finalisés/verrouillés/réconciliation (Error.Conflict),
+            // 400 sur les autres validations (absence de feuille, ordre d'imputation…).
+            if (string.Equals(r.Error.Code, "Conflict", StringComparison.OrdinalIgnoreCase))
+                return Conflict(ApiResponse<object>.Fail(r.Error.Description, r.Error.Code));
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description, r.Error.Code));
+        }
         return Ok(ApiResponse<object>.Ok(null!));
     }
 

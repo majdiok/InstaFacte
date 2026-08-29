@@ -67,7 +67,15 @@ public sealed class GetFiscalResultDeclarationQueryHandler
         var suggestedTurnover = await TryComputeLocalTurnoverTtcAsync(request.FiscalYear, cancellationToken);
 
         if (existing is not null)
-            return Result.Success(FiscalResultAssembler.Assemble(existing, parameters, _settings.FiscalLiasseEnabled, suggestedTurnover));
+        {
+            // T11 — résultat comptable net (après impôt) repris de l'état de résultat, proposé à côté
+            // du champ saisi (la valeur saisie n'est jamais écrasée). Calculé uniquement ici : le
+            // chemin « sans feuille » ci-dessous refait déjà GetNctStatementsAsync et construit son
+            // propre aperçu, donc cet appel serait un second parcours d'agrégation inutile.
+            var suggestedAccountingResult = await TryComputeSuggestedAccountingResultAsync(request.FiscalYear, cancellationToken);
+            return Result.Success(FiscalResultAssembler.Assemble(
+                existing, parameters, _settings.FiscalLiasseEnabled, suggestedTurnover, suggestedAccountingResult));
+        }
 
         // Aucune feuille : aperçu initial à partir du résultat comptable net + suggestions auto certaines.
         var nct = await _reporting.GetNctStatementsAsync(request.FiscalYear, cancellationToken);
@@ -75,7 +83,11 @@ public sealed class GetFiscalResultDeclarationQueryHandler
             return Result.Failure<FiscalResultDeclarationDto>(nct.Error);
 
         var netResult = nct.Value.IncomeStatement.NetResult;
-        var isCharge = Math.Max(nct.Value.IncomeStatement.ResultBeforeTax - netResult, 0m);
+        // Charge d'impôt = impôt ordinaire (IMP) + impôt sur éléments extraordinaires (IEX).
+        // Ne pas dériver de RAI − RN : RN inclut aussi le solde extraordinaire hors impôt (67/77),
+        // ce qui fausserait la suggestion R-IS en présence d'éléments extraordinaires.
+        decimal LineAmount(string code) => nct.Value.IncomeStatement.Lines.FirstOrDefault(l => l.Code == code)?.Amount ?? 0m;
+        var isCharge = Math.Max(LineAmount("IMP") + LineAmount("IEX"), 0m);
 
         var suggestions = new List<FiscalAdjustmentLineDto>();
         if (isCharge > 0m)
@@ -117,7 +129,34 @@ public sealed class GetFiscalResultDeclarationQueryHandler
         return balance.IsFailure ? 0m : FiscalResultAssembler.EstimateLocalTurnoverTtc(balance.Value);
     }
 
-    /// <summary>Somme des mouvements débiteurs des comptes de pénalités (6712, 668) sur l'exercice.</summary>
+    /// <summary>
+    /// Résultat comptable <b>net (après impôt)</b> de l'exercice, repris de l'état de résultat NCT
+    /// (T11). Proposé comme aide à la saisie du champ « résultat comptable » — la valeur saisie par le
+    /// comptable prime et n'est jamais écrasée. Null si les états ne sont pas disponibles.
+    /// </summary>
+    private async Task<decimal?> TryComputeSuggestedAccountingResultAsync(int fiscalYear, CancellationToken ct)
+    {
+        var nct = await _reporting.GetNctStatementsAsync(fiscalYear, ct);
+        return nct.IsSuccess ? nct.Value.IncomeStatement.NetResult : null;
+    }
+
+    /// <summary>
+    /// Suggestion R-PENALITES : somme des mouvements débiteurs des pénalités et majorations de retard
+    /// sur l'exercice, pour réintégration non déductible.
+    /// </summary>
+    /// <remarks>
+    /// Lit DEUX racines de comptes :
+    /// <list type="bullet">
+    /// <item><c>668</c> — autres charges non déductibles (amendes, pénalités comptabilisées au compte
+    /// standard du plan SCE).</item>
+    /// <item><c>6712</c> — pénalités et majorations de retard fiscales. Ce compte N'EXISTE PAS au
+    /// catalogue livré (§1.4) : il s'agit d'un SOUS-COMPTE potentiel créé au gré des tenants. Un
+    /// tenant sans <c>6712</c> ne lève JAMAIS d'exception ici : la balance ne retourne simplement aucune
+    /// ligne pour ce préfixe et la suggestion se réduit aux débits <c>668</c> seuls. C'est le
+    /// comportement de repli documenté et testé (T17) : aucune charge de pénalité fiscale
+    /// spécifique <c>6712</c> n'est détectée → suggestion = débits <c>668</c> uniquement, sans erreur.
+    /// </list>
+    /// </remarks>
     private async Task<decimal> TryComputePenaltiesAsync(int fiscalYear, CancellationToken ct)
     {
         var from = new DateTime(fiscalYear, 1, 1);

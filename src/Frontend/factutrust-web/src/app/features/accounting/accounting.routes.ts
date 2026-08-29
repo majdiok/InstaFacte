@@ -1,5 +1,7 @@
 import { Routes } from '@angular/router';
 import { fixedAssetsFeatureGuard } from './shared/fixed-assets-feature.guard';
+import { permissionGuard } from '@core/guards/permission.guard';
+import { PERMISSIONS } from '@core/config/permission-keys';
 import { pendingChangesGuard } from './fixed-assets/pending-changes.guard';
 
 export const ACCOUNTING_ROUTES: Routes = [
@@ -164,36 +166,52 @@ export const ACCOUNTING_ROUTES: Routes = [
   },
   {
     path: 'balance-sheet',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.accounting.read] },
     loadComponent: () =>
       import('./balance-sheet/balance-sheet.component').then(m => m.BalanceSheetComponent),
     title: 'Bilan - InstaFact'
   },
   {
     path: 'income-statement',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.accounting.read] },
     loadComponent: () =>
       import('./income-statement/income-statement.component').then(m => m.IncomeStatementComponent),
     title: 'Compte de résultat - InstaFact'
   },
   {
     path: 'nct-statements',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.accounting.read] },
     loadComponent: () =>
       import('./nct-statements/nct-statements.component').then(m => m.NctStatementsComponent),
     title: 'États financiers NCT - InstaFact'
   },
   {
     path: 'inventory-book',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.accounting.read] },
     loadComponent: () =>
       import('./inventory-book/inventory-book.component').then(m => m.InventoryBookComponent),
     title: "Livre d'inventaire - InstaFact"
   },
   {
     path: 'fiscal-result',
+    canActivate: [permissionGuard],
+    // Confirme la perte de modifications non enregistrées à la navigation (T23). Écrite en garde
+    // en ligne (plutôt qu'un import statique du composant) pour ne pas casser le lazy-loading.
+    canDeactivate: [(component: { canDeactivate: () => boolean }) => component.canDeactivate()],
+    data: { permissions: [PERMISSIONS.accounting.read] },
     loadComponent: () =>
       import('./fiscal-result/fiscal-result.component').then(m => m.FiscalResultComponent),
     title: 'Détermination du résultat fiscal - InstaFact'
   },
   {
     path: 'fiscal-parameters',
+    canActivate: [permissionGuard],
+    canDeactivate: [(component: { canDeactivate: () => boolean }) => component.canDeactivate()],
+    data: { permissions: [PERMISSIONS.accounting.read] },
     loadComponent: () =>
       import('./fiscal-parameters/fiscal-parameters.component').then(m => m.FiscalParametersComponent),
     title: 'Paramètres fiscaux - InstaFact'

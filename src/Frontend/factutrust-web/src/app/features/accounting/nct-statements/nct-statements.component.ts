@@ -1,6 +1,9 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Subject, of } from 'rxjs';
+import { catchError, switchMap } from 'rxjs/operators';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.component';
@@ -10,6 +13,19 @@ import { FinancialStatementsExportDialogComponent } from './financial-statements
 import { NctNoteOverridesDialogComponent } from './nct-note-overrides-dialog.component';
 
 type NctTab = 'bilan' | 'resultat' | 'flux' | 'capitaux' | 'notes';
+
+/** Réponse d'API générique (miroir non exporté de `ApiResponse<T>` du service). */
+interface NctStatementsApiResponse {
+  success: boolean;
+  data?: NctFinancialStatementsDto;
+  error?: string;
+}
+
+const MIN_FISCAL_YEAR = 2000;
+const MAX_FISCAL_YEAR = 2100;
+
+/** Code de la ligne de réconciliation dans le tableau des flux de trésorerie (méthode indirecte). */
+const CASH_FLOW_RECONCILIATION_CODE = 'CFECART';
 
 @Component({
   selector: 'app-nct-statements',
@@ -32,11 +48,16 @@ type NctTab = 'bilan' | 'resultat' | 'flux' | 'capitaux' | 'notes';
         <div accountingFilterFields>
           <div class="accounting-filter-field">
             <label class="accounting-filter-label" for="nct-year">Exercice</label>
-            <input id="nct-year" type="number" [(ngModel)]="fiscalYear" class="accounting-filter-input nct-year-input" />
+            <input id="nct-year" type="number" [ngModel]="fiscalYear" (ngModelChange)="onYearInputChange($event)"
+              class="accounting-filter-input nct-year-input" min="2000" max="2100"
+              [attr.aria-invalid]="!isYearValid()" />
+            @if (!isYearValid()) {
+              <span class="nct-year-error" role="alert">Exercice invalide : doit être compris entre 2000 et 2100.</span>
+            }
           </div>
         </div>
         <div accountingFilterActions>
-          <app-button variant="secondary" icon="pi pi-refresh" type="button" (click)="load()" [disabled]="loading()"
+          <app-button variant="secondary" icon="pi pi-refresh" type="button" (click)="load()" [disabled]="loading() || !isYearValid()"
             ariaLabel="Charger la liasse NCT">Charger</app-button>
           <app-button variant="secondary" icon="pi pi-eye" type="button" (click)="openExportDialog()" [disabled]="loading() || !data()"
             ariaLabel="Aperçu et impression des états financiers">Aperçu / Impression</app-button>
@@ -68,6 +89,18 @@ type NctTab = 'bilan' | 'resultat' | 'flux' | 'capitaux' | 'notes';
         </div>
       }
 
+      @if (d.balanceSheet.warnings.length) {
+        <div class="nct-alert-banner" role="alert">
+          <i class="pi pi-exclamation-triangle" aria-hidden="true"></i>
+          <div>
+            <strong>Contrôles qualité de la liasse</strong>
+            <ul class="nct-warn-list">
+              @for (w of d.balanceSheet.warnings; track w) { <li>{{ w }}</li> }
+            </ul>
+          </div>
+        </div>
+      }
+
       <div class="nct-tabs" role="tablist">
         <button type="button" role="tab" class="nct-tab" [class.nct-tab--active]="tab() === 'bilan'" (click)="tab.set('bilan')">Bilan</button>
         <button type="button" role="tab" class="nct-tab" [class.nct-tab--active]="tab() === 'resultat'" (click)="tab.set('resultat')">Compte de résultat</button>
@@ -81,7 +114,7 @@ type NctTab = 'bilan' | 'resultat' | 'flux' | 'capitaux' | 'notes';
           @case ('bilan') {
             <div class="nct-balance-status">
               <span class="nct-badge" [class.nct-badge--ok]="d.balanceSheet.isBalanced" [class.nct-badge--ko]="!d.balanceSheet.isBalanced">
-                {{ d.balanceSheet.isBalanced ? 'Bilan équilibré' : 'Écart Actif / Passif' }}
+                {{ d.balanceSheet.isBalanced ? 'Bilan équilibré' : 'Non équilibré (écart : ' + (d.balanceSheet.difference | number : '1.3-3') + ' TND)' }}
               </span>
             </div>
             <h3 class="nct-section">ACTIF</h3>
@@ -93,6 +126,11 @@ type NctTab = 'bilan' | 'resultat' | 'flux' | 'capitaux' | 'notes';
             <ng-container [ngTemplateOutlet]="tableTpl" [ngTemplateOutletContext]="{ lines: d.incomeStatement.lines }"></ng-container>
           }
           @case ('flux') {
+            <div class="nct-balance-status">
+              <span class="nct-badge" [class.nct-badge--ok]="d.cashFlow.isReconciled" [class.nct-badge--ko]="!d.cashFlow.isReconciled">
+                {{ d.cashFlow.isReconciled ? 'Flux de trésorerie rapproché' : 'Flux non rapproché (écart : ' + (cashFlowGap() | number : '1.3-3') + ' TND)' }}
+              </span>
+            </div>
             <p class="nct-hint">Méthode indirecte. La ligne « Écart de rapprochement » explicite tout résidu par rapport à la variation réelle de trésorerie.</p>
             <ng-container [ngTemplateOutlet]="tableTpl" [ngTemplateOutletContext]="{ lines: d.cashFlow.lines }"></ng-container>
           }
@@ -120,7 +158,7 @@ type NctTab = 'bilan' | 'resultat' | 'flux' | 'capitaux' | 'notes';
         </thead>
         <tbody>
           @for (line of lines; track line.code) {
-            <tr [class.nct-row--subtotal]="line.isSubtotal">
+            <tr [class.nct-row--subtotal]="line.isSubtotal" [class.nct-row--reconciliation]="line.code === reconciliationCode">
               <td class="nct-td-label" [style.paddingLeft.rem]="0.75 + line.level * 1.25">{{ line.label }}</td>
               <td class="nct-td-amount">{{ line.amount | number : '1.3-3' }}</td>
               <td class="nct-td-amount nct-td-prev">{{ line.previousAmount | number : '1.3-3' }}</td>
@@ -142,6 +180,9 @@ type NctTab = 'bilan' | 'resultat' | 'flux' | 'capitaux' | 'notes';
     .nct-badge { display:inline-block; padding:0.15rem 0.6rem; border-radius:var(--radius-pill,999px); font-size:var(--font-size-xs); font-weight:var(--font-weight-semibold); }
     .nct-badge--ok { background:var(--color-success-100,#dcfce7); color:var(--color-success-700,#15803d); }
     .nct-badge--ko { background:var(--color-danger-100,#fee2e2); color:var(--color-danger-700,#b91c1c); }
+    .nct-alert-banner { display:flex; align-items:flex-start; gap:var(--spacing-2); margin-bottom:var(--spacing-4); padding:var(--spacing-3) var(--spacing-4); border-radius:var(--radius-md); font-size:var(--font-size-sm); background:var(--color-warning-50,#fffbeb); border:1px solid var(--color-warning-200,#fde68a); color:var(--color-warning-800,#92400e); }
+    .nct-warn-list { margin:0.25rem 0 0; padding-left:1.1rem; }
+    .nct-warn-list li { margin:0.15rem 0; }
     .nct-section { font-size:var(--font-size-sm); font-weight:var(--font-weight-bold); text-transform:uppercase; letter-spacing:0.04em; color:var(--color-text-tertiary); margin:var(--spacing-4) 0 var(--spacing-2); }
     .nct-hint { font-size:var(--font-size-sm); color:var(--color-text-secondary); margin:0 0 var(--spacing-3); }
     .nct-table { width:100%; border-collapse:collapse; margin-bottom:var(--spacing-2); }
@@ -151,6 +192,8 @@ type NctTab = 'bilan' | 'resultat' | 'flux' | 'capitaux' | 'notes';
     .nct-td-amount { padding:var(--spacing-2) var(--spacing-3); text-align:right; font-variant-numeric:tabular-nums; font-weight:var(--font-weight-medium); }
     .nct-td-prev { color:var(--color-text-tertiary); }
     .nct-row--subtotal > td { font-weight:var(--font-weight-bold); color:var(--color-text-primary); border-top:1px solid var(--color-border-subtle); background:var(--color-background-subtle); }
+    .nct-row--reconciliation > td { font-style:italic; color:var(--color-warning-700,#b45309); background:var(--color-warning-50,#fffbeb); }
+    .nct-year-error { display:block; font-size:var(--font-size-xs); color:var(--color-danger-600,#dc2626); margin-top:0.2rem; }
   `
 })
 export class NctStatementsComponent implements OnInit {
@@ -162,6 +205,33 @@ export class NctStatementsComponent implements OnInit {
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
   readonly tab = signal<NctTab>('bilan');
+  /** Exposé au template pour la mise en évidence de la ligne de réconciliation des flux (BUG #004). */
+  readonly reconciliationCode = CASH_FLOW_RECONCILIATION_CODE;
+  /** Montant de la ligne de réconciliation CFECART (écart flux) — alimente le badge de l'onglet Flux (T21). */
+  readonly cashFlowGap = computed(() => {
+    const lines = this.data()?.cashFlow.lines ?? [];
+    const gap = lines.find(l => l.code === CASH_FLOW_RECONCILIATION_CODE);
+    return gap ? gap.amount : 0;
+  });
+
+  private readonly loadRequests$ = new Subject<number>();
+
+  constructor() {
+    this.loadRequests$
+      .pipe(
+        switchMap(year =>
+          this.api.getNctStatements(year).pipe(
+            catchError(() => of<NctStatementsApiResponse>({ success: false, error: 'Erreur réseau' }))
+          )
+        ),
+        takeUntilDestroyed()
+      )
+      .subscribe(res => {
+        this.loading.set(false);
+        if (res.success && res.data) this.data.set(res.data);
+        else this.error.set(res.error ?? 'Erreur');
+      });
+  }
 
   ngOnInit(): void {
     this.load();
@@ -172,22 +242,25 @@ export class NctStatementsComponent implements OnInit {
     this.exportDialogVisible = true;
   }
 
+  onYearInputChange(value: number): void {
+    this.fiscalYear = value;
+  }
+
+  isYearValid(): boolean {
+    const y = Number(this.fiscalYear);
+    return Number.isInteger(y) && y >= MIN_FISCAL_YEAR && y <= MAX_FISCAL_YEAR;
+  }
+
+  private clampYear(y: number): number {
+    return Math.min(MAX_FISCAL_YEAR, Math.max(MIN_FISCAL_YEAR, Math.floor(Number(y)) || new Date().getFullYear()));
+  }
+
   load(): void {
-    const y = Math.min(2100, Math.max(2000, Math.floor(Number(this.fiscalYear)) || new Date().getFullYear()));
+    const y = this.clampYear(this.fiscalYear);
     this.fiscalYear = y;
     this.loading.set(true);
     this.error.set(null);
-    this.api.getNctStatements(y).subscribe({
-      next: res => {
-        this.loading.set(false);
-        if (res.success && res.data) this.data.set(res.data);
-        else this.error.set(res.error ?? 'Erreur');
-      },
-      error: () => {
-        this.loading.set(false);
-        this.error.set('Erreur réseau');
-      }
-    });
+    this.loadRequests$.next(y);
   }
 
   exportPdf(): void {
