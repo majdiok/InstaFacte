@@ -205,4 +205,98 @@ public sealed class FixedAssetDomainTests
 
         Assert.Equal(0m, cat.UsefulLifeYears);
     }
+
+    // ------------------------------------------------------------------
+    // T2 — TVA capitalisée (véhicules de tourisme)
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public void FixedAsset_Create_VatCapitalized_TotalCapitalizedCost_IncludesVat()
+    {
+        var result = FixedAsset.Create(
+            "IMMO-2026-0010", "Véhicule de tourisme", CategoryId, 20m, 5m,
+            "2244", "2824", "68112", 50_000m, 0m, 55_000m, new DateTime(2026, 1, 15),
+            vatAmount: 9_500m, vatCapitalized: true);
+
+        Assert.True(result.IsSuccess);
+        var asset = result.Value;
+        Assert.Equal(59_500m, asset.TotalCapitalizedCost);
+        Assert.Equal(59_500m, asset.NetBookValue);
+        Assert.Equal(59_500m, asset.DepreciableBase + asset.ResidualValue);
+    }
+
+    [Fact]
+    public void FixedAsset_Create_VatCapitalized_ResidualBelowTtc_IsAccepted()
+    {
+        // residualValue = 55 000 < total TTC 59 500 → accepté (alors qu'il serait invalide
+        // comparé à la seule base HT 50 000).
+        var result = FixedAsset.Create(
+            "IMMO-2026-0011", "Véhicule de tourisme", CategoryId, 20m, 5m,
+            "2244", "2824", "68112", 50_000m, 0m, 55_000m, new DateTime(2026, 1, 15),
+            vatAmount: 9_500m, vatCapitalized: true);
+
+        Assert.True(result.IsSuccess);
+    }
+
+    [Fact]
+    public void FixedAsset_Create_VatCapitalized_ResidualAboveTtc_IsRejected()
+    {
+        var result = FixedAsset.Create(
+            "IMMO-2026-0012", "Véhicule de tourisme", CategoryId, 20m, 5m,
+            "2244", "2824", "68112", 50_000m, 0m, 60_000m, new DateTime(2026, 1, 15),
+            vatAmount: 9_500m, vatCapitalized: true);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains("résiduelle", result.Error.Description);
+    }
+
+    [Fact]
+    public void FixedAsset_Create_StandardAsset_TotalCapitalizedCost_ExcludesVat()
+    {
+        // Actif standard (VatCapitalized = false, défaut) : la TVA est déductible (43662), pas
+        // capitalisée — base amortissable et VNC restent en HT, invariant historique inchangé.
+        var result = FixedAsset.Create(
+            "IMMO-2026-0013", "Machine industrielle", CategoryId, 15m, 6.67m,
+            "213", "2813", "6813", 50_000m, 0m, 0m, new DateTime(2026, 1, 15),
+            vatAmount: 9_500m);
+
+        Assert.True(result.IsSuccess);
+        var asset = result.Value;
+        Assert.False(asset.VatCapitalized);
+        Assert.Equal(50_000m, asset.TotalCapitalizedCost);
+        Assert.Equal(50_000m, asset.NetBookValue);
+    }
+
+    [Fact]
+    public void FixedAsset_UpdateDraft_TogglingVatCapitalized_RecomputesNetBookValue()
+    {
+        var asset = CreateValidAsset(cost: 50_000m, residual: 0m, rate: 20m).Value;
+
+        var result = asset.UpdateDraft(
+            "Véhicule de tourisme", null, 50_000m, 0m, 55_000m, new DateTime(2026, 1, 15),
+            20m, 5m, "2244", "2824", "68112", null,
+            vatAmount: 9_500m, vatCapitalized: true);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(asset.VatCapitalized);
+        Assert.Equal(59_500m, asset.TotalCapitalizedCost);
+        Assert.Equal(59_500m, asset.NetBookValue);
+    }
+
+    [Fact]
+    public void FixedAsset_UpdateDraft_ExistingAsset_DefaultVatCapitalized_IsUnchanged()
+    {
+        // Anti-régression : ne pas passer vatCapitalized => la valeur existante (false par défaut)
+        // est conservée — aucun actif existant ne change de base ni de VNC.
+        var asset = CreateValidAsset(cost: 30_000m).Value;
+
+        var result = asset.UpdateDraft(
+            "Nouveau libellé", null, 30_000m, 0m, 0m, new DateTime(2026, 1, 15),
+            15m, 6.67m, "213", "2813", "6813", null);
+
+        Assert.True(result.IsSuccess);
+        Assert.False(asset.VatCapitalized);
+        Assert.Equal(30_000m, asset.NetBookValue);
+    }
+
 }

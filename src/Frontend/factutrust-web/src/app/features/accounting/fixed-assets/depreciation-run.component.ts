@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule } from '@angular/router';
@@ -7,6 +7,16 @@ import { ButtonComponent } from '@shared/components/button/button.component';
 import { DepreciationRunResultDto, FixedAssetsService } from '../services/fixed-assets.service';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
 import { AccountingCorrectionBannerComponent } from '../shared/accounting-correction-banner.component';
+import {
+  FixedAssetSettingsForm,
+  defaultFiscalYearSettings,
+  normalizeFiscalYearSettings
+} from '../services/fixed-asset-settings-defaults';
+import {
+  FiscalYearOption,
+  buildFiscalYearOptions,
+  fiscalYearKey
+} from '../services/fiscal-year.util';
 
 @Component({
   selector: 'app-depreciation-run',
@@ -32,9 +42,17 @@ import { AccountingCorrectionBannerComponent } from '../shared/accounting-correc
         Le tableau d'amortissement est généré automatiquement à la mise en service de chaque actif.
         Si une dotation attendue n'apparaît pas, ouvrez la fiche de l'actif et générez son tableau.
       </p>
+      <app-accounting-status-banner
+        *ngIf="isOffset()"
+        title="Exercice décalé"
+        [message]="offsetHint"
+        variant="warning" />
       <label>
         Exercice fiscal
-        <input type="number" class="accounting-filter-input" [(ngModel)]="fiscalYear" min="2000" max="2100" />
+        <select class="accounting-filter-input" [(ngModel)]="fiscalYear" [disabled]="loading()">
+          <option *ngFor="let opt of fiscalYearOptions()" [ngValue]="opt.key">{{ opt.label }}</option>
+        </select>
+        <span class="hint" *ngIf="!settingsLoaded()">Chargement des exercices…</span>
       </label>
       <div class="actions">
         <app-button variant="primary" type="button" (click)="run()" [disabled]="loading()">
@@ -51,19 +69,25 @@ import { AccountingCorrectionBannerComponent } from '../shared/accounting-correc
           [queryParams]="{ refresh: 1 }">
           Voir tableau amortissements
         </app-button>
+        <app-button variant="secondary" type="button" icon="pi pi-cog" routerLink="/accounting/fixed-assets/settings">
+          Paramètres d'exercice
+        </app-button>
       </div>
     </div>
 
     <app-accounting-status-banner [message]="error() ?? ''" variant="error" *ngIf="error()" />
 
     <div class="card result" *ngIf="result()">
-      <h3>Résultat — exercice {{ result()!.fiscalYear }}</h3>
-      <p><strong>Dotations comptabilisées :</strong> {{ result()!.postedCount }}</p>
-      <p><strong>Ignorées / en erreur :</strong> {{ result()!.skippedCount }}</p>
-      <p><strong>Total dotations :</strong> {{ result()!.totalDepreciationAmount | number: '1.3-3' }} TND</p>
-      <ul *ngIf="result()!.errors?.length">
-        <li *ngFor="let e of result()!.errors">{{ e }}</li>
-      </ul>
+      <h3>Résultat — exercice {{ resultLabel() }}</h3>
+      <p *ngIf="rerunMessage() as msg"><strong>{{ msg }}</strong></p>
+      <ng-container *ngIf="!rerunMessage()">
+        <p><strong>Dotations comptabilisées :</strong> {{ result()!.postedCount }}</p>
+        <p><strong>Ignorées / en erreur :</strong> {{ result()!.skippedCount }}</p>
+        <p><strong>Total dotations :</strong> {{ result()!.totalDepreciationAmount | number: '1.3-3' }} TND</p>
+        <ul *ngIf="result()!.errors?.length">
+          <li *ngFor="let e of result()!.errors">{{ e }}</li>
+        </ul>
+      </ng-container>
     </div>
   `,
   styles: [
@@ -95,20 +119,90 @@ export class DepreciationRunComponent implements OnInit {
   private readonly api = inject(FixedAssetsService);
   private readonly route = inject(ActivatedRoute);
 
+  /** Clé d'exercice sélectionnée (année de début) — envoyée au backend via le run. */
   fiscalYear = new Date().getFullYear();
+
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
   readonly result = signal<DepreciationRunResultDto | null>(null);
 
+  /** Paramètres d'exercice chargés depuis le tenant (repli civil tant que non chargés). */
+  readonly settings = signal<FixedAssetSettingsForm>(defaultFiscalYearSettings());
+  readonly settingsLoaded = signal(false);
+
+  /** Vrai si l'exercice du dossier est décalé (mois de début ≠ janvier). */
+  readonly isOffset = computed(() => this.settings().fiscalYearStartMonth !== 1);
+
+  readonly offsetHint =
+    "Le dossier est en exercice décalé : les dotations sont rattachées à l'exercice sélectionné " +
+    "(clé = année de début). Le Grand-Livre reste en année civile (limitation transitoire).";
+
+  /** Liste des exercices proposés au sélecteur (calculée côté client depuis le paramétrage). */
+  readonly fiscalYearOptions = computed<FiscalYearOption[]>(() => {
+    const { fiscalYearStartMonth, fiscalYearLabelFormat } = this.settings();
+    const currentKey = fiscalYearKey(new Date(), fiscalYearStartMonth);
+    return buildFiscalYearOptions(currentKey, fiscalYearStartMonth, fiscalYearLabelFormat);
+  });
+
+  /** Libellé d'exercice du résultat : privilégie `fiscalYearLabel` (P3), repli sur la clé. */
+  readonly resultLabel = computed(() => {
+    const r = this.result();
+    if (!r) return '';
+    return r.fiscalYearLabel || String(r.fiscalYear);
+  });
+
+  // T14 (re-run) — quand aucune nouvelle dotation n'est comptabilisée mais que des dotations
+  // étaient déjà postées pour cet exercice, on affiche un message explicite au lieu du « 0 »
+  // cryptique (capture 2410).
+  readonly rerunMessage = computed(() => {
+    const r = this.result();
+    if (!r) return null;
+    const alreadyPosted = r.alreadyPostedCount ?? 0;
+    if (r.postedCount === 0 && alreadyPosted > 0) {
+      return `Aucune nouvelle dotation — ${alreadyPosted} dotation(s) déjà comptabilisée(s) pour cet exercice.`;
+    }
+    return null;
+  });
+
   ngOnInit(): void {
+    // Un queryParam `fiscalYear` explicite (clé d'exercice) surclasse la sélection par défaut.
     const fy = this.route.snapshot.queryParamMap.get('fiscalYear');
+    let queryOverride: number | null = null;
     if (fy) {
       const year = Number(fy);
-      if (!Number.isNaN(year)) this.fiscalYear = year;
+      if (!Number.isNaN(year)) {
+        this.fiscalYear = year;
+        queryOverride = year;
+      }
     }
+    this.loadSettings(queryOverride);
+  }
+
+  private loadSettings(queryOverride: number | null): void {
+    this.api.getSettings().subscribe({
+      next: res => {
+        this.settings.set(normalizeFiscalYearSettings(res.data));
+        this.settingsLoaded.set(true);
+        // Sans surcharge queryParam, on sélectionne l'exercice courant du dossier.
+        if (queryOverride === null) {
+          this.fiscalYear = fiscalYearKey(new Date(), this.settings().fiscalYearStartMonth);
+        }
+      },
+      error: () => {
+        // Repli civil : options en année civile, sélection = année civile courante.
+        this.settings.set(defaultFiscalYearSettings());
+        this.settingsLoaded.set(true);
+        if (queryOverride === null) {
+          this.fiscalYear = new Date().getFullYear();
+        }
+      }
+    });
   }
 
   run(): void {
+    // C7 — garde anti double-clic : en plus du [disabled] du bouton, on court-circuite tout appel
+    // tant qu'un run est déjà en cours (une race entre deux clics peut contourner le disabled).
+    if (this.loading()) return;
     this.loading.set(true);
     this.error.set(null);
     this.result.set(null);

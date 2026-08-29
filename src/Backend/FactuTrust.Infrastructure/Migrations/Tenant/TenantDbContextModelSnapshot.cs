@@ -2330,6 +2330,10 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<string>("DisposalReceivableAccount")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.Property<string>("ExpenseAccountNumber")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -2385,6 +2389,10 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.Property<decimal>("VatAmount")
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
+
+                    b.Property<bool>("VatCapitalized")
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
 
                     b.Property<int>("Version")
                         .IsConcurrencyToken()
@@ -2455,6 +2463,40 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                     b.HasIndex("FixedAssetId");
 
                     b.ToTable("FixedAssetEvents", (string)null);
+                });
+
+            modelBuilder.Entity("FactuTrust.Domain.Entities.FixedAssetSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("FiscalYearStartMonth")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(1);
+
+                    b.Property<string>("FiscalYearLabelFormat")
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasDefaultValue("N/N+1");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("FixedAssetSettings", (string)null);
                 });
 
             modelBuilder.Entity("FactuTrust.Domain.Entities.Forecasting.ForecastRecomputeAudit", b =>

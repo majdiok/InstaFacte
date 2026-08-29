@@ -290,6 +290,7 @@ public sealed class OpeningEntriesBalanceConsistencyTests
 
         var service = new AccountingService(
             chart.Object, periodService.Object, journals.Object, new Mock<IWithholdingTaxRepository>().Object,
+            new Mock<IDepreciationRateCategoryRepository>().Object,
             factory, NullLogger<AccountingService>.Instance, Options.Create(new AccountingSettings()));
 
         return (service, captured);

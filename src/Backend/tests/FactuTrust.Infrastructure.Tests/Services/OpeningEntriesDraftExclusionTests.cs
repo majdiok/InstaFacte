@@ -94,6 +94,7 @@ public sealed class OpeningEntriesDraftExclusionTests
 
         var service = new AccountingService(
             chart.Object, periodService.Object, journals.Object, withholding.Object,
+            new Mock<IDepreciationRateCategoryRepository>().Object,
             _factory, NullLogger<AccountingService>.Instance, settings);
 
         return (service, journals, captured);

@@ -4,6 +4,7 @@ using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.Accounting;
 using FactuTrust.Application.Features.Accounting.Services;
 using FactuTrust.Application.Features.CashDesk.Services;
+using FactuTrust.Application.Features.FixedAssets;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Entities.Payroll;
@@ -69,6 +70,7 @@ public sealed class AccountingService : IAccountingService
     private readonly IAccountingPeriodService _periodService;
     private readonly IJournalEntryRepository _journalEntries;
     private readonly IWithholdingTaxRepository _withholdingTaxTypes;
+    private readonly IDepreciationRateCategoryRepository _depreciationRateCategories;
     private readonly ITenantDbContextFactory _contextFactory;
     private readonly ILogger<AccountingService> _logger;
     private readonly AccountingSettings _settings;
@@ -78,6 +80,7 @@ public sealed class AccountingService : IAccountingService
         IAccountingPeriodService periodService,
         IJournalEntryRepository journalEntries,
         IWithholdingTaxRepository withholdingTaxTypes,
+        IDepreciationRateCategoryRepository depreciationRateCategories,
         ITenantDbContextFactory contextFactory,
         ILogger<AccountingService> logger,
         IOptions<AccountingSettings> settings)
@@ -86,6 +89,7 @@ public sealed class AccountingService : IAccountingService
         _periodService = periodService;
         _journalEntries = journalEntries;
         _withholdingTaxTypes = withholdingTaxTypes;
+        _depreciationRateCategories = depreciationRateCategories;
         _contextFactory = contextFactory;
         _logger = logger;
         _settings = settings.Value;
@@ -730,7 +734,8 @@ public sealed class AccountingService : IAccountingService
         var period = periodResult.Value;
         var currency = invoice.TotalAmount.Currency;
         var productTypes = await TryLoadStandaloneProductTypesAsync(invoice, cancellationToken);
-        var (lines, _) = SupplierInvoiceJournalLineBuilder.Build(invoice, productTypes);
+        var fixedAssetClassifications = await BuildFixedAssetClassificationsAsync(invoice, cancellationToken);
+        var (lines, _) = SupplierInvoiceJournalLineBuilder.Build(invoice, productTypes, fixedAssetClassifications);
 
         var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
         if (accountValidation.IsFailure)
@@ -779,6 +784,44 @@ public sealed class AccountingService : IAccountingService
         return await context.Products.AsNoTracking()
             .Where(p => productIds.Contains(p.Id))
             .ToDictionaryAsync(p => p.Id, p => p.Type, cancellationToken);
+    }
+
+    /// <summary>
+    /// Resolves, for every fixed-asset line of a supplier invoice, the effective (category-resolved)
+    /// asset account and the "TVA capitalisée" decision (<see cref="FixedAssetVatRules"/>) — the same
+    /// resolution used by <c>CreateFixedAssetsFromSupplierInvoiceHandler</c> when creating the draft,
+    /// so the posted journal entry and the created <see cref="FixedAsset"/> stay consistent.
+    /// Lines without a resolvable category are omitted: the builder falls back to its prior
+    /// (non-regressed) behavior for them.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<Guid, SupplierInvoiceJournalLineBuilder.FixedAssetLineClassification>?>
+        BuildFixedAssetClassificationsAsync(SupplierInvoice invoice, CancellationToken cancellationToken)
+    {
+        var assetLines = invoice.Lines.Where(l => l.IsFixedAsset).ToList();
+        if (assetLines.Count == 0)
+            return null;
+
+        var result = new Dictionary<Guid, SupplierInvoiceJournalLineBuilder.FixedAssetLineClassification>();
+        foreach (var line in assetLines)
+        {
+            var category = line.DepreciationRateCategoryId.HasValue
+                ? await _depreciationRateCategories.GetByIdAsync(line.DepreciationRateCategoryId.Value, cancellationToken)
+                : await _depreciationRateCategories.GetByCodeAsync("OTHER", cancellationToken);
+
+            if (category is null)
+            {
+                _logger.LogWarning("No depreciation category for supplier line {Line}", line.LineNumber);
+                continue;
+            }
+
+            var assetAccount = string.IsNullOrWhiteSpace(line.AssetAccountNumber)
+                ? category.DefaultAssetAccount
+                : line.AssetAccountNumber;
+            var vatCapitalized = FixedAssetVatRules.IsVatCapitalized(category.Code, assetAccount);
+            result[line.Id] = new SupplierInvoiceJournalLineBuilder.FixedAssetLineClassification(assetAccount, vatCapitalized);
+        }
+
+        return result;
     }
 
     public async Task<Result> GenerateSupplierPaymentEntryAsync(SupplierPayment payment, CancellationToken cancellationToken = default)
@@ -1490,12 +1533,25 @@ public sealed class AccountingService : IAccountingService
         if (periodResult.IsFailure)
             return Result.Failure(periodResult.Error);
 
-        var amount = asset.TotalCapitalizedCost;
+        // Débit actif : HT normalement, ou TTC (TVA incluse) pour les véhicules de tourisme
+        // (VatCapitalized) — TotalCapitalizedCost suit déjà cette règle. TVA déductible non
+        // capitalisée (véhicules utilitaires, matériel…) est postée au débit du 43662 ; véhicules
+        // de tourisme n'ont pas de ligne 43662 (TVA non récupérable, capitalisée dans le prix de
+        // revient) ; TVA nulle → comportement historique à 2 lignes, inchangé.
+        var debitAssetAmount = asset.TotalCapitalizedCost;
+        var creditAmount = debitAssetAmount;
         var lines = new List<JournalLineInput>
         {
-            new(asset.AssetAccountNumber, $"Acquisition — {asset.InventoryNumber}", amount, 0, null, ThirdPartyKind.None),
-            new(asset.CreditAccountNumber!, $"Acquisition — {asset.Label}", 0, amount, null, ThirdPartyKind.None)
+            new(asset.AssetAccountNumber, $"Acquisition — {asset.InventoryNumber}", debitAssetAmount, 0, null, ThirdPartyKind.None)
         };
+
+        if (asset.VatAmount > 0 && !asset.VatCapitalized)
+        {
+            lines.Add(new(TunisianPostingAccounts.VatDeductibleFixedAssets, $"TVA déductible immo — {asset.InventoryNumber}", asset.VatAmount, 0, null, ThirdPartyKind.None));
+            creditAmount += asset.VatAmount;
+        }
+
+        lines.Add(new(asset.CreditAccountNumber!, $"Acquisition — {asset.Label}", 0, creditAmount, null, ThirdPartyKind.None));
 
         var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
         if (accountValidation.IsFailure)
@@ -1526,6 +1582,7 @@ public sealed class AccountingService : IAccountingService
     public async Task<Result> GenerateFixedAssetDepreciationEntryAsync(
         FixedAsset asset,
         DepreciationScheduleLine scheduleLine,
+        DateTime? entryDate = null,
         CancellationToken cancellationToken = default)
     {
         if (await _chartOfAccounts.CountAsync(cancellationToken) == 0)
@@ -1534,15 +1591,20 @@ public sealed class AccountingService : IAccountingService
         if (scheduleLine.IsPosted)
             return Result.Success();
 
-        var existing = await _journalEntries.GetBySourceAsync(SourceFixedAssetDepreciation, scheduleLine.Id, cancellationToken);
+        // Garde « écriture active » (T13, C6) : une écriture extournée n'est plus bloquante —
+        // GetActiveBySourceAsync filtre !IsReversed. Une écriture active l'est toujours (idempotence).
+        var existing = await _journalEntries.GetActiveBySourceAsync(SourceFixedAssetDepreciation, scheduleLine.Id, cancellationToken);
         if (existing is not null)
             return Result.Success();
 
         if (scheduleLine.DepreciationAmount <= 0)
             return Result.Success();
 
-        var entryDate = new DateTime(scheduleLine.FiscalYear, 12, 31);
-        var periodResult = await _periodService.EnsureOpenPeriodAsync(entryDate, cancellationToken);
+        // Défaut civil (repli) : 31/12 de l'exercice (clé) de la ligne. Le run annuel décalé (P3)
+        // passe une date explicite (fin d'exercice, ex. 30/06/N+1) — ce défaut n'est atteint que
+        // pour l'exercice civil ou les appelants ne fournissant pas de date (test, repli).
+        var effectiveDate = entryDate ?? new DateTime(scheduleLine.FiscalYear, 12, 31);
+        var periodResult = await _periodService.EnsureOpenPeriodAsync(effectiveDate, cancellationToken);
         if (periodResult.IsFailure)
             return Result.Failure(periodResult.Error);
 
@@ -1561,7 +1623,7 @@ public sealed class AccountingService : IAccountingService
         var create = JournalEntry.Create(
             n,
             FixedAssetJournalCode,
-            entryDate,
+            effectiveDate,
             $"Dotation amortissement {asset.InventoryNumber} ({scheduleLine.FiscalYear})",
             periodResult.Value.Id,
             true,
@@ -1588,11 +1650,13 @@ public sealed class AccountingService : IAccountingService
         if (await _chartOfAccounts.CountAsync(cancellationToken) == 0)
             return Result.Success();
 
-        var existing = await _journalEntries.GetBySourceAsync(SourceFixedAssetDisposal, asset.Id, cancellationToken);
+        // Garde « écriture active » (T13, C6) : une écriture de cession extournée n'est plus
+        // bloquante — GetActiveBySourceAsync filtre !IsReversed (cohérence avec la dotation).
+        var existing = await _journalEntries.GetActiveBySourceAsync(SourceFixedAssetDisposal, asset.Id, cancellationToken);
         if (existing is not null)
             return Result.Success();
 
-        if (asset.DisposalDate is null || string.IsNullOrWhiteSpace(asset.DisposalTreasuryAccount))
+        if (asset.DisposalDate is null)
             return Result.Failure(Error.Validation("FixedAsset", "Cession incomplète pour l'écriture comptable."));
 
         var entryDate = asset.DisposalDate.Value;
@@ -1605,6 +1669,13 @@ public sealed class AccountingService : IAccountingService
         var proceeds = asset.DisposalProceeds ?? 0m;
         var nbv = asset.NetBookValue;
         var gainOrLoss = proceeds - nbv;
+
+        var hasTreasury = !string.IsNullOrWhiteSpace(asset.DisposalTreasuryAccount);
+        var hasReceivable = !string.IsNullOrWhiteSpace(asset.DisposalReceivableAccount);
+        // Un compte de règlement n'est requis que pour un produit de cession positif ; la mise au
+        // rebut / cession gratuite (produit = 0) ne génère aucune ligne de règlement (T4, A6).
+        if (proceeds > 0 && !hasTreasury && !hasReceivable)
+            return Result.Failure(Error.Validation("FixedAsset", "Cession incomplète pour l'écriture comptable."));
 
         var lines = new List<JournalLineInput>();
 
@@ -1621,8 +1692,10 @@ public sealed class AccountingService : IAccountingService
 
         if (proceeds > 0)
         {
+            // Règlement comptant (trésorerie) ou à terme (créance 452 sur cession).
+            var settlementAccount = hasReceivable ? asset.DisposalReceivableAccount! : asset.DisposalTreasuryAccount!;
             lines.Add(new JournalLineInput(
-                asset.DisposalTreasuryAccount!,
+                settlementAccount,
                 $"Produit cession — {asset.InventoryNumber}",
                 proceeds,
                 0,

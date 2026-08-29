@@ -36,6 +36,17 @@ describe('accounting-amount.utils', () => {
       expect(parseAccountingAmount(100.5)).toBe(100.5);
     });
 
+    // T10 (bug C2) — saisie décimale à virgule sur les champs montants des immobilisations.
+    it('parses a comma decimal the way a Tunisian user types it (150,500 → 150.5)', () => {
+      expect(parseAccountingAmount('150,500')).toBe(150.5);
+    });
+
+    it('round-trips through 3 millime decimals (format then parse)', () => {
+      const rounded = roundToMillime(12.5685); // 12.569
+      // Value kept under 1000 to avoid any locale-specific thousand separator ambiguity.
+      expect(parseAccountingAmount(formatAccountingAmount(rounded))).toBe(rounded);
+    });
+
     it('returns null for empty or invalid input', () => {
       expect(parseAccountingAmount('')).toBeNull();
       expect(parseAccountingAmount(null)).toBeNull();

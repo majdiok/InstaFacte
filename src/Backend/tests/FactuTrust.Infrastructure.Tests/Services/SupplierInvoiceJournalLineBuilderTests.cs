@@ -116,6 +116,57 @@ public sealed class SupplierInvoiceJournalLineBuilderTests
     }
 
     [Fact]
+    public void Build_FixedAssetLine_VatCapitalized_DebitsVatToAssetAccount_No43662()
+    {
+        var invoice = BuildInvoice((true, 2000m));
+        var line = invoice.Lines.Single();
+        var classifications = new Dictionary<Guid, SupplierInvoiceJournalLineBuilder.FixedAssetLineClassification>
+        {
+            [line.Id] = new("2244", true)
+        };
+
+        var (lines, totals) = SupplierInvoiceJournalLineBuilder.Build(invoice, null, classifications);
+
+        Assert.Equal(2000m, totals.AssetHt);
+        Assert.Equal(0m, totals.AssetVat);
+        Assert.Contains(lines, l => l.AccountNumber == "2244" && l.Debit == 2380m);
+        Assert.DoesNotContain(lines, l => l.AccountNumber == "43662");
+        Assert.Equal(2380m, lines.Single(l => l.AccountNumber == "4011").Credit);
+    }
+
+    [Fact]
+    public void Build_FixedAssetLine_NotVatCapitalized_KeepsVatOn43662()
+    {
+        var invoice = BuildInvoice((true, 2000m));
+        var line = invoice.Lines.Single();
+        var classifications = new Dictionary<Guid, SupplierInvoiceJournalLineBuilder.FixedAssetLineClassification>
+        {
+            [line.Id] = new("224", false)
+        };
+
+        var (lines, totals) = SupplierInvoiceJournalLineBuilder.Build(invoice, null, classifications);
+
+        Assert.Equal(380m, totals.AssetVat);
+        Assert.Contains(lines, l => l.AccountNumber == "224" && l.Debit == 2000m);
+        Assert.Contains(lines, l => l.AccountNumber == "43662" && l.Debit == 380m);
+        Assert.Equal(2380m, lines.Single(l => l.AccountNumber == "4011").Credit);
+    }
+
+    [Fact]
+    public void Build_FixedAssetLine_ClassificationAbsent_PreservesLegacyBehavior()
+    {
+        // Non-régression : absence de dictionnaire de classification (appelant qui ne connaît pas
+        // encore les catégories) → comportement historique inchangé (compte de la ligne, 43662).
+        var invoice = BuildInvoice((true, 2000m));
+
+        var (lines, totals) = SupplierInvoiceJournalLineBuilder.Build(invoice, null, null);
+
+        Assert.Equal(380m, totals.AssetVat);
+        Assert.Contains(lines, l => l.AccountNumber == "223" && l.Debit == 2000m);
+        Assert.Contains(lines, l => l.AccountNumber == "43662" && l.Debit == 380m);
+    }
+
+    [Fact]
     public void Build_WithFiscalStamp_Debits6654()
     {
         var invoice = BuildInvoice((false, 1000m));
