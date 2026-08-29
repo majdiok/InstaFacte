@@ -188,13 +188,6 @@ export const ALL_NAV_ITEMS: NavItem[] = [
         permissionsAll: [PERMISSIONS.recurringContracts.read]
       },
       {
-        label: 'Brouillons récurrents',
-        route: '/recurring-contracts/pending-drafts',
-        icon: 'fa-solid fa-file-circle-check',
-        modules: [M.RecurringContracts],
-        permissionsAll: [PERMISSIONS.recurringContracts.read]
-      },
-      {
         label: 'Solde par client',
         route: '/reports/client-balances',
         icon: 'fa-solid fa-wallet',
@@ -862,7 +855,6 @@ const ROUTE_KEYWORDS: Record<string, string[]> = {
   '/quotes': ['devis', 'DEV', 'proposition'],
   '/quotes/new': ['nouveau devis', 'créer devis', 'ajouter devis'],
   '/recurring-contracts': ['contrat récurrent', 'abonnement', 'subscription', 'récurrent'],
-  '/recurring-contracts/pending-drafts': ['brouillon récurrent', 'facturation récurrente'],
   '/delivery-notes': ['bon de livraison', 'BL', 'livraison'],
   '/delivery-notes/new': ['nouveau bon', 'créer livraison'],
   '/return-notes': ['bon de retour', 'BRT', 'retour'],
