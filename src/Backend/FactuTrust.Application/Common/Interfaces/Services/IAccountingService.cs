@@ -67,9 +67,16 @@ public interface IAccountingService
 
     Task<Result> GenerateFixedAssetAcquisitionEntryAsync(FixedAsset asset, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Poste la dotation d'amortissement d'une ligne d'échéancier. <paramref name="entryDate"/>
+    /// permet d'imposer une date d'écriture explicite (flux de cession — T3/T4) ; non fourni,
+    /// le comportement historique est conservé : datée au 31/12 de l'exercice de la ligne
+    /// (run annuel — exercices décalés hors périmètre, décision D8).
+    /// </summary>
     Task<Result> GenerateFixedAssetDepreciationEntryAsync(
         FixedAsset asset,
         DepreciationScheduleLine scheduleLine,
+        DateTime? entryDate = null,
         CancellationToken cancellationToken = default);
 
     Task<Result> GenerateFixedAssetDisposalEntryAsync(FixedAsset asset, CancellationToken cancellationToken = default);

@@ -367,7 +367,7 @@ public sealed class PostDepreciationRunCommandHandler : IRequestHandler<PostDepr
                 continue;
             }
 
-            var result = await _accounting.GenerateFixedAssetDepreciationEntryAsync(asset, line, cancellationToken);
+            var result = await _accounting.GenerateFixedAssetDepreciationEntryAsync(asset, line, cancellationToken: cancellationToken);
             if (result.IsFailure)
             {
                 errors.Add($"{asset.InventoryNumber}: {result.Error.Description}");
@@ -433,7 +433,7 @@ public sealed class DisposeFixedAssetCommandHandler : IRequestHandler<DisposeFix
         var yearLine = asset.ScheduleLines.FirstOrDefault(l => l.FiscalYear == disposalYear && !l.IsPosted);
         if (yearLine is not null && yearLine.DepreciationAmount > 0)
         {
-            var dep = await _accounting.GenerateFixedAssetDepreciationEntryAsync(asset, yearLine, cancellationToken);
+            var dep = await _accounting.GenerateFixedAssetDepreciationEntryAsync(asset, yearLine, cancellationToken: cancellationToken);
             if (dep.IsFailure)
                 return Result.Failure<Guid>(dep.Error);
             await _assets.SaveScheduleLineAsync(yearLine, cancellationToken);

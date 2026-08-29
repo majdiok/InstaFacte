@@ -1582,6 +1582,7 @@ public sealed class AccountingService : IAccountingService
     public async Task<Result> GenerateFixedAssetDepreciationEntryAsync(
         FixedAsset asset,
         DepreciationScheduleLine scheduleLine,
+        DateTime? entryDate = null,
         CancellationToken cancellationToken = default)
     {
         if (await _chartOfAccounts.CountAsync(cancellationToken) == 0)
@@ -1597,8 +1598,8 @@ public sealed class AccountingService : IAccountingService
         if (scheduleLine.DepreciationAmount <= 0)
             return Result.Success();
 
-        var entryDate = new DateTime(scheduleLine.FiscalYear, 12, 31);
-        var periodResult = await _periodService.EnsureOpenPeriodAsync(entryDate, cancellationToken);
+        var effectiveDate = entryDate ?? new DateTime(scheduleLine.FiscalYear, 12, 31);
+        var periodResult = await _periodService.EnsureOpenPeriodAsync(effectiveDate, cancellationToken);
         if (periodResult.IsFailure)
             return Result.Failure(periodResult.Error);
 
@@ -1617,7 +1618,7 @@ public sealed class AccountingService : IAccountingService
         var create = JournalEntry.Create(
             n,
             FixedAssetJournalCode,
-            entryDate,
+            effectiveDate,
             $"Dotation amortissement {asset.InventoryNumber} ({scheduleLine.FiscalYear})",
             periodResult.Value.Id,
             true,
