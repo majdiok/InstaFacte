@@ -41,6 +41,10 @@ public sealed class CreateFixedAssetCommandHandler : IRequestHandler<CreateFixed
         var depreciationAccount = string.IsNullOrWhiteSpace(r.DepreciationAccountNumber) ? category.DefaultDepreciationAccount : r.DepreciationAccountNumber.Trim();
         var expenseAccount = string.IsNullOrWhiteSpace(r.ExpenseAccountNumber) ? category.DefaultExpenseAccount : r.ExpenseAccountNumber.Trim();
 
+        var accountsValidation = FixedAssetAccountRules.Validate(assetAccount, depreciationAccount, expenseAccount);
+        if (accountsValidation.IsFailure)
+            return Result.Failure<Guid>(accountsValidation.Error);
+
         var resolved = FixedAssetRateResolver.Resolve(
             category.IsNonDepreciable,
             category.LegalRatePercent,
@@ -233,6 +237,10 @@ public sealed class UpdateFixedAssetCommandHandler : IRequestHandler<UpdateFixed
         var assetAccount = string.IsNullOrWhiteSpace(r.AssetAccountNumber) ? category.DefaultAssetAccount : r.AssetAccountNumber.Trim();
         var depreciationAccount = string.IsNullOrWhiteSpace(r.DepreciationAccountNumber) ? category.DefaultDepreciationAccount : r.DepreciationAccountNumber.Trim();
         var expenseAccount = string.IsNullOrWhiteSpace(r.ExpenseAccountNumber) ? category.DefaultExpenseAccount : r.ExpenseAccountNumber.Trim();
+
+        var accountsValidation = FixedAssetAccountRules.Validate(assetAccount, depreciationAccount, expenseAccount);
+        if (accountsValidation.IsFailure)
+            return Result.Failure<Guid>(accountsValidation.Error);
 
         var resolved = FixedAssetRateResolver.Resolve(
             category.IsNonDepreciable,

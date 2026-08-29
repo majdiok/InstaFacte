@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Enums;
 
@@ -8,6 +9,14 @@ namespace FactuTrust.Domain.Entities;
 /// </summary>
 public sealed class FixedAsset : AggregateRoot
 {
+    /// <summary>
+    /// Format minimal partagé d'un numéro de compte comptable (chiffres uniquement, 2 à 20
+    /// caractères). Invariant de dernier recours au niveau du domaine : les règles complètes
+    /// (préfixes NCT, cohérence corporel/incorporel) vivent dans
+    /// <c>FixedAssetAccountRules</c> (Application), appliquées en amont par les handlers.
+    /// </summary>
+    private static readonly Regex AccountNumberFormat = new("^\\d{2,20}$", RegexOptions.Compiled);
+
     /// <summary>
     /// Coefficients d'amortissement accéléré autorisés par le Décret 2008-492 art. 2 :
     /// 1,5 pour deux équipes (matériel industriel ; taux 15 % → 22,5 %) et 2 pour trois équipes (→ 30 %).
@@ -105,6 +114,8 @@ public sealed class FixedAsset : AggregateRoot
             return Result.Failure<FixedAsset>(Error.Validation("ResidualValue", "La valeur résiduelle doit être inférieure au coût total"));
         if (string.IsNullOrEmpty(assetAccountNumber) || string.IsNullOrEmpty(depreciationAccountNumber) || string.IsNullOrEmpty(expenseAccountNumber))
             return Result.Failure<FixedAsset>(Error.Validation("AccountNumber", "Les comptes comptables sont obligatoires"));
+        if (!AccountNumberFormat.IsMatch(assetAccountNumber) || !AccountNumberFormat.IsMatch(depreciationAccountNumber) || !AccountNumberFormat.IsMatch(expenseAccountNumber))
+            return Result.Failure<FixedAsset>(Error.Validation("AccountNumber", "Un numéro de compte comptable ne peut contenir que des chiffres (2 à 20 caractères)"));
         if (depreciationMethod == DepreciationMethod.Accelerated && !AllowedAccelerationCoefficients.Contains(accelerationCoefficient))
             return Result.Failure<FixedAsset>(Error.Validation(
                 "AccelerationCoefficient",
@@ -201,6 +212,14 @@ public sealed class FixedAsset : AggregateRoot
             return Result.Failure(Error.Validation("AccelerationCoefficient", "Le coefficient n'est applicable qu'à la méthode accélérée"));
         if (method != DepreciationMethod.Linear && depreciationRatePercent <= 0)
             return Result.Failure(Error.Validation("DepreciationMethod", "Cette méthode d'amortissement nécessite un taux positif (bien amortissable)"));
+
+        assetAccountNumber = assetAccountNumber?.Trim() ?? string.Empty;
+        depreciationAccountNumber = depreciationAccountNumber?.Trim() ?? string.Empty;
+        expenseAccountNumber = expenseAccountNumber?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(assetAccountNumber) || string.IsNullOrEmpty(depreciationAccountNumber) || string.IsNullOrEmpty(expenseAccountNumber))
+            return Result.Failure(Error.Validation("AccountNumber", "Les comptes comptables sont obligatoires"));
+        if (!AccountNumberFormat.IsMatch(assetAccountNumber) || !AccountNumberFormat.IsMatch(depreciationAccountNumber) || !AccountNumberFormat.IsMatch(expenseAccountNumber))
+            return Result.Failure(Error.Validation("AccountNumber", "Un numéro de compte comptable ne peut contenir que des chiffres (2 à 20 caractères)"));
 
         Label = label;
         Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();

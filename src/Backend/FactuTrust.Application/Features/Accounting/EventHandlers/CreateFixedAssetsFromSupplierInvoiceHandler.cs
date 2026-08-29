@@ -63,9 +63,29 @@ public sealed class CreateFixedAssetsFromSupplierInvoiceHandler
 
             var rate = category.IsNonDepreciable ? 0m : category.LegalRatePercent;
             var assetAccount = line.AssetAccountNumber ?? category.DefaultAssetAccount;
+            if (!FixedAssetAccountRules.IsValidAssetAccount(assetAccount))
+            {
+                _logger.LogWarning(
+                    "Invalid asset account {Account} on supplier line {Line}, falling back to category default {Default}",
+                    assetAccount, line.LineNumber, category.DefaultAssetAccount);
+                assetAccount = category.DefaultAssetAccount;
+            }
+
             var depreciationAccount = category.DefaultDepreciationAccount;
             var expenseAccount = category.DefaultExpenseAccount;
             var vatCapitalized = FixedAssetVatRules.IsVatCapitalized(category.Code, assetAccount);
+
+            // Garde défensive (B5/T8) : le triplet résolu doit rester cohérent même après repli sur
+            // les défauts de catégorie (valides post-T1) — sinon la ligne est ignorée proprement,
+            // sans lever d'exception dans ce notification handler.
+            var accountsValidation = FixedAssetAccountRules.Validate(assetAccount, depreciationAccount, expenseAccount);
+            if (accountsValidation.IsFailure)
+            {
+                _logger.LogWarning(
+                    "Fixed asset draft skipped for supplier line {Line}: invalid account triplet {Asset}/{Depreciation}/{Expense} ({Error})",
+                    line.LineNumber, assetAccount, depreciationAccount, expenseAccount, accountsValidation.Error.Description);
+                continue;
+            }
 
             var create = FixedAsset.Create(
                 $"IMMO-{year}-{seq:D4}",
