@@ -169,8 +169,9 @@ builder.Services.AddAuthentication(options =>
                 if (!isValid)
                     context.Fail("Accès révoqué : rôle ou statut du compte modifié. Reconnectez-vous.");
             }
-            catch
+            catch (Exception ex)
             {
+                Log.Error(ex, "JWT bearer token validation failed. TraceId: {TraceId}", context.HttpContext.TraceIdentifier);
                 // Fail-closed explicite (plan §6 Phase 2.5) : base master injoignable, timeout, erreur
                 // cache -> on rejette toujours, jamais de "laisser passer" sur erreur.
                 context.Fail("Impossible de vérifier la session (service indisponible).");
