@@ -1,5 +1,6 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Domain.Entities.Fiscal;
+using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
 
@@ -58,16 +59,35 @@ public sealed class FiscalResultDeclarationRepository : IFiscalResultDeclaration
         return decl;
     }
 
-    public async Task<bool> FinalizeAsync(int fiscalYear, string userId, CancellationToken ct = default)
+    /// <summary>
+    /// Finalisation CONDITIONNELLE et ATOMIQUE (T10, porte de concurrence) :
+    /// <c>UPDATE … WHERE Status = Draft</c> via <c>ExecuteUpdateAsync</c> — seule une feuille encore
+    /// au brouillon est finalisée. Si aucune ligne n'est affectée, on distingue l'absence de feuille
+    /// d'une feuille déjà finalisée (concurrence) par une lecture complémentaire.
+    /// </summary>
+    public async Task<FiscalFinalizeOutcome> FinalizeAsync(int fiscalYear, string userId, CancellationToken ct = default)
     {
         await using var context = _contextFactory.CreateContext();
-        var decl = await context.FiscalResultDeclarations
-            .FirstOrDefaultAsync(d => d.FiscalYear == fiscalYear, ct);
-        if (decl is null)
-            return false;
 
-        decl.Finalize(userId);
-        await context.SaveChangesAsync(ct);
-        return true;
+        // Mise à jour conditionnelle atomique : seul un brouillon est finalisé.
+        var affected = await context.FiscalResultDeclarations
+            .Where(d => d.FiscalYear == fiscalYear && d.Status == FiscalDeclarationStatus.Draft)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(d => d.Status, FiscalDeclarationStatus.Finalized)
+                .SetProperty(d => d.FinalizedAt, DateTime.UtcNow)
+                .SetProperty(d => d.FinalizedBy, userId), ct);
+
+        if (affected > 0)
+            return FiscalFinalizeOutcome.Finalized;
+
+        // Aucun brouillon affecté : absente ou déjà finalisée (concurrence) — lecture complémentaire.
+        var status = await context.FiscalResultDeclarations
+            .Where(d => d.FiscalYear == fiscalYear)
+            .Select(d => d.Status)
+            .FirstOrDefaultAsync(ct);
+
+        return status == FiscalDeclarationStatus.Finalized
+            ? FiscalFinalizeOutcome.AlreadyFinalized
+            : FiscalFinalizeOutcome.Absent;
     }
 }

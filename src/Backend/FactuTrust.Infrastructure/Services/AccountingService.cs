@@ -53,6 +53,23 @@ public sealed class AccountingService : IAccountingService
 
     public const string FixedAssetJournalCode = "JIM";
 
+    /// <summary>
+    /// T10 — clé d'idempotence de l'écriture d'impôt de la finalisation de la liasse fiscale, sur
+    /// l'id de la feuille de détermination du résultat fiscal. Une seule finalisation possible par
+    /// exercice + idempotence par <see cref="IJournalEntryRepository.GetBySourceAsync"/> dans la même
+    /// transaction : l'unicité découle du flux, pas d'un index global (cf. IFiscalResultDeclarationRepository).
+    /// </summary>
+    public const string SourceFiscalTax = "FiscalTaxDeclaration";
+    /// <summary>Charge d'impôt sur les sociétés (classe 69) — débit du montant d'IS dû.</summary>
+    public const string IncomeTaxExpenseAccountNumber = "691";
+    /// <summary>
+    /// Charge de contribution sociale de solidarité (sous-compte de 691 — aucun compte CSS dédié au
+    /// catalogue livré §1.4 ; auto-créé via <see cref="TryAutoCreateSubAccountAsync"/> le cas échéant).
+    /// </summary>
+    public const string CssExpenseAccountNumber = "6912";
+    /// <summary>État — impôt à liquider (crédit du montant total d'impôt dû, jamais le net à payer).</summary>
+    public const string IncomeTaxLiabilityAccountNumber = "4343";
+
     /// <summary>Comptes d'effets de commerce (traites) — alignés sur le seed du plan comptable tenant.</summary>
     public const string ClientEffetAccountNumber = "413";   // Clients - effets à recevoir (NCT 01)
     public const string SupplierEffetAccountNumber = "403";  // Fournisseurs - effets à payer
@@ -1847,6 +1864,77 @@ public sealed class AccountingService : IAccountingService
         entry.SetAuditInfo("system", false);
         await _journalEntries.AddAsync(entry, cancellationToken);
         return Result.Success();
+    }
+
+    // ── T10 : écriture d'impôt de la finalisation de la liasse fiscale (Bug E) ───────────────
+
+    public async Task<Result<Guid>> GenerateFiscalTaxEntryAsync(
+        int fiscalYear, decimal taxDue, decimal cssDue, Guid declarationId, CancellationToken cancellationToken = default)
+    {
+        // Garde-fous : montants négatifs refusés.
+        if (taxDue < 0m)
+            return Result.Failure<Guid>(Error.Validation("TaxDue", "Le montant d'impôt dû ne peut pas être négatif."));
+        if (cssDue < 0m)
+            return Result.Failure<Guid>(Error.Validation("CssDue", "Le montant de CSS ne peut pas être négatif."));
+
+        // Impôt total nul → rien à comptabiliser (no-op succès sûr pour la finalisation).
+        if (taxDue + cssDue == 0m)
+            return Result.Success(Guid.Empty);
+
+        if (declarationId == Guid.Empty)
+            return Result.Failure<Guid>(Error.Validation("DeclarationId", "L'identifiant de la déclaration est obligatoire."));
+
+        // Idempotence : un rejeu rend l'Id de l'écriture existante (jamais de doublon).
+        var existing = await _journalEntries.GetBySourceAsync(SourceFiscalTax, declarationId, cancellationToken);
+        if (existing is not null)
+            return Result.Success(existing.Id);
+
+        var entryDate = new DateTime(fiscalYear, 12, 31);
+        var periodResult = await _periodService.EnsureOpenPeriodAsync(entryDate, cancellationToken);
+        if (periodResult.IsFailure)
+            return Result.Failure<Guid>(periodResult.Error);
+
+        var totalDue = taxDue + cssDue;
+        var lines = new List<JournalLineInput>();
+
+        // Débit 691 = impôt dû (charge d'IS).
+        if (taxDue > 0m)
+            lines.Add(new JournalLineInput(IncomeTaxExpenseAccountNumber, "Impôt sur les sociétés — exercice", taxDue, 0m, null, ThirdPartyKind.None));
+
+        // Débit 6912 = CSS (omise si 0 ; sous-compte auto-créé le cas échéant).
+        if (cssDue > 0m)
+            lines.Add(new JournalLineInput(CssExpenseAccountNumber, "Contribution sociale de solidarité — exercice", cssDue, 0m, null, ThirdPartyKind.None));
+
+        // Crédit 4343 = impôt total dû (jamais le net à payer — acomptes/RAS restent en 4341/4342).
+        lines.Add(new JournalLineInput(IncomeTaxLiabilityAccountNumber, "Impôt à liquider — exercice", 0m, totalDue, null, ThirdPartyKind.None));
+
+        var accountValidation = await ValidateAccountsExistAsync(lines, "FiscalTaxEntry", cancellationToken);
+        if (accountValidation.IsFailure)
+            return Result.Failure<Guid>(accountValidation.Error);
+
+        var n = await _journalEntries.ReserveNextEntryNumberAsync(MiscJournalCode, entryDate.Year, cancellationToken);
+        var create = JournalEntry.Create(
+            n,
+            MiscJournalCode,
+            entryDate,
+            $"Comptabilisation de l'impôt sur le résultat — exercice {fiscalYear}",
+            periodResult.Value.Id,
+            true,
+            SourceFiscalTax,
+            declarationId,
+            lines);
+
+        if (create.IsFailure)
+            return Result.Failure<Guid>(create.Error);
+
+        var entry = create.Value;
+        // T10 — statut Validee FORCÉ explicitement (NE PAS utiliser NewEntryStatus) : avec
+        // BrouillardEnabled, un brouillon resterait invisible des états NCT (Status != Brouillon),
+        // cassant la réconciliation feuille/livres de la finalisation et laissant l'impôt hors bilan.
+        entry.MarkInitialStatus(JournalEntryStatus.Validee);
+        entry.SetAuditInfo("system", false);
+        await _journalEntries.AddAsync(entry, cancellationToken);
+        return Result.Success(entry.Id);
     }
 
     public async Task<int> CountReplaceableLinesAsync(string accountNumber, CancellationToken cancellationToken = default)

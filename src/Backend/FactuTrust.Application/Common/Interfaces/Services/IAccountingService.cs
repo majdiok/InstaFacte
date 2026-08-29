@@ -94,6 +94,21 @@ public interface IAccountingService
     Task<Result> GenerateFixedAssetDisposalEntryAsync(FixedAsset asset, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Écriture d'impôt sur le résultat de la finalisation de la liasse fiscale (T10, Bug E) :
+    /// débit 691 = impôt dû, débit 6912 = CSS (omise si 0), crédit 4343 = impôt total dû — au journal
+    /// JOD, date 31/12/N, statut <c>Validee</c> forcé (jamais <c>NewEntryStatus</c>, sinon l'impôt
+    /// resterait invisible des états NCT en brouillard). Idempotente par <c>SourceFiscalTax</c> +
+    /// <paramref name="declarationId"/>. Montants négatifs refusés ; impôt total nul → no-op succès.
+    /// À exécuter dans une transaction (<c>ITenantUnitOfWork</c>) couvrant l'alignement de la feuille.
+    /// </summary>
+    Task<Result<Guid>> GenerateFiscalTaxEntryAsync(
+        int fiscalYear,
+        decimal taxDue,
+        decimal cssDue,
+        Guid declarationId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Écriture comptable de paie sur validation d'un cycle (640/647, 421, 432, 453).
     /// </summary>
     Task<Result> GeneratePayrollRunEntryAsync(PayrollRun payrollRun, CancellationToken cancellationToken = default);

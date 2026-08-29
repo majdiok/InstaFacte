@@ -1091,7 +1091,13 @@ public sealed class AccountingController : ControllerBase
     {
         var r = await _mediator.Send(new FinalizeFiscalResultDeclarationCommand(fiscalYear), cancellationToken);
         if (r.IsFailure)
-            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        {
+            // T10 — sémantique 409 sur les états finalisés/verrouillés/réconciliation (Error.Conflict),
+            // 400 sur les autres validations (absence de feuille, ordre d'imputation…).
+            if (string.Equals(r.Error.Code, "Conflict", StringComparison.OrdinalIgnoreCase))
+                return Conflict(ApiResponse<object>.Fail(r.Error.Description, r.Error.Code));
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description, r.Error.Code));
+        }
         return Ok(ApiResponse<object>.Ok(null!));
     }
 
