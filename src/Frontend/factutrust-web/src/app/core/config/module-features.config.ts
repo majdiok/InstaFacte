@@ -112,25 +112,35 @@ export function isSubFeatureOn(item: UserModuleAccessItem, featureKey: string): 
 }
 
 /** Tout coché → null ; aucune case → [] ; sous-ensemble explicite → liste. */
-export function setSubFeatureChecked(item: UserModuleAccessItem, featureKey: string, checked: boolean): void {
-  const next = withSubFeatureToggled(item, featureKey, checked);
+export function setSubFeatureChecked(
+  item: UserModuleAccessItem,
+  featureKey: string,
+  checked: boolean,
+  visibleKeys?: readonly string[]
+): void {
+  const next = withSubFeatureToggled(item, featureKey, checked, visibleKeys);
   item.enabledFeatureKeys = next.enabledFeatureKeys;
 }
 
-/** Immutable — à utiliser avec signal.update (p-checkbox OnPush + NgModel). */
+/**
+ * Immutable — à utiliser avec signal.update (p-checkbox OnPush + NgModel).
+ * `visibleKeys` = features cochables du catalogue (allowedPermissions non vide).
+ * Sans cet argument, le catalogue statique du module sert d’univers (rétrocompat).
+ */
 export function withSubFeatureToggled(
   item: UserModuleAccessItem,
   featureKey: string,
-  checked: boolean
+  checked: boolean,
+  visibleKeys?: readonly string[]
 ): UserModuleAccessItem {
-  const all = allFeatureKeysForModule(item.module);
+  const all = visibleKeys ? [...visibleKeys] : allFeatureKeysForModule(item.module);
   if (all.length === 0) return { ...item };
   const current =
     item.enabledFeatureKeys == null
       ? [...all]
       : item.enabledFeatureKeys.length === 0
         ? []
-        : [...item.enabledFeatureKeys];
+        : item.enabledFeatureKeys.filter(k => all.includes(k));
   const set = new Set(current);
   if (checked) set.add(featureKey);
   else set.delete(featureKey);

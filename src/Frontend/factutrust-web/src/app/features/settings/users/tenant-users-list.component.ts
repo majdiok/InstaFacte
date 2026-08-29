@@ -814,7 +814,10 @@ export class TenantUsersListComponent implements OnInit {
       const i = draft.findIndex(x => x.module === module);
       if (i < 0) return draft;
       const next = [...draft];
-      next[i] = { ...withSubFeatureToggled(draft[i], featureKey, checked), dirty: true };
+      next[i] = {
+        ...withSubFeatureToggled(draft[i], featureKey, checked, this.visibleFeatureKeys(this.createCatalogModule(module))),
+        dirty: true
+      };
       return next;
     });
   }
@@ -824,9 +827,17 @@ export class TenantUsersListComponent implements OnInit {
       const i = draft.findIndex(x => x.module === module);
       if (i < 0) return draft;
       const next = [...draft];
-      next[i] = { ...withSubFeatureToggled(draft[i], featureKey, checked), dirty: true };
+      next[i] = {
+        ...withSubFeatureToggled(draft[i], featureKey, checked, this.visibleFeatureKeys(this.editCatalogModule(module))),
+        dirty: true
+      };
       return next;
     });
+  }
+
+  /** Clés cochables du catalogue (plafond du rôle) — univers de normalisation d’un module touché. */
+  private visibleFeatureKeys(cm: ModuleCatalogModuleDto | undefined): string[] {
+    return this.catalogVisibleFeatures(cm).map(f => f.key);
   }
 
   afterCreateModuleEnabledChange(m: ModuleDraft): void {

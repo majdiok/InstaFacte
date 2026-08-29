@@ -85,6 +85,13 @@ function catalogFor(role: UserRole): ApiResponse<ModuleCatalogDto> {
               isExtension: true
             },
             {
+              key: 'forecast_read',
+              basePermissions: [],
+              allowedPermissions: ['treasury_forecast:view'],
+              defaultSelected: false,
+              isExtension: true
+            },
+            {
               // Feature sans aucune allowedPermission → doit être masquée.
               key: 'forecast_manage',
               basePermissions: [],
@@ -259,6 +266,20 @@ describe('TenantUsersListComponent', () => {
       expect(sales).toBeDefined();
       expect(sales!.enabled).toBeTrue();
       expect(sales!.enabledFeatureKeys).toBeUndefined();
+    });
+
+    it('Treasury keys=null + décocher manage → payload sans forecast_manage (feature masquée)', () => {
+      // Commercial : forecast_manage a allowedPermissions vide → masquée. Un grant null
+      // (« toutes les features ») ne doit pas réintroduire cette clé au PATCH.
+      component.openEdit(findUser('u-null-keys'));
+      component.onEditSubFeatureChange(AppModule.Treasury, 'manage', false);
+
+      const payload = saveAndCapturePayload();
+      const treasury = findInPayload(payload, AppModule.Treasury);
+      expect(treasury).toBeDefined();
+      expect(treasury!.enabled).toBeTrue();
+      expect(treasury!.enabledFeatureKeys).toEqual(['read', 'forecast_read']);
+      expect(treasury!.enabledFeatureKeys).not.toContain('forecast_manage');
     });
 
     it('affiche le message de révocation renvoyé par l’API en toast après une modification réussie', () => {

@@ -577,7 +577,8 @@ export class TenantUsersBulkComponent {
       const i = draft.findIndex(x => x.module === module);
       if (i < 0) return draft;
       const next = [...draft];
-      next[i] = withSubFeatureToggled(draft[i], featureKey, checked);
+      const visibleKeys = this.catalogVisibleFeatures(this.bulkCatalogModule(module)).map(f => f.key);
+      next[i] = withSubFeatureToggled(draft[i], featureKey, checked, visibleKeys);
       return next;
     });
   }

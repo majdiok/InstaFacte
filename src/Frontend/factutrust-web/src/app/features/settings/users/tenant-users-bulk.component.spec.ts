@@ -79,6 +79,13 @@ function catalogFor(role: UserRole): ApiResponse<ModuleCatalogDto> {
               isExtension: true
             },
             {
+              key: 'forecast_read',
+              basePermissions: [],
+              allowedPermissions: ['treasury_forecast:view'],
+              defaultSelected: false,
+              isExtension: true
+            },
+            {
               // Feature sans aucune allowedPermission → doit être masquée.
               key: 'forecast_manage',
               basePermissions: [],
