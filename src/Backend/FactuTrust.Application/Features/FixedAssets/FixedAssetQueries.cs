@@ -141,7 +141,11 @@ public sealed class GetFixedAssetScheduleQueryHandler : IRequestHandler<GetFixed
         if (asset is null)
             return Result.Failure<FixedAssetScheduleDto>(Error.Validation("FixedAsset", "Immobilisation introuvable."));
 
-        return Result.Success(GenerateDepreciationScheduleCommandHandler.ToScheduleDto(asset));
+        // État d'extourne des lignes (T13, C6) : alimente IsReversed du DTO, pour que le frontend
+        // ne bloque la régénération que sur les dotations nettes (IsPosted && !IsReversed).
+        var reversalState = await _assets.GetScheduleLinesWithReversalStateAsync(request.Id, cancellationToken);
+
+        return Result.Success(GenerateDepreciationScheduleCommandHandler.ToScheduleDto(asset, reversalState));
     }
 }
 

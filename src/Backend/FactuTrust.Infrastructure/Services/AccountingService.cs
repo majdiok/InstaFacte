@@ -1591,7 +1591,9 @@ public sealed class AccountingService : IAccountingService
         if (scheduleLine.IsPosted)
             return Result.Success();
 
-        var existing = await _journalEntries.GetBySourceAsync(SourceFixedAssetDepreciation, scheduleLine.Id, cancellationToken);
+        // Garde « écriture active » (T13, C6) : une écriture extournée n'est plus bloquante —
+        // GetActiveBySourceAsync filtre !IsReversed. Une écriture active l'est toujours (idempotence).
+        var existing = await _journalEntries.GetActiveBySourceAsync(SourceFixedAssetDepreciation, scheduleLine.Id, cancellationToken);
         if (existing is not null)
             return Result.Success();
 
@@ -1645,7 +1647,9 @@ public sealed class AccountingService : IAccountingService
         if (await _chartOfAccounts.CountAsync(cancellationToken) == 0)
             return Result.Success();
 
-        var existing = await _journalEntries.GetBySourceAsync(SourceFixedAssetDisposal, asset.Id, cancellationToken);
+        // Garde « écriture active » (T13, C6) : une écriture de cession extournée n'est plus
+        // bloquante — GetActiveBySourceAsync filtre !IsReversed (cohérence avec la dotation).
+        var existing = await _journalEntries.GetActiveBySourceAsync(SourceFixedAssetDisposal, asset.Id, cancellationToken);
         if (existing is not null)
             return Result.Success();
 

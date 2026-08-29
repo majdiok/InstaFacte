@@ -164,15 +164,18 @@ public sealed class GenerateDepreciationScheduleCommandHandler : IRequestHandler
     private readonly IFixedAssetRepository _assets;
     private readonly IDepreciationEngine _engine;
     private readonly ICurrentUser _currentUser;
+    private readonly ITenantUnitOfWork _unitOfWork;
 
     public GenerateDepreciationScheduleCommandHandler(
         IFixedAssetRepository assets,
         IDepreciationEngine engine,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        ITenantUnitOfWork unitOfWork)
     {
         _assets = assets;
         _engine = engine;
         _currentUser = currentUser;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<Result<FixedAssetScheduleDto>> Handle(GenerateDepreciationScheduleCommand request, CancellationToken cancellationToken)
@@ -184,21 +187,83 @@ public sealed class GenerateDepreciationScheduleCommandHandler : IRequestHandler
         if (asset.InServiceDate is null)
             return Result.Failure<FixedAssetScheduleDto>(Error.Validation("InServiceDate", "L'immobilisation doit être mise en service avant de générer le tableau."));
 
-        if (asset.ScheduleLines.Any(l => l.IsPosted))
-            return Result.Failure<FixedAssetScheduleDto>(Error.Validation("Schedule", "Impossible de regénérer : des dotations sont déjà comptabilisées."));
+        // État d'extourne des lignes (T13, C6) : une dotation dont l'écriture est extournée n'est
+        // plus une dotation « nette » et ne doit plus bloquer la régénération.
+        var reversalState = await _assets.GetScheduleLinesWithReversalStateAsync(request.Id, cancellationToken);
+        var isReversedByLineId = reversalState.ToDictionary(r => r.Line.Id, r => r.IsReversed);
 
-        var lines = _engine.GenerateSchedule(asset);
-        await _assets.ReplaceScheduleLinesAsync(asset.Id, lines, cancellationToken);
+        if (asset.ScheduleLines.Any(l => l.IsPosted && !isReversedByLineId.GetValueOrDefault(l.Id)))
+            return Result.Failure<FixedAssetScheduleDto>(Error.Validation("Schedule", "Impossible de regénérer : des dotations sont déjà comptabilisées (non extournées)."));
 
+        // Atomicité (T13, C6) : dé-postage des lignes extournées + recalcul du cumul + merge du
+        // tableau régénéré dans une seule transaction. Aucune écriture comptable modifiée (E1).
+        Result txnResult;
+        try
+        {
+            txnResult = await _unitOfWork.ExecuteAsync(async ct =>
+            {
+                // 1. Dé-poster les lignes dont l'écriture est explicitement extournée — conserve
+                //    le lien d'audit JournalEntryId (T13, C6 : Unpost ne le remet plus à null).
+                var reversedPosted = asset.ScheduleLines
+                    .Where(l => l.IsPosted && isReversedByLineId.GetValueOrDefault(l.Id))
+                    .ToList();
+                foreach (var line in reversedPosted)
+                {
+                    line.Unpost();
+                    await _assets.SaveScheduleLineAsync(line, ct);
+                }
+
+                // 2. Merger le tableau régénéré (préserve l'identité des lignes — T13 étape 3).
+                //    Les lignes extournées sont désormais non postées → le merge peut les mettre à
+                //    jour en place (même Id, JournalEntryId d'audit conservé).
+                var regenerated = _engine.GenerateSchedule(asset);
+                await _assets.ReplaceScheduleLinesAsync(asset.Id, regenerated, ct);
+
+                // 3. Recalculer le cumul de l'actif à partir des lignes restées comptabilisées
+                //    (non extournées) — uniquement si des lignes ont été dé-postées ; sans ligne
+                //    extournée, le cumul est déjà à jour (comportement préservé, aucune écriture
+                //    sur l'actif). Aucune écriture comptable modifiée (E1).
+                if (reversedPosted.Count > 0)
+                {
+                    var remainingAccumulated = asset.ScheduleLines
+                        .Where(l => l.IsPosted)
+                        .Select(l => (decimal?)l.AccumulatedDepreciation)
+                        .Max() ?? 0m;
+                    asset.RecalculateDepreciationTotals(remainingAccumulated);
+                    asset.SetAuditInfo(_currentUser.Email ?? "system", true);
+                    await _assets.UpdateDepreciationTotalsAsync(asset, ct);
+                }
+
+                return Result.Success();
+            }, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            return Result.Failure<FixedAssetScheduleDto>(new Error("FixedAsset.RegenerateSchedule", ex.Message));
+        }
+
+        if (txnResult.IsFailure)
+            return Result.Failure<FixedAssetScheduleDto>(txnResult.Error);
+
+        // Recharger pour le DTO : lignes fusionnées (mêmes Id, montants à jour) + état d'extourne frais.
         asset = await _assets.GetByIdAsync(request.Id, includeSchedule: true, cancellationToken: cancellationToken);
         if (asset is null)
             return Result.Failure<FixedAssetScheduleDto>(Error.Validation("FixedAsset", "Immobilisation introuvable."));
 
-        return Result.Success(ToScheduleDto(asset));
+        var freshReversal = await _assets.GetScheduleLinesWithReversalStateAsync(request.Id, cancellationToken);
+        return Result.Success(ToScheduleDto(asset, freshReversal));
     }
 
-    internal static FixedAssetScheduleDto ToScheduleDto(FixedAsset asset) =>
-        new(
+    internal static FixedAssetScheduleDto ToScheduleDto(
+        FixedAsset asset,
+        IReadOnlyList<(DepreciationScheduleLine Line, bool IsReversed)>? reversalState = null)
+    {
+        var isReversedByLineId = reversalState?.ToDictionary(r => r.Line.Id, r => r.IsReversed);
+        var lines = asset.ScheduleLines
+            .Select(l => FixedAssetMappings.ToDto(l, isReversedByLineId is not null && isReversedByLineId.GetValueOrDefault(l.Id)))
+            .ToList();
+
+        return new FixedAssetScheduleDto(
             asset.Id,
             asset.InventoryNumber,
             asset.Label,
@@ -208,9 +273,10 @@ public sealed class GenerateDepreciationScheduleCommandHandler : IRequestHandler
             asset.DepreciationRatePercent,
             asset.UsefulLifeYears,
             asset.DepreciableBase,
-            asset.ScheduleLines.Select(FixedAssetMappings.ToDto).ToList(),
+            lines,
             asset.DepreciationMethod,
             asset.AccelerationCoefficient);
+    }
 }
 
 public sealed record UpdateFixedAssetCommand(Guid Id, UpdateFixedAssetRequest Request) : IRequest<Result<Guid>>;

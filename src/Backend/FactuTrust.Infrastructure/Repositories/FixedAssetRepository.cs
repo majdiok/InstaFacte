@@ -564,6 +564,50 @@ public sealed class FixedAssetRepository : IFixedAssetRepository
     }
 
     /// <summary>
+    /// Projection de l'état d'extourne (T13, C6) : <c>LEFT JOIN JournalEntries</c> sur
+    /// <c>JournalEntryId</c>. Conservateur — <c>JournalEntryId</c> nul ou écriture absente →
+    /// <c>IsReversed = false</c> (via <c>entry != null &amp;&amp; entry.IsReversed</c>).
+    /// </summary>
+    public async Task<IReadOnlyList<(DepreciationScheduleLine Line, bool IsReversed)>> GetScheduleLinesWithReversalStateAsync(
+        Guid fixedAssetId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+
+        var rows = await (
+            from line in context.DepreciationScheduleLines.AsNoTracking()
+            where line.FixedAssetId == fixedAssetId
+            join entry in context.JournalEntries.AsNoTracking()
+                on line.JournalEntryId equals entry.Id into entries
+            from entry in entries.DefaultIfEmpty()
+            orderby line.FiscalYear, line.PeriodMonth
+            select new
+            {
+                Line = line,
+                IsReversed = entry != null && entry.IsReversed
+            }).ToListAsync(cancellationToken);
+
+        return rows
+            .Select(r => (r.Line, r.IsReversed))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Met à jour uniquement les colonnes cumul de l'actif (T13, C6) : <c>Attach</c> marque les
+    /// navigations accessibles (lignes, événements, catégorie) <c>Unchanged</c> → aucune écriture
+    /// sur les lignes, seul l'actif est <c>Modified</c>. Évite le repli par state-management des
+    /// lignes de <c>UpdateAsync</c> (qui re-sauverait/insérerait des lignes périmées en mémoire).
+    /// </summary>
+    public async Task UpdateDepreciationTotalsAsync(FixedAsset asset, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        context.FixedAssets.Attach(asset);
+        context.Entry(asset).State = EntityState.Modified;
+        asset.IncrementVersion();
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// Merge par clé <c>(FiscalYear, PeriodMonth)</c> — préserve l'identité (Id) et le lien d'audit
     /// (<c>JournalEntryId</c>) des lignes existantes (T4/T13, C6) au lieu d'un delete+recreate qui
     /// cassait <c>JournalEntries.SourceEntityId → DepreciationScheduleLine.Id</c>.

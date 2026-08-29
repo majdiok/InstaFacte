@@ -91,4 +91,24 @@ public interface IFixedAssetRepository
     /// entièrement comptabilisé » d'un exercice sans aucune dotation à comptabiliser.
     /// </summary>
     Task<int> GetPostedScheduleLineCountForYearAsync(int fiscalYear, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lignes d'échéancier d'un actif avec l'état d'extourne de leur écriture comptable
+    /// (T13, C6) : jointure LINQ explicite
+    /// <c>DepreciationScheduleLines LEFT JOIN JournalEntries ON JournalEntryId = JournalEntries.Id</c>,
+    /// projetée en <c>(Line, IsReversed)</c>. **Conservateur** : <c>JournalEntryId</c> nul ou
+    /// écriture introuvable → <c>IsReversed = false</c> (une ligne postée sans extourne prouvée
+    /// reste bloquante pour la régénération).
+    /// </summary>
+    Task<IReadOnlyList<(DepreciationScheduleLine Line, bool IsReversed)>> GetScheduleLinesWithReversalStateAsync(
+        Guid fixedAssetId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Persiste uniquement les cumuls d'amortissement de l'actif (amortissement cumulé, VNC,
+    /// statut, audit, version) **sans retoucher les lignes d'échéancier** (T13, C6) — utilisé
+    /// après recalcul du cumul (<c>FixedAsset.RecalculateDepreciationTotals</c>) lors d'une
+    /// régénération post-extourne. S'enrôle dans la transaction ambiante via <c>CreateContext()</c>.
+    /// </summary>
+    Task UpdateDepreciationTotalsAsync(FixedAsset asset, CancellationToken cancellationToken = default);
 }

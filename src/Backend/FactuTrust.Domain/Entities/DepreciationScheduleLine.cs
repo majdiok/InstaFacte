@@ -65,11 +65,18 @@ public sealed class DepreciationScheduleLine : Entity
         AccountingPeriodId = accountingPeriodId;
     }
 
+    /// <summary>
+    /// Marque la ligne comme non comptabilisée **en conservant le lien d'audit** vers l'écriture
+    /// extournée (T13, C6) : <see cref="JournalEntryId"/> et <see cref="AccountingPeriodId"/>
+    /// restent peuplés. Le re-lien vers la nouvelle écriture active se fait par
+    /// <see cref="MarkPosted"/> (qui écrase <see cref="JournalEntryId"/>) lors de la
+    /// recomptabilisation. Une ligne dé-postée porte donc <c>IsPosted=false</c> + un
+    /// <c>JournalEntryId</c> pointant vers l'écriture extournée : c'est ce qui permet à la garde
+    /// « écriture active » (<c>GetActiveBySourceAsync</c>) d'autoriser le reposting.
+    /// </summary>
     public void Unpost()
     {
         IsPosted = false;
-        JournalEntryId = null;
-        AccountingPeriodId = null;
     }
 
     /// <summary>

@@ -42,8 +42,17 @@ internal static class FixedAssetMappings
             a.SupplierInvoiceLineId,
             a.VatCapitalized);
 
-    public static DepreciationScheduleLineDto ToDto(DepreciationScheduleLine l) =>
+    public static DepreciationScheduleLineDto ToDto(DepreciationScheduleLine l) => ToDto(l, false);
+
+    /// <summary>
+    /// Surcharge portant l'état d'extourne (T13, C6) : <paramref name="isReversed"/> reflète
+    /// <c>JournalEntry.IsReversed</c> de l'écriture liée à la ligne (projection
+    /// <c>GetScheduleLinesWithReversalStateAsync</c>). Une ligne peut être <c>IsPosted=false</c> +
+    /// <c>IsReversed=true</c> après dé-postage (lien d'audit conservé) — le frontend ne bloque la
+    /// régénération que sur <c>IsPosted &amp;&amp; !IsReversed</c>.
+    /// </summary>
+    public static DepreciationScheduleLineDto ToDto(DepreciationScheduleLine l, bool isReversed) =>
         new(l.Id, l.FiscalYear, l.PeriodMonth, l.OpeningNbv, l.NormalAnnualAmount,
             l.PriorAccumulatedDepreciation, l.DepreciationAmount, l.AccumulatedDepreciation,
-            l.ClosingNbv, l.IsPosted);
+            l.ClosingNbv, l.IsPosted, isReversed);
 }

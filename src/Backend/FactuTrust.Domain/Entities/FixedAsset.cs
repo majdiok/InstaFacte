@@ -335,6 +335,27 @@ public sealed class FixedAsset : AggregateRoot
     }
 
     /// <summary>
+    /// Recalcule le snapshot dénormalisé des cumuls de l'actif (amortissement cumulé, VNC, statut)
+    /// à partir des dotations réellement comptabilisées (T13, C6) — utilisé après dé-postage des
+    /// lignes extournées lors d'une régénération du tableau. Aucune écriture comptable n'est
+    /// modifiée (E1) : seule l'image cumulée de l'actif est remise à jour. Le statut repasse à
+    /// <see cref="FixedAssetStatus.InService"/> si l'actif n'est plus totalement amorti.
+    /// </summary>
+    public void RecalculateDepreciationTotals(decimal accumulatedDepreciation)
+    {
+        if (accumulatedDepreciation < 0)
+            accumulatedDepreciation = 0;
+
+        AccumulatedDepreciation = accumulatedDepreciation;
+        NetBookValue = Math.Max(ResidualValue, TotalCapitalizedCost - accumulatedDepreciation);
+
+        if (DepreciationRatePercent > 0 && NetBookValue <= ResidualValue && accumulatedDepreciation > 0)
+            Status = FixedAssetStatus.FullyDepreciated;
+        else if (Status == FixedAssetStatus.FullyDepreciated)
+            Status = FixedAssetStatus.InService;
+    }
+
+    /// <summary>
     /// Construit une copie détachée pour simuler une mise en service hypothétique (T6, B3) —
     /// utilisée par l'aperçu d'échéancier (<c>PreviewDepreciationScheduleQueryHandler</c>).
     /// La copie porte le même <see cref="Entity.Id"/> que l'original : rien n'est jamais

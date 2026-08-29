@@ -115,7 +115,8 @@ public sealed record DepreciationScheduleLineDto(
     decimal DepreciationAmount,
     decimal AccumulatedDepreciation,
     decimal ClosingNbv,
-    bool IsPosted);
+    bool IsPosted,
+    bool IsReversed);
 
 public sealed record FixedAssetScheduleDto(
     Guid FixedAssetId,
