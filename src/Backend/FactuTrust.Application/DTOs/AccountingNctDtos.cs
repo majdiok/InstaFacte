@@ -26,7 +26,18 @@ public sealed record NctBalanceSheetDto
     public decimal PreviousTotalEquityAndLiabilities { get; init; }
     /// <summary>Vrai si Total Actif = Total Capitaux propres et Passifs (contrôle d'équilibre).</summary>
     public bool IsBalanced { get; init; }
+    /// <summary>Écart Total Actif − Total Capitaux propres et Passifs (0 si équilibré, T3).</summary>
+    public decimal Difference { get; init; }
+    /// <summary>
+    /// Avertissements de qualité des données (rubriques normalement non négatives détectées négatives,
+    /// anomalies de sens du compte 1011, à-nouveaux absents/manuels — T3/T7).
+    /// </summary>
+    public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
 }
+
+/// <summary>Agrégats de cession d'immobilisations de l'exercice N (T5), calculés par le service appelant
+/// à partir des lignes d'écritures — le builder ne voit que des soldes nets.</summary>
+public sealed record NctDisposalAggregates(decimal DepreciationRemoved, decimal Proceeds);
 
 public sealed record NctIncomeStatementDto
 {
@@ -57,6 +68,24 @@ public sealed record NctEquityChangeDto
     public decimal OpeningEquity { get; init; }
     public decimal NetResult { get; init; }
     public decimal ClosingEquity { get; init; }
+    /// <summary>Décomposition par composante (CAP, RES, REP, AUT, RSX — T6).</summary>
+    public IReadOnlyList<NctEquityComponentDto> Components { get; init; } = Array.Empty<NctEquityComponentDto>();
+}
+
+/// <summary>
+/// Composante de la variation des capitaux propres (T6). <c>NctLineDto</c> ne peut pas représenter
+/// ouverture/résultat de l'exercice/autres mouvements/clôture séparément par composante.
+/// </summary>
+public sealed record NctEquityComponentDto
+{
+    public string Code { get; init; } = null!;      // "CAP", "RES", "REP", "AUT", "RSX"
+    public string Label { get; init; } = null!;
+    public decimal Opening { get; init; }
+    /// <summary>Résultat de l'exercice (0 sauf composante RSX).</summary>
+    public decimal PeriodResult { get; init; }
+    /// <summary>Apports, affectations, distributions… (résiduel).</summary>
+    public decimal OtherMovements { get; init; }
+    public decimal Closing { get; init; }
 }
 
 public sealed record NctNoteDto
