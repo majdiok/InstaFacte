@@ -5,6 +5,7 @@ import { RouterTestingModule } from '@angular/router/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { environment } from '@environments/environment';
 import { FixedAssetDetailComponent } from './fixed-asset-detail.component';
+import { ConfirmationService } from '@core/services/confirmation.service';
 import { DepreciationMethod, DepreciationScheduleLineDto, FixedAssetScheduleDto, FixedAssetStatus } from '../services/fixed-assets.service';
 import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 
@@ -37,6 +38,8 @@ describe('FixedAssetDetailComponent', () => {
   };
 
   function setup(routeSnapshot: Partial<{ data: Record<string, unknown>; id: string | null }>) {
+    const confirmationSpy = jasmine.createSpyObj<ConfirmationService>('ConfirmationService', ['confirm', 'alert']);
+
     TestBed.configureTestingModule({
       imports: [FixedAssetDetailComponent, RouterTestingModule, NoopAnimationsModule],
       providers: [
@@ -50,6 +53,7 @@ describe('FixedAssetDetailComponent', () => {
             }
           }
         },
+        { provide: ConfirmationService, useValue: confirmationSpy },
         provideHttpClient(withInterceptorsFromDi()),
         provideHttpClientTesting()
       ]
@@ -70,7 +74,7 @@ describe('FixedAssetDetailComponent', () => {
       });
     }
 
-    return { fixture, httpMock };
+    return { fixture, httpMock, confirmationSpy };
   }
 
   function flushDraftAsset(httpMock: HttpTestingController, overrides: Record<string, unknown> = {}): void {
@@ -456,6 +460,168 @@ describe('FixedAssetDetailComponent', () => {
       ]);
 
       expect(component.hasPostedLines()).toBeFalse();
+      httpMock.verify();
+    });
+  });
+
+  // T15 (bug C9) — confirmation de cession, mode de règlement (452 / rebut) et garde de
+  // navigation. La cession n'est envoyée qu'après confirmation ; le payload dépend du mode ;
+  // un formulaire modifié bloque la navigation interne (guard) et active beforeunload.
+  describe('disposal confirmation + settlement mode (T15 / C9)', () => {
+    function flushInService(httpMock: HttpTestingController, overrides: Record<string, unknown> = {}): void {
+      httpMock.expectOne(`${base}/asset-1`).flush({
+        success: true,
+        data: { ...draftAsset, status: 'InService', ...overrides }
+      });
+      httpMock.expectOne(`${base}/asset-1/schedule`).flush({ success: true, data: null });
+    }
+
+    /** Flushe la rechargement de l'actif déclenché par le callback de succès de `dispose()`. */
+    function flushPostDisposalReload(httpMock: HttpTestingController): void {
+      httpMock.expectOne(`${base}/asset-1`).flush({
+        success: true,
+        data: { ...draftAsset, status: 'Disposed' }
+      });
+      httpMock.expectOne(`${base}/asset-1/schedule`).flush({ success: true, data: null });
+    }
+
+    it('opens a confirmation modal and does NOT send the disposal POST until accepted', () => {
+      const { fixture, httpMock, confirmationSpy } = setup({ id: 'asset-1' });
+      flushInService(httpMock);
+      const component = fixture.componentInstance;
+
+      // Default spy does not invoke accept (user has not confirmed yet).
+      component.confirmDispose();
+
+      expect(confirmationSpy.confirm).toHaveBeenCalledTimes(1);
+      const cfg = confirmationSpy.confirm.calls.mostRecent().args[0];
+      expect(cfg.header).toContain('cession');
+      expect(cfg.message).toContain('irréversible');
+      expect(cfg.message).toContain(component.disposalDate);
+      // No disposal request issued yet.
+      httpMock.expectNone(`${base}/asset-1/dispose`);
+      httpMock.verify();
+    });
+
+    it('sends the disposal POST only after the confirmation accept callback runs (Comptant)', () => {
+      const { fixture, httpMock, confirmationSpy } = setup({ id: 'asset-1' });
+      flushInService(httpMock);
+      const component = fixture.componentInstance;
+      component.disposalMode = 'cash';
+      component.disposalProceeds = 1000;
+      component.treasuryAccount = '5321';
+
+      confirmationSpy.confirm.and.callFake(cfg => cfg.accept?.());
+      component.confirmDispose();
+
+      const req = httpMock.expectOne(`${base}/asset-1/dispose`);
+      expect(req.request.body.treasuryAccountNumber).toBe('5321');
+      expect(req.request.body.receivableAccountNumber).toBeUndefined();
+      expect(req.request.body.disposalProceeds).toBe(1000);
+      req.flush({ success: true, data: 'ok' });
+      flushPostDisposalReload(httpMock);
+      httpMock.verify();
+    });
+
+    it('sends receivableAccountNumber=452 with no treasury for the "À terme" mode', () => {
+      const { fixture, httpMock, confirmationSpy } = setup({ id: 'asset-1' });
+      flushInService(httpMock);
+      const component = fixture.componentInstance;
+      component.disposalMode = 'receivable';
+      component.receivableAccount = '452';
+      component.disposalProceeds = 2500;
+
+      confirmationSpy.confirm.and.callFake(cfg => cfg.accept?.());
+      component.confirmDispose();
+
+      const req = httpMock.expectOne(`${base}/asset-1/dispose`);
+      expect(req.request.body.receivableAccountNumber).toBe('452');
+      expect(req.request.body.treasuryAccountNumber).toBeUndefined();
+      expect(req.request.body.disposalProceeds).toBe(2500);
+      req.flush({ success: true, data: 'ok' });
+      flushPostDisposalReload(httpMock);
+      httpMock.verify();
+    });
+
+    it('sends no account and proceeds 0 for the "Mise au rebut" mode', () => {
+      const { fixture, httpMock, confirmationSpy } = setup({ id: 'asset-1' });
+      flushInService(httpMock);
+      const component = fixture.componentInstance;
+      component.disposalMode = 'scrap';
+      component.disposalProceeds = 500; // must be forced to 0
+
+      confirmationSpy.confirm.and.callFake(cfg => cfg.accept?.());
+      component.confirmDispose();
+
+      const req = httpMock.expectOne(`${base}/asset-1/dispose`);
+      expect(req.request.body.disposalProceeds).toBe(0);
+      expect(req.request.body.treasuryAccountNumber).toBeUndefined();
+      expect(req.request.body.receivableAccountNumber).toBeUndefined();
+      req.flush({ success: true, data: 'ok' });
+      flushPostDisposalReload(httpMock);
+      httpMock.verify();
+    });
+
+    it('forces proceeds to 0 when selecting the scrap mode via onDisposalModeChange', () => {
+      const { fixture, httpMock } = setup({ id: 'asset-1' });
+      flushInService(httpMock);
+      const component = fixture.componentInstance;
+      component.disposalProceeds = 500;
+
+      component.onDisposalModeChange('scrap');
+
+      expect(component.disposalMode).toBe('scrap');
+      expect(component.disposalProceeds).toBe(0);
+      httpMock.verify();
+    });
+  });
+
+  describe('pending changes navigation guard (T15 / C9)', () => {
+    it('allows navigation when the form is blank (not dirty) without prompting', () => {
+      const { fixture, httpMock } = setup({ data: { mode: 'new' } });
+      const component = fixture.componentInstance;
+      spyOn(window, 'confirm');
+
+      expect(component.isDirty()).toBeFalse();
+      expect(component.canDeactivate()).toBeTrue();
+      expect(window.confirm).not.toHaveBeenCalled();
+      httpMock.verify();
+    });
+
+    it('blocks internal navigation when the form is dirty and the user cancels', () => {
+      const { fixture, httpMock } = setup({ data: { mode: 'new' } });
+      const component = fixture.componentInstance;
+      component.form.label = 'Modified label';
+      spyOn(window, 'confirm').and.returnValue(false);
+
+      expect(component.isDirty()).toBeTrue();
+      expect(component.canDeactivate()).toBeFalse();
+      httpMock.verify();
+    });
+
+    it('allows internal navigation when the form is dirty and the user confirms', () => {
+      const { fixture, httpMock } = setup({ data: { mode: 'new' } });
+      const component = fixture.componentInstance;
+      component.form.label = 'Modified label';
+      spyOn(window, 'confirm').and.returnValue(true);
+
+      expect(component.isDirty()).toBeTrue();
+      expect(component.canDeactivate()).toBeTrue();
+      httpMock.verify();
+    });
+
+    it('activates beforeunload only when the form is dirty', () => {
+      const { fixture, httpMock } = setup({ data: { mode: 'new' } });
+      const component = fixture.componentInstance;
+
+      const cleanEvent = { returnValue: '' } as unknown as BeforeUnloadEvent;
+      component.unloadNotification(cleanEvent);
+      expect(cleanEvent.returnValue).toBe('');
+
+      component.form.label = 'Modified label';
+      const dirtyEvent = { returnValue: '' } as unknown as BeforeUnloadEvent;
+      component.unloadNotification(dirtyEvent);
+      expect(dirtyEvent.returnValue).toBeTruthy();
       httpMock.verify();
     });
   });

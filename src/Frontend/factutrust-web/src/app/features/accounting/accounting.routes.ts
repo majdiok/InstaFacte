@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { fixedAssetsFeatureGuard } from './shared/fixed-assets-feature.guard';
+import { pendingChangesGuard } from './fixed-assets/pending-changes.guard';
 
 export const ACCOUNTING_ROUTES: Routes = [
   {
@@ -233,6 +234,7 @@ export const ACCOUNTING_ROUTES: Routes = [
     loadComponent: () =>
       import('./fixed-assets/fixed-asset-detail.component').then(m => m.FixedAssetDetailComponent),
     canActivate: [fixedAssetsFeatureGuard],
+    canDeactivate: [pendingChangesGuard],
     data: { mode: 'new' },
     title: 'Nouvelle immobilisation - InstaFact'
   },
@@ -267,6 +269,7 @@ export const ACCOUNTING_ROUTES: Routes = [
     loadComponent: () =>
       import('./fixed-assets/fixed-asset-detail.component').then(m => m.FixedAssetDetailComponent),
     canActivate: [fixedAssetsFeatureGuard],
+    canDeactivate: [pendingChangesGuard],
     title: 'Immobilisation - InstaFact'
   },
   {

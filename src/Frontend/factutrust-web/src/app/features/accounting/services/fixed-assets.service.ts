@@ -247,7 +247,11 @@ export interface PutFixedAssetInServiceRequest {
 export interface DisposeFixedAssetRequest {
   disposalDate: string;
   disposalProceeds: number;
-  treasuryAccountNumber: string;
+  /** Compte de trésorerie (5321, 5411…) — mode « Comptant ». Optionnel depuis T4 : un produit nul
+   *  (mise au rebut) n'exige aucun compte de règlement. */
+  treasuryAccountNumber?: string;
+  /** Créance sur cession (préfixe 452) — mode « À terme » (cession à crédit, T4). */
+  receivableAccountNumber?: string;
 }
 
 export interface DepreciationRunResultDto {
