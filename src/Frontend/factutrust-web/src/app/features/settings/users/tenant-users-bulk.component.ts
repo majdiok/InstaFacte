@@ -11,12 +11,15 @@ import { DialogModule } from 'primeng/dialog';
 import { InputSwitchModule } from 'primeng/inputswitch';
 import { CheckboxModule } from 'primeng/checkbox';
 import { CardModule } from 'primeng/card';
+import { forkJoin } from 'rxjs';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { BreadcrumbComponent, BreadcrumbItem } from '@shared/components/breadcrumb/breadcrumb.component';
 import {
   APP_MODULE_OPTIONS,
   AppModule,
   CreateTenantUserItem,
+  ModuleCatalogFeatureDto,
+  ModuleCatalogModuleDto,
   TenantUsersService,
   UserModuleAccessItem,
   UserRole
@@ -134,7 +137,8 @@ interface BulkRow {
             <td data-label="Rôle">
               <p-select
                 [options]="roleOptions"
-                [(ngModel)]="row.role"
+                [ngModel]="row.role"
+                (ngModelChange)="onRowRoleChange(ri, $event)"
                 [name]="'bulk-role-' + ri"
                 optionLabel="label"
                 optionValue="value"
@@ -177,44 +181,59 @@ interface BulkRow {
       [modal]="true"
       [style]="{ width: 'min(480px, 96vw)' }"
       (onHide)="onModulesDialogHide()">
-      <p class="hint">Tout sélectionner correspond au maximum permis par le rôle de la ligne.</p>
-      <div class="module-actions">
-        <p-button label="Tout activer" [text]="true" (onClick)="setAllModules(true)"></p-button>
-        <p-button label="Tout désactiver" [text]="true" (onClick)="setAllModules(false)"></p-button>
-      </div>
-      <div class="module-list">
-        @for (m of workingModules(); track m.module) {
-          <div class="module-row">
-            <div class="module-row-main">
-              <span class="module-title">{{ moduleLabel(m.module) }}</span>
-              <p-inputSwitch
-                [(ngModel)]="m.enabled"
-                (ngModelChange)="afterModuleEnabledChange(m)"></p-inputSwitch>
-            </div>
-            @if (
-              getModuleFeatureOptions(m.module).length &&
-              m.enabled &&
-              !isModuleToggleIneffectiveForRole(bulkModulesRole(), m.module)
-            ) {
-              <div
-                class="module-subfeatures"
-                role="group"
-                [attr.aria-label]="'Sous-modules : ' + moduleLabel(m.module)">
-                @for (opt of getModuleFeatureOptions(m.module); track opt.key) {
-                  <label class="subfeature-row">
-                    <p-checkbox
-                      [binary]="true"
-                      [ngModel]="isSubFeatureOn(m, opt.key)"
-                      (ngModelChange)="onWorkingSubFeatureChange(m.module, opt.key, $event)"
-                      [inputId]="'bulkFeat-' + m.module + '-' + opt.key"></p-checkbox>
-                    <span class="subfeature-label-text">{{ opt.label }}</span>
-                  </label>
-                }
+      <p class="hint">
+        Les accès effectifs = éléments cochés, dans la limite du plafond autorisé pour le rôle.
+        Les éléments « Extension » élargissent les accès par défaut du rôle.
+      </p>
+      @if (bulkCatalogLoading()) {
+        <p class="catalog-state">Chargement du catalogue…</p>
+      } @else if (bulkCatalogError()) {
+        <div class="catalog-error">
+          Impossible de charger le catalogue des modules pour ce rôle. Fermez puis rouvrez la configuration pour réessayer.
+        </div>
+      } @else {
+        <div class="module-actions">
+          <p-button label="Tout activer" [text]="true" (onClick)="setAllModules(true)"></p-button>
+          <p-button label="Tout désactiver" [text]="true" (onClick)="setAllModules(false)"></p-button>
+        </div>
+        <div class="module-list">
+          @for (m of workingModules(); track m.module) {
+            <div class="module-row">
+              <div class="module-row-main">
+                <span class="module-title">
+                  {{ moduleLabel(m.module) }}
+                  @if (isModuleDefaultIncluded(bulkCatalogModule(m.module))) {
+                    <span class="default-badge">Inclus par défaut</span>
+                  }
+                </span>
+                <p-inputSwitch
+                  [(ngModel)]="m.enabled"
+                  (ngModelChange)="afterModuleEnabledChange(m)"></p-inputSwitch>
               </div>
-            }
-          </div>
-        }
-      </div>
+              @if (m.enabled && catalogVisibleFeatures(bulkCatalogModule(m.module)).length) {
+                <div
+                  class="module-subfeatures"
+                  role="group"
+                  [attr.aria-label]="'Sous-modules : ' + moduleLabel(m.module)">
+                  @for (f of catalogVisibleFeatures(bulkCatalogModule(m.module)); track f.key) {
+                    <label class="subfeature-row">
+                      <p-checkbox
+                        [binary]="true"
+                        [ngModel]="isSubFeatureOn(m, f.key)"
+                        (ngModelChange)="onWorkingSubFeatureChange(m.module, f.key, $event)"
+                        [inputId]="'bulkFeat-' + m.module + '-' + f.key"></p-checkbox>
+                      <span class="subfeature-label-text">{{ featureLabel(m.module, f.key) }}</span>
+                      @if (f.isExtension) {
+                        <span class="extension-badge">Extension</span>
+                      }
+                    </label>
+                  }
+                </div>
+              }
+            </div>
+          }
+        </div>
+      }
       <div class="dialog-actions">
         <p-button label="Fermer" (onClick)="modulesVisible = false"></p-button>
       </div>
@@ -330,6 +349,41 @@ interface BulkRow {
     }
     .subfeature-label-text { line-height: 1.35; }
     .dialog-actions { display: flex; justify-content: flex-end; margin-top: var(--spacing-3); }
+
+    .default-badge,
+    .extension-badge {
+      display: inline-flex;
+      align-items: center;
+      margin-left: var(--spacing-2);
+      padding: 0 var(--spacing-2);
+      font-size: var(--font-size-xs, 0.7rem);
+      font-weight: var(--font-weight-medium);
+      line-height: 1.5;
+      border-radius: var(--radius-full, 9999px);
+      white-space: nowrap;
+    }
+    .default-badge {
+      color: var(--color-text-secondary, var(--color-neutral-600));
+      background: var(--color-neutral-100, #eef2f7);
+    }
+    .extension-badge {
+      color: var(--color-primary-700, #1d4ed8);
+      background: var(--color-primary-50, #eff6ff);
+    }
+    .catalog-state {
+      margin: 0;
+      padding: var(--spacing-2) 0;
+      font-size: var(--font-size-sm);
+      color: var(--color-neutral-500);
+    }
+    .catalog-error {
+      padding: var(--spacing-2) var(--spacing-3);
+      border: 1px solid var(--color-danger-200, #fecaca);
+      border-radius: var(--radius-lg, 0.5rem);
+      background: var(--color-danger-50, #fef2f2);
+      color: var(--color-danger-700, #b91c1c);
+      font-size: var(--font-size-sm);
+    }
   `]
 })
 export class TenantUsersBulkComponent {
@@ -374,7 +428,10 @@ export class TenantUsersBulkComponent {
   modulesVisible = false;
   configRowIndex: number | null = null;
   workingModules = signal<UserModuleAccessItem[]>([]);
-  bulkModulesRole = signal<UserRole>('Accountant');
+  /** Catalogue du rôle de la ligne en cours de configuration (rendu piloté par l'API, plan §4.a). */
+  bulkCatalog = signal<ModuleCatalogModuleDto[]>([]);
+  bulkCatalogLoading = signal(false);
+  bulkCatalogError = signal(false);
 
   addRow(): void {
     this.rows.update(list => [...list, this.emptyRow()]);
@@ -391,25 +448,115 @@ export class TenantUsersBulkComponent {
       lastName: '',
       password: '',
       role: 'Accountant',
-      moduleAccess: APP_MODULE_OPTIONS.map(o => ({
-        module: o.value,
-        enabled: true,
-        enabledFeatureKeys: null
-      }))
+      // Vide : la configuration d'une ligne se fait via le catalogue de son rôle (bouton « Configurer »).
+      // Une ligne non configurée produit un utilisateur sans grants (= jeu de base du rôle).
+      moduleAccess: []
     };
+  }
+
+  /** Changement de rôle d'une ligne : recharge le catalogue et réinitialise les modules sur les défauts du rôle. */
+  onRowRoleChange(rowIndex: number, role: UserRole): void {
+    this.rows.update(list => {
+      const next = [...list];
+      next[rowIndex] = { ...next[rowIndex], role };
+      return next;
+    });
+    this.tenantUsers.getModuleCatalog(role).subscribe({
+      next: res => {
+        if (res.success && res.data) {
+          const access = this.accessFromCatalog(res.data.modules);
+          this.rows.update(list => {
+            const next = [...list];
+            next[rowIndex] = { ...next[rowIndex], moduleAccess: access };
+            return next;
+          });
+        }
+      },
+      error: () => {
+        /* Laisser la ligne telle quelle : la modale de configuration affichera l'erreur à l'ouverture. */
+      }
+    });
+  }
+
+  private accessFromCatalog(catalog: ModuleCatalogModuleDto[]): UserModuleAccessItem[] {
+    return catalog
+      .filter(cm => cm.grantable)
+      .map(cm => ({
+        module: cm.module,
+        enabled: cm.defaultEnabled,
+        enabledFeatureKeys: this.defaultFeatureKeys(cm)
+      }));
   }
 
   openModules(rowIndex: number): void {
     this.configRowIndex = rowIndex;
     const row = this.rows()[rowIndex];
-    this.bulkModulesRole.set(row.role);
-    this.workingModules.set(
-      row.moduleAccess.map(x => ({
-        ...x,
-        enabledFeatureKeys: x.enabledFeatureKeys ?? null
-      }))
-    );
     this.modulesVisible = true;
+    this.loadBulkCatalog(row.role, row.moduleAccess);
+  }
+
+  private loadBulkCatalog(role: UserRole, rowAccess: UserModuleAccessItem[]): void {
+    this.bulkCatalogLoading.set(true);
+    this.bulkCatalogError.set(false);
+    this.tenantUsers.getModuleCatalog(role).subscribe({
+      next: res => {
+        this.bulkCatalogLoading.set(false);
+        if (res.success && res.data) {
+          this.bulkCatalog.set(res.data.modules);
+          this.buildBulkWorkingModules(res.data.modules, rowAccess);
+        } else {
+          this.bulkCatalogError.set(true);
+          this.bulkCatalog.set([]);
+          this.workingModules.set([]);
+        }
+      },
+      error: () => {
+        this.bulkCatalogLoading.set(false);
+        this.bulkCatalogError.set(true);
+        this.bulkCatalog.set([]);
+        this.workingModules.set([]);
+      }
+    });
+  }
+
+  /**
+   * Brouillon de la modale : un module par module grantable du catalogue, conservant l'état déjà
+   * configuré de la ligne s'il existe, sinon les défauts du rôle.
+   */
+  private buildBulkWorkingModules(catalog: ModuleCatalogModuleDto[], rowAccess: UserModuleAccessItem[]): void {
+    this.workingModules.set(
+      catalog
+        .filter(cm => cm.grantable)
+        .map(cm => {
+          const existing = rowAccess.find(x => x.module === cm.module);
+          return {
+            module: cm.module,
+            enabled: existing ? existing.enabled : cm.defaultEnabled,
+            enabledFeatureKeys: existing ? (existing.enabledFeatureKeys ?? null) : this.defaultFeatureKeys(cm)
+          };
+        })
+    );
+  }
+
+  /** Entrée de catalogue du rôle de la ligne en cours pour un module donné. */
+  bulkCatalogModule(m: AppModule): ModuleCatalogModuleDto | undefined {
+    return this.bulkCatalog().find(cm => cm.module === m);
+  }
+
+  catalogVisibleFeatures(cm: ModuleCatalogModuleDto | undefined): ModuleCatalogFeatureDto[] {
+    return cm?.features.filter(f => f.allowedPermissions.length > 0) ?? [];
+  }
+
+  isModuleDefaultIncluded(cm: ModuleCatalogModuleDto | undefined): boolean {
+    return !!cm?.defaultEnabled;
+  }
+
+  featureLabel(module: AppModule, key: string): string {
+    return getModuleFeatureOptions(module).find(o => o.key === key)?.label ?? key;
+  }
+
+  private defaultFeatureKeys(cm: ModuleCatalogModuleDto): string[] {
+    return cm.features.filter(f => f.defaultSelected).map(f => f.key);
   }
 
   afterModuleEnabledChange(m: UserModuleAccessItem): void {
@@ -433,47 +580,6 @@ export class TenantUsersBulkComponent {
       next[i] = withSubFeatureToggled(draft[i], featureKey, checked);
       return next;
     });
-  }
-
-  isModuleToggleIneffectiveForRole(role: UserRole, module: AppModule): boolean {
-    if (role === 'Administrator' || role === 'Supervisor') return false;
-    
-    // Rôles avec accès métier complet (modulo configuration)
-    if (role === 'Accountant' || role === 'Auditor') return false;
-
-    // Studio (low-code) : pertinent uniquement pour le Développeur
-    // (Admin/Superviseur/Comptable/Auditeur déjà traités au-dessus).
-    if (module === AppModule.Studio) {
-      return role !== 'Developer';
-    }
-
-    // Rôles très restreints : retourne true pour les modules qu'ils n'auront jamais
-    switch (role) {
-      case 'Developer':
-        // Le Développeur ne lit que Clients/Produits/Ventes(factures)/Rapports ; le reste est sans effet.
-        return module !== AppModule.Clients
-          && module !== AppModule.Products
-          && module !== AppModule.Sales
-          && module !== AppModule.Reports;
-
-      case 'Client':
-        return module !== AppModule.Sales && module !== AppModule.Treasury && module !== AppModule.Administration;
-      
-      case 'SalesRep':
-      case 'SalesManager':
-        return module === AppModule.Administration || module === AppModule.Purchases || module === AppModule.Stock;
-        
-      case 'Warehouse':
-        return module === AppModule.Administration || module === AppModule.Sales || module === AppModule.Purchases || module === AppModule.Treasury || module === AppModule.Reports;
-        
-      case 'Purchaser':
-        return module === AppModule.Administration || module === AppModule.Sales || module === AppModule.Treasury || module === AppModule.Reports;
-        
-      case 'Cashier':
-        return module === AppModule.Administration || module === AppModule.Purchases || module === AppModule.Reports;
-    }
-
-    return false;
   }
 
   persistModulesFromWorking(): void {
@@ -505,17 +611,61 @@ export class TenantUsersBulkComponent {
   }
 
   onModulesDialogHide(): void {
+    // Ne pas écraser la configuration de la ligne si le catalogue n'a pas pu se charger (fail-closed) :
+    // la ligne conserve son état précédent, et la soumission re-filtrera par le catalogue du rôle.
+    if (this.bulkCatalogError()) return;
     this.persistModulesFromWorking();
   }
 
+  /**
+   * « Dupliquer modules (ligne 1 → toutes) » : applique la configuration de la première ligne à chaque
+   * autre ligne, mais re-filtre par le rôle cible — les modules non grantables pour un rôle cible sont
+   * écartés et signalés par un avertissement visuel (plan §4.a).
+   */
   copyModulesFromFirst(): void {
     const list = this.rows();
     if (list.length < 2) return;
     const template = this.cloneModuleAccess(list[0].moduleAccess);
-    this.rows.set(
-      list.map((r, i) => (i === 0 ? r : { ...r, moduleAccess: this.cloneModuleAccess(template) }))
-    );
-    this.toast.add({ severity: 'info', summary: 'Modules copiés', detail: 'Configuration de la première ligne appliquée aux autres.' });
+    const targetRoles = [...new Set(list.slice(1).map(r => r.role))];
+    this.submitting.set(true);
+    forkJoin(targetRoles.map(r => this.tenantUsers.getModuleCatalog(r))).subscribe({
+      next: catalogs => {
+        this.submitting.set(false);
+        const byRole = new Map(targetRoles.map((r, i) => [r, catalogs[i].data?.modules ?? []]));
+        let dropped = 0;
+        const next = list.map((r, i) => {
+          if (i === 0) return r;
+          const grantable = new Set(
+            (byRole.get(r.role) ?? []).filter(cm => cm.grantable).map(cm => cm.module)
+          );
+          const filtered = this.cloneModuleAccess(template.filter(x => grantable.has(x.module)));
+          dropped += template.length - filtered.length;
+          return { ...r, moduleAccess: filtered };
+        });
+        this.rows.set(next);
+        if (dropped > 0) {
+          this.toast.add({
+            severity: 'warn',
+            summary: 'Modules copiés',
+            detail: `Configuration appliquée. ${dropped} module(s) non disponible(s) pour certains rôles ont été écartés.`
+          });
+        } else {
+          this.toast.add({
+            severity: 'info',
+            summary: 'Modules copiés',
+            detail: 'Configuration de la première ligne appliquée aux autres.'
+          });
+        }
+      },
+      error: () => {
+        this.submitting.set(false);
+        this.toast.add({
+          severity: 'error',
+          summary: 'Erreur',
+          detail: 'Impossible de charger le catalogue pour la copie des modules.'
+        });
+      }
+    });
   }
 
   private cloneModuleAccess(items: UserModuleAccessItem[]): UserModuleAccessItem[] {
@@ -552,7 +702,40 @@ export class TenantUsersBulkComponent {
       return;
     }
 
+    // Fail-closed / anti-400 : avant l'envoi, on s'assure que chaque ligne ne porte que des modules
+    // grantables pour son rôle (re-filtrage par le catalogue servi par l'API). Les catalogues sont
+    // mémorisés par le service, donc les rôles déjà chargés ne déclenchent pas de requête réseau.
+    const roles = [...new Set(items.map(it => it.role))];
     this.submitting.set(true);
+    forkJoin(roles.map(r => this.tenantUsers.getModuleCatalog(r))).subscribe({
+      next: catalogs => {
+        const byRole = new Map(roles.map((r, i) => [r, catalogs[i].data?.modules ?? []]));
+        const finalItems = items.map(it => ({
+          ...it,
+          moduleAccess: this.filterAccessByCatalog(it.moduleAccess ?? [], byRole.get(it.role) ?? [])
+        }));
+        this.batchCreate(finalItems);
+      },
+      error: () => {
+        this.submitting.set(false);
+        this.toast.add({
+          severity: 'error',
+          summary: 'Erreur',
+          detail: 'Impossible de charger le catalogue des modules pour valider l’enregistrement.'
+        });
+      }
+    });
+  }
+
+  private filterAccessByCatalog(
+    access: UserModuleAccessItem[],
+    catalogModules: ModuleCatalogModuleDto[]
+  ): UserModuleAccessItem[] {
+    const grantable = new Set(catalogModules.filter(cm => cm.grantable).map(cm => cm.module));
+    return access.filter(x => grantable.has(x.module));
+  }
+
+  private batchCreate(items: CreateTenantUserItem[]): void {
     this.tenantUsers.batchCreate(items).subscribe({
       next: res => {
         this.submitting.set(false);

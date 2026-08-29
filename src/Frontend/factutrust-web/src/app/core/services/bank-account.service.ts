@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, of } from 'rxjs';
 import { catchError, map, shareReplay } from 'rxjs/operators';
 import { environment } from '@environments/environment';
+import { createHttpContextSkipGlobalErrorUi } from '@core/http-context';
 import { ApiResponse } from './client.service';
 
 export interface TunisianBankReference {
@@ -78,22 +79,37 @@ export class BankAccountService {
   }
 
   list(): Observable<ApiResponse<BankAccountDto[]>> {
-    return this.http.get<ApiResponse<BankAccountDto[]>>(this.baseUrl);
+    // 403 is handled locally by the list (toast) — suppress the duplicate global modal.
+    return this.http.get<ApiResponse<BankAccountDto[]>>(this.baseUrl, {
+      context: createHttpContextSkipGlobalErrorUi()
+    });
   }
 
   create(payload: CreateBankAccountPayload): Observable<ApiResponse<BankAccountDto>> {
-    return this.http.post<ApiResponse<BankAccountDto>>(this.baseUrl, payload);
+    // 403 (payments:create) handled locally by the dialog — suppress the duplicate global modal.
+    return this.http.post<ApiResponse<BankAccountDto>>(this.baseUrl, payload, {
+      context: createHttpContextSkipGlobalErrorUi()
+    });
   }
 
   update(id: string, payload: UpdateBankAccountPayload): Observable<ApiResponse<BankAccountDto>> {
-    return this.http.put<ApiResponse<BankAccountDto>>(`${this.baseUrl}/${id}`, payload);
+    // 403 (payments:update) handled locally by the dialog — suppress the duplicate global modal.
+    return this.http.put<ApiResponse<BankAccountDto>>(`${this.baseUrl}/${id}`, payload, {
+      context: createHttpContextSkipGlobalErrorUi()
+    });
   }
 
   delete(id: string): Observable<ApiResponse<object>> {
-    return this.http.delete<ApiResponse<object>>(`${this.baseUrl}/${id}`);
+    // 403 (payments:update) handled locally by the list (toast) — suppress the duplicate global modal.
+    return this.http.delete<ApiResponse<object>>(`${this.baseUrl}/${id}`, {
+      context: createHttpContextSkipGlobalErrorUi()
+    });
   }
 
   setDefault(id: string): Observable<ApiResponse<object>> {
-    return this.http.post<ApiResponse<object>>(`${this.baseUrl}/${id}/set-default`, {});
+    // 403 (payments:update) handled locally by the list (toast) — suppress the duplicate global modal.
+    return this.http.post<ApiResponse<object>>(`${this.baseUrl}/${id}/set-default`, {}, {
+      context: createHttpContextSkipGlobalErrorUi()
+    });
   }
 }

@@ -27,6 +27,7 @@ import {
 } from '@core/services/cash-desk.service';
 import { ToastService } from '@core/services/toast.service';
 import { AuthService } from '@core/services/auth.service';
+import { PERMISSIONS } from '@core/config/permission-keys';
 import { forkJoin } from 'rxjs';
 
 import { HttpErrorResponse } from '@angular/common/http';
@@ -112,20 +113,24 @@ const MONTH_OPTIONS: { label: string; value: number }[] = [
           </div>
           @if (!auth.isFirmDelegatedReadonly()) {
             <div class="filter-action filter-actions">
-              <app-button
-                variant="outline"
-                icon="pi pi-building"
-                (click)="openBankDepositWizard()"
-                ariaLabel="Remise en banque">
-                Remise en banque
-              </app-button>
-              <app-button
-                variant="primary"
-                icon="pi pi-plus"
-                (click)="openAddDialog()"
-                ariaLabel="Enregistrer une opération">
-                Enregistrer une opération
-              </app-button>
+              @if (canCreate()) {
+                <app-button
+                  variant="outline"
+                  icon="pi pi-building"
+                  (click)="openBankDepositWizard()"
+                  ariaLabel="Remise en banque">
+                  Remise en banque
+                </app-button>
+                <app-button
+                  variant="primary"
+                  icon="pi pi-plus"
+                  (click)="openAddDialog()"
+                  ariaLabel="Enregistrer une opération">
+                  Enregistrer une opération
+                </app-button>
+              } @else {
+                <span class="perm-hint" role="note">Autorisation « Trésorerie — saisie » requise.</span>
+              }
             </div>
           }
         </div>
@@ -293,15 +298,25 @@ const MONTH_OPTIONS: { label: string; value: number }[] = [
                           op.origin !== CashOperationOrigin.InvoicePayment &&
                           op.origin !== CashOperationOrigin.SupplierPayment
                         ) {
-                          <app-button
-                            variant="danger"
-                            icon="pi pi-trash"
-                            [iconOnly]="true"
-                            [iconAlwaysVisible]="true"
-                            pTooltip="Annuler l'opération"
-                            ariaLabel="Annuler l'opération"
-                            (click)="openCancelDialog(op); $event.stopPropagation()">
-                          </app-button>
+                          @if (canUpdate()) {
+                            <app-button
+                              variant="danger"
+                              icon="pi pi-trash"
+                              [iconOnly]="true"
+                              [iconAlwaysVisible]="true"
+                              pTooltip="Annuler l'opération"
+                              ariaLabel="Annuler l'opération"
+                              (click)="openCancelDialog(op); $event.stopPropagation()">
+                            </app-button>
+                          } @else {
+                            <span
+                              class="perm-lock"
+                              role="note"
+                              pTooltip="Autorisation « Trésorerie — mise à jour » requise."
+                              aria-label="Autorisation « Trésorerie — mise à jour » requise.">
+                              <i class="pi pi-lock" aria-hidden="true"></i>
+                            </span>
+                          }
                         } @else if (
                           op.status === CashOperationStatus.Terminee &&
                           (op.origin === CashOperationOrigin.InvoicePayment || op.origin === CashOperationOrigin.SupplierPayment)
@@ -465,6 +480,22 @@ const MONTH_OPTIONS: { label: string; value: number }[] = [
     .source-link:hover { text-decoration: underline; }
     .row-actions { display: flex; gap: var(--spacing-2); justify-content: flex-end; }
 
+    .perm-hint {
+      display: inline-flex;
+      align-items: center;
+      color: var(--color-text-tertiary);
+      font-size: var(--font-size-xs);
+      font-style: italic;
+    }
+    .perm-lock {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--color-text-tertiary);
+      font-size: 0.9rem;
+      cursor: help;
+    }
+
     .type-badge {
       display: inline-flex;
       align-items: center;
@@ -502,6 +533,11 @@ export class CashDeskComponent implements OnInit {
   private readonly cashDeskService = inject(CashDeskService);
   private readonly toastService = inject(ToastService);
   readonly auth = inject(AuthService);
+
+  /** Droit de saisie (encaissements/décaissements, remises en banque) — `payments:create`. */
+  readonly canCreate = computed(() => this.auth.hasPermission(PERMISSIONS.payments.create));
+  /** Droit d'annulation (opérations, dépenses, versements bancaires) — `payments:update`. */
+  readonly canUpdate = computed(() => this.auth.hasPermission(PERMISSIONS.payments.update));
 
   readonly monthOptions = MONTH_OPTIONS;
   selectedMonth = new Date().getMonth() + 1;
@@ -650,12 +686,12 @@ export class CashDeskComponent implements OnInit {
   }
 
   openAddDialog(): void {
-    if (this.auth.isFirmDelegatedReadonly()) return;
+    if (this.auth.isFirmDelegatedReadonly() || !this.canCreate()) return;
     this.addDialogVisible = true;
   }
 
   openBankDepositWizard(): void {
-    if (this.auth.isFirmDelegatedReadonly()) return;
+    if (this.auth.isFirmDelegatedReadonly() || !this.canCreate()) return;
     this.bankDepositWizardVisible = true;
   }
 
@@ -668,7 +704,7 @@ export class CashDeskComponent implements OnInit {
   }
 
   openCancelDialog(op: CashOperationListItem): void {
-    if (this.auth.isFirmDelegatedReadonly()) return;
+    if (this.auth.isFirmDelegatedReadonly() || !this.canUpdate()) return;
     this.operationToCancel = op;
     this.cancelReason = '';
     this.cancelError.set('');
@@ -795,11 +831,13 @@ export class CashDeskComponent implements OnInit {
         this.cancelling.set(false);
       },
       error: (err: HttpErrorResponse) => {
-        const msg =
-          (err.error as any)?.errors?.[0] ??
-          (err.error as any)?.message ??
-          (err.error as any)?.error?.description ??
-          'Erreur lors de l\u2019annulation.';
+        // 403 (payments:update) → message métier français ; autres erreurs → message générique francisé.
+        const msg = err.status === 403
+          ? 'Action refusée : autorisations insuffisantes (Trésorerie — mise à jour).'
+          : (err.error as any)?.errors?.[0] ??
+            (err.error as any)?.message ??
+            (err.error as any)?.error?.description ??
+            'Erreur lors de l\u2019annulation.';
         this.cancelError.set(msg);
         this.cancelling.set(false);
       }

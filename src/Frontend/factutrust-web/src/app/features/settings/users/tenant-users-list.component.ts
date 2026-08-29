@@ -18,6 +18,8 @@ import { TableTotalsBarComponent, TotalMetric } from '@shared/components/table-t
 import {
   APP_MODULE_OPTIONS,
   AppModule,
+  ModuleCatalogFeatureDto,
+  ModuleCatalogModuleDto,
   TenantUserListItem,
   TenantUsersService,
   UserModuleAccessItem,
@@ -31,6 +33,16 @@ import {
 } from '@core/config/module-features.config';
 import { ToastService } from '@core/services/toast.service';
 import { AuthService } from '@core/services/auth.service';
+
+/**
+ * Brouillon d'un module dans la modale : étend `UserModuleAccessItem` d'un drapeau `dirty` qui suit
+ * si l'administrateur a touché le toggle ou l'une des sous-features. Règle de persistance §5.2 /
+ * décision E : un module non touché reproduit exactement son état stocké initial (absent reste absent,
+ * `null` reste `null`, liste explicite reste identique) — seuls les modules touchés sont normalisés.
+ */
+interface ModuleDraft extends UserModuleAccessItem {
+  dirty: boolean;
+}
 
 @Component({
   selector: 'app-tenant-users-list',
@@ -145,7 +157,8 @@ import { AuthService } from '@core/services/auth.service';
             <p-select
               inputId="createRole"
               [options]="roleOptions"
-              [(ngModel)]="createRole"
+              [ngModel]="createRole"
+              (ngModelChange)="onCreateRoleChange($event)"
               optionLabel="label"
               optionValue="value"
               styleClass="w-full"></p-select>
@@ -156,49 +169,69 @@ import { AuthService } from '@core/services/auth.service';
           <div class="form-section-head">
             <h4 id="create-modules-heading" class="form-section-title">Modules</h4>
             <p class="modules-hint">
-              Les droits effectifs combinent le rôle et les modules enregistrés ici. Certains rôles peuvent
-              recevoir des modules supplémentaires définis par la politique produit (ex. Magasinier et Clients)
-              uniquement après enregistrement. Un module n’apparaît dans le menu que s’il correspond à au moins
-              une permission effective après connexion.
+              Les accès effectifs = éléments cochés, dans la limite du plafond autorisé pour le rôle.
+              Les éléments « Extension » élargissent les accès par défaut du rôle.
             </p>
           </div>
-          <div class="module-list">
-            @for (m of createModuleDraft(); track m.module) {
-              <div class="module-row">
-                <div class="module-row-main">
-                  <label class="module-row-label" [for]="'createMod' + m.module">{{ moduleLabel(m.module) }}</label>
-                  <p-inputSwitch
-                    [(ngModel)]="m.enabled"
-                    (ngModelChange)="afterCreateModuleEnabledChange(m)"
-                    [inputId]="'createMod' + m.module"
-                    [disabled]="isModuleToggleIneffectiveForRole(createRole, m.module)"></p-inputSwitch>
-                </div>
-                @if (getModuleFeatureOptions(m.module).length && m.enabled && !isModuleToggleIneffectiveForRole(createRole, m.module)) {
-                  <div
-                    class="module-subfeatures"
-                    role="group"
-                    [attr.aria-label]="'Sous-modules : ' + moduleLabel(m.module)">
-                    @for (opt of getModuleFeatureOptions(m.module); track opt.key) {
-                      <label class="subfeature-row">
-                        <p-checkbox
-                          [binary]="true"
-                          [ngModel]="isSubFeatureOn(m, opt.key)"
-                          (ngModelChange)="onCreateSubFeatureChange(m.module, opt.key, $event)"
-                          [inputId]="'createFeat-' + m.module + '-' + opt.key"></p-checkbox>
-                        <span class="subfeature-label-text">{{ opt.label }}</span>
-                      </label>
-                    }
+          @if (createCatalogLoading()) {
+            <p class="catalog-state">Chargement du catalogue…</p>
+          } @else if (createCatalogError()) {
+            <div class="catalog-error">
+              <p>Impossible de charger le catalogue des modules pour ce rôle. L’enregistrement est désactivé.</p>
+              <p-button label="Réessayer" [outlined]="true" (onClick)="onCreateRoleChange(createRole)"></p-button>
+            </div>
+          } @else {
+            <div class="module-list">
+              @for (m of createModuleDraft(); track m.module) {
+                <div class="module-row">
+                  <div class="module-row-main">
+                    <label class="module-row-label" [for]="'createMod' + m.module">
+                      {{ moduleLabel(m.module) }}
+                      @if (isModuleDefaultIncluded(createCatalogModule(m.module))) {
+                        <span class="default-badge">Inclus par défaut</span>
+                      }
+                    </label>
+                    <p-inputSwitch
+                      [(ngModel)]="m.enabled"
+                      (ngModelChange)="afterCreateModuleEnabledChange(m)"
+                      [inputId]="'createMod' + m.module"></p-inputSwitch>
                   </div>
-                }
-              </div>
-            }
-          </div>
+                  @if (m.enabled && catalogVisibleFeatures(createCatalogModule(m.module)).length) {
+                    <div
+                      class="module-subfeatures"
+                      role="group"
+                      [attr.aria-label]="'Sous-modules : ' + moduleLabel(m.module)">
+                      @for (f of catalogVisibleFeatures(createCatalogModule(m.module)); track f.key) {
+                        <label class="subfeature-row">
+                          <p-checkbox
+                            [binary]="true"
+                            [ngModel]="isSubFeatureOn(m, f.key)"
+                            (ngModelChange)="onCreateSubFeatureChange(m.module, f.key, $event)"
+                            [inputId]="'createFeat-' + m.module + '-' + f.key"></p-checkbox>
+                          <span class="subfeature-label-text">{{ featureLabel(m.module, f.key) }}</span>
+                          @if (f.isExtension) {
+                            <span class="extension-badge">Extension</span>
+                          }
+                        </label>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+          }
         </section>
       </div>
       <ng-template pTemplate="footer">
         <div class="user-dialog-footer-actions">
           <p-button label="Annuler" [outlined]="true" type="button" (onClick)="closeCreate()"></p-button>
-          <p-button label="Créer" icon="pi pi-check" type="button" (onClick)="saveCreate()" [loading]="createSaving()"></p-button>
+          <p-button
+            label="Créer"
+            icon="pi pi-check"
+            type="button"
+            (onClick)="saveCreate()"
+            [loading]="createSaving()"
+            [disabled]="createCatalogError() || createCatalogLoading()"></p-button>
         </div>
       </ng-template>
     </p-dialog>
@@ -222,7 +255,8 @@ import { AuthService } from '@core/services/auth.service';
               <p-select
                 inputId="editRole"
                 [options]="roleOptions"
-                [(ngModel)]="editRole"
+                [ngModel]="editRole"
+                (ngModelChange)="onEditRoleChange($event)"
                 optionLabel="label"
                 optionValue="value"
                 styleClass="w-full"></p-select>
@@ -250,51 +284,59 @@ import { AuthService } from '@core/services/auth.service';
             <div class="form-section-head">
               <h4 id="edit-modules-heading" class="form-section-title">Modules</h4>
               <p class="modules-hint">
-                Les droits effectifs combinent le rôle et les modules enregistrés ici. Certains rôles peuvent
-                recevoir des modules supplémentaires définis par la politique produit (ex. Magasinier et Clients)
-                uniquement après enregistrement. Un module n’apparaît dans le menu que s’il correspond à au moins
-                une permission effective après connexion.
+                Les accès effectifs = éléments cochés, dans la limite du plafond autorisé pour le rôle.
+                Les éléments « Extension » élargissent les accès par défaut du rôle.
               </p>
             </div>
-            <div class="module-list">
-              @for (m of moduleDraft(); track m.module) {
-                <div class="module-row">
-                  <div class="module-row-main">
-                    <label class="module-row-label" [for]="'editMod' + m.module">{{ moduleLabel(m.module) }}</label>
-                    <p-inputSwitch
-                      [(ngModel)]="m.enabled"
-                      (ngModelChange)="afterEditModuleEnabledChange(m)"
-                      [inputId]="'editMod' + m.module"
-                      [disabled]="
-                        isAdministrationModuleLockedForEdit(m) ||
-                        isModuleToggleIneffectiveForRole(editRole, m.module)
-                      "></p-inputSwitch>
-                  </div>
-                  @if (
-                    getModuleFeatureOptions(m.module).length &&
-                    m.enabled &&
-                    !isModuleToggleIneffectiveForRole(editRole, m.module)
-                  ) {
-                    <div
-                      class="module-subfeatures"
-                      role="group"
-                      [attr.aria-label]="'Sous-modules : ' + moduleLabel(m.module)">
-                      @for (opt of getModuleFeatureOptions(m.module); track opt.key) {
-                        <label class="subfeature-row">
-                          <p-checkbox
-                            [binary]="true"
-                            [ngModel]="isSubFeatureOn(m, opt.key)"
-                            (ngModelChange)="onEditSubFeatureChange(m.module, opt.key, $event)"
-                            [inputId]="'editFeat-' + m.module + '-' + opt.key"
-                            [disabled]="isAdministrationModuleLockedForEdit(m)"></p-checkbox>
-                          <span class="subfeature-label-text">{{ opt.label }}</span>
-                        </label>
-                      }
+            @if (editCatalogLoading()) {
+              <p class="catalog-state">Chargement du catalogue…</p>
+            } @else if (editCatalogError()) {
+              <div class="catalog-error">
+                <p>Impossible de charger le catalogue des modules pour ce rôle. L’enregistrement est désactivé.</p>
+                <p-button label="Réessayer" [outlined]="true" (onClick)="onEditRoleChange(editRole)"></p-button>
+              </div>
+            } @else {
+              <div class="module-list">
+                @for (m of moduleDraft(); track m.module) {
+                  <div class="module-row">
+                    <div class="module-row-main">
+                      <label class="module-row-label" [for]="'editMod' + m.module">
+                        {{ moduleLabel(m.module) }}
+                        @if (isModuleDefaultIncluded(editCatalogModule(m.module))) {
+                          <span class="default-badge">Inclus par défaut</span>
+                        }
+                      </label>
+                      <p-inputSwitch
+                        [(ngModel)]="m.enabled"
+                        (ngModelChange)="afterEditModuleEnabledChange(m)"
+                        [inputId]="'editMod' + m.module"
+                        [disabled]="isAdministrationModuleLockedForEdit(m)"></p-inputSwitch>
                     </div>
-                  }
-                </div>
-              }
-            </div>
+                    @if (m.enabled && catalogVisibleFeatures(editCatalogModule(m.module)).length) {
+                      <div
+                        class="module-subfeatures"
+                        role="group"
+                        [attr.aria-label]="'Sous-modules : ' + moduleLabel(m.module)">
+                        @for (f of catalogVisibleFeatures(editCatalogModule(m.module)); track f.key) {
+                          <label class="subfeature-row">
+                            <p-checkbox
+                              [binary]="true"
+                              [ngModel]="isSubFeatureOn(m, f.key)"
+                              (ngModelChange)="onEditSubFeatureChange(m.module, f.key, $event)"
+                              [inputId]="'editFeat-' + m.module + '-' + f.key"
+                              [disabled]="isAdministrationModuleLockedForEdit(m)"></p-checkbox>
+                            <span class="subfeature-label-text">{{ featureLabel(m.module, f.key) }}</span>
+                            @if (f.isExtension) {
+                              <span class="extension-badge">Extension</span>
+                            }
+                          </label>
+                        }
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+            }
           </section>
         </div>
       }
@@ -302,7 +344,12 @@ import { AuthService } from '@core/services/auth.service';
         @if (editUser()) {
           <div class="user-dialog-footer-actions">
             <p-button label="Annuler" [outlined]="true" type="button" (onClick)="closeEdit()"></p-button>
-            <p-button label="Enregistrer" type="button" (onClick)="saveEdit()" [loading]="saving()"></p-button>
+            <p-button
+              label="Enregistrer"
+              type="button"
+              (onClick)="saveEdit()"
+              [loading]="saving()"
+              [disabled]="editCatalogError() || editCatalogLoading()"></p-button>
           </div>
         }
       </ng-template>
@@ -450,6 +497,49 @@ import { AuthService } from '@core/services/auth.service';
       line-height: 1.35;
     }
 
+    .default-badge,
+    .extension-badge {
+      display: inline-flex;
+      align-items: center;
+      margin-left: var(--spacing-2);
+      padding: 0 var(--spacing-2);
+      font-size: var(--font-size-xs, 0.7rem);
+      font-weight: var(--font-weight-medium);
+      line-height: 1.5;
+      border-radius: var(--radius-full, 9999px);
+      white-space: nowrap;
+    }
+
+    .default-badge {
+      color: var(--color-text-secondary, var(--color-neutral-600));
+      background: var(--color-neutral-100, #eef2f7);
+    }
+
+    .extension-badge {
+      color: var(--color-primary-700, #1d4ed8);
+      background: var(--color-primary-50, #eff6ff);
+    }
+
+    .catalog-state {
+      margin: 0;
+      padding: var(--spacing-3);
+      font-size: var(--font-size-sm);
+      color: var(--color-neutral-500);
+    }
+
+    .catalog-error {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: var(--spacing-2);
+      padding: var(--spacing-3);
+      border: 1px solid var(--color-danger-200, #fecaca);
+      border-radius: var(--radius-lg, 0.5rem);
+      background: var(--color-danger-50, #fef2f2);
+      color: var(--color-danger-700, #b91c1c);
+      font-size: var(--font-size-sm);
+    }
+
     .module-row-label {
       font-size: var(--font-size-sm);
       font-weight: var(--font-weight-medium);
@@ -541,14 +631,28 @@ export class TenantUsersListComponent implements OnInit {
   createPassword = '';
   createPhone = '';
   createRole: UserRole = 'Accountant';
-  createModuleDraft = signal<UserModuleAccessItem[]>(this.defaultModulesAllEnabled());
+  createModuleDraft = signal<ModuleDraft[]>([]);
+  /** Catalogue du rôle courant de la modale de création (rendu piloté par l'API, plan §4.a). */
+  createCatalog = signal<ModuleCatalogModuleDto[]>([]);
+  createCatalogLoading = signal(false);
+  createCatalogError = signal(false);
 
   editVisible = false;
   editUser = signal<TenantUserListItem | null>(null);
   editRole: UserRole = 'Accountant';
   editActive = true;
   editNewPassword = '';
-  moduleDraft = signal<UserModuleAccessItem[]>([]);
+  moduleDraft = signal<ModuleDraft[]>([]);
+  /** Catalogue du rôle courant de la modale d'édition. */
+  editCatalog = signal<ModuleCatalogModuleDto[]>([]);
+  editCatalogLoading = signal(false);
+  editCatalogError = signal(false);
+  /**
+   * État stocké initial capturé à l'ouverture de l'édition (une entrée par ligne de grant persistée).
+   * Un module absent de cette map est « absent » côté base : à l'enregistrement sans toucher, il est
+   * omis du payload (absent reste absent). Utilisé uniquement pour la règle no-op (décision E).
+   */
+  private editInitialGrants = new Map<AppModule, { enabled: boolean; featureKeys: string[] | null }>();
 
   readonly roleOptions = [
     { label: 'Administrateur', value: 'Administrator' as UserRole },
@@ -608,54 +712,41 @@ export class TenantUsersListComponent implements OnInit {
     return !!row && !!me && row.id === me.id;
   }
 
-  /**
-   * Rôle Client : aucune permission issue de ces modules (plafond rôle), donc bascule sans effet — désactivée pour éviter les faux positifs.
-   */
-  isModuleToggleIneffectiveForRole(role: UserRole, module: AppModule): boolean {
-    if (role === 'Administrator' || role === 'Supervisor') return false;
-    
-    // Rôles avec accès métier complet (modulo configuration)
-    if (role === 'Accountant' || role === 'Auditor') return false;
+  /** Entrée de catalogue du rôle courant d'édition pour un module donné. */
+  editCatalogModule(m: AppModule): ModuleCatalogModuleDto | undefined {
+    return this.editCatalog().find(cm => cm.module === m);
+  }
 
-    // Studio (low-code) : pertinent uniquement pour le Développeur
-    // (Admin/Superviseur/Comptable/Auditeur déjà traités au-dessus).
-    if (module === AppModule.Studio) {
-      return role !== 'Developer';
-    }
+  /** Entrée de catalogue du rôle courant de création pour un module donné. */
+  createCatalogModule(m: AppModule): ModuleCatalogModuleDto | undefined {
+    return this.createCatalog().find(cm => cm.module === m);
+  }
 
-    // Rôles très restreints : retourne true pour les modules qu'ils n'auront jamais
-    switch (role) {
-      case 'Developer':
-        // Le Développeur ne lit que Clients/Produits/Ventes(factures)/Rapports ; le reste est sans effet.
-        return module !== AppModule.Clients
-          && module !== AppModule.Products
-          && module !== AppModule.Sales
-          && module !== AppModule.Reports;
+  /** Features cochables d'un module = celles avec `allowedPermissions` non vide (les autres sont masquées). */
+  catalogVisibleFeatures(cm: ModuleCatalogModuleDto | undefined): ModuleCatalogFeatureDto[] {
+    return cm?.features.filter(f => f.allowedPermissions.length > 0) ?? [];
+  }
 
-      case 'Client':
-        return module !== AppModule.Sales && module !== AppModule.Treasury && module !== AppModule.Administration;
-      
-      case 'SalesRep':
-      case 'SalesManager':
-        return module === AppModule.Administration || module === AppModule.Purchases || module === AppModule.Stock;
-        
-      case 'Warehouse':
-        return module === AppModule.Administration || module === AppModule.Sales || module === AppModule.Purchases || module === AppModule.Treasury || module === AppModule.Reports;
-        
-      case 'Purchaser':
-        return module === AppModule.Administration || module === AppModule.Sales || module === AppModule.Treasury || module === AppModule.Reports;
-        
-      case 'Cashier':
-        return module === AppModule.Administration || module === AppModule.Purchases || module === AppModule.Reports;
-    }
+  /** Badge « Inclus par défaut » lorsque le module figure dans la base du rôle (`defaultEnabled`). */
+  isModuleDefaultIncluded(cm: ModuleCatalogModuleDto | undefined): boolean {
+    return !!cm?.defaultEnabled;
+  }
 
-    return false;
+  /** Libellé français d'une feature depuis le catalogue (la clé seule n'est pas localisée). */
+  featureLabel(module: AppModule, key: string): string {
+    return getModuleFeatureOptions(module).find(o => o.key === key)?.label ?? key;
+  }
+
+  /** Clés des features incluses par défaut (`defaultSelected`) — sert à pré-cocher la base du rôle. */
+  private defaultFeatureKeys(cm: ModuleCatalogModuleDto): string[] {
+    return cm.features.filter(f => f.defaultSelected).map(f => f.key);
   }
 
   openCreate(): void {
     this.closeEdit();
     this.resetCreateForm();
     this.createVisible = true;
+    this.loadCreateCatalog(this.createRole);
   }
 
   closeCreate(): void {
@@ -670,11 +761,52 @@ export class TenantUsersListComponent implements OnInit {
     this.createPassword = '';
     this.createPhone = '';
     this.createRole = 'Accountant';
-    this.createModuleDraft.set(this.defaultModulesAllEnabled());
+    this.createCatalog.set([]);
+    this.createCatalogError.set(false);
+    this.createCatalogLoading.set(false);
+    this.createModuleDraft.set([]);
   }
 
-  private defaultModulesAllEnabled(): UserModuleAccessItem[] {
-    return APP_MODULE_OPTIONS.map(o => ({ module: o.value, enabled: true, enabledFeatureKeys: null }));
+  onCreateRoleChange(role: UserRole): void {
+    this.createRole = role;
+    this.loadCreateCatalog(role);
+  }
+
+  private loadCreateCatalog(role: UserRole): void {
+    this.createCatalogLoading.set(true);
+    this.createCatalogError.set(false);
+    this.tenantUsers.getModuleCatalog(role).subscribe({
+      next: res => {
+        this.createCatalogLoading.set(false);
+        if (res.success && res.data) {
+          this.createCatalog.set(res.data.modules);
+          this.rebuildCreateDraft(res.data.modules);
+        } else {
+          this.createCatalogError.set(true);
+          this.createCatalog.set([]);
+          this.createModuleDraft.set([]);
+        }
+      },
+      error: () => {
+        this.createCatalogLoading.set(false);
+        this.createCatalogError.set(true);
+        this.createCatalog.set([]);
+        this.createModuleDraft.set([]);
+      }
+    });
+  }
+
+  private rebuildCreateDraft(catalog: ModuleCatalogModuleDto[]): void {
+    this.createModuleDraft.set(
+      catalog
+        .filter(cm => cm.grantable)
+        .map(cm => ({
+          module: cm.module,
+          enabled: cm.defaultEnabled,
+          enabledFeatureKeys: this.defaultFeatureKeys(cm),
+          dirty: false
+        }))
+    );
   }
 
   onCreateSubFeatureChange(module: AppModule, featureKey: string, checked: boolean): void {
@@ -682,7 +814,7 @@ export class TenantUsersListComponent implements OnInit {
       const i = draft.findIndex(x => x.module === module);
       if (i < 0) return draft;
       const next = [...draft];
-      next[i] = withSubFeatureToggled(draft[i], featureKey, checked);
+      next[i] = { ...withSubFeatureToggled(draft[i], featureKey, checked), dirty: true };
       return next;
     });
   }
@@ -692,22 +824,22 @@ export class TenantUsersListComponent implements OnInit {
       const i = draft.findIndex(x => x.module === module);
       if (i < 0) return draft;
       const next = [...draft];
-      next[i] = withSubFeatureToggled(draft[i], featureKey, checked);
+      next[i] = { ...withSubFeatureToggled(draft[i], featureKey, checked), dirty: true };
       return next;
     });
   }
 
-  afterCreateModuleEnabledChange(m: UserModuleAccessItem): void {
+  afterCreateModuleEnabledChange(m: ModuleDraft): void {
     this.syncModuleEnabledInDraft(this.createModuleDraft, m);
   }
 
-  afterEditModuleEnabledChange(m: UserModuleAccessItem): void {
+  afterEditModuleEnabledChange(m: ModuleDraft): void {
     this.syncModuleEnabledInDraft(this.moduleDraft, m);
   }
 
   private syncModuleEnabledInDraft(
-    target: { update: (fn: (d: UserModuleAccessItem[]) => UserModuleAccessItem[]) => void },
-    m: UserModuleAccessItem
+    target: { update: (fn: (d: ModuleDraft[]) => ModuleDraft[]) => void },
+    m: ModuleDraft
   ): void {
     target.update(draft => {
       const i = draft.findIndex(x => x.module === m.module);
@@ -715,8 +847,8 @@ export class TenantUsersListComponent implements OnInit {
       const prev = draft[i];
       const next = [...draft];
       next[i] = m.enabled
-        ? { ...prev, enabled: true }
-        : { ...prev, enabled: false, enabledFeatureKeys: null };
+        ? { ...prev, enabled: true, dirty: true }
+        : { ...prev, enabled: false, enabledFeatureKeys: null, dirty: true };
       return next;
     });
   }
@@ -739,7 +871,9 @@ export class TenantUsersListComponent implements OnInit {
       password: this.createPassword,
       role: this.createRole,
       phoneNumber: this.createPhone.trim() || undefined,
-      moduleAccess: toModuleAccessApiPayload(this.createModuleDraft())
+      // Nouvel utilisateur : aucun état stocké initial → les modules non touchés restent absents
+      // (jeu de base du rôle), seuls les modules explicitement configurés sont normalisés.
+      moduleAccess: this.buildModuleAccessPayload(this.createModuleDraft(), new Map())
     };
 
     this.tenantUsers.create(payload).subscribe({
@@ -768,17 +902,93 @@ export class TenantUsersListComponent implements OnInit {
     this.editRole = row.role;
     this.editActive = row.isActive;
     this.editNewPassword = '';
-    this.moduleDraft.set(
-      row.moduleFeatures && row.moduleFeatures.length > 0
-        ? this.moduleDraftFromStoredGrants(row.moduleFeatures)
-        : this.modulesFromEnabledIds(row.enabledModuleIds)
-    );
+    this.captureEditInitialGrants(row.moduleFeatures);
     this.editVisible = true;
+    this.loadEditCatalog(row.role, false);
   }
 
   closeEdit(): void {
     this.editVisible = false;
     this.editUser.set(null);
+    this.editCatalog.set([]);
+    this.editCatalogError.set(false);
+    this.editCatalogLoading.set(false);
+    this.moduleDraft.set([]);
+    this.editInitialGrants = new Map();
+  }
+
+  onEditRoleChange(role: UserRole): void {
+    if (role === this.editRole) return;
+    this.editRole = role;
+    // Changement de rôle : on recharge le catalogue et reconstruit le brouillon sur les défauts du
+    // nouveau rôle en marquant tous les modules visibles « touchés » — on ne reproduit jamais les
+    // grants stockés de l'ancien rôle (potentiellement hors plafond pour le nouveau rôle).
+    this.loadEditCatalog(role, true);
+  }
+
+  private captureEditInitialGrants(stored: TenantUserListItem['moduleFeatures']): void {
+    this.editInitialGrants = new Map();
+    if (!stored || stored.length === 0) return;
+    for (const sf of stored) {
+      this.editInitialGrants.set(sf.module, {
+        enabled: sf.enabled,
+        featureKeys: sf.featureKeys == null ? null : [...sf.featureKeys]
+      });
+    }
+  }
+
+  private loadEditCatalog(role: UserRole, markAllDirty: boolean): void {
+    this.editCatalogLoading.set(true);
+    this.editCatalogError.set(false);
+    this.tenantUsers.getModuleCatalog(role).subscribe({
+      next: res => {
+        this.editCatalogLoading.set(false);
+        if (res.success && res.data) {
+          this.editCatalog.set(res.data.modules);
+          this.rebuildEditDraft(res.data.modules, markAllDirty);
+        } else {
+          this.editCatalogError.set(true);
+          this.editCatalog.set([]);
+          this.moduleDraft.set([]);
+        }
+      },
+      error: () => {
+        this.editCatalogLoading.set(false);
+        this.editCatalogError.set(true);
+        this.editCatalog.set([]);
+        this.moduleDraft.set([]);
+      }
+    });
+  }
+
+  /**
+   * Reconstruit le brouillon d'édition depuis le catalogue. `markAllDirty=false` (ouverture) conserve
+   * l'état stocké initial par module (`null` reste `null`, liste explicite reste identique) et les
+   * modules absents affichent le défaut du rôle (reproduits absents à l'enregistrement). `markAllDirty=true`
+   * (changement de rôle) repart des défauts du nouveau rôle, tous marqués touchés.
+   */
+  private rebuildEditDraft(catalog: ModuleCatalogModuleDto[], markAllDirty: boolean): void {
+    const draft: ModuleDraft[] = [];
+    for (const cm of catalog) {
+      if (!cm.grantable) continue; // masqué (plafond vide / rôle exclu)
+      let enabled: boolean;
+      let featureKeys: string[] | null;
+      if (markAllDirty) {
+        enabled = cm.defaultEnabled;
+        featureKeys = this.defaultFeatureKeys(cm);
+      } else {
+        const stored = this.editInitialGrants.get(cm.module);
+        if (stored) {
+          enabled = stored.enabled;
+          featureKeys = stored.featureKeys;
+        } else {
+          enabled = cm.defaultEnabled;
+          featureKeys = this.defaultFeatureKeys(cm);
+        }
+      }
+      draft.push({ module: cm.module, enabled, enabledFeatureKeys: featureKeys, dirty: markAllDirty });
+    }
+    this.moduleDraft.set(draft);
   }
 
   saveEdit(): void {
@@ -788,7 +998,7 @@ export class TenantUsersListComponent implements OnInit {
     const body: Parameters<TenantUsersService['update']>[1] = {
       role: this.editRole,
       isActive: this.editActive,
-      moduleAccess: toModuleAccessApiPayload(this.moduleDraft())
+      moduleAccess: this.buildModuleAccessPayload(this.moduleDraft(), this.editInitialGrants)
     };
     if (this.editNewPassword.trim()) {
       body.newPassword = this.editNewPassword.trim();
@@ -797,6 +1007,7 @@ export class TenantUsersListComponent implements OnInit {
       next: res => {
         this.saving.set(false);
         if (res.success) {
+          // Message de révocation renvoyé par l'API (sessions en cours révoquées) affiché en toast.
           this.toast.add({ severity: 'success', summary: 'Enregistré', detail: res.message ?? 'Utilisateur mis à jour' });
           this.closeEdit();
           this.load();
@@ -811,24 +1022,29 @@ export class TenantUsersListComponent implements OnInit {
     });
   }
 
-  private modulesFromEnabledIds(ids: number[]): UserModuleAccessItem[] {
-    return APP_MODULE_OPTIONS.map(o => ({
-      module: o.value,
-      enabled: ids.length === 0 ? true : ids.includes(o.value),
-      enabledFeatureKeys: null
-    }));
-  }
-
-  private moduleDraftFromStoredGrants(
-    stored: NonNullable<TenantUserListItem['moduleFeatures']>
-  ): UserModuleAccessItem[] {
-    return APP_MODULE_OPTIONS.map(o => {
-      const sf = stored.find(f => f.module === o.value);
-      if (!sf) {
-        return { module: o.value, enabled: true, enabledFeatureKeys: null };
+  /**
+   * Règle de persistance §5.2 / décision E : un module non touché reproduit exactement son état stocké
+   * initial (absent → omis, `null` → omis, liste explicite → identique) via `toModuleAccessApiPayload` ;
+   * un module touché est normalisé vers la sélection visible. Aucune normalisation silencieuse.
+   */
+  private buildModuleAccessPayload(
+    draft: ModuleDraft[],
+    initial: Map<AppModule, { enabled: boolean; featureKeys: string[] | null }>
+  ): Array<{ module: AppModule; enabled: boolean; enabledFeatureKeys?: string[] | null }> {
+    const result: Array<{ module: AppModule; enabled: boolean; enabledFeatureKeys?: string[] | null }> = [];
+    for (const m of draft) {
+      if (m.dirty) {
+        result.push(...toModuleAccessApiPayload([m]));
+      } else {
+        const stored = initial.get(m.module);
+        if (!stored) continue; // absent reste absent
+        result.push(
+          ...toModuleAccessApiPayload([
+            { module: m.module, enabled: stored.enabled, enabledFeatureKeys: stored.featureKeys }
+          ])
+        );
       }
-      const fk = sf.featureKeys == null ? null : [...sf.featureKeys];
-      return { module: o.value, enabled: sf.enabled, enabledFeatureKeys: fk };
-    });
+    }
+    return result;
   }
 }

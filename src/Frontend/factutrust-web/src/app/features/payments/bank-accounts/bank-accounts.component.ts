@@ -1,5 +1,6 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -10,6 +11,7 @@ import { BankAccountDto, BankAccountService } from '@core/services/bank-account.
 import { ToastService } from '@core/services/toast.service';
 import { ConfirmationService } from '@core/services/confirmation.service';
 import { AuthService } from '@core/services/auth.service';
+import { PERMISSIONS } from '@core/config/permission-keys';
 import { AddBankAccountDialogComponent } from './components/add-bank-account-dialog/add-bank-account-dialog.component';
 
 @Component({
@@ -31,7 +33,7 @@ import { AddBankAccountDialogComponent } from './components/add-bank-account-dia
       subtitle="Gérez vos comptes tunisiens (RIB / IBAN) pour la trésorerie.">
     </app-page-header>
 
-    @if (!auth.isFirmDelegatedReadonly()) {
+    @if (!auth.isFirmDelegatedReadonly() && canCreate()) {
       <div class="page-actions">
         <app-button variant="primary" icon="pi pi-plus" (click)="openCreate()" ariaLabel="Ajouter un compte bancaire">
           Ajouter un compte
@@ -53,13 +55,19 @@ import { AddBankAccountDialogComponent } from './components/add-bank-account-dia
             title="Vous n'avez pas encore de compte bancaire"
             description="Aucun compte bancaire n'est configuré pour ce dossier.">
           </app-empty-state>
-        } @else {
+        } @else if (canCreate()) {
           <app-empty-state
             icon="pi pi-building"
             title="Vous n'avez pas encore de compte bancaire"
             description="Ajoutez un compte pour suivre vos virements et votre trésorerie."
             actionLabel="Ajouter un compte"
             (actionClick)="openCreate()">
+          </app-empty-state>
+        } @else {
+          <app-empty-state
+            icon="pi pi-building"
+            title="Vous n'avez pas encore de compte bancaire"
+            description="Autorisation « Trésorerie — saisie » requise pour ajouter un compte.">
           </app-empty-state>
         }
       } @else {
@@ -98,7 +106,7 @@ import { AddBankAccountDialogComponent } from './components/add-bank-account-dia
                   </div>
                 }
               </div>
-              @if (!auth.isFirmDelegatedReadonly()) {
+              @if (!auth.isFirmDelegatedReadonly() && canUpdate()) {
                 <div class="bank-actions">
                   @if (!a.isDefault) {
                     <app-button
@@ -237,6 +245,11 @@ export class BankAccountsComponent implements OnInit {
   private readonly confirmation = inject(ConfirmationService);
   readonly auth = inject(AuthService);
 
+  /** Création d'un compte bancaire — `payments:create`. */
+  readonly canCreate = computed(() => this.auth.hasPermission(PERMISSIONS.payments.create));
+  /** Modification / suppression / défaut — `payments:update`. */
+  readonly canUpdate = computed(() => this.auth.hasPermission(PERMISSIONS.payments.update));
+
   loading = signal(true);
   accounts = signal<BankAccountDto[]>([]);
 
@@ -271,13 +284,13 @@ export class BankAccountsComponent implements OnInit {
   }
 
   openCreate(): void {
-    if (this.auth.isFirmDelegatedReadonly()) return;
+    if (this.auth.isFirmDelegatedReadonly() || !this.canCreate()) return;
     this.accountToEdit = null;
     this.dialogVisible = true;
   }
 
   openEdit(a: BankAccountDto): void {
-    if (this.auth.isFirmDelegatedReadonly()) return;
+    if (this.auth.isFirmDelegatedReadonly() || !this.canUpdate()) return;
     this.accountToEdit = { ...a };
     this.dialogVisible = true;
   }
@@ -295,7 +308,7 @@ export class BankAccountsComponent implements OnInit {
   }
 
   setDefault(a: BankAccountDto): void {
-    if (this.auth.isFirmDelegatedReadonly()) return;
+    if (this.auth.isFirmDelegatedReadonly() || !this.canUpdate()) return;
     this.bankAccountService.setDefault(a.id).subscribe({
       next: res => {
         if (res.success) {
@@ -313,14 +326,18 @@ export class BankAccountsComponent implements OnInit {
           });
         }
       },
-      error: () => {
-        this.toast.add({ severity: 'error', summary: 'Erreur', detail: 'Action impossible.' });
+      error: (err: HttpErrorResponse) => {
+        // 403 (payments:update) → message métier français ; autre → message générique.
+        const detail = err.status === 403
+          ? 'Action refusée : autorisations insuffisantes (Trésorerie — mise à jour).'
+          : 'Action impossible.';
+        this.toast.add({ severity: 'error', summary: 'Erreur', detail });
       }
     });
   }
 
   confirmDelete(a: BankAccountDto): void {
-    if (this.auth.isFirmDelegatedReadonly()) return;
+    if (this.auth.isFirmDelegatedReadonly() || !this.canUpdate()) return;
     this.confirmation.confirm({
       header: 'Supprimer le compte',
       message: `Supprimer le compte ${a.designation || a.bankName} ? Cette action est irréversible.`,
@@ -346,8 +363,12 @@ export class BankAccountsComponent implements OnInit {
               });
             }
           },
-          error: () => {
-            this.toast.add({ severity: 'error', summary: 'Erreur', detail: 'Suppression impossible.' });
+          error: (err: HttpErrorResponse) => {
+            // 403 (payments:update) → message métier français ; autre → message générique.
+            const detail = err.status === 403
+              ? 'Action refusée : autorisations insuffisantes (Trésorerie — mise à jour).'
+              : 'Suppression impossible.';
+            this.toast.add({ severity: 'error', summary: 'Erreur', detail });
           }
         });
       }

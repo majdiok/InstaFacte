@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, HostListener, Input, OnChanges, OnInit, Output, SimpleChanges, inject, signal } from '@angular/core';
+import { Component, EventEmitter, HostListener, Input, OnChanges, OnInit, Output, SimpleChanges, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { StepsModule } from 'primeng/steps';
@@ -11,6 +11,7 @@ import { Textarea } from 'primeng/textarea';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { ToastService } from '@core/services/toast.service';
 import { AuthService } from '@core/services/auth.service';
+import { PERMISSIONS } from '@core/config/permission-keys';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
 import {
   BankDepositService,
@@ -63,6 +64,9 @@ export class BankDepositWizardComponent implements OnChanges, OnInit {
   readonly auth = inject(AuthService);
 
   readonly BankDepositType = BankDepositType;
+
+  /** Droit de saisie des remises en banque — `payments:create` (garde en amont : bouton caisse). */
+  readonly canCreate = computed(() => this.auth.hasPermission(PERMISSIONS.payments.create));
 
   steps: MenuItem[] = [
     { label: 'Type de remise' },
@@ -333,6 +337,10 @@ export class BankDepositWizardComponent implements OnChanges, OnInit {
   submit(): void {
     if (this.depositType === null || !this.bankAccountId) return;
     if (this.submitting()) return;
+    if (!this.canCreate()) {
+      this.stepError.set('Action refusée : autorisations insuffisantes (Trésorerie — saisie).');
+      return;
+    }
 
     this.submitting.set(true);
     this.stepError.set('');
@@ -368,7 +376,12 @@ export class BankDepositWizardComponent implements OnChanges, OnInit {
         this.submitting.set(false);
       },
       error: (err: HttpErrorResponse) => {
-        this.stepError.set(this.errorHandler.extractErrorMessage(err));
+        // 403 (payments:create) → message métier français ; autres erreurs → extraction francisée.
+        this.stepError.set(
+          err.status === 403
+            ? 'Action refusée : autorisations insuffisantes (Trésorerie — saisie).'
+            : this.errorHandler.extractErrorMessage(err)
+        );
         this.submitting.set(false);
       }
     });

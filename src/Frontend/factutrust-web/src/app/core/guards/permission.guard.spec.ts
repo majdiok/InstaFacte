@@ -75,4 +75,42 @@ describe('permissionGuard', () => {
     );
     expect(result).toBe(false);
   });
+
+  it('redirects to /payments/cash-desk when Treasury module is missing (cash-desk route data)', async () => {
+    const auth = TestBed.inject(AuthService);
+    // Commercial avec payments:read mais SANS le module Treasury activé.
+    setUser(auth, {
+      ...user,
+      effectivePermissions: [PERMISSIONS.payments.read],
+      enabledModuleIds: [AppModule.Clients, AppModule.Sales]
+    });
+    const router = TestBed.inject(Router);
+    const navigateSpy = spyOn(router, 'navigate');
+    const result = await TestBed.runInInjectionContext(() =>
+      permissionGuard(
+        { data: { modules: [AppModule.Treasury], permissions: [PERMISSIONS.payments.read] } } as never,
+        { url: '/payments/cash-desk' } as never
+      )
+    );
+    expect(result).toBe(false);
+    expect(navigateSpy).toHaveBeenCalledWith(['/access-denied'], {
+      queryParams: { returnUrl: '/payments/cash-desk' }
+    });
+  });
+
+  it('allows /payments/cash-desk when Treasury module and payments:read are present', async () => {
+    const auth = TestBed.inject(AuthService);
+    setUser(auth, {
+      ...user,
+      effectivePermissions: [PERMISSIONS.payments.read],
+      enabledModuleIds: [AppModule.Treasury]
+    });
+    const result = await TestBed.runInInjectionContext(() =>
+      permissionGuard(
+        { data: { modules: [AppModule.Treasury], permissions: [PERMISSIONS.payments.read] } } as never,
+        { url: '/payments/cash-desk' } as never
+      )
+    );
+    expect(result).toBe(true);
+  });
 });

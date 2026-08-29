@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, shareReplay, catchError, throwError, map } from 'rxjs';
 import { environment } from '@environments/environment';
+import { createHttpContextSkipGlobalErrorUi } from '@core/http-context';
 import { ApiResponse, PagedResult } from './client.service';
 
 export enum CashOperationStatus {
@@ -435,7 +436,11 @@ export class CashDeskService {
   }
 
   createOperation(payload: CreateCashOperationPayload): Observable<ApiResponse<CashOperationListItem>> {
-    return this.http.post<ApiResponse<CashOperationListItem>>(`${this.API_URL}/operations`, payload);
+    // 403 (payments:create) is handled locally by the dialog (French inline message) — suppress the
+    // duplicate global "ACCÈS REFUSÉ" modal via SKIP_ERROR_TOAST.
+    return this.http.post<ApiResponse<CashOperationListItem>>(`${this.API_URL}/operations`, payload, {
+      context: createHttpContextSkipGlobalErrorUi()
+    });
   }
 
   getFeatureFlags(): Observable<ApiResponse<CashDeskFeatureFlags>> {
@@ -443,9 +448,11 @@ export class CashDeskService {
   }
 
   cancelOperation(operationId: string, reason: string): Observable<ApiResponse<object>> {
+    // 403 (payments:update) is handled locally by the cancel dialog — suppress the duplicate global modal.
     return this.http.post<ApiResponse<object>>(
       `${this.API_URL}/operations/${operationId}/cancel`,
-      { cancellationReason: reason }
+      { cancellationReason: reason },
+      { context: createHttpContextSkipGlobalErrorUi() }
     );
   }
 

@@ -1,4 +1,7 @@
 import { Routes } from '@angular/router';
+import { permissionGuard } from '@core/guards/permission.guard';
+import { AppModule } from '@core/models/app-module';
+import { PERMISSIONS } from '@core/config/permission-keys';
 
 export const PAYMENTS_ROUTES: Routes = [
   {
@@ -21,6 +24,8 @@ export const PAYMENTS_ROUTES: Routes = [
   {
     path: 'cash-desk',
     loadComponent: () => import('./cash-desk/cash-desk.component').then(m => m.CashDeskComponent),
+    canActivate: [permissionGuard],
+    data: { modules: [AppModule.Treasury], permissions: [PERMISSIONS.payments.read] },
     title: 'Caisse de trésorerie - InstaFact'
   },
   {
