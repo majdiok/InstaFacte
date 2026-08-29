@@ -181,4 +181,96 @@ describe('FixedAssetDetailComponent', () => {
     expect(component.suggestIntegral()).toBeTrue();
     httpMock.verify();
   });
+
+  // T11 (bug C3) — synchronisation taux/durée : le champ édité (« champ maître ») ne doit jamais
+  // être réécrit par la dérivation, et les arrondis doivent être alignés sur le backend
+  // (`FixedAssetRateResolver.Resolve` : durée dérivée = 2 décimales, taux dérivé = 4 décimales).
+  describe('rate/life synchronization (T11 / C3)', () => {
+    it('derives life from rate at 2 decimals and keeps the edited rate untouched (3% → 33,33 ans)', () => {
+      const { fixture, httpMock } = setup({ data: { mode: 'new' } });
+      const component = fixture.componentInstance;
+
+      component.form.depreciationRatePercent = 3;
+      component.onRateChange(3);
+
+      expect(component.form.depreciationRatePercent).toBe(3);
+      expect(component.form.usefulLifeYears).toBe(33.33);
+      httpMock.verify();
+    });
+
+    it('derives rate from life at 4 decimals and keeps the edited life untouched (5 ans → 20%)', () => {
+      const { fixture, httpMock } = setup({ data: { mode: 'new' } });
+      const component = fixture.componentInstance;
+
+      component.form.usefulLifeYears = 5;
+      component.onLifeChange(5);
+
+      expect(component.form.usefulLifeYears).toBe(5);
+      expect(component.form.depreciationRatePercent).toBe(20);
+      httpMock.verify();
+    });
+
+    it('does not re-derive the rate when the derivation itself re-enters onLifeChange (no cascade)', () => {
+      const { fixture, httpMock } = setup({ data: { mode: 'new' } });
+      const component = fixture.componentInstance;
+
+      component.form.depreciationRatePercent = 3;
+      component.onRateChange(3);
+      expect(component.form.usefulLifeYears).toBe(33.33);
+
+      // Simulates a spurious re-entrant call while the mutex is held: the master field (rate)
+      // must never be degraded back to something like 3.0003 %.
+      (component as unknown as { isSyncingRateAndLife: boolean }).isSyncingRateAndLife = true;
+      component.onLifeChange(33.33);
+      (component as unknown as { isSyncingRateAndLife: boolean }).isSyncingRateAndLife = false;
+
+      expect(component.form.depreciationRatePercent).toBe(3);
+      httpMock.verify();
+    });
+
+    it('remains stable across alternating edits of the same master field', () => {
+      const { fixture, httpMock } = setup({ data: { mode: 'new' } });
+      const component = fixture.componentInstance;
+
+      component.form.depreciationRatePercent = 3;
+      component.onRateChange(3);
+      expect(component.form.usefulLifeYears).toBe(33.33);
+
+      component.form.depreciationRatePercent = 4;
+      component.onRateChange(4);
+      expect(component.form.usefulLifeYears).toBe(25);
+
+      component.form.depreciationRatePercent = 3;
+      component.onRateChange(3);
+      expect(component.form.usefulLifeYears).toBe(33.33);
+      expect(component.form.depreciationRatePercent).toBe(3);
+      httpMock.verify();
+    });
+
+    it('matches FixedAssetRateResolver semantics for a rate override (rate kept, life = Round(100/r, 2))', () => {
+      const { fixture, httpMock } = setup({ data: { mode: 'new' } });
+      const component = fixture.componentInstance;
+
+      component.form.depreciationRatePercent = 6.67;
+      component.onRateChange(6.67);
+
+      // FixedAssetRateResolver: rate = r; life = Math.Round(100m / r, 2)
+      expect(component.form.depreciationRatePercent).toBe(6.67);
+      expect(component.form.usefulLifeYears).toBe(Math.round((100 / 6.67) * 100) / 100);
+      httpMock.verify();
+    });
+
+    it('matches FixedAssetRateResolver semantics for a life override (life kept, rate = Round(100/y, 4))', () => {
+      const { fixture, httpMock } = setup({ data: { mode: 'new' } });
+      const component = fixture.componentInstance;
+
+      component.form.usefulLifeYears = 33.33;
+      component.onLifeChange(33.33);
+
+      // FixedAssetRateResolver: life = y; rate = Math.Round(100m / y, 4)
+      expect(component.form.usefulLifeYears).toBe(33.33);
+      expect(component.form.depreciationRatePercent).toBe(Math.round((100 / 33.33) * 10000) / 10000);
+      httpMock.verify();
+    });
+  });
 });

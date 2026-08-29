@@ -712,15 +712,37 @@ export class FixedAssetDetailComponent implements OnInit {
     }
   }
 
+  // Marqueur « champ maître » : le champ que l'utilisateur vient d'éditer est la seule source de
+  // vérité, l'autre champ n'est que dérivé. Chaque handler ne modifie jamais le champ qu'il reçoit
+  // en paramètre (déjà à jour via le two-way binding [(ngModel)]) — il ne fait que recalculer
+  // l'AUTRE champ, aligné sur `FixedAssetRateResolver.Resolve` (backend) : durée dérivée = 2
+  // décimales, taux dérivé = 4 décimales. Un mutex (`isSyncingRateAndLife`) empêche toute
+  // ré-entrance : si la dérivation déclenchait par erreur le handler du champ maître, celui-ci ne
+  // pourrait pas réécrire (et donc dégrader) la valeur que l'utilisateur vient de saisir
+  // (élimine le cas 3 % → 33,33 ans → 3,0003 %).
+  private isSyncingRateAndLife = false;
+
   onRateChange(rate: number | null): void {
+    if (this.isSyncingRateAndLife) return;
     if (rate && rate > 0 && rate <= 100) {
-      this.form.usefulLifeYears = Math.round((100 / rate) * 100) / 100;
+      this.isSyncingRateAndLife = true;
+      try {
+        this.form.usefulLifeYears = Math.round((100 / rate) * 100) / 100;
+      } finally {
+        this.isSyncingRateAndLife = false;
+      }
     }
   }
 
   onLifeChange(years: number | null): void {
-    if (years && years > 0) {
-      this.form.depreciationRatePercent = Math.round((100 / years) * 10000) / 10000;
+    if (this.isSyncingRateAndLife) return;
+    if (years && years > 0 && years <= 100) {
+      this.isSyncingRateAndLife = true;
+      try {
+        this.form.depreciationRatePercent = Math.round((100 / years) * 10000) / 10000;
+      } finally {
+        this.isSyncingRateAndLife = false;
+      }
     }
   }
 
