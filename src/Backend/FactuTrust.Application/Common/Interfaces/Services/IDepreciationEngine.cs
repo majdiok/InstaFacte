@@ -5,15 +5,25 @@ namespace FactuTrust.Application.Common.Interfaces.Services;
 public interface IDepreciationEngine
 {
     /// <summary>
-    /// Builds the full linear depreciation schedule (prorata temporis on entry/disposal years).
+    /// Construit l'échéancier d'amortissement complet (prorata temporis sur les exercices de mise
+    /// en service / de cession). Les lignes sont générées par <b>exercice</b> (clé = année de début
+    /// d'exercice, <see cref="DepreciationScheduleLine.FiscalYear"/>). <paramref name="throughFiscalYear"/>
+    /// (optionnel) est une clé d'exercice. <paramref name="fiscalYearStartMonth"/> = 1 = exercice civil
+    /// (comportement historique bit-à-bit identique).
     /// </summary>
-    IReadOnlyList<DepreciationScheduleLine> GenerateSchedule(FixedAsset asset, int? throughFiscalYear = null);
+    IReadOnlyList<DepreciationScheduleLine> GenerateSchedule(
+        FixedAsset asset,
+        int? throughFiscalYear = null,
+        int fiscalYearStartMonth = 1);
 
     /// <summary>
-    /// Pro-rata depreciation for the fiscal year of disposal (months in service during that year).
+    /// Dotation prorata de l'exercice de cession (jours en service durant cet exercice).
+    /// <paramref name="fiscalYear"/> est la clé d'exercice de la date de cession.
+    /// <paramref name="fiscalYearStartMonth"/> = 1 = exercice civil.
     /// </summary>
     decimal CalculateDisposalYearDepreciation(
         FixedAsset asset,
         int fiscalYear,
-        decimal priorAccumulatedDepreciation);
+        decimal priorAccumulatedDepreciation,
+        int fiscalYearStartMonth = 1);
 }

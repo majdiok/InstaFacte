@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { fixedAssetsFeatureGuard } from './shared/fixed-assets-feature.guard';
+import { pendingChangesGuard } from './fixed-assets/pending-changes.guard';
 
 export const ACCOUNTING_ROUTES: Routes = [
   {
@@ -233,6 +234,7 @@ export const ACCOUNTING_ROUTES: Routes = [
     loadComponent: () =>
       import('./fixed-assets/fixed-asset-detail.component').then(m => m.FixedAssetDetailComponent),
     canActivate: [fixedAssetsFeatureGuard],
+    canDeactivate: [pendingChangesGuard],
     data: { mode: 'new' },
     title: 'Nouvelle immobilisation - InstaFact'
   },
@@ -251,6 +253,13 @@ export const ACCOUNTING_ROUTES: Routes = [
     title: 'Tableau des amortissements - InstaFact'
   },
   {
+    path: 'fixed-assets/settings',
+    loadComponent: () =>
+      import('./fixed-assets/fixed-asset-settings.component').then(m => m.FixedAssetSettingsComponent),
+    canActivate: [fixedAssetsFeatureGuard],
+    title: 'Exercice comptable - InstaFact'
+  },
+  {
     path: 'loans',
     loadComponent: () =>
       import('./loans/loans-list.component').then(m => m.LoansListComponent),
@@ -267,6 +276,7 @@ export const ACCOUNTING_ROUTES: Routes = [
     loadComponent: () =>
       import('./fixed-assets/fixed-asset-detail.component').then(m => m.FixedAssetDetailComponent),
     canActivate: [fixedAssetsFeatureGuard],
+    canDeactivate: [pendingChangesGuard],
     title: 'Immobilisation - InstaFact'
   },
   {

@@ -182,6 +182,111 @@ public sealed class DepreciationEngineTests
     }
 
     // ------------------------------------------------------------------
+    // Dotation prorata de l'année de cession (T4, B1) — CalculateDisposalYearDepreciation
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public void CalculateDisposalYearDepreciation_MidYear_ShouldProrate30_360()
+    {
+        // 40 000 × 20 % = 8 000/an ; 2026-2027 pleins (16 000) ; cession 30/06/2028 → 180 j/360 → 4 000.
+        var asset = CreateAsset(
+            40_000m,
+            20m,
+            new DateTime(2026, 1, 1),
+            new DateTime(2026, 1, 1),
+            disposal: new DateTime(2028, 6, 30));
+
+        var amount = _engine.CalculateDisposalYearDepreciation(asset, fiscalYear: 2028, priorAccumulatedDepreciation: 16_000m);
+
+        Assert.Equal(4_000m, amount);
+    }
+
+    [Fact]
+    public void CalculateDisposalYearDepreciation_SameYearAsInService_ShouldProrateBetweenDates()
+    {
+        // Mise en service 01/03, cession 30/06 même année → 120 j/360 → 4 500 × 120/360 = 1 500.
+        var asset = CreateAsset(
+            30_000m,
+            15m,
+            new DateTime(2026, 1, 10),
+            new DateTime(2026, 3, 1),
+            disposal: new DateTime(2026, 6, 30));
+
+        var amount = _engine.CalculateDisposalYearDepreciation(asset, fiscalYear: 2026, priorAccumulatedDepreciation: 0m);
+
+        Assert.Equal(1_500m, amount);
+    }
+
+    [Fact]
+    public void CalculateDisposalYearDepreciation_Accelerated_ShouldProrateEffectiveRate()
+    {
+        // 40 000, 15 % × 1,5 = 22,5 % → 9 000/an ; 2026 plein (9 000) ; cession 30/06/2027 → 4 500.
+        var asset = CreateAsset(
+            40_000m,
+            15m,
+            new DateTime(2026, 1, 1),
+            new DateTime(2026, 1, 1),
+            disposal: new DateTime(2027, 6, 30),
+            method: DepreciationMethod.Accelerated,
+            coefficient: 1.5m);
+
+        var amount = _engine.CalculateDisposalYearDepreciation(asset, fiscalYear: 2027, priorAccumulatedDepreciation: 9_000m);
+
+        Assert.Equal(4_500m, amount);
+    }
+
+    [Fact]
+    public void CalculateDisposalYearDepreciation_December31_ShouldBeFullAnnuity()
+    {
+        // Cession au 31/12 → 360 j/360 → annuité pleine (8 000).
+        var asset = CreateAsset(
+            40_000m,
+            20m,
+            new DateTime(2026, 1, 1),
+            new DateTime(2026, 1, 1),
+            disposal: new DateTime(2028, 12, 31));
+
+        var amount = _engine.CalculateDisposalYearDepreciation(asset, fiscalYear: 2028, priorAccumulatedDepreciation: 16_000m);
+
+        Assert.Equal(8_000m, amount);
+    }
+
+    [Fact]
+    public void CalculateDisposalYearDepreciation_Integral_ShouldReturnFullBase()
+    {
+        // Bien de faible valeur : dotation unique dès l'année de mise en service (sans prorata).
+        var asset = CreateAsset(
+            150m,
+            100m,
+            new DateTime(2026, 5, 10),
+            new DateTime(2026, 9, 15),
+            disposal: new DateTime(2026, 12, 31),
+            method: DepreciationMethod.Integral);
+
+        var amount = _engine.CalculateDisposalYearDepreciation(asset, fiscalYear: 2026, priorAccumulatedDepreciation: 0m);
+
+        Assert.Equal(150m, amount);
+    }
+
+    [Fact]
+    public void CalculateDisposalYearDepreciation_NearlyFullyDepreciated_ShouldClampToRemainingBase()
+    {
+        // Base 10 000, 20 % ; 4 ans pleins (8 000) ; cession mi-année 5 → prorata 1 000 mais il ne
+        // reste que 2 000 de base → clamé à 2 000 (sécurité anti-dépassement).
+        var asset = CreateAsset(
+            10_000m,
+            20m,
+            new DateTime(2026, 1, 1),
+            new DateTime(2026, 1, 1),
+            disposal: new DateTime(2030, 6, 30));
+
+        var amount = _engine.CalculateDisposalYearDepreciation(asset, fiscalYear: 2030, priorAccumulatedDepreciation: 8_000m);
+
+        Assert.True(amount <= 2_000m);
+        Assert.True(amount > 0m);
+    }
+
+    // ------------------------------------------------------------------
     // Amortissement accéléré (Décret 2008-492 art. 2)
     // ------------------------------------------------------------------
 

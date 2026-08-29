@@ -1,3 +1,4 @@
+using FactuTrust.Application.Common.Fiscal;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
@@ -13,11 +14,35 @@ namespace FactuTrust.Infrastructure.Services;
 ///     industriel multi-équipes : annuité constante sur base constante, prorata temporis 1ʳᵉ année) ;
 ///   • Intégrale (Décret 2008-492 art. 4 — biens de faible valeur, dotation unique sans prorata).
 /// </summary>
+/// <remarks>
+/// <b>Exercices décalés (plan « Exercices décalés », P2).</b> Les lignes d'échéancier sont générées
+/// par <b>exercice</b> (clé = année de début d'exercice, <see cref="DepreciationScheduleLine.FiscalYear"/>),
+/// non par année civile. Le prorata 30/360 est calculé <b>relativement à la frontière d'exercice</b>
+/// (depuis début d'exercice / restant jusqu'à fin d'exercice / entre deux dates d'un même exercice).
+/// <para>
+/// <b>Choix de signature.</b> Le mois de début d'exercice (<paramref name="fiscalYearStartMonth"/>)
+/// est passé en paramètre des méthodes publiques (défaut 1) plutôt qu'injecté : le moteur est
+/// statique par nature, n'a aucun état ni dépendance config/DB, et les tests existants l'appellent
+/// sans ce paramètre. Les appelants (preview, generate-schedule, mise en service, cession, run)
+/// récupèrent le mois configuré via <c>FixedAssetSettings</c> et le propagent.
+/// </para>
+/// <para>
+/// <b>Anti-régression absolue.</b> Avec <paramref name="fiscalYearStartMonth"/> = 1 (exercice
+/// civil), tous les résultats sont bit-à-bit identiques à l'existant : la clé d'exercice dégénère
+/// en année civile (<see cref="FiscalYearMath.Key"/> retourne <c>date.Year</c>), et les helpers
+/// 30/360 fiscaux se réduisent exactement aux helpers année civile d'origine (délégation par
+/// défaut 1 — chemin unique). Convention 30/360, <see cref="Round3"/> (AwayFromZero) et
+/// <see cref="AdjustFinalLineRounding"/> intacts.
+/// </para>
+/// </remarks>
 public sealed class DepreciationEngine : IDepreciationEngine
 {
     private const decimal DaysPerYear = 360m;
 
-    public IReadOnlyList<DepreciationScheduleLine> GenerateSchedule(FixedAsset asset, int? throughFiscalYear = null)
+    public IReadOnlyList<DepreciationScheduleLine> GenerateSchedule(
+        FixedAsset asset,
+        int? throughFiscalYear = null,
+        int fiscalYearStartMonth = 1)
     {
         ArgumentNullException.ThrowIfNull(asset);
 
@@ -30,16 +55,17 @@ public sealed class DepreciationEngine : IDepreciationEngine
 
         return asset.DepreciationMethod switch
         {
-            DepreciationMethod.Integral => GenerateIntegralSchedule(asset, baseAmount),
-            DepreciationMethod.Accelerated => GenerateAcceleratedSchedule(asset, baseAmount, throughFiscalYear),
-            _ => GenerateLinearSchedule(asset, baseAmount, throughFiscalYear, effectiveRatePercent: asset.DepreciationRatePercent)
+            DepreciationMethod.Integral => GenerateIntegralSchedule(asset, baseAmount, fiscalYearStartMonth),
+            DepreciationMethod.Accelerated => GenerateAcceleratedSchedule(asset, baseAmount, throughFiscalYear, fiscalYearStartMonth),
+            _ => GenerateLinearSchedule(asset, baseAmount, throughFiscalYear, asset.DepreciationRatePercent, fiscalYearStartMonth)
         };
     }
 
     public decimal CalculateDisposalYearDepreciation(
         FixedAsset asset,
         int fiscalYear,
-        decimal priorAccumulatedDepreciation)
+        decimal priorAccumulatedDepreciation,
+        int fiscalYearStartMonth = 1)
     {
         ArgumentNullException.ThrowIfNull(asset);
         if (asset.InServiceDate is null || asset.DisposalDate is null)
@@ -51,7 +77,7 @@ public sealed class DepreciationEngine : IDepreciationEngine
         if (baseAmount <= 0 || priorAccumulatedDepreciation >= baseAmount)
             return 0m;
 
-        var lines = GenerateSchedule(asset);
+        var lines = GenerateSchedule(asset, fiscalYearStartMonth: fiscalYearStartMonth);
         var line = lines.FirstOrDefault(l => l.FiscalYear == fiscalYear);
         if (line is null)
             return 0m;
@@ -67,7 +93,8 @@ public sealed class DepreciationEngine : IDepreciationEngine
         FixedAsset asset,
         decimal baseAmount,
         int? throughFiscalYear,
-        decimal effectiveRatePercent)
+        decimal effectiveRatePercent,
+        int fiscalYearStartMonth)
     {
         var inService = asset.InServiceDate!.Value.Date;
         var normalAnnual = Round3(baseAmount * effectiveRatePercent / 100m);
@@ -75,18 +102,18 @@ public sealed class DepreciationEngine : IDepreciationEngine
             return Array.Empty<DepreciationScheduleLine>();
 
         var effectiveLifeYears = effectiveRatePercent > 0 ? 100m / effectiveRatePercent : asset.UsefulLifeYears;
-        var startYear = inService.Year;
-        var endYear = throughFiscalYear ?? EstimateEndYear(startYear, effectiveLifeYears, asset.DisposalDate);
+        var startKey = FiscalYearMath.Key(inService, fiscalYearStartMonth);
+        var endKey = throughFiscalYear ?? EstimateEndYear(startKey, effectiveLifeYears, asset.DisposalDate, fiscalYearStartMonth);
         if (asset.DisposalDate is not null)
-            endYear = Math.Min(endYear, asset.DisposalDate.Value.Year);
+            endKey = Math.Min(endKey, FiscalYearMath.Key(asset.DisposalDate.Value, fiscalYearStartMonth));
 
         var lines = new List<DepreciationScheduleLine>();
         decimal priorAccumulated = 0m;
         decimal openingNbv = asset.TotalCapitalizedCost;
 
-        for (var year = startYear; year <= endYear; year++)
+        for (var year = startKey; year <= endKey; year++)
         {
-            var amount = CalculateLinearYearAmount(asset, year, normalAnnual, baseAmount, priorAccumulated);
+            var amount = CalculateLinearYearAmount(asset, year, normalAnnual, baseAmount, priorAccumulated, fiscalYearStartMonth);
             if (amount <= 0 && priorAccumulated >= baseAmount)
                 break;
 
@@ -111,31 +138,33 @@ public sealed class DepreciationEngine : IDepreciationEngine
         int fiscalYear,
         decimal normalAnnual,
         decimal baseAmount,
-        decimal priorAccumulated)
+        decimal priorAccumulated,
+        int fiscalYearStartMonth)
     {
         if (priorAccumulated >= baseAmount)
             return 0m;
 
         var inService = asset.InServiceDate!.Value.Date;
-        var startYear = inService.Year;
+        var startKey = FiscalYearMath.Key(inService, fiscalYearStartMonth);
 
-        if (fiscalYear < startYear)
+        if (fiscalYear < startKey)
             return 0m;
 
         decimal amount;
-        if (asset.DisposalDate is not null && fiscalYear == asset.DisposalDate.Value.Year)
+        if (asset.DisposalDate is not null && fiscalYear == FiscalYearMath.Key(asset.DisposalDate.Value, fiscalYearStartMonth))
         {
             // Année de sortie : prorata en jours/360 jusqu'à la date de cession ; si la cession a
-            // lieu l'année de mise en service, le prorata court de la mise en service à la cession.
-            var days = fiscalYear == startYear
-                ? Days360Between(inService, asset.DisposalDate.Value.Date)
-                : Days360FromYearStart(asset.DisposalDate.Value.Date);
+            // lieu l'exercice de mise en service, le prorata court de la mise en service à la cession.
+            var disposalDate = asset.DisposalDate.Value.Date;
+            var days = fiscalYear == startKey
+                ? Days360BetweenFiscal(inService, disposalDate, fiscalYearStartMonth)
+                : Days360FromFiscalYearStart(disposalDate, fiscalYearStartMonth);
             amount = Round3(normalAnnual * days / DaysPerYear);
         }
-        else if (fiscalYear == startYear)
+        else if (fiscalYear == startKey)
         {
-            // Première année : prorata en jours/360 de la mise en service au 31/12 (jour inclus).
-            var days = Days360RemainingInYear(inService);
+            // Première année : prorata en jours/360 de la mise en service à la fin d'exercice (jour inclus).
+            var days = Days360RemainingInFiscalYear(inService, fiscalYearStartMonth);
             amount = Round3(normalAnnual * days / DaysPerYear);
         }
         else
@@ -156,20 +185,24 @@ public sealed class DepreciationEngine : IDepreciationEngine
     private static IReadOnlyList<DepreciationScheduleLine> GenerateAcceleratedSchedule(
         FixedAsset asset,
         decimal baseAmount,
-        int? throughFiscalYear)
+        int? throughFiscalYear,
+        int fiscalYearStartMonth)
     {
         var coefficient = asset.AccelerationCoefficient <= 1m ? 1m : asset.AccelerationCoefficient;
         var effectiveRate = asset.DepreciationRatePercent * coefficient;
-        return GenerateLinearSchedule(asset, baseAmount, throughFiscalYear, effectiveRate);
+        return GenerateLinearSchedule(asset, baseAmount, throughFiscalYear, effectiveRate, fiscalYearStartMonth);
     }
 
     // ---------------------------------------------------------------
     // Intégral (dotation unique, sans prorata)
     // ---------------------------------------------------------------
 
-    private static IReadOnlyList<DepreciationScheduleLine> GenerateIntegralSchedule(FixedAsset asset, decimal baseAmount)
+    private static IReadOnlyList<DepreciationScheduleLine> GenerateIntegralSchedule(
+        FixedAsset asset,
+        decimal baseAmount,
+        int fiscalYearStartMonth)
     {
-        var fiscalYear = asset.InServiceDate!.Value.Year;
+        var fiscalYear = FiscalYearMath.Key(asset.InServiceDate!.Value.Date, fiscalYearStartMonth);
         var lines = new List<DepreciationScheduleLine>();
         AppendLine(lines, asset, fiscalYear, asset.TotalCapitalizedCost, baseAmount, 0m, Round3(baseAmount));
         return lines;
@@ -208,13 +241,13 @@ public sealed class DepreciationEngine : IDepreciationEngine
         lines.Add(lineResult.Value);
     }
 
-    private static int EstimateEndYear(int startYear, decimal usefulLifeYears, DateTime? disposalDate)
+    private static int EstimateEndYear(int startKey, decimal usefulLifeYears, DateTime? disposalDate, int fiscalYearStartMonth)
     {
         if (disposalDate is not null)
-            return disposalDate.Value.Year;
+            return FiscalYearMath.Key(disposalDate.Value, fiscalYearStartMonth);
 
         var extra = usefulLifeYears <= 0 ? 20 : (int)Math.Ceiling(usefulLifeYears) + 1;
-        return startYear + extra;
+        return startKey + extra;
     }
 
     /// <summary>
@@ -260,21 +293,41 @@ public sealed class DepreciationEngine : IDepreciationEngine
             lines[^1] = replacement.Value;
     }
 
-    /// <summary>Jours écoulés depuis le 1er janvier (inclus) jusqu'à la date donnée, convention 30/360.</summary>
-    internal static decimal Days360FromYearStart(DateTime date) =>
-        (date.Month - 1) * 30 + Math.Min(date.Day, 30);
+    /// <summary>Jours écoulés depuis le début de l'exercice (inclus) jusqu'à la date donnée, convention 30/360.</summary>
+    internal static decimal Days360FromFiscalYearStart(DateTime date, int fiscalYearStartMonth)
+    {
+        // Position (0-indexée) du mois dans l'exercice : mois ≥ startMonth → (month - startMonth) ;
+        // sinon (mois de l'année civile suivante) → (month + 12 - startMonth). Avec startMonth = 1,
+        // dégénère en (month - 1) = Days360FromYearStart.
+        var monthIndex = date.Month >= fiscalYearStartMonth
+            ? date.Month - fiscalYearStartMonth
+            : date.Month + 12 - fiscalYearStartMonth;
+        return monthIndex * 30 + Math.Min(date.Day, 30);
+    }
 
-    /// <summary>Jours restants dans l'année à compter de la date donnée (jour inclus), convention 30/360.</summary>
-    internal static decimal Days360RemainingInYear(DateTime date) =>
-        DaysPerYear - Days360FromYearStart(date) + 1;
+    /// <summary>Jours restants dans l'exercice à compter de la date donnée (jour inclus), convention 30/360.</summary>
+    internal static decimal Days360RemainingInFiscalYear(DateTime date, int fiscalYearStartMonth) =>
+        DaysPerYear - Days360FromFiscalYearStart(date, fiscalYearStartMonth) + 1;
 
-    /// <summary>Jours entre deux dates de la même année (bornes incluses), convention 30/360.</summary>
-    internal static decimal Days360Between(DateTime from, DateTime to)
+    /// <summary>Jours entre deux dates d'un même exercice (bornes incluses), convention 30/360.</summary>
+    internal static decimal Days360BetweenFiscal(DateTime from, DateTime to, int fiscalYearStartMonth)
     {
         if (to < from)
             return 0m;
-        return Days360FromYearStart(to) - Days360FromYearStart(from) + 1;
+        return Days360FromFiscalYearStart(to, fiscalYearStartMonth) - Days360FromFiscalYearStart(from, fiscalYearStartMonth) + 1;
     }
+
+    // --- Helpers année civile d'origine (conservés : testés directement par DepreciationEngineTests).
+    //     Délèguent aux variantes fiscales avec startMonth = 1 (chemin unique ⇒ bit-à-bit identique). ---
+
+    /// <summary>Jours écoulés depuis le 1er janvier (inclus) jusqu'à la date donnée, convention 30/360.</summary>
+    internal static decimal Days360FromYearStart(DateTime date) => Days360FromFiscalYearStart(date, 1);
+
+    /// <summary>Jours restants dans l'année à compter de la date donnée (jour inclus), convention 30/360.</summary>
+    internal static decimal Days360RemainingInYear(DateTime date) => Days360RemainingInFiscalYear(date, 1);
+
+    /// <summary>Jours entre deux dates de la même année (bornes incluses), convention 30/360.</summary>
+    internal static decimal Days360Between(DateTime from, DateTime to) => Days360BetweenFiscal(from, to, 1);
 
     internal static decimal Round3(decimal value) =>
         Math.Round(value, 3, MidpointRounding.AwayFromZero);

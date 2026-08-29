@@ -1,6 +1,7 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.Accounting.Notifications;
+using FactuTrust.Application.Features.FixedAssets;
 using FactuTrust.Domain.Entities;
 using MediatR;
 using Microsoft.Extensions.Logging;
@@ -45,11 +46,9 @@ public sealed class CreateFixedAssetsFromSupplierInvoiceHandler
             return;
 
         var year = invoice.InvoiceDate.Year;
-        var seq = await _fixedAssets.CountByYearPrefixAsync(year, cancellationToken);
 
         foreach (var line in assetLines)
         {
-            seq++;
             var category = line.DepreciationRateCategoryId.HasValue
                 ? await _categories.GetByIdAsync(line.DepreciationRateCategoryId.Value, cancellationToken)
                 : await _categories.GetByCodeAsync("OTHER", cancellationToken);
@@ -62,36 +61,64 @@ public sealed class CreateFixedAssetsFromSupplierInvoiceHandler
 
             var rate = category.IsNonDepreciable ? 0m : category.LegalRatePercent;
             var assetAccount = line.AssetAccountNumber ?? category.DefaultAssetAccount;
+            if (!FixedAssetAccountRules.IsValidAssetAccount(assetAccount))
+            {
+                _logger.LogWarning(
+                    "Invalid asset account {Account} on supplier line {Line}, falling back to category default {Default}",
+                    assetAccount, line.LineNumber, category.DefaultAssetAccount);
+                assetAccount = category.DefaultAssetAccount;
+            }
+
             var depreciationAccount = category.DefaultDepreciationAccount;
             var expenseAccount = category.DefaultExpenseAccount;
+            var vatCapitalized = FixedAssetVatRules.IsVatCapitalized(category.Code, assetAccount);
 
-            var create = FixedAsset.Create(
-                $"IMMO-{year}-{seq:D4}",
-                $"{line.ProductName} ({invoice.InvoiceNumber})",
-                category.Id,
-                rate,
-                category?.UsefulLifeYears ?? (rate > 0 ? 100m / rate : 0m),
-                assetAccount,
-                depreciationAccount,
-                expenseAccount,
-                line.SubTotal.Amount,
-                0m,
-                0m,
-                invoice.InvoiceDate,
-                line.ProductDescription,
-                line.VatAmount.Amount,
-                supplierId: invoice.SupplierId);
-
-            if (create.IsFailure)
+            // Garde défensive (B5/T8) : le triplet résolu doit rester cohérent même après repli sur
+            // les défauts de catégorie (valides post-T1) — sinon la ligne est ignorée proprement,
+            // sans lever d'exception dans ce notification handler.
+            var accountsValidation = FixedAssetAccountRules.Validate(assetAccount, depreciationAccount, expenseAccount);
+            if (accountsValidation.IsFailure)
             {
-                _logger.LogWarning("Fixed asset draft skipped for supplier line {Line}: {Error}",
-                    line.LineNumber, create.Error.Description);
+                _logger.LogWarning(
+                    "Fixed asset draft skipped for supplier line {Line}: invalid account triplet {Asset}/{Depreciation}/{Expense} ({Error})",
+                    line.LineNumber, assetAccount, depreciationAccount, expenseAccount, accountsValidation.Error.Description);
                 continue;
             }
 
-            var asset = create.Value;
-            asset.LinkSupplierInvoiceSource(invoice.Id, line.Id);
-            await _fixedAssets.AddAsync(asset, cancellationToken);
+            var added = await _fixedAssets.AddWithGeneratedInventoryNumberAsync(
+                inventoryNumber =>
+                {
+                    var create = FixedAsset.Create(
+                        inventoryNumber,
+                        $"{line.ProductName} ({invoice.InvoiceNumber})",
+                        category.Id,
+                        rate,
+                        category?.UsefulLifeYears ?? (rate > 0 ? 100m / rate : 0m),
+                        assetAccount,
+                        depreciationAccount,
+                        expenseAccount,
+                        line.SubTotal.Amount,
+                        0m,
+                        0m,
+                        invoice.InvoiceDate,
+                        line.ProductDescription,
+                        line.VatAmount.Amount,
+                        supplierId: invoice.SupplierId,
+                        vatCapitalized: vatCapitalized);
+
+                    if (create.IsSuccess)
+                        create.Value.LinkSupplierInvoiceSource(invoice.Id, line.Id);
+
+                    return create;
+                },
+                year,
+                cancellationToken);
+
+            if (added.IsFailure)
+            {
+                _logger.LogWarning("Fixed asset draft skipped for supplier line {Line}: {Error}",
+                    line.LineNumber, added.Error.Description);
+            }
         }
     }
 }

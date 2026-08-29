@@ -244,6 +244,7 @@ public static class DependencyInjection
         services.AddScoped<IVatDeclarationRepository, VatDeclarationRepository>();
         services.AddScoped<IFiscalScheduleRepository, FiscalScheduleRepository>();
         services.AddScoped<IFixedAssetRepository, FixedAssetRepository>();
+        services.AddScoped<IFixedAssetSettingsRepository, FixedAssetSettingsRepository>();
         services.AddScoped<ILoanRepository, LoanRepository>();
         services.AddScoped<IDepreciationRateCategoryRepository, DepreciationRateCategoryRepository>();
 
@@ -308,6 +309,7 @@ public static class DependencyInjection
         services.AddScoped<IAccountingExportService, AccountingExportService>();
         services.AddScoped<IPayrollReportExportService, PayrollReportExportService>();
         services.AddScoped<IDepreciationEngine, DepreciationEngine>();
+        services.AddScoped<IFiscalYearResolver, FiscalYearResolver>();
         services.AddScoped<IFixedAssetExportService, FixedAssetExportService>();
         services.AddScoped<ILetteringService, LetteringService>();
         services.AddScoped<IAuditLogQueryService, AuditLogQueryService>();

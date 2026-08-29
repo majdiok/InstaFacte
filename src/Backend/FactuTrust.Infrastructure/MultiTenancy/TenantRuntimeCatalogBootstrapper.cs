@@ -12,6 +12,7 @@ public static class TenantRuntimeCatalogBootstrapper
     public static async Task EnsureAsync(TenantDbContext context, CancellationToken cancellationToken = default)
     {
         await Nct01ChartMigrationService.EnsureMigratedAsync(context, cancellationToken);
+        await FixedAssetCategoryNctRepairService.EnsureAppliedAsync(context, cancellationToken);
         await WithholdingTaxCatalogInitializer.EnsureSystemTypesSeededAsync(context, cancellationToken);
         await WithholdingFiscalYearParameterInitializer.EnsureDefaultsSeededAsync(context, cancellationToken);
         await IncomeTaxYearParameterInitializer.EnsureDefaultsSeededAsync(context, cancellationToken);
