@@ -34,8 +34,6 @@ public sealed class CreateFixedAssetCommandHandler : IRequestHandler<CreateFixed
             return Result.Failure<Guid>(Error.Validation("DepreciationRateCategoryId", "Catégorie d'amortissement introuvable."));
 
         var year = r.AcquisitionDate.Year;
-        var seq = await _assets.CountByYearPrefixAsync(year, cancellationToken) + 1;
-        var inventoryNumber = $"IMMO-{year}-{seq:D4}";
 
         var assetAccount = string.IsNullOrWhiteSpace(r.AssetAccountNumber) ? category.DefaultAssetAccount : r.AssetAccountNumber.Trim();
         var depreciationAccount = string.IsNullOrWhiteSpace(r.DepreciationAccountNumber) ? category.DefaultDepreciationAccount : r.DepreciationAccountNumber.Trim();
@@ -54,34 +52,45 @@ public sealed class CreateFixedAssetCommandHandler : IRequestHandler<CreateFixed
         if (resolved.IsFailure)
             return Result.Failure<Guid>(resolved.Error);
 
-        var create = FixedAsset.Create(
-            inventoryNumber,
-            r.Label,
-            category.Id,
-            resolved.Value.RatePercent,
-            resolved.Value.LifeYears,
-            assetAccount,
-            depreciationAccount,
-            expenseAccount,
-            r.AcquisitionCost,
-            r.CapitalizedFees,
-            r.ResidualValue,
-            r.AcquisitionDate,
-            r.Description,
-            r.VatAmount,
-            r.Location,
-            r.SupplierId,
-            r.DepreciationMethod,
-            r.AccelerationCoefficient ?? 1m,
-            FixedAssetVatRules.IsVatCapitalized(category.Code, assetAccount));
+        var email = _currentUser.Email ?? "system";
+        var vatCapitalized = FixedAssetVatRules.IsVatCapitalized(category.Code, assetAccount);
 
-        if (create.IsFailure)
-            return Result.Failure<Guid>(create.Error);
+        var added = await _assets.AddWithGeneratedInventoryNumberAsync(
+            inventoryNumber =>
+            {
+                var create = FixedAsset.Create(
+                    inventoryNumber,
+                    r.Label,
+                    category.Id,
+                    resolved.Value.RatePercent,
+                    resolved.Value.LifeYears,
+                    assetAccount,
+                    depreciationAccount,
+                    expenseAccount,
+                    r.AcquisitionCost,
+                    r.CapitalizedFees,
+                    r.ResidualValue,
+                    r.AcquisitionDate,
+                    r.Description,
+                    r.VatAmount,
+                    r.Location,
+                    r.SupplierId,
+                    r.DepreciationMethod,
+                    r.AccelerationCoefficient ?? 1m,
+                    vatCapitalized);
 
-        var entity = create.Value;
-        entity.SetAuditInfo(_currentUser.Email ?? "system", false);
-        await _assets.AddAsync(entity, cancellationToken);
-        return Result.Success(entity.Id);
+                if (create.IsSuccess)
+                    create.Value.SetAuditInfo(email, false);
+
+                return create;
+            },
+            year,
+            cancellationToken);
+
+        if (added.IsFailure)
+            return Result.Failure<Guid>(added.Error);
+
+        return Result.Success(added.Value.Id);
     }
 }
 

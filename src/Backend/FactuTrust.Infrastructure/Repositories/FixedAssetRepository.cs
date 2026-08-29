@@ -6,6 +6,7 @@ using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Infrastructure.MultiTenancy;
 using FactuTrust.Infrastructure.Persistence;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace FactuTrust.Infrastructure.Repositories;
@@ -261,6 +262,71 @@ public sealed class FixedAssetRepository : IFixedAssetRepository
         var prefix = $"IMMO-{year}-";
         return await context.FixedAssets.CountAsync(a => a.InventoryNumber.StartsWith(prefix), cancellationToken);
     }
+
+    public async Task<int> GetNextInventorySequenceAsync(int year, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        var prefix = $"IMMO-{year}-";
+        var suffixes = await context.FixedAssets
+            .Where(a => a.InventoryNumber.StartsWith(prefix))
+            .Select(a => a.InventoryNumber)
+            .ToListAsync(cancellationToken);
+
+        var max = 0;
+        foreach (var number in suffixes)
+        {
+            var suffix = number.Length > prefix.Length ? number[prefix.Length..] : string.Empty;
+            if (int.TryParse(suffix, out var value) && value > max)
+                max = value;
+        }
+
+        return max + 1;
+    }
+
+    public async Task<Result<FixedAsset>> AddWithGeneratedInventoryNumberAsync(
+        Func<string, Result<FixedAsset>> factory,
+        int year,
+        CancellationToken cancellationToken = default)
+    {
+        for (var attempt = 1; attempt <= MaxConcurrencyAttempts; attempt++)
+        {
+            var sequence = await GetNextInventorySequenceAsync(year, cancellationToken);
+            var inventoryNumber = $"IMMO-{year}-{sequence:D4}";
+
+            var built = factory(inventoryNumber);
+            if (built.IsFailure)
+                return built;
+
+            var entity = built.Value;
+
+            try
+            {
+                await using var context = _contextFactory.CreateContext();
+
+                if (entity.DepreciationRateCategory != null)
+                {
+                    context.Entry(entity.DepreciationRateCategory).State = EntityState.Unchanged;
+                }
+
+                context.FixedAssets.Add(entity);
+                await context.SaveChangesAsync(cancellationToken);
+                return Result.Success(entity);
+            }
+            catch (DbUpdateException ex) when (attempt < MaxConcurrencyAttempts && IsInventoryNumberUniqueViolation(ex))
+            {
+                // Violation d'unicité sur IX_FixedAssets_InventoryNumber : une autre création concurrente
+                // a pris ce numéro entre le calcul de la séquence et l'insert — on retente avec un
+                // nouveau contexte et une séquence recalculée (MAX+1, pas de COUNT+1).
+            }
+        }
+
+        return Result.Failure<FixedAsset>(Error.Conflict(
+            "Impossible de générer un numéro d'inventaire unique après plusieurs tentatives."));
+    }
+
+    private static bool IsInventoryNumberUniqueViolation(DbUpdateException ex) =>
+        ex.InnerException is SqlException { Number: 2601 or 2627 } sqlEx &&
+        sqlEx.Message.Contains("IX_FixedAssets_InventoryNumber", StringComparison.OrdinalIgnoreCase);
 
     public async Task<IReadOnlyList<FixedAsset>> GetBySupplierInvoiceIdAsync(
         Guid supplierInvoiceId,

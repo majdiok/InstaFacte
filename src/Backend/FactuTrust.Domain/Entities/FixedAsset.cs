@@ -18,6 +18,11 @@ public sealed class FixedAsset : AggregateRoot
     private static readonly Regex AccountNumberFormat = new("^\\d{2,20}$", RegexOptions.Compiled);
 
     /// <summary>
+    /// Format du numéro d'inventaire (plan T5, B2) : <c>IMMO-{année}-{séquence sur 4 chiffres}</c>.
+    /// </summary>
+    private static readonly Regex InventoryNumberFormat = new("^IMMO-\\d{4}-\\d{4}$", RegexOptions.Compiled);
+
+    /// <summary>
     /// Coefficients d'amortissement accéléré autorisés par le Décret 2008-492 art. 2 :
     /// 1,5 pour deux équipes (matériel industriel ; taux 15 % → 22,5 %) et 2 pour trois équipes (→ 30 %).
     /// </summary>
@@ -154,6 +159,24 @@ public sealed class FixedAsset : AggregateRoot
 
         asset._events.Add(FixedAssetEvent.Create(asset.Id, FixedAssetEventType.Created, acquisitionDate.Date, null, null));
         return Result.Success(asset);
+    }
+
+    /// <summary>
+    /// Réattribue le numéro d'inventaire (plan T5, B2) — utilisé par le retry ciblé du repository
+    /// en cas de violation d'unicité (<c>IX_FixedAssets_InventoryNumber</c>) : format
+    /// <c>IMMO-{année}-{séquence}</c> vérifié, uniquement autorisé avant la mise en service.
+    /// </summary>
+    public Result AssignInventoryNumber(string inventoryNumber)
+    {
+        if (Status != FixedAssetStatus.Draft)
+            return Result.Failure(Error.Validation("InventoryNumber", "Le numéro d'inventaire ne peut être modifié qu'avant la mise en service."));
+
+        inventoryNumber = inventoryNumber?.Trim() ?? string.Empty;
+        if (!InventoryNumberFormat.IsMatch(inventoryNumber))
+            return Result.Failure(Error.Validation("InventoryNumber", "Le numéro d'inventaire doit respecter le format IMMO-AAAA-9999."));
+
+        InventoryNumber = inventoryNumber;
+        return Result.Success();
     }
 
     public void LinkSupplierInvoiceSource(Guid supplierInvoiceId, Guid supplierInvoiceLineId)

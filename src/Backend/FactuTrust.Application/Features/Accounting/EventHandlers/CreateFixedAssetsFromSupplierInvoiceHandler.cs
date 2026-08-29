@@ -46,11 +46,9 @@ public sealed class CreateFixedAssetsFromSupplierInvoiceHandler
             return;
 
         var year = invoice.InvoiceDate.Year;
-        var seq = await _fixedAssets.CountByYearPrefixAsync(year, cancellationToken);
 
         foreach (var line in assetLines)
         {
-            seq++;
             var category = line.DepreciationRateCategoryId.HasValue
                 ? await _categories.GetByIdAsync(line.DepreciationRateCategoryId.Value, cancellationToken)
                 : await _categories.GetByCodeAsync("OTHER", cancellationToken);
@@ -87,34 +85,40 @@ public sealed class CreateFixedAssetsFromSupplierInvoiceHandler
                 continue;
             }
 
-            var create = FixedAsset.Create(
-                $"IMMO-{year}-{seq:D4}",
-                $"{line.ProductName} ({invoice.InvoiceNumber})",
-                category.Id,
-                rate,
-                category?.UsefulLifeYears ?? (rate > 0 ? 100m / rate : 0m),
-                assetAccount,
-                depreciationAccount,
-                expenseAccount,
-                line.SubTotal.Amount,
-                0m,
-                0m,
-                invoice.InvoiceDate,
-                line.ProductDescription,
-                line.VatAmount.Amount,
-                supplierId: invoice.SupplierId,
-                vatCapitalized: vatCapitalized);
+            var added = await _fixedAssets.AddWithGeneratedInventoryNumberAsync(
+                inventoryNumber =>
+                {
+                    var create = FixedAsset.Create(
+                        inventoryNumber,
+                        $"{line.ProductName} ({invoice.InvoiceNumber})",
+                        category.Id,
+                        rate,
+                        category?.UsefulLifeYears ?? (rate > 0 ? 100m / rate : 0m),
+                        assetAccount,
+                        depreciationAccount,
+                        expenseAccount,
+                        line.SubTotal.Amount,
+                        0m,
+                        0m,
+                        invoice.InvoiceDate,
+                        line.ProductDescription,
+                        line.VatAmount.Amount,
+                        supplierId: invoice.SupplierId,
+                        vatCapitalized: vatCapitalized);
 
-            if (create.IsFailure)
+                    if (create.IsSuccess)
+                        create.Value.LinkSupplierInvoiceSource(invoice.Id, line.Id);
+
+                    return create;
+                },
+                year,
+                cancellationToken);
+
+            if (added.IsFailure)
             {
                 _logger.LogWarning("Fixed asset draft skipped for supplier line {Line}: {Error}",
-                    line.LineNumber, create.Error.Description);
-                continue;
+                    line.LineNumber, added.Error.Description);
             }
-
-            var asset = create.Value;
-            asset.LinkSupplierInvoiceSource(invoice.Id, line.Id);
-            await _fixedAssets.AddAsync(asset, cancellationToken);
         }
     }
 }

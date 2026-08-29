@@ -411,10 +411,9 @@ public sealed class FixedAssetCommandHandlersTests
         var category = CreateCategory();
 
         var repo = new Mock<IFixedAssetRepository>();
-        repo.Setup(x => x.CountByYearPrefixAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(0);
-        repo.Setup(x => x.AddAsync(It.IsAny<FixedAsset>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((FixedAsset a, CancellationToken _) => a);
+        repo.Setup(x => x.AddWithGeneratedInventoryNumberAsync(
+                It.IsAny<Func<string, Result<FixedAsset>>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Func<string, Result<FixedAsset>> factory, int year, CancellationToken _) => factory($"IMMO-{year}-0001"));
 
         var categories = new Mock<IDepreciationRateCategoryRepository>();
         categories.Setup(x => x.GetByIdAsync(category.Id, It.IsAny<CancellationToken>()))
@@ -426,8 +425,9 @@ public sealed class FixedAssetCommandHandlersTests
 
         var result = await handler.Handle(new CreateFixedAssetCommand(request), CancellationToken.None);
 
-        Assert.True(result.IsSuccess);
-        repo.Verify(x => x.AddAsync(It.IsAny<FixedAsset>(), It.IsAny<CancellationToken>()), Times.Once);
+        Assert.True(result.IsSuccess, result.IsFailure ? result.Error.Description : null);
+        repo.Verify(x => x.AddWithGeneratedInventoryNumberAsync(
+            It.IsAny<Func<string, Result<FixedAsset>>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

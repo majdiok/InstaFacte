@@ -2,6 +2,7 @@ using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.Accounting.EventHandlers;
 using FactuTrust.Application.Features.Accounting.Notifications;
+using FactuTrust.Domain.Common;
 using FactuTrust.Domain.Entities;
 using FactuTrust.Domain.Enums;
 using FactuTrust.Domain.ValueObjects;
@@ -38,14 +39,14 @@ public sealed class CreateFixedAssetsFromSupplierInvoiceHandlerTests
         FixedAsset? saved = null;
         var fixedAssets = new Mock<IFixedAssetRepository>();
         fixedAssets
-            .Setup(x => x.CountByYearPrefixAsync(invoice.InvoiceDate.Year, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(0);
-        fixedAssets
-            .Setup(x => x.AddAsync(It.IsAny<FixedAsset>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((FixedAsset asset, CancellationToken _) =>
+            .Setup(x => x.AddWithGeneratedInventoryNumberAsync(
+                It.IsAny<Func<string, Result<FixedAsset>>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Func<string, Result<FixedAsset>> factory, int year, CancellationToken _) =>
             {
-                saved = asset;
-                return asset;
+                var created = factory($"IMMO-{year}-0001");
+                if (created.IsSuccess)
+                    saved = created.Value;
+                return created;
             });
 
         var categories = new Mock<IDepreciationRateCategoryRepository>();
@@ -67,7 +68,8 @@ public sealed class CreateFixedAssetsFromSupplierInvoiceHandlerTests
         Assert.Equal(assetLine.Id, saved.SupplierInvoiceLineId);
         Assert.Equal(FixedAssetStatus.Draft, saved.Status);
         Assert.Equal(assetLine.SubTotal.Amount, saved.AcquisitionCost);
-        fixedAssets.Verify(x => x.AddAsync(It.IsAny<FixedAsset>(), It.IsAny<CancellationToken>()), Times.Once);
+        fixedAssets.Verify(x => x.AddWithGeneratedInventoryNumberAsync(
+            It.IsAny<Func<string, Result<FixedAsset>>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -87,14 +89,14 @@ public sealed class CreateFixedAssetsFromSupplierInvoiceHandlerTests
         FixedAsset? saved = null;
         var fixedAssets = new Mock<IFixedAssetRepository>();
         fixedAssets
-            .Setup(x => x.CountByYearPrefixAsync(invoice.InvoiceDate.Year, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(0);
-        fixedAssets
-            .Setup(x => x.AddAsync(It.IsAny<FixedAsset>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((FixedAsset asset, CancellationToken _) =>
+            .Setup(x => x.AddWithGeneratedInventoryNumberAsync(
+                It.IsAny<Func<string, Result<FixedAsset>>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Func<string, Result<FixedAsset>> factory, int year, CancellationToken _) =>
             {
-                saved = asset;
-                return asset;
+                var created = factory($"IMMO-{year}-0001");
+                if (created.IsSuccess)
+                    saved = created.Value;
+                return created;
             });
 
         var categories = new Mock<IDepreciationRateCategoryRepository>();
@@ -133,14 +135,14 @@ public sealed class CreateFixedAssetsFromSupplierInvoiceHandlerTests
         FixedAsset? saved = null;
         var fixedAssets = new Mock<IFixedAssetRepository>();
         fixedAssets
-            .Setup(x => x.CountByYearPrefixAsync(invoice.InvoiceDate.Year, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(0);
-        fixedAssets
-            .Setup(x => x.AddAsync(It.IsAny<FixedAsset>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((FixedAsset asset, CancellationToken _) =>
+            .Setup(x => x.AddWithGeneratedInventoryNumberAsync(
+                It.IsAny<Func<string, Result<FixedAsset>>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Func<string, Result<FixedAsset>> factory, int year, CancellationToken _) =>
             {
-                saved = asset;
-                return asset;
+                var created = factory($"IMMO-{year}-0001");
+                if (created.IsSuccess)
+                    saved = created.Value;
+                return created;
             });
 
         var categories = new Mock<IDepreciationRateCategoryRepository>();
@@ -184,7 +186,8 @@ public sealed class CreateFixedAssetsFromSupplierInvoiceHandlerTests
 
         await handler.Handle(new SupplierInvoiceCreatedForAccountingNotification(invoice.Id), CancellationToken.None);
 
-        fixedAssets.Verify(x => x.AddAsync(It.IsAny<FixedAsset>(), It.IsAny<CancellationToken>()), Times.Never);
+        fixedAssets.Verify(x => x.AddWithGeneratedInventoryNumberAsync(
+            It.IsAny<Func<string, Result<FixedAsset>>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // ------------------------------------------------------------------
@@ -210,14 +213,14 @@ public sealed class CreateFixedAssetsFromSupplierInvoiceHandlerTests
         FixedAsset? saved = null;
         var fixedAssets = new Mock<IFixedAssetRepository>();
         fixedAssets
-            .Setup(x => x.CountByYearPrefixAsync(invoice.InvoiceDate.Year, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(0);
-        fixedAssets
-            .Setup(x => x.AddAsync(It.IsAny<FixedAsset>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((FixedAsset asset, CancellationToken _) =>
+            .Setup(x => x.AddWithGeneratedInventoryNumberAsync(
+                It.IsAny<Func<string, Result<FixedAsset>>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Func<string, Result<FixedAsset>> factory, int year, CancellationToken _) =>
             {
-                saved = asset;
-                return asset;
+                var created = factory($"IMMO-{year}-0001");
+                if (created.IsSuccess)
+                    saved = created.Value;
+                return created;
             });
 
         var categories = new Mock<IDepreciationRateCategoryRepository>();
@@ -236,7 +239,8 @@ public sealed class CreateFixedAssetsFromSupplierInvoiceHandlerTests
 
         Assert.NotNull(saved);
         Assert.Equal("228", saved!.AssetAccountNumber);
-        fixedAssets.Verify(x => x.AddAsync(It.IsAny<FixedAsset>(), It.IsAny<CancellationToken>()), Times.Once);
+        fixedAssets.Verify(x => x.AddWithGeneratedInventoryNumberAsync(
+            It.IsAny<Func<string, Result<FixedAsset>>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -256,9 +260,6 @@ public sealed class CreateFixedAssetsFromSupplierInvoiceHandlerTests
             .ReturnsAsync(invoice);
 
         var fixedAssets = new Mock<IFixedAssetRepository>();
-        fixedAssets
-            .Setup(x => x.CountByYearPrefixAsync(invoice.InvoiceDate.Year, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(0);
 
         var categories = new Mock<IDepreciationRateCategoryRepository>();
         categories
@@ -275,7 +276,8 @@ public sealed class CreateFixedAssetsFromSupplierInvoiceHandlerTests
         // Ne doit lever aucune exception : la ligne est ignorée proprement.
         await handler.Handle(new SupplierInvoiceCreatedForAccountingNotification(invoice.Id), CancellationToken.None);
 
-        fixedAssets.Verify(x => x.AddAsync(It.IsAny<FixedAsset>(), It.IsAny<CancellationToken>()), Times.Never);
+        fixedAssets.Verify(x => x.AddWithGeneratedInventoryNumberAsync(
+            It.IsAny<Func<string, Result<FixedAsset>>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     private static SupplierInvoice BuildSupplierInvoiceWithAssetLine(Guid categoryId, string assetAccountNumber = "228")

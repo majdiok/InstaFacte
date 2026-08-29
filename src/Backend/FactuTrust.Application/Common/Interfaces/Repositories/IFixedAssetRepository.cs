@@ -34,6 +34,27 @@ public interface IFixedAssetRepository
         string companyName,
         CancellationToken cancellationToken = default);
     Task<int> CountByYearPrefixAsync(int year, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Prochaine séquence disponible pour l'année (plan T5, B2) : <c>MAX(suffixe numérique) + 1</c>
+    /// sur les numéros <c>IMMO-{year}-%</c> — contrairement à un COUNT+1, correct en présence de trous
+    /// (actifs supprimés/numéros sautés).
+    /// </summary>
+    Task<int> GetNextInventorySequenceAsync(int year, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Crée un actif avec un numéro d'inventaire généré, avec retry ciblé (plan T5, B2) : à chaque
+    /// tentative, la séquence est recalculée et l'entité entièrement reconstruite via
+    /// <paramref name="factory"/> (jamais de mutation d'une entité déjà trackée par un contexte
+    /// invalidé) dans un nouveau contexte. Retry uniquement sur violation de
+    /// <c>IX_FixedAssets_InventoryNumber</c> (SQL 2601/2627) ; toute autre erreur est propagée
+    /// immédiatement, sans retry.
+    /// </summary>
+    Task<Result<FixedAsset>> AddWithGeneratedInventoryNumberAsync(
+        Func<string, Result<FixedAsset>> factory,
+        int year,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<FixedAsset>> GetBySupplierInvoiceIdAsync(Guid supplierInvoiceId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<FixedAsset>> GetActiveForDepreciationRunAsync(int fiscalYear, CancellationToken cancellationToken = default);
     Task<FixedAsset> AddAsync(FixedAsset entity, CancellationToken cancellationToken = default);
