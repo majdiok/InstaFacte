@@ -143,8 +143,11 @@ public sealed class UpsertFiscalResultDeclarationCommandHandler
         }
         catch (InvalidOperationException ex)
         {
-            // Feuille déjà finalisée (non modifiable).
-            return Result.Failure<FiscalResultDeclarationDto>(Error.Validation("Status", ex.Message));
+            // T27 — feuille déjà finalisée (non modifiable) : Error.Conflict → HTTP 409.
+            // Un état finalisé/verrouillé est une mutation interdite (conflit d'état), distincte
+            // d'une erreur de validation de contenu (→ 400). Aligné sur T10 (re-finalisation,
+            // verrou, réconciliation) qui utilise déjà Error.Conflict.
+            return Result.Failure<FiscalResultDeclarationDto>(Error.Conflict(ex.Message));
         }
 
         // Le CA suggéré n'est pas recalculé ici (il l'est au chargement) : la valeur enregistrée fait foi.

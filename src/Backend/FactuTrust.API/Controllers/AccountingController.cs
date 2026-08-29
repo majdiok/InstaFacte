@@ -1081,7 +1081,14 @@ public sealed class AccountingController : ControllerBase
     {
         var r = await _mediator.Send(new UpsertFiscalResultDeclarationCommand(fiscalYear, request), cancellationToken);
         if (r.IsFailure)
-            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        {
+            // T27 — sémantique 409 sur feuille finalisée (Error.Conflict, levée par UpsertAsync) ;
+            // 400 sur les autres validations de contenu (TaxpayerKind, reports…). Mapping local par
+            // code "Conflict" (patron FinalizeFiscalResult ci-dessous / StorefrontTenantController).
+            if (string.Equals(r.Error.Code, "Conflict", StringComparison.OrdinalIgnoreCase))
+                return Conflict(ApiResponse<object>.Fail(r.Error.Description, r.Error.Code));
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description, r.Error.Code));
+        }
         return Ok(ApiResponse<FiscalResultDeclarationDto>.Ok(r.Value));
     }
 
