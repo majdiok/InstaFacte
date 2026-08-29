@@ -1,4 +1,4 @@
-import { Component, Input, OnChanges, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, Input, OnChanges, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { TableModule } from 'primeng/table';
@@ -11,10 +11,8 @@ import {
   RecurringContractDetail,
   RecurringContractService
 } from '@core/services/recurring-contract.service';
-import { AuthService } from '@core/services/auth.service';
 import { ToastService } from '@core/services/toast.service';
 import { ErrorHandlerService } from '@core/services/error-handler.service';
-import { PERMISSIONS } from '@core/config/permission-keys';
 import { invoiceBadgeStatus } from '../recurring-contracts.ui-utils';
 
 /** Onglet « Factures » : factures réellement émises depuis ce contrat (endpoint phase 2). */
@@ -28,16 +26,6 @@ import { invoiceBadgeStatus } from '../recurring-contracts.ui-utils';
   template: `
     <div class="section-header">
       <h3>Factures liées</h3>
-      @if (canCreateInvoice()) {
-        <app-button
-          variant="primary"
-          size="sm"
-          icon="pi-plus"
-          [routerLink]="['/invoices/new']"
-          [queryParams]="{ clientId: contract.clientId }">
-          Nouvelle facture
-        </app-button>
-      }
     </div>
 
     @if (loading()) {
@@ -144,15 +132,12 @@ export class ContractInvoicesTabComponent implements OnInit, OnChanges {
   @Input() refreshToken = 0;
 
   private readonly service = inject(RecurringContractService);
-  private readonly auth = inject(AuthService);
   private readonly toast = inject(ToastService);
   private readonly errorHandler = inject(ErrorHandlerService);
 
   readonly invoices = signal<LinkedInvoice[] | null>([]);
   readonly loading = signal(true);
   private initialized = false;
-
-  readonly canCreateInvoice = computed(() => this.auth.hasPermission(PERMISSIONS.invoices.create));
 
   readonly skeletonColumns: SkeletonColumn[] = [
     { width: '140px' }, { width: '120px' }, { width: '120px' }, { width: '130px' }, { width: '130px' }, { width: '150px' }, { width: '80px' }

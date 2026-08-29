@@ -28,7 +28,7 @@ export type ContractSideAction = 'invoice' | 'reminder' | 'download' | 'clone' |
         <div class="donut-wrap">
           <p-chart
             type="doughnut"
-            [data]="donutChartData(s)"
+            [data]="donutData"
             [options]="donutOptions"
             [style]="{ height: '180px' }">
           </p-chart>
@@ -217,7 +217,27 @@ export type ContractSideAction = 'invoice' | 'reminder' | 'download' | 'clone' |
 })
 export class ContractSidePanelComponent {
   @Input({ required: true }) contract!: RecurringContractDetail;
-  @Input() summary: ContractFinancialSummary | null = null;
+
+  /**
+   * Résumé financier exposé via setter : les données du donut sont calculées
+   * UNE fois par changement d'input et non à chaque cycle de détection de
+   * changements. Un binding `[data]="donutChartData(s)"` produirait une
+   * nouvelle référence à chaque cycle, et le setter `data` de p-chart
+   * (PrimeNG 19) appelle `reinit()` (destroy + recréation du chart) →
+   * clignotement du donut à chaque interaction.
+   */
+  @Input()
+  set summary(value: ContractFinancialSummary | null) {
+    this._summary = value;
+    this.donutData = value ? donutChartData(value) : null;
+  }
+  get summary(): ContractFinancialSummary | null {
+    return this._summary;
+  }
+  private _summary: ContractFinancialSummary | null = null;
+
+  /** Données du donut, référence stable entre deux changements de `summary`. */
+  donutData: { labels: string[]; datasets: unknown[] } | null = null;
   /** Gardes de permission (miroir de l'en-tête de page) — sans elles, aucun bouton d'action. */
   @Input() canManage = false;
   @Input() canTriggerBilling = false;
@@ -236,6 +256,5 @@ export class ContractSidePanelComponent {
     }
   };
 
-  protected readonly donutChartData = donutChartData;
   protected readonly renewalDeadlineOf = renewalDeadlineOf;
 }
