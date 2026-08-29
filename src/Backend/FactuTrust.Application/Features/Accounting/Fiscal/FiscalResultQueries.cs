@@ -65,9 +65,13 @@ public sealed class GetFiscalResultDeclarationQueryHandler
         // CA local TTC repris de la comptabilité : assiette du minimum d'impôt, proposé en aide à la
         // saisie (la valeur retenue par le comptable prime — ex. exclusion du chiffre d'affaires export).
         var suggestedTurnover = await TryComputeLocalTurnoverTtcAsync(request.FiscalYear, cancellationToken);
+        // T11 — résultat comptable net (après impôt) repris de l'état de résultat, proposé à côté du
+        // champ saisi (la valeur saisie n'est jamais écrasée). Calculé aussi pour les feuilles existantes.
+        var suggestedAccountingResult = await TryComputeSuggestedAccountingResultAsync(request.FiscalYear, cancellationToken);
 
         if (existing is not null)
-            return Result.Success(FiscalResultAssembler.Assemble(existing, parameters, _settings.FiscalLiasseEnabled, suggestedTurnover));
+            return Result.Success(FiscalResultAssembler.Assemble(
+                existing, parameters, _settings.FiscalLiasseEnabled, suggestedTurnover, suggestedAccountingResult));
 
         // Aucune feuille : aperçu initial à partir du résultat comptable net + suggestions auto certaines.
         var nct = await _reporting.GetNctStatementsAsync(request.FiscalYear, cancellationToken);
@@ -115,6 +119,17 @@ public sealed class GetFiscalResultDeclarationQueryHandler
         var to = new DateTime(fiscalYear, 12, 31);
         var balance = await _reporting.GetBalanceAsync(from, to, ct);
         return balance.IsFailure ? 0m : FiscalResultAssembler.EstimateLocalTurnoverTtc(balance.Value);
+    }
+
+    /// <summary>
+    /// Résultat comptable <b>net (après impôt)</b> de l'exercice, repris de l'état de résultat NCT
+    /// (T11). Proposé comme aide à la saisie du champ « résultat comptable » — la valeur saisie par le
+    /// comptable prime et n'est jamais écrasée. Null si les états ne sont pas disponibles.
+    /// </summary>
+    private async Task<decimal?> TryComputeSuggestedAccountingResultAsync(int fiscalYear, CancellationToken ct)
+    {
+        var nct = await _reporting.GetNctStatementsAsync(fiscalYear, ct);
+        return nct.IsSuccess ? nct.Value.IncomeStatement.NetResult : null;
     }
 
     /// <summary>Somme des mouvements débiteurs des comptes de pénalités (6712, 668) sur l'exercice.</summary>

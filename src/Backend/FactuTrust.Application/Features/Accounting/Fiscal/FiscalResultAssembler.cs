@@ -17,7 +17,8 @@ namespace FactuTrust.Application.Features.Accounting.Fiscal;
 public static class FiscalResultAssembler
 {
     public static FiscalResultDeclarationDto Assemble(
-        FiscalResultDeclaration d, IncomeTaxYearParameter p, bool enabled, decimal suggestedLocalTurnoverTtc = 0m)
+        FiscalResultDeclaration d, IncomeTaxYearParameter p, bool enabled, decimal suggestedLocalTurnoverTtc = 0m,
+        decimal? suggestedAccountingResult = null)
     {
         var adjustments = d.Adjustments
             .Select(a => new FiscalAdjustmentLineDto
@@ -56,6 +57,7 @@ public static class FiscalResultAssembler
             LocalTurnoverTtc = d.LocalTurnoverTtc,
             MinimumTaxRegime = (int)d.MinimumTaxRegime,
             SuggestedLocalTurnoverTtc = suggestedLocalTurnoverTtc,
+            SuggestedAccountingResult = suggestedAccountingResult,
             AcomptesPaid = d.AcomptesPaid,
             WithholdingSuffered = d.WithholdingSuffered,
             PriorTaxCredit = d.PriorTaxCredit,
@@ -96,6 +98,7 @@ public static class FiscalResultAssembler
             LocalTurnoverTtc = suggestedLocalTurnoverTtc,
             MinimumTaxRegime = (int)MinimumTaxRegime.Standard,
             SuggestedLocalTurnoverTtc = suggestedLocalTurnoverTtc,
+            SuggestedAccountingResult = accountingNetResult,
             Adjustments = suggestions,
             CarryForwards = carry,
             Computation = computation,
