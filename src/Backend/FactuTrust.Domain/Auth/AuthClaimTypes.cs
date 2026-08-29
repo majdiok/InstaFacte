@@ -39,4 +39,11 @@ public static class AuthClaimTypes
 
     /// <summary>Value <c>true</c> when the JWT belongs to a client-portal contact (not staff).</summary>
     public const string IsPortal = "portal";
+
+    /// <summary>
+    /// Snapshot of <c>ApplicationUser.SecurityStamp</c> at token-issuance time. Checked on every
+    /// request against the master DB (short-TTL cache) so that role/IsActive changes revoke the
+    /// current access token immediately instead of waiting for its natural expiry.
+    /// </summary>
+    public const string SecurityStamp = "sstamp";
 }

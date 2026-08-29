@@ -588,6 +588,12 @@ public sealed class PlatformAuthController : ControllerBase
             new(JwtRegisteredClaimNames.Jti, jwtId.ToString())
         };
 
+        // Révocation immédiate (plan §6 Phase 2.5) : même claim sstamp que TenantAuthTokenService,
+        // vérifié par le même OnTokenValidated (même scheme JWT). Sans ce claim, tous les tokens
+        // plateforme seraient rejetés dès que RequireSecurityStampClaim=true (étape 2 du rollout).
+        if (!string.IsNullOrEmpty(user.SecurityStamp))
+            claims.Add(new Claim(AuthClaimTypes.SecurityStamp, user.SecurityStamp));
+
         foreach (var role in platformRoles)
         {
             claims.Add(new Claim(ClaimTypes.Role, role));

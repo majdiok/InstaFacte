@@ -156,6 +156,13 @@ public sealed class TenantAuthTokenService : ITenantAuthTokenService
             new(AuthClaimTypes.TenantKind, homeTenant.Kind.ToClaimValue())
         };
 
+        // Révocation immédiate (plan §6 Phase 2.5) : snapshot du SecurityStamp Identity à l'émission.
+        // Vérifié à chaque requête (OnTokenValidated) contre la base master ; un changement de rôle,
+        // une désactivation ou une réinitialisation de mot de passe invalident l'access token courant
+        // sans attendre son expiration naturelle (15 min).
+        if (!string.IsNullOrEmpty(user.SecurityStamp))
+            claims.Add(new Claim(AuthClaimTypes.SecurityStamp, user.SecurityStamp));
+
         foreach (var role in roles)
         {
             if (string.Equals(role, PlatformRoles.PlatformAdmin, StringComparison.Ordinal))

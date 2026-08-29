@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Authorization;
 using FactuTrust.Domain.ClientPortal;
@@ -25,6 +26,8 @@ public sealed class TenantUsersController : ControllerBase
     private readonly ICurrentUser _currentUser;
     private readonly IEffectivePermissionService _permissionService;
     private readonly ISubscriptionResolver _subscriptionResolver;
+    private readonly IAuditService _auditService;
+    private readonly ISecurityStampTokenValidator _securityStampTokenValidator;
     private readonly ILogger<TenantUsersController> _logger;
 
     public TenantUsersController(
@@ -34,6 +37,8 @@ public sealed class TenantUsersController : ControllerBase
         ICurrentUser currentUser,
         IEffectivePermissionService permissionService,
         ISubscriptionResolver subscriptionResolver,
+        IAuditService auditService,
+        ISecurityStampTokenValidator securityStampTokenValidator,
         ILogger<TenantUsersController> logger)
     {
         _masterContext = masterContext;
@@ -42,6 +47,8 @@ public sealed class TenantUsersController : ControllerBase
         _currentUser = currentUser;
         _permissionService = permissionService;
         _subscriptionResolver = subscriptionResolver;
+        _auditService = auditService;
+        _securityStampTokenValidator = securityStampTokenValidator;
         _logger = logger;
     }
 
@@ -123,6 +130,73 @@ public sealed class TenantUsersController : ControllerBase
         return Ok(ApiResponse<IReadOnlyList<TenantUserListItemDto>>.Ok(items));
     }
 
+    /// <summary>
+    /// Pure Domain calculation (no DB access) — plan §6 Phase 2.1. Excluded roles (Client, FirmManager,
+    /// FirmAccountant) always return 200 with a non-grantable, feature-less catalog, never 400: a single
+    /// unified "empty ceiling" behavior consistent with <see cref="RoleModuleGrantCeilingExtensions.GetGrantCeiling"/>.
+    /// </summary>
+    [HttpGet("module-catalog")]
+    [ProducesResponseType(typeof(ApiResponse<ModuleCatalogDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public IActionResult GetModuleCatalog([FromQuery] UserRole role)
+    {
+        if (!Enum.IsDefined(role))
+            return BadRequest(ApiResponse<ModuleCatalogDto>.Fail("Rôle invalide"));
+
+        return Ok(ApiResponse<ModuleCatalogDto>.Ok(BuildModuleCatalog(role)));
+    }
+
+    /// <summary>Builds the module/feature catalog for <paramref name="role"/> — see <see cref="GetModuleCatalog"/>.</summary>
+    private static ModuleCatalogDto BuildModuleCatalog(UserRole role)
+    {
+        var basePermissions = new HashSet<string>(role.GetPermissions(), StringComparer.Ordinal);
+        var modules = new List<ModuleCatalogModuleDto>();
+        // Excluded roles (Client/FirmManager/FirmAccountant) always have an empty grant ceiling
+        // (RoleModuleGrantCeilingExtensions.IsExcludedFromModuleGrants) — plan §5.3/§6-2.1 requires
+        // the unified "empty/non-grantable" catalog for them: grantable=false on every module AND
+        // no feature listed at all, never a 400. Without this short-circuit, a feature whose base
+        // permissions happen to coincide with the excluded role's own base permissions could still
+        // surface with DefaultSelected=true, which would violate the "aucune feature listée" contract.
+        var isExcludedRole = RoleModuleGrantCeilingExtensions.IsExcludedFromModuleGrants(role);
+
+        foreach (var module in AppModuleExtensions.AllValues)
+        {
+            var ceiling = RoleModuleGrantCeilingExtensions.GetGrantCeiling(role, module);
+            var universe = module.GetModulePermissionUniverse();
+            var baseInModule = new HashSet<string>(basePermissions, StringComparer.Ordinal);
+            baseInModule.IntersectWith(universe);
+
+            var features = new List<ModuleCatalogFeatureDto>();
+            foreach (var featureKey in isExcludedRole ? Array.Empty<string>() : ModuleFeatureCatalog.GetValidFeatureKeys(module))
+            {
+                var featurePermissions = ModuleFeatureCatalog.GetPermissionsForFeature(module, featureKey);
+                var featureBase = featurePermissions.Where(basePermissions.Contains).ToList();
+                var featureAllowed = featurePermissions.Where(ceiling.Contains).ToList();
+                var isExtension = featureAllowed.Except(featureBase, StringComparer.Ordinal).Any();
+
+                features.Add(new ModuleCatalogFeatureDto
+                {
+                    Key = featureKey,
+                    BasePermissions = featureBase,
+                    AllowedPermissions = featureAllowed,
+                    DefaultSelected = featureBase.Count > 0,
+                    IsExtension = isExtension
+                });
+            }
+
+            modules.Add(new ModuleCatalogModuleDto
+            {
+                Module = module,
+                DisplayName = module.ToDisplayString(),
+                Grantable = ceiling.Count > 0,
+                DefaultEnabled = baseInModule.Count > 0,
+                Features = features
+            });
+        }
+
+        return new ModuleCatalogDto { Role = role, Modules = modules };
+    }
+
     [HttpPost]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -147,6 +221,11 @@ public sealed class TenantUsersController : ControllerBase
         if (!tenantId.HasValue)
             return Unauthorized(ApiResponse<object>.Fail("Contexte entreprise introuvable"));
 
+        var tenantKind = await _masterContext.Tenants.AsNoTracking()
+            .Where(t => t.Id == tenantId.Value)
+            .Select(t => t.Kind)
+            .FirstOrDefaultAsync(cancellationToken);
+
         var plan = await _subscriptionResolver.GetPlanForTenantAsync(tenantId.Value, cancellationToken);
         var maxUsers = SubscriptionLimits.GetMaxUsers(plan);
         var currentCount = await _masterContext.Users.CountAsync(
@@ -169,7 +248,13 @@ public sealed class TenantUsersController : ControllerBase
                     return BadRequest(ApiResponse<object>.Fail(err));
                 }
 
-                var errModules = ValidateModuleAccessItems(req.ModuleAccess);
+                if (!TenantRoleCompatibility.IsRoleAllowedForTenantKind(req.Role, tenantKind))
+                {
+                    await RollbackCreatedUsersAsync(createdUsers);
+                    return BadRequest(ApiResponse<object>.Fail(TenantRoleCompatibility.GetRejectionMessage(req.Role, tenantKind)));
+                }
+
+                var errModules = ValidateModuleAccessItems(req.Role, req.ModuleAccess);
                 if (errModules is not null)
                 {
                     await RollbackCreatedUsersAsync(createdUsers);
@@ -203,6 +288,20 @@ public sealed class TenantUsersController : ControllerBase
 
             await _masterContext.SaveChangesAsync(cancellationToken);
             _logger.LogInformation("Created {Count} user(s) for tenant {TenantId}", requests.Count, tenantId);
+
+            // Audit — best effort, only after the whole batch has committed successfully (plan §6 Phase 2.4:
+            // never emitted on rollback paths above, since RollbackCreatedUsersAsync already ran for those).
+            for (var i = 0; i < requests.Count; i++)
+            {
+                var req = requests[i];
+                await LogAuditBestEffortAsync(
+                    AuditActions.User.Created,
+                    createdUsers[i].Id,
+                    oldValues: null,
+                    newValues: new { req.Email, Role = req.Role.ToString(), ModuleAccess = BuildAuditModuleAccessSnapshot(req.ModuleAccess) },
+                    cancellationToken);
+            }
+
             return StatusCode(StatusCodes.Status201Created, ApiResponse<object>.Ok(new { count = requests.Count }, "Utilisateur(s) créé(s)"));
         }
         catch (Exception ex)
@@ -271,59 +370,184 @@ public sealed class TenantUsersController : ControllerBase
                     "Vous ne pouvez pas désactiver le module Paramètres et utilisateurs pour votre propre compte."));
         }
 
-        if (request.ModuleAccess is not null)
-        {
-            var errModules = ValidateModuleAccessItems(request.ModuleAccess);
-            if (errModules is not null)
-                return BadRequest(ApiResponse<object>.Fail(errModules));
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.FirstName))
-            user.FirstName = request.FirstName.Trim();
-        if (!string.IsNullOrWhiteSpace(request.LastName))
-            user.LastName = request.LastName.Trim();
-        if (request.PhoneNumber is not null)
-            user.PhoneNumber = string.IsNullOrWhiteSpace(request.PhoneNumber) ? null : request.PhoneNumber.Trim();
-        if (request.IsActive.HasValue)
-            user.IsActive = request.IsActive.Value;
+        // Resolved BEFORE any mutation — plan §6 Phase 2.2: grant validation and tenant/role compatibility
+        // are checked against the FINAL role (request.Role if provided, otherwise the current role).
+        var previousRole = await GetUserRoleAsync(user);
+        var previousIsActive = user.IsActive;
+        var effectiveRole = request.Role ?? previousRole;
 
         if (request.Role.HasValue)
         {
             if (!ClientPortalStaffRules.IsAssignableByStaff(request.Role.Value))
                 return BadRequest(ApiResponse<object>.Fail(ClientPortalStaffRules.InviteFromClientCardMessage));
 
-            var previousRole = await GetUserRoleAsync(user);
             if (user.Id == _currentUser.UserId && request.Role.Value != previousRole)
                 return BadRequest(ApiResponse<object>.Fail("Vous ne pouvez pas modifier votre propre rôle"));
 
-            var currentRoles = await _userManager.GetRolesAsync(user);
-            await _userManager.RemoveFromRolesAsync(user, currentRoles);
-            await _userManager.AddToRoleAsync(user, request.Role.Value.ToString());
+            var tenantKind = await _masterContext.Tenants.AsNoTracking()
+                .Where(t => t.Id == tenantId.Value)
+                .Select(t => t.Kind)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (!TenantRoleCompatibility.IsRoleAllowedForTenantKind(request.Role.Value, tenantKind))
+                return BadRequest(ApiResponse<object>.Fail(TenantRoleCompatibility.GetRejectionMessage(request.Role.Value, tenantKind)));
         }
-
-        if (!string.IsNullOrWhiteSpace(request.NewPassword))
-        {
-            var token = await _userManager.GeneratePasswordResetTokenAsync(user);
-            var pwd = await _userManager.ResetPasswordAsync(user, token, request.NewPassword);
-            if (!pwd.Succeeded)
-            {
-                return BadRequest(ApiResponse<object>.Fail(IdentityErrorTranslator.TranslateToFrench(pwd.Errors)));
-            }
-        }
-
-        await _userManager.UpdateAsync(user);
 
         if (request.ModuleAccess is not null)
         {
-            if (request.ModuleAccess.Count == 0)
-                await ClearModuleGrantsAsync(user.Id, cancellationToken);
-            else
-                await ReplaceModuleGrantsAsync(user.Id, request.ModuleAccess, cancellationToken);
+            var errModules = ValidateModuleAccessItems(effectiveRole, request.ModuleAccess);
+            if (errModules is not null)
+                return BadRequest(ApiResponse<object>.Fail(errModules));
         }
 
-        await _masterContext.SaveChangesAsync(cancellationToken);
+        // Last-administrator protection (plan §6 Phase 2.3) — only when this PATCH would demote or
+        // deactivate an administrator who is currently active; serialized in the transaction below via
+        // an UPDLOCK/HOLDLOCK on the tenant row + a fresh admin count inside the SAME transaction.
+        var mustProtectLastAdmin =
+            previousRole == UserRole.Administrator && previousIsActive &&
+            ((request.Role.HasValue && request.Role.Value != UserRole.Administrator) || request.IsActive == false);
 
-        return Ok(ApiResponse<object>.Ok(null!, "Utilisateur mis à jour"));
+        // Role, activation state or module grants changing must revoke the OLD access token immediately
+        // (plan §6 Phase 2.5) — rotate the security stamp and purge the refresh token, atomically with
+        // the mutation itself.
+        var mustRevokeCurrentToken = request.Role.HasValue || request.IsActive.HasValue || request.ModuleAccess is not null;
+
+        IReadOnlyList<UserModuleGrant> oldGrantsSnapshot = Array.Empty<UserModuleGrant>();
+        if (request.ModuleAccess is not null)
+        {
+            oldGrantsSnapshot = await _masterContext.UserModuleGrants.AsNoTracking()
+                .Where(g => g.UserId == user.Id)
+                .ToListAsync(cancellationToken);
+        }
+
+        string? failureMessage = null;
+        var strategy = _masterContext.Database.CreateExecutionStrategy();
+        var succeeded = await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await _masterContext.Database.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                if (mustProtectLastAdmin)
+                {
+                    // Tenant-row mutex: serializes concurrent PATCHes for the same tenant so two
+                    // simultaneous demotions of the last two admins can never both succeed.
+                    await _masterContext.Database.ExecuteSqlInterpolatedAsync(
+                        $"SELECT TOP(1) Id FROM Tenants WITH (UPDLOCK, HOLDLOCK) WHERE Id = {tenantId.Value}",
+                        cancellationToken);
+
+                    var activeAdminCount = await (
+                        from u in _masterContext.Users
+                        join ur in _masterContext.Set<Microsoft.AspNetCore.Identity.IdentityUserRole<Guid>>() on u.Id equals ur.UserId
+                        join r in _masterContext.Roles on ur.RoleId equals r.Id
+                        where u.TenantId == tenantId.Value && u.IsActive && r.Name == nameof(UserRole.Administrator)
+                        select u.Id).CountAsync(cancellationToken);
+
+                    if (activeAdminCount <= 1)
+                    {
+                        await transaction.RollbackAsync(cancellationToken);
+                        failureMessage = "Impossible de rétrograder ou désactiver le dernier administrateur actif de l'entreprise.";
+                        return false;
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(request.FirstName))
+                    user.FirstName = request.FirstName.Trim();
+                if (!string.IsNullOrWhiteSpace(request.LastName))
+                    user.LastName = request.LastName.Trim();
+                if (request.PhoneNumber is not null)
+                    user.PhoneNumber = string.IsNullOrWhiteSpace(request.PhoneNumber) ? null : request.PhoneNumber.Trim();
+                if (request.IsActive.HasValue)
+                    user.IsActive = request.IsActive.Value;
+
+                if (request.Role.HasValue)
+                {
+                    var currentRoles = await _userManager.GetRolesAsync(user);
+                    await _userManager.RemoveFromRolesAsync(user, currentRoles);
+                    await _userManager.AddToRoleAsync(user, request.Role.Value.ToString());
+                }
+
+                if (!string.IsNullOrWhiteSpace(request.NewPassword))
+                {
+                    var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+                    var pwd = await _userManager.ResetPasswordAsync(user, token, request.NewPassword);
+                    if (!pwd.Succeeded)
+                    {
+                        await transaction.RollbackAsync(cancellationToken);
+                        failureMessage = IdentityErrorTranslator.TranslateToFrench(pwd.Errors);
+                        return false;
+                    }
+                }
+
+                if (mustRevokeCurrentToken)
+                {
+                    // Atomic with the mutation above (same transaction): either both commit, or neither
+                    // does — no state where grants/role changed but the old token is still trusted.
+                    user.RefreshToken = null;
+                    user.RefreshTokenExpiryTime = null;
+                    await _userManager.UpdateSecurityStampAsync(user);
+                }
+
+                await _userManager.UpdateAsync(user);
+
+                if (request.ModuleAccess is not null)
+                {
+                    if (request.ModuleAccess.Count == 0)
+                        await ClearModuleGrantsAsync(user.Id, cancellationToken);
+                    else
+                        await ReplaceModuleGrantsAsync(user.Id, request.ModuleAccess, cancellationToken);
+                }
+
+                await _masterContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return true;
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
+
+        if (!succeeded)
+            return BadRequest(ApiResponse<object>.Fail(failureMessage ?? "Erreur lors de la mise à jour de l'utilisateur"));
+
+        // Post-commit cache eviction (plan §6 Phase 2.5): the mutation transaction just rotated the
+        // security stamp — evict this user's cached stamp snapshot on THIS node so the very next
+        // request rejects the old token immediately, instead of waiting out the up-to-5s TTL. Other
+        // nodes still rely on that TTL bound alone.
+        if (mustRevokeCurrentToken)
+            _securityStampTokenValidator.Invalidate(user.Id);
+
+        // Audit — best effort, emitted only after the master transaction has committed (plan §6 Phase 2.4).
+        if (request.Role.HasValue && request.Role.Value != previousRole)
+        {
+            await LogAuditBestEffortAsync(
+                AuditActions.User.RoleChanged, user.Id,
+                oldValues: new { Role = previousRole.ToString() },
+                newValues: new { Role = request.Role.Value.ToString() },
+                cancellationToken);
+        }
+
+        if (request.IsActive.HasValue && request.IsActive.Value != previousIsActive)
+        {
+            await LogAuditBestEffortAsync(
+                request.IsActive.Value ? AuditActions.User.Reactivated : AuditActions.User.Deactivated,
+                user.Id, oldValues: new { IsActive = previousIsActive }, newValues: new { IsActive = request.IsActive.Value },
+                cancellationToken);
+        }
+
+        if (request.ModuleAccess is not null)
+        {
+            await LogAuditBestEffortAsync(
+                AuditActions.User.ModuleGrantsChanged, user.Id,
+                oldValues: BuildAuditGrantsSnapshot(oldGrantsSnapshot),
+                newValues: BuildAuditModuleAccessSnapshot(request.ModuleAccess),
+                cancellationToken);
+        }
+
+        var message = mustRevokeCurrentToken
+            ? "Utilisateur mis à jour ; ses accès effectifs ont changé, ses sessions en cours sont révoquées."
+            : "Utilisateur mis à jour";
+        return Ok(ApiResponse<object>.Ok(null!, message));
     }
 
     private async Task<UserRole> GetUserRoleAsync(ApplicationUser user)
@@ -345,7 +569,15 @@ public sealed class TenantUsersController : ControllerBase
         return null;
     }
 
-    private static string? ValidateModuleAccessItems(IReadOnlyList<UserModuleAccessItemDto>? list)
+    /// <summary>
+    /// Validates module-access items against the FINAL resolved role (plan §6 Phase 2.2): a module can only
+    /// be enabled if <see cref="RoleModuleGrantCeilingExtensions.GetGrantCeiling"/> is non-empty for
+    /// (role, module) — this also covers the excluded roles (Client/FirmManager/FirmAccountant), whose
+    /// ceiling is always empty, so any attempt to enable a module for them is rejected. A feature key is
+    /// only accepted when at least one of its permissions is within that ceiling. Explicit rejection,
+    /// never a silent trim.
+    /// </summary>
+    private static string? ValidateModuleAccessItems(UserRole role, IReadOnlyList<UserModuleAccessItemDto>? list)
     {
         if (list is null || list.Count == 0)
             return null;
@@ -364,6 +596,10 @@ public sealed class TenantUsersController : ControllerBase
                 continue;
             }
 
+            var ceiling = RoleModuleGrantCeilingExtensions.GetGrantCeiling(role, x.Module);
+            if (ceiling.Count == 0)
+                return $"Le module « {x.Module.ToDisplayString()} » n'est pas disponible pour le rôle {role.ToDisplayString()}.";
+
             if (x.EnabledFeatureKeys is null || x.EnabledFeatureKeys.Count == 0)
                 continue;
 
@@ -374,6 +610,10 @@ public sealed class TenantUsersController : ControllerBase
                 var trimmed = key.Trim();
                 if (!ModuleFeatureCatalog.IsValidFeatureKey(x.Module, trimmed))
                     return $"Clé de sous-module invalide pour le module {x.Module}: {trimmed}";
+
+                var featurePermissions = ModuleFeatureCatalog.GetPermissionsForFeature(x.Module, trimmed);
+                if (!featurePermissions.Any(ceiling.Contains))
+                    return $"Le sous-module « {trimmed} » n'est pas disponible pour le rôle {role.ToDisplayString()}.";
             }
         }
 
@@ -386,6 +626,38 @@ public sealed class TenantUsersController : ControllerBase
             return;
         await ReplaceModuleGrantsAsync(userId, moduleAccess, cancellationToken);
     }
+
+    /// <summary>
+    /// Best-effort audit write (plan §6 Phase 2.4): <see cref="IAuditService"/> writes to the TENANT
+    /// database (isolated context) and cannot join the master transaction that already committed the
+    /// mutation — a failure here must never fail the request. Traced with an AUDIT_WRITE_FAILED marker
+    /// so it can be alerted on.
+    /// </summary>
+    private async Task LogAuditBestEffortAsync(
+        string action, Guid entityId, object? oldValues, object? newValues, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _auditService.LogAsync(action, "User", entityId, oldValues, newValues, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "AUDIT_WRITE_FAILED action={Action} entityId={EntityId}", action, entityId);
+        }
+    }
+
+    private static IReadOnlyList<object> BuildAuditModuleAccessSnapshot(IReadOnlyList<UserModuleAccessItemDto>? items) =>
+        items is null
+            ? Array.Empty<object>()
+            : items.Select(x => (object)new { module = x.Module.ToString(), enabled = x.Enabled, featureKeys = x.EnabledFeatureKeys }).ToList();
+
+    private static IReadOnlyList<object> BuildAuditGrantsSnapshot(IReadOnlyList<UserModuleGrant> grants) =>
+        grants.Select(g => (object)new
+        {
+            module = g.Module.ToString(),
+            enabled = g.IsEnabled,
+            featureKeys = ParseFeatureKeysForListDto(g.EnabledFeatureKeys)
+        }).ToList();
 
     private async Task ReplaceModuleGrantsAsync(Guid userId, IReadOnlyList<UserModuleAccessItemDto> items, CancellationToken cancellationToken)
     {

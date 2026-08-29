@@ -1,3 +1,5 @@
+using FactuTrust.Domain.Authorization;
+
 namespace FactuTrust.Domain.Enums;
 
 /// <summary>
@@ -216,7 +218,14 @@ public static class AppModuleExtensions
             Permissions.Payroll.Declare,
             Permissions.Payroll.Export,
             Permissions.Payroll.Pay,
-            Permissions.Payroll.Settings
+            Permissions.Payroll.Settings,
+            // Ces trois clés sont dans le jeu de base d'Administrator/Accountant/Supervisor
+            // (UserRole.cs) mais n'étaient portées par aucune feature Payroll ni par ce tableau :
+            // un module activé « sans sous-sélection » (§5.2) faisait silencieusement disparaître
+            // ces permissions du plafond effectif — même défaut latent que Treasury/TreasuryForecast.
+            Permissions.Payroll.ManageGarnishments,
+            Permissions.Payroll.HrDocuments,
+            Permissions.Payroll.ManageTermination
         },
         AppModule.Honoraires => new[]
         {
@@ -266,6 +275,45 @@ public static class AppModuleExtensions
     };
 
     public static readonly AppModule[] AllValues = Enum.GetValues<AppModule>();
+
+    private static readonly Lazy<IReadOnlySet<string>> AllModulesPermissionUniverseLazy = new(() =>
+    {
+        var union = new HashSet<string>();
+        foreach (var module in AllValues)
+            foreach (var key in module.GetModulePermissionUniverse())
+                union.Add(key);
+        return union;
+    });
+
+    /// <summary>
+    /// Union of every <see cref="AppModule"/>'s <see cref="GetModulePermissionUniverse"/> — every
+    /// permission key reachable through the per-user module-grant system at all, regardless of role
+    /// or which module is enabled. Used to identify permission keys that are NOT module-gated (e.g.
+    /// <c>storefront:manage</c>, which has no owning <see cref="AppModule"/>): those must never be
+    /// silently dropped just because a user has some (any) module grants configured, since no grant
+    /// checkbox could ever have controlled them in the first place (plan §5.2/§7.2.1 — module
+    /// customization must never produce a permission delta of REMOVAL).
+    /// </summary>
+    public static IReadOnlySet<string> GetAllModulesPermissionUniverse() => AllModulesPermissionUniverseLazy.Value;
+
+    /// <summary>
+    /// Full permission universe of a module: <see cref="GetPermissionKeys"/> plus every permission
+    /// reachable through any of its sub-features (<see cref="ModuleFeatureCatalog"/>). Some modules
+    /// (e.g. Treasury) have features that carry permissions absent from the flat module key list
+    /// (e.g. <c>treasury_forecast:view/manage</c>) — a module enabled "without sub-selection" must
+    /// still preserve those, otherwise activating the module can silently drop base permissions.
+    /// </summary>
+    public static IReadOnlySet<string> GetModulePermissionUniverse(this AppModule module)
+    {
+        var universe = new HashSet<string>(module.GetPermissionKeys());
+        foreach (var featureKey in ModuleFeatureCatalog.GetValidFeatureKeys(module))
+        {
+            foreach (var permission in ModuleFeatureCatalog.GetPermissionsForFeature(module, featureKey))
+                universe.Add(permission);
+        }
+
+        return universe;
+    }
 
     /// <summary>
     /// True if <paramref name="effectivePermissions"/> contains at least one permission key mapped to this module.

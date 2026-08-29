@@ -52,9 +52,22 @@ public static class EffectivePermissionsCalculator
             }
             else
             {
-                foreach (var p in module.GetPermissionKeys())
+                // No sub-selection: the full module universe applies (module keys + every
+                // feature's permissions), not just GetPermissionKeys() — see AppModule.GetModulePermissionUniverse.
+                foreach (var p in module.GetModulePermissionUniverse())
                     unionFromModules.Add(p);
             }
+        }
+
+        // Permissions genuinely outside the module-grant system altogether (no AppModule's universe
+        // contains them, e.g. Permissions.Storefront.Manage) are never governed by any per-module
+        // checkbox — module customization must never silently revoke them (plan §5.2/§7.2.1: a
+        // customization delta of REMOVAL is a bug, only additions are the accepted consequence).
+        var moduleMappedKeys = AppModuleExtensions.GetAllModulesPermissionUniverse();
+        foreach (var permission in roleSet)
+        {
+            if (!moduleMappedKeys.Contains(permission))
+                unionFromModules.Add(permission);
         }
 
         var permissionCeiling = new HashSet<string>(roleSet);

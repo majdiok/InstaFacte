@@ -117,6 +117,9 @@ public static class DependencyInjection
             services.AddScoped<TenantDatabaseProvisioner>();
             services.AddScoped<ITenantService, TenantService>();
             services.AddScoped<ITenantAuthTokenService, TenantAuthTokenService>();
+            // Révocation immédiate des tokens (plan §6 Phase 2.5) — vérifié par le OnTokenValidated
+            // de Program.cs sur chaque requête authentifiée, quel que soit l'émetteur du token.
+            services.AddScoped<ISecurityStampTokenValidator, SecurityStampTokenValidator>();
             services.AddScoped<IAccountingFirmRegistrationService, AccountingFirmRegistrationService>();
             services.AddScoped<ICompanyProfileSnapshotProvider, CompanyProfileSnapshotProvider>();
             // Enregistrement en 2 temps : la classe concrète est scopée (une instance par
