@@ -122,6 +122,7 @@ public sealed class OpeningEntriesRepairTests
             });
 
         var withholding = new Mock<IWithholdingTaxRepository>();
+        var categories = new Mock<IDepreciationRateCategoryRepository>();
         var settings = Options.Create(new AccountingSettings { ManualReversalEnabled = manualReversalEnabled });
 
         // Vrai repository (pas un mock) : preuve que ReserveNextEntryNumberAsync fonctionne contre
@@ -129,7 +130,7 @@ public sealed class OpeningEntriesRepairTests
         var journals = new JournalEntryRepository(factory);
 
         return new AccountingService(
-            chart.Object, periodService.Object, journals, withholding.Object,
+            chart.Object, periodService.Object, journals, withholding.Object, categories.Object,
             factory, NullLogger<AccountingService>.Instance, settings);
     }
 

@@ -8,6 +8,8 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './e2e',
   
+  globalSetup: process.env.CI ? './e2e/ci-global-setup.ts' : undefined,
+  
   /* Exclure les fichiers Selenium */
   testIgnore: /.*\.selenium\.spec\.ts$/,
   

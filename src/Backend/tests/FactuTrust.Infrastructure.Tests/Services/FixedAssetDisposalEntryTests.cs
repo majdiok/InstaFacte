@@ -49,11 +49,12 @@ public sealed class FixedAssetDisposalEntryTests
             .ReturnsAsync((JournalEntry e, CancellationToken _) => e);
 
         var withholding = new Mock<IWithholdingTaxRepository>();
+        var categories = new Mock<IDepreciationRateCategoryRepository>();
         var ctxFactory = new Mock<ITenantDbContextFactory>();
         var settings = Options.Create(new AccountingSettings { BrouillardEnabled = brouillardEnabled });
 
         var service = new AccountingService(
-            chart.Object, periodService.Object, journals.Object, withholding.Object,
+            chart.Object, periodService.Object, journals.Object, withholding.Object, categories.Object,
             ctxFactory.Object, NullLogger<AccountingService>.Instance, settings);
 
         return (service, journals, captured);
@@ -249,11 +250,12 @@ public sealed class FixedAssetDisposalEntryTests
 
         var periodService = new Mock<IAccountingPeriodService>();
         var withholding = new Mock<IWithholdingTaxRepository>();
+        var categories = new Mock<IDepreciationRateCategoryRepository>();
         var ctxFactory = new Mock<ITenantDbContextFactory>();
         var settings = Options.Create(new AccountingSettings());
 
         var service = new AccountingService(
-            chart.Object, periodService.Object, journals.Object, withholding.Object,
+            chart.Object, periodService.Object, journals.Object, withholding.Object, categories.Object,
             ctxFactory.Object, NullLogger<AccountingService>.Instance, settings);
 
         var result = await service.GenerateFixedAssetDisposalEntryAsync(asset, CancellationToken.None);

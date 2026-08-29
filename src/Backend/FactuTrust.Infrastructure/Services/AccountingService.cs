@@ -1726,7 +1726,6 @@ public sealed class AccountingService : IAccountingService
             new(asset.AssetAccountNumber, $"Acquisition — {asset.InventoryNumber}", debitAssetAmount, 0, null, ThirdPartyKind.None)
         };
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, "FixedAssetAcquisition", cancellationToken);
         if (asset.VatAmount > 0 && !asset.VatCapitalized)
         {
             lines.Add(new(TunisianPostingAccounts.VatDeductibleFixedAssets, $"TVA déductible immo — {asset.InventoryNumber}", asset.VatAmount, 0, null, ThirdPartyKind.None));
@@ -1735,7 +1734,7 @@ public sealed class AccountingService : IAccountingService
 
         lines.Add(new(asset.CreditAccountNumber!, $"Acquisition — {asset.Label}", 0, creditAmount, null, ThirdPartyKind.None));
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "FixedAssetAcquisition", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 

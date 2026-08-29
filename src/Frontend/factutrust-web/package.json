@@ -80,5 +80,8 @@
     "tailwindcss": "^3.4.0",
     "ts-node": "^10.9.0",
     "typescript": "~5.7.2"
+  },
+  "overrides": {
+    "tar": "^7.5.22"
   }
 }
