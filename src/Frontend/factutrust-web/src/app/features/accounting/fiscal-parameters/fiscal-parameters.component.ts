@@ -1,11 +1,26 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Subject, of } from 'rxjs';
+import { catchError, switchMap } from 'rxjs/operators';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.component';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
 import { AccountingService, IncomeTaxYearParameterDto } from '../services/accounting.service';
+
+/** Réponse d'API générique (miroir non exporté de `ApiResponse<T>` du service). */
+interface FiscalParametersApiResponse {
+  success: boolean;
+  data?: IncomeTaxYearParameterDto;
+  error?: string;
+}
+
+const MIN_FISCAL_YEAR = 2000;
+const MAX_FISCAL_YEAR = 2100;
+const UNSAVED_CHANGES_MESSAGE =
+  'Des modifications non enregistrées seront perdues. Continuer ?';
 
 /**
  * Paramétrage fiscal par exercice : taux IS, minimum d'impôt, CSS, acomptes, report des déficits et
@@ -20,16 +35,25 @@ import { AccountingService, IncomeTaxYearParameterDto } from '../services/accoun
     <app-page-header title="Paramètres fiscaux"
       subtitle="Taux IS, minimum d'impôt, CSS, acomptes et barème IRPP — par exercice" />
 
+    @if (isDirty()) {
+      <p class="fp-dirty-indicator" role="status"><i class="pi pi-circle-fill" aria-hidden="true"></i> Modifications non enregistrées</p>
+    }
+
     <div class="card accounting-filters-card">
       <app-accounting-filter-bar ariaLabel="Exercice des paramètres fiscaux">
         <div accountingFilterFields>
           <div class="accounting-filter-field">
             <label class="accounting-filter-label" for="fp-year">Exercice</label>
-            <input id="fp-year" type="number" [(ngModel)]="fiscalYear" class="accounting-filter-input fp-year-input" min="2000" max="2100" />
+            <input id="fp-year" type="number" [ngModel]="fiscalYear" (ngModelChange)="onYearInputChange($event)"
+              class="accounting-filter-input fp-year-input" min="2000" max="2100"
+              [attr.aria-invalid]="!isYearValid()" />
+            @if (!isYearValid()) {
+              <span class="fp-year-error" role="alert">Exercice invalide : doit être compris entre 2000 et 2100.</span>
+            }
           </div>
         </div>
         <div accountingFilterActions>
-          <app-button variant="secondary" icon="pi pi-refresh" type="button" (click)="load()" [disabled]="loading()"
+          <app-button variant="secondary" icon="pi pi-refresh" type="button" (click)="load()" [disabled]="loading() || !isYearValid()"
             ariaLabel="Charger les paramètres de l'exercice">Charger</app-button>
           <app-button variant="primary" icon="pi pi-save" type="button" (click)="save()" [disabled]="loading() || saving() || !model"
             ariaLabel="Enregistrer les paramètres fiscaux">Enregistrer</app-button>
@@ -47,6 +71,13 @@ import { AccountingService, IncomeTaxYearParameterDto } from '../services/accoun
 
     <app-accounting-status-banner variant="error" [message]="error() ?? ''" [showRetry]="!!error()" retryLabel="Réessayer" (retry)="load()" />
 
+    @if (jsonError(); as jerr) {
+      <div class="fp-json-error-banner" role="alert">
+        <i class="pi pi-times-circle" aria-hidden="true"></i>
+        <span>{{ jerr }}</span>
+      </div>
+    }
+
     @if (info(); as msg) {
       <div class="fp-info-banner" role="status"><i class="pi pi-check-circle" aria-hidden="true"></i><span>{{ msg }}</span></div>
     }
@@ -55,7 +86,7 @@ import { AccountingService, IncomeTaxYearParameterDto } from '../services/accoun
       @if (!m.isUserModified) {
         <div class="fp-default-banner" role="status">
           <i class="pi pi-info-circle" aria-hidden="true"></i>
-          <span>Paramètres issus des valeurs par défaut. Après enregistrement, ils ne seront plus réinitialisés automatiquement.</span>
+          <span>Paramètres standards en vigueur. Après enregistrement, vos valeurs personnalisées seront conservées et ne seront plus mises à jour automatiquement.</span>
         </div>
       }
 
@@ -88,8 +119,8 @@ import { AccountingService, IncomeTaxYearParameterDto } from '../services/accoun
         <div class="card fp-card">
           <h3 class="fp-title">Acomptes, reports et arrondi</h3>
           <div class="fp-row"><label>Taux d'un acompte</label><input type="number" step="0.01" min="0" max="1" [(ngModel)]="m.acompteRate" /><span class="fp-hint">0.30 = 30 % de l'IS N-1</span></div>
-          <div class="fp-row"><label>Nombre d'acomptes</label><input type="number" step="1" min="0" [(ngModel)]="m.acompteCount" /></div>
-          <div class="fp-row"><label>Report des déficits (années)</label><input type="number" step="1" min="0" [(ngModel)]="m.deficitCarryForwardYears" /><span class="fp-hint">amortissements différés : illimité</span></div>
+          <div class="fp-row"><label>Nombre d'acomptes</label><input type="number" step="1" min="0" max="12" [(ngModel)]="m.acompteCount" /></div>
+          <div class="fp-row"><label>Report des déficits (années)</label><input type="number" step="1" min="1" max="20" [(ngModel)]="m.deficitCarryForwardYears" /><span class="fp-hint">amortissements différés : illimité</span></div>
           <div class="fp-row fp-row--check">
             <label for="fp-round">Arrondir l'assiette au dinar</label>
             <input id="fp-round" type="checkbox" [(ngModel)]="m.roundTaxableToDinar" />
@@ -99,7 +130,10 @@ import { AccountingService, IncomeTaxYearParameterDto } from '../services/accoun
         <div class="card fp-card fp-card--wide">
           <h3 class="fp-title">Barème IRPP (BIC — régime réel)</h3>
           <p class="fp-hint">Tableau JSON : <code>[{{ '{' }}"lower":0,"rate":0{{ '}' }}, …]</code> — <em>lower</em> = borne inférieure annuelle (TND), <em>rate</em> = taux en %.</p>
-          <textarea rows="4" class="fp-json" [(ngModel)]="m.irppBracketsJson" aria-label="Barème IRPP en JSON"></textarea>
+          <textarea rows="4" class="fp-json" [class.fp-json--invalid]="!!irppValidationError()" [(ngModel)]="m.irppBracketsJson" aria-label="Barème IRPP en JSON"></textarea>
+          @if (irppValidationError(); as verr) {
+            <span class="fp-json-inline-error" role="alert">{{ verr }}</span>
+          }
         </div>
       </div>
     }
@@ -107,10 +141,11 @@ import { AccountingService, IncomeTaxYearParameterDto } from '../services/accoun
   styles: `
     @use '../shared/accounting-layout';
     .fp-year-input { max-width:7rem; }
-    .fp-validate-banner, .fp-info-banner, .fp-default-banner { display:flex; align-items:flex-start; gap:var(--spacing-2); margin-bottom:var(--spacing-4); padding:var(--spacing-3) var(--spacing-4); border-radius:var(--radius-md); font-size:var(--font-size-sm); }
+    .fp-validate-banner, .fp-info-banner, .fp-default-banner, .fp-json-error-banner { display:flex; align-items:flex-start; gap:var(--spacing-2); margin-bottom:var(--spacing-4); padding:var(--spacing-3) var(--spacing-4); border-radius:var(--radius-md); font-size:var(--font-size-sm); }
     .fp-validate-banner { background:var(--color-warning-50,#fffbeb); border:1px solid var(--color-warning-200,#fde68a); color:var(--color-warning-800,#92400e); }
     .fp-info-banner { background:var(--color-success-50,#f0fdf4); border:1px solid var(--color-success-200,#bbf7d0); color:var(--color-success-700,#15803d); }
     .fp-default-banner { background:var(--color-primary-50,#eff6ff); border:1px solid var(--color-primary-200,#bfdbfe); color:var(--color-primary-700,#1d4ed8); }
+    .fp-json-error-banner { background:var(--color-danger-50,#fef2f2); border:1px solid var(--color-danger-200,#fecaca); color:var(--color-danger-700,#b91c1c); }
     .fp-grid { display:grid; grid-template-columns:1fr; gap:var(--spacing-4); }
     @media (min-width:900px){ .fp-grid { grid-template-columns:1fr 1fr; align-items:start; } }
     .fp-card { padding:var(--spacing-4) var(--spacing-5); border-radius:var(--radius-lg); box-shadow:var(--shadow-sm); }
@@ -122,6 +157,10 @@ import { AccountingService, IncomeTaxYearParameterDto } from '../services/accoun
     .fp-row input[type=number] { padding:0.4rem 0.55rem; border:1px solid var(--color-border-default,#cbd5e1); border-radius:var(--radius-md); text-align:right; font-variant-numeric:tabular-nums; }
     .fp-hint { font-size:var(--font-size-xs); color:var(--color-text-tertiary); }
     .fp-json { width:100%; font-family:monospace; font-size:var(--font-size-sm); padding:var(--spacing-2); border:1px solid var(--color-border-default,#cbd5e1); border-radius:var(--radius-md); }
+    .fp-json--invalid { border-color:var(--color-danger-600,#dc2626); }
+    .fp-year-error, .fp-json-inline-error { display:block; font-size:var(--font-size-xs); color:var(--color-danger-600,#dc2626); margin-top:0.2rem; }
+    .fp-dirty-indicator { display:flex; align-items:center; gap:var(--spacing-2); margin:0 0 var(--spacing-2); font-size:var(--font-size-xs); color:var(--color-warning-700,#b45309); }
+    .fp-dirty-indicator i { font-size:0.5rem; }
   `
 })
 export class FiscalParametersComponent implements OnInit {
@@ -129,36 +168,192 @@ export class FiscalParametersComponent implements OnInit {
 
   fiscalYear = new Date().getFullYear() - 1;
   model: IncomeTaxYearParameterDto | null = null;
+  private snapshot: IncomeTaxYearParameterDto | null = null;
   readonly loading = signal(false);
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
   readonly info = signal<string | null>(null);
+  /** Erreur de parsing JSON constatée sur la valeur reçue du serveur (BUG #015). */
+  readonly jsonError = signal<string | null>(null);
+
+  private readonly loadRequests$ = new Subject<number>();
+
+  constructor() {
+    this.loadRequests$
+      .pipe(
+        switchMap(year =>
+          this.api.getIncomeTaxParameters(year).pipe(
+            catchError(() => of<FiscalParametersApiResponse>({ success: false, error: 'Erreur réseau' }))
+          )
+        ),
+        takeUntilDestroyed()
+      )
+      .subscribe(res => {
+        this.loading.set(false);
+        if (res.success && res.data) {
+          this.model = { ...res.data };
+          this.snapshot = { ...res.data };
+          this.jsonError.set(this.validateIrppJsonSyntax(res.data.irppBracketsJson));
+        } else {
+          this.error.set(res.error ?? 'Erreur');
+        }
+      });
+  }
 
   ngOnInit(): void {
     this.load();
   }
 
   load(): void {
-    const y = Math.min(2100, Math.max(2000, Math.floor(Number(this.fiscalYear)) || new Date().getFullYear()));
+    if (!this.confirmDiscardIfDirty()) return;
+    const y = this.clampYear(this.fiscalYear);
     this.fiscalYear = y;
     this.loading.set(true);
     this.error.set(null);
     this.info.set(null);
-    this.api.getIncomeTaxParameters(y).subscribe({
-      next: res => {
-        this.loading.set(false);
-        if (res.success && res.data) this.model = { ...res.data };
-        else this.error.set(res.error ?? 'Erreur');
-      },
-      error: () => {
-        this.loading.set(false);
-        this.error.set('Erreur réseau');
+    this.jsonError.set(null);
+    this.loadRequests$.next(y);
+  }
+
+  /** Année saisie via l'input « Exercice » : demande confirmation si des modifications sont en cours. */
+  onYearInputChange(value: number): void {
+    if (this.isDirty() && !confirm(UNSAVED_CHANGES_MESSAGE)) {
+      return;
+    }
+    this.fiscalYear = value;
+  }
+
+  isYearValid(): boolean {
+    const y = Number(this.fiscalYear);
+    return Number.isInteger(y) && y >= MIN_FISCAL_YEAR && y <= MAX_FISCAL_YEAR;
+  }
+
+  private clampYear(y: number): number {
+    return Math.min(MAX_FISCAL_YEAR, Math.max(MIN_FISCAL_YEAR, Math.floor(Number(y)) || new Date().getFullYear()));
+  }
+
+  /** État « modifications non enregistrées » : compare le modèle courant au dernier instantané chargé/sauvegardé. */
+  isDirty(): boolean {
+    if (!this.snapshot || !this.model) return false;
+    return JSON.stringify(this.model) !== JSON.stringify(this.snapshot);
+  }
+
+  private confirmDiscardIfDirty(): boolean {
+    if (!this.isDirty()) return true;
+    return confirm(UNSAVED_CHANGES_MESSAGE);
+  }
+
+  /** Garde fonctionnelle de désactivation de route (T23) : confirmation si des modifications sont en cours. */
+  canDeactivate(): boolean {
+    return this.confirmDiscardIfDirty();
+  }
+
+  /** Erreur de syntaxe JSON simple (BUG #015) — utilisée à l'affichage du bandeau après chargement. */
+  private validateIrppJsonSyntax(raw: string): string | null {
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return 'Le barème IRPP reçu du serveur est invalide (tableau attendu).';
+      return null;
+    } catch {
+      return 'Le barème IRPP reçu du serveur est illisible (JSON invalide) — vérifiez avant de sauvegarder.';
+    }
+  }
+
+  /**
+   * Valide le barème IRPP saisi (T22, réplique côté client des règles serveur T13) : JSON valide,
+   * tableau, `lower ≥ 0` strictement croissants et uniques, `rate ∈ [0;100]`.
+   * Retourne `null` si valide, sinon un message d'erreur en français.
+   */
+  irppValidationError(): string | null {
+    if (!this.model) return null;
+    const raw = this.model.irppBracketsJson;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return 'Barème IRPP : JSON invalide.';
+    }
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return 'Barème IRPP : un tableau non vide de tranches est requis.';
+    }
+    let previousLower = -1;
+    for (const entry of parsed) {
+      if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+        return 'Barème IRPP : chaque tranche doit être un objet { lower, rate }.';
       }
-    });
+      const lower = (entry as Record<string, unknown>)['lower'];
+      const rate = (entry as Record<string, unknown>)['rate'];
+      if (typeof lower !== 'number' || !Number.isFinite(lower) || lower < 0) {
+        return 'Barème IRPP : chaque « lower » doit être un nombre ≥ 0.';
+      }
+      if (typeof rate !== 'number' || !Number.isFinite(rate) || rate < 0 || rate > 100) {
+        return 'Barème IRPP : chaque « rate » doit être compris entre 0 et 100.';
+      }
+      if (lower <= previousLower) {
+        return 'Barème IRPP : les bornes « lower » doivent être strictement croissantes et uniques.';
+      }
+      previousLower = lower;
+    }
+    return null;
+  }
+
+  /** Re-validation des bornes numériques en TypeScript (BUG #017) — les attributs HTML min/max n'empêchent pas le collage. */
+  private numericBoundsError(): string | null {
+    if (!this.model) return null;
+    const m = this.model;
+    const rateFields: Array<[number, string]> = [
+      [m.isStandardRate, 'Taux IS de droit commun'],
+      [m.isReducedRate, 'Taux IS réduit'],
+      [m.isSectorRate, 'Taux IS sectoriel majoré'],
+      [m.minTaxRate, "Taux du minimum d'impôt"],
+      [m.minTaxReducedRate, "Taux réduit du minimum d'impôt"],
+      [m.cssRate, 'Taux CSS'],
+      [m.acompteRate, "Taux d'un acompte"]
+    ];
+    for (const [value, label] of rateFields) {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 0 || n > 1) {
+        return `${label} : doit être compris entre 0 et 1.`;
+      }
+    }
+    const floorFields: Array<[number, string]> = [
+      [m.minTaxFloorTnd, "Plancher du minimum d'impôt"],
+      [m.minTaxFloorReducedTnd, "Plancher réduit du minimum d'impôt"],
+      [m.cssFloorTnd, 'Plancher CSS']
+    ];
+    for (const [value, label] of floorFields) {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 0) {
+        return `${label} : doit être positif ou nul.`;
+      }
+    }
+    const acompteCount = Number(m.acompteCount);
+    if (!Number.isInteger(acompteCount) || acompteCount < 0 || acompteCount > 12) {
+      return "Nombre d'acomptes : doit être compris entre 0 et 12.";
+    }
+    const deficitYears = Number(m.deficitCarryForwardYears);
+    if (!Number.isInteger(deficitYears) || deficitYears < 1 || deficitYears > 20) {
+      return 'Report des déficits (années) : doit être compris entre 1 et 20.';
+    }
+    return null;
   }
 
   save(): void {
     if (!this.model) return;
+    if (!this.isYearValid()) {
+      this.error.set('Exercice invalide : doit être compris entre 2000 et 2100.');
+      return;
+    }
+    const irppError = this.irppValidationError();
+    if (irppError) {
+      this.error.set(irppError);
+      return;
+    }
+    const boundsError = this.numericBoundsError();
+    if (boundsError) {
+      this.error.set(boundsError);
+      return;
+    }
     this.saving.set(true);
     this.error.set(null);
     this.info.set(null);
@@ -167,6 +362,8 @@ export class FiscalParametersComponent implements OnInit {
         this.saving.set(false);
         if (res.success && res.data) {
           this.model = { ...res.data };
+          this.snapshot = { ...res.data };
+          this.jsonError.set(this.validateIrppJsonSyntax(res.data.irppBracketsJson));
           this.info.set('Paramètres enregistrés — ils ne seront plus réinitialisés automatiquement.');
         } else {
           this.error.set(res.error ?? "L'enregistrement a échoué.");
