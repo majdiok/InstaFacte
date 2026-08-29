@@ -165,12 +165,16 @@ export const ACCOUNTING_ROUTES: Routes = [
   },
   {
     path: 'balance-sheet',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.accounting.read] },
     loadComponent: () =>
       import('./balance-sheet/balance-sheet.component').then(m => m.BalanceSheetComponent),
     title: 'Bilan - InstaFact'
   },
   {
     path: 'income-statement',
+    canActivate: [permissionGuard],
+    data: { permissions: [PERMISSIONS.accounting.read] },
     loadComponent: () =>
       import('./income-statement/income-statement.component').then(m => m.IncomeStatementComponent),
     title: 'Compte de résultat - InstaFact'
