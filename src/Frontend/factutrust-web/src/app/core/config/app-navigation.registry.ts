@@ -790,7 +790,10 @@ export const ALL_NAV_ITEMS: NavItem[] = [
         route: '/treasury',
         icon: 'fa-solid fa-money-check-dollar',
         modules: [M.Treasury],
-        permissionsAll: ['treasury:read']
+        // `/treasury` redirige vers `/treasury/cash-forecast`, gardée par `treasury_forecast:view`
+        // (permission.guard + layout-module-policy.ts). `treasury:read` n'existe dans aucune
+        // policy backend : cette entrée était donc invisible pour tout le monde (bug corrigé).
+        permissionsAll: [PERMISSIONS.treasuryForecast.view]
       },
       {
         label: 'Clôture',

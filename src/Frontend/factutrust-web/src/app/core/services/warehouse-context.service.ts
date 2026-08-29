@@ -5,6 +5,7 @@ import { Observable, of } from 'rxjs';
 import { map, catchError, switchMap } from 'rxjs/operators';
 import { AuthService } from './auth.service';
 import { StockService, Warehouse } from './stock.service';
+import { PERMISSIONS } from '@core/config/permission-keys';
 import {
   clearWarehouseStorage,
   readWarehouseIdForUser,
@@ -59,7 +60,13 @@ export class WarehouseContextService {
           if (!id) {
             return of<Warehouse | null>(null);
           }
-          return this.stockService.getWarehouses(true).pipe(
+          if (!this.authService.hasPermission(PERMISSIONS.stock.read)) {
+            // Sélection persistée périmée sans stock:read : purge le storage pour qu'elle ne
+            // redéclenche pas ce pipeline au prochain login. Aucun appel API.
+            clearWarehouseStorage();
+            return of<Warehouse | null>(null);
+          }
+          return this.stockService.getWarehouses(true, { skipGlobalErrorUi: true }).pipe(
             map((res) => {
               const list: Warehouse[] = res.success && res.data ? res.data : [];
               return list.find((w) => w.id === id) ?? null;
@@ -108,7 +115,15 @@ export class WarehouseContextService {
       return;
     }
     const safeUrl = returnUrl?.startsWith('/') ? returnUrl : '/dashboard';
-    this.stockService.getWarehouses(true).subscribe({
+    if (!this.authService.hasPermission(PERMISSIONS.stock.read)) {
+      // Sans stock:read : pas d'appel API ; purge l'état résolu (via le signal, qui recascade
+      // dans le pipeline du constructeur) et le storage, puis navigue directement.
+      this.selectedId.set(null);
+      clearWarehouseStorage();
+      this.router.navigateByUrl(safeUrl);
+      return;
+    }
+    this.stockService.getWarehouses(true, { skipGlobalErrorUi: true }).subscribe({
       next: (res) => {
         const list: Warehouse[] = res.success && res.data ? res.data : [];
         this.applyResolution(list, safeUrl);
@@ -126,7 +141,13 @@ export class WarehouseContextService {
     if (this.authService.isAccountingFirm()) {
       return of(true);
     }
-    return this.stockService.getWarehouses(true).pipe(
+    if (!this.authService.hasPermission(PERMISSIONS.stock.read)) {
+      // Sans stock:read : pas d'appel API ; purge l'état résolu et le storage, retourne true.
+      this.selectedId.set(null);
+      clearWarehouseStorage();
+      return of(true);
+    }
+    return this.stockService.getWarehouses(true, { skipGlobalErrorUi: true }).pipe(
       map((res) => {
         const list: Warehouse[] = res.success && res.data ? res.data : [];
         const tree = this.resolveListForGuard(list, returnUrl);

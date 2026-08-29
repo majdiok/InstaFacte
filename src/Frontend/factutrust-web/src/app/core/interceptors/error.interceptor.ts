@@ -121,15 +121,26 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
             return throwError(() => processedError);
           }
 
-          // 403 permission / policy (not tenant context): modale bloquante (pas de toast doublon)
+          // 403 permission / policy (not tenant context) : lecture (GET) → toast non bloquant ;
+          // écriture (POST/PATCH/PUT/DELETE) → modale bloquante actuelle (conservée).
+          // `SKIP_ERROR_TOAST` reste prioritaire dans les deux cas (silence total).
           if (
             processedError.status === 403 &&
             !isLogoutCall &&
             !isContextOrTenantError(processedError.status, errorMessage)
           ) {
             if (!isRegistrationEndpoint && !skipGlobalErrorUi) {
-              const dedupeKey = `${req.method}|${req.url}|${errorMessage}`;
-              forbiddenDialog.showAccessDenied(errorMessage, dedupeKey);
+              if (req.method === 'GET') {
+                toastService.add({
+                  severity: 'warn',
+                  summary: 'Accès refusé',
+                  detail: errorMessage,
+                  life: 5000
+                });
+              } else {
+                const dedupeKey = `${req.method}|${req.url}|${errorMessage}`;
+                forbiddenDialog.showAccessDenied(errorMessage, dedupeKey);
+              }
             }
             return throwError(() => processedError);
           }

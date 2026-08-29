@@ -206,10 +206,20 @@ export class StockService {
 
     // --- Warehouses ---
 
-    getWarehouses(activeOnly: boolean = true): Observable<ApiResponse<Warehouse[]>> {
+    getWarehouses(
+        activeOnly: boolean = true,
+        options?: { skipGlobalErrorUi?: boolean }
+    ): Observable<ApiResponse<Warehouse[]>> {
         const params = new HttpParams().set('activeOnly', activeOnly.toString());
+        const skipGlobalErrorUi = options?.skipGlobalErrorUi === true;
+        const httpOpts: { params: HttpParams; context?: ReturnType<typeof createHttpContextSkipGlobalErrorUi> } = {
+            params
+        };
+        if (skipGlobalErrorUi) {
+            httpOpts.context = createHttpContextSkipGlobalErrorUi();
+        }
         return this.http
-            .get<ApiResponse<Warehouse[]> | Warehouse[]>(`${this.API_URL}/warehouses`, { params })
+            .get<ApiResponse<Warehouse[]> | Warehouse[]>(`${this.API_URL}/warehouses`, httpOpts)
             .pipe(
                 map((response) => {
                     if (Array.isArray(response)) {

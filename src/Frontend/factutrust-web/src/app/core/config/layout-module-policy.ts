@@ -6,6 +6,7 @@ import { AppModule } from '@core/models/app-module';
  */
 export const MODULES_REQUIRED_BY_FIRST_SEGMENT: Record<string, AppModule[]> = {
   dashboard: [],
+  'ai-assistant': [AppModule.AI],
   invoices: [AppModule.Sales],
   quotes: [AppModule.Sales],
   'delivery-notes': [AppModule.Sales],
@@ -37,6 +38,7 @@ export const MODULES_REQUIRED_BY_FIRST_SEGMENT: Record<string, AppModule[]> = {
  * Omitted segments: module check only (or none).
  */
 export const PERMISSIONS_ALL_REQUIRED_BY_FIRST_SEGMENT: Record<string, string[]> = {
+  'ai-assistant': ['ai:chat'],
   quotes: ['quotes:read'],
   'delivery-notes': ['delivery_notes:read'],
   'return-notes': ['return_notes:read'],
