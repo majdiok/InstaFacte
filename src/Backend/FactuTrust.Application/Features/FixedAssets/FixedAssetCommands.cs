@@ -68,7 +68,8 @@ public sealed class CreateFixedAssetCommandHandler : IRequestHandler<CreateFixed
             r.Location,
             r.SupplierId,
             r.DepreciationMethod,
-            r.AccelerationCoefficient ?? 1m);
+            r.AccelerationCoefficient ?? 1m,
+            FixedAssetVatRules.IsVatCapitalized(category.Code, assetAccount));
 
         if (create.IsFailure)
             return Result.Failure<Guid>(create.Error);
@@ -258,7 +259,8 @@ public sealed class UpdateFixedAssetCommandHandler : IRequestHandler<UpdateFixed
             r.DepreciationMethod,
             r.AccelerationCoefficient,
             category.Id,
-            r.VatAmount);
+            r.VatAmount,
+            FixedAssetVatRules.IsVatCapitalized(category.Code, assetAccount));
 
         if (update.IsFailure)
             return Result.Failure<Guid>(update.Error);

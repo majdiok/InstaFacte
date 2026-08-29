@@ -100,7 +100,8 @@ public sealed record FixedAssetDto(
     string? CreditAccountNumber,
     Guid? SupplierId,
     Guid? SupplierInvoiceId,
-    Guid? SupplierInvoiceLineId);
+    Guid? SupplierInvoiceLineId,
+    bool VatCapitalized);
 
 public sealed record DepreciationScheduleLineDto(
     Guid Id,

@@ -71,6 +71,97 @@ public sealed class CreateFixedAssetsFromSupplierInvoiceHandlerTests
     }
 
     [Fact]
+    public async Task Handle_PassengerVehicleCategory_CreatesDraft_WithVatCapitalizedTrue()
+    {
+        var category = DepreciationRateCategory.Create(
+            "VEH_PASS", "Véhicule de tourisme", 20m, "2244", "2824", "68112",
+            isNonDepreciable: false, sortOrder: 1);
+
+        var invoice = BuildSupplierInvoiceWithAssetLine(category.Id, assetAccountNumber: "2244");
+
+        var supplierInvoices = new Mock<ISupplierInvoiceRepository>();
+        supplierInvoices
+            .Setup(x => x.GetByIdWithLinesAsync(invoice.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(invoice);
+
+        FixedAsset? saved = null;
+        var fixedAssets = new Mock<IFixedAssetRepository>();
+        fixedAssets
+            .Setup(x => x.CountByYearPrefixAsync(invoice.InvoiceDate.Year, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+        fixedAssets
+            .Setup(x => x.AddAsync(It.IsAny<FixedAsset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((FixedAsset asset, CancellationToken _) =>
+            {
+                saved = asset;
+                return asset;
+            });
+
+        var categories = new Mock<IDepreciationRateCategoryRepository>();
+        categories
+            .Setup(x => x.GetByIdAsync(category.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(category);
+
+        var handler = new CreateFixedAssetsFromSupplierInvoiceHandler(
+            supplierInvoices.Object,
+            fixedAssets.Object,
+            categories.Object,
+            NullLogger<CreateFixedAssetsFromSupplierInvoiceHandler>.Instance,
+            Options.Create(new FixedAssetsOptions { Enabled = true }));
+
+        await handler.Handle(new SupplierInvoiceCreatedForAccountingNotification(invoice.Id), CancellationToken.None);
+
+        Assert.NotNull(saved);
+        Assert.True(saved!.VatCapitalized);
+        Assert.Equal("2244", saved.AssetAccountNumber);
+    }
+
+    [Fact]
+    public async Task Handle_OtherCategory_CreatesDraft_WithVatCapitalizedFalse()
+    {
+        var category = DepreciationRateCategory.Create(
+            "OTHER", "Autres immobilisations", 10m, "228", "2828", "68112",
+            isNonDepreciable: false, sortOrder: 99);
+
+        var invoice = BuildSupplierInvoiceWithAssetLine(category.Id);
+
+        var supplierInvoices = new Mock<ISupplierInvoiceRepository>();
+        supplierInvoices
+            .Setup(x => x.GetByIdWithLinesAsync(invoice.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(invoice);
+
+        FixedAsset? saved = null;
+        var fixedAssets = new Mock<IFixedAssetRepository>();
+        fixedAssets
+            .Setup(x => x.CountByYearPrefixAsync(invoice.InvoiceDate.Year, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+        fixedAssets
+            .Setup(x => x.AddAsync(It.IsAny<FixedAsset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((FixedAsset asset, CancellationToken _) =>
+            {
+                saved = asset;
+                return asset;
+            });
+
+        var categories = new Mock<IDepreciationRateCategoryRepository>();
+        categories
+            .Setup(x => x.GetByIdAsync(category.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(category);
+
+        var handler = new CreateFixedAssetsFromSupplierInvoiceHandler(
+            supplierInvoices.Object,
+            fixedAssets.Object,
+            categories.Object,
+            NullLogger<CreateFixedAssetsFromSupplierInvoiceHandler>.Instance,
+            Options.Create(new FixedAssetsOptions { Enabled = true }));
+
+        await handler.Handle(new SupplierInvoiceCreatedForAccountingNotification(invoice.Id), CancellationToken.None);
+
+        Assert.NotNull(saved);
+        Assert.False(saved!.VatCapitalized);
+    }
+
+    [Fact]
     public async Task Handle_WhenFeatureDisabled_ShouldSkipCreation()
     {
         var category = DepreciationRateCategory.Create(
@@ -96,7 +187,7 @@ public sealed class CreateFixedAssetsFromSupplierInvoiceHandlerTests
         fixedAssets.Verify(x => x.AddAsync(It.IsAny<FixedAsset>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    private static SupplierInvoice BuildSupplierInvoiceWithAssetLine(Guid categoryId)
+    private static SupplierInvoice BuildSupplierInvoiceWithAssetLine(Guid categoryId, string assetAccountNumber = "228")
     {
         var address = Address.Create("1 rue de test", "Tunis", "Tunis").Value;
         var email = Email.Create("supplier@test.com").Value;
@@ -135,7 +226,7 @@ public sealed class CreateFixedAssetsFromSupplierInvoiceHandlerTests
 
         var invoice = invoiceResult.Value;
         invoice.ApplyLineAssetClassifications([
-            (LineNumber: 1, IsFixedAsset: true, AssetAccountNumber: "228", DepreciationRateCategoryId: categoryId)
+            (LineNumber: 1, IsFixedAsset: true, AssetAccountNumber: assetAccountNumber, DepreciationRateCategoryId: categoryId)
         ]);
         return invoice;
     }

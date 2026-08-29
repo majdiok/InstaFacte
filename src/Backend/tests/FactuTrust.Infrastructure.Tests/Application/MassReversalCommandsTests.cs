@@ -142,7 +142,8 @@ public sealed class MassReversalCommandsTests
 
         var service = new AccountingService(
             new Mock<IChartOfAccountRepository>().Object, periodService.Object, journals.Object,
-            new Mock<IWithholdingTaxRepository>().Object, new Mock<ITenantDbContextFactory>().Object,
+            new Mock<IWithholdingTaxRepository>().Object, new Mock<IDepreciationRateCategoryRepository>().Object,
+            new Mock<ITenantDbContextFactory>().Object,
             NullLogger<AccountingService>.Instance,
             Options.Create(new AccountingSettings { ManualReversalEnabled = true }));
 
@@ -187,7 +188,8 @@ public sealed class MassReversalCommandsTests
 
         var service = new AccountingService(
             new Mock<IChartOfAccountRepository>().Object, periodService.Object, journals.Object,
-            new Mock<IWithholdingTaxRepository>().Object, new Mock<ITenantDbContextFactory>().Object,
+            new Mock<IWithholdingTaxRepository>().Object, new Mock<IDepreciationRateCategoryRepository>().Object,
+            new Mock<ITenantDbContextFactory>().Object,
             NullLogger<AccountingService>.Instance,
             Options.Create(new AccountingSettings { ManualReversalEnabled = true }));
 
@@ -217,6 +219,7 @@ public sealed class MassReversalCommandsTests
         var service = new AccountingService(
             new Mock<IChartOfAccountRepository>().Object, new Mock<IAccountingPeriodService>().Object,
             journals.Object, new Mock<IWithholdingTaxRepository>().Object,
+            new Mock<IDepreciationRateCategoryRepository>().Object,
             new Mock<ITenantDbContextFactory>().Object, NullLogger<AccountingService>.Instance,
             Options.Create(new AccountingSettings { ManualReversalEnabled = false }));
 

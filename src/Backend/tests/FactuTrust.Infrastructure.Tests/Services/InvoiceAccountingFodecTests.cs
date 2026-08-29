@@ -73,6 +73,7 @@ public sealed class InvoiceAccountingFodecTests
 
         var service = new AccountingService(
             chart.Object, periodService.Object, journals.Object, withholding.Object,
+            new Mock<IDepreciationRateCategoryRepository>().Object,
             ctxFactory.Object, NullLogger<AccountingService>.Instance, settings);
 
         return (service, captured, chart);

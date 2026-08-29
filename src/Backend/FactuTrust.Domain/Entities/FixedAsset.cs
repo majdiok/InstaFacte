@@ -30,6 +30,7 @@ public sealed class FixedAsset : AggregateRoot
     public decimal CapitalizedFees { get; private set; }
     public decimal ResidualValue { get; private set; }
     public decimal VatAmount { get; private set; }
+    public bool VatCapitalized { get; private set; }
     public DateTime AcquisitionDate { get; private set; }
     public DateTime? InServiceDate { get; private set; }
     public DateTime? DisposalDate { get; private set; }
@@ -60,7 +61,7 @@ public sealed class FixedAsset : AggregateRoot
 
     public decimal DepreciableBase => Math.Max(0, TotalCapitalizedCost - ResidualValue);
 
-    public decimal TotalCapitalizedCost => AcquisitionCost + CapitalizedFees;
+    public decimal TotalCapitalizedCost => AcquisitionCost + CapitalizedFees + (VatCapitalized ? VatAmount : 0);
 
     public static Result<FixedAsset> Create(
         string inventoryNumber,
@@ -80,7 +81,8 @@ public sealed class FixedAsset : AggregateRoot
         string? location = null,
         Guid? supplierId = null,
         DepreciationMethod depreciationMethod = DepreciationMethod.Linear,
-        decimal accelerationCoefficient = 1m)
+        decimal accelerationCoefficient = 1m,
+        bool vatCapitalized = false)
     {
         inventoryNumber = inventoryNumber?.Trim() ?? string.Empty;
         label = label?.Trim() ?? string.Empty;
@@ -98,7 +100,8 @@ public sealed class FixedAsset : AggregateRoot
             return Result.Failure<FixedAsset>(Error.Validation("Amount", "Les montants ne peuvent pas être négatifs"));
         if (acquisitionCost + capitalizedFees <= 0)
             return Result.Failure<FixedAsset>(Error.Validation("AcquisitionCost", "Le coût d'acquisition doit être positif"));
-        if (residualValue >= acquisitionCost + capitalizedFees)
+        var totalForValidation = acquisitionCost + capitalizedFees + (vatCapitalized ? vatAmount : 0m);
+        if (residualValue >= totalForValidation)
             return Result.Failure<FixedAsset>(Error.Validation("ResidualValue", "La valeur résiduelle doit être inférieure au coût total"));
         if (string.IsNullOrEmpty(assetAccountNumber) || string.IsNullOrEmpty(depreciationAccountNumber) || string.IsNullOrEmpty(expenseAccountNumber))
             return Result.Failure<FixedAsset>(Error.Validation("AccountNumber", "Les comptes comptables sont obligatoires"));
@@ -111,7 +114,7 @@ public sealed class FixedAsset : AggregateRoot
         if (depreciationMethod != DepreciationMethod.Linear && depreciationRatePercent <= 0)
             return Result.Failure<FixedAsset>(Error.Validation("DepreciationMethod", "Cette méthode d'amortissement nécessite un taux positif (bien amortissable)"));
 
-        var total = acquisitionCost + capitalizedFees;
+        var total = acquisitionCost + capitalizedFees + (vatCapitalized ? vatAmount : 0m);
         var asset = new FixedAsset
         {
             InventoryNumber = inventoryNumber,
@@ -129,6 +132,7 @@ public sealed class FixedAsset : AggregateRoot
             CapitalizedFees = capitalizedFees,
             ResidualValue = residualValue,
             VatAmount = vatAmount,
+            VatCapitalized = vatCapitalized,
             AcquisitionDate = acquisitionDate.Date,
             Location = string.IsNullOrWhiteSpace(location) ? null : location.Trim(),
             SupplierId = supplierId,
@@ -166,7 +170,8 @@ public sealed class FixedAsset : AggregateRoot
         DepreciationMethod? depreciationMethod = null,
         decimal? accelerationCoefficient = null,
         Guid? depreciationRateCategoryId = null,
-        decimal? vatAmount = null)
+        decimal? vatAmount = null,
+        bool? vatCapitalized = null)
     {
         if (Status != FixedAssetStatus.Draft)
             return Result.Failure(Error.Validation("Status", "Seuls les immobilisations en brouillon peuvent être modifiées"));
@@ -180,7 +185,10 @@ public sealed class FixedAsset : AggregateRoot
             return Result.Failure(Error.Validation("VatAmount", "Le montant de TVA ne peut pas être négatif"));
         if (acquisitionCost + capitalizedFees <= 0)
             return Result.Failure(Error.Validation("AcquisitionCost", "Le coût d'acquisition doit être positif"));
-        if (residualValue >= acquisitionCost + capitalizedFees)
+        var effectiveVatAmount = vatAmount ?? VatAmount;
+        var effectiveVatCapitalized = vatCapitalized ?? VatCapitalized;
+        var totalForValidation = acquisitionCost + capitalizedFees + (effectiveVatCapitalized ? effectiveVatAmount : 0m);
+        if (residualValue >= totalForValidation)
             return Result.Failure(Error.Validation("ResidualValue", "La valeur résiduelle doit être inférieure au coût total"));
 
         var method = depreciationMethod ?? DepreciationMethod;
@@ -208,6 +216,7 @@ public sealed class FixedAsset : AggregateRoot
             DepreciationRateCategoryId = categoryId;
         if (vatAmount is { } vat)
             VatAmount = vat;
+        VatCapitalized = effectiveVatCapitalized;
         AssetAccountNumber = assetAccountNumber.Trim();
         DepreciationAccountNumber = depreciationAccountNumber.Trim();
         ExpenseAccountNumber = expenseAccountNumber.Trim();

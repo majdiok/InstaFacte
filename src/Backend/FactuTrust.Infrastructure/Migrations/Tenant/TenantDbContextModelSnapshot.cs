@@ -2386,6 +2386,10 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<bool>("VatCapitalized")
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
                     b.Property<int>("Version")
                         .IsConcurrencyToken()
                         .HasColumnType("int");

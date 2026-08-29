@@ -1,6 +1,7 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Configuration;
 using FactuTrust.Application.Features.Accounting.Notifications;
+using FactuTrust.Application.Features.FixedAssets;
 using FactuTrust.Domain.Entities;
 using MediatR;
 using Microsoft.Extensions.Logging;
@@ -64,6 +65,7 @@ public sealed class CreateFixedAssetsFromSupplierInvoiceHandler
             var assetAccount = line.AssetAccountNumber ?? category.DefaultAssetAccount;
             var depreciationAccount = category.DefaultDepreciationAccount;
             var expenseAccount = category.DefaultExpenseAccount;
+            var vatCapitalized = FixedAssetVatRules.IsVatCapitalized(category.Code, assetAccount);
 
             var create = FixedAsset.Create(
                 $"IMMO-{year}-{seq:D4}",
@@ -80,7 +82,8 @@ public sealed class CreateFixedAssetsFromSupplierInvoiceHandler
                 invoice.InvoiceDate,
                 line.ProductDescription,
                 line.VatAmount.Amount,
-                supplierId: invoice.SupplierId);
+                supplierId: invoice.SupplierId,
+                vatCapitalized: vatCapitalized);
 
             if (create.IsFailure)
             {

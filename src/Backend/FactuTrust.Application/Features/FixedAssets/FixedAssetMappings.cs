@@ -39,7 +39,8 @@ internal static class FixedAssetMappings
             a.CreditAccountNumber,
             a.SupplierId,
             a.SupplierInvoiceId,
-            a.SupplierInvoiceLineId);
+            a.SupplierInvoiceLineId,
+            a.VatCapitalized);
 
     public static DepreciationScheduleLineDto ToDto(DepreciationScheduleLine l) =>
         new(l.Id, l.FiscalYear, l.PeriodMonth, l.OpeningNbv, l.NormalAnnualAmount,

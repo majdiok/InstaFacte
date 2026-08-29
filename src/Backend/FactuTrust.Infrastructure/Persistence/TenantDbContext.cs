@@ -4331,6 +4331,7 @@ public partial class TenantDbContext : DbContext
             entity.Property(e => e.CapitalizedFees).HasPrecision(18, 3);
             entity.Property(e => e.ResidualValue).HasPrecision(18, 3);
             entity.Property(e => e.VatAmount).HasPrecision(18, 3);
+            entity.Property(e => e.VatCapitalized).HasDefaultValue(false);
             entity.Property(e => e.DepreciationRatePercent).HasPrecision(8, 4);
             entity.Property(e => e.UsefulLifeYears).HasPrecision(8, 2);
             entity.Property(e => e.AccelerationCoefficient).HasPrecision(8, 4).HasDefaultValue(1m);
