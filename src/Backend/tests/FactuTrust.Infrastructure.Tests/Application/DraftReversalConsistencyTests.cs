@@ -447,6 +447,7 @@ public sealed class DraftReversalConsistencyTests
 
         var service = new AccountingService(
             chart.Object, periodService.Object, journals.Object, withholding.Object,
+            new Mock<IDepreciationRateCategoryRepository>().Object,
             ctxFactory.Object, NullLogger<AccountingService>.Instance, settings);
 
         var result = await service.ReverseInvoiceSaleEntryAsync(Guid.NewGuid(), "FAC-1", CancellationToken.None);

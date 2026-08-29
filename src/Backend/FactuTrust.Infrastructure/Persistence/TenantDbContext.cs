@@ -214,6 +214,7 @@ public partial class TenantDbContext : DbContext
     public DbSet<LoanScheduleLine> LoanScheduleLines => Set<LoanScheduleLine>();
     public DbSet<NctNoteOverride> NctNoteOverrides => Set<NctNoteOverride>();
     public DbSet<FixedAssetEvent> FixedAssetEvents => Set<FixedAssetEvent>();
+    public DbSet<FixedAssetSettings> FixedAssetSettings => Set<FixedAssetSettings>();
 
     // AI Assistant
     public DbSet<Conversation> Conversations => Set<Conversation>();
@@ -471,6 +472,7 @@ public partial class TenantDbContext : DbContext
         ConfigureFixedAsset(builder);
         ConfigureDepreciationScheduleLine(builder);
         ConfigureFixedAssetEvent(builder);
+        ConfigureFixedAssetSettings(builder);
         ConfigureLoan(builder);
         ConfigureLoanScheduleLine(builder);
         ConfigureNctNoteOverride(builder);
@@ -4331,6 +4333,7 @@ public partial class TenantDbContext : DbContext
             entity.Property(e => e.CapitalizedFees).HasPrecision(18, 3);
             entity.Property(e => e.ResidualValue).HasPrecision(18, 3);
             entity.Property(e => e.VatAmount).HasPrecision(18, 3);
+            entity.Property(e => e.VatCapitalized).HasDefaultValue(false);
             entity.Property(e => e.DepreciationRatePercent).HasPrecision(8, 4);
             entity.Property(e => e.UsefulLifeYears).HasPrecision(8, 2);
             entity.Property(e => e.AccelerationCoefficient).HasPrecision(8, 4).HasDefaultValue(1m);
@@ -4340,6 +4343,7 @@ public partial class TenantDbContext : DbContext
             entity.Property(e => e.CreditAccountNumber).HasMaxLength(20);
             entity.Property(e => e.DisposalProceeds).HasPrecision(18, 3);
             entity.Property(e => e.DisposalTreasuryAccount).HasMaxLength(20);
+            entity.Property(e => e.DisposalReceivableAccount).HasMaxLength(20);
             entity.Property(e => e.Status).HasConversion<int>();
             entity.Property(e => e.DepreciationMethod).HasConversion<int>();
             entity.HasIndex(e => e.Status);
@@ -4398,6 +4402,21 @@ public partial class TenantDbContext : DbContext
                 .WithMany(a => a.Events)
                 .HasForeignKey(e => e.FixedAssetId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    /// <summary>
+    /// Paramètres du module Immobilisations du tenant (singleton) — support des exercices
+    /// décalés (plan « Exercices décalés », P1). Une seule ligne par base tenant.
+    /// </summary>
+    private static void ConfigureFixedAssetSettings(ModelBuilder builder)
+    {
+        builder.Entity<FixedAssetSettings>(entity =>
+        {
+            entity.ToTable("FixedAssetSettings");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.FiscalYearStartMonth).HasDefaultValue(FactuTrust.Domain.Entities.FixedAssetSettings.DefaultFiscalYearStartMonth);
+            entity.Property(e => e.FiscalYearLabelFormat).HasMaxLength(10).IsRequired().HasDefaultValue(FactuTrust.Domain.Entities.FixedAssetSettings.LabelFormatNn1);
         });
     }
 

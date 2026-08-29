@@ -9,6 +9,13 @@ namespace FactuTrust.Infrastructure.Services;
 /// </summary>
 internal static class SupplierInvoiceJournalLineBuilder
 {
+    /// <summary>
+    /// Effective (category-resolved) asset account and VAT-capitalization decision for a single
+    /// fixed-asset supplier invoice line — resolved by the caller (<c>AccountingService</c>), which knows
+    /// the line's <see cref="DepreciationRateCategory"/> (the builder itself only sees invoice lines).
+    /// </summary>
+    internal readonly record struct FixedAssetLineClassification(string AssetAccountNumber, bool VatCapitalized);
+
     internal sealed record BuiltLines(decimal GoodsHt, decimal GoodsVat, decimal AssetHt, decimal AssetVat)
     {
         public decimal ServicesHt { get; init; }
@@ -17,7 +24,8 @@ internal static class SupplierInvoiceJournalLineBuilder
 
     public static (List<JournalLineInput> Lines, BuiltLines Totals) Build(
         SupplierInvoice invoice,
-        IReadOnlyDictionary<Guid, ProductType>? lineProductTypes = null)
+        IReadOnlyDictionary<Guid, ProductType>? lineProductTypes = null,
+        IReadOnlyDictionary<Guid, FixedAssetLineClassification>? fixedAssetClassifications = null)
     {
         decimal goodsHt = 0, goodsVat = 0, assetHt = 0, assetVat = 0, servicesHt = 0, servicesVat = 0;
         var assetDebits = new Dictionary<string, decimal>(StringComparer.Ordinal);
@@ -27,14 +35,36 @@ internal static class SupplierInvoiceJournalLineBuilder
             if (line.IsFixedAsset)
             {
                 assetHt += line.SubTotal.Amount;
-                assetVat += line.VatAmount.Amount;
-                var acc = string.IsNullOrWhiteSpace(line.AssetAccountNumber)
-                    ? TunisianPostingAccounts.DefaultFixedAsset
-                    : line.AssetAccountNumber.Trim();
+
+                string acc;
+                bool vatCapitalized;
+                if (fixedAssetClassifications is not null
+                    && fixedAssetClassifications.TryGetValue(line.Id, out var classification))
+                {
+                    acc = classification.AssetAccountNumber;
+                    vatCapitalized = classification.VatCapitalized;
+                }
+                else
+                {
+                    acc = string.IsNullOrWhiteSpace(line.AssetAccountNumber)
+                        ? TunisianPostingAccounts.DefaultFixedAsset
+                        : line.AssetAccountNumber.Trim();
+                    vatCapitalized = false;
+                }
+
+                // Capitalized VAT (passenger vehicles) is debited directly to the asset account instead of
+                // the aggregate 43662 line — absence of classification preserves the exact prior behavior.
+                var debitAmount = line.SubTotal.Amount;
+                if (vatCapitalized)
+                    debitAmount += line.VatAmount.Amount;
+                else
+                    assetVat += line.VatAmount.Amount;
+
                 assetDebits.TryGetValue(acc, out var sum);
-                assetDebits[acc] = sum + line.SubTotal.Amount;
+                assetDebits[acc] = sum + debitAmount;
                 continue;
             }
+
 
             if (lineProductTypes is not null
                 && lineProductTypes.TryGetValue(line.ProductId, out var productType)

@@ -288,10 +288,48 @@ public sealed class FixedAssetCommandHandlersTests
         Assert.True(result.IsSuccess);
         Assert.NotEmpty(result.Value.Lines);
         Assert.Equal(asset.DepreciableBase, result.Value.Lines.Sum(l => l.DepreciationAmount));
+        Assert.Equal(asset.Id, result.Value.FixedAssetId);
+        Assert.Equal(new DateTime(2026, 10, 1), result.Value.InServiceDate); // le DTO reflète la date simulée
         repo.Verify(x => x.UpdateAsync(It.IsAny<FixedAsset>(), It.IsAny<CancellationToken>()), Times.Never);
         repo.Verify(
             x => x.ReplaceScheduleLinesAsync(It.IsAny<Guid>(), It.IsAny<IReadOnlyList<DepreciationScheduleLine>>(), It.IsAny<CancellationToken>()),
             Times.Never);
+
+        // T6/B3 : l'entité chargée par le handler ne doit jamais être mutée par la simulation —
+        // la copie de simulation (FixedAsset.CreateSimulationCopy) porte le même Id mais est une
+        // instance distincte.
+        Assert.Equal(FixedAssetStatus.Draft, asset.Status);
+        Assert.Null(asset.InServiceDate);
+        Assert.Null(asset.CreditAccountNumber);
+    }
+
+    [Fact]
+    public async Task PreviewSchedule_DraftAsset_DoesNotMutateSameReferenceAsRepositoryEntity()
+    {
+        var category = CreateCategory();
+        var asset = CreateDraftAsset(category);
+
+        var repo = new Mock<IFixedAssetRepository>();
+        repo.Setup(x => x.GetByIdAsync(asset.Id, false, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(asset);
+
+        var handler = new PreviewDepreciationScheduleQueryHandler(repo.Object, new DepreciationEngine());
+
+        var result = await handler.Handle(
+            new PreviewDepreciationScheduleQuery(asset.Id, new DateTime(2026, 10, 1)),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+
+        // Deuxième appel : si la première simulation avait muté l'entité renvoyée par le repo (bug
+        // « var simulated = asset; » corrigé par T6), le second appel verrait un actif déjà en
+        // service et échouerait sur PutInService (statut != Draft).
+        var second = await handler.Handle(
+            new PreviewDepreciationScheduleQuery(asset.Id, new DateTime(2026, 11, 1)),
+            CancellationToken.None);
+
+        Assert.True(second.IsSuccess, second.Error?.Description);
+        Assert.Equal(new DateTime(2026, 11, 1), second.Value.InServiceDate);
     }
 
     // ------------------------------------------------------------------
@@ -330,5 +368,180 @@ public sealed class FixedAssetCommandHandlersTests
         var result = FixedAssetRateResolver.Resolve(true, 0m, 0m, 20m, null);
         Assert.True(result.IsSuccess);
         Assert.Equal(0m, result.Value.RatePercent);
+    }
+
+    // ------------------------------------------------------------------
+    // Validation des comptes (T8, B5)
+    // ------------------------------------------------------------------
+
+    private static CreateFixedAssetRequest CreateRequest(
+        Guid categoryId,
+        string? assetAccount = null,
+        string? depreciationAccount = null,
+        string? expenseAccount = null) =>
+        new(
+            "Machine test",
+            categoryId,
+            10_000m,
+            0m,
+            0m,
+            new DateTime(2026, 1, 10),
+            null,
+            0m,
+            null,
+            null,
+            assetAccount,
+            depreciationAccount,
+            expenseAccount);
+
+    [Fact]
+    public async Task Create_DepreciationAccountIn2xx_ShouldBeRejected()
+    {
+        var category = CreateCategory();
+
+        var repo = new Mock<IFixedAssetRepository>();
+        repo.Setup(x => x.CountByYearPrefixAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+
+        var categories = new Mock<IDepreciationRateCategoryRepository>();
+        categories.Setup(x => x.GetByIdAsync(category.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(category);
+
+        var handler = new CreateFixedAssetCommandHandler(repo.Object, categories.Object, CurrentUser().Object);
+
+        var request = CreateRequest(category.Id, assetAccount: "224", depreciationAccount: "224", expenseAccount: "68112");
+
+        var result = await handler.Handle(new CreateFixedAssetCommand(request), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.DepreciationAccountNumber", result.Error.Code);
+        repo.Verify(x => x.AddAsync(It.IsAny<FixedAsset>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Create_IncoherentTriplet_ShouldBeRejected()
+    {
+        var category = CreateCategory();
+
+        var repo = new Mock<IFixedAssetRepository>();
+        repo.Setup(x => x.CountByYearPrefixAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+
+        var categories = new Mock<IDepreciationRateCategoryRepository>();
+        categories.Setup(x => x.GetByIdAsync(category.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(category);
+
+        var handler = new CreateFixedAssetCommandHandler(repo.Object, categories.Object, CurrentUser().Object);
+
+        // Actif incorporel (21x) marié à une dotation de corporel (68112) : incohérent.
+        var request = CreateRequest(category.Id, assetAccount: "212", depreciationAccount: "2812", expenseAccount: "68112");
+
+        var result = await handler.Handle(new CreateFixedAssetCommand(request), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.AssetAccountNumber", result.Error.Code);
+        repo.Verify(x => x.AddAsync(It.IsAny<FixedAsset>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Create_VehiclePassengerCoherentTriplet_ShouldSucceed()
+    {
+        var category = CreateCategory();
+
+        var repo = new Mock<IFixedAssetRepository>();
+        repo.Setup(x => x.AddWithGeneratedInventoryNumberAsync(
+                It.IsAny<Func<string, Result<FixedAsset>>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Func<string, Result<FixedAsset>> factory, int year, CancellationToken _) => factory($"IMMO-{year}-0001"));
+
+        var categories = new Mock<IDepreciationRateCategoryRepository>();
+        categories.Setup(x => x.GetByIdAsync(category.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(category);
+
+        var handler = new CreateFixedAssetCommandHandler(repo.Object, categories.Object, CurrentUser().Object);
+
+        var request = CreateRequest(category.Id, assetAccount: "224", depreciationAccount: "2824", expenseAccount: "68112");
+
+        var result = await handler.Handle(new CreateFixedAssetCommand(request), CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.IsFailure ? result.Error.Description : null);
+        repo.Verify(x => x.AddWithGeneratedInventoryNumberAsync(
+            It.IsAny<Func<string, Result<FixedAsset>>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Create_NonNumericAccount_ShouldBeRejected()
+    {
+        var category = CreateCategory();
+
+        var repo = new Mock<IFixedAssetRepository>();
+        repo.Setup(x => x.CountByYearPrefixAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+
+        var categories = new Mock<IDepreciationRateCategoryRepository>();
+        categories.Setup(x => x.GetByIdAsync(category.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(category);
+
+        var handler = new CreateFixedAssetCommandHandler(repo.Object, categories.Object, CurrentUser().Object);
+
+        var request = CreateRequest(category.Id, assetAccount: "22A", depreciationAccount: "2824", expenseAccount: "68112");
+
+        var result = await handler.Handle(new CreateFixedAssetCommand(request), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.AssetAccountNumber", result.Error.Code);
+        repo.Verify(x => x.AddAsync(It.IsAny<FixedAsset>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateDraft_DepreciationAccountIn2xx_ShouldBeRejectedAndNotPersisted()
+    {
+        var category = CreateCategory();
+        var asset = CreateDraftAsset(category);
+
+        var repo = new Mock<IFixedAssetRepository>();
+        repo.Setup(x => x.GetByIdAsync(asset.Id, false, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(asset);
+
+        var categories = new Mock<IDepreciationRateCategoryRepository>();
+        categories.Setup(x => x.GetByIdAsync(category.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(category);
+
+        var handler = new UpdateFixedAssetCommandHandler(repo.Object, categories.Object, CurrentUser().Object);
+
+        var request = new UpdateFixedAssetRequest(
+            "Machine modifiée", 12_000m, 0m, 0m, new DateTime(2026, 2, 1), null, null,
+            "224", "224", "68112");
+
+        var result = await handler.Handle(new UpdateFixedAssetCommand(asset.Id, request), CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Validation.DepreciationAccountNumber", result.Error.Code);
+        repo.Verify(x => x.UpdateAsync(It.IsAny<FixedAsset>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateDraft_CategoryDefaultsPostT1_ShouldStillSucceed()
+    {
+        // Non-régression : les défauts de catégorie (228/2828/68112 après T1) restent valides.
+        var category = CreateCategory();
+        var asset = CreateDraftAsset(category);
+
+        var repo = new Mock<IFixedAssetRepository>();
+        repo.Setup(x => x.GetByIdAsync(asset.Id, false, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(asset);
+
+        var categories = new Mock<IDepreciationRateCategoryRepository>();
+        categories.Setup(x => x.GetByIdAsync(category.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(category);
+
+        var handler = new UpdateFixedAssetCommandHandler(repo.Object, categories.Object, CurrentUser().Object);
+
+        var request = new UpdateFixedAssetRequest(
+            "Machine modifiée", 12_000m, 0m, 0m, new DateTime(2026, 2, 1), null, null, null, null, null);
+
+        var result = await handler.Handle(new UpdateFixedAssetCommand(asset.Id, request), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        repo.Verify(x => x.UpdateAsync(asset, It.IsAny<CancellationToken>()), Times.Once);
     }
 }

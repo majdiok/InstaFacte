@@ -39,18 +39,23 @@ public sealed record GetFixedAssetsQuery(
 public sealed class GetFixedAssetsQueryHandler : IRequestHandler<GetFixedAssetsQuery, Result<FixedAssetListResponse>>
 {
     private readonly IFixedAssetRepository _assets;
+    private readonly IFixedAssetSettingsRepository? _settings;
 
-    public GetFixedAssetsQueryHandler(IFixedAssetRepository assets)
+    public GetFixedAssetsQueryHandler(IFixedAssetRepository assets, IFixedAssetSettingsRepository? settings = null)
     {
         _assets = assets;
+        _settings = settings;
     }
 
     public async Task<Result<FixedAssetListResponse>> Handle(GetFixedAssetsQuery request, CancellationToken cancellationToken)
     {
         var page = request.Page < 1 ? 1 : request.Page;
         var pageSize = request.PageSize is < 1 or > 200 ? 25 : request.PageSize;
+        // Filtre d'exercice par frontière décalée (P3) : le filtre fiscalYear optionnel de l'UI est
+        // une clé d'exercice ; la comparaison d'éligibilité utilise le mois de début configuré.
+        var startMonth = await FixedAssetFiscalYearSupport.GetStartMonthAsync(_settings, cancellationToken);
         var (items, total) = await _assets.SearchAsync(
-            page, pageSize, request.Status, request.CategoryId, request.FiscalYear, request.Search, cancellationToken);
+            page, pageSize, request.Status, request.CategoryId, request.FiscalYear, request.Search, startMonth, cancellationToken);
 
         return Result.Success(new FixedAssetListResponse(
             items.Select(FixedAssetMappings.ToDto).ToList(),
@@ -141,7 +146,11 @@ public sealed class GetFixedAssetScheduleQueryHandler : IRequestHandler<GetFixed
         if (asset is null)
             return Result.Failure<FixedAssetScheduleDto>(Error.Validation("FixedAsset", "Immobilisation introuvable."));
 
-        return Result.Success(GenerateDepreciationScheduleCommandHandler.ToScheduleDto(asset));
+        // État d'extourne des lignes (T13, C6) : alimente IsReversed du DTO, pour que le frontend
+        // ne bloque la régénération que sur les dotations nettes (IsPosted && !IsReversed).
+        var reversalState = await _assets.GetScheduleLinesWithReversalStateAsync(request.Id, cancellationToken);
+
+        return Result.Success(GenerateDepreciationScheduleCommandHandler.ToScheduleDto(asset, reversalState));
     }
 }
 
@@ -157,10 +166,12 @@ public sealed class GetAmortizationReportQueryHandler
     : IRequestHandler<GetAmortizationReportQuery, Result<AmortizationReportResponse>>
 {
     private readonly IFixedAssetRepository _assets;
+    private readonly IFixedAssetSettingsRepository? _settings;
 
-    public GetAmortizationReportQueryHandler(IFixedAssetRepository assets)
+    public GetAmortizationReportQueryHandler(IFixedAssetRepository assets, IFixedAssetSettingsRepository? settings = null)
     {
         _assets = assets;
+        _settings = settings;
     }
 
     public async Task<Result<AmortizationReportResponse>> Handle(
@@ -168,6 +179,9 @@ public sealed class GetAmortizationReportQueryHandler
         CancellationToken cancellationToken)
     {
         var fiscalYear = request.FiscalYear ?? DateTime.UtcNow.Year;
+        // Frontière d'exercice configurée par tenant (P4) : l'en-tête du rapport porte les dates de
+        // début/fin d'exercice réelles. En exercice civil (mois 1), 01/01/N → 31/12/N (parité).
+        var startMonth = await FixedAssetFiscalYearSupport.GetStartMonthAsync(_settings, cancellationToken);
         var report = await _assets.GetAmortizationReportAsync(
             fiscalYear,
             request.GroupingMode,
@@ -175,6 +189,7 @@ public sealed class GetAmortizationReportQueryHandler
             request.CategoryId,
             request.Search,
             request.CompanyName ?? string.Empty,
+            startMonth,
             cancellationToken);
 
         return Result.Success(report);

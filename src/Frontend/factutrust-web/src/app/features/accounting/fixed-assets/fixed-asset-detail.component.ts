@@ -1,4 +1,4 @@
-import { Component, ElementRef, OnInit, ViewChild, afterNextRender, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, HostListener, OnInit, ViewChild, afterNextRender, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
@@ -7,11 +7,13 @@ import { TabsModule } from 'primeng/tabs';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { SupplierService, SupplierListItem } from '@core/services/supplier.service';
+import { ConfirmationService } from '@core/services/confirmation.service';
 import {
   ACCELERATION_COEFFICIENTS,
   DEPRECIATION_METHOD_LABELS,
   DepreciationMethod,
   DepreciationRateCategoryDto,
+  DisposeFixedAssetRequest,
   FixedAssetDto,
   FixedAssetScheduleDto,
   FixedAssetsService,
@@ -26,8 +28,16 @@ import {
   isInServiceOrBeyond,
   parseDepreciationMethod
 } from '../services/fixed-asset-enums';
+import {
+  FixedAssetSettingsForm,
+  defaultFiscalYearSettings,
+  normalizeFiscalYearSettings
+} from '../services/fixed-asset-settings-defaults';
+import { fiscalYearLabel } from '../services/fiscal-year.util';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
+import { AccountingAmountInputComponent } from '../shared/accounting-amount-input.component';
 import { todayLocalYmd } from '../shared/accounting-date-utils';
+import { validateAccountTriplet } from './fixed-asset-account-rules';
 
 interface AssetFormModel {
   label: string;
@@ -40,14 +50,20 @@ interface AssetFormModel {
   usefulLifeYears: number | null;
   acquisitionDate: string;
   supplierId: string;
-  acquisitionCost: number;
-  vatAmount: number;
-  capitalizedFees: number;
-  residualValue: number;
+  acquisitionCost: number | null;
+  vatAmount: number | null;
+  capitalizedFees: number | null;
+  residualValue: number | null;
   assetAccountNumber: string;
   depreciationAccountNumber: string;
   expenseAccountNumber: string;
 }
+
+/** Mode de règlement d'une cession (T15 / C9), aligné sur T4 :
+ *  - `cash`       : règlement comptant → `treasuryAccountNumber` (5321, 5411…).
+ *  - `receivable` : cession à terme   → `receivableAccountNumber` (créance, préfixe 452).
+ *  - `scrap`      : mise au rebut      → produit forcé à 0, aucun compte de règlement. */
+type DisposalMode = 'cash' | 'receivable' | 'scrap';
 
 @Component({
   selector: 'app-fixed-asset-detail',
@@ -60,7 +76,8 @@ interface AssetFormModel {
     TabsModule,
     PageHeaderComponent,
     ButtonComponent,
-    AccountingStatusBannerComponent
+    AccountingStatusBannerComponent,
+    AccountingAmountInputComponent
   ],
   template: `
     <app-page-header
@@ -188,17 +205,19 @@ interface AssetFormModel {
               <label>
                 Compte d'immobilisation (21x) *
                 <input class="accounting-filter-input" [(ngModel)]="form.assetAccountNumber" [disabled]="readonly()" />
+                <span class="field-error" *ngIf="fieldErrors()['assetAccount']">{{ fieldErrors()['assetAccount'] }}</span>
               </label>
               <label>
                 Compte d'amortissement (28x) *
                 <input class="accounting-filter-input" [(ngModel)]="form.depreciationAccountNumber" [disabled]="readonly()" />
+                <span class="field-error" *ngIf="fieldErrors()['depreciationAccount']">{{ fieldErrors()['depreciationAccount'] }}</span>
               </label>
               <label>
                 Compte de dotation (68x) *
                 <input class="accounting-filter-input" [(ngModel)]="form.expenseAccountNumber" [disabled]="readonly()" />
+                <span class="field-error" *ngIf="fieldErrors()['expenseAccount']">{{ fieldErrors()['expenseAccount'] }}</span>
               </label>
             </div>
-            <span class="field-error" *ngIf="fieldErrors()['accounts']">{{ fieldErrors()['accounts'] }}</span>
           </fieldset>
         </p-tabpanel>
 
@@ -218,20 +237,40 @@ interface AssetFormModel {
             </label>
             <label>
               Prix d'achat HT *
-              <input type="number" step="0.001" min="0" class="accounting-filter-input" [(ngModel)]="form.acquisitionCost" [disabled]="readonly()" />
+              <app-accounting-amount-input
+                [(ngModel)]="form.acquisitionCost"
+                [disabled]="readonly()"
+                side="debit"
+                inputId="acquisitionCost"
+                ariaLabel="Prix d'achat HT" />
               <span class="field-error" *ngIf="fieldErrors()['cost']">{{ fieldErrors()['cost'] }}</span>
             </label>
             <label>
               Montant TVA
-              <input type="number" step="0.001" min="0" class="accounting-filter-input" [(ngModel)]="form.vatAmount" [disabled]="readonly()" />
+              <app-accounting-amount-input
+                [(ngModel)]="form.vatAmount"
+                [disabled]="readonly()"
+                side="debit"
+                inputId="vatAmount"
+                ariaLabel="Montant TVA" />
             </label>
             <label>
               Frais capitalisés
-              <input type="number" step="0.001" min="0" class="accounting-filter-input" [(ngModel)]="form.capitalizedFees" [disabled]="readonly()" />
+              <app-accounting-amount-input
+                [(ngModel)]="form.capitalizedFees"
+                [disabled]="readonly()"
+                side="debit"
+                inputId="capitalizedFees"
+                ariaLabel="Frais capitalisés" />
             </label>
             <label>
               Valeur résiduelle
-              <input type="number" step="0.001" min="0" class="accounting-filter-input" [(ngModel)]="form.residualValue" [disabled]="readonly()" />
+              <app-accounting-amount-input
+                [(ngModel)]="form.residualValue"
+                [disabled]="readonly()"
+                side="debit"
+                inputId="residualValue"
+                ariaLabel="Valeur résiduelle" />
               <span class="field-error" *ngIf="fieldErrors()['residual']">{{ fieldErrors()['residual'] }}</span>
             </label>
             <label>
@@ -316,7 +355,8 @@ interface AssetFormModel {
         </div>
       </div>
       <p class="hint" *ngIf="hasPostedLines()">
-        Des dotations sont déjà comptabilisées : le tableau ne peut plus être regénéré.
+        Des dotations non extournées sont déjà comptabilisées : le tableau ne peut plus être regénéré.
+        Extournez l'écriture concernée pour autoriser la régénération.
       </p>
 
       <ng-container *ngIf="schedule() as s">
@@ -338,7 +378,7 @@ interface AssetFormModel {
           </ng-template>
           <ng-template pTemplate="body" let-line>
             <tr>
-              <td>{{ line.fiscalYear }}</td>
+              <td>{{ fiscalYearLineLabel(line.fiscalYear) }}</td>
               <td class="text-right">{{ line.openingNbv | number: '1.3-3' }}</td>
               <td class="text-right">{{ line.normalAnnualAmount | number: '1.3-3' }}</td>
               <td class="text-right">{{ line.priorAccumulatedDepreciation | number: '1.3-3' }}</td>
@@ -377,7 +417,7 @@ interface AssetFormModel {
         </thead>
         <tbody>
           <tr *ngFor="let line of s.lines">
-            <td>{{ line.fiscalYear }}</td>
+            <td>{{ fiscalYearLineLabel(line.fiscalYear) }}</td>
             <td class="text-right">{{ s.depreciableBase | number: '1.3-3' }}</td>
             <td class="text-right">{{ line.depreciationAmount | number: '1.3-3' }}</td>
             <td class="text-right">{{ line.accumulatedDepreciation | number: '1.3-3' }}</td>
@@ -405,14 +445,45 @@ interface AssetFormModel {
         </label>
         <label>
           Prix de cession (TND)
-          <input type="number" step="0.001" min="0" class="accounting-filter-input" [(ngModel)]="disposalProceeds" />
-        </label>
-        <label>
-          Compte trésorerie (5321, 5411…) *
-          <input class="accounting-filter-input" [(ngModel)]="treasuryAccount" placeholder="5321" />
+          <app-accounting-amount-input
+            [(ngModel)]="disposalProceeds"
+            [disabled]="disposalMode === 'scrap'"
+            side="debit"
+            inputId="disposalProceeds"
+            ariaLabel="Prix de cession" />
         </label>
       </div>
-      <app-button variant="danger" type="button" (click)="dispose()" [disabled]="saving()">Enregistrer la cession</app-button>
+
+      <fieldset class="form-section">
+        <legend>Mode de règlement</legend>
+        <div class="disposal-mode-grid">
+          <label class="radio-option">
+            <input type="radio" name="disposalMode" value="cash" [ngModel]="disposalMode" (ngModelChange)="onDisposalModeChange($event)" />
+            Comptant — compte de trésorerie (5321, 5411…)
+          </label>
+          <label *ngIf="disposalMode === 'cash'">
+            Compte trésorerie *
+            <input class="accounting-filter-input" [(ngModel)]="treasuryAccount" placeholder="5321" />
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="disposalMode" value="receivable" [ngModel]="disposalMode" (ngModelChange)="onDisposalModeChange($event)" />
+            À terme — créance sur cession (prérempli 452)
+          </label>
+          <label *ngIf="disposalMode === 'receivable'">
+            Compte créance *
+            <input class="accounting-filter-input" [(ngModel)]="receivableAccount" placeholder="452" />
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="disposalMode" value="scrap" [ngModel]="disposalMode" (ngModelChange)="onDisposalModeChange($event)" />
+            Mise au rebut — produit nul, aucun compte de règlement
+          </label>
+        </div>
+        <p class="hint" *ngIf="disposalMode === 'scrap'">
+          La mise au rebut force un prix de cession nul : aucune écriture de règlement n'est générée (sortie 2xx / 28x / 636 uniquement).
+        </p>
+      </fieldset>
+
+      <app-button variant="danger" type="button" (click)="confirmDispose()" [disabled]="saving()">Enregistrer la cession</app-button>
     </div>
 
     <!-- ============ Méta ============ -->
@@ -452,6 +523,18 @@ interface AssetFormModel {
         align-items: center;
         gap: 0.5rem;
         white-space: nowrap;
+      }
+      .disposal-mode-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 0.75rem 1rem;
+        align-items: start;
+      }
+      .radio-option {
+        flex-direction: row;
+        align-items: center;
+        gap: 0.5rem;
+        font-weight: 400;
       }
       .form-section {
         border: 1px solid #dbeafe;
@@ -539,6 +622,7 @@ export class FixedAssetDetailComponent implements OnInit {
   private readonly supplierApi = inject(SupplierService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly confirmation = inject(ConfirmationService);
 
   @ViewChild('putInServiceSection') putInServiceSection?: ElementRef<HTMLElement>;
 
@@ -559,6 +643,9 @@ export class FixedAssetDetailComponent implements OnInit {
   readonly success = signal<string | null>(null);
   readonly fieldErrors = signal<Record<string, string>>({});
 
+  /** Paramètres d'exercice du dossier (repli civil tant que non chargés) — plan « Exercices décalés ». */
+  readonly settings = signal<FixedAssetSettingsForm>(defaultFiscalYearSettings());
+
   /** Lecture seule dès que l'actif est en service, totalement amorti ou cédé. */
   readonly readonly = computed(() => {
     const a = this.asset();
@@ -571,16 +658,20 @@ export class FixedAssetDetailComponent implements OnInit {
   creditAccount = '404';
   previewDate = todayLocalYmd();
   disposalDate = todayLocalYmd();
-  disposalProceeds = 0;
+  disposalProceeds: number | null = 0;
   treasuryAccount = '5321';
+  receivableAccount = '452';
+  disposalMode: DisposalMode = 'cash';
 
   ngOnInit(): void {
     this.api.getRateCategories().subscribe(res => this.categories.set(res.data ?? []));
+    this.loadFiscalYearSettings();
 
     const id = this.route.snapshot.paramMap.get('id');
     if (this.route.snapshot.data['mode'] === 'new' || id === 'new' || !id) {
       this.isNew.set(true);
       this.loadSuppliers();
+      this.markFormPristine();
       return;
     }
     this.loadAsset(id);
@@ -612,6 +703,20 @@ export class FixedAssetDetailComponent implements OnInit {
 
   hasPositiveAcquisitionCost(): boolean {
     return (this.form.acquisitionCost || 0) + (this.form.capitalizedFees || 0) > 0;
+  }
+
+  /** Libellé d'exercice d'une ligne d'échéancier (« N/N+1 » si décalé, sinon « N ») — calculé côté
+   *  client depuis le paramétrage tenant (le DTO ligne n'expose pas de libellé). */
+  fiscalYearLineLabel(fiscalYear: number): string {
+    const { fiscalYearStartMonth, fiscalYearLabelFormat } = this.settings();
+    return fiscalYearLabel(fiscalYear, fiscalYearStartMonth, fiscalYearLabelFormat);
+  }
+
+  private loadFiscalYearSettings(): void {
+    this.api.getSettings().subscribe({
+      next: res => this.settings.set(normalizeFiscalYearSettings(res.data)),
+      error: () => this.settings.set(defaultFiscalYearSettings())
+    });
   }
 
   private scrollToPutInService(): void {
@@ -688,7 +793,59 @@ export class FixedAssetDetailComponent implements OnInit {
   }
 
   hasPostedLines(): boolean {
-    return this.schedule()?.lines?.some(l => l.isPosted) ?? false;
+    // T13 (C6) — une ligne extournée (isReversed) ne bloque plus la régénération même si son
+    // écriture d'origine reste rattachée (isPosted true, dé-postage différé côté serveur). On ne
+    // bloque que sur les dotations encore actives (comptabilisées ET non extournées).
+    return this.schedule()?.lines?.some(l => l.isPosted && !l.isReversed) ?? false;
+  }
+
+  // ----------------------------------------------------------------
+  // Garde de navigation (T15 / C9) — formulaire « dirty »
+  // ----------------------------------------------------------------
+  // `beforeunload` ne couvre que la fermeture/rechargement de l'onglet ; la navigation interne
+  // Angular (routerLink, retour au registre) est gérée par le guard CanDeactivate
+  // (`pendingChangesGuard`) qui appelle `canDeactivate()`. Les deux se branchent sur `isDirty()`.
+  private pristineSnapshot = '';
+
+  /** État sérialisé de tous les champs éditables (fiche + mise en service + cession). La simulation
+   *  (`previewDate`) est exclue : ce n'est qu'un paramètre de prévisualisation, pas une saisie. */
+  private serializeEditableState(): string {
+    return JSON.stringify({
+      form: this.form,
+      inServiceDate: this.inServiceDate,
+      creditAccount: this.creditAccount,
+      disposalDate: this.disposalDate,
+      disposalProceeds: this.disposalProceeds,
+      disposalMode: this.disposalMode,
+      treasuryAccount: this.treasuryAccount,
+      receivableAccount: this.receivableAccount
+    });
+  }
+
+  private markFormPristine(): void {
+    this.pristineSnapshot = this.serializeEditableState();
+  }
+
+  /** Vrai si l'utilisateur a modifié des champs depuis le dernier état propre (chargement, sauvegarde,
+   *  mise en service ou cession). Utilisé par le guard CanDeactivate et le @HostListener beforeunload. */
+  isDirty(): boolean {
+    return this.serializeEditableState() !== this.pristineSnapshot;
+  }
+
+  /** Appelé par `pendingChangesGuard` (CanDeactivate) avant une navigation interne Angular. */
+  canDeactivate(): boolean {
+    if (!this.isDirty()) return true;
+    return window.confirm(
+      'Vous avez des modifications non enregistrées. Quitter cette page ? Les changements seront perdus.'
+    );
+  }
+
+  @HostListener('window:beforeunload', ['$event'])
+  unloadNotification(event: BeforeUnloadEvent): void {
+    if (this.isDirty()) {
+      // Affecter returnValue déclenche la boîte de confirmation native du navigateur.
+      event.returnValue = 'Vous avez des modifications non enregistrées.';
+    }
   }
 
   depreciableBase(): number {
@@ -712,15 +869,37 @@ export class FixedAssetDetailComponent implements OnInit {
     }
   }
 
+  // Marqueur « champ maître » : le champ que l'utilisateur vient d'éditer est la seule source de
+  // vérité, l'autre champ n'est que dérivé. Chaque handler ne modifie jamais le champ qu'il reçoit
+  // en paramètre (déjà à jour via le two-way binding [(ngModel)]) — il ne fait que recalculer
+  // l'AUTRE champ, aligné sur `FixedAssetRateResolver.Resolve` (backend) : durée dérivée = 2
+  // décimales, taux dérivé = 4 décimales. Un mutex (`isSyncingRateAndLife`) empêche toute
+  // ré-entrance : si la dérivation déclenchait par erreur le handler du champ maître, celui-ci ne
+  // pourrait pas réécrire (et donc dégrader) la valeur que l'utilisateur vient de saisir
+  // (élimine le cas 3 % → 33,33 ans → 3,0003 %).
+  private isSyncingRateAndLife = false;
+
   onRateChange(rate: number | null): void {
+    if (this.isSyncingRateAndLife) return;
     if (rate && rate > 0 && rate <= 100) {
-      this.form.usefulLifeYears = Math.round((100 / rate) * 100) / 100;
+      this.isSyncingRateAndLife = true;
+      try {
+        this.form.usefulLifeYears = Math.round((100 / rate) * 100) / 100;
+      } finally {
+        this.isSyncingRateAndLife = false;
+      }
     }
   }
 
   onLifeChange(years: number | null): void {
-    if (years && years > 0) {
-      this.form.depreciationRatePercent = Math.round((100 / years) * 10000) / 10000;
+    if (this.isSyncingRateAndLife) return;
+    if (years && years > 0 && years <= 100) {
+      this.isSyncingRateAndLife = true;
+      try {
+        this.form.depreciationRatePercent = Math.round((100 / years) * 10000) / 10000;
+      } finally {
+        this.isSyncingRateAndLife = false;
+      }
     }
   }
 
@@ -739,8 +918,16 @@ export class FixedAssetDetailComponent implements OnInit {
       if (this.form.depreciationMethod === DepreciationMethod.Accelerated && !ACCELERATION_COEFFICIENTS.includes(this.form.accelerationCoefficient))
         errors['coefficient'] = 'Le coefficient accéléré doit être 1,5 ou 2 (Décret 2008-492 art. 2).';
     }
-    if (!this.form.assetAccountNumber.trim() || !this.form.depreciationAccountNumber.trim() || !this.form.expenseAccountNumber.trim())
-      errors['accounts'] = 'Les trois comptes comptables sont obligatoires.';
+    // C1 — validation des comptes alignée serveur (FixedAssetAccountRules) : format, préfixes NCT
+    // et cohérence corporel/incorporel. Affichage par champ via fieldErrors.
+    const accountResult = validateAccountTriplet(
+      this.form.assetAccountNumber,
+      this.form.depreciationAccountNumber,
+      this.form.expenseAccountNumber
+    );
+    if (!accountResult.valid && accountResult.field) {
+      errors[accountResult.field] = accountResult.message;
+    }
     this.fieldErrors.set(errors);
     return Object.keys(errors).length === 0;
   }
@@ -766,9 +953,9 @@ export class FixedAssetDetailComponent implements OnInit {
       .create({
         label: this.form.label,
         depreciationRateCategoryId: this.form.depreciationRateCategoryId,
-        acquisitionCost: this.form.acquisitionCost,
-        capitalizedFees: this.form.capitalizedFees,
-        residualValue: this.form.residualValue,
+        acquisitionCost: this.form.acquisitionCost || 0,
+        capitalizedFees: this.form.capitalizedFees || 0,
+        residualValue: this.form.residualValue || 0,
         acquisitionDate: this.form.acquisitionDate,
         description: this.form.description || undefined,
         vatAmount: this.form.vatAmount || 0,
@@ -803,9 +990,9 @@ export class FixedAssetDetailComponent implements OnInit {
     if (!id) return;
     const req: UpdateFixedAssetRequest = {
       label: this.form.label,
-      acquisitionCost: this.form.acquisitionCost,
-      capitalizedFees: this.form.capitalizedFees,
-      residualValue: this.form.residualValue,
+      acquisitionCost: this.form.acquisitionCost || 0,
+      capitalizedFees: this.form.capitalizedFees || 0,
+      residualValue: this.form.residualValue || 0,
       acquisitionDate: this.form.acquisitionDate,
       description: this.form.description || undefined,
       location: this.form.location || undefined,
@@ -931,16 +1118,74 @@ export class FixedAssetDetailComponent implements OnInit {
     });
   }
 
+  onDisposalModeChange(mode: DisposalMode): void {
+    this.disposalMode = mode;
+    if (mode === 'scrap') {
+      // Mise au rebut : produit nul, aucun compte de règlement (aligné T4).
+      this.disposalProceeds = 0;
+    } else if (mode === 'receivable' && !this.receivableAccount) {
+      this.receivableAccount = '452';
+    }
+  }
+
+  /** Construit le payload de cession selon le mode de règlement (T15 / T4). */
+  private buildDisposalRequest(): DisposeFixedAssetRequest {
+    const disposalProceeds = this.disposalMode === 'scrap' ? 0 : this.disposalProceeds || 0;
+    const request: DisposeFixedAssetRequest = {
+      disposalDate: this.disposalDate,
+      disposalProceeds
+    };
+    if (this.disposalMode === 'cash') {
+      request.treasuryAccountNumber = this.treasuryAccount || undefined;
+    } else if (this.disposalMode === 'receivable') {
+      request.receivableAccountNumber = this.receivableAccount || '452';
+    }
+    // scrap : aucun compte de règlement.
+    return request;
+  }
+
+  /** Récapitulatif date/prix/compte affiché dans la modale de confirmation (T15 / C9). */
+  private disposalRecap(): string {
+    const proceeds = this.disposalMode === 'scrap' ? 0 : this.disposalProceeds || 0;
+    const account =
+      this.disposalMode === 'scrap'
+        ? 'Mise au rebut — aucun compte de règlement'
+        : this.disposalMode === 'receivable'
+          ? `À terme — créance ${this.receivableAccount || '452'}`
+          : `Comptant — trésorerie ${this.treasuryAccount || '5321'}`;
+    return (
+      `Confirmer la cession de cette immobilisation ?\n` +
+      `Date de cession : ${this.disposalDate}\n` +
+      `Prix de cession : ${proceeds} TND\n` +
+      `Règlement : ${account}\n\n` +
+      `Cette action est irréversible.`
+    );
+  }
+
+  /** Demande confirmation avant d'enregistrer la cession (action irréversible — T15 / C9). */
+  confirmDispose(): void {
+    const id = this.asset()?.id;
+    if (!id) return;
+    this.error.set(null);
+    this.success.set(null);
+    this.confirmation.confirm({
+      header: 'Enregistrer la cession',
+      message: this.disposalRecap(),
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Enregistrer la cession',
+      rejectLabel: 'Annuler',
+      acceptButtonStyleClass: 'btn-danger',
+      size: 'md',
+      accept: () => this.dispose()
+    });
+  }
+
   dispose(): void {
     const id = this.asset()?.id;
     if (!id) return;
     this.saving.set(true);
     this.api
-      .dispose(id, {
-        disposalDate: this.disposalDate,
-        disposalProceeds: this.disposalProceeds,
-        treasuryAccountNumber: this.treasuryAccount
-      })
+      .dispose(id, this.buildDisposalRequest())
       .subscribe({
         next: () => {
           this.saving.set(false);
@@ -976,6 +1221,7 @@ export class FixedAssetDetailComponent implements OnInit {
         this.asset.set(res.data ?? null);
         if (res.data) {
           this.fillFormFromAsset(res.data);
+          this.markFormPristine();
           if (isDraftStatus(res.data.status)) {
             this.loadSuppliers();
           }

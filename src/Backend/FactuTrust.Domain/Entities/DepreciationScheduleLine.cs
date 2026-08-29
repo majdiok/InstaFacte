@@ -65,10 +65,49 @@ public sealed class DepreciationScheduleLine : Entity
         AccountingPeriodId = accountingPeriodId;
     }
 
+    /// <summary>
+    /// Marque la ligne comme non comptabilisée **en conservant le lien d'audit** vers l'écriture
+    /// extournée (T13, C6) : <see cref="JournalEntryId"/> et <see cref="AccountingPeriodId"/>
+    /// restent peuplés. Le re-lien vers la nouvelle écriture active se fait par
+    /// <see cref="MarkPosted"/> (qui écrase <see cref="JournalEntryId"/>) lors de la
+    /// recomptabilisation. Une ligne dé-postée porte donc <c>IsPosted=false</c> + un
+    /// <c>JournalEntryId</c> pointant vers l'écriture extournée : c'est ce qui permet à la garde
+    /// « écriture active » (<c>GetActiveBySourceAsync</c>) d'autoriser le reposting.
+    /// </summary>
     public void Unpost()
     {
         IsPosted = false;
-        JournalEntryId = null;
-        AccountingPeriodId = null;
+    }
+
+    /// <summary>
+    /// Met à jour en place les montants (et le mois) d'une ligne non comptabilisée — utilisé par
+    /// le merge du tableau (T4/T13) afin de préserver l'<see cref="Entity.Id"/> et le lien d'audit
+    /// <see cref="JournalEntryId"/>. Refus si la ligne est déjà comptabilisée (garde défensive).
+    /// Mêmes validations que <see cref="Create"/>.
+    /// </summary>
+    public Result UpdateAmounts(
+        decimal openingNbv,
+        decimal normalAnnualAmount,
+        decimal priorAccumulatedDepreciation,
+        decimal depreciationAmount,
+        decimal accumulatedDepreciation,
+        decimal closingNbv,
+        int? periodMonth)
+    {
+        if (IsPosted)
+            return Result.Failure(Error.Validation("Schedule", "Une dotation comptabilisée ne peut pas être modifiée."));
+        if (periodMonth is < 1 or > 12)
+            return Result.Failure(Error.Validation("PeriodMonth", "Mois invalide"));
+        if (depreciationAmount < 0 || accumulatedDepreciation < 0 || openingNbv < 0 || closingNbv < 0)
+            return Result.Failure(Error.Validation("Amount", "Les montants ne peuvent pas être négatifs"));
+
+        OpeningNbv = openingNbv;
+        NormalAnnualAmount = normalAnnualAmount;
+        PriorAccumulatedDepreciation = priorAccumulatedDepreciation;
+        DepreciationAmount = depreciationAmount;
+        AccumulatedDepreciation = accumulatedDepreciation;
+        ClosingNbv = closingNbv;
+        PeriodMonth = periodMonth;
+        return Result.Success();
     }
 }
