@@ -82,8 +82,20 @@ public sealed class UpdateIncomeTaxParametersCommandHandler
         if (d.MinTaxFloorTnd < 0 || d.MinTaxFloorReducedTnd < 0 || d.CssFloorTnd < 0)
             return Result.Failure<IncomeTaxYearParameterDto>(Error.Validation("Floors", "Les planchers ne peuvent pas être négatifs."));
 
-        if (string.IsNullOrWhiteSpace(d.IrppBracketsJson) || IrppScale.Parse(d.IrppBracketsJson).Count == 0)
-            return Result.Failure<IncomeTaxYearParameterDto>(Error.Validation("IrppBracketsJson", "Barème IRPP invalide ou vide."));
+        // T13 — bornes de bon sens : le nombre d'acomptes provisionnels est compris entre 0 et 12
+        // (au plus mensuel), la durée de report des déficits entre 1 et 20 exercices.
+        if (d.AcompteCount < 0 || d.AcompteCount > 12)
+            return Result.Failure<IncomeTaxYearParameterDto>(Error.Validation("AcompteCount",
+                "Le nombre d'acomptes provisionnels doit être compris entre 0 et 12."));
+        if (d.DeficitCarryForwardYears < 1 || d.DeficitCarryForwardYears > 20)
+            return Result.Failure<IncomeTaxYearParameterDto>(Error.Validation("DeficitCarryForwardYears",
+                "La durée de report des déficits doit être comprise entre 1 et 20 exercices."));
+
+        // T13 — barème IRPP strict (borne ≥ 0, strictement croissant, taux ∈ [0;100]) : la saisie est
+        // rejetée AVANT persistance avec un message précis. Le « Parse » tolérant reste réservé à la
+        // lecture des données historiques (le moteur ne doit pas planter sur une ligne ancienne).
+        if (!IrppScale.TryParseStrict(d.IrppBracketsJson, out _, out var irppError))
+            return Result.Failure<IncomeTaxYearParameterDto>(Error.Validation("IrppBracketsJson", irppError ?? "Barème IRPP invalide ou vide."));
 
         var upsert = new IncomeTaxParameterUpsert(
             d.IsStandardRate, d.IsReducedRate, d.IsSectorRate,
