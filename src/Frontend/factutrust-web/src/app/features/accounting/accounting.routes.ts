@@ -253,6 +253,13 @@ export const ACCOUNTING_ROUTES: Routes = [
     title: 'Tableau des amortissements - InstaFact'
   },
   {
+    path: 'fixed-assets/settings',
+    loadComponent: () =>
+      import('./fixed-assets/fixed-asset-settings.component').then(m => m.FixedAssetSettingsComponent),
+    canActivate: [fixedAssetsFeatureGuard],
+    title: 'Exercice comptable - InstaFact'
+  },
+  {
     path: 'loans',
     loadComponent: () =>
       import('./loans/loans-list.component').then(m => m.LoansListComponent),

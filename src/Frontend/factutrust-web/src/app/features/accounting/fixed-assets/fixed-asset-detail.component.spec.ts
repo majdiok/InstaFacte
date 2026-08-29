@@ -64,6 +64,11 @@ describe('FixedAssetDetailComponent', () => {
     fixture.detectChanges();
 
     httpMock.expectOne(`${base}/rate-categories`).flush({ success: true, data: [] });
+    // P4 — le composant charge le paramétrage d'exercice au démarrage (repli civil par défaut).
+    httpMock.expectOne(`${base}/settings`).flush({
+      success: true,
+      data: { fiscalYearStartMonth: 1, fiscalYearLabelFormat: 'N/N+1', fiscalYearLabelSample: '2026' }
+    });
 
     const isNew =
       routeSnapshot.data?.['mode'] === 'new' || routeSnapshot.id === 'new' || !routeSnapshot.id;
@@ -622,6 +627,82 @@ describe('FixedAssetDetailComponent', () => {
       const dirtyEvent = { returnValue: '' } as unknown as BeforeUnloadEvent;
       component.unloadNotification(dirtyEvent);
       expect(dirtyEvent.returnValue).toBeTruthy();
+      httpMock.verify();
+    });
+  });
+
+  // P4 (plan « Exercices décalés ») — le tableau d'amortissement (CP17 + format norme) affiche
+  // l'exercice sous forme « N/N+1 » quand le paramétrage est décalé ; sinon « N ». Le libellé est
+  // calculé côté client depuis `fiscalYearStartMonth` (le DTO ligne n'expose pas de libellé).
+  describe('fiscal-year label in schedule tables (P4)', () => {
+    it('computes the exercise label from the tenant settings', () => {
+      const { fixture, httpMock } = setup({ data: { mode: 'new' } });
+      const component = fixture.componentInstance;
+
+      component.settings.set({ fiscalYearStartMonth: 7, fiscalYearLabelFormat: 'N/N+1' });
+      expect(component.fiscalYearLineLabel(2026)).toBe('2026/2027');
+      expect(component.fiscalYearLineLabel(2025)).toBe('2025/2026');
+
+      // Civil exercise → bare year regardless of format.
+      component.settings.set({ fiscalYearStartMonth: 1, fiscalYearLabelFormat: 'N/N+1' });
+      expect(component.fiscalYearLineLabel(2026)).toBe('2026');
+
+      // Offset exercise with the "N" format → bare start year.
+      component.settings.set({ fiscalYearStartMonth: 7, fiscalYearLabelFormat: 'N' });
+      expect(component.fiscalYearLineLabel(2026)).toBe('2026');
+      httpMock.verify();
+    });
+
+    it('renders the N/N+1 exercise label in the norm schedule table for an offset dossier', () => {
+      const { fixture, httpMock } = setup({ id: 'asset-1' });
+
+      // In-service asset + a schedule with one line at fiscalYear 2026.
+      httpMock.expectOne(`${base}/asset-1`).flush({
+        success: true,
+        data: { ...draftAsset, status: 'InService' }
+      });
+      httpMock.expectOne(`${base}/asset-1/schedule`).flush({
+        success: true,
+        data: {
+          fixedAssetId: 'asset-1',
+          inventoryNumber: 'IMMO-2026-0001',
+          label: 'Camion',
+          acquisitionDate: '2026-01-10',
+          inServiceDate: '2026-07-01',
+          totalCapitalizedCost: 50000,
+          depreciationRatePercent: 20,
+          usefulLifeYears: 5,
+          depreciableBase: 50000,
+          depreciationMethod: 'Linear',
+          accelerationCoefficient: 1,
+          lines: [
+            {
+              id: 'l1',
+              fiscalYear: 2026,
+              periodMonth: null,
+              openingNbv: 50000,
+              normalAnnualAmount: 10000,
+              priorAccumulatedDepreciation: 0,
+              depreciationAmount: 5000,
+              accumulatedDepreciation: 5000,
+              closingNbv: 45000,
+              isPosted: false,
+              isReversed: false
+            }
+          ]
+        }
+      });
+      fixture.detectChanges();
+
+      // Switch the dossier to a july-offset exercise and re-render.
+      fixture.componentInstance.settings.set({ fiscalYearStartMonth: 7, fiscalYearLabelFormat: 'N/N+1' });
+      fixture.detectChanges();
+
+      const normTable = fixture.nativeElement.querySelector('table.norm-table') as HTMLTableElement;
+      expect(normTable).toBeTruthy();
+      expect(normTable.textContent).toContain('2026/2027');
+      // The bare calendar year must no longer appear as a standalone exercise cell.
+      expect(normTable.textContent).not.toContain('>2026<');
       httpMock.verify();
     });
   });

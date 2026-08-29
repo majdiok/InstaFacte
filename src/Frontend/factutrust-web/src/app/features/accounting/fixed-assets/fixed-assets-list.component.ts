@@ -73,6 +73,9 @@ import { AccountingStatusBannerComponent } from '../shared/accounting-status-ban
         <app-button variant="secondary" icon="pi pi-table" type="button" routerLink="/accounting/fixed-assets/amortization-table">
           Tableau amortissements
         </app-button>
+        <app-button variant="secondary" icon="pi pi-cog" type="button" routerLink="/accounting/fixed-assets/settings">
+          Exercice comptable
+        </app-button>
       </div>
     </div>
 

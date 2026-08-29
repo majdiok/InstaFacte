@@ -99,6 +99,10 @@ describe('FixedAssetsAmortizationTableComponent', () => {
     fixture.detectChanges();
 
     httpMock.expectOne(`${base}/rate-categories`).flush({ success: true, data: [] });
+    httpMock.expectOne(`${base}/settings`).flush({
+      success: true,
+      data: { fiscalYearStartMonth: 1, fiscalYearLabelFormat: 'N/N+1', fiscalYearLabelSample: '2026' }
+    });
     const req = httpMock.expectOne(r => r.url === `${base}/amortization-report`);
     expect(req.request.params.get('groupingMode')).toBe('AssetAccount');
     req.flush({ success: true, data: mockReport });
@@ -126,6 +130,10 @@ describe('FixedAssetsAmortizationTableComponent', () => {
       const httpMock = TestBed.inject(HttpTestingController);
       fixture.detectChanges();
       httpMock.expectOne(`${base}/rate-categories`).flush({ success: true, data: [] });
+      httpMock.expectOne(`${base}/settings`).flush({
+        success: true,
+        data: { fiscalYearStartMonth: 1, fiscalYearLabelFormat: 'N/N+1', fiscalYearLabelSample: '2026' }
+      });
       httpMock.expectOne(r => r.url === `${base}/amortization-report`).flush({ success: true, data: mockReport });
       fixture.detectChanges();
       httpMock.verify();
@@ -160,6 +168,10 @@ describe('FixedAssetsAmortizationTableComponent', () => {
     fixture.detectChanges();
 
     httpMock.expectOne(`${base}/rate-categories`).flush({ success: true, data: [] });
+    httpMock.expectOne(`${base}/settings`).flush({
+      success: true,
+      data: { fiscalYearStartMonth: 1, fiscalYearLabelFormat: 'N/N+1', fiscalYearLabelSample: '2026' }
+    });
     httpMock.expectOne(r => r.url === `${base}/amortization-report`).flush({ success: true, data: mockReport });
 
     fixture.componentInstance.groupingMode = 'FiscalCategory';
@@ -172,5 +184,49 @@ describe('FixedAssetsAmortizationTableComponent', () => {
     fixture.detectChanges();
     expect(fixture.componentInstance.groupingMode).toBe('FiscalCategory');
     httpMock.verify();
+  });
+
+  // P4 (plan « Exercices décalés ») — le tableau Sage affiche l'exercice sous forme « N/N+1 »
+  // quand le paramétrage est décalé ; sinon « N » (calcul côté client depuis fiscalYearStartMonth).
+  describe('fiscal-year label (P4)', () => {
+    it('displays the N/N+1 exercise label when the dossier is offset', () => {
+      const fixture = TestBed.createComponent(FixedAssetsAmortizationTableComponent);
+      const httpMock = TestBed.inject(HttpTestingController);
+      fixture.detectChanges();
+
+      httpMock.expectOne(`${base}/rate-categories`).flush({ success: true, data: [] });
+      httpMock.expectOne(`${base}/settings`).flush({
+        success: true,
+        data: { fiscalYearStartMonth: 7, fiscalYearLabelFormat: 'N/N+1', fiscalYearLabelSample: '2026/2027' }
+      });
+      httpMock.expectOne(r => r.url === `${base}/amortization-report`).flush({ success: true, data: mockReport });
+      fixture.detectChanges();
+
+      // fiscalYearFilter defaults to the civil current year (2026); for a july-offset dossier the
+      // label is « 2026/2027 ».
+      expect(fixture.componentInstance.fiscalYearDisplay(2026)).toBe('2026/2027');
+      expect(fixture.nativeElement.textContent).toContain('Exercice affiché : 2026/2027');
+      // The Sage header meta labels the exercise too.
+      expect(fixture.nativeElement.textContent).toContain('Exercice : 2026/2027');
+      httpMock.verify();
+    });
+
+    it('displays the bare year for a civil exercise', () => {
+      const fixture = TestBed.createComponent(FixedAssetsAmortizationTableComponent);
+      const httpMock = TestBed.inject(HttpTestingController);
+      fixture.detectChanges();
+
+      httpMock.expectOne(`${base}/rate-categories`).flush({ success: true, data: [] });
+      httpMock.expectOne(`${base}/settings`).flush({
+        success: true,
+        data: { fiscalYearStartMonth: 1, fiscalYearLabelFormat: 'N/N+1', fiscalYearLabelSample: '2026' }
+      });
+      httpMock.expectOne(r => r.url === `${base}/amortization-report`).flush({ success: true, data: mockReport });
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.fiscalYearDisplay(2026)).toBe('2026');
+      expect(fixture.nativeElement.textContent).toContain('Exercice affiché : 2026');
+      httpMock.verify();
+    });
   });
 });

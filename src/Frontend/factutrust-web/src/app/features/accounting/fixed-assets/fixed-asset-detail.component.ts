@@ -28,6 +28,12 @@ import {
   isInServiceOrBeyond,
   parseDepreciationMethod
 } from '../services/fixed-asset-enums';
+import {
+  FixedAssetSettingsForm,
+  defaultFiscalYearSettings,
+  normalizeFiscalYearSettings
+} from '../services/fixed-asset-settings-defaults';
+import { fiscalYearLabel } from '../services/fiscal-year.util';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
 import { AccountingAmountInputComponent } from '../shared/accounting-amount-input.component';
 import { todayLocalYmd } from '../shared/accounting-date-utils';
@@ -372,7 +378,7 @@ type DisposalMode = 'cash' | 'receivable' | 'scrap';
           </ng-template>
           <ng-template pTemplate="body" let-line>
             <tr>
-              <td>{{ line.fiscalYear }}</td>
+              <td>{{ fiscalYearLineLabel(line.fiscalYear) }}</td>
               <td class="text-right">{{ line.openingNbv | number: '1.3-3' }}</td>
               <td class="text-right">{{ line.normalAnnualAmount | number: '1.3-3' }}</td>
               <td class="text-right">{{ line.priorAccumulatedDepreciation | number: '1.3-3' }}</td>
@@ -411,7 +417,7 @@ type DisposalMode = 'cash' | 'receivable' | 'scrap';
         </thead>
         <tbody>
           <tr *ngFor="let line of s.lines">
-            <td>{{ line.fiscalYear }}</td>
+            <td>{{ fiscalYearLineLabel(line.fiscalYear) }}</td>
             <td class="text-right">{{ s.depreciableBase | number: '1.3-3' }}</td>
             <td class="text-right">{{ line.depreciationAmount | number: '1.3-3' }}</td>
             <td class="text-right">{{ line.accumulatedDepreciation | number: '1.3-3' }}</td>
@@ -637,6 +643,9 @@ export class FixedAssetDetailComponent implements OnInit {
   readonly success = signal<string | null>(null);
   readonly fieldErrors = signal<Record<string, string>>({});
 
+  /** Paramètres d'exercice du dossier (repli civil tant que non chargés) — plan « Exercices décalés ». */
+  readonly settings = signal<FixedAssetSettingsForm>(defaultFiscalYearSettings());
+
   /** Lecture seule dès que l'actif est en service, totalement amorti ou cédé. */
   readonly readonly = computed(() => {
     const a = this.asset();
@@ -656,6 +665,7 @@ export class FixedAssetDetailComponent implements OnInit {
 
   ngOnInit(): void {
     this.api.getRateCategories().subscribe(res => this.categories.set(res.data ?? []));
+    this.loadFiscalYearSettings();
 
     const id = this.route.snapshot.paramMap.get('id');
     if (this.route.snapshot.data['mode'] === 'new' || id === 'new' || !id) {
@@ -693,6 +703,20 @@ export class FixedAssetDetailComponent implements OnInit {
 
   hasPositiveAcquisitionCost(): boolean {
     return (this.form.acquisitionCost || 0) + (this.form.capitalizedFees || 0) > 0;
+  }
+
+  /** Libellé d'exercice d'une ligne d'échéancier (« N/N+1 » si décalé, sinon « N ») — calculé côté
+   *  client depuis le paramétrage tenant (le DTO ligne n'expose pas de libellé). */
+  fiscalYearLineLabel(fiscalYear: number): string {
+    const { fiscalYearStartMonth, fiscalYearLabelFormat } = this.settings();
+    return fiscalYearLabel(fiscalYear, fiscalYearStartMonth, fiscalYearLabelFormat);
+  }
+
+  private loadFiscalYearSettings(): void {
+    this.api.getSettings().subscribe({
+      next: res => this.settings.set(normalizeFiscalYearSettings(res.data)),
+      error: () => this.settings.set(defaultFiscalYearSettings())
+    });
   }
 
   private scrollToPutInService(): void {
