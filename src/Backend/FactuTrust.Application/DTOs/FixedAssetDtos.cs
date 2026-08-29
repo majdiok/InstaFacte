@@ -13,6 +13,22 @@ public sealed record DepreciationRateCategoryDto(
     string DefaultExpenseAccount,
     bool IsNonDepreciable);
 
+/// <summary>
+/// Paramètres du module Immobilisations du dossier (tenant) — support des exercices décalés
+/// (plan « Exercices décalés », décisions D1/D2/D3). Contrat stable consommé par P4/frontend.
+/// </summary>
+public sealed record FixedAssetSettingsDto(
+    int FiscalYearStartMonth,
+    string FiscalYearLabelFormat,
+    string FiscalYearLabelSample);
+
+/// <summary>
+/// Requête de mise à jour des paramètres Immobilisations du dossier (permission Accounting).
+/// </summary>
+public sealed record UpdateFixedAssetSettingsRequest(
+    int FiscalYearStartMonth,
+    string FiscalYearLabelFormat);
+
 public sealed record CreateFixedAssetRequest(
     string Label,
     Guid DepreciationRateCategoryId,
@@ -71,7 +87,8 @@ public sealed record DepreciationRunResultDto(
     int SkippedCount,
     decimal TotalDepreciationAmount,
     IReadOnlyList<string> Errors,
-    int AlreadyPostedCount = 0);
+    int AlreadyPostedCount = 0,
+    string FiscalYearLabel = "");
 
 public sealed record FixedAssetDto(
     Guid Id,

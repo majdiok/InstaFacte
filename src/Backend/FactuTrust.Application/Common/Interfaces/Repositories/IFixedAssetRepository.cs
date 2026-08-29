@@ -16,6 +16,7 @@ public interface IFixedAssetRepository
         Guid? categoryId,
         int? fiscalYear,
         string? search,
+        int fiscalYearStartMonth = 1,
         CancellationToken cancellationToken = default);
     Task<(IReadOnlyList<FixedAssetAmortizationTableRowDto> Items, int TotalCount)> SearchCurrentYearAmortizationTableAsync(
         int page,
@@ -32,6 +33,7 @@ public interface IFixedAssetRepository
         Guid? categoryId,
         string? search,
         string companyName,
+        int fiscalYearStartMonth = 1,
         CancellationToken cancellationToken = default);
     Task<int> CountByYearPrefixAsync(int year, CancellationToken cancellationToken = default);
 
@@ -56,7 +58,7 @@ public interface IFixedAssetRepository
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<FixedAsset>> GetBySupplierInvoiceIdAsync(Guid supplierInvoiceId, CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<FixedAsset>> GetActiveForDepreciationRunAsync(int fiscalYear, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<FixedAsset>> GetActiveForDepreciationRunAsync(int fiscalYear, int fiscalYearStartMonth = 1, CancellationToken cancellationToken = default);
     Task<FixedAsset> AddAsync(FixedAsset entity, CancellationToken cancellationToken = default);
     Task UpdateAsync(FixedAsset entity, CancellationToken cancellationToken = default);
 

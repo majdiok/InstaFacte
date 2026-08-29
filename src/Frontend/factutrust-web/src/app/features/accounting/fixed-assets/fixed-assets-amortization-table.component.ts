@@ -17,6 +17,12 @@ import {
   FixedAssetStatus,
   FixedAssetsService
 } from '../services/fixed-assets.service';
+import {
+  FixedAssetSettingsForm,
+  defaultFiscalYearSettings,
+  normalizeFiscalYearSettings
+} from '../services/fixed-asset-settings-defaults';
+import { fiscalYearLabel } from '../services/fiscal-year.util';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
 
 @Component({
@@ -85,7 +91,7 @@ import { AccountingStatusBannerComponent } from '../shared/accounting-status-ban
     <app-accounting-status-banner [message]="error() ?? ''" variant="error" *ngIf="error()" />
     <app-accounting-status-banner
       class="no-print"
-      [message]="'Exercice affiché: ' + fiscalYearFilter"
+      [message]="'Exercice affiché : ' + fiscalYearDisplay(fiscalYearFilter)"
       variant="info"
       *ngIf="!error()" />
 
@@ -106,7 +112,7 @@ import { AccountingStatusBannerComponent } from '../shared/accounting-status-ban
           </div>
           <div class="sage-meta">
             <span>Le {{ r.header.generatedAtUtc | date: 'dd/MM/yyyy à HH:mm' }}</span>
-            <span>Exercice : {{ r.header.fiscalYear }}</span>
+            <span>Exercice : {{ fiscalYearDisplay(r.header.fiscalYear) }}</span>
           </div>
         </header>
 
@@ -190,7 +196,7 @@ import { AccountingStatusBannerComponent } from '../shared/accounting-status-ban
                   <th>Nature</th>
                   <th class="text-right">Valeur d'origine</th>
                   <th class="text-right">Amort. cumulés 31/12/{{ priorYear() }}</th>
-                  <th class="text-right">Dotation {{ r.header.fiscalYear }}</th>
+                  <th class="text-right">Dotation {{ fiscalYearDisplay(r.header.fiscalYear) }}</th>
                   <th class="text-right">VNC 31/12/{{ r.header.fiscalYear }}</th>
                 </tr>
               </thead>
@@ -389,6 +395,9 @@ export class FixedAssetsAmortizationTableComponent implements OnInit {
   readonly report = signal<AmortizationReportResponse | null>(null);
   readonly categories = signal<DepreciationRateCategoryDto[]>([]);
 
+  /** Paramètres d'exercice du dossier (repli civil tant que non chargés) — plan « Exercices décalés ». */
+  readonly settings = signal<FixedAssetSettingsForm>(defaultFiscalYearSettings());
+
   readonly priorYear = computed(() => this.fiscalYearFilter - 1);
 
   search = '';
@@ -402,12 +411,26 @@ export class FixedAssetsAmortizationTableComponent implements OnInit {
       next: res => this.categories.set(res.data ?? []),
       error: () => this.categories.set([])
     });
+    this.loadFiscalYearSettings();
 
     if (this.route.snapshot.queryParamMap.get('refresh') === '1') {
       this.load();
     } else {
       this.load();
     }
+  }
+
+  /** Libellé d'exercice (« N/N+1 » si décalé, sinon « N ») pour l'affichage du tableau Sage. */
+  fiscalYearDisplay(fiscalYear: number): string {
+    const { fiscalYearStartMonth, fiscalYearLabelFormat } = this.settings();
+    return fiscalYearLabel(fiscalYear, fiscalYearStartMonth, fiscalYearLabelFormat);
+  }
+
+  private loadFiscalYearSettings(): void {
+    this.api.getSettings().subscribe({
+      next: res => this.settings.set(normalizeFiscalYearSettings(res.data)),
+      error: () => this.settings.set(defaultFiscalYearSettings())
+    });
   }
 
   reload(): void {

@@ -55,6 +55,7 @@ public sealed class FixedAssetRepository : IFixedAssetRepository
         Guid? categoryId,
         int? fiscalYear,
         string? search,
+        int fiscalYearStartMonth = 1,
         CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();
@@ -65,7 +66,18 @@ public sealed class FixedAssetRepository : IFixedAssetRepository
         if (categoryId.HasValue)
             query = query.Where(a => a.DepreciationRateCategoryId == categoryId.Value);
         if (fiscalYear.HasValue)
-            query = query.Where(a => a.InServiceDate != null && a.InServiceDate.Value.Year <= fiscalYear.Value);
+        {
+            // Éligibilité par frontière d'exercice (P3) : la clé d'exercice de la mise en service
+            // (année de début d'exercice contenant la date) doit être ≤ l'exercice filtré. La
+            // comparaison est inlinée (EF ne traduit pas les méthodes statiques) et équivaut à
+            // FiscalYearMath.Key(InServiceDate, startMonth) <= fiscalYear. Exercice civil
+            // (startMonth=1) ⇒ InServiceDate.Year <= fiscalYear (comportement historique identique).
+            var fy = fiscalYear.Value;
+            query = query.Where(a => a.InServiceDate != null &&
+                (a.InServiceDate.Value.Month >= fiscalYearStartMonth
+                    ? a.InServiceDate.Value.Year
+                    : a.InServiceDate.Value.Year - 1) <= fy);
+        }
         if (!string.IsNullOrWhiteSpace(search))
         {
             var s = search.Trim();
@@ -173,6 +185,7 @@ public sealed class FixedAssetRepository : IFixedAssetRepository
         Guid? categoryId,
         string? search,
         string companyName,
+        int fiscalYearStartMonth = 1,
         CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();
@@ -253,7 +266,7 @@ public sealed class FixedAssetRepository : IFixedAssetRepository
                 i.PostedLineCount);
         }).ToList();
 
-        return AmortizationReportAssembler.Assemble(projections, fiscalYear, groupingMode, companyName);
+        return AmortizationReportAssembler.Assemble(projections, fiscalYear, groupingMode, companyName, fiscalYearStartMonth);
     }
 
     public async Task<int> CountByYearPrefixAsync(int year, CancellationToken cancellationToken = default)
@@ -339,12 +352,17 @@ public sealed class FixedAssetRepository : IFixedAssetRepository
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<FixedAsset>> GetActiveForDepreciationRunAsync(int fiscalYear, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<FixedAsset>> GetActiveForDepreciationRunAsync(int fiscalYear, int fiscalYearStartMonth = 1, CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();
+        // Éligibilité par frontière d'exercice (P3) — voir SearchAsync. Inlinée pour la traduction
+        // EF (FiscalYearMath.Key non traduisible). Exercice civil ⇒ InServiceDate.Year <= fiscalYear.
         return await context.FixedAssets
             .Where(a => a.Status == FixedAssetStatus.InService || a.Status == FixedAssetStatus.FullyDepreciated)
-            .Where(a => a.InServiceDate != null && a.InServiceDate.Value.Year <= fiscalYear)
+            .Where(a => a.InServiceDate != null &&
+                (a.InServiceDate.Value.Month >= fiscalYearStartMonth
+                    ? a.InServiceDate.Value.Year
+                    : a.InServiceDate.Value.Year - 1) <= fiscalYear)
             .Where(a => a.DepreciationRatePercent > 0)
             .Include(a => a.ScheduleLines)
             .ToListAsync(cancellationToken);

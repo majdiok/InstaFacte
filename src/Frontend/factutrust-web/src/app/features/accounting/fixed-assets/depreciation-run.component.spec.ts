@@ -7,6 +7,25 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { environment } from '@environments/environment';
 import { DepreciationRunComponent } from './depreciation-run.component';
 
+const base = `${environment.apiUrl}/accounting/fixed-assets`;
+
+/** Paramètres tenant « exercice civil » (janvier, N/N+1) — défaut d'usine. */
+const civilSettings = {
+  success: true,
+  data: { fiscalYearStartMonth: 1, fiscalYearLabelFormat: 'N/N+1', fiscalYearLabelSample: '2026' }
+};
+
+/** Paramètres tenant « exercice décalé » démarrant en juillet (juil. N → juin N+1). */
+const offsetSettings = {
+  success: true,
+  data: { fiscalYearStartMonth: 7, fiscalYearLabelFormat: 'N/N+1', fiscalYearLabelSample: '2026/2027' }
+};
+
+/** Flushe la requête GET /settings émise au démarrage du composant. */
+function flushSettings(httpMock: HttpTestingController, payload: object = civilSettings): void {
+  httpMock.expectOne(`${base}/settings`).flush(payload);
+}
+
 // T12 (bug C8) — les boutons d'action (dont les liens de navigation rendus via routerLink) ne
 // doivent jamais s'afficher vides. Reproduit la régression des captures 2401/2410 : les boutons
 // "Retour au registre" / "Voir tableau amortissements", rendus via app-button[routerLink], se
@@ -24,6 +43,8 @@ describe('DepreciationRunComponent buttons (T12 / C8)', () => {
     });
     const fixture = TestBed.createComponent(DepreciationRunComponent);
     const httpMock = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+    flushSettings(httpMock);
     fixture.detectChanges();
     return { fixture, httpMock };
   }
@@ -56,9 +77,10 @@ describe('DepreciationRunComponent buttons (T12 / C8)', () => {
     const { fixture, httpMock } = setup();
 
     const links = Array.from(fixture.nativeElement.querySelectorAll('a.btn') as NodeListOf<HTMLAnchorElement>);
-    expect(links.length).toBe(2);
+    expect(links.length).toBe(3);
     expect(links.some(a => a.textContent?.trim() === 'Retour au registre')).toBeTrue();
     expect(links.some(a => a.textContent?.trim() === 'Voir tableau amortissements')).toBeTrue();
+    expect(links.some(a => a.textContent?.trim() === 'Paramètres d\'exercice')).toBeTrue();
     httpMock.verify();
   });
 });
@@ -66,8 +88,6 @@ describe('DepreciationRunComponent buttons (T12 / C8)', () => {
 // T14 (bug C7 + message de re-run) — garde anti double-clic dans run() (en plus du [disabled]) et
 // affichage du champ alreadyPostedCount (T7 backend) quand aucune nouvelle dotation n'est postée.
 describe('DepreciationRunComponent run guard & re-run message (T14 / C7)', () => {
-  const base = `${environment.apiUrl}/accounting/fixed-assets`;
-
   function setup() {
     TestBed.configureTestingModule({
       imports: [DepreciationRunComponent, RouterTestingModule, NoopAnimationsModule],
@@ -78,6 +98,9 @@ describe('DepreciationRunComponent run guard & re-run message (T14 / C7)', () =>
       ]
     });
     const fixture = TestBed.createComponent(DepreciationRunComponent);
+    const httpMock = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+    flushSettings(httpMock);
     fixture.detectChanges();
     return fixture;
   }
@@ -176,6 +199,117 @@ describe('DepreciationRunComponent run guard & re-run message (T14 / C7)', () =>
     fixture.detectChanges();
 
     expect(component.rerunMessage()).toBeNull();
+    httpMock.verify();
+  });
+});
+
+// P4 (plan « Exercices décalés ») — le champ numérique libre est remplacé par un sélecteur
+// d'exercices calculé depuis le paramétrage tenant (clé = année de début, libellé N/N+1), et le
+// résultat affiche le libellé d'exercice (`fiscalYearLabel`, repli sur la clé).
+describe('DepreciationRunComponent exercise selector + label (P4)', () => {
+  function setup(queryParams: Record<string, string> = {}) {
+    TestBed.configureTestingModule({
+      imports: [DepreciationRunComponent, RouterTestingModule, NoopAnimationsModule],
+      providers: [
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(queryParams) } } },
+        provideHttpClient(withInterceptorsFromDi()),
+        provideHttpClientTesting()
+      ]
+    });
+    const fixture = TestBed.createComponent(DepreciationRunComponent);
+    const httpMock = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+    return { fixture, httpMock };
+  }
+
+  it('replaces the free numeric year input with a select of exercises (offset settings)', () => {
+    const { fixture, httpMock } = setup();
+    flushSettings(httpMock, offsetSettings);
+    fixture.detectChanges();
+
+    // No free numeric year input remains.
+    expect(fixture.nativeElement.querySelectorAll('input[type="number"]').length).toBe(0);
+
+    const select = fixture.nativeElement.querySelector('select.accounting-filter-input') as HTMLSelectElement;
+    expect(select).toBeTruthy();
+
+    const options = Array.from(select.querySelectorAll('option')) as HTMLOptionElement[];
+    // Centered window (4 before, current, 1 after) for the july-offset current exercise (2026).
+    expect(options.some(o => o.textContent?.trim() === '2026/2027')).toBeTrue();
+    expect(options.some(o => o.textContent?.trim() === '2025/2026')).toBeTrue();
+    expect(options.some(o => o.textContent?.trim() === '2027/2028')).toBeTrue();
+    httpMock.verify();
+  });
+
+  it('selects the current exercise key by default for an offset dossier (august → FY 2026)', () => {
+    const { fixture, httpMock } = setup();
+    flushSettings(httpMock, offsetSettings);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.fiscalYear).toBe(2026);
+    expect(fixture.componentInstance.isOffset()).toBeTrue();
+    httpMock.verify();
+  });
+
+  it('honours a fiscalYear queryParam override (explicit exercise key)', () => {
+    const { fixture, httpMock } = setup({ fiscalYear: '2025' });
+    flushSettings(httpMock, offsetSettings);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.fiscalYear).toBe(2025);
+    httpMock.verify();
+  });
+
+  it('displays the fiscalYearLabel in the result heading and falls back to the key when empty', () => {
+    const { fixture, httpMock } = setup();
+    flushSettings(httpMock, offsetSettings);
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance;
+
+    // Backend P3 returns a N/N+1 label.
+    component.result.set({
+      fiscalYear: 2026,
+      postedCount: 2,
+      skippedCount: 0,
+      totalDepreciationAmount: 1000,
+      errors: [],
+      fiscalYearLabel: '2026/2027'
+    });
+    fixture.detectChanges();
+    expect(component.resultLabel()).toBe('2026/2027');
+    expect(fixture.nativeElement.textContent).toContain('Résultat — exercice 2026/2027');
+
+    // Back-compat: an older backend returns an empty label → repli on the key.
+    component.result.set({
+      fiscalYear: 2026,
+      postedCount: 1,
+      skippedCount: 0,
+      totalDepreciationAmount: 500,
+      errors: [],
+      fiscalYearLabel: ''
+    });
+    fixture.detectChanges();
+    expect(component.resultLabel()).toBe('2026');
+    expect(fixture.nativeElement.textContent).toContain('Résultat — exercice 2026');
+    httpMock.verify();
+  });
+
+  it('falls back to civil-year options when the settings endpoint fails', () => {
+    const { fixture, httpMock } = setup();
+    httpMock.expectOne(`${base}/settings`).flush(
+      { success: false, message: 'désactivé' },
+      { status: 503, statusText: 'Service Unavailable' }
+    );
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.isOffset()).toBeFalse();
+    expect(fixture.componentInstance.settingsLoaded()).toBeTrue();
+    const options = Array.from(
+      (fixture.nativeElement.querySelector('select.accounting-filter-input') as HTMLSelectElement).querySelectorAll('option')
+    ) as HTMLOptionElement[];
+    // Civil exercise → bare-year labels.
+    expect(options.some(o => o.textContent?.trim() === String(new Date().getFullYear()))).toBeTrue();
     httpMock.verify();
   });
 });

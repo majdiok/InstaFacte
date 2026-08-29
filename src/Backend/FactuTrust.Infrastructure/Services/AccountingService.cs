@@ -1600,6 +1600,9 @@ public sealed class AccountingService : IAccountingService
         if (scheduleLine.DepreciationAmount <= 0)
             return Result.Success();
 
+        // Défaut civil (repli) : 31/12 de l'exercice (clé) de la ligne. Le run annuel décalé (P3)
+        // passe une date explicite (fin d'exercice, ex. 30/06/N+1) — ce défaut n'est atteint que
+        // pour l'exercice civil ou les appelants ne fournissant pas de date (test, repli).
         var effectiveDate = entryDate ?? new DateTime(scheduleLine.FiscalYear, 12, 31);
         var periodResult = await _periodService.EnsureOpenPeriodAsync(effectiveDate, cancellationToken);
         if (periodResult.IsFailure)

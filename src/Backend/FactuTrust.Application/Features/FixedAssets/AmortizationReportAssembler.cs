@@ -1,3 +1,4 @@
+using FactuTrust.Application.Common.Fiscal;
 using FactuTrust.Application.DTOs;
 using FactuTrust.Domain.Enums;
 
@@ -29,13 +30,32 @@ public static class AmortizationReportAssembler
         int fiscalYear,
         AmortizationReportGroupingMode groupingMode,
         string companyName)
+        // Exercice civil (mois 1) : 01/01/N → 31/12/N, bit-à-bit identique à l'existant.
+        => Assemble(projections, fiscalYear, groupingMode, companyName, fiscalYearStartMonth: 1);
+
+    /// <summary>
+    /// Assemble le rapport d'amortissement conscient de la frontière d'exercice (plan « Exercices
+    /// décalés », P4). L'en-tête porte les dates de début/fin d'exercice réelles
+    /// (<see cref="FiscalYearMath.StartDateTime"/> / <see cref="FiscalYearMath.EndDateTime"/>). En
+    /// exercice civil (<paramref name="fiscalYearStartMonth"/> = 1) : 01/01/N → 31/12/N (parité
+    /// stricte avec le comportement historique). Le groupement reste par clé d'exercice (P2) et
+    /// aucun montant n'est modifié.
+    /// </summary>
+    public static AmortizationReportResponse Assemble(
+        IReadOnlyList<AmortizationReportAssetProjection> projections,
+        int fiscalYear,
+        AmortizationReportGroupingMode groupingMode,
+        string companyName,
+        int fiscalYearStartMonth)
     {
         var generatedAt = DateTime.UtcNow;
+        var periodStart = FiscalYearMath.StartDateTime(fiscalYear, fiscalYearStartMonth);
+        var periodEnd = FiscalYearMath.EndDateTime(fiscalYear, fiscalYearStartMonth);
         var header = new AmortizationReportHeaderDto(
             companyName,
             fiscalYear,
-            new DateTime(fiscalYear, 1, 1),
-            new DateTime(fiscalYear, 12, 31),
+            periodStart,
+            periodEnd,
             generatedAt);
 
         var rows = projections.Select(ToRow).OrderBy(r => r.AssetAccountNumber).ThenBy(r => r.InventoryNumber).ToList();

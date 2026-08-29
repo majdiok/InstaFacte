@@ -134,4 +134,40 @@ describe('FixedAssetsService', () => {
       }
     });
   });
+
+  // P4 (plan « Exercices décalés ») — lecture/écriture des paramètres d'exercice du dossier.
+  it('should GET the fixed-asset settings (fiscal year offset)', () => {
+    service.getSettings().subscribe(res => {
+      expect(res.success).toBe(true);
+      expect(res.data?.fiscalYearStartMonth).toBe(7);
+      expect(res.data?.fiscalYearLabelFormat).toBe('N/N+1');
+      expect(res.data?.fiscalYearLabelSample).toBe('2026/2027');
+    });
+
+    const req = httpMock.expectOne(`${base}/settings`);
+    expect(req.request.method).toBe('GET');
+    req.flush({
+      success: true,
+      data: { fiscalYearStartMonth: 7, fiscalYearLabelFormat: 'N/N+1', fiscalYearLabelSample: '2026/2027' }
+    });
+  });
+
+  it('should PUT the fixed-asset settings with the update request body', () => {
+    service
+      .updateSettings({ fiscalYearStartMonth: 4, fiscalYearLabelFormat: 'N' })
+      .subscribe(res => {
+        expect(res.success).toBe(true);
+        expect(res.data?.fiscalYearStartMonth).toBe(4);
+        expect(res.data?.fiscalYearLabelFormat).toBe('N');
+      });
+
+    const req = httpMock.expectOne(`${base}/settings`);
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body.fiscalYearStartMonth).toBe(4);
+    expect(req.request.body.fiscalYearLabelFormat).toBe('N');
+    req.flush({
+      success: true,
+      data: { fiscalYearStartMonth: 4, fiscalYearLabelFormat: 'N', fiscalYearLabelSample: '2026' }
+    });
+  });
 });

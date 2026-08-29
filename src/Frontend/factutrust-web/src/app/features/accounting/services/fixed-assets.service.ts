@@ -262,6 +262,31 @@ export interface DepreciationRunResultDto {
   errors: string[];
   /** Dotations déjà comptabilisées pour cet exercice (re-run idempotent — ajouté en T7 backend). */
   alreadyPostedCount?: number;
+  /**
+   * Libellé d'exercice renvoyé par le backend (plan « Exercices décalés », P3) : « 2026/2027 » pour
+   * un exercice décalé au format N/N+1, « 2026 » pour un exercice civil. Repli sur `fiscalYear`
+   * côté UI si le champ est vide (back-compat avec un backend antérieur à P3).
+   */
+  fiscalYearLabel?: string;
+}
+
+/**
+ * Paramètres du module Immobilisations du dossier (tenant) — support des exercices comptables
+ * décalés (plan « Exercices décalés », P1). Contrat miroir du backend `FixedAssetSettingsDto`.
+ */
+export interface FixedAssetSettingsDto {
+  /** Mois de début d'exercice (1..12) ; 1 = exercice civil (comportement historique). */
+  fiscalYearStartMonth: number;
+  /** Format de libellé d'exercice : `"N/N+1"` (défaut) ou `"N"`. */
+  fiscalYearLabelFormat: string;
+  /** Libellé d'exemple pour l'exercice courant (aide à prévisualiser le format côté UI). */
+  fiscalYearLabelSample: string;
+}
+
+/** Requête de mise à jour des paramètres Immobilisations du dossier (permission Accounting). */
+export interface UpdateFixedAssetSettingsRequest {
+  fiscalYearStartMonth: number;
+  fiscalYearLabelFormat: string;
 }
 
 /** DTO brut renvoyé par l'API avant normalisation des enums. */
@@ -380,6 +405,16 @@ export class FixedAssetsService {
 
   getRateCategories(): Observable<ApiResponse<DepreciationRateCategoryDto[]>> {
     return this.http.get<ApiResponse<DepreciationRateCategoryDto[]>>(`${this.base}/rate-categories`);
+  }
+
+  /** Lecture des paramètres Immobilisations du dossier (exercice décalé) — permission Accounting. */
+  getSettings(): Observable<ApiResponse<FixedAssetSettingsDto>> {
+    return this.http.get<ApiResponse<FixedAssetSettingsDto>>(`${this.base}/settings`);
+  }
+
+  /** Écriture des paramètres Immobilisations du dossier (exercice décalé) — permission Accounting. */
+  updateSettings(req: UpdateFixedAssetSettingsRequest): Observable<ApiResponse<FixedAssetSettingsDto>> {
+    return this.http.put<ApiResponse<FixedAssetSettingsDto>>(`${this.base}/settings`, req);
   }
 
   list(params: {
