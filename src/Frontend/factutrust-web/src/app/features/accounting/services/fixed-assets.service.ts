@@ -78,6 +78,9 @@ export interface DepreciationScheduleLineDto {
   accumulatedDepreciation: number;
   closingNbv: number;
   isPosted: boolean;
+  /** Vrai si l'écriture de dotation rattachée est extournée (T13 backend) — une ligne extournée
+   *  ne bloque plus la régénération du tableau même si `isPosted` reste true (dé-postage différé). */
+  isReversed: boolean;
 }
 
 export interface FixedAssetScheduleDto {

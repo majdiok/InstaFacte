@@ -5,7 +5,7 @@ import { RouterTestingModule } from '@angular/router/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { environment } from '@environments/environment';
 import { FixedAssetDetailComponent } from './fixed-asset-detail.component';
-import { DepreciationMethod, FixedAssetStatus } from '../services/fixed-assets.service';
+import { DepreciationMethod, DepreciationScheduleLineDto, FixedAssetScheduleDto, FixedAssetStatus } from '../services/fixed-assets.service';
 import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 
 describe('FixedAssetDetailComponent', () => {
@@ -381,6 +381,81 @@ describe('FixedAssetDetailComponent', () => {
       const amountInputs = fixture.nativeElement.querySelectorAll('app-accounting-amount-input');
       expect(amountInputs.length).toBeGreaterThanOrEqual(1);
       expect(fixture.nativeElement.querySelectorAll('input[type="number"][step="0.001"]').length).toBe(0);
+      httpMock.verify();
+    });
+  });
+
+  // T13 (bug C6) — régénération après extourne : une ligne dont l'écriture est extournée
+  // (isReversed) ne doit plus bloquer la régénération, même si isPosted reste true. La garde UI
+  // ne bloque que sur les dotations encore actives (isPosted && !isReversed).
+  describe('regeneration guard after reversal (T13 / C6)', () => {
+    function line(overrides: Partial<DepreciationScheduleLineDto>): DepreciationScheduleLineDto {
+      return {
+        id: 'line-1',
+        fiscalYear: 2024,
+        periodMonth: null,
+        openingNbv: 0,
+        normalAnnualAmount: 0,
+        priorAccumulatedDepreciation: 0,
+        depreciationAmount: 0,
+        accumulatedDepreciation: 0,
+        closingNbv: 0,
+        isPosted: false,
+        isReversed: false,
+        ...overrides
+      } as DepreciationScheduleLineDto;
+    }
+
+    function setSchedule(component: FixedAssetDetailComponent, lines: DepreciationScheduleLineDto[]): void {
+      component.schedule.set({ lines } as unknown as FixedAssetScheduleDto);
+    }
+
+    it('allows regeneration when every posted line is reversed (extourne)', () => {
+      const { fixture, httpMock } = setup({ data: { mode: 'new' } });
+      const component = fixture.componentInstance;
+
+      setSchedule(component, [
+        line({ fiscalYear: 2024, isPosted: true, isReversed: true }),
+        line({ fiscalYear: 2025, isPosted: false, isReversed: false })
+      ]);
+
+      expect(component.hasPostedLines()).toBeFalse();
+      httpMock.verify();
+    });
+
+    it('blocks regeneration when a posted, non-reversed line exists', () => {
+      const { fixture, httpMock } = setup({ data: { mode: 'new' } });
+      const component = fixture.componentInstance;
+
+      setSchedule(component, [
+        line({ fiscalYear: 2024, isPosted: true, isReversed: true }),
+        line({ fiscalYear: 2025, isPosted: true, isReversed: false })
+      ]);
+
+      expect(component.hasPostedLines()).toBeTrue();
+      httpMock.verify();
+    });
+
+    it('allows regeneration when there are no schedule lines', () => {
+      const { fixture, httpMock } = setup({ data: { mode: 'new' } });
+      const component = fixture.componentInstance;
+
+      setSchedule(component, []);
+
+      expect(component.hasPostedLines()).toBeFalse();
+      httpMock.verify();
+    });
+
+    it('allows regeneration when no line is posted', () => {
+      const { fixture, httpMock } = setup({ data: { mode: 'new' } });
+      const component = fixture.componentInstance;
+
+      setSchedule(component, [
+        line({ fiscalYear: 2024, isPosted: false, isReversed: false }),
+        line({ fiscalYear: 2025, isPosted: false, isReversed: true })
+      ]);
+
+      expect(component.hasPostedLines()).toBeFalse();
       httpMock.verify();
     });
   });

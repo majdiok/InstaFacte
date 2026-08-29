@@ -341,7 +341,8 @@ interface AssetFormModel {
         </div>
       </div>
       <p class="hint" *ngIf="hasPostedLines()">
-        Des dotations sont déjà comptabilisées : le tableau ne peut plus être regénéré.
+        Des dotations non extournées sont déjà comptabilisées : le tableau ne peut plus être regénéré.
+        Extournez l'écriture concernée pour autoriser la régénération.
       </p>
 
       <ng-container *ngIf="schedule() as s">
@@ -717,7 +718,10 @@ export class FixedAssetDetailComponent implements OnInit {
   }
 
   hasPostedLines(): boolean {
-    return this.schedule()?.lines?.some(l => l.isPosted) ?? false;
+    // T13 (C6) — une ligne extournée (isReversed) ne bloque plus la régénération même si son
+    // écriture d'origine reste rattachée (isPosted true, dé-postage différé côté serveur). On ne
+    // bloque que sur les dotations encore actives (comptabilisées ET non extournées).
+    return this.schedule()?.lines?.some(l => l.isPosted && !l.isReversed) ?? false;
   }
 
   depreciableBase(): number {
