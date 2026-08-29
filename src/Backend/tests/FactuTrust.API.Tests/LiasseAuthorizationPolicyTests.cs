@@ -185,7 +185,8 @@ public sealed class LiasseAuthorizationPolicyTests
             .Select(a => a.Policy)
             .Distinct()
             .ToList();
-        return Assert.Single(policies);
+        Assert.Single(policies);
+        return policies[0];
     }
 
     /// <summary>Résout la permission concrète portée par une politique <c>perm:…</c>.</summary>
