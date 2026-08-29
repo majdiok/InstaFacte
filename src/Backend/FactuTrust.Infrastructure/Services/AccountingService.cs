@@ -1649,7 +1649,7 @@ public sealed class AccountingService : IAccountingService
         if (existing is not null)
             return Result.Success();
 
-        if (asset.DisposalDate is null || string.IsNullOrWhiteSpace(asset.DisposalTreasuryAccount))
+        if (asset.DisposalDate is null)
             return Result.Failure(Error.Validation("FixedAsset", "Cession incomplète pour l'écriture comptable."));
 
         var entryDate = asset.DisposalDate.Value;
@@ -1662,6 +1662,13 @@ public sealed class AccountingService : IAccountingService
         var proceeds = asset.DisposalProceeds ?? 0m;
         var nbv = asset.NetBookValue;
         var gainOrLoss = proceeds - nbv;
+
+        var hasTreasury = !string.IsNullOrWhiteSpace(asset.DisposalTreasuryAccount);
+        var hasReceivable = !string.IsNullOrWhiteSpace(asset.DisposalReceivableAccount);
+        // Un compte de règlement n'est requis que pour un produit de cession positif ; la mise au
+        // rebut / cession gratuite (produit = 0) ne génère aucune ligne de règlement (T4, A6).
+        if (proceeds > 0 && !hasTreasury && !hasReceivable)
+            return Result.Failure(Error.Validation("FixedAsset", "Cession incomplète pour l'écriture comptable."));
 
         var lines = new List<JournalLineInput>();
 
@@ -1678,8 +1685,10 @@ public sealed class AccountingService : IAccountingService
 
         if (proceeds > 0)
         {
+            // Règlement comptant (trésorerie) ou à terme (créance 452 sur cession).
+            var settlementAccount = hasReceivable ? asset.DisposalReceivableAccount! : asset.DisposalTreasuryAccount!;
             lines.Add(new JournalLineInput(
-                asset.DisposalTreasuryAccount!,
+                settlementAccount,
                 $"Produit cession — {asset.InventoryNumber}",
                 proceeds,
                 0,

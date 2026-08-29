@@ -434,59 +434,170 @@ public sealed class DisposeFixedAssetCommandHandler : IRequestHandler<DisposeFix
     private readonly IDepreciationEngine _engine;
     private readonly IAccountingService _accounting;
     private readonly ICurrentUser _currentUser;
+    private readonly ITenantUnitOfWork _unitOfWork;
 
     public DisposeFixedAssetCommandHandler(
         IFixedAssetRepository assets,
         IDepreciationEngine engine,
         IAccountingService accounting,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        ITenantUnitOfWork unitOfWork)
     {
         _assets = assets;
         _engine = engine;
         _accounting = accounting;
         _currentUser = currentUser;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<Result<Guid>> Handle(DisposeFixedAssetCommand request, CancellationToken cancellationToken)
     {
+        var r = request.Request;
         var asset = await _assets.GetByIdAsync(request.Id, includeSchedule: true, cancellationToken: cancellationToken);
         if (asset is null)
             return Result.Failure<Guid>(Error.Validation("FixedAsset", "Immobilisation introuvable."));
 
-        var dispose = asset.Dispose(
-            request.Request.DisposalDate,
-            request.Request.DisposalProceeds,
-            request.Request.TreasuryAccountNumber);
-        if (dispose.IsFailure)
-            return Result.Failure<Guid>(dispose.Error);
+        var disposalDate = r.DisposalDate.Date;
+        var disposalYear = disposalDate.Year;
+        var treasury = string.IsNullOrWhiteSpace(r.TreasuryAccountNumber) ? null : r.TreasuryAccountNumber.Trim();
+        var receivable = string.IsNullOrWhiteSpace(r.ReceivableAccountNumber) ? null : r.ReceivableAccountNumber.Trim();
 
-        if (asset.DepreciationRatePercent > 0 &&
-            (!asset.ScheduleLines.Any() || !asset.ScheduleLines.Any(l => l.IsPosted)))
+        // Validation des comptes de règlement (452 / trésorerie / mise au rebut) — T4, A6.
+        if (r.DisposalProceeds > 0)
         {
-            var regenerated = _engine.GenerateSchedule(asset);
-            await _assets.ReplaceScheduleLinesAsync(asset.Id, regenerated, cancellationToken);
-            asset = await _assets.GetByIdAsync(request.Id, includeSchedule: true, cancellationToken: cancellationToken);
-            if (asset is null)
-                return Result.Failure<Guid>(Error.Validation("FixedAsset", "Immobilisation introuvable."));
+            var hasTreasury = !string.IsNullOrEmpty(treasury);
+            var hasReceivable = !string.IsNullOrEmpty(receivable);
+            if (hasTreasury == hasReceivable)
+                return Result.Failure<Guid>(Error.Validation("DisposalAccount", "Indiquez un seul compte de règlement : trésorerie (comptant) ou créance 452 (à terme)."));
+            if (hasReceivable && !receivable!.StartsWith("452"))
+                return Result.Failure<Guid>(Error.Validation("ReceivableAccountNumber", "Le compte de créance sur cession doit commencer par 452."));
         }
 
-        var disposalYear = request.Request.DisposalDate.Year;
-        var yearLine = asset.ScheduleLines.FirstOrDefault(l => l.FiscalYear == disposalYear && !l.IsPosted);
-        if (yearLine is not null && yearLine.DepreciationAmount > 0)
+        // Pré-condition « exercices antérieurs comptabilisés » (finding 2 — BLOQUANT).
+        var priorUnpostedYears = asset.ScheduleLines
+            .Where(l => l.FiscalYear < disposalYear && !l.IsPosted)
+            .Select(l => l.FiscalYear)
+            .Distinct()
+            .OrderBy(y => y)
+            .ToList();
+        if (priorUnpostedYears.Count > 0)
+            return Result.Failure<Guid>(Error.Validation("Schedule",
+                $"Des dotations d'exercices antérieurs ({string.Join(", ", priorUnpostedYears)}) ne sont pas comptabilisées. Comptabilisez-les (page Dotations) avant d'enregistrer la cession."));
+
+        // Pré-condition : la ligne de l'année de cession ne doit pas être déjà comptabilisée.
+        if (asset.ScheduleLines.Any(l => l.FiscalYear == disposalYear && l.IsPosted))
+            return Result.Failure<Guid>(Error.Validation("Schedule",
+                "La dotation de l'année de cession est déjà comptabilisée (annuité pleine). La cession ne peut pas recalculer une dotation déjà postée."));
+
+        // Atomicité tout-ou-rien (finding 1 — BLOQUANT, D9) : tout le workflow dans une transaction.
+        Result<Guid> disposalResult;
+        try
         {
-            var dep = await _accounting.GenerateFixedAssetDepreciationEntryAsync(asset, yearLine, cancellationToken: cancellationToken);
-            if (dep.IsFailure)
-                return Result.Failure<Guid>(dep.Error);
-            await _assets.SaveScheduleLineAsync(yearLine, cancellationToken);
+            disposalResult = await _unitOfWork.ExecuteAsync(async ct =>
+            {
+                // 1. Mutation de l'actif (cession) — DisposalDate alimente le moteur de prorata.
+                var dispose = asset.Dispose(disposalDate, r.DisposalProceeds, treasury, receivable);
+                if (dispose.IsFailure)
+                    return Result.Failure<Guid>(dispose.Error);
+
+                // 2. Prorata de l'année de cession + remplacement des lignes non postées (B1).
+                if (asset.DepreciationRatePercent > 0)
+                {
+                    var hasPosted = asset.ScheduleLines.Any(l => l.IsPosted);
+                    if (!hasPosted)
+                    {
+                        // Aucune dotation comptabilisée : régénération complète (comportement préservé).
+                        var regenerated = _engine.GenerateSchedule(asset);
+                        await _assets.ReplaceScheduleLinesAsync(asset.Id, regenerated, ct);
+                    }
+                    else
+                    {
+                        // Dotations antérieures comptabilisées : prorata en place de la ligne de cession,
+                        // suppression des lignes futures non postées. Les lignes IsPosted sont intactes.
+                        var priorAccumulated = asset.ScheduleLines
+                            .Where(l => l.FiscalYear < disposalYear && l.IsPosted)
+                            .Sum(l => l.DepreciationAmount);
+
+                        var prorataAmount = _engine.CalculateDisposalYearDepreciation(asset, disposalYear, priorAccumulated);
+                        var target = BuildDisposalYearLine(asset, disposalYear, priorAccumulated, prorataAmount);
+                        await _assets.ReplaceUnpostedScheduleLinesAsync(asset.Id, target is null ? Array.Empty<DepreciationScheduleLine>() : new[] { target }, ct);
+                    }
+
+                    // Recharger pour obtenir la ligne de cession mise à jour (montants prorata, même Id).
+                    asset = await _assets.GetByIdAsync(request.Id, includeSchedule: true, cancellationToken: ct);
+                    if (asset is null)
+                        return Result.Failure<Guid>(Error.Validation("FixedAsset", "Immobilisation introuvable."));
+
+                    // La recharge perd l'état de cession (non encore persisté) : on le ré-applique.
+                    var reDispose = asset.Dispose(disposalDate, r.DisposalProceeds, treasury, receivable);
+                    if (reDispose.IsFailure)
+                        return Result.Failure<Guid>(reDispose.Error);
+
+                    // 3. Dotation complémentaire datée à la date de cession (T3).
+                    var yearLine = asset.ScheduleLines.FirstOrDefault(l => l.FiscalYear == disposalYear && !l.IsPosted);
+                    if (yearLine is not null && yearLine.DepreciationAmount > 0)
+                    {
+                        var dep = await _accounting.GenerateFixedAssetDepreciationEntryAsync(asset, yearLine, entryDate: disposalDate, cancellationToken: ct);
+                        if (dep.IsFailure)
+                            return Result.Failure<Guid>(dep.Error);
+                        await _assets.SaveScheduleLineAsync(yearLine, ct);
+                    }
+                }
+
+                // 4. Mutation de l'actif (cumuls, audit).
+                asset.SetAuditInfo(_currentUser.Email ?? "system", true);
+                await _assets.UpdateAsync(asset, ct);
+
+                // 5. Écriture de sortie (schéma net 636/736 — E3).
+                var disposalEntry = await _accounting.GenerateFixedAssetDisposalEntryAsync(asset, ct);
+                if (disposalEntry.IsFailure)
+                    return Result.Failure<Guid>(disposalEntry.Error);
+
+                return Result.Success(asset.Id);
+            }, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            return Result.Failure<Guid>(new Error("FixedAsset.Disposal", ex.Message));
         }
 
-        asset.SetAuditInfo(_currentUser.Email ?? "system", true);
-        await _assets.UpdateAsync(asset, cancellationToken);
+        return disposalResult;
+    }
 
-        var disposalEntry = await _accounting.GenerateFixedAssetDisposalEntryAsync(asset, cancellationToken);
-        if (disposalEntry.IsFailure)
-            return Result.Failure<Guid>(disposalEntry.Error);
+    /// <summary>
+    /// Construit la ligne cible de l'année de cession (prorata) à partir des montants réellement
+    /// comptabilisés (<paramref name="priorAccumulated"/>) et de la dotation prorata calculée par
+    /// le moteur. L'<c>NormalAnnualAmount</c> (annuité pleine) provient du tableau régénéré pour
+    /// l'affichage ; les cumuls sont dérivés de la situation réelle.
+    /// </summary>
+    private DepreciationScheduleLine? BuildDisposalYearLine(
+        FixedAsset asset,
+        int disposalYear,
+        decimal priorAccumulated,
+        decimal prorataAmount)
+    {
+        if (prorataAmount <= 0)
+            return null;
 
-        return Result.Success(asset.Id);
+        var generated = _engine.GenerateSchedule(asset);
+        var template = generated.FirstOrDefault(l => l.FiscalYear == disposalYear);
+        if (template is null)
+            return null;
+
+        const MidpointRounding rounding = MidpointRounding.AwayFromZero;
+        var accumulated = Math.Round(priorAccumulated + prorataAmount, 3, rounding);
+        var closingNbv = Math.Round(Math.Max(asset.ResidualValue, asset.TotalCapitalizedCost - accumulated), 3, rounding);
+        var openingNbv = Math.Round(Math.Max(asset.ResidualValue, asset.TotalCapitalizedCost - priorAccumulated), 3, rounding);
+
+        return DepreciationScheduleLine.Create(
+            asset.Id,
+            disposalYear,
+            template.PeriodMonth,
+            openingNbv,
+            template.NormalAnnualAmount,
+            priorAccumulated,
+            prorataAmount,
+            accumulated,
+            closingNbv).Value;
     }
 }

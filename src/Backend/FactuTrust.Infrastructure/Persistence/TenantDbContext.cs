@@ -4341,6 +4341,7 @@ public partial class TenantDbContext : DbContext
             entity.Property(e => e.CreditAccountNumber).HasMaxLength(20);
             entity.Property(e => e.DisposalProceeds).HasPrecision(18, 3);
             entity.Property(e => e.DisposalTreasuryAccount).HasMaxLength(20);
+            entity.Property(e => e.DisposalReceivableAccount).HasMaxLength(20);
             entity.Property(e => e.Status).HasConversion<int>();
             entity.Property(e => e.DepreciationMethod).HasConversion<int>();
             entity.HasIndex(e => e.Status);

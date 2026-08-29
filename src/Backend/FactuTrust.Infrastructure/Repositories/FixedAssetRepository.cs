@@ -475,7 +475,7 @@ public sealed class FixedAssetRepository : IFixedAssetRepository
 
             if (scheduleLinesToReplace is { Count: > 0 })
             {
-                await ReplaceScheduleLinesInContextAsync(context, asset.Id, scheduleLinesToReplace, cancellationToken);
+                await MergeScheduleLinesInContextAsync(context, asset.Id, scheduleLinesToReplace, skipPostedLines: false, cancellationToken);
             }
 
             await transaction.CommitAsync(cancellationToken);
@@ -500,7 +500,25 @@ public sealed class FixedAssetRepository : IFixedAssetRepository
         CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();
-        await ReplaceScheduleLinesInContextAsync(context, fixedAssetId, lines, cancellationToken);
+        await MergeScheduleLinesInContextAsync(context, fixedAssetId, lines, skipPostedLines: false, cancellationToken);
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Flux de cession (T4, B1) : merge des lignes non postées uniquement. La ligne de l'année de
+    /// cession (présente dans <paramref name="targetLines"/>) est mise à jour en place via
+    /// <see cref="DepreciationScheduleLine.UpdateAmounts"/> (Id et JournalEntryId conservés) ;
+    /// les lignes non postées sans correspondance (exercices postérieurs) sont supprimées ; les
+    /// lignes <c>IsPosted</c> sont laissées intactes (jamais touchées). S'enrôle dans la
+    /// transaction ambiante via <c>CreateContext()</c>.
+    /// </summary>
+    public async Task ReplaceUnpostedScheduleLinesAsync(
+        Guid fixedAssetId,
+        IReadOnlyList<DepreciationScheduleLine> targetLines,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        await MergeScheduleLinesInContextAsync(context, fixedAssetId, targetLines, skipPostedLines: true, cancellationToken);
         await context.SaveChangesAsync(cancellationToken);
     }
 
@@ -545,21 +563,68 @@ public sealed class FixedAssetRepository : IFixedAssetRepository
             .CountAsync(cancellationToken);
     }
 
-    private static async Task ReplaceScheduleLinesInContextAsync(
+    /// <summary>
+    /// Merge par clé <c>(FiscalYear, PeriodMonth)</c> — préserve l'identité (Id) et le lien d'audit
+    /// (<c>JournalEntryId</c>) des lignes existantes (T4/T13, C6) au lieu d'un delete+recreate qui
+    /// cassait <c>JournalEntries.SourceEntityId → DepreciationScheduleLine.Id</c>.
+    /// <list type="bullet">
+    /// <item>Ligne existante <c>IsPosted</c> : exception si <paramref name="skipPostedLines"/> est
+    ///   <c>false</c> (flux « regénérer ») ; ignorée (intacte) si <c>true</c> (flux cession).</item>
+    /// <item>Ligne existante non postée avec correspondance dans <paramref name="lines"/> :
+    ///   <see cref="DepreciationScheduleLine.UpdateAmounts"/> (même Id, JournalEntryId conservé).</item>
+    /// <item>Ligne de <paramref name="lines"/> sans existant : <c>Add</c>.</item>
+    /// <item>Ligne existante non postée sans correspondance : <c>Remove</c>.</item>
+    /// </list>
+    /// </summary>
+    private static async Task MergeScheduleLinesInContextAsync(
         TenantDbContext context,
         Guid fixedAssetId,
         IReadOnlyList<DepreciationScheduleLine> lines,
+        bool skipPostedLines,
         CancellationToken cancellationToken)
     {
         var existing = await context.DepreciationScheduleLines
             .Where(l => l.FixedAssetId == fixedAssetId)
             .ToListAsync(cancellationToken);
 
-        if (existing.Any(l => l.IsPosted))
+        if (!skipPostedLines && existing.Any(l => l.IsPosted))
             throw new InvalidOperationException("Des dotations comptabilisées empêchent la regénération du tableau.");
 
-        context.DepreciationScheduleLines.RemoveRange(existing);
-        context.DepreciationScheduleLines.AddRange(lines);
+        // Les lignes postées sont ignorées dans le flux de cession (skipPostedLines) : jamais
+        // modifiées ni supprimées. Seules les lignes non postées participent au merge.
+        var unpostedByKey = existing
+            .Where(l => !l.IsPosted)
+            .ToDictionary(l => (l.FiscalYear, l.PeriodMonth));
+
+        foreach (var target in lines)
+        {
+            var key = (target.FiscalYear, target.PeriodMonth);
+            if (unpostedByKey.TryGetValue(key, out var match))
+            {
+                var update = match.UpdateAmounts(
+                    target.OpeningNbv,
+                    target.NormalAnnualAmount,
+                    target.PriorAccumulatedDepreciation,
+                    target.DepreciationAmount,
+                    target.AccumulatedDepreciation,
+                    target.ClosingNbv,
+                    target.PeriodMonth);
+                if (update.IsFailure)
+                    throw new InvalidOperationException(update.Error.Description);
+                unpostedByKey.Remove(key);
+            }
+            else
+            {
+                context.DepreciationScheduleLines.Add(target);
+            }
+        }
+
+        // Lignes non postées restantes (sans correspondance dans le tableau cible) → suppression.
+        foreach (var remaining in unpostedByKey.Values)
+        {
+            context.DepreciationScheduleLines.Remove(remaining);
+        }
+
         await context.SaveChangesAsync(cancellationToken);
     }
 

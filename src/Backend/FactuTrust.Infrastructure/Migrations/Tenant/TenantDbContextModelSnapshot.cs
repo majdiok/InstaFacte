@@ -2330,6 +2330,10 @@ namespace FactuTrust.Infrastructure.Migrations.Tenant
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<string>("DisposalReceivableAccount")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.Property<string>("ExpenseAccountNumber")
                         .IsRequired()
                         .HasMaxLength(20)

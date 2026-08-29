@@ -62,7 +62,8 @@ public sealed record PostDepreciationRunRequest(int FiscalYear);
 public sealed record DisposeFixedAssetRequest(
     DateTime DisposalDate,
     decimal DisposalProceeds,
-    string TreasuryAccountNumber);
+    string? TreasuryAccountNumber,
+    string? ReceivableAccountNumber = null);
 
 public sealed record DepreciationRunResultDto(
     int FiscalYear,

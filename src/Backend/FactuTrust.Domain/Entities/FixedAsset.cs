@@ -64,6 +64,8 @@ public sealed class FixedAsset : AggregateRoot
     public string? CreditAccountNumber { get; private set; }
     public decimal? DisposalProceeds { get; private set; }
     public string? DisposalTreasuryAccount { get; private set; }
+    /// <summary>Créance sur cession d'immobilisations (compte 452) — règlement à terme (T4, A6).</summary>
+    public string? DisposalReceivableAccount { get; private set; }
 
     private readonly List<DepreciationScheduleLine> _scheduleLines = new();
     public IReadOnlyCollection<DepreciationScheduleLine> ScheduleLines => _scheduleLines.AsReadOnly();
@@ -296,14 +298,18 @@ public sealed class FixedAsset : AggregateRoot
         return Result.Success();
     }
 
-    public Result Dispose(DateTime disposalDate, decimal disposalProceeds, string treasuryAccountNumber)
+    public Result Dispose(DateTime disposalDate, decimal disposalProceeds, string? treasuryAccountNumber, string? receivableAccountNumber = null)
     {
         if (Status is FixedAssetStatus.Draft or FixedAssetStatus.Disposed)
             return Result.Failure(Error.Validation("Status", "Cette immobilisation ne peut pas être cédée"));
 
-        treasuryAccountNumber = treasuryAccountNumber?.Trim() ?? string.Empty;
-        if (string.IsNullOrEmpty(treasuryAccountNumber))
-            return Result.Failure(Error.Validation("TreasuryAccountNumber", "Le compte de trésorerie est obligatoire"));
+        treasuryAccountNumber = string.IsNullOrWhiteSpace(treasuryAccountNumber) ? null : treasuryAccountNumber.Trim();
+        receivableAccountNumber = string.IsNullOrWhiteSpace(receivableAccountNumber) ? null : receivableAccountNumber.Trim();
+
+        // Un compte de règlement (trésorerie ou créance 452) n'est requis que pour un prix de
+        // cession positif ; la mise au rebut / cession gratuite (produit = 0) n'en exige aucun.
+        if (disposalProceeds > 0 && string.IsNullOrEmpty(treasuryAccountNumber) && string.IsNullOrEmpty(receivableAccountNumber))
+            return Result.Failure(Error.Validation("DisposalAccount", "Un compte de règlement (trésorerie ou créance 452) est requis lorsque le prix de cession est positif."));
 
         if (InServiceDate is null || disposalDate.Date < InServiceDate.Value)
             return Result.Failure(Error.Validation("DisposalDate", "La date de cession ne peut pas précéder la mise en service"));
@@ -315,6 +321,7 @@ public sealed class FixedAsset : AggregateRoot
         DisposalDate = disposalDate.Date;
         DisposalProceeds = disposalProceeds;
         DisposalTreasuryAccount = treasuryAccountNumber;
+        DisposalReceivableAccount = receivableAccountNumber;
         _events.Add(FixedAssetEvent.Create(Id, FixedAssetEventType.Disposed, disposalDate.Date, disposalProceeds, null));
         return Result.Success();
     }
@@ -367,7 +374,8 @@ public sealed class FixedAsset : AggregateRoot
             NetBookValue = NetBookValue,
             CreditAccountNumber = CreditAccountNumber,
             DisposalProceeds = DisposalProceeds,
-            DisposalTreasuryAccount = DisposalTreasuryAccount
+            DisposalTreasuryAccount = DisposalTreasuryAccount,
+            DisposalReceivableAccount = DisposalReceivableAccount
         };
         copy.Id = Id;
 

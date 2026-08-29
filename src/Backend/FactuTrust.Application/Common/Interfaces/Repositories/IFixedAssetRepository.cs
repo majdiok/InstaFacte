@@ -72,6 +72,16 @@ public interface IFixedAssetRepository
         CancellationToken cancellationToken = default);
 
     Task ReplaceScheduleLinesAsync(Guid fixedAssetId, IReadOnlyList<DepreciationScheduleLine> lines, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Remplace en place les lignes d'échéancier non comptabilisées (flux de cession — T4, B1) :
+    /// met à jour la ligne de l'année de cession avec la dotation prorata (via
+    /// <c>UpdateAmounts</c>, <c>Id</c> et lien d'audit conservés) et supprime les lignes non
+    /// postées d'exercices postérieurs. Les lignes <c>IsPosted</c> ne sont **jamais** touchées.
+    /// Toutes les méthodes appelées utilisent <c>CreateContext()</c> (enrôlement transaction ambiante).
+    /// </summary>
+    Task ReplaceUnpostedScheduleLinesAsync(Guid fixedAssetId, IReadOnlyList<DepreciationScheduleLine> targetLines, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<DepreciationScheduleLine>> GetUnpostedScheduleLinesForYearAsync(int fiscalYear, CancellationToken cancellationToken = default);
     Task SaveScheduleLineAsync(DepreciationScheduleLine line, CancellationToken cancellationToken = default);
 
