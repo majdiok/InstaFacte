@@ -313,7 +313,20 @@ public static class NctStatementBuilder
         decimal Raw50(IReadOnlyDictionary<string, decimal> d) => Net(d, a => Cls(a) == 5 && Root2(a) == "50" && !a.StartsWith("506"));
         var dClass1 = RawClass1(cur) - RawClass1(prev);
         var d50 = Raw50(cur) - Raw50(prev);
-        var financing = -dClass1 - d50;
+
+        // T5 suivi — résultat N-1 non affecté. Le comparatif unique `prev` sert à la fois au compte de
+        // résultat N-1 (qui requiert les classes 6/7 porteuses du résultat N-1) et au bilan d'ouverture
+        // du flux (qui devrait être post-affectation, 6/7 soldés). Dès que NetResult(N-1) ≠ 0 et que ce
+        // résultat est encore non affecté (porté par 6/7, NON repris dans la classe 1 d'ouverture —
+        // l'injection synthétique 121 de LoadYearNetAsync ne porte que les résultats antérieurs à N-1),
+        // le bilan d'ouverture est déséquilibré d'exactement NetResult(N-1) : sans correction,
+        // CFECART = −NetResult(N-1). NetPnl(d) = Σ net(6/7) = −NetResult(year) si non affecté, 0 si
+        // clôturé/ancré (écritures de clôture soldant 6/7). On retranche du financement la part du
+        // résultat N-1 seulement portée en capitaux propres d'ouverture : ouverture(equity) =
+        // classe1(prev) − NetPnl(prev) = classe1(prev) + NetResult(N-1). No-op quand NetPnl(prev) = 0
+        // (résultat affecté/ancré) → pas de régression pour les tenants déjà rapprochés.
+        decimal NetPnl(IReadOnlyDictionary<string, decimal> d) => Net(d, a => Cls(a) == 6 || Cls(a) == 7);
+        var financing = -dClass1 - d50 + NetPnl(prev);
 
         var computed = operating + investing + financing;
 

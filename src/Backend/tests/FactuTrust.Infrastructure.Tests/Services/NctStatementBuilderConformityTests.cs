@@ -174,15 +174,16 @@ public sealed class NctStatementBuilderConformityTests
         Assert.Equal(-2000m, L("CF5"));
         Assert.Equal(2000m, L("CFINV2"));
 
-        // NOTE — écart avec une lecture naïve du plan : CFECART n'est pas « toujours 0 par construction ».
-        // Il vaut en réalité −NetResult(exercice comparatif N-1). Le builder reçoit un SEUL dictionnaire
-        // comparatif `previousNet` servi à la fois pour le compte de résultat N-1 (qui requiert les
-        // classes 6/7 porteuses du résultat N-1, cf. T4 « REX/RAI N-1 ≠ 0 ») et pour les soldes d'ouverture
-        // du flux de trésorerie (qui devraient être un bilan post-affectation équilibré, classes 6/7
-        // soldées). Ces deux usages sont incompatibles dès que NetResult(N-1) ≠ 0 : la fixture T9 fixe
-        // donc NetResult(N-1) = 0 (691 absorbe le RAI) — unique état cohérent avec l'architecture à un
-        // seul comparatif — tout en gardant REX(N-1)/RAI(N-1) ≠ 0. Un NetResult(N-1) ≠ 0 produirait
-        // CFECART = −NetResult(N-1) (IsReconciled = false) : limite connexe à T5 à traiter en suivi.
+        // NOTE — rapprochement du flux (T5 suivi). Le builder reçoit un SEUL dictionnaire comparatif
+        // `previousNet` servi à la fois pour le compte de résultat N-1 (qui requiert les classes 6/7
+        // porteuses du résultat N-1, cf. T4 « REX/RAI N-1 ≠ 0 ») et pour les soldes d'ouverture du flux
+        // (qui devraient être un bilan post-affectation, classes 6/7 soldées). Historiquement incompatibles
+        // dès que NetResult(N-1) ≠ 0 (CFECART valait −NetResult(N-1)) : la fixture T9 fixait donc
+        // NetResult(N-1) = 0 (691 absorbe le RAI). La ligne de financement annule désormais la part du
+        // résultat N-1 non affecté portée en capitaux propres d'ouverture (cf. BuildCashFlow, NetPnl) :
+        // CFECART = 0 quel que soit NetResult(N-1), prouvé par CashFlow_PriorYear_Unaffected_Reconciles
+        // et CashFlow_ProfitableN_WithDisposalPayrollTva_AndUnaffectedN1_Reconciles. Cette fixture
+        // (NetResult(N-1) = 0) reste le cas de non-régression où NetPnl(prev) = 0 (correctif no-op).
     }
 
     [Fact]
@@ -268,5 +269,111 @@ public sealed class NctStatementBuilderConformityTests
         Assert.Equal(10m, L("CFINV2"));                  // inchangé (basé sur les soldes 736)
         // La composante cession du flux d'investissement (110) ≠ Proceeds (50) : défaut observable réel.
         Assert.NotEqual(50m, cf.InvestingCashFlow);
+    }
+
+    // ── T5 suivi : rapprochement du flux quel que soit NetResult(N-1) ────────────
+    //
+    // La ligne de financement annule désormais la part du résultat N-1 non affecté portée en capitaux
+    // propres d'ouverture (BuildCashFlow, NetPnl). NetPnl(prev) = Σ net(6/7) = −NetResult(N-1) si le
+    // résultat est non affecté (encore en 6/7), 0 si l'exercice est clôturé/ancré (écritures de clôture
+    // soldant 6/7). CFECART doit valoir 0 (IsReconciled) dans tous les cas ci-dessous.
+
+    // Cas 1 — N-1 bénéficiaire et NON affecté : les classes 6/7 portent le résultat (pas de 121/13x pour
+    // le résultat N-1) ; ouverture de N via à-nouveaux (trésorerie reportée + résultat N-1 porté en 131).
+    // Aucune activité en N → Δtrésorerie = 0. Sans correctif, CFECART = −40 (−NetResult(N-1)).
+    [Fact]
+    public void CashFlow_PriorYear_Unaffected_Reconciles()
+    {
+        // N-1 : produits 100 (70, crédit) / charges 60 (601, débit) ; résultat 40 non affecté, porté
+        // par les classes 6/7 ; la trésorerie (532 = 40) équilibre la balance (Σ = 0).
+        var prev = new Dictionary<string, decimal>
+        {
+            ["70"]  = -100m,
+            ["601"] = 60m,
+            ["532"] = 40m
+        };
+        // N : aucune activité P&L ; à-nouveaux reportant la trésorerie (532 = 40) et le résultat N-1
+        // en 131 (crédit 40). Δtrésorerie = 0, balance équilibrée (Σ = 0).
+        var cur = new Dictionary<string, decimal>
+        {
+            ["532"] = 40m,
+            ["131"] = -40m
+        };
+
+        var cf = NctStatementBuilder.Build(2026, cur, prev, enabled: true).CashFlow;
+        decimal L(string code) => cf.Lines.First(l => l.Code == code).Amount;
+
+        Assert.True(cf.IsReconciled);
+        Assert.True(Math.Abs(L("CFECART")) < 0.001m);
+        Assert.Equal(0m, cf.NetChange);              // Δtrésorerie = 0
+        // NetPnl(prev) = −40 annule le financement issu du 131 d'ouverture : CFFIN = 0.
+        Assert.Equal(0m, cf.FinancingCashFlow);
+    }
+
+    // Cas 2 — N-1 dont le résultat est déjà affecté (121 « Résultats reportés » mouventé, classes 6/7
+    // soldées) : NetPnl(prev) = 0 → correctif no-op. Non-régression : CFECART = 0.
+    [Fact]
+    public void CashFlow_PriorYear_Affected_NoRegression()
+    {
+        // N-1 : résultat 40 affecté en 121 (crédit) ; classes 6/7 soldées. Trésorerie 40. Σ = 0.
+        var prev = new Dictionary<string, decimal>
+        {
+            ["532"] = 40m,
+            ["121"] = -40m
+        };
+        // N : aucune activité ; report à l'identique. Δtrésorerie = 0.
+        var cur = new Dictionary<string, decimal>
+        {
+            ["532"] = 40m,
+            ["121"] = -40m
+        };
+
+        var cf = NctStatementBuilder.Build(2026, cur, prev, enabled: true).CashFlow;
+        decimal L(string code) => cf.Lines.First(l => l.Code == code).Amount;
+
+        Assert.True(cf.IsReconciled);
+        Assert.True(Math.Abs(L("CFECART")) < 0.001m);
+        Assert.Equal(0m, cf.NetChange);
+        Assert.Equal(0m, cf.FinancingCashFlow);      // NetPnl(prev) = 0 → no-op
+    }
+
+    // Cas 4 — N bénéficiaire avec cession + paie + TVA, ET N-1 bénéficiaire non affecté : extension de
+    // la fixture T9 (ConformityBiExercice) où l'on retire l'absorption 691 de N-1 pour rendre son
+    // résultat (41 400) non affecté. N conserve son résultat (45 500), sa cession, sa paie et sa TVA.
+    [Fact]
+    public void CashFlow_ProfitableN_WithDisposalPayrollTva_AndUnaffectedN1_Reconciles()
+    {
+        var (cur, prev, disposals) = ConformityBiExercice_UnaffectedN1();
+        var stmt = NctStatementBuilder.Build(2026, cur, prev, enabled: true, disposals);
+        var cf = stmt.CashFlow;
+        var inc = stmt.IncomeStatement;
+        decimal L(string code) => cf.Lines.First(l => l.Code == code).Amount;
+
+        // Préconditions : N-1 bénéficiaire non affecté (NetResult(N-1) = 41 400), N bénéficiaire (45 500).
+        Assert.Equal(41400m, inc.PreviousNetResult);
+        Assert.Equal(45500m, inc.NetResult);
+
+        // Rapprochement tient (T5 suivi) : CFECART = 0 malgré NetResult(N-1) ≠ 0.
+        Assert.True(cf.IsReconciled);
+        Assert.True(Math.Abs(L("CFECART")) < 0.001m);
+        Assert.Equal(cf.NetChange, cf.OperatingCashFlow + cf.InvestingCashFlow + cf.FinancingCashFlow);
+        // Cession toujours reclassée (T5) : CF5 neutralise le gain 736, CFINV2 le reclassé.
+        Assert.Equal(-2000m, L("CF5"));
+        Assert.Equal(2000m, L("CFINV2"));
+        // TVA + paie toujours captées (CFVAC/CFVAD non nulles).
+        Assert.NotEqual(0m, L("CFVAC"));
+        Assert.NotEqual(0m, L("CFVAD"));
+    }
+
+    // Variante de la fixture T9 : N-1 rendu non affecté (retrait de l'absorption 691, rééquilibrage du
+    // bouchon 101) — le résultat N-1 (41 400) demeure porté par les classes 6/7 et les actifs, non
+    // repris dans la classe 1 d'ouverture. N (cur) et les agrégats de cession sont inchangés.
+    private static (Dictionary<string, decimal> Cur, Dictionary<string, decimal> Prev, NctDisposalAggregates Disposals) ConformityBiExercice_UnaffectedN1()
+    {
+        var (cur, prev, disposals) = ConformityBiExercice();
+        prev.Remove("691");   // le résultat N-1 n'est plus absorbé : il reste en classes 6/7
+        var sumExcl101 = prev.Where(kv => kv.Key != "101").Sum(kv => kv.Value);
+        prev["101"] = -sumExcl101;   // bouchon : Σ(tous comptes) = 0 (résultat N-1 dans les actifs)
+        return (cur, prev, disposals);
     }
 }
