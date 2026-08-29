@@ -253,6 +253,8 @@ export interface DepreciationRunResultDto {
   skippedCount: number;
   totalDepreciationAmount: number;
   errors: string[];
+  /** Dotations déjà comptabilisées pour cet exercice (re-run idempotent — ajouté en T7 backend). */
+  alreadyPostedCount?: number;
 }
 
 /** DTO brut renvoyé par l'API avant normalisation des enums. */

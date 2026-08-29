@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule } from '@angular/router';
@@ -58,12 +58,15 @@ import { AccountingCorrectionBannerComponent } from '../shared/accounting-correc
 
     <div class="card result" *ngIf="result()">
       <h3>Résultat — exercice {{ result()!.fiscalYear }}</h3>
-      <p><strong>Dotations comptabilisées :</strong> {{ result()!.postedCount }}</p>
-      <p><strong>Ignorées / en erreur :</strong> {{ result()!.skippedCount }}</p>
-      <p><strong>Total dotations :</strong> {{ result()!.totalDepreciationAmount | number: '1.3-3' }} TND</p>
-      <ul *ngIf="result()!.errors?.length">
-        <li *ngFor="let e of result()!.errors">{{ e }}</li>
-      </ul>
+      <p *ngIf="rerunMessage() as msg"><strong>{{ msg }}</strong></p>
+      <ng-container *ngIf="!rerunMessage()">
+        <p><strong>Dotations comptabilisées :</strong> {{ result()!.postedCount }}</p>
+        <p><strong>Ignorées / en erreur :</strong> {{ result()!.skippedCount }}</p>
+        <p><strong>Total dotations :</strong> {{ result()!.totalDepreciationAmount | number: '1.3-3' }} TND</p>
+        <ul *ngIf="result()!.errors?.length">
+          <li *ngFor="let e of result()!.errors">{{ e }}</li>
+        </ul>
+      </ng-container>
     </div>
   `,
   styles: [
@@ -100,6 +103,19 @@ export class DepreciationRunComponent implements OnInit {
   readonly error = signal<string | null>(null);
   readonly result = signal<DepreciationRunResultDto | null>(null);
 
+  // T14 (re-run) — quand aucune nouvelle dotation n'est comptabilisée mais que des dotations
+  // étaient déjà postées pour cet exercice, on affiche un message explicite au lieu du « 0 »
+  // cryptique (capture 2410).
+  readonly rerunMessage = computed(() => {
+    const r = this.result();
+    if (!r) return null;
+    const alreadyPosted = r.alreadyPostedCount ?? 0;
+    if (r.postedCount === 0 && alreadyPosted > 0) {
+      return `Aucune nouvelle dotation — ${alreadyPosted} dotation(s) déjà comptabilisée(s) pour cet exercice.`;
+    }
+    return null;
+  });
+
   ngOnInit(): void {
     const fy = this.route.snapshot.queryParamMap.get('fiscalYear');
     if (fy) {
@@ -109,6 +125,9 @@ export class DepreciationRunComponent implements OnInit {
   }
 
   run(): void {
+    // C7 — garde anti double-clic : en plus du [disabled] du bouton, on court-circuite tout appel
+    // tant qu'un run est déjà en cours (une race entre deux clics peut contourner le disabled).
+    if (this.loading()) return;
     this.loading.set(true);
     this.error.set(null);
     this.result.set(null);
