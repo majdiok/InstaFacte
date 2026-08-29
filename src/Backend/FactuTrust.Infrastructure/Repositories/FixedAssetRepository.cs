@@ -536,6 +536,15 @@ public sealed class FixedAssetRepository : IFixedAssetRepository
         await context.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<int> GetPostedScheduleLineCountForYearAsync(int fiscalYear, CancellationToken cancellationToken = default)
+    {
+        await using var context = _contextFactory.CreateContext();
+        return await context.DepreciationScheduleLines
+            .Where(l => l.FiscalYear == fiscalYear && l.IsPosted && l.DepreciationAmount > 0)
+            .Where(l => l.FixedAsset!.Status == FixedAssetStatus.InService || l.FixedAsset.Status == FixedAssetStatus.FullyDepreciated)
+            .CountAsync(cancellationToken);
+    }
+
     private static async Task ReplaceScheduleLinesInContextAsync(
         TenantDbContext context,
         Guid fixedAssetId,

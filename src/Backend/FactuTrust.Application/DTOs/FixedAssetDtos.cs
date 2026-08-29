@@ -69,7 +69,8 @@ public sealed record DepreciationRunResultDto(
     int PostedCount,
     int SkippedCount,
     decimal TotalDepreciationAmount,
-    IReadOnlyList<string> Errors);
+    IReadOnlyList<string> Errors,
+    int AlreadyPostedCount = 0);
 
 public sealed record FixedAssetDto(
     Guid Id,

@@ -74,4 +74,11 @@ public interface IFixedAssetRepository
     Task ReplaceScheduleLinesAsync(Guid fixedAssetId, IReadOnlyList<DepreciationScheduleLine> lines, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<DepreciationScheduleLine>> GetUnpostedScheduleLinesForYearAsync(int fiscalYear, CancellationToken cancellationToken = default);
     Task SaveScheduleLineAsync(DepreciationScheduleLine line, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Nombre de lignes déjà comptabilisées pour l'exercice (plan T7, B4) — sert à distinguer,
+    /// lors d'un nouveau lancement de la comptabilisation des dotations, un exercice « déjà
+    /// entièrement comptabilisé » d'un exercice sans aucune dotation à comptabiliser.
+    /// </summary>
+    Task<int> GetPostedScheduleLineCountForYearAsync(int fiscalYear, CancellationToken cancellationToken = default);
 }

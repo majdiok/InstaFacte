@@ -350,11 +350,16 @@ public sealed class PostDepreciationRunCommandHandler : IRequestHandler<PostDepr
 {
     private readonly IFixedAssetRepository _assets;
     private readonly IAccountingService _accounting;
+    private readonly ITenantUnitOfWork _unitOfWork;
 
-    public PostDepreciationRunCommandHandler(IFixedAssetRepository assets, IAccountingService accounting)
+    public PostDepreciationRunCommandHandler(
+        IFixedAssetRepository assets,
+        IAccountingService accounting,
+        ITenantUnitOfWork unitOfWork)
     {
         _assets = assets;
         _accounting = accounting;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<Result<DepreciationRunResultDto>> Handle(PostDepreciationRunCommand request, CancellationToken cancellationToken)
@@ -362,6 +367,8 @@ public sealed class PostDepreciationRunCommandHandler : IRequestHandler<PostDepr
         var year = request.Request.FiscalYear;
         if (year < 2000 || year > 2100)
             return Result.Failure<DepreciationRunResultDto>(Error.Validation("FiscalYear", "Exercice invalide."));
+        if (year > DateTime.UtcNow.Year)
+            return Result.Failure<DepreciationRunResultDto>(Error.Validation("FiscalYear", "Impossible de comptabiliser des dotations d'un exercice futur."));
 
         var lines = await _assets.GetUnpostedScheduleLinesForYearAsync(year, cancellationToken);
         var posted = 0;
@@ -378,21 +385,44 @@ public sealed class PostDepreciationRunCommandHandler : IRequestHandler<PostDepr
                 continue;
             }
 
-            var result = await _accounting.GenerateFixedAssetDepreciationEntryAsync(asset, line, cancellationToken: cancellationToken);
-            if (result.IsFailure)
+            // Atomicité par ligne (T7, B4) : écriture comptable + ligne d'échéancier + actif sont
+            // enveloppés dans la MÊME transaction (unité de travail) — un échec sur cette ligne
+            // (écriture générée mais échec de persistance, par exemple) annule uniquement cette
+            // ligne (rollback), le run se poursuit sur les lignes suivantes. Idempotence
+            // (SourceFixedAssetDepreciation + line.Id) inchangée — voir AccountingService.
+            Result lineResult;
+            try
             {
-                errors.Add($"{asset.InventoryNumber}: {result.Error.Description}");
+                lineResult = await _unitOfWork.ExecuteAsync(async ct =>
+                {
+                    var generated = await _accounting.GenerateFixedAssetDepreciationEntryAsync(asset, line, cancellationToken: ct);
+                    if (generated.IsFailure)
+                        return generated;
+
+                    await _assets.SaveScheduleLineAsync(line, ct);
+                    await _assets.UpdateAsync(asset, ct);
+                    return Result.Success();
+                }, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                lineResult = Result.Failure(new Error("DepreciationRun.LineFailed", ex.Message));
+            }
+
+            if (lineResult.IsFailure)
+            {
+                errors.Add($"{asset.InventoryNumber}: {lineResult.Error.Description}");
                 skipped++;
                 continue;
             }
 
-            await _assets.SaveScheduleLineAsync(line, cancellationToken);
-            await _assets.UpdateAsync(asset, cancellationToken);
             posted++;
             total += line.DepreciationAmount;
         }
 
-        return Result.Success(new DepreciationRunResultDto(year, posted, skipped, total, errors));
+        var alreadyPostedCount = await _assets.GetPostedScheduleLineCountForYearAsync(year, cancellationToken);
+
+        return Result.Success(new DepreciationRunResultDto(year, posted, skipped, total, errors, alreadyPostedCount));
     }
 }
 
