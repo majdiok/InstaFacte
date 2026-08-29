@@ -166,10 +166,12 @@ public sealed class GetAmortizationReportQueryHandler
     : IRequestHandler<GetAmortizationReportQuery, Result<AmortizationReportResponse>>
 {
     private readonly IFixedAssetRepository _assets;
+    private readonly IFixedAssetSettingsRepository? _settings;
 
-    public GetAmortizationReportQueryHandler(IFixedAssetRepository assets)
+    public GetAmortizationReportQueryHandler(IFixedAssetRepository assets, IFixedAssetSettingsRepository? settings = null)
     {
         _assets = assets;
+        _settings = settings;
     }
 
     public async Task<Result<AmortizationReportResponse>> Handle(
@@ -177,6 +179,9 @@ public sealed class GetAmortizationReportQueryHandler
         CancellationToken cancellationToken)
     {
         var fiscalYear = request.FiscalYear ?? DateTime.UtcNow.Year;
+        // Frontière d'exercice configurée par tenant (P4) : l'en-tête du rapport porte les dates de
+        // début/fin d'exercice réelles. En exercice civil (mois 1), 01/01/N → 31/12/N (parité).
+        var startMonth = await FixedAssetFiscalYearSupport.GetStartMonthAsync(_settings, cancellationToken);
         var report = await _assets.GetAmortizationReportAsync(
             fiscalYear,
             request.GroupingMode,
@@ -184,6 +189,7 @@ public sealed class GetAmortizationReportQueryHandler
             request.CategoryId,
             request.Search,
             request.CompanyName ?? string.Empty,
+            startMonth,
             cancellationToken);
 
         return Result.Success(report);

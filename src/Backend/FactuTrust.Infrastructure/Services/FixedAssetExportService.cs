@@ -6,11 +6,42 @@ namespace FactuTrust.Infrastructure.Services;
 
 public sealed class FixedAssetExportService : IFixedAssetExportService
 {
-    public byte[] ExportScheduleToExcel(FixedAssetScheduleDto schedule)
+    private readonly IFiscalYearResolver _fiscalYearResolver;
+
+    /// <summary>
+    /// Constructeur par défaut (résolveur déterministe canonique) — utilisé en test direct
+    /// (<c>new FixedAssetExportService()</c>) et conserve le comportement historique.
+    /// </summary>
+    public FixedAssetExportService() : this(new FiscalYearResolver()) { }
+
+    /// <summary>
+    /// Constructeur DI : le résolveur est substituable en test (plan « Exercices décalés »).
+    /// </summary>
+    public FixedAssetExportService(IFiscalYearResolver fiscalYearResolver)
+    {
+        _fiscalYearResolver = fiscalYearResolver;
+    }
+
+    /// <summary>
+    /// Valeur de cellule pour une colonne d'exercice : en exercice civil (<paramref name="fiscalYearStartMonth"/> = 1)
+    /// retourne la clé entière brute (sortie bit-à-bit identique à l'existant) ; en exercice décalé retourne le
+    /// libellé <c>N/N+1</c> (décision D2).
+    /// </summary>
+    private XLCellValue FiscalYearCell(int fiscalYearKey, int fiscalYearStartMonth, string fiscalYearLabelFormat)
+    {
+        if (fiscalYearStartMonth == 1)
+            return fiscalYearKey;
+        return _fiscalYearResolver.FiscalYearLabel(fiscalYearKey, fiscalYearStartMonth, fiscalYearLabelFormat);
+    }
+
+    public byte[] ExportScheduleToExcel(
+        FixedAssetScheduleDto schedule,
+        int fiscalYearStartMonth = 1,
+        string fiscalYearLabelFormat = "N/N+1")
     {
         using var wb = new XLWorkbook();
-        AddOfficialScheduleSheet(wb, schedule);
-        AddCp17DetailSheet(wb, schedule);
+        AddOfficialScheduleSheet(wb, schedule, fiscalYearStartMonth, fiscalYearLabelFormat);
+        AddCp17DetailSheet(wb, schedule, fiscalYearStartMonth, fiscalYearLabelFormat);
         return WorkbookToBytes(wb);
     }
 
@@ -19,7 +50,11 @@ public sealed class FixedAssetExportService : IFixedAssetExportService
     /// en-tête récapitulatif (nature, montant, date, durée, taux) puis colonnes
     /// Année / Base / Annuité / Annuités cumulées / Valeur nette comptable + ligne TOTAL.
     /// </summary>
-    private static void AddOfficialScheduleSheet(XLWorkbook wb, FixedAssetScheduleDto schedule)
+    private void AddOfficialScheduleSheet(
+        XLWorkbook wb,
+        FixedAssetScheduleDto schedule,
+        int fiscalYearStartMonth,
+        string fiscalYearLabelFormat)
     {
         var ws = wb.Worksheets.Add("Tableau amortissement");
 
@@ -60,7 +95,7 @@ public sealed class FixedAssetExportService : IFixedAssetExportService
         var row = headerRow + 1;
         foreach (var line in schedule.Lines)
         {
-            ws.Cell(row, 1).Value = line.FiscalYear;
+            ws.Cell(row, 1).Value = FiscalYearCell(line.FiscalYear, fiscalYearStartMonth, fiscalYearLabelFormat);
             ws.Cell(row, 2).Value = schedule.DepreciableBase;
             ws.Cell(row, 3).Value = line.DepreciationAmount;
             ws.Cell(row, 4).Value = line.AccumulatedDepreciation;
@@ -80,7 +115,11 @@ public sealed class FixedAssetExportService : IFixedAssetExportService
         ws.Columns().AdjustToContents();
     }
 
-    private static void AddCp17DetailSheet(XLWorkbook wb, FixedAssetScheduleDto schedule)
+    private void AddCp17DetailSheet(
+        XLWorkbook wb,
+        FixedAssetScheduleDto schedule,
+        int fiscalYearStartMonth,
+        string fiscalYearLabelFormat)
     {
         var ws = wb.Worksheets.Add("Détail CP17");
 
@@ -119,7 +158,7 @@ public sealed class FixedAssetExportService : IFixedAssetExportService
         var row = headerRow + 1;
         foreach (var line in schedule.Lines)
         {
-            ws.Cell(row, 1).Value = line.FiscalYear;
+            ws.Cell(row, 1).Value = FiscalYearCell(line.FiscalYear, fiscalYearStartMonth, fiscalYearLabelFormat);
             ws.Cell(row, 2).Value = line.OpeningNbv;
             ws.Cell(row, 3).Value = line.NormalAnnualAmount;
             ws.Cell(row, 4).Value = line.PriorAccumulatedDepreciation;
@@ -134,10 +173,18 @@ public sealed class FixedAssetExportService : IFixedAssetExportService
         ws.Columns().AdjustToContents();
     }
 
-    public byte[] ExportDepreciationReportToExcel(IReadOnlyList<FixedAssetScheduleDto> schedules, int fiscalYear)
+    public byte[] ExportDepreciationReportToExcel(
+        IReadOnlyList<FixedAssetScheduleDto> schedules,
+        int fiscalYear,
+        int fiscalYearStartMonth = 1,
+        string fiscalYearLabelFormat = "N/N+1")
     {
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add($"Dotations {fiscalYear}");
+        // Libellé d'exercice (N en civil = bit-à-bit identique à l'existant ; N/N+1 en décalé).
+        // Le nom de feuille Excel n'accepte pas les caractères interdits (notamment « / » du
+        // libellé N/N+1) : on les remplace par un tiret. En civil, aucun remplacement (parité).
+        var sheetName = SanitizeSheetName($"Dotations {_fiscalYearResolver.FiscalYearLabel(fiscalYear, fiscalYearStartMonth, fiscalYearLabelFormat)}");
+        var ws = wb.Worksheets.Add(sheetName);
 
         var headers = new[]
         {
@@ -152,6 +199,8 @@ public sealed class FixedAssetExportService : IFixedAssetExportService
         var row = 2;
         foreach (var schedule in schedules)
         {
+            // Sélection de la ligne par clé d'exercice (P2) — inchangée : en civil la clé = année civile,
+            // en exercice décalé la clé est l'année de début (résolution correcte de la ligne d'exercice).
             var line = schedule.Lines.FirstOrDefault(l => l.FiscalYear == fiscalYear);
             if (line is null)
                 continue;
@@ -182,32 +231,48 @@ public sealed class FixedAssetExportService : IFixedAssetExportService
         return WorkbookToBytes(wb);
     }
 
-    public byte[] ExportAmortizationReportToExcel(AmortizationReportResponse report)
+    public byte[] ExportAmortizationReportToExcel(
+        AmortizationReportResponse report,
+        int fiscalYearStartMonth = 1,
+        string fiscalYearLabelFormat = "N/N+1")
     {
         using var wb = new XLWorkbook();
-        AddAmortizationReportMainSheet(wb, report);
-        AddAmortizationReportSummarySheet(wb, report);
+        AddAmortizationReportMainSheet(wb, report, fiscalYearStartMonth, fiscalYearLabelFormat);
+        AddAmortizationReportSummarySheet(wb, report, fiscalYearStartMonth, fiscalYearLabelFormat);
         AddAmortizationReportInfoSheet(wb, report);
         return WorkbookToBytes(wb);
     }
 
-    private static void AddAmortizationReportMainSheet(XLWorkbook wb, AmortizationReportResponse report)
+    private void AddAmortizationReportMainSheet(
+        XLWorkbook wb,
+        AmortizationReportResponse report,
+        int fiscalYearStartMonth,
+        string fiscalYearLabelFormat)
     {
         var ws = wb.Worksheets.Add("Tableau amortissements");
         var fy = report.Header.FiscalYear;
-        var priorYear = fy - 1;
+        // Bornes d'exercice (début/fin) via le résolveur : en civil, 31/12/N (bit-à-bit identique) ;
+        // en exercice décalé, fin d'exercice réelle (ex. 30/06/N+1).
+        var priorEnd = _fiscalYearResolver.FiscalYearEndDateTime(fy - 1, fiscalYearStartMonth);
+        var currentEnd = _fiscalYearResolver.FiscalYearEndDateTime(fy, fiscalYearStartMonth);
+        var label = _fiscalYearResolver.FiscalYearLabel(fy, fiscalYearStartMonth, fiscalYearLabelFormat);
 
         ws.Cell(1, 1).Value = report.Header.CompanyName;
         ws.Cell(2, 1).Value = "TABLEAU DES AMORTISSEMENTS";
         ws.Cell(2, 1).Style.Font.Bold = true;
-        ws.Cell(3, 1).Value = $"Exercice du {report.Header.PeriodStart:dd/MM/yyyy} au {report.Header.PeriodEnd:dd/MM/yyyy}";
+        // En exercice civil, l'en-tête reste strictement « Exercice du … au … » (parité). En exercice
+        // décalé, le libellé N/N+1 est affiché en tête (décision D2).
+        var exerciseHeader = fiscalYearStartMonth == 1
+            ? $"Exercice du {report.Header.PeriodStart:dd/MM/yyyy} au {report.Header.PeriodEnd:dd/MM/yyyy}"
+            : $"Exercice {label} — du {report.Header.PeriodStart:dd/MM/yyyy} au {report.Header.PeriodEnd:dd/MM/yyyy}";
+        ws.Cell(3, 1).Value = exerciseHeader;
 
         var headers = new[]
         {
             "Code immobilisation", "Désignation", "Date acquisition", "Valeur origine",
-            "Durée (ans)", "Mode", $"Amort. antérieurs 31/12/{priorYear}",
-            "Dotation calculée", "Dotation comptabilisée", $"Fin exercice 31/12/{fy}",
-            $"VNC 31/12/{fy}", "Statut compta"
+            "Durée (ans)", "Mode", $"Amort. antérieurs {priorEnd:dd/MM/yyyy}",
+            "Dotation calculée", "Dotation comptabilisée", $"Fin exercice {currentEnd:dd/MM/yyyy}",
+            $"VNC {currentEnd:dd/MM/yyyy}", "Statut compta"
         };
         var headerRow = 5;
         for (var c = 0; c < headers.Length; c++)
@@ -269,19 +334,25 @@ public sealed class FixedAssetExportService : IFixedAssetExportService
         ws.Columns().AdjustToContents();
     }
 
-    private static void AddAmortizationReportSummarySheet(XLWorkbook wb, AmortizationReportResponse report)
+    private void AddAmortizationReportSummarySheet(
+        XLWorkbook wb,
+        AmortizationReportResponse report,
+        int fiscalYearStartMonth,
+        string fiscalYearLabelFormat)
     {
         var ws = wb.Worksheets.Add("Récapitulatif");
         var fy = report.Header.FiscalYear;
-        var priorYear = fy - 1;
+        var priorEnd = _fiscalYearResolver.FiscalYearEndDateTime(fy - 1, fiscalYearStartMonth);
+        var currentEnd = _fiscalYearResolver.FiscalYearEndDateTime(fy, fiscalYearStartMonth);
+        var label = _fiscalYearResolver.FiscalYearLabel(fy, fiscalYearStartMonth, fiscalYearLabelFormat);
 
         ws.Cell(1, 1).Value = "RÉCAPITULATIF PAR NATURE D'IMMOBILISATIONS";
         ws.Cell(1, 1).Style.Font.Bold = true;
 
         var headers = new[]
         {
-            "Nature", "Valeur origine", $"Amort. cumulés 31/12/{priorYear}",
-            $"Dotation exercice {fy}", $"VNC 31/12/{fy}"
+            "Nature", "Valeur origine", $"Amort. cumulés {priorEnd:dd/MM/yyyy}",
+            $"Dotation exercice {label}", $"VNC {currentEnd:dd/MM/yyyy}"
         };
         var headerRow = 3;
         for (var c = 0; c < headers.Length; c++)
@@ -343,4 +414,13 @@ public sealed class FixedAssetExportService : IFixedAssetExportService
         wb.SaveAs(ms);
         return ms.ToArray();
     }
+
+    /// <summary>
+    /// Nettoie un nom de feuille des caractères interdits par Excel (\ / ? * [ ] :). En exercice
+    /// civil, le libellé ne contient que des chiffres → aucun remplacement (sortie bit-à-bit
+    /// identique) ; en exercice décalé, le « / » du libellé N/N+1 devient un tiret.
+    /// </summary>
+    private static string SanitizeSheetName(string name)
+        => name.Replace('\\', '-').Replace('/', '-').Replace('?', '-')
+               .Replace('*', '-').Replace('[', '-').Replace(']', '-').Replace(':', '-');
 }

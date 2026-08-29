@@ -33,6 +33,7 @@ public interface IFixedAssetRepository
         Guid? categoryId,
         string? search,
         string companyName,
+        int fiscalYearStartMonth = 1,
         CancellationToken cancellationToken = default);
     Task<int> CountByYearPrefixAsync(int year, CancellationToken cancellationToken = default);
 

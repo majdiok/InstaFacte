@@ -185,6 +185,7 @@ public sealed class FixedAssetRepository : IFixedAssetRepository
         Guid? categoryId,
         string? search,
         string companyName,
+        int fiscalYearStartMonth = 1,
         CancellationToken cancellationToken = default)
     {
         await using var context = _contextFactory.CreateContext();
@@ -265,7 +266,7 @@ public sealed class FixedAssetRepository : IFixedAssetRepository
                 i.PostedLineCount);
         }).ToList();
 
-        return AmortizationReportAssembler.Assemble(projections, fiscalYear, groupingMode, companyName);
+        return AmortizationReportAssembler.Assemble(projections, fiscalYear, groupingMode, companyName, fiscalYearStartMonth);
     }
 
     public async Task<int> CountByYearPrefixAsync(int year, CancellationToken cancellationToken = default)
