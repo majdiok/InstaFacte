@@ -232,6 +232,28 @@ describe('app-navigation.registry', () => {
     });
   });
 
+  describe('sales navigation after Brouillons récurrents removal', () => {
+    it('does not expose /recurring-contracts/pending-drafts in the search index', () => {
+      const routes = buildFlatNavSearchEntries().map(e => e.route);
+      expect(routes).not.toContain('/recurring-contracts/pending-drafts');
+    });
+
+    it('keeps the Contrats récurrents entry', () => {
+      const routes = buildFlatNavSearchEntries().map(e => e.route);
+      expect(routes).toContain('/recurring-contracts');
+    });
+
+    it('does not list Brouillons récurrents under Ventes', () => {
+      const sales = ALL_NAV_ITEMS.find(i => i.label === 'Ventes');
+      const childRoutes = sales?.children?.map(c => c.route) ?? [];
+      const childLabels = sales?.children?.map(c => c.label) ?? [];
+
+      expect(childRoutes).not.toContain('/recurring-contracts/pending-drafts');
+      expect(childLabels).not.toContain('Brouillons récurrents');
+      expect(childRoutes).toContain('/recurring-contracts');
+    });
+  });
+
   describe('promotions navigation placement', () => {
     it('lists promotions under Paramètres and not under Ventes', () => {
       const ventes = ALL_NAV_ITEMS.find(i => i.label === 'Ventes');
