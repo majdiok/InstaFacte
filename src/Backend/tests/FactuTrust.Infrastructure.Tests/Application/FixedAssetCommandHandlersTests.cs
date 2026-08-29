@@ -288,10 +288,48 @@ public sealed class FixedAssetCommandHandlersTests
         Assert.True(result.IsSuccess);
         Assert.NotEmpty(result.Value.Lines);
         Assert.Equal(asset.DepreciableBase, result.Value.Lines.Sum(l => l.DepreciationAmount));
+        Assert.Equal(asset.Id, result.Value.FixedAssetId);
+        Assert.Equal(new DateTime(2026, 10, 1), result.Value.InServiceDate); // le DTO reflète la date simulée
         repo.Verify(x => x.UpdateAsync(It.IsAny<FixedAsset>(), It.IsAny<CancellationToken>()), Times.Never);
         repo.Verify(
             x => x.ReplaceScheduleLinesAsync(It.IsAny<Guid>(), It.IsAny<IReadOnlyList<DepreciationScheduleLine>>(), It.IsAny<CancellationToken>()),
             Times.Never);
+
+        // T6/B3 : l'entité chargée par le handler ne doit jamais être mutée par la simulation —
+        // la copie de simulation (FixedAsset.CreateSimulationCopy) porte le même Id mais est une
+        // instance distincte.
+        Assert.Equal(FixedAssetStatus.Draft, asset.Status);
+        Assert.Null(asset.InServiceDate);
+        Assert.Null(asset.CreditAccountNumber);
+    }
+
+    [Fact]
+    public async Task PreviewSchedule_DraftAsset_DoesNotMutateSameReferenceAsRepositoryEntity()
+    {
+        var category = CreateCategory();
+        var asset = CreateDraftAsset(category);
+
+        var repo = new Mock<IFixedAssetRepository>();
+        repo.Setup(x => x.GetByIdAsync(asset.Id, false, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(asset);
+
+        var handler = new PreviewDepreciationScheduleQueryHandler(repo.Object, new DepreciationEngine());
+
+        var result = await handler.Handle(
+            new PreviewDepreciationScheduleQuery(asset.Id, new DateTime(2026, 10, 1)),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+
+        // Deuxième appel : si la première simulation avait muté l'entité renvoyée par le repo (bug
+        // « var simulated = asset; » corrigé par T6), le second appel verrait un actif déjà en
+        // service et échouerait sur PutInService (statut != Draft).
+        var second = await handler.Handle(
+            new PreviewDepreciationScheduleQuery(asset.Id, new DateTime(2026, 11, 1)),
+            CancellationToken.None);
+
+        Assert.True(second.IsSuccess, second.Error?.Description);
+        Assert.Equal(new DateTime(2026, 11, 1), second.Value.InServiceDate);
     }
 
     // ------------------------------------------------------------------

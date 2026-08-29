@@ -327,6 +327,56 @@ public sealed class FixedAsset : AggregateRoot
             Status = FixedAssetStatus.FullyDepreciated;
     }
 
+    /// <summary>
+    /// Construit une copie détachée pour simuler une mise en service hypothétique (T6, B3) —
+    /// utilisée par l'aperçu d'échéancier (<c>PreviewDepreciationScheduleQueryHandler</c>).
+    /// La copie porte le même <see cref="Entity.Id"/> que l'original : rien n'est jamais
+    /// persisté, et le DTO d'aperçu retourné doit rester identifiable comme portant sur l'actif
+    /// demandé. La copie n'est en revanche jamais suivie par le contexte EF de l'original ni
+    /// ajoutée à ses collections : muter la copie (<see cref="PutInService"/>) ne modifie jamais
+    /// l'entité chargée.
+    /// </summary>
+    public Result<FixedAsset> CreateSimulationCopy(DateTime inServiceDate, string creditAccountNumber)
+    {
+        var copy = new FixedAsset
+        {
+            InventoryNumber = InventoryNumber,
+            Label = Label,
+            Description = Description,
+            AssetAccountNumber = AssetAccountNumber,
+            DepreciationAccountNumber = DepreciationAccountNumber,
+            ExpenseAccountNumber = ExpenseAccountNumber,
+            AcquisitionCost = AcquisitionCost,
+            CapitalizedFees = CapitalizedFees,
+            ResidualValue = ResidualValue,
+            VatAmount = VatAmount,
+            VatCapitalized = VatCapitalized,
+            AcquisitionDate = AcquisitionDate,
+            DisposalDate = DisposalDate,
+            DepreciationRateCategoryId = DepreciationRateCategoryId,
+            DepreciationRatePercent = DepreciationRatePercent,
+            UsefulLifeYears = UsefulLifeYears,
+            DepreciationMethod = DepreciationMethod,
+            AccelerationCoefficient = AccelerationCoefficient,
+            Status = Status,
+            SupplierId = SupplierId,
+            SupplierInvoiceId = SupplierInvoiceId,
+            SupplierInvoiceLineId = SupplierInvoiceLineId,
+            Location = Location,
+            AccumulatedDepreciation = AccumulatedDepreciation,
+            NetBookValue = NetBookValue,
+            CreditAccountNumber = CreditAccountNumber,
+            DisposalProceeds = DisposalProceeds,
+            DisposalTreasuryAccount = DisposalTreasuryAccount
+        };
+        copy.Id = Id;
+
+        var put = copy.PutInService(inServiceDate, creditAccountNumber);
+        return put.IsFailure
+            ? Result.Failure<FixedAsset>(put.Error)
+            : Result.Success(copy);
+    }
+
     public void AddScheduleLine(DepreciationScheduleLine line) => _scheduleLines.Add(line);
 
     public void AddEvent(FixedAssetEvent evt) => _events.Add(evt);

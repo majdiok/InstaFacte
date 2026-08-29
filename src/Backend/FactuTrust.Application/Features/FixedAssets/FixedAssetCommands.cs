@@ -319,10 +319,12 @@ public sealed class PreviewDepreciationScheduleQueryHandler
         if (asset.InServiceDate is null)
         {
             var inServiceDate = request.InServiceDate ?? asset.AcquisitionDate;
-            // Simulation sur une copie détachée : l'entité chargée n'est jamais persistée ici.
-            var put = simulated.PutInService(inServiceDate, asset.CreditAccountNumber ?? "404");
-            if (put.IsFailure)
-                return Result.Failure<FixedAssetScheduleDto>(put.Error);
+            // Simulation sur une copie détachée (T6, B3) : l'entité chargée par ce handler n'est
+            // ni mutée ni persistée ici — voir FixedAsset.CreateSimulationCopy.
+            var copy = asset.CreateSimulationCopy(inServiceDate, asset.CreditAccountNumber ?? "404");
+            if (copy.IsFailure)
+                return Result.Failure<FixedAssetScheduleDto>(copy.Error);
+            simulated = copy.Value;
         }
 
         var lines = _engine.GenerateSchedule(simulated);
