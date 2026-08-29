@@ -273,4 +273,115 @@ describe('FixedAssetDetailComponent', () => {
       httpMock.verify();
     });
   });
+
+  // T10 (bug C1) — validation des comptes alignée serveur (FixedAssetAccountRules) : format,
+  // préfixes NCT et cohérence corporel/incorporel. Affichage par champ via fieldErrors.
+  describe('account validation (T10 / C1)', () => {
+    // `validate()` is private; cast through `unknown` (same approach the T11 spec uses for the
+    // private `isSyncingRateAndLife` mutex) to exercise it from the spec.
+    function validateOf(c: FixedAssetDetailComponent): boolean {
+      return (c as unknown as { validate(): boolean }).validate();
+    }
+
+    function setValidBaseForm(component: FixedAssetDetailComponent): void {
+      component.form.label = 'Test asset';
+      component.form.depreciationRateCategoryId = 'cat-1';
+      component.form.acquisitionDate = '2026-01-01';
+      component.form.acquisitionCost = 1000;
+      component.form.capitalizedFees = 0;
+      component.form.residualValue = 0;
+      component.form.depreciationRatePercent = null;
+      component.form.depreciationMethod = DepreciationMethod.Linear;
+    }
+
+    it('blocks submission and sets the asset-account field error for an invalid asset account (28x)', () => {
+      const { fixture, httpMock } = setup({ data: { mode: 'new' } });
+      const component = fixture.componentInstance;
+      setValidBaseForm(component);
+      component.form.assetAccountNumber = '2813';
+      component.form.depreciationAccountNumber = '2812';
+      component.form.expenseAccountNumber = '68111';
+
+      expect(validateOf(component)).toBeFalse();
+      expect(component.fieldErrors()['assetAccount']).toContain('invalide');
+
+      // Submission must be blocked: no create POST is issued.
+      component.save();
+      expect(component.error()).toContain('corriger');
+      httpMock.expectNone(`${base}`);
+      httpMock.verify();
+    });
+
+    it('accepts valid default accounts (228 / 2828 / 68112) with no account errors', () => {
+      const { fixture, httpMock } = setup({ data: { mode: 'new' } });
+      const component = fixture.componentInstance;
+      setValidBaseForm(component);
+      component.form.assetAccountNumber = '228';
+      component.form.depreciationAccountNumber = '2828';
+      component.form.expenseAccountNumber = '68112';
+
+      expect(validateOf(component)).toBeTrue();
+      expect(component.fieldErrors()['assetAccount']).toBeUndefined();
+      expect(component.fieldErrors()['depreciationAccount']).toBeUndefined();
+      expect(component.fieldErrors()['expenseAccount']).toBeUndefined();
+      httpMock.verify();
+    });
+
+    it('rejects an incoherent triplet (212 + 68112) on the asset-account field', () => {
+      const { fixture, httpMock } = setup({ data: { mode: 'new' } });
+      const component = fixture.componentInstance;
+      setValidBaseForm(component);
+      component.form.assetAccountNumber = '2120';
+      component.form.depreciationAccountNumber = '2812';
+      component.form.expenseAccountNumber = '68112';
+
+      expect(validateOf(component)).toBeFalse();
+      expect(component.fieldErrors()['assetAccount']).toContain('Incohérence');
+      httpMock.verify();
+    });
+
+    it('rejects a non-numeric account (frontend guard mirroring the server)', () => {
+      const { fixture, httpMock } = setup({ data: { mode: 'new' } });
+      const component = fixture.componentInstance;
+      setValidBaseForm(component);
+      component.form.assetAccountNumber = 'INVALID';
+
+      expect(validateOf(component)).toBeFalse();
+      expect(component.fieldErrors()['assetAccount']).toBeTruthy();
+      httpMock.verify();
+    });
+
+    it('accepts a 271 (frais préliminaires) asset with no coherence constraint', () => {
+      const { fixture, httpMock } = setup({ data: { mode: 'new' } });
+      const component = fixture.componentInstance;
+      setValidBaseForm(component);
+      component.form.assetAccountNumber = '271';
+      component.form.depreciationAccountNumber = '2818';
+      component.form.expenseAccountNumber = '68111';
+
+      expect(validateOf(component)).toBeTrue();
+      httpMock.verify();
+    });
+  });
+
+  // T10 (bug C2) — les champs montants utilisent le composant existant app-accounting-amount-input
+  // (parse virgule via parseAccountingAmount, locale fr, 3 décimales) au lieu de <input type="number">.
+  describe('amount inputs (T10 / C2)', () => {
+    it('renders the disposal proceeds field as app-accounting-amount-input (no number step=0.001)', () => {
+      const { fixture, httpMock } = setup({ id: 'asset-1' });
+
+      httpMock.expectOne(`${base}/asset-1`).flush({
+        success: true,
+        data: { ...draftAsset, status: 'InService' }
+      });
+      httpMock.expectOne(`${base}/asset-1/schedule`).flush({ success: true, data: null });
+      fixture.detectChanges();
+
+      // Cession section is rendered for in-service assets (outside lazy tabs).
+      const amountInputs = fixture.nativeElement.querySelectorAll('app-accounting-amount-input');
+      expect(amountInputs.length).toBeGreaterThanOrEqual(1);
+      expect(fixture.nativeElement.querySelectorAll('input[type="number"][step="0.001"]').length).toBe(0);
+      httpMock.verify();
+    });
+  });
 });

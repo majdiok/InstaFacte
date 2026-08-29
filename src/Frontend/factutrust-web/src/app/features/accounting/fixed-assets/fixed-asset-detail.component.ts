@@ -27,7 +27,9 @@ import {
   parseDepreciationMethod
 } from '../services/fixed-asset-enums';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
+import { AccountingAmountInputComponent } from '../shared/accounting-amount-input.component';
 import { todayLocalYmd } from '../shared/accounting-date-utils';
+import { validateAccountTriplet } from './fixed-asset-account-rules';
 
 interface AssetFormModel {
   label: string;
@@ -40,10 +42,10 @@ interface AssetFormModel {
   usefulLifeYears: number | null;
   acquisitionDate: string;
   supplierId: string;
-  acquisitionCost: number;
-  vatAmount: number;
-  capitalizedFees: number;
-  residualValue: number;
+  acquisitionCost: number | null;
+  vatAmount: number | null;
+  capitalizedFees: number | null;
+  residualValue: number | null;
   assetAccountNumber: string;
   depreciationAccountNumber: string;
   expenseAccountNumber: string;
@@ -60,7 +62,8 @@ interface AssetFormModel {
     TabsModule,
     PageHeaderComponent,
     ButtonComponent,
-    AccountingStatusBannerComponent
+    AccountingStatusBannerComponent,
+    AccountingAmountInputComponent
   ],
   template: `
     <app-page-header
@@ -188,17 +191,19 @@ interface AssetFormModel {
               <label>
                 Compte d'immobilisation (21x) *
                 <input class="accounting-filter-input" [(ngModel)]="form.assetAccountNumber" [disabled]="readonly()" />
+                <span class="field-error" *ngIf="fieldErrors()['assetAccount']">{{ fieldErrors()['assetAccount'] }}</span>
               </label>
               <label>
                 Compte d'amortissement (28x) *
                 <input class="accounting-filter-input" [(ngModel)]="form.depreciationAccountNumber" [disabled]="readonly()" />
+                <span class="field-error" *ngIf="fieldErrors()['depreciationAccount']">{{ fieldErrors()['depreciationAccount'] }}</span>
               </label>
               <label>
                 Compte de dotation (68x) *
                 <input class="accounting-filter-input" [(ngModel)]="form.expenseAccountNumber" [disabled]="readonly()" />
+                <span class="field-error" *ngIf="fieldErrors()['expenseAccount']">{{ fieldErrors()['expenseAccount'] }}</span>
               </label>
             </div>
-            <span class="field-error" *ngIf="fieldErrors()['accounts']">{{ fieldErrors()['accounts'] }}</span>
           </fieldset>
         </p-tabpanel>
 
@@ -218,20 +223,40 @@ interface AssetFormModel {
             </label>
             <label>
               Prix d'achat HT *
-              <input type="number" step="0.001" min="0" class="accounting-filter-input" [(ngModel)]="form.acquisitionCost" [disabled]="readonly()" />
+              <app-accounting-amount-input
+                [(ngModel)]="form.acquisitionCost"
+                [disabled]="readonly()"
+                side="debit"
+                inputId="acquisitionCost"
+                ariaLabel="Prix d'achat HT" />
               <span class="field-error" *ngIf="fieldErrors()['cost']">{{ fieldErrors()['cost'] }}</span>
             </label>
             <label>
               Montant TVA
-              <input type="number" step="0.001" min="0" class="accounting-filter-input" [(ngModel)]="form.vatAmount" [disabled]="readonly()" />
+              <app-accounting-amount-input
+                [(ngModel)]="form.vatAmount"
+                [disabled]="readonly()"
+                side="debit"
+                inputId="vatAmount"
+                ariaLabel="Montant TVA" />
             </label>
             <label>
               Frais capitalisés
-              <input type="number" step="0.001" min="0" class="accounting-filter-input" [(ngModel)]="form.capitalizedFees" [disabled]="readonly()" />
+              <app-accounting-amount-input
+                [(ngModel)]="form.capitalizedFees"
+                [disabled]="readonly()"
+                side="debit"
+                inputId="capitalizedFees"
+                ariaLabel="Frais capitalisés" />
             </label>
             <label>
               Valeur résiduelle
-              <input type="number" step="0.001" min="0" class="accounting-filter-input" [(ngModel)]="form.residualValue" [disabled]="readonly()" />
+              <app-accounting-amount-input
+                [(ngModel)]="form.residualValue"
+                [disabled]="readonly()"
+                side="debit"
+                inputId="residualValue"
+                ariaLabel="Valeur résiduelle" />
               <span class="field-error" *ngIf="fieldErrors()['residual']">{{ fieldErrors()['residual'] }}</span>
             </label>
             <label>
@@ -405,7 +430,11 @@ interface AssetFormModel {
         </label>
         <label>
           Prix de cession (TND)
-          <input type="number" step="0.001" min="0" class="accounting-filter-input" [(ngModel)]="disposalProceeds" />
+          <app-accounting-amount-input
+            [(ngModel)]="disposalProceeds"
+            side="debit"
+            inputId="disposalProceeds"
+            ariaLabel="Prix de cession" />
         </label>
         <label>
           Compte trésorerie (5321, 5411…) *
@@ -571,7 +600,7 @@ export class FixedAssetDetailComponent implements OnInit {
   creditAccount = '404';
   previewDate = todayLocalYmd();
   disposalDate = todayLocalYmd();
-  disposalProceeds = 0;
+  disposalProceeds: number | null = 0;
   treasuryAccount = '5321';
 
   ngOnInit(): void {
@@ -761,8 +790,16 @@ export class FixedAssetDetailComponent implements OnInit {
       if (this.form.depreciationMethod === DepreciationMethod.Accelerated && !ACCELERATION_COEFFICIENTS.includes(this.form.accelerationCoefficient))
         errors['coefficient'] = 'Le coefficient accéléré doit être 1,5 ou 2 (Décret 2008-492 art. 2).';
     }
-    if (!this.form.assetAccountNumber.trim() || !this.form.depreciationAccountNumber.trim() || !this.form.expenseAccountNumber.trim())
-      errors['accounts'] = 'Les trois comptes comptables sont obligatoires.';
+    // C1 — validation des comptes alignée serveur (FixedAssetAccountRules) : format, préfixes NCT
+    // et cohérence corporel/incorporel. Affichage par champ via fieldErrors.
+    const accountResult = validateAccountTriplet(
+      this.form.assetAccountNumber,
+      this.form.depreciationAccountNumber,
+      this.form.expenseAccountNumber
+    );
+    if (!accountResult.valid && accountResult.field) {
+      errors[accountResult.field] = accountResult.message;
+    }
     this.fieldErrors.set(errors);
     return Object.keys(errors).length === 0;
   }
@@ -788,9 +825,9 @@ export class FixedAssetDetailComponent implements OnInit {
       .create({
         label: this.form.label,
         depreciationRateCategoryId: this.form.depreciationRateCategoryId,
-        acquisitionCost: this.form.acquisitionCost,
-        capitalizedFees: this.form.capitalizedFees,
-        residualValue: this.form.residualValue,
+        acquisitionCost: this.form.acquisitionCost || 0,
+        capitalizedFees: this.form.capitalizedFees || 0,
+        residualValue: this.form.residualValue || 0,
         acquisitionDate: this.form.acquisitionDate,
         description: this.form.description || undefined,
         vatAmount: this.form.vatAmount || 0,
@@ -825,9 +862,9 @@ export class FixedAssetDetailComponent implements OnInit {
     if (!id) return;
     const req: UpdateFixedAssetRequest = {
       label: this.form.label,
-      acquisitionCost: this.form.acquisitionCost,
-      capitalizedFees: this.form.capitalizedFees,
-      residualValue: this.form.residualValue,
+      acquisitionCost: this.form.acquisitionCost || 0,
+      capitalizedFees: this.form.capitalizedFees || 0,
+      residualValue: this.form.residualValue || 0,
       acquisitionDate: this.form.acquisitionDate,
       description: this.form.description || undefined,
       location: this.form.location || undefined,
@@ -960,7 +997,7 @@ export class FixedAssetDetailComponent implements OnInit {
     this.api
       .dispose(id, {
         disposalDate: this.disposalDate,
-        disposalProceeds: this.disposalProceeds,
+        disposalProceeds: this.disposalProceeds || 0,
         treasuryAccountNumber: this.treasuryAccount
       })
       .subscribe({
