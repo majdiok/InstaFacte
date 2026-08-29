@@ -307,9 +307,9 @@ export class FinancialStatementsExportDialogComponent implements OnChanges {
       this.localError.set('Sélectionnez au moins un état ou une note annexe.');
       return;
     }
+    this.localError.set(null);
     const options = this.buildOptions();
     this.busy.set(true);
-    this.localError.set(null);
     this.api.exportNctStatementsPdfWithOptions(options).subscribe({
       next: blob => {
         this.busy.set(false);
@@ -329,7 +329,18 @@ export class FinancialStatementsExportDialogComponent implements OnChanges {
   }
 
   private buildOptions(): NctLiasseExportOptions {
-    const d = this.asOfDate instanceof Date ? this.asOfDate : new Date(this.fiscalYear, 11, 31);
+    const fallback = new Date(this.fiscalYear, 11, 31);
+    const isValidAsOfDate =
+      this.asOfDate instanceof Date &&
+      !isNaN(this.asOfDate.getTime()) &&
+      this.asOfDate.getFullYear() >= 2000 &&
+      this.asOfDate.getFullYear() <= 2100;
+    if (!isValidAsOfDate) {
+      this.localError.set(
+        `Date d'arrêt invalide : repli sur le 31/12/${this.fiscalYear}.`
+      );
+    }
+    const d = isValidAsOfDate ? this.asOfDate : fallback;
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
