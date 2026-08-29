@@ -904,6 +904,35 @@ public sealed class AccountingController : ControllerBase
         return Ok(ApiResponse<Guid>.Ok(r.Value));
     }
 
+    /// <summary>
+    /// Diagnostic des écritures d'à-nouveaux (« JAN ») actives : écarts ligne à ligne entre les
+    /// soldes de clôture ancrés attendus et les lignes effectivement portées par l'à-nouveau.
+    /// Lecture seule, aucune mutation.
+    /// </summary>
+    [HttpGet("periods/opening-entries/diagnose")]
+    [Authorize(Policy = PermissionPolicies.AccountingRead)]
+    public async Task<IActionResult> DiagnoseOpeningEntries(CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new DiagnoseOpeningEntriesQuery(), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<IReadOnlyList<OpeningEntryDiagnosticDto>>.Ok(r.Value));
+    }
+
+    /// <summary>
+    /// Répare l'à-nouveau contaminé de l'exercice clôturé <paramref name="fiscalYear"/> (extourne
+    /// interne + régénération). Idempotente : aucun écart détecté → succès sans effet.
+    /// </summary>
+    [HttpPost("periods/opening-entries/{fiscalYear:int}/repair")]
+    [Authorize(Policy = PermissionPolicies.AccountingCreate)]
+    public async Task<IActionResult> RepairOpeningEntries(int fiscalYear, CancellationToken cancellationToken)
+    {
+        var r = await _mediator.Send(new RepairOpeningEntriesCommand(fiscalYear), cancellationToken);
+        if (r.IsFailure)
+            return BadRequest(ApiResponse<object>.Fail(r.Error.Description));
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
+
     [HttpGet("pre-closing-checklist")]
     [Authorize(Policy = PermissionPolicies.AccountingRead)]
     public async Task<IActionResult> GetPreClosingChecklist([FromQuery] int fiscalYear, CancellationToken cancellationToken)

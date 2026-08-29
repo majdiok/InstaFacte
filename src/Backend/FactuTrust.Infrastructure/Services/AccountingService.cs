@@ -1,6 +1,7 @@
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Application.Configuration;
+using FactuTrust.Application.DTOs;
 using FactuTrust.Application.Features.Accounting;
 using FactuTrust.Application.Features.Accounting.Services;
 using FactuTrust.Application.Features.CashDesk.Services;
@@ -29,6 +30,13 @@ public sealed class AccountingService : IAccountingService
     public const string SourceBankDeposit = "BankDeposit";
     public const string SourceCashOperation = "CashOperation";
     public const string SourceOpeningBalance = "OpeningBalance";
+
+    /// <summary>
+    /// Extourne interne d'un à-nouveau contaminé (T8, réparation) — DISTINCT de
+    /// <see cref="SourceOpeningBalance"/> pour ne jamais être confondu avec l'à-nouveau lui-même
+    /// par <see cref="Application.Common.Interfaces.Repositories.IJournalEntryRepository.GetActiveBySourceAsync"/>.
+    /// </summary>
+    public const string SourceOpeningBalanceReversal = "OpeningBalanceReversal";
     public const string SourceFixedAssetAcquisition = "FixedAssetAcquisition";
     public const string SourceFixedAssetDepreciation = "FixedAssetDepreciation";
     public const string SourceFixedAssetDisposal = "FixedAssetDisposal";
@@ -1269,9 +1277,12 @@ public sealed class AccountingService : IAccountingService
 
         var newYear = closedFiscalYear + 1;
 
-        // Idempotency: check if opening entries already exist for this year
+        // Idempotency: check if opening entries already exist for this year. GetActiveBySourceAsync
+        // (et non GetBySourceAsync) : ignore les à-nouveaux EXTOURNÉS — indispensable pour que la
+        // réparation (RepairOpeningEntriesAsync, T8) puisse régénérer après avoir extourné un
+        // à-nouveau contaminé, sans se heurter à un faux conflit sur l'écriture désormais inactive.
         var existingSourceId = GuidFromFiscalYear(closedFiscalYear);
-        var existing = await _journalEntries.GetBySourceAsync(SourceOpeningBalance, existingSourceId, cancellationToken);
+        var existing = await _journalEntries.GetActiveBySourceAsync(SourceOpeningBalance, existingSourceId, cancellationToken);
         if (existing is not null)
             return Result.Failure<Guid>(Error.Conflict($"Les écritures d'à-nouveau pour l'exercice {closedFiscalYear} ont déjà été générées."));
 
@@ -1291,85 +1302,13 @@ public sealed class AccountingService : IAccountingService
 
         var period = periodResult.Value;
 
-        // Compute closing balances for ALL accounts up to end of closed fiscal year.
-        // Sortie légale : seules les écritures définitives entrent dans les soldes — un brouillon
-        // (y compris antérieur à l'exercice clôturé) ne doit jamais alimenter l'à-nouveau.
+        // Soldes de clôture ancrés sur l'à-nouveau de l'exercice s'il existe (T8) : corrige le
+        // double comptage historique (Bug D-bis) qui cumulait tout l'historique antérieur SANS
+        // exclure les à-nouveaux déjà posés — à partir du 2ᵉ exercice clôturé, les soldes reportés
+        // étaient doublés. Voir FiscalAnchorHelper.ComputeAnchoredClosingBalancesAsync.
         await using var ctx = _contextFactory.CreateContext();
-        var endDate = new DateTime(closedFiscalYear, 12, 31);
-
-        // Agrégation par compte ET par tiers : un à-nouveau qui perd le tiers n'est plus justifiable
-        // dans la balance auxiliaire ni dans le grand livre tiers. Les lignes sans tiers (la très
-        // grande majorité des comptes) forment un groupe unique par compte — comportement inchangé.
-        var accountBalances = await ctx.JournalEntryLines
-            .AsNoTracking()
-            .Include(l => l.JournalEntry)
-            .Where(l => l.JournalEntry.EntryDate <= endDate
-                        && l.JournalEntry.Status != JournalEntryStatus.Brouillon)
-            .GroupBy(l => new { l.AccountNumber, l.ThirdPartyId, l.ThirdPartyKind })
-            .Select(g => new
-            {
-                g.Key.AccountNumber,
-                g.Key.ThirdPartyId,
-                g.Key.ThirdPartyKind,
-                TotalDebit = g.Sum(l => l.DebitAmount.Amount),
-                TotalCredit = g.Sum(l => l.CreditAmount.Amount)
-            })
-            .ToListAsync(cancellationToken);
-
-        var lines = new List<JournalLineInput>();
-
-        // Carry forward balance sheet accounts (classes 1-5)
-        foreach (var ab in accountBalances
-            .Where(a => a.AccountNumber.Length > 0 &&
-                        a.AccountNumber[0] >= '1' && a.AccountNumber[0] <= '5')
-            .OrderBy(a => a.AccountNumber, StringComparer.Ordinal)
-            .ThenBy(a => a.ThirdPartyId))
-        {
-            var balance = Math.Round(ab.TotalDebit - ab.TotalCredit, 3);
-            if (balance == 0) continue;
-
-            var lineLabel = $"À-nouveau {closedFiscalYear} — {ab.AccountNumber}";
-            if (balance > 0)
-            {
-                lines.Add(new JournalLineInput(
-                    ab.AccountNumber, lineLabel,
-                    balance, 0, ab.ThirdPartyId, ab.ThirdPartyKind));
-            }
-            else
-            {
-                lines.Add(new JournalLineInput(
-                    ab.AccountNumber, lineLabel,
-                    0, Math.Abs(balance), ab.ThirdPartyId, ab.ThirdPartyKind));
-            }
-        }
-
-        // Compute net result from P&L accounts (classes 6 and 7)
-        // Class 6 = expenses (debit nature), Class 7 = revenues (credit nature)
-        var pnlBalance = accountBalances
-            .Where(a => a.AccountNumber.Length > 0 &&
-                        (a.AccountNumber[0] == '6' || a.AccountNumber[0] == '7'))
-            .Sum(a => a.TotalCredit - a.TotalDebit);
-
-        var netResult = Math.Round(pnlBalance, 3);
-
-        if (netResult != 0)
-        {
-            var resultAccount = netResult > 0 ? OpeningBalanceProfitAccountNumber : OpeningBalanceLossAccountNumber;
-            if (netResult > 0)
-            {
-                lines.Add(new JournalLineInput(
-                    resultAccount,
-                    $"Résultat net exercice {closedFiscalYear}",
-                    0, netResult, null, ThirdPartyKind.None));
-            }
-            else
-            {
-                lines.Add(new JournalLineInput(
-                    resultAccount,
-                    $"Résultat net exercice {closedFiscalYear}",
-                    Math.Abs(netResult), 0, null, ThirdPartyKind.None));
-            }
-        }
+        var balances = await FiscalAnchorHelper.ComputeAnchoredClosingBalancesAsync(ctx, closedFiscalYear, cancellationToken);
+        var lines = BuildOpeningLines(balances, closedFiscalYear);
 
         if (lines.Count < 2)
         {
@@ -1407,6 +1346,192 @@ public sealed class AccountingService : IAccountingService
             lines.Count, newYear, closedFiscalYear);
 
         return Result.Success(entry.Id);
+    }
+
+    /// <summary>
+    /// Construit les lignes d'à-nouveau attendues à partir des soldes ancrés (T8) : report des
+    /// comptes de bilan (classes 1-5, un par compte + tiers, montants non nuls) puis transfert du
+    /// résultat net de l'exercice (classes 6-7, mouvements seuls) vers 131 (bénéfice) ou 135
+    /// (perte). Factorisée pour être exploitée à l'identique par la génération
+    /// (<see cref="GenerateOpeningEntriesAsync"/>) et le diagnostic (<see cref="DiagnoseOpeningEntriesAsync"/>).
+    /// </summary>
+    private static List<JournalLineInput> BuildOpeningLines(
+        IReadOnlyList<FiscalAnchorHelper.AnchoredBalance> balances, int closedFiscalYear)
+    {
+        var lines = new List<JournalLineInput>();
+
+        foreach (var ab in balances
+            .Where(a => a.AccountNumber.Length > 0 &&
+                        a.AccountNumber[0] >= '1' && a.AccountNumber[0] <= '5')
+            .OrderBy(a => a.AccountNumber, StringComparer.Ordinal)
+            .ThenBy(a => a.ThirdPartyId))
+        {
+            var balance = Math.Round(ab.TotalDebit - ab.TotalCredit, 3);
+            if (balance == 0) continue;
+
+            var lineLabel = $"À-nouveau {closedFiscalYear} — {ab.AccountNumber}";
+            lines.Add(balance > 0
+                ? new JournalLineInput(ab.AccountNumber, lineLabel, balance, 0, ab.ThirdPartyId, ab.ThirdPartyKind)
+                : new JournalLineInput(ab.AccountNumber, lineLabel, 0, Math.Abs(balance), ab.ThirdPartyId, ab.ThirdPartyKind));
+        }
+
+        // Classes 6 (charges, nature débit) et 7 (produits, nature crédit) : le résultat net de
+        // l'exercice — les mouvements seuls, jamais d'ouverture, cf. ComputeAnchoredClosingBalancesAsync.
+        var pnlBalance = balances
+            .Where(a => a.AccountNumber.Length > 0 && (a.AccountNumber[0] == '6' || a.AccountNumber[0] == '7'))
+            .Sum(a => a.TotalCredit - a.TotalDebit);
+        var netResult = Math.Round(pnlBalance, 3);
+
+        if (netResult != 0)
+        {
+            var resultAccount = netResult > 0 ? OpeningBalanceProfitAccountNumber : OpeningBalanceLossAccountNumber;
+            var label = $"Résultat net exercice {closedFiscalYear}";
+            lines.Add(netResult > 0
+                ? new JournalLineInput(resultAccount, label, 0, netResult, null, ThirdPartyKind.None)
+                : new JournalLineInput(resultAccount, label, Math.Abs(netResult), 0, null, ThirdPartyKind.None));
+        }
+
+        return lines;
+    }
+
+    /// <summary>Solde signé (débit − crédit) attendu par compte + tiers, agrégeant les lignes attendues.</summary>
+    private static Dictionary<(string AccountNumber, Guid? ThirdPartyId), decimal> ExpectedSignedBalances(
+        IEnumerable<JournalLineInput> lines)
+    {
+        var dict = new Dictionary<(string, Guid?), decimal>();
+        foreach (var l in lines)
+        {
+            var key = (l.AccountNumber, l.ThirdPartyId);
+            dict.TryGetValue(key, out var cur);
+            dict[key] = cur + l.Debit - l.Credit;
+        }
+        return dict;
+    }
+
+    /// <summary>
+    /// Diagnostique une écriture d'à-nouveau active donnée : recalcule les soldes attendus pour
+    /// son exercice clôturé et rend les écarts ligne à ligne avec les montants réellement portés.
+    /// </summary>
+    private static async Task<OpeningEntryDiagnosticDto> DiagnoseOneAsync(
+        Persistence.TenantDbContext ctx, JournalEntry openingEntry, int closedFiscalYear, CancellationToken ct)
+    {
+        var balances = await FiscalAnchorHelper.ComputeAnchoredClosingBalancesAsync(ctx, closedFiscalYear, ct);
+        var expected = ExpectedSignedBalances(BuildOpeningLines(balances, closedFiscalYear));
+
+        var actual = ExpectedSignedBalances(openingEntry.Lines.Select(l =>
+            new JournalLineInput(l.AccountNumber, l.Label, l.DebitAmount.Amount, l.CreditAmount.Amount, l.ThirdPartyId, l.ThirdPartyKind)));
+
+        var keys = new HashSet<(string, Guid?)>(expected.Keys);
+        keys.UnionWith(actual.Keys);
+
+        var discrepancies = new List<OpeningEntryLineDiscrepancyDto>();
+        foreach (var key in keys.OrderBy(k => k.Item1, StringComparer.Ordinal))
+        {
+            var exp = expected.TryGetValue(key, out var e) ? e : 0m;
+            var act = actual.TryGetValue(key, out var a) ? a : 0m;
+            if (Math.Abs(exp - act) >= 0.01m)
+                discrepancies.Add(new OpeningEntryLineDiscrepancyDto(key.Item1, key.Item2, exp, act, exp - act));
+        }
+
+        return new OpeningEntryDiagnosticDto(closedFiscalYear, openingEntry.Id, discrepancies.Count > 0, discrepancies);
+    }
+
+    public async Task<Result<IReadOnlyList<OpeningEntryDiagnosticDto>>> DiagnoseOpeningEntriesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using var ctx = _contextFactory.CreateContext();
+
+        var activeEntries = await ctx.JournalEntries.AsNoTracking()
+            .Include(e => e.Lines)
+            .Where(e => e.SourceEntityType == SourceOpeningBalance && !e.IsReversed)
+            .OrderBy(e => e.EntryDate)
+            .ToListAsync(cancellationToken);
+
+        var diagnostics = new List<OpeningEntryDiagnosticDto>();
+        foreach (var entry in activeEntries)
+        {
+            // L'à-nouveau de l'exercice clôturé N est daté du 1er janvier de N+1.
+            var closedFiscalYear = entry.EntryDate.Year - 1;
+            diagnostics.Add(await DiagnoseOneAsync(ctx, entry, closedFiscalYear, cancellationToken));
+        }
+
+        return Result.Success<IReadOnlyList<OpeningEntryDiagnosticDto>>(diagnostics);
+    }
+
+    public async Task<Result> RepairOpeningEntriesAsync(int closedFiscalYear, CancellationToken cancellationToken = default)
+    {
+        var existing = await _journalEntries.GetActiveBySourceAsync(
+            SourceOpeningBalance, GuidFromFiscalYear(closedFiscalYear), cancellationToken);
+        if (existing is null)
+            return Result.Success(); // Rien à réparer : aucun à-nouveau actif pour cet exercice.
+
+        await using var ctx = _contextFactory.CreateContext();
+        var diagnostic = await DiagnoseOneAsync(ctx, existing, closedFiscalYear, cancellationToken);
+        if (!diagnostic.HasDiscrepancy)
+            return Result.Success(); // Idempotence : aucun écart, no-op succès.
+
+        if (existing.Status == JournalEntryStatus.Brouillon)
+        {
+            await _journalEntries.RemoveAsync(existing, cancellationToken);
+        }
+        else
+        {
+            // Extourne interne (patron ReverseSupplierInvoiceEntryAsync) : NE PAS utiliser
+            // ReverseJournalEntryAsync (parcours utilisateur conditionné au réglage d'extourne
+            // manuelle) — la réparation doit fonctionner quel que soit ce réglage (T8, point 4).
+            var reversalDate = existing.EntryDate;
+            var periodResult = await _periodService.EnsureOpenPeriodAsync(reversalDate, cancellationToken);
+            if (periodResult.IsFailure)
+            {
+                reversalDate = DateTime.UtcNow.Date;
+                periodResult = await _periodService.EnsureOpenPeriodAsync(reversalDate, cancellationToken);
+            }
+            if (periodResult.IsFailure)
+                return Result.Failure(periodResult.Error);
+
+            var period = periodResult.Value;
+            var currency = existing.Lines.First().DebitAmount.Amount > 0
+                ? existing.Lines.First().DebitAmount.Currency
+                : existing.Lines.First().CreditAmount.Currency;
+
+            var revLines = existing.Lines
+                .OrderBy(l => l.LineNumber)
+                .Select(l => new JournalLineInput(
+                    l.AccountNumber, l.Label, l.CreditAmount.Amount, l.DebitAmount.Amount, l.ThirdPartyId, l.ThirdPartyKind))
+                .ToList();
+
+            var n = await _journalEntries.ReserveNextEntryNumberAsync(existing.JournalCode, reversalDate.Year, cancellationToken);
+            var create = JournalEntry.Create(
+                n,
+                existing.JournalCode,
+                reversalDate,
+                $"Extourne (réparation à-nouveau contaminé) — Exercice {closedFiscalYear}",
+                period.Id,
+                true,
+                SourceOpeningBalanceReversal,
+                existing.Id,
+                revLines,
+                currency,
+                existing.Id);
+
+            if (create.IsFailure)
+                return Result.Failure(create.Error);
+
+            var reversal = create.Value;
+            // Statut forcé Validee (jamais NewEntryStatus) : la réparation figure les soldes ;
+            // un brouillon serait invisible des états NCT et laisserait l'écart en place.
+            reversal.MarkInitialStatus(JournalEntryStatus.Validee);
+            reversal.SetAuditInfo("system", false);
+            await _journalEntries.AddAsync(reversal, cancellationToken);
+
+            existing.MarkReversedBy(reversal.Id);
+            await _journalEntries.UpdateAsync(existing, cancellationToken);
+        }
+
+        // Régénère : GetActiveBySourceAsync (T8, point 2) ne voit plus l'écriture d'origine
+        // (supprimée, ou extournée) — la génération ne court-circuite plus en conflit.
+        var regenerate = await GenerateOpeningEntriesAsync(closedFiscalYear, cancellationToken);
+        return regenerate.IsSuccess ? Result.Success() : Result.Failure(regenerate.Error);
     }
 
     /// <summary>
