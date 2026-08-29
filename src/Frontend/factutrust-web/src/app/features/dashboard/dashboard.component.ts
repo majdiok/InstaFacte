@@ -172,6 +172,7 @@ import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-chec
       </div>
     } @else {
       <div class="kpi-row" data-tour="dash-kpi">
+        @if (canReadInvoices()) {
         <app-stat-card
           label="Chiffre d'affaires"
           [value]="totalRevenue()"
@@ -223,6 +224,8 @@ import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-chec
           [queryParams]="drillDown('pendingInvoices')?.queryParams"
           [navigationAriaLabel]="drillDown('pendingInvoices')?.ariaLabel">
         </app-stat-card>
+        }
+        @if (showStockUrgent()) {
         <app-stat-card
           label="Produits en alerte"
           [value]="stockAlertsCount()"
@@ -235,6 +238,7 @@ import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-chec
           [queryParams]="drillDown('stockAlerts')?.queryParams"
           [navigationAriaLabel]="drillDown('stockAlerts')?.ariaLabel">
         </app-stat-card>
+        }
       </div>
     }
 
@@ -1875,7 +1879,7 @@ export class DashboardComponent implements OnInit {
       case 'crm':
         return this.hasCrmModule();
       case 'chart':
-        return !this.loading() && this.monthlyRevenue().length > 0;
+        return !this.loading() && this.canReadInvoices() && this.monthlyRevenue().length > 0;
       case 'kpi':
       case 'quick-actions':
       case 'bottom-grid':
@@ -2015,6 +2019,7 @@ export class DashboardComponent implements OnInit {
   }
 
   loadStockAlerts(): void {
+    if (!this.showStockUrgent()) return;
     const warehouseId = this.warehouseContext.selectedWarehouseId() ?? undefined;
     this.stockService.getStockAlerts(warehouseId, { skipGlobalErrorUi: true }).subscribe({
       next: (response) => {
@@ -2029,6 +2034,7 @@ export class DashboardComponent implements OnInit {
   }
 
   loadPendingDeliveries(): void {
+    if (!this.showDeliveryUrgent()) return;
     this.deliveryNoteService.getDeliveryNotes({
       status: DeliveryNoteStatus.Confirmed,
       pageSize: 100,

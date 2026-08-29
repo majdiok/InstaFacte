@@ -4,6 +4,8 @@ import { map, catchError } from 'rxjs/operators';
 import { InvoiceService, InvoiceListItem } from '@core/services/invoice.service';
 import { QuoteService, QuoteListItem } from '@core/services/quote.service';
 import { ClientService, ClientListItem } from '@core/services/client.service';
+import { AuthService } from '@core/services/auth.service';
+import { PERMISSIONS } from '@core/config/permission-keys';
 import { isRealizedRevenue } from '@core/utils/invoice-metrics.util';
 import { buildKpiSparklines, type KpiSparklines } from './dashboard-kpi-series.util';
 
@@ -71,23 +73,34 @@ export class DashboardService {
   private invoiceService = inject(InvoiceService);
   private quoteService = inject(QuoteService);
   private clientService = inject(ClientService);
+  private authService = inject(AuthService);
 
   loadDashboardData(): Observable<DashboardAggregatedData> {
+    const canReadInvoices = this.authService.hasPermission(PERMISSIONS.invoices.read);
+    const canReadQuotes = this.authService.hasPermission(PERMISSIONS.quotes.read);
+    const canReadClients = this.authService.hasPermission(PERMISSIONS.clients.read);
+
     return forkJoin({
-      invoices: this.invoiceService.getInvoices({ pageSize: 1000, skipGlobalErrorUi: true }).pipe(
-        catchError(() => of({ success: false, data: { items: [] as InvoiceListItem[] } } as any))
-      ),
-      quotes: this.quoteService.getQuotes({ pageSize: 200, skipGlobalErrorUi: true }).pipe(
-        catchError(() => of({ success: false, data: { items: [] as QuoteListItem[] } } as any))
-      ),
-      clients: this.clientService.getClients({
-        pageSize: 100,
-        sortBy: 'totalRevenue',
-        sortOrder: 'desc',
-        skipGlobalErrorUi: true
-      }).pipe(
-        catchError(() => of({ success: false, data: { items: [] as ClientListItem[] } } as any))
-      )
+      invoices: canReadInvoices
+        ? this.invoiceService.getInvoices({ pageSize: 1000, skipGlobalErrorUi: true }).pipe(
+            catchError(() => of({ success: false, data: { items: [] as InvoiceListItem[] } } as any))
+          )
+        : of({ success: true, data: { items: [] as InvoiceListItem[] } } as any),
+      quotes: canReadQuotes
+        ? this.quoteService.getQuotes({ pageSize: 200, skipGlobalErrorUi: true }).pipe(
+            catchError(() => of({ success: false, data: { items: [] as QuoteListItem[] } } as any))
+          )
+        : of({ success: true, data: { items: [] as QuoteListItem[] } } as any),
+      clients: canReadClients
+        ? this.clientService.getClients({
+            pageSize: 100,
+            sortBy: 'totalRevenue',
+            sortOrder: 'desc',
+            skipGlobalErrorUi: true
+          }).pipe(
+            catchError(() => of({ success: false, data: { items: [] as ClientListItem[] } } as any))
+          )
+        : of({ success: true, data: { items: [] as ClientListItem[] } } as any)
     }).pipe(
       map(({ invoices, quotes, clients }) => {
         const allInvoices: InvoiceListItem[] = invoices.success ? invoices.data.items : [];

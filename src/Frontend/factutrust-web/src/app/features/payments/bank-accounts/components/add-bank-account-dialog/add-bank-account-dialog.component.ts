@@ -772,6 +772,13 @@ export class AddBankAccountDialogComponent implements OnChanges {
   }
 
   private extractError(err: HttpErrorResponse): string {
+    // 403 → message métier français (saisie à la création, mise à jour à l'édition) ;
+    // jamais le texte brut `err.message` (« Http failure response for … »).
+    if (err.status === 403) {
+      return this.editingAccount
+        ? 'Action refusée : autorisations insuffisantes (Trésorerie — mise à jour).'
+        : 'Action refusée : autorisations insuffisantes (Trésorerie — saisie).';
+    }
     const body = err.error;
     if (typeof body === 'string') return body;
     if (body && typeof body === 'object') {
@@ -779,7 +786,7 @@ export class AddBankAccountDialogComponent implements OnChanges {
       if (o.errors?.length) return o.errors[0];
       if (o.message) return o.message;
     }
-    return err.message ?? 'Erreur réseau.';
+    return 'Erreur lors de l\u2019enregistrement du compte.';
   }
 
   close(): void {

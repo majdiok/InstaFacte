@@ -235,6 +235,88 @@ describe('errorInterceptor', () => {
     httpMock.verify();
   });
 
+  it('shows a non-blocking toast (no modal) for a 403 on a GET request', (done) => {
+    http.get('/api/stock/warehouses').subscribe({
+      error: () => {
+        expect(forbiddenDialog.showAccessDenied).not.toHaveBeenCalled();
+        expect(toastService.add).toHaveBeenCalled();
+        const call = toastService.add.calls.mostRecent();
+        expect(call.args[0].severity).toBe('warn');
+        expect(call.args[0].summary).toContain('Accès refusé');
+        done();
+      }
+    });
+
+    const req = httpMock.expectOne('/api/stock/warehouses');
+    req.flush({ success: false, message: 'Permission stock:read requise.' }, { status: 403, statusText: 'Forbidden' });
+    httpMock.verify();
+  });
+
+  it('keeps the blocking modal (no toast) for a 403 on a write request (POST)', (done) => {
+    http.post('/api/cash-desk/operations', {}).subscribe({
+      error: () => {
+        expect(toastService.add).not.toHaveBeenCalled();
+        expect(forbiddenDialog.showAccessDenied).toHaveBeenCalled();
+        const call = forbiddenDialog.showAccessDenied.calls.mostRecent();
+        expect(call.args[1]).toBe('POST|/api/cash-desk/operations|Permission payments:create requise.');
+        done();
+      }
+    });
+
+    const req = httpMock.expectOne('/api/cash-desk/operations');
+    req.flush(
+      { success: false, message: 'Permission payments:create requise.' },
+      { status: 403, statusText: 'Forbidden' }
+    );
+    httpMock.verify();
+  });
+
+  it('keeps the blocking modal for a 403 on other write verbs (PATCH/PUT/DELETE)', (done) => {
+    let remaining = 3;
+    const finishIfDone = () => {
+      remaining -= 1;
+      if (remaining === 0) {
+        expect(toastService.add).not.toHaveBeenCalled();
+        expect(forbiddenDialog.showAccessDenied).toHaveBeenCalledTimes(3);
+        done();
+      }
+    };
+
+    http.patch('/api/tenant-users/1', {}).subscribe({ error: finishIfDone });
+    http.put('/api/bank-accounts/1', {}).subscribe({ error: finishIfDone });
+    http.delete('/api/bank-accounts/1').subscribe({ error: finishIfDone });
+
+    httpMock.expectOne('/api/tenant-users/1').flush(
+      { success: false, message: 'Forbidden' },
+      { status: 403, statusText: 'Forbidden' }
+    );
+    httpMock.expectOne({ url: '/api/bank-accounts/1', method: 'PUT' }).flush(
+      { success: false, message: 'Forbidden' },
+      { status: 403, statusText: 'Forbidden' }
+    );
+    httpMock.expectOne({ url: '/api/bank-accounts/1', method: 'DELETE' }).flush(
+      { success: false, message: 'Forbidden' },
+      { status: 403, statusText: 'Forbidden' }
+    );
+    httpMock.verify();
+  });
+
+  it('shows neither toast nor dialog for a 403 GET when SKIP_ERROR_TOAST is set', (done) => {
+    const ctx = new HttpContext().set(SKIP_ERROR_TOAST, true);
+
+    http.get('/api/stock/warehouses', { context: ctx }).subscribe({
+      error: () => {
+        expect(forbiddenDialog.showAccessDenied).not.toHaveBeenCalled();
+        expect(toastService.add).not.toHaveBeenCalled();
+        done();
+      }
+    });
+
+    const req = httpMock.expectOne('/api/stock/warehouses');
+    req.flush({ success: false, message: 'Forbidden' }, { status: 403, statusText: 'Forbidden' });
+    httpMock.verify();
+  });
+
   it('does not log when 401 and SKIP_ERROR_TOAST is set (background poll)', (done) => {
     const errorHandler = TestBed.inject(ErrorHandlerService);
     const logSpy = spyOn(errorHandler, 'logError');

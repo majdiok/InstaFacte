@@ -1,4 +1,5 @@
 import { CommonModule } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, EventEmitter, HostListener, Input, Output, OnChanges, OnInit, SimpleChanges, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
@@ -756,13 +757,15 @@ export class AddCashOperationDialogComponent implements OnChanges, OnInit {
         }
         this.submitting.set(false);
       },
-      error: (err) => {
-        const msg =
-          err?.error?.errors?.[0] ??
-          err?.error?.message ??
-          err?.error?.error?.description ??
-          err?.message ??
-          'Erreur lors de l\u2019enregistrement de l\u2019opération.';
+      error: (err: HttpErrorResponse) => {
+        // 403 (payments:create) → message métier français ; jamais le texte brut `err?.message`
+        // (« Http failure response for … 403 Forbidden »). Les autres erreurs → message générique francisé.
+        const msg = err.status === 403
+          ? 'Action refusée : autorisations insuffisantes (Trésorerie — saisie).'
+          : err?.error?.errors?.[0] ??
+            err?.error?.message ??
+            err?.error?.error?.description ??
+            'Erreur lors de l\u2019enregistrement de l\u2019opération.';
         this.errorMessage.set(msg);
         this.submitting.set(false);
       }

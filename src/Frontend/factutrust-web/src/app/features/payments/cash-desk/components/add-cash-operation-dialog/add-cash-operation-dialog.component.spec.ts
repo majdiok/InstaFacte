@@ -1,8 +1,17 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { HttpErrorResponse, provideHttpClient, withInterceptors } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { of, throwError } from 'rxjs';
 import { CashDeskService, CashOperationType, CashOperationListItem } from '@core/services/cash-desk.service';
 import { ToastService } from '@core/services/toast.service';
+import { ErrorHandlerService } from '@core/services/error-handler.service';
+import { HttpForbiddenDialogService } from '@core/services/http-forbidden-dialog.service';
+import { HttpValidationDialogService } from '@core/services/http-validation-dialog.service';
+import { AuthService } from '@core/services/auth.service';
+import { errorInterceptor } from '@core/interceptors/error.interceptor';
+import { SKIP_ERROR_TOAST } from '@core/http-context';
+import { environment } from '@environments/environment';
 import { AddCashOperationDialogComponent } from './add-cash-operation-dialog.component';
 
 describe('AddCashOperationDialogComponent', () => {
@@ -235,6 +244,29 @@ describe('AddCashOperationDialogComponent', () => {
     expect(component.submitting()).toBeFalse();
   });
 
+  it('shows a localized French business message on 403 (not raw err.message nor backend text)', () => {
+    createOperation.and.returnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 403,
+            error: { success: false, message: 'Permission payments:create requise.' }
+          })
+      )
+    );
+    openDialog();
+    component.selectedRevenueCategory = 0;
+    component.amount = 10;
+    component.label = 'Test';
+
+    component.submit();
+
+    expect(component.errorMessage()).toBe('Action refusée : autorisations insuffisantes (Trésorerie — saisie).');
+    expect(component.errorMessage()).not.toContain('Http failure');
+    expect(component.errorMessage()).not.toBe('Permission payments:create requise.');
+    expect(component.submitting()).toBeFalse();
+  });
+
   describe('Taux de TVA (encaissements ventes au comptant)', () => {
     it('is absent when the feature flag is off', () => {
       openDialog();
@@ -373,5 +405,67 @@ describe('AddCashOperationDialogComponent', () => {
         jasmine.objectContaining({ vatRate: null })
       );
     });
+  });
+});
+
+describe('AddCashOperationDialogComponent — 403 & SKIP_ERROR_TOAST (intégration HTTP)', () => {
+  let component: AddCashOperationDialogComponent;
+  let httpMock: HttpTestingController;
+  let forbiddenDialog: jasmine.SpyObj<HttpForbiddenDialogService>;
+
+  beforeEach(async () => {
+    forbiddenDialog = jasmine.createSpyObj('HttpForbiddenDialogService', ['showAccessDenied']);
+
+    await TestBed.configureTestingModule({
+      imports: [AddCashOperationDialogComponent],
+      providers: [
+        provideNoopAnimations(),
+        CashDeskService,
+        provideHttpClient(withInterceptors([errorInterceptor])),
+        provideHttpClientTesting(),
+        ErrorHandlerService,
+        { provide: ToastService, useValue: { add: jasmine.createSpy('add') } },
+        { provide: HttpForbiddenDialogService, useValue: forbiddenDialog },
+        { provide: HttpValidationDialogService, useValue: jasmine.createSpyObj('HttpValidationDialogService', ['showValidationFailed']) },
+        { provide: AuthService, useValue: jasmine.createSpyObj('AuthService', ['logout']) }
+      ]
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(AddCashOperationDialogComponent);
+    component = fixture.componentInstance;
+    httpMock = TestBed.inject(HttpTestingController);
+
+    // Empêche tout appel réseau réel du loadFeatureFlags (ngOnInit) — on teste createOperation.
+    spyOn(TestBed.inject(CashDeskService), 'getFeatureFlags').and.returnValue(
+      of({ success: true, data: { vatEnabled: false }, message: null, errors: [] })
+    );
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+  });
+
+  it('porte SKIP_ERROR_TOAST sur la requête POST /cash-desk/operations et n\'ouvre pas la modale globale sur 403', () => {
+    component.operationType = CashOperationType.Credit;
+    component.selectedRevenueCategory = 0;
+    component.selectedMethod = 0;
+    component.amount = 10;
+    component.operationDate = new Date(2026, 6, 15);
+    component.label = 'Test';
+
+    component.submit();
+
+    const req = httpMock.expectOne(
+      r => r.method === 'POST' && r.url === `${environment.apiUrl}/cash-desk/operations`
+    );
+    expect(req.request.context.get(SKIP_ERROR_TOAST)).toBeTrue();
+
+    req.flush(
+      { success: false, message: 'Permission payments:create requise.' },
+      { status: 403, statusText: 'Forbidden' }
+    );
+
+    expect(component.errorMessage()).toBe('Action refusée : autorisations insuffisantes (Trésorerie — saisie).');
+    expect(forbiddenDialog.showAccessDenied).not.toHaveBeenCalled();
   });
 });

@@ -188,6 +188,9 @@ public static class AuditActions
         public const string Updated = "User.Updated";
         public const string Deleted = "User.Deleted";
         public const string RoleChanged = "User.RoleChanged";
+        public const string ModuleGrantsChanged = "User.ModuleGrantsChanged";
+        public const string Deactivated = "User.Deactivated";
+        public const string Reactivated = "User.Reactivated";
     }
 
     public static class Subscription

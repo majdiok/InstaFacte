@@ -5,6 +5,7 @@ using FactuTrust.API.Services.Background;
 using FactuTrust.API.Services.Channels;
 using FactuTrust.Application;
 using FactuTrust.Application.Common.Interfaces;
+using FactuTrust.Application.Common.Interfaces.Services;
 using FactuTrust.Domain.Constants;
 using FactuTrust.Infrastructure;
 using FactuTrust.Infrastructure.MultiTenancy;
@@ -22,6 +23,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Serilog;
@@ -137,6 +139,44 @@ builder.Services.AddAuthentication(options =>
         ValidAudience = jwtSettings["Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)),
         ClockSkew = TimeSpan.Zero
+    };
+
+    // Révocation immédiate (plan §6 Phase 2.5) : signature/durée de vie/issuer/audience ne suffisent pas —
+    // un rôle rétrogradé ou une désactivation doivent invalider l'access token courant sans attendre son
+    // expiration naturelle (15 min). Vérifié à CHAQUE requête via ISecurityStampTokenValidator (lookup
+    // base master adouci par un cache mémoire TTL <= 5 s, plan §6 Phase 2.5) ; ne s'applique qu'au scheme
+    // JWT principal — le ticket 2FA (PlatformAuthController.GenerateTwoFactorTicket) porte une audience
+    // différente et n'est jamais validé par ce handler.
+    var requireSecurityStampClaim = builder.Configuration.GetValue<bool>("JwtSettings:RequireSecurityStampClaim");
+    options.Events = new JwtBearerEvents
+    {
+        OnTokenValidated = async context =>
+        {
+            try
+            {
+                var userIdClaim = context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                if (!Guid.TryParse(userIdClaim, out var userId))
+                {
+                    context.Fail("Utilisateur introuvable dans le token.");
+                    return;
+                }
+
+                var securityStampClaim = context.Principal?.FindFirst(FactuTrust.Domain.Auth.AuthClaimTypes.SecurityStamp)?.Value;
+                var validator = context.HttpContext.RequestServices.GetRequiredService<ISecurityStampTokenValidator>();
+                var isValid = await validator.IsValidAsync(
+                    userId, securityStampClaim, requireSecurityStampClaim, context.HttpContext.RequestAborted);
+
+                if (!isValid)
+                    context.Fail("Accès révoqué : rôle ou statut du compte modifié. Reconnectez-vous.");
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "JWT bearer token validation failed. TraceId: {TraceId}", context.HttpContext.TraceIdentifier);
+                // Fail-closed explicite (plan §6 Phase 2.5) : base master injoignable, timeout, erreur
+                // cache -> on rejette toujours, jamais de "laisser passer" sur erreur.
+                context.Fail("Impossible de vérifier la session (service indisponible).");
+            }
+        }
     };
 });
 

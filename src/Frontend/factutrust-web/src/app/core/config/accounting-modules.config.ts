@@ -1,5 +1,6 @@
 import { AppModule as M } from '../models/app-module';
 import { NavItem, NavSubItem } from './app-navigation.registry';
+import { PERMISSIONS } from './permission-keys';
 
 /**
  * Source unique des modules comptables « façon Axeane » (Configuration, Traitements, États,
@@ -101,7 +102,9 @@ export const ACCOUNTING_MODULES: AccountingModuleDef[] = [
     links: [
       { label: 'Declaration mensuelle', route: '/accounting/vat-declaration', icon: 'fa-solid fa-file-invoice', perms: ['accounting:read'] },
       { label: 'Echeancier fiscal', route: '/accounting/fiscal-schedule', icon: 'fa-solid fa-calendar-days', perms: ['accounting:read'] },
-      { label: 'Paiements et quittances', route: '/treasury', icon: 'fa-solid fa-money-check-dollar', perms: ['treasury:read'] }
+      // `/treasury` redirige vers `/treasury/cash-forecast`, gardée par `treasury_forecast:view` ;
+      // `treasury:read` n'existe dans aucune policy backend (lien invisible pour tout le monde, bug corrigé).
+      { label: 'Paiements et quittances', route: '/treasury', icon: 'fa-solid fa-money-check-dollar', perms: [PERMISSIONS.treasuryForecast.view] }
     ]
   },
   {

@@ -94,6 +94,10 @@ export class BankDepositService {
   }
 
   cancel(id: string, cancellationReason: string): Observable<ApiResponse<object>> {
-    return this.http.post<ApiResponse<object>>(`${this.baseUrl}/${id}/cancel`, { cancellationReason });
+    // 403 (payments:update) is handled locally by the deposit cancellation screen — suppress the
+    // duplicate global "ACCÈS REFUSÉ" modal via SKIP_ERROR_TOAST.
+    return this.http.post<ApiResponse<object>>(`${this.baseUrl}/${id}/cancel`, { cancellationReason }, {
+      context: createHttpContextSkipGlobalErrorUi()
+    });
   }
 }

@@ -295,4 +295,17 @@ describe('app-navigation.registry', () => {
       expect(entry!.permissionsAll).toContain('return_notes:read');
     });
   });
+
+  describe('Declarations · Paiements navigation entry (fuite menu ⇔ route)', () => {
+    it('requires treasury_forecast:view, matching the /treasury/cash-forecast route guard', () => {
+      const comptabilite = ALL_NAV_ITEMS.find(i => i.label === 'Comptabilité');
+      const entry = comptabilite?.children?.find(c => c.route === '/treasury');
+
+      expect(entry).toBeDefined();
+      // `/treasury` redirige vers `/treasury/cash-forecast` (garde: treasury_forecast:view).
+      // `treasury:read` n'existe dans aucune policy backend : l'ancienne valeur rendait
+      // cette entrée invisible pour tout le monde, quel que soit le rôle.
+      expect(entry!.permissionsAll).toEqual(['treasury_forecast:view']);
+    });
+  });
 });
