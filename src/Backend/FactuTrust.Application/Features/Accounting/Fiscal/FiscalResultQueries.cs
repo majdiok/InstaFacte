@@ -132,7 +132,23 @@ public sealed class GetFiscalResultDeclarationQueryHandler
         return nct.IsSuccess ? nct.Value.IncomeStatement.NetResult : null;
     }
 
-    /// <summary>Somme des mouvements débiteurs des comptes de pénalités (6712, 668) sur l'exercice.</summary>
+    /// <summary>
+    /// Suggestion R-PENALITES : somme des mouvements débiteurs des pénalités et majorations de retard
+    /// sur l'exercice, pour réintégration non déductible.
+    /// </summary>
+    /// <remarks>
+    /// Lit DEUX racines de comptes :
+    /// <list type="bullet">
+    /// <item><c>668</c> — autres charges non déductibles (amendes, pénalités comptabilisées au compte
+    /// standard du plan SCE).</item>
+    /// <item><c>6712</c> — pénalités et majorations de retard fiscales. Ce compte N'EXISTE PAS au
+    /// catalogue livré (§1.4) : il s'agit d'un SOUS-COMPTE potentiel créé au gré des tenants. Un
+    /// tenant sans <c>6712</c> ne lève JAMAIS d'exception ici : la balance ne retourne simplement aucune
+    /// ligne pour ce préfixe et la suggestion se réduit aux débits <c>668</c> seuls. C'est le
+    /// comportement de repli documenté et testé (T17) : aucune charge de pénalité fiscale
+    /// spécifique <c>6712</c> n'est détectée → suggestion = débits <c>668</c> uniquement, sans erreur.
+    /// </list>
+    /// </remarks>
     private async Task<decimal> TryComputePenaltiesAsync(int fiscalYear, CancellationToken ct)
     {
         var from = new DateTime(fiscalYear, 1, 1);
