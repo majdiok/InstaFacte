@@ -85,4 +85,12 @@ describe('ProjectApiService', () => {
     expect(req.request.method).toBe('GET');
     req.flush({ success: true, data: {} });
   });
+
+  it('moves task to another phase with optional status', () => {
+    service.moveTask('task-1', 'phase-2', 'InProgress').subscribe();
+    const req = http.expectOne(`${environment.apiUrl}/projects/tasks/task-1/move`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ phaseId: 'phase-2', status: 'InProgress' });
+    req.flush({ success: true, data: true });
+  });
 });
