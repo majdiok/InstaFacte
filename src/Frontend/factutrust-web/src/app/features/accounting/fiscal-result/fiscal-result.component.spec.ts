@@ -40,6 +40,7 @@ function makeDto(overrides: Partial<FiscalResultDeclarationDto> = {}): FiscalRes
     localTurnoverTtc: 10000,
     minimumTaxRegime: 0,
     suggestedLocalTurnoverTtc: 10000,
+    suggestedAccountingResult: null,
     acomptesPaid: 0,
     withholdingSuffered: 0,
     priorTaxCredit: 0,
@@ -269,5 +270,51 @@ describe('FiscalResultComponent', () => {
     const confirmSpy = spyOn(window, 'confirm').and.returnValue(false);
     expect(fixture.componentInstance.canDeactivate()).toBeFalse();
     expect(confirmSpy).toHaveBeenCalled();
+  });
+
+  // T24 : bouton « Reprendre » le résultat comptable suggéré (résout BUG #006).
+  it('affiche le résultat comptable suggéré et un bouton Reprendre à côté du champ', async () => {
+    accountingMock.getFiscalResult.and.returnValue(
+      of({ success: true, data: makeDto({ accountingResult: 1000, suggestedAccountingResult: 8400 }) })
+    );
+    await renderForUser(companyUserWithCreate);
+    expect(fixture.componentInstance.suggestedAccountingResult()).toBe(8400);
+    const btn: HTMLButtonElement | null = fixture.nativeElement.querySelector('[aria-label="Reprendre le résultat comptable calculé"]');
+    expect(btn).toBeTruthy();
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Résultat comptable = résultat avant impôt − IS comptabilisé');
+    expect(text).toContain('Résultat comptable calculé');
+  });
+
+  it('cliquer « Reprendre » met à jour le champ résultat comptable et marque l’état dirty', async () => {
+    accountingMock.getFiscalResult.and.returnValue(
+      of({ success: true, data: makeDto({ accountingResult: 1000, suggestedAccountingResult: 8400 }) })
+    );
+    await renderForUser(companyUserWithCreate);
+    expect(fixture.componentInstance.model.accountingResult).toBe(1000);
+    expect(fixture.componentInstance.isDirty()).toBeFalse();
+    const btn: HTMLButtonElement = fixture.nativeElement.querySelector('[aria-label="Reprendre le résultat comptable calculé"]');
+    btn?.click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.model.accountingResult).toBe(8400);
+    expect(fixture.componentInstance.isDirty()).toBeTrue();
+  });
+
+  it("ne propose pas le bouton Reprendre quand aucun résultat comptable n'est suggéré", async () => {
+    accountingMock.getFiscalResult.and.returnValue(
+      of({ success: true, data: makeDto({ suggestedAccountingResult: null }) })
+    );
+    await renderForUser(companyUserWithCreate);
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).not.toContain('Résultat comptable calculé');
+  });
+
+  it("n'écrase pas le résultat comptable saisi sans action utilisateur", async () => {
+    accountingMock.getFiscalResult.and.returnValue(
+      of({ success: true, data: makeDto({ accountingResult: 5000, suggestedAccountingResult: 8400 }) })
+    );
+    await renderForUser(companyUserWithCreate);
+    expect(fixture.componentInstance.model.accountingResult).toBe(5000);
+    expect(fixture.componentInstance.isDirty()).toBeFalse();
   });
 });

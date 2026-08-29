@@ -156,6 +156,15 @@ interface EditableModel {
               <input type="number" step="0.001" [(ngModel)]="model.accountingResult" [disabled]="readonly()" />
               <span class="fr-hint">l'IS comptabilisé (compte 69) est réintégré ci-dessous</span>
             </div>
+            <p class="fr-formula">Résultat comptable = résultat avant impôt − IS comptabilisé</p>
+            @if (suggestedAccountingResult() != null) {
+              <div class="fr-suggest-row">
+                <span class="fr-hint">Résultat comptable calculé : {{ suggestedAccountingResult() | number : '1.3-3' }}</span>
+                <app-button variant="ghost" size="sm" icon="pi pi-arrow-down-left" type="button"
+                  (click)="applySuggestedAccountingResult()" [disabled]="readonly()"
+                  ariaLabel="Reprendre le résultat comptable calculé">Reprendre</app-button>
+              </div>
+            }
             @if (model.taxpayerKind === 0) {
               <div class="fr-input-row">
                 <label>Taux IS applicable</label>
@@ -374,6 +383,7 @@ interface EditableModel {
     .fr-input-row input { padding:0.4rem 0.55rem; border:1px solid var(--color-border-default,#cbd5e1); border-radius:var(--radius-md); text-align:right; font-variant-numeric:tabular-nums; }
     .fr-input-row select { padding:0.4rem 0.55rem; border:1px solid var(--color-border-default,#cbd5e1); border-radius:var(--radius-md); }
     .fr-hint { font-size:var(--font-size-xs); color:var(--color-text-tertiary); }
+    .fr-formula { font-size:var(--font-size-xs); color:var(--color-text-tertiary); margin:0 0 var(--spacing-2); }
     .fr-suggest-row { display:flex; align-items:center; justify-content:flex-end; gap:var(--spacing-2); margin:-0.25rem 0 var(--spacing-2); }
     .fr-alert-banner { display:flex; align-items:flex-start; gap:var(--spacing-2); margin-bottom:var(--spacing-4); padding:var(--spacing-3) var(--spacing-4); border-radius:var(--radius-md); font-size:var(--font-size-sm); background:var(--color-warning-50,#fffbeb); border:1px solid var(--color-warning-200,#fde68a); color:var(--color-warning-800,#92400e); }
     .fr-warn-list { margin:0.25rem 0 0; padding-left:1.1rem; }
@@ -413,6 +423,11 @@ export class FiscalResultComponent implements OnInit {
    * recalcule pas (il l'est au chargement), la valeur reste donc disponible après sauvegarde.
    */
   readonly suggestedTurnover = signal(0);
+  /**
+   * Résultat comptable net (après impôt) recalculé depuis les états NCT (miroir du patron
+   * `suggestedTurnover`) ; n'écrase jamais la valeur saisie sans action utilisateur (T24).
+   */
+  readonly suggestedAccountingResult = signal<number | null>(null);
 
   model: EditableModel = this.blankModel();
   private snapshot: EditableModel | null = null;
@@ -444,6 +459,7 @@ export class FiscalResultComponent implements OnInit {
           this.model = this.toModel(res.data);
           this.snapshot = this.toModel(res.data);
           this.suggestedTurnover.set(res.data.suggestedLocalTurnoverTtc ?? 0);
+          this.suggestedAccountingResult.set(res.data.suggestedAccountingResult ?? null);
         } else {
           this.error.set(res.error ?? 'Erreur');
         }
@@ -653,6 +669,14 @@ export class FiscalResultComponent implements OnInit {
   applySuggestedTurnover(): void {
     if (this.readonly()) return;
     this.model.localTurnoverTtc = this.suggestedTurnover();
+  }
+
+  /** Reprend le résultat comptable net (après impôt) calculé depuis les états NCT (T24). */
+  applySuggestedAccountingResult(): void {
+    if (this.readonly()) return;
+    const suggested = this.suggestedAccountingResult();
+    if (suggested == null) return;
+    this.model.accountingResult = suggested;
   }
 
   private toModel(d: FiscalResultDeclarationDto): EditableModel {
