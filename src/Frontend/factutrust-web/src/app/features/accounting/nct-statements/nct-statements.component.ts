@@ -1,6 +1,9 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Subject, of } from 'rxjs';
+import { catchError, switchMap } from 'rxjs/operators';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.component';
@@ -10,6 +13,19 @@ import { FinancialStatementsExportDialogComponent } from './financial-statements
 import { NctNoteOverridesDialogComponent } from './nct-note-overrides-dialog.component';
 
 type NctTab = 'bilan' | 'resultat' | 'flux' | 'capitaux' | 'notes';
+
+/** Réponse d'API générique (miroir non exporté de `ApiResponse<T>` du service). */
+interface NctStatementsApiResponse {
+  success: boolean;
+  data?: NctFinancialStatementsDto;
+  error?: string;
+}
+
+const MIN_FISCAL_YEAR = 2000;
+const MAX_FISCAL_YEAR = 2100;
+
+/** Code de la ligne de réconciliation dans le tableau des flux de trésorerie (méthode indirecte). */
+const CASH_FLOW_RECONCILIATION_CODE = 'CFECART';
 
 @Component({
   selector: 'app-nct-statements',
@@ -32,11 +48,16 @@ type NctTab = 'bilan' | 'resultat' | 'flux' | 'capitaux' | 'notes';
         <div accountingFilterFields>
           <div class="accounting-filter-field">
             <label class="accounting-filter-label" for="nct-year">Exercice</label>
-            <input id="nct-year" type="number" [(ngModel)]="fiscalYear" class="accounting-filter-input nct-year-input" />
+            <input id="nct-year" type="number" [ngModel]="fiscalYear" (ngModelChange)="onYearInputChange($event)"
+              class="accounting-filter-input nct-year-input" min="2000" max="2100"
+              [attr.aria-invalid]="!isYearValid()" />
+            @if (!isYearValid()) {
+              <span class="nct-year-error" role="alert">Exercice invalide : doit être compris entre 2000 et 2100.</span>
+            }
           </div>
         </div>
         <div accountingFilterActions>
-          <app-button variant="secondary" icon="pi pi-refresh" type="button" (click)="load()" [disabled]="loading()"
+          <app-button variant="secondary" icon="pi pi-refresh" type="button" (click)="load()" [disabled]="loading() || !isYearValid()"
             ariaLabel="Charger la liasse NCT">Charger</app-button>
           <app-button variant="secondary" icon="pi pi-eye" type="button" (click)="openExportDialog()" [disabled]="loading() || !data()"
             ariaLabel="Aperçu et impression des états financiers">Aperçu / Impression</app-button>
@@ -120,7 +141,7 @@ type NctTab = 'bilan' | 'resultat' | 'flux' | 'capitaux' | 'notes';
         </thead>
         <tbody>
           @for (line of lines; track line.code) {
-            <tr [class.nct-row--subtotal]="line.isSubtotal">
+            <tr [class.nct-row--subtotal]="line.isSubtotal" [class.nct-row--reconciliation]="line.code === reconciliationCode">
               <td class="nct-td-label" [style.paddingLeft.rem]="0.75 + line.level * 1.25">{{ line.label }}</td>
               <td class="nct-td-amount">{{ line.amount | number : '1.3-3' }}</td>
               <td class="nct-td-amount nct-td-prev">{{ line.previousAmount | number : '1.3-3' }}</td>
@@ -151,6 +172,8 @@ type NctTab = 'bilan' | 'resultat' | 'flux' | 'capitaux' | 'notes';
     .nct-td-amount { padding:var(--spacing-2) var(--spacing-3); text-align:right; font-variant-numeric:tabular-nums; font-weight:var(--font-weight-medium); }
     .nct-td-prev { color:var(--color-text-tertiary); }
     .nct-row--subtotal > td { font-weight:var(--font-weight-bold); color:var(--color-text-primary); border-top:1px solid var(--color-border-subtle); background:var(--color-background-subtle); }
+    .nct-row--reconciliation > td { font-style:italic; color:var(--color-warning-700,#b45309); background:var(--color-warning-50,#fffbeb); }
+    .nct-year-error { display:block; font-size:var(--font-size-xs); color:var(--color-danger-600,#dc2626); margin-top:0.2rem; }
   `
 })
 export class NctStatementsComponent implements OnInit {
@@ -162,6 +185,27 @@ export class NctStatementsComponent implements OnInit {
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
   readonly tab = signal<NctTab>('bilan');
+  /** Exposé au template pour la mise en évidence de la ligne de réconciliation des flux (BUG #004). */
+  readonly reconciliationCode = CASH_FLOW_RECONCILIATION_CODE;
+
+  private readonly loadRequests$ = new Subject<number>();
+
+  constructor() {
+    this.loadRequests$
+      .pipe(
+        switchMap(year =>
+          this.api.getNctStatements(year).pipe(
+            catchError(() => of<NctStatementsApiResponse>({ success: false, error: 'Erreur réseau' }))
+          )
+        ),
+        takeUntilDestroyed()
+      )
+      .subscribe(res => {
+        this.loading.set(false);
+        if (res.success && res.data) this.data.set(res.data);
+        else this.error.set(res.error ?? 'Erreur');
+      });
+  }
 
   ngOnInit(): void {
     this.load();
@@ -172,22 +216,25 @@ export class NctStatementsComponent implements OnInit {
     this.exportDialogVisible = true;
   }
 
+  onYearInputChange(value: number): void {
+    this.fiscalYear = value;
+  }
+
+  isYearValid(): boolean {
+    const y = Number(this.fiscalYear);
+    return Number.isInteger(y) && y >= MIN_FISCAL_YEAR && y <= MAX_FISCAL_YEAR;
+  }
+
+  private clampYear(y: number): number {
+    return Math.min(MAX_FISCAL_YEAR, Math.max(MIN_FISCAL_YEAR, Math.floor(Number(y)) || new Date().getFullYear()));
+  }
+
   load(): void {
-    const y = Math.min(2100, Math.max(2000, Math.floor(Number(this.fiscalYear)) || new Date().getFullYear()));
+    const y = this.clampYear(this.fiscalYear);
     this.fiscalYear = y;
     this.loading.set(true);
     this.error.set(null);
-    this.api.getNctStatements(y).subscribe({
-      next: res => {
-        this.loading.set(false);
-        if (res.success && res.data) this.data.set(res.data);
-        else this.error.set(res.error ?? 'Erreur');
-      },
-      error: () => {
-        this.loading.set(false);
-        this.error.set('Erreur réseau');
-      }
-    });
+    this.loadRequests$.next(y);
   }
 
   exportPdf(): void {
