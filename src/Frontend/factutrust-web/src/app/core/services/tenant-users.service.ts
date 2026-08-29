@@ -26,7 +26,13 @@ export function parseAppModule(raw: unknown): AppModule {
       Accounting: AppModule.Accounting,
       CRM: AppModule.CRM,
       Fiscal: AppModule.Fiscal,
-      AI: AppModule.AI
+      AI: AppModule.AI,
+      Forecasting: AppModule.Forecasting,
+      Studio: AppModule.Studio,
+      Payroll: AppModule.Payroll,
+      Honoraires: AppModule.Honoraires,
+      Projects: AppModule.Projects,
+      RecurringContracts: AppModule.RecurringContracts
     };
     const v = byName[raw];
     if (v !== undefined) return v;

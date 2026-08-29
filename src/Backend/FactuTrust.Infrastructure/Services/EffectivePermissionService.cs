@@ -55,7 +55,12 @@ public sealed class EffectivePermissionService : IEffectivePermissionService
     /// When no grant rows: all modules enabled in UI/JWT (legacy). When rows exist: toggled-on modules
     /// restricted to those with at least one effective permission (role ∩ module union).
     /// </summary>
-    private static IReadOnlyList<AppModule> ResolveEnabledModules(
+    /// <summary>
+    /// Pure function over the granted modules (no DB/instance dependency) — shared with
+    /// <c>TenantUsersController</c> (which batches grants across users to avoid N+1) so the
+    /// List optimization and the service stay in lock-step (single source of truth).
+    /// </summary>
+    public static IReadOnlyList<AppModule> ResolveEnabledModules(
         IReadOnlyList<UserModuleGrant> grants,
         HashSet<string> effectivePermissions)
     {
@@ -74,7 +79,8 @@ public sealed class EffectivePermissionService : IEffectivePermissionService
         return AppModuleExtensions.FilterToModulesWithEffectivePermissions(toggledOn, effectivePermissions);
     }
 
-    private static IReadOnlyDictionary<AppModule, IReadOnlyList<string>>? BuildFeatureKeysByModule(
+    /// <summary>Pure function over the granted modules — see <see cref="ResolveEnabledModules"/>.</summary>
+    public static IReadOnlyDictionary<AppModule, IReadOnlyList<string>>? BuildFeatureKeysByModule(
         IReadOnlyList<UserModuleGrant> grants)
     {
         Dictionary<AppModule, IReadOnlyList<string>>? map = null;

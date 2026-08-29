@@ -97,9 +97,9 @@ public sealed class TenantUsersController : ControllerBase
             IReadOnlyDictionary<AppModule, bool>? grantDict = null;
             if (userGrants.Count > 0)
                 grantDict = userGrants.ToDictionary(g => g.Module, g => g.IsEnabled);
-            var featureMap = BuildFeatureKeysByModuleStatic(userGrants);
+            var featureMap = EffectivePermissionService.BuildFeatureKeysByModule(userGrants);
             var effective = EffectivePermissionsCalculator.Compute(roleEnum, grantDict, featureMap);
-            var enabledModules = ResolveEnabledModulesStatic(userGrants, effective);
+            var enabledModules = EffectivePermissionService.ResolveEnabledModules(userGrants, effective);
 
             IReadOnlyList<TenantUserModuleFeaturesDto> moduleFeatures = Array.Empty<TenantUserModuleFeaturesDto>();
             if (userGrants.Count > 0)
@@ -189,7 +189,10 @@ public sealed class TenantUsersController : ControllerBase
                 Module = module,
                 DisplayName = module.ToDisplayString(),
                 Grantable = ceiling.Count > 0,
-                DefaultEnabled = baseInModule.Count > 0,
+                // Excluded roles must surface as fully non-grantable AND non-enabled (review #4):
+                // Grantable is already false (empty ceiling), but baseInModule can still be non-empty for
+                // FirmManager/FirmAccountant whose delegated keys overlap module keys — force DefaultEnabled=false.
+                DefaultEnabled = !isExcludedRole && baseInModule.Count > 0,
                 Features = features
             });
         }
@@ -406,11 +409,6 @@ public sealed class TenantUsersController : ControllerBase
             previousRole == UserRole.Administrator && previousIsActive &&
             ((request.Role.HasValue && request.Role.Value != UserRole.Administrator) || request.IsActive == false);
 
-        // Role, activation state or module grants changing must revoke the OLD access token immediately
-        // (plan §6 Phase 2.5) — rotate the security stamp and purge the refresh token, atomically with
-        // the mutation itself.
-        var mustRevokeCurrentToken = request.Role.HasValue || request.IsActive.HasValue || request.ModuleAccess is not null;
-
         IReadOnlyList<UserModuleGrant> oldGrantsSnapshot = Array.Empty<UserModuleGrant>();
         if (request.ModuleAccess is not null)
         {
@@ -418,6 +416,15 @@ public sealed class TenantUsersController : ControllerBase
                 .Where(g => g.UserId == user.Id)
                 .ToListAsync(cancellationToken);
         }
+
+        // Only a REAL change to role, activation state or module grants must revoke the OLD access
+        // token (plan §6 Phase 2.5, decision F — "ne jamais révoquer sans changement"). A no-op open
+        // and save (name typo fix, or the modal reproducing stored grants) must NOT rotate the
+        // security stamp, purge the refresh token or emit a spurious ModuleGrantsChanged audit entry.
+        var roleChanged = request.Role.HasValue && request.Role.Value != previousRole;
+        var activeChanged = request.IsActive.HasValue && request.IsActive.Value != previousIsActive;
+        var moduleAccessChanged = request.ModuleAccess is not null && !ModuleAccessEquals(oldGrantsSnapshot, request.ModuleAccess);
+        var mustRevokeCurrentToken = roleChanged || activeChanged || moduleAccessChanged;
 
         string? failureMessage = null;
         var strategy = _masterContext.Database.CreateExecutionStrategy();
@@ -517,25 +524,26 @@ public sealed class TenantUsersController : ControllerBase
         if (mustRevokeCurrentToken)
             _securityStampTokenValidator.Invalidate(user.Id);
 
-        // Audit — best effort, emitted only after the master transaction has committed (plan §6 Phase 2.4).
-        if (request.Role.HasValue && request.Role.Value != previousRole)
+        // Audit — best effort, emitted only after the master transaction has committed (plan §6 Phase 2.4),
+        // and only for REAL changes (a no-op save emits nothing).
+        if (roleChanged)
         {
             await LogAuditBestEffortAsync(
                 AuditActions.User.RoleChanged, user.Id,
                 oldValues: new { Role = previousRole.ToString() },
-                newValues: new { Role = request.Role.Value.ToString() },
+                newValues: new { Role = request.Role!.Value.ToString() },
                 cancellationToken);
         }
 
-        if (request.IsActive.HasValue && request.IsActive.Value != previousIsActive)
+        if (activeChanged)
         {
             await LogAuditBestEffortAsync(
-                request.IsActive.Value ? AuditActions.User.Reactivated : AuditActions.User.Deactivated,
-                user.Id, oldValues: new { IsActive = previousIsActive }, newValues: new { IsActive = request.IsActive.Value },
+                request.IsActive!.Value ? AuditActions.User.Reactivated : AuditActions.User.Deactivated,
+                user.Id, oldValues: new { IsActive = previousIsActive }, newValues: new { IsActive = request.IsActive!.Value },
                 cancellationToken);
         }
 
-        if (request.ModuleAccess is not null)
+        if (moduleAccessChanged)
         {
             await LogAuditBestEffortAsync(
                 AuditActions.User.ModuleGrantsChanged, user.Id,
@@ -584,6 +592,7 @@ public sealed class TenantUsersController : ControllerBase
 
         // P3: Reject duplicate modules in the payload
         var seenModules = new HashSet<AppModule>();
+        var roleBasePermissions = new HashSet<string>(role.GetPermissions(), StringComparer.Ordinal);
         foreach (var x in list)
         {
             if (!seenModules.Add(x.Module))
@@ -614,6 +623,23 @@ public sealed class TenantUsersController : ControllerBase
                 var featurePermissions = ModuleFeatureCatalog.GetPermissionsForFeature(x.Module, trimmed);
                 if (!featurePermissions.Any(ceiling.Contains))
                     return $"Le sous-module « {trimmed} » n'est pas disponible pour le rôle {role.ToDisplayString()}.";
+
+                // Defense-in-depth (review #3): the ceiling is derived from the §5.3 delta table, which must
+                // never extend a non-admin role with a forbidden/destructive key. Assert each feature permission
+                // that reaches beyond the role base is not forbidden — the single allow-listed exception is the
+                // historic Warehouse × Clients full-module grant. Catches a future regression in the delta table.
+                if (role != UserRole.Administrator &&
+                    !RoleModuleGrantCeilingExtensions.IsHistoricWarehouseClientsException(role, x.Module))
+                {
+                    foreach (var granted in featurePermissions)
+                    {
+                        if (!ceiling.Contains(granted) || roleBasePermissions.Contains(granted))
+                            continue;
+                        System.Diagnostics.Debug.Assert(
+                            !RoleModuleGrantCeilingExtensions.IsForbiddenCeilingDeltaKey(granted),
+                            $"Grant ceiling for role {role}/{x.Module} contains forbidden delta key '{granted}'.");
+                    }
+                }
             }
         }
 
@@ -713,38 +739,6 @@ public sealed class TenantUsersController : ControllerBase
     }
 
     /// <summary>
-    /// In-memory equivalent of EffectivePermissionService.BuildFeatureKeysByModule (for List optimization).
-    /// </summary>
-    private static IReadOnlyDictionary<AppModule, IReadOnlyList<string>>? BuildFeatureKeysByModuleStatic(
-        IReadOnlyList<UserModuleGrant> grants)
-    {
-        Dictionary<AppModule, IReadOnlyList<string>>? map = null;
-        foreach (var g in grants)
-        {
-            if (!g.IsEnabled || string.IsNullOrWhiteSpace(g.EnabledFeatureKeys))
-                continue;
-
-            List<string>? parsed = null;
-            try
-            {
-                parsed = JsonSerializer.Deserialize<List<string>>(g.EnabledFeatureKeys);
-            }
-            catch (JsonException)
-            {
-                continue;
-            }
-
-            if (parsed is null)
-                continue;
-
-            map ??= new Dictionary<AppModule, IReadOnlyList<string>>();
-            map[g.Module] = parsed;
-        }
-
-        return map;
-    }
-
-    /// <summary>
     /// <c>null</c> column = all sub-features; otherwise parsed keys (empty JSON = explicit none).
     /// </summary>
     private static IReadOnlyList<string>? ParseFeatureKeysForListDto(string? json)
@@ -774,24 +768,74 @@ public sealed class TenantUsersController : ControllerBase
     }
 
     /// <summary>
-    /// In-memory equivalent of EffectivePermissionService.ResolveEnabledModules (for List optimization).
+    /// Semantic equality between the stored grants (<see cref="UserModuleGrant"/>) and the requested
+    /// module-access payload — used to decide whether a PATCH is a real access change (plan §6 decision F:
+    /// never revoke the token or emit a grant audit entry for a no-op save). Compares module set both
+    /// ways (added/removed/same counts) and feature keys order-insensitively after trim/dedupe, treating
+    /// <c>null</c> (= all sub-features), <c>[]</c> (= explicit none) and a re-serialized identical list as
+    /// equivalent to their stored counterparts.
     /// </summary>
-    private static IReadOnlyList<AppModule> ResolveEnabledModulesStatic(
-        IReadOnlyList<UserModuleGrant> grants,
-        HashSet<string> effectivePermissions)
+    private static bool ModuleAccessEquals(
+        IReadOnlyList<UserModuleGrant> stored,
+        IReadOnlyList<UserModuleAccessItemDto> requested)
     {
-        if (grants.Count == 0)
-            return AppModuleExtensions.AllValues.ToList();
+        var storedMap = new Dictionary<AppModule, (bool Enabled, IReadOnlyList<string>? Keys)>();
+        foreach (var g in stored)
+            storedMap[g.Module] = (g.IsEnabled, ParseFeatureKeysForListDto(g.EnabledFeatureKeys));
 
-        var dict = grants.ToDictionary(g => g.Module, g => g.IsEnabled);
-        var toggledOn = new List<AppModule>();
-        foreach (var m in AppModuleExtensions.AllValues)
+        var requestedMap = new Dictionary<AppModule, (bool Enabled, IReadOnlyList<string>? Keys)>();
+        foreach (var x in requested)
         {
-            var on = !dict.TryGetValue(m, out var flag) || flag;
-            if (on)
-                toggledOn.Add(m);
+            // Store as wall-clocked: a disabled item's feature keys are irrelevant, but normalize anyway
+            // so a re-opened disabled grant (null/[] keys) still compares equal.
+            requestedMap[x.Module] = (x.Enabled, NormalizeRequestedFeatureKeys(x));
         }
 
-        return AppModuleExtensions.FilterToModulesWithEffectivePermissions(toggledOn, effectivePermissions);
+        if (storedMap.Count != requestedMap.Count)
+            return false;
+
+        foreach (var (module, requestedGrant) in requestedMap)
+        {
+            if (!storedMap.TryGetValue(module, out var storedGrant))
+                return false;
+            if (requestedGrant.Enabled != storedGrant.Enabled)
+                return false;
+
+            // Feature keys only matter for enabled modules: ReplaceModuleGrantsAsync stores null keys
+            // for any disabled grant regardless of what the client sent, so comparing keys here would
+            // falsely flag a re-opened disabled module (client `[]` vs stored `null`) as changed.
+            if (requestedGrant.Enabled && !FeatureKeySetsEqual(requestedGrant.Keys, storedGrant.Keys))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static IReadOnlyList<string>? NormalizeRequestedFeatureKeys(UserModuleAccessItemDto x)
+    {
+        if (x.EnabledFeatureKeys is null)
+            return null;
+
+        if (x.EnabledFeatureKeys.Count == 0)
+            return Array.Empty<string>();
+
+        return x.EnabledFeatureKeys
+            .Select(k => k.Trim())
+            .Where(k => k.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary><c>null</c> = all sub-features; empty = explicit none; otherwise unordered set of keys.</summary>
+    private static bool FeatureKeySetsEqual(IReadOnlyList<string>? a, IReadOnlyList<string>? b)
+    {
+        if (a is null || b is null)
+            return a is null && b is null;
+
+        if (a.Count == 0 || b.Count == 0)
+            return a.Count == 0 && b.Count == 0;
+
+        return new HashSet<string>(a, StringComparer.Ordinal).SetEquals(
+            new HashSet<string>(b, StringComparer.Ordinal));
     }
 }

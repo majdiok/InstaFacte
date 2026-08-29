@@ -87,8 +87,7 @@ describe('DashboardComponent — gating par permission (§7.3.3)', () => {
         recentActivity: [],
         kpiTrends: { revenueChange: undefined, salesTodayChange: undefined, pendingChange: undefined },
         kpiSparklines: { revenue: [], salesToday: [], currentMonth: [], pending: [] },
-        activeQuotesCount: 0,
-        authorizedDomains: { invoices: true, quotes: true, clients: true }
+        activeQuotesCount: 0
       })
     );
     selectedWarehouseId = jasmine.createSpy('selectedWarehouseId').and.returnValue(null);

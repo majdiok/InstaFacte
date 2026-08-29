@@ -56,12 +56,6 @@ export interface DashboardAggregatedData {
   kpiTrends: KpiTrends;
   kpiSparklines: KpiSparklines;
   activeQuotesCount: number;
-  /** Domaines réellement interrogés (permission présente) — pour affinage par le composant. */
-  authorizedDomains: {
-    invoices: boolean;
-    quotes: boolean;
-    clients: boolean;
-  };
 }
 
 const MONTH_NAMES_FR = [
@@ -123,12 +117,7 @@ export class DashboardService {
           recentActivity: this.buildRecentActivity(allInvoices, allQuotes),
           kpiTrends: this.computeKpiTrends(allInvoices),
           kpiSparklines: buildKpiSparklines(allInvoices),
-          activeQuotesCount: this.countActiveQuotes(allQuotes),
-          authorizedDomains: {
-            invoices: canReadInvoices,
-            quotes: canReadQuotes,
-            clients: canReadClients
-          }
+          activeQuotesCount: this.countActiveQuotes(allQuotes)
         };
       })
     );

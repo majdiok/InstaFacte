@@ -225,6 +225,7 @@ import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-chec
           [navigationAriaLabel]="drillDown('pendingInvoices')?.ariaLabel">
         </app-stat-card>
         }
+        @if (showStockUrgent()) {
         <app-stat-card
           label="Produits en alerte"
           [value]="stockAlertsCount()"
@@ -237,6 +238,7 @@ import { OnboardingChecklistComponent } from '@shared/onboarding/onboarding-chec
           [queryParams]="drillDown('stockAlerts')?.queryParams"
           [navigationAriaLabel]="drillDown('stockAlerts')?.ariaLabel">
         </app-stat-card>
+        }
       </div>
     }
 

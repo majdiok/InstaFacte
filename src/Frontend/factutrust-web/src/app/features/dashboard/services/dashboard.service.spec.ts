@@ -105,7 +105,6 @@ describe('DashboardService', () => {
       expect(getQuotes).toHaveBeenCalled();
       expect(getClients).toHaveBeenCalled();
       expect(data.allInvoices).toEqual([]);
-      expect(data.authorizedDomains).toEqual({ invoices: false, quotes: true, clients: true });
     });
   });
 
@@ -121,7 +120,6 @@ describe('DashboardService', () => {
       expect(getInvoices).toHaveBeenCalled();
       expect(getQuotes).toHaveBeenCalled();
       expect(getClients).toHaveBeenCalled();
-      expect(data.authorizedDomains).toEqual({ invoices: true, quotes: true, clients: true });
     });
   });
 });
