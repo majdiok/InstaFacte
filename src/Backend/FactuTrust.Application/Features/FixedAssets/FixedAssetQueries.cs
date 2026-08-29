@@ -39,18 +39,23 @@ public sealed record GetFixedAssetsQuery(
 public sealed class GetFixedAssetsQueryHandler : IRequestHandler<GetFixedAssetsQuery, Result<FixedAssetListResponse>>
 {
     private readonly IFixedAssetRepository _assets;
+    private readonly IFixedAssetSettingsRepository? _settings;
 
-    public GetFixedAssetsQueryHandler(IFixedAssetRepository assets)
+    public GetFixedAssetsQueryHandler(IFixedAssetRepository assets, IFixedAssetSettingsRepository? settings = null)
     {
         _assets = assets;
+        _settings = settings;
     }
 
     public async Task<Result<FixedAssetListResponse>> Handle(GetFixedAssetsQuery request, CancellationToken cancellationToken)
     {
         var page = request.Page < 1 ? 1 : request.Page;
         var pageSize = request.PageSize is < 1 or > 200 ? 25 : request.PageSize;
+        // Filtre d'exercice par frontière décalée (P3) : le filtre fiscalYear optionnel de l'UI est
+        // une clé d'exercice ; la comparaison d'éligibilité utilise le mois de début configuré.
+        var startMonth = await FixedAssetFiscalYearSupport.GetStartMonthAsync(_settings, cancellationToken);
         var (items, total) = await _assets.SearchAsync(
-            page, pageSize, request.Status, request.CategoryId, request.FiscalYear, request.Search, cancellationToken);
+            page, pageSize, request.Status, request.CategoryId, request.FiscalYear, request.Search, startMonth, cancellationToken);
 
         return Result.Success(new FixedAssetListResponse(
             items.Select(FixedAssetMappings.ToDto).ToList(),

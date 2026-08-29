@@ -46,7 +46,9 @@ public sealed class ExportDepreciationReportExcelQueryHandler : IRequestHandler<
 
     public async Task<Result<byte[]>> Handle(ExportDepreciationReportExcelQuery request, CancellationToken cancellationToken)
     {
-        var (items, _) = await _assets.SearchAsync(1, 500, null, null, request.FiscalYear, null, cancellationToken);
+        // Filtre d'exercice civil par défaut (fiscalYearStartMonth=1) — l'export est rendu conscient
+        // de la frontière décalée en P4 ; ici on préserve le comportement antérieur (année civile).
+        var (items, _) = await _assets.SearchAsync(1, 500, null, null, request.FiscalYear, null, cancellationToken: cancellationToken);
         var schedules = new List<FixedAssetScheduleDto>();
         foreach (var item in items)
         {

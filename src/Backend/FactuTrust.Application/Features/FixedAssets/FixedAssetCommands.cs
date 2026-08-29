@@ -433,15 +433,18 @@ public sealed class PostDepreciationRunCommandHandler : IRequestHandler<PostDepr
     private readonly IFixedAssetRepository _assets;
     private readonly IAccountingService _accounting;
     private readonly ITenantUnitOfWork _unitOfWork;
+    private readonly IFixedAssetSettingsRepository? _settings;
 
     public PostDepreciationRunCommandHandler(
         IFixedAssetRepository assets,
         IAccountingService accounting,
-        ITenantUnitOfWork unitOfWork)
+        ITenantUnitOfWork unitOfWork,
+        IFixedAssetSettingsRepository? settings = null)
     {
         _assets = assets;
         _accounting = accounting;
         _unitOfWork = unitOfWork;
+        _settings = settings;
     }
 
     public async Task<Result<DepreciationRunResultDto>> Handle(PostDepreciationRunCommand request, CancellationToken cancellationToken)
@@ -449,8 +452,23 @@ public sealed class PostDepreciationRunCommandHandler : IRequestHandler<PostDepr
         var year = request.Request.FiscalYear;
         if (year < 2000 || year > 2100)
             return Result.Failure<DepreciationRunResultDto>(Error.Validation("FiscalYear", "Exercice invalide."));
-        if (year > DateTime.UtcNow.Year)
+
+        // Frontière d'exercice paramétrée (P3) : la clé d'exercice en entrée est l'année de début
+        // d'exercice (P2). La garde anti-futur se réfère à l'exercice courant (et non à l'année
+        // civile) — un dossier décalé juillet→juin peut comptabiliser l'exercice N tant que
+        // celui-ci est en cours. Exercice civil (startMonth=1) ⇒ FiscalYearMath.Key = UtcNow.Year
+        // (comportement historique strictement préservé).
+        var settings = await FixedAssetFiscalYearSupport.GetSettingsAsync(_settings, cancellationToken);
+        var startMonth = settings.FiscalYearStartMonth;
+        var currentFiscalYear = FiscalYearMath.Key(DateTime.UtcNow, startMonth);
+        if (year > currentFiscalYear)
             return Result.Failure<DepreciationRunResultDto>(Error.Validation("FiscalYear", "Impossible de comptabiliser des dotations d'un exercice futur."));
+
+        // Date d'écriture par défaut du run annuel = fin d'exercice (ex. 30/06/N+1 pour un exercice
+        // juillet→juin). Calculée une fois avant la boucle (efficace : une seule résolution de
+        // frontière) et passée explicitement à chaque ligne — AccountingService reçoit une date
+        // explicite et n'utilise pas son défaut 31/12 (civil). Exercice civil ⇒ 31/12/N.
+        var runEntryDate = FiscalYearMath.EndDateTime(year, startMonth);
 
         var lines = await _assets.GetUnpostedScheduleLinesForYearAsync(year, cancellationToken);
         var posted = 0;
@@ -477,7 +495,7 @@ public sealed class PostDepreciationRunCommandHandler : IRequestHandler<PostDepr
             {
                 lineResult = await _unitOfWork.ExecuteAsync(async ct =>
                 {
-                    var generated = await _accounting.GenerateFixedAssetDepreciationEntryAsync(asset, line, cancellationToken: ct);
+                    var generated = await _accounting.GenerateFixedAssetDepreciationEntryAsync(asset, line, entryDate: runEntryDate, cancellationToken: ct);
                     if (generated.IsFailure)
                         return generated;
 
@@ -504,7 +522,11 @@ public sealed class PostDepreciationRunCommandHandler : IRequestHandler<PostDepr
 
         var alreadyPostedCount = await _assets.GetPostedScheduleLineCountForYearAsync(year, cancellationToken);
 
-        return Result.Success(new DepreciationRunResultDto(year, posted, skipped, total, errors, alreadyPostedCount));
+        // Libellé d'exercice pour l'affichage du résultat (« Résultat — exercice {{label}} », P4) :
+        // exercice civil ⇒ « N » (ex. « 2026 ») ; exercice décalé ⇒ « N/N+1 » (ex. « 2026/2027 »).
+        var fiscalYearLabel = FiscalYearMath.Label(year, startMonth, settings.FiscalYearLabelFormat);
+
+        return Result.Success(new DepreciationRunResultDto(year, posted, skipped, total, errors, alreadyPostedCount, fiscalYearLabel));
     }
 }
 

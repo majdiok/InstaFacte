@@ -87,7 +87,8 @@ public sealed record DepreciationRunResultDto(
     int SkippedCount,
     decimal TotalDepreciationAmount,
     IReadOnlyList<string> Errors,
-    int AlreadyPostedCount = 0);
+    int AlreadyPostedCount = 0,
+    string FiscalYearLabel = "");
 
 public sealed record FixedAssetDto(
     Guid Id,
