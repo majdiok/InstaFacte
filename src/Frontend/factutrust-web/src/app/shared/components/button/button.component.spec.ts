@@ -1,6 +1,16 @@
+import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { ButtonComponent } from './button.component';
+
+@Component({
+  standalone: true,
+  imports: [ButtonComponent],
+  template: `<app-button [routerLink]="link">Export Excel</app-button>`
+})
+class RouterLinkHostComponent {
+  link = '/accounting/fixed-assets';
+}
 
 describe('ButtonComponent', () => {
   let fixture: ComponentFixture<ButtonComponent>;
@@ -83,5 +93,32 @@ describe('ButtonComponent', () => {
     const link = fixture.nativeElement.querySelector('a.btn') as HTMLAnchorElement;
     link.click();
     expect(spy).toHaveBeenCalled();
+  });
+});
+
+// C8 regression (captures 2401/2410): buttons rendered via the routerLink (<a>) branch used to
+// lose their projected <ng-content> text entirely — Angular only ever attaches projected light
+// DOM to the FIRST <ng-content> declared in the compiled template, regardless of which @if/@else
+// branch is actually active at runtime. With two separate <ng-content> tags (one per branch), the
+// <a> branch rendered as a blank box next to "Export Excel dotations". This suite hosts
+// <app-button> with real projected text through a router link, which is the scenario that was
+// broken (unlike the tests above that call TestBed.createComponent(ButtonComponent) directly,
+// which never exercises content projection).
+describe('ButtonComponent content projection through a router link (C8 regression)', () => {
+  let fixture: ComponentFixture<RouterLinkHostComponent>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [RouterLinkHostComponent],
+      providers: [provideRouter([])]
+    }).compileComponents();
+    fixture = TestBed.createComponent(RouterLinkHostComponent);
+    fixture.detectChanges();
+  });
+
+  it('projects the button label into the router link anchor instead of rendering it empty', () => {
+    const link = fixture.nativeElement.querySelector('a.btn') as HTMLAnchorElement;
+    expect(link).toBeTruthy();
+    expect(link.textContent?.trim()).toBe('Export Excel');
   });
 });

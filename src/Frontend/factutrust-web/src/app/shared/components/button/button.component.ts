@@ -16,15 +16,7 @@ import { RouterModule } from '@angular/router';
         [class.btn-icon-always-visible]="iconOnly && iconAlwaysVisible"
         [attr.aria-label]="ariaLabel || null"
         (click)="onClick($event)">
-        @if (icon && !iconOnly) {
-          <i class="pi {{ icon }}" [class.icon-left]="iconPos === 'left'" [class.icon-right]="iconPos === 'right'"></i>
-        }
-        @if (iconOnly && icon) {
-          <i class="pi {{ icon }}"></i>
-        }
-        @if (!iconOnly) {
-          <ng-content></ng-content>
-        }
+        <ng-container *ngTemplateOutlet="innerContent"></ng-container>
       </a>
     } @else {
       <button
@@ -35,17 +27,29 @@ import { RouterModule } from '@angular/router';
         [type]="type"
         [attr.aria-label]="ariaLabel || null"
         (click)="onClick($event)">
-        @if (icon && !iconOnly) {
-          <i class="pi {{ icon }}" [class.icon-left]="iconPos === 'left'" [class.icon-right]="iconPos === 'right'"></i>
-        }
-        @if (iconOnly && icon) {
-          <i class="pi {{ icon }}"></i>
-        }
-        @if (!iconOnly) {
-          <ng-content></ng-content>
-        }
+        <ng-container *ngTemplateOutlet="innerContent"></ng-container>
       </button>
     }
+    <!--
+      C8 fix: a single physical <ng-content> declaration shared by both branches above via
+      ngTemplateOutlet. Angular only ever attaches projected content to the FIRST <ng-content>
+      it finds at compile time, regardless of which conditional branch is actually rendered — so
+      having two separate <ng-content> tags (one per branch, as before) left the routerLink (<a>)
+      branch permanently empty (icon-less export/nav buttons rendered as blank boxes, see
+      captures 2401/2410). Routing both branches through the same <ng-template> keeps exactly one
+      <ng-content> in the compiled template.
+    -->
+    <ng-template #innerContent>
+      @if (icon && !iconOnly) {
+        <i class="pi {{ icon }}" [class.icon-left]="iconPos === 'left'" [class.icon-right]="iconPos === 'right'"></i>
+      }
+      @if (iconOnly && icon) {
+        <i class="pi {{ icon }}"></i>
+      }
+      @if (!iconOnly) {
+        <ng-content></ng-content>
+      }
+    </ng-template>
   `,
   styles: [`
     .btn {

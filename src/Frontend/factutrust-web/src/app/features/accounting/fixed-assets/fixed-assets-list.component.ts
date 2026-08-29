@@ -119,7 +119,7 @@ import { AccountingStatusBannerComponent } from '../shared/accounting-status-ban
         </ng-template>
         <ng-template pTemplate="footer">
           <tr class="totals-row">
-            <td colspan="4"><strong>Totaux (page)</strong></td>
+            <td colspan="4"><strong>Totaux page {{ page() }} / {{ totalPages() }}</strong></td>
             <td class="text-right"><strong>{{ totals().origin | number: '1.3-3' }}</strong></td>
             <td class="text-right"><strong>{{ totals().accumulated | number: '1.3-3' }}</strong></td>
             <td class="text-right"><strong>{{ totals().nbv | number: '1.3-3' }}</strong></td>

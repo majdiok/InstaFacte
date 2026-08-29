@@ -111,7 +111,47 @@ describe('FixedAssetsAmortizationTableComponent', () => {
     expect(text).toContain('TOTAL GÉNÉRAL');
     expect(text).toContain('Dotation calculée');
     expect(text).toContain('Totalement comptabilisée');
+    // C4 (captures 2408/2409): groupLabel already contains groupCode ('228 Matériel') — must not
+    // be duplicated into "228 228 Matériel".
+    expect(text).not.toContain('228 228');
+    expect(text).toContain('228 Matériel');
     httpMock.verify();
+  });
+
+  // T12 (bug C4) — l'en-tête de groupe ne doit jamais dupliquer le code lorsqu'il est déjà inclus
+  // dans le libellé (captures 2408/2409 : « 224 224 Véhicules… »).
+  describe('groupHeaderLabel (T12 / C4)', () => {
+    function component() {
+      const fixture = TestBed.createComponent(FixedAssetsAmortizationTableComponent);
+      const httpMock = TestBed.inject(HttpTestingController);
+      fixture.detectChanges();
+      httpMock.expectOne(`${base}/rate-categories`).flush({ success: true, data: [] });
+      httpMock.expectOne(r => r.url === `${base}/amortization-report`).flush({ success: true, data: mockReport });
+      fixture.detectChanges();
+      httpMock.verify();
+      return fixture.componentInstance;
+    }
+
+    it('does not duplicate the code when the label already includes it', () => {
+      const instance = component();
+      expect(instance.groupHeaderLabel({ groupCode: '224', groupLabel: '224 Véhicules', rows: [], subtotal: mockReport.groups[0].subtotal })).toBe(
+        '224 Véhicules'
+      );
+    });
+
+    it('prepends the code when the label does not include it', () => {
+      const instance = component();
+      expect(instance.groupHeaderLabel({ groupCode: '228', groupLabel: 'Matériel', rows: [], subtotal: mockReport.groups[0].subtotal })).toBe(
+        '228 Matériel'
+      );
+    });
+
+    it('falls back to the label alone when there is no code', () => {
+      const instance = component();
+      expect(instance.groupHeaderLabel({ groupCode: '', groupLabel: 'Non catégorisé', rows: [], subtotal: mockReport.groups[0].subtotal })).toBe(
+        'Non catégorisé'
+      );
+    });
   });
 
   it('reloads report when grouping mode changes', () => {

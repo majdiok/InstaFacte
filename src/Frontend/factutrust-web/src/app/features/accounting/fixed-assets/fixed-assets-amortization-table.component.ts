@@ -10,6 +10,7 @@ import {
   AmortizationReportGroupingMode,
   AmortizationReportResponse,
   AmortizationReportAssetRowDto,
+  AmortizationReportGroupDto,
   CURRENT_YEAR_POSTING_STATUS_LABELS,
   DEPRECIATION_METHOD_LABELS,
   DepreciationRateCategoryDto,
@@ -131,7 +132,7 @@ import { AccountingStatusBannerComponent } from '../shared/accounting-status-ban
             <tbody>
               <ng-container *ngFor="let group of r.groups">
                 <tr class="group-row">
-                  <td colspan="13"><strong>{{ group.groupCode }} {{ group.groupLabel }}</strong></td>
+                  <td colspan="13"><strong>{{ groupHeaderLabel(group) }}</strong></td>
                 </tr>
                 <tr *ngFor="let row of group.rows" class="asset-row">
                   <td><code>{{ row.assetAccountNumber }}</code></td>
@@ -445,6 +446,17 @@ export class FixedAssetsAmortizationTableComponent implements OnInit {
 
   methodLabel(row: AmortizationReportAssetRowDto): string {
     return DEPRECIATION_METHOD_LABELS[row.depreciationMethod] ?? 'Linéaire';
+  }
+
+  // C4 : n'affiche le code de groupe qu'une seule fois — certaines réponses API renvoient déjà le
+  // code dans le libellé (ex. groupCode="224", groupLabel="224 Véhicules"), ce qui produisait
+  // « 224 224 Véhicules… » en concaténant systématiquement code + libellé.
+  groupHeaderLabel(group: AmortizationReportGroupDto): string {
+    const code = (group.groupCode ?? '').trim();
+    const label = (group.groupLabel ?? '').trim();
+    if (!code) return label;
+    if (!label) return code;
+    return label.startsWith(code) ? label : `${code} ${label}`;
   }
 
   postingStatusLabel(status: keyof typeof CURRENT_YEAR_POSTING_STATUS_LABELS): string {
