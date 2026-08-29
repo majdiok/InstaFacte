@@ -1,3 +1,4 @@
+using FactuTrust.Application.Common.Fiscal;
 using FactuTrust.Application.Common.Interfaces;
 using FactuTrust.Application.Common.Interfaces.Repositories;
 using FactuTrust.Application.Common.Interfaces.Services;
@@ -102,17 +103,20 @@ public sealed class PutFixedAssetInServiceCommandHandler : IRequestHandler<PutFi
     private readonly IAccountingService _accounting;
     private readonly IDepreciationEngine _engine;
     private readonly ICurrentUser _currentUser;
+    private readonly IFixedAssetSettingsRepository? _settings;
 
     public PutFixedAssetInServiceCommandHandler(
         IFixedAssetRepository assets,
         IAccountingService accounting,
         IDepreciationEngine engine,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IFixedAssetSettingsRepository? settings = null)
     {
         _assets = assets;
         _accounting = accounting;
         _engine = engine;
         _currentUser = currentUser;
+        _settings = settings;
     }
 
     public async Task<Result<Guid>> Handle(PutFixedAssetInServiceCommand request, CancellationToken cancellationToken)
@@ -124,11 +128,12 @@ public sealed class PutFixedAssetInServiceCommandHandler : IRequestHandler<PutFi
         IReadOnlyList<DepreciationScheduleLine>? scheduleLines = null;
         if (preview.DepreciationRatePercent > 0 && !preview.ScheduleLines.Any(l => l.IsPosted))
         {
+            var startMonth = await FixedAssetFiscalYearSupport.GetStartMonthAsync(_settings, cancellationToken);
             var simulated = preview;
             var dryRun = simulated.PutInService(request.Request.InServiceDate, request.Request.CreditAccountNumber);
             if (dryRun.IsFailure)
                 return Result.Failure<Guid>(dryRun.Error);
-            scheduleLines = _engine.GenerateSchedule(simulated);
+            scheduleLines = _engine.GenerateSchedule(simulated, fiscalYearStartMonth: startMonth);
         }
 
         var putResult = await _assets.PutInServiceInTransactionAsync(
@@ -165,17 +170,20 @@ public sealed class GenerateDepreciationScheduleCommandHandler : IRequestHandler
     private readonly IDepreciationEngine _engine;
     private readonly ICurrentUser _currentUser;
     private readonly ITenantUnitOfWork _unitOfWork;
+    private readonly IFixedAssetSettingsRepository? _settings;
 
     public GenerateDepreciationScheduleCommandHandler(
         IFixedAssetRepository assets,
         IDepreciationEngine engine,
         ICurrentUser currentUser,
-        ITenantUnitOfWork unitOfWork)
+        ITenantUnitOfWork unitOfWork,
+        IFixedAssetSettingsRepository? settings = null)
     {
         _assets = assets;
         _engine = engine;
         _currentUser = currentUser;
         _unitOfWork = unitOfWork;
+        _settings = settings;
     }
 
     public async Task<Result<FixedAssetScheduleDto>> Handle(GenerateDepreciationScheduleCommand request, CancellationToken cancellationToken)
@@ -186,6 +194,8 @@ public sealed class GenerateDepreciationScheduleCommandHandler : IRequestHandler
 
         if (asset.InServiceDate is null)
             return Result.Failure<FixedAssetScheduleDto>(Error.Validation("InServiceDate", "L'immobilisation doit être mise en service avant de générer le tableau."));
+
+        var startMonth = await FixedAssetFiscalYearSupport.GetStartMonthAsync(_settings, cancellationToken);
 
         // État d'extourne des lignes (T13, C6) : une dotation dont l'écriture est extournée n'est
         // plus une dotation « nette » et ne doit plus bloquer la régénération.
@@ -216,7 +226,7 @@ public sealed class GenerateDepreciationScheduleCommandHandler : IRequestHandler
                 // 2. Merger le tableau régénéré (préserve l'identité des lignes — T13 étape 3).
                 //    Les lignes extournées sont désormais non postées → le merge peut les mettre à
                 //    jour en place (même Id, JournalEntryId d'audit conservé).
-                var regenerated = _engine.GenerateSchedule(asset);
+                var regenerated = _engine.GenerateSchedule(asset, fiscalYearStartMonth: startMonth);
                 await _assets.ReplaceScheduleLinesAsync(asset.Id, regenerated, ct);
 
                 // 3. Recalculer le cumul de l'actif à partir des lignes restées comptabilisées
@@ -365,11 +375,16 @@ public sealed class PreviewDepreciationScheduleQueryHandler
 {
     private readonly IFixedAssetRepository _assets;
     private readonly IDepreciationEngine _engine;
+    private readonly IFixedAssetSettingsRepository? _settings;
 
-    public PreviewDepreciationScheduleQueryHandler(IFixedAssetRepository assets, IDepreciationEngine engine)
+    public PreviewDepreciationScheduleQueryHandler(
+        IFixedAssetRepository assets,
+        IDepreciationEngine engine,
+        IFixedAssetSettingsRepository? settings = null)
     {
         _assets = assets;
         _engine = engine;
+        _settings = settings;
     }
 
     public async Task<Result<FixedAssetScheduleDto>> Handle(PreviewDepreciationScheduleQuery request, CancellationToken cancellationToken)
@@ -393,7 +408,8 @@ public sealed class PreviewDepreciationScheduleQueryHandler
             simulated = copy.Value;
         }
 
-        var lines = _engine.GenerateSchedule(simulated);
+        var startMonth = await FixedAssetFiscalYearSupport.GetStartMonthAsync(_settings, cancellationToken);
+        var lines = _engine.GenerateSchedule(simulated, fiscalYearStartMonth: startMonth);
         return Result.Success(new FixedAssetScheduleDto(
             simulated.Id,
             simulated.InventoryNumber,
@@ -501,19 +517,22 @@ public sealed class DisposeFixedAssetCommandHandler : IRequestHandler<DisposeFix
     private readonly IAccountingService _accounting;
     private readonly ICurrentUser _currentUser;
     private readonly ITenantUnitOfWork _unitOfWork;
+    private readonly IFixedAssetSettingsRepository? _settings;
 
     public DisposeFixedAssetCommandHandler(
         IFixedAssetRepository assets,
         IDepreciationEngine engine,
         IAccountingService accounting,
         ICurrentUser currentUser,
-        ITenantUnitOfWork unitOfWork)
+        ITenantUnitOfWork unitOfWork,
+        IFixedAssetSettingsRepository? settings = null)
     {
         _assets = assets;
         _engine = engine;
         _accounting = accounting;
         _currentUser = currentUser;
         _unitOfWork = unitOfWork;
+        _settings = settings;
     }
 
     public async Task<Result<Guid>> Handle(DisposeFixedAssetCommand request, CancellationToken cancellationToken)
@@ -524,7 +543,11 @@ public sealed class DisposeFixedAssetCommandHandler : IRequestHandler<DisposeFix
             return Result.Failure<Guid>(Error.Validation("FixedAsset", "Immobilisation introuvable."));
 
         var disposalDate = r.DisposalDate.Date;
-        var disposalYear = disposalDate.Year;
+        var startMonth = await FixedAssetFiscalYearSupport.GetStartMonthAsync(_settings, cancellationToken);
+        // Clé d'exercice de la cession (année de début d'exercice contenant la date de cession) :
+        // les lignes étant générées par clé d'exercice (P2), les comparaisons et le lookup du
+        // moteur se font sur cette clé. Exercice civil (startMonth=1) ⇒ disposalDate.Year.
+        var disposalYear = FiscalYearMath.Key(disposalDate, startMonth);
         var treasury = string.IsNullOrWhiteSpace(r.TreasuryAccountNumber) ? null : r.TreasuryAccountNumber.Trim();
         var receivable = string.IsNullOrWhiteSpace(r.ReceivableAccountNumber) ? null : r.ReceivableAccountNumber.Trim();
 
@@ -573,7 +596,7 @@ public sealed class DisposeFixedAssetCommandHandler : IRequestHandler<DisposeFix
                     if (!hasPosted)
                     {
                         // Aucune dotation comptabilisée : régénération complète (comportement préservé).
-                        var regenerated = _engine.GenerateSchedule(asset);
+                        var regenerated = _engine.GenerateSchedule(asset, fiscalYearStartMonth: startMonth);
                         await _assets.ReplaceScheduleLinesAsync(asset.Id, regenerated, ct);
                     }
                     else
@@ -584,8 +607,8 @@ public sealed class DisposeFixedAssetCommandHandler : IRequestHandler<DisposeFix
                             .Where(l => l.FiscalYear < disposalYear && l.IsPosted)
                             .Sum(l => l.DepreciationAmount);
 
-                        var prorataAmount = _engine.CalculateDisposalYearDepreciation(asset, disposalYear, priorAccumulated);
-                        var target = BuildDisposalYearLine(asset, disposalYear, priorAccumulated, prorataAmount);
+                        var prorataAmount = _engine.CalculateDisposalYearDepreciation(asset, disposalYear, priorAccumulated, fiscalYearStartMonth: startMonth);
+                        var target = BuildDisposalYearLine(asset, disposalYear, priorAccumulated, prorataAmount, startMonth);
                         await _assets.ReplaceUnpostedScheduleLinesAsync(asset.Id, target is null ? Array.Empty<DepreciationScheduleLine>() : new[] { target }, ct);
                     }
 
@@ -640,12 +663,13 @@ public sealed class DisposeFixedAssetCommandHandler : IRequestHandler<DisposeFix
         FixedAsset asset,
         int disposalYear,
         decimal priorAccumulated,
-        decimal prorataAmount)
+        decimal prorataAmount,
+        int fiscalYearStartMonth)
     {
         if (prorataAmount <= 0)
             return null;
 
-        var generated = _engine.GenerateSchedule(asset);
+        var generated = _engine.GenerateSchedule(asset, fiscalYearStartMonth: fiscalYearStartMonth);
         var template = generated.FirstOrDefault(l => l.FiscalYear == disposalYear);
         if (template is null)
             return null;
