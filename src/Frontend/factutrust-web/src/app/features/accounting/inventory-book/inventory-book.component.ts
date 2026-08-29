@@ -9,6 +9,7 @@ import { AccountingStatusBannerComponent } from '../shared/accounting-status-ban
 import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.component';
 import { AccountingExportMenuComponent } from '../shared/accounting-export-menu.component';
 import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
+import { ToastService } from '@core/services/toast.service';
 
 /**
  * Livre d'inventaire d'un exercice : édition légale figée (états financiers NCT + provisions
@@ -87,7 +88,7 @@ import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared
             <tr>
               <td data-label="Compte"><span class="ib-code">{{ r.code }}</span></td>
               <td data-label="Libellé">{{ r.label }}</td>
-              <td data-label="Montant" class="text-right">{{ r.amount | number : '1.3-3' }}</td>
+              <td data-label="Montant" class="text-right" [class.ib-neg]="r.amount < 0">{{ r.amount | number : '1.3-3' }}</td>
             </tr>
           </ng-template>
           <ng-template pTemplate="footer">
@@ -122,10 +123,12 @@ import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared
     .ib-lock i { font-size:1.2rem; }
     .ib-lock--locked { background:var(--color-success-50,#f0fdf4); color:var(--color-success-700,#15803d); border:1px solid var(--color-success-200,#bbf7d0); }
     .ib-lock--provisional { background:var(--color-warning-50,#fffbeb); color:var(--color-warning-700,#a16207); border:1px solid var(--color-warning-200,#fde68a); }
+    .ib-neg { color:var(--color-danger-700,#b91c1c); font-weight:var(--font-weight-semibold); }
   `
 })
 export class InventoryBookComponent implements OnInit {
   private readonly api = inject(AccountingService);
+  private readonly toast = inject(ToastService);
 
   fiscalYear = new Date().getFullYear() - 1;
   readonly book = signal<InventoryBookDto | null>(null);
@@ -142,13 +145,26 @@ export class InventoryBookComponent implements OnInit {
   }
 
   load(): void {
+    const wasLocked = this.book()?.isYearLocked ?? false;
     this.error.set(null);
     this.loading.set(true);
     this.api.getInventoryBook(this.fiscalYear).subscribe({
       next: res => {
         this.loading.set(false);
-        if (res.success && res.data) this.book.set(res.data);
-        else this.error.set(res.error ?? 'Erreur');
+        if (res.success && res.data) {
+          this.book.set(res.data);
+          // BUG #014 : notifie si l'état de verrouillage a changé depuis le dernier chargement.
+          if (!wasLocked && res.data.isYearLocked) {
+            this.toast.add({
+              severity: 'warn',
+              summary: "Livre d'inventaire",
+              detail: "L'exercice a été verrouillé depuis le dernier chargement.",
+              life: 6000
+            });
+          }
+        } else {
+          this.error.set(res.error ?? 'Erreur');
+        }
       },
       error: () => {
         this.loading.set(false);
