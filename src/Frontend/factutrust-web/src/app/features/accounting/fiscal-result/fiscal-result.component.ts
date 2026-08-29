@@ -1,12 +1,19 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { CanDeactivateFn } from '@angular/router';
+import { Subject, of } from 'rxjs';
+import { catchError, switchMap } from 'rxjs/operators';
 import { PageHeaderComponent } from '@shared/components/page-header/page-header.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { AccountingFilterBarComponent } from '../shared/accounting-filter-bar.component';
 import { AccountingStatusBannerComponent } from '../shared/accounting-status-banner.component';
 import { AccountingExportMenuComponent } from '../shared/accounting-export-menu.component';
 import { AccountingExportFormat, downloadBlob, exportExtension } from '../shared/accounting-download.util';
+import { AuthService } from '@core/services/auth.service';
+import { PERMISSIONS } from '@core/config/permission-keys';
+import { canValidateAccountingEntries } from '@core/utils/accounting-access';
 import {
   AccountingService,
   FiscalAdjustmentCatalogEntryDto,
@@ -15,6 +22,18 @@ import {
   FiscalResultDeclarationDto,
   UpsertFiscalResultRequest
 } from '../services/accounting.service';
+
+/** Réponse d'API générique (miroir non exporté de `ApiResponse<T>` du service). */
+interface FiscalResultApiResponse {
+  success: boolean;
+  data?: FiscalResultDeclarationDto;
+  error?: string;
+}
+
+const MIN_FISCAL_YEAR = 2000;
+const MAX_FISCAL_YEAR = 2100;
+const UNSAVED_CHANGES_MESSAGE =
+  'Des modifications non enregistrées seront perdues. Continuer ?';
 
 /** Modèle éditable local (copie mutable de la feuille de détermination). */
 interface EditableModel {
@@ -51,12 +70,21 @@ interface EditableModel {
     <app-page-header title="Détermination du résultat fiscal"
       subtitle="Passage du résultat comptable au résultat fiscal, imputation des reports et calcul de l'impôt (IS / IRPP)" />
 
+    @if (isDirty()) {
+      <p class="fr-dirty-indicator" role="status"><i class="pi pi-circle-fill" aria-hidden="true"></i> Modifications non enregistrées</p>
+    }
+
     <div class="card accounting-filters-card">
       <app-accounting-filter-bar ariaLabel="Exercice et type de contribuable">
         <div accountingFilterFields class="fr-fields">
           <div class="accounting-filter-field">
             <label class="accounting-filter-label" for="fr-year">Exercice</label>
-            <input id="fr-year" type="number" [(ngModel)]="fiscalYear" class="accounting-filter-input fr-year-input" min="2000" max="2100" />
+            <input id="fr-year" type="number" [ngModel]="fiscalYear" (ngModelChange)="onYearInputChange($event)"
+              class="accounting-filter-input fr-year-input" min="2000" max="2100"
+              [attr.aria-invalid]="!isYearValid()" />
+            @if (!isYearValid()) {
+              <span class="fr-year-error" role="alert">Exercice invalide : doit être compris entre 2000 et 2100.</span>
+            }
           </div>
           <div class="accounting-filter-field">
             <label class="accounting-filter-label" for="fr-kind">Contribuable</label>
@@ -67,18 +95,22 @@ interface EditableModel {
           </div>
         </div>
         <div accountingFilterActions>
-          <app-button variant="secondary" icon="pi pi-refresh" type="button" (click)="load()" [disabled]="loading()"
+          <app-button variant="secondary" icon="pi pi-refresh" type="button" (click)="load()" [disabled]="loading() || !isYearValid()"
             ariaLabel="Charger la feuille de détermination">Charger</app-button>
-          <app-button variant="primary" icon="pi pi-save" type="button" (click)="save()"
-            [disabled]="loading() || saving() || readonly()"
-            ariaLabel="Enregistrer et recalculer">Enregistrer et recalculer</app-button>
+          @if (canMutate()) {
+            <app-button variant="primary" icon="pi pi-save" type="button" (click)="save()"
+              [disabled]="loading() || saving() || readonly()"
+              ariaLabel="Enregistrer et recalculer">Enregistrer et recalculer</app-button>
+          }
           <app-accounting-export-menu label="Exporter la détermination"
             [disabled]="loading() || !data()" (exportFormat)="onExportDetermination($event)" />
           <app-accounting-export-menu label="Exporter la liasse complète"
             [disabled]="loading() || !data()" (exportFormat)="onExportLiasse($event)" />
-          <app-button variant="secondary" icon="pi pi-lock" type="button" (click)="finalize()"
-            [disabled]="loading() || saving() || readonly()"
-            ariaLabel="Finaliser la feuille (cabinet en mode dossier délégué)">Finaliser</app-button>
+          @if (canFinalize()) {
+            <app-button variant="secondary" icon="pi pi-lock" type="button" (click)="finalize()"
+              [disabled]="loading() || saving() || readonly()"
+              ariaLabel="Finaliser la feuille (cabinet en mode dossier délégué)">Finaliser</app-button>
+          }
         </div>
       </app-accounting-filter-bar>
     </div>
@@ -143,6 +175,11 @@ interface EditableModel {
                   (click)="applySuggestedTurnover()" [disabled]="readonly()"
                   ariaLabel="Reprendre le chiffre d'affaires comptable">Reprendre</app-button>
               </div>
+            }
+            @if (caVarianceWarning(); as w) {
+              <p class="fr-ca-warning" role="alert">
+                <i class="pi pi-exclamation-triangle" aria-hidden="true"></i> {{ w }}
+              </p>
             }
             <div class="fr-input-row">
               <label>Régime de minimum d'impôt</label>
@@ -226,10 +263,20 @@ interface EditableModel {
                           <option [ngValue]="0">Déficit</option><option [ngValue]="1">Amort. différé</option>
                         </select>
                       </td>
-                      <td><input type="number" class="fr-yr" [(ngModel)]="cf.originYear" [disabled]="readonly()" aria-label="Année d'origine" /></td>
+                      <td>
+                        <input type="number" class="fr-yr" [(ngModel)]="cf.originYear" [disabled]="readonly()"
+                          [max]="fiscalYear - 1" aria-label="Année d'origine" />
+                        @if (!isOriginYearValid(cf)) {
+                          <span class="fr-yr-error" role="alert">Année d'origine invalide (doit être &lt; {{ fiscalYear }})</span>
+                        }
+                      </td>
                       <td class="fr-num"><input type="number" step="0.001" [(ngModel)]="cf.initialAmount" [disabled]="readonly()" aria-label="Montant initial" /></td>
                       <td class="fr-num"><input type="number" step="0.001" [(ngModel)]="cf.imputedThisYear" [disabled]="readonly()" aria-label="Imputé cette année" /></td>
-                      <td><input type="number" class="fr-yr" [ngModel]="cf.expiryYear" (ngModelChange)="cf.expiryYear = $event" [disabled]="readonly()" aria-label="Année d'expiration" /></td>
+                      <td>
+                        <input type="number" class="fr-yr" [value]="cf.expiryYear" disabled
+                          aria-label="Année d'expiration (calculée automatiquement)"
+                          title="calculée automatiquement" placeholder="calculée automatiquement" />
+                      </td>
                       <td><app-button variant="ghost" size="sm" icon="pi pi-trash" type="button" (click)="removeCarryForward($index)" [disabled]="readonly()" ariaLabel="Supprimer ce report" /></td>
                     </tr>
                   }
@@ -243,7 +290,7 @@ interface EditableModel {
         <div class="fr-col">
           <div class="card fr-card fr-compute">
             <h3 class="fr-card-title">Calcul de l'impôt</h3>
-            <p class="fr-compute-note">Calcul serveur, mis à jour à chaque « Enregistrer et recalculer ».</p>
+            <p class="fr-compute-note">Calcul effectué côté serveur, mis à jour après chaque enregistrement.</p>
             <table class="fr-compute-table">
               <tbody>
                 <tr><td>Résultat comptable net (après impôt)</td><td class="fr-num">{{ d.computation.accountingResult | number : '1.3-3' }}</td></tr>
@@ -286,6 +333,9 @@ interface EditableModel {
               <tr>
                 <td>
                   <input type="text" [(ngModel)]="line.label" [disabled]="readonly()" aria-label="Libellé de la ligne" />
+                  @if (!isLabelValid(line)) {
+                    <span class="fr-label-error" role="alert">Libellé requis</span>
+                  }
                   @if (line.isAutoSuggested) { <span class="fr-auto" title="Suggestion automatique">auto</span> }
                 </td>
                 <td class="fr-num"><input type="number" step="0.001" [(ngModel)]="line.amount" [disabled]="readonly()" aria-label="Montant" /></td>
@@ -301,6 +351,10 @@ interface EditableModel {
     @use '../shared/accounting-layout';
     .fr-fields { display:flex; flex-wrap:wrap; align-items:flex-end; gap:var(--spacing-4); }
     .fr-year-input { max-width:7rem; }
+    .fr-year-error, .fr-yr-error, .fr-label-error { display:block; font-size:var(--font-size-xs); color:var(--color-danger-600,#dc2626); margin-top:0.2rem; }
+    .fr-ca-warning { display:flex; align-items:center; gap:var(--spacing-2); margin:0 0 var(--spacing-2); font-size:var(--font-size-xs); color:var(--color-warning-700,#b45309); }
+    .fr-dirty-indicator { display:flex; align-items:center; gap:var(--spacing-2); margin:0 0 var(--spacing-2); font-size:var(--font-size-xs); color:var(--color-warning-700,#b45309); }
+    .fr-dirty-indicator i { font-size:0.5rem; }
     .fr-info-banner, .fr-warn-banner, .fr-lock-banner { display:flex; align-items:center; gap:var(--spacing-2); margin-bottom:var(--spacing-4); padding:var(--spacing-3) var(--spacing-4); border-radius:var(--radius-md); font-size:var(--font-size-sm); }
     .fr-info-banner { background:var(--color-success-50,#f0fdf4); border:1px solid var(--color-success-200,#bbf7d0); color:var(--color-success-700,#15803d); }
     .fr-warn-banner { background:var(--color-primary-50,#eff6ff); border:1px solid var(--color-primary-200,#bfdbfe); color:var(--color-primary-700,#1d4ed8); }
@@ -345,6 +399,7 @@ interface EditableModel {
 })
 export class FiscalResultComponent implements OnInit {
   private readonly api = inject(AccountingService);
+  private readonly auth = inject(AuthService);
 
   fiscalYear = new Date().getFullYear() - 1;
   readonly data = signal<FiscalResultDeclarationDto | null>(null);
@@ -360,10 +415,40 @@ export class FiscalResultComponent implements OnInit {
   readonly suggestedTurnover = signal(0);
 
   model: EditableModel = this.blankModel();
+  private snapshot: EditableModel | null = null;
 
   readonly readonly = computed(() => this.data()?.isFinalized ?? false);
   readonly catalogReintegrations = computed(() => this.catalog().filter(c => c.kind === 0));
   readonly catalogDeductions = computed(() => this.catalog().filter(c => c.kind === 1));
+  /** Boutons de mutation (Enregistrer, lignes d'ajustement…) : nécessite `accounting:create`. */
+  readonly canMutate = computed(() => this.auth.hasPermission(PERMISSIONS.accounting.create));
+  /** Bouton Finaliser : réservé au cabinet en mode dossier délégué (aligné sur la policy backend). */
+  readonly canFinalize = computed(() => canValidateAccountingEntries(this.auth));
+
+  private readonly loadRequests$ = new Subject<number>();
+
+  constructor() {
+    this.loadRequests$
+      .pipe(
+        switchMap(year =>
+          this.api.getFiscalResult(year).pipe(
+            catchError(() => of<FiscalResultApiResponse>({ success: false, error: 'Erreur réseau' }))
+          )
+        ),
+        takeUntilDestroyed()
+      )
+      .subscribe(res => {
+        this.loading.set(false);
+        if (res.success && res.data) {
+          this.data.set(res.data);
+          this.model = this.toModel(res.data);
+          this.snapshot = this.toModel(res.data);
+          this.suggestedTurnover.set(res.data.suggestedLocalTurnoverTtc ?? 0);
+        } else {
+          this.error.set(res.error ?? 'Erreur');
+        }
+      });
+  }
 
   ngOnInit(): void {
     this.api.getFiscalAdjustmentCatalog().subscribe({
@@ -384,31 +469,85 @@ export class FiscalResultComponent implements OnInit {
   }
 
   load(): void {
-    const y = Math.min(2100, Math.max(2000, Math.floor(Number(this.fiscalYear)) || new Date().getFullYear()));
+    if (!this.confirmDiscardIfDirty()) return;
+    const y = this.clampYear(this.fiscalYear);
     this.fiscalYear = y;
     this.loading.set(true);
     this.error.set(null);
     this.info.set(null);
-    this.api.getFiscalResult(y).subscribe({
-      next: res => {
-        this.loading.set(false);
-        if (res.success && res.data) {
-          this.data.set(res.data);
-          this.model = this.toModel(res.data);
-          this.suggestedTurnover.set(res.data.suggestedLocalTurnoverTtc ?? 0);
-        } else {
-          this.error.set(res.error ?? 'Erreur');
-        }
-      },
-      error: () => {
-        this.loading.set(false);
-        this.error.set('Erreur réseau');
-      }
-    });
+    this.loadRequests$.next(y);
+  }
+
+  /** Année saisie via l'input « Exercice » : demande confirmation si des modifications sont en cours. */
+  onYearInputChange(value: number): void {
+    if (this.isDirty() && !confirm(UNSAVED_CHANGES_MESSAGE)) {
+      return;
+    }
+    this.fiscalYear = value;
+  }
+
+  isYearValid(): boolean {
+    const y = Number(this.fiscalYear);
+    return Number.isInteger(y) && y >= MIN_FISCAL_YEAR && y <= MAX_FISCAL_YEAR;
+  }
+
+  private clampYear(y: number): number {
+    return Math.min(MAX_FISCAL_YEAR, Math.max(MIN_FISCAL_YEAR, Math.floor(Number(y)) || new Date().getFullYear()));
+  }
+
+  /** État « modifications non enregistrées » : compare le modèle courant au dernier instantané chargé/sauvegardé. */
+  isDirty(): boolean {
+    if (!this.snapshot) return false;
+    return JSON.stringify(this.model) !== JSON.stringify(this.snapshot);
+  }
+
+  private confirmDiscardIfDirty(): boolean {
+    if (!this.isDirty()) return true;
+    return confirm(UNSAVED_CHANGES_MESSAGE);
+  }
+
+  /** Garde fonctionnelle de désactivation de route (T23) : confirmation si des modifications sont en cours. */
+  canDeactivate(): boolean {
+    return this.confirmDiscardIfDirty();
+  }
+
+  /** Avertissement non bloquant si le CA saisi diverge de plus de 5 % du CA comptable calculé. */
+  caVarianceWarning(): string | null {
+    const suggested = this.suggestedTurnover();
+    if (!suggested) return null;
+    const entered = Number(this.model.localTurnoverTtc) || 0;
+    const diff = Math.abs(entered - suggested);
+    const ratio = diff / suggested;
+    if (ratio <= 0.05) return null;
+    const pct = (ratio * 100).toFixed(1);
+    return `Le chiffre d'affaires saisi s'écarte de ${pct} % du CA comptable calculé.`;
+  }
+
+  isLabelValid(line: FiscalAdjustmentLineDto): boolean {
+    return line.label.trim().length > 0;
+  }
+
+  isOriginYearValid(cf: FiscalCarryForwardDto): boolean {
+    const y = Number(cf.originYear);
+    return Number.isInteger(y) && y < this.fiscalYear && y >= this.fiscalYear - 100;
   }
 
   save(): void {
-    if (this.readonly()) return;
+    if (this.readonly() || !this.canMutate()) return;
+    if (!this.isYearValid()) {
+      this.error.set('Exercice invalide : doit être compris entre 2000 et 2100.');
+      return;
+    }
+    const invalidLabel = this.model.adjustments.find(a => !this.isLabelValid(a));
+    if (invalidLabel) {
+      this.error.set('Toutes les lignes de réintégration/déduction doivent avoir un libellé.');
+      return;
+    }
+    const invalidOrigin = this.model.carryForwards.find(c => !this.isOriginYearValid(c));
+    if (invalidOrigin) {
+      this.error.set("Année d'origine invalide sur un report (doit être antérieure à l'exercice).");
+      return;
+    }
     this.saving.set(true);
     this.error.set(null);
     this.info.set(null);
@@ -442,6 +581,7 @@ export class FiscalResultComponent implements OnInit {
         if (res.success && res.data) {
           this.data.set(res.data);
           this.model = this.toModel(res.data);
+          this.snapshot = this.toModel(res.data);
           this.info.set('Feuille enregistrée et recalculée.');
         } else {
           this.error.set(res.error ?? "L'enregistrement a échoué.");
@@ -455,7 +595,7 @@ export class FiscalResultComponent implements OnInit {
   }
 
   finalize(): void {
-    if (this.readonly()) return;
+    if (this.readonly() || !this.canFinalize()) return;
     if (!confirm('Finaliser la feuille de détermination ? Elle deviendra non modifiable.')) return;
     this.saving.set(true);
     this.error.set(null);
@@ -536,3 +676,7 @@ export class FiscalResultComponent implements OnInit {
     };
   }
 }
+
+/** Garde de désactivation de route (T23) : confirme la perte des modifications non enregistrées. */
+export const fiscalResultCanDeactivateGuard: CanDeactivateFn<FiscalResultComponent> = component =>
+  component.canDeactivate();
