@@ -81,6 +81,14 @@ public sealed class AccountingService : IAccountingService
     private readonly ILogger<AccountingService> _logger;
     private readonly AccountingSettings _settings;
 
+    /// <summary>
+    /// Piste d'audit persistée de l'auto-création de sous-comptes (T16, DÉFAUT #3). Vit dans sa propre
+    /// transaction isolée (cf. <see cref="ITenantUnitOfWork"/>) : l'événement survit au rollback de
+    /// l'écriture mère — comportement souhaité (un compte créé reste créé même si l'écriture échoue).
+    /// Optionnel en construction (null = tests sans audit) ; toujours injecté par la DI en production.
+    /// </summary>
+    private readonly IAuditService? _audit;
+
     public AccountingService(
         IChartOfAccountRepository chartOfAccounts,
         IAccountingPeriodService periodService,
@@ -88,7 +96,8 @@ public sealed class AccountingService : IAccountingService
         IWithholdingTaxRepository withholdingTaxTypes,
         ITenantDbContextFactory contextFactory,
         ILogger<AccountingService> logger,
-        IOptions<AccountingSettings> settings)
+        IOptions<AccountingSettings> settings,
+        IAuditService? audit = null)
     {
         _chartOfAccounts = chartOfAccounts;
         _periodService = periodService;
@@ -97,6 +106,7 @@ public sealed class AccountingService : IAccountingService
         _contextFactory = contextFactory;
         _logger = logger;
         _settings = settings.Value;
+        _audit = audit;
     }
 
     /// <summary>
@@ -112,8 +122,14 @@ public sealed class AccountingService : IAccountingService
     /// auto-created to prevent data loss from a single missing configuration entry.
     /// Returns a failure result with the first missing account, or success if all accounts exist.
     /// </summary>
+    /// <param name="sourceContext">
+    /// T16 — provenance de l'écriture (ex. « OpeningEntries », « FixedAssetDisposal »,
+    /// « FiscalTaxEntry ») tracée dans la piste d'audit lors d'une auto-création de sous-compte.
+    /// Oblligatoire : aucun site d'appel sans contexte.
+    /// </param>
     private async Task<Result> ValidateAccountsExistAsync(
         IEnumerable<JournalLineInput> lines,
+        string sourceContext,
         CancellationToken cancellationToken)
     {
         var checkedAccounts = new HashSet<string>(StringComparer.Ordinal);
@@ -127,7 +143,7 @@ public sealed class AccountingService : IAccountingService
             if (account is null)
             {
                 // Attempt auto-creation: find nearest parent account in the chart
-                var created = await TryAutoCreateSubAccountAsync(acc, cancellationToken);
+                var created = await TryAutoCreateSubAccountAsync(acc, sourceContext, cancellationToken);
                 if (!created)
                 {
                     _logger.LogError(
@@ -154,8 +170,9 @@ public sealed class AccountingService : IAccountingService
     /// in the chart of accounts hierarchy. This follows standard ERP practice for
     /// Tunisian SCE where sub-accounts are created as needed.
     /// </summary>
+    /// <param name="sourceContext">T16 — provenance de l'écriture, tracée dans la piste d'audit.</param>
     /// <returns>True if the sub-account was successfully created, false otherwise.</returns>
-    private async Task<bool> TryAutoCreateSubAccountAsync(string accountNumber, CancellationToken cancellationToken)
+    private async Task<bool> TryAutoCreateSubAccountAsync(string accountNumber, string sourceContext, CancellationToken cancellationToken)
     {
         // Try progressively shorter prefixes to find a parent account
         // e.g., for "4371": try "437", then "43", then "4"
@@ -192,6 +209,28 @@ public sealed class AccountingService : IAccountingService
             _logger.LogInformation(
                 "Auto-created missing sub-account {AccountNumber} under parent {ParentNumber} (class {AccountClass})",
                 accountNumber, parentNumber, accountClass);
+
+            // T16 — piste d'audit persistée de l'auto-création avec la provenance de l'écriture.
+            // Transaction isolée (cf. IAuditService / ITenantUnitOfWork) : survit au rollback mère.
+            if (_audit is not null)
+            {
+                try
+                {
+                    await _audit.LogAsync(
+                        action: "AccountAutoCreated",
+                        entityType: "ChartOfAccount",
+                        entityId: newAccount.Id,
+                        oldValues: null,
+                        newValues: new { accountNumber, parentNumber, label, sourceContext },
+                        cancellationToken: cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    // L'audit ne doit jamais faire échouer l'écriture comptable.
+                    _logger.LogError(ex,
+                        "Failed to log audit event for auto-created sub-account {AccountNumber}", accountNumber);
+                }
+            }
 
             return true;
         }
@@ -313,7 +352,7 @@ public sealed class AccountingService : IAccountingService
             }
         }
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "InvoiceSale", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -464,7 +503,7 @@ public sealed class AccountingService : IAccountingService
             }
         }
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "InvoiceCreditNote", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -530,7 +569,7 @@ public sealed class AccountingService : IAccountingService
 
         lines.Add(new JournalLineInput(TunisianPostingAccounts.Client, $"Client — {invoice.Number.Value}", 0, totalApplied, invoice.ClientId, ThirdPartyKind.Client));
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "ClientPayment", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -740,7 +779,7 @@ public sealed class AccountingService : IAccountingService
         var productTypes = await TryLoadStandaloneProductTypesAsync(invoice, cancellationToken);
         var (lines, _) = SupplierInvoiceJournalLineBuilder.Build(invoice, productTypes);
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "SupplierInvoice", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -819,7 +858,7 @@ public sealed class AccountingService : IAccountingService
             new(creditAccount, creditLabel, 0, amount, null, ThirdPartyKind.None)
         };
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "SupplierPayment", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -902,7 +941,7 @@ public sealed class AccountingService : IAccountingService
             description = $"Effet impayé facture {invoice.Number.Value}";
         }
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "ClientEffetSettlement", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -958,7 +997,7 @@ public sealed class AccountingService : IAccountingService
             new("5321", $"Paiement effet — {inv.InvoiceNumber}", 0, amount, null, ThirdPartyKind.None)
         };
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "SupplierEffetSettlement", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -1008,7 +1047,7 @@ public sealed class AccountingService : IAccountingService
             new("5411", $"Sortie caisse — remise {deposit.Number.Value}", 0, amount, null, ThirdPartyKind.None)
         };
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "BankDeposit", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -1089,7 +1128,7 @@ public sealed class AccountingService : IAccountingService
             }
         }
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "CashOperation", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -1174,7 +1213,7 @@ public sealed class AccountingService : IAccountingService
                 ThirdPartyKind.None)
         };
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "SupplierInvoiceWithholding", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -1318,7 +1357,7 @@ public sealed class AccountingService : IAccountingService
         }
 
         // Validate all accounts exist
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "OpeningEntries", cancellationToken);
         if (accountValidation.IsFailure)
             return Result.Failure<Guid>(accountValidation.Error);
 
@@ -1622,7 +1661,7 @@ public sealed class AccountingService : IAccountingService
             new(asset.CreditAccountNumber!, $"Acquisition — {asset.Label}", 0, amount, null, ThirdPartyKind.None)
         };
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "FixedAssetAcquisition", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -1678,7 +1717,7 @@ public sealed class AccountingService : IAccountingService
             new(asset.DepreciationAccountNumber, $"Amort. {scheduleLine.FiscalYear} — {asset.InventoryNumber}", 0, amount, null, ThirdPartyKind.None)
         };
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "FixedAssetDepreciation", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -1784,7 +1823,7 @@ public sealed class AccountingService : IAccountingService
                 ThirdPartyKind.None));
         }
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "FixedAssetDisposal", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -1940,7 +1979,7 @@ public sealed class AccountingService : IAccountingService
 
         var lines = linesResult.Value;
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "PayrollRun", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -2116,7 +2155,7 @@ public sealed class AccountingService : IAccountingService
             null,
             ThirdPartyKind.None));
 
-        var accountValidation = await ValidateAccountsExistAsync(lines, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(lines, "PayrollPayment", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
@@ -2251,7 +2290,7 @@ public sealed class AccountingService : IAccountingService
         if (linesResult.IsFailure)
             return Result.Failure(linesResult.Error);
 
-        var accountValidation = await ValidateAccountsExistAsync(linesResult.Value, cancellationToken);
+        var accountValidation = await ValidateAccountsExistAsync(linesResult.Value, "CnssContributionPayment", cancellationToken);
         if (accountValidation.IsFailure)
             return accountValidation;
 
