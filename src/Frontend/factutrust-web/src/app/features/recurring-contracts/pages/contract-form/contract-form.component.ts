@@ -189,7 +189,7 @@ interface ContractLineForm extends ContractLinePayloadSource {
 
       <div class="actions">
         <app-button type="button" variant="outline" [routerLink]="cancelRoute">Annuler</app-button>
-        <app-button type="submit" variant="primary" icon="pi-check" [disabled]="saving()">
+        <app-button type="submit" variant="primary" icon="pi-check" [disabled]="saving() || !canSave">
           {{ saving() ? 'Enregistrement…' : 'Enregistrer' }}
         </app-button>
       </div>
@@ -445,30 +445,43 @@ export class ContractFormComponent implements OnInit {
     });
   }
 
-  /** Validation client : toast warn et aucune requête en cas d'invalidité. */
-  private validate(): boolean {
-    const warn = (detail: string) => this.toast.add({ severity: 'warn', summary: 'Formulaire incomplet', detail });
-
-    if (!this.clientId) { warn('Sélectionnez un client.'); return false; }
+  /**
+   * Première erreur de validation du formulaire, ou null s'il est valide.
+   * Source unique des règles : utilisée par le getter `canSave` (désactivation
+   * du bouton Enregistrer) et par `validate()` (filet de sécurité à la soumission).
+   */
+  private firstValidationError(): string | null {
+    if (!this.clientId) return 'Sélectionnez un client.';
     if (this.billingDayOfMonth < 1 || this.billingDayOfMonth > 31) {
-      warn('Le jour de facturation doit être compris entre 1 et 31.');
-      return false;
+      return 'Le jour de facturation doit être compris entre 1 et 31.';
     }
-    if (!this.startDate) { warn('La date de début est obligatoire.'); return false; }
+    if (!this.startDate) return 'La date de début est obligatoire.';
     if (this.endDate && this.endDate < this.startDate) {
-      warn('La date de fin doit être postérieure ou égale à la date de début.');
-      return false;
+      return 'La date de fin doit être postérieure ou égale à la date de début.';
     }
-    if (this.lines.length === 0) { warn('Ajoutez au moins une ligne au contrat.'); return false; }
+    if (this.lines.length === 0) return 'Ajoutez au moins une ligne au contrat.';
     for (const line of this.lines) {
       if (!line.description?.trim()) {
-        warn('Chaque ligne doit avoir une description.');
-        return false;
+        return 'Chaque ligne doit avoir une description.';
       }
       if (line.lineType === 'UsageMetered' && !line.usageMetricId) {
-        warn('La métrique est obligatoire pour une ligne à la consommation.');
-        return false;
+        return 'La métrique est obligatoire pour une ligne à la consommation.';
       }
+    }
+    return null;
+  }
+
+  /** Le bouton Enregistrer n'est actif que lorsque tous les champs obligatoires sont valides. */
+  get canSave(): boolean {
+    return this.firstValidationError() === null;
+  }
+
+  /** Validation client : toast warn et aucune requête en cas d'invalidité. */
+  private validate(): boolean {
+    const error = this.firstValidationError();
+    if (error) {
+      this.toast.add({ severity: 'warn', summary: 'Formulaire incomplet', detail: error });
+      return false;
     }
     return true;
   }
